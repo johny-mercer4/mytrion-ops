@@ -1,0 +1,24 @@
+name: Deploy
+
+# Render auto-deploys from the connected repo, but this lets us trigger a deploy
+# explicitly (or from other workflows). Configure the RENDER_DEPLOY_HOOK_URL secret
+# with the deploy hook from the Render dashboard.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "RENDER_DEPLOY_HOOK_URL not set — skipping deploy trigger."
+            exit 0
+          fi
+          curl -fsS -X POST "$HOOK"
+          echo "Render deploy triggered."

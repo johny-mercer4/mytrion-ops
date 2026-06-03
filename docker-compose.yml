@@ -1,0 +1,38 @@
+# Local dev infrastructure: Postgres 16 (with pgvector) + Redis 7.
+# Usage: docker compose up -d
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: octane-postgres
+    environment:
+      POSTGRES_USER: octane
+      POSTGRES_PASSWORD: octane
+      POSTGRES_DB: octane_assistant
+    ports:
+      - '5432:5432'
+    volumes:
+      - octane_pgdata:/var/lib/postgresql/data
+      - ./scripts/enable-pgvector.sql:/docker-entrypoint-initdb.d/00-enable-pgvector.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U octane -d octane_assistant']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: octane-redis
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '6379:6379'
+    volumes:
+      - octane_redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  octane_pgdata:
+  octane_redisdata:
