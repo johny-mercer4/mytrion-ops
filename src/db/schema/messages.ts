@@ -1,0 +1,33 @@
+import { createId } from '@paralleldrive/cuid2';
+import { index, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+
+/** A single conversation turn. Mirrors the OpenAI chat message shape. */
+export const messages = pgTable(
+  'messages',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    tenantId: text('tenant_id').notNull(),
+    conversationId: text('conversation_id').notNull(),
+    role: text('role').$type<'system' | 'user' | 'assistant' | 'tool'>().notNull(),
+    content: text('content').notNull().default(''),
+    /** For assistant messages that requested tools: the OpenAI tool_calls array. */
+    toolCalls: jsonb('tool_calls').$type<unknown>(),
+    /** For tool messages: the id of the tool call this responds to. */
+    toolCallId: text('tool_call_id'),
+    /** For tool messages: the tool name. */
+    name: text('name'),
+    model: text('model'),
+    promptTokens: integer('prompt_tokens'),
+    completionTokens: integer('completion_tokens'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    conversationIdx: index('messages_conversation_idx').on(table.conversationId, table.createdAt),
+    tenantIdx: index('messages_tenant_idx').on(table.tenantId),
+  }),
+);
+
+export type Message = typeof messages.$inferSelect;
+export type NewMessage = typeof messages.$inferInsert;
