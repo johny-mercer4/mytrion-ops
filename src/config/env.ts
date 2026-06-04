@@ -105,6 +105,8 @@ const EnvSchema = z.object({
   // --- Feature flags ---
   FF_PARTNER_AUDIENCE_ENABLED: flag('1'),
   FF_KNOWLEDGE_INGEST_ENABLED: flag('1'),
+  // Always-on RAG: inject RBAC-scoped pgvector passages into every chat turn.
+  FF_RAG_ENABLED: flag('1'),
   FF_AUDIT_LOG_ENABLED: flag('1'),
 });
 

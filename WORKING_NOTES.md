@@ -201,3 +201,21 @@ Scope model (per product direction): RAG **and** tool calling are gated by `depa
 - Tests: `tests/unit/department-access.test.ts` (tool gating + retrieval SQL filter). 36 tests pass;
   typecheck/lint/build clean. NOTE: the migration still needs to run against the DB (`pnpm db:migrate`).
 
+### Always-on RAG in chat + R2/Browserbase env scaffolding (later, 2026-06-04)
+
+Focus narrowed (R2/Browserbase deferred — no creds yet): get streaming chat working with
+RBAC-enforced RAG; tool calling comes after confirmation.
+- **Always-on RAG**: `chatService` now retrieves RBAC-scoped pgvector passages for the user's
+  message and injects them as a system "grounding" block on every turn (`FF_RAG_ENABLED`, default
+  on). Isolation is the existing `knowledgeRepo` filter (tenant + audience + department_access), so
+  the grounding a caller sees is limited to their departments/keys; managers see all. Retrieval
+  failures degrade gracefully (chat continues ungrounded). `ChatTurnResult.ragPassages` added; the
+  stream emits a `context` event with the passage count. `department_access` is a generic access tag
+  — a department name OR a unique key (zoho user id / carrier id), caller's choice at ingest + query.
+- **Upload→ingest with department** (`POST /v1/knowledge/upload`) was already built last entry — this
+  is the endpoint the Zoho admin-console widget calls (multipart: file(s) + `department` field).
+- **Env scaffolding** (empty defaults, clients wired later): `API_KEY` (inbound key to this engine —
+  registered, not yet enforced), Cloudflare R2 (`R2_ACCOUNT_ID/ACCESS_KEY_ID/SECRET_ACCESS_KEY/
+  BUCKET/ENDPOINT/PUBLIC_BASE_URL/REGION`), Browserbase (`BROWSERBASE_API_KEY/PROJECT_ID/BASE_URL`).
+- 37 tests pass (new: chat RAG grounding). typecheck/lint/build clean.
+
