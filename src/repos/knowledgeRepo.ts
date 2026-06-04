@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or, type SQL, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   knowledgeChunks,
@@ -35,16 +35,35 @@ export interface UpdateDocPatch {
   title?: string;
 }
 
+/**
+ * RBAC department filter for retrieval. Managers (allDepartmentAccess) get no restriction.
+ * Otherwise: always include global (NULL) chunks, plus any in the caller's departments.
+ * Returns undefined when unrestricted so `and(...)` simply drops it.
+ */
+function departmentFilter(ctx: TenantContext): SQL | undefined {
+  if (ctx.allDepartmentAccess) return undefined;
+  const col = knowledgeChunks.departmentAccess;
+  if (ctx.departments.length === 0) return isNull(col);
+  return or(isNull(col), inArray(col, ctx.departments));
+}
+
 export const knowledgeRepo = {
   async createDoc(
     ctx: TenantContext,
-    input: { title: string; source?: string; mimeType?: string; checksum?: string },
+    input: {
+      title: string;
+      source?: string;
+      mimeType?: string;
+      checksum?: string;
+      departmentAccess?: string | null;
+    },
   ): Promise<KnowledgeDoc> {
     const values: NewKnowledgeDoc = {
       tenantId: ctx.tenantId,
       audience: ctx.audience,
       title: input.title,
     };
+    if (input.departmentAccess !== undefined) values.departmentAccess = input.departmentAccess;
     if (input.source !== undefined) values.source = input.source;
     if (input.mimeType !== undefined) values.mimeType = input.mimeType;
     if (input.checksum !== undefined) values.checksum = input.checksum;
@@ -103,7 +122,12 @@ export const knowledgeRepo = {
   },
 
   /** Atomically replace all chunks for a doc (idempotent re-ingest). */
-  async replaceChunks(ctx: TenantContext, docId: string, chunks: NewChunkInput[]): Promise<void> {
+  async replaceChunks(
+    ctx: TenantContext,
+    docId: string,
+    chunks: NewChunkInput[],
+    departmentAccess: string | null = null,
+  ): Promise<void> {
     await db.transaction(async (tx) => {
       await tx
         .delete(knowledgeChunks)
@@ -114,6 +138,7 @@ export const knowledgeRepo = {
           tenantId: ctx.tenantId,
           audience: ctx.audience,
           docId,
+          departmentAccess,
           chunkIndex: c.chunkIndex,
           content: c.content,
           embedding: c.embedding,
@@ -145,6 +170,7 @@ export const knowledgeRepo = {
         and(
           eq(knowledgeChunks.tenantId, ctx.tenantId),
           eq(knowledgeChunks.audience, ctx.audience),
+          departmentFilter(ctx),
         ),
       )
       .orderBy(sql`${knowledgeChunks.embedding} <=> ${literal}::vector`)

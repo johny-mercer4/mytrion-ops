@@ -16,6 +16,8 @@ function cliContext(tenantId: string): TenantContext {
     audience: 'internal',
     role: 'admin',
     scopes: scopesForRole('admin'),
+    departments: [],
+    allDepartmentAccess: true,
     requestId: 'cli-embed-docs',
   };
 }

@@ -1,5 +1,6 @@
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
+import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
 import swagger from '@fastify/swagger';
@@ -81,6 +82,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
   await app.register(sensible);
   await app.register(rateLimit, { max: 120, timeWindow: '1 minute' });
+  // File uploads for knowledge training (POST /v1/knowledge/upload).
+  await app.register(multipart, {
+    limits: { fileSize: 10_000_000, files: 20, fields: 10 },
+  });
 
   if (!isProduction && !isTest) {
     await registerDocs(app);

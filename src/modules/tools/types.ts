@@ -23,6 +23,11 @@ export interface ToolManifest<TInput, TOutput> {
   riskClass: RiskClass;
   allowedAudiences: Audience[];
   requiredScopes: string[];
+  /**
+   * Departments allowed to use this tool (RBAC). Omit/empty = available to all departments.
+   * When set, the caller must have allDepartmentAccess or an overlapping department.
+   */
+  allowedDepartments?: string[];
   rateLimit?: { perMinute: number };
   handler: (input: TInput, ctx: ToolContext) => Promise<TOutput>;
 }
@@ -40,6 +45,7 @@ export interface RegisteredTool {
   riskClass: RiskClass;
   allowedAudiences: Audience[];
   requiredScopes: string[];
+  allowedDepartments?: string[];
   rateLimit?: { perMinute: number };
   run: (rawInput: unknown, ctx: ToolContext) => Promise<unknown>;
 }

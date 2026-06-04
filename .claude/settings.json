@@ -32,7 +32,9 @@
       "Bash(git commit -q -m 'chore: add Claude Code project permissions \\(auto-approve safe shell, deny git push\\) *)",
       "Bash(git commit -q -m 'refactor: drop Redis/BullMQ; knowledge ingest runs synchronously *)",
       "Bash(git check-ignore *)",
-      "Bash(awk '{print $5\"\\\\t\"$9}')"
+      "Bash(awk '{print $5\"\\\\t\"$9}')",
+      "Bash(sed -n '1,80p' src/db/schema/knowledge_chunks.ts)",
+      "Bash(sed -n '1,80p' src/db/schema/knowledge_docs.ts)"
     ],
     "deny": [
       "Bash(git push:*)",

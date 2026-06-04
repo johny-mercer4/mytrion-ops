@@ -5,12 +5,15 @@ import { runChatTurn, streamChatTurn, type ChatTurnOptions } from '../../modules
 import { startSSE } from '../../modules/chat/streaming.js';
 import { conversationRepo } from '../../repos/conversationRepo.js';
 import { messageRepo } from '../../repos/messageRepo.js';
-import { requireContext } from './helpers.js';
+import { requireContext, withDepartmentAccess } from './helpers.js';
 
 const chatSchema = z.object({
   conversationId: z.string().min(1).max(100).optional(),
   message: z.string().min(1).max(8000),
   model: z.string().min(1).max(100).optional(),
+  // Department-access RBAC for RAG + tools (caller-supplied; see withDepartmentAccess).
+  departmentAccess: z.array(z.string().min(1).max(60)).max(50).optional(),
+  allDepartments: z.boolean().optional(),
 });
 
 function optionsFrom(body: z.infer<typeof chatSchema>): ChatTurnOptions {
@@ -19,14 +22,14 @@ function optionsFrom(body: z.infer<typeof chatSchema>): ChatTurnOptions {
 
 export async function chatRoutes(app: FastifyInstance): Promise<void> {
   app.post('/chat', { onRequest: [app.authenticate] }, async (request) => {
-    const ctx = requireContext(request);
     const body = chatSchema.parse(request.body);
+    const ctx = withDepartmentAccess(requireContext(request), request, body);
     return runChatTurn(body.conversationId, body.message, ctx, optionsFrom(body));
   });
 
   app.post('/chat/stream', { onRequest: [app.authenticate] }, async (request, reply) => {
-    const ctx = requireContext(request);
     const body = chatSchema.parse(request.body);
+    const ctx = withDepartmentAccess(requireContext(request), request, body);
     const sse = startSSE(reply);
     try {
       await streamChatTurn(body.conversationId, body.message, ctx, sse, optionsFrom(body));

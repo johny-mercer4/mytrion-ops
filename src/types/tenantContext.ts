@@ -26,6 +26,14 @@ export interface TenantContext {
   role: Role;
   /** Derived from role; e.g. ['zoho_crm:read', 'octane_card:read']. '*' grants all. */
   scopes: string[];
+  /**
+   * Departments this request may access (RBAC for RAG + tools). Supplied per request by
+   * the caller (trusted frontend/agent). Global/NULL-tagged knowledge is always visible;
+   * department-tagged knowledge and department-restricted tools require a match here.
+   */
+  departments: string[];
+  /** Manager/elevated access: bypass department filtering entirely ("almost everything"). */
+  allDepartmentAccess: boolean;
   requestId: string;
 }
 

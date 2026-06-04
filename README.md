@@ -31,6 +31,11 @@ pnpm dev                        # API on :3001
   `driver`, `fleet_manager`
 - **Multi-tenant-lite**: one schema; every row tagged with `tenant_id` + `audience`
   (`internal` | `partner`); isolation enforced in the repo layer.
+- **Department RBAC**: `department_access` (caller-supplied per request) gates both RAG retrieval
+  and tool calling. Knowledge docs are tagged per department (NULL = shared/global); managers get
+  all-access. Train via `POST /v1/knowledge/upload` (multipart `.md`/text + optional `department`).
+- **Integration auth** is centralized in `src/integrations/wrapper.ts` (`wrapper.authHeaders(platform)`),
+  which caches Zoho OAuth tokens and handles CMP api-key auth.
 
 ## Tool calling
 

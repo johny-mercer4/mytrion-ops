@@ -54,6 +54,10 @@ export function contextFromClaims(claims: TokenClaims, requestId: string): Tenan
     audience: claims.audience,
     role: claims.role,
     scopes: scopesForRole(claims.role),
+    // Department access is supplied per request by the caller (see routes/v1/helpers).
+    // Admins are elevated by default ("managers can access almost everything").
+    departments: [],
+    allDepartmentAccess: claims.role === 'admin',
     requestId,
   };
 }

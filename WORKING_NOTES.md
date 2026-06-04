@@ -182,3 +182,22 @@ Postgres. Delivery: work on `build` → PR to `main` → Render deploy.
   request via `models.default`; `gpt-5.4-mini` is defined but unused. No change needed.
 - New `tests/unit/wrapper.test.ts` (token caching / expiry / per-service / header). 29 tests pass.
 
+### department_access RBAC + file-upload RAG training (later, 2026-06-04)
+
+Scope model (per product direction): RAG **and** tool calling are gated by `department_access`.
+- **TenantContext** gains `departments: string[]` + `allDepartmentAccess: boolean`. Supplied per
+  request by the trusted caller via `withDepartmentAccess` (body `departmentAccess[]`/`allDepartments`
+  or `x-department-access` CSV / `x-all-departments` headers). Admins default to allAccess
+  ("managers can access almost everything").
+- **Knowledge** docs + chunks get a nullable `department_access` column (NULL = shared/global) +
+  btree indexes. Migration `0001_ambitious_gideon.sql` (additive). `ingestDocument` accepts a single
+  `department`; retrieval filter in `knowledgeRepo`: managers → unfiltered; else
+  `department_access IS NULL OR IN (ctx.departments)` (empty depts → global only).
+- **Tools**: `ToolManifest.allowedDepartments?` (omit = all departments). `ToolRegistry.checkAccess`
+  adds the gate after audience/scope/write-risk. Existing 8 tools set nothing → unchanged behavior.
+- **Endpoints**: new `POST /v1/knowledge/upload` (multipart, `@fastify/multipart`, ≤10MB ×20 files;
+  accepts .md/.markdown/.txt/.json/text; optional `department` form field tags every doc). `/embed`
+  gains `department`; `/query` + `/chat` + `/chat/stream` thread department access into ctx.
+- Tests: `tests/unit/department-access.test.ts` (tool gating + retrieval SQL filter). 36 tests pass;
+  typecheck/lint/build clean. NOTE: the migration still needs to run against the DB (`pnpm db:migrate`).
+
