@@ -48,24 +48,27 @@ const EnvSchema = z.object({
   // Optional shared refresh token; used as a fallback when a service-specific one is unset.
   ZOHO_REFRESH_TOKEN: z.string().default(''),
 
+  // The *_API_DOMAIN / *_BASE_URL values are the FULL versioned API roots; callers append
+  // only the resource path (e.g. `${ZOHO_CRM_API_DOMAIN}/settings/modules`).
+
   // --- Zoho CRM ---
   ZOHO_CRM_CLIENT_ID: z.string().default(''),
   ZOHO_CRM_CLIENT_SECRET: z.string().default(''),
   ZOHO_CRM_REFRESH_TOKEN: z.string().default(''),
-  ZOHO_CRM_API_DOMAIN: z.string().default('https://www.zohoapis.com'),
+  ZOHO_CRM_API_DOMAIN: z.string().default('https://www.zohoapis.com/crm/v8'),
 
   // --- Zoho Desk ---
   ZOHO_DESK_REFRESH_TOKEN: z.string().default(''),
-  ZOHO_DESK_BASE_URL: z.string().default('https://desk.zoho.com'),
+  ZOHO_DESK_BASE_URL: z.string().default('https://desk.zoho.com/api/v1'),
   ZOHO_DESK_ORG_ID: z.string().default(''),
 
   // --- Zoho People ---
   ZOHO_PEOPLE_REFRESH_TOKEN: z.string().default(''),
-  ZOHO_PEOPLE_BASE_URL: z.string().default('https://people.zoho.com'),
+  ZOHO_PEOPLE_BASE_URL: z.string().default('https://people.zoho.com/api'),
 
   // --- Zoho Projects ---
   ZOHO_PROJECTS_REFRESH_TOKEN: z.string().default(''),
-  ZOHO_PROJECTS_BASE_URL: z.string().default('https://projectsapi.zoho.com'),
+  ZOHO_PROJECTS_BASE_URL: z.string().default('https://projectsapi.zoho.com/api/v3'),
 
   // --- Vendor: Octane internal API ---
   OCTANE_INTERNAL_API_URL: z.string().default(''),

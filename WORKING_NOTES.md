@@ -143,3 +143,18 @@ Postgres. Delivery: work on `build` → PR to `main` → Render deploy.
   default to empty — to be filled in next ("set the .envs"). Analyzers fail fast with a clear
   message when creds are missing (verified).
 
+### `.env` populated + analyzers validated live (later, 2026-06-04)
+
+- Convention change: `*_API_DOMAIN` / `*_BASE_URL` now hold the **full versioned API root**
+  (e.g. `https://www.zohoapis.com/crm/v8`, `https://desk.zoho.com/api/v1`,
+  `https://people.zoho.com/api`, `https://projectsapi.zoho.com/api/v3`); analyzers append only
+  the resource path. Updated env.ts defaults, .env.example, and the 3 Zoho analyzers.
+- `.env` written from supplied secrets (git-ignored; never committed). `MYTRION_OPS_DATABASE_URL`
+  mapped → `DATABASE_URL` (the app reads `DATABASE_URL`; note the value is a Render-internal host,
+  so local dev should point at the docker-compose Postgres instead). `API_KEY` left as a commented
+  note — nothing in the app consumes it yet (only `OCTANE_INTERNAL_API_KEY` exists in schema).
+- Ran all four analyzers against live systems → catalogs in `metadataScripts/output/` (git-ignored):
+  **CRM** 148 modules / 2460 fields · **Desk** 6 modules / 10 departments / 110 fields ·
+  **People** 17 forms / 199 fields · **DWH** 6 schemas / 591 tables-views. OAuth + versioned-base
+  paths confirmed working for all services.
+

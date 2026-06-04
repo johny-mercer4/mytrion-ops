@@ -1,10 +1,10 @@
 /**
  * Zoho CRM metadata analyzer.
  *
- * Pulls the full module + field catalog from Zoho CRM v6 so we can build tools against
- * the real API names (not guesses):
- *   - GET {apiDomain}/crm/v6/settings/modules
- *   - GET {apiDomain}/crm/v6/settings/fields?module={api_name}   (per module, best-effort)
+ * Pulls the full module + field catalog from Zoho CRM so we can build tools against the
+ * real API names (not guesses). ZOHO_CRM_API_DOMAIN is the full versioned root:
+ *   - GET {ZOHO_CRM_API_DOMAIN}/settings/modules
+ *   - GET {ZOHO_CRM_API_DOMAIN}/settings/fields?module={api_name}   (per module, best-effort)
  *
  * Requires a refresh token with at least `ZohoCRM.settings.modules.READ` and
  * `ZohoCRM.settings.fields.READ` scopes. Run: `pnpm meta:zoho-crm`.
@@ -54,19 +54,23 @@ interface ModuleMeta {
   fieldsError?: string;
 }
 
-function crmApiDomain(token: ZohoToken): string {
-  return token.apiDomain ?? env.ZOHO_CRM_API_DOMAIN;
+/** Full versioned CRM API root. Prefer the configured base; else derive from the token. */
+function crmBase(token: ZohoToken): string {
+  const configured = env.ZOHO_CRM_API_DOMAIN.replace(/\/+$/, '');
+  if (configured) return configured;
+  if (token.apiDomain) return `${token.apiDomain.replace(/\/+$/, '')}/crm/v8`;
+  throw new Error('[zoho-crm] no CRM API base — set ZOHO_CRM_API_DOMAIN');
 }
 
 async function main(): Promise<WrittenPaths> {
   const cfg = resolveZohoConfig('crm');
   const token = await fetchZohoAccessToken(cfg);
   const headers = zohoAuthHeader(token);
-  const apiDomain = crmApiDomain(token);
+  const apiDomain = crmBase(token);
 
   console.log(`[zoho-crm] fetching modules from ${apiDomain}`);
   const { modules } = await getJson<{ modules: CrmModule[] }>(
-    `${apiDomain}/crm/v6/settings/modules`,
+    `${apiDomain}/settings/modules`,
     headers,
   );
 
@@ -79,7 +83,7 @@ async function main(): Promise<WrittenPaths> {
       continue;
     }
     const fieldsRes = await tryGetJson<{ fields: CrmField[] }>(
-      `${apiDomain}/crm/v6/settings/fields?module=${encodeURIComponent(mod.api_name)}`,
+      `${apiDomain}/settings/fields?module=${encodeURIComponent(mod.api_name)}`,
       headers,
     );
     if (!fieldsRes.ok) {

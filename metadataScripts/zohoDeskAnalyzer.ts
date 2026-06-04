@@ -1,10 +1,11 @@
 /**
  * Zoho Desk metadata analyzer.
  *
- * Pulls org + department + per-module field metadata so Desk tools target real API names:
- *   - GET {base}/api/v1/organizations
- *   - GET {base}/api/v1/departments                         (orgId header)
- *   - GET {base}/api/v1/organizationFields?module={module}  (orgId header, per module)
+ * Pulls org + department + per-module field metadata so Desk tools target real API names.
+ * ZOHO_DESK_BASE_URL is the full versioned root (e.g. https://desk.zoho.com/api/v1):
+ *   - GET {base}/organizations
+ *   - GET {base}/departments                         (orgId header)
+ *   - GET {base}/organizationFields?module={module}  (orgId header, per module)
  *
  * Requires a refresh token with Desk read scopes (e.g. `Desk.settings.READ`,
  * `Desk.basic.READ`). Set ZOHO_DESK_ORG_ID to pin an org, else the first org is used.
@@ -44,11 +45,11 @@ async function main(): Promise<WrittenPaths> {
   const cfg = resolveZohoConfig('desk');
   const token = await fetchZohoAccessToken(cfg);
   const authHeaders = zohoAuthHeader(token);
-  const base = env.ZOHO_DESK_BASE_URL;
+  const base = env.ZOHO_DESK_BASE_URL.replace(/\/+$/, '');
 
   // Resolve org id: configured, else first org returned.
   let orgId = env.ZOHO_DESK_ORG_ID;
-  const orgsRes = await tryGetJson<{ data: DeskOrg[] }>(`${base}/api/v1/organizations`, authHeaders);
+  const orgsRes = await tryGetJson<{ data: DeskOrg[] }>(`${base}/organizations`, authHeaders);
   const orgs = orgsRes.ok ? (orgsRes.data.data ?? []) : [];
   if (!orgId && orgs[0]) orgId = orgs[0].id;
   if (!orgId) {
@@ -57,7 +58,7 @@ async function main(): Promise<WrittenPaths> {
   const headers = { ...authHeaders, orgId };
   console.log(`[zoho-desk] org ${orgId} on ${base}`);
 
-  const deptRes = await tryGetJson<{ data: DeskDepartment[] }>(`${base}/api/v1/departments`, headers);
+  const deptRes = await tryGetJson<{ data: DeskDepartment[] }>(`${base}/departments`, headers);
   const departments = deptRes.ok
     ? (deptRes.data.data ?? []).map((d) => ({ id: d.id, name: d.name ?? '', enabled: d.isEnabled !== false }))
     : [];
@@ -71,7 +72,7 @@ async function main(): Promise<WrittenPaths> {
   }> = [];
   for (const module of DESK_MODULES) {
     const res = await tryGetJson<{ data: DeskField[] }>(
-      `${base}/api/v1/organizationFields?module=${module}`,
+      `${base}/organizationFields?module=${module}`,
       headers,
     );
     if (!res.ok) {

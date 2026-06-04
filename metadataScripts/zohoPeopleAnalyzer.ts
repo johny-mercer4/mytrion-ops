@@ -2,9 +2,9 @@
  * Zoho People metadata analyzer.
  *
  * People organizes records into "forms" (Employee, Department, Leave, etc.), each with
- * its own fields. We list forms and their field labels/API names:
- *   - GET {base}/people/api/forms                              (list forms)
- *   - GET {base}/people/api/forms/{formLinkName}/components    (fields, best-effort)
+ * its own fields. ZOHO_PEOPLE_BASE_URL is the full root (e.g. https://people.zoho.com/api):
+ *   - GET {base}/forms                              (list forms)
+ *   - GET {base}/forms/{formLinkName}/components    (fields, best-effort)
  *
  * The People API surface varies by edition; calls are best-effort and whatever metadata
  * returns is written. Requires a refresh token with People read scopes
@@ -40,11 +40,11 @@ async function main(): Promise<WrittenPaths> {
   const cfg = resolveZohoConfig('people');
   const token = await fetchZohoAccessToken(cfg);
   const headers = zohoAuthHeader(token);
-  const base = env.ZOHO_PEOPLE_BASE_URL;
+  const base = env.ZOHO_PEOPLE_BASE_URL.replace(/\/+$/, '');
 
   console.log(`[zoho-people] listing forms from ${base}`);
   const formsRes = await tryGetJson<{ response?: { result?: PeopleForm[] }; forms?: PeopleForm[] }>(
-    `${base}/people/api/forms`,
+    `${base}/forms`,
     headers,
   );
   if (!formsRes.ok) {
@@ -66,7 +66,7 @@ async function main(): Promise<WrittenPaths> {
     const displayName = form.displayName ?? form.formName ?? linkName;
     if (!linkName) continue;
     const compRes = await tryGetJson<{ response?: { result?: PeopleComponent[] }; components?: PeopleComponent[] }>(
-      `${base}/people/api/forms/${encodeURIComponent(linkName)}/components`,
+      `${base}/forms/${encodeURIComponent(linkName)}/components`,
       headers,
     );
     if (!compRes.ok) {
