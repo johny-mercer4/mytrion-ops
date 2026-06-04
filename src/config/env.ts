@@ -28,9 +28,11 @@ const EnvSchema = z.object({
 
   // --- OpenAI ---
   OPENAI_API_KEY: z.string().default(''),
-  OPENAI_DEFAULT_MODEL: z.string().default('gpt-4o-mini'),
-  OPENAI_REASONING_MODEL: z.string().default('gpt-4o'),
-  OPENAI_EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
+  // Model IDs by role: FOUR_O_MINI = default chat, FIVE_O_MINI = reasoning/hard tasks,
+  // EMBEDDING_SMALL = embeddings. Wired in modules/llm/openaiClient.ts (`models`).
+  OPEN_AI_FOUR_O_MINI: z.string().default('gpt-4o-mini-2024-07-18'),
+  OPEN_AI_FIVE_O_MINI: z.string().default('gpt-5.4-mini-2026-03-17'),
+  OPEN_AI_EMBEDDING_SMALL: z.string().default('text-embedding-3-small'),
 
   // --- Auth ---
   JWT_SECRET: z.string().default(''),
