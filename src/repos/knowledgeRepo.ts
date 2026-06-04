@@ -91,14 +91,60 @@ export const knowledgeRepo = {
 
   async listDocs(
     ctx: TenantContext,
-    page?: { limit?: number; offset?: number },
+    page?: { limit?: number; offset?: number; department?: string },
   ): Promise<KnowledgeDoc[]> {
     const { limit, offset } = normalizePagination(page);
     return db
       .select()
       .from(knowledgeDocs)
-      .where(and(eq(knowledgeDocs.tenantId, ctx.tenantId), eq(knowledgeDocs.audience, ctx.audience)))
+      .where(
+        and(
+          eq(knowledgeDocs.tenantId, ctx.tenantId),
+          eq(knowledgeDocs.audience, ctx.audience),
+          page?.department ? eq(knowledgeDocs.departmentAccess, page.department) : undefined,
+        ),
+      )
       .orderBy(desc(knowledgeDocs.createdAt))
+      .limit(limit)
+      .offset(offset);
+  },
+
+  async countDocs(ctx: TenantContext): Promise<number> {
+    const rows = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(knowledgeDocs)
+      .where(eq(knowledgeDocs.tenantId, ctx.tenantId));
+    return firstOrUndefined(rows)?.count ?? 0;
+  },
+
+  /** List a doc's chunks for inspection. Excludes the raw 1536-float embedding (too large). */
+  async listChunksByDoc(
+    ctx: TenantContext,
+    docId: string,
+    page?: { limit?: number; offset?: number },
+  ): Promise<
+    Array<{
+      id: string;
+      chunkIndex: number;
+      content: string;
+      tokenCount: number | null;
+      departmentAccess: string | null;
+      hasEmbedding: boolean;
+    }>
+  > {
+    const { limit, offset } = normalizePagination(page);
+    return db
+      .select({
+        id: knowledgeChunks.id,
+        chunkIndex: knowledgeChunks.chunkIndex,
+        content: knowledgeChunks.content,
+        tokenCount: knowledgeChunks.tokenCount,
+        departmentAccess: knowledgeChunks.departmentAccess,
+        hasEmbedding: sql<boolean>`(${knowledgeChunks.embedding} is not null)`,
+      })
+      .from(knowledgeChunks)
+      .where(and(eq(knowledgeChunks.tenantId, ctx.tenantId), eq(knowledgeChunks.docId, docId)))
+      .orderBy(knowledgeChunks.chunkIndex)
       .limit(limit)
       .offset(offset);
   },

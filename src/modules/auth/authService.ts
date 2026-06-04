@@ -62,6 +62,24 @@ export function contextFromClaims(claims: TokenClaims, requestId: string): Tenan
   };
 }
 
+/**
+ * The single hardcoded identity used when a request authenticates with the static
+ * API_KEY (no users / multi-tenancy). Full tool scopes; department access is least-
+ * privilege and supplied per request by the caller (see withDepartmentAccess).
+ */
+export function systemContext(requestId: string): TenantContext {
+  return {
+    tenantId: DEFAULT_TENANT_ID,
+    userId: 'system',
+    audience: 'internal',
+    role: 'admin',
+    scopes: scopesForRole('admin'),
+    departments: [],
+    allDepartmentAccess: false,
+    requestId,
+  };
+}
+
 async function issueTokens(user: User): Promise<AuthTokens> {
   const claims: TokenClaims = {
     userId: user.id,

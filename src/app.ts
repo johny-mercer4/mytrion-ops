@@ -9,6 +9,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { API_PREFIX, APP_NAME } from './config/constants.js';
 import { corsOrigins, env, isDev, isProduction, isTest } from './config/env.js';
 import { logger } from './lib/logger.js';
+import { apiKeyAuthPlugin } from './plugins/apiKeyAuth.js';
 import { authPlugin } from './plugins/auth.js';
 import { errorHandlerPlugin } from './plugins/errorHandler.js';
 import { healthcheckPlugin } from './plugins/healthcheck.js';
@@ -73,6 +74,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   requestContextPlugin(app);
   errorHandlerPlugin(app);
   authPlugin(app);
+  apiKeyAuthPlugin(app);
   rbacPlugin(app);
 
   await app.register(helmet, { contentSecurityPolicy: false });

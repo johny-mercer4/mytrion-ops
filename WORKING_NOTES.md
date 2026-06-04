@@ -234,3 +234,19 @@ RBAC-enforced RAG; tool calling comes after confirmation.
 - Trimmed the auth Wrapper to **Zoho-only** for now; CMP/EFS/Server-CRM auth providers will be added
   with their tools (CMP needs a login→token flow, EFS is SOAP). Still nothing pushed.
 
+### API_KEY inbound auth + Agent Scope widget endpoints (2026-06-05)
+
+Building the first Zoho widget (**Agent Scope**: upload `.md` knowledge + view embedded vectors).
+- **Inbound auth**: new `apiKeyAuthPlugin` decorates `app.apiKeyAuth` — validates the static
+  `API_KEY` (`Authorization: Bearer` or `x-api-key`, constant-time) and sets a hardcoded
+  `systemContext` (single identity, admin scopes, least-privilege departments). This is the
+  no-users access path. `503` if `API_KEY` unset, `401` if missing/wrong.
+- **Knowledge endpoints** (all `apiKeyAuth`): existing `/embed`, `/upload`, `/query` plus new
+  **GET `/knowledge/docs`** (list, optional `?department`), **GET `/knowledge/stats`**
+  (`{docs,chunks}`), **GET `/knowledge/docs/:id`**, **GET `/knowledge/docs/:id/chunks`** (chunk
+  content + `hasEmbedding`; raw vectors omitted). Repo: `listChunksByDoc`, `countDocs`, dept filter
+  on `listDocs`.
+- **Brief for the widget dev's agent**: `docs/agent-scope-widget-backend.md` — full contract, auth
+  (with a "don't ship API_KEY in client JS — proxy it" warning), RBAC, error shapes, examples.
+- 39 tests pass (added API-key rejection tests). typecheck/lint/build clean. Migration unchanged.
+

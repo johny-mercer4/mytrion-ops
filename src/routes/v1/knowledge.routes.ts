@@ -2,9 +2,10 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { DEFAULT_RETRIEVAL_K, MAX_RETRIEVAL_K } from '../../config/constants.js';
 import { env } from '../../config/env.js';
-import { AppError } from '../../lib/errors.js';
+import { AppError, NotFoundError } from '../../lib/errors.js';
 import { ingestDocument, type IngestResult } from '../../modules/knowledge/ingestService.js';
 import { retrieve } from '../../modules/knowledge/retriever.js';
+import { knowledgeRepo } from '../../repos/knowledgeRepo.js';
 import { requireContext, withDepartmentAccess } from './helpers.js';
 
 const embedSchema = z.object({
@@ -22,6 +23,17 @@ const querySchema = z.object({
   // Department-access RBAC for retrieval (caller-supplied).
   departmentAccess: z.array(z.string().min(1).max(60)).max(50).optional(),
   allDepartments: z.boolean().optional(),
+});
+
+const listQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+  department: z.string().min(1).max(60).optional(),
+});
+
+const chunkQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
 });
 
 /** Text formats we accept for upload-based training. */
@@ -43,11 +55,15 @@ function assertIngestEnabled(): void {
   }
 }
 
+/**
+ * Knowledge endpoints powering the Agent Scope widget: ingest .md/text into pgvector,
+ * list ingested docs, and inspect embedded chunks. Authenticated by the static API_KEY.
+ */
 export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
-  // Knowledge curation is an internal task; restrict to admin/ops.
-  const curatorGuard = { onRequest: [app.authenticate], preHandler: [app.requireRole('admin', 'ops')] };
+  const guard = { onRequest: [app.apiKeyAuth] };
 
-  app.post('/knowledge/embed', curatorGuard, async (request) => {
+  // --- Ingest: raw text body ---
+  app.post('/knowledge/embed', guard, async (request) => {
     assertIngestEnabled();
     const ctx = requireContext(request);
     const body = embedSchema.parse(request.body);
@@ -60,11 +76,8 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
-  /**
-   * Upload one or more text files (mainly .md) to train the AI. Multipart form: file
-   * part(s) plus an optional `department` field that tags every uploaded doc for RBAC.
-   */
-  app.post('/knowledge/upload', curatorGuard, async (request) => {
+  // --- Ingest: file upload (mainly .md). Multipart: file part(s) + optional `department` field ---
+  app.post('/knowledge/upload', guard, async (request) => {
     assertIngestEnabled();
     const ctx = requireContext(request);
 
@@ -105,7 +118,51 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     return { department, uploaded: results };
   });
 
-  app.post('/knowledge/query', { onRequest: [app.authenticate] }, async (request) => {
+  // --- Inspect: list ingested docs (optionally filter by department) ---
+  app.get('/knowledge/docs', guard, async (request) => {
+    const ctx = requireContext(request);
+    const q = listQuerySchema.parse(request.query);
+    const page: { limit?: number; offset?: number; department?: string } = {};
+    if (q.limit !== undefined) page.limit = q.limit;
+    if (q.offset !== undefined) page.offset = q.offset;
+    if (q.department !== undefined) page.department = q.department;
+    const docs = await knowledgeRepo.listDocs(ctx, page);
+    return { docs };
+  });
+
+  // --- Inspect: knowledge totals (for the widget header) ---
+  app.get('/knowledge/stats', guard, async (request) => {
+    const ctx = requireContext(request);
+    const [docs, chunks] = await Promise.all([
+      knowledgeRepo.countDocs(ctx),
+      knowledgeRepo.countChunks(ctx),
+    ]);
+    return { docs, chunks };
+  });
+
+  // --- Inspect: a single doc ---
+  app.get<{ Params: { id: string } }>('/knowledge/docs/:id', guard, async (request) => {
+    const ctx = requireContext(request);
+    const doc = await knowledgeRepo.findDoc(ctx, request.params.id);
+    if (!doc) throw new NotFoundError('Knowledge doc not found');
+    return { doc };
+  });
+
+  // --- Inspect: a doc's embedded chunks (content + whether a vector is stored) ---
+  app.get<{ Params: { id: string } }>('/knowledge/docs/:id/chunks', guard, async (request) => {
+    const ctx = requireContext(request);
+    const doc = await knowledgeRepo.findDoc(ctx, request.params.id);
+    if (!doc) throw new NotFoundError('Knowledge doc not found');
+    const q = chunkQuerySchema.parse(request.query);
+    const page: { limit?: number; offset?: number } = {};
+    if (q.limit !== undefined) page.limit = q.limit;
+    if (q.offset !== undefined) page.offset = q.offset;
+    const chunks = await knowledgeRepo.listChunksByDoc(ctx, doc.id, page);
+    return { docId: doc.id, chunks };
+  });
+
+  // --- Retrieve: RBAC-scoped kNN search (caller passes department access) ---
+  app.post('/knowledge/query', guard, async (request) => {
     const body = querySchema.parse(request.body);
     const ctx = withDepartmentAccess(requireContext(request), request, body);
     const passages = await retrieve(ctx, body.query, body.limit ?? DEFAULT_RETRIEVAL_K);

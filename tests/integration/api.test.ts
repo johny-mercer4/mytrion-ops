@@ -1,5 +1,11 @@
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+// Set the inbound API key before env.ts is imported (parsed once at import time).
+vi.hoisted(() => {
+  process.env.API_KEY = 'test-secret-key';
+});
+
 import { buildApp } from '../../src/app.js';
 
 let app: FastifyInstance;
@@ -35,6 +41,21 @@ describe('HTTP API (no external services)', () => {
     });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+  });
+
+  it('rejects GET /v1/knowledge/docs with no API key', async () => {
+    const res = await app.inject({ method: 'GET', url: '/v1/knowledge/docs' });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toMatchObject({ error: { code: 'AUTH_ERROR' } });
+  });
+
+  it('rejects GET /v1/knowledge/docs with a wrong API key', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/knowledge/docs',
+      headers: { authorization: 'Bearer wrong-key' },
+    });
+    expect(res.statusCode).toBe(401);
   });
 
   it('returns a JSON 404 for unknown routes', async () => {
