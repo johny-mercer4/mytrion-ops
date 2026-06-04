@@ -11,11 +11,10 @@ managers) through a single typed backend.
 ```bash
 pnpm install
 cp .env.example .env            # fill in OPENAI_API_KEY, JWT_SECRET, etc.
-docker compose up -d            # Postgres (pgvector) + Redis
+docker compose up -d            # Postgres (pgvector)
 pnpm db:migrate                 # apply schema
 pnpm db:seed                    # creates admin@octane.com / changeme
 pnpm dev                        # API on :3001
-pnpm worker                     # ingest worker (separate terminal)
 ```
 
 > pnpm is invoked via Corepack in this environment. If `pnpm` is not on your PATH, run
@@ -27,7 +26,7 @@ pnpm worker                     # ingest worker (separate terminal)
 - **OpenAI SDK** for chat + embeddings (`gpt-4o-mini` default, `gpt-4o` for hard tasks)
 - **pgvector on Postgres 16** for knowledge retrieval (1536-dim embeddings)
 - **Drizzle ORM** for type-safe DB access; every query flows through `src/repos/*`
-- **BullMQ on Redis** for ingest jobs
+- **Knowledge ingestion** runs synchronously in-process (chunk → embed → pgvector); no queue
 - **JWT auth** (`jose`) + role-based access: `admin`, `ops`, `finance`, `support`, `viewer`,
   `driver`, `fleet_manager`
 - **Multi-tenant-lite**: one schema; every row tagged with `tenant_id` + `audience`
@@ -42,7 +41,7 @@ default; write tools require `riskClass: 'write'` and the `admin` role.
 
 ## Deploy
 
-Render via `render.yaml`. Three services: web, worker, Redis. One managed Postgres with pgvector.
+Render via `render.yaml`. One web service + one managed Postgres with pgvector.
 Run `scripts/enable-pgvector.sql` (`CREATE EXTENSION IF NOT EXISTS vector;`) once before the first
 deploy.
 
@@ -57,7 +56,6 @@ deploy.
 | `pnpm dev`          | Run API with hot reload (tsx)                    |
 | `pnpm build`        | Compile TypeScript → `dist/`                     |
 | `pnpm start`        | Run compiled API (`node dist/server.js`)         |
-| `pnpm worker`       | Run the BullMQ ingest worker                     |
 | `pnpm db:generate`  | Generate a Drizzle migration from schema changes |
 | `pnpm db:migrate`   | Apply pending migrations                         |
 | `pnpm db:seed`      | Seed initial admin user + sample tenants         |

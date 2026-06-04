@@ -28,9 +28,6 @@ export const TOKEN_TYPE_REFRESH = 'refresh';
 export const DEFAULT_RETRIEVAL_K = 6;
 export const MAX_RETRIEVAL_K = 25;
 
-/** BullMQ queue name for knowledge ingest jobs. */
-export const INGEST_QUEUE_NAME = 'knowledge-ingest';
-
 /**
  * OpenAI pricing in USD per 1,000,000 tokens. Used by costTracker for per-tenant
  * rollups. Update when OpenAI changes prices. Embedding models have no output cost.

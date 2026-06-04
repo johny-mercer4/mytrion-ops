@@ -4,7 +4,6 @@ import { DEFAULT_RETRIEVAL_K, MAX_RETRIEVAL_K } from '../../config/constants.js'
 import { env } from '../../config/env.js';
 import { AppError } from '../../lib/errors.js';
 import { ingestDocument } from '../../modules/knowledge/ingestService.js';
-import { enqueueIngest } from '../../modules/knowledge/ingestWorker.js';
 import { retrieve } from '../../modules/knowledge/retriever.js';
 import { requireContext } from './helpers.js';
 
@@ -13,7 +12,6 @@ const embedSchema = z.object({
   content: z.string().min(1).max(1_000_000),
   source: z.string().max(1000).optional(),
   mimeType: z.string().max(200).optional(),
-  async: z.boolean().optional(),
 });
 
 const querySchema = z.object({
@@ -42,10 +40,6 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
         ...(body.source !== undefined ? { source: body.source } : {}),
         ...(body.mimeType !== undefined ? { mimeType: body.mimeType } : {}),
       };
-      if (body.async) {
-        await enqueueIngest({ ctx, input });
-        return { status: 'queued' as const };
-      }
       return ingestDocument(ctx, input);
     },
   );

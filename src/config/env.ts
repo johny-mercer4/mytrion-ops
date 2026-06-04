@@ -23,9 +23,6 @@ const EnvSchema = z.object({
     .default('postgres://octane:octane@localhost:5432/octane_assistant'),
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
 
-  // --- Redis ---
-  REDIS_URL: z.string().default('redis://localhost:6379'),
-
   // --- OpenAI ---
   OPENAI_API_KEY: z.string().default(''),
   OPENAI_DEFAULT_MODEL: z.string().default('gpt-4o-mini'),
