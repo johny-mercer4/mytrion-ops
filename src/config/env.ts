@@ -82,6 +82,26 @@ const EnvSchema = z.object({
   // Header used to send CMP_API_KEY. Default Bearer; set to e.g. 'X-API-Key' if CMP expects that.
   CMP_AUTH_HEADER: z.string().default('Authorization'),
 
+  // --- Inbound server API key (callers present this to reach this engine) ---
+  API_KEY: z.string().default(''),
+
+  // --- File storage: Cloudflare R2 (S3-compatible) ---
+  R2_ACCOUNT_ID: z.string().default(''),
+  R2_ACCESS_KEY_ID: z.string().default(''),
+  R2_SECRET_ACCESS_KEY: z.string().default(''),
+  R2_BUCKET: z.string().default(''),
+  // Defaults to https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com when blank.
+  R2_ENDPOINT: z.string().default(''),
+  // Optional public/custom-domain base for serving uploaded files.
+  R2_PUBLIC_BASE_URL: z.string().default(''),
+  // R2 ignores region but the S3 SDK requires one; 'auto' is correct for R2.
+  R2_REGION: z.string().default('auto'),
+
+  // --- Browser automation: Browserbase ---
+  BROWSERBASE_API_KEY: z.string().default(''),
+  BROWSERBASE_PROJECT_ID: z.string().default(''),
+  BROWSERBASE_BASE_URL: z.string().default('https://api.browserbase.com'),
+
   // --- Feature flags ---
   FF_PARTNER_AUDIENCE_ENABLED: flag('1'),
   FF_KNOWLEDGE_INGEST_ENABLED: flag('1'),
