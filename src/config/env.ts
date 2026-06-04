@@ -76,6 +76,12 @@ const EnvSchema = z.object({
   OCTANE_INTERNAL_API_URL: z.string().default(''),
   OCTANE_INTERNAL_API_KEY: z.string().default(''),
 
+  // --- CMP (our custom Node server) ---
+  CMP_BASE_URL: z.string().default(''),
+  CMP_API_KEY: z.string().default(''),
+  // Header used to send CMP_API_KEY. Default Bearer; set to e.g. 'X-API-Key' if CMP expects that.
+  CMP_AUTH_HEADER: z.string().default('Authorization'),
+
   // --- Feature flags ---
   FF_PARTNER_AUDIENCE_ENABLED: flag('1'),
   FF_KNOWLEDGE_INGEST_ENABLED: flag('1'),

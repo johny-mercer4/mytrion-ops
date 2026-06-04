@@ -168,3 +168,17 @@ Postgres. Delivery: work on `build` → PR to `main` → Render deploy.
   TODO placeholder** (0.25/2.0) — confirm; costTracker falls back to 0 for unknowns and `baseModel`
   already strips the date suffix, so this is visibility-only.
 
+### Auth Wrapper — parent integration auth layer (later, 2026-06-04)
+
+- New `src/integrations/`: `zoho.ts` (OAuth primitives, now returns `expiresInSec`) and
+  `wrapper.ts` — the parent `wrapper.authHeaders(platform)` that hides each platform's auth and
+  **caches Zoho access tokens** per service (refresh on expiry minus 60s skew). Platforms:
+  `zoho_crm|zoho_desk|zoho_people|zoho_projects|cmp`; `zoho_desk` auto-attaches `orgId`. CMP uses a
+  static `CMP_API_KEY` (header configurable via `CMP_AUTH_HEADER`, default `Authorization: Bearer`).
+  Added `CMP_BASE_URL/CMP_API_KEY/CMP_AUTH_HEADER` to env (empty defaults). The pasted `API_KEY`
+  likely belongs in `CMP_API_KEY` — pending confirmation.
+- `metadataScripts/lib/zohoAuth.ts` now re-exports from `src/integrations/zoho.ts` (single source).
+- Confirmed: 4o-mini (`OPEN_AI_FOUR_O_MINI`) is already the model for every chat + tool-calling
+  request via `models.default`; `gpt-5.4-mini` is defined but unused. No change needed.
+- New `tests/unit/wrapper.test.ts` (token caching / expiry / per-service / header). 29 tests pass.
+
