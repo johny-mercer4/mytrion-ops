@@ -219,3 +219,18 @@ RBAC-enforced RAG; tool calling comes after confirmation.
   BUCKET/ENDPOINT/PUBLIC_BASE_URL/REGION`), Browserbase (`BROWSERBASE_API_KEY/PROJECT_ID/BASE_URL`).
 - 37 tests pass (new: chat RAG grounding). typecheck/lint/build clean.
 
+### DB live + new platform env (later, 2026-06-04)
+
+- Switched `DATABASE_URL` to the **external** Mytrion OPS Render host (off-Render reachable).
+  Added conditional **SSL** (`dbSslOption` in db/client.ts; matching ssl in drizzle.config + a
+  programmatic-migrate fix) — managed hosts use TLS w/o CA verify, local docker uses none.
+- **Applied the migration** to the (empty) Mytrion OPS DB via `tsx scripts/migrate.ts`
+  (drizzle-kit's pg driver ignored the ssl option; the postgres.js programmatic migrator honors it).
+  Verified: 8 tables created, pgvector installed, `department_access` on docs + chunks. DWH was
+  **never touched** (migrations only target DATABASE_URL; DWH is read-only analytics, per user).
+- Registered new platform env (values in .env, empty defaults in schema/.env.example): CMP
+  login/password **prod + sandbox** (replaced the earlier api-key model), EFS SOAP
+  (`EFS_WSDL_URL/LOGIN/PASSWORD/PARENT`), Server CRM (`SERVER_CRM_URL/KEY`). `API_KEY` = inbound key.
+- Trimmed the auth Wrapper to **Zoho-only** for now; CMP/EFS/Server-CRM auth providers will be added
+  with their tools (CMP needs a login→token flow, EFS is SOAP). Still nothing pushed.
+

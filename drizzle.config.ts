@@ -20,6 +20,12 @@ export default defineConfig({
   dialect: 'postgresql',
   dbCredentials: {
     url: process.env.DATABASE_URL ?? 'postgres://octane:octane@localhost:5432/octane_assistant',
+    // Managed Postgres (Render external) requires SSL; local docker does not.
+    ssl: /@(localhost|127\.0\.0\.1|postgres)[:/]/.test(
+      process.env.DATABASE_URL ?? 'localhost',
+    )
+      ? undefined
+      : { rejectUnauthorized: false },
   },
   strict: true,
   verbose: true,

@@ -76,11 +76,23 @@ const EnvSchema = z.object({
   OCTANE_INTERNAL_API_URL: z.string().default(''),
   OCTANE_INTERNAL_API_KEY: z.string().default(''),
 
-  // --- CMP (our custom Node server) ---
-  CMP_BASE_URL: z.string().default(''),
-  CMP_API_KEY: z.string().default(''),
-  // Header used to send CMP_API_KEY. Default Bearer; set to e.g. 'X-API-Key' if CMP expects that.
-  CMP_AUTH_HEADER: z.string().default('Authorization'),
+  // --- CMP (our custom Node server; login/password auth, prod + sandbox) ---
+  CMP_PRODUCTION_URL: z.string().default(''),
+  CMP_PRODUCTION_LOGIN: z.string().default(''),
+  CMP_PRODUCTION_PASSWORD: z.string().default(''),
+  CMP_SANDBOX_URL: z.string().default(''),
+  CMP_SANDBOX_LOGIN: z.string().default(''),
+  CMP_SANDBOX_PASSWORD: z.string().default(''),
+
+  // --- EFS (CardManagement SOAP/WSDL) ---
+  EFS_WSDL_URL: z.string().default(''),
+  EFS_LOGIN: z.string().default(''),
+  EFS_PASSWORD: z.string().default(''),
+  EFS_PARENT: z.string().default('PARENT'),
+
+  // --- Server CRM (outbound integration) ---
+  SERVER_CRM_URL: z.string().default(''),
+  SERVER_CRM_KEY: z.string().default(''),
 
   // --- Inbound server API key (callers present this to reach this engine) ---
   API_KEY: z.string().default(''),

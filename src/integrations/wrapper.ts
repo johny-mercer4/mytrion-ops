@@ -21,7 +21,9 @@ import {
 } from './zoho.js';
 
 export type ZohoPlatform = `zoho_${ZohoService}`;
-export type Platform = ZohoPlatform | 'cmp';
+// CMP (login/password), EFS (SOAP), and Server CRM auth providers will be added here
+// when their tools are built. Zoho is the only wired platform for now.
+export type Platform = ZohoPlatform;
 
 /** Refresh a token this many ms before it actually expires, to avoid edge-of-expiry 401s. */
 const EXPIRY_SKEW_MS = 60_000;
@@ -33,10 +35,6 @@ interface CachedZohoToken {
 }
 
 const zohoTokenCache = new Map<ZohoService, CachedZohoToken>();
-
-function isZohoPlatform(p: Platform): p is ZohoPlatform {
-  return p.startsWith('zoho_');
-}
 
 function zohoServiceOf(p: ZohoPlatform): ZohoService {
   return p.slice('zoho_'.length) as ZohoService;
@@ -58,16 +56,6 @@ export async function getZohoToken(service: ZohoService, now: number = Date.now(
   return token;
 }
 
-/** CMP (our custom Node server) auth headers from a static API key. */
-function cmpAuthHeaders(): Record<string, string> {
-  if (!env.CMP_API_KEY) {
-    throw new Error('[cmp] CMP_API_KEY is not configured');
-  }
-  const headerName = env.CMP_AUTH_HEADER || 'Authorization';
-  const value = headerName === 'Authorization' ? `Bearer ${env.CMP_API_KEY}` : env.CMP_API_KEY;
-  return { [headerName]: value };
-}
-
 /** The base URL configured for a platform (where its API lives). */
 export function baseUrl(platform: Platform): string {
   switch (platform) {
@@ -79,27 +67,18 @@ export function baseUrl(platform: Platform): string {
       return env.ZOHO_PEOPLE_BASE_URL;
     case 'zoho_projects':
       return env.ZOHO_PROJECTS_BASE_URL;
-    case 'cmp':
-      return env.CMP_BASE_URL;
   }
 }
 
 /** Auth headers to attach to an outbound request for the given platform. */
 export async function authHeaders(platform: Platform): Promise<Record<string, string>> {
-  if (isZohoPlatform(platform)) {
-    const token = await getZohoToken(zohoServiceOf(platform));
-    const headers = zohoAuthHeader(token);
-    // Zoho Desk also needs the org id on every call.
-    if (platform === 'zoho_desk' && env.ZOHO_DESK_ORG_ID) {
-      headers.orgId = env.ZOHO_DESK_ORG_ID;
-    }
-    return headers;
+  const token = await getZohoToken(zohoServiceOf(platform));
+  const headers = zohoAuthHeader(token);
+  // Zoho Desk also needs the org id on every call.
+  if (platform === 'zoho_desk' && env.ZOHO_DESK_ORG_ID) {
+    headers.orgId = env.ZOHO_DESK_ORG_ID;
   }
-  if (platform === 'cmp') {
-    return cmpAuthHeaders();
-  }
-  // Exhaustiveness guard — unreachable while Platform is fully handled above.
-  throw new Error(`[wrapper] no auth provider for platform: ${String(platform)}`);
+  return headers;
 }
 
 /** Clear cached tokens (tests / forced re-auth). */
