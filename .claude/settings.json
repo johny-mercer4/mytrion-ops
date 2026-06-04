@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(cd:*)",
+      "Bash(ls:*)",
+      "Bash(pwd)",
+      "Bash(which:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(echo:*)",
+      "Bash(mkdir:*)",
+      "Bash(node:*)",
+      "Bash(corepack pnpm:*)",
+      "Bash(pnpm:*)",
+      "Bash(npx tsx:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git checkout:*)",
+      "Bash(git switch:*)",
+      "Bash(git add:*)",
+      "Bash(git restore:*)",
+      "Bash(git stash:*)",
+      "Bash(git commit:*)",
+      "Bash(git commit -q -m 'chore: add Claude Code project permissions \\(auto-approve safe shell, deny git push\\) *)",
+      "Bash(git commit -q -m 'refactor: drop Redis/BullMQ; knowledge ingest runs synchronously *)"
+    ],
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(git push)"
+    ]
+  }
+}
