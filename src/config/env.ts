@@ -17,11 +17,14 @@ const EnvSchema = z.object({
     .default('info'),
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
 
-  // --- Database ---
+  // --- Database (app's own Postgres: sessions, logging, knowledge) ---
   DATABASE_URL: z
     .string()
     .default('postgres://octane:octane@localhost:5432/octane_assistant'),
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
+
+  // --- Data Warehouse (separate read Postgres; tool + metadata target) ---
+  DWH_DATABASE_URL: z.string().default(''),
 
   // --- OpenAI ---
   OPENAI_API_KEY: z.string().default(''),
@@ -38,11 +41,31 @@ const EnvSchema = z.object({
   // --- Encryption (vendor credentials at rest) ---
   ENCRYPTION_KEY: z.string().default(''),
 
-  // --- Vendor: Zoho CRM ---
+  // --- Zoho: shared OAuth app (one self-client app across CRM/Desk/People/Projects) ---
+  ZOHO_ACCOUNTS_DOMAIN: z.string().default('https://accounts.zoho.com'),
+  ZOHO_CLIENT_ID: z.string().default(''),
+  ZOHO_CLIENT_SECRET: z.string().default(''),
+  // Optional shared refresh token; used as a fallback when a service-specific one is unset.
+  ZOHO_REFRESH_TOKEN: z.string().default(''),
+
+  // --- Zoho CRM ---
   ZOHO_CRM_CLIENT_ID: z.string().default(''),
   ZOHO_CRM_CLIENT_SECRET: z.string().default(''),
   ZOHO_CRM_REFRESH_TOKEN: z.string().default(''),
   ZOHO_CRM_API_DOMAIN: z.string().default('https://www.zohoapis.com'),
+
+  // --- Zoho Desk ---
+  ZOHO_DESK_REFRESH_TOKEN: z.string().default(''),
+  ZOHO_DESK_BASE_URL: z.string().default('https://desk.zoho.com'),
+  ZOHO_DESK_ORG_ID: z.string().default(''),
+
+  // --- Zoho People ---
+  ZOHO_PEOPLE_REFRESH_TOKEN: z.string().default(''),
+  ZOHO_PEOPLE_BASE_URL: z.string().default('https://people.zoho.com'),
+
+  // --- Zoho Projects ---
+  ZOHO_PROJECTS_REFRESH_TOKEN: z.string().default(''),
+  ZOHO_PROJECTS_BASE_URL: z.string().default('https://projectsapi.zoho.com'),
 
   // --- Vendor: Octane internal API ---
   OCTANE_INTERNAL_API_URL: z.string().default(''),

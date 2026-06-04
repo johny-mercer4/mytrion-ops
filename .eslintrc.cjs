@@ -26,7 +26,7 @@ module.exports = {
   },
   overrides: [
     {
-      files: ['tests/**/*.ts', 'scripts/**/*.ts'],
+      files: ['tests/**/*.ts', 'scripts/**/*.ts', 'metadataScripts/**/*.ts'],
       rules: {
         '@typescript-eslint/no-explicit-any': 'off',
         '@typescript-eslint/no-non-null-assertion': 'off',

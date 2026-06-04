@@ -106,3 +106,40 @@ Append-only changelog of decisions. Newest entries at the bottom of each day.
 - Not runnable here (no docker/Postgres/Redis/OpenAI key): `db:migrate`, `db:seed`, live
   `/v1/chat` round trip, `/v1/knowledge/embed` persistence. Code is complete; these need live
   services (run `docker compose up -d` + set `OPENAI_API_KEY`).
+
+---
+
+## 2026-06-04 — Direction reset: drop Redis, add metadata tooling
+
+Server's purpose clarified: it's the **internal AI server that answers Agent requests**. Tool
+targets going forward are DWH (Postgres), Zoho (CRM/Desk/People/Projects), the CMP custom Node
+server, and external platforms. Prompts stay in TS (not md). Sessions + logging on our own
+Postgres. Delivery: work on `build` → PR to `main` → Render deploy.
+
+### Claude Code project config
+
+- Added `.claude/settings.json`: auto-approve safe shell (cd/ls/pnpm/git status·add·commit/…),
+  **deny `git push`**. Standing rule — Claude commits to the current branch but never pushes;
+  pushing/PRs are the human's action.
+
+### Dropped Redis/BullMQ (per "no Redis for now")
+
+- Deleted `ingestWorker.ts`; removed `worker`/`worker:prod` scripts, `ioredis` + `bullmq` deps,
+  `REDIS_URL`, `INGEST_QUEUE_NAME`, and the `/knowledge/embed` `async`→queue path (ingest is now
+  always synchronous, which `embed-docs` CLI already was). Removed the redis + worker services from
+  `render.yaml` and the redis service from `docker-compose.yml`. Updated README/.env.example.
+  Lockfile re-synced. typecheck/lint/test(25)/build all green.
+
+### metadataScripts/ (new)
+
+- Standalone, read-only introspection tooling (run via tsx; not bundled into `dist`). Writes a
+  metadata catalog to `output/` (git-ignored) as JSON + Markdown so we build tools against real
+  API names. Scripts: `zohoCrmAnalyzer`, `zohoDeskAnalyzer`, `zohoPeopleAnalyzer`, `dwhAnalyzer`
+  (+ `pnpm meta:*` scripts). Shared `lib/`: `zohoAuth` (refresh-token → access-token, per-service
+  with shared-app fallback), `http`, `output`.
+- Env: added a unified Zoho block (shared `ZOHO_CLIENT_ID/SECRET/ACCOUNTS_DOMAIN` +
+  per-service refresh tokens & base URLs for CRM/Desk/People/Projects) and `DWH_DATABASE_URL`
+  (separate read Postgres, distinct from the app's own DB) to `env.ts` + `.env.example`. All
+  default to empty — to be filled in next ("set the .envs"). Analyzers fail fast with a clear
+  message when creds are missing (verified).
+
