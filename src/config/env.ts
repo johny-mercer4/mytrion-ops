@@ -17,10 +17,12 @@ const EnvSchema = z.object({
     .default('info'),
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
 
-  // --- Database (app's own Postgres: sessions, logging, knowledge) ---
-  DATABASE_URL: z
-    .string()
-    .default('postgres://octane:octane@localhost:5432/octane_assistant'),
+  // --- Database: Mytrion OPS external Postgres (sessions, logging, knowledge) ---
+  // No local DB — always the external URL. `DATABASE_URL` is kept only as a legacy alias.
+  // No localhost default on purpose: a missing value should fail loudly, not silently
+  // connect to localhost (see assertRuntimeSecrets).
+  MYTRION_OPS_DATABASE_URL: z.string().default(''),
+  DATABASE_URL: z.string().default(''),
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
 
   // --- Data Warehouse (separate read Postgres; tool + metadata target) ---
@@ -139,6 +141,12 @@ export const isProduction = env.NODE_ENV === 'production';
 export const isTest = env.NODE_ENV === 'test';
 export const isDev = env.NODE_ENV === 'development';
 
+/**
+ * Resolved app database URL — the Mytrion OPS external Postgres. `DATABASE_URL` is a
+ * legacy alias kept only as a fallback. Empty means unconfigured (caught at startup).
+ */
+export const databaseUrl: string = env.MYTRION_OPS_DATABASE_URL || env.DATABASE_URL;
+
 export const corsOrigins: string[] = env.CORS_ORIGINS.split(',')
   .map((o) => o.trim())
   .filter(Boolean);
@@ -151,6 +159,7 @@ export const corsOrigins: string[] = env.CORS_ORIGINS.split(',')
  */
 export function assertRuntimeSecrets(): void {
   const missing: string[] = [];
+  if (!databaseUrl) missing.push('MYTRION_OPS_DATABASE_URL');
   if (!env.JWT_SECRET) missing.push('JWT_SECRET');
   if (!env.ENCRYPTION_KEY) missing.push('ENCRYPTION_KEY');
   if (!env.OPENAI_API_KEY) missing.push('OPENAI_API_KEY');

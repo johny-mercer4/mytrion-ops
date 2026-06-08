@@ -9,13 +9,7 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: octane-assistant-db
-          property: connectionString
+      # All secrets/config (incl. MYTRION_OPS_DATABASE_URL — the external Postgres,
+      # plus OPENAI_API_KEY, API_KEY, JWT_SECRET, ENCRYPTION_KEY, ZOHO_*, etc.) come
+      # from the env group. No Render-managed DB: this engine uses the external Mytrion OPS DB.
       - fromGroup: octane-assistant-secrets
-
-databases:
-  - name: octane-assistant-db
-    plan: starter
-    postgresMajorVersion: 16

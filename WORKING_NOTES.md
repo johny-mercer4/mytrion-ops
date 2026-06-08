@@ -250,3 +250,29 @@ Building the first Zoho widget (**Agent Scope**: upload `.md` knowledge + view e
   (with a "don't ship API_KEY in client JS — proxy it" warning), RBAC, error shapes, examples.
 - 39 tests pass (added API-key rejection tests). typecheck/lint/build clean. Migration unchanged.
 
+### Fix prod DB env: use MYTRION_OPS_DATABASE_URL (2026-06-08)
+
+Prod (`octane-ops-ai.onrender.com`) was 500ing on knowledge endpoints with `ECONNREFUSED
+127.0.0.1:5432` — `DATABASE_URL` was unset in Render, so env.ts fell back to the localhost
+default. Render env uses **`MYTRION_OPS_DATABASE_URL`**, not `DATABASE_URL`. Fixes:
+- env.ts: `MYTRION_OPS_DATABASE_URL` is the canonical app DB var (`DATABASE_URL` kept only as a
+  legacy fallback); **removed the localhost default**; exported resolved `databaseUrl`;
+  `assertRuntimeSecrets` now fails fast in production if it's unset (no more silent localhost).
+- db/client.ts, scripts/migrate.ts, drizzle.config.ts now use `MYTRION_OPS_DATABASE_URL`.
+- render.yaml: dropped the unused Render-managed DB + `DATABASE_URL` wiring; all config (incl.
+  `MYTRION_OPS_DATABASE_URL`) comes from the env group. .env.example renamed.
+- Verified the external URL connects (8 public tables). **Action on user: set the Render env vars
+  (esp. `MYTRION_OPS_DATABASE_URL`) and redeploy** — code alone can't fix a missing prod env.
+
+### department_access normalization + new keys (2026-06-08)
+
+Widget dev brief added 3 RBAC keys (`finance`, `c-level`, `management`) — no schema change needed
+since `department_access` is free-text. Added **normalization** so ingest- and query-side tags can't
+drift: `src/lib/department.ts` (`normalizeDepartment`/`normalizeDepartments` = trim + lowercase,
+blank => null/Global; `KNOWN_DEPARTMENTS` for reference, NOT an enforced allowlist). Applied in
+ingestService (doc tag), withDepartmentAccess (caller's allowed keys), and the `/docs?department=`
+filter. Updated `docs/agent-scope-widget-backend.md` with the canonical key table + answers to the
+5 RBAC questions. **Open product decision** (relayed to user): whether elevated keys
+(`c-level`/`management`/`finance`) expand server-side to broader scopes, or stay caller-driven
+(`allDepartments: true`). Today: no server hierarchy — caller passes the set + Global. 41 tests pass.
+

@@ -1,6 +1,6 @@
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { env } from '../config/env.js';
+import { databaseUrl, env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
 import * as schema from './schema/index.js';
 
@@ -23,9 +23,9 @@ export function dbSslOption(url: string): false | { rejectUnauthorized: false } 
  * postgres.js connects lazily (on first query), so importing this module never
  * opens a socket — safe for tests and tooling that don't touch the DB.
  */
-const sql = postgres(env.DATABASE_URL, {
+const sql = postgres(databaseUrl, {
   max: env.DATABASE_POOL_MAX,
-  ssl: dbSslOption(env.DATABASE_URL),
+  ssl: dbSslOption(databaseUrl),
   onnotice: (notice) => logger.debug({ notice }, 'pg notice'),
 });
 

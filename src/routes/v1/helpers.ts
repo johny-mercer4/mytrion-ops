@@ -1,4 +1,5 @@
 import type { FastifyRequest } from 'fastify';
+import { normalizeDepartments } from '../../lib/department.js';
 import { AuthError } from '../../lib/errors.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
@@ -30,9 +31,11 @@ export function withDepartmentAccess(
     typeof headerVal === 'string'
       ? headerVal.split(',').map((s) => s.trim()).filter(Boolean)
       : [];
-  const departments = [
-    ...new Set([...ctx.departments, ...headerDepts, ...(body?.departmentAccess ?? [])]),
-  ];
+  const departments = normalizeDepartments([
+    ...ctx.departments,
+    ...headerDepts,
+    ...(body?.departmentAccess ?? []),
+  ]);
   const allDepartmentAccess =
     ctx.allDepartmentAccess ||
     request.headers['x-all-departments'] === 'true' ||

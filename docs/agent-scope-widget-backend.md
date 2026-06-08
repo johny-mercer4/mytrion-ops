@@ -44,13 +44,48 @@ x-api-key: <API_KEY>
 ## RBAC: `department_access`
 
 Knowledge is segmented by a single tag called **`department_access`** — a department name
-(`"sales"`, `"billing"`, `"verification"`, …) **or any unique key** (e.g. a Zoho user id or carrier
-id). It's just a string.
+**or any unique key** (e.g. a Zoho user id or carrier id). It's just a string.
 
-- On **upload/ingest** you may pass a `department` for the doc. Omit it → the doc is **global/shared**
-  (visible to everyone).
-- This Agent Scope (admin) widget can **see all docs** regardless of department — listing is not
+- On **upload/ingest** you may pass a `department` for the doc. Omit/blank → the doc is
+  **Global/shared** (visible to every scope).
+- This admin widget can **see all docs** regardless of department — listing is not
   department-filtered (you may optionally filter with `?department=`).
+
+### Canonical keys (free-string, not an enforced allowlist)
+
+The backend **accepts any string** and does **not** reject unknown values. The well-known keys:
+
+| `department_access` | Scope |
+| :--- | :--- |
+| `sales` | Sales |
+| `billing` | Billing & Accounting |
+| `verification` | Verification |
+| `maintenance` | Maintenance |
+| `customer-service` | Customer Service |
+| `finance` | Finance |
+| `c-level` | C-Level / Executives |
+| `management` | Management |
+| *(omitted/blank)* | **Global / shared** |
+
+### Confirmed RBAC behavior (answers to the request brief)
+
+1. **Allowlist vs free string** — **free string**, with **normalization**. The backend trims +
+   lowercases every tag on **both** ingest and query (`"  Finance "` → `finance`, `"C-Level"` →
+   `c-level`), so values can't drift. Send the keys above as written (lowercase-hyphenated) and
+   they match. Unknown values are stored as-is (normalized).
+2. **Global semantics** — confirmed: a blank/omitted `department_access` is **always included** in
+   every scoped query result. Global is visible to all keys.
+3. **Query scoping source of truth** — the **caller supplies** the allowed keys per request
+   (`departmentAccess[]`, or `allDepartments: true`). The backend does not derive them from an
+   identity (there are no user accounts). This admin widget sends `allDepartments: true`.
+4. **Elevated/hierarchical roles** (`c-level` / `management` / `finance`) — **NOT yet decided**.
+   Today there is **no server-side hierarchy**: a scoped query sees exactly the keys it passes
+   **plus Global**. So "c-level sees everything" must be expressed by the caller passing
+   `allDepartments: true` (or the full key list). If you want the backend to *expand* certain keys
+   server-side (e.g. `c-level` ⇒ all, `management` ⇒ {sales,billing,…}), that's a backend change —
+   pending the owner's decision. **For this admin widget it's moot** (`allDepartments: true`).
+5. **Constraints** — case-insensitive (normalized to lowercase); any characters allowed; at most
+   **50** keys per `departmentAccess[]`; each key ≤ 60 chars.
 
 ## Endpoints
 
