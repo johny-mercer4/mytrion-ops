@@ -20,7 +20,8 @@ export interface IngestInput {
 export interface IngestResult {
   docId: string;
   chunkCount: number;
-  status: 'ready' | 'skipped';
+  /** ready = embedded; updated = same content, department re-tagged; skipped = identical no-op. */
+  status: 'ready' | 'skipped' | 'updated';
 }
 
 function sha256(input: string): string {
@@ -39,9 +40,24 @@ function approxTokens(text: string): number {
  */
 export async function ingestDocument(ctx: TenantContext, input: IngestInput): Promise<IngestResult> {
   const checksum = sha256(input.content);
+  // Normalize so ingest- and query-side tags can't drift. null = Global.
+  const department = normalizeDepartment(input.department);
   const existing = await knowledgeRepo.findDocByChecksum(ctx, checksum);
 
   if (existing && existing.status === 'ready') {
+    // Content unchanged. Upsert the department if it changed — cheap re-tag, no re-embed.
+    if (existing.departmentAccess !== department) {
+      await knowledgeRepo.setDepartment(ctx, existing.id, department);
+      await auditFromContext(ctx, {
+        action: 'knowledge.retag',
+        status: 'ok',
+        resourceType: 'knowledge_doc',
+        resourceId: existing.id,
+        detail: { departmentAccess: department },
+      });
+      logger.debug({ docId: existing.id, department }, 'ingest re-tagged department (checksum match)');
+      return { docId: existing.id, chunkCount: existing.chunkCount, status: 'updated' };
+    }
     logger.debug({ docId: existing.id, tenantId: ctx.tenantId }, 'ingest skipped (checksum match)');
     return { docId: existing.id, chunkCount: existing.chunkCount, status: 'skipped' };
   }
@@ -51,8 +67,7 @@ export async function ingestDocument(ctx: TenantContext, input: IngestInput): Pr
     (await knowledgeRepo.createDoc(ctx, {
       title: input.title,
       checksum,
-      // Normalize so ingest- and query-side tags can't drift. null = Global.
-      departmentAccess: normalizeDepartment(input.department),
+      departmentAccess: department,
       ...(input.source !== undefined ? { source: input.source } : {}),
       ...(input.mimeType !== undefined ? { mimeType: input.mimeType } : {}),
     }));
@@ -62,7 +77,11 @@ export async function ingestDocument(ctx: TenantContext, input: IngestInput): Pr
   try {
     const chunks = chunkText(input.content);
     if (chunks.length === 0) {
-      await knowledgeRepo.updateDoc(ctx, doc.id, { status: 'ready', chunkCount: 0 });
+      await knowledgeRepo.updateDoc(ctx, doc.id, {
+        status: 'ready',
+        chunkCount: 0,
+        departmentAccess: department,
+      });
       return { docId: doc.id, chunkCount: 0, status: 'ready' };
     }
 
@@ -80,11 +99,12 @@ export async function ingestDocument(ctx: TenantContext, input: IngestInput): Pr
       });
     }
 
-    await knowledgeRepo.replaceChunks(ctx, doc.id, chunkInputs, doc.departmentAccess);
+    await knowledgeRepo.replaceChunks(ctx, doc.id, chunkInputs, department);
     await knowledgeRepo.updateDoc(ctx, doc.id, {
       status: 'ready',
       chunkCount: chunkInputs.length,
       error: null,
+      departmentAccess: department,
     });
     await auditFromContext(ctx, {
       action: 'knowledge.embed',

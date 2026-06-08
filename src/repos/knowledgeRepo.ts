@@ -33,6 +33,7 @@ export interface UpdateDocPatch {
   chunkCount?: number;
   error?: string | null;
   title?: string;
+  departmentAccess?: string | null;
 }
 
 /**
@@ -159,12 +160,45 @@ export const knowledgeRepo = {
     if (patch.chunkCount !== undefined) set.chunkCount = patch.chunkCount;
     if (patch.error !== undefined) set.error = patch.error;
     if (patch.title !== undefined) set.title = patch.title;
+    if (patch.departmentAccess !== undefined) set.departmentAccess = patch.departmentAccess;
     const rows = await db
       .update(knowledgeDocs)
       .set(set)
       .where(and(eq(knowledgeDocs.id, docId), eq(knowledgeDocs.tenantId, ctx.tenantId)))
       .returning();
     return firstOrUndefined(rows);
+  },
+
+  /** Update a doc's department on both the doc and all its chunks (cheap re-tag, no re-embed). */
+  async setDepartment(
+    ctx: TenantContext,
+    docId: string,
+    department: string | null,
+  ): Promise<void> {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(knowledgeDocs)
+        .set({ departmentAccess: department, updatedAt: new Date() })
+        .where(and(eq(knowledgeDocs.id, docId), eq(knowledgeDocs.tenantId, ctx.tenantId)));
+      await tx
+        .update(knowledgeChunks)
+        .set({ departmentAccess: department })
+        .where(and(eq(knowledgeChunks.tenantId, ctx.tenantId), eq(knowledgeChunks.docId, docId)));
+    });
+  },
+
+  /** Delete a doc and all its chunks. Returns true if a doc was removed. */
+  async deleteDoc(ctx: TenantContext, docId: string): Promise<boolean> {
+    return db.transaction(async (tx) => {
+      await tx
+        .delete(knowledgeChunks)
+        .where(and(eq(knowledgeChunks.tenantId, ctx.tenantId), eq(knowledgeChunks.docId, docId)));
+      const rows = await tx
+        .delete(knowledgeDocs)
+        .where(and(eq(knowledgeDocs.id, docId), eq(knowledgeDocs.tenantId, ctx.tenantId)))
+        .returning({ id: knowledgeDocs.id });
+      return rows.length > 0;
+    });
   },
 
   /** Atomically replace all chunks for a doc (idempotent re-ingest). */

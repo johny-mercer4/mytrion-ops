@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { normalizeDepartment, normalizeDepartments } from '../../src/lib/department.js';
+import {
+  isAdministratorProfile,
+  normalizeDepartment,
+  normalizeDepartments,
+  resolveAllDepartmentAccess,
+} from '../../src/lib/department.js';
 import { knowledgeRepo } from '../../src/repos/knowledgeRepo.js';
 import { registerTool, ToolRegistry } from '../../src/modules/tools/registry.js';
 import type { ToolManifest } from '../../src/modules/tools/types.js';
@@ -38,6 +43,34 @@ describe('department normalization (ingest + query must not drift)', () => {
       'c-level',
     ]);
     expect(normalizeDepartments(undefined)).toEqual([]);
+  });
+});
+
+describe('Administrator profile bypass (RAG + tools share one flag)', () => {
+  it('detects an Administrator profile (case-insensitive, substring, list or string)', () => {
+    expect(isAdministratorProfile('Administrator')).toBe(true);
+    expect(isAdministratorProfile('System Administrator')).toBe(true);
+    expect(isAdministratorProfile(['Standard', 'administrator'])).toBe(true);
+    expect(isAdministratorProfile('Standard')).toBe(false);
+    expect(isAdministratorProfile(undefined)).toBe(false);
+    expect(isAdministratorProfile([])).toBe(false);
+  });
+
+  it('resolves the bypass from allDepartments OR an Administrator profile', () => {
+    expect(resolveAllDepartmentAccess({ allDepartments: true })).toBe(true);
+    expect(resolveAllDepartmentAccess({ profile: 'Administrator' })).toBe(true);
+    expect(resolveAllDepartmentAccess({ profile: ['Standard'] })).toBe(false);
+    expect(resolveAllDepartmentAccess({})).toBe(false);
+  });
+
+  it('the bypass flag unlocks both a dept-restricted tool and unfiltered retrieval', () => {
+    // tools
+    const r = deptTool(['finance']);
+    const adminCtx = makeContext({ role: 'viewer', departments: [], allDepartmentAccess: true });
+    expect(r.checkAccess(r.all()[0]!, adminCtx).ok).toBe(true);
+    // retrieval
+    const { sql } = knowledgeRepo.buildSearchQuery(adminCtx, [0.1, 0.2, 0.3], 5).toSQL();
+    expect(sql).not.toContain('department_access');
   });
 });
 
