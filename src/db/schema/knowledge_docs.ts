@@ -12,6 +12,8 @@ export const knowledgeDocs = pgTable(
     tenantId: text('tenant_id').notNull(),
     audience: text('audience').$type<Audience>().notNull(),
     title: text('title').notNull(),
+    /** Department this doc belongs to for RBAC. NULL = shared/global (all departments). */
+    departmentAccess: text('department_access'),
     source: text('source'),
     mimeType: text('mime_type'),
     status: text('status')
@@ -29,6 +31,7 @@ export const knowledgeDocs = pgTable(
   (table) => ({
     tenantIdx: index('knowledge_docs_tenant_idx').on(table.tenantId, table.audience),
     checksumIdx: index('knowledge_docs_checksum_idx').on(table.tenantId, table.checksum),
+    deptIdx: index('knowledge_docs_dept_idx').on(table.tenantId, table.departmentAccess),
   }),
 );
 

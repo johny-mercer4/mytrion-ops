@@ -28,7 +28,19 @@ export function registerTool<I, O>(manifest: ToolManifest<I, O>): RegisteredTool
     },
   };
   if (manifest.rateLimit) tool.rateLimit = manifest.rateLimit;
+  if (manifest.allowedDepartments) tool.allowedDepartments = manifest.allowedDepartments;
   return tool;
+}
+
+/**
+ * Department RBAC for a tool. No `allowedDepartments` (or empty) = open to all departments.
+ * Otherwise the caller needs allDepartmentAccess or at least one overlapping department.
+ */
+function hasDepartmentAccess(tool: RegisteredTool, ctx: TenantContext): boolean {
+  const allowed = tool.allowedDepartments;
+  if (!allowed || allowed.length === 0) return true;
+  if (ctx.allDepartmentAccess) return true;
+  return ctx.departments.some((d) => allowed.includes(d));
 }
 
 export class ToolRegistry {
@@ -71,6 +83,12 @@ export class ToolRegistry {
     }
     if (tool.riskClass !== 'read' && ctx.role !== 'admin') {
       return { ok: false, reason: `${tool.riskClass} tools require the admin role` };
+    }
+    if (!hasDepartmentAccess(tool, ctx)) {
+      return {
+        ok: false,
+        reason: `tool '${tool.name}' is restricted to departments: ${tool.allowedDepartments?.join(', ')}`,
+      };
     }
     return { ok: true };
   }

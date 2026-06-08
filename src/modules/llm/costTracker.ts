@@ -33,7 +33,7 @@ export function computeCost(usage: TokenUsage): CostBreakdown {
   };
 }
 
-// Process-local rollup. Not durable across restarts — swap for a DB/Redis rollup
+// Process-local rollup. Not durable across restarts — swap for a DB-backed rollup
 // when per-tenant billing matters. Good enough for in-flight visibility + logs.
 const tenantTotals = new Map<string, number>();
 

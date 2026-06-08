@@ -12,6 +12,8 @@ export interface IngestInput {
   content: string;
   source?: string;
   mimeType?: string;
+  /** Department this doc belongs to (RBAC). null/undefined = shared/global. */
+  department?: string | null;
 }
 
 export interface IngestResult {
@@ -48,6 +50,7 @@ export async function ingestDocument(ctx: TenantContext, input: IngestInput): Pr
     (await knowledgeRepo.createDoc(ctx, {
       title: input.title,
       checksum,
+      ...(input.department !== undefined ? { departmentAccess: input.department } : {}),
       ...(input.source !== undefined ? { source: input.source } : {}),
       ...(input.mimeType !== undefined ? { mimeType: input.mimeType } : {}),
     }));
@@ -75,7 +78,7 @@ export async function ingestDocument(ctx: TenantContext, input: IngestInput): Pr
       });
     }
 
-    await knowledgeRepo.replaceChunks(ctx, doc.id, chunkInputs);
+    await knowledgeRepo.replaceChunks(ctx, doc.id, chunkInputs, doc.departmentAccess);
     await knowledgeRepo.updateDoc(ctx, doc.id, {
       status: 'ready',
       chunkCount: chunkInputs.length,

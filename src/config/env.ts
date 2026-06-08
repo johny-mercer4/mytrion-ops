@@ -17,20 +17,22 @@ const EnvSchema = z.object({
     .default('info'),
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
 
-  // --- Database ---
+  // --- Database (app's own Postgres: sessions, logging, knowledge) ---
   DATABASE_URL: z
     .string()
     .default('postgres://octane:octane@localhost:5432/octane_assistant'),
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
 
-  // --- Redis ---
-  REDIS_URL: z.string().default('redis://localhost:6379'),
+  // --- Data Warehouse (separate read Postgres; tool + metadata target) ---
+  DWH_DATABASE_URL: z.string().default(''),
 
   // --- OpenAI ---
   OPENAI_API_KEY: z.string().default(''),
-  OPENAI_DEFAULT_MODEL: z.string().default('gpt-4o-mini'),
-  OPENAI_REASONING_MODEL: z.string().default('gpt-4o'),
-  OPENAI_EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
+  // Model IDs by role: FOUR_O_MINI = default chat, FIVE_O_MINI = reasoning/hard tasks,
+  // EMBEDDING_SMALL = embeddings. Wired in modules/llm/openaiClient.ts (`models`).
+  OPEN_AI_FOUR_O_MINI: z.string().default('gpt-4o-mini-2024-07-18'),
+  OPEN_AI_FIVE_O_MINI: z.string().default('gpt-5.4-mini-2026-03-17'),
+  OPEN_AI_EMBEDDING_SMALL: z.string().default('text-embedding-3-small'),
 
   // --- Auth ---
   JWT_SECRET: z.string().default(''),
@@ -41,19 +43,82 @@ const EnvSchema = z.object({
   // --- Encryption (vendor credentials at rest) ---
   ENCRYPTION_KEY: z.string().default(''),
 
-  // --- Vendor: Zoho CRM ---
+  // --- Zoho: shared OAuth app (one self-client app across CRM/Desk/People/Projects) ---
+  ZOHO_ACCOUNTS_DOMAIN: z.string().default('https://accounts.zoho.com'),
+  ZOHO_CLIENT_ID: z.string().default(''),
+  ZOHO_CLIENT_SECRET: z.string().default(''),
+  // Optional shared refresh token; used as a fallback when a service-specific one is unset.
+  ZOHO_REFRESH_TOKEN: z.string().default(''),
+
+  // The *_API_DOMAIN / *_BASE_URL values are the FULL versioned API roots; callers append
+  // only the resource path (e.g. `${ZOHO_CRM_API_DOMAIN}/settings/modules`).
+
+  // --- Zoho CRM ---
   ZOHO_CRM_CLIENT_ID: z.string().default(''),
   ZOHO_CRM_CLIENT_SECRET: z.string().default(''),
   ZOHO_CRM_REFRESH_TOKEN: z.string().default(''),
-  ZOHO_CRM_API_DOMAIN: z.string().default('https://www.zohoapis.com'),
+  ZOHO_CRM_API_DOMAIN: z.string().default('https://www.zohoapis.com/crm/v8'),
+
+  // --- Zoho Desk ---
+  ZOHO_DESK_REFRESH_TOKEN: z.string().default(''),
+  ZOHO_DESK_BASE_URL: z.string().default('https://desk.zoho.com/api/v1'),
+  ZOHO_DESK_ORG_ID: z.string().default(''),
+
+  // --- Zoho People ---
+  ZOHO_PEOPLE_REFRESH_TOKEN: z.string().default(''),
+  ZOHO_PEOPLE_BASE_URL: z.string().default('https://people.zoho.com/api'),
+
+  // --- Zoho Projects ---
+  ZOHO_PROJECTS_REFRESH_TOKEN: z.string().default(''),
+  ZOHO_PROJECTS_BASE_URL: z.string().default('https://projectsapi.zoho.com/api/v3'),
 
   // --- Vendor: Octane internal API ---
   OCTANE_INTERNAL_API_URL: z.string().default(''),
   OCTANE_INTERNAL_API_KEY: z.string().default(''),
 
+  // --- CMP (our custom Node server; login/password auth, prod + sandbox) ---
+  CMP_PRODUCTION_URL: z.string().default(''),
+  CMP_PRODUCTION_LOGIN: z.string().default(''),
+  CMP_PRODUCTION_PASSWORD: z.string().default(''),
+  CMP_SANDBOX_URL: z.string().default(''),
+  CMP_SANDBOX_LOGIN: z.string().default(''),
+  CMP_SANDBOX_PASSWORD: z.string().default(''),
+
+  // --- EFS (CardManagement SOAP/WSDL) ---
+  EFS_WSDL_URL: z.string().default(''),
+  EFS_LOGIN: z.string().default(''),
+  EFS_PASSWORD: z.string().default(''),
+  EFS_PARENT: z.string().default('PARENT'),
+
+  // --- Server CRM (outbound integration) ---
+  SERVER_CRM_URL: z.string().default(''),
+  SERVER_CRM_KEY: z.string().default(''),
+
+  // --- Inbound server API key (callers present this to reach this engine) ---
+  API_KEY: z.string().default(''),
+
+  // --- File storage: Cloudflare R2 (S3-compatible) ---
+  R2_ACCOUNT_ID: z.string().default(''),
+  R2_ACCESS_KEY_ID: z.string().default(''),
+  R2_SECRET_ACCESS_KEY: z.string().default(''),
+  R2_BUCKET: z.string().default(''),
+  // Defaults to https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com when blank.
+  R2_ENDPOINT: z.string().default(''),
+  // Optional public/custom-domain base for serving uploaded files.
+  R2_PUBLIC_BASE_URL: z.string().default(''),
+  // R2 ignores region but the S3 SDK requires one; 'auto' is correct for R2.
+  R2_REGION: z.string().default('auto'),
+
+  // --- Browser automation: Browserbase ---
+  BROWSERBASE_API_KEY: z.string().default(''),
+  BROWSERBASE_PROJECT_ID: z.string().default(''),
+  BROWSERBASE_BASE_URL: z.string().default('https://api.browserbase.com'),
+
   // --- Feature flags ---
   FF_PARTNER_AUDIENCE_ENABLED: flag('1'),
   FF_KNOWLEDGE_INGEST_ENABLED: flag('1'),
+  // Always-on RAG: inject RBAC-scoped pgvector passages into every chat turn.
+  FF_RAG_ENABLED: flag('1'),
   FF_AUDIT_LOG_ENABLED: flag('1'),
 });
 

@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
+import { dbSslOption } from '../src/db/client.js';
 import { env } from '../src/config/env.js';
 import { logger } from '../src/lib/logger.js';
 
@@ -11,7 +12,7 @@ import { logger } from '../src/lib/logger.js';
  * the pgvector extension before the vector column, so this is self-sufficient.
  */
 async function main(): Promise<void> {
-  const sql = postgres(env.DATABASE_URL, { max: 1 });
+  const sql = postgres(env.DATABASE_URL, { max: 1, ssl: dbSslOption(env.DATABASE_URL) });
   try {
     const db = drizzle(sql);
     logger.info('applying migrations...');

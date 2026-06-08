@@ -1,14 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { createMock, dispatchMock } = vi.hoisted(() => ({
+const { createMock, dispatchMock, retrieveMock } = vi.hoisted(() => ({
   createMock: vi.fn(),
   dispatchMock: vi.fn(),
+  retrieveMock: vi.fn(),
 }));
 
 vi.mock('../../src/modules/llm/openaiClient.js', () => ({
   getOpenAI: () => ({ chat: { completions: { create: createMock } } }),
   models: { default: 'gpt-4o-mini', reasoning: 'gpt-4o', embedding: 'text-embedding-3-small' },
 }));
+vi.mock('../../src/modules/knowledge/retriever.js', () => ({ retrieve: retrieveMock }));
 vi.mock('../../src/modules/chat/toolDispatcher.js', () => ({ dispatchTool: dispatchMock }));
 vi.mock('../../src/repos/conversationRepo.js', () => ({
   conversationRepo: {
@@ -45,6 +47,8 @@ function completion(content: string, toolCalls?: unknown[]) {
 beforeEach(() => {
   createMock.mockReset();
   dispatchMock.mockReset();
+  retrieveMock.mockReset();
+  retrieveMock.mockResolvedValue([]); // default: no grounded passages
 });
 
 describe('runChatTurn', () => {
@@ -55,6 +59,24 @@ describe('runChatTurn', () => {
     expect(res.iterations).toBe(1);
     expect(res.toolCalls).toEqual([]);
     expect(res.usage.promptTokens).toBe(10);
+    expect(res.ragPassages).toBe(0);
+  });
+
+  it('injects RBAC-scoped RAG passages as grounding context', async () => {
+    retrieveMock.mockResolvedValueOnce([
+      { id: 'c1', docId: 'doc_policy', chunkIndex: 0, content: 'Fuel cards expire after 36 months.', score: 0.91 },
+    ]);
+    createMock.mockResolvedValueOnce(completion('Grounded answer'));
+
+    const res = await runChatTurn(undefined, 'when do cards expire?', makeContext({ role: 'ops', departments: ['sales'] }));
+
+    expect(res.ragPassages).toBe(1);
+    // The retriever was called with the department-scoped context (RBAC enforced downstream).
+    expect(retrieveMock.mock.calls[0]?.[0]).toMatchObject({ departments: ['sales'] });
+    // A system message carrying the retrieved passage was sent to the model.
+    const sentMessages = createMock.mock.calls[0]?.[0]?.messages as Array<{ role: string; content: string }>;
+    const grounding = sentMessages.filter((m) => m.role === 'system').map((m) => m.content).join('\n');
+    expect(grounding).toContain('Fuel cards expire after 36 months.');
   });
 
   it('dispatches tool calls (mapping names back) then returns the final answer', async () => {

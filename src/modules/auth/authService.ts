@@ -54,6 +54,28 @@ export function contextFromClaims(claims: TokenClaims, requestId: string): Tenan
     audience: claims.audience,
     role: claims.role,
     scopes: scopesForRole(claims.role),
+    // Department access is supplied per request by the caller (see routes/v1/helpers).
+    // Admins are elevated by default ("managers can access almost everything").
+    departments: [],
+    allDepartmentAccess: claims.role === 'admin',
+    requestId,
+  };
+}
+
+/**
+ * The single hardcoded identity used when a request authenticates with the static
+ * API_KEY (no users / multi-tenancy). Full tool scopes; department access is least-
+ * privilege and supplied per request by the caller (see withDepartmentAccess).
+ */
+export function systemContext(requestId: string): TenantContext {
+  return {
+    tenantId: DEFAULT_TENANT_ID,
+    userId: 'system',
+    audience: 'internal',
+    role: 'admin',
+    scopes: scopesForRole('admin'),
+    departments: [],
+    allDepartmentAccess: false,
     requestId,
   };
 }

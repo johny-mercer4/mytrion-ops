@@ -1,13 +1,16 @@
 import type OpenAI from 'openai';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import { MAX_TOOL_ITERATIONS } from '../../config/constants.js';
+import { DEFAULT_RETRIEVAL_K, MAX_TOOL_ITERATIONS } from '../../config/constants.js';
+import { env } from '../../config/env.js';
 import { AppError, errorMessage, NotFoundError, RBACError } from '../../lib/errors.js';
+import { logger } from '../../lib/logger.js';
 import { conversationRepo } from '../../repos/conversationRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { auditFromContext } from '../audit/auditLogger.js';
+import { retrieve } from '../knowledge/retriever.js';
 import { costTracker } from '../llm/costTracker.js';
 import { getOpenAI, models } from '../llm/openaiClient.js';
-import { buildSystemPrompt } from '../llm/promptBuilder.js';
+import { buildSystemPrompt, knowledgeGroundingNote } from '../llm/promptBuilder.js';
 import { toolRegistry } from '../tools/index.js';
 import { messageStore } from './messageStore.js';
 import type { SSEStream } from './streaming.js';
@@ -30,6 +33,8 @@ export interface ChatTurnResult {
   toolCalls: ChatToolCallSummary[];
   usage: { promptTokens: number; completionTokens: number; totalCost: number };
   iterations: number;
+  /** Number of RBAC-scoped pgvector passages injected as grounding for this turn. */
+  ragPassages: number;
 }
 
 export interface ChatTurnOptions {
@@ -64,6 +69,44 @@ async function ensureConversation(ctx: TenantContext, conversationId?: string): 
   }
   const created = await conversationRepo.create(ctx, {});
   return created.id;
+}
+
+/**
+ * Always-on RAG: embed the user's message and pull RBAC-scoped passages from pgvector.
+ * Isolation (tenant + audience + department_access) is enforced in knowledgeRepo, so the
+ * grounding a caller sees is already limited to what their departments/keys allow.
+ * Retrieval failures degrade gracefully (chat continues without grounded context).
+ */
+async function retrieveGrounding(
+  ctx: TenantContext,
+  query: string,
+): Promise<{ content: string; count: number } | null> {
+  if (!env.FF_RAG_ENABLED) return null;
+  try {
+    const passages = await retrieve(ctx, query, DEFAULT_RETRIEVAL_K);
+    if (passages.length === 0) return null;
+    const body = passages
+      .map((p, i) => `[#${i + 1} · doc ${p.docId} · score ${p.score.toFixed(3)}]\n${p.content}`)
+      .join('\n\n');
+    return { content: `${knowledgeGroundingNote()}\n\n${body}`, count: passages.length };
+  } catch (err) {
+    logger.warn({ err: errorMessage(err) }, 'RAG grounding retrieval failed; continuing without it');
+    return null;
+  }
+}
+
+/** Build the LLM message list for a turn: system prompt, RAG grounding, then history. */
+async function buildTurnMessages(
+  ctx: TenantContext,
+  conversationId: string,
+  userMessage: string,
+): Promise<{ messages: ChatMessage[]; ragPassages: number }> {
+  const history = await messageStore.loadHistory(ctx, conversationId);
+  const messages: ChatMessage[] = [{ role: 'system', content: buildSystemPrompt(ctx) }];
+  const grounding = await retrieveGrounding(ctx, userMessage);
+  if (grounding) messages.push({ role: 'system', content: grounding.content });
+  messages.push(...history);
+  return { messages, ragPassages: grounding?.count ?? 0 };
 }
 
 /** Execute a single tool call. Never throws — failures become a tool message the model can read. */
@@ -144,8 +187,7 @@ export async function runChatTurn(
   const convId = await ensureConversation(ctx, conversationId);
   await messageStore.appendUser(ctx, convId, userMessage);
 
-  const history = await messageStore.loadHistory(ctx, convId);
-  const messages: ChatMessage[] = [{ role: 'system', content: buildSystemPrompt(ctx) }, ...history];
+  const { messages, ragPassages } = await buildTurnMessages(ctx, convId, userMessage);
   const tools = buildTools(ctx);
   const model = opts.model ?? models.default;
   const client = getOpenAI();
@@ -199,10 +241,17 @@ export async function runChatTurn(
     status: 'ok',
     resourceType: 'conversation',
     resourceId: convId,
-    detail: { iterations, toolCalls: toolSummaries.length, ...usageAcc },
+    detail: { iterations, toolCalls: toolSummaries.length, ragPassages, ...usageAcc },
   });
 
-  return { conversationId: convId, message: finalContent, toolCalls: toolSummaries, usage: usageAcc, iterations };
+  return {
+    conversationId: convId,
+    message: finalContent,
+    toolCalls: toolSummaries,
+    usage: usageAcc,
+    iterations,
+    ragPassages,
+  };
 }
 
 async function streamCompletion(
@@ -253,8 +302,8 @@ export async function streamChatTurn(
   sse.send('start', { conversationId: convId });
   await messageStore.appendUser(ctx, convId, userMessage);
 
-  const history = await messageStore.loadHistory(ctx, convId);
-  const messages: ChatMessage[] = [{ role: 'system', content: buildSystemPrompt(ctx) }, ...history];
+  const { messages, ragPassages } = await buildTurnMessages(ctx, convId, userMessage);
+  sse.send('context', { passages: ragPassages });
   const tools = buildTools(ctx);
   const model = opts.model ?? models.default;
   const client = getOpenAI();
@@ -311,7 +360,7 @@ export async function streamChatTurn(
     status: 'ok',
     resourceType: 'conversation',
     resourceId: convId,
-    detail: { iterations, toolCalls: toolSummaries.length, streamed: true, ...usageAcc },
+    detail: { iterations, toolCalls: toolSummaries.length, streamed: true, ragPassages, ...usageAcc },
   });
 
   const result: ChatTurnResult = {
@@ -320,6 +369,7 @@ export async function streamChatTurn(
     toolCalls: toolSummaries,
     usage: usageAcc,
     iterations,
+    ragPassages,
   };
   sse.send('done', result);
   return result;

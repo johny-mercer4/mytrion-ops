@@ -10,7 +10,7 @@ import { getOpenAI } from '../llm/openaiClient.js';
 export async function embedTexts(texts: string[]): Promise<number[][]> {
   if (texts.length === 0) return [];
   const res = await getOpenAI().embeddings.create({
-    model: env.OPENAI_EMBEDDING_MODEL,
+    model: env.OPEN_AI_EMBEDDING_SMALL,
     input: texts,
   });
   const ordered = [...res.data].sort((a, b) => a.index - b.index);

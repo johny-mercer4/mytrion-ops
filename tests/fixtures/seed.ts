@@ -14,6 +14,8 @@ export function makeContext(overrides: Partial<TenantContext> & { role?: Role } 
     audience: overrides.audience ?? audienceForRole(role),
     role,
     scopes: overrides.scopes ?? scopesForRole(role),
+    departments: overrides.departments ?? [],
+    allDepartmentAccess: overrides.allDepartmentAccess ?? role === 'admin',
     requestId: overrides.requestId ?? 'test-request',
   };
 }

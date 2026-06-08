@@ -1,5 +1,6 @@
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
+import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
 import swagger from '@fastify/swagger';
@@ -8,6 +9,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { API_PREFIX, APP_NAME } from './config/constants.js';
 import { corsOrigins, env, isDev, isProduction, isTest } from './config/env.js';
 import { logger } from './lib/logger.js';
+import { apiKeyAuthPlugin } from './plugins/apiKeyAuth.js';
 import { authPlugin } from './plugins/auth.js';
 import { errorHandlerPlugin } from './plugins/errorHandler.js';
 import { healthcheckPlugin } from './plugins/healthcheck.js';
@@ -72,6 +74,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   requestContextPlugin(app);
   errorHandlerPlugin(app);
   authPlugin(app);
+  apiKeyAuthPlugin(app);
   rbacPlugin(app);
 
   await app.register(helmet, { contentSecurityPolicy: false });
@@ -81,6 +84,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
   await app.register(sensible);
   await app.register(rateLimit, { max: 120, timeWindow: '1 minute' });
+  // File uploads for knowledge training (POST /v1/knowledge/upload).
+  await app.register(multipart, {
+    limits: { fileSize: 10_000_000, files: 20, fields: 10 },
+  });
 
   if (!isProduction && !isTest) {
     await registerDocs(app);

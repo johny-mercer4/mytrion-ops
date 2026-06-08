@@ -16,6 +16,8 @@ export const knowledgeChunks = pgTable(
     tenantId: text('tenant_id').notNull(),
     audience: text('audience').$type<Audience>().notNull(),
     docId: text('doc_id').notNull(),
+    /** Mirrors the parent doc's department for RBAC-filtered retrieval. NULL = global. */
+    departmentAccess: text('department_access'),
     chunkIndex: integer('chunk_index').notNull(),
     content: text('content').notNull(),
     tokenCount: integer('token_count'),
@@ -26,6 +28,7 @@ export const knowledgeChunks = pgTable(
   (table) => ({
     docIdx: index('knowledge_chunks_doc_idx').on(table.docId),
     tenantIdx: index('knowledge_chunks_tenant_idx').on(table.tenantId, table.audience),
+    deptIdx: index('knowledge_chunks_dept_idx').on(table.tenantId, table.departmentAccess),
     embeddingIdx: index('knowledge_chunks_embedding_idx').using(
       'hnsw',
       table.embedding.op('vector_cosine_ops'),

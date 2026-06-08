@@ -106,3 +106,147 @@ Append-only changelog of decisions. Newest entries at the bottom of each day.
 - Not runnable here (no docker/Postgres/Redis/OpenAI key): `db:migrate`, `db:seed`, live
   `/v1/chat` round trip, `/v1/knowledge/embed` persistence. Code is complete; these need live
   services (run `docker compose up -d` + set `OPENAI_API_KEY`).
+
+---
+
+## 2026-06-04 — Direction reset: drop Redis, add metadata tooling
+
+Server's purpose clarified: it's the **internal AI server that answers Agent requests**. Tool
+targets going forward are DWH (Postgres), Zoho (CRM/Desk/People/Projects), the CMP custom Node
+server, and external platforms. Prompts stay in TS (not md). Sessions + logging on our own
+Postgres. Delivery: work on `build` → PR to `main` → Render deploy.
+
+### Claude Code project config
+
+- Added `.claude/settings.json`: auto-approve safe shell (cd/ls/pnpm/git status·add·commit/…),
+  **deny `git push`**. Standing rule — Claude commits to the current branch but never pushes;
+  pushing/PRs are the human's action.
+
+### Dropped Redis/BullMQ (per "no Redis for now")
+
+- Deleted `ingestWorker.ts`; removed `worker`/`worker:prod` scripts, `ioredis` + `bullmq` deps,
+  `REDIS_URL`, `INGEST_QUEUE_NAME`, and the `/knowledge/embed` `async`→queue path (ingest is now
+  always synchronous, which `embed-docs` CLI already was). Removed the redis + worker services from
+  `render.yaml` and the redis service from `docker-compose.yml`. Updated README/.env.example.
+  Lockfile re-synced. typecheck/lint/test(25)/build all green.
+
+### metadataScripts/ (new)
+
+- Standalone, read-only introspection tooling (run via tsx; not bundled into `dist`). Writes a
+  metadata catalog to `output/` (git-ignored) as JSON + Markdown so we build tools against real
+  API names. Scripts: `zohoCrmAnalyzer`, `zohoDeskAnalyzer`, `zohoPeopleAnalyzer`, `dwhAnalyzer`
+  (+ `pnpm meta:*` scripts). Shared `lib/`: `zohoAuth` (refresh-token → access-token, per-service
+  with shared-app fallback), `http`, `output`.
+- Env: added a unified Zoho block (shared `ZOHO_CLIENT_ID/SECRET/ACCOUNTS_DOMAIN` +
+  per-service refresh tokens & base URLs for CRM/Desk/People/Projects) and `DWH_DATABASE_URL`
+  (separate read Postgres, distinct from the app's own DB) to `env.ts` + `.env.example`. All
+  default to empty — to be filled in next ("set the .envs"). Analyzers fail fast with a clear
+  message when creds are missing (verified).
+
+### `.env` populated + analyzers validated live (later, 2026-06-04)
+
+- Convention change: `*_API_DOMAIN` / `*_BASE_URL` now hold the **full versioned API root**
+  (e.g. `https://www.zohoapis.com/crm/v8`, `https://desk.zoho.com/api/v1`,
+  `https://people.zoho.com/api`, `https://projectsapi.zoho.com/api/v3`); analyzers append only
+  the resource path. Updated env.ts defaults, .env.example, and the 3 Zoho analyzers.
+- `.env` written from supplied secrets (git-ignored; never committed). `MYTRION_OPS_DATABASE_URL`
+  mapped → `DATABASE_URL` (the app reads `DATABASE_URL`; note the value is a Render-internal host,
+  so local dev should point at the docker-compose Postgres instead). `API_KEY` left as a commented
+  note — nothing in the app consumes it yet (only `OCTANE_INTERNAL_API_KEY` exists in schema).
+- Ran all four analyzers against live systems → catalogs in `metadataScripts/output/` (git-ignored):
+  **CRM** 148 modules / 2460 fields · **Desk** 6 modules / 10 departments / 110 fields ·
+  **People** 17 forms / 199 fields · **DWH** 6 schemas / 591 tables-views. OAuth + versioned-base
+  paths confirmed working for all services.
+
+### OpenAI model vars by role (later, 2026-06-04)
+
+- Replaced `OPENAI_DEFAULT_MODEL` / `OPENAI_REASONING_MODEL` / `OPENAI_EMBEDDING_MODEL` with
+  role-named pinned IDs: `OPEN_AI_FOUR_O_MINI` (gpt-4o-mini-2024-07-18 → `models.default`),
+  `OPEN_AI_FIVE_O_MINI` (gpt-5.4-mini-2026-03-17 → `models.reasoning`), `OPEN_AI_EMBEDDING_SMALL`
+  (text-embedding-3-small → `models.embedding`). Wired in `openaiClient.ts` + `embedder.ts`.
+- `MODEL_PRICING` got entries for the pinned 4o-mini and gpt-5.4-mini. **gpt-5.4-mini price is a
+  TODO placeholder** (0.25/2.0) — confirm; costTracker falls back to 0 for unknowns and `baseModel`
+  already strips the date suffix, so this is visibility-only.
+
+### Auth Wrapper — parent integration auth layer (later, 2026-06-04)
+
+- New `src/integrations/`: `zoho.ts` (OAuth primitives, now returns `expiresInSec`) and
+  `wrapper.ts` — the parent `wrapper.authHeaders(platform)` that hides each platform's auth and
+  **caches Zoho access tokens** per service (refresh on expiry minus 60s skew). Platforms:
+  `zoho_crm|zoho_desk|zoho_people|zoho_projects|cmp`; `zoho_desk` auto-attaches `orgId`. CMP uses a
+  static `CMP_API_KEY` (header configurable via `CMP_AUTH_HEADER`, default `Authorization: Bearer`).
+  Added `CMP_BASE_URL/CMP_API_KEY/CMP_AUTH_HEADER` to env (empty defaults). The pasted `API_KEY`
+  likely belongs in `CMP_API_KEY` — pending confirmation.
+- `metadataScripts/lib/zohoAuth.ts` now re-exports from `src/integrations/zoho.ts` (single source).
+- Confirmed: 4o-mini (`OPEN_AI_FOUR_O_MINI`) is already the model for every chat + tool-calling
+  request via `models.default`; `gpt-5.4-mini` is defined but unused. No change needed.
+- New `tests/unit/wrapper.test.ts` (token caching / expiry / per-service / header). 29 tests pass.
+
+### department_access RBAC + file-upload RAG training (later, 2026-06-04)
+
+Scope model (per product direction): RAG **and** tool calling are gated by `department_access`.
+- **TenantContext** gains `departments: string[]` + `allDepartmentAccess: boolean`. Supplied per
+  request by the trusted caller via `withDepartmentAccess` (body `departmentAccess[]`/`allDepartments`
+  or `x-department-access` CSV / `x-all-departments` headers). Admins default to allAccess
+  ("managers can access almost everything").
+- **Knowledge** docs + chunks get a nullable `department_access` column (NULL = shared/global) +
+  btree indexes. Migration `0001_ambitious_gideon.sql` (additive). `ingestDocument` accepts a single
+  `department`; retrieval filter in `knowledgeRepo`: managers → unfiltered; else
+  `department_access IS NULL OR IN (ctx.departments)` (empty depts → global only).
+- **Tools**: `ToolManifest.allowedDepartments?` (omit = all departments). `ToolRegistry.checkAccess`
+  adds the gate after audience/scope/write-risk. Existing 8 tools set nothing → unchanged behavior.
+- **Endpoints**: new `POST /v1/knowledge/upload` (multipart, `@fastify/multipart`, ≤10MB ×20 files;
+  accepts .md/.markdown/.txt/.json/text; optional `department` form field tags every doc). `/embed`
+  gains `department`; `/query` + `/chat` + `/chat/stream` thread department access into ctx.
+- Tests: `tests/unit/department-access.test.ts` (tool gating + retrieval SQL filter). 36 tests pass;
+  typecheck/lint/build clean. NOTE: the migration still needs to run against the DB (`pnpm db:migrate`).
+
+### Always-on RAG in chat + R2/Browserbase env scaffolding (later, 2026-06-04)
+
+Focus narrowed (R2/Browserbase deferred — no creds yet): get streaming chat working with
+RBAC-enforced RAG; tool calling comes after confirmation.
+- **Always-on RAG**: `chatService` now retrieves RBAC-scoped pgvector passages for the user's
+  message and injects them as a system "grounding" block on every turn (`FF_RAG_ENABLED`, default
+  on). Isolation is the existing `knowledgeRepo` filter (tenant + audience + department_access), so
+  the grounding a caller sees is limited to their departments/keys; managers see all. Retrieval
+  failures degrade gracefully (chat continues ungrounded). `ChatTurnResult.ragPassages` added; the
+  stream emits a `context` event with the passage count. `department_access` is a generic access tag
+  — a department name OR a unique key (zoho user id / carrier id), caller's choice at ingest + query.
+- **Upload→ingest with department** (`POST /v1/knowledge/upload`) was already built last entry — this
+  is the endpoint the Zoho admin-console widget calls (multipart: file(s) + `department` field).
+- **Env scaffolding** (empty defaults, clients wired later): `API_KEY` (inbound key to this engine —
+  registered, not yet enforced), Cloudflare R2 (`R2_ACCOUNT_ID/ACCESS_KEY_ID/SECRET_ACCESS_KEY/
+  BUCKET/ENDPOINT/PUBLIC_BASE_URL/REGION`), Browserbase (`BROWSERBASE_API_KEY/PROJECT_ID/BASE_URL`).
+- 37 tests pass (new: chat RAG grounding). typecheck/lint/build clean.
+
+### DB live + new platform env (later, 2026-06-04)
+
+- Switched `DATABASE_URL` to the **external** Mytrion OPS Render host (off-Render reachable).
+  Added conditional **SSL** (`dbSslOption` in db/client.ts; matching ssl in drizzle.config + a
+  programmatic-migrate fix) — managed hosts use TLS w/o CA verify, local docker uses none.
+- **Applied the migration** to the (empty) Mytrion OPS DB via `tsx scripts/migrate.ts`
+  (drizzle-kit's pg driver ignored the ssl option; the postgres.js programmatic migrator honors it).
+  Verified: 8 tables created, pgvector installed, `department_access` on docs + chunks. DWH was
+  **never touched** (migrations only target DATABASE_URL; DWH is read-only analytics, per user).
+- Registered new platform env (values in .env, empty defaults in schema/.env.example): CMP
+  login/password **prod + sandbox** (replaced the earlier api-key model), EFS SOAP
+  (`EFS_WSDL_URL/LOGIN/PASSWORD/PARENT`), Server CRM (`SERVER_CRM_URL/KEY`). `API_KEY` = inbound key.
+- Trimmed the auth Wrapper to **Zoho-only** for now; CMP/EFS/Server-CRM auth providers will be added
+  with their tools (CMP needs a login→token flow, EFS is SOAP). Still nothing pushed.
+
+### API_KEY inbound auth + Agent Scope widget endpoints (2026-06-05)
+
+Building the first Zoho widget (**Agent Scope**: upload `.md` knowledge + view embedded vectors).
+- **Inbound auth**: new `apiKeyAuthPlugin` decorates `app.apiKeyAuth` — validates the static
+  `API_KEY` (`Authorization: Bearer` or `x-api-key`, constant-time) and sets a hardcoded
+  `systemContext` (single identity, admin scopes, least-privilege departments). This is the
+  no-users access path. `503` if `API_KEY` unset, `401` if missing/wrong.
+- **Knowledge endpoints** (all `apiKeyAuth`): existing `/embed`, `/upload`, `/query` plus new
+  **GET `/knowledge/docs`** (list, optional `?department`), **GET `/knowledge/stats`**
+  (`{docs,chunks}`), **GET `/knowledge/docs/:id`**, **GET `/knowledge/docs/:id/chunks`** (chunk
+  content + `hasEmbedding`; raw vectors omitted). Repo: `listChunksByDoc`, `countDocs`, dept filter
+  on `listDocs`.
+- **Brief for the widget dev's agent**: `docs/agent-scope-widget-backend.md` — full contract, auth
+  (with a "don't ship API_KEY in client JS — proxy it" warning), RBAC, error shapes, examples.
+- 39 tests pass (added API-key rejection tests). typecheck/lint/build clean. Migration unchanged.
+
