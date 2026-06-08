@@ -58,6 +58,34 @@ describe('HTTP API (no external services)', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it('CORS preflight on /v1/chat/stream echoes a Zoho widget origin', async () => {
+    const origin = 'https://3ab5b85d-1234.zappsusercontent.com';
+    const res = await app.inject({
+      method: 'OPTIONS',
+      url: '/v1/chat/stream',
+      headers: {
+        origin,
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'content-type,x-api-key',
+      },
+    });
+    expect(res.statusCode).toBeLessThan(300);
+    expect(res.headers['access-control-allow-origin']).toBe(origin);
+    expect(String(res.headers['access-control-allow-headers']).toLowerCase()).toContain('x-api-key');
+  });
+
+  it('CORS does not allow an unknown origin', async () => {
+    const res = await app.inject({
+      method: 'OPTIONS',
+      url: '/v1/chat/stream',
+      headers: {
+        origin: 'https://evil.example.com',
+        'access-control-request-method': 'POST',
+      },
+    });
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
   it('returns a JSON 404 for unknown routes', async () => {
     const res = await app.inject({ method: 'GET', url: '/nope' });
     expect(res.statusCode).toBe(404);

@@ -7,7 +7,8 @@ import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { API_PREFIX, APP_NAME } from './config/constants.js';
-import { corsOrigins, env, isDev, isProduction, isTest } from './config/env.js';
+import { env, isDev, isProduction, isTest } from './config/env.js';
+import { isAllowedOrigin } from './lib/cors.js';
 import { logger } from './lib/logger.js';
 import { apiKeyAuthPlugin } from './plugins/apiKeyAuth.js';
 import { authPlugin } from './plugins/auth.js';
@@ -79,7 +80,19 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(helmet, { contentSecurityPolicy: false });
   await app.register(cors, {
-    origin: corsOrigins.length > 0 ? corsOrigins : true,
+    // Reflect the caller's Origin when allowed (exact match or allowed suffix, e.g.
+    // *.zappsusercontent.com) — never a bare "*", since we send a custom x-api-key header.
+    origin: (origin, cb) => cb(null, isAllowedOrigin(origin ?? undefined)),
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-api-key',
+      'x-request-id',
+      'x-department-access',
+      'x-all-departments',
+      'x-zoho-user-id',
+    ],
     credentials: true,
   });
   await app.register(sensible);

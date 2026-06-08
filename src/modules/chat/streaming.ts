@@ -13,7 +13,7 @@ export interface SSEStream {
  * this, Fastify no longer manages the reply (reply.hijack()), so the route must
  * drive the stream to completion and call close().
  */
-export function startSSE(reply: FastifyReply): SSEStream {
+export function startSSE(reply: FastifyReply, extraHeaders: Record<string, string> = {}): SSEStream {
   reply.hijack();
   const res = reply.raw;
   res.writeHead(200, {
@@ -22,6 +22,8 @@ export function startSSE(reply: FastifyReply): SSEStream {
     Connection: 'keep-alive',
     // Disable proxy buffering (nginx/Render) so events flush immediately.
     'X-Accel-Buffering': 'no',
+    // hijack() bypasses Fastify's reply headers, so CORS (etc.) must be passed in here.
+    ...extraHeaders,
   });
 
   return {
