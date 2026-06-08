@@ -78,12 +78,13 @@ The backend **accepts any string** and does **not** reject unknown values. The w
 3. **Query scoping source of truth** — the **caller supplies** the allowed keys per request
    (`departmentAccess[]`, or `allDepartments: true`). The backend does not derive them from an
    identity (there are no user accounts). This admin widget sends `allDepartments: true`.
-4. **Elevated/hierarchical roles** (`c-level` / `management` / `finance`) — **NOT yet decided**.
-   Today there is **no server-side hierarchy**: a scoped query sees exactly the keys it passes
-   **plus Global**. So "c-level sees everything" must be expressed by the caller passing
-   `allDepartments: true` (or the full key list). If you want the backend to *expand* certain keys
-   server-side (e.g. `c-level` ⇒ all, `management` ⇒ {sales,billing,…}), that's a backend change —
-   pending the owner's decision. **For this admin widget it's moot** (`allDepartments: true`).
+4. **Elevated/hierarchical roles** (`c-level` / `management` / `finance`) — **DECIDED: no
+   server-side hierarchy.** These are ordinary department keys: a scoped query sees exactly the
+   keys it passes **plus Global**. There is **no implicit cross-department expansion**. To grant
+   broader visibility:
+   - **See everything** → send a `profile` containing `Administrator` (or `allDepartments: true`).
+   - **Partial elevation** → the caller passes multiple keys, e.g. `departmentAccess: ["finance","billing"]`.
+   The same rule governs RAG and tools (one flag). For this admin widget it's moot (`allDepartments: true`).
 5. **Constraints** — case-insensitive (normalized to lowercase); any characters allowed; at most
    **50** keys per `departmentAccess[]`; each key ≤ 60 chars.
 
