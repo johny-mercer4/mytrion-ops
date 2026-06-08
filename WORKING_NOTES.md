@@ -296,3 +296,15 @@ different key, or deploy lagged). Fixes:
 - 41 tests pass; typecheck/lint/build clean. The existing SalesHandbook doc (null dept) can be
   fixed by re-uploading it with the department set, now that upsert re-tags.
 
+### role/profile params + Administrator RBAC bypass (2026-06-09)
+
+Chat endpoint now accepts `role` + `profile` (string|array). **Single source of truth** for the
+"see everything" bypass: `resolveAllDepartmentAccess({allDepartments, profile})` in
+`src/lib/department.ts` → true if `allDepartments:true` OR profile contains "administrator"
+(case-insensitive substring; `isAdministratorProfile`). It sets `ctx.allDepartmentAccess`, which
+**both** RAG retrieval (`knowledgeRepo.departmentFilter`) and tool gating
+(`registry.hasDepartmentAccess`) already key off — so Administrator bypass is uniform across RAG and
+tools by construction. TenantContext gained optional `profiles`/`callerRole` (audit + future
+per-role policy). Documented in `docs/chat-widget-backend.md`. 44 tests pass (added admin-bypass
+tests). Note: tool calling itself is still deferred, but the gate honors the same flag now.
+

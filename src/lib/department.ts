@@ -38,3 +38,27 @@ export function normalizeDepartments(values?: readonly string[] | null): string[
   }
   return [...out];
 }
+
+/**
+ * Profiles that bypass ALL department RBAC (RAG grounding + tool gating). Matched as a
+ * case-insensitive substring so "Administrator", "System Administrator", etc. all qualify.
+ */
+export const ADMIN_PROFILE_MARKER = 'administrator';
+
+export function isAdministratorProfile(profile?: string | readonly string[] | null): boolean {
+  if (!profile) return false;
+  const list = Array.isArray(profile) ? profile : [profile as string];
+  return list.some((p) => p.toLowerCase().includes(ADMIN_PROFILE_MARKER));
+}
+
+/**
+ * The single source of truth for the "see everything" bypass, applied identically to RAG
+ * and tools. True when the caller explicitly asks (`allDepartments`) OR holds an Administrator
+ * profile. Keep this the ONLY place that decides the bypass so RAG + tools never diverge.
+ */
+export function resolveAllDepartmentAccess(opts: {
+  allDepartments?: boolean | undefined;
+  profile?: string | readonly string[] | null | undefined;
+}): boolean {
+  return opts.allDepartments === true || isAdministratorProfile(opts.profile);
+}

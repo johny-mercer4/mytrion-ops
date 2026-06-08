@@ -5,8 +5,11 @@ import { runChatTurn, streamChatTurn, type ChatTurnOptions } from '../../modules
 import { startSSE } from '../../modules/chat/streaming.js';
 import { conversationRepo } from '../../repos/conversationRepo.js';
 import { messageRepo } from '../../repos/messageRepo.js';
+import { resolveAllDepartmentAccess } from '../../lib/department.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireContext, withDepartmentAccess } from './helpers.js';
+
+const stringOrList = z.union([z.string(), z.array(z.string().max(120)).max(50)]);
 
 const chatSchema = z.object({
   message: z.string().min(1).max(8000),
@@ -15,6 +18,9 @@ const chatSchema = z.object({
   // --- Caller identity (from the Zoho widget) ---
   zoho_user_id: z.string().min(1).max(120).optional(),
   user_name: z.string().min(1).max(200).optional(),
+  // Caller's Zoho role + profile. An "Administrator" profile bypasses ALL RBAC (RAG + tools).
+  role: stringOrList.optional(),
+  profile: stringOrList.optional(),
   // --- RBAC scope: the caller's department(s). Accepts a single key or a list. ---
   department_scope: z.union([z.string(), z.array(z.string().max(60)).max(50)]).optional(),
   // Compatibility aliases (same effect as department_scope).
@@ -44,11 +50,19 @@ function identityFrom(body: ChatBody): string | undefined {
  */
 function chatContext(request: FastifyRequest, body: ChatBody): TenantContext {
   const departmentAccess = [...toArray(body.department_scope), ...(body.departmentAccess ?? [])];
-  const accessBody: { departmentAccess: string[]; allDepartments?: boolean } = { departmentAccess };
-  if (body.allDepartments !== undefined) accessBody.allDepartments = body.allDepartments;
-  const ctx = withDepartmentAccess(requireContext(request), request, accessBody);
+  // Administrator profile (or explicit allDepartments) bypasses RBAC for BOTH RAG and tools.
+  const allDepartments = resolveAllDepartmentAccess({
+    allDepartments: body.allDepartments,
+    profile: body.profile,
+  });
+  const ctx = withDepartmentAccess(requireContext(request), request, { departmentAccess, allDepartments });
   const userId = identityFrom(body);
-  return userId ? { ...ctx, userId } : ctx;
+  const profiles = toArray(body.profile);
+  const callerRole = toArray(body.role).join(', ');
+  const merged: TenantContext = { ...ctx, ...(userId ? { userId } : {}) };
+  if (profiles.length > 0) merged.profiles = profiles;
+  if (callerRole) merged.callerRole = callerRole;
+  return merged;
 }
 
 function optionsFrom(body: ChatBody): ChatTurnOptions {

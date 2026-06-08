@@ -34,6 +34,10 @@ export interface TenantContext {
   departments: string[];
   /** Manager/elevated access: bypass department filtering entirely ("almost everything"). */
   allDepartmentAccess: boolean;
+  /** Caller's external (e.g. Zoho) profile name(s). An "Administrator" profile grants allDepartmentAccess. */
+  profiles?: string[];
+  /** Caller's external (e.g. Zoho) role name — informational (audit / future per-role policy). */
+  callerRole?: string;
   requestId: string;
 }
 

@@ -33,6 +33,8 @@ Request body (JSON):
 | `zoho_user_id` | string | recommended | Identifies the caller; conversation history is grouped per user. |
 | `user_name` | string | fallback | Display name; used if `zoho_user_id` is absent, and to personalize replies. |
 | `department_scope` | string \| string[] | recommended | The caller's department key(s) for RBAC (e.g. `"sales"` or `["sales","finance"]`). Scopes which knowledge the answer can use. |
+| `profile` | string \| string[] | recommended | The caller's Zoho **profile**. If it contains **`Administrator`** (case-insensitive), the caller **bypasses all RBAC** — sees every department's knowledge (and, once enabled, every tool). |
+| `role` | string \| string[] | optional | The caller's Zoho **role** — recorded for audit; not used for access decisions yet. |
 | `conversationId` | string | optional | Omit on the first turn; reuse the value returned in `start`/`done` for follow-ups. |
 | `allDepartments` | boolean | optional | `true` = ignore department scoping (managers/admins see all knowledge). Default `false`. |
 | `model` | string | optional | Override the model id (default is the server's `gpt-4o-mini`). |
@@ -42,7 +44,9 @@ Request body (JSON):
   "message": "What's our refund window?",
   "zoho_user_id": "1520000000041001",
   "user_name": "Jane Operator",
-  "department_scope": "sales"
+  "department_scope": "sales",
+  "profile": "Standard",
+  "role": "Sales Rep"
 }
 ```
 
@@ -121,8 +125,11 @@ Same body; returns the whole result as JSON (no SSE) — handy for testing:
 - The answer is grounded **only** in knowledge the caller is allowed to see: documents tagged
   with one of the caller's `department_scope` keys, **plus** Global (untagged) documents.
 - Keys are normalized (trim + lowercase) — send `"sales"`, `"finance"`, `"c-level"`, etc.
-- `allDepartments: true` bypasses scoping (admin/manager view).
-- The widget supplies the scope; the backend trusts it (no user accounts server-side).
+- `allDepartments: true` **or** a `profile` containing `Administrator` bypasses scoping entirely
+  (sees all knowledge). The **same flag** governs tool access once tools are enabled — so an
+  Administrator is unrestricted across RAG **and** tools, and a department user is confined to their
+  scope (+ Global) for both. One rule, applied everywhere.
+- The widget supplies identity/scope; the backend trusts it (no user accounts server-side).
 
 ## Errors
 
