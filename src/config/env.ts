@@ -16,6 +16,9 @@ const EnvSchema = z.object({
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
     .default('info'),
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
+  // Wildcard-by-suffix origins (comma-separated hostnames). Zoho serves each widget from a
+  // per-instance subdomain of zappsusercontent.com, so we allow that whole suffix.
+  CORS_ORIGIN_SUFFIXES: z.string().default('zappsusercontent.com'),
 
   // --- Database: Mytrion OPS external Postgres (sessions, logging, knowledge) ---
   // No local DB — always the external URL. `DATABASE_URL` is kept only as a legacy alias.
@@ -149,6 +152,10 @@ export const databaseUrl: string = env.MYTRION_OPS_DATABASE_URL || env.DATABASE_
 
 export const corsOrigins: string[] = env.CORS_ORIGINS.split(',')
   .map((o) => o.trim())
+  .filter(Boolean);
+
+export const corsOriginSuffixes: string[] = env.CORS_ORIGIN_SUFFIXES.split(',')
+  .map((s) => s.trim().toLowerCase())
   .filter(Boolean);
 
 /**

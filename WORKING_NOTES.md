@@ -308,3 +308,18 @@ tools by construction. TenantContext gained optional `profiles`/`callerRole` (au
 per-role policy). Documented in `docs/chat-widget-backend.md`. 44 tests pass (added admin-bypass
 tests). Note: tool calling itself is still deferred, but the gate honors the same flag now.
 
+### CORS for the Zoho widget (direct-from-browser SSE) (2026-06-09)
+
+The RnD widget calls `/v1/chat/stream` directly from the browser (Zoho's proxy buffers and can't
+stream). Zoho serves widgets from per-instance `*.zappsusercontent.com` subdomains (dynamic origin).
+- `src/lib/cors.ts`: `isAllowedOrigin` (exact `CORS_ORIGINS` match OR allowed suffix from new
+  `CORS_ORIGIN_SUFFIXES`, default `zappsusercontent.com`) + `sseCorsHeaders` (echo origin).
+- `@fastify/cors` now uses an origin **function** (reflects the origin, never bare `*`), with
+  explicit methods (`GET/POST/PUT/PATCH/DELETE/OPTIONS`) and allowedHeaders (incl. `x-api-key`,
+  `Authorization`, `x-department-access`, …). Preflight → 204 via the plugin.
+- **SSE fix**: `startSSE` does `reply.hijack()` + raw `writeHead`, which bypasses Fastify's reply
+  headers — so the cors plugin's header was lost on the stream. `startSSE` now takes `extraHeaders`
+  and the stream route passes `sseCorsHeaders(request.headers.origin)`. SSE already sets
+  `text/event-stream` + `no-transform` + `X-Accel-Buffering: no` (no buffering).
+- 46 tests pass (added preflight-echo + unknown-origin-rejected). Decision doc: no dept hierarchy.
+

@@ -16,6 +16,11 @@ finds. Responses stream token-by-token over SSE.
 - The key is a **server secret** — **never put it in client-side widget JS**. Call through a
   Zoho server-side proxy (Connection / Catalyst function) that injects the header; the browser
   talks to the proxy.
+- **Exception for live streaming:** true SSE needs a *direct* browser `fetch` (Zoho's proxy
+  buffers and breaks streaming). For `/v1/chat/stream` the backend allows the widget origin via
+  CORS (any `https://*.zappsusercontent.com`, reflected — not `*`), accepting `x-api-key`,
+  `Authorization`, `Content-Type`. If you must avoid exposing the key in the browser, fall back to
+  the buffered proxy path (`POST /v1/chat`); the live-streaming UX is the only thing lost.
 
 ## Base URL
 

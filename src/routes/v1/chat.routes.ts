@@ -5,6 +5,7 @@ import { runChatTurn, streamChatTurn, type ChatTurnOptions } from '../../modules
 import { startSSE } from '../../modules/chat/streaming.js';
 import { conversationRepo } from '../../repos/conversationRepo.js';
 import { messageRepo } from '../../repos/messageRepo.js';
+import { sseCorsHeaders } from '../../lib/cors.js';
 import { resolveAllDepartmentAccess } from '../../lib/department.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireContext, withDepartmentAccess } from './helpers.js';
@@ -92,7 +93,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   app.post('/chat/stream', guard, async (request, reply) => {
     const body = chatSchema.parse(request.body);
     const ctx = chatContext(request, body);
-    const sse = startSSE(reply);
+    const sse = startSSE(reply, sseCorsHeaders(request.headers.origin));
     try {
       await streamChatTurn(body.conversationId, body.message, ctx, sse, optionsFrom(body));
     } catch (err) {
