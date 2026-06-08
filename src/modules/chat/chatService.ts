@@ -297,8 +297,8 @@ async function streamCompletion(
 }
 
 /**
- * Streaming chat turn over SSE. Emits: start, token (per content delta),
- * tool_call, tool_result, and a final done event. Returns the same result shape.
+ * Streaming chat turn over SSE. Emits: start, status (dynamic stage labels), context,
+ * token (per content delta), tool_call, tool_result, and a final done event.
  */
 export async function streamChatTurn(
   conversationId: string | undefined,
@@ -311,6 +311,10 @@ export async function streamChatTurn(
   sse.send('start', { conversationId: convId });
   await messageStore.appendUser(ctx, convId, userMessage);
 
+  // Dynamic status: searching the knowledge base (real stage, no extra LLM).
+  if (env.FF_RAG_ENABLED) {
+    sse.send('status', { state: 'retrieving', label: 'Searching the knowledge base…' });
+  }
   const { messages, ragPassages } = await buildTurnMessages(ctx, convId, userMessage, opts.userName);
   sse.send('context', { passages: ragPassages });
   const tools = buildTools(ctx);
@@ -324,6 +328,14 @@ export async function streamChatTurn(
 
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i += 1) {
     iterations = i + 1;
+    // Dynamic status: first pass mentions grounded sources; later passes are post-tool reasoning.
+    const thinkingLabel =
+      i === 0
+        ? ragPassages > 0
+          ? `Reviewing ${ragPassages} source${ragPassages === 1 ? '' : 's'}…`
+          : 'Thinking…'
+        : 'Thinking it through…';
+    sse.send('status', { state: 'thinking', label: thinkingLabel });
     const { content, toolCalls, usage } = await streamCompletion(
       client,
       {
@@ -346,7 +358,9 @@ export async function streamChatTurn(
     }
 
     for (const toolCall of toolCalls) {
-      sse.send('tool_call', { name: fromOpenAiToolName(toolCall.function.name) });
+      const callName = fromOpenAiToolName(toolCall.function.name);
+      sse.send('tool_call', { name: callName });
+      sse.send('status', { state: 'tool', label: `Using ${callName}…` });
       const { content: toolContent, status, toolName } = await runToolCall(ctx, convId, toolCall);
       toolSummaries.push({ name: toolName, status });
       sse.send('tool_result', { name: toolName, status });

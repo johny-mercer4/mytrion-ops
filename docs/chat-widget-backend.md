@@ -53,11 +53,19 @@ The endpoint returns `text/event-stream`. Events (each `event:` + `data:` JSON):
 | `event` | `data` | When |
 | :--- | :--- | :--- |
 | `start` | `{ "conversationId": "…" }` | once, first — save this id for follow-ups |
+| `status` | `{ "state": "retrieving" \| "thinking" \| "tool", "label": "Searching the knowledge base…" }` | repeated — drive the dynamic "Thinking / Searching / Reviewing N sources…" indicator |
 | `context` | `{ "passages": 3 }` | how many RBAC-scoped knowledge passages grounded this turn |
 | `token` | `{ "text": "…" }` | repeated — append to the visible answer |
 | `tool_call` / `tool_result` | `{ "name": "…", … }` | only once tool-calling is enabled (ignore for now) |
 | `done` | `{ "conversationId", "message", "ragPassages", "usage", "iterations" }` | once, last — `message` is the full final text |
 | `error` | `{ "message": "…" }` | on failure (stream then closes) |
+
+**Dynamic status indicator.** Use `status` events to replace a plain spinner with live, truthful
+stages. `state` is the stable machine value (`retrieving` → `thinking`/`tool`); `label` is a
+ready-to-show string (e.g. *"Searching the knowledge base…"*, *"Reviewing 3 sources…"*,
+*"Thinking…"*, *"Using knowledge.search…"*). Show the latest `label` until the first `token`
+arrives, then switch to rendering the answer. (These come straight from the backend pipeline — no
+extra model call.)
 
 #### Consuming SSE from a POST (important)
 
@@ -89,7 +97,8 @@ while (true) {
     const ev = frame.match(/^event: (.*)$/m)?.[1];
     const data = JSON.parse(frame.match(/^data: (.*)$/m)?.[1] ?? "{}");
     if (ev === "start") conversationId = data.conversationId;
-    else if (ev === "token") appendToBubble(data.text);
+    else if (ev === "status") setStatus(data.label);     // e.g. "Searching the knowledge base…"
+    else if (ev === "token") { clearStatus(); appendToBubble(data.text); }
     else if (ev === "done") finalize(data.message);
     else if (ev === "error") showError(data.message);
   }
