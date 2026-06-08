@@ -19,10 +19,11 @@ export default defineConfig({
   out: './src/db/migrations',
   dialect: 'postgresql',
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? 'postgres://octane:octane@localhost:5432/octane_assistant',
+    // Mytrion OPS external Postgres (DATABASE_URL kept only as a legacy alias).
+    url: process.env.MYTRION_OPS_DATABASE_URL || process.env.DATABASE_URL || '',
     // Managed Postgres (Render external) requires SSL; local docker does not.
     ssl: /@(localhost|127\.0\.0\.1|postgres)[:/]/.test(
-      process.env.DATABASE_URL ?? 'localhost',
+      process.env.MYTRION_OPS_DATABASE_URL || process.env.DATABASE_URL || 'localhost',
     )
       ? undefined
       : { rejectUnauthorized: false },
