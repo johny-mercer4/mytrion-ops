@@ -276,3 +276,23 @@ filter. Updated `docs/agent-scope-widget-backend.md` with the canonical key tabl
 (`c-level`/`management`/`finance`) expand server-side to broader scopes, or stay caller-driven
 (`allDepartments: true`). Today: no server hierarchy — caller passes the set + Global. 41 tests pass.
 
+### Knowledge upsert/delete/re-tag + streaming chat for Zoho widget (2026-06-09)
+
+First widget upload stored `department_access = null` (widget didn't send `department`, or sent a
+different key, or deploy lagged). Fixes:
+- **Upsert/re-tag**: `ingestDocument` now compares the normalized department; if content is
+  unchanged (checksum match) but the department differs, it re-tags the doc + chunks (no re-embed,
+  `status: "updated"`). Department is also persisted on the full-ingest path. So re-sending a file
+  with the right department now corrects an existing doc.
+- **Field alias**: `/embed` + `/upload` accept the department under `department` **or**
+  `department_scope` (the chat-side name) to avoid silent nulls from a name mismatch.
+- **Delete**: `DELETE /v1/knowledge/docs/:id` (repo `deleteDoc`, tx removes chunks + doc).
+  Repo also gains `setDepartment` (re-tag doc + chunks).
+- **Streaming chat enabled for the widget**: `/chat` + `/chat/stream` now use **API_KEY** auth and
+  accept `zoho_user_id` (conversation owner, namespaced `zoho:<id>`), `user_name` (fallback id +
+  added to the system prompt), and `department_scope` (string|array → department RBAC). GET history
+  routes take `?zohoUserId=`. `ChatTurnOptions.userName` threads into the prompt.
+- Frontend brief: `docs/chat-widget-backend.md` (SSE contract, params, fetch-stream snippet, RBAC).
+- 41 tests pass; typecheck/lint/build clean. The existing SalesHandbook doc (null dept) can be
+  fixed by re-uploading it with the department set, now that upsert re-tags.
+

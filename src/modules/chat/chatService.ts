@@ -39,6 +39,8 @@ export interface ChatTurnResult {
 
 export interface ChatTurnOptions {
   model?: string;
+  /** Display name of the end-user (e.g. from a Zoho widget) — added to the system prompt. */
+  userName?: string;
 }
 
 // OpenAI function names must match ^[a-zA-Z0-9_-]+$, but our tool ids use dots
@@ -100,9 +102,16 @@ async function buildTurnMessages(
   ctx: TenantContext,
   conversationId: string,
   userMessage: string,
+  userName?: string,
 ): Promise<{ messages: ChatMessage[]; ragPassages: number }> {
   const history = await messageStore.loadHistory(ctx, conversationId);
   const messages: ChatMessage[] = [{ role: 'system', content: buildSystemPrompt(ctx) }];
+  if (userName) {
+    messages.push({
+      role: 'system',
+      content: `You are assisting "${userName}". Address them naturally when appropriate.`,
+    });
+  }
   const grounding = await retrieveGrounding(ctx, userMessage);
   if (grounding) messages.push({ role: 'system', content: grounding.content });
   messages.push(...history);
@@ -187,7 +196,7 @@ export async function runChatTurn(
   const convId = await ensureConversation(ctx, conversationId);
   await messageStore.appendUser(ctx, convId, userMessage);
 
-  const { messages, ragPassages } = await buildTurnMessages(ctx, convId, userMessage);
+  const { messages, ragPassages } = await buildTurnMessages(ctx, convId, userMessage, opts.userName);
   const tools = buildTools(ctx);
   const model = opts.model ?? models.default;
   const client = getOpenAI();
@@ -302,7 +311,7 @@ export async function streamChatTurn(
   sse.send('start', { conversationId: convId });
   await messageStore.appendUser(ctx, convId, userMessage);
 
-  const { messages, ragPassages } = await buildTurnMessages(ctx, convId, userMessage);
+  const { messages, ragPassages } = await buildTurnMessages(ctx, convId, userMessage, opts.userName);
   sse.send('context', { passages: ragPassages });
   const tools = buildTools(ctx);
   const model = opts.model ?? models.default;

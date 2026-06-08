@@ -16,6 +16,8 @@ const embedSchema = z.object({
   mimeType: z.string().max(200).optional(),
   /** Department this doc belongs to (RBAC). Omit/empty = shared/global. */
   department: z.string().min(1).max(60).optional(),
+  /** Alias accepted from callers that use the chat-side name. */
+  department_scope: z.string().min(1).max(60).optional(),
 });
 
 const querySchema = z.object({
@@ -68,12 +70,13 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     assertIngestEnabled();
     const ctx = requireContext(request);
     const body = embedSchema.parse(request.body);
+    const department = body.department ?? body.department_scope;
     return ingestDocument(ctx, {
       title: body.title,
       content: body.content,
       ...(body.source !== undefined ? { source: body.source } : {}),
       ...(body.mimeType !== undefined ? { mimeType: body.mimeType } : {}),
-      ...(body.department !== undefined ? { department: body.department } : {}),
+      ...(department !== undefined ? { department } : {}),
     });
   });
 
@@ -103,7 +106,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     if (files.length === 0) {
       throw new AppError('No files in upload', { statusCode: 400, code: 'NO_FILES', expose: true });
     }
-    const department = fields.department?.trim() || null;
+    const department = (fields.department ?? fields.department_scope)?.trim() || null;
 
     const results: Array<IngestResult & { filename: string }> = [];
     for (const file of files) {
@@ -161,6 +164,14 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     if (q.offset !== undefined) page.offset = q.offset;
     const chunks = await knowledgeRepo.listChunksByDoc(ctx, doc.id, page);
     return { docId: doc.id, chunks };
+  });
+
+  // --- Delete: remove a doc and all its embedded chunks ---
+  app.delete<{ Params: { id: string } }>('/knowledge/docs/:id', guard, async (request) => {
+    const ctx = requireContext(request);
+    const deleted = await knowledgeRepo.deleteDoc(ctx, request.params.id);
+    if (!deleted) throw new NotFoundError('Knowledge doc not found');
+    return { deleted: true, id: request.params.id };
   });
 
   // --- Retrieve: RBAC-scoped kNN search (caller passes department access) ---
