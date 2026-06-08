@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { normalizeDepartment } from '../../lib/department.js';
 import { errorMessage } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
 import { knowledgeRepo, type NewChunkInput } from '../../repos/knowledgeRepo.js';
@@ -50,7 +51,8 @@ export async function ingestDocument(ctx: TenantContext, input: IngestInput): Pr
     (await knowledgeRepo.createDoc(ctx, {
       title: input.title,
       checksum,
-      ...(input.department !== undefined ? { departmentAccess: input.department } : {}),
+      // Normalize so ingest- and query-side tags can't drift. null = Global.
+      departmentAccess: normalizeDepartment(input.department),
       ...(input.source !== undefined ? { source: input.source } : {}),
       ...(input.mimeType !== undefined ? { mimeType: input.mimeType } : {}),
     }));

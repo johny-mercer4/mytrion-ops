@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { DEFAULT_RETRIEVAL_K, MAX_RETRIEVAL_K } from '../../config/constants.js';
 import { env } from '../../config/env.js';
+import { normalizeDepartment } from '../../lib/department.js';
 import { AppError, NotFoundError } from '../../lib/errors.js';
 import { ingestDocument, type IngestResult } from '../../modules/knowledge/ingestService.js';
 import { retrieve } from '../../modules/knowledge/retriever.js';
@@ -125,7 +126,8 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     const page: { limit?: number; offset?: number; department?: string } = {};
     if (q.limit !== undefined) page.limit = q.limit;
     if (q.offset !== undefined) page.offset = q.offset;
-    if (q.department !== undefined) page.department = q.department;
+    const dept = normalizeDepartment(q.department);
+    if (dept) page.department = dept;
     const docs = await knowledgeRepo.listDocs(ctx, page);
     return { docs };
   });

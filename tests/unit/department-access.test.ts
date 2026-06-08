@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { normalizeDepartment, normalizeDepartments } from '../../src/lib/department.js';
 import { knowledgeRepo } from '../../src/repos/knowledgeRepo.js';
 import { registerTool, ToolRegistry } from '../../src/modules/tools/registry.js';
 import type { ToolManifest } from '../../src/modules/tools/types.js';
@@ -20,6 +21,25 @@ function deptTool(allowedDepartments?: string[]) {
   };
   return new ToolRegistry([registerTool(manifest)]);
 }
+
+describe('department normalization (ingest + query must not drift)', () => {
+  it('trims + lowercases a tag; blank => null (Global)', () => {
+    expect(normalizeDepartment('  Finance ')).toBe('finance');
+    expect(normalizeDepartment('C-Level')).toBe('c-level');
+    expect(normalizeDepartment('')).toBeNull();
+    expect(normalizeDepartment('   ')).toBeNull();
+    expect(normalizeDepartment(undefined)).toBeNull();
+    expect(normalizeDepartment(null)).toBeNull();
+  });
+
+  it('normalizes + dedupes a list, dropping blanks', () => {
+    expect(normalizeDepartments([' Finance', 'finance', 'C-LEVEL', '', '  '])).toEqual([
+      'finance',
+      'c-level',
+    ]);
+    expect(normalizeDepartments(undefined)).toEqual([]);
+  });
+});
 
 describe('department RBAC — tool gating', () => {
   const tool = (r: ToolRegistry) => r.all()[0]!;
