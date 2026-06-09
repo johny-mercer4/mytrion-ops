@@ -342,3 +342,13 @@ later). Patterns borrowed (not imported) from `~/Desktop/Octane-Project/servercr
 - 55 tests pass (added integrations.test: tokenCache dedup/TTL, CMP cached auth, EFS helpers,
   DWH unset-guard). typecheck/lint/build clean; largest integration file 137 lines.
 
+### Server CRM wrapper (proxy path) (2026-06-09)
+
+Added `integrations/serverCrm.ts` — the "mix" path: our servercrm node server already wraps
+DWH/EFS/CMP/Zoho and exposes an agent API under `/api/agent/*` (auth = static `x-api-key`, verified
+against servercrm `middleware/auth.js`). Wrapper = `serverCrmBaseUrl` + `serverCrmAuthHeaders`
+(`x-api-key: SERVER_CRM_KEY`) + thin `serverCrmRequest`/`serverCrmGet`/`serverCrmPost` (URL build,
+query params, JSON, throw-on-non-2xx). No token flow. Uses existing `SERVER_CRM_URL`/`SERVER_CRM_KEY`
+env. Barrel exports it as `serverCrm`. 59 tests pass (4 new: header, GET url+query, POST body,
+non-2xx). So tool-building can choose: direct vendor wrapper (dwh/cmp/efs/zoho) OR proxy via serverCrm.
+

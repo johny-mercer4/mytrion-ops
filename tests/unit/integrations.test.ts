@@ -5,6 +5,8 @@ const { fetchMock } = vi.hoisted(() => {
   process.env.CMP_SANDBOX_URL = 'https://sandbox.example.com';
   process.env.CMP_SANDBOX_LOGIN = 'u';
   process.env.CMP_SANDBOX_PASSWORD = 'p';
+  process.env.SERVER_CRM_URL = 'https://crm.example.com';
+  process.env.SERVER_CRM_KEY = 'srv-key';
   // Force DWH unset for a deterministic "not configured" test (dotenv won't override a
   // key already present in process.env, even when empty).
   process.env.DWH_DATABASE_URL = '';
@@ -21,6 +23,11 @@ import {
 } from '../../src/integrations/cmp.js';
 import { getDwhPool } from '../../src/integrations/dwh.js';
 import { efsGroupWsdlFrom, extractEfsToken, wsdlToEndpoint } from '../../src/integrations/efs.js';
+import {
+  serverCrmAuthHeaders,
+  serverCrmGet,
+  serverCrmPost,
+} from '../../src/integrations/serverCrm.js';
 import { createTokenProvider } from '../../src/integrations/tokenCache.js';
 
 describe('createTokenProvider', () => {
@@ -111,5 +118,37 @@ describe('EFS auth helpers', () => {
 describe('DWH wrapper', () => {
   it('throws clearly when DWH_DATABASE_URL is not configured', () => {
     expect(() => getDwhPool()).toThrow(/DWH_DATABASE_URL/);
+  });
+});
+
+describe('Server CRM wrapper (proxy)', () => {
+  beforeEach(() => {
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue({ ok: true, status: 200, text: async () => '{"ok":true}' });
+  });
+
+  it('sends the x-api-key header', () => {
+    expect(serverCrmAuthHeaders()).toEqual({ 'x-api-key': 'srv-key', 'Content-Type': 'application/json' });
+  });
+
+  it('GET builds url + query and authenticates', async () => {
+    const out = await serverCrmGet('/api/agent/dwh/schema', { table: 'cards' });
+    expect(out).toEqual({ ok: true });
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(String(url)).toBe('https://crm.example.com/api/agent/dwh/schema?table=cards');
+    expect((init as RequestInit).method).toBe('GET');
+    expect((init as RequestInit).headers).toMatchObject({ 'x-api-key': 'srv-key' });
+  });
+
+  it('POST sends a JSON body', async () => {
+    await serverCrmPost('/api/agent/dwh/snapshot', { agentName: 'Jane' });
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect((init as RequestInit).method).toBe('POST');
+    expect((init as RequestInit).body).toBe('{"agentName":"Jane"}');
+  });
+
+  it('throws on a non-2xx response', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 500, text: async () => 'boom' });
+    await expect(serverCrmGet('/api/agent/dwh/snapshot')).rejects.toThrow(/HTTP 500/);
   });
 });
