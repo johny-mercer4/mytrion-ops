@@ -63,6 +63,8 @@ function chatContext(request: FastifyRequest, body: ChatBody): TenantContext {
   const merged: TenantContext = { ...ctx, ...(userId ? { userId } : {}) };
   if (profiles.length > 0) merged.profiles = profiles;
   if (callerRole) merged.callerRole = callerRole;
+  const userName = body.user_name?.trim();
+  if (userName) merged.userName = userName;
   return merged;
 }
 

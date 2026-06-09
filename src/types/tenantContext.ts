@@ -38,6 +38,8 @@ export interface TenantContext {
   profiles?: string[];
   /** Caller's external (e.g. Zoho) role name — informational (audit / future per-role policy). */
   callerRole?: string;
+  /** Caller's display name (e.g. Zoho user_name). Available to tool handlers for data scoping. */
+  userName?: string;
   requestId: string;
 }
 
