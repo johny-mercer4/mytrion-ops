@@ -323,3 +323,22 @@ stream). Zoho serves widgets from per-instance `*.zappsusercontent.com` subdomai
   `text/event-stream` + `no-transform` + `X-Accel-Buffering: no` (no buffering).
 - 46 tests pass (added preflight-echo + unknown-origin-rejected). Decision doc: no dept hierarchy.
 
+### Tool-calling foundation: platform auth wrappers (2026-06-09)
+
+Set up the per-platform wrapper layer under `src/integrations/` (auth only for now; calls/tools
+later). Patterns borrowed (not imported) from `~/Desktop/Octane-Project/servercrm` (build):
+`services/{cmpAuth,efs,dwh,zohoAuth}.js`.
+- `tokenCache.ts`: reusable `createTokenProvider` (TTL + skew + in-flight dedup + forceRefresh/clear;
+  injectable clock for tests). CMP + EFS use it; Zoho keeps its existing per-service cache.
+- `dwh.ts`: read-only `pg.Pool` on `DWH_DATABASE_URL` (`ssl:false`, `options=-c
+  default_transaction_read_only=on`) + `dwhQuery`/`getDwhPool`/`closeDwhPool`. Never writes the DWH.
+- `cmp.ts`: login/password → bearer (`POST {base}/api/authenticate`), cached per environment;
+  **defaults to sandbox** (`CMP_ENV`). `cmpAuthHeaders/getCmpToken/forceRefreshCmpToken/cmpBaseUrl`.
+- `efs.ts`: node-soap (`soap` dep added) parent `login` → session clientId (TTL via tokenCache) +
+  child carrier tokens (`CarrierGroupWS.loginAsChild`); WSDL/endpoint derived from `EFS_WSDL_URL`
+  (override `EFS_GROUP_WSDL_URL`). Auth only — card ops later.
+- `wrapper.ts` remains the Zoho parent (cached per service). `index.ts` barrel namespaces
+  `zoho`/`dwh`/`cmp`/`efs`. New env: `CMP_ENV` (sandbox), `EFS_GROUP_WSDL_URL`.
+- 55 tests pass (added integrations.test: tokenCache dedup/TTL, CMP cached auth, EFS helpers,
+  DWH unset-guard). typecheck/lint/build clean; largest integration file 137 lines.
+

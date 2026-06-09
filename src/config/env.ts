@@ -82,6 +82,8 @@ const EnvSchema = z.object({
   OCTANE_INTERNAL_API_KEY: z.string().default(''),
 
   // --- CMP (our custom Node server; login/password auth, prod + sandbox) ---
+  // Which CMP environment the wrapper authenticates against by default.
+  CMP_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
   CMP_PRODUCTION_URL: z.string().default(''),
   CMP_PRODUCTION_LOGIN: z.string().default(''),
   CMP_PRODUCTION_PASSWORD: z.string().default(''),
@@ -91,6 +93,8 @@ const EnvSchema = z.object({
 
   // --- EFS (CardManagement SOAP/WSDL) ---
   EFS_WSDL_URL: z.string().default(''),
+  // CarrierGroupWS WSDL (child-token auth). Derived from EFS_WSDL_URL when blank.
+  EFS_GROUP_WSDL_URL: z.string().default(''),
   EFS_LOGIN: z.string().default(''),
   EFS_PASSWORD: z.string().default(''),
   EFS_PARENT: z.string().default('PARENT'),
