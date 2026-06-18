@@ -352,3 +352,17 @@ query params, JSON, throw-on-non-2xx). No token flow. Uses existing `SERVER_CRM_
 env. Barrel exports it as `serverCrm`. 59 tests pass (4 new: header, GET url+query, POST body,
 non-2xx). So tool-building can choose: direct vendor wrapper (dwh/cmp/efs/zoho) OR proxy via serverCrm.
 
+### Zoho API reference skills (2026-06-19)
+
+Researched (3 parallel agents on official Zoho docs) and committed Claude Code skills under
+`.claude/skills/` for building Zoho tool integrations — each covers metadata + core + bulk APIs:
+- `zoho-crm-api/SKILL.md` — CRM REST **v8** (OAuth/scopes, modules/fields/layouts, record CRUD,
+  search, COQL, related/notes/attachments/tags, bulk read/write, credits/limits, errors).
+- `zoho-desk-api/SKILL.md` — Desk **v1** (orgId header, tickets CRUD+actions, threads/conversations/
+  comments, sendReply, contacts/accounts, activities, search, counts, errors). Verified vs Zoho's
+  official OpenAPI repo. Gotchas captured: update=PATCH, delete=`moveToTrash`, empty=HTTP 204.
+- `zoho-people-api/SKILL.md` — People's **3 coexisting API styles** (legacy forms / v2 / v3),
+  forms/records, employees, org structure, attendance, leave, bulk import; success sentinel varies.
+- `.claude/skills/README.md` indexes them; each opens with a "Using this in Mytrion Ops" header tying
+  it to `src/integrations/` wrappers + `pnpm meta:zoho-*` catalogs. Docs only — no code change.
+
