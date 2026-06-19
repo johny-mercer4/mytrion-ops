@@ -6,9 +6,20 @@
 
 ## What it does
 
-A streaming chat assistant for Mytrion Ops. Every turn it **first searches the pgvector
-knowledge base** (RBAC-scoped to the caller's department) and answers grounded in what it
-finds. Responses stream token-by-token over SSE.
+A streaming chat assistant for Mytrion Ops — and the **single, unified entry point** for the
+widget. Every turn it **first searches the pgvector knowledge base** (RBAC-scoped) and can also
+**call tools** into our systems (e.g. look up Zoho People employees) when the user's message calls
+for it. Responses stream token-by-token over SSE; tool activity surfaces as `status`/`tool_call`/
+`tool_result` events (see below).
+
+**There is no separate per-feature endpoint.** The widget always sends a chat message + the caller's
+Zoho context to `/v1/chat/stream`; the assistant decides whether to answer from knowledge, call a
+tool, or both. New capabilities (more tools) light up here automatically — the widget contract does
+not change.
+
+> **Always send the Zoho context** (`zoho_user_id`, `user_name`, `profile`, `role`,
+> `department_scope`) on **every** call — it drives RBAC (what knowledge/tools the caller may use),
+> ownership scoping for sales agents, and personalization. Treat it as required.
 
 ## Auth
 
@@ -65,7 +76,8 @@ The endpoint returns `text/event-stream`. Events (each `event:` + `data:` JSON):
 | `status` | `{ "state": "retrieving" \| "thinking" \| "tool", "label": "Searching the knowledge base…" }` | repeated — drive the dynamic "Thinking / Searching / Reviewing N sources…" indicator |
 | `context` | `{ "passages": 3 }` | how many RBAC-scoped knowledge passages grounded this turn |
 | `token` | `{ "text": "…" }` | repeated — append to the visible answer |
-| `tool_call` / `tool_result` | `{ "name": "…", … }` | only once tool-calling is enabled (ignore for now) |
+| `tool_call` | `{ "name": "zoho_people.search_employees" }` | the assistant invoked a tool (optional: show "Looking up…") |
+| `tool_result` | `{ "name": "…", "status": "ok" \| "error" \| "denied" }` | that tool finished. The data is **not** in this event — the assistant uses it and continues streaming `token`s with the answer. |
 | `done` | `{ "conversationId", "message", "ragPassages", "usage", "iterations" }` | once, last — `message` is the full final text |
 | `error` | `{ "message": "…" }` | on failure (stream then closes) |
 
@@ -86,10 +98,13 @@ const res = await fetch(`${BASE}/v1/chat/stream`, {
   headers: { "Content-Type": "application/json", "x-api-key": API_KEY }, // injected server-side
   body: JSON.stringify({
     message,
+    // Zoho context — ALWAYS send all of these (from the widget's onLoad user context):
     zoho_user_id: zohoUserId,
     user_name: userName,
+    profile: userProfile,                // e.g. "Administrator" → unrestricted; else scoped
+    role: userRole,
     department_scope: departmentScope,   // "sales" | ["sales","finance"]
-    conversationId,                      // omit on first turn
+    conversationId,                      // omit on first turn; reuse from `start`/`done`
   }),
 });
 
@@ -125,15 +140,34 @@ Same body; returns the whole result as JSON (no SSE) — handy for testing:
 - `GET /v1/chat/conversations?zohoUserId=<id>` → the user's conversations.
 - `GET /v1/chat/conversations/:id/messages?zohoUserId=<id>` → messages in a conversation.
 
+## Tools / actions (live)
+
+The assistant calls these automatically when the message warrants it — **the widget does nothing
+special**, it just chats. Tool access obeys the same RBAC as knowledge (`Administrator` profile →
+all; otherwise department-scoped).
+
+| Tool | Fires when the user asks… | Honors |
+| :--- | :--- | :--- |
+| `zoho_people.search_employees` | "list all employees", "who's in the Sales department", "find employee Jane Doe" | Zoho People (employees by all / name / department) |
+
+Front-end handling: just render the `status` label (e.g. *"Using zoho_people.search_employees…"*)
+while the tool runs, then the streamed `token`s contain the assistant's answer (it summarizes the
+tool's data for you). You don't parse tool data yourself. More tools will appear here over time with
+**no widget change**.
+
+Example: user types *"Who works in Verification?"* → stream: `start` → `status`(retrieving) →
+`context` → `status`(tool, "Using zoho_people.search_employees…") → `tool_call` → `tool_result` →
+`token`…(the answer) → `done`.
+
 ## RBAC / `department_scope`
 
 - The answer is grounded **only** in knowledge the caller is allowed to see: documents tagged
   with one of the caller's `department_scope` keys, **plus** Global (untagged) documents.
 - Keys are normalized (trim + lowercase) — send `"sales"`, `"finance"`, `"c-level"`, etc.
 - `allDepartments: true` **or** a `profile` containing `Administrator` bypasses scoping entirely
-  (sees all knowledge). The **same flag** governs tool access once tools are enabled — so an
-  Administrator is unrestricted across RAG **and** tools, and a department user is confined to their
-  scope (+ Global) for both. One rule, applied everywhere.
+  (sees all knowledge). The **same flag** governs **tool access** — so an Administrator is
+  unrestricted across RAG **and** tools, and a department user is confined to their scope (+ Global)
+  for both. One rule, applied everywhere.
 - The widget supplies identity/scope; the backend trusts it (no user accounts server-side).
 
 ## Errors
@@ -144,4 +178,6 @@ On the stream, failures arrive as an `error` SSE event. `401` = bad/missing API 
 ## Notes
 - Conversation memory is automatic when you reuse `conversationId` (history is stored server-side,
   keyed to `zoho_user_id`).
-- Tool calling (CRM/DWH/etc.) is **not enabled yet** — ignore `tool_call`/`tool_result` events for now.
+- **Tool calling is live** (see Tools / actions). The widget renders `status`/`tool_call`/
+  `tool_result` for UX but never needs to parse tool data — the answer arrives as `token`s. More
+  tools (CRM, DWH, Desk, …) will be added behind this same unified endpoint with no widget change.

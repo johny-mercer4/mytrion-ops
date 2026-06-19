@@ -187,8 +187,15 @@ export const knowledgeRepo = {
     });
   },
 
-  /** Delete a doc and all its chunks. Returns true if a doc was removed. */
-  async deleteDoc(ctx: TenantContext, docId: string): Promise<boolean> {
+  /**
+   * Hard-delete a doc and all its chunks (cascade). Returns the deleted doc summary, or null
+   * if no such doc. Because the row (incl. its checksum) is removed, re-uploading the same
+   * file re-ingests fresh (no checksum match → not "skipped").
+   */
+  async deleteDoc(
+    ctx: TenantContext,
+    docId: string,
+  ): Promise<{ id: string; title: string; chunkCount: number } | null> {
     return db.transaction(async (tx) => {
       await tx
         .delete(knowledgeChunks)
@@ -196,8 +203,12 @@ export const knowledgeRepo = {
       const rows = await tx
         .delete(knowledgeDocs)
         .where(and(eq(knowledgeDocs.id, docId), eq(knowledgeDocs.tenantId, ctx.tenantId)))
-        .returning({ id: knowledgeDocs.id });
-      return rows.length > 0;
+        .returning({
+          id: knowledgeDocs.id,
+          title: knowledgeDocs.title,
+          chunkCount: knowledgeDocs.chunkCount,
+        });
+      return rows[0] ?? null;
     });
   },
 

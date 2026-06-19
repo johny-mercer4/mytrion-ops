@@ -156,7 +156,23 @@ The raw 1536-float embedding is **not** returned (too large); `hasEmbedding` tel
 }
 ```
 
-### 7. (Optional) Test retrieval  `POST /v1/knowledge/query`
+### 7. Delete a doc (cascade)  `DELETE /v1/knowledge/docs/:id`
+Removes the doc **and all its chunks/embeddings**. Because the doc row (incl. its checksum) is
+hard-deleted, **re-uploading the same file re-ingests fresh** (`status: "ready"`, not `"skipped"`).
+- **POST alias** (Zoho proxy can't always DELETE): `POST /v1/knowledge/docs/:id/delete` — identical.
+- Unknown id → `404 NOT_FOUND`. Admin key may delete any doc (not department-scoped).
+- `GET /v1/knowledge/stats` reflects the lower counts immediately after.
+```json
+{ "deleted": { "id": "abc123", "title": "refund-policy.md", "chunkCount": 7 } }
+```
+
+### 8. Bulk delete  `POST /v1/knowledge/docs/delete`
+Body: `{ "ids": ["abc123","def456"] }` (1–100 ids). Per-id cascade; missing ids are reported, not fatal.
+```json
+{ "deleted": [ { "id": "abc123", "title": "refund-policy.md", "chunkCount": 7 } ], "notFound": ["def456"] }
+```
+
+### 9. (Optional) Test retrieval  `POST /v1/knowledge/query`
 Useful to verify embeddings work. Body: `{ "query": "refund window", "limit": 6, "departmentAccess": ["sales"], "allDepartments": false }`.
 Response: `{ "passages": [{ "id", "docId", "chunkIndex", "content", "score" }] }`.
 `allDepartments: true` ignores department scoping (sees everything).

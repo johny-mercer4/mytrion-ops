@@ -86,6 +86,23 @@ describe('HTTP API (no external services)', () => {
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
   });
 
+  it('rejects DELETE /v1/knowledge/docs/:id with no API key', async () => {
+    const res = await app.inject({ method: 'DELETE', url: '/v1/knowledge/docs/abc123' });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toMatchObject({ error: { code: 'AUTH_ERROR' } });
+  });
+
+  it('validates bulk delete body (ids required, non-empty)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/knowledge/docs/delete',
+      headers: { 'x-api-key': 'test-secret-key', 'content-type': 'application/json' },
+      payload: { ids: [] },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+  });
+
   it('rejects POST /v1/automation/logs with no API key', async () => {
     const res = await app.inject({ method: 'POST', url: '/v1/automation/logs', payload: { automationType: 'x' } });
     expect(res.statusCode).toBe(401);
