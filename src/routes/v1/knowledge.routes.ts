@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { DEFAULT_RETRIEVAL_K, MAX_RETRIEVAL_K } from '../../config/constants.js';
 import { env } from '../../config/env.js';
@@ -37,6 +37,10 @@ const listQuerySchema = z.object({
 const chunkQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).optional(),
   offset: z.coerce.number().int().min(0).optional(),
+});
+
+const bulkDeleteSchema = z.object({
+  ids: z.array(z.string().min(1).max(100)).min(1).max(100),
 });
 
 /** Text formats we accept for upload-based training. */
@@ -166,12 +170,31 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     return { docId: doc.id, chunks };
   });
 
-  // --- Delete: remove a doc and all its embedded chunks ---
-  app.delete<{ Params: { id: string } }>('/knowledge/docs/:id', guard, async (request) => {
+  // --- Delete: remove a doc and all its embedded chunks (cascade) ---
+  // Hard delete → the doc's checksum is gone, so re-uploading the same file re-ingests fresh.
+  async function deleteOne(request: FastifyRequest<{ Params: { id: string } }>) {
     const ctx = requireContext(request);
     const deleted = await knowledgeRepo.deleteDoc(ctx, request.params.id);
-    if (!deleted) throw new NotFoundError('Knowledge doc not found');
-    return { deleted: true, id: request.params.id };
+    if (!deleted) throw new NotFoundError(`No document with id ${request.params.id}`);
+    return { deleted };
+  }
+
+  app.delete<{ Params: { id: string } }>('/knowledge/docs/:id', guard, deleteOne);
+  // POST alias — Zoho's server-side proxy reliably supports POST but not always DELETE.
+  app.post<{ Params: { id: string } }>('/knowledge/docs/:id/delete', guard, deleteOne);
+
+  // Bulk delete: POST /knowledge/docs/delete  { ids: [...] }
+  app.post('/knowledge/docs/delete', guard, async (request) => {
+    const ctx = requireContext(request);
+    const { ids } = bulkDeleteSchema.parse(request.body);
+    const deleted: Array<{ id: string; title: string; chunkCount: number }> = [];
+    const notFound: string[] = [];
+    for (const id of [...new Set(ids)]) {
+      const row = await knowledgeRepo.deleteDoc(ctx, id);
+      if (row) deleted.push(row);
+      else notFound.push(id);
+    }
+    return { deleted, notFound };
   });
 
   // --- Retrieve: RBAC-scoped kNN search (caller passes department access) ---

@@ -397,3 +397,16 @@ Simple front-end-driven logging into the Mytrion OPS DB.
 - Registered in app.ts + drizzle.config schema list. Front-end brief: `docs/automation-logs-widget-backend.md`.
 - 67 tests pass (added 401 + 400-validation cases). typecheck/lint/build clean.
 
+### Knowledge doc delete: DELETE + POST alias + bulk (2026-06-20)
+
+Widget needs to remove ingested docs (cascade). `knowledgeRepo.deleteDoc` now returns
+`{id,title,chunkCount}|null` (was boolean). Routes (all API_KEY-guarded):
+- `DELETE /v1/knowledge/docs/:id` → `{ deleted: {id,title,chunkCount} }`, 404 if unknown.
+- `POST /v1/knowledge/docs/:id/delete` — identical alias (Zoho proxy can't reliably DELETE).
+- `POST /v1/knowledge/docs/delete` `{ids:[...]}` (1–100) → `{ deleted:[...], notFound:[...] }`.
+Hard delete removes the doc row incl. checksum, so re-upload re-ingests fresh (no "skipped") — the
+dev's IMPORTANT requirement, satisfied by construction (no soft-delete). Not department-scoped
+(admin deletes any). **Live-verified against the prod DB** (temp script, cleaned up): delete returns
+the right shape, `findDocByChecksum` → null after, chunks → 0, unknown id → null (404). Brief
+updated (`docs/agent-scope-widget-backend.md` §7–8). 69 tests (added 401 + bulk-validation 400).
+
