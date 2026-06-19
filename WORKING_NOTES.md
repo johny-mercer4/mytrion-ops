@@ -384,3 +384,16 @@ First production tool, routed through the existing chat tool-calling loop (no ch
 - NOT a sales-owner-scoped record, so no zoho_user_id ownership filter applied (HR lookup). Could
   later gate `allowedDepartments` to e.g. hr/management/c-level if employee data should be restricted.
 
+### Automation_Logs table + insert endpoint (2026-06-19)
+
+Simple front-end-driven logging into the Mytrion OPS DB.
+- New table `automation_logs` ([schema](src/db/schema/automation_logs.ts)): `id`, `tenant_id`,
+  `trigger_time` (text), `trigger_date` (text), `automation_type` (text, required), `agent_name`
+  (text), `created_at` (timestamptz). Trigger time/date are pass-through strings; `created_at` is the
+  authoritative server time. Migration `0002_safe_dakota_north.sql` — **applied directly to the live
+  DB** (`tsx scripts/migrate.ts`); verified the 7 columns exist.
+- `automationLogRepo.insert(ctx, {...})` + `POST /v1/automation/logs` ([automation.routes.ts])
+  (API_KEY auth, zod-validated; `automationType` required, rest optional). Returns `{id, createdAt}`.
+- Registered in app.ts + drizzle.config schema list. Front-end brief: `docs/automation-logs-widget-backend.md`.
+- 67 tests pass (added 401 + 400-validation cases). typecheck/lint/build clean.
+
