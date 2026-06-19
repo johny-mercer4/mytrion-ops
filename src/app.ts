@@ -18,6 +18,7 @@ import { rbacPlugin } from './plugins/rbac.js';
 import { requestContextPlugin } from './plugins/requestContext.js';
 import { adminRoutes } from './routes/v1/admin.routes.js';
 import { authRoutes } from './routes/v1/auth.routes.js';
+import { automationRoutes } from './routes/v1/automation.routes.js';
 import { chatRoutes } from './routes/v1/chat.routes.js';
 import { healthRoutes } from './routes/v1/health.routes.js';
 import { knowledgeRoutes } from './routes/v1/knowledge.routes.js';
@@ -115,6 +116,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(chatRoutes);
       await v1.register(knowledgeRoutes);
       await v1.register(toolsRoutes);
+      await v1.register(automationRoutes);
       await v1.register(adminRoutes);
     },
     { prefix: API_PREFIX },

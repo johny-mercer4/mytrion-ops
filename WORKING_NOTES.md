@@ -323,3 +323,77 @@ stream). Zoho serves widgets from per-instance `*.zappsusercontent.com` subdomai
   `text/event-stream` + `no-transform` + `X-Accel-Buffering: no` (no buffering).
 - 46 tests pass (added preflight-echo + unknown-origin-rejected). Decision doc: no dept hierarchy.
 
+### Tool-calling foundation: platform auth wrappers (2026-06-09)
+
+Set up the per-platform wrapper layer under `src/integrations/` (auth only for now; calls/tools
+later). Patterns borrowed (not imported) from `~/Desktop/Octane-Project/servercrm` (build):
+`services/{cmpAuth,efs,dwh,zohoAuth}.js`.
+- `tokenCache.ts`: reusable `createTokenProvider` (TTL + skew + in-flight dedup + forceRefresh/clear;
+  injectable clock for tests). CMP + EFS use it; Zoho keeps its existing per-service cache.
+- `dwh.ts`: read-only `pg.Pool` on `DWH_DATABASE_URL` (`ssl:false`, `options=-c
+  default_transaction_read_only=on`) + `dwhQuery`/`getDwhPool`/`closeDwhPool`. Never writes the DWH.
+- `cmp.ts`: login/password → bearer (`POST {base}/api/authenticate`), cached per environment;
+  **defaults to sandbox** (`CMP_ENV`). `cmpAuthHeaders/getCmpToken/forceRefreshCmpToken/cmpBaseUrl`.
+- `efs.ts`: node-soap (`soap` dep added) parent `login` → session clientId (TTL via tokenCache) +
+  child carrier tokens (`CarrierGroupWS.loginAsChild`); WSDL/endpoint derived from `EFS_WSDL_URL`
+  (override `EFS_GROUP_WSDL_URL`). Auth only — card ops later.
+- `wrapper.ts` remains the Zoho parent (cached per service). `index.ts` barrel namespaces
+  `zoho`/`dwh`/`cmp`/`efs`. New env: `CMP_ENV` (sandbox), `EFS_GROUP_WSDL_URL`.
+- 55 tests pass (added integrations.test: tokenCache dedup/TTL, CMP cached auth, EFS helpers,
+  DWH unset-guard). typecheck/lint/build clean; largest integration file 137 lines.
+
+### Server CRM wrapper (proxy path) (2026-06-09)
+
+Added `integrations/serverCrm.ts` — the "mix" path: our servercrm node server already wraps
+DWH/EFS/CMP/Zoho and exposes an agent API under `/api/agent/*` (auth = static `x-api-key`, verified
+against servercrm `middleware/auth.js`). Wrapper = `serverCrmBaseUrl` + `serverCrmAuthHeaders`
+(`x-api-key: SERVER_CRM_KEY`) + thin `serverCrmRequest`/`serverCrmGet`/`serverCrmPost` (URL build,
+query params, JSON, throw-on-non-2xx). No token flow. Uses existing `SERVER_CRM_URL`/`SERVER_CRM_KEY`
+env. Barrel exports it as `serverCrm`. 59 tests pass (4 new: header, GET url+query, POST body,
+non-2xx). So tool-building can choose: direct vendor wrapper (dwh/cmp/efs/zoho) OR proxy via serverCrm.
+
+### Zoho API reference skills (2026-06-19)
+
+Researched (3 parallel agents on official Zoho docs) and committed Claude Code skills under
+`.claude/skills/` for building Zoho tool integrations — each covers metadata + core + bulk APIs:
+- `zoho-crm-api/SKILL.md` — CRM REST **v8** (OAuth/scopes, modules/fields/layouts, record CRUD,
+  search, COQL, related/notes/attachments/tags, bulk read/write, credits/limits, errors).
+- `zoho-desk-api/SKILL.md` — Desk **v1** (orgId header, tickets CRUD+actions, threads/conversations/
+  comments, sendReply, contacts/accounts, activities, search, counts, errors). Verified vs Zoho's
+  official OpenAPI repo. Gotchas captured: update=PATCH, delete=`moveToTrash`, empty=HTTP 204.
+- `zoho-people-api/SKILL.md` — People's **3 coexisting API styles** (legacy forms / v2 / v3),
+  forms/records, employees, org structure, attendance, leave, bulk import; success sentinel varies.
+- `.claude/skills/README.md` indexes them; each opens with a "Using this in Mytrion Ops" header tying
+  it to `src/integrations/` wrappers + `pnpm meta:zoho-*` catalogs. Docs only — no code change.
+
+### First real tool: Zoho People employee lookup (2026-06-19)
+
+First production tool, routed through the existing chat tool-calling loop (no chat-route change —
+`buildTools` exposes any registered tool to `/chat` + `/chat/stream`).
+- `src/integrations/zohoPeople.ts` — `searchEmployees({name?,department?,limit?})` via the legacy
+  forms `getRecords` on the `employee` form (auth from `wrapper.authHeaders('zoho_people')`,
+  base from `baseUrl('zoho_people')`). Filters via `searchParams` (Contains, pipe=AND); single-word
+  name fans out to FirstName∪LastName (two requests, deduped); two-word name → first AND last.
+  Parses `response.result` `{recordId:[sections]}` → flat `{recordId, fields}`; throws on `status!=0`.
+  Field label-names (`FirstName`/`LastName`/`Department`) are tweakable constants (People analyzer
+  didn't capture them; these are the standard system labels).
+- `definitions/zoho_people_search_employees.ts` — `ToolManifest` `zoho_people.search_employees`
+  (read, internal, scope `zoho_people:read`); registered in tools/index. Covers all/by-name/by-dept.
+- Tests: `tests/unit/zoho-people.test.ts` (6) + bumped `tools.test` counts (9 total; admin-internal 7;
+  ops stays 6 — lacks `zoho_people:read`). 65 tests pass; typecheck/lint/build clean.
+- NOT a sales-owner-scoped record, so no zoho_user_id ownership filter applied (HR lookup). Could
+  later gate `allowedDepartments` to e.g. hr/management/c-level if employee data should be restricted.
+
+### Automation_Logs table + insert endpoint (2026-06-19)
+
+Simple front-end-driven logging into the Mytrion OPS DB.
+- New table `automation_logs` ([schema](src/db/schema/automation_logs.ts)): `id`, `tenant_id`,
+  `trigger_time` (text), `trigger_date` (text), `automation_type` (text, required), `agent_name`
+  (text), `created_at` (timestamptz). Trigger time/date are pass-through strings; `created_at` is the
+  authoritative server time. Migration `0002_safe_dakota_north.sql` — **applied directly to the live
+  DB** (`tsx scripts/migrate.ts`); verified the 7 columns exist.
+- `automationLogRepo.insert(ctx, {...})` + `POST /v1/automation/logs` ([automation.routes.ts])
+  (API_KEY auth, zod-validated; `automationType` required, rest optional). Returns `{id, createdAt}`.
+- Registered in app.ts + drizzle.config schema list. Front-end brief: `docs/automation-logs-widget-backend.md`.
+- 67 tests pass (added 401 + 400-validation cases). typecheck/lint/build clean.
+

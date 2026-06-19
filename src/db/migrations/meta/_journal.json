@@ -15,6 +15,13 @@
       "when": 1780582426761,
       "tag": "0001_ambitious_gideon",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781890796473,
+      "tag": "0002_safe_dakota_north",
+      "breakpoints": true
     }
   ]
 }

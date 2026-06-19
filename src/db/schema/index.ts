@@ -6,3 +6,4 @@ export * from './tool_calls.js';
 export * from './knowledge_docs.js';
 export * from './knowledge_chunks.js';
 export * from './audit_log.js';
+export * from './automation_logs.js';

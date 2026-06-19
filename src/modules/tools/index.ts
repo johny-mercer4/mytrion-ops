@@ -8,6 +8,7 @@ import { octaneCardStatusTool } from './definitions/octane_card_status.js';
 import { octaneTransactionSearchTool } from './definitions/octane_transaction_search.js';
 import { partnerDriverLookupTool } from './definitions/partner_driver_lookup.js';
 import { partnerFleetSummaryTool } from './definitions/partner_fleet_summary.js';
+import { zohoPeopleSearchEmployeesTool } from './definitions/zoho_people_search_employees.js';
 
 /**
  * The hard-coded tool catalog. Each registerTool() call infers its own input/output
@@ -23,6 +24,7 @@ export const allTools: RegisteredTool[] = [
   registerTool(octaneTransactionSearchTool),
   registerTool(partnerDriverLookupTool),
   registerTool(partnerFleetSummaryTool),
+  registerTool(zohoPeopleSearchEmployeesTool),
 ];
 
 export const toolRegistry = new ToolRegistry(allTools);
