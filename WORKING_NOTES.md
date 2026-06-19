@@ -366,3 +366,21 @@ Researched (3 parallel agents on official Zoho docs) and committed Claude Code s
 - `.claude/skills/README.md` indexes them; each opens with a "Using this in Mytrion Ops" header tying
   it to `src/integrations/` wrappers + `pnpm meta:zoho-*` catalogs. Docs only — no code change.
 
+### First real tool: Zoho People employee lookup (2026-06-19)
+
+First production tool, routed through the existing chat tool-calling loop (no chat-route change —
+`buildTools` exposes any registered tool to `/chat` + `/chat/stream`).
+- `src/integrations/zohoPeople.ts` — `searchEmployees({name?,department?,limit?})` via the legacy
+  forms `getRecords` on the `employee` form (auth from `wrapper.authHeaders('zoho_people')`,
+  base from `baseUrl('zoho_people')`). Filters via `searchParams` (Contains, pipe=AND); single-word
+  name fans out to FirstName∪LastName (two requests, deduped); two-word name → first AND last.
+  Parses `response.result` `{recordId:[sections]}` → flat `{recordId, fields}`; throws on `status!=0`.
+  Field label-names (`FirstName`/`LastName`/`Department`) are tweakable constants (People analyzer
+  didn't capture them; these are the standard system labels).
+- `definitions/zoho_people_search_employees.ts` — `ToolManifest` `zoho_people.search_employees`
+  (read, internal, scope `zoho_people:read`); registered in tools/index. Covers all/by-name/by-dept.
+- Tests: `tests/unit/zoho-people.test.ts` (6) + bumped `tools.test` counts (9 total; admin-internal 7;
+  ops stays 6 — lacks `zoho_people:read`). 65 tests pass; typecheck/lint/build clean.
+- NOT a sales-owner-scoped record, so no zoho_user_id ownership filter applied (HR lookup). Could
+  later gate `allowedDepartments` to e.g. hr/management/c-level if employee data should be restricted.
+
