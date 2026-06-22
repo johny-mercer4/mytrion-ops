@@ -63,7 +63,7 @@ describe('zohoDesk.listTickets', () => {
     const url = fetchMock.mock.calls[0]?.[0] as URL;
     expect(url.searchParams.get('status')).toBe('Open');
     expect(url.searchParams.get('departmentId')).toBe('77');
-    expect(url.searchParams.get('limit')).toBe('100'); // clamped to MAX_LIMIT
+    expect(url.searchParams.get('limit')).toBe('99'); // clamped to Desk's ticket-list cap
     expect(url.searchParams.get('sortBy')).toBe('dueDate');
   });
 
@@ -82,6 +82,19 @@ describe('zohoDesk.listDepartments', () => {
   it('returns id/name/isEnabled', async () => {
     fetchMock.mockResolvedValue(deskResponse([{ id: '10', name: 'Support', isEnabled: true, junk: 1 }]));
     expect(await listDepartments()).toEqual([{ id: '10', name: 'Support', isEnabled: true }]);
+  });
+
+  it('coerces id and drops wrongly-typed fields', async () => {
+    // isEnabled as a string (not boolean) is dropped; numeric id is coerced to string.
+    fetchMock.mockResolvedValue(deskResponse([{ id: 10, isEnabled: 'true' }]));
+    expect(await listDepartments()).toEqual([{ id: '10' }]);
+  });
+
+  it('caps the departments limit at 200', async () => {
+    fetchMock.mockResolvedValue(deskResponse([]));
+    await listDepartments(999);
+    const url = fetchMock.mock.calls[0]?.[0] as URL;
+    expect(url.searchParams.get('limit')).toBe('200');
   });
 });
 

@@ -22,13 +22,18 @@ beforeEach(() => {
 });
 
 describe('assertReadOnlyCoql', () => {
-  it('accepts a SELECT', () => {
+  it('accepts a SELECT (any case)', () => {
     expect(assertReadOnlyCoql('  select id from Leads limit 0, 5 ')).toBe('select id from Leads limit 0, 5');
+    expect(assertReadOnlyCoql('SELECT Id FROM Leads where id is not null')).toMatch(/^SELECT/);
   });
-  it('rejects non-SELECT, chained statements, and write keywords', () => {
+  it('rejects a non-SELECT statement and chained statements', () => {
     expect(() => assertReadOnlyCoql('update Leads set x=1')).toThrow(/SELECT/i);
     expect(() => assertReadOnlyCoql('select id from Leads; drop table x')).toThrow(/single statement/i);
-    expect(() => assertReadOnlyCoql('select id from Leads where delete = 1')).toThrow(/write keyword/i);
+  });
+  it('does NOT false-reject reads whose literals/fields contain write words', () => {
+    // /coql is SELECT-only, so these are legitimate reads — the guard must not block them.
+    expect(() => assertReadOnlyCoql("select id from Deals where Stage = 'Update Pending'")).not.toThrow();
+    expect(() => assertReadOnlyCoql("select id from Leads where Status = 'Merge Complete'")).not.toThrow();
   });
 });
 
@@ -66,15 +71,25 @@ describe('zohoCrm.runCoql', () => {
 });
 
 describe('zohoCrm.getOrg', () => {
-  it('returns the first org profile', async () => {
+  it('returns the first org profile (snake_case keys)', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
       text: async () => JSON.stringify({ org: [{ id: '999', company_name: 'Octane' }] }),
     });
     const org = await getOrg();
-    expect(org).toMatchObject({ id: '999', company_name: 'Octane' });
+    expect(org).toEqual({ id: '999', company_name: 'Octane' });
     expect((fetchMock.mock.calls[0]?.[0] as string)).toBe('https://www.zohoapis.com/crm/v8/org');
+  });
+
+  it('returns {} when no org is present', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, text: async () => JSON.stringify({ org: [] }) });
+    expect(await getOrg()).toEqual({});
+  });
+
+  it('throws on an HTTP error', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 401, text: async () => 'INVALID_OAUTH' });
+    await expect(getOrg()).rejects.toThrow(/GET \/org HTTP 401/);
   });
 });
 

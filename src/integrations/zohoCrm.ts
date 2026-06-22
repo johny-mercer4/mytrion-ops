@@ -24,9 +24,12 @@ interface CoqlResponse {
 }
 
 /**
- * Reject anything that isn't a single read-only SELECT before it reaches Zoho. COQL only supports
- * SELECT, but the query is model-generated, so we fail closed on write keywords and statement
- * chaining rather than trusting the upstream to refuse them.
+ * Fail fast on a query that obviously isn't a single SELECT. This is a sanity check, NOT the
+ * read-only boundary: the real guarantees are that `/coql` is a SELECT-only endpoint and the
+ * configured OAuth scope is `ZohoCRM.coql.READ` (no write capability) — plus the tool's read
+ * riskClass + RBAC. We deliberately do NOT scan the body for write keywords: a real write can't
+ * start with SELECT, so such a scan only ever false-rejects legitimate reads whose field names or
+ * literal values happen to contain words like "update" (e.g. a Stage of 'Update Pending').
  */
 export function assertReadOnlyCoql(selectQuery: string): string {
   const q = selectQuery.trim();
@@ -35,9 +38,6 @@ export function assertReadOnlyCoql(selectQuery: string): string {
   }
   if (q.includes(';')) {
     throw new Error('[zoho-crm] COQL query must be a single statement (no ";").');
-  }
-  if (/\b(insert|update|delete|drop|create|alter|truncate|merge)\b/i.test(q)) {
-    throw new Error('[zoho-crm] COQL query contains a forbidden write keyword.');
   }
   return q;
 }
@@ -68,10 +68,11 @@ export async function runCoql(selectQuery: string): Promise<CoqlResult> {
   };
 }
 
+/** Zoho returns snake_case keys on /org; the index signature carries any others. */
 export interface OrgInfo {
   id?: string;
-  companyName?: string;
-  primaryEmail?: string;
+  company_name?: string;
+  primary_email?: string;
   [key: string]: unknown;
 }
 

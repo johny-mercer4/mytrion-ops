@@ -9,7 +9,9 @@
 import { authHeaders, baseUrl } from './wrapper.js';
 
 const DEFAULT_LIMIT = 20;
-const MAX_LIMIT = 100;
+// Desk caps record lists (tickets/contacts/…) at 99, but allows 200 for departments/agents.
+const MAX_TICKET_LIMIT = 99;
+const MAX_DEPARTMENT_LIMIT = 200;
 
 /** sortBy values Desk accepts for /tickets; '-' prefix = descending. */
 export type TicketSort = 'createdTime' | '-createdTime' | 'dueDate' | '-dueDate' | 'recentThread' | '-recentThread';
@@ -39,8 +41,8 @@ interface DeskListResponse<T> {
   data?: T[];
 }
 
-function clampLimit(limit: number | undefined): number {
-  return Math.min(Math.max(Math.trunc(limit ?? DEFAULT_LIMIT), 1), MAX_LIMIT);
+function clampLimit(limit: number | undefined, max: number): number {
+  return Math.min(Math.max(Math.trunc(limit ?? DEFAULT_LIMIT), 1), max);
 }
 
 function deskUrl(path: string): string {
@@ -84,7 +86,7 @@ function toSummary(t: Record<string, unknown>): TicketSummary {
 export async function listTickets(input: ListTicketsInput = {}): Promise<TicketSummary[]> {
   const url = new URL(deskUrl('/tickets'));
   url.searchParams.set('from', '1');
-  url.searchParams.set('limit', String(clampLimit(input.limit)));
+  url.searchParams.set('limit', String(clampLimit(input.limit, MAX_TICKET_LIMIT)));
   url.searchParams.set('sortBy', input.sortBy ?? '-createdTime');
   if (input.status) url.searchParams.set('status', input.status);
   if (input.departmentId) url.searchParams.set('departmentId', input.departmentId);
@@ -102,7 +104,7 @@ export interface DeskDepartment {
 export async function listDepartments(limit = 50): Promise<DeskDepartment[]> {
   const url = new URL(deskUrl('/departments'));
   url.searchParams.set('from', '1');
-  url.searchParams.set('limit', String(clampLimit(limit)));
+  url.searchParams.set('limit', String(clampLimit(limit, MAX_DEPARTMENT_LIMIT)));
   const rows = await deskGet<Record<string, unknown>>(url);
   return rows.map((d) => {
     const dept: DeskDepartment = { id: String(d.id ?? '') };

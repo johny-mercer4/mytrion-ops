@@ -7,7 +7,9 @@ import 'dotenv/config';
  * For each capability it prints OK / FAIL / SKIP and a tiny sample. SKIP means the relevant
  * secrets aren't set in .env (so it's safe to run in any environment — it never hard-fails on a
  * missing token). RAG does a full round-trip: ingest a throwaway doc → retrieve it → delete it.
- * Nothing is written to Zoho; the only DB writes are the RAG doc, which is removed at the end.
+ * Nothing is ever written to Zoho. The only DB write is the RAG canary doc, deleted at the end on
+ * success; if the embed call itself fails the doc may persist (status 'failed') and the next run
+ * reclaims it via checksum idempotency.
  */
 import { env } from '../src/config/env.js';
 import { DEFAULT_TENANT_ID } from '../src/config/constants.js';
@@ -71,7 +73,7 @@ const CRM_MODULE = process.env.SMOKE_CRM_MODULE || 'Leads';
 async function runCrm(): Promise<void> {
   await check('Zoho CRM — GET /org', CRM_SECRETS, async () => {
     const org = await getOrg();
-    return `company=${org.company_name ?? org.companyName ?? '?'} id=${org.id ?? '?'}`;
+    return `company=${org.company_name ?? '?'} id=${org.id ?? '?'}`;
   });
   await check('Zoho CRM — COQL query', CRM_SECRETS, async () => {
     // COQL requires a WHERE clause; `id is not null` is the universal "match anything" predicate.

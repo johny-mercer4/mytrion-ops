@@ -11,8 +11,8 @@ const inputSchema = z.object({
   sortBy: z
     .enum(['createdTime', '-createdTime', 'dueDate', '-dueDate', 'recentThread', '-recentThread'])
     .optional(),
-  /** Max tickets to return (default 20, max 100). */
-  limit: z.number().int().min(1).max(100).optional(),
+  /** Max tickets to return (default 20, max 99 — Desk's record-list cap). */
+  limit: z.number().int().min(1).max(99).optional(),
 });
 
 const outputSchema = z.object({

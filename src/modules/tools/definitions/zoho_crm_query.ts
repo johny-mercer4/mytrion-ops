@@ -21,8 +21,9 @@ const outputSchema = z.object({
 
 /**
  * Real tool (Zoho CRM). Runs a read-only COQL query. The model supplies the query; module and
- * field API names come from the knowledge base (RAG), not from this manifest. Read-only is enforced
- * both here (riskClass) and in the integration (assertReadOnlyCoql).
+ * field API names come from the knowledge base (RAG), not from this manifest. Read-only is
+ * guaranteed by the SELECT-only `/coql` endpoint and the read-only OAuth scope (ZohoCRM.coql.READ),
+ * plus this tool's read riskClass + RBAC; assertReadOnlyCoql is just a fail-fast sanity check.
  */
 export const zohoCrmQueryTool: ToolManifest<z.infer<typeof inputSchema>, z.infer<typeof outputSchema>> = {
   name: 'zoho_crm.query',
