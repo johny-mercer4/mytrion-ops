@@ -119,18 +119,51 @@ async function buildTurnMessages(
   return { messages, ragPassages: grounding?.count ?? 0 };
 }
 
+/** Above this we don't attempt to unwrap; tool args are tiny in practice, so a huge blob is junk. */
+const MAX_TOOL_ARG_LEN = 64_000;
+
 /**
- * Some Groq-hosted models (gpt-oss/Llama) wrap tool-call JSON in XML-ish tags, a python tag,
- * or markdown fences. Strip those before parsing so we don't spuriously fail valid calls.
+ * Some Groq-hosted models (gpt-oss/Llama) wrap tool-call JSON in a python tag, an XML-ish
+ * `<function>…</function>` block, or a markdown fence. Strip those so we can recover the JSON.
+ *
+ * Only called as a *fallback* after a direct JSON.parse fails (see parseToolArgs) — clean JSON never
+ * reaches here, so we can't corrupt valid arguments. Each unwrap is gated behind a cheap substring
+ * check and uses indexOf/lastIndexOf slicing rather than greedy `[\s\S]*?` backtracking, so adversarial
+ * unterminated input can't drive O(n²) regex work (ReDoS).
  */
 function sanitizeToolArgs(raw: string): string {
   let s = raw.trim();
-  s = s.replace(/<\|python_tag\|>/g, '').trim();
-  const fn = /<function[^>]*>([\s\S]*?)<\/function>/i.exec(s);
-  if (fn?.[1]) s = fn[1].trim();
-  const fence = /```(?:json)?\s*([\s\S]*?)```/i.exec(s);
-  if (fence?.[1]) s = fence[1].trim();
+  if (s.length > MAX_TOOL_ARG_LEN) return s;
+  if (s.includes('<|python_tag|>')) s = s.split('<|python_tag|>').join('').trim();
+  // Unwrap <function ...>…</function> by slicing between the first '>' and the last closing tag.
+  if (s.toLowerCase().startsWith('<function') && s.includes('</function>')) {
+    const open = s.indexOf('>');
+    const close = s.toLowerCase().lastIndexOf('</function>');
+    if (open !== -1 && close > open) s = s.slice(open + 1, close).trim();
+  }
+  // Unwrap a ```…``` / ```json…``` fence by slicing between the first and last fence markers.
+  if (s.startsWith('```')) {
+    const close = s.lastIndexOf('```');
+    if (close > 2) {
+      let inner = s.slice(3, close);
+      if (/^json\b/i.test(inner)) inner = inner.slice(4);
+      s = inner.trim();
+    }
+  }
   return s;
+}
+
+/**
+ * Parse tool-call arguments. Try the raw string first so valid JSON is never altered; only if that
+ * fails do we attempt to unwrap model wrappers (gpt-oss/Llama) and parse again.
+ */
+function parseToolArgs(raw: string | undefined): unknown {
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return JSON.parse(sanitizeToolArgs(raw));
+  }
 }
 
 /** Execute a single tool call. Never throws — failures become a tool message the model can read. */
@@ -142,7 +175,7 @@ async function runToolCall(
   const toolName = fromOpenAiToolName(toolCall.function.name);
   let args: unknown = {};
   try {
-    args = toolCall.function.arguments ? JSON.parse(sanitizeToolArgs(toolCall.function.arguments)) : {};
+    args = parseToolArgs(toolCall.function.arguments);
   } catch {
     return {
       toolName,
@@ -317,8 +350,8 @@ async function createCompletion(
   }
 }
 
-/** Streaming completion with one-shot fallback to OpenAI if opening the stream fails. */
-async function openCompletionStream(
+/** Open a streaming completion for the turn's current provider. No fallback here — see streamTurn. */
+function openStream(
   turn: TurnModel,
   messages: ChatMessage[],
   tools: ChatTool[],
@@ -330,18 +363,39 @@ async function openCompletionStream(
     stream_options: { include_usage: true },
     ...(tools.length > 0 ? { tools, tool_choice: 'auto' as const } : {}),
   };
+  return getClient(turn.provider).chat.completions.create(params);
+}
+
+/** Tracks whether any token has reached the client, so a mid-stream fallback can't duplicate output. */
+interface StreamProgress {
+  emitted: boolean;
+}
+
+/**
+ * Stream a turn with Groq→OpenAI fallback that covers BOTH a failed stream open and a failure
+ * mid-iteration. We only fall back while nothing has been streamed yet — once tokens are on the
+ * wire, re-running on OpenAI would duplicate visible output, so we surface the error instead.
+ */
+async function streamTurn(
+  turn: TurnModel,
+  messages: ChatMessage[],
+  tools: ChatTool[],
+  sse: SSEStream,
+): Promise<{ content: string; toolCalls: ToolCall[]; usage: Usage | null }> {
+  const progress: StreamProgress = { emitted: false };
   try {
-    return await getClient(turn.provider).chat.completions.create(params);
+    return await consumeStream(await openStream(turn, messages, tools), sse, progress);
   } catch (err) {
-    if (turn.provider === 'openai') throw err;
+    if (turn.provider === 'openai' || progress.emitted) throw err;
     fallBackToOpenAI(turn, err);
-    return getClient('openai').chat.completions.create({ ...params, model: turn.model });
+    return consumeStream(await openStream(turn, messages, tools), sse, progress);
   }
 }
 
 async function consumeStream(
   stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>,
   sse: SSEStream,
+  progress: StreamProgress,
 ): Promise<{ content: string; toolCalls: ToolCall[]; usage: Usage | null }> {
   let content = '';
   let usage: Usage | null = null;
@@ -353,6 +407,7 @@ async function consumeStream(
     if (!delta) continue;
     if (delta.content) {
       content += delta.content;
+      progress.emitted = true;
       sse.send('token', { text: delta.content });
     }
     for (const tcd of delta.tool_calls ?? []) {
@@ -409,8 +464,7 @@ export async function streamChatTurn(
           : 'Thinking…'
         : 'Thinking it through…';
     sse.send('status', { state: 'thinking', label: thinkingLabel });
-    const stream = await openCompletionStream(turn, messages, tools);
-    const { content, toolCalls, usage } = await consumeStream(stream, sse);
+    const { content, toolCalls, usage } = await streamTurn(turn, messages, tools, sse);
     recordUsage(ctx, turn.model, usage, usageAcc);
 
     await persistAssistant(ctx, convId, content, toolCalls, turn.model, usage);

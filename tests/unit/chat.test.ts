@@ -107,7 +107,7 @@ describe('runChatTurn', () => {
 
   it('parses tool arguments that a Groq model wrapped in fences / function tags', async () => {
     // gpt-oss/Llama sometimes emit `<|python_tag|>`, `<function>…</function>`, or ```json fences
-    // around the JSON. sanitizeToolArgs should strip those so the call still dispatches.
+    // around the JSON. The parse-on-failure fallback should unwrap those so the call still dispatches.
     const wrapped = '<|python_tag|><function=knowledge__search>```json\n{"query":"expiry"}\n```</function>';
     createMock
       .mockResolvedValueOnce(
@@ -123,5 +123,64 @@ describe('runChatTurn', () => {
     expect(dispatchMock.mock.calls[0]?.[0]).toBe('knowledge.search');
     expect(dispatchMock.mock.calls[0]?.[1]).toEqual({ query: 'expiry' });
     expect(res.toolCalls).toEqual([{ name: 'knowledge.search', status: 'ok' }]);
+  });
+
+  it('does NOT mangle valid JSON whose values contain backticks / tags (parse-first, no false positives)', async () => {
+    // Regression: the unwrapper must never run on already-valid JSON, or it would corrupt argument
+    // values that legitimately contain ```fences```, <function> tokens, or <|python_tag|> literals.
+    const args = JSON.stringify({
+      query: 'how do I write a ```json``` block and a <function>foo</function> tag?',
+      note: 'the <|python_tag|> marker stays intact',
+    });
+    createMock
+      .mockResolvedValueOnce(
+        completion('', [
+          { id: 'call_1', type: 'function', function: { name: 'knowledge__search', arguments: args } },
+        ]),
+      )
+      .mockResolvedValueOnce(completion('Answer'));
+    dispatchMock.mockResolvedValueOnce({ passages: [] });
+
+    const res = await runChatTurn('conv_1', 'q', makeContext({ role: 'ops' }));
+
+    // Arguments survive byte-for-byte; the call dispatches (no spurious "invalid JSON" error).
+    expect(dispatchMock.mock.calls[0]?.[1]).toEqual(JSON.parse(args));
+    expect(res.toolCalls).toEqual([{ name: 'knowledge.search', status: 'ok' }]);
+  });
+
+  it('reports unparseable tool arguments as an error without dispatching', async () => {
+    createMock
+      .mockResolvedValueOnce(
+        completion('', [
+          { id: 'call_1', type: 'function', function: { name: 'knowledge__search', arguments: 'not json {{{' } },
+        ]),
+      )
+      .mockResolvedValueOnce(completion('Recovered'));
+
+    const res = await runChatTurn('conv_1', 'q', makeContext({ role: 'ops' }));
+
+    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(res.toolCalls).toEqual([{ name: 'knowledge.search', status: 'error' }]);
+  });
+
+  it('does not hang on adversarial unterminated <function> input (ReDoS guard)', async () => {
+    // Many unterminated openings would be O(n²) for a greedy regex; the substring-guarded
+    // unwrapper must return promptly. Kept under the length cap so this exercises the
+    // `includes('</function>')` guard, not just the size bailout. ~50KB.
+    const evil = '<function>'.repeat(5_000) + 'tail';
+    createMock
+      .mockResolvedValueOnce(
+        completion('', [
+          { id: 'call_1', type: 'function', function: { name: 'knowledge__search', arguments: evil } },
+        ]),
+      )
+      .mockResolvedValueOnce(completion('Recovered'));
+
+    const start = performance.now();
+    const res = await runChatTurn('conv_1', 'q', makeContext({ role: 'ops' }));
+    const elapsed = performance.now() - start;
+
+    expect(elapsed).toBeLessThan(1000);
+    expect(res.toolCalls).toEqual([{ name: 'knowledge.search', status: 'error' }]);
   });
 });
