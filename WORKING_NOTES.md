@@ -410,3 +410,20 @@ dev's IMPORTANT requirement, satisfied by construction (no soft-delete). Not dep
 the right shape, `findDocByChecksum` → null after, chunks → 0, unknown id → null (404). Brief
 updated (`docs/agent-scope-widget-backend.md` §7–8). 69 tests (added 401 + bulk-validation 400).
 
+### servercrm-proxy agent tools + retire fake stubs (2026-06-22)
+
+Reviewed servercrm (build) operational processes (3 parallel agents; map saved to memory
+[[servercrm-reference]]). Then:
+- **Retired the 7 mock/stub tools** (`zoho_crm.search_accounts`, `zoho_crm.get_account`, `octane.*`,
+  `partner.*`) — they returned fake data and were live in chat. Registry is now real-only.
+- **3 servercrm agent-API proxy tools** (via the `serverCrm` wrapper): `agent.sales_snapshot`
+  (POST /api/agent/dwh/snapshot), `agent.debtors` (POST /api/agent/dwh/debtors), `agent.activity`
+  (GET /api/agent/activity/:zohoUserId). Internal, read, scope `servercrm:read`.
+- **Owner scoping** (`src/modules/tools/serverCrmScope.ts`): non-admins locked to their own identity
+  (agentName = `ctx.userName`; zohoUserId from `ctx.userId` `zoho:<id>`); `Administrator`
+  (allDepartmentAccess) may override to query another agent. Enacts the sales-agent ownership RBAC.
+- Carrier-detail tools (overview/transactions/balance) deferred — not server-side owner-scoped, so
+  they need a roster check first (next batch). CRM-via-COQL also next (user chose servercrm first).
+- Registry now 5 tools. Updated rbac.test/tools.test/fixtures; new `tests/unit/servercrm-tools.test.ts`
+  (scoping + request building). 75 tests pass; typecheck/lint/build clean. Widget brief Tools table updated.
+

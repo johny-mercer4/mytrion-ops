@@ -44,7 +44,7 @@ export interface ChatTurnOptions {
 }
 
 // OpenAI function names must match ^[a-zA-Z0-9_-]+$, but our tool ids use dots
-// (e.g. 'zoho_crm.search_accounts'). Map '.' <-> '__' across the boundary.
+// (e.g. 'zoho_people.search_employees'). Map '.' <-> '__' across the boundary.
 const toOpenAiToolName = (name: string): string => name.replace(/\./g, '__');
 const fromOpenAiToolName = (name: string): string => name.replace(/__/g, '.');
 

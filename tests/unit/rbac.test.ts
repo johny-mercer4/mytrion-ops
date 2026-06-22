@@ -52,14 +52,14 @@ describe('permissions', () => {
 describe('tool registry access control', () => {
   it('denies internal-only tools to a partner context', () => {
     const partner = makeContext({ role: 'fleet_manager', tenantId: 'tenant-A' });
-    const tool = toolRegistry.get('zoho_crm.search_accounts');
+    const tool = toolRegistry.get('agent.sales_snapshot'); // internal only
     expect(tool).toBeDefined();
     expect(toolRegistry.checkAccess(tool!, partner).ok).toBe(false);
   });
 
   it('denies a tool when the context lacks the required scope', () => {
     const viewer = makeContext({ role: 'viewer' }); // only zoho_crm:read
-    const tool = toolRegistry.get('octane.card_status'); // needs octane_card:read
+    const tool = toolRegistry.get('agent.sales_snapshot'); // needs servercrm:read
     expect(toolRegistry.checkAccess(tool!, viewer).ok).toBe(false);
   });
 });
@@ -86,13 +86,13 @@ describe('CRITICAL: cross-tenant isolation', () => {
     }
   });
 
-  it('an internal viewer cannot reach partner tools or unscoped internal tools', async () => {
+  it('an internal viewer cannot reach tools it lacks the scope for', async () => {
     const viewer = makeContext({ role: 'viewer', tenantId: 'tenant-A' });
     await expect(
-      dispatchTool('partner.fleet_summary', {}, viewer),
+      dispatchTool('agent.sales_snapshot', {}, viewer), // needs servercrm:read
     ).rejects.toBeInstanceOf(RBACError);
     await expect(
-      dispatchTool('octane.transaction_search', { cardId: 'c' }, viewer),
+      dispatchTool('zoho_people.search_employees', {}, viewer), // needs zoho_people:read
     ).rejects.toBeInstanceOf(RBACError);
   });
 

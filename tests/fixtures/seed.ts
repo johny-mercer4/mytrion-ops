@@ -8,7 +8,7 @@ function audienceForRole(role: Role): Audience {
 /** Build a TenantContext for tests. Scopes default to the role's real scopes. */
 export function makeContext(overrides: Partial<TenantContext> & { role?: Role } = {}): TenantContext {
   const role: Role = overrides.role ?? 'admin';
-  return {
+  const ctx: TenantContext = {
     tenantId: overrides.tenantId ?? 'tenant-A',
     userId: overrides.userId ?? 'user-1',
     audience: overrides.audience ?? audienceForRole(role),
@@ -18,16 +18,17 @@ export function makeContext(overrides: Partial<TenantContext> & { role?: Role } 
     allDepartmentAccess: overrides.allDepartmentAccess ?? role === 'admin',
     requestId: overrides.requestId ?? 'test-request',
   };
+  if (overrides.userName !== undefined) ctx.userName = overrides.userName;
+  if (overrides.profiles !== undefined) ctx.profiles = overrides.profiles;
+  if (overrides.callerRole !== undefined) ctx.callerRole = overrides.callerRole;
+  return ctx;
 }
 
 /** Minimal valid arguments for each tool, keyed by tool name. */
 export const sampleToolArgs: Record<string, Record<string, unknown>> = {
   'knowledge.search': { query: 'fuel card policy' },
-  'zoho_crm.search_accounts': { query: 'acme' },
-  'zoho_crm.get_account': { accountId: 'acc_1' },
-  'octane.customer_lookup': { identifier: 'customer-1' },
-  'octane.card_status': { cardId: 'card_1' },
-  'octane.transaction_search': { cardId: 'card_1' },
-  'partner.driver_lookup': { driverId: 'driver_1' },
-  'partner.fleet_summary': {},
+  'zoho_people.search_employees': {},
+  'agent.sales_snapshot': {},
+  'agent.debtors': {},
+  'agent.activity': {},
 };
