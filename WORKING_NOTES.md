@@ -440,3 +440,23 @@ Groq/Llama for speed + cost. Output committed as skill `.claude/skills/llm-provi
 - Mandatory validate→strip-wrappers→retry→**fallback-to-OpenAI** on Groq tool-call failure.
 - Gate behind `FF_GROQ_ENABLED` (off by default). Decision saved to memory. NOT yet implemented —
   this turn is research + plan only; `GROQ_API_KEY` is in `.env`.
+
+
+### Groq implementation: worker provider + OpenAI fallback (2026-06-22)
+
+Implemented the Groq plan from the llm-providers skill, behind `FF_GROQ_ENABLED` (off by default).
+Commits: `c1c2c45` (env/constants/openaiClient/modelRouter scaffolding) + `f2f93c2` (chat wiring,
+review fixes, tests).
+- `modelRouter.resolveModel(role)` → worker=Groq `gpt-oss-120b` when flag on, else OpenAI; answer/
+  reasoning/embedding always OpenAI. Flag-off ⇒ behavior identical to the all-OpenAI baseline.
+- `openaiClient`: `getGroq()` reuses the `openai` SDK with Groq baseURL; `getClient(provider)`.
+- chatService runs the whole turn on the worker `TurnModel`; on a Groq error it falls back to
+  OpenAI and stays there (sticky). Audit detail carries `provider` + `fellBack`.
+- Hardening from an adversarial review workflow (16 agents, 9 confirmed findings) — all fixed before
+  commit: (1) parse-first/sanitize-on-failure so valid tool args are never mutated (killed a
+  baseline-affecting false-positive + a silent `<|python_tag|>` corruption); (2) ReDoS-safe unwrapper
+  (substring guards + indexOf slicing + 64KB cap); (3) streaming fallback now covers mid-stream
+  failures, falling back only before the first token is emitted (no duplicate output).
+- Tests: router, non-stream + SSE routing, open/pre-token/mid-token fallback, multi-iteration
+  stickiness, flag-off parity + OpenAI rethrow, sanitizer safety. RBAC suites green. 93 pass;
+  typecheck/lint/build clean. chatService.ts 517 lines (<600 cap). Not pushed.
