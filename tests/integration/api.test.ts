@@ -125,4 +125,61 @@ describe('HTTP API (no external services)', () => {
     expect(res.statusCode).toBe(404);
     expect(res.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
   });
+
+  // --- Octane Scope risk items (auth + validation; DB-touching paths covered by the live smoke) ---
+
+  it('rejects GET /v1/scope/risks with no API key', async () => {
+    const res = await app.inject({ method: 'GET', url: '/v1/scope/risks?nodeId=lead-cycle' });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toMatchObject({ error: { code: 'AUTH_ERROR' } });
+  });
+
+  it('rejects POST /v1/scope/risks with no API key', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/scope/risks',
+      payload: { nodeId: 'lead-cycle', category: 'blocker', label: 'x' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('validates POST /v1/scope/risks (bad category → 400)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/scope/risks',
+      headers: { 'x-api-key': 'test-secret-key', 'content-type': 'application/json' },
+      payload: { nodeId: 'lead-cycle', category: 'bogus', label: 'x' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+  });
+
+  // The Zoho proxy POSTs with content-type: application/json and often an EMPTY body. The custom
+  // parser must treat that as {} (not FST_ERR_CTP_EMPTY_JSON_BODY) so it reaches Zod → VALIDATION_ERROR.
+  it('treats an empty JSON body as {} (reaches validation, not a parser 400)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/scope/risks',
+      headers: { 'x-api-key': 'test-secret-key', 'content-type': 'application/json' },
+      payload: '',
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+  });
+
+  it('rejects an empty update patch (POST /v1/scope/risks/:id with no fields → 400)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/scope/risks/ri_anything',
+      headers: { 'x-api-key': 'test-secret-key', 'content-type': 'application/json' },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+  });
+
+  it('rejects POST /v1/scope/risks/:id/delete with no API key', async () => {
+    const res = await app.inject({ method: 'POST', url: '/v1/scope/risks/ri_x/delete' });
+    expect(res.statusCode).toBe(401);
+  });
 });

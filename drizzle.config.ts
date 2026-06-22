@@ -16,6 +16,7 @@ export default defineConfig({
     './src/db/schema/knowledge_chunks.ts',
     './src/db/schema/audit_log.ts',
     './src/db/schema/automation_logs.ts',
+    './src/db/schema/scope_risk_items.ts',
   ],
   out: './src/db/migrations',
   dialect: 'postgresql',
