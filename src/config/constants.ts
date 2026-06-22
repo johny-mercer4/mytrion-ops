@@ -43,4 +43,7 @@ export const MODEL_PRICING: Record<string, { input: number; output: number }> = 
   'gpt-5.4-mini-2026-03-17': { input: 0.25, output: 2.0 },
   'text-embedding-3-small': { input: 0.02, output: 0 },
   'text-embedding-3-large': { input: 0.13, output: 0 },
+  // Groq (USD per 1M tokens) — gpt-oss worker models. Confirm vs groq.com/pricing.
+  'openai/gpt-oss-120b': { input: 0.15, output: 0.6 },
+  'openai/gpt-oss-20b': { input: 0.075, output: 0.3 },
 };

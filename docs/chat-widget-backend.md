@@ -149,6 +149,13 @@ all; otherwise department-scoped).
 | Tool | Fires when the user asks… | Honors |
 | :--- | :--- | :--- |
 | `zoho_people.search_employees` | "list all employees", "who's in the Sales department", "find employee Jane Doe" | Zoho People (employees by all / name / department) |
+| `agent.sales_snapshot` | "how am I doing", "my numbers this week", portfolio health | the caller's portfolio (active/inactive/stuck clients, week-over-week tx/gallons/new cards) |
+| `agent.debtors` | "who owes me money", "my overdue accounts" | the caller's carriers (overdue invoices, hard-debtor flag) |
+| `agent.activity` | "my activity this week", "what have I done" | the caller's activity scorecard (calls/notes/leads/deals/conversion) |
+
+> The `agent.*` tools are **owner-scoped to the calling agent** (resolved from the Zoho context —
+> that's why sending `zoho_user_id` + `user_name` matters). An `Administrator` profile may ask about
+> another agent ("show me Bob's debtors"); everyone else only ever sees their own.
 
 Front-end handling: just render the `status` label (e.g. *"Using zoho_people.search_employees…"*)
 while the tool runs, then the streamed `token`s contain the assistant's answer (it summarizes the

@@ -7,13 +7,15 @@ import { toolRegistry } from '../../src/modules/tools/index.js';
 import { makeContext } from '../fixtures/seed.js';
 
 describe('tool registry', () => {
-  it('registers all 9 tools with unique names', () => {
+  it('registers all 7 tools with unique names', () => {
     const names = toolRegistry.all().map((t) => t.name);
-    expect(names).toHaveLength(9);
-    expect(new Set(names).size).toBe(9);
+    expect(names).toHaveLength(7);
+    expect(new Set(names).size).toBe(7);
     expect(names).toContain('knowledge.search');
-    expect(names).toContain('partner.fleet_summary');
     expect(names).toContain('zoho_people.search_employees');
+    expect(names).toContain('zoho_crm.query');
+    expect(names).toContain('zoho_desk.search_tickets');
+    expect(names).toContain('agent.sales_snapshot');
   });
 
   it('rejects duplicate tool names', () => {
@@ -22,12 +24,15 @@ describe('tool registry', () => {
   });
 
   it('filters tools by audience + scopes for each role', () => {
-    // admin holds '*' so it sees the new zoho_people tool too (7); ops lacks zoho_people:read (stays 6).
+    // admin holds '*' → sees all 7 internal tools. knowledge.search needs no scope (both audiences);
+    // zoho_crm.query needs zoho_crm:read (held by viewer/ops); zoho_desk + zoho_people + agent.*
+    // need scopes only admin holds. Partner audience sees only knowledge.search.
     expect(toolRegistry.listForContext(makeContext({ role: 'admin', audience: 'internal' }))).toHaveLength(7);
-    expect(toolRegistry.listForContext(makeContext({ role: 'admin', audience: 'partner' }))).toHaveLength(3);
-    expect(toolRegistry.listForContext(makeContext({ role: 'viewer' }))).toHaveLength(3);
-    expect(toolRegistry.listForContext(makeContext({ role: 'ops' }))).toHaveLength(6);
-    expect(toolRegistry.listForContext(makeContext({ role: 'driver' }))).toHaveLength(2);
+    expect(toolRegistry.listForContext(makeContext({ role: 'admin', audience: 'partner' }))).toHaveLength(1);
+    // viewer + ops both hold zoho_crm:read → knowledge.search + zoho_crm.query.
+    expect(toolRegistry.listForContext(makeContext({ role: 'viewer' }))).toHaveLength(2);
+    expect(toolRegistry.listForContext(makeContext({ role: 'ops' }))).toHaveLength(2);
+    expect(toolRegistry.listForContext(makeContext({ role: 'driver' }))).toHaveLength(1);
   });
 });
 

@@ -410,3 +410,135 @@ dev's IMPORTANT requirement, satisfied by construction (no soft-delete). Not dep
 the right shape, `findDocByChecksum` → null after, chunks → 0, unknown id → null (404). Brief
 updated (`docs/agent-scope-widget-backend.md` §7–8). 69 tests (added 401 + bulk-validation 400).
 
+### servercrm-proxy agent tools + retire fake stubs (2026-06-22)
+
+Reviewed servercrm (build) operational processes (3 parallel agents; map saved to memory
+[[servercrm-reference]]). Then:
+- **Retired the 7 mock/stub tools** (`zoho_crm.search_accounts`, `zoho_crm.get_account`, `octane.*`,
+  `partner.*`) — they returned fake data and were live in chat. Registry is now real-only.
+- **3 servercrm agent-API proxy tools** (via the `serverCrm` wrapper): `agent.sales_snapshot`
+  (POST /api/agent/dwh/snapshot), `agent.debtors` (POST /api/agent/dwh/debtors), `agent.activity`
+  (GET /api/agent/activity/:zohoUserId). Internal, read, scope `servercrm:read`.
+- **Owner scoping** (`src/modules/tools/serverCrmScope.ts`): non-admins locked to their own identity
+  (agentName = `ctx.userName`; zohoUserId from `ctx.userId` `zoho:<id>`); `Administrator`
+  (allDepartmentAccess) may override to query another agent. Enacts the sales-agent ownership RBAC.
+- Carrier-detail tools (overview/transactions/balance) deferred — not server-side owner-scoped, so
+  they need a roster check first (next batch). CRM-via-COQL also next (user chose servercrm first).
+- Registry now 5 tools. Updated rbac.test/tools.test/fixtures; new `tests/unit/servercrm-tools.test.ts`
+  (scoping + request building). 75 tests pass; typecheck/lint/build clean. Widget brief Tools table updated.
+
+
+### LLM provider research: OpenAI + Groq (2026-06-22)
+
+Ran an 8-agent research workflow (6 parallel research → fact-check verify → synthesis) on OpenAI +
+Groq/Llama for speed + cost. Output committed as skill `.claude/skills/llm-providers/SKILL.md`
+(verified pricing/capability table + phased integration plan). Key conclusions:
+- Add **Groq via the OpenAI-compatible baseURL** (existing `openai` SDK), not `groq-sdk`.
+- Use **`openai/gpt-oss-120b`/`gpt-oss-20b`, NOT Llama** (all Groq-Llama deprecated in 2026; gpt-oss
+  = official replacement + strict json_schema + caching). 
+- Route: worker turns → Groq gpt-oss; final grounded answer → OpenAI; hard → `gpt-5.4-mini`.
+- Mandatory validate→strip-wrappers→retry→**fallback-to-OpenAI** on Groq tool-call failure.
+- Gate behind `FF_GROQ_ENABLED` (off by default). Decision saved to memory. NOT yet implemented —
+  this turn is research + plan only; `GROQ_API_KEY` is in `.env`.
+
+
+### Groq implementation: worker provider + OpenAI fallback (2026-06-22)
+
+Implemented the Groq plan from the llm-providers skill, behind `FF_GROQ_ENABLED` (off by default).
+Commits: `c1c2c45` (env/constants/openaiClient/modelRouter scaffolding) + `f2f93c2` (chat wiring,
+review fixes, tests).
+- `modelRouter.resolveModel(role)` → worker=Groq `gpt-oss-120b` when flag on, else OpenAI; answer/
+  reasoning/embedding always OpenAI. Flag-off ⇒ behavior identical to the all-OpenAI baseline.
+- `openaiClient`: `getGroq()` reuses the `openai` SDK with Groq baseURL; `getClient(provider)`.
+- chatService runs the whole turn on the worker `TurnModel`; on a Groq error it falls back to
+  OpenAI and stays there (sticky). Audit detail carries `provider` + `fellBack`.
+- Hardening from an adversarial review workflow (16 agents, 9 confirmed findings) — all fixed before
+  commit: (1) parse-first/sanitize-on-failure so valid tool args are never mutated (killed a
+  baseline-affecting false-positive + a silent `<|python_tag|>` corruption); (2) ReDoS-safe unwrapper
+  (substring guards + indexOf slicing + 64KB cap); (3) streaming fallback now covers mid-stream
+  failures, falling back only before the first token is emitted (no duplicate output).
+- Tests: router, non-stream + SSE routing, open/pre-token/mid-token fallback, multi-iteration
+  stickiness, flag-off parity + OpenAI rethrow, sanitizer safety. RBAC suites green. 93 pass;
+  typecheck/lint/build clean. chatService.ts 517 lines (<600 cap). Not pushed.
+
+
+### Zoho CRM/Desk/People read tools + RAG verification (2026-06-22)
+
+Added simple READ-ONLY tooling to prove the Zoho integrations + RAG work end to end.
+Commits: `cbf1c89` (tools) + `4a0f78b` (review hardening).
+- Integrations: `src/integrations/zohoCrm.ts` (runCoql via POST /coql + getOrg) and
+  `zohoDesk.ts` (listTickets GET /tickets + listDepartments). People tool already existed.
+- Tools: `zoho_crm.query` (COQL, scope zoho_crm:read) and `zoho_desk.search_tickets`
+  (scope zoho_desk:read), both internal + riskClass read, departments left open. Registry now 7.
+- `scripts/zoho-smoke.ts` (`pnpm zoho:smoke`): live read-only smoke — CRM org+COQL, Desk
+  departments+tickets, People employees, and a RAG ingest→retrieve→delete round-trip. SKIPs when
+  a secret is absent; only DB write is the self-deleting canary.
+- **Verified live against the real org (company=Octane): all 6 checks pass**, incl. RAG retrieval
+  (pgvector + OpenAI embeddings). So OAuth tokens, all three Zoho services, and RAG are confirmed working.
+- Learned live: Zoho COQL REQUIRES a WHERE clause (use `where id is not null` to match all) — baked
+  into the tool description. Desk `listTickets` works WITHOUT departmentId (kept optional).
+- Adversarial review workflow (24 agents) → applied: Desk limit caps (tickets 99 / depts 200);
+  removed the brittle COQL write-keyword regex (false-positives only, since /coql is SELECT-only +
+  read scope); OrgInfo snake_case. Rejected the "departmentId required" finding (live evidence wins).
+- Architecture decision: tool CONTRACTS stay hardcoded (ToolManifest); BUSINESS/SCHEMA context
+  (module/field API names, dept name→id, glossary) goes in the RAG vector DB. The model needs RAG to
+  write correct COQL — they're complementary, not either/or. Next: ingest a CRM/Desk/People data
+  dictionary (.md, skeleton from `pnpm meta:zoho-*`).
+
+
+### Whole-metadata analyzers + write-side feasibility (2026-06-22)
+
+Expanded all four metadataScripts analyzers to pull complete catalogs; verified live (read-only).
+Commit: `a686ddc`.
+- CRM: + org, users, custom-module flag, per-field picklist values + lookup/relationship targets,
+  per-module related lists. Live: 149 modules (47 custom), 200 users, 353 picklist fields, 84 lookups.
+- Desk: + agents, teams, per-field allowedValues (picklists); module sweep extended. Live: 10 depts,
+  10 agents, 24 picklist fields.
+- People: + component options (best-effort; this edition's /components doesn't return them → 0).
+- DWH: + foreign keys + indexes. Live: 594 tables/views, 146 indexes, 0 declared FKs (normal for a warehouse).
+- All sections best-effort: missing scope / invalid module logged + recorded, never fatal. output/ git-ignored.
+
+**Write-side finding (custom modules) — IMPORTANT.** Zoho's public APIs do NOT support creating
+custom MODULES (CRM), FORMS (People), or any "module" (Desk) — that's a product-UI/admin-console
+operation. Confirmed against the committed API skills + Zoho MCP tool set (no createModule anywhere).
+What the APIs DO allow:
+- CRM: create custom **fields** (`POST /settings/fields`, scope settings.fields.CREATE — the MCP
+  `createFields` capability) and **records** (POST /{module}); also notes/tags/attachments.
+- Desk: create **records** (tickets, departments) — no custom-field/module create endpoint.
+- People: insert **records** into existing forms (insertRecord, add-employee, add-department) — no form create.
+So any "creation" tooling = custom fields (CRM only) or records. These are production WRITES
+(outward-facing, hard to reverse) → must be gated: riskClass 'write', admin role, dry-run default,
+explicit --apply. Awaiting user decision on scope before building.
+
+
+### Zoho MCP evaluation — decision: defer (2026-06-23)
+
+Researched connecting Mytrion Ops to Zoho's hosted MCP (5-cluster research workflow + skeptical
+critique). Decision: **do NOT build on Zoho hosted MCP now; keep the existing refresh-token integration.**
+
+Why:
+- **Headless auth is the blocker.** Zoho hosted MCP documents only two auth models: "Authorization on
+  Demand" (per-user browser OAuth, default) and "Authorization via Connections" (a human Super Admin
+  consents once, tokens shared org-wide). Every documented client (Claude/Cursor/VS Code) requires an
+  interactive "Click Allow" at connect time. No documented server-to-server / API-key-only path for a
+  cold backend process. So a multi-user backend almost certainly can't drive it headless.
+- **We already have headless auth**: src/integrations/zoho.ts (grant_type=refresh_token) + wrapper.ts
+  (cached 1h access tokens). Non-expiring refresh token minted once = autonomous forever. This is our
+  "single service identity" and it's already proven live (last session's smoke test).
+- **Beta risk**: Zoho MCP is early/beta ("functionalities may change"); no official GA date.
+- **RBAC mismatch**: "Authorization via Connections" = one shared Super-Admin identity, no
+  per-department scoping → our department_access RBAC would have to do ALL isolation (makes rule 9
+  cross-tenant tests load-bearing).
+
+If we revisit later (post-GA), the path = an MCP-client adapter behind toolDispatcher:
+- Package: the single `@modelcontextprotocol/sdk` (v1.x, subpath imports e.g.
+  `@modelcontextprotocol/sdk/client/streamableHttp.js`). The split `@modelcontextprotocol/client|server`
+  is v2/pre-alpha (~stable Aug 2026) — NOT what you install today. (Repo has no MCP SDK yet.)
+- Transport: StreamableHTTPClientTransport (SSE deprecated).
+- Wrap each discovered MCP tool as a ToolManifest; classify riskClass via verb allowlist
+  (get/search/list→read, create/update/delete/upsert/send→write), default-unknown→write (rule 7);
+  route every call through toolDispatcher (RBAC+audit); sanitize JSON-Schema for OpenAI strict mode
+  (strip anyOf/format/$ref); provision the shared token with READ-only scopes as defense-in-depth.
+- Gate behind a one-time falsification test: in the Zoho MCP console create a server with
+  "Authorization via Connections", then from a clean machine (no Zoho cookies) curl/Node-connect the
+  generated URL — if it 401s/redirects-to-login, hosted-MCP-headless is dead.

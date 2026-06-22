@@ -1,7 +1,10 @@
 import OpenAI from 'openai';
 import { env } from '../../config/env.js';
 
-let client: OpenAI | null = null;
+export type Provider = 'openai' | 'groq';
+
+let openaiClient: OpenAI | null = null;
+let groqClient: OpenAI | null = null;
 
 /**
  * Lazily construct a single OpenAI client. Lazy so importing this module never
@@ -9,15 +12,40 @@ let client: OpenAI | null = null;
  * construction never throws; real calls then fail with 401 rather than at import.
  */
 export function getOpenAI(): OpenAI {
-  if (!client) {
-    client = new OpenAI({ apiKey: env.OPENAI_API_KEY || 'sk-not-configured', maxRetries: 2 });
+  if (!openaiClient) {
+    openaiClient = new OpenAI({ apiKey: env.OPENAI_API_KEY || 'sk-not-configured', maxRetries: 2 });
   }
-  return client;
+  return openaiClient;
 }
 
-/** For tests: inject a stub client implementing the bits we use. */
+/**
+ * Groq via its OpenAI-compatible endpoint — same `OpenAI` client, different baseURL.
+ * Lazy + placeholder key, same as getOpenAI.
+ */
+export function getGroq(): OpenAI {
+  if (!groqClient) {
+    groqClient = new OpenAI({
+      apiKey: env.GROQ_API_KEY || 'gsk-not-configured',
+      baseURL: env.GROQ_BASE_URL,
+      maxRetries: 2,
+    });
+  }
+  return groqClient;
+}
+
+/** Resolve the client for a provider (both are OpenAI-SDK clients). */
+export function getClient(provider: Provider): OpenAI {
+  return provider === 'groq' ? getGroq() : getOpenAI();
+}
+
+/** For tests: inject a stub OpenAI client. */
 export function setOpenAIClient(stub: OpenAI): void {
-  client = stub;
+  openaiClient = stub;
+}
+
+/** For tests: inject a stub Groq client. */
+export function setGroqClient(stub: OpenAI): void {
+  groqClient = stub;
 }
 
 export const models = {

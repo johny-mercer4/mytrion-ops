@@ -22,6 +22,7 @@ import { automationRoutes } from './routes/v1/automation.routes.js';
 import { chatRoutes } from './routes/v1/chat.routes.js';
 import { healthRoutes } from './routes/v1/health.routes.js';
 import { knowledgeRoutes } from './routes/v1/knowledge.routes.js';
+import { scopeRoutes } from './routes/v1/scope.routes.js';
 import { toolsRoutes } from './routes/v1/tools.routes.js';
 
 function loggerOption() {
@@ -72,6 +73,32 @@ export async function buildApp(): Promise<FastifyInstance> {
     },
   });
 
+  // Tolerate an empty JSON body. The Zoho server-side proxy issues POSTs (the only verb it
+  // reliably allows for mutations) often with `content-type: application/json` and no body — e.g.
+  // the POST delete aliases (/scope/risks/:id/delete, /knowledge/docs/:id/delete) that take no
+  // payload. Fastify's default parser 400s on that (FST_ERR_CTP_EMPTY_JSON_BODY); we treat empty
+  // as {} while still rejecting malformed JSON. Global on purpose — every widget POST hits the same
+  // proxy. Caveat: a future POST route with an all-optional schema would accept an empty body as a
+  // no-op {} rather than erroring; keep at least one required field (or a .refine) on such schemas.
+  app.addContentTypeParser(
+    'application/json',
+    { parseAs: 'string' },
+    (_req, body, done) => {
+      const text = typeof body === 'string' ? body.trim() : '';
+      if (text === '') {
+        done(null, {});
+        return;
+      }
+      try {
+        done(null, JSON.parse(text));
+      } catch (err) {
+        const e = err as Error & { statusCode?: number };
+        e.statusCode = 400;
+        done(e, undefined);
+      }
+    },
+  );
+
   // Cross-cutting (root-level so decorators/hooks reach every route).
   requestContextPlugin(app);
   errorHandlerPlugin(app);
@@ -115,6 +142,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(authRoutes);
       await v1.register(chatRoutes);
       await v1.register(knowledgeRoutes);
+      await v1.register(scopeRoutes);
       await v1.register(toolsRoutes);
       await v1.register(automationRoutes);
       await v1.register(adminRoutes);

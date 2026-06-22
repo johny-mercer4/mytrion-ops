@@ -9,7 +9,8 @@ import type { TenantContext } from '../../types/tenantContext.js';
 import { auditFromContext } from '../audit/auditLogger.js';
 import { retrieve } from '../knowledge/retriever.js';
 import { costTracker } from '../llm/costTracker.js';
-import { getOpenAI, models } from '../llm/openaiClient.js';
+import { getClient, models, type Provider } from '../llm/openaiClient.js';
+import { resolveModel } from '../llm/modelRouter.js';
 import { buildSystemPrompt, knowledgeGroundingNote } from '../llm/promptBuilder.js';
 import { toolRegistry } from '../tools/index.js';
 import { messageStore } from './messageStore.js';
@@ -44,7 +45,7 @@ export interface ChatTurnOptions {
 }
 
 // OpenAI function names must match ^[a-zA-Z0-9_-]+$, but our tool ids use dots
-// (e.g. 'zoho_crm.search_accounts'). Map '.' <-> '__' across the boundary.
+// (e.g. 'zoho_people.search_employees'). Map '.' <-> '__' across the boundary.
 const toOpenAiToolName = (name: string): string => name.replace(/\./g, '__');
 const fromOpenAiToolName = (name: string): string => name.replace(/__/g, '.');
 
@@ -118,6 +119,53 @@ async function buildTurnMessages(
   return { messages, ragPassages: grounding?.count ?? 0 };
 }
 
+/** Above this we don't attempt to unwrap; tool args are tiny in practice, so a huge blob is junk. */
+const MAX_TOOL_ARG_LEN = 64_000;
+
+/**
+ * Some Groq-hosted models (gpt-oss/Llama) wrap tool-call JSON in a python tag, an XML-ish
+ * `<function>…</function>` block, or a markdown fence. Strip those so we can recover the JSON.
+ *
+ * Only called as a *fallback* after a direct JSON.parse fails (see parseToolArgs) — clean JSON never
+ * reaches here, so we can't corrupt valid arguments. Each unwrap is gated behind a cheap substring
+ * check and uses indexOf/lastIndexOf slicing rather than greedy `[\s\S]*?` backtracking, so adversarial
+ * unterminated input can't drive O(n²) regex work (ReDoS).
+ */
+function sanitizeToolArgs(raw: string): string {
+  let s = raw.trim();
+  if (s.length > MAX_TOOL_ARG_LEN) return s;
+  if (s.includes('<|python_tag|>')) s = s.split('<|python_tag|>').join('').trim();
+  // Unwrap <function ...>…</function> by slicing between the first '>' and the last closing tag.
+  if (s.toLowerCase().startsWith('<function') && s.includes('</function>')) {
+    const open = s.indexOf('>');
+    const close = s.toLowerCase().lastIndexOf('</function>');
+    if (open !== -1 && close > open) s = s.slice(open + 1, close).trim();
+  }
+  // Unwrap a ```…``` / ```json…``` fence by slicing between the first and last fence markers.
+  if (s.startsWith('```')) {
+    const close = s.lastIndexOf('```');
+    if (close > 2) {
+      let inner = s.slice(3, close);
+      if (/^json\b/i.test(inner)) inner = inner.slice(4);
+      s = inner.trim();
+    }
+  }
+  return s;
+}
+
+/**
+ * Parse tool-call arguments. Try the raw string first so valid JSON is never altered; only if that
+ * fails do we attempt to unwrap model wrappers (gpt-oss/Llama) and parse again.
+ */
+function parseToolArgs(raw: string | undefined): unknown {
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return JSON.parse(sanitizeToolArgs(raw));
+  }
+}
+
 /** Execute a single tool call. Never throws — failures become a tool message the model can read. */
 async function runToolCall(
   ctx: TenantContext,
@@ -127,7 +175,7 @@ async function runToolCall(
   const toolName = fromOpenAiToolName(toolCall.function.name);
   let args: unknown = {};
   try {
-    args = toolCall.function.arguments ? JSON.parse(toolCall.function.arguments) : {};
+    args = parseToolArgs(toolCall.function.arguments);
   } catch {
     return {
       toolName,
@@ -198,8 +246,7 @@ export async function runChatTurn(
 
   const { messages, ragPassages } = await buildTurnMessages(ctx, convId, userMessage, opts.userName);
   const tools = buildTools(ctx);
-  const model = opts.model ?? models.default;
-  const client = getOpenAI();
+  const turn = newTurnModel(opts);
 
   const usageAcc = { promptTokens: 0, completionTokens: 0, totalCost: 0 };
   const toolSummaries: ChatToolCallSummary[] = [];
@@ -208,19 +255,15 @@ export async function runChatTurn(
 
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i += 1) {
     iterations = i + 1;
-    const completion = await client.chat.completions.create({
-      model,
-      messages,
-      ...(tools.length > 0 ? { tools, tool_choice: 'auto' as const } : {}),
-    });
-    recordUsage(ctx, model, completion.usage, usageAcc);
+    const completion = await createCompletion(turn, messages, tools);
+    recordUsage(ctx, turn.model, completion.usage, usageAcc);
 
     const message = completion.choices[0]?.message;
-    if (!message) throw new AppError('OpenAI returned no choices', { statusCode: 502 });
+    if (!message) throw new AppError('LLM returned no choices', { statusCode: 502 });
     const content = message.content ?? '';
     const toolCalls = message.tool_calls ?? [];
 
-    await persistAssistant(ctx, convId, content, toolCalls, model, completion.usage);
+    await persistAssistant(ctx, convId, content, toolCalls, turn.model, completion.usage);
     pushAssistant(messages, content, toolCalls);
 
     if (toolCalls.length === 0) {
@@ -250,7 +293,7 @@ export async function runChatTurn(
     status: 'ok',
     resourceType: 'conversation',
     resourceId: convId,
-    detail: { iterations, toolCalls: toolSummaries.length, ragPassages, ...usageAcc },
+    detail: { iterations, toolCalls: toolSummaries.length, ragPassages, provider: turn.provider, fellBack: turn.fellBack, ...usageAcc },
   });
 
   return {
@@ -263,12 +306,97 @@ export async function runChatTurn(
   };
 }
 
-async function streamCompletion(
-  client: OpenAI,
-  params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming,
+/** The provider+model for a turn, plus whether we fell back to OpenAI mid-turn. */
+interface TurnModel {
+  provider: Provider;
+  model: string;
+  fellBack: boolean;
+}
+
+/** Resolve the worker model for a turn (Groq when enabled; OpenAI otherwise / on override). */
+function newTurnModel(opts: ChatTurnOptions): TurnModel {
+  const resolved = resolveModel('worker', { model: opts.model });
+  return { provider: resolved.provider, model: resolved.model, fellBack: false };
+}
+
+/** Mutate the turn to fall back to OpenAI (used after a Groq failure). */
+function fallBackToOpenAI(turn: TurnModel, err: unknown): void {
+  logger.warn(
+    { err: errorMessage(err), model: turn.model },
+    'completion failed on groq; falling back to OpenAI for the rest of the turn',
+  );
+  turn.provider = 'openai';
+  turn.model = models.default;
+  turn.fellBack = true;
+}
+
+/** Non-streaming completion with one-shot fallback to OpenAI on a Groq error. */
+async function createCompletion(
+  turn: TurnModel,
+  messages: ChatMessage[],
+  tools: ChatTool[],
+): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+  const params = {
+    model: turn.model,
+    messages,
+    ...(tools.length > 0 ? { tools, tool_choice: 'auto' as const } : {}),
+  };
+  try {
+    return await getClient(turn.provider).chat.completions.create(params);
+  } catch (err) {
+    if (turn.provider === 'openai') throw err;
+    fallBackToOpenAI(turn, err);
+    return getClient('openai').chat.completions.create({ ...params, model: turn.model });
+  }
+}
+
+/** Open a streaming completion for the turn's current provider. No fallback here — see streamTurn. */
+function openStream(
+  turn: TurnModel,
+  messages: ChatMessage[],
+  tools: ChatTool[],
+): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
+  const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
+    model: turn.model,
+    messages,
+    stream: true,
+    stream_options: { include_usage: true },
+    ...(tools.length > 0 ? { tools, tool_choice: 'auto' as const } : {}),
+  };
+  return getClient(turn.provider).chat.completions.create(params);
+}
+
+/** Tracks whether any token has reached the client, so a mid-stream fallback can't duplicate output. */
+interface StreamProgress {
+  emitted: boolean;
+}
+
+/**
+ * Stream a turn with Groq→OpenAI fallback that covers BOTH a failed stream open and a failure
+ * mid-iteration. We only fall back while nothing has been streamed yet — once tokens are on the
+ * wire, re-running on OpenAI would duplicate visible output, so we surface the error instead.
+ */
+async function streamTurn(
+  turn: TurnModel,
+  messages: ChatMessage[],
+  tools: ChatTool[],
   sse: SSEStream,
 ): Promise<{ content: string; toolCalls: ToolCall[]; usage: Usage | null }> {
-  const stream = await client.chat.completions.create(params);
+  const progress: StreamProgress = { emitted: false };
+  try {
+    return await consumeStream(await openStream(turn, messages, tools), sse, progress);
+  } catch (err) {
+    if (turn.provider === 'openai' || progress.emitted) throw err;
+    fallBackToOpenAI(turn, err);
+    return consumeStream(await openStream(turn, messages, tools), sse, progress);
+  }
+}
+
+async function consumeStream(
+  stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>,
+  sse: SSEStream,
+  progress: StreamProgress,
+): Promise<{ content: string; toolCalls: ToolCall[]; usage: Usage | null }> {
   let content = '';
   let usage: Usage | null = null;
   const acc = new Map<number, { id: string; name: string; args: string }>();
@@ -279,6 +407,7 @@ async function streamCompletion(
     if (!delta) continue;
     if (delta.content) {
       content += delta.content;
+      progress.emitted = true;
       sse.send('token', { text: delta.content });
     }
     for (const tcd of delta.tool_calls ?? []) {
@@ -318,8 +447,7 @@ export async function streamChatTurn(
   const { messages, ragPassages } = await buildTurnMessages(ctx, convId, userMessage, opts.userName);
   sse.send('context', { passages: ragPassages });
   const tools = buildTools(ctx);
-  const model = opts.model ?? models.default;
-  const client = getOpenAI();
+  const turn = newTurnModel(opts);
 
   const usageAcc = { promptTokens: 0, completionTokens: 0, totalCost: 0 };
   const toolSummaries: ChatToolCallSummary[] = [];
@@ -336,20 +464,10 @@ export async function streamChatTurn(
           : 'Thinking…'
         : 'Thinking it through…';
     sse.send('status', { state: 'thinking', label: thinkingLabel });
-    const { content, toolCalls, usage } = await streamCompletion(
-      client,
-      {
-        model,
-        messages,
-        stream: true,
-        stream_options: { include_usage: true },
-        ...(tools.length > 0 ? { tools, tool_choice: 'auto' as const } : {}),
-      },
-      sse,
-    );
-    recordUsage(ctx, model, usage, usageAcc);
+    const { content, toolCalls, usage } = await streamTurn(turn, messages, tools, sse);
+    recordUsage(ctx, turn.model, usage, usageAcc);
 
-    await persistAssistant(ctx, convId, content, toolCalls, model, usage);
+    await persistAssistant(ctx, convId, content, toolCalls, turn.model, usage);
     pushAssistant(messages, content, toolCalls);
 
     if (toolCalls.length === 0) {
@@ -383,7 +501,7 @@ export async function streamChatTurn(
     status: 'ok',
     resourceType: 'conversation',
     resourceId: convId,
-    detail: { iterations, toolCalls: toolSummaries.length, streamed: true, ragPassages, ...usageAcc },
+    detail: { iterations, toolCalls: toolSummaries.length, streamed: true, ragPassages, provider: turn.provider, fellBack: turn.fellBack, ...usageAcc },
   });
 
   const result: ChatTurnResult = {

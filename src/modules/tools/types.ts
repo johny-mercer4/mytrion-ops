@@ -12,7 +12,7 @@ export type ToolContext = TenantContext;
  * then validates the result against `outputSchema`.
  */
 export interface ToolManifest<TInput, TOutput> {
-  /** Stable id, e.g. 'zoho_crm.search_accounts'. Also used as the OpenAI tool name. */
+  /** Stable id, e.g. 'zoho_people.search_employees'. Also used as the OpenAI tool name. */
   name: string;
   /** Used by the LLM to decide when to call the tool. */
   description: string;
