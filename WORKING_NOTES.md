@@ -542,3 +542,23 @@ If we revisit later (post-GA), the path = an MCP-client adapter behind toolDispa
 - Gate behind a one-time falsification test: in the Zoho MCP console create a server with
   "Authorization via Connections", then from a clean machine (no Zoho cookies) curl/Node-connect the
   generated URL — if it 401s/redirects-to-login, hosted-MCP-headless is dead.
+
+
+### AI Chat sessions + conversation logging (2026-06-23)
+
+Persistent chat sessions for the widget. Commit `3475aeb`. EXTENDED the existing conversations/messages
+tables + repos (not new chat_* tables) since /chat/stream already returns conversations.id + replays
+from messages. Migration 0004 applied live (additive columns; cv_/msg_ id prefixes for new rows).
+- Logging wired into runChatTurn + streamChatTurn via finalizeTurn (annotate final assistant OR insert
+  errored/cap-fallback row; auto-title; messageCount +2; lastMessageAt bump). ensureConversation is
+  create-on-missing and returns the row.
+- CRUD: POST create / GET list(+total) / GET :id (transcript) / POST :id rename / POST :id/delete (cascade).
+- Reviewed (21 agents); fixed 4 blockers: cross-user IDOR (by-id routes now owner-scoped via zoho_user_id,
+  tenant fallback only when absent — widget should always send it), tool-cap final answer now persisted to
+  a transcript row, chatService split (completion.ts extracted) to stay <600 lines, errored-empty rows not
+  replayed into prompt. Verified live incl. cross-user 404s.
+- KNOWN non-blocking follow-ups (from review, deferred): (1) messageCount is a denormalized display-only
+  counter (+2/turn) — can drift from transcript length on preamble-with-tool_calls or errored-after-preamble
+  turns; no consumer depends on it. (2) A DB write failing mid-tool-loop can leave an assistant(tool_calls)
+  row with no matching tool row → that one conversation is un-resumable until it ages past 20 turns; fix =
+  drop a trailing unsatisfied-tool_calls assistant in loadHistory (symmetry with the existing leading-tool drop).
