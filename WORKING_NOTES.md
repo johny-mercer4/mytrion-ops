@@ -460,3 +460,27 @@ review fixes, tests).
 - Tests: router, non-stream + SSE routing, open/pre-token/mid-token fallback, multi-iteration
   stickiness, flag-off parity + OpenAI rethrow, sanitizer safety. RBAC suites green. 93 pass;
   typecheck/lint/build clean. chatService.ts 517 lines (<600 cap). Not pushed.
+
+
+### Zoho CRM/Desk/People read tools + RAG verification (2026-06-22)
+
+Added simple READ-ONLY tooling to prove the Zoho integrations + RAG work end to end.
+Commits: `cbf1c89` (tools) + `4a0f78b` (review hardening).
+- Integrations: `src/integrations/zohoCrm.ts` (runCoql via POST /coql + getOrg) and
+  `zohoDesk.ts` (listTickets GET /tickets + listDepartments). People tool already existed.
+- Tools: `zoho_crm.query` (COQL, scope zoho_crm:read) and `zoho_desk.search_tickets`
+  (scope zoho_desk:read), both internal + riskClass read, departments left open. Registry now 7.
+- `scripts/zoho-smoke.ts` (`pnpm zoho:smoke`): live read-only smoke — CRM org+COQL, Desk
+  departments+tickets, People employees, and a RAG ingest→retrieve→delete round-trip. SKIPs when
+  a secret is absent; only DB write is the self-deleting canary.
+- **Verified live against the real org (company=Octane): all 6 checks pass**, incl. RAG retrieval
+  (pgvector + OpenAI embeddings). So OAuth tokens, all three Zoho services, and RAG are confirmed working.
+- Learned live: Zoho COQL REQUIRES a WHERE clause (use `where id is not null` to match all) — baked
+  into the tool description. Desk `listTickets` works WITHOUT departmentId (kept optional).
+- Adversarial review workflow (24 agents) → applied: Desk limit caps (tickets 99 / depts 200);
+  removed the brittle COQL write-keyword regex (false-positives only, since /coql is SELECT-only +
+  read scope); OrgInfo snake_case. Rejected the "departmentId required" finding (live evidence wins).
+- Architecture decision: tool CONTRACTS stay hardcoded (ToolManifest); BUSINESS/SCHEMA context
+  (module/field API names, dept name→id, glossary) goes in the RAG vector DB. The model needs RAG to
+  write correct COQL — they're complementary, not either/or. Next: ingest a CRM/Desk/People data
+  dictionary (.md, skeleton from `pnpm meta:zoho-*`).
