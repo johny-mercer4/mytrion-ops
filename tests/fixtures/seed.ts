@@ -28,6 +28,8 @@ export function makeContext(overrides: Partial<TenantContext> & { role?: Role } 
 export const sampleToolArgs: Record<string, Record<string, unknown>> = {
   'knowledge.search': { query: 'fuel card policy' },
   'zoho_people.search_employees': {},
+  'zoho_crm.query': { select_query: 'select id from Leads limit 0, 1' },
+  'zoho_desk.search_tickets': {},
   'agent.sales_snapshot': {},
   'agent.debtors': {},
   'agent.activity': {},

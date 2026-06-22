@@ -17,6 +17,7 @@
     "meta:zoho-desk": "tsx metadataScripts/zohoDeskAnalyzer.ts",
     "meta:zoho-people": "tsx metadataScripts/zohoPeopleAnalyzer.ts",
     "meta:dwh": "tsx metadataScripts/dwhAnalyzer.ts",
+    "zoho:smoke": "tsx scripts/zoho-smoke.ts",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
