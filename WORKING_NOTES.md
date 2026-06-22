@@ -484,3 +484,28 @@ Commits: `cbf1c89` (tools) + `4a0f78b` (review hardening).
   (module/field API names, dept name→id, glossary) goes in the RAG vector DB. The model needs RAG to
   write correct COQL — they're complementary, not either/or. Next: ingest a CRM/Desk/People data
   dictionary (.md, skeleton from `pnpm meta:zoho-*`).
+
+
+### Whole-metadata analyzers + write-side feasibility (2026-06-22)
+
+Expanded all four metadataScripts analyzers to pull complete catalogs; verified live (read-only).
+Commit: `a686ddc`.
+- CRM: + org, users, custom-module flag, per-field picklist values + lookup/relationship targets,
+  per-module related lists. Live: 149 modules (47 custom), 200 users, 353 picklist fields, 84 lookups.
+- Desk: + agents, teams, per-field allowedValues (picklists); module sweep extended. Live: 10 depts,
+  10 agents, 24 picklist fields.
+- People: + component options (best-effort; this edition's /components doesn't return them → 0).
+- DWH: + foreign keys + indexes. Live: 594 tables/views, 146 indexes, 0 declared FKs (normal for a warehouse).
+- All sections best-effort: missing scope / invalid module logged + recorded, never fatal. output/ git-ignored.
+
+**Write-side finding (custom modules) — IMPORTANT.** Zoho's public APIs do NOT support creating
+custom MODULES (CRM), FORMS (People), or any "module" (Desk) — that's a product-UI/admin-console
+operation. Confirmed against the committed API skills + Zoho MCP tool set (no createModule anywhere).
+What the APIs DO allow:
+- CRM: create custom **fields** (`POST /settings/fields`, scope settings.fields.CREATE — the MCP
+  `createFields` capability) and **records** (POST /{module}); also notes/tags/attachments.
+- Desk: create **records** (tickets, departments) — no custom-field/module create endpoint.
+- People: insert **records** into existing forms (insertRecord, add-employee, add-department) — no form create.
+So any "creation" tooling = custom fields (CRM only) or records. These are production WRITES
+(outward-facing, hard to reverse) → must be gated: riskClass 'write', admin role, dry-run default,
+explicit --apply. Awaiting user decision on scope before building.
