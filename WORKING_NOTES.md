@@ -427,3 +427,16 @@ Reviewed servercrm (build) operational processes (3 parallel agents; map saved t
 - Registry now 5 tools. Updated rbac.test/tools.test/fixtures; new `tests/unit/servercrm-tools.test.ts`
   (scoping + request building). 75 tests pass; typecheck/lint/build clean. Widget brief Tools table updated.
 
+
+### LLM provider research: OpenAI + Groq (2026-06-22)
+
+Ran an 8-agent research workflow (6 parallel research → fact-check verify → synthesis) on OpenAI +
+Groq/Llama for speed + cost. Output committed as skill `.claude/skills/llm-providers/SKILL.md`
+(verified pricing/capability table + phased integration plan). Key conclusions:
+- Add **Groq via the OpenAI-compatible baseURL** (existing `openai` SDK), not `groq-sdk`.
+- Use **`openai/gpt-oss-120b`/`gpt-oss-20b`, NOT Llama** (all Groq-Llama deprecated in 2026; gpt-oss
+  = official replacement + strict json_schema + caching). 
+- Route: worker turns → Groq gpt-oss; final grounded answer → OpenAI; hard → `gpt-5.4-mini`.
+- Mandatory validate→strip-wrappers→retry→**fallback-to-OpenAI** on Groq tool-call failure.
+- Gate behind `FF_GROQ_ENABLED` (off by default). Decision saved to memory. NOT yet implemented —
+  this turn is research + plan only; `GROQ_API_KEY` is in `.env`.
