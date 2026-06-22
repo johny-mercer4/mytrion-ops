@@ -509,3 +509,36 @@ What the APIs DO allow:
 So any "creation" tooling = custom fields (CRM only) or records. These are production WRITES
 (outward-facing, hard to reverse) → must be gated: riskClass 'write', admin role, dry-run default,
 explicit --apply. Awaiting user decision on scope before building.
+
+
+### Zoho MCP evaluation — decision: defer (2026-06-23)
+
+Researched connecting Mytrion Ops to Zoho's hosted MCP (5-cluster research workflow + skeptical
+critique). Decision: **do NOT build on Zoho hosted MCP now; keep the existing refresh-token integration.**
+
+Why:
+- **Headless auth is the blocker.** Zoho hosted MCP documents only two auth models: "Authorization on
+  Demand" (per-user browser OAuth, default) and "Authorization via Connections" (a human Super Admin
+  consents once, tokens shared org-wide). Every documented client (Claude/Cursor/VS Code) requires an
+  interactive "Click Allow" at connect time. No documented server-to-server / API-key-only path for a
+  cold backend process. So a multi-user backend almost certainly can't drive it headless.
+- **We already have headless auth**: src/integrations/zoho.ts (grant_type=refresh_token) + wrapper.ts
+  (cached 1h access tokens). Non-expiring refresh token minted once = autonomous forever. This is our
+  "single service identity" and it's already proven live (last session's smoke test).
+- **Beta risk**: Zoho MCP is early/beta ("functionalities may change"); no official GA date.
+- **RBAC mismatch**: "Authorization via Connections" = one shared Super-Admin identity, no
+  per-department scoping → our department_access RBAC would have to do ALL isolation (makes rule 9
+  cross-tenant tests load-bearing).
+
+If we revisit later (post-GA), the path = an MCP-client adapter behind toolDispatcher:
+- Package: the single `@modelcontextprotocol/sdk` (v1.x, subpath imports e.g.
+  `@modelcontextprotocol/sdk/client/streamableHttp.js`). The split `@modelcontextprotocol/client|server`
+  is v2/pre-alpha (~stable Aug 2026) — NOT what you install today. (Repo has no MCP SDK yet.)
+- Transport: StreamableHTTPClientTransport (SSE deprecated).
+- Wrap each discovered MCP tool as a ToolManifest; classify riskClass via verb allowlist
+  (get/search/list→read, create/update/delete/upsert/send→write), default-unknown→write (rule 7);
+  route every call through toolDispatcher (RBAC+audit); sanitize JSON-Schema for OpenAI strict mode
+  (strip anyOf/format/$ref); provision the shared token with READ-only scopes as defense-in-depth.
+- Gate behind a one-time falsification test: in the Zoho MCP console create a server with
+  "Authorization via Connections", then from a clean machine (no Zoho cookies) curl/Node-connect the
+  generated URL — if it 401s/redirects-to-login, hosted-MCP-headless is dead.
