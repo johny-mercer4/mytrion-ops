@@ -38,16 +38,18 @@ vi.mock('../../src/modules/knowledge/retriever.js', () => ({ retrieve: retrieveM
 vi.mock('../../src/modules/chat/toolDispatcher.js', () => ({ dispatchTool: dispatchMock }));
 vi.mock('../../src/repos/conversationRepo.js', () => ({
   conversationRepo: {
-    create: vi.fn(async () => ({ id: 'conv_1' })),
-    findOwned: vi.fn(async () => ({ id: 'conv_1' })),
-    touch: vi.fn(async () => undefined),
+    create: vi.fn(async () => ({ id: 'conv_1', title: null })),
+    findOwned: vi.fn(async () => ({ id: 'conv_1', title: 'existing' })),
+    setTitle: vi.fn(async () => undefined),
+    bumpForTurn: vi.fn(async () => undefined),
   },
 }));
 vi.mock('../../src/modules/chat/messageStore.js', () => ({
   messageStore: {
     appendUser: vi.fn(async () => ({})),
-    appendAssistant: vi.fn(async () => ({})),
+    appendAssistant: vi.fn(async () => ({ id: 'msg_1' })),
     appendToolResult: vi.fn(async () => ({})),
+    annotateAssistant: vi.fn(async () => undefined),
     loadHistory: vi.fn(async () => []),
   },
 }));

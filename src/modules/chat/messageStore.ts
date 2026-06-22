@@ -1,7 +1,7 @@
 import type OpenAI from 'openai';
 import { DEFAULT_HISTORY_TURNS } from '../../config/constants.js';
 import type { Message } from '../../db/schema/index.js';
-import { messageRepo } from '../../repos/messageRepo.js';
+import { messageRepo, type AnnotateMessageInput } from '../../repos/messageRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
 type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
@@ -16,6 +16,8 @@ export function dbMessageToOpenAi(msg: Message): ChatMessage | null {
     case 'user':
       return { role: 'user', content: msg.content };
     case 'assistant': {
+      // An errored turn with no usable text is bookkeeping only — don't replay it into the prompt.
+      if (msg.error && msg.content.length === 0 && !msg.toolCalls) return null;
       const assistant: AssistantMessage = {
         role: 'assistant',
         content: msg.content.length > 0 ? msg.content : null,
@@ -40,11 +42,26 @@ export interface AssistantPersistInput {
   model?: string;
   promptTokens?: number;
   completionTokens?: number;
+  // --- Widget transcript metadata (set on the final assistant message of a turn) ---
+  departmentScope?: string | string[];
+  ragPassages?: number;
+  tools?: Array<{ name: string; status: string }>;
+  error?: string;
 }
 
 export const messageStore = {
-  appendUser(ctx: TenantContext, conversationId: string, content: string): Promise<Message> {
-    return messageRepo.append(ctx, { conversationId, role: 'user', content });
+  appendUser(
+    ctx: TenantContext,
+    conversationId: string,
+    content: string,
+    departmentScope?: string | string[],
+  ): Promise<Message> {
+    return messageRepo.append(ctx, {
+      conversationId,
+      role: 'user',
+      content,
+      ...(departmentScope !== undefined ? { departmentScope } : {}),
+    });
   },
 
   appendAssistant(
@@ -60,7 +77,16 @@ export const messageStore = {
       ...(input.model !== undefined ? { model: input.model } : {}),
       ...(input.promptTokens !== undefined ? { promptTokens: input.promptTokens } : {}),
       ...(input.completionTokens !== undefined ? { completionTokens: input.completionTokens } : {}),
+      ...(input.departmentScope !== undefined ? { departmentScope: input.departmentScope } : {}),
+      ...(input.ragPassages !== undefined ? { ragPassages: input.ragPassages } : {}),
+      ...(input.tools !== undefined ? { tools: input.tools } : {}),
+      ...(input.error !== undefined ? { error: input.error } : {}),
     });
+  },
+
+  /** Attach turn-summary metadata to the final assistant message (tenant-scoped). */
+  annotateAssistant(ctx: TenantContext, messageId: string, patch: AnnotateMessageInput): Promise<void> {
+    return messageRepo.annotate(ctx, messageId, patch);
   },
 
   appendToolResult(

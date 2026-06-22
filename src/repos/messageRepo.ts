@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, ne, or } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { messages, type Message, type NewMessage } from '../db/schema/index.js';
 import type { TenantContext } from '../types/tenantContext.js';
@@ -14,6 +14,19 @@ export interface AppendMessageInput {
   model?: string;
   promptTokens?: number;
   completionTokens?: number;
+  // --- Widget transcript metadata ---
+  departmentScope?: string | string[];
+  ragPassages?: number;
+  tools?: Array<{ name: string; status: string }>;
+  error?: string;
+}
+
+/** Fields the chat loop annotates onto the final assistant message of a turn. */
+export interface AnnotateMessageInput {
+  departmentScope?: string | string[] | undefined;
+  ragPassages?: number | undefined;
+  tools?: Array<{ name: string; status: string }> | undefined;
+  error?: string | undefined;
 }
 
 export const messageRepo = {
@@ -31,9 +44,47 @@ export const messageRepo = {
     if (input.model !== undefined) values.model = input.model;
     if (input.promptTokens !== undefined) values.promptTokens = input.promptTokens;
     if (input.completionTokens !== undefined) values.completionTokens = input.completionTokens;
+    if (input.departmentScope !== undefined) values.departmentScope = input.departmentScope;
+    if (input.ragPassages !== undefined) values.ragPassages = input.ragPassages;
+    if (input.tools !== undefined) values.tools = input.tools;
+    if (input.error !== undefined) values.error = input.error;
 
     const rows = await db.insert(messages).values(values).returning();
     return firstOrThrow(rows, 'Failed to persist message');
+  },
+
+  /** Annotate one message (tenant-scoped) — used to attach turn summary to the final assistant row. */
+  async annotate(ctx: TenantContext, id: string, patch: AnnotateMessageInput): Promise<void> {
+    await db
+      .update(messages)
+      .set({
+        ...(patch.departmentScope !== undefined ? { departmentScope: patch.departmentScope } : {}),
+        ...(patch.ragPassages !== undefined ? { ragPassages: patch.ragPassages } : {}),
+        ...(patch.tools !== undefined ? { tools: patch.tools } : {}),
+        ...(patch.error !== undefined ? { error: patch.error } : {}),
+      })
+      .where(and(eq(messages.id, id), eq(messages.tenantId, ctx.tenantId)));
+  },
+
+  /**
+   * The clean widget transcript (oldest→newest): user messages plus the final-answer assistant
+   * messages, dropping the intermediate empty tool-calling assistant stubs and tool rows.
+   */
+  async listTranscript(ctx: TenantContext, conversationId: string): Promise<Message[]> {
+    return db
+      .select()
+      .from(messages)
+      .where(
+        and(
+          eq(messages.tenantId, ctx.tenantId),
+          eq(messages.conversationId, conversationId),
+          or(
+            eq(messages.role, 'user'),
+            and(eq(messages.role, 'assistant'), or(ne(messages.content, ''), isNotNull(messages.error))),
+          ),
+        ),
+      )
+      .orderBy(asc(messages.createdAt));
   },
 
   /** The most recent `limit` messages, returned oldest-first (for prompt assembly). */

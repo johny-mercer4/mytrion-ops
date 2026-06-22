@@ -182,4 +182,44 @@ describe('HTTP API (no external services)', () => {
     const res = await app.inject({ method: 'POST', url: '/v1/scope/risks/ri_x/delete' });
     expect(res.statusCode).toBe(401);
   });
+
+  // --- Chat conversation sessions (auth + validation; DB-touching paths covered by the live smoke) ---
+
+  it('rejects GET /v1/chat/conversations with no API key', async () => {
+    const res = await app.inject({ method: 'GET', url: '/v1/chat/conversations?zoho_user_id=551' });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toMatchObject({ error: { code: 'AUTH_ERROR' } });
+  });
+
+  it('rejects POST /v1/chat/conversations with no API key', async () => {
+    const res = await app.inject({ method: 'POST', url: '/v1/chat/conversations', payload: { zoho_user_id: '551' } });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('rejects an empty update patch (POST /v1/chat/conversations/:id with no fields → 400)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/conversations/cv_anything',
+      headers: { 'x-api-key': 'test-secret-key', 'content-type': 'application/json' },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+  });
+
+  it('validates /v1/chat/stream body (message required → 400)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/stream',
+      headers: { 'x-api-key': 'test-secret-key', 'content-type': 'application/json' },
+      payload: { zoho_user_id: '551' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+  });
+
+  it('rejects POST /v1/chat/conversations/:id/delete with no API key', async () => {
+    const res = await app.inject({ method: 'POST', url: '/v1/chat/conversations/cv_x/delete' });
+    expect(res.statusCode).toBe(401);
+  });
 });
