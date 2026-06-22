@@ -39,6 +39,12 @@ const EnvSchema = z.object({
   OPEN_AI_FIVE_O_MINI: z.string().default('gpt-5.4-mini-2026-03-17'),
   OPEN_AI_EMBEDDING_SMALL: z.string().default('text-embedding-3-small'),
 
+  // --- Groq (fast/cheap worker via the OpenAI-compatible API). Off unless FF_GROQ_ENABLED. ---
+  GROQ_API_KEY: z.string().default(''),
+  GROQ_BASE_URL: z.string().default('https://api.groq.com/openai/v1'),
+  // Worker model for tool-calling/simple turns. gpt-oss (NOT Llama — deprecated on Groq).
+  GROQ_MODEL_WORKER: z.string().default('openai/gpt-oss-120b'),
+
   // --- Auth ---
   JWT_SECRET: z.string().default(''),
   JWT_ACCESS_TTL: z.string().default('15m'),
@@ -128,6 +134,8 @@ const EnvSchema = z.object({
   FF_KNOWLEDGE_INGEST_ENABLED: flag('1'),
   // Always-on RAG: inject RBAC-scoped pgvector passages into every chat turn.
   FF_RAG_ENABLED: flag('1'),
+  // Route worker/tool-calling turns to Groq (gpt-oss). Off → all turns stay on OpenAI.
+  FF_GROQ_ENABLED: flag('0'),
   FF_AUDIT_LOG_ENABLED: flag('1'),
 });
 
@@ -174,6 +182,7 @@ export function assertRuntimeSecrets(): void {
   if (!env.JWT_SECRET) missing.push('JWT_SECRET');
   if (!env.ENCRYPTION_KEY) missing.push('ENCRYPTION_KEY');
   if (!env.OPENAI_API_KEY) missing.push('OPENAI_API_KEY');
+  if (env.FF_GROQ_ENABLED && !env.GROQ_API_KEY) missing.push('GROQ_API_KEY');
 
   if (missing.length === 0) return;
 

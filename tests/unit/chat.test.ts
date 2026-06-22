@@ -6,10 +6,17 @@ const { createMock, dispatchMock, retrieveMock } = vi.hoisted(() => ({
   retrieveMock: vi.fn(),
 }));
 
-vi.mock('../../src/modules/llm/openaiClient.js', () => ({
-  getOpenAI: () => ({ chat: { completions: { create: createMock } } }),
-  models: { default: 'gpt-4o-mini', reasoning: 'gpt-4o', embedding: 'text-embedding-3-small' },
-}));
+vi.mock('../../src/modules/llm/openaiClient.js', () => {
+  const stub = { chat: { completions: { create: createMock } } };
+  return {
+    getOpenAI: () => stub,
+    getGroq: () => stub,
+    getClient: () => stub,
+    setOpenAIClient: vi.fn(),
+    setGroqClient: vi.fn(),
+    models: { default: 'gpt-4o-mini', reasoning: 'gpt-4o', embedding: 'text-embedding-3-small' },
+  };
+});
 vi.mock('../../src/modules/knowledge/retriever.js', () => ({ retrieve: retrieveMock }));
 vi.mock('../../src/modules/chat/toolDispatcher.js', () => ({ dispatchTool: dispatchMock }));
 vi.mock('../../src/repos/conversationRepo.js', () => ({
@@ -96,5 +103,25 @@ describe('runChatTurn', () => {
     expect(res.toolCalls).toEqual([{ name: 'knowledge.search', status: 'ok' }]);
     expect(res.message).toBe('Final answer');
     expect(res.iterations).toBe(2);
+  });
+
+  it('parses tool arguments that a Groq model wrapped in fences / function tags', async () => {
+    // gpt-oss/Llama sometimes emit `<|python_tag|>`, `<function>…</function>`, or ```json fences
+    // around the JSON. sanitizeToolArgs should strip those so the call still dispatches.
+    const wrapped = '<|python_tag|><function=knowledge__search>```json\n{"query":"expiry"}\n```</function>';
+    createMock
+      .mockResolvedValueOnce(
+        completion('', [
+          { id: 'call_1', type: 'function', function: { name: 'knowledge__search', arguments: wrapped } },
+        ]),
+      )
+      .mockResolvedValueOnce(completion('Grounded'));
+    dispatchMock.mockResolvedValueOnce({ passages: [] });
+
+    const res = await runChatTurn('conv_1', 'look it up', makeContext({ role: 'ops' }));
+
+    expect(dispatchMock.mock.calls[0]?.[0]).toBe('knowledge.search');
+    expect(dispatchMock.mock.calls[0]?.[1]).toEqual({ query: 'expiry' });
+    expect(res.toolCalls).toEqual([{ name: 'knowledge.search', status: 'ok' }]);
   });
 });
