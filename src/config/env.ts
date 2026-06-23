@@ -45,6 +45,9 @@ const EnvSchema = z.object({
   // Worker model for tool-calling/simple turns. gpt-oss (NOT Llama — deprecated on Groq).
   GROQ_MODEL_WORKER: z.string().default('openai/gpt-oss-120b'),
 
+  // --- Zoho MCP (hosted; "Authorize via Connection" → headless, URL embeds the credential). ---
+  ZOHO_MCP_URL: z.string().default(''),
+
   // --- Auth ---
   JWT_SECRET: z.string().default(''),
   JWT_ACCESS_TTL: z.string().default('15m'),
@@ -136,6 +139,10 @@ const EnvSchema = z.object({
   FF_RAG_ENABLED: flag('1'),
   // Route worker/tool-calling turns to Groq (gpt-oss). Off → all turns stay on OpenAI.
   FF_GROQ_ENABLED: flag('0'),
+  // Expose Zoho MCP tools to the chat agent (read tools only unless FF_ZOHO_MCP_WRITES). Off by default.
+  FF_ZOHO_MCP_ENABLED: flag('0'),
+  // Additionally expose Zoho MCP WRITE tools (create/update/upsert). Off by default (read-only posture).
+  FF_ZOHO_MCP_WRITES: flag('0'),
   FF_AUDIT_LOG_ENABLED: flag('1'),
 });
 
@@ -183,6 +190,7 @@ export function assertRuntimeSecrets(): void {
   if (!env.ENCRYPTION_KEY) missing.push('ENCRYPTION_KEY');
   if (!env.OPENAI_API_KEY) missing.push('OPENAI_API_KEY');
   if (env.FF_GROQ_ENABLED && !env.GROQ_API_KEY) missing.push('GROQ_API_KEY');
+  if (env.FF_ZOHO_MCP_ENABLED && !env.ZOHO_MCP_URL) missing.push('ZOHO_MCP_URL');
 
   if (missing.length === 0) return;
 

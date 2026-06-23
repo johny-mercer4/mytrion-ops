@@ -55,6 +55,16 @@ export class ToolRegistry {
     }
   }
 
+  /**
+   * Add tools after construction (e.g. MCP tools discovered at boot). Idempotent: a name already
+   * present is skipped, so re-running boot won't throw on duplicates.
+   */
+  register(tools: RegisteredTool[]): void {
+    for (const tool of tools) {
+      if (!this.byName.has(tool.name)) this.byName.set(tool.name, tool);
+    }
+  }
+
   get(name: string): RegisteredTool | undefined {
     return this.byName.get(name);
   }

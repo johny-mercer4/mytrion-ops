@@ -47,5 +47,11 @@ export interface RegisteredTool {
   requiredScopes: string[];
   allowedDepartments?: string[];
   rateLimit?: { perMinute: number };
+  /**
+   * Pre-built JSON Schema for the OpenAI `function.parameters`, used when a tool's parameters come
+   * from an external source (e.g. an MCP server) rather than a local zod schema. When set, the chat
+   * loop uses this verbatim instead of deriving it from `inputSchema`.
+   */
+  rawParameters?: Record<string, unknown>;
   run: (rawInput: unknown, ctx: ToolContext) => Promise<unknown>;
 }

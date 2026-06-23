@@ -60,11 +60,10 @@ function buildTools(ctx: TenantContext): ChatTool[] {
     function: {
       name: toOpenAiToolName(tool.name),
       description: tool.description,
-      // zod -> JSON Schema; inline refs so OpenAI gets a self-contained schema.
-      parameters: zodToJsonSchema(tool.inputSchema, { $refStrategy: 'none' }) as Record<
-        string,
-        unknown
-      >,
+      // MCP tools carry their own JSON Schema (rawParameters); native tools derive it from zod.
+      parameters:
+        tool.rawParameters ??
+        (zodToJsonSchema(tool.inputSchema, { $refStrategy: 'none' }) as Record<string, unknown>),
     },
   }));
 }
