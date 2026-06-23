@@ -7,7 +7,7 @@ export const messages = pgTable(
   {
     id: text('id')
       .primaryKey()
-      .$defaultFn(() => createId()),
+      .$defaultFn(() => `msg_${createId()}`),
     tenantId: text('tenant_id').notNull(),
     conversationId: text('conversation_id').notNull(),
     role: text('role').$type<'system' | 'user' | 'assistant' | 'tool'>().notNull(),
@@ -21,6 +21,15 @@ export const messages = pgTable(
     model: text('model'),
     promptTokens: integer('prompt_tokens'),
     completionTokens: integer('completion_tokens'),
+    // --- Widget transcript metadata (set on user/assistant turns from the Zoho widget) ---
+    /** department_scope sent for this turn (string or string[]). */
+    departmentScope: jsonb('department_scope').$type<string | string[]>(),
+    /** Grounded-passage count for the answer (assistant turns). */
+    ragPassages: integer('rag_passages'),
+    /** Tool calls used to produce the answer (assistant turns). */
+    tools: jsonb('tools').$type<Array<{ name: string; status: string }>>(),
+    /** Set if the turn errored. */
+    error: text('error'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({

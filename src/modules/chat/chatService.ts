@@ -2,15 +2,15 @@ import type OpenAI from 'openai';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { DEFAULT_RETRIEVAL_K, MAX_TOOL_ITERATIONS } from '../../config/constants.js';
 import { env } from '../../config/env.js';
-import { AppError, errorMessage, NotFoundError, RBACError } from '../../lib/errors.js';
+import { AppError, errorMessage, RBACError } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
-import { conversationRepo } from '../../repos/conversationRepo.js';
+import type { Conversation, Message } from '../../db/schema/index.js';
+import { conversationRepo, type CreateConversationInput } from '../../repos/conversationRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { auditFromContext } from '../audit/auditLogger.js';
 import { retrieve } from '../knowledge/retriever.js';
 import { costTracker } from '../llm/costTracker.js';
-import { getClient, models, type Provider } from '../llm/openaiClient.js';
-import { resolveModel } from '../llm/modelRouter.js';
+import { createCompletion, newTurnModel, streamTurn } from './completion.js';
 import { buildSystemPrompt, knowledgeGroundingNote } from '../llm/promptBuilder.js';
 import { toolRegistry } from '../tools/index.js';
 import { messageStore } from './messageStore.js';
@@ -42,6 +42,11 @@ export interface ChatTurnOptions {
   model?: string;
   /** Display name of the end-user (e.g. from a Zoho widget) — added to the system prompt. */
   userName?: string;
+  // --- Zoho widget session metadata, persisted on the conversation/messages ---
+  zohoUserId?: string;
+  profile?: string;
+  role?: string;
+  departmentScope?: string | string[];
 }
 
 // OpenAI function names must match ^[a-zA-Z0-9_-]+$, but our tool ids use dots
@@ -55,23 +60,101 @@ function buildTools(ctx: TenantContext): ChatTool[] {
     function: {
       name: toOpenAiToolName(tool.name),
       description: tool.description,
-      // zod -> JSON Schema; inline refs so OpenAI gets a self-contained schema.
-      parameters: zodToJsonSchema(tool.inputSchema, { $refStrategy: 'none' }) as Record<
-        string,
-        unknown
-      >,
+      // MCP tools carry their own JSON Schema (rawParameters); native tools derive it from zod.
+      parameters:
+        tool.rawParameters ??
+        (zodToJsonSchema(tool.inputSchema, { $refStrategy: 'none' }) as Record<string, unknown>),
     },
   }));
 }
 
-async function ensureConversation(ctx: TenantContext, conversationId?: string): Promise<string> {
+/** Conversation metadata seeded from the caller's Zoho identity (for the session row). */
+function conversationMeta(ctx: TenantContext, opts: ChatTurnOptions): CreateConversationInput {
+  const meta: CreateConversationInput = {};
+  if (opts.zohoUserId) meta.zohoUserId = opts.zohoUserId;
+  const userName = opts.userName ?? ctx.userName;
+  if (userName) meta.userName = userName;
+  if (opts.profile) meta.profile = opts.profile;
+  if (opts.role) meta.role = opts.role;
+  if (opts.departmentScope !== undefined) meta.departmentScope = opts.departmentScope;
+  return meta;
+}
+
+/**
+ * Resolve the conversation: use the provided id when it's the caller's own; otherwise (absent OR
+ * unknown/foreign) create a fresh one seeded with the caller's metadata. The widget then keeps the
+ * id returned in the `start` event. Returns the row so callers can auto-title on first turn.
+ */
+async function ensureConversation(
+  ctx: TenantContext,
+  conversationId: string | undefined,
+  meta: CreateConversationInput,
+): Promise<Conversation> {
   if (conversationId) {
     const conv = await conversationRepo.findOwned(ctx, conversationId);
-    if (!conv) throw new NotFoundError('Conversation not found');
-    return conv.id;
+    if (conv) return conv;
+    logger.warn({ conversationId }, 'chat: unknown/foreign conversation id; creating a new one');
   }
-  const created = await conversationRepo.create(ctx, {});
-  return created.id;
+  return conversationRepo.create(ctx, meta);
+}
+
+/** First user message → a short title (≤60 chars, trimmed on a word boundary). */
+function deriveTitle(message: string): string {
+  const clean = message.trim().replace(/\s+/g, ' ');
+  if (clean.length <= 60) return clean;
+  const cut = clean.slice(0, 60);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${(lastSpace > 30 ? cut.slice(0, lastSpace) : cut).trim()}…`;
+}
+
+interface FinalizeInput {
+  lastAssistant?: Message | undefined;
+  ragPassages: number;
+  toolSummaries: ChatToolCallSummary[];
+  departmentScope?: string | string[] | undefined;
+  errorMsg?: string | undefined;
+  /** The turn's final answer text (fallback string on tool-cap; partial text on error). */
+  finalContent: string;
+}
+
+/**
+ * End-of-turn persistence (success or error): attach the turn summary to the final assistant
+ * message (or insert an errored assistant row), auto-title from the first user message, and bump
+ * the conversation's messageCount/lastMessageAt. Best-effort: never throws.
+ */
+async function finalizeTurn(
+  ctx: TenantContext,
+  conv: Conversation,
+  userMessage: string,
+  input: FinalizeInput,
+): Promise<void> {
+  const scope = input.departmentScope;
+  const summary = {
+    ragPassages: input.ragPassages,
+    tools: input.toolSummaries,
+    ...(scope !== undefined ? { departmentScope: scope } : {}),
+  };
+  try {
+    if (input.errorMsg !== undefined) {
+      // The turn threw — record an errored assistant row carrying whatever final text we have.
+      await messageStore.appendAssistant(ctx, conv.id, {
+        content: input.finalContent,
+        error: input.errorMsg,
+        ...summary,
+      });
+    } else if (input.lastAssistant && input.lastAssistant.content !== '') {
+      // Normal case: the final answer is already a content-bearing row — just annotate it.
+      await messageStore.annotateAssistant(ctx, input.lastAssistant.id, summary);
+    } else {
+      // Tool-iteration cap (or an empty final stub): the answer was streamed but never persisted
+      // to a transcript-visible row. Insert it now so reload shows what the user saw.
+      await messageStore.appendAssistant(ctx, conv.id, { content: input.finalContent, ...summary });
+    }
+    if (!conv.title) await conversationRepo.setTitle(ctx, conv.id, deriveTitle(userMessage));
+    await conversationRepo.bumpForTurn(ctx, conv.id, { departmentScope: scope });
+  } catch (err) {
+    logger.warn({ err: errorMessage(err), conversationId: conv.id }, 'chat: finalizeTurn failed');
+  }
 }
 
 /**
@@ -221,14 +304,14 @@ async function persistAssistant(
   toolCalls: ToolCall[],
   model: string,
   usage: Usage | null | undefined,
-): Promise<void> {
+): Promise<Message> {
   const input: Parameters<typeof messageStore.appendAssistant>[2] = { content, model };
   if (toolCalls.length > 0) input.toolCalls = toolCalls;
   if (usage) {
     input.promptTokens = usage.prompt_tokens;
     input.completionTokens = usage.completion_tokens;
   }
-  await messageStore.appendAssistant(ctx, conversationId, input);
+  return messageStore.appendAssistant(ctx, conversationId, input);
 }
 
 /**
@@ -241,53 +324,73 @@ export async function runChatTurn(
   ctx: TenantContext,
   opts: ChatTurnOptions = {},
 ): Promise<ChatTurnResult> {
-  const convId = await ensureConversation(ctx, conversationId);
-  await messageStore.appendUser(ctx, convId, userMessage);
+  const conv = await ensureConversation(ctx, conversationId, conversationMeta(ctx, opts));
+  const convId = conv.id;
+  await messageStore.appendUser(ctx, convId, userMessage, opts.departmentScope);
 
   const { messages, ragPassages } = await buildTurnMessages(ctx, convId, userMessage, opts.userName);
   const tools = buildTools(ctx);
-  const turn = newTurnModel(opts);
+  const turn = newTurnModel(opts.model);
 
   const usageAcc = { promptTokens: 0, completionTokens: 0, totalCost: 0 };
   const toolSummaries: ChatToolCallSummary[] = [];
   let finalContent = '';
+  let lastAssistant: Message | undefined;
   let iterations = 0;
 
-  for (let i = 0; i < MAX_TOOL_ITERATIONS; i += 1) {
-    iterations = i + 1;
-    const completion = await createCompletion(turn, messages, tools);
-    recordUsage(ctx, turn.model, completion.usage, usageAcc);
+  try {
+    for (let i = 0; i < MAX_TOOL_ITERATIONS; i += 1) {
+      iterations = i + 1;
+      const completion = await createCompletion(turn, messages, tools);
+      recordUsage(ctx, turn.model, completion.usage, usageAcc);
 
-    const message = completion.choices[0]?.message;
-    if (!message) throw new AppError('LLM returned no choices', { statusCode: 502 });
-    const content = message.content ?? '';
-    const toolCalls = message.tool_calls ?? [];
+      const message = completion.choices[0]?.message;
+      if (!message) throw new AppError('LLM returned no choices', { statusCode: 502 });
+      const content = message.content ?? '';
+      const toolCalls = message.tool_calls ?? [];
 
-    await persistAssistant(ctx, convId, content, toolCalls, turn.model, completion.usage);
-    pushAssistant(messages, content, toolCalls);
+      lastAssistant = await persistAssistant(ctx, convId, content, toolCalls, turn.model, completion.usage);
+      pushAssistant(messages, content, toolCalls);
 
-    if (toolCalls.length === 0) {
-      finalContent = content;
-      break;
+      if (toolCalls.length === 0) {
+        finalContent = content;
+        break;
+      }
+
+      for (const toolCall of toolCalls) {
+        const { content: toolContent, status, toolName } = await runToolCall(ctx, convId, toolCall);
+        toolSummaries.push({ name: toolName, status });
+        messages.push({ role: 'tool', tool_call_id: toolCall.id, content: toolContent });
+        await messageStore.appendToolResult(ctx, convId, {
+          toolCallId: toolCall.id,
+          name: toolName,
+          content: toolContent,
+        });
+      }
+
+      if (i === MAX_TOOL_ITERATIONS - 1) {
+        finalContent = content || 'I was unable to complete this within the tool-call limit.';
+      }
     }
-
-    for (const toolCall of toolCalls) {
-      const { content: toolContent, status, toolName } = await runToolCall(ctx, convId, toolCall);
-      toolSummaries.push({ name: toolName, status });
-      messages.push({ role: 'tool', tool_call_id: toolCall.id, content: toolContent });
-      await messageStore.appendToolResult(ctx, convId, {
-        toolCallId: toolCall.id,
-        name: toolName,
-        content: toolContent,
-      });
-    }
-
-    if (i === MAX_TOOL_ITERATIONS - 1) {
-      finalContent = content || 'I was unable to complete this within the tool-call limit.';
-    }
+  } catch (err) {
+    await finalizeTurn(ctx, conv, userMessage, {
+      lastAssistant,
+      ragPassages,
+      toolSummaries,
+      departmentScope: opts.departmentScope,
+      errorMsg: errorMessage(err),
+      finalContent,
+    });
+    throw err;
   }
 
-  await conversationRepo.touch(ctx, convId);
+  await finalizeTurn(ctx, conv, userMessage, {
+    lastAssistant,
+    ragPassages,
+    toolSummaries,
+    departmentScope: opts.departmentScope,
+    finalContent,
+  });
   await auditFromContext(ctx, {
     action: 'chat.turn',
     status: 'ok',
@@ -306,125 +409,6 @@ export async function runChatTurn(
   };
 }
 
-/** The provider+model for a turn, plus whether we fell back to OpenAI mid-turn. */
-interface TurnModel {
-  provider: Provider;
-  model: string;
-  fellBack: boolean;
-}
-
-/** Resolve the worker model for a turn (Groq when enabled; OpenAI otherwise / on override). */
-function newTurnModel(opts: ChatTurnOptions): TurnModel {
-  const resolved = resolveModel('worker', { model: opts.model });
-  return { provider: resolved.provider, model: resolved.model, fellBack: false };
-}
-
-/** Mutate the turn to fall back to OpenAI (used after a Groq failure). */
-function fallBackToOpenAI(turn: TurnModel, err: unknown): void {
-  logger.warn(
-    { err: errorMessage(err), model: turn.model },
-    'completion failed on groq; falling back to OpenAI for the rest of the turn',
-  );
-  turn.provider = 'openai';
-  turn.model = models.default;
-  turn.fellBack = true;
-}
-
-/** Non-streaming completion with one-shot fallback to OpenAI on a Groq error. */
-async function createCompletion(
-  turn: TurnModel,
-  messages: ChatMessage[],
-  tools: ChatTool[],
-): Promise<OpenAI.Chat.Completions.ChatCompletion> {
-  const params = {
-    model: turn.model,
-    messages,
-    ...(tools.length > 0 ? { tools, tool_choice: 'auto' as const } : {}),
-  };
-  try {
-    return await getClient(turn.provider).chat.completions.create(params);
-  } catch (err) {
-    if (turn.provider === 'openai') throw err;
-    fallBackToOpenAI(turn, err);
-    return getClient('openai').chat.completions.create({ ...params, model: turn.model });
-  }
-}
-
-/** Open a streaming completion for the turn's current provider. No fallback here — see streamTurn. */
-function openStream(
-  turn: TurnModel,
-  messages: ChatMessage[],
-  tools: ChatTool[],
-): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
-  const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
-    model: turn.model,
-    messages,
-    stream: true,
-    stream_options: { include_usage: true },
-    ...(tools.length > 0 ? { tools, tool_choice: 'auto' as const } : {}),
-  };
-  return getClient(turn.provider).chat.completions.create(params);
-}
-
-/** Tracks whether any token has reached the client, so a mid-stream fallback can't duplicate output. */
-interface StreamProgress {
-  emitted: boolean;
-}
-
-/**
- * Stream a turn with Groq→OpenAI fallback that covers BOTH a failed stream open and a failure
- * mid-iteration. We only fall back while nothing has been streamed yet — once tokens are on the
- * wire, re-running on OpenAI would duplicate visible output, so we surface the error instead.
- */
-async function streamTurn(
-  turn: TurnModel,
-  messages: ChatMessage[],
-  tools: ChatTool[],
-  sse: SSEStream,
-): Promise<{ content: string; toolCalls: ToolCall[]; usage: Usage | null }> {
-  const progress: StreamProgress = { emitted: false };
-  try {
-    return await consumeStream(await openStream(turn, messages, tools), sse, progress);
-  } catch (err) {
-    if (turn.provider === 'openai' || progress.emitted) throw err;
-    fallBackToOpenAI(turn, err);
-    return consumeStream(await openStream(turn, messages, tools), sse, progress);
-  }
-}
-
-async function consumeStream(
-  stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>,
-  sse: SSEStream,
-  progress: StreamProgress,
-): Promise<{ content: string; toolCalls: ToolCall[]; usage: Usage | null }> {
-  let content = '';
-  let usage: Usage | null = null;
-  const acc = new Map<number, { id: string; name: string; args: string }>();
-
-  for await (const chunk of stream) {
-    if (chunk.usage) usage = chunk.usage;
-    const delta = chunk.choices[0]?.delta;
-    if (!delta) continue;
-    if (delta.content) {
-      content += delta.content;
-      progress.emitted = true;
-      sse.send('token', { text: delta.content });
-    }
-    for (const tcd of delta.tool_calls ?? []) {
-      const cur = acc.get(tcd.index) ?? { id: '', name: '', args: '' };
-      if (tcd.id) cur.id = tcd.id;
-      if (tcd.function?.name) cur.name += tcd.function.name;
-      if (tcd.function?.arguments) cur.args += tcd.function.arguments;
-      acc.set(tcd.index, cur);
-    }
-  }
-
-  const toolCalls: ToolCall[] = [...acc.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([, v]) => ({ id: v.id, type: 'function', function: { name: v.name, arguments: v.args } }));
-  return { content, toolCalls, usage };
-}
-
 /**
  * Streaming chat turn over SSE. Emits: start, status (dynamic stage labels), context,
  * token (per content delta), tool_call, tool_result, and a final done event.
@@ -436,9 +420,10 @@ export async function streamChatTurn(
   sse: SSEStream,
   opts: ChatTurnOptions = {},
 ): Promise<ChatTurnResult> {
-  const convId = await ensureConversation(ctx, conversationId);
+  const conv = await ensureConversation(ctx, conversationId, conversationMeta(ctx, opts));
+  const convId = conv.id;
   sse.send('start', { conversationId: convId });
-  await messageStore.appendUser(ctx, convId, userMessage);
+  await messageStore.appendUser(ctx, convId, userMessage, opts.departmentScope);
 
   // Dynamic status: searching the knowledge base (real stage, no extra LLM).
   if (env.FF_RAG_ENABLED) {
@@ -447,55 +432,74 @@ export async function streamChatTurn(
   const { messages, ragPassages } = await buildTurnMessages(ctx, convId, userMessage, opts.userName);
   sse.send('context', { passages: ragPassages });
   const tools = buildTools(ctx);
-  const turn = newTurnModel(opts);
+  const turn = newTurnModel(opts.model);
 
   const usageAcc = { promptTokens: 0, completionTokens: 0, totalCost: 0 };
   const toolSummaries: ChatToolCallSummary[] = [];
   let finalContent = '';
+  let lastAssistant: Message | undefined;
   let iterations = 0;
 
-  for (let i = 0; i < MAX_TOOL_ITERATIONS; i += 1) {
-    iterations = i + 1;
-    // Dynamic status: first pass mentions grounded sources; later passes are post-tool reasoning.
-    const thinkingLabel =
-      i === 0
-        ? ragPassages > 0
-          ? `Reviewing ${ragPassages} source${ragPassages === 1 ? '' : 's'}…`
-          : 'Thinking…'
-        : 'Thinking it through…';
-    sse.send('status', { state: 'thinking', label: thinkingLabel });
-    const { content, toolCalls, usage } = await streamTurn(turn, messages, tools, sse);
-    recordUsage(ctx, turn.model, usage, usageAcc);
+  try {
+    for (let i = 0; i < MAX_TOOL_ITERATIONS; i += 1) {
+      iterations = i + 1;
+      // Dynamic status: first pass mentions grounded sources; later passes are post-tool reasoning.
+      const thinkingLabel =
+        i === 0
+          ? ragPassages > 0
+            ? `Reviewing ${ragPassages} source${ragPassages === 1 ? '' : 's'}…`
+            : 'Thinking…'
+          : 'Thinking it through…';
+      sse.send('status', { state: 'thinking', label: thinkingLabel });
+      const { content, toolCalls, usage } = await streamTurn(turn, messages, tools, sse);
+      recordUsage(ctx, turn.model, usage, usageAcc);
 
-    await persistAssistant(ctx, convId, content, toolCalls, turn.model, usage);
-    pushAssistant(messages, content, toolCalls);
+      lastAssistant = await persistAssistant(ctx, convId, content, toolCalls, turn.model, usage);
+      pushAssistant(messages, content, toolCalls);
 
-    if (toolCalls.length === 0) {
-      finalContent = content;
-      break;
+      if (toolCalls.length === 0) {
+        finalContent = content;
+        break;
+      }
+
+      for (const toolCall of toolCalls) {
+        const callName = fromOpenAiToolName(toolCall.function.name);
+        sse.send('tool_call', { name: callName });
+        sse.send('status', { state: 'tool', label: `Using ${callName}…` });
+        const { content: toolContent, status, toolName } = await runToolCall(ctx, convId, toolCall);
+        toolSummaries.push({ name: toolName, status });
+        sse.send('tool_result', { name: toolName, status });
+        messages.push({ role: 'tool', tool_call_id: toolCall.id, content: toolContent });
+        await messageStore.appendToolResult(ctx, convId, {
+          toolCallId: toolCall.id,
+          name: toolName,
+          content: toolContent,
+        });
+      }
+
+      if (i === MAX_TOOL_ITERATIONS - 1) {
+        finalContent = content || 'I was unable to complete this within the tool-call limit.';
+      }
     }
-
-    for (const toolCall of toolCalls) {
-      const callName = fromOpenAiToolName(toolCall.function.name);
-      sse.send('tool_call', { name: callName });
-      sse.send('status', { state: 'tool', label: `Using ${callName}…` });
-      const { content: toolContent, status, toolName } = await runToolCall(ctx, convId, toolCall);
-      toolSummaries.push({ name: toolName, status });
-      sse.send('tool_result', { name: toolName, status });
-      messages.push({ role: 'tool', tool_call_id: toolCall.id, content: toolContent });
-      await messageStore.appendToolResult(ctx, convId, {
-        toolCallId: toolCall.id,
-        name: toolName,
-        content: toolContent,
-      });
-    }
-
-    if (i === MAX_TOOL_ITERATIONS - 1) {
-      finalContent = content || 'I was unable to complete this within the tool-call limit.';
-    }
+  } catch (err) {
+    await finalizeTurn(ctx, conv, userMessage, {
+      lastAssistant,
+      ragPassages,
+      toolSummaries,
+      departmentScope: opts.departmentScope,
+      errorMsg: errorMessage(err),
+      finalContent,
+    });
+    throw err;
   }
 
-  await conversationRepo.touch(ctx, convId);
+  await finalizeTurn(ctx, conv, userMessage, {
+    lastAssistant,
+    ragPassages,
+    toolSummaries,
+    departmentScope: opts.departmentScope,
+    finalContent,
+  });
   await auditFromContext(ctx, {
     action: 'chat.turn',
     status: 'ok',

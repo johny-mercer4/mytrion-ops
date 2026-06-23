@@ -16,6 +16,8 @@ import { errorHandlerPlugin } from './plugins/errorHandler.js';
 import { healthcheckPlugin } from './plugins/healthcheck.js';
 import { rbacPlugin } from './plugins/rbac.js';
 import { requestContextPlugin } from './plugins/requestContext.js';
+import { loadMcpTools } from './modules/tools/mcpTools.js';
+import { toolRegistry } from './modules/tools/index.js';
 import { adminRoutes } from './routes/v1/admin.routes.js';
 import { authRoutes } from './routes/v1/auth.routes.js';
 import { automationRoutes } from './routes/v1/automation.routes.js';
@@ -135,6 +137,21 @@ export async function buildApp(): Promise<FastifyInstance> {
   }
 
   healthcheckPlugin(app); // GET /health (liveness)
+
+  // Discover Zoho MCP tools once at boot and register them (flag-gated). Non-fatal AND bounded: a
+  // slow/hung MCP endpoint must never block startup (Render deploy/health timeouts), so we race
+  // discovery against a hard deadline and continue with native tools if it loses.
+  if (env.FF_ZOHO_MCP_ENABLED) {
+    const deadline = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('mcp discovery timed out')), 20_000),
+    );
+    try {
+      const mcpTools = await Promise.race([loadMcpTools(), deadline]);
+      toolRegistry.register(mcpTools);
+    } catch (err) {
+      logger.error({ err }, 'zoho mcp: tool discovery failed/timed out; continuing without MCP tools');
+    }
+  }
 
   await app.register(
     async (v1) => {
