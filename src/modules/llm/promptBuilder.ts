@@ -1,4 +1,5 @@
 import type { TenantContext } from '../../types/tenantContext.js';
+import { resolveAgentPersona } from '../agents/departmentAgents.js';
 
 const SHARED_RULES = [
   'You are Octane Assistant, an AI assistant for Octane, a fuel card company.',
@@ -26,7 +27,9 @@ export function buildSystemPrompt(ctx: TenantContext): string {
   return [
     `- ${SHARED_RULES}`,
     `- ${audienceBlock}`,
-    `- The current user's role is "${ctx.role}". Respect the tools you have been given; do not ask for tools you don't have.`,
+    // Department-agent persona (Sales/Billing/…/admin) — frames scope + which tools to use.
+    `- ${resolveAgentPersona(ctx)}`,
+    `- Respect the tools you have been given; do not ask for tools you don't have.`,
   ].join('\n');
 }
 

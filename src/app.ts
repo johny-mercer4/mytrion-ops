@@ -16,6 +16,7 @@ import { errorHandlerPlugin } from './plugins/errorHandler.js';
 import { healthcheckPlugin } from './plugins/healthcheck.js';
 import { rbacPlugin } from './plugins/rbac.js';
 import { requestContextPlugin } from './plugins/requestContext.js';
+import { applyDepartmentPolicy } from './modules/agents/departmentAgents.js';
 import { loadMcpTools } from './modules/tools/mcpTools.js';
 import { toolRegistry } from './modules/tools/index.js';
 import { adminRoutes } from './routes/v1/admin.routes.js';
@@ -147,6 +148,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     );
     try {
       const mcpTools = await Promise.race([loadMcpTools(), deadline]);
+      applyDepartmentPolicy(mcpTools); // no agent lists MCP tools → admin-only
       toolRegistry.register(mcpTools);
     } catch (err) {
       logger.error({ err }, 'zoho mcp: tool discovery failed/timed out; continuing without MCP tools');
