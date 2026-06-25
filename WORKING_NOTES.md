@@ -581,3 +581,24 @@ smoke): 15 tools; getOrganization + COQL run through our dispatcher. Commit `d81
   names containing '__' (no live impact — names use single '_'); no outbound response-size cap (matches
   every other integration); session-state has no concurrency mutex (sequential tool loop today); add
   negative-path/boot-resilience + writes-on tests. None affect the flag-off default.
+
+
+### Department agents — distribute RAG + tools per team (2026-06-26)
+
+Per-department AI distribution. Commit `1e1fe86`. Reuses the existing department_access RBAC (RAG)
++ tool allowedDepartments (dispatcher) — no new enforcement path.
+- `src/modules/agents/departmentAgents.ts` = single source of truth: 6 agents (sales, billing,
+  customer-service, verification, collection, retention) → {persona, dept tools}. Drives both the
+  system-prompt persona (resolveAgentPersona) and each tool's allowedDepartments (applyDepartmentPolicy,
+  applied to native tools in tools/index and to MCP tools at app boot).
+- Tool map: sales→sales_snapshot/activity/crm.query; billing+collection→debtors/crm.query;
+  customer-service→desk/crm.query; verification+retention→crm.query; knowledge.search universal;
+  zoho_mcp.* + zoho_people = admin-only (ADMIN_ONLY sentinel '__admin_only__').
+- Admin/unlimited = ADMIN_PROFILE_MARKERS env (CSV, default administrator,manager,developer), matched
+  case-insensitive substring on profile AND role. resolveAllDepartmentAccess is still THE single bypass.
+- Verified live end-to-end: Sales caller denied admin-only MCP tools (got zoho_crm.query only);
+  Manager (role marker) got zoho_mcp.getModules + real data. RAG dept-isolation proven prior session.
+- KNOWN footgun (documented in .env + code): 'manager' substring over-matches titles like "Account
+  Manager" → would grant unlimited. Tune ADMIN_PROFILE_MARKERS to precise values if that's a risk.
+- To deploy: merge build→main (Render), set ADMIN_PROFILE_MARKERS if defaults don't fit, and the
+  widget sends department_scope (per Zoho user's dept) + profile + role as it already does.
