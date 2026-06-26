@@ -93,10 +93,12 @@ function ownerCtx(ctx: TenantContext, zohoUserId?: string, userName?: string): T
  */
 function chatContext(request: FastifyRequest, body: ChatBody): TenantContext {
   const departmentAccess = [...toArray(body.department_scope), ...(body.departmentAccess ?? [])];
-  // Administrator profile (or explicit allDepartments) bypasses RBAC for BOTH RAG and tools.
+  // Admin profile/role (or explicit allDepartments) bypasses RBAC for BOTH RAG and tools —
+  // Developers/Managers/Admins per ADMIN_PROFILE_MARKERS (matched on profile AND role).
   const allDepartments = resolveAllDepartmentAccess({
     allDepartments: body.allDepartments,
     profile: body.profile,
+    role: body.role,
   });
   const ctx = withDepartmentAccess(requireContext(request), request, { departmentAccess, allDepartments });
   const merged = ownerCtx(ctx, body.zoho_user_id, body.user_name);

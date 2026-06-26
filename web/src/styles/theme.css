@@ -1,0 +1,30 @@
+/* Design tokens — the single place to tune the widget's look. Referenced by every CSS Module. */
+:root {
+  /* color */
+  --bg: #0f1115;
+  --surface: #1a1d24;
+  --surface-2: #20242d;
+  --line: #2a2f3a;
+  --fg: #e6e8ec;
+  --muted: #9aa3b2;
+  --accent: #6aa1ff;
+  --warn-fg: #ffd479;
+  --warn-bg: #2a2415;
+  --warn-line: #5a4a1f;
+  --error-fg: #ff8a8a;
+
+  /* spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+
+  /* radius + type */
+  --radius: 10px;
+  --radius-sm: 6px;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --fs-sm: 12px;
+  --fs-base: 14px;
+  --fs-lg: 18px;
+}

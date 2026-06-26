@@ -23,15 +23,14 @@ describe('tool registry', () => {
     expect(() => new ToolRegistry([tool, tool])).toThrow(/Duplicate/);
   });
 
-  it('filters tools by audience + scopes for each role', () => {
-    // admin holds '*' → sees all 7 internal tools. knowledge.search needs no scope (both audiences);
-    // zoho_crm.query needs zoho_crm:read (held by viewer/ops); zoho_desk + zoho_people + agent.*
-    // need scopes only admin holds. Partner audience sees only knowledge.search.
+  it('filters tools by audience + scopes + department for each role', () => {
+    // admin → allDepartmentAccess → bypasses dept gating → all 7 internal tools.
     expect(toolRegistry.listForContext(makeContext({ role: 'admin', audience: 'internal' }))).toHaveLength(7);
     expect(toolRegistry.listForContext(makeContext({ role: 'admin', audience: 'partner' }))).toHaveLength(1);
-    // viewer + ops both hold zoho_crm:read → knowledge.search + zoho_crm.query.
-    expect(toolRegistry.listForContext(makeContext({ role: 'viewer' }))).toHaveLength(2);
-    expect(toolRegistry.listForContext(makeContext({ role: 'ops' }))).toHaveLength(2);
+    // Non-admin roles in the fixture have NO departments, so department-gated tools (zoho_crm.query,
+    // agent.*, zoho_desk) are now withheld — they see only the universal knowledge.search.
+    expect(toolRegistry.listForContext(makeContext({ role: 'viewer' }))).toHaveLength(1);
+    expect(toolRegistry.listForContext(makeContext({ role: 'ops' }))).toHaveLength(1);
     expect(toolRegistry.listForContext(makeContext({ role: 'driver' }))).toHaveLength(1);
   });
 });

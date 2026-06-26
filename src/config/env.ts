@@ -48,6 +48,9 @@ const EnvSchema = z.object({
   // --- Zoho MCP (hosted; "Authorize via Connection" → headless, URL embeds the credential). ---
   ZOHO_MCP_URL: z.string().default(''),
 
+  // --- Department RBAC: profile/role substrings that grant UNLIMITED access (all depts + all tools). ---
+  ADMIN_PROFILE_MARKERS: z.string().default('administrator,manager,developer'),
+
   // --- Auth ---
   JWT_SECRET: z.string().default(''),
   JWT_ACCESS_TTL: z.string().default('15m'),

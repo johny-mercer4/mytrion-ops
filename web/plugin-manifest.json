@@ -1,0 +1,17 @@
+{
+  "service": "CRM",
+  "locale": ["en"],
+  "modules": {
+    "widgets": [
+      {
+        "id": "octane_assistant",
+        "name": "Octane Assistant",
+        "url": "/app/index.html",
+        "type": "web"
+      }
+    ]
+  },
+  "cspDomains": {
+    "connect-src": ["http://localhost:3001", "https://YOUR_BACKEND_HOST"]
+  }
+}

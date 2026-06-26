@@ -1,0 +1,19 @@
+/* Global reset + base. Component-specific styling lives in each component's *.module.css. */
+@import './theme.css';
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+}
+
+body {
+  font-family: var(--font);
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  background: var(--bg);
+  color: var(--fg);
+}

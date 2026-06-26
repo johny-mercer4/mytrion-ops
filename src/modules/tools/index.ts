@@ -1,3 +1,4 @@
+import { applyDepartmentPolicy } from '../agents/departmentAgents.js';
 import { registerTool, ToolRegistry } from './registry.js';
 import type { RegisteredTool } from './types.js';
 import { knowledgeSearchTool } from './definitions/knowledge_search.js';
@@ -24,6 +25,10 @@ export const allTools: RegisteredTool[] = [
   registerTool(agentDebtorsTool),
   registerTool(agentActivityTool),
 ];
+
+// Stamp each tool's allowedDepartments from the department-agent registry (RBAC enforced in
+// toolDispatcher): department tools → their dept(s), universal tools → open, the rest → admin-only.
+applyDepartmentPolicy(allTools);
 
 export const toolRegistry = new ToolRegistry(allTools);
 

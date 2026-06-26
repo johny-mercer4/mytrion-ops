@@ -1,0 +1,6 @@
+node_modules
+dist
+app
+*.zip
+.env
+.env.local
