@@ -1,22 +1,22 @@
+import { AppHeader } from './components/AppHeader';
+import { StatusMessage } from './components/StatusMessage';
+import { UserContextCard } from './features/userContext/UserContextCard';
 import { useZohoUser } from './hooks/useZohoUser';
-import { UserContextCard } from './components/UserContext';
+import styles from './App.module.css';
 
-export default function App(): JSX.Element {
+export default function App() {
   const state = useZohoUser();
 
   return (
-    <div className="app">
-      <header className="app-header">
-        <h1>Octane Assistant</h1>
-        <span className="sub">Zoho CRM widget</span>
-      </header>
+    <div className={styles.app}>
+      <AppHeader title="Octane Assistant" subtitle="Zoho CRM widget" />
 
-      {state.status === 'loading' && <p className="status">Connecting to Zoho CRM…</p>}
+      {state.status === 'loading' && <StatusMessage>Connecting to Zoho CRM…</StatusMessage>}
 
       {state.status === 'error' && (
-        <p className="status err">
+        <StatusMessage tone="error">
           Couldn’t initialize Zoho CRM: {state.error}. (This widget must run inside Zoho CRM.)
-        </p>
+        </StatusMessage>
       )}
 
       {state.status === 'ready' && <UserContextCard context={state.context} />}

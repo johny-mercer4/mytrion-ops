@@ -1,0 +1,11 @@
+.status {
+  margin: 0;
+}
+
+.info {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--error-fg);
+}
