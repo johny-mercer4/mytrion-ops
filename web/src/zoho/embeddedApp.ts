@@ -5,6 +5,8 @@
  *
  * Outside CRM (local `vite dev`) the SDK's init() never resolves, so in DEV we fall back to a mock
  * user after a short timeout. In production the widget MUST run inside CRM, so a failure surfaces.
+ *
+ * getZohoSdk() exposes the initialized SDK to the API layer (org-variable config + HTTP proxy).
  */
 import type { ZohoRawUser, ZohoSDK } from './zoho-sdk';
 
@@ -72,38 +74,54 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   ]);
 }
 
-async function initReal(sdk: ZohoSDK): Promise<ZohoContext> {
-  let entity: unknown = null;
-  // Register listeners BEFORE init(); PageLoad carries the entity the widget opened on.
-  sdk.embeddedApp.on('PageLoad', (data) => {
-    entity = data;
-  });
-  await sdk.embeddedApp.init();
-  const res = await sdk.CRM.CONFIG.getCurrentUser();
-  const user = mapUser(res.users?.[0]);
-  return { user, entity, departmentScope: deriveDepartmentScope(user), mocked: false };
+// One shared init for the whole app (StrictMode double-mount + identity + API config all share it).
+let entity: unknown = null;
+let sdkReady: Promise<ZohoSDK | null> | null = null;
+
+function ensureZoho(): Promise<ZohoSDK | null> {
+  if (sdkReady) return sdkReady;
+  sdkReady = (async () => {
+    const sdk = window.ZOHO;
+    if (!sdk?.embeddedApp) return null; // not embedded (dev) / SDK script absent
+    sdk.embeddedApp.on('PageLoad', (data) => {
+      entity = data;
+    });
+    await withTimeout(sdk.embeddedApp.init(), INIT_TIMEOUT_MS);
+    return sdk;
+  })();
+  return sdkReady;
 }
 
-// Cache the bootstrap so React StrictMode's double-mount (and multiple consumers) share one init.
-let bootstrapPromise: Promise<ZohoContext> | null = null;
+/** The initialized SDK, or null when not embedded (dev). Used by the API layer. */
+export async function getZohoSdk(): Promise<ZohoSDK | null> {
+  try {
+    return await ensureZoho();
+  } catch {
+    return null;
+  }
+}
 
+let contextPromise: Promise<ZohoContext> | null = null;
+
+/** Initialize Zoho and resolve the current-user context. Cached; DEV falls back to a mock. */
 export function loadZohoContext(): Promise<ZohoContext> {
-  if (bootstrapPromise) return bootstrapPromise;
-  bootstrapPromise = (async () => {
-    const sdk = window.ZOHO;
-    const real = sdk?.embeddedApp
-      ? withTimeout(initReal(sdk), INIT_TIMEOUT_MS)
-      : Promise.reject(new Error('Zoho Embedded App SDK not found'));
-    if (import.meta.env.DEV) {
-      // Outside CRM the SDK can't initialize — fall back to a mock so the UI is testable locally.
-      return real.catch(() => ({
-        user: MOCK_USER,
-        entity: null,
-        departmentScope: deriveDepartmentScope(MOCK_USER),
-        mocked: true,
-      }));
+  if (contextPromise) return contextPromise;
+  contextPromise = (async () => {
+    let sdk: ZohoSDK | null = null;
+    try {
+      sdk = await ensureZoho();
+    } catch {
+      sdk = null;
     }
-    return real;
+    if (!sdk) {
+      if (import.meta.env.DEV) {
+        return { user: MOCK_USER, entity: null, departmentScope: deriveDepartmentScope(MOCK_USER), mocked: true };
+      }
+      throw new Error('Zoho Embedded App SDK not found — this widget must run inside Zoho CRM.');
+    }
+    const res = await sdk.CRM.CONFIG.getCurrentUser();
+    const user = mapUser(res.users?.[0]);
+    return { user, entity, departmentScope: deriveDepartmentScope(user), mocked: false };
   })();
-  return bootstrapPromise;
+  return contextPromise;
 }

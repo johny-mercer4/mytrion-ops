@@ -1,0 +1,54 @@
+.panel {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.scopeBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.who {
+  color: var(--fg);
+  font-size: var(--fs-base);
+  font-weight: 600;
+}
+
+.scope {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.error {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  color: var(--error-fg);
+  font-size: var(--fs-sm);
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+
+/* Narrow widget frames: collapse the sidebar so the transcript keeps full width. */
+@media (max-width: 520px) {
+  .panel {
+    flex-direction: column;
+  }
+}

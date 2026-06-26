@@ -602,3 +602,29 @@ Per-department AI distribution. Commit `1e1fe86`. Reuses the existing department
   Manager" → would grant unlimited. Tune ADMIN_PROFILE_MARKERS to precise values if that's a risk.
 - To deploy: merge build→main (Render), set ADMIN_PROFILE_MARKERS if defaults don't fit, and the
   widget sends department_scope (per Zoho user's dept) + profile + role as it already does.
+
+
+### AI Chat widget — external React+TS Zoho widget (2026-06-26)
+
+First real frontend in `web/` (Vite + React 18 + TS, CSS Modules). Our OWN stack — the Vue/CDN
+`zoho-octane` repo is reference-only. Auth = the user's CRM session via the Embedded App SDK; on mount
+`getCurrentUser()` → {profile, role} → `deriveDepartmentScope()` → backend department-agent RBAC.
+- API layer (`web/src/api/`): `config.ts` (org-var URL/key via getOrgVariable inside CRM; VITE_* only in
+  dev), `transport.ts` (ZOHO.CRM.HTTP proxy inside CRM / direct fetch in dev; `findError` scans every
+  wrapper level), `chat.ts` (conversation CRUD), `stream.ts` (SSE: direct fetch+getReader for live
+  tokens → sticky proxy fallback on CORS). Contract verified clean against backend (events
+  start/status/context/tool_call/tool_result/token/done/error; done={conversationId,message,ragPassages}).
+- Chat feature (`web/src/features/chat/`): `useChat` reducer + ChatPanel/ConversationList/MessageList/
+  MessageBubble/Composer, each with its own .module.css. "New chat" interrupts a live turn.
+- Reviewed adversarially twice (find→verify workflows). Fixed: VITE_API_* now gated behind
+  import.meta.env.DEV so it can't inline into the prod bundle (verified absent) + sourcemaps off;
+  AbortSignal threaded through ALL THREE stream paths (proxy, reader-loop, buffered) so a stale stream
+  can't clobber the current conversation; stream finally/catch guarded by controller identity; stable
+  message ids; empty-bubble guard (keeps grounding-only rows); scroll-pin on [messages].
+- OPEN tradeoff (user's call): stream.ts tries a direct browser fetch first (carries x-api-key) for live
+  tokens, per the reference workaround. Key is already in-browser via getOrgVariable, so exposure is the
+  user's own Network tab. To eliminate entirely → move to a Zoho Connection (key server-side, buffered
+  responses only inside CRM). Left as-is to preserve live streaming.
+- Build: `cd web && pnpm build` (tsc --noEmit + vite build → web/app/). `pnpm dev` on :3000 (in CORS
+  allowlist) shows a DEV MOCK admin user. Package via `zet` (see web/README.md). `deriveDepartmentScope`
+  still has placeholder rules — wire real profile/role → dept mapping before non-admin testing.

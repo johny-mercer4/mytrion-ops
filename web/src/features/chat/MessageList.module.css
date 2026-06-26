@@ -1,0 +1,27 @@
+.list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+}
+
+.empty {
+  margin: auto;
+  text-align: center;
+  max-width: 320px;
+}
+
+.emptyTitle {
+  margin: 0 0 var(--space-2);
+  color: var(--fg);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.emptyHint {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-base);
+  line-height: 1.5;
+}
