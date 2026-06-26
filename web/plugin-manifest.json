@@ -12,6 +12,6 @@
     ]
   },
   "cspDomains": {
-    "connect-src": ["http://localhost:3001", "https://YOUR_BACKEND_HOST"]
+    "connect-src": ["http://localhost:3001", "https://octane-ops-ai.onrender.com"]
   }
 }
