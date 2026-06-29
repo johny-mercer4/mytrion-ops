@@ -6,7 +6,7 @@ import {
   type ConversationSummary,
 } from '../../api/chat';
 import { streamChat, type ChatRequestBody } from '../../api/stream';
-import type { ZohoContext } from '../../zoho/embeddedApp';
+import type { UserContext } from '../../context/userContext';
 import type { UiMessage } from './types';
 
 interface State {
@@ -120,10 +120,10 @@ export interface ChatController {
   refreshConversations(): Promise<void>;
 }
 
-export function useChat(ctx: ZohoContext): ChatController {
+export function useChat(ctx: UserContext, department: string | string[] | null): ChatController {
   const [state, dispatch] = useReducer(reducer, EMPTY);
   const abortRef = useRef<AbortController | null>(null);
-  const zohoUserId = ctx.user.id;
+  const zohoUserId = ctx.userId;
 
   const refreshConversations = useCallback(async () => {
     if (!zohoUserId) return;
@@ -150,11 +150,11 @@ export function useChat(ctx: ZohoContext): ChatController {
 
       const body: ChatRequestBody = { message: text };
       if (state.conversationId) body.conversationId = state.conversationId;
-      if (ctx.user.id) body.zoho_user_id = ctx.user.id;
-      if (ctx.user.name) body.user_name = ctx.user.name;
-      if (ctx.user.profile) body.profile = ctx.user.profile;
-      if (ctx.user.role) body.role = ctx.user.role;
-      if (ctx.departmentScope) body.department_scope = ctx.departmentScope;
+      if (ctx.userId) body.zoho_user_id = ctx.userId;
+      if (ctx.userName) body.user_name = ctx.userName;
+      if (ctx.profile) body.profile = ctx.profile;
+      if (ctx.role) body.role = ctx.role;
+      if (department) body.department_scope = department;
 
       void (async () => {
         try {
@@ -190,7 +190,7 @@ export function useChat(ctx: ZohoContext): ChatController {
         }
       })();
     },
-    [ctx, state.conversationId, state.streaming, refreshConversations],
+    [ctx, department, state.conversationId, state.streaming, refreshConversations],
   );
 
   const newConversation = useCallback(() => {

@@ -1,9 +1,9 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  /** Dev-only backend URL (production reads MYTRION_OPS_API_URL from a Zoho org variable). */
+  /** Dev-only backend origin (production is same-origin: base '' → relative '/v1/*'). */
   readonly VITE_API_URL?: string;
-  /** Dev-only API key (production injects it server-side via the Zoho HTTP proxy). */
+  /** Dev-only API key for a cross-origin dev backend (production sends no key — same-origin). */
   readonly VITE_API_KEY?: string;
 }
 

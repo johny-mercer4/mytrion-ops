@@ -1,14 +1,24 @@
-import type { ZohoContext } from '../../zoho/embeddedApp';
+import type { UserContext } from '../../context/userContext';
 import { Composer } from './Composer';
 import { ConversationList } from './ConversationList';
 import { MessageList } from './MessageList';
 import { useChat } from './useChat';
 import styles from './ChatPanel.module.css';
 
-/** The AI Chat widget: session sidebar + streaming transcript + composer, scoped to the Zoho user. */
-export function ChatPanel({ context }: { context: ZohoContext }) {
-  const chat = useChat(context);
-  const dept = context.departmentScope ?? 'all (admin)';
+/**
+ * The AI Chat surface: session sidebar + streaming transcript + composer. Shared by every Mytrion;
+ * `department` is the active Mytrion's scope (null = broad/admin), forwarded to the backend.
+ */
+export function ChatPanel({
+  context,
+  department,
+}: {
+  context: UserContext;
+  department?: string | string[] | null;
+}) {
+  const chat = useChat(context, department ?? null);
+  const scope =
+    department == null ? 'all (admin)' : Array.isArray(department) ? department.join(', ') : department;
 
   return (
     <div className={styles.panel}>
@@ -23,8 +33,8 @@ export function ChatPanel({ context }: { context: ZohoContext }) {
 
       <div className={styles.main}>
         <div className={styles.scopeBar}>
-          <span className={styles.who}>{context.user.name || 'You'}</span>
-          <span className={styles.scope}>scope: {dept}</span>
+          <span className={styles.who}>{context.userName || 'You'}</span>
+          <span className={styles.scope}>scope: {scope}</span>
         </div>
 
         <MessageList messages={chat.messages} />
