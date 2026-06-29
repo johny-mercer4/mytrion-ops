@@ -1,6 +1,10 @@
 services:
   - type: web
     name: octane-assistant-api
+    # NOTE: the repo's root Dockerfile is what Render actually builds from (Docker runtime);
+    # it OVERRIDES the buildCommand/startCommand below. The widget (web/app) must be copied into
+    # the Dockerfile's runtime stage — adding it here alone is not enough. Keep the Dockerfile
+    # authoritative for build/runtime; this block is effectively documentation.
     runtime: node
     plan: starter
     # Plain tsc build (reliable). The widget UI (web/app) is VENDORED in git and served same-origin
