@@ -3,7 +3,10 @@ services:
     name: octane-assistant-api
     runtime: node
     plan: starter
-    buildCommand: pnpm install --frozen-lockfile && pnpm build
+    # Build the API, then the widget UI (web/app). The server serves the widget same-origin at
+    # /widget, so the chat UI and the API share one origin — the widget's live-token streaming fetch
+    # needs no CORS allowlisting. Base URL to register in Zoho: <service-url>/widget/index.html
+    buildCommand: pnpm install --frozen-lockfile && pnpm build && pnpm --dir web install --frozen-lockfile && pnpm --dir web build
     startCommand: pnpm start
     healthCheckPath: /health
     envVars:
@@ -13,18 +16,3 @@ services:
       # plus OPENAI_API_KEY, API_KEY, JWT_SECRET, ENCRYPTION_KEY, ZOHO_*, etc.) come
       # from the env group. No Render-managed DB: this engine uses the external Mytrion OPS DB.
       - fromGroup: octane-assistant-secrets
-
-  # Static host for the AI Chat widget UI (the web/ React build). Registered in Zoho as an
-  # EXTERNAL widget pointing at <this-service-url>/index.html. No secrets baked in — the widget
-  # reads the backend URL + key from the MYTRION_OPS_API_* org variables at runtime.
-  #
-  # IMPORTANT: after this deploys, add this service's origin to the API's CORS_ORIGINS env so the
-  # direct (live-token) streaming fetch is allowed; otherwise the widget falls back to the buffered
-  # proxy. e.g. CORS_ORIGINS=...,https://octane-assistant-widget.onrender.com
-  - type: web
-    name: octane-assistant-widget
-    runtime: static
-    rootDir: web
-    buildCommand: pnpm install --frozen-lockfile && pnpm build
-    staticPublishPath: app
-    pullRequestPreviewsEnabled: false

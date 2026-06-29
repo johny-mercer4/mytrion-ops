@@ -16,6 +16,7 @@ import { errorHandlerPlugin } from './plugins/errorHandler.js';
 import { healthcheckPlugin } from './plugins/healthcheck.js';
 import { rbacPlugin } from './plugins/rbac.js';
 import { requestContextPlugin } from './plugins/requestContext.js';
+import { registerWidgetStatic } from './plugins/widgetStatic.js';
 import { applyDepartmentPolicy } from './modules/agents/departmentAgents.js';
 import { loadMcpTools } from './modules/tools/mcpTools.js';
 import { toolRegistry } from './modules/tools/index.js';
@@ -138,6 +139,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   }
 
   healthcheckPlugin(app); // GET /health (liveness)
+
+  // Serve the AI Chat widget UI same-origin at /widget (public; no-op if web/app isn't built).
+  await registerWidgetStatic(app);
 
   // Discover Zoho MCP tools once at boot and register them (flag-gated). Non-fatal AND bounded: a
   // slow/hung MCP endpoint must never block startup (Render deploy/health timeouts), so we race

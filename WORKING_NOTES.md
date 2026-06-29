@@ -628,3 +628,22 @@ First real frontend in `web/` (Vite + React 18 + TS, CSS Modules). Our OWN stack
 - Build: `cd web && pnpm build` (tsc --noEmit + vite build → web/app/). `pnpm dev` on :3000 (in CORS
   allowlist) shows a DEV MOCK admin user. Package via `zet` (see web/README.md). `deriveDepartmentScope`
   still has placeholder rules — wire real profile/role → dept mapping before non-admin testing.
+
+
+### Widget served same-origin by the backend at /widget (2026-06-29)
+
+Decision: host the widget UI FROM the API instead of a separate static site. Chosen for one URL + zero
+CORS (same origin → the live-token streaming fetch just works). Zoho external-widget Base URL =
+`https://octane-ops-ai.onrender.com/widget/index.html`.
+- `src/plugins/widgetStatic.ts` (NEW): @fastify/static@^7 serves `web/app` under `/widget` (public,
+  no api-key guard — files hold no secrets). No-op if web/app isn't built. Resolves the dir via
+  import.meta.url so it works under tsx-dev and `node dist`. index.html → no-cache; hashed assets →
+  immutable. `/widget` → 302 `/widget/`.
+- GOTCHA fixed: @fastify/helmet writes `X-Frame-Options: SAMEORIGIN` onto the RAW Node response, so
+  `reply.removeHeader` can't see it — must `reply.raw.removeHeader('X-Frame-Options')` in an
+  encapsulated onSend. Scoped to /widget only; the API keeps its frame guard. Verified via inject:
+  /widget/* → no XFO, /v1/* → SAMEORIGIN.
+- `render.yaml`: API buildCommand now also `pnpm --dir web install && pnpm --dir web build`; removed the
+  separate `octane-assistant-widget` static service. Needs main merge + redeploy to go live.
+- Tradeoff still open: key reaches the browser via getOrgVariable + rides the same-origin request.
+  To keep it off the browser entirely → Zoho Connection (buffered, no live streaming). Left as-is.

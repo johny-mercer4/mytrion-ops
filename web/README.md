@@ -47,32 +47,23 @@ pnpm build        # → ./app  (the widget web root)
 
 `vite dev` runs on port **3000**, which is already in the backend's CORS allowlist.
 
-## Backend
+## Deployment — served same-origin by the backend
 
-Production backend: **https://octane-ops-ai.onrender.com** (Render). The widget never hardcodes this —
-it reads the URL + key at runtime from the org variables below, and `plugin-manifest.json`'s
-`cspDomains.connect-src` whitelists the host so the browser permits the call.
+The backend **serves this widget at `/widget`** (see `src/plugins/widgetStatic.ts`), so the UI and the
+API share one origin:
 
-## Run / package as a Zoho widget (zet)
+- Production widget URL: **https://octane-ops-ai.onrender.com/widget/index.html**
 
-Uses Zoho's Extension Toolkit (`npm i -g zoho-extension-toolkit`, then `zet`):
-
-```bash
-pnpm build        # builds into ./app
-zet run           # serves ./app over HTTPS for the CRM sandbox to load (dev/test)
-zet validate      # checks plugin-manifest.json
-zet pack          # → zip for upload to your org (Developer Hub) or the Marketplace
-```
-
-`plugin-manifest.json` is already wired:
-- `cspDomains.connect-src` → `https://octane-ops-ai.onrender.com` (+ `http://localhost:3001` for dev).
-- `modules.widgets[]` → adjust `type`/placement to your widget location (web tab, button, related list).
+On Render the API's `buildCommand` (in `render.yaml`) builds `web/` too, and the Node server serves
+`web/app` under `/widget`. Same-origin means the widget's live-token streaming `fetch` needs **no CORS
+allowlisting** — the chat page and the API are the same host. The static files are public on purpose;
+they carry no secrets (the backend key comes from an org variable at runtime). The server strips
+`X-Frame-Options` for `/widget` only (so Zoho can embed it) while the API keeps its frame guard.
 
 ## Wiring it into Zoho CRM (external widget)
 
-The widget authenticates with the user's existing CRM session via the Embedded App SDK — there is no
-separate login. "External" here means **our own React build**, loaded into a CRM iframe; you can let
-Zoho host the build (zip) or host it on your own HTTPS URL. Steps:
+The widget authenticates with the user's existing CRM session via the Embedded App SDK — no separate
+login. "External" = our own React build loaded into a CRM iframe (here, hosted by our own backend).
 
 1. **Create the two org variables** — Setup → Developer Hub → **Variables** → New:
    - `MYTRION_OPS_API_URL` = `https://octane-ops-ai.onrender.com`
@@ -80,30 +71,29 @@ Zoho host the build (zip) or host it on your own HTTPS URL. Steps:
    These live server-side in the org; the widget reads them at runtime via `getOrgVariable`, so the
    key is **never** baked into the bundle.
 2. **Register the widget** — Setup → Developer Hub → **Widgets** → Create New Widget:
-   - Hosting **Zoho** → upload the `zet pack` zip (Zoho serves it from `*.zwidgets.com`), **or**
-     Hosting **External** → point at your HTTPS URL serving `app/index.html`.
-   - Index page: `/app/index.html`.
+   - Hosting: **External**
+   - **Base URL:** `https://octane-ops-ai.onrender.com/widget/index.html`
 3. **Place it** — create a **Web Tab** (Setup → Customization → Web Tabs → Widget), a **Home page
    component**, or a button/related-list widget, and select the widget from step 2.
-4. **CSP** — `connect-src` (above) must include the backend host or the browser blocks the call. The
-   SDK script host (`live.zwidgets.com`) is allowed by Zoho automatically.
-5. **Open CRM** → the tab loads the widget, it reads the current user + org variables, and the chat
-   talks to the backend (via the `ZOHO.CRM.HTTP` proxy, with a direct-fetch streaming attempt first).
+4. **Open CRM** → the tab loads the widget, it reads the current user + org variables, and the chat
+   talks to the backend.
 
-### How the backend call is routed (and the key tradeoff)
-- **Conversation CRUD** and the **proxy streaming fallback** go through `ZOHO.CRM.HTTP` — a
-  server-to-server proxy (no CORS; the request leaves Zoho's infra, not the browser).
-- **Live token streaming** is attempted first as a direct browser `fetch` (SSE). For this to succeed
-  the backend must allow the widget's origin. A **Zoho-hosted** widget runs on
-  `https://<instance>.zappsusercontent.com`, which the backend already allows via
-  `CORS_ORIGIN_SUFFIXES=zappsusercontent.com` (its default) — so live streaming works out of the box.
-  An **externally-hosted** widget must have its exact origin added to the backend's `CORS_ORIGINS`.
-  If the origin isn't allowed, the widget transparently falls back to the buffered proxy for the
-  rest of the session (you still get the full answer, just not token-by-token).
-- The `x-api-key` is resolved from the org variable into browser memory either way (that's how
-  `getOrgVariable` works), so the direct-fetch attempt's only extra exposure is the user's own Network
-  tab. To keep the key entirely off the browser, switch to a Zoho **Connection** (key injected
-  server-side) — at the cost of buffered-only responses inside CRM.
+### Alternative: package as a Zoho-hosted widget (zet)
+
+Instead of backend-hosting you can let Zoho serve the build. Uses Zoho's Extension Toolkit
+(`npm i -g zoho-extension-toolkit`): `pnpm build` → `zet validate` → `zet pack` → upload the zip under
+Developer Hub → Widgets (Hosting: Zoho). Then it runs on `*.zappsusercontent.com`, already allowed by
+the backend's `CORS_ORIGIN_SUFFIXES` default, so live streaming also works. `plugin-manifest.json` is
+kept for this path.
+
+### How the backend call is routed
+- **Conversation CRUD** and the **proxy streaming fallback** go through `ZOHO.CRM.HTTP` (server-to-
+  server; no CORS).
+- **Live token streaming** is a direct browser `fetch` (SSE). Served same-origin (option above) this
+  always works. The `x-api-key` is resolved from the org variable into browser memory (that's how
+  `getOrgVariable` works) and sent on the same-origin request; to keep the key entirely off the
+  browser, switch to a Zoho **Connection** (key injected server-side) at the cost of buffered-only
+  responses.
 
 ## Security
 
