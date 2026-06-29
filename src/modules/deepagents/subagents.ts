@@ -8,6 +8,7 @@
  */
 import type { SubAgent } from 'deepagents';
 import type { TenantContext } from '../../types/tenantContext.js';
+import { buildComposioTools } from './tools/composioTools.js';
 import { ragTool } from './tools/rag.js';
 import { buildToolCallerTools } from './tools/toolCaller.js';
 import { webSearchTool } from './tools/webSearch.js';
@@ -49,5 +50,28 @@ export function toolCallerSubagent(ctx: TenantContext): SubAgent {
       'asked. Every tool call is RBAC-checked and audit-logged server-side; if a tool returns an access ' +
       'or validation error, report it plainly rather than guessing. Return the data you retrieved.',
     tools: buildToolCallerTools(ctx),
+  };
+}
+
+/**
+ * External-tools subagent backed by Composio (Zoho CRM/Desk, etc.) against the shared org account.
+ * Returns null when Composio is disabled, the caller isn't allowed, or no tools resolve — so the
+ * orchestrator only gains the subagent when it can actually do something.
+ */
+export async function externalToolsSubagent(ctx: TenantContext): Promise<SubAgent | null> {
+  const tools = await buildComposioTools(ctx);
+  if (tools.length === 0) return null;
+  return {
+    name: 'external-tools-agent',
+    description:
+      'Calls external SaaS apps through Composio (Zoho CRM, Zoho Desk, …) using the org\'s connected ' +
+      'account — create/read/update records, tickets, contacts, deals, notes, etc. Delegate external ' +
+      'app actions here.',
+    systemPrompt:
+      'You are the external-integrations specialist. Use the Composio tools to act on external apps ' +
+      '(Zoho CRM/Desk, …). Confirm the exact record/fields before any write or delete. Every call runs ' +
+      'against the shared org connection and is audit-logged; if a tool errors (e.g. not connected), ' +
+      'report it plainly. Return what you did or retrieved.',
+    tools,
   };
 }

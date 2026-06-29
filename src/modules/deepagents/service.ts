@@ -27,7 +27,7 @@ export async function runDeepAgent(
   return runWithAgentContext(
     { ctx, ...(opts.conversationId ? { conversationId: opts.conversationId } : {}) },
     async () => {
-      const agent = buildDeepAgent(ctx);
+      const agent = await buildDeepAgent(ctx);
       const result = await agent.invoke({ messages: [{ role: 'user', content: message }] });
       return { answer: finalText(result.messages as BaseMessage[]) };
     },
