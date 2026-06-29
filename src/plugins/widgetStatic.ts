@@ -18,9 +18,12 @@ const WIDGET_DIR = path.resolve(HERE, '..', '..', 'web', 'app');
  * comes from a Zoho org variable at runtime). No-op when the build is absent (dev/test, or the API
  * deployed without first building web/).
  *
- * Encapsulated so its single hook only touches /widget responses: helmet sets a global
- * X-Frame-Options: SAMEORIGIN, which would blank the widget inside Zoho's cross-origin iframe — we
- * strip it here (and only here) so CRM can embed the widget while the API keeps its frame guard.
+ * Encapsulated so its single hook only touches /widget responses. helmet applies global headers
+ * that would block a cross-origin iframe; for /widget only we relax them so Zoho CRM can embed the
+ * widget while the API keeps its hardened defaults:
+ *   - X-Frame-Options: SAMEORIGIN  → removed (the actual iframe blocker; no CSP frame-ancestors is set)
+ *   - Cross-Origin-Resource-Policy: same-origin → cross-origin (in case the embedder enables COEP)
+ * helmet writes these straight onto the raw Node response, so we operate on reply.raw.
  */
 export async function registerWidgetStatic(app: FastifyInstance): Promise<void> {
   if (!existsSync(path.join(WIDGET_DIR, 'index.html'))) {
@@ -29,12 +32,15 @@ export async function registerWidgetStatic(app: FastifyInstance): Promise<void> 
   }
 
   await app.register(async (scope) => {
-    // Allow embedding in the Zoho CRM iframe. helmet writes X-Frame-Options: SAMEORIGIN straight
-    // onto the raw Node response, so reply.removeHeader() can't see it — strip it off reply.raw.
-    // To tighten later, set a scoped CSP frame-ancestors listing your Zoho data-center domain.
+    // Make /widget embeddable in the (cross-origin) Zoho CRM iframe. To tighten later, set a scoped
+    // CSP frame-ancestors listing your exact Zoho data-center domain instead of removing XFO outright.
     scope.addHook('onSend', async (_req, reply) => {
       reply.removeHeader('X-Frame-Options');
-      if (!reply.raw.headersSent) reply.raw.removeHeader('X-Frame-Options');
+      reply.header('Cross-Origin-Resource-Policy', 'cross-origin');
+      if (!reply.raw.headersSent) {
+        reply.raw.removeHeader('X-Frame-Options');
+        reply.raw.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      }
     });
     await scope.register(fastifyStatic, {
       root: WIDGET_DIR,
