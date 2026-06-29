@@ -3,10 +3,10 @@ services:
     name: octane-assistant-api
     runtime: node
     plan: starter
-    # Build the API, then the widget UI (web/app). The server serves the widget same-origin at
-    # /widget, so the chat UI and the API share one origin — the widget's live-token streaming fetch
-    # needs no CORS allowlisting. Base URL to register in Zoho: <service-url>/widget/index.html
-    buildCommand: pnpm install --frozen-lockfile && pnpm build && pnpm --dir web install --frozen-lockfile && pnpm --dir web build
+    # `pnpm build` builds the API AND the widget UI (web/app) — see package.json build:widget — so the
+    # server can serve the widget same-origin at /widget regardless of how the build is invoked
+    # (Blueprint or a manually-created service's dashboard command). Zoho Base URL: <url>/widget/index.html
+    buildCommand: pnpm install --frozen-lockfile && pnpm build
     startCommand: pnpm start
     healthCheckPath: /health
     envVars:
