@@ -1,6 +1,8 @@
 node_modules
 dist
-app
 *.zip
 .env
 .env.local
+# app/ (the built widget) is intentionally COMMITTED so the backend serves /widget on ANY deploy
+# without depending on the build step producing it. Rebuild + recommit when the widget changes
+# (`pnpm -C web build`, or root `pnpm build` which regenerates it).
