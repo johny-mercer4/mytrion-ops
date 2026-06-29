@@ -671,3 +671,30 @@ the hand-rolled chatService). Deps: deepagents@1.10.5, langchain@1.5.2, @langcha
   env: FF_DEEP_AGENTS_ENABLED, DEEP_AGENTS_MODEL (''→default chat model), DEEP_WEB_SEARCH_MODEL
   (default gpt-4o-mini; dated snapshots may not support web_search). Stateless (no checkpointer).
 - Verified: typecheck + build + lint (0 errors) + 143 tests pass + offline orchestrator smoke.
+
+
+### Composio — external tool-calling gateway for DeepAgents (2026-06-29)
+
+External SaaS tool calls (Zoho CRM/Desk, …) now route through Composio as a NEW `external-tools-agent`
+subagent in the orchestrator. Native tool-caller (toolDispatcher) left intact (coexist). Deps:
+@composio/core@0.13.1, @composio/langchain@0.10.0. Off unless FF_COMPOSIO_ENABLED.
+- Decisions: SHARED ORG ACCOUNT (fixed COMPOSIO_ORG_USER_ID='octane-org' owns connected accounts —
+  connect Zoho once, all callers use it; no per-user OAuth) + NEW subagent (keep native).
+- `src/integrations/composio.ts`: lazy client (LangchainProvider), `authorizeToolkit`/`listConnections`,
+  `isComposioAllowed(ctx)` = admin OR allDepartmentAccess. NOT re-exported from integrations/index.ts
+  and only ever lazy-imported, so the SDK never loads at boot when the flag is off.
+- `modules/deepagents/tools/composioTools.ts`: `composio.tools.get(orgUser,{toolkits,limit},{afterExecute})`
+  → LangChain tools. Hard-rule handling for REMOTE execution: admin-gated exposure (#4/#7) + audit via
+  the afterExecute modifier writing tool_calls + audit rows (#8), reading ctx from the run ALS.
+- Toolkits = COMPOSIO_TOOLKITS env (default ZOHO,ZOHO_DESK — both Composio-managed OAuth, no custom
+  creds). orchestrator.buildDeepAgent is now async; adds external-tools-agent only when FF on + allowed
+  + tools resolve.
+- Connection mgmt (admin): GET /v1/integrations/composio/status, POST /v1/integrations/composio/authorize
+  {toolkit} → Connect Link redirectUrl. Flag+admin gated, lazy-imported.
+- GOTCHA: doc said `@composio/core@next` + `LangChainProvider`; real published API is
+  `composio.tools.get(userId,filters,opts)` + `LangchainProvider` (lowercase c). afterExecute modifier
+  shape: `({toolSlug,toolkitSlug,result})=>result`.
+- env: FF_COMPOSIO_ENABLED, COMPOSIO_API_KEY, COMPOSIO_ORG_USER_ID, COMPOSIO_TOOLKITS, COMPOSIO_TOOL_LIMIT.
+- To go live: set COMPOSIO_API_KEY + FF_COMPOSIO_ENABLED, then POST .../authorize {toolkit:'ZOHO'} as
+  admin → open redirectUrl → complete Zoho OAuth (once). Verified offline: gate, config, no-network
+  viewer path, orchestrator builds. Live remote execution untested (needs key + connected account).
