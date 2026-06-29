@@ -8,13 +8,13 @@ import { logger } from '../lib/logger.js';
 // Locate <repo>/web/app robustly across layouts (tsx-dev = src/plugins, prod = dist/plugins, plus a
 // cwd fallback and a WIDGET_DIR override) so a deploy whose CWD differs still finds the build.
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const WIDGET_DIR_CANDIDATES = [
+export const WIDGET_DIR_CANDIDATES = [
   process.env.WIDGET_DIR,
   path.resolve(HERE, '..', '..', 'web', 'app'),
   path.resolve(process.cwd(), 'web', 'app'),
 ].filter((d): d is string => Boolean(d));
 
-function resolveWidgetDir(): string | null {
+export function resolveWidgetDir(): string | null {
   for (const dir of WIDGET_DIR_CANDIDATES) {
     if (existsSync(path.join(dir, 'index.html'))) return dir;
   }
