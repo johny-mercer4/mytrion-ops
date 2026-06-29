@@ -58,7 +58,7 @@ const EnvSchema = z.object({
   // connected accounts (connect Zoho once → all callers use it). Toolkits are managed-auth slugs
   // (ZOHO = CRM, ZOHO_DESK). Execution is remote on Composio; we wrap each call with an audit log
   // and gate the subagent to admins (external tools include writes/deletes).
-  COMPOSIO_API_KEY: z.string().default(''),
+  COMPOSIO_API_KEY: z.string().default('COMPOSIO_KEY'),
   COMPOSIO_ORG_USER_ID: z.string().default('octane-org'),
   COMPOSIO_TOOLKITS: z.string().default('ZOHO,ZOHO_DESK'),
   COMPOSIO_TOOL_LIMIT: z.coerce.number().int().positive().max(200).default(50),
@@ -168,7 +168,7 @@ const EnvSchema = z.object({
   // DeepAgents orchestrator endpoint (POST /v1/agent/deep). Off by default; lazy-loaded when on.
   FF_DEEP_AGENTS_ENABLED: flag('0'),
   // Composio external tool-calling (adds the external-tools subagent + /v1/integrations/composio/*).
-  FF_COMPOSIO_ENABLED: flag('0'),
+  FF_COMPOSIO_ENABLED: flag('1'),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
