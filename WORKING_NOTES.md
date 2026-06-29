@@ -647,3 +647,27 @@ CORS (same origin → the live-token streaming fetch just works). Zoho external-
   separate `octane-assistant-widget` static service. Needs main merge + redeploy to go live.
 - Tradeoff still open: key reaches the browser via getOrgVariable + rides the same-origin request.
   To keep it off the browser entirely → Zoho Connection (buffered, no live streaming). Left as-is.
+
+
+### DeepAgents orchestrator — parent + RAG/web/tool-caller children (2026-06-29)
+
+Added the LangChain/LangGraph DeepAgents harness as an ADDITIVE, embedded module (does NOT replace
+the hand-rolled chatService). Deps: deepagents@1.10.5, langchain@1.5.2, @langchain/core@1.2,
+@langchain/langgraph@1.4, @langchain/openai@1.5. Reuses the existing OpenAI key (no new provider).
+- `src/modules/deepagents/`: orchestrator (createDeepAgent parent) delegates via the task tool to 3
+  declarative subagents — rag-agent (knowledge_search → retrieve()), web-search-agent (OpenAI
+  Responses `web_search` built-in; graceful fallback if model/account lacks it), tool-caller-agent
+  (every registry tool → dispatchTool()). `context.ts` = AsyncLocalStorage carrying TenantContext so
+  the LangChain tool handlers enforce the SAME RBAC + audit + validation as the chat loop.
+- tool-caller tools are built PER REQUEST from `toolRegistry.listForContext(ctx)` (RBAC-filtered),
+  knowledge.search excluded (rag-agent's). Registry names are classic-zod-v3 → converted with
+  zodToJsonSchema; LangChain tool names can't contain '.', so `zoho_crm.query` → `zoho_crm__query`
+  (real name used for dispatch). Smoke (admin ctx) built 6 tool-caller tools + a compiling graph.
+- GOTCHA: LangChain v1 tool() rejects classic `import {z} from 'zod'` under exactOptionalPropertyTypes
+  (_def.description string|undefined). Author tools with `import * as z from 'zod/v4'`; convert the
+  registry's v3 schemas via zodToJsonSchema.
+- Endpoint: POST /v1/agent/deep, flag-gated FF_DEEP_AGENTS_ENABLED (default OFF) + LAZY import so the
+  heavy LangGraph deps stay out of cold start when off. Same body shape + ctx build as /v1/chat.
+  env: FF_DEEP_AGENTS_ENABLED, DEEP_AGENTS_MODEL (''→default chat model), DEEP_WEB_SEARCH_MODEL
+  (default gpt-4o-mini; dated snapshots may not support web_search). Stateless (no checkpointer).
+- Verified: typecheck + build + lint (0 errors) + 143 tests pass + offline orchestrator smoke.

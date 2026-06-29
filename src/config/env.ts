@@ -45,6 +45,14 @@ const EnvSchema = z.object({
   // Worker model for tool-calling/simple turns. gpt-oss (NOT Llama — deprecated on Groq).
   GROQ_MODEL_WORKER: z.string().default('openai/gpt-oss-120b'),
 
+  // --- DeepAgents (LangChain/LangGraph orchestrator + RAG / web-search / tool-caller subagents). ---
+  // Off by default (FF_DEEP_AGENTS_ENABLED). Reuses OPENAI_API_KEY; no new provider.
+  // Empty DEEP_AGENTS_MODEL falls back to OPEN_AI_FOUR_O_MINI. The web-search subagent calls the
+  // OpenAI Responses `web_search` built-in tool with DEEP_WEB_SEARCH_MODEL (must be a web-search-capable
+  // model alias, e.g. gpt-4o-mini / gpt-4o; dated snapshots may not support it).
+  DEEP_AGENTS_MODEL: z.string().default(''),
+  DEEP_WEB_SEARCH_MODEL: z.string().default('gpt-4o-mini'),
+
   // --- Zoho MCP (hosted; "Authorize via Connection" → headless, URL embeds the credential). ---
   ZOHO_MCP_URL: z.string().default(''),
 
@@ -147,6 +155,8 @@ const EnvSchema = z.object({
   // Additionally expose Zoho MCP WRITE tools (create/update/upsert). Off by default (read-only posture).
   FF_ZOHO_MCP_WRITES: flag('0'),
   FF_AUDIT_LOG_ENABLED: flag('1'),
+  // DeepAgents orchestrator endpoint (POST /v1/agent/deep). Off by default; lazy-loaded when on.
+  FF_DEEP_AGENTS_ENABLED: flag('0'),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
