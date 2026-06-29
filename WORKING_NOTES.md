@@ -698,3 +698,8 @@ subagent in the orchestrator. Native tool-caller (toolDispatcher) left intact (c
 - To go live: set COMPOSIO_API_KEY + FF_COMPOSIO_ENABLED, then POST .../authorize {toolkit:'ZOHO'} as
   admin → open redirectUrl → complete Zoho OAuth (once). Verified offline: gate, config, no-network
   viewer path, orchestrator builds. Live remote execution untested (needs key + connected account).
+- READ-ONLY by default (hard-rule #7): ZOHO (14) + ZOHO_DESK (23) include destructive writes
+  (ZOHO_DELETE_DEAL, ZOHO_DESK_UPDATE_TICKET, …). buildComposioTools filters to read tools via
+  `isComposioWriteTool` (verb-in-slug regex) unless FF_COMPOSIO_WRITES — same pattern as
+  FF_ZOHO_MCP_WRITES. afterExecute audit records per-tool riskClass (read/write). Classifier verified
+  on the real slugs (8 read / 7 write sample, 0 misclassified).

@@ -169,6 +169,9 @@ const EnvSchema = z.object({
   FF_DEEP_AGENTS_ENABLED: flag('0'),
   // Composio external tool-calling (adds the external-tools subagent + /v1/integrations/composio/*).
   FF_COMPOSIO_ENABLED: flag('1'),
+  // Expose Composio WRITE/destructive tools (create/update/delete/…) to the agent. Off = read-only
+  // (hard-rule #7), mirroring FF_ZOHO_MCP_WRITES. Even when on, the subagent stays admin-gated.
+  FF_COMPOSIO_WRITES: flag('0'),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

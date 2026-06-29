@@ -22,6 +22,15 @@ import type { TenantContext } from '../../../types/tenantContext.js';
 import { auditFromContext } from '../../audit/auditLogger.js';
 import { requireAgentContext } from '../context.js';
 
+// Composio tool slugs encode the verb (ZOHO_GET_CONTACT, ZOHO_DELETE_DEAL, ZOHO_DESK_UPDATE_TICKET).
+// These verbs mutate state; everything else (get/list/search/download/count) is treated as read.
+const WRITE_VERB = /(^|_)(create|update|delete|convert|upload|remove|add|send|set|upsert|merge|put|patch|post|assign|close|cancel)(_|$)/i;
+
+/** Whether a Composio tool slug is a write/destructive action (vs a read). */
+export function isComposioWriteTool(slug: string): boolean {
+  return WRITE_VERB.test(slug);
+}
+
 /** afterExecute modifier: audit-log each remote Composio call. Never throws (audit must not break runs). */
 async function auditExecution(context: {
   toolSlug: string;
@@ -36,7 +45,7 @@ async function auditExecution(context: {
     await toolCallRepo.record({
       tenantId: ctx.tenantId,
       toolName,
-      riskClass: 'write',
+      riskClass: isComposioWriteTool(toolSlug) ? 'write' : 'read',
       arguments: { toolkit: toolkitSlug },
       status,
       ...(status === 'error' && result?.error ? { errorMessage: String(result.error) } : {}),
@@ -54,7 +63,10 @@ async function auditExecution(context: {
   return result;
 }
 
-/** Build the admin-gated, audited Composio tools for the shared org account. Empty when not allowed. */
+/**
+ * Build the admin-gated, audited Composio tools for the shared org account. Empty when not allowed.
+ * Read-only by default (hard-rule #7): write/destructive tools are dropped unless FF_COMPOSIO_WRITES.
+ */
 export async function buildComposioTools(ctx: TenantContext): Promise<StructuredTool[]> {
   if (!isComposioAllowed(ctx) || COMPOSIO_TOOLKITS.length === 0) return [];
   const tools = await getComposio().tools.get(
@@ -64,5 +76,7 @@ export async function buildComposioTools(ctx: TenantContext): Promise<Structured
   );
   // Composio's LangChain DynamicStructuredTools satisfy StructuredTool; cast across the (possibly
   // distinct) @langchain/core copies the two packages resolve.
-  return tools as unknown as StructuredTool[];
+  const all = tools as unknown as StructuredTool[];
+  if (env.FF_COMPOSIO_WRITES) return all;
+  return all.filter((t) => !isComposioWriteTool(t.name));
 }
