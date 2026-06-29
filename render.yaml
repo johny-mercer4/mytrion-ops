@@ -3,9 +3,9 @@ services:
     name: octane-assistant-api
     runtime: node
     plan: starter
-    # `pnpm build` builds the API AND the widget UI (web/app) — see package.json build:widget — so the
-    # server can serve the widget same-origin at /widget regardless of how the build is invoked
-    # (Blueprint or a manually-created service's dashboard command). Zoho Base URL: <url>/widget/index.html
+    # Plain tsc build (reliable). The widget UI (web/app) is VENDORED in git and served same-origin
+    # at /widget, so the deploy needs no web build step. Zoho Base URL: <url>/widget/index.html
+    # (regenerate web/app with `pnpm build:widget` and recommit when the widget changes.)
     buildCommand: pnpm install --frozen-lockfile && pnpm build
     startCommand: pnpm start
     healthCheckPath: /health
