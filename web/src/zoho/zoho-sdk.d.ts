@@ -34,12 +34,29 @@ export interface ZohoEmbeddedApp {
   on(event: string, handler: (data: unknown) => void): void;
 }
 
+/** Request shape for the server-side HTTP proxy (ZOHO.CRM.HTTP). Returns a wrapped response. */
+export interface ZohoHttpRequest {
+  url: string;
+  headers?: Record<string, string>;
+  body?: string;
+  parameters?: Record<string, unknown>;
+}
+
 export interface ZohoSDK {
   embeddedApp: ZohoEmbeddedApp;
   CRM: {
     CONFIG: {
       getCurrentUser(): Promise<ZohoCurrentUserResponse>;
       getOrgInfo(): Promise<unknown>;
+    };
+    /** Read CRM org variables (server secrets). Object form: { apiKeys: ['NAME', ...] }. */
+    API: {
+      getOrgVariable(input: { apiKeys: string[] }): Promise<unknown>;
+    };
+    /** Server-side HTTP proxy — request originates from Zoho's servers (no CORS, buffered). */
+    HTTP: {
+      get(req: ZohoHttpRequest): Promise<unknown>;
+      post(req: ZohoHttpRequest): Promise<unknown>;
     };
   };
 }

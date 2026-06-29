@@ -7,6 +7,8 @@ export default defineConfig({
   plugins: [react()],
   base: './',
   server: { port: 3000 },
-  // Build into app/ — the web root a Zoho widget (zet) serves and packs.
-  build: { outDir: 'app', emptyOutDir: true, sourcemap: true },
+  // Build into app/ — the web root a Zoho widget (zet) serves and packs. sourcemap is OFF: the
+  // app/ dir is packed into the .zet and served publicly, and maps would expose source (and could
+  // re-expose any inlined env value). Flip to true only for local debugging, never for a shipped build.
+  build: { outDir: 'app', emptyOutDir: true, sourcemap: false },
 });

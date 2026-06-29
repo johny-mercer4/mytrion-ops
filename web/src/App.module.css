@@ -1,5 +1,17 @@
 .app {
-  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 860px;
   margin: 0 auto;
-  padding: var(--space-5) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  gap: var(--space-3);
+}
+
+/* The chat fills the space the header leaves; min-height:0 lets the inner list scroll. */
+.main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
