@@ -5,11 +5,21 @@ import fastifyStatic from '@fastify/static';
 import type { FastifyInstance } from 'fastify';
 import { logger } from '../lib/logger.js';
 
-// Resolve <repo>/web/app from this file's location (works under both tsx-dev and `node dist`):
-// dev   → <repo>/src/plugins/widgetStatic.ts  → ../../web/app
-// prod  → <repo>/dist/plugins/widgetStatic.js  → ../../web/app
+// Locate <repo>/web/app robustly across layouts (tsx-dev = src/plugins, prod = dist/plugins, plus a
+// cwd fallback and a WIDGET_DIR override) so a deploy whose CWD differs still finds the build.
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const WIDGET_DIR = path.resolve(HERE, '..', '..', 'web', 'app');
+const WIDGET_DIR_CANDIDATES = [
+  process.env.WIDGET_DIR,
+  path.resolve(HERE, '..', '..', 'web', 'app'),
+  path.resolve(process.cwd(), 'web', 'app'),
+].filter((d): d is string => Boolean(d));
+
+function resolveWidgetDir(): string | null {
+  for (const dir of WIDGET_DIR_CANDIDATES) {
+    if (existsSync(path.join(dir, 'index.html'))) return dir;
+  }
+  return null;
+}
 
 /**
  * Serve the built AI Chat widget (web/app) under /widget so the UI lives same-origin with the API.
@@ -26,8 +36,12 @@ const WIDGET_DIR = path.resolve(HERE, '..', '..', 'web', 'app');
  * helmet writes these straight onto the raw Node response, so we operate on reply.raw.
  */
 export async function registerWidgetStatic(app: FastifyInstance): Promise<void> {
-  if (!existsSync(path.join(WIDGET_DIR, 'index.html'))) {
-    logger.info({ dir: WIDGET_DIR }, 'widget build not found — /widget static host disabled');
+  const widgetDir = resolveWidgetDir();
+  if (!widgetDir) {
+    logger.warn(
+      { tried: WIDGET_DIR_CANDIDATES },
+      'widget build not found — /widget static host disabled (did the deploy run `pnpm --dir web build`?)',
+    );
     return;
   }
 
@@ -43,7 +57,7 @@ export async function registerWidgetStatic(app: FastifyInstance): Promise<void> 
       }
     });
     await scope.register(fastifyStatic, {
-      root: WIDGET_DIR,
+      root: widgetDir,
       prefix: '/widget/',
       index: ['index.html'],
       // index.html must revalidate so a redeploy is picked up; vite's hashed assets cache hard.
@@ -58,5 +72,5 @@ export async function registerWidgetStatic(app: FastifyInstance): Promise<void> 
     scope.get('/widget', async (_req, reply) => reply.redirect('/widget/'));
   });
 
-  logger.info({ dir: WIDGET_DIR }, 'serving AI Chat widget at /widget/');
+  logger.info({ dir: widgetDir }, 'serving AI Chat widget at /widget/');
 }
