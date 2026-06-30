@@ -1,4 +1,5 @@
 import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { SendArrowIcon } from '../../components/icons';
 import styles from './Composer.module.css';
 
 interface ComposerProps {
@@ -6,7 +7,7 @@ interface ComposerProps {
   onSend(text: string): void;
 }
 
-/** Auto-growing input. Enter sends, Shift+Enter newlines; locked while a turn streams. */
+/** Auto-growing pill input. Enter sends, Shift+Enter newlines; locked while a turn streams. */
 export function Composer({ disabled, onSend }: ComposerProps) {
   const [value, setValue] = useState('');
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -15,7 +16,7 @@ export function Composer({ disabled, onSend }: ComposerProps) {
     const ta = taRef.current;
     if (!ta) return;
     ta.style.height = 'auto';
-    ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`;
+    ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
   }
 
   function submit(e?: FormEvent) {
@@ -35,21 +36,21 @@ export function Composer({ disabled, onSend }: ComposerProps) {
   }
 
   return (
-    <form className={styles.composer} onSubmit={submit}>
+    <form className={styles.pill} onSubmit={submit}>
       <textarea
         ref={taRef}
         className={styles.input}
         value={value}
         rows={1}
-        placeholder={disabled ? 'Waiting for the assistant…' : 'Message the Octane assistant…'}
+        placeholder={disabled ? 'Waiting for the assistant…' : 'Ask the knowledge base…'}
         onChange={(e) => {
           setValue(e.target.value);
           grow();
         }}
         onKeyDown={onKeyDown}
       />
-      <button type="submit" className={styles.send} disabled={disabled || !value.trim()}>
-        Send
+      <button type="submit" className={styles.send} disabled={disabled || !value.trim()} aria-label="Send">
+        <SendArrowIcon size={16} />
       </button>
     </form>
   );

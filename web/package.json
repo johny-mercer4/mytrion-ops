@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Octane Assistant widget UI (React + TS). Runs as a Zoho CRM widget; auth/identity via the Zoho JS SDK, calls the Mytrion Ops backend.",
+  "description": "Mytrion external app (React + TS). Department 'Mytrions' routed by /m/:mytrion; user identity arrives as URL values from a thin Zoho CRM shim (no SDK). Same-origin with the Mytrion Ops backend.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",

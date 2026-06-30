@@ -1,11 +1,13 @@
 .status {
   margin: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
 }
 
 .info {
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .error {
-  color: var(--error-fg);
+  color: var(--danger);
 }

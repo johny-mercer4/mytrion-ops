@@ -28,6 +28,7 @@ import { chatRoutes } from './routes/v1/chat.routes.js';
 import { healthRoutes } from './routes/v1/health.routes.js';
 import { integrationsRoutes } from './routes/v1/integrations.routes.js';
 import { knowledgeRoutes } from './routes/v1/knowledge.routes.js';
+import { moneyCodeRoutes } from './routes/v1/moneyCode.routes.js';
 import { scopeRoutes } from './routes/v1/scope.routes.js';
 import { toolsRoutes } from './routes/v1/tools.routes.js';
 
@@ -170,6 +171,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(scopeRoutes);
       await v1.register(toolsRoutes);
       await v1.register(automationRoutes);
+      await v1.register(moneyCodeRoutes);
       await v1.register(adminRoutes);
       await v1.register(agentRoutes);
       await v1.register(integrationsRoutes);

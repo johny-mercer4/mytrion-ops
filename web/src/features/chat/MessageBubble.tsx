@@ -1,53 +1,74 @@
+import { Gem } from '../../components/Gem';
+import { CheckIcon, XIcon } from '../../components/icons';
 import type { UiMessage } from './types';
 import styles from './MessageBubble.module.css';
 
-/** A single chat turn. Assistant rows also surface the live status, grounding count, and tool calls. */
+/** A single chat turn. Assistant rows surface tool chips, thinking dots, grounding, and errors. */
 export function MessageBubble({ message }: { message: UiMessage }) {
   const isUser = message.role === 'user';
-  const showStatus = !isUser && message.streaming && !message.text && !!message.status;
-  const showCursor = !isUser && message.streaming && !!message.text;
 
-  // A finished assistant turn with nothing to show (empty/aborted stream) would render a blank
-  // padded balloon — drop the row entirely instead. "Nothing" must also account for the grounding
-  // line, which renders on passages>0 alone (a turn can ground on passages yet emit no text).
+  if (isUser) {
+    return (
+      <div className={styles.userRow}>
+        <div className={styles.userBubble}>{message.text}</div>
+      </div>
+    );
+  }
+
+  const thinking = message.streaming && !message.text && !message.error;
   const hasGrounding = message.passages != null && message.passages > 0;
-  if (!isUser && !message.streaming && !message.text && !message.error && message.tools.length === 0 && !hasGrounding) {
+
+  // A finished assistant turn with nothing to show: drop the row entirely (no blank gem row).
+  if (!message.streaming && !message.text && !message.error && message.tools.length === 0 && !hasGrounding) {
     return null;
   }
 
   return (
-    <div className={`${styles.row} ${isUser ? styles.user : styles.assistant}`}>
-      <div className={styles.bubble}>
-        {!isUser && message.tools.length > 0 && (
-          <div className={styles.tools}>
-            {message.tools.map((t) => (
-              <span key={t.name} className={`${styles.tool} ${t.status === 'running' ? styles.toolRunning : ''}`}>
-                {t.name}
-                {t.status !== 'running' && t.status !== 'ok' ? ` · ${t.status}` : ''}
-              </span>
-            ))}
+    <div className={styles.assistantRow}>
+      <Gem size={28} />
+      <div className={styles.body}>
+        {message.tools.length > 0 && (
+          <div className={styles.chips}>
+            {message.tools.map((t) => {
+              const ok = t.status === 'ok';
+              const running = t.status === 'running';
+              const tone = running ? styles.chipRunning : ok ? styles.chipOk : styles.chipDenied;
+              return (
+                <span key={t.name} className={`${styles.chip} ${tone}`}>
+                  {running ? <span className={styles.spinner} /> : ok ? <CheckIcon size={10} /> : <XIcon size={10} />}
+                  <span className={styles.chipLabel}>{t.name}</span>
+                </span>
+              );
+            })}
           </div>
         )}
 
-        {showStatus && (
-          <p className={styles.status}>
-            <span className={styles.dots} aria-hidden="true" />
-            {message.status}
-          </p>
+        {thinking && (
+          <div className={styles.thinking}>
+            <span className={styles.dots}>
+              <i className={styles.dot} />
+              <i className={styles.dot} />
+              <i className={styles.dot} />
+            </span>
+            <span className={styles.thinkLabel}>{message.status || 'Thinking'}</span>
+          </div>
         )}
 
         {message.text && (
-          <p className={styles.text}>
+          <div className={styles.text}>
             {message.text}
-            {showCursor && <span className={styles.caret} aria-hidden="true" />}
-          </p>
+            {message.streaming && <span className={styles.caret} aria-hidden="true" />}
+          </div>
         )}
 
-        {!isUser && !message.streaming && message.passages != null && message.passages > 0 && (
-          <p className={styles.meta}>Grounded on {message.passages} knowledge passage{message.passages === 1 ? '' : 's'}</p>
+        {!message.streaming && hasGrounding && (
+          <div className={styles.grounding}>
+            <CheckIcon size={11} />
+            Grounded in {message.passages} passage{message.passages === 1 ? '' : 's'}
+          </div>
         )}
 
-        {message.error && <p className={styles.error}>{message.error}</p>}
+        {message.error && <div className={styles.errText}>{message.error}</div>}
       </div>
     </div>
   );

@@ -1,27 +1,24 @@
-import { AppHeader } from './components/AppHeader';
+import { AppRouter } from './app/router';
+import { UserContextProvider } from './context/UserContextProvider';
 import { StatusMessage } from './components/StatusMessage';
-import { ChatPanel } from './features/chat/ChatPanel';
-import { useZohoUser } from './hooks/useZohoUser';
 import styles from './App.module.css';
 
+/**
+ * Root: read the user context from the URL (passed by the Zoho shim — no SDK), then route to the
+ * accessible Mytrion(s). A missing/invalid context renders the "open from CRM" fallback.
+ */
 export default function App() {
-  const state = useZohoUser();
-
   return (
     <div className={styles.app}>
-      <AppHeader title="Octane Assistant" subtitle="AI Chat" />
-
-      <main className={styles.main}>
-        {state.status === 'loading' && <StatusMessage>Connecting to Zoho CRM…</StatusMessage>}
-
-        {state.status === 'error' && (
-          <StatusMessage tone="error">
-            Couldn’t initialize Zoho CRM: {state.error}. (This widget must run inside Zoho CRM.)
-          </StatusMessage>
+      <UserContextProvider
+        fallback={(error) => (
+          <main className={styles.main}>
+            <StatusMessage tone="error">{error}</StatusMessage>
+          </main>
         )}
-
-        {state.status === 'ready' && <ChatPanel context={state.context} />}
-      </main>
+      >
+        <AppRouter />
+      </UserContextProvider>
     </div>
   );
 }

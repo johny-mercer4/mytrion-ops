@@ -1,12 +1,10 @@
 /**
- * Streaming chat (POST /v1/chat/stream, Server-Sent Events). Mirrors the proven widget workaround:
- *  - DIRECT browser fetch + body.getReader() for live tokens.
- *  - On a CORS failure (the widget origin isn't whitelisted), fall back to the buffered Zoho HTTP
- *    proxy (whole response at once) and remember the block for the rest of the session.
+ * Streaming chat (POST /v1/chat/stream, Server-Sent Events). Same-origin direct fetch + body
+ * .getReader() for live tokens — no CORS, so the Zoho HTTP proxy fallback is gone. Respects an
+ * AbortSignal at every await so a cancelled turn never dispatches late frames.
  */
-import { getZohoSdk } from '../zoho/embeddedApp';
+import { authHeaders } from './transport';
 import { resolveApiConfig, v1Url } from './config';
-import { unwrap } from './transport';
 
 export interface ChatRequestBody {
   message: string;
@@ -28,9 +26,6 @@ export interface StreamHandlers {
   onDone?(data: { message?: string; ragPassages?: number; conversationId?: string }): void;
   onError?(message: string): void;
 }
-
-// Sticky for the session: once direct streaming hits CORS, go straight to the proxy.
-let directBlocked = false;
 
 function dispatchFrame(frame: string, h: StreamHandlers): void {
   if (!frame.trim()) return;
@@ -60,63 +55,31 @@ function dispatchFrame(frame: string, h: StreamHandlers): void {
   }
 }
 
-async function streamViaProxy(
-  url: string,
-  headers: Record<string, string>,
-  payload: string,
-  h: StreamHandlers,
-  signal?: AbortSignal,
-): Promise<void> {
-  const sdk = await getZohoSdk();
-  if (!sdk) throw new Error('Direct streaming was blocked and no Zoho proxy is available.');
-  // The proxy is a single buffered request that can't be cancelled mid-flight. If the caller
-  // aborted while it was outstanding (e.g. the user started a new chat), drop the late response so
-  // its frames don't get dispatched into — and clobber — the now-current conversation.
-  const raw = await sdk.CRM.HTTP.post({ url, headers, body: payload });
-  if (signal?.aborted) return;
-  const text = unwrap(raw);
-  const str = typeof text === 'string' ? text : JSON.stringify(text ?? '');
-  if (!str.trim()) throw new Error('Empty response from the chat service.');
-  for (const frame of str.split('\n\n')) {
-    if (signal?.aborted) return;
-    dispatchFrame(frame, h);
-  }
-}
-
 export async function streamChat(
   body: ChatRequestBody,
   handlers: StreamHandlers,
   signal?: AbortSignal,
 ): Promise<void> {
-  const cfg = await resolveApiConfig();
-  if (!cfg.baseUrl || !cfg.apiKey) {
-    throw new Error('Backend not configured — set the MYTRION_OPS_API_URL / MYTRION_OPS_API_KEY org variables.');
-  }
-  const url = v1Url(cfg.baseUrl, '/chat/stream');
-  const headers: Record<string, string> = { 'Content-Type': 'application/json', 'x-api-key': cfg.apiKey };
-  const payload = JSON.stringify(body);
-  const sdk = await getZohoSdk();
-
-  if (directBlocked && sdk) {
-    await streamViaProxy(url, headers, payload, handlers, signal);
-    return;
-  }
+  const { baseUrl } = resolveApiConfig();
+  const url = v1Url(baseUrl, '/chat/stream');
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...authHeaders() };
 
   let res: Response;
   try {
-    res = await fetch(url, { method: 'POST', headers, body: payload, ...(signal ? { signal } : {}) });
+    res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      credentials: 'same-origin',
+      ...(signal ? { signal } : {}),
+    });
   } catch (e) {
     if ((e as Error)?.name === 'AbortError') return;
-    if (sdk) {
-      directBlocked = true; // CORS — widget origin not whitelisted; use the proxy from now on
-      await streamViaProxy(url, headers, payload, handlers, signal);
-      return;
-    }
     throw e;
   }
 
-  // A non-OK status is a genuine backend error (the request was received and processed). We do NOT
-  // retry it via the proxy: POST /chat/stream is not idempotent — a retry would start a second turn.
+  // A non-OK status is a genuine backend error (request received + processed). Do NOT retry —
+  // POST /chat/stream is not idempotent; a retry would start a second turn.
   if (!res.ok) {
     let msg = `Chat service returned HTTP ${res.status}.`;
     try {
@@ -128,8 +91,7 @@ export async function streamChat(
     throw new Error(msg);
   }
 
-  // No readable stream (older runtime / proxy buffered) → parse the whole body. Guard the same way
-  // as the other two paths: if the caller aborted while the body was in flight, drop the late frames.
+  // No readable stream (older runtime) → parse the whole body once, honoring abort.
   if (!res.body || typeof res.body.getReader !== 'function') {
     const txt = await res.text();
     if (signal?.aborted) return;

@@ -703,3 +703,47 @@ subagent in the orchestrator. Native tool-caller (toolDispatcher) left intact (c
   `isComposioWriteTool` (verb-in-slug regex) unless FF_COMPOSIO_WRITES — same pattern as
   FF_ZOHO_MCP_WRITES. afterExecute audit records per-tool riskClass (read/write). Classifier verified
   on the real slugs (8 read / 7 write sample, 0 misclassified).
+
+## 2026-06-30 — Pivot: external multi-"Mytrion" app (drop Zoho SDK)
+
+- DECISION (owner): drop the Zoho Embedded App SDK entirely. Zoho becomes a THIN shim that reads the
+  CRM user and redirects to this external app with identity as URL values
+  (`/m/:mytrion?uid&profile&role&uname[&ts&sig]`). The React app reads context from the URL — no SDK.
+- Scaffolded 8 department Mytrions under `web/src/mytrions/<id>/` (uniform `MytrionShell` +
+  `MytrionScaffold` = shared ChatPanel scoped to a department + "panels to build" notes). 5 ported
+  refs (admin←agent-scope, sales←self-service, billing←billing-mytrion, finance←mytrion-finance,
+  customer-service←mytrion-customer-service) + 3 new stubs (retention, verification, manager).
+- ACCESS: single declarative table `web/src/access/mytrions.config.ts` — profile = DEFAULT,
+  `allowedUsernames` = ADDITIVE override, `adminBypass`. `resolveAccess.ts` + route guard. Placeholder
+  profile names — owner must edit to real Zoho values.
+- ROUTING: react-router-dom v6; `/` Landing (0→403, 1→auto-enter, 2+→picker), `/m/:mytrion` guarded +
+  lazy (build code-splits one chunk per Mytrion). Context params stripped from URL after capture.
+- API: refactored `api/{config,transport,stream}.ts` to SAME-ORIGIN `/v1` (dropped Zoho HTTP proxy +
+  org-variable resolution). TRUST = advisory (owner choice): URL params drive UI only; backend
+  x-api-key + department_access is the real boundary. Prod sends NO key (same-origin) — OPEN: backend
+  must accept same-origin widget requests; dev uses VITE_API_KEY.
+- DELETED: `web/src/zoho/*`, `hooks/useZohoUser`, `features/userContext/*`, `web/plugin-manifest.json`.
+- `pnpm -C web build` + typecheck GREEN. Left `web/app` (vendored, deployed at /widget) PRISTINE — the
+  pivot needs a mount-point + SPA-fallback decision before rebuilding/vendoring (see web/ARCHITECTURE.md §9).
+- Handoff spec for the design agent: `web/ARCHITECTURE.md` (URL contract, Zoho shim Deluge sketch,
+  per-Mytrion porting map + endpoints, backend forwarding, deploy wiring, open decisions).
+
+## 2026-06-30 — Apply MytrionOpsDesign system to the web app
+
+- Built the web app to the design at `~/Desktop/MytrionOpsDesign` (Design System.dc.html + Mytrion.dc.html,
+  4 screens: 1a picker, 1b admin tabbed, 1c admin chat-docked [chosen], 1d light). "Soft Midnight" dark
+  default + "Cool White" light; cyan accent; Rajdhani/Inter/JetBrains Mono.
+- Tokens → `styles/theme.css` (:root dark, [data-theme=light] override) + radii/shadows/--gem/--fuel +
+  keyframes (spin/thinkBounce/blink) in global.css. Fonts via Google Fonts <link> in index.html.
+- New components: `icons.tsx` (centralized SVGs + MytrionGlyph), `BrandMark`(FuelMark+wordmark), `Gem`,
+  `TopBar` (brand+context badge+Switch+theme toggle+avatar), `hooks/useTheme` (localStorage, <html data-theme>).
+- `MytrionShell` rebuilt to design 1c: TopBar + 64px icon nav rail + center content + ALWAYS-present
+  docked `ChatPanel` (404px, surface-alt). Chat restyled: gem avatars, tool chips (running spinner/
+  success check/denied x), grounding footnote, thinkBounce dots, pill composer + round accent send.
+- `MytrionPicker` = design 1a (hero + 8 hued Mytrion cards, Ported/New badges, Enter →). Admin Mytrion
+  center = `KnowledgeBase` panel (search + status-badged doc list, static placeholder — TODO wire /v1/knowledge)
+  + Home/Train/Knowledge/Scope nav. Forbidden/NotFound themed. Deleted unused AppHeader/Badge/Card/KeyValueList.
+- mytrions.config gained tag/icon(glyph)/hue per Mytrion. web typecheck + build GREEN (code-splits per Mytrion).
+- Verified via 5-lens adversarial design-fidelity workflow: FAITHFUL, 0 deviations. `web/app` left PRISTINE
+  (rebuild+vendor only after the mount-point + SPA-fallback deploy wiring — ARCHITECTURE.md §9). Caveat: static
+  fidelity read, not a rendered pixel diff; chat dock collapses below 900px.
