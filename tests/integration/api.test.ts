@@ -20,10 +20,11 @@ afterAll(async () => {
 });
 
 describe('HTTP API (no external services)', () => {
-  it('GET /health returns { ok: true }', async () => {
+  it('GET /health returns ok (plus deploy probe fields)', async () => {
     const res = await app.inject({ method: 'GET', url: '/health' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ ok: true });
+    // /health also echoes a deploy probe (commit + widget-serving status); assert the liveness flag.
+    expect(res.json()).toMatchObject({ ok: true });
   });
 
   it('rejects unauthenticated access to GET /v1/tools', async () => {
