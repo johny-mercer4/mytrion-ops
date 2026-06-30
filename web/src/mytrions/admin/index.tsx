@@ -1,16 +1,20 @@
-import { MytrionScaffold } from '../_shared/MytrionScaffold';
+import { HomeIcon, KnowledgeIcon, ScopeIcon, TrainIcon } from '../../components/icons';
+import { MytrionShell, type NavItem } from '../_shared/MytrionShell';
+import { KnowledgeBase } from './KnowledgeBase';
 
-/** Mytrion Admin — Octane team RnD: knowledge base, agent scope, RBAC. Ported from agent-scope. */
+/** Mytrion Admin (design 1c) — RnD knowledge base + agent scope, with the scoped AI chat docked right. */
 export default function AdminMytrion() {
+  // TODO(design agent): make these tabs switch the center panel (Train / Knowledge browser / Octane Scope).
+  const nav: NavItem[] = [
+    { key: 'home', label: 'Home', icon: <HomeIcon />, active: true },
+    { key: 'train', label: 'Train', icon: <TrainIcon /> },
+    { key: 'knowledge', label: 'Knowledge', icon: <KnowledgeIcon /> },
+    { key: 'scope', label: 'Octane Scope', icon: <ScopeIcon /> },
+  ];
+
   return (
-    <MytrionScaffold
-      id="admin"
-      buildNotes={[
-        'Knowledge base manager (upload/list/delete docs; per-department tagging) → POST /v1/knowledge/embed, /v1/knowledge/query, delete',
-        'Agent Scope graph (Vue Flow stages → React Flow): AS_STAGES data + scope-color constants',
-        'Scope risks CRUD (Blockers/Red Flags/Manual Processes) → /v1/scope endpoints (admin-only)',
-        'Chat with allDepartments:true (broad retrieval) — already wired below',
-      ]}
-    />
+    <MytrionShell id="admin" nav={nav}>
+      <KnowledgeBase />
+    </MytrionShell>
   );
 }

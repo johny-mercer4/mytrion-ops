@@ -1,17 +1,15 @@
 .app {
-  display: flex;
-  flex-direction: column;
   height: 100%;
-  max-width: 860px;
-  margin: 0 auto;
-  padding: var(--space-3) var(--space-4);
-  gap: var(--space-3);
+  min-height: 0;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
-/* The chat fills the space the header leaves; min-height:0 lets the inner list scroll. */
+/* Fallback (missing/invalid user context): centered message. */
 .main {
-  flex: 1;
-  min-height: 0;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
 }

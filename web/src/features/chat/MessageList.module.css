@@ -1,27 +1,34 @@
 .list {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-4);
+  min-height: 0;
+  padding: 18px;
   display: flex;
   flex-direction: column;
+  gap: 20px;
 }
 
 .empty {
   margin: auto;
   text-align: center;
-  max-width: 320px;
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
 }
 
 .emptyTitle {
-  margin: 0 0 var(--space-2);
-  color: var(--fg);
-  font-size: var(--fs-lg);
-  font-weight: 600;
+  margin: 0;
+  font-family: var(--font-head);
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 700;
 }
 
 .emptyHint {
   margin: 0;
-  color: var(--muted);
-  font-size: var(--fs-base);
-  line-height: 1.5;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.55;
 }

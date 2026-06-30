@@ -27,9 +27,13 @@ export type MytrionId =
 export interface MytrionAccessRule {
   id: MytrionId;
   title: string;
-  /** Card icon (emoji) + one-line blurb for the picker. */
+  /** Short context badge shown in the header (e.g. admin → "RnD"). */
+  tag: string;
+  /** Glyph key for the picker/nav (see MytrionGlyph) + one-line blurb. */
   icon: string;
   blurb: string;
+  /** Accent hue for the Mytrion's icon chip: maps to a token (accent|success|purple|orange|danger). */
+  hue: 'accent' | 'success' | 'purple' | 'orange' | 'danger';
   /** Canonical department_access slug forwarded to the backend. */
   department: string;
   /** Send allDepartments:true on knowledge queries (broad retrieval). */
@@ -56,8 +60,10 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
   admin: {
     id: 'admin',
     title: 'Mytrion Admin',
-    icon: '🛠️',
-    blurb: 'Knowledge base, agent scope & RBAC — Octane team only.',
+    tag: 'RnD',
+    icon: 'admin',
+    blurb: 'RnD knowledge base — train agents, browse embeddings, map agent scope.',
+    hue: 'accent',
     department: 'admin',
     allDepartments: true,
     allowedProfiles: ['Administrator'],
@@ -70,8 +76,10 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
   sales: {
     id: 'sales',
     title: 'Sales Mytrion',
-    icon: '📈',
-    blurb: 'Pipeline, carriers, cards, tickets & automations for sales agents.',
+    tag: 'Sales',
+    icon: 'sales',
+    blurb: 'Self-service ops — carrier balances, cards, invoices, EFS/WEX, automations.',
+    hue: 'success',
     department: 'sales',
     allDepartments: false,
     allowedProfiles: ['Sales', 'Sales Agent'],
@@ -84,8 +92,10 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
   billing: {
     id: 'billing',
     title: 'Billing Mytrion',
-    icon: '🧾',
-    blurb: 'Invoices, transactions, debtors & split-payment workflows.',
+    tag: 'Billing',
+    icon: 'billing',
+    blurb: 'Invoices, transactions, debtors and split-payment reconciliation.',
+    hue: 'purple',
     department: 'billing',
     allDepartments: false,
     allowedProfiles: ['Billing'],
@@ -98,8 +108,10 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
   finance: {
     id: 'finance',
     title: 'Finance Mytrion',
-    icon: '💰',
-    blurb: 'Fueling transactions, client invoicing & balance audits.',
+    tag: 'Finance',
+    icon: 'finance',
+    blurb: 'Fueling transactions, invoicing, balance audits and pattern checks.',
+    hue: 'orange',
     department: 'finance',
     allDepartments: false,
     allowedProfiles: ['Finance'],
@@ -112,8 +124,10 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
   'customer-service': {
     id: 'customer-service',
     title: 'Customer Service Mytrion',
-    icon: '🎧',
-    blurb: 'Tickets, calls, contacts & service analytics.',
+    tag: 'CS',
+    icon: 'customer-service',
+    blurb: 'Tickets, calls, contacts and Desk + DWH analytics in one place.',
+    hue: 'accent',
     department: 'customer-service',
     allDepartments: false,
     allowedProfiles: ['Customer Service', 'Support'],
@@ -126,8 +140,10 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
   retention: {
     id: 'retention',
     title: 'Retention Mytrion',
-    icon: '🔁',
-    blurb: 'Churn signals & win-back workflows. (skeleton)',
+    tag: 'Retention',
+    icon: 'retention',
+    blurb: 'Churn signals, win-back playbooks and retention metrics.',
+    hue: 'danger',
     department: 'retention',
     allDepartments: false,
     allowedProfiles: ['Retention'],
@@ -139,8 +155,10 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
   verification: {
     id: 'verification',
     title: 'Verification Mytrion',
-    icon: '✅',
-    blurb: 'Application & document verification. (skeleton)',
+    tag: 'Verification',
+    icon: 'verification',
+    blurb: 'Verification queue, document checklist and audit trail.',
+    hue: 'success',
     department: 'verification',
     allDepartments: false,
     allowedProfiles: ['Verification'],
@@ -152,8 +170,10 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
   manager: {
     id: 'manager',
     title: 'Manager Mytrion',
-    icon: '📊',
-    blurb: 'Team oversight & cross-department metrics. (skeleton)',
+    tag: 'Manager',
+    icon: 'manager',
+    blurb: 'Team metrics roll-up and cross-department KPIs.',
+    hue: 'purple',
     department: 'management',
     // OPEN DECISION: are managers hierarchical (see across departments)? If yes, set true.
     allDepartments: false,

@@ -1,0 +1,9 @@
+.gem {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--gem);
+  color: #fff;
+  flex: none;
+}

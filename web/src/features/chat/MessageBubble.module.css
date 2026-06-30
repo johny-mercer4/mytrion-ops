@@ -1,97 +1,129 @@
-.row {
+/* ── user turn ── */
+.userRow {
   display: flex;
-  margin-bottom: var(--space-3);
-}
-
-.user {
   justify-content: flex-end;
 }
 
-.assistant {
-  justify-content: flex-start;
-}
-
-.bubble {
-  max-width: 86%;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius);
-  font-size: var(--fs-base);
+.userBubble {
+  max-width: 80%;
+  padding: 10px 15px;
+  border-radius: 18px;
+  border-bottom-right-radius: 5px;
+  background: color-mix(in srgb, var(--text-primary) 9%, var(--surface));
+  color: var(--text-primary);
+  font-size: 13.5px;
   line-height: 1.5;
-}
-
-.user .bubble {
-  background: var(--accent);
-  color: #0c1322;
-  border-bottom-right-radius: var(--radius-sm);
-}
-
-.assistant .bubble {
-  background: var(--surface-2);
-  color: var(--fg);
-  border: 1px solid var(--line);
-  border-bottom-left-radius: var(--radius-sm);
-}
-
-.text {
-  margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.tools {
+/* ── assistant turn ── */
+.assistantRow {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* tool chips */
+.chips {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1);
-  margin-bottom: var(--space-2);
+  gap: 6px;
+  margin-bottom: 9px;
 }
 
-.tool {
-  font-size: var(--fs-sm);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  background: var(--surface);
-  color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 1px var(--space-2);
-}
-
-.toolRunning {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.status {
-  display: flex;
+.chip {
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  font-size: 10.5px;
+  font-weight: 600;
 }
 
-.meta {
-  margin: var(--space-2) 0 0;
-  color: var(--muted);
-  font-size: var(--fs-sm);
+.chipLabel {
+  font-family: var(--font-mono);
 }
 
-.error {
-  margin: var(--space-2) 0 0;
-  color: var(--error-fg);
-  font-size: var(--fs-sm);
+.chipRunning {
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+.chipOk {
+  color: var(--success);
+  border: 1px solid color-mix(in srgb, var(--success) 40%, var(--border));
+  background: color-mix(in srgb, var(--success) 8%, var(--surface));
+}
+.chipDenied {
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
 }
 
-.dots {
-  width: 8px;
-  height: 8px;
+.spinner {
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  background: var(--accent);
-  animation: pulse 1s ease-in-out infinite;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-top-color: var(--accent);
+  display: inline-block;
+  animation: spin 0.8s linear infinite;
+}
+
+/* thinking */
+.thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding-top: 3px;
+}
+.dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gem);
+  display: inline-block;
+  animation: thinkBounce 1.25s ease-in-out infinite both;
+}
+.dot:nth-child(2) {
+  animation-delay: 0.16s;
+}
+.dot:nth-child(3) {
+  animation-delay: 0.32s;
+}
+.thinkLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* answer text */
+.text {
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.text strong {
+  font-weight: 700;
 }
 
 .caret {
   display: inline-block;
-  width: 7px;
+  width: 6px;
   height: 1em;
   margin-left: 2px;
   vertical-align: text-bottom;
@@ -100,11 +132,20 @@
   animation: blink 1s step-start infinite;
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 1; }
+/* grounding footnote */
+.grounding {
+  margin-top: 11px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border-dark);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-@keyframes blink {
-  50% { opacity: 0; }
+.errText {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--danger);
 }

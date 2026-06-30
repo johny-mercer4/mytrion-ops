@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { Gem } from '../../components/Gem';
 import { MessageBubble } from './MessageBubble';
 import type { UiMessage } from './types';
 import styles from './MessageList.module.css';
@@ -17,9 +18,11 @@ export function MessageList({ messages }: { messages: UiMessage[] }) {
     return (
       <div className={styles.list}>
         <div className={styles.empty}>
-          <p className={styles.emptyTitle}>Ask the Octane assistant</p>
+          <Gem size={32} />
+          <p className={styles.emptyTitle}>Ask Mytrion</p>
           <p className={styles.emptyHint}>
-            It searches the knowledge base and calls CRM / Desk tools, scoped to your department.
+            Grounded in your knowledge base and scoped to your department — ask about policies,
+            carriers, invoices, tickets, and more.
           </p>
         </div>
       </div>
