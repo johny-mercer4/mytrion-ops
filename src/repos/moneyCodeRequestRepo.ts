@@ -15,6 +15,8 @@ export interface NewMoneyCodeRequestInput {
   status?: 'ISSUED' | 'VOIDED' | undefined;
   efsMoneyCode?: string | undefined;
   requestedBy?: string | undefined;
+  /** Company email (nullable, lightly normalized by the caller). Stored only on first insert. */
+  email?: string | null | undefined;
 }
 
 export interface InsertMoneyCodeResult {
@@ -61,6 +63,7 @@ export const moneyCodeRequestRepo = {
     if (input.status !== undefined) values.status = input.status;
     if (input.efsMoneyCode !== undefined) values.efsMoneyCode = input.efsMoneyCode;
     if (input.requestedBy !== undefined) values.requestedBy = input.requestedBy;
+    if (input.email !== undefined) values.email = input.email;
 
     const inserted = await db
       .insert(moneyCodeRequests)

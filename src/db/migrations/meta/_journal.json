@@ -43,6 +43,13 @@
       "when": 1782841188412,
       "tag": "0005_milky_gladiator",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782844667754,
+      "tag": "0006_ancient_rage",
+      "breakpoints": true
     }
   ]
 }

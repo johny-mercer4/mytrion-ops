@@ -26,6 +26,7 @@ export const moneyCodeRequests = pgTable(
     status: text('status').notNull().default('ISSUED'), // ISSUED | VOIDED
     efsMoneyCode: text('efs_money_code'), // filled by the (future) EFS step
     requestedBy: text('requested_by'),
+    email: text('email'), // company email (from DWH dim_company); nullable. Zapier sends from this.
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
