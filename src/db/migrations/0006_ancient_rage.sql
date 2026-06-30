@@ -1,0 +1,1 @@
+ALTER TABLE "money_code_requests" ADD COLUMN "email" text;

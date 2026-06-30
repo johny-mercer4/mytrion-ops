@@ -14,6 +14,9 @@ const bodySchema = z.object({
   status: z.enum(['ISSUED', 'VOIDED']).optional(),
   efsMoneyCode: z.string().min(1).max(200).optional(),
   requestedBy: z.string().min(1).max(200).optional(),
+  // Company email (from DWH dim_company). Intentionally NOT format-validated — a malformed address
+  // must never block issuing a money code. Accepts string | null | omitted; normalized below.
+  email: z.string().nullish(),
 });
 
 /**
@@ -25,8 +28,11 @@ export async function moneyCodeRoutes(app: FastifyInstance): Promise<void> {
   app.post('/money-codes', { onRequest: [app.apiKeyAuth] }, async (request, reply) => {
     const ctx = requireContext(request);
     const body = bodySchema.parse(request.body);
+    // Light normalize: trim, store null if empty/absent. No format check (see schema note).
+    const email = typeof body.email === 'string' ? body.email.trim() || null : null;
     const { row, created } = await moneyCodeRequestRepo.insert({
       ...body,
+      email,
       requestedBy: body.requestedBy ?? ctx.userName,
     });
     reply.code(created ? 201 : 200);
