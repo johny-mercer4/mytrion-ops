@@ -68,6 +68,24 @@ describe('registerTool', () => {
     await expect(tool.run({}, makeContext())).rejects.toBeTruthy();
   });
 
+  it('bypassRbac short-circuits every access gate (BYPASS_USERS)', () => {
+    // A tool that a normal context fails on every axis: wrong audience, missing scope, write-risk.
+    const lockedTool = registerTool({
+      name: 'test.locked',
+      description: 'fails audience + scope + write gates',
+      inputSchema: z.object({}),
+      outputSchema: z.object({}),
+      riskClass: 'write',
+      allowedAudiences: ['partner'],
+      requiredScopes: ['nonexistent:scope'],
+      handler: async () => ({}),
+    });
+    const registry = new ToolRegistry([lockedTool]);
+    const normal = makeContext({ role: 'viewer', audience: 'internal' });
+    expect(registry.checkAccess(lockedTool, normal).ok).toBe(false);
+    expect(registry.checkAccess(lockedTool, { ...normal, bypassRbac: true }).ok).toBe(true);
+  });
+
   it('enforces admin-only for write-risk tools', () => {
     const writeTool = registerTool({
       name: 'test.write',

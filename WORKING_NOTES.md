@@ -747,3 +747,24 @@ subagent in the orchestrator. Native tool-caller (toolDispatcher) left intact (c
 - Verified via 5-lens adversarial design-fidelity workflow: FAITHFUL, 0 deviations. `web/app` left PRISTINE
   (rebuild+vendor only after the mount-point + SPA-fallback deploy wiring — ARCHITECTURE.md §9). Caveat: static
   fidelity read, not a rendered pixel diff; chat dock collapses below 900px.
+
+## 2026-07-01 — RBAC: two caller shapes + ADMIN_USERS / BYPASS_USERS
+
+- Context recap: API_KEY callers already resolve to systemContext (role admin, scopes '*'), so the ONLY
+  per-request RBAC that varies is DEPARTMENT access. Two caller shapes handled via chat/agent body params:
+  - Worker (Zoho): zoho_user_id, user_name, profile, role (+ department_scope).
+  - Customer (Telegram): carrier_id OR application_id (company id → department isolation tag), company_name,
+    chat_id. Added these to chatSchema; carrier/application ids are UNIONed into departmentAccess so a
+    customer only sees their company's knowledge/tools (+ Global).
+- ADMIN_USERS / BYPASS_USERS env (CSV or bracketed `[a,b]`), matched on WORKER `user_name` (case-insensitive,
+  NOT company_name — customers can't self-escalate). ADMIN_USERS → allDepartmentAccess (folded into
+  resolveAllDepartmentAccess, the single see-everything decision). BYPASS_USERS → allDept + new
+  TenantContext.bypassRbac; registry.checkAccess short-circuits to allow when bypassRbac (skips
+  audience/scope/write/department gates). Wired in chat.routes.chatContext + agent.routes.
+- Tests: added bypassRbac short-circuit test (144 total green). Verified list parsing + resolveAllDepartmentAccess
+  by user_name via throwaway smoke ([alice,bob] admins, carol bypass — all correct).
+- OPEN / flagged for customer-facing: (1) customer path currently still accepts client-supplied
+  department_scope/allDepartments/profile — for untrusted customers these must be IGNORED and scope DERIVED
+  from the authenticated company id (else self-escalation). (2) "Global" (untagged) knowledge is visible to
+  every scope incl. customers — audit tagging before exposing internal docs. (3) no 'customer' audience yet
+  (all API_KEY callers are 'internal').

@@ -76,6 +76,12 @@ const EnvSchema = z.object({
 
   // --- Department RBAC: profile/role substrings that grant UNLIMITED access (all depts + all tools). ---
   ADMIN_PROFILE_MARKERS: z.string().default('administrator,manager,developer'),
+  // Per-user overrides matched on the caller's `user_name` (case-insensitive). Accepts CSV or a
+  // bracketed list, e.g. ADMIN_USERS=[alice,bob] or ADMIN_USERS=alice,bob.
+  //   ADMIN_USERS  → granted all-department access (see everything, like an admin marker).
+  //   BYPASS_USERS → hard RBAC bypass (skips audience/scope/write/department gates entirely).
+  ADMIN_USERS: z.string().default(''),
+  BYPASS_USERS: z.string().default(''),
 
   // --- Auth ---
   JWT_SECRET: z.string().default(''),
