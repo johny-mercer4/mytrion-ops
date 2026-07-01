@@ -1,21 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { env } from '../../src/config/env.js';
 import { DEFAULT_RETRIEVAL_K } from '../../src/config/constants.js';
 import { knowledgeSearchTool } from '../../src/modules/tools/definitions/knowledge_search.js';
 import { registerTool, ToolRegistry } from '../../src/modules/tools/registry.js';
 import { toolRegistry } from '../../src/modules/tools/index.js';
 import { makeContext } from '../fixtures/seed.js';
 
+// 7 always-on core tools + the flag-gated native Telegram toolkit (6 tools, all internal-audience).
+const CORE_TOOL_COUNT = 7;
+const TELEGRAM_TOOL_COUNT = env.FF_TELEGRAM_ENABLED ? 6 : 0;
+const INTERNAL_TOOL_COUNT = CORE_TOOL_COUNT + TELEGRAM_TOOL_COUNT;
+
 describe('tool registry', () => {
-  it('registers all 7 tools with unique names', () => {
+  it('registers the core tools + flag-gated toolkits with unique names', () => {
     const names = toolRegistry.all().map((t) => t.name);
-    expect(names).toHaveLength(7);
-    expect(new Set(names).size).toBe(7);
+    expect(names).toHaveLength(INTERNAL_TOOL_COUNT);
+    expect(new Set(names).size).toBe(INTERNAL_TOOL_COUNT);
     expect(names).toContain('knowledge.search');
     expect(names).toContain('zoho_people.search_employees');
     expect(names).toContain('zoho_crm.query');
     expect(names).toContain('zoho_desk.search_tickets');
     expect(names).toContain('agent.sales_snapshot');
+    if (env.FF_TELEGRAM_ENABLED) {
+      expect(names).toContain('telegram.send_message');
+      expect(names).toContain('telegram.get_me');
+    }
   });
 
   it('rejects duplicate tool names', () => {
@@ -24,8 +34,11 @@ describe('tool registry', () => {
   });
 
   it('filters tools by audience + scopes + department for each role', () => {
-    // admin → allDepartmentAccess → bypasses dept gating → all 7 internal tools.
-    expect(toolRegistry.listForContext(makeContext({ role: 'admin', audience: 'internal' }))).toHaveLength(7);
+    // admin → allDepartmentAccess + admin role → sees every internal tool (core + Telegram sends/reads).
+    expect(toolRegistry.listForContext(makeContext({ role: 'admin', audience: 'internal' }))).toHaveLength(
+      INTERNAL_TOOL_COUNT,
+    );
+    // Telegram tools are internal-only, so a partner admin still sees just the one partner-visible tool.
     expect(toolRegistry.listForContext(makeContext({ role: 'admin', audience: 'partner' }))).toHaveLength(1);
     // Non-admin roles in the fixture have NO departments, so department-gated tools (zoho_crm.query,
     // agent.*, zoho_desk) are now withheld — they see only the universal knowledge.search.

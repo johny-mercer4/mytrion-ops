@@ -63,6 +63,11 @@ const EnvSchema = z.object({
   COMPOSIO_TOOLKITS: z.string().default('ZOHO,ZOHO_DESK'),
   COMPOSIO_TOOL_LIMIT: z.coerce.number().int().positive().max(200).default(50),
 
+  // --- Telegram (native Bot API integration; auth = bot token, no OAuth/Composio needed). ---
+  // Off unless FF_TELEGRAM_ENABLED. Exposed as native tools: reads (get_me/updates/chat) are
+  // read-risk; sends (message/photo/document) are write-risk (admin-gated by the dispatcher).
+  TELEGRAM_BOT_TOKEN: z.string().default(''),
+
   // --- Zoho MCP (hosted; "Authorize via Connection" → headless, URL embeds the credential). ---
   ZOHO_MCP_URL: z.string().default(''),
 
@@ -172,6 +177,9 @@ const EnvSchema = z.object({
   // Expose Composio WRITE/destructive tools (create/update/delete/…) to the agent. Off = read-only
   // (hard-rule #7), mirroring FF_ZOHO_MCP_WRITES. Even when on, the subagent stays admin-gated.
   FF_COMPOSIO_WRITES: flag('0'),
+  // Expose the native Telegram toolkit (send/get tools) to the agent. Sends are write-risk →
+  // admin-gated by the dispatcher regardless; this just registers the toolkit.
+  FF_TELEGRAM_ENABLED: flag('1'),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -220,6 +228,7 @@ export function assertRuntimeSecrets(): void {
   if (env.FF_GROQ_ENABLED && !env.GROQ_API_KEY) missing.push('GROQ_API_KEY');
   if (env.FF_ZOHO_MCP_ENABLED && !env.ZOHO_MCP_URL) missing.push('ZOHO_MCP_URL');
   if (env.FF_COMPOSIO_ENABLED && !env.COMPOSIO_API_KEY) missing.push('COMPOSIO_API_KEY');
+  if (env.FF_TELEGRAM_ENABLED && !env.TELEGRAM_BOT_TOKEN) missing.push('TELEGRAM_BOT_TOKEN');
 
   if (missing.length === 0) return;
 

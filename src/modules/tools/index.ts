@@ -1,3 +1,4 @@
+import { env } from '../../config/env.js';
 import { applyDepartmentPolicy } from '../agents/departmentAgents.js';
 import { registerTool, ToolRegistry } from './registry.js';
 import type { RegisteredTool } from './types.js';
@@ -8,6 +9,14 @@ import { zohoDeskSearchTicketsTool } from './definitions/zoho_desk_search_ticket
 import { agentSalesSnapshotTool } from './definitions/agent_sales_snapshot.js';
 import { agentDebtorsTool } from './definitions/agent_debtors.js';
 import { agentActivityTool } from './definitions/agent_activity.js';
+import {
+  telegramGetChatTool,
+  telegramGetMeTool,
+  telegramGetUpdatesTool,
+  telegramSendDocumentTool,
+  telegramSendMessageTool,
+  telegramSendPhotoTool,
+} from './definitions/telegram.js';
 
 /**
  * The hard-coded tool catalog. Each registerTool() call infers its own input/output
@@ -24,6 +33,17 @@ export const allTools: RegisteredTool[] = [
   registerTool(agentSalesSnapshotTool),
   registerTool(agentDebtorsTool),
   registerTool(agentActivityTool),
+  // Native Telegram toolkit (flag-gated). Sends are write-risk → admin-gated by the dispatcher.
+  ...(env.FF_TELEGRAM_ENABLED
+    ? [
+        registerTool(telegramSendMessageTool),
+        registerTool(telegramSendPhotoTool),
+        registerTool(telegramSendDocumentTool),
+        registerTool(telegramGetMeTool),
+        registerTool(telegramGetUpdatesTool),
+        registerTool(telegramGetChatTool),
+      ]
+    : []),
 ];
 
 // Stamp each tool's allowedDepartments from the department-agent registry (RBAC enforced in
