@@ -17,6 +17,24 @@ export function telegramConfigured(): boolean {
   return Boolean(env.TELEGRAM_BOT_TOKEN);
 }
 
+/** The configured default ("main") chat id, or '' if unset. */
+export function defaultChatId(): string {
+  return env.TELEGRAM_CHAT_ID_MAIN;
+}
+
+/**
+ * Resolve the target chat for a send: an explicit value wins, else the configured main chat
+ * (TELEGRAM_CHAT_ID_MAIN). Throws a clear error if neither is available, so a misconfigured deploy
+ * fails loudly instead of silently sending nowhere.
+ */
+export function resolveChatId(explicit?: string): string {
+  const id = (explicit ?? '').trim() || env.TELEGRAM_CHAT_ID_MAIN.trim();
+  if (!id) {
+    throw new Error('No Telegram chat target: pass `chatId`, or set TELEGRAM_CHAT_ID_MAIN.');
+  }
+  return id;
+}
+
 interface TelegramResponse<T> {
   ok: boolean;
   result?: T;

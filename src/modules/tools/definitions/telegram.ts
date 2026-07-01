@@ -1,14 +1,22 @@
 import { z } from 'zod';
-import { callTelegram, type TelegramMessage, type TelegramUser } from '../../../integrations/telegram.js';
+import { callTelegram, resolveChatId, type TelegramMessage, type TelegramUser } from '../../../integrations/telegram.js';
 import type { ToolManifest } from '../types.js';
 
 /**
  * Native Telegram Bot API tools. Reads (get_me / get_updates / get_chat) are read-risk; sends
  * (message / photo / document) are write-risk → the dispatcher requires the admin role. Auth is the
  * bot token (server-side); callers never pass credentials.
+ *
+ * `chatId` is OPTIONAL on chat-targeted tools: omit it to target the configured main chat
+ * (TELEGRAM_CHAT_ID_MAIN) — so the assistant can DM the primary user directly — or pass an explicit
+ * id/@username to target anyone the bot can reach.
  */
 
-const chatId = z.string().min(1).describe('Target chat: numeric id (as a string) or @username of a channel/supergroup.');
+const chatId = z
+  .string()
+  .min(1)
+  .optional()
+  .describe('Target chat: numeric id (as a string) or @channelusername. Omit to use the main chat (TELEGRAM_CHAT_ID_MAIN).');
 const parseMode = z.enum(['Markdown', 'MarkdownV2', 'HTML']).optional();
 const sentSchema = z.object({ messageId: z.number(), chatId: z.number(), date: z.number() });
 
@@ -29,7 +37,7 @@ const sendMessageInput = z.object({
 export const telegramSendMessageTool: ToolManifest<z.infer<typeof sendMessageInput>, z.infer<typeof sentSchema>> = {
   name: 'telegram.send_message',
   description:
-    'Send a text message to a Telegram chat via the bot. `chatId` is a numeric id (string) or @channelusername. Optional `parseMode` (Markdown/MarkdownV2/HTML) — omit it if text has unescaped special characters. Max 4096 chars.',
+    'Send a text message to a Telegram chat via the bot. Omit `chatId` to DM the main user (TELEGRAM_CHAT_ID_MAIN), or pass a numeric id (string) / @channelusername. Optional `parseMode` (Markdown/MarkdownV2/HTML) — omit it if text has unescaped special characters. Max 4096 chars.',
   inputSchema: sendMessageInput,
   outputSchema: sentSchema,
   riskClass: 'write',
@@ -38,7 +46,7 @@ export const telegramSendMessageTool: ToolManifest<z.infer<typeof sendMessageInp
   rateLimit: { perMinute: 20 },
   async handler(input) {
     const m = await callTelegram<TelegramMessage>('sendMessage', {
-      chat_id: input.chatId,
+      chat_id: resolveChatId(input.chatId),
       text: input.text,
       parse_mode: input.parseMode,
       disable_notification: input.disableNotification,
@@ -61,7 +69,7 @@ const sendPhotoInput = z.object({
 export const telegramSendPhotoTool: ToolManifest<z.infer<typeof sendPhotoInput>, z.infer<typeof sentSchema>> = {
   name: 'telegram.send_photo',
   description:
-    'Send a photo to a Telegram chat. `photo` is a publicly reachable HTTPS URL or a Telegram file_id (base64/inline bytes are not accepted). Optional caption (≤1024 chars).',
+    'Send a photo to a Telegram chat. Omit `chatId` to use the main chat. `photo` is a publicly reachable HTTPS URL or a Telegram file_id (base64/inline bytes are not accepted). Optional caption (≤1024 chars).',
   inputSchema: sendPhotoInput,
   outputSchema: sentSchema,
   riskClass: 'write',
@@ -70,7 +78,7 @@ export const telegramSendPhotoTool: ToolManifest<z.infer<typeof sendPhotoInput>,
   rateLimit: { perMinute: 20 },
   async handler(input) {
     const m = await callTelegram<TelegramMessage>('sendPhoto', {
-      chat_id: input.chatId,
+      chat_id: resolveChatId(input.chatId),
       photo: input.photo,
       caption: input.caption,
       parse_mode: input.parseMode,
@@ -92,7 +100,7 @@ const sendDocumentInput = z.object({
 export const telegramSendDocumentTool: ToolManifest<z.infer<typeof sendDocumentInput>, z.infer<typeof sentSchema>> = {
   name: 'telegram.send_document',
   description:
-    'Send a document/file to a Telegram chat (preserves original format, unlike a photo). `document` is a publicly reachable HTTPS URL or a Telegram file_id. Optional caption (≤1024 chars).',
+    'Send a document/file to a Telegram chat (preserves original format, unlike a photo). Omit `chatId` to use the main chat. `document` is a publicly reachable HTTPS URL or a Telegram file_id. Optional caption (≤1024 chars).',
   inputSchema: sendDocumentInput,
   outputSchema: sentSchema,
   riskClass: 'write',
@@ -101,7 +109,7 @@ export const telegramSendDocumentTool: ToolManifest<z.infer<typeof sendDocumentI
   rateLimit: { perMinute: 20 },
   async handler(input) {
     const m = await callTelegram<TelegramMessage>('sendDocument', {
-      chat_id: input.chatId,
+      chat_id: resolveChatId(input.chatId),
       document: input.document,
       caption: input.caption,
       parse_mode: input.parseMode,
@@ -168,7 +176,7 @@ const getChatOutput = z.object({ chat: z.record(z.unknown()) });
 export const telegramGetChatTool: ToolManifest<z.infer<typeof getChatInput>, z.infer<typeof getChatOutput>> = {
   name: 'telegram.get_chat',
   description:
-    'Get up-to-date info about a chat (title, type, username, etc.). `chatId` is a numeric id (string) or @channelusername. The bot must be a member of / have access to the chat.',
+    'Get up-to-date info about a chat (title, type, username, etc.). Omit `chatId` to use the main chat, or pass a numeric id (string) / @channelusername. The bot must be a member of / have access to the chat.',
   inputSchema: getChatInput,
   outputSchema: getChatOutput,
   riskClass: 'read',
@@ -176,7 +184,7 @@ export const telegramGetChatTool: ToolManifest<z.infer<typeof getChatInput>, z.i
   requiredScopes: ['telegram:read'],
   rateLimit: { perMinute: 60 },
   async handler(input) {
-    const chat = await callTelegram<Record<string, unknown>>('getChat', { chat_id: input.chatId });
+    const chat = await callTelegram<Record<string, unknown>>('getChat', { chat_id: resolveChatId(input.chatId) });
     return { chat: chat ?? {} };
   },
 };

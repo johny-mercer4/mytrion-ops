@@ -67,6 +67,9 @@ const EnvSchema = z.object({
   // Off unless FF_TELEGRAM_ENABLED. Exposed as native tools: reads (get_me/updates/chat) are
   // read-risk; sends (message/photo/document) are write-risk (admin-gated by the dispatcher).
   TELEGRAM_BOT_TOKEN: z.string().default(''),
+  // Default ("main") chat the send tools target when no chatId is passed — lets the assistant DM the
+  // primary user directly. Callers can still override per-call with an explicit chatId.
+  TELEGRAM_CHAT_ID_MAIN: z.string().default(''),
 
   // --- Zoho MCP (hosted; "Authorize via Connection" → headless, URL embeds the credential). ---
   ZOHO_MCP_URL: z.string().default(''),
