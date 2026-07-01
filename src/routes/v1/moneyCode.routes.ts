@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { NotFoundError } from '../../lib/errors.js';
 import { moneyCodeRequestRepo } from '../../repos/moneyCodeRequestRepo.js';
 import { requireContext } from './helpers.js';
 
@@ -19,12 +20,24 @@ const bodySchema = z.object({
   email: z.string().nullish(),
 });
 
+const listQuerySchema = z.object({
+  status: z.enum(['ISSUED', 'VOIDED']).optional(),
+  generatedBefore: z.string().datetime({ offset: true }).optional(),
+  limit: z.coerce.number().int().positive().max(1000).default(200),
+  order: z.enum(['asc', 'desc']).default('asc'), // oldest-first by default (natural for a void sweep)
+});
+
+const voidParamsSchema = z.object({ id: z.coerce.number().int().positive() });
+const voidBodySchema = z.object({ reason: z.string().max(500).nullish() });
+
 /**
- * Money codes — issue (or fetch the existing) money-code request for a carrier+invoice.
- * Idempotent on (carrier_id, invoice_id): a duplicate returns the existing row with 200, a new
- * insert returns 201. Auth: API_KEY. `requested_by` defaults to the caller's user name from context.
+ * Money codes service. Auth: API_KEY on all routes.
+ *  - POST  /money-codes            issue (or fetch the existing ACTIVE) request — idempotent on (carrier, invoice)
+ *  - GET   /money-codes            list for the void sweep (status / generatedBefore / limit / order)
+ *  - POST  /money-codes/:id/void   mark one record voided (idempotent no-op if already voided)
  */
 export async function moneyCodeRoutes(app: FastifyInstance): Promise<void> {
+  // Issue (or return the existing active) money-code request. 201 created / 200 already-issued.
   app.post('/money-codes', { onRequest: [app.apiKeyAuth] }, async (request, reply) => {
     const ctx = requireContext(request);
     const body = bodySchema.parse(request.body);
@@ -37,5 +50,27 @@ export async function moneyCodeRoutes(app: FastifyInstance): Promise<void> {
     });
     reply.code(created ? 201 : 200);
     return { created, request: row };
+  });
+
+  // List records (the servercrm 72h auto-void cron reads this to find expired ISSUED codes).
+  app.get('/money-codes', { onRequest: [app.apiKeyAuth] }, async (request) => {
+    const q = listQuerySchema.parse(request.query);
+    const data = await moneyCodeRequestRepo.list({
+      status: q.status,
+      generatedBefore: q.generatedBefore ? new Date(q.generatedBefore) : undefined,
+      limit: q.limit,
+      order: q.order,
+    });
+    return { data };
+  });
+
+  // Void one record. Idempotent: already-VOIDED is a 200 no-op. Frees (carrier, invoice) for re-issue.
+  app.post('/money-codes/:id/void', { onRequest: [app.apiKeyAuth] }, async (request) => {
+    const { id } = voidParamsSchema.parse(request.params);
+    const parsed = voidBodySchema.parse(request.body ?? {});
+    const reason = typeof parsed.reason === 'string' ? parsed.reason.trim() || null : null;
+    const row = await moneyCodeRequestRepo.voidById(id, reason);
+    if (!row) throw new NotFoundError(`Money code request ${id} not found`);
+    return { voided: true, request: row };
   });
 }

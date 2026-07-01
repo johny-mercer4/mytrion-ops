@@ -1,13 +1,17 @@
-import { bigint, bigserial, date, numeric, pgTable, text, timestamp, unique } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { bigint, bigserial, date, numeric, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 
 /**
- * Money_Code_Requests — one issued money code per (carrier, invoice). The UNIQUE(carrier_id,
- * invoice_id) constraint is the dedup anchor: it makes "issue a code for this invoice" idempotent
- * and race-safe at the DB level (a concurrent double-submit collides on 23505, not a duplicate row).
+ * Money_Code_Requests — one ACTIVE (non-voided) money code per (carrier, invoice).
+ *
+ * Dedup anchor: a PARTIAL unique index on (carrier_id, invoice_id) WHERE status <> 'VOIDED'. This
+ * makes "issue a code for this invoice" idempotent + race-safe at the DB level, while letting a
+ * VOIDED row be superseded by a fresh issue (voided rows are excluded from the index, so re-issue
+ * after an auto-void doesn't collide). At most one ISSUED row per invoice; any number of VOIDED ones.
  *
  * Not tenant-scoped: carrier_id / invoice_id live in the CMP domain (BIGINT ids), so this is a global
- * operational table (like a DWH-facing log), not a per-tenant one. `efs_money_code` is filled later by
- * the EFS step; `status` is ISSUED until VOIDED.
+ * operational table (like a DWH-facing log). `efs_money_code` is filled later by the EFS step;
+ * `status` is ISSUED until VOIDED (then voided_at / void_reason are set).
  *
  * NOTE: carrier_id / invoice_id use bigint mode:'number' — CMP ids are well within JS's safe-integer
  * range. Switch to mode:'bigint' if an id can exceed 2^53.
@@ -28,9 +32,14 @@ export const moneyCodeRequests = pgTable(
     requestedBy: text('requested_by'),
     email: text('email'), // company email (from DWH dim_company); nullable. Zapier sends from this.
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    voidedAt: timestamp('voided_at', { withTimezone: true }), // set when status flips to VOIDED
+    voidReason: text('void_reason'),
   },
   (table) => ({
-    carrierInvoiceUnq: unique('money_code_requests_carrier_id_invoice_id_key').on(table.carrierId, table.invoiceId),
+    // Unique only among ACTIVE rows — a voided invoice can be issued again.
+    activeCarrierInvoiceUnq: uniqueIndex('money_code_requests_active_carrier_invoice_uniq')
+      .on(table.carrierId, table.invoiceId)
+      .where(sql`${table.status} <> 'VOIDED'`),
   }),
 );
 

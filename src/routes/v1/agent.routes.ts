@@ -8,7 +8,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { env } from '../../config/env.js';
 import { NotFoundError } from '../../lib/errors.js';
-import { resolveAllDepartmentAccess } from '../../lib/department.js';
+import { isBypassUser, resolveAllDepartmentAccess } from '../../lib/department.js';
 import { requireContext, withDepartmentAccess } from './helpers.js';
 
 const stringOrList = z.union([z.string(), z.array(z.string().max(120)).max(50)]);
@@ -41,18 +41,21 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     const body = deepAgentSchema.parse(request.body);
 
     const departmentAccess = toArray(body.department_scope);
+    const userName = body.user_name?.trim();
     const allDepartments = resolveAllDepartmentAccess({
       allDepartments: body.allDepartments,
       profile: body.profile,
       role: body.role,
+      userName,
     });
     const ctx = withDepartmentAccess(requireContext(request), request, { departmentAccess, allDepartments });
     const profiles = toArray(body.profile);
     if (profiles.length > 0) ctx.profiles = profiles;
     const callerRole = toArray(body.role).join(', ');
     if (callerRole) ctx.callerRole = callerRole;
-    const userName = body.user_name?.trim();
     if (userName) ctx.userName = userName;
+    // Hard RBAC bypass — trusted BYPASS_USERS allowlist only.
+    if (isBypassUser(userName)) ctx.bypassRbac = true;
 
     // Lazy import: keeps the heavy LangChain/LangGraph deps out of cold start when the flag is off.
     const { runDeepAgent } = await import('../../modules/deepagents/service.js');

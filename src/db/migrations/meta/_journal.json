@@ -50,6 +50,13 @@
       "when": 1782844667754,
       "tag": "0006_ancient_rage",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1782858415539,
+      "tag": "0007_moaning_legion",
+      "breakpoints": true
     }
   ]
 }

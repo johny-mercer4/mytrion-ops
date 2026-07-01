@@ -85,6 +85,8 @@ export class ToolRegistry {
    *  3. non-read (write/destructive) tools require the admin role.
    */
   checkAccess(tool: RegisteredTool, ctx: TenantContext): AccessCheck {
+    // Hard bypass (BYPASS_USERS): skip all gates. Set only from a trusted user_name allowlist.
+    if (ctx.bypassRbac) return { ok: true };
     if (!tool.allowedAudiences.includes(ctx.audience)) {
       return { ok: false, reason: `tool '${tool.name}' is not available to audience '${ctx.audience}'` };
     }

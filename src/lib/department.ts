@@ -75,6 +75,36 @@ export function isAdministratorProfile(profile?: string | readonly string[] | nu
 }
 
 /**
+ * Per-user access overrides, matched on the caller's `user_name` (case-insensitive, exact after
+ * trim). Configured via ADMIN_USERS / BYPASS_USERS (CSV or bracketed list, e.g. "[alice,bob]").
+ *   - ADMIN_USERS  → all-department access (see everything).
+ *   - BYPASS_USERS → a hard RBAC bypass (see isBypassUser + the checkAccess short-circuit).
+ * Matching by user_name only (not company_name), so customer identities can't collide with these.
+ */
+function parseUserList(raw: string): string[] {
+  return raw
+    .replace(/[[\]"']/g, '') // tolerate [] / ["a","b"] / 'a'
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function userInList(list: string[], userName?: string | null): boolean {
+  const n = userName?.trim().toLowerCase();
+  return Boolean(n) && list.includes(n as string);
+}
+
+/** True if `user_name` is in ADMIN_USERS. */
+export function isAdminUser(userName?: string | null): boolean {
+  return userInList(parseUserList(env.ADMIN_USERS), userName);
+}
+
+/** True if `user_name` is in BYPASS_USERS (hard RBAC bypass). */
+export function isBypassUser(userName?: string | null): boolean {
+  return userInList(parseUserList(env.BYPASS_USERS), userName);
+}
+
+/**
  * The single source of truth for the "see everything" bypass, applied identically to RAG
  * and tools. True when the caller explicitly asks (`allDepartments`) OR carries an admin
  * marker on their profile OR their role. Keep this the ONLY place that decides the bypass
@@ -84,10 +114,14 @@ export function resolveAllDepartmentAccess(opts: {
   allDepartments?: boolean | undefined;
   profile?: string | readonly string[] | null | undefined;
   role?: string | readonly string[] | null | undefined;
+  /** Caller's user_name — ADMIN_USERS / BYPASS_USERS grant see-everything by name. */
+  userName?: string | null | undefined;
 }): boolean {
   return (
     opts.allDepartments === true ||
     matchesAdminMarker(opts.profile) ||
-    matchesAdminMarker(opts.role)
+    matchesAdminMarker(opts.role) ||
+    isAdminUser(opts.userName) ||
+    isBypassUser(opts.userName)
   );
 }

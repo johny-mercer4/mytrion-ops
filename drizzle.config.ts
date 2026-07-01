@@ -21,16 +21,19 @@ export default defineConfig({
   ],
   out: './src/db/migrations',
   dialect: 'postgresql',
-  dbCredentials: {
-    // Mytrion OPS external Postgres (DATABASE_URL kept only as a legacy alias).
-    url: process.env.MYTRION_OPS_DATABASE_URL || process.env.DATABASE_URL || '',
-    // Managed Postgres (Render external) requires SSL; local docker does not.
-    ssl: /@(localhost|127\.0\.0\.1|postgres)[:/]/.test(
-      process.env.MYTRION_OPS_DATABASE_URL || process.env.DATABASE_URL || 'localhost',
-    )
-      ? undefined
-      : { rejectUnauthorized: false },
-  },
+  // Mytrion OPS external Postgres (DATABASE_URL kept only as a legacy alias).
+  // drizzle-kit hands the URL straight to pg and IGNORES a separate `ssl` option, so the SSL mode
+  // must live IN the URL. Managed Postgres (Render) requires SSL → append `sslmode=require` (encrypt
+  // without CA verify, matching the runtime app's rejectUnauthorized:false). Local docker needs none.
+  dbCredentials: (() => {
+    const raw = process.env.MYTRION_OPS_DATABASE_URL || process.env.DATABASE_URL || '';
+    const isLocal = /@(localhost|127\.0\.0\.1|postgres)[:/]/.test(raw);
+    const url =
+      !raw || isLocal || /[?&]sslmode=/.test(raw)
+        ? raw
+        : `${raw}${raw.includes('?') ? '&' : '?'}sslmode=require`;
+    return { url };
+  })(),
   strict: true,
   verbose: true,
 });
