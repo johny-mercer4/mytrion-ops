@@ -40,7 +40,7 @@ function turnOptions(body: AgentTurnBody) {
 }
 
 export async function agentRoutes(app: FastifyInstance): Promise<void> {
-  const guard = { onRequest: [app.apiKeyAuth] };
+  const guard = { onRequest: [app.sessionOrApiKey] };
 
   const enabled = (): boolean => env.FF_ORCHESTRATOR_ENABLED || env.FF_DEEP_AGENTS_ENABLED;
 

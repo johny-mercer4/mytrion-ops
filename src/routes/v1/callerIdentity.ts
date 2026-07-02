@@ -159,6 +159,18 @@ function workerContext(request: FastifyRequest, body: CallerIdentityBody): Tenan
  * locks customers down, legacy mode preserves today's behavior but warns about what will change.
  */
 export function buildCallerContext(request: FastifyRequest, body: CallerIdentityBody): TenantContext {
+  // Verified worker session (Zoho OAuth): identity is authoritative — ignore ALL client-supplied
+  // identity fields. Only the department VIEW (which Mytrion) is taken from the request, and only
+  // for non-admin workers (admins already see everything). Owner-scoping uses the verified userId.
+  const base = requireContext(request);
+  if (base.sessionVerified) {
+    if (base.allDepartmentAccess) return base;
+    const departments = normalizeDepartments([
+      ...toArray(body.department_scope),
+      ...(body.departmentAccess ?? []),
+    ]);
+    return departments.length > 0 ? { ...base, departments } : base;
+  }
   if (!hasCustomerMarkers(body)) return workerContext(request, body);
   const ignored = ignoredCustomerFields(body);
   if (env.FF_CUSTOMER_SCOPE_STRICT) {

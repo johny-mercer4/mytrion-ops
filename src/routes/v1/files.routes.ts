@@ -35,7 +35,7 @@ function fileDto(f: FileAsset) {
 }
 
 export async function filesRoutes(app: FastifyInstance): Promise<void> {
-  const guard = { onRequest: [app.apiKeyAuth] };
+  const guard = { onRequest: [app.sessionOrApiKey] };
 
   // Multipart upload; identity fields arrive as form fields alongside the file.
   app.post('/files/upload', guard, async (request, reply) => {

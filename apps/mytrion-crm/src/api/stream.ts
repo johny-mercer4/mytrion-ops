@@ -3,7 +3,8 @@
  * .getReader() for live tokens — no CORS, so the Zoho HTTP proxy fallback is gone. Respects an
  * AbortSignal at every await so a cancelled turn never dispatches late frames.
  */
-import { authHeaders } from './transport';
+import { authHeaders, refreshBearer } from './transport';
+import { getSession } from './session';
 import { resolveApiConfig, v1Url } from './config';
 
 export interface ChatRequestBody {
@@ -62,17 +63,25 @@ export async function streamChat(
 ): Promise<void> {
   const { baseUrl } = resolveApiConfig();
   const url = v1Url(baseUrl, '/chat/stream');
-  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...authHeaders() };
 
-  let res: Response;
-  try {
-    res = await fetch(url, {
+  // Re-read headers each attempt so a refreshed Bearer token is picked up on retry.
+  const doFetch = (): Promise<Response> =>
+    fetch(url, {
       method: 'POST',
-      headers,
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify(body),
       credentials: 'same-origin',
       ...(signal ? { signal } : {}),
     });
+
+  let res: Response;
+  try {
+    res = await doFetch();
+    // A 401 is rejected pre-processing (no turn started), so refreshing + retrying once is safe
+    // even though /chat/stream is otherwise non-idempotent.
+    if (res.status === 401 && getSession() && (await refreshBearer())) {
+      res = await doFetch();
+    }
   } catch (e) {
     if ((e as Error)?.name === 'AbortError') return;
     throw e;

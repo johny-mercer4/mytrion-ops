@@ -41,7 +41,7 @@ function requireAdmin(ctx: TenantContext): void {
 }
 
 export async function approvalsRoutes(app: FastifyInstance): Promise<void> {
-  const guard = { onRequest: [app.apiKeyAuth] };
+  const guard = { onRequest: [app.sessionOrApiKey] };
 
   app.get('/approvals', guard, async (request) => {
     const q = listQuery.parse(request.query);

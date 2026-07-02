@@ -132,6 +132,16 @@ const EnvSchema = z.object({
   // Optional shared refresh token; used as a fallback when a service-specific one is unset.
   ZOHO_REFRESH_TOKEN: z.string().default(''),
 
+  // --- Zoho OAuth login (WORKER sign-in — authorization-code flow). A SEPARATE "server" app
+  // whose redirect URI is registered in the Zoho console (must exactly match ZOHO_OAUTH_REDIRECT_URI).
+  ZOHO_SERVER_CLIENT_ID: z.string().default(''),
+  ZOHO_SERVER_CLIENT_SECRET: z.string().default(''),
+  // Where Zoho sends the browser back with ?code&state — the SPA relays it to /v1/auth/zoho/callback.
+  // MUST byte-match a redirect URI registered on the Zoho server app (local dev: the Vite origin).
+  ZOHO_OAUTH_REDIRECT_URI: z.string().default('http://localhost:5173'),
+  // Scope for reading the signed-in worker's CRM user (id, name, email, profile, role → RBAC).
+  ZOHO_OAUTH_SCOPES: z.string().default('ZohoCRM.users.READ'),
+
   // The *_API_DOMAIN / *_BASE_URL values are the FULL versioned API roots; callers append
   // only the resource path (e.g. `${ZOHO_CRM_API_DOMAIN}/settings/modules`).
 
@@ -257,6 +267,8 @@ const EnvSchema = z.object({
   // allDepartments / profile / role / user_name are IGNORED and scope derives solely from the
   // company id. Off = legacy behavior + a loud warning, so the Telegram shim can migrate first.
   FF_CUSTOMER_SCOPE_STRICT: flag('0'),
+  // Zoho OAuth worker sign-in (/v1/auth/zoho/*) + Bearer-session identity on caller routes.
+  FF_ZOHO_OAUTH_ENABLED: flag('0'),
   // Multi-agent orchestrator endpoint (POST /v1/agent). FF_DEEP_AGENTS_ENABLED is kept as a
   // deprecated alias — either flag enables the endpoint.
   FF_ORCHESTRATOR_ENABLED: flag('0'),
@@ -335,6 +347,11 @@ export function assertRuntimeSecrets(): void {
   if (env.FF_ZOHO_MCP_ENABLED && !env.ZOHO_MCP_URL) missing.push('ZOHO_MCP_URL');
   if (env.FF_COMPOSIO_ENABLED && !env.COMPOSIO_API_KEY) missing.push('COMPOSIO_API_KEY');
   if (env.FF_TELEGRAM_ENABLED && !env.TELEGRAM_BOT_TOKEN) missing.push('TELEGRAM_BOT_TOKEN');
+  if (env.FF_ZOHO_OAUTH_ENABLED) {
+    if (!env.ZOHO_SERVER_CLIENT_ID) missing.push('ZOHO_SERVER_CLIENT_ID');
+    if (!env.ZOHO_SERVER_CLIENT_SECRET) missing.push('ZOHO_SERVER_CLIENT_SECRET');
+    if (!env.JWT_SECRET) missing.push('JWT_SECRET');
+  }
   if (env.FF_FILES_ENABLED) {
     if (!env.S3_ENDPOINT) missing.push('S3_ENDPOINT');
     if (!env.S3_ACCESS_KEY_ID) missing.push('S3_ACCESS_KEY_ID');

@@ -12,7 +12,7 @@ const logSchema = z.object({
 
 /** Automation logging — front-end posts a trigger record; we insert it. Auth: API_KEY. */
 export async function automationRoutes(app: FastifyInstance): Promise<void> {
-  app.post('/automation/logs', { onRequest: [app.apiKeyAuth] }, async (request) => {
+  app.post('/automation/logs', { onRequest: [app.sessionOrApiKey] }, async (request) => {
     const ctx = requireContext(request);
     const body = logSchema.parse(request.body);
     const log = await automationLogRepo.insert(ctx, body);

@@ -1088,3 +1088,40 @@ Q-2 payment info; department codes C/Q/V/M) and servercrm (/api/clients/by-agent
   model hand-copying 70 options → hallucinated picklist (switched to server-built crm.pick_my_client).
 - Writes (card activation/limits/override, money code, WEX BOCA) deferred → they go behind the M6
   approval flow. UI rendering of the picker is the frontend's job (later); backend contract is done.
+
+## 2026-07-03 — Auth architecture: Zoho OAuth worker sign-in (session-authoritative RBAC)
+
+Set up portal auth: workers sign in with their own Zoho account (authorization-code flow, backend is
+the confidential client). All gated behind `FF_ZOHO_OAUTH_ENABLED` (default off). Client login/password
+(Type 2) intentionally NOT built yet.
+
+- **env** (`config/env.ts`): `ZOHO_SERVER_CLIENT_ID` / `ZOHO_SERVER_CLIENT_SECRET` (separate "server"
+  app from the tool-integration Zoho creds), `ZOHO_OAUTH_REDIRECT_URI` (default `http://localhost:5173`,
+  must byte-match the Zoho console), `ZOHO_OAUTH_SCOPES` (default `ZohoCRM.users.READ`), flag
+  `FF_ZOHO_OAUTH_ENABLED`. assertRuntimeSecrets requires the two secrets + JWT_SECRET when the flag is on.
+- **Flow**: SPA `GET /v1/auth/zoho/login` → `{authorizeUrl, state}` (state = short-lived signed JWT, CSRF)
+  → browser to Zoho → back to the SPA origin with `?code&state` → SPA relays to `POST /v1/auth/zoho/callback`
+  → backend verifies state, exchanges the code (server-side w/ client_secret), reads CRM `CurrentUser`
+  (id/name/email/profile/role), and mints a Bearer session (`integrations/zohoOAuth.ts`,
+  `modules/auth/zohoAuthService.ts`).
+- **Session-authoritative identity (the security win)**: the access token carries a verified
+  `worker` claim (`jwt.ts` `WorkerIdentity`); `contextFromClaims` builds a ctx with `sessionVerified:true`,
+  `userId=zoho:<id>`, and `allDepartmentAccess` derived from the VERIFIED Zoho profile — never from the
+  request body. `buildCallerContext` short-circuits on `sessionVerified`: ALL client-supplied identity
+  (zoho_user_id/user_name/profile/role/allDepartments) is ignored; only the department VIEW
+  (`department_scope`) is honored, and only for non-all-access workers. Closes the self-escalation hole
+  the old "advisory URL identity" model had. `refresh` re-issues worker sessions from the token (no
+  users-table row for a `zoho:<id>` principal).
+- **Guard**: new `plugins/combinedAuth.ts` decorates `sessionOrApiKey` (Bearer session → verified ctx,
+  else falls through to the static API_KEY → system identity). Backward-compatible with
+  `Authorization: Bearer <API_KEY>`. All caller routes (chat/agent/tasks/files/approvals/knowledge/scope/
+  money-codes/automation) switched `apiKeyAuth` → `sessionOrApiKey`. `/auth/me` returns the worker
+  identity for verified sessions (no user lookup).
+- **Frontend** (`apps/mytrion-crm`): `api/session.ts` (token store), `api/auth.ts` (begin/complete/logout),
+  transport sends `Authorization: Bearer` with a deduped refresh-on-401 retry (`stream.ts` too);
+  `UserContextProvider` rewritten as an auth boot state machine (complete callback → resume session →
+  dev-mock → login gate); `LoginGate` "Sign in with Zoho"; TopBar sign-out. Identity now derives from
+  the verified session, not spoofable URL params. Dev bypass: `VITE_DEV_MOCK_AUTH=1`.
+- Tests: `tests/unit/zoho-oauth.test.ts` (worker-claim round-trip, oauth-state sign/verify + negatives,
+  contextFromClaims worker branch, startLogin URL) + session-authoritative cases added to
+  `caller-identity.test.ts`. Full suite green: 312 tests. lint/typecheck/build clean.

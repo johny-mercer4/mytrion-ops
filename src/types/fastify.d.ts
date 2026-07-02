@@ -14,6 +14,8 @@ declare module 'fastify' {
     authenticate(request: FastifyRequest, reply: FastifyReply): Promise<void>;
     /** onRequest guard: verifies the static API_KEY and sets request.ctx to the system identity. */
     apiKeyAuth(request: FastifyRequest, reply: FastifyReply): Promise<void>;
+    /** onRequest guard: accepts a verified worker session (Bearer JWT) OR the static API_KEY. */
+    sessionOrApiKey(request: FastifyRequest, reply: FastifyReply): Promise<void>;
     /** preHandler factory: requires the authenticated user to hold one of these roles. */
     requireRole(...roles: Role[]): preHandlerHookHandler;
     /** preHandler factory: requires the authenticated user's scopes to include `scope`. */

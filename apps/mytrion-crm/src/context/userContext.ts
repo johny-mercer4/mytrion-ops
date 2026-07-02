@@ -1,34 +1,22 @@
 /**
- * User context for the external Mytrion app. The Zoho side is now a THIN shim: it reads the CRM
- * user and redirects here, passing identity as URL VALUES (no Embedded App SDK on our side).
- * This module parses + validates that context once, on load.
+ * User context for the external Mytrion app. Identity now comes from a VERIFIED Zoho OAuth session
+ * (see api/auth.ts + api/session.ts) — the worker signs in with their own Zoho account and the
+ * backend mints a Bearer session carrying their verified zoho_user_id / profile / role / name.
  *
- * URL contract (the Zoho shim targets this):
- *   /m/:mytrion?uid=<userId>&profile=<profile>&role=<role>&uname=<userName>[&ts=<ms>&sig=<hmac>]
- *
- * TRUST MODEL (decided: "advisory now"): these params drive UI/routing ONLY. They are spoofable —
- * the real security boundary is the backend (x-api-key + server-side department_access RBAC). We
- * still capture optional ts/sig so the backend can later verify them; the browser never holds the
- * HMAC secret, so `trusted` here just records whether a signature rode along, not that it's valid.
+ * This replaces the old "advisory" model where identity rode in on spoofable URL params. The only
+ * remaining non-session path is an explicit dev bypass (VITE_DEV_MOCK_AUTH=1) so the UI can be run
+ * standalone without a backend.
  */
+import type { SessionWorker } from '../api/session';
 
 export interface UserContext {
   userId: string;
   profile: string;
   role: string;
   userName: string;
-  /** Epoch-ms freshness stamp from the shim, if signed. Forwarded to the backend, not verified here. */
-  ts?: string;
-  /** HMAC from the shim, if signed. Forwarded to the backend (x-octane-sig), not verified here. */
-  sig?: string;
-  /** True only if the redirect carried sig+ts. Advisory: the backend decides if it's actually valid. */
+  /** True when the identity came from a verified Zoho session (false only for the dev mock). */
   trusted: boolean;
 }
-
-export type UserContextResult = { ok: true; context: UserContext } | { ok: false; error: string };
-
-/** URL query keys (short, to keep the redirect tidy). */
-export const CONTEXT_PARAMS = ['uid', 'profile', 'role', 'uname', 'ts', 'sig'] as const;
 
 /** Mirrors the old MOCK_USER so `vite dev` works standalone (admin, sees everything). */
 const DEV_MOCK: UserContext = {
@@ -39,26 +27,21 @@ const DEV_MOCK: UserContext = {
   trusted: false,
 };
 
-/** Parse + validate the four required context values from a query string. */
-export function readUserContext(search: string = window.location.search): UserContextResult {
-  const q = new URLSearchParams(search);
-  const userId = (q.get('uid') ?? '').trim();
-  const profile = (q.get('profile') ?? '').trim();
-  const role = (q.get('role') ?? '').trim();
-  const userName = (q.get('uname') ?? '').trim();
-  const ts = (q.get('ts') ?? '').trim();
-  const sig = (q.get('sig') ?? '').trim();
+/** Map the verified session worker onto the UI's user context. */
+export function contextFromWorker(worker: SessionWorker): UserContext {
+  return {
+    userId: worker.zohoUserId,
+    profile: worker.profile ?? '',
+    role: worker.role ?? '',
+    userName: worker.userName ?? '',
+    trusted: true,
+  };
+}
 
-  if (!userId || !profile || !role || !userName) {
-    if (import.meta.env.DEV) return { ok: true, context: { ...DEV_MOCK } };
-    return {
-      ok: false,
-      error: 'Missing user context — open Mytrion from inside Zoho CRM (it passes who you are).',
-    };
-  }
-
-  const context: UserContext = { userId, profile, role, userName, trusted: Boolean(sig && ts) };
-  if (ts) context.ts = ts;
-  if (sig) context.sig = sig;
-  return { ok: true, context };
+/**
+ * Dev-only bypass: run the UI without a Zoho login (and without a session token — transport then
+ * falls back to the dev API key). Enabled only when VITE_DEV_MOCK_AUTH=1 in a dev build.
+ */
+export function devMockContext(): UserContext | null {
+  return import.meta.env.DEV && import.meta.env.VITE_DEV_MOCK_AUTH === '1' ? { ...DEV_MOCK } : null;
 }

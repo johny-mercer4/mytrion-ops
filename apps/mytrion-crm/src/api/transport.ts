@@ -1,9 +1,14 @@
 /**
- * Core request transport for the Mytrion Ops backend. The app is same-origin with the API now, so
- * this is a plain fetch to '/v1/*' (no Zoho HTTP proxy, no wrapper-peeling). The backend returns the
- * payload directly on success and `{ error: { message, code } }` with a 4xx/5xx on failure.
+ * Core request transport for the Mytrion Ops backend. The app is same-origin with the API in
+ * production (plain fetch to '/v1/*'); in dev it talks to a cross-origin backend.
+ *
+ * Auth: a signed-in worker sends `Authorization: Bearer <accessToken>` from the Zoho OAuth session.
+ * Absent a session we fall back to the dev API key (cross-origin local backend) — production
+ * same-origin sends neither and relies on the session. On a 401 we transparently refresh the token
+ * once and retry, so a 15-minute access-token expiry never surfaces to the user mid-session.
  */
 import { devApiKey, resolveApiConfig, v1Url } from './config';
+import { clearSession, getSession, setSession, type SessionWorker } from './session';
 
 export class ApiError extends Error {
   code: string;
@@ -21,10 +26,77 @@ export interface RequestOptions {
   body?: unknown;
 }
 
-/** Auth headers: a dev key only when talking to a cross-origin dev backend; empty in prod. */
+/** Bearer from the worker session, else the dev API key for a cross-origin local backend. */
 export function authHeaders(): Record<string, string> {
+  const token = getSession()?.accessToken;
+  if (token) return { Authorization: `Bearer ${token}` };
   const key = devApiKey();
   return key ? { 'x-api-key': key } : {};
+}
+
+// De-duplicate concurrent refreshes: many in-flight requests hitting 401 at once share one refresh.
+let refreshInFlight: Promise<boolean> | null = null;
+
+/**
+ * Rotate the access token using the stored refresh token. Returns true if a fresh token was stored.
+ * Uses a bare fetch (not `request`) so it never recurses through the 401-refresh path. On any
+ * failure the session is cleared so the app falls back to the login gate.
+ */
+export async function refreshBearer(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    const s = getSession();
+    if (!s?.refreshToken) return false;
+    const { baseUrl } = resolveApiConfig();
+    try {
+      const res = await fetch(v1Url(baseUrl, '/auth/refresh'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: s.refreshToken }),
+        credentials: 'same-origin',
+      });
+      if (!res.ok) {
+        clearSession();
+        return false;
+      }
+      const json = (await res.json()) as {
+        accessToken?: string;
+        refreshToken?: string;
+        worker?: SessionWorker;
+      };
+      if (!json.accessToken || !json.refreshToken) {
+        clearSession();
+        return false;
+      }
+      setSession({
+        accessToken: json.accessToken,
+        refreshToken: json.refreshToken,
+        worker: json.worker ?? s.worker,
+      });
+      return true;
+    } catch {
+      return false; // network blip — keep the session, let the caller surface the error
+    }
+  })();
+  try {
+    return await refreshInFlight;
+  } finally {
+    refreshInFlight = null;
+  }
+}
+
+function buildUrl(path: string, query?: RequestOptions['query']): string {
+  const { baseUrl } = resolveApiConfig();
+  let url = v1Url(baseUrl, path);
+  if (query) {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(query)) {
+      if (v !== undefined && v !== null && v !== '') qs.append(k, String(v));
+    }
+    const s = qs.toString();
+    if (s) url += `?${s}`;
+  }
+  return url;
 }
 
 export async function request(
@@ -32,28 +104,26 @@ export async function request(
   path: string,
   opts: RequestOptions = {},
 ): Promise<unknown> {
-  const { baseUrl } = resolveApiConfig();
-  let url = v1Url(baseUrl, path);
-  if (opts.query) {
-    const qs = new URLSearchParams();
-    for (const [k, v] of Object.entries(opts.query)) {
-      if (v !== undefined && v !== null && v !== '') qs.append(k, String(v));
-    }
-    const s = qs.toString();
-    if (s) url += `?${s}`;
-  }
+  const url = buildUrl(path, opts.query);
 
-  const headers: Record<string, string> = { ...authHeaders() };
-  if (method !== 'GET') headers['Content-Type'] = 'application/json';
-
-  let res: Response;
-  try {
-    res = await fetch(url, {
+  const doFetch = async (): Promise<Response> => {
+    const headers: Record<string, string> = { ...authHeaders() };
+    if (method !== 'GET') headers['Content-Type'] = 'application/json';
+    return fetch(url, {
       method,
       headers,
       credentials: 'same-origin',
       ...(method !== 'GET' ? { body: JSON.stringify(opts.body ?? {}) } : {}),
     });
+  };
+
+  let res: Response;
+  try {
+    res = await doFetch();
+    // Session expired mid-use: refresh once and retry (only when we actually hold a session).
+    if (res.status === 401 && getSession() && (await refreshBearer())) {
+      res = await doFetch();
+    }
   } catch (e) {
     throw new ApiError(`Could not reach the backend. ${(e as Error)?.message ?? ''}`, 'NETWORK', 0);
   }
@@ -71,7 +141,11 @@ export async function request(
   if (!res.ok) {
     const err =
       json && typeof json === 'object' ? (json as { error?: { message?: string; code?: string } }).error : null;
-    throw new ApiError(err?.message ?? `Backend returned HTTP ${res.status}.`, err?.code ?? `HTTP_${res.status}`, res.status);
+    throw new ApiError(
+      err?.message ?? `Backend returned HTTP ${res.status}.`,
+      err?.code ?? `HTTP_${res.status}`,
+      res.status,
+    );
   }
   return json;
 }

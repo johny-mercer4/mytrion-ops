@@ -1,9 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
-import { NotFoundError } from '../../lib/errors.js';
+import { env } from '../../config/env.js';
+import { AppError, NotFoundError } from '../../lib/errors.js';
 import { audit } from '../../modules/audit/auditLogger.js';
 import { authService, toPublicUser } from '../../modules/auth/authService.js';
+import { zohoAuthService } from '../../modules/auth/zohoAuthService.js';
 import { userRepo } from '../../repos/userRepo.js';
 import { requireContext } from './helpers.js';
 
@@ -16,6 +18,20 @@ const loginSchema = z.object({
 const refreshSchema = z.object({
   refreshToken: z.string().min(10),
 });
+
+const zohoCallbackSchema = z.object({
+  code: z.string().min(1).max(2000),
+  state: z.string().min(1).max(4000),
+});
+
+function requireZohoOauth(): void {
+  if (!env.FF_ZOHO_OAUTH_ENABLED) {
+    throw new AppError('Zoho OAuth login is disabled (set FF_ZOHO_OAUTH_ENABLED).', {
+      statusCode: 503,
+      code: 'FEATURE_DISABLED',
+    });
+  }
+}
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post('/auth/login', async (request) => {
@@ -51,8 +67,58 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     return authService.refresh(body.refreshToken);
   });
 
+  // ── Zoho OAuth worker sign-in (authorization-code) ───────────────────────────────────────────
+  // Step 1: the SPA fetches the authorize URL + state, stashes state, and redirects the browser.
+  app.get('/auth/zoho/login', async () => {
+    requireZohoOauth();
+    return zohoAuthService.startLogin();
+  });
+
+  // Step 2: Zoho redirects back to the SPA with ?code&state; the SPA relays them here. We verify
+  // state, exchange the code, read the worker's Zoho identity, and return a Bearer session.
+  app.post('/auth/zoho/callback', async (request) => {
+    requireZohoOauth();
+    const body = zohoCallbackSchema.parse(request.body);
+    try {
+      const session = await zohoAuthService.completeLogin(body.code, body.state);
+      await audit({
+        tenantId: DEFAULT_TENANT_ID,
+        audience: 'internal',
+        userId: `zoho:${session.worker.zohoUserId}`,
+        action: 'auth.zoho.login',
+        status: 'ok',
+        requestId: request.requestId,
+        ip: request.ip,
+        detail: { profile: session.worker.profile, role: session.worker.role },
+      });
+      return session;
+    } catch (err) {
+      await audit({
+        tenantId: DEFAULT_TENANT_ID,
+        action: 'auth.zoho.login',
+        status: 'denied',
+        requestId: request.requestId,
+        ip: request.ip,
+      });
+      throw err;
+    }
+  });
+
+  // Current identity for a session. Worker (Zoho) sessions return the verified Zoho identity from
+  // the context; the dormant email/password path returns the users-table record.
   app.get('/auth/me', { onRequest: [app.authenticate] }, async (request) => {
     const ctx = requireContext(request);
+    if (ctx.sessionVerified) {
+      return {
+        worker: {
+          zohoUserId: ctx.userId.replace(/^zoho:/, ''),
+          userName: ctx.userName ?? null,
+          profile: ctx.profiles?.[0] ?? null,
+          role: ctx.callerRole ?? null,
+          allDepartmentAccess: ctx.allDepartmentAccess,
+        },
+      };
+    }
     const user = await userRepo.findById(ctx, ctx.userId);
     if (!user) throw new NotFoundError('User not found');
     return { user: toPublicUser(user) };

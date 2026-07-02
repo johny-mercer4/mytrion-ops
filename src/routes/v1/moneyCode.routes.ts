@@ -38,7 +38,7 @@ const voidBodySchema = z.object({ reason: z.string().max(500).nullish() });
  */
 export async function moneyCodeRoutes(app: FastifyInstance): Promise<void> {
   // Issue (or return the existing active) money-code request. 201 created / 200 already-issued.
-  app.post('/money-codes', { onRequest: [app.apiKeyAuth] }, async (request, reply) => {
+  app.post('/money-codes', { onRequest: [app.sessionOrApiKey] }, async (request, reply) => {
     const ctx = requireContext(request);
     const body = bodySchema.parse(request.body);
     // Light normalize: trim, store null if empty/absent. No format check (see schema note).
@@ -53,7 +53,7 @@ export async function moneyCodeRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // List records (the servercrm 72h auto-void cron reads this to find expired ISSUED codes).
-  app.get('/money-codes', { onRequest: [app.apiKeyAuth] }, async (request) => {
+  app.get('/money-codes', { onRequest: [app.sessionOrApiKey] }, async (request) => {
     const q = listQuerySchema.parse(request.query);
     const data = await moneyCodeRequestRepo.list({
       status: q.status,
@@ -65,7 +65,7 @@ export async function moneyCodeRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // Void one record. Idempotent: already-VOIDED is a 200 no-op. Frees (carrier, invoice) for re-issue.
-  app.post('/money-codes/:id/void', { onRequest: [app.apiKeyAuth] }, async (request) => {
+  app.post('/money-codes/:id/void', { onRequest: [app.sessionOrApiKey] }, async (request) => {
     const { id } = voidParamsSchema.parse(request.params);
     const parsed = voidBodySchema.parse(request.body ?? {});
     const reason = typeof parsed.reason === 'string' ? parsed.reason.trim() || null : null;

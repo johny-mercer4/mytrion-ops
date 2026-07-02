@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom';
 import { useUserContext } from '../context/UserContextProvider';
+import { logout } from '../api/auth';
 import { useTheme } from '../hooks/useTheme';
 import { BrandMark } from './BrandMark';
-import { MoonIcon, SunIcon, SwitchIcon } from './icons';
+import { MoonIcon, SunIcon, SwitchIcon, XIcon } from './icons';
 import styles from './TopBar.module.css';
 
 function initials(name: string): string {
@@ -54,6 +55,12 @@ export function TopBar({
         <span className={styles.avatar} title={user.userName}>
           {initials(user.userName)}
         </span>
+        {user.trusted && (
+          <button type="button" className={styles.switch} onClick={logout} title="Sign out">
+            <XIcon size={13} />
+            Sign out
+          </button>
+        )}
       </div>
     </header>
   );

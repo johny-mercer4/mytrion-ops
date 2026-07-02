@@ -112,7 +112,7 @@ function messageDto(m: Message) {
 }
 
 export async function chatRoutes(app: FastifyInstance): Promise<void> {
-  const guard = { onRequest: [app.apiKeyAuth] };
+  const guard = { onRequest: [app.sessionOrApiKey] };
 
   app.post('/chat', guard, async (request) => {
     const body = chatSchema.parse(request.body);

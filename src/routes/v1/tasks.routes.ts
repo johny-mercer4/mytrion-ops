@@ -64,7 +64,7 @@ function requireOrchestrator(): void {
 }
 
 export async function tasksRoutes(app: FastifyInstance): Promise<void> {
-  const guard = { onRequest: [app.apiKeyAuth] };
+  const guard = { onRequest: [app.sessionOrApiKey] };
 
   app.post('/agent/tasks', guard, async (request, reply) => {
     requireJobs();

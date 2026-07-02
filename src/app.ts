@@ -12,6 +12,7 @@ import { isAllowedOrigin } from './lib/cors.js';
 import { logger } from './lib/logger.js';
 import { apiKeyAuthPlugin } from './plugins/apiKeyAuth.js';
 import { authPlugin } from './plugins/auth.js';
+import { combinedAuthPlugin } from './plugins/combinedAuth.js';
 import { errorHandlerPlugin } from './plugins/errorHandler.js';
 import { healthcheckPlugin } from './plugins/healthcheck.js';
 import { rbacPlugin } from './plugins/rbac.js';
@@ -114,6 +115,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   errorHandlerPlugin(app);
   authPlugin(app);
   apiKeyAuthPlugin(app);
+  combinedAuthPlugin(app);
   rbacPlugin(app);
 
   await app.register(helmet, { contentSecurityPolicy: false });

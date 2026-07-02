@@ -67,7 +67,7 @@ function assertIngestEnabled(): void {
  * list ingested docs, and inspect embedded chunks. Authenticated by the static API_KEY.
  */
 export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
-  const guard = { onRequest: [app.apiKeyAuth] };
+  const guard = { onRequest: [app.sessionOrApiKey] };
 
   // --- Ingest: raw text body ---
   app.post('/knowledge/embed', guard, async (request) => {

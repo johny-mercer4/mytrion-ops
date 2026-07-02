@@ -38,7 +38,7 @@ const bulkDeleteSchema = z.object({ ids: z.array(z.string().min(1)).min(1).max(2
  * (the Zoho server-side proxy only issues GET/POST), so update/delete use POST aliases.
  */
 export async function scopeRoutes(app: FastifyInstance): Promise<void> {
-  const guard = { onRequest: [app.apiKeyAuth] };
+  const guard = { onRequest: [app.sessionOrApiKey] };
 
   // List — by node (?nodeId=...) or, with no nodeId, every node's items for bulk preload.
   app.get('/scope/risks', guard, async (request) => {

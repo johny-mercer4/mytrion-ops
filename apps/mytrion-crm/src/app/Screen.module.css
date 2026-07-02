@@ -47,3 +47,31 @@
 .link:hover {
   text-decoration: underline;
 }
+
+.button {
+  margin-top: 8px;
+  padding: 11px 20px;
+  font-family: var(--font-head);
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: opacity 0.12s ease;
+}
+.button:hover {
+  opacity: 0.9;
+}
+.button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.error {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--danger, #d64545);
+}

@@ -58,6 +58,13 @@ export interface TenantContext {
    * (e.g. 'billing'). Flows into tool_calls/audit_log attribution — never grants access.
    */
   actingAgent?: string;
+  /**
+   * True when the identity fields (userId/userName/profiles/callerRole/allDepartmentAccess) came
+   * from a VERIFIED session token (Zoho OAuth worker), not from client-supplied request body.
+   * When set, buildCallerContext ignores body identity — only the department VIEW is taken from
+   * the request. The static API_KEY (systemContext) leaves this unset.
+   */
+  sessionVerified?: boolean;
   requestId: string;
 }
 

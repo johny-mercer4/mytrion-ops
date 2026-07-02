@@ -16,7 +16,7 @@ const authorizeSchema = z.object({
 });
 
 export async function integrationsRoutes(app: FastifyInstance): Promise<void> {
-  const guard = { onRequest: [app.apiKeyAuth] };
+  const guard = { onRequest: [app.sessionOrApiKey] };
 
   function requireAdmin(request: Parameters<typeof requireContext>[0]): void {
     if (!env.FF_COMPOSIO_ENABLED) {

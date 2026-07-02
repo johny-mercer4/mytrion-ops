@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyRequest } from 'fastify';
+import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { env } from '../../src/config/env.js';
 import {
   buildCallerContext,
   hasCustomerMarkers,
   type CallerIdentityBody,
 } from '../../src/routes/v1/callerIdentity.js';
-import { systemContext } from '../../src/modules/auth/authService.js';
+import { contextFromClaims, systemContext } from '../../src/modules/auth/authService.js';
+import type { WorkerIdentity } from '../../src/modules/auth/jwt.js';
+import type { Role } from '../../src/types/tenantContext.js';
 import { agentRegistry } from '../../src/modules/agents/agentRegistry.js';
 import { toolRegistry } from '../../src/modules/tools/index.js';
 
@@ -20,6 +23,15 @@ function fakeRequest(): FastifyRequest {
   // Test double: the identity builders only touch ctx/headers/log, so a full Fastify
   // request is unnecessary — the cast documents exactly that.
   return req as unknown as FastifyRequest;
+}
+
+/** Request whose ctx is a VERIFIED Zoho-worker session (as authenticate → contextFromClaims sets). */
+function sessionRequest(worker: WorkerIdentity, role: Role = 'admin'): FastifyRequest {
+  const ctx = contextFromClaims(
+    { userId: `zoho:${worker.zohoUserId}`, tenantId: DEFAULT_TENANT_ID, audience: 'internal', role, worker },
+    'req-test',
+  );
+  return { ctx, headers: {}, log: { warn: vi.fn() } } as unknown as FastifyRequest;
 }
 
 const strictFlag = env.FF_CUSTOMER_SCOPE_STRICT;
@@ -60,6 +72,57 @@ describe('worker context (unchanged trusted-frontend behavior)', () => {
     });
     expect(ctx.allDepartmentAccess).toBe(false);
     expect(ctx.departments).toEqual(['collection']);
+  });
+});
+
+describe('verified worker session is authoritative (Zoho OAuth) — body identity is ignored', () => {
+  it('all-access worker: hostile body identity cannot change the verified identity or scope', () => {
+    const req = sessionRequest({ zohoUserId: '555', userName: 'Alice', profile: 'Administrator', zohoRole: 'CEO' });
+    const ctx = buildCallerContext(req, {
+      // every spoof vector: a different id, a different name, a downgraded profile, a narrow scope
+      zoho_user_id: '999',
+      user_name: 'Evil Twin',
+      profile: 'Standard',
+      department_scope: ['finance'],
+      allDepartments: false,
+    });
+    expect(ctx.sessionVerified).toBe(true);
+    expect(ctx.userId).toBe('zoho:555'); // from the token, not body 999
+    expect(ctx.userName).toBe('Alice'); // from the token, not 'Evil Twin'
+    expect(ctx.profiles).toEqual(['Administrator']); // verified profile, not the body 'Standard'
+    expect(ctx.allDepartmentAccess).toBe(true); // derived from the verified Administrator profile
+  });
+
+  it('non-admin worker: body cannot self-escalate, but the department VIEW is honored', () => {
+    const req = sessionRequest({ zohoUserId: '42', userName: 'Bob', profile: 'Sales Rep', zohoRole: 'Agent' });
+    const ctx = buildCallerContext(req, {
+      zoho_user_id: '1',
+      user_name: 'Mallory',
+      profile: 'Administrator', // spoof attempt
+      allDepartments: true, // spoof attempt
+      department_scope: ['Sales', ' billing '],
+    });
+    expect(ctx.userId).toBe('zoho:42');
+    expect(ctx.userName).toBe('Bob');
+    expect(ctx.profiles).toEqual(['Sales Rep']); // NOT the body's 'Administrator'
+    expect(ctx.allDepartmentAccess).toBe(false); // spoofed allDepartments/profile ignored
+    expect(ctx.departments).toEqual(['sales', 'billing']); // view honored + normalized
+  });
+
+  it('non-admin worker with no department view falls back to the base (no departments)', () => {
+    const ctx = buildCallerContext(sessionRequest({ zohoUserId: '42', profile: 'Sales Rep' }), {});
+    expect(ctx.sessionVerified).toBe(true);
+    expect(ctx.departments).toEqual([]);
+  });
+
+  it('session wins over customer markers: carrier_id in the body does NOT downgrade to customer', () => {
+    const ctx = buildCallerContext(sessionRequest({ zohoUserId: '42', profile: 'Sales Rep' }), {
+      carrier_id: 999,
+      department_scope: ['sales'],
+    });
+    expect(ctx.audience).toBe('internal');
+    expect(ctx.sessionVerified).toBe(true);
+    expect(ctx.departments).toEqual(['sales']);
   });
 });
 

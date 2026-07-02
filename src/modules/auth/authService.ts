@@ -1,11 +1,14 @@
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import type { User } from '../../db/schema/index.js';
 import { AuthError } from '../../lib/errors.js';
+import { resolveAllDepartmentAccess } from '../../lib/department.js';
 import { userRepo } from '../../repos/userRepo.js';
 import type { Audience, Role, TenantContext } from '../../types/tenantContext.js';
 import { signAccessToken, signRefreshToken, verifyToken, type TokenClaims } from './jwt.js';
 import { verifyPassword } from './password.js';
 import { scopesForRole } from './permissions.js';
+// Type-only (erased at compile): no runtime import cycle — zohoAuthService value-imports nothing here.
+import type { PublicWorker, WorkerSession } from './zohoAuthService.js';
 
 export interface PublicUser {
   id: string;
@@ -48,6 +51,32 @@ export function toPublicUser(user: User): PublicUser {
  * recomputed from role here (never trusted from the token).
  */
 export function contextFromClaims(claims: TokenClaims, requestId: string): TenantContext {
+  // Zoho-worker session: identity is VERIFIED (from the signed token). scopes come from the
+  // internal role as always; allDepartmentAccess is derived from the worker's Zoho profile/role
+  // ("see everything" markers), never from client input. The department VIEW is applied per
+  // request in buildCallerContext.
+  if (claims.worker) {
+    const w = claims.worker;
+    const ctx: TenantContext = {
+      tenantId: claims.tenantId,
+      userId: claims.userId,
+      audience: claims.audience,
+      role: claims.role,
+      scopes: scopesForRole(claims.role),
+      departments: [],
+      allDepartmentAccess: resolveAllDepartmentAccess({
+        profile: w.profile,
+        role: w.zohoRole,
+        userName: w.userName,
+      }),
+      sessionVerified: true,
+      requestId,
+    };
+    if (w.userName) ctx.userName = w.userName;
+    if (w.profile) ctx.profiles = [w.profile];
+    if (w.zohoRole) ctx.callerRole = w.zohoRole;
+    return ctx;
+  }
   return {
     tenantId: claims.tenantId,
     userId: claims.userId,
@@ -113,8 +142,25 @@ export const authService = {
   },
 
   /** Exchange a valid refresh token for a fresh token pair (rotating). */
-  async refresh(refreshToken: string): Promise<LoginResult> {
+  async refresh(refreshToken: string): Promise<LoginResult | WorkerSession> {
     const claims = await verifyToken(refreshToken, 'refresh');
+    // Worker (Zoho) session: the identity is self-contained in the token, so re-issue directly.
+    // There is no users-table row for a `zoho:<id>` principal — a findById would 404.
+    if (claims.worker) {
+      const w = claims.worker;
+      const [accessToken, newRefresh] = await Promise.all([
+        signAccessToken(claims),
+        signRefreshToken(claims),
+      ]);
+      const worker: PublicWorker = {
+        zohoUserId: w.zohoUserId,
+        userName: w.userName ?? null,
+        email: w.email ?? null,
+        profile: w.profile ?? null,
+        role: w.zohoRole ?? null,
+      };
+      return { accessToken, refreshToken: newRefresh, tokenType: 'Bearer', worker };
+    }
     const ctx = contextFromClaims(claims, 'refresh');
     const user = await userRepo.findById(ctx, claims.userId);
     if (!user || user.status !== 'active') {
