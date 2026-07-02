@@ -16,6 +16,33 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # --- Agentic Core v2 feature flags (2026-07-02). Explicit keys override the env group. ---
+      # Multi-agent orchestrator endpoint (POST /v1/agent) + department child agents.
+      - key: FF_ORCHESTRATOR_ENABLED
+        value: "1"
+      # Agentic RAG: hybrid vector+full-text RRF retrieval + multi-query refine loop + citations.
+      # Requires migration 0010 (content_tsv) — applied before this deploy.
+      - key: FF_RAG_HYBRID
+        value: "1"
+      - key: FF_AGENTIC_RAG
+        value: "1"
+      # Browser automation via Composio toolkits. NOTE: also set COMPOSIO_API_KEY (real key) and
+      # BROWSER_ALLOWED_DOMAINS in the env group — with an empty allowlist every navigation is
+      # denied (fail-closed), and tools no-op without a valid Composio key.
+      - key: FF_BROWSER_ENABLED
+        value: "1"
+      # Human-in-the-loop write approvals: agent-proposed writes park at /v1/approvals (24h TTL).
+      - key: FF_WRITE_APPROVALS
+        value: "1"
+      # Long-term agent memory (distill + UNTRUSTED recall + nightly decay). Requires migration 0013.
+      - key: FF_AGENT_MEMORY
+        value: "1"
+      # NOT enabled here on purpose:
+      #   FF_JOBS_ENABLED       — excluded per request (pg-boss workers/crons stay off).
+      #   FF_FILES_ENABLED      — would crash boot: assertRuntimeSecrets() requires S3_ENDPOINT /
+      #                           S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY / S3_BUCKET (MinIO). Add
+      #                           those to the env group first, then set FF_FILES_ENABLED=1.
+      #   FF_AGENT_CHECKPOINTS  — not requested; leave off (stateless agent runs).
       # All secrets/config (incl. MYTRION_OPS_DATABASE_URL — the external Postgres,
       # plus OPENAI_API_KEY, API_KEY, JWT_SECRET, ENCRYPTION_KEY, ZOHO_*, etc.) come
       # from the env group. No Render-managed DB: this engine uses the external Mytrion OPS DB.

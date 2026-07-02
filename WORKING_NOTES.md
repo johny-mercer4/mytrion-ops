@@ -1019,3 +1019,22 @@ defects fixed (all flag-on production issues; tsc+281 tests had passed but didn'
   agentPath. Fix: parse the stringified form too.
 - Tests: 289 green (+ composio-tools, jobs-queue-order, customer file-isolation, stringified-task
   stream cases). Migration 0015 (file_assets.audience).
+
+## 2026-07-02 — Rollout: migrations applied + feature flags enabled (files/jobs held)
+
+- **Migrations 0008–0015 applied to the app Postgres** (MYTRION_OPS_DATABASE_URL) via `pnpm db:migrate`
+  (user-approved). Verified live: new tables agent_runs, agent_tasks, file_assets, approvals,
+  agent_memories; new columns file_assets.audience, knowledge_chunks.content_tsv,
+  tool_calls.acting_agent, knowledge_docs.last_verified_at. DWH untouched.
+- **render.yaml: enabled 6 flags** as explicit envVars (override the env group):
+  FF_ORCHESTRATOR_ENABLED, FF_RAG_HYBRID, FF_AGENTIC_RAG, FF_BROWSER_ENABLED, FF_WRITE_APPROVALS,
+  FF_AGENT_MEMORY.
+- **Held FF_JOBS_ENABLED** (excluded per request) and **FF_FILES_ENABLED** — the latter would crash
+  boot (assertRuntimeSecrets requires S3_ENDPOINT/ACCESS_KEY_ID/SECRET_ACCESS_KEY/BUCKET, none set).
+  To finish files later: add S3_* (MinIO) to the octane-assistant-secrets env group, then set
+  FF_FILES_ENABLED=1. FF_AGENT_CHECKPOINTS left off (not requested).
+- Pre-deploy setup still needed for browser to FUNCTION (not a boot blocker): real COMPOSIO_API_KEY
+  + BROWSER_ALLOWED_DOMAINS in the env group (empty allowlist = deny-all, fail-closed).
+- Note: FF_AGENTIC_RAG enabled without running scripts/evalRetrieval.ts against prod on purpose —
+  that harness ingests 10 fixture docs and would pollute the live knowledge base; run it against a
+  scratch/dev DB to measure recall before relying on hybrid quality.
