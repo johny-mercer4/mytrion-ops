@@ -12,6 +12,7 @@ import { env } from '../../../config/env.js';
 import { retrieve } from '../../knowledge/retriever.js';
 import { wrapUntrusted } from '../../security/untrusted.js';
 import { effectiveRetrievalContext } from '../authority.js';
+import { requireAgentContext } from '../context.js';
 import { recallMemories } from '../memory.js';
 import type { AgentManifest } from '../types.js';
 import type { TenantContext } from '../../../types/tenantContext.js';
@@ -20,6 +21,8 @@ export function buildScopedRagTool(manifest: AgentManifest, callerCtx: TenantCon
   const retrievalCtx = effectiveRetrievalContext(callerCtx, manifest);
   return tool(
     async ({ query, limit }: { query: string; limit: number }) => {
+      // RAG counts against the run's tool-call budget too (registry tools aren't the only path).
+      requireAgentContext().budget?.countToolCall();
       if (env.FF_AGENTIC_RAG) {
         const { agenticRetrieve } = await import('../../knowledge/agentic/loop.js');
         const result = await agenticRetrieve(retrievalCtx, query, { k: limit });

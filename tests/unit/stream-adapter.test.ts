@@ -111,6 +111,32 @@ describe('consumeAgentStream', () => {
     expect(events.map((e) => e.event)).toEqual(['tool_call', 'tool_result']);
   });
 
+  it('extracts subagent_type from the REAL stringified task input (streamEvents v2 shape)', async () => {
+    const { sink, events } = fakeSink();
+    const outcome = await consumeAgentStream(
+      stream([
+        // Production shape: data.input = { input: '<JSON string>' }
+        ev({
+          event: 'on_tool_start',
+          name: 'task',
+          data: { input: { input: JSON.stringify({ description: 'x', subagent_type: 'finance' }) } },
+        }),
+        ev({
+          event: 'on_tool_end',
+          name: 'task',
+          data: { input: { input: JSON.stringify({ description: 'x', subagent_type: 'finance' }) } },
+        }),
+        ev({ event: 'on_chain_end', data: { output: { messages: [{ content: 'done' }] } } }),
+      ]),
+      sink,
+    );
+    expect(outcome.agentPath).toEqual(['finance']);
+    expect(events.filter((e) => e.event === 'agent')).toEqual([
+      { event: 'agent', data: { key: 'finance', state: 'start' } },
+      { event: 'agent', data: { key: 'finance', state: 'done' } },
+    ]);
+  });
+
   it('handles array content parts in token chunks', async () => {
     const outcome = await consumeAgentStream(
       stream([

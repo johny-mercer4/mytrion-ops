@@ -30,10 +30,18 @@ async function childTools(manifest: AgentManifest, callerCtx: TenantContext): Pr
     ...buildAgentTools(manifest, narrowed),
   ];
   if (manifest.webSearch) tools.push(webSearchTool);
-  if (manifest.browser) tools.push(...(await buildBrowserTools(narrowed)));
+  if (manifest.browser) {
+    tools.push(...(await buildBrowserTools(narrowed, { readOnly: manifest.readOnly })));
+  }
   if (manifest.composioToolkits.length > 0) {
     try {
-      tools.push(...(await buildComposioToolsFor(narrowed, manifest.composioToolkits)));
+      // Read-only agents (manager) get read Composio tools only, regardless of FF_COMPOSIO_WRITES —
+      // Composio executes remotely, so binding-time stripping is the only enforcement point.
+      tools.push(
+        ...(await buildComposioToolsFor(narrowed, manifest.composioToolkits, {
+          ...(manifest.readOnly ? { readOnly: true } : {}),
+        })),
+      );
     } catch (err) {
       // Composio being unreachable/misconfigured must never take down agent construction.
       logger.warn({ err, agent: manifest.key }, 'composio tools unavailable; continuing without');

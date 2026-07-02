@@ -138,6 +138,13 @@ export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
   deadLetterJob,
 ];
 
+/** Department automations that run LLM agent turns — the scheduler gates these on the orchestrator flag. */
+export const DEPARTMENT_AUTOMATION_QUEUES = new Set<string>([
+  debtorSweepJob.name,
+  retentionScanJob.name,
+  verificationRecheckJob.name,
+]);
+
 /** Cron schedule per automation queue (tz = JOBS_CRON_TZ). */
 export const CRON_SCHEDULES: Array<{ name: string; cron: string }> = [
   { name: debtorSweepJob.name, cron: '0 8 * * 1-5' }, // weekday mornings

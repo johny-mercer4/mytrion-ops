@@ -106,6 +106,12 @@ export interface ComposioBuildOptions {
    * The browser path opts out — its universe is COMPOSIO_BROWSER_TOOLKITS.
    */
   requireEnabled?: boolean;
+  /**
+   * Force read-only: drop every write/destructive tool regardless of FF_COMPOSIO_WRITES.
+   * Set for read-only agents (analyst/manager) — Composio executes remotely, so the
+   * dispatcher's readOnly gate can't catch these; they must be stripped at binding.
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -152,8 +158,11 @@ export async function buildComposioToolsFor(
       logger.warn({ err, toolkit }, 'composio toolkit fetch failed; skipping');
     }
   }
-  if (env.FF_COMPOSIO_WRITES) return collected;
-  return collected.filter((t) => !isComposioWriteTool(t.name));
+  // Read-only agents never get write tools, even with FF_COMPOSIO_WRITES on.
+  if (opts.readOnly || !env.FF_COMPOSIO_WRITES) {
+    return collected.filter((t) => !isComposioWriteTool(t.name));
+  }
+  return collected;
 }
 
 /** All-enabled-toolkits variant (legacy external-tools behavior). */

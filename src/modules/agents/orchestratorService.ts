@@ -19,7 +19,7 @@ import { costTracker } from '../llm/costTracker.js';
 import { agentRegistry } from './agentRegistry.js';
 import { BudgetExceededError, BudgetMeter } from './budget.js';
 import { buildTurnBrief, recentHistorySummary } from './briefBuilder.js';
-import { getCheckpointer, threadIdFor } from './checkpointer.js';
+import { ensureCheckpointerReady, getCheckpointer, threadIdFor } from './checkpointer.js';
 import { runWithAgentContext } from './context.js';
 import { resolveAgentModelId } from './models.js';
 import { buildOrchestrator, buildSingleAgent } from './orchestrator.js';
@@ -91,6 +91,14 @@ async function ensureConversation(
   return conversationRepo.create(ctx, meta);
 }
 
+/** Walk the error cause chain to detect a budget breach wrapped by LangGraph middleware. */
+function hasBudgetCause(err: unknown, depth = 0): boolean {
+  if (depth > 5 || err == null) return false;
+  if (err instanceof BudgetExceededError) return true;
+  const cause = (err as { cause?: unknown }).cause;
+  return cause ? hasBudgetCause(cause, depth + 1) : false;
+}
+
 function deriveTitle(message: string): string {
   const clean = message.trim().replace(/\s+/g, ' ');
   if (clean.length <= 60) return clean;
@@ -113,6 +121,9 @@ async function executeTurn(
   await messageStore.appendUser(ctx, conv.id, message, opts.departmentScope);
 
   const checkpointing = Boolean(getCheckpointer());
+  // Idempotent, memoized: guarantees the langgraph schema exists even though scripts/migrate.ts
+  // isn't in the runtime image (deploy applies drizzle migrations only).
+  if (checkpointing) await ensureCheckpointerReady();
   const historySummary =
     !checkpointing && opts.conversationId ? await recentHistorySummary(ctx, conv.id) : '';
   const brief = buildTurnBrief({
@@ -140,11 +151,17 @@ async function executeTurn(
         const agent = manifest
           ? await buildSingleAgent(manifest, ctx)
           : (await buildOrchestrator(ctx)).agent;
+        // recursionLimit is the hard runaway bound (deepagents' default is ~unbounded). A single
+        // agent's manifest cap applies directly; the orchestrator gets the max child cap + a small
+        // margin for its own planning/delegation steps.
+        const childCap = manifest?.maxIterations ?? env.AGENT_MAX_CHILD_ITERATIONS;
+        const recursionLimit = manifest ? childCap : childCap * 2 + 6;
         const events = agent.streamEvents(
           { messages: [{ role: 'user', content: brief }] },
           {
             version: 'v2',
             callbacks: [tracker],
+            recursionLimit,
             ...(checkpointing ? { configurable: { thread_id: threadIdFor(ctx.tenantId, conv.id) } } : {}),
           },
         );
@@ -154,12 +171,14 @@ async function executeTurn(
   } catch (err) {
     status = 'error';
     errorMsg = errorMessage(err);
-    const friendly =
-      err instanceof BudgetExceededError
-        ? `I had to stop early: ${errorMsg}. Here is what I have so far — please narrow the request.`
-        : `The agent run failed: ${errorMsg}`;
+    // LangGraph/deepagents wraps tool errors (MiddlewareError etc.), so a budget breach may reach
+    // us via err.cause rather than as a direct instance — unwrap the chain to detect it.
+    const budgetHit = hasBudgetCause(err);
+    const friendly = budgetHit
+      ? `I had to stop early: ${errorMsg}. Here is what I have so far — please narrow the request.`
+      : `The agent run failed: ${errorMsg}`;
     outcome = { finalText: friendly, toolCalls: [], agentPath: tracker.agentPath };
-    logger.warn({ err: errorMsg, agentKey }, 'agent turn failed');
+    logger.warn({ err: errorMsg, agentKey, budgetHit }, 'agent turn failed');
   }
 
   const finalText = outcome.finalText || 'The agent produced no answer.';

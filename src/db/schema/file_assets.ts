@@ -1,11 +1,13 @@
 import { createId } from '@paralleldrive/cuid2';
 import { index, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import type { Audience } from '../../types/tenantContext.js';
 
 /**
  * Files the assistant generates (reports) or receives (uploads for analysis), stored in
- * MinIO/S3; this row is the tenant-scoped catalog entry. Read RBAC mirrors knowledge:
- * department NULL = global-within-tenant, else the caller needs the department, ownership,
- * or allDepartmentAccess.
+ * MinIO/S3; this row is the tenant-scoped catalog entry. Read RBAC is partitioned by AUDIENCE
+ * first (a customer never sees internal files and vice-versa), then: customers see only files
+ * they OWN; internal/partner callers see department-NULL (global-within-audience), their
+ * departments, or their own files; admins see their whole audience.
  */
 export const fileAssets = pgTable(
   'file_assets',
@@ -14,6 +16,8 @@ export const fileAssets = pgTable(
       .primaryKey()
       .$defaultFn(() => createId()),
     tenantId: text('tenant_id').notNull(),
+    /** Isolation partition — customer files never mix with internal files. */
+    audience: text('audience').$type<Audience>().notNull().default('internal'),
     /** Requester/owner (e.g. 'zoho:123', 'customer:tg:9', 'system:scheduler'); NULL = system. */
     ownerUserId: text('owner_user_id'),
     departmentAccess: text('department_access'),

@@ -1,0 +1,1 @@
+ALTER TABLE "file_assets" ADD COLUMN "audience" text DEFAULT 'internal' NOT NULL;

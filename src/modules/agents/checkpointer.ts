@@ -15,6 +15,7 @@ import { dbSslOption } from '../../db/client.js';
 export const CHECKPOINT_SCHEMA = 'langgraph';
 
 let saver: PostgresSaver | null = null;
+let setupPromise: Promise<void> | null = null;
 
 function makeSaver(): PostgresSaver {
   // Own small pg pool (the checkpointer requires `pg`; the app pool is postgres.js) — max 5
@@ -34,7 +35,24 @@ export function getCheckpointer(): PostgresSaver | undefined {
   return saver;
 }
 
-/** Create/upgrade the `langgraph` schema tables. Called from scripts/migrate.ts. */
+/**
+ * Ensure the `langgraph` schema tables exist before the first agent run uses them. setup() is
+ * idempotent and memoized here, so this works whether or not scripts/migrate.ts ran (it is NOT
+ * in the runtime image) — the orchestrator service calls this before building a checkpointed
+ * agent. No-op when the flag is off.
+ */
+export async function ensureCheckpointerReady(): Promise<void> {
+  if (!env.FF_AGENT_CHECKPOINTS) return;
+  if (!setupPromise) {
+    setupPromise = (saver ?? (saver = makeSaver())).setup().catch((err) => {
+      setupPromise = null; // allow a retry on the next turn if setup transiently failed
+      throw err;
+    });
+  }
+  await setupPromise;
+}
+
+/** Create/upgrade the `langgraph` schema tables (also usable from scripts/migrate.ts). */
 export async function setupCheckpointer(): Promise<void> {
   const s = saver ?? makeSaver();
   saver = s;

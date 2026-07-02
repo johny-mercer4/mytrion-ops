@@ -44,7 +44,17 @@ export async function startJobs(opts: { withWorkers: boolean }): Promise<void> {
     await b.start();
     started = true;
   }
-  for (const job of [...ALL_JOBS, bulkIngestJob]) {
+  // The dead-letter queue MUST exist before any queue that references it: pg-boss v12
+  // createQueue validates the deadLetter target up front. Create referenced dead-letter
+  // targets first, then the rest.
+  const jobs = [...ALL_JOBS, bulkIngestJob];
+  const deadLetterNames = new Set(jobs.map((j) => j.queue.deadLetter).filter((n): n is string => Boolean(n)));
+  const ordered = [...jobs].sort((a, b) => {
+    const aDead = deadLetterNames.has(a.name) ? 0 : 1;
+    const bDead = deadLetterNames.has(b.name) ? 0 : 1;
+    return aDead - bDead;
+  });
+  for (const job of ordered) {
     await b.createQueue(job.name, job.queue);
   }
   if (opts.withWorkers) {

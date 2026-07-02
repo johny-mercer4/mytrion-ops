@@ -5,6 +5,7 @@
  */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { env } from '../../config/env.js';
 import { sseCorsHeaders } from '../../lib/cors.js';
 import { AppError, NotFoundError, RBACError } from '../../lib/errors.js';
 import { agentRegistry } from '../../modules/agents/agentRegistry.js';
@@ -52,11 +53,22 @@ function requireJobs(): void {
   }
 }
 
+/** Async agent runs are still ORCHESTRATOR runs — gate them on the orchestrator flag too. */
+function requireOrchestrator(): void {
+  if (!env.FF_ORCHESTRATOR_ENABLED && !env.FF_DEEP_AGENTS_ENABLED) {
+    throw new AppError('Agent runs are disabled (set FF_ORCHESTRATOR_ENABLED).', {
+      statusCode: 503,
+      code: 'FEATURE_DISABLED',
+    });
+  }
+}
+
 export async function tasksRoutes(app: FastifyInstance): Promise<void> {
   const guard = { onRequest: [app.apiKeyAuth] };
 
   app.post('/agent/tasks', guard, async (request, reply) => {
     requireJobs();
+    requireOrchestrator();
     const body = createTaskSchema.parse(request.body);
     const ctx = buildCallerContext(request, body);
     if (body.agent) {

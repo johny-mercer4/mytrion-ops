@@ -4,17 +4,25 @@ import { fileAssets, type FileAsset, type NewFileAsset } from '../db/schema/inde
 import type { TenantContext } from '../types/tenantContext.js';
 
 /**
- * Read RBAC for files — mirrors the knowledge retriever's filter, plus ownership:
- * allDepartmentAccess/bypass → unrestricted (within tenant); otherwise the file must be
- * department-NULL (tenant-global), in one of the caller's departments, or owned by them.
+ * Read RBAC for files. ALWAYS partitions by audience (customer files never surface to internal
+ * callers or to other customers via the global branch, and vice-versa). Within the audience:
+ *   - customers: OWNERSHIP only — no department-global branch, so one carrier can never read
+ *     another carrier's uploads (their files are dept-NULL by design);
+ *   - internal/partner: department-NULL (global-within-audience) OR their departments OR own files;
+ *   - admin/bypass: their whole audience.
  * Exported for offline SQL assertions in the RBAC suite.
  */
 export function fileVisibilityFilter(ctx: TenantContext): SQL | undefined {
-  if (ctx.allDepartmentAccess || ctx.bypassRbac) return undefined;
+  const audienceMatch = eq(fileAssets.audience, ctx.audience);
+  if (ctx.allDepartmentAccess || ctx.bypassRbac) return audienceMatch;
+  if (ctx.audience === 'customer') {
+    // Customer files are dept-NULL; the ONLY visibility is ownership — never the global branch.
+    return and(audienceMatch, eq(fileAssets.ownerUserId, ctx.userId));
+  }
   const dept = fileAssets.departmentAccess;
   const deptOk =
     ctx.departments.length === 0 ? isNull(dept) : or(isNull(dept), inArray(dept, ctx.departments));
-  return or(deptOk, eq(fileAssets.ownerUserId, ctx.userId));
+  return and(audienceMatch, or(deptOk, eq(fileAssets.ownerUserId, ctx.userId)));
 }
 
 export const fileRepo = {
@@ -67,9 +75,11 @@ export const fileRepo = {
   async markDeleted(ctx: TenantContext, id: string): Promise<FileAsset | undefined> {
     const conditions = [
       eq(fileAssets.tenantId, ctx.tenantId),
+      eq(fileAssets.audience, ctx.audience),
       eq(fileAssets.id, id),
       eq(fileAssets.status, 'ready'),
     ];
+    // Admins may delete any file in their audience; everyone else only their own.
     if (!ctx.allDepartmentAccess && !ctx.bypassRbac) {
       conditions.push(eq(fileAssets.ownerUserId, ctx.userId));
     }

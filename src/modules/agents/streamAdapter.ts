@@ -43,12 +43,28 @@ function isChildRun(event: StreamEvent): boolean {
   return typeof event.metadata?.['lc_agent_name'] === 'string';
 }
 
+function readSubagentType(obj: unknown): string | undefined {
+  if (typeof obj !== 'object' || obj === null || !('subagent_type' in obj)) return undefined;
+  const v = (obj as { subagent_type?: unknown }).subagent_type;
+  return typeof v === 'string' ? v : undefined;
+}
+
+/**
+ * Extract the delegated subagent key from a task-tool event. LangChain's tracer wraps tool
+ * args as `data.input = { input: <argsObject | JSON-stringified args string> }`, so we probe
+ * both the object form (unit fixtures) and the stringified form (real streamEvents v2).
+ */
 function subagentTypeOf(input: unknown): string | undefined {
   if (typeof input !== 'object' || input === null) return undefined;
-  const raw = (input as { input?: unknown }).input ?? input;
-  if (typeof raw === 'object' && raw !== null && 'subagent_type' in raw) {
-    const v = (raw as { subagent_type?: unknown }).subagent_type;
-    return typeof v === 'string' ? v : undefined;
+  const inner = (input as { input?: unknown }).input ?? input;
+  const direct = readSubagentType(inner) ?? readSubagentType(input);
+  if (direct) return direct;
+  if (typeof inner === 'string') {
+    try {
+      return readSubagentType(JSON.parse(inner));
+    } catch {
+      return undefined;
+    }
   }
   return undefined;
 }

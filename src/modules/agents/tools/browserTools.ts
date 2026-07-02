@@ -78,18 +78,26 @@ function browserToolkits(): string[] {
     .filter(Boolean);
 }
 
-/** Composio-backed browser tools for one agent run (empty when disabled/not allowed). */
-export async function buildBrowserTools(ctx: TenantContext): Promise<StructuredTool[]> {
+/** Composio-backed browser tools for one agent run (empty when disabled/not allowed/read-only). */
+export async function buildBrowserTools(
+  ctx: TenantContext,
+  opts: { readOnly?: boolean } = {},
+): Promise<StructuredTool[]> {
   if (!env.FF_BROWSER_ENABLED) return [];
   try {
     const tools = await buildComposioToolsFor(ctx, browserToolkits(), {
+      requireEnabled: false, // browser universe is COMPOSIO_BROWSER_TOOLKITS, not the org list
+      ...(opts.readOnly ? { readOnly: true } : {}),
       beforeExecute: (context) => {
         assertUrlsAllowed(context.params.arguments);
         return context.params;
       },
     });
-    if (env.FF_BROWSER_WRITES) return tools;
-    return tools.filter((t) => !isBrowserWriteTool(t.name));
+    // Read-only agents get scrape/read verbs only; interactive verbs need FF_BROWSER_WRITES.
+    if (opts.readOnly || !env.FF_BROWSER_WRITES) {
+      return tools.filter((t) => !isBrowserWriteTool(t.name));
+    }
+    return tools;
   } catch (err) {
     logger.warn({ err }, 'browser tools unavailable; continuing without');
     return [];

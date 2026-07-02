@@ -982,3 +982,40 @@ Collection added as the 10th agent. This session = M0, everything default-off / 
   == {analyst, manager}, valid delegatesTo, non-trivial personas; adding an AGENT_KEY without a
   golden record fails CI. Behavioral scripted-model evals deferred to scripts/evalLive (follow-up).
 - **Tests: 281 green** (approvals park/deny-before-park/legacy-off/executor-outcome included).
+
+## 2026-07-02 — Agentic Core v2: adversarial review fixes (8 confirmed defects)
+
+Ran an 11-agent adversarial review (3 dimensions × find→verify) over the M0–M6 build. 8 confirmed
+defects fixed (all flag-on production issues; tsc+281 tests had passed but didn't cover these):
+
+- **[CRITICAL] file cross-customer leak** (fileRepo/file_assets/fileService): file_assets had NO
+  audience column and customer uploads stored dept=NULL (global), so the isNull(dept) visibility
+  branch let any customer read any other customer's + internal files. Fix: added `audience` column
+  (migration 0015), visibility now ALWAYS partitions by audience, and customers get OWNERSHIP-ONLY
+  visibility (no global branch). storeFile stamps ctx.audience; markDeleted audience-scoped.
+- **[CRITICAL] pg-boss dead-letter ordering** (boss.ts): createQueue in ALL_JOBS order created
+  'jobs.dead' LAST, but v12 validates the deadLetter target exists first → deterministic crash-loop
+  on first FF_JOBS_ENABLED boot. Fix: create dead-letter target queues before their referrers.
+- **[MAJOR] read-only agents got Composio/browser writes** (orchestrator/composio/browserTools):
+  manager (readOnly) received Composio write tools when FF_COMPOSIO_WRITES on, bypassing the
+  dispatcher readOnly gate + approvals (Composio executes remotely). Fix: buildComposioToolsFor +
+  buildBrowserTools take `readOnly` → strip write tools at binding regardless of the flag; orchestrator
+  passes manifest.readOnly. Also fixed a latent bug: browser path now sets requireEnabled:false so
+  FIRECRAWL isn't intersected away by the org toolkit list.
+- **[MAJOR] budget/recursion unbounded** (orchestratorService/scopedRag): manifest.maxIterations was
+  never applied (deepagents default ~unbounded) and budget breaches were swallowed. Fix: wire
+  recursionLimit (child cap direct; orchestrator = 2×cap+6), unwrap wrapped BudgetExceededError via
+  the cause chain, and count scopedRag calls against the tool-call budget.
+- **[MAJOR] FF_JOBS_ENABLED bypassed the orchestrator gate + auto-ran LLM crons** (tasks.routes/
+  scheduler): /v1/agent/tasks ran full agent turns and department cron automations DM'd Telegram with
+  only FF_JOBS on. Fix: POST /agent/tasks now also requires FF_ORCHESTRATOR_ENABLED; applySchedules
+  gates the 3 department automations on the orchestrator flag (maintenance crons always run).
+- **[MAJOR] checkpointer schema not in deploy path** (checkpointer): setupCheckpointer only ran from
+  scripts/migrate.ts, which isn't in the runtime image → 42P01 on every turn with FF_AGENT_CHECKPOINTS
+  on. Fix: ensureCheckpointerReady() — idempotent, memoized setup() called before the first
+  checkpointed run.
+- **[MAJOR] agentPath always empty** (streamAdapter): subagentTypeOf only matched an object task
+  input, but streamEvents v2 emits data.input={input:'<json string>'} → no `agent` SSE events, empty
+  agentPath. Fix: parse the stringified form too.
+- Tests: 289 green (+ composio-tools, jobs-queue-order, customer file-isolation, stringified-task
+  stream cases). Migration 0015 (file_assets.audience).

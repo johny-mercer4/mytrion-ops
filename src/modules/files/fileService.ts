@@ -64,8 +64,10 @@ export async function storeFile(ctx: TenantContext, input: StoreFileInput): Prom
   await getStorage().put(key, input.buffer, { contentType: input.mime });
   await fileRepo.create(ctx, {
     id: fileId,
+    audience: ctx.audience,
     ownerUserId: ctx.userId,
-    // Customer callers never set department tags on files — owner scoping only.
+    // Customer callers never set department tags — combined with audience partitioning + the
+    // customer-branch owner-only visibility filter, this keeps one carrier's files private.
     departmentAccess: ctx.audience === 'customer' ? null : (input.department ?? null),
     name,
     mime: input.mime,
