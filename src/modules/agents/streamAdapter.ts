@@ -11,17 +11,26 @@
  */
 import type { StreamEvent } from '@langchain/core/tracers/log_stream';
 import type { SSEStream } from '../chat/streaming.js';
+import type { Elicitation } from './elicitation.js';
 
 export interface StreamOutcome {
   finalText: string;
   toolCalls: Array<{ name: string; status: 'ok' | 'error' }>;
   agentPath: string[];
+  /**
+   * Set by orchestratorService from the run's ElicitationHolder when a tool asked the user to
+   * choose (e.g. crm.pick_my_client / ui.request_choice) — the frontend renders a picker.
+   */
+  elicitation?: Elicitation;
 }
 
 interface AgentEventPayload {
   key: string;
   state: 'start' | 'done';
 }
+
+/** UI-only tools that shouldn't surface as operational tool_call/tool_result noise. */
+const UI_TOOL_NAMES = new Set(['ui.request_choice', 'ui__request_choice']);
 
 function contentToText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -100,7 +109,7 @@ export async function consumeAgentStream(
           }
           break;
         }
-        if (event.name === 'write_todos') break; // internal planning noise
+        if (event.name === 'write_todos' || UI_TOOL_NAMES.has(event.name)) break; // planning / UI noise
         sink?.send('tool_call', { name: event.name, agent: event.metadata?.['lc_agent_name'] ?? null });
         break;
       }
@@ -110,7 +119,7 @@ export async function consumeAgentStream(
           if (key) sink?.send('agent', { key, state: 'done' } satisfies AgentEventPayload);
           break;
         }
-        if (event.name === 'write_todos') break;
+        if (event.name === 'write_todos' || UI_TOOL_NAMES.has(event.name)) break;
         toolCalls.push({ name: event.name, status: 'ok' });
         sink?.send('tool_result', { name: event.name, status: 'ok' });
         break;

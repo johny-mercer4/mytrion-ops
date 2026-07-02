@@ -10,6 +10,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { TenantContext } from '../../types/tenantContext.js';
 import type { BudgetMeter } from './budget.js';
+import type { ElicitationHolder } from './elicitation.js';
 
 export interface AgentRunContext {
   ctx: TenantContext;
@@ -18,6 +19,8 @@ export interface AgentRunContext {
   budget?: BudgetMeter;
   /** agent_runs.id for this run — stamped onto tool_calls/audit rows. */
   agentRunId?: string;
+  /** Collects a generative-UI choice a tool asked for; surfaced on the turn result. */
+  collect?: ElicitationHolder;
 }
 
 const storage = new AsyncLocalStorage<AgentRunContext>();

@@ -24,6 +24,7 @@ import { runWithAgentContext } from './context.js';
 import { resolveAgentModelId } from './models.js';
 import { buildOrchestrator, buildSingleAgent } from './orchestrator.js';
 import { RunTracker } from './runTracker.js';
+import type { Elicitation } from './elicitation.js';
 import { consumeAgentStream, type StreamOutcome } from './streamAdapter.js';
 import { isAgentKey, type AgentManifest } from './types.js';
 
@@ -46,6 +47,8 @@ export interface AgentTurnResult {
   agentPath: string[];
   toolCalls: Array<{ name: string; status: string }>;
   usage: { promptTokens: number; completionTokens: number; totalCost: number };
+  /** Present when the agent asked the user to pick from options (generative UI). */
+  elicitation?: Elicitation;
 }
 
 /** Resolve + RBAC-check the requested child agent; audit denials. */
@@ -138,6 +141,7 @@ async function executeTurn(
   const modelId = resolveAgentModelId(manifest);
   const tracker = new RunTracker(modelId, budget);
   const startedAt = Date.now();
+  const collect: { elicitation?: Elicitation } = {}; // filled by a tool that asked the user to choose
 
   sse?.send('status', { state: 'running' });
 
@@ -146,7 +150,7 @@ async function executeTurn(
   let errorMsg: string | undefined;
   try {
     outcome = await runWithAgentContext(
-      { ctx, conversationId: conv.id, budget, agentRunId },
+      { ctx, conversationId: conv.id, budget, agentRunId, collect },
       async () => {
         const agent = manifest
           ? await buildSingleAgent(manifest, ctx)
@@ -181,6 +185,12 @@ async function executeTurn(
       : `The agent run failed: ${errorMsg}`;
     outcome = { finalText: friendly, toolCalls: [], agentPath: tracker.agentPath };
     logger.warn({ err: errorMsg, agentKey, budgetHit }, 'agent turn failed');
+  }
+
+  // A tool asked the user to choose (generative UI) — surface the picker on the result + stream.
+  if (collect.elicitation) {
+    outcome.elicitation = collect.elicitation;
+    sse?.send('elicitation', collect.elicitation);
   }
 
   const finalText = outcome.finalText || 'The agent produced no answer.';
@@ -250,6 +260,7 @@ async function executeTurn(
     agentPath: outcome.agentPath,
     toolCalls: outcome.toolCalls,
     usage,
+    ...(outcome.elicitation ? { elicitation: outcome.elicitation } : {}),
   };
   sse?.send('done', result);
   return result;

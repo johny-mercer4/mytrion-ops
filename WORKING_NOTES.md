@@ -1053,3 +1053,38 @@ but LangGraph counts every graph super-step (model/tool/deepagents-middleware no
 child agent hit "Recursion limit of 8" before finishing one tool round. Fixed: recursionLimit =
 childCap*5+10 (single) / childCap*6+24 (orchestrator); the BudgetMeter (tool-call/cost/wall) remains
 the real runaway guard. Re-tested green; 289 unit tests pass.
+
+## 2026-07-02 — Real use case: servercrm client self-service tools + owner-scoping + dynamic-UI picker
+
+Mapped the self-service widget's automation blocks + servercrm to AI agent tools. First slice = the
+owner-scoped READ tools every sales/customer-service agent uses to serve THEIR OWN clients by carrier,
+plus the "which client?" generative-UI flow. Grounded in a live exploration of zoho-octane
+(app/self-service automation blocks: C-8 balance, C-28 account status, C-24 cards, C-15 transactions,
+Q-2 payment info; department codes C/Q/V/M) and servercrm (/api/clients/by-agent/:zohoUserId roster;
+/api/agent/dwh/carrier-*).
+
+- **New tools** (`tools/definitions/servercrm_client.ts`, all read, servercrm:read):
+  crm.list_my_clients, crm.pick_my_client (server-built picker), crm.carrier_balance (C-8),
+  crm.carrier_overview (C-28), crm.list_cards (C-24), crm.transactions (C-15), crm.payment_info (Q-2).
+  Added to the sales + customer-service manifests (+ CLIENT_SERVICE_RULE persona).
+- **OWNER-SCOPING (security-critical, per user)**: the picklist comes ONLY from the caller's own
+  zoho_user_id (ctx.userId `zoho:<id>` → /api/clients/by-agent/:id) — an agent NEVER sees another
+  agent's carriers. Every carrier-keyed tool calls `assertCarrierOwned(ctx, carrierId)` first
+  (targeted by-agent lookup); non-owned → RBACError. Admins (allDepartmentAccess) bypass. servercrm
+  does NOT enforce this — our layer does. `fetchAgentRoster` coerces servercrm 0/1 flags → booleans.
+- **Dynamic-UI elicitation** (`agents/elicitation.ts`): a tool that needs a choice returns an
+  `elicitation` field; the per-agent tool wrapper stashes it into the run's ElicitationHolder;
+  orchestratorService surfaces it on AgentTurnResult.elicitation + an `elicitation` SSE event.
+  crm.pick_my_client builds the options SERVER-SIDE (model passes only an optional search) — no
+  model-copied option arrays. States: resolved (1 match → carrier_id) / choose (picklist shown) /
+  too_many (>25 → ask to narrow) / none. Generic ui.request_choice kept (universal) but removed from
+  the sales/CS flow so the model can't re-present with invented options.
+- **Live-tested (sales agent Frank Harrison, real servercrm)**: named client → resolve → REAL balance
+  (ALI CARGO INC: EFS $1,000, limit $3,000, used $303.09, remaining $2,696.91); ambiguous "ALI" → REAL
+  server-built picklist (ALI CARGO INC/5816381, ALI FAMILY TRUCKING/5759008, ALITRANS LLC/5772232, …);
+  foreign carrier 5794015 (another agent's) → DENIED + audited ("not in your client list"). 299 tests.
+- Bugs caught + fixed by live testing: empty-string optional params abort LangChain pre-handler
+  validation (relaxed schemas); servercrm booleans-as-numbers broke output validation (toBool coerce);
+  model hand-copying 70 options → hallucinated picklist (switched to server-built crm.pick_my_client).
+- Writes (card activation/limits/override, money code, WEX BOCA) deferred → they go behind the M6
+  approval flow. UI rendering of the picker is the frontend's job (later); backend contract is done.

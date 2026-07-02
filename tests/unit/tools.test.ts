@@ -7,8 +7,10 @@ import { registerTool, ToolRegistry } from '../../src/modules/tools/registry.js'
 import { toolRegistry } from '../../src/modules/tools/index.js';
 import { makeContext } from '../fixtures/seed.js';
 
-// 7 always-on core tools + the flag-gated native Telegram toolkit (6 tools, all internal-audience).
-const CORE_TOOL_COUNT = 7;
+// Always-on core tools + the flag-gated native Telegram toolkit (6 tools, all internal-audience).
+// Core = 7 originals + 8 servercrm client-service / UI tools (crm.pick_my_client, crm.list_my_clients,
+// crm.carrier_balance/overview, crm.list_cards, crm.transactions, crm.payment_info, ui.request_choice).
+const CORE_TOOL_COUNT = 15;
 const TELEGRAM_TOOL_COUNT = env.FF_TELEGRAM_ENABLED ? 6 : 0;
 const INTERNAL_TOOL_COUNT = CORE_TOOL_COUNT + TELEGRAM_TOOL_COUNT;
 

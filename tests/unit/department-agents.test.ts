@@ -76,20 +76,45 @@ describe('tool gating through the live registry (widget path)', () => {
     makeContext({ scopes: ['*'], audience: 'internal', departments, allDepartmentAccess: false });
   const names = (ctx: ReturnType<typeof dept>) => toolRegistry.listForContext(ctx).map((t) => t.name).sort();
 
-  it('Sales sees only sales tools + universal RAG, never another team’s tools', () => {
+  it('Sales sees sales + client-service tools + universal RAG, never another team’s tools', () => {
     const n = names(dept(['sales']));
-    expect(n).toEqual(['agent.activity', 'agent.sales_snapshot', 'knowledge.search', 'zoho_crm.query']);
+    expect(n).toEqual([
+      'agent.activity',
+      'agent.sales_snapshot',
+      'crm.carrier_balance',
+      'crm.carrier_overview',
+      'crm.list_cards',
+      'crm.list_my_clients',
+      'crm.payment_info',
+      'crm.pick_my_client',
+      'crm.transactions',
+      'knowledge.search',
+      'zoho_crm.query',
+    ]);
     expect(n).not.toContain('agent.debtors');
     expect(n).not.toContain('zoho_desk.search_tickets');
     expect(n).not.toContain('zoho_people.search_employees');
   });
 
-  it('Billing sees debtors + CRM + RAG, not sales/desk tools', () => {
-    expect(names(dept(['billing']))).toEqual(['agent.debtors', 'knowledge.search', 'zoho_crm.query']);
+  it('Billing sees debtors + CRM + RAG, not sales/desk/client-service tools', () => {
+    const n = names(dept(['billing']));
+    expect(n).toEqual(['agent.debtors', 'knowledge.search', 'zoho_crm.query']);
+    expect(n).not.toContain('crm.carrier_balance');
   });
 
-  it('Customer Service sees Desk tickets + CRM + RAG', () => {
-    expect(names(dept(['customer-service']))).toEqual(['knowledge.search', 'zoho_crm.query', 'zoho_desk.search_tickets']);
+  it('Customer Service sees Desk tickets + CRM + client-service tools + RAG', () => {
+    expect(names(dept(['customer-service']))).toEqual([
+      'crm.carrier_balance',
+      'crm.carrier_overview',
+      'crm.list_cards',
+      'crm.list_my_clients',
+      'crm.payment_info',
+      'crm.pick_my_client',
+      'crm.transactions',
+      'knowledge.search',
+      'zoho_crm.query',
+      'zoho_desk.search_tickets',
+    ]);
   });
 
   it('no-department caller sees only the universal RAG tool', () => {

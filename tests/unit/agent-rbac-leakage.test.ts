@@ -85,9 +85,20 @@ describe('tool binding never crosses departments', () => {
     }
   });
 
-  it('the right agent still works: sales caller via sales agent keeps sales tools', () => {
+  it('the right agent still works: sales caller via sales agent keeps sales + client-service tools', () => {
     const bound = boundToolNames(salesCaller(), 'sales');
-    expect(bound.sort()).toEqual(['agent.activity', 'agent.sales_snapshot', 'zoho_crm.query']);
+    expect(bound.sort()).toEqual([
+      'agent.activity',
+      'agent.sales_snapshot',
+      'crm.carrier_balance',
+      'crm.carrier_overview',
+      'crm.list_cards',
+      'crm.list_my_clients',
+      'crm.payment_info',
+      'crm.pick_my_client',
+      'crm.transactions',
+      'zoho_crm.query',
+    ]);
   });
 
   it('admin via read-only manager agent is bounded: no write tools, no bypass', () => {

@@ -14,13 +14,28 @@ import { toolRegistry } from '../../src/modules/tools/index.js';
 import { makeContext } from '../fixtures/seed.js';
 
 // File tools appear only when FF_FILES_ENABLED registers them; golden values assume default-off.
+// crm.* client-service tools are on sales + customer-service (owner-scoped self-service).
+const CLIENT_TOOLS = [
+  'crm.carrier_balance',
+  'crm.carrier_overview',
+  'crm.list_cards',
+  'crm.list_my_clients',
+  'crm.payment_info',
+  'crm.pick_my_client',
+  'crm.transactions',
+];
+
 const GOLDEN: Record<string, { caller: string[]; tools: string[]; rag: string[] }> = {
-  sales: { caller: ['sales'], tools: ['agent.activity', 'agent.sales_snapshot', 'zoho_crm.query'], rag: ['sales'] },
+  sales: {
+    caller: ['sales'],
+    tools: ['agent.activity', 'agent.sales_snapshot', ...CLIENT_TOOLS, 'zoho_crm.query'].sort(),
+    rag: ['sales'],
+  },
   marketing: { caller: ['marketing'], tools: ['zoho_crm.query'], rag: ['marketing'] },
   billing: { caller: ['billing'], tools: ['agent.debtors', 'zoho_crm.query'], rag: ['billing'] },
   'customer-service': {
     caller: ['customer-service'],
-    tools: ['zoho_crm.query', 'zoho_desk.search_tickets'],
+    tools: [...CLIENT_TOOLS, 'zoho_crm.query', 'zoho_desk.search_tickets'].sort(),
     rag: ['customer-service'],
   },
   verification: { caller: ['verification'], tools: ['zoho_crm.query'], rag: ['verification'] },

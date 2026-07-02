@@ -17,6 +17,7 @@ import { toolRegistry } from '../../tools/index.js';
 import type { RegisteredTool } from '../../tools/types.js';
 import { BudgetExceededError } from '../budget.js';
 import { requireAgentContext } from '../context.js';
+import { coerceElicitation } from '../elicitation.js';
 import type { AgentManifest } from '../types.js';
 
 /** LangChain/OpenAI tool names must match [a-zA-Z0-9_-]; map dotted registry names to '__'. */
@@ -34,7 +35,8 @@ function toLangChainTool(
       // Run bookkeeping (conversation/budget/run id) comes from the ALS store, but dispatch
       // authority is the NARROWED context captured at build time — the child never executes
       // with the caller's wider departments/bypass, even if the ALS ctx is broader.
-      const { conversationId, budget, agentRunId } = requireAgentContext();
+      const runCtx = requireAgentContext();
+      const { conversationId, budget, agentRunId } = runCtx;
       budget?.countToolCall(); // throws BudgetExceededError → aborts the run
       try {
         const out = await dispatchTool(rt.name, input, narrowedCtx, {
@@ -43,6 +45,20 @@ function toLangChainTool(
           ...(manifest.readOnly ? { readOnly: true } : {}),
           viaAgent: true,
         });
+        // A tool asking the user to choose returns an `elicitation` — stash it for the frontend
+        // (server-built options; the model gets a short confirmation, not the full list).
+        if (out && typeof out === 'object' && 'elicitation' in out && runCtx.collect) {
+          const e = coerceElicitation((out as { elicitation?: unknown }).elicitation);
+          if (e) {
+            runCtx.collect.elicitation = e;
+            return (
+              `A selection UI with ${e.options.length} option(s) for "${e.field}" has ALREADY been ` +
+              'shown to the user. Do NOT call another tool to present options, do NOT list or invent ' +
+              'the options in your reply. Simply ask the user to pick from the list shown, then STOP — ' +
+              'their choice arrives as the next message.'
+            );
+          }
+        }
         return sanitizeToolResult(out, env.AGENT_TOOL_OUTPUT_MAX_CHARS);
       } catch (err) {
         if (err instanceof BudgetExceededError) throw err;
