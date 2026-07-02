@@ -56,7 +56,8 @@ const EnvSchema = z.object({
   // Orchestrator model ('' → DEEP_AGENTS_MODEL → default chat model) and default child model.
   ORCHESTRATOR_MODEL: z.string().default(''),
   AGENT_CHILD_MODEL: z.string().default(''),
-  // Child ReAct-loop cap (LangGraph recursionLimit) unless a manifest overrides it.
+  // Child tool-call rounds (converted to a LangGraph recursionLimit with headroom in
+  // orchestratorService — each round is several graph super-steps). Manifest may override.
   AGENT_MAX_CHILD_ITERATIONS: z.coerce.number().int().positive().max(50).default(8),
   // Tool output cap inside agent runs (chars) — keeps one chatty tool from flooding a context.
   AGENT_TOOL_OUTPUT_MAX_CHARS: z.coerce.number().int().positive().default(8000),

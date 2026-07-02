@@ -151,11 +151,13 @@ async function executeTurn(
         const agent = manifest
           ? await buildSingleAgent(manifest, ctx)
           : (await buildOrchestrator(ctx)).agent;
-        // recursionLimit is the hard runaway bound (deepagents' default is ~unbounded). A single
-        // agent's manifest cap applies directly; the orchestrator gets the max child cap + a small
-        // margin for its own planning/delegation steps.
+        // recursionLimit is the hard graph-depth backstop (deepagents' default is ~unbounded).
+        // LangGraph counts EVERY super-step (model node, tool node, deepagents middleware), so one
+        // tool round is several steps — the cap is tool-call rounds converted to graph steps with
+        // generous headroom. The BudgetMeter (tool-call count / cost / wall-time) is the real
+        // semantic runaway guard; this just prevents an infinite graph.
         const childCap = manifest?.maxIterations ?? env.AGENT_MAX_CHILD_ITERATIONS;
-        const recursionLimit = manifest ? childCap : childCap * 2 + 6;
+        const recursionLimit = manifest ? childCap * 5 + 10 : childCap * 6 + 24;
         const events = agent.streamEvents(
           { messages: [{ role: 'user', content: brief }] },
           {

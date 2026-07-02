@@ -1038,3 +1038,18 @@ defects fixed (all flag-on production issues; tsc+281 tests had passed but didn'
 - Note: FF_AGENTIC_RAG enabled without running scripts/evalRetrieval.ts against prod on purpose —
   that harness ingests 10 fixture docs and would pollute the live knowledge base; run it against a
   scratch/dev DB to measure recall before relying on hybrid quality.
+
+## 2026-07-02 — Live end-to-end test (admin scope, real backends) + recursionLimit fix
+
+Ran the API locally (flags on) against real OpenAI + app DB + servercrm with admin scope. Verified:
+- **RAG**: /v1/chat grounded a billing question in 6 real KB passages (agentic hybrid loop, FF_AGENTIC_RAG+FF_RAG_HYBRID on).
+- **Orchestrator**: /v1/agent delegated to the verification child (agentPath=["verification"] — confirms the streamAdapter stringified-task fix), which called scoped knowledge_search and synthesized a grounded answer.
+- **Operational read tool**: direct-to-child billing agent dispatched agent.debtors → servercrm (real HTTP; returned "agent not found" for the fake admin name, handled gracefully). tool_calls.acting_agent="billing" recorded.
+- **Agent-selection RBAC**: sales-scoped caller → finance agent = 403 RBAC_DENIED (pre-LLM). Non-admin → /v1/approvals = 403; admin = 200 (0 pending — read-only launch posture, no write tools bound to agents).
+- **Persistence**: agent_runs rows with token/cost attribution; 3 agent_memories distilled (FF_AGENT_MEMORY); tool_call attribution.
+
+**Bug found + fixed (live test):** recursionLimit was mapped 1:1 from AGENT_MAX_CHILD_ITERATIONS(8),
+but LangGraph counts every graph super-step (model/tool/deepagents-middleware nodes), so a single
+child agent hit "Recursion limit of 8" before finishing one tool round. Fixed: recursionLimit =
+childCap*5+10 (single) / childCap*6+24 (orchestrator); the BudgetMeter (tool-call/cost/wall) remains
+the real runaway guard. Re-tested green; 289 unit tests pass.
