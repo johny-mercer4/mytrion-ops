@@ -216,6 +216,19 @@ const EnvSchema = z.object({
   FF_ORCHESTRATOR_ENABLED: flag('0'),
   // Durable LangGraph threads (PostgresSaver in the 'langgraph' schema). Off = stateless runs.
   FF_AGENT_CHECKPOINTS: flag('0'),
+  // Background jobs (pg-boss on the app Postgres, own 'pgboss' schema — self-migrating).
+  FF_JOBS_ENABLED: flag('0'),
+  // inline: this process runs boss + workers + schedules (default, single Render service).
+  // send-only: this process only enqueues; a dedicated worker (dist/worker.js) executes.
+  // off: /v1/agent/tasks returns 503.
+  JOBS_WORKER_MODE: z.enum(['inline', 'send-only', 'off']).default('inline'),
+  PGBOSS_SCHEMA: z
+    .string()
+    .regex(/^[a-z_][a-z0-9_]*$/, 'must be a plain lowercase identifier')
+    .default('pgboss'),
+  // Batch size for the agent-run queue worker (how many agent runs execute concurrently).
+  JOBS_CONCURRENCY: z.coerce.number().int().positive().max(10).default(2),
+  JOBS_CRON_TZ: z.string().default('America/Chicago'),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

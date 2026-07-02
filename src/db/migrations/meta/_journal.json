@@ -64,6 +64,13 @@
       "when": 1782957386529,
       "tag": "0008_solid_pet_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782959162271,
+      "tag": "0009_faithful_stature",
+      "breakpoints": true
     }
   ]
 }

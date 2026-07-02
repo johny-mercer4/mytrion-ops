@@ -847,3 +847,36 @@ Collection added as the 10th agent. This session = M0, everything default-off / 
   direct-to-child / 400 unknown agent). Deferred: web app sends `agent` param (needs a web build cycle;
   /v1/chat stays the widget default until the flag flips); per-child token cost split is approximated
   at the run level (tool attribution is exact via tool_calls.acting_agent).
+
+## 2026-07-02 — Agentic Core v2, M2: pg-boss job infrastructure (async agent runs + cron automations)
+
+- **pg-boss 12.24.1** on the app Postgres, own self-migrating `pgboss` schema (never modeled in
+  drizzle; no ordering hazard with release migrations). `src/modules/jobs/`: boss.ts (lazy singleton,
+  pool max 3, dbSslOption reuse, graceful stop {graceful, close, timeout 25s} inside Render's SIGTERM
+  window), catalog.ts (typed `defineJob` + zod payloads; payloads embed the caller's TenantContext
+  verbatim via `tenantContextSchema` + `payloadToContext` — workers execute with EXACTLY the
+  requester's authority), queue.ts (parse-before-send), scheduler.ts (idempotent cron upsert +
+  stray-schedule cleanup, tz=JOBS_CRON_TZ), systemContext.ts (cron authority: department-scoped,
+  admin role for write-risk notifies, NO allDepartmentAccess/bypass).
+- **Deployment shape**: JOBS_WORKER_MODE=inline (default — web service runs workers in-process) |
+  send-only (dedicated Render Background Worker runs `node dist/worker.js`, same image) | off.
+  server.ts boots jobs after listen; shutdown order stopJobs → app.close → closeDb. `src/worker.ts`
+  entry built NOW so the second-service flip is config-only.
+- **Job catalog**: `agent.run` (retry 1, expire 15m, dead-letters; singleton per taskId),
+  cron automations — collection debtor-sweep (weekday 08:00), retention weekly-scan (Mon 09:00),
+  verification recheck-reminders (daily 07:00) — each: scoped systemContext → agent_tasks row →
+  direct-to-child runAgentTurn with a canned prompt → automation_logs row → optional Telegram
+  summary THROUGH dispatchTool (explicitly elevated notify ctx; audited). `maintenance.checkpoint-
+  ttl-sweep` (nightly; deletes langgraph threads whose newest checkpoint ts < now-TTL). `jobs.dead`
+  dead-letter sink (audit `job.dead` + mark task failed).
+- **agent_tasks table** (migration 0009) + agentTaskRepo: tenant-scoped, owner-isolated listing,
+  `markRunning` transitions only from queued/running/failed (re-delivered completed/cancelled jobs
+  ack without re-running — the idempotency guard).
+- **Routes** `tasks.routes.ts`: POST /v1/agent/tasks (fail-fast agent RBAC → row → enqueue → 202
+  {taskId}), GET list/:id, GET /:id/stream (SSE row-poll 1.5s, 10m cap, keep-alive comments),
+  POST /:id/cancel (row transition authoritative + best-effort boss.cancel), GET /agent/jobs/stats
+  (allDepartmentAccess only; pgboss.job counts + recent failures via validated schema identifier).
+- **Tests: 236 green.** jobs-catalog (cron↔queue integrity, payload round-trip preserves authority
+  verbatim, payloadToContext strips explicit-undefineds, malformed rejected), systemContext scoping,
+  integration 503/401 gates. NOTE: no live pg-boss lifecycle test — deliberately not pointed at the
+  Render DB; M2 smoke happens in dev per plan (docker Postgres) before flipping FF_JOBS_ENABLED.

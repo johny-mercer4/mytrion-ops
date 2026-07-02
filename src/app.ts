@@ -30,6 +30,7 @@ import { integrationsRoutes } from './routes/v1/integrations.routes.js';
 import { knowledgeRoutes } from './routes/v1/knowledge.routes.js';
 import { moneyCodeRoutes } from './routes/v1/moneyCode.routes.js';
 import { scopeRoutes } from './routes/v1/scope.routes.js';
+import { tasksRoutes } from './routes/v1/tasks.routes.js';
 import { toolsRoutes } from './routes/v1/tools.routes.js';
 
 function loggerOption() {
@@ -174,6 +175,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(moneyCodeRoutes);
       await v1.register(adminRoutes);
       await v1.register(agentRoutes);
+      await v1.register(tasksRoutes);
       await v1.register(integrationsRoutes);
     },
     { prefix: API_PREFIX },
