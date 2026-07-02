@@ -10,6 +10,7 @@ import type OpenAI from 'openai';
 import { env } from '../../../config/env.js';
 import { logger } from '../../../lib/logger.js';
 import { getOpenAI } from '../../llm/openaiClient.js';
+import { wrapUntrusted } from '../../security/untrusted.js';
 
 // The Responses web-search built-in tool. Typed locally so the literal matches the SDK union.
 const WEB_SEARCH_TOOL: OpenAI.Responses.Tool = { type: 'web_search_preview' };
@@ -23,7 +24,10 @@ export const webSearchTool = tool(
         input: query,
       });
       const text = res.output_text?.trim();
-      return text && text.length > 0 ? text : 'Web search returned no usable result.';
+      // Web content is a trust boundary: wrapped so injected instructions stay inert.
+      return text && text.length > 0
+        ? wrapUntrusted('web', text)
+        : 'Web search returned no usable result.';
     } catch (err) {
       logger.warn({ err }, 'deepagents web search failed');
       const reason = err instanceof Error ? err.message : 'unknown error';

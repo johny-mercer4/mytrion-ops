@@ -15,6 +15,9 @@ export interface AuditInput {
   resourceType?: string;
   resourceId?: string;
   toolName?: string;
+  /** Child agent acting on the caller's behalf (multi-agent attribution). */
+  actingAgent?: string;
+  agentRunId?: string;
   detail?: Record<string, unknown>;
   requestId?: string;
   ip?: string;
@@ -38,6 +41,8 @@ export async function audit(input: AuditInput): Promise<void> {
     if (input.resourceType !== undefined) entry.resourceType = input.resourceType;
     if (input.resourceId !== undefined) entry.resourceId = input.resourceId;
     if (input.toolName !== undefined) entry.toolName = input.toolName;
+    if (input.actingAgent !== undefined) entry.actingAgent = input.actingAgent;
+    if (input.agentRunId !== undefined) entry.agentRunId = input.agentRunId;
     if (input.detail !== undefined) entry.detail = input.detail;
     if (input.requestId !== undefined) entry.requestId = input.requestId;
     if (input.ip !== undefined) entry.ip = input.ip;
@@ -48,7 +53,7 @@ export async function audit(input: AuditInput): Promise<void> {
   }
 }
 
-/** Convenience that fills tenant/audience/user/request from the security context. */
+/** Convenience that fills tenant/audience/user/request (+ acting agent) from the security context. */
 export async function auditFromContext(
   ctx: TenantContext,
   fields: {
@@ -57,6 +62,7 @@ export async function auditFromContext(
     resourceType?: string;
     resourceId?: string;
     toolName?: string;
+    agentRunId?: string;
     detail?: Record<string, unknown>;
   },
 ): Promise<void> {
@@ -65,6 +71,7 @@ export async function auditFromContext(
     audience: ctx.audience,
     userId: ctx.userId,
     requestId: ctx.requestId,
+    ...(ctx.actingAgent !== undefined ? { actingAgent: ctx.actingAgent } : {}),
     ...fields,
   });
 }

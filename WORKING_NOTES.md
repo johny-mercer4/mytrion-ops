@@ -768,3 +768,47 @@ subagent in the orchestrator. Native tool-caller (toolDispatcher) left intact (c
   from the authenticated company id (else self-escalation). (2) "Global" (untagged) knowledge is visible to
   every scope incl. customers — audit tagging before exposing internal docs. (3) no 'customer' audience yet
   (all API_KEY callers are 'internal').
+
+## 2026-07-02 — Agentic Core v2, M0: security & agent foundation (10 manifests, authority narrowing, customer lockdown)
+
+Kickoff of the approved Agentic Core v2 plan (orchestrator + 10 department child agents on LangGraph,
+pg-boss, agentic RAG, MinIO files, Composio browser). Decisions locked with the user: OpenAI-only for
+now (Groq stays dormant), browser automation via Composio toolkits, file storage on MinIO (S3 API),
+Collection added as the 10th agent. This session = M0, everything default-off / no runtime change:
+
+- **AgentManifest layer** (`src/modules/agents/types.ts`, `manifests/*` — one file per agent,
+  `agentRegistry.ts` mirroring ToolRegistry): typed manifests for customer-service, billing,
+  verification, retention, sales, marketing, finance, analyst, manager, collection. Manifests declare
+  departments (access grant), operatingDepartments (cross-dept cap for analyst/manager), tool
+  allowlist, ragScope, readOnly, delegatesTo. `departmentAgents.ts` is now a DERIVED SHIM off the
+  manifests (same exports; /v1/chat personas + applyDepartmentPolicy unchanged in behavior, policy
+  extended: finance/marketing/manager tiers now grant their tools — test expectations updated).
+  'marketing' added to KNOWN_DEPARTMENTS.
+- **Authority narrowing** (`authority.ts`): narrowContext (child depts = caller ∩ operating; admins
+  bounded to the operating list; allDepartmentAccess + bypassRbac ALWAYS dropped; sets ctx.actingAgent),
+  narrowRagScope (ragScope is a cap, never a grant), effectiveRetrievalContext (what scoped RAG will use).
+- **Customer-trust fix** (the 2026-07-01 OPEN item): new `routes/v1/callerIdentity.ts` with explicit
+  workerContext/customerContext builders; chat.routes now uses buildCallerContext. New 'customer'
+  audience (deny-by-default everywhere; knowledge.search opted in — retrieval is audience-exact so
+  customers only see customer-audience docs). FF_CUSTOMER_SCOPE_STRICT (default 0 = legacy + loud
+  warning listing fields that will be ignored; 1 = customer requests get viewer role, NO scopes,
+  departments = company tag only, client scope/profile/user_name fields ignored). Telegram shim must
+  migrate before flipping.
+- **Audit attribution** (migration 0008): tool_calls + audit_log gain acting_agent + agent_run_id;
+  new agent_runs table (per-run status/tokens/cost) + agentRunRepo. DispatchOptions gains
+  {readOnly, actingAgent, agentRunId}; dispatcher denies non-read tools under readOnly (defense in
+  depth for analyst/manager) and stamps attribution on ok/error/denied rows.
+- **Injection defenses + budgets**: `security/untrusted.ts` (wrapUntrusted with delimiter-smuggling
+  neutralization + control-char strip; sanitizeToolResult with truncation notice; UNTRUSTED_RULE added
+  to the system prompt). Wired at boundaries: RAG grounding (chatService), web search output,
+  Composio afterExecute (payload → untrusted_content). `agents/budget.ts` BudgetMeter
+  (AGENT_MAX_TOOL_CALLS/COST_USD/WALL_MS env knobs) ready for the M1 run loop.
+- **Tests: 216 green** (was 181). New suites: agent-registry (selection matrix incl. customer/partner
+  denial), agent-authority (narrowing invariants, table-driven over all 10), caller-identity (hostile
+  customer lockdown + legacy warn path), untrusted (smuggling/ANSI/canary — secret-shaped env values
+  never in prompts), budget, and the headline **agent-rbac-leakage** suite (retrieval SQL never
+  references foreign departments through any agent; hostile reformulation can't change the WHERE;
+  dispatch-by-name denied + audited with actingAgent; read-only gate holds for admins).
+- Note for later milestones: zoho_mcp.* stays admin-sentinel (unavailable inside child agents — revisit
+  when Composio covers Zoho breadth); Composio output wrapping changes tool payload shape to
+  {untrusted_content} — verify against live Composio in M5.

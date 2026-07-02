@@ -18,6 +18,7 @@ export default defineConfig({
     './src/db/schema/automation_logs.ts',
     './src/db/schema/scope_risk_items.ts',
     './src/db/schema/money_code_requests.ts',
+    './src/db/schema/agent_runs.ts',
   ],
   out: './src/db/migrations',
   dialect: 'postgresql',

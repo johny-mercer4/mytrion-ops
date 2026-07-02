@@ -7,33 +7,16 @@ import { conversationRepo } from '../../repos/conversationRepo.js';
 import { messageRepo } from '../../repos/messageRepo.js';
 import type { Conversation, Message } from '../../db/schema/index.js';
 import { sseCorsHeaders } from '../../lib/cors.js';
-import { isBypassUser, resolveAllDepartmentAccess } from '../../lib/department.js';
-import type { TenantContext } from '../../types/tenantContext.js';
-import { requireContext, withDepartmentAccess } from './helpers.js';
+import { requireContext } from './helpers.js';
+import { buildCallerContext, callerIdentitySchema, ownerCtx, toArray } from './callerIdentity.js';
 
 const stringOrList = z.union([z.string(), z.array(z.string().max(120)).max(50)]);
 const scopeSchema = z.union([z.string(), z.array(z.string().max(60)).max(50)]);
 
-const chatSchema = z.object({
+const chatSchema = callerIdentitySchema.extend({
   message: z.string().min(1).max(8000),
   conversationId: z.string().min(1).max(100).optional(),
   model: z.string().min(1).max(100).optional(),
-  // --- Worker (Octane) identity — from the Zoho widget ---
-  zoho_user_id: z.string().min(1).max(120).optional(),
-  user_name: z.string().min(1).max(200).optional(),
-  // Caller's Zoho role + profile. An "Administrator" profile bypasses ALL RBAC (RAG + tools).
-  role: stringOrList.optional(),
-  profile: stringOrList.optional(),
-  // --- Customer identity — from the Telegram bot / mini-app. The company id isolates their data. ---
-  carrier_id: z.union([z.string().max(60), z.number()]).optional(),
-  application_id: z.union([z.string().max(60), z.number()]).optional(),
-  company_name: z.string().min(1).max(200).optional(),
-  chat_id: z.union([z.string().max(60), z.number()]).optional(),
-  // --- RBAC scope: the caller's department(s). Accepts a single key or a list. ---
-  department_scope: scopeSchema.optional(),
-  // Compatibility aliases (same effect as department_scope).
-  departmentAccess: z.array(z.string().min(1).max(60)).max(50).optional(),
-  allDepartments: z.boolean().optional(),
 });
 
 type ChatBody = z.infer<typeof chatSchema>;
@@ -71,66 +54,6 @@ const idScopeQuerySchema = z.object({
   zohoUserId: z.string().min(1).max(120).optional(),
 });
 const deleteBodySchema = z.object({ zoho_user_id: z.string().min(1).max(120).optional() });
-
-function toArray(v?: string | string[]): string[] {
-  if (!v) return [];
-  return Array.isArray(v) ? v : [v];
-}
-
-/** Stable conversation-owner id for a Zoho caller (namespaced to avoid collisions). */
-function identityFrom(zohoUserId?: string, userName?: string): string | undefined {
-  const id = zohoUserId?.trim();
-  if (id) return `zoho:${id}`;
-  const name = userName?.trim();
-  if (name) return `zoho-name:${name}`;
-  return undefined;
-}
-
-/** Owner-scoped context (userId = `zoho:<id>`) so list/create attach to that user's chats. */
-function ownerCtx(ctx: TenantContext, zohoUserId?: string, userName?: string): TenantContext {
-  const userId = identityFrom(zohoUserId, userName);
-  return userId ? { ...ctx, userId } : ctx;
-}
-
-/** A customer's company identifier(s) become department tags — isolating their RAG/tool scope. */
-function companyTags(body: ChatBody): string[] {
-  return [body.carrier_id, body.application_id]
-    .map((v) => (v == null ? '' : String(v).trim()))
-    .filter(Boolean);
-}
-
-/**
- * Build the per-request context for a chat call. Two caller shapes are supported:
- *   - Octane worker: zoho_user_id / user_name / profile / role (+ department_scope).
- *   - Customer:      carrier_id or application_id (company isolation) + company_name + chat_id.
- * Department RBAC comes from department_scope (+ aliases/headers) UNIONed with the customer's
- * company tags. ADMIN_USERS / BYPASS_USERS are matched on the WORKER `user_name` only (never
- * company_name), so a customer identity can't self-escalate.
- */
-function chatContext(request: FastifyRequest, body: ChatBody): TenantContext {
-  const workerName = body.user_name?.trim();
-  const departmentAccess = [...toArray(body.department_scope), ...(body.departmentAccess ?? []), ...companyTags(body)];
-  // See-everything bypass for RAG + tools: explicit allDepartments, an admin profile/role marker,
-  // or an ADMIN_USERS/BYPASS_USERS match on the worker user_name.
-  const allDepartments = resolveAllDepartmentAccess({
-    allDepartments: body.allDepartments,
-    profile: body.profile,
-    role: body.role,
-    userName: workerName,
-  });
-  const ctx = withDepartmentAccess(requireContext(request), request, { departmentAccess, allDepartments });
-  // Conversation owner: worker by zoho id / name; customer by chat_id.
-  const merged = ownerCtx(ctx, body.zoho_user_id, workerName ?? (body.chat_id != null ? `tg:${body.chat_id}` : undefined));
-  const profiles = toArray(body.profile);
-  const callerRole = toArray(body.role).join(', ');
-  if (profiles.length > 0) merged.profiles = profiles;
-  if (callerRole) merged.callerRole = callerRole;
-  const displayName = workerName ?? body.company_name?.trim();
-  if (displayName) merged.userName = displayName;
-  // Hard RBAC bypass — only for the trusted BYPASS_USERS allowlist (by worker user_name).
-  if (isBypassUser(workerName)) merged.bypassRbac = true;
-  return merged;
-}
 
 function optionsFrom(body: ChatBody): ChatTurnOptions {
   const opts: ChatTurnOptions = {};
@@ -193,12 +116,12 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/chat', guard, async (request) => {
     const body = chatSchema.parse(request.body);
-    return runChatTurn(body.conversationId, body.message, chatContext(request, body), optionsFrom(body));
+    return runChatTurn(body.conversationId, body.message, buildCallerContext(request, body), optionsFrom(body));
   });
 
   app.post('/chat/stream', guard, async (request, reply) => {
     const body = chatSchema.parse(request.body);
-    const ctx = chatContext(request, body);
+    const ctx = buildCallerContext(request, body);
     const sse = startSSE(reply, sseCorsHeaders(request.headers.origin));
     try {
       await streamChatTurn(body.conversationId, body.message, ctx, sse, optionsFrom(body));

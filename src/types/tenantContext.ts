@@ -4,7 +4,14 @@
  * against this object — never against raw request input.
  */
 
-export const AUDIENCES = ['internal', 'partner'] as const;
+/**
+ * 'internal'  — Octane workers (Zoho widget / Mytrion app callers).
+ * 'partner'   — external partner tenants (dormant scaffold).
+ * 'customer'  — end customers (Telegram / mini-app). Deny-by-default everywhere: tools and
+ *               agents must OPT IN via allowedAudiences, and customer contexts never honor
+ *               client-supplied department scope (see routes/v1/callerIdentity.ts).
+ */
+export const AUDIENCES = ['internal', 'partner', 'customer'] as const;
 export type Audience = (typeof AUDIENCES)[number];
 
 export const ROLES = [
@@ -46,6 +53,11 @@ export interface TenantContext {
   callerRole?: string;
   /** Caller's display name (e.g. Zoho user_name). Available to tool handlers for data scoping. */
   userName?: string;
+  /**
+   * Set by authority.narrowContext when a child agent is acting on the caller's behalf
+   * (e.g. 'billing'). Flows into tool_calls/audit_log attribution — never grants access.
+   */
+  actingAgent?: string;
   requestId: string;
 }
 

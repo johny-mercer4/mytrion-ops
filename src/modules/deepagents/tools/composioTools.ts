@@ -20,6 +20,7 @@ import { logger } from '../../../lib/logger.js';
 import { toolCallRepo } from '../../../repos/toolCallRepo.js';
 import type { TenantContext } from '../../../types/tenantContext.js';
 import { auditFromContext } from '../../audit/auditLogger.js';
+import { sanitizeToolResult, wrapUntrusted } from '../../security/untrusted.js';
 import { requireAgentContext } from '../context.js';
 
 // Composio tool slugs encode the verb (ZOHO_GET_CONTACT, ZOHO_DELETE_DEAL, ZOHO_DESK_UPDATE_TICKET).
@@ -31,7 +32,10 @@ export function isComposioWriteTool(slug: string): boolean {
   return WRITE_VERB.test(slug);
 }
 
-/** afterExecute modifier: audit-log each remote Composio call. Never throws (audit must not break runs). */
+/**
+ * afterExecute modifier: audit-log each remote Composio call (never throws — audit must not
+ * break runs), then wrap the payload as UNTRUSTED external content before it reaches the model.
+ */
 async function auditExecution(context: {
   toolSlug: string;
   toolkitSlug: string;
@@ -60,7 +64,11 @@ async function auditExecution(context: {
   } catch (err) {
     logger.warn({ err, toolSlug }, 'composio audit hook failed');
   }
-  return result;
+  // External SaaS payloads are a trust boundary — the model receives them as inert data.
+  return {
+    ...result,
+    data: { untrusted_content: wrapUntrusted('composio', sanitizeToolResult(result?.data)) },
+  };
 }
 
 /**

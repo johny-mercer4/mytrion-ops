@@ -30,7 +30,9 @@ export const knowledgeSearchTool: ToolManifest<
   inputSchema,
   outputSchema,
   riskClass: 'read',
-  allowedAudiences: ['internal', 'partner'],
+  // 'customer' is a deliberate opt-in: retrieval is audience- and department-scoped in the
+  // repo, so customers only ever see customer-audience docs tagged with their own company id.
+  allowedAudiences: ['internal', 'partner', 'customer'],
   requiredScopes: [],
   rateLimit: { perMinute: 60 },
   async handler(input, ctx) {

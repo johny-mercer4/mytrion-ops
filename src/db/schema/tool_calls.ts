@@ -19,11 +19,16 @@ export const toolCalls = pgTable(
     status: text('status').$type<'ok' | 'error' | 'denied'>().notNull(),
     errorMessage: text('error_message'),
     durationMs: integer('duration_ms'),
+    /** Child agent acting on the caller's behalf ('billing', …) — attribution, never authority. */
+    actingAgent: text('acting_agent'),
+    /** Groups every tool call of one orchestrator/child run (agent_runs.id). */
+    agentRunId: text('agent_run_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     conversationIdx: index('tool_calls_conversation_idx').on(table.conversationId),
     tenantIdx: index('tool_calls_tenant_idx').on(table.tenantId, table.createdAt),
+    agentRunIdx: index('tool_calls_agent_run_idx').on(table.tenantId, table.agentRunId),
   }),
 );
 

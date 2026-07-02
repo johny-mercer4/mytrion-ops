@@ -12,6 +12,7 @@ import { env } from '../config/env.js';
 
 export const KNOWN_DEPARTMENTS = [
   'sales',
+  'marketing',
   'billing',
   'verification',
   'maintenance',

@@ -1,0 +1,21 @@
+import type { AgentManifest } from '../types.js';
+import { STAY_IN_LANE } from './shared.js';
+
+export const marketingAgent: AgentManifest = {
+  key: 'marketing',
+  label: 'Marketing',
+  description:
+    'Owns lead-generation channels (Meta, website, brokers), campaign performance, segmentation, and outreach. Can research the public web.',
+  persona:
+    'You are Octane’s Marketing assistant, supporting the Marketing team with campaigns, ' +
+    'lead-generation channels (Meta, website, brokers), audience segmentation, and outreach ' +
+    `performance. ${STAY_IN_LANE}`,
+  departments: ['marketing', 'sales'],
+  allowedAudiences: ['internal'],
+  tools: ['zoho_crm.query'],
+  composioToolkits: [],
+  ragScope: { departments: ['marketing', 'sales'], allowAllDepartments: false },
+  readOnly: false,
+  webSearch: true,
+  delegatesTo: ['sales'],
+};

@@ -52,6 +52,18 @@ const EnvSchema = z.object({
   // model alias, e.g. gpt-4o-mini / gpt-4o; dated snapshots may not support it).
   DEEP_AGENTS_MODEL: z.string().default(''),
   DEEP_WEB_SEARCH_MODEL: z.string().default('gpt-4o-mini'),
+  // --- Multi-agent core (orchestrator + department child agents) ---
+  // Orchestrator model ('' → DEEP_AGENTS_MODEL → default chat model) and default child model.
+  ORCHESTRATOR_MODEL: z.string().default(''),
+  AGENT_CHILD_MODEL: z.string().default(''),
+  // Child ReAct-loop cap (LangGraph recursionLimit) unless a manifest overrides it.
+  AGENT_MAX_CHILD_ITERATIONS: z.coerce.number().int().positive().max(50).default(8),
+  // Tool output cap inside agent runs (chars) — keeps one chatty tool from flooding a context.
+  AGENT_TOOL_OUTPUT_MAX_CHARS: z.coerce.number().int().positive().default(8000),
+  // Per-run budget guards (BudgetMeter): tool calls, LLM dollars, wall-clock.
+  AGENT_MAX_TOOL_CALLS: z.coerce.number().int().positive().default(20),
+  AGENT_MAX_COST_USD: z.coerce.number().positive().default(0.5),
+  AGENT_MAX_WALL_MS: z.coerce.number().int().positive().default(120_000),
 
   // --- Composio (external tool-calling gateway for the DeepAgents external-tools subagent). ---
   // Off unless FF_COMPOSIO_ENABLED. Shared-org-account model: one fixed Composio user owns the
@@ -189,6 +201,11 @@ const EnvSchema = z.object({
   // Expose the native Telegram toolkit (send/get tools) to the agent. Sends are write-risk →
   // admin-gated by the dispatcher regardless; this just registers the toolkit.
   FF_TELEGRAM_ENABLED: flag('1'),
+  // Strict customer isolation: requests carrying customer markers (carrier_id / application_id /
+  // chat_id) get a locked-down 'customer' context — client-supplied department_scope /
+  // allDepartments / profile / role / user_name are IGNORED and scope derives solely from the
+  // company id. Off = legacy behavior + a loud warning, so the Telegram shim can migrate first.
+  FF_CUSTOMER_SCOPE_STRICT: flag('0'),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

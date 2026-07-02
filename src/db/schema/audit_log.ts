@@ -18,6 +18,9 @@ export const auditLog = pgTable(
     resourceId: text('resource_id'),
     toolName: text('tool_name'),
     status: text('status').$type<'ok' | 'denied' | 'error'>().notNull(),
+    /** Child agent acting on the caller's behalf — audit attribution for multi-agent runs. */
+    actingAgent: text('acting_agent'),
+    agentRunId: text('agent_run_id'),
     detail: jsonb('detail').$type<Record<string, unknown>>(),
     requestId: text('request_id'),
     ip: text('ip'),

@@ -12,6 +12,7 @@ import { retrieve } from '../knowledge/retriever.js';
 import { costTracker } from '../llm/costTracker.js';
 import { createCompletion, newTurnModel, streamTurn } from './completion.js';
 import { buildSystemPrompt, knowledgeGroundingNote } from '../llm/promptBuilder.js';
+import { wrapUntrusted } from '../security/untrusted.js';
 import { toolRegistry } from '../tools/index.js';
 import { messageStore } from './messageStore.js';
 import type { SSEStream } from './streaming.js';
@@ -174,7 +175,11 @@ async function retrieveGrounding(
     const body = passages
       .map((p, i) => `[#${i + 1} · doc ${p.docId} · score ${p.score.toFixed(3)}]\n${p.content}`)
       .join('\n\n');
-    return { content: `${knowledgeGroundingNote()}\n\n${body}`, count: passages.length };
+    // Passages are retrieved DATA (a trust boundary): wrapped so injected instructions inert.
+    return {
+      content: `${knowledgeGroundingNote()}\n\n${wrapUntrusted('kb', body)}`,
+      count: passages.length,
+    };
   } catch (err) {
     logger.warn({ err: errorMessage(err) }, 'RAG grounding retrieval failed; continuing without it');
     return null;

@@ -9,6 +9,16 @@ import { toolRegistry } from '../tools/index.js';
 
 export interface DispatchOptions {
   conversationId?: string;
+  /**
+   * Read-only dispatch (read-only agents like analyst/manager): any non-read tool is denied
+   * here even if the caller's role would allow it — defense in depth behind the tool-binding
+   * filter, since a model can name tools it was never bound to.
+   */
+  readOnly?: boolean;
+  /** Attribution override; defaults to ctx.actingAgent (set by authority.narrowContext). */
+  actingAgent?: string;
+  /** Groups all tool calls of one orchestrator/child run (agent_runs.id). */
+  agentRunId?: string;
 }
 
 function toArgsRecord(raw: unknown): Record<string, unknown> {
@@ -56,12 +66,18 @@ export async function dispatchTool(
     throw new RBACError(access.reason ?? `Access to ${toolName} denied`);
   }
 
+  if (opts.readOnly && tool.riskClass !== 'read') {
+    const reason = `tool '${toolName}' is ${tool.riskClass}-risk and this agent context is read-only`;
+    await recordDenied(ctx, toolName, args, tool.riskClass, opts, reason);
+    throw new RBACError(reason);
+  }
+
   const start = Date.now();
   try {
     const output = await tool.run(rawArgs, ctx);
     const durationMs = Date.now() - start;
     await recordToolCall(ctx, {
-      ...baseEntry(toolName, args, tool.riskClass, opts),
+      ...baseEntry(toolName, args, tool.riskClass, opts, ctx),
       status: 'ok',
       result: output,
       durationMs,
@@ -70,6 +86,7 @@ export async function dispatchTool(
       action: 'tool.call',
       status: 'ok',
       toolName,
+      ...(opts.agentRunId !== undefined ? { agentRunId: opts.agentRunId } : {}),
       detail: { durationMs },
     });
     return output;
@@ -77,7 +94,7 @@ export async function dispatchTool(
     const durationMs = Date.now() - start;
     const message = errorMessage(err);
     await recordToolCall(ctx, {
-      ...baseEntry(toolName, args, tool.riskClass, opts),
+      ...baseEntry(toolName, args, tool.riskClass, opts, ctx),
       status: 'error',
       errorMessage: message,
       durationMs,
@@ -86,6 +103,7 @@ export async function dispatchTool(
       action: 'tool.call',
       status: 'error',
       toolName,
+      ...(opts.agentRunId !== undefined ? { agentRunId: opts.agentRunId } : {}),
       detail: { error: message },
     });
     if (err instanceof ZodError) {
@@ -100,6 +118,7 @@ function baseEntry(
   args: Record<string, unknown>,
   riskClass: NewToolCall['riskClass'],
   opts: DispatchOptions,
+  ctx: TenantContext,
 ): Omit<NewToolCall, 'tenantId' | 'status'> {
   const entry: Omit<NewToolCall, 'tenantId' | 'status'> = {
     toolName,
@@ -107,6 +126,9 @@ function baseEntry(
     arguments: args,
   };
   if (opts.conversationId !== undefined) entry.conversationId = opts.conversationId;
+  const actingAgent = opts.actingAgent ?? ctx.actingAgent;
+  if (actingAgent !== undefined) entry.actingAgent = actingAgent;
+  if (opts.agentRunId !== undefined) entry.agentRunId = opts.agentRunId;
   return entry;
 }
 
@@ -119,7 +141,7 @@ async function recordDenied(
   reason?: string,
 ): Promise<void> {
   await recordToolCall(ctx, {
-    ...baseEntry(toolName, args, riskClass, opts),
+    ...baseEntry(toolName, args, riskClass, opts, ctx),
     status: 'denied',
     ...(reason !== undefined ? { errorMessage: reason } : {}),
   });
@@ -127,6 +149,7 @@ async function recordDenied(
     action: 'tool.call',
     status: 'denied',
     toolName,
+    ...(opts.agentRunId !== undefined ? { agentRunId: opts.agentRunId } : {}),
     ...(reason !== undefined ? { detail: { reason } } : {}),
   });
 }
