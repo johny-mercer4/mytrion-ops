@@ -9,6 +9,7 @@ import { databaseUrl, env } from '../../config/env.js';
 import { dbSslOption } from '../../db/client.js';
 import { logger } from '../../lib/logger.js';
 import { ALL_JOBS } from './catalog.js';
+import { bulkIngestJob } from './workers/knowledgeIngest.js';
 import { applySchedules } from './scheduler.js';
 import { registerWorkers } from './workers/index.js';
 
@@ -43,7 +44,7 @@ export async function startJobs(opts: { withWorkers: boolean }): Promise<void> {
     await b.start();
     started = true;
   }
-  for (const job of ALL_JOBS) {
+  for (const job of [...ALL_JOBS, bulkIngestJob]) {
     await b.createQueue(job.name, job.queue);
   }
   if (opts.withWorkers) {

@@ -10,6 +10,7 @@ import {
   agentRunJob,
 } from '../catalog.js';
 import { handleAgentRunJobs } from './agentRun.js';
+import { bulkIngestJob, handleBulkIngestJobs } from './knowledgeIngest.js';
 import { AUTOMATIONS, makeAutomationHandler } from './automations.js';
 import { handleDeadLetterJobs, sweepStaleCheckpoints } from './maintenance.js';
 
@@ -21,6 +22,7 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
     await boss.work(spec.queue, { batchSize: 1 }, async () => handler());
   }
 
+  await boss.work(bulkIngestJob.name, { batchSize: 1 }, handleBulkIngestJobs);
   await boss.work(checkpointSweepJob.name, { batchSize: 1 }, async () => sweepStaleCheckpoints());
   await boss.work(deadLetterJob.name, { batchSize: 5 }, handleDeadLetterJobs);
 }

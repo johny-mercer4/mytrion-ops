@@ -1,5 +1,5 @@
 import type { AgentManifest } from '../types.js';
-import { STAY_IN_LANE } from './shared.js';
+import { FILE_TOOLS, STAY_IN_LANE } from './shared.js';
 
 export const salesAgent: AgentManifest = {
   key: 'sales',
@@ -11,7 +11,7 @@ export const salesAgent: AgentManifest = {
     `demos, pipeline activity, and sales performance. ${STAY_IN_LANE}`,
   departments: ['sales'],
   allowedAudiences: ['internal'],
-  tools: ['agent.sales_snapshot', 'agent.activity', 'zoho_crm.query'],
+  tools: ['agent.sales_snapshot', 'agent.activity', 'zoho_crm.query', ...FILE_TOOLS],
   composioToolkits: [],
   ragScope: { departments: ['sales'], allowAllDepartments: false },
   readOnly: false,

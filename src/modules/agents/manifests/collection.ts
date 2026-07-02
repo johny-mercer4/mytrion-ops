@@ -1,5 +1,5 @@
 import type { AgentManifest } from '../types.js';
-import { STAY_IN_LANE } from './shared.js';
+import { FILE_TOOLS, STAY_IN_LANE } from './shared.js';
 
 export const collectionAgent: AgentManifest = {
   key: 'collection',
@@ -11,7 +11,7 @@ export const collectionAgent: AgentManifest = {
     `accounts and outstanding balances. ${STAY_IN_LANE}`,
   departments: ['collection'],
   allowedAudiences: ['internal'],
-  tools: ['agent.debtors', 'zoho_crm.query'],
+  tools: ['agent.debtors', 'zoho_crm.query', ...FILE_TOOLS],
   composioToolkits: [],
   ragScope: { departments: ['collection', 'billing'], allowAllDepartments: false },
   readOnly: false,

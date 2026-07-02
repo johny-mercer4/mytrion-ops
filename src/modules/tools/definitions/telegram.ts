@@ -89,28 +89,45 @@ export const telegramSendPhotoTool: ToolManifest<z.infer<typeof sendPhotoInput>,
 };
 
 // ── send document (write) ──────────────────────────────────────────────────
-const sendDocumentInput = z.object({
-  chatId,
-  document: z.string().min(1).describe('Public HTTPS URL or a Telegram file_id.'),
-  caption: z.string().max(1024).optional(),
-  parseMode,
-  disableNotification: z.boolean().optional(),
-});
+const sendDocumentInput = z
+  .object({
+    chatId,
+    document: z.string().min(1).describe('Public HTTPS URL or a Telegram file_id.').optional(),
+    fileId: z
+      .string()
+      .min(1)
+      .max(100)
+      .describe('A stored Octane file id (from file.generate_* / uploads) — a fresh download link is resolved automatically.')
+      .optional(),
+    caption: z.string().max(1024).optional(),
+    parseMode,
+    disableNotification: z.boolean().optional(),
+  })
+  .refine((v) => Boolean(v.document) !== Boolean(v.fileId), {
+    message: 'Provide exactly one of document (URL/file_id) or fileId (stored Octane file).',
+  });
 
 export const telegramSendDocumentTool: ToolManifest<z.infer<typeof sendDocumentInput>, z.infer<typeof sentSchema>> = {
   name: 'telegram.send_document',
   description:
-    'Send a document/file to a Telegram chat (preserves original format, unlike a photo). Omit `chatId` to use the main chat. `document` is a publicly reachable HTTPS URL or a Telegram file_id. Optional caption (≤1024 chars).',
+    'Send a document/file to a Telegram chat (preserves original format, unlike a photo). Omit `chatId` to use the main chat. Provide either `document` (publicly reachable HTTPS URL / Telegram file_id) OR `fileId` (a stored Octane file — link resolved automatically). Optional caption (≤1024 chars).',
   inputSchema: sendDocumentInput,
   outputSchema: sentSchema,
   riskClass: 'write',
   allowedAudiences: ['internal'],
   requiredScopes: ['telegram:write'],
   rateLimit: { perMinute: 20 },
-  async handler(input) {
+  async handler(input, ctx) {
+    let documentUrl = input.document;
+    if (input.fileId) {
+      // RBAC-checked presign; requires the storage endpoint to be reachable by Telegram's servers.
+      const { presignFile } = await import('../../files/fileService.js');
+      const { url } = await presignFile(ctx, input.fileId);
+      documentUrl = url;
+    }
     const m = await callTelegram<TelegramMessage>('sendDocument', {
       chat_id: resolveChatId(input.chatId),
-      document: input.document,
+      document: documentUrl,
       caption: input.caption,
       parse_mode: input.parseMode,
       disable_notification: input.disableNotification,

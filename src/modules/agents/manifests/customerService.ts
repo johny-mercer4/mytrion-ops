@@ -1,5 +1,5 @@
 import type { AgentManifest } from '../types.js';
-import { STAY_IN_LANE } from './shared.js';
+import { FILE_TOOLS, STAY_IN_LANE } from './shared.js';
 
 export const customerServiceAgent: AgentManifest = {
   key: 'customer-service',
@@ -11,7 +11,7 @@ export const customerServiceAgent: AgentManifest = {
     `customer inquiries, and contact lookups. ${STAY_IN_LANE}`,
   departments: ['customer-service'],
   allowedAudiences: ['internal'],
-  tools: ['zoho_desk.search_tickets', 'zoho_crm.query'],
+  tools: ['zoho_desk.search_tickets', 'zoho_crm.query', ...FILE_TOOLS],
   composioToolkits: [],
   ragScope: { departments: ['customer-service'], allowAllDepartments: false },
   readOnly: false,

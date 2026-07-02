@@ -10,6 +10,13 @@ import { agentSalesSnapshotTool } from './definitions/agent_sales_snapshot.js';
 import { agentDebtorsTool } from './definitions/agent_debtors.js';
 import { agentActivityTool } from './definitions/agent_activity.js';
 import {
+  fileGenerateCsvTool,
+  fileGenerateExcelTool,
+  fileGeneratePdfTool,
+  fileGetLinkTool,
+} from './definitions/file_generate.js';
+import { fileAnalyzeTool, fileIngestToKnowledgeTool } from './definitions/file_analyze.js';
+import {
   telegramGetChatTool,
   telegramGetMeTool,
   telegramGetUpdatesTool,
@@ -33,6 +40,18 @@ export const allTools: RegisteredTool[] = [
   registerTool(agentSalesSnapshotTool),
   registerTool(agentDebtorsTool),
   registerTool(agentActivityTool),
+  // File generation/analysis (flag-gated; storage = MinIO/S3). generate/analyze are read-class
+  // by ratified decision (tenant-scoped, audited artifacts); ingest_to_knowledge stays write.
+  ...(env.FF_FILES_ENABLED
+    ? [
+        registerTool(fileGenerateCsvTool),
+        registerTool(fileGenerateExcelTool),
+        registerTool(fileGeneratePdfTool),
+        registerTool(fileGetLinkTool),
+        registerTool(fileAnalyzeTool),
+        registerTool(fileIngestToKnowledgeTool),
+      ]
+    : []),
   // Native Telegram toolkit (flag-gated). Sends are write-risk → admin-gated by the dispatcher.
   ...(env.FF_TELEGRAM_ENABLED
     ? [

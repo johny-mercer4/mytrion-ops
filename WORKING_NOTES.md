@@ -907,3 +907,32 @@ Collection added as the 10th agent. This session = M0, everything default-off / 
   the caller's), RRF fusion math/determinism, full-text degradation, grounding-block markers.
 - Deferred/noted: citation objects aren't yet persisted to message metadata (markers live in the
   grounding block; the model cites [Sn] in its answer text) — revisit with the web app citations UI.
+
+## 2026-07-02 — Agentic Core v2, M4: files on MinIO (generate + analyze + routes + Telegram delivery)
+
+- **Storage**: `modules/files/storage/` ObjectStorage interface + S3 adapter (@aws-sdk/client-s3,
+  forcePathStyle for MinIO; R2 swap = env-only: S3_ENDPOINT/S3_REGION=auto/S3_FORCE_PATH_STYLE=0).
+  Lazy singleton + setStorageForTests seam. Keys: `<tenant>/<kind>/<yyyy-mm>/<fileId>/<name>`
+  (sanitized, no '..'). getBuffer enforces PARSE_MAX_BYTES via HEAD + stream cap.
+- **Catalog**: `file_assets` (migration 0011) + fileRepo — visibility mirrors knowledge RBAC
+  (NULL-dept tenant-global OR caller dept OR ownership OR allDepartmentAccess; exported
+  fileVisibilityFilter for SQL assertions). storeFile: size caps, customer callers NEVER set
+  department tags (owner-scoped only), audit `file.store`/`file.delete`.
+- **Generation** (riskClass 'read' — the plan-ratified deviation, commented in code):
+  file.generate_csv (csv-stringify, 100k-row cap), file.generate_excel (exceljs, per-sheet specs),
+  file.generate_pdf (pdfkit, structured title/sections/tables spec, 2k-row guard), file.get_link.
+- **Analysis**: parse/ (unpdf 200-page cap, exceljs 50k-row, csv-parse, mammoth docx, text;
+  2M-char extract cap) → file.analyze (read; optional question → one LLM pass over UNTRUSTED-
+  wrapped content) + file.ingest_to_knowledge (WRITE, admin-sentinel; non-admins can only tag
+  their own departments; >2MB routes through new `knowledge.bulk-ingest` pg-boss queue with
+  agent_tasks tracking — finally unlocks pdf/xlsx/docx → RAG).
+- **Exposure**: FILE_TOOLS (5 read tools) added to ALL 10 manifests (registered only when
+  FF_FILES_ENABLED, inert otherwise); tool registration flag-gated in tools/index.ts so tool
+  counts/tests unchanged with the flag off. Routes `/v1/files` (multipart upload w/ per-route cap,
+  list, metadata, presigned download, delete; global multipart ceiling raised to FILE_MAX_SIZE_MB).
+  telegram.send_document now accepts `fileId` (RBAC-checked fresh presign; requires MinIO to be
+  publicly reachable for Telegram fetches — else fall back to a URL upload later).
+- docker-compose: added `minio` service (console :9001; bucket `octane-files` created via console).
+- **Tests: 258 green.** files (generators round-trip via exceljs/csv-parse/%PDF header, caps,
+  key sanitization, hostile customer department tag ignored), file-rbac (visibility SQL scoping +
+  ownership escape hatch; file tools available to every real department; ingest stays admin-sentinel).

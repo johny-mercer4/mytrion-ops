@@ -12,3 +12,16 @@ export const STAY_IN_LANE =
 export const READ_ONLY_RULE =
   'You are strictly read-only: you may look up and analyze data, but never perform writes or ' +
   'destructive actions — recommend them for a human to execute instead.';
+
+/**
+ * File capability tools every department agent gets (read-class: generate/export/analyze).
+ * They register only when FF_FILES_ENABLED, so listing them here is inert until the flag flips.
+ * file.ingest_to_knowledge is deliberately NOT here (write-risk, admin-sentinel via derivation).
+ */
+export const FILE_TOOLS = [
+  'file.generate_csv',
+  'file.generate_excel',
+  'file.generate_pdf',
+  'file.get_link',
+  'file.analyze',
+] as const;

@@ -189,6 +189,21 @@ const EnvSchema = z.object({
   // R2 ignores region but the S3 SDK requires one; 'auto' is correct for R2.
   R2_REGION: z.string().default('auto'),
 
+  // --- File storage: MinIO (self-hosted, S3-compatible). R2 swaps in later via env only:
+  // set S3_ENDPOINT to the R2 endpoint, S3_REGION=auto, S3_FORCE_PATH_STYLE=0.
+  S3_ENDPOINT: z.string().default(''),
+  S3_ACCESS_KEY_ID: z.string().default(''),
+  S3_SECRET_ACCESS_KEY: z.string().default(''),
+  S3_BUCKET: z.string().default(''),
+  S3_REGION: z.string().default('us-east-1'),
+  // MinIO requires path-style addressing (bucket in the path, not the host).
+  S3_FORCE_PATH_STYLE: flag('1'),
+  S3_PRESIGN_TTL_SECONDS: z.coerce.number().int().positive().max(86_400).default(900),
+  // Hard cap for uploads AND generated artifacts.
+  FILE_MAX_SIZE_MB: z.coerce.number().int().positive().max(200).default(25),
+  // Parse-path memory guardrail (Render starter plan): max bytes loaded for file analysis.
+  PARSE_MAX_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
+
   // --- Browser automation: Browserbase ---
   BROWSERBASE_API_KEY: z.string().default(''),
   BROWSERBASE_PROJECT_ID: z.string().default(''),
@@ -232,6 +247,8 @@ const EnvSchema = z.object({
   FF_ORCHESTRATOR_ENABLED: flag('0'),
   // Durable LangGraph threads (PostgresSaver in the 'langgraph' schema). Off = stateless runs.
   FF_AGENT_CHECKPOINTS: flag('0'),
+  // File generation/analysis tools + /v1/files routes (MinIO/S3 storage).
+  FF_FILES_ENABLED: flag('0'),
   // Background jobs (pg-boss on the app Postgres, own 'pgboss' schema — self-migrating).
   FF_JOBS_ENABLED: flag('0'),
   // inline: this process runs boss + workers + schedules (default, single Render service).
@@ -294,6 +311,12 @@ export function assertRuntimeSecrets(): void {
   if (env.FF_ZOHO_MCP_ENABLED && !env.ZOHO_MCP_URL) missing.push('ZOHO_MCP_URL');
   if (env.FF_COMPOSIO_ENABLED && !env.COMPOSIO_API_KEY) missing.push('COMPOSIO_API_KEY');
   if (env.FF_TELEGRAM_ENABLED && !env.TELEGRAM_BOT_TOKEN) missing.push('TELEGRAM_BOT_TOKEN');
+  if (env.FF_FILES_ENABLED) {
+    if (!env.S3_ENDPOINT) missing.push('S3_ENDPOINT');
+    if (!env.S3_ACCESS_KEY_ID) missing.push('S3_ACCESS_KEY_ID');
+    if (!env.S3_SECRET_ACCESS_KEY) missing.push('S3_SECRET_ACCESS_KEY');
+    if (!env.S3_BUCKET) missing.push('S3_BUCKET');
+  }
 
   if (missing.length === 0) return;
 

@@ -20,6 +20,7 @@ export default defineConfig({
     './src/db/schema/money_code_requests.ts',
     './src/db/schema/agent_runs.ts',
     './src/db/schema/agent_tasks.ts',
+    './src/db/schema/file_assets.ts',
   ],
   out: './src/db/migrations',
   dialect: 'postgresql',
