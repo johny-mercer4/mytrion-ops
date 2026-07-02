@@ -19,7 +19,8 @@ export function buildGroundingBlock(passages: RetrievedPassage[]): {
   const body = passages
     .map((p, i) => {
       const title = p.docTitle ? ` · ${p.docTitle}` : '';
-      return `[S${i + 1}${title} · doc ${p.docId}]\n${p.content}`;
+      const staleNote = p.stale ? ' · may be outdated' : '';
+      return `[S${i + 1}${title} · doc ${p.docId}${staleNote}]\n${p.content}`;
     })
     .join('\n\n');
   const groundingBlock =

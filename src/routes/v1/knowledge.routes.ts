@@ -183,6 +183,14 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
   // POST alias — Zoho's server-side proxy reliably supports POST but not always DELETE.
   app.post<{ Params: { id: string } }>('/knowledge/docs/:id/delete', guard, deleteOne);
 
+  // Freshness attest: resets last_verified_at so retrieval stops demoting the doc as stale.
+  app.post<{ Params: { id: string } }>('/knowledge/docs/:id/verify', guard, async (request) => {
+    const ctx = withDepartmentAccess(requireContext(request), request);
+    const verified = await knowledgeRepo.markVerified(ctx, request.params.id);
+    if (!verified) throw new NotFoundError('Document not found');
+    return { verified: true, id: request.params.id };
+  });
+
   // Bulk delete: POST /knowledge/docs/delete  { ids: [...] }
   app.post('/knowledge/docs/delete', guard, async (request) => {
     const ctx = requireContext(request);

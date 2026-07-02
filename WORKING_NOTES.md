@@ -955,3 +955,30 @@ Collection added as the 10th agent. This session = M0, everything default-off / 
   scraping = connect the key in the Composio dashboard; no code change (verbs are read-class).
 - **Tests: 265 green** — allowlist deny-by-default + suffix/lookalike cases, nested URL extraction,
   write-verb classification, flag-off no-op, rate bucket window behavior.
+
+## 2026-07-02 — Agentic Core v2, M6: write approvals, agent memory, knowledge freshness, golden policy suite
+
+- **Write approvals (FF_WRITE_APPROVALS — unlocks agent writes safely)**: migration 0012 `approvals`
+  table + approvalRepo (pending→approved/denied once, TTL 24h, hourly expiry cron). dispatchTool
+  gains `viaAgent`: agent-proposed non-read tools park as pending approvals AFTER checkAccess (an
+  agent can't queue what its principal couldn't do — approval is a gate, never authority); the model
+  receives {pendingApprovalId, message}. agentTools wrappers set viaAgent — direct API/admin usage
+  untouched. `/v1/approvals` (admin-only): list, approve → approvalExecutor re-builds the PROPOSER's
+  snapshot ctx, re-runs checkAccess (policy drift), dispatches with original attribution, records
+  executed/failed; deny. Decisions only via authenticated HTTP (never Telegram callbacks).
+- **Agent memory (FF_AGENT_MEMORY)**: migration 0013 `agent_memories` (embedding+HNSW, importance,
+  per-user, dept-scoped like knowledge; deliberately NOT knowledge_docs — model-generated text stays
+  UNTRUSTED + decays). memoryRepo (search bumps access stats; evictBeyondCap 500/(agent,dept);
+  decayAndEvict exp half-life, drop <0.05). agents/memory.ts: end-of-turn distillation (≤3 durable
+  facts, fire-and-forget) + recall appended to scoped RAG output inside UNTRUSTED source=memory
+  ("do NOT cite as knowledge"). Nightly `maintenance.memory-decay` cron.
+- **Knowledge freshness**: migration 0014 knowledge_docs origin/effective_at/expires_at/
+  last_verified_at. Staleness computed AT QUERY TIME in both hybrid legs (no scan job needed):
+  stale = past expiry OR unverified > STALE_DOC_DAYS (180) → half weight in RRF fusion + "may be
+  outdated" in citation headers. POST /v1/knowledge/docs/:id/verify resets last_verified_at.
+  Deferred: FF_INGEST_AUTOTAG auto-tagging (suggestion-only feature — later).
+- **Golden policy suite** (tests/unit/agent-golden.test.ts): locks per-agent posture — exact bound
+  registry tools under the agent's own-department caller, effective RAG departments, read-only set
+  == {analyst, manager}, valid delegatesTo, non-trivial personas; adding an AGENT_KEY without a
+  golden record fails CI. Behavioral scripted-model evals deferred to scripts/evalLive (follow-up).
+- **Tests: 281 green** (approvals park/deny-before-park/legacy-off/executor-outcome included).

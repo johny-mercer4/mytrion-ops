@@ -85,6 +85,27 @@
       "when": 1782960283273,
       "tag": "0011_fast_vanisher",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782960837220,
+      "tag": "0012_ordinary_triathlon",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1782960990772,
+      "tag": "0013_blushing_speed_demon",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1782961055681,
+      "tag": "0014_famous_the_stranger",
+      "breakpoints": true
     }
   ]
 }

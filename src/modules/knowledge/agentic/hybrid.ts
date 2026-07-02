@@ -34,7 +34,9 @@ export async function hybridRetrieve(
 
   const addRanking = (chunks: HybridChunk[]): void => {
     chunks.forEach((chunk, rank) => {
-      const increment = 1 / (env.RAG_RRF_K + rank + 1);
+      // Stale docs (past expiry / unverified beyond STALE_DOC_DAYS) count half.
+      const staleFactor = chunk.stale ? 0.5 : 1;
+      const increment = staleFactor / (env.RAG_RRF_K + rank + 1);
       const existing = byId.get(chunk.id);
       if (existing) {
         existing.fusedScore += increment;

@@ -66,6 +66,9 @@ const EnvSchema = z.object({
   AGENT_MAX_WALL_MS: z.coerce.number().int().positive().default(120_000),
   // Checkpointed threads idle longer than this are swept by a background job.
   AGENT_CHECKPOINT_TTL_DAYS: z.coerce.number().int().positive().default(30),
+  // Long-term agent memory (FF_AGENT_MEMORY): decay half-life + per-(agent,dept) row cap.
+  AGENT_MEMORY_HALFLIFE_DAYS: z.coerce.number().int().positive().default(30),
+  AGENT_MEMORY_MAX_PER_KEY: z.coerce.number().int().positive().default(500),
   // --- Agentic RAG ---
   // Planner/judge model for query decomposition + sufficiency ('' → default chat model).
   RAG_PLANNER_MODEL: z.string().default(''),
@@ -76,6 +79,8 @@ const EnvSchema = z.object({
   // Short-circuit the sufficiency judge when the top fused score is at least this
   // (0.032 ≈ rank-1 in both legs for a single query at RRF_K=60).
   RAG_SUFFICIENT_SCORE: z.coerce.number().positive().default(0.032),
+  // Docs unverified for longer than this are demoted in retrieval and flagged in citations.
+  STALE_DOC_DAYS: z.coerce.number().int().positive().default(180),
   // Optional LangSmith tracing passthrough (traces contain message content — staging only).
   LANGSMITH_TRACING: z.string().default(''),
   LANGSMITH_API_KEY: z.string().default(''),
@@ -260,6 +265,11 @@ const EnvSchema = z.object({
   FF_FILES_ENABLED: flag('0'),
   // Browser automation via Composio toolkits (admin-gated; domain-allowlisted; fail closed).
   FF_BROWSER_ENABLED: flag('0'),
+  // Human-in-the-loop approvals: agent-proposed write/destructive tools park as pending
+  // approvals (24h TTL) instead of executing. Unlocks agent writes safely.
+  FF_WRITE_APPROVALS: flag('0'),
+  // Long-term agent memory: end-of-run distillation + UNTRUSTED recall in scoped RAG.
+  FF_AGENT_MEMORY: flag('0'),
   // Interactive browser WRITE actions (navigate/click/fill/…). Off = scrape/read-class only.
   FF_BROWSER_WRITES: flag('0'),
   // Background jobs (pg-boss on the app Postgres, own 'pgboss' schema — self-migrating).

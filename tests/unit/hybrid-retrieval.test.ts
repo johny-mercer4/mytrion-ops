@@ -29,6 +29,7 @@ function chunk(id: string, over: Partial<HybridChunk> = {}): HybridChunk {
     chunkIndex: 0,
     content: `content ${id}`,
     departmentAccess: null,
+    stale: false,
     score: 0.5,
     ...over,
   };

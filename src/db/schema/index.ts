@@ -12,3 +12,5 @@ export * from './money_code_requests.js';
 export * from './agent_runs.js';
 export * from './agent_tasks.js';
 export * from './file_assets.js';
+export * from './approvals.js';
+export * from './agent_memories.js';

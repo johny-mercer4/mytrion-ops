@@ -12,6 +12,7 @@ import { env } from '../../../config/env.js';
 import { retrieve } from '../../knowledge/retriever.js';
 import { wrapUntrusted } from '../../security/untrusted.js';
 import { effectiveRetrievalContext } from '../authority.js';
+import { recallMemories } from '../memory.js';
 import type { AgentManifest } from '../types.js';
 import type { TenantContext } from '../../../types/tenantContext.js';
 
@@ -28,7 +29,8 @@ export function buildScopedRagTool(manifest: AgentManifest, callerCtx: TenantCon
         const webHint = result.suggestWebSearch
           ? '\n\n(Coverage looks thin — if this needs public/current information, report that the knowledge base lacks coverage.)'
           : '';
-        return `${result.groundingBlock}${webHint}`;
+        const memory = await recallMemories(retrievalCtx, manifest.key, query);
+        return `${result.groundingBlock}${webHint}${memory}`;
       }
       const results = await retrieve(retrievalCtx, query, limit);
       if (results.length === 0) return 'No relevant passages found in the knowledge base.';

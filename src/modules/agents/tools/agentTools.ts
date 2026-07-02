@@ -41,6 +41,7 @@ function toLangChainTool(
           ...(conversationId ? { conversationId } : {}),
           ...(agentRunId ? { agentRunId } : {}),
           ...(manifest.readOnly ? { readOnly: true } : {}),
+          viaAgent: true,
         });
         return sanitizeToolResult(out, env.AGENT_TOOL_OUTPUT_MAX_CHARS);
       } catch (err) {

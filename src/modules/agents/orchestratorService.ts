@@ -216,6 +216,12 @@ async function executeTurn(
     logger.warn({ err: errorMessage(err) }, 'agent: turn bookkeeping failed');
   }
 
+  if (status === 'ok') {
+    // Fire-and-forget distillation — memory must never delay or fail a turn.
+    const { distillMemories } = await import('./memory.js');
+    void distillMemories(ctx, agentKey, message, finalText);
+  }
+
   const result: AgentTurnResult = {
     conversationId: conv.id,
     message: finalText,

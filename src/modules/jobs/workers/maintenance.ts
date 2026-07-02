@@ -39,6 +39,21 @@ export async function sweepStaleCheckpoints(): Promise<void> {
   }
 }
 
+/** Hourly: expire pending approvals past their TTL (audited count only). */
+export async function sweepExpiredApprovals(): Promise<void> {
+  const { approvalRepo } = await import('../../../repos/approvalRepo.js');
+  const expired = await approvalRepo.expireStale();
+  if (expired > 0) logger.info({ expired }, 'expired stale write-approvals');
+}
+
+/** Nightly agent-memory decay/eviction (no-op when the flag is off). */
+export async function decayAgentMemories(): Promise<void> {
+  if (!env.FF_AGENT_MEMORY) return;
+  const { memoryRepo } = await import('../../../repos/memoryRepo.js');
+  const removed = await memoryRepo.decayAndEvict(env.AGENT_MEMORY_HALFLIFE_DAYS);
+  if (removed > 0) logger.info({ removed }, 'agent-memory decay evicted rows');
+}
+
 export async function handleDeadLetterJobs(jobs: Job<unknown>[]): Promise<void> {
   for (const job of jobs) {
     const data = (job.data ?? {}) as { taskId?: string; ctx?: { tenantId?: string } };

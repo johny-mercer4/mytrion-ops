@@ -50,6 +50,16 @@ export function departmentFilter(ctx: TenantContext): SQL | undefined {
 }
 
 export const knowledgeRepo = {
+  /** Freshness attest: reset the doc's last_verified_at (admin action via /knowledge/docs/:id/verify). */
+  async markVerified(ctx: TenantContext, id: string): Promise<boolean> {
+    const rows = await db
+      .update(knowledgeDocs)
+      .set({ lastVerifiedAt: sql`now()`, updatedAt: sql`now()` })
+      .where(and(eq(knowledgeDocs.tenantId, ctx.tenantId), eq(knowledgeDocs.id, id)))
+      .returning({ id: knowledgeDocs.id });
+    return rows.length > 0;
+  },
+
   async createDoc(
     ctx: TenantContext,
     input: {

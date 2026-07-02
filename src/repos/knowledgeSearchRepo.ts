@@ -5,6 +5,7 @@
  * unable to widen access (the RBAC-leakage suite asserts this on the built SQL).
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
+import { env } from '../config/env.js';
 import { db } from '../db/client.js';
 import { knowledgeChunks, knowledgeDocs } from '../db/schema/index.js';
 import { normalizeDepartments } from '../lib/department.js';
@@ -24,6 +25,8 @@ export interface HybridChunk {
   chunkIndex: number;
   content: string;
   departmentAccess: string | null;
+  /** Doc past expiry or unverified beyond STALE_DOC_DAYS — demoted in fusion + flagged in citations. */
+  stale: boolean;
   /** Leg-specific relevance (cosine similarity / ts_rank_cd) — used for ranking only. */
   score: number;
 }
@@ -46,14 +49,18 @@ export function resolveRetrievalContext(ctx: TenantContext, scope?: RetrievalSco
   return { ...ctx, departments: intersect(normalizeDepartments(ctx.departments), cap) };
 }
 
-const baseSelection = {
-  id: knowledgeChunks.id,
-  docId: knowledgeChunks.docId,
-  docTitle: knowledgeDocs.title,
-  chunkIndex: knowledgeChunks.chunkIndex,
-  content: knowledgeChunks.content,
-  departmentAccess: knowledgeChunks.departmentAccess,
-};
+function baseSelection() {
+  return {
+    id: knowledgeChunks.id,
+    docId: knowledgeChunks.docId,
+    docTitle: knowledgeDocs.title,
+    chunkIndex: knowledgeChunks.chunkIndex,
+    content: knowledgeChunks.content,
+    departmentAccess: knowledgeChunks.departmentAccess,
+    stale: sql<boolean>`coalesce(${knowledgeDocs.expiresAt} < now(), false)
+      OR coalesce(${knowledgeDocs.lastVerifiedAt} < now() - make_interval(days => ${env.STALE_DOC_DAYS}), false)`,
+  };
+}
 
 export const knowledgeSearchRepo = {
   /** Vector leg (exposed as a builder so tests can assert the WHERE offline via .toSQL()). */
@@ -62,7 +69,7 @@ export const knowledgeSearchRepo = {
     const literal = toVectorLiteral(embedding);
     return db
       .select({
-        ...baseSelection,
+        ...baseSelection(),
         score: sql<number>`1 - (${knowledgeChunks.embedding} <=> ${literal}::vector)`,
       })
       .from(knowledgeChunks)
@@ -84,7 +91,7 @@ export const knowledgeSearchRepo = {
     const tsQuery = sql`websearch_to_tsquery('english', ${query})`;
     return db
       .select({
-        ...baseSelection,
+        ...baseSelection(),
         score: sql<number>`ts_rank_cd(${knowledgeChunks.contentTsv}, ${tsQuery})`,
       })
       .from(knowledgeChunks)

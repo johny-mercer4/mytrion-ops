@@ -21,6 +21,8 @@ export default defineConfig({
     './src/db/schema/agent_runs.ts',
     './src/db/schema/agent_tasks.ts',
     './src/db/schema/file_assets.ts',
+    './src/db/schema/approvals.ts',
+    './src/db/schema/agent_memories.ts',
   ],
   out: './src/db/migrations',
   dialect: 'postgresql',

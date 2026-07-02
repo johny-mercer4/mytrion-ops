@@ -99,6 +99,20 @@ export const verificationRecheckJob = defineJob({
   queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 600, deadLetter: DEAD_LETTER_QUEUE },
 });
 
+/** Daily: decay agent-memory importance and evict faded/expired rows. */
+export const memoryDecayJob = defineJob({
+  name: 'maintenance.memory-decay',
+  schema: emptyPayload,
+  queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 300 },
+});
+
+/** Marks stale pending write-approvals expired (24h TTL). */
+export const approvalsExpiryJob = defineJob({
+  name: 'maintenance.approvals-expiry',
+  schema: emptyPayload,
+  queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 300 },
+});
+
 /** Deletes checkpointed LangGraph threads idle longer than AGENT_CHECKPOINT_TTL_DAYS. */
 export const checkpointSweepJob = defineJob({
   name: 'maintenance.checkpoint-ttl-sweep',
@@ -115,6 +129,8 @@ export const deadLetterJob = defineJob({
 
 export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
   agentRunJob,
+  approvalsExpiryJob,
+  memoryDecayJob,
   debtorSweepJob,
   retentionScanJob,
   verificationRecheckJob,
@@ -128,4 +144,6 @@ export const CRON_SCHEDULES: Array<{ name: string; cron: string }> = [
   { name: retentionScanJob.name, cron: '0 9 * * 1' }, // Monday morning
   { name: verificationRecheckJob.name, cron: '0 7 * * *' }, // daily
   { name: checkpointSweepJob.name, cron: '30 3 * * *' }, // nightly
+  { name: approvalsExpiryJob.name, cron: '15 * * * *' }, // hourly
+  { name: memoryDecayJob.name, cron: '45 3 * * *' }, // nightly
 ];

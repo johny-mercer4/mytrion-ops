@@ -24,6 +24,12 @@ export const knowledgeDocs = pgTable(
     checksum: text('checksum'),
     chunkCount: integer('chunk_count').notNull().default(0),
     error: text('error'),
+    /** Where the content came from: 'upload' | 'file' | 'api' | 'url'. */
+    origin: text('origin'),
+    /** Freshness lifecycle: retrieval demotes docs past expiry or unverified beyond STALE_DOC_DAYS. */
+    effectiveAt: timestamp('effective_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    lastVerifiedAt: timestamp('last_verified_at', { withTimezone: true }),
     metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

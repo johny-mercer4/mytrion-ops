@@ -1,4 +1,5 @@
 import { ZodError } from 'zod';
+import { env } from '../../config/env.js';
 import type { NewToolCall } from '../../db/schema/index.js';
 import { errorMessage, RBACError, ToolError, ValidationError } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
@@ -19,6 +20,56 @@ export interface DispatchOptions {
   actingAgent?: string;
   /** Groups all tool calls of one orchestrator/child run (agent_runs.id). */
   agentRunId?: string;
+  /**
+   * The call was proposed by an AGENT (model decision), not direct API usage. With
+   * FF_WRITE_APPROVALS on, non-read tools park as a pending approval instead of executing.
+   */
+  viaAgent?: boolean;
+}
+
+const APPROVAL_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Park an agent-proposed write as a pending approval. The proposal is only parked when the
+ * proposer is ALREADY authorized (checkAccess ran first) — an agent can't queue what its
+ * principal couldn't do; approval adds a human gate on top, never authority.
+ */
+async function requestApproval(
+  ctx: TenantContext,
+  toolName: string,
+  riskClass: 'write' | 'destructive',
+  args: Record<string, unknown>,
+  opts: DispatchOptions,
+): Promise<unknown> {
+  const { approvalRepo } = await import('../../repos/approvalRepo.js');
+  const { tenantContextSchema } = await import('../jobs/catalog.js');
+  const snapshot = tenantContextSchema.parse(ctx) as Record<string, unknown>;
+  const actingAgent = opts.actingAgent ?? ctx.actingAgent;
+  const approval = await approvalRepo.create(ctx, {
+    requestedBy: ctx.userId,
+    ...(actingAgent !== undefined ? { actingAgent } : {}),
+    ...(opts.agentRunId ? { agentRunId: opts.agentRunId } : {}),
+    ...(opts.conversationId ? { conversationId: opts.conversationId } : {}),
+    toolName,
+    riskClass,
+    arguments: args,
+    ctxSnapshot: snapshot,
+    expiresAt: new Date(Date.now() + APPROVAL_TTL_MS),
+  });
+  await auditFromContext(ctx, {
+    action: 'tool.approval_requested',
+    status: 'ok',
+    toolName,
+    ...(opts.agentRunId !== undefined ? { agentRunId: opts.agentRunId } : {}),
+    detail: { approvalId: approval.id, riskClass },
+  });
+  return {
+    status: 'pending_approval',
+    pendingApprovalId: approval.id,
+    message:
+      `This ${riskClass} action requires human approval. It has been queued as approval ` +
+      `${approval.id} (expires in 24h). Tell the user an admin must approve it at /v1/approvals.`,
+  };
 }
 
 function toArgsRecord(raw: unknown): Record<string, unknown> {
@@ -70,6 +121,10 @@ export async function dispatchTool(
     const reason = `tool '${toolName}' is ${tool.riskClass}-risk and this agent context is read-only`;
     await recordDenied(ctx, toolName, args, tool.riskClass, opts, reason);
     throw new RBACError(reason);
+  }
+
+  if (env.FF_WRITE_APPROVALS && opts.viaAgent && tool.riskClass !== 'read') {
+    return requestApproval(ctx, toolName, tool.riskClass, args, opts);
   }
 
   const start = Date.now();
