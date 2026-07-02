@@ -40,8 +40,9 @@ export interface UpdateDocPatch {
  * RBAC department filter for retrieval. Managers (allDepartmentAccess) get no restriction.
  * Otherwise: always include global (NULL) chunks, plus any in the caller's departments.
  * Returns undefined when unrestricted so `and(...)` simply drops it.
+ * Exported: the SINGLE chokepoint every retrieval leg (vector, full-text, memory) must reuse.
  */
-function departmentFilter(ctx: TenantContext): SQL | undefined {
+export function departmentFilter(ctx: TenantContext): SQL | undefined {
   if (ctx.allDepartmentAccess) return undefined;
   const col = knowledgeChunks.departmentAccess;
   if (ctx.departments.length === 0) return isNull(col);

@@ -66,6 +66,16 @@ const EnvSchema = z.object({
   AGENT_MAX_WALL_MS: z.coerce.number().int().positive().default(120_000),
   // Checkpointed threads idle longer than this are swept by a background job.
   AGENT_CHECKPOINT_TTL_DAYS: z.coerce.number().int().positive().default(30),
+  // --- Agentic RAG ---
+  // Planner/judge model for query decomposition + sufficiency ('' → default chat model).
+  RAG_PLANNER_MODEL: z.string().default(''),
+  RAG_MAX_HOPS: z.coerce.number().int().min(1).max(4).default(2),
+  RAG_MULTIQUERY_MAX: z.coerce.number().int().min(1).max(5).default(3),
+  RAG_RRF_K: z.coerce.number().int().positive().default(60),
+  RAG_CANDIDATES_PER_LEG: z.coerce.number().int().min(5).max(100).default(30),
+  // Short-circuit the sufficiency judge when the top fused score is at least this
+  // (0.032 ≈ rank-1 in both legs for a single query at RRF_K=60).
+  RAG_SUFFICIENT_SCORE: z.coerce.number().positive().default(0.032),
   // Optional LangSmith tracing passthrough (traces contain message content — staging only).
   LANGSMITH_TRACING: z.string().default(''),
   LANGSMITH_API_KEY: z.string().default(''),
@@ -189,6 +199,12 @@ const EnvSchema = z.object({
   FF_KNOWLEDGE_INGEST_ENABLED: flag('1'),
   // Always-on RAG: inject RBAC-scoped pgvector passages into every chat turn.
   FF_RAG_ENABLED: flag('1'),
+  // Hybrid retrieval (vector + full-text RRF fusion). Requires the content_tsv migration.
+  FF_RAG_HYBRID: flag('0'),
+  // Agentic retrieval loop (multi-query planning + sufficiency-driven refinement + citations).
+  FF_AGENTIC_RAG: flag('0'),
+  // Optional LLM rerank of fused candidates (adds a model call per retrieval).
+  FF_RAG_RERANK: flag('0'),
   // Route worker/tool-calling turns to Groq (gpt-oss). Off → all turns stay on OpenAI.
   FF_GROQ_ENABLED: flag('0'),
   // Expose Zoho MCP tools to the chat agent (read tools only unless FF_ZOHO_MCP_WRITES). Off by default.

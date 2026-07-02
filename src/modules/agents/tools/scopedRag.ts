@@ -8,6 +8,7 @@ import { tool, type StructuredTool } from '@langchain/core/tools';
 // exactOptionalPropertyTypes on _def.description).
 import * as z from 'zod/v4';
 import { DEFAULT_RETRIEVAL_K, MAX_RETRIEVAL_K } from '../../../config/constants.js';
+import { env } from '../../../config/env.js';
 import { retrieve } from '../../knowledge/retriever.js';
 import { wrapUntrusted } from '../../security/untrusted.js';
 import { effectiveRetrievalContext } from '../authority.js';
@@ -18,6 +19,17 @@ export function buildScopedRagTool(manifest: AgentManifest, callerCtx: TenantCon
   const retrievalCtx = effectiveRetrievalContext(callerCtx, manifest);
   return tool(
     async ({ query, limit }: { query: string; limit: number }) => {
+      if (env.FF_AGENTIC_RAG) {
+        const { agenticRetrieve } = await import('../../knowledge/agentic/loop.js');
+        const result = await agenticRetrieve(retrievalCtx, query, { k: limit });
+        if (result.passages.length === 0) {
+          return 'No relevant passages found in the knowledge base. The knowledge base may lack coverage for this topic.';
+        }
+        const webHint = result.suggestWebSearch
+          ? '\n\n(Coverage looks thin — if this needs public/current information, report that the knowledge base lacks coverage.)'
+          : '';
+        return `${result.groundingBlock}${webHint}`;
+      }
       const results = await retrieve(retrievalCtx, query, limit);
       if (results.length === 0) return 'No relevant passages found in the knowledge base.';
       const body = JSON.stringify(

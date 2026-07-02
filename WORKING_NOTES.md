@@ -880,3 +880,30 @@ Collection added as the 10th agent. This session = M0, everything default-off / 
   verbatim, payloadToContext strips explicit-undefineds, malformed rejected), systemContext scoping,
   integration 503/401 gates. NOTE: no live pg-boss lifecycle test — deliberately not pointed at the
   Render DB; M2 smoke happens in dev per plan (docker Postgres) before flipping FF_JOBS_ENABLED.
+
+## 2026-07-02 — Agentic Core v2, M3: agentic RAG (hybrid RRF + retrieval loop + citations)
+
+- **Hybrid retrieval** (migration 0010): `knowledge_chunks.content_tsv` STORED generated tsvector
+  column (drizzle `generatedAlwaysAs` + customType) + GIN index. New `repos/knowledgeSearchRepo.ts`:
+  buildVectorQuery/buildFullTextQuery (websearch_to_tsquery + ts_rank_cd) — BOTH legs reuse the now-
+  exported `departmentFilter` chokepoint + tenant/audience predicates, join knowledge_docs for titles.
+  `resolveRetrievalContext(ctx, scope)` = intersection-only cap (bounds admins to the cap list).
+- **Agentic loop** `modules/knowledge/agentic/`: queryPlanner (1–3 sub-queries + sufficiency judge —
+  BOTH degrade safely: planner→original question, judge→sufficient), hybrid.ts (parallel legs per
+  sub-query, RRF fuse 1/(K+rank), dedupe across hops; full-text leg degrades to vector-only on
+  error/flag-off), rerank.ts (optional listwise LLM rerank, FF_RAG_RERANK), loop.ts (plan → retrieve →
+  top-score short-circuit (RAG_SUFFICIENT_SCORE≈rank-1-both-legs) → judge → refine ≤ RAG_MAX_HOPS;
+  sets suggestWebSearch for the CALLER to decide), citations.ts ([S1..Sn] markers + cite-instruction
+  OUTSIDE the UNTRUSTED wrapper).
+- **Wiring**: chatService.retrieveGrounding honors FF_AGENTIC_RAG (lazy import); scopedRag honors it
+  per child agent (retrieval ctx unchanged — effectiveRetrievalContext already encodes the cap) and
+  surfaces a thin-coverage hint. Flags default OFF: FF_RAG_HYBRID, FF_AGENTIC_RAG, FF_RAG_RERANK —
+  flip after evalRetrieval in dev.
+- **Eval harness**: `scripts/evalRetrieval.ts` + `tests/fixtures/retrieval-corpus.json` (10 docs
+  across 8 dept tags + Global, 10 labeled queries) → recall@6/MRR for single-shot vs hybrid vs
+  agentic against a dev DB (checksum-idempotent ingest; requires OPENAI + DB, run manually).
+- **Tests: 244 green.** hybrid-retrieval suite: cap semantics (never widens, bounds admins), both
+  legs' SQL scoping under a hostile reformulated query (query string is a PARAMETER, dept params stay
+  the caller's), RRF fusion math/determinism, full-text degradation, grounding-block markers.
+- Deferred/noted: citation objects aren't yet persisted to message metadata (markers live in the
+  grounding block; the model cites [Sn] in its answer text) — revisit with the web app citations UI.

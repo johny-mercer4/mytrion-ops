@@ -170,6 +170,13 @@ async function retrieveGrounding(
 ): Promise<{ content: string; count: number } | null> {
   if (!env.FF_RAG_ENABLED) return null;
   try {
+    if (env.FF_AGENTIC_RAG) {
+      // Multi-query hybrid loop with [Sn] citations (module enforces the same repo-level RBAC).
+      const { agenticRetrieve } = await import('../knowledge/agentic/loop.js');
+      const result = await agenticRetrieve(ctx, query, { k: DEFAULT_RETRIEVAL_K });
+      if (result.passages.length === 0) return null;
+      return { content: result.groundingBlock, count: result.passages.length };
+    }
     const passages = await retrieve(ctx, query, DEFAULT_RETRIEVAL_K);
     if (passages.length === 0) return null;
     const body = passages
