@@ -64,6 +64,11 @@ const EnvSchema = z.object({
   AGENT_MAX_TOOL_CALLS: z.coerce.number().int().positive().default(20),
   AGENT_MAX_COST_USD: z.coerce.number().positive().default(0.5),
   AGENT_MAX_WALL_MS: z.coerce.number().int().positive().default(120_000),
+  // Checkpointed threads idle longer than this are swept by a background job.
+  AGENT_CHECKPOINT_TTL_DAYS: z.coerce.number().int().positive().default(30),
+  // Optional LangSmith tracing passthrough (traces contain message content — staging only).
+  LANGSMITH_TRACING: z.string().default(''),
+  LANGSMITH_API_KEY: z.string().default(''),
 
   // --- Composio (external tool-calling gateway for the DeepAgents external-tools subagent). ---
   // Off unless FF_COMPOSIO_ENABLED. Shared-org-account model: one fixed Composio user owns the
@@ -206,6 +211,11 @@ const EnvSchema = z.object({
   // allDepartments / profile / role / user_name are IGNORED and scope derives solely from the
   // company id. Off = legacy behavior + a loud warning, so the Telegram shim can migrate first.
   FF_CUSTOMER_SCOPE_STRICT: flag('0'),
+  // Multi-agent orchestrator endpoint (POST /v1/agent). FF_DEEP_AGENTS_ENABLED is kept as a
+  // deprecated alias — either flag enables the endpoint.
+  FF_ORCHESTRATOR_ENABLED: flag('0'),
+  // Durable LangGraph threads (PostgresSaver in the 'langgraph' schema). Off = stateless runs.
+  FF_AGENT_CHECKPOINTS: flag('0'),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

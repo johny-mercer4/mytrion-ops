@@ -1,11 +1,14 @@
 /**
- * Composio tools for the external-tools subagent. `composio.tools.get` returns LangChain tools that
- * Composio executes REMOTELY (against the shared org connected account) — outside our toolDispatcher.
+ * Composio tools for child agents. `composio.tools.get` returns LangChain tools that Composio
+ * executes REMOTELY (against the shared org connected account) — outside our toolDispatcher.
  * To honor the hard rules we:
  *   - gate exposure to admins (isComposioAllowed) — external toolkits include writes/deletes (#4/#7);
  *   - audit-log every remote execution via the afterExecute modifier (#8), reading the security
  *     context from the per-run AsyncLocalStorage and writing the same tool_calls + audit rows the
- *     native dispatcher does.
+ *     native dispatcher does;
+ *   - wrap the payload as UNTRUSTED external content before it reaches the model;
+ *   - filter per agent manifest (composioToolkits) with longest-prefix toolkit matching, so e.g.
+ *     'ZOHO' does not accidentally grant 'ZOHO_DESK' tools.
  */
 import type { StructuredTool } from '@langchain/core/tools';
 import type { ToolExecuteResponse } from '@composio/core';
@@ -43,7 +46,7 @@ async function auditExecution(context: {
 }): Promise<ToolExecuteResponse> {
   const { toolSlug, toolkitSlug, result } = context;
   try {
-    const { ctx, conversationId } = requireAgentContext();
+    const { ctx, conversationId, agentRunId } = requireAgentContext();
     const status: 'ok' | 'error' = result?.successful ? 'ok' : 'error';
     const toolName = `composio:${toolSlug}`;
     await toolCallRepo.record({
@@ -54,11 +57,14 @@ async function auditExecution(context: {
       status,
       ...(status === 'error' && result?.error ? { errorMessage: String(result.error) } : {}),
       ...(conversationId ? { conversationId } : {}),
+      ...(ctx.actingAgent ? { actingAgent: ctx.actingAgent } : {}),
+      ...(agentRunId ? { agentRunId } : {}),
     });
     await auditFromContext(ctx, {
       action: 'tool.call',
       status,
       toolName,
+      ...(agentRunId ? { agentRunId } : {}),
       detail: { toolkit: toolkitSlug, via: 'composio' },
     });
   } catch (err) {
@@ -72,19 +78,49 @@ async function auditExecution(context: {
 }
 
 /**
- * Build the admin-gated, audited Composio tools for the shared org account. Empty when not allowed.
- * Read-only by default (hard-rule #7): write/destructive tools are dropped unless FF_COMPOSIO_WRITES.
+ * Longest-prefix toolkit matching over the ENABLED toolkit set: a tool belongs to the most
+ * specific enabled toolkit whose slug prefixes its name ('ZOHO_DESK_UPDATE_TICKET' → ZOHO_DESK,
+ * not ZOHO). Returns whether that toolkit is in the agent's allowlist.
  */
-export async function buildComposioTools(ctx: TenantContext): Promise<StructuredTool[]> {
+export function toolAllowedForToolkits(toolSlug: string, allowed: string[], enabled: string[]): boolean {
+  const upper = toolSlug.toUpperCase();
+  let match = '';
+  for (const toolkit of enabled) {
+    const t = toolkit.toUpperCase();
+    if ((upper === t || upper.startsWith(`${t}_`)) && t.length > match.length) match = t;
+  }
+  if (!match) return false;
+  return allowed.some((a) => a.toUpperCase() === match);
+}
+
+/**
+ * Build the admin-gated, audited Composio tools for the shared org account, filtered to the
+ * given toolkit allowlist. Empty when not allowed / nothing matches. Read-only by default
+ * (hard-rule #7): write/destructive tools are dropped unless FF_COMPOSIO_WRITES.
+ */
+export async function buildComposioToolsFor(
+  ctx: TenantContext,
+  allowedToolkits: string[],
+): Promise<StructuredTool[]> {
   if (!isComposioAllowed(ctx) || COMPOSIO_TOOLKITS.length === 0) return [];
+  const wanted = allowedToolkits.filter((t) =>
+    COMPOSIO_TOOLKITS.some((enabled) => enabled.toUpperCase() === t.toUpperCase()),
+  );
+  if (wanted.length === 0) return [];
   const tools = await getComposio().tools.get(
     COMPOSIO_ORG_USER,
-    { toolkits: COMPOSIO_TOOLKITS, limit: env.COMPOSIO_TOOL_LIMIT },
+    { toolkits: wanted, limit: env.COMPOSIO_TOOL_LIMIT },
     { afterExecute: auditExecution },
   );
   // Composio's LangChain DynamicStructuredTools satisfy StructuredTool; cast across the (possibly
   // distinct) @langchain/core copies the two packages resolve.
   const all = tools as unknown as StructuredTool[];
-  if (env.FF_COMPOSIO_WRITES) return all;
-  return all.filter((t) => !isComposioWriteTool(t.name));
+  const scoped = all.filter((t) => toolAllowedForToolkits(t.name, wanted, COMPOSIO_TOOLKITS));
+  if (env.FF_COMPOSIO_WRITES) return scoped;
+  return scoped.filter((t) => !isComposioWriteTool(t.name));
+}
+
+/** All-enabled-toolkits variant (legacy external-tools behavior). */
+export function buildComposioTools(ctx: TenantContext): Promise<StructuredTool[]> {
+  return buildComposioToolsFor(ctx, [...COMPOSIO_TOOLKITS]);
 }

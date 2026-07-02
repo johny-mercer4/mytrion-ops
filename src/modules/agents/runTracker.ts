@@ -1,0 +1,88 @@
+/**
+ * LangChain callback handler that observes one agent run: token usage (for cost + budget) and
+ * which specialists the orchestrator delegated to (agentPath). Usage is accumulated across the
+ * whole run and costed against the primary model id — per-child token split is approximated
+ * (children usually share the default child model); exact per-agent tool attribution lives in
+ * tool_calls.acting_agent.
+ */
+import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
+import type { LLMResult } from '@langchain/core/outputs';
+import { computeCost } from '../llm/costTracker.js';
+import type { BudgetMeter } from './budget.js';
+
+interface Serialized {
+  id?: string[];
+  name?: string;
+}
+
+export class RunTracker extends BaseCallbackHandler {
+  override name = 'octane-run-tracker';
+  promptTokens = 0;
+  completionTokens = 0;
+  readonly agentPath: string[] = [];
+
+  constructor(
+    private readonly modelId: string,
+    private readonly budget?: BudgetMeter,
+  ) {
+    super();
+  }
+
+  override async handleLLMEnd(output: LLMResult): Promise<void> {
+    let prompt = 0;
+    let completion = 0;
+    const usage = output.llmOutput?.['tokenUsage'] as
+      | { promptTokens?: number; completionTokens?: number }
+      | undefined;
+    if (usage && (usage.promptTokens || usage.completionTokens)) {
+      prompt = usage.promptTokens ?? 0;
+      completion = usage.completionTokens ?? 0;
+    } else {
+      // Streaming path: usage arrives on the message's usage_metadata instead of llmOutput.
+      for (const generations of output.generations) {
+        for (const gen of generations) {
+          const meta = (gen as { message?: { usage_metadata?: { input_tokens?: number; output_tokens?: number } } })
+            .message?.usage_metadata;
+          if (meta) {
+            prompt += meta.input_tokens ?? 0;
+            completion += meta.output_tokens ?? 0;
+          }
+        }
+      }
+    }
+    if (prompt === 0 && completion === 0) return;
+    this.promptTokens += prompt;
+    this.completionTokens += completion;
+    if (this.budget) {
+      const cost = computeCost({ model: this.modelId, promptTokens: prompt, completionTokens: completion });
+      this.budget.charge(cost.totalCost);
+    }
+  }
+
+  override async handleToolStart(
+    tool: Serialized,
+    input: string,
+    _runId: string,
+    _parentRunId?: string,
+    _tags?: string[],
+    _metadata?: Record<string, unknown>,
+    runName?: string,
+  ): Promise<void> {
+    const toolName = runName ?? tool.name ?? tool.id?.at(-1);
+    if (toolName !== 'task') return;
+    try {
+      const parsed = JSON.parse(input) as { subagent_type?: string };
+      if (parsed.subagent_type) this.agentPath.push(parsed.subagent_type);
+    } catch {
+      // input not JSON — ignore; agentPath is best-effort observability.
+    }
+  }
+
+  totalCost(): number {
+    return computeCost({
+      model: this.modelId,
+      promptTokens: this.promptTokens,
+      completionTokens: this.completionTokens,
+    }).totalCost;
+  }
+}

@@ -812,3 +812,38 @@ Collection added as the 10th agent. This session = M0, everything default-off / 
 - Note for later milestones: zoho_mcp.* stays admin-sentinel (unavailable inside child agents — revisit
   when Composio covers Zoho breadth); Composio output wrapping changes tool payload shape to
   {untrusted_content} — verify against live Composio in M5.
+
+## 2026-07-02 — Agentic Core v2, M1: orchestrator runtime (POST /v1/agent, 10 compiled agents, checkpointer)
+
+- **Compiler** (`src/modules/agents/orchestrator.ts`): AgentManifest → deepagents SubAgent per request,
+  AFTER agentRegistry RBAC filtering — a sales caller's orchestrator contains only sales+marketing.
+  Children get: per-agent scoped knowledge_search (effectiveRetrievalContext — the leakage-tested fn),
+  registry tools (RBAC ∩ allowlist, dispatched under the NARROWED ctx captured at build time, readOnly
+  + actingAgent + agentRunId stamped), webSearch (manifest.webSearch: marketing), Composio filtered by
+  manifest.composioToolkits with longest-prefix toolkit matching (manager only, admin-gated; failures
+  degrade — never break construction). Children return structured AgentResult (answer/citations/
+  toolsUsed/confidence/escalate) via responseFormat; escalation is advisory — parent re-delegates only
+  within the RBAC-filtered set. Direct-to-child mode compiles one agent, no orchestrator hop.
+- **deepagents module absorbed** into `src/modules/agents/` (context/models/prompts/tools moved,
+  toolCaller→agentTools, rag→scopedRag, composioTools→composio); `deepagents` pinned exact 1.10.5
+  (compiler file is the single API seam). Old 4-generic-subagent stack deleted.
+- **Service** (`orchestratorService.ts`): runAgentTurn/streamAgentTurn share one streamEvents
+  consumption path (`streamAdapter.ts` — SSE vocabulary start/status/token/tool_call/tool_result/done
+  + new `agent` {key,state} events; ONLY root tokens stream, child runs surface as progress; final =
+  last root chain-end message). Persistence mirrors chatService (appendUser/appendAssistant, auto-title,
+  bumpForTurn) so widget transcripts are pipeline-agnostic. BudgetMeter per run (tool calls counted in
+  wrappers; cost charged from RunTracker usage); breach → friendly partial answer + audit. agent_runs
+  row per run (status/model/tokens/cost/duration) + costTracker + audit `agent.turn`.
+- **Durability**: `checkpointer.ts` PostgresSaver (own pg pool max 5, `langgraph` schema) behind
+  FF_AGENT_CHECKPOINTS; setup() runs from scripts/migrate.ts (library owns that schema's DDL);
+  threadId = tenantId:conversationId with findOwned guard. Brief builder packs date/user/departments +
+  ≤600-token mechanical history summary into the HUMAN message (system prompts stay byte-stable for
+  prompt caching). TTL sweep job lands with pg-boss (M2).
+- **API**: POST /v1/agent {message, conversationId?, agent?, stream?} + caller-identity fields
+  (shared callerIdentitySchema); /v1/agent/deep kept as deprecated alias returning {answer}.
+  FF_ORCHESTRATOR_ENABLED (or legacy FF_DEEP_AGENTS_ENABLED) gates both. LANGSMITH_* env passthrough.
+- **Tests: 228 green.** New: agent-compiler (per-caller subagent sets), stream-adapter (token routing,
+  child silence, task boundaries, error tools), integration gate paths (404 off / 401 / 403 cross-dept
+  direct-to-child / 400 unknown agent). Deferred: web app sends `agent` param (needs a web build cycle;
+  /v1/chat stays the widget default until the flag flips); per-child token cost split is approximated
+  at the run level (tool attribution is exact via tool_calls.acting_agent).

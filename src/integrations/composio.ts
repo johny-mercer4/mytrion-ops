@@ -5,7 +5,7 @@
  * connected accounts; connect Zoho once and every agent call uses it. This mirrors the native
  * shared-service-token model and avoids per-end-user OAuth. Access control stays in OUR layer: the
  * external-tools subagent is admin-gated (external toolkits include writes/deletes) and every remote
- * execution is audit-logged (see modules/deepagents/tools/composioTools.ts).
+ * execution is audit-logged (see modules/agents/tools/composio.ts).
  *
  * This module is NOT re-exported from integrations/index.ts and is only ever lazy-imported, so the
  * Composio SDK never loads at boot when FF_COMPOSIO_ENABLED is off.

@@ -1,11 +1,11 @@
 /**
- * Web search tool for the web-search-agent subagent. Uses OpenAI's built-in `web_search` tool via
- * the Responses API (the existing OpenAI key — no Tavily / separate provider). Wrapped so that a
- * model/account that doesn't support web search degrades to a clear message instead of throwing and
- * taking down the run.
+ * Web search tool for agents whose manifest sets `webSearch: true` (e.g. marketing). Uses
+ * OpenAI's built-in `web_search` via the Responses API (the existing OpenAI key — no separate
+ * provider). Degrades to a clear message instead of throwing and taking down the run. Output
+ * is a trust boundary → wrapped as UNTRUSTED.
  */
-import { tool } from '@langchain/core/tools';
-import * as z from 'zod/v4'; // see rag.ts — LangChain v1 tool() wants the zod v4 entrypoint
+import { tool, type StructuredTool } from '@langchain/core/tools';
+import * as z from 'zod/v4'; // see scopedRag.ts — LangChain v1 tool() wants the zod v4 entrypoint
 import type OpenAI from 'openai';
 import { env } from '../../../config/env.js';
 import { logger } from '../../../lib/logger.js';
@@ -24,12 +24,11 @@ export const webSearchTool = tool(
         input: query,
       });
       const text = res.output_text?.trim();
-      // Web content is a trust boundary: wrapped so injected instructions stay inert.
       return text && text.length > 0
         ? wrapUntrusted('web', text)
         : 'Web search returned no usable result.';
     } catch (err) {
-      logger.warn({ err }, 'deepagents web search failed');
+      logger.warn({ err }, 'agent web search failed');
       const reason = err instanceof Error ? err.message : 'unknown error';
       return `Web search is currently unavailable (${reason}).`;
     }
@@ -43,4 +42,4 @@ export const webSearchTool = tool(
       query: z.string().min(1).max(1000).describe('The web search query'),
     }),
   },
-);
+) as unknown as StructuredTool; // zod v4 tool() generics vs StructuredTool: same-package cast, safe at runtime
