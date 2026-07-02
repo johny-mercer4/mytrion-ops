@@ -16,6 +16,7 @@ import { resolveAgentModel, resolveOrchestratorModel } from './models.js';
 import { childSystemPrompt, ORCHESTRATOR_PROMPT } from './prompts.js';
 import { agentResultSchema } from './resultSchema.js';
 import { buildAgentTools } from './tools/agentTools.js';
+import { buildBrowserTools } from './tools/browserTools.js';
 import { buildComposioToolsFor } from './tools/composio.js';
 import { buildScopedRagTool } from './tools/scopedRag.js';
 import { webSearchTool } from './tools/webSearch.js';
@@ -29,6 +30,7 @@ async function childTools(manifest: AgentManifest, callerCtx: TenantContext): Pr
     ...buildAgentTools(manifest, narrowed),
   ];
   if (manifest.webSearch) tools.push(webSearchTool);
+  if (manifest.browser) tools.push(...(await buildBrowserTools(narrowed)));
   if (manifest.composioToolkits.length > 0) {
     try {
       tools.push(...(await buildComposioToolsFor(narrowed, manifest.composioToolkits)));

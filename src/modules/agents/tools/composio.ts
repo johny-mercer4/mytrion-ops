@@ -11,8 +11,9 @@
  *     'ZOHO' does not accidentally grant 'ZOHO_DESK' tools.
  */
 import type { StructuredTool } from '@langchain/core/tools';
-import type { ToolExecuteResponse } from '@composio/core';
+import type { ToolExecuteParams, ToolExecuteResponse } from '@composio/core';
 import { env } from '../../../config/env.js';
+import { takeToken } from '../../security/rateBucket.js';
 import {
   COMPOSIO_ORG_USER,
   COMPOSIO_TOOLKITS,
@@ -93,31 +94,66 @@ export function toolAllowedForToolkits(toolSlug: string, allowed: string[], enab
   return allowed.some((a) => a.toUpperCase() === match);
 }
 
+export interface ComposioBuildOptions {
+  /** Extra beforeExecute guard (e.g. the browser domain allowlist), run AFTER the rate check. */
+  beforeExecute?: (context: {
+    toolSlug: string;
+    toolkitSlug: string;
+    params: ToolExecuteParams;
+  }) => ToolExecuteParams | Promise<ToolExecuteParams>;
+  /**
+   * When true (default), toolkits are intersected with the org-enabled COMPOSIO_TOOLKITS list.
+   * The browser path opts out — its universe is COMPOSIO_BROWSER_TOOLKITS.
+   */
+  requireEnabled?: boolean;
+}
+
 /**
  * Build the admin-gated, audited Composio tools for the shared org account, filtered to the
- * given toolkit allowlist. Empty when not allowed / nothing matches. Read-only by default
- * (hard-rule #7): write/destructive tools are dropped unless FF_COMPOSIO_WRITES.
+ * given toolkit allowlist. Fetched PER TOOLKIT so one chatty toolkit can't crowd out others
+ * under COMPOSIO_TOOL_LIMIT; a per-toolkit token bucket throttles executions. Read-only by
+ * default (hard-rule #7): write/destructive tools are dropped unless FF_COMPOSIO_WRITES.
  */
 export async function buildComposioToolsFor(
   ctx: TenantContext,
   allowedToolkits: string[],
+  opts: ComposioBuildOptions = {},
 ): Promise<StructuredTool[]> {
-  if (!isComposioAllowed(ctx) || COMPOSIO_TOOLKITS.length === 0) return [];
-  const wanted = allowedToolkits.filter((t) =>
-    COMPOSIO_TOOLKITS.some((enabled) => enabled.toUpperCase() === t.toUpperCase()),
-  );
+  if (!isComposioAllowed(ctx)) return [];
+  const requireEnabled = opts.requireEnabled ?? true;
+  const wanted = requireEnabled
+    ? allowedToolkits.filter((t) =>
+        COMPOSIO_TOOLKITS.some((enabled) => enabled.toUpperCase() === t.toUpperCase()),
+      )
+    : allowedToolkits;
   if (wanted.length === 0) return [];
-  const tools = await getComposio().tools.get(
-    COMPOSIO_ORG_USER,
-    { toolkits: wanted, limit: env.COMPOSIO_TOOL_LIMIT },
-    { afterExecute: auditExecution },
-  );
-  // Composio's LangChain DynamicStructuredTools satisfy StructuredTool; cast across the (possibly
-  // distinct) @langchain/core copies the two packages resolve.
-  const all = tools as unknown as StructuredTool[];
-  const scoped = all.filter((t) => toolAllowedForToolkits(t.name, wanted, COMPOSIO_TOOLKITS));
-  if (env.FF_COMPOSIO_WRITES) return scoped;
-  return scoped.filter((t) => !isComposioWriteTool(t.name));
+
+  const beforeExecute: ComposioBuildOptions['beforeExecute'] = async (context) => {
+    if (!takeToken(`composio:${context.toolkitSlug}`, env.COMPOSIO_RATE_PER_MIN)) {
+      throw new Error(
+        `Rate limit: toolkit ${context.toolkitSlug} exceeded ${env.COMPOSIO_RATE_PER_MIN} calls/min — retry later`,
+      );
+    }
+    return opts.beforeExecute ? opts.beforeExecute(context) : context.params;
+  };
+
+  const collected: StructuredTool[] = [];
+  for (const toolkit of wanted) {
+    try {
+      const tools = await getComposio().tools.get(
+        COMPOSIO_ORG_USER,
+        { toolkits: [toolkit], limit: env.COMPOSIO_TOOL_LIMIT },
+        { beforeExecute, afterExecute: auditExecution },
+      );
+      // Composio's LangChain DynamicStructuredTools satisfy StructuredTool; cast across the
+      // (possibly distinct) @langchain/core copies the two packages resolve.
+      collected.push(...(tools as unknown as StructuredTool[]));
+    } catch (err) {
+      logger.warn({ err, toolkit }, 'composio toolkit fetch failed; skipping');
+    }
+  }
+  if (env.FF_COMPOSIO_WRITES) return collected;
+  return collected.filter((t) => !isComposioWriteTool(t.name));
 }
 
 /** All-enabled-toolkits variant (legacy external-tools behavior). */

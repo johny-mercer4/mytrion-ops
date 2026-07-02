@@ -936,3 +936,22 @@ Collection added as the 10th agent. This session = M0, everything default-off / 
 - **Tests: 258 green.** files (generators round-trip via exceljs/csv-parse/%PDF header, caps,
   key sanitization, hostile customer department tag ignored), file-rbac (visibility SQL scoping +
   ownership escape hatch; file tools available to every real department; ingest stays admin-sentinel).
+
+## 2026-07-02 — Agentic Core v2, M5: browser automation via Composio + hygiene
+
+- **browserTools.ts** (agents/tools): Composio-backed browser/scrape tools behind FF_BROWSER_ENABLED
+  + the existing admin gate. Toolkit universe = COMPOSIO_BROWSER_TOOLKITS (default FIRECRAWL; add the
+  Composio Browserbase toolkit slug for interactive sessions AFTER verifying it in the dashboard).
+  Guardrails all fail-closed: beforeExecute domain allowlist over every URL-ish arg (suffix match,
+  lookalike-host safe; EMPTY BROWSER_ALLOWED_DOMAINS = deny all navigation), interactive write verbs
+  (navigate/click/fill/type/press/act/…) dropped unless FF_BROWSER_WRITES, per-toolkit in-memory
+  token bucket (COMPOSIO_RATE_PER_MIN), audit + UNTRUSTED wrap via the shared afterExecute hook.
+  Exposed via new manifest capability `browser: true` — marketing only at launch.
+- **Composio hygiene**: buildComposioToolsFor now fetches PER TOOLKIT (one chatty toolkit can't crowd
+  others out of COMPOSIO_TOOL_LIMIT; per-toolkit failures skip, not break), takes optional extra
+  beforeExecute (the domain gate composes after the rate check), and requireEnabled opt-out for the
+  browser universe. security/rateBucket.ts = minimal sliding-window limiter (no Redis by design).
+- Web search complement: FIRECRAWL arrives through this same path — enabling it for search-grade
+  scraping = connect the key in the Composio dashboard; no code change (verbs are read-class).
+- **Tests: 265 green** — allowlist deny-by-default + suffix/lookalike cases, nested URL extraction,
+  write-verb classification, flag-off no-op, rate bucket window behavior.

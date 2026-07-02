@@ -17,5 +17,6 @@ export const marketingAgent: AgentManifest = {
   ragScope: { departments: ['marketing', 'sales'], allowAllDepartments: false },
   readOnly: false,
   webSearch: true,
+  browser: true,
   delegatesTo: ['sales'],
 };

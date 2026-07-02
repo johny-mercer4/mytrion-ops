@@ -77,6 +77,11 @@ export interface AgentManifest {
   readOnly: boolean;
   /** Grants access to the general web-search tool at compile time (e.g. marketing). */
   webSearch?: boolean;
+  /**
+   * Grants the Composio browser/scraping toolkit at compile time (FF_BROWSER_ENABLED +
+   * admin gate + BROWSER_ALLOWED_DOMAINS still apply — this only opts the agent in).
+   */
+  browser?: boolean;
   /** Chat model id override; unset → AGENT_CHILD_MODEL → default chat model. */
   model?: string;
   /** Child agent loop cap (LangGraph recursionLimit). Unset → AGENT_MAX_CHILD_ITERATIONS. */

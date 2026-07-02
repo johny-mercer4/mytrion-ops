@@ -204,10 +204,19 @@ const EnvSchema = z.object({
   // Parse-path memory guardrail (Render starter plan): max bytes loaded for file analysis.
   PARSE_MAX_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
 
-  // --- Browser automation: Browserbase ---
+  // --- Browser automation: Browserbase (legacy direct stubs — superseded by Composio toolkits) ---
   BROWSERBASE_API_KEY: z.string().default(''),
   BROWSERBASE_PROJECT_ID: z.string().default(''),
   BROWSERBASE_BASE_URL: z.string().default('https://api.browserbase.com'),
+
+  // --- Browser automation via Composio toolkits (FIRECRAWL for scraping; add the Composio
+  // Browserbase toolkit slug for interactive sessions once verified in the dashboard) ---
+  COMPOSIO_BROWSER_TOOLKITS: z.string().default('FIRECRAWL'),
+  // CSV of allowed hostnames/suffixes for browser/scrape targets. EMPTY = deny all navigation
+  // (fail closed) — set explicitly before enabling browser automation.
+  BROWSER_ALLOWED_DOMAINS: z.string().default(''),
+  // Simple in-memory per-toolkit rate limit for Composio executions.
+  COMPOSIO_RATE_PER_MIN: z.coerce.number().int().positive().default(30),
 
   // --- Feature flags ---
   FF_PARTNER_AUDIENCE_ENABLED: flag('1'),
@@ -249,6 +258,10 @@ const EnvSchema = z.object({
   FF_AGENT_CHECKPOINTS: flag('0'),
   // File generation/analysis tools + /v1/files routes (MinIO/S3 storage).
   FF_FILES_ENABLED: flag('0'),
+  // Browser automation via Composio toolkits (admin-gated; domain-allowlisted; fail closed).
+  FF_BROWSER_ENABLED: flag('0'),
+  // Interactive browser WRITE actions (navigate/click/fill/…). Off = scrape/read-class only.
+  FF_BROWSER_WRITES: flag('0'),
   // Background jobs (pg-boss on the app Postgres, own 'pgboss' schema — self-migrating).
   FF_JOBS_ENABLED: flag('0'),
   // inline: this process runs boss + workers + schedules (default, single Render service).
