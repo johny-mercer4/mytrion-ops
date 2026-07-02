@@ -2,14 +2,15 @@ services:
   - type: web
     name: octane-assistant-api
     # NOTE: the repo's root Dockerfile is what Render actually builds from (Docker runtime);
-    # it OVERRIDES the buildCommand/startCommand below. The widget (web/app) must be copied into
-    # the Dockerfile's runtime stage — adding it here alone is not enough. Keep the Dockerfile
-    # authoritative for build/runtime; this block is effectively documentation.
+    # it OVERRIDES the buildCommand/startCommand below. The widget (apps/mytrion-crm/app) must be
+    # copied into the Dockerfile's runtime stage — adding it here alone is not enough. Keep the
+    # Dockerfile authoritative for build/runtime; this block is effectively documentation.
     runtime: node
     plan: starter
-    # Plain tsc build (reliable). The widget UI (web/app) is VENDORED in git and served same-origin
-    # at /widget, so the deploy needs no web build step. Zoho Base URL: <url>/widget/index.html
-    # (regenerate web/app with `pnpm build:widget` and recommit when the widget changes.)
+    # Plain tsc build (reliable). The widget UI (apps/mytrion-crm/app) is VENDORED in git and served
+    # same-origin at /widget, so the deploy needs no web build step. Zoho Base URL:
+    # <url>/widget/index.html (regenerate apps/mytrion-crm/app with `pnpm build:widget` and recommit
+    # when the widget changes.)
     buildCommand: pnpm install --frozen-lockfile && pnpm build
     startCommand: pnpm start
     healthCheckPath: /health

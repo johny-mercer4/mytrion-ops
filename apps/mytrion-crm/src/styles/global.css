@@ -1,0 +1,135 @@
+/* Global reset + base. Component styling lives in each component's *.module.css
+   (legacy) or Tailwind utilities (new work — see docs/design-mockups/design-tokens.md). */
+@import 'tailwindcss';
+@import './theme.css';
+
+/* Bridges Tailwind's semantic color/radius/font vars onto the *existing* design
+   tokens in theme.css, so `bg-background`, `text-foreground`, `bg-primary`, etc.
+   resolve to the same values CSS-Modules components already use — no second
+   token system, and [data-theme="light"] (useTheme.ts) keeps working unchanged.
+   No `dark:` Tailwind variant is defined on purpose: colors swap via the CSS
+   custom-property cascade, not conditional classes. */
+@theme inline {
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--text-primary);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--text-primary);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--on-accent);
+  --color-secondary: var(--surface-alt);
+  --color-secondary-foreground: var(--text-primary);
+  --color-muted: var(--surface-alt);
+  --color-muted-foreground: var(--text-muted);
+  --color-accent: var(--surface-raised);
+  --color-accent-foreground: var(--text-primary);
+  --color-destructive: var(--danger);
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: var(--accent);
+  --color-good: var(--success);
+  --color-warn: var(--warning);
+  --color-bad: var(--danger);
+  --color-brand-purple: var(--purple);
+  --color-brand-orange: var(--orange);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-lg);
+  --font-sans: var(--font-body);
+  --font-heading: var(--font-head);
+  --font-mono: var(--font-mono);
+}
+
+/* Per-Mytrion accent override — set data-mytrion="billing" (etc.) on a page
+   root to swap --accent/--on-accent to that module's hue while everything
+   else (bg/surface/text/status colors) stays the shared brand scale. Values
+   from docs/design-mockups/design-tokens.md. Dark is the default (no
+   [data-theme] attribute); [data-theme="light"] overrides. */
+[data-mytrion='billing'] { --accent: #8b5cf6; --accent-strong: #7c6ae8; --on-accent: #f6f3ff; }
+[data-theme='light'] [data-mytrion='billing'] { --accent: #7c3aed; --accent-strong: #6d28d9; --on-accent: #ffffff; }
+
+[data-mytrion='collection'] { --accent: #f0564e; --accent-strong: #fb7a72; --on-accent: #2a0908; }
+[data-theme='light'] [data-mytrion='collection'] { --accent: #d5342b; --accent-strong: #c22b23; --on-accent: #ffffff; }
+
+[data-mytrion='sales'] { --accent: #38bdf8; --accent-strong: #7dd3fc; --on-accent: #04131c; }
+[data-theme='light'] [data-mytrion='sales'] { --accent: #2563eb; --accent-strong: #1d4ed8; --on-accent: #ffffff; }
+
+[data-mytrion='finance'] { --accent: #10b981; --accent-strong: #34d399; --on-accent: #04231a; }
+[data-theme='light'] [data-mytrion='finance'] { --accent: #0e9e6e; --accent-strong: #0b8a5f; --on-accent: #ffffff; }
+
+[data-mytrion='customer-service'] { --accent: #e0a83e; --accent-strong: #f2c86a; --on-accent: #241a06; }
+[data-theme='light'] [data-mytrion='customer-service'] { --accent: #b4770f; --accent-strong: #ce9022; --on-accent: #ffffff; }
+
+[data-mytrion='retention'] { --accent: #e85dc0; --accent-strong: #f49ad9; --on-accent: #2a0a22; }
+[data-theme='light'] [data-mytrion='retention'] { --accent: #c0269e; --accent-strong: #db3ab5; --on-accent: #ffffff; }
+
+[data-mytrion='verification'] { --accent: #5a8dff; --accent-strong: #93b4ff; --on-accent: #05122e; }
+[data-theme='light'] [data-mytrion='verification'] { --accent: #2563eb; --accent-strong: #3b82f6; --on-accent: #ffffff; }
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button {
+  font-family: inherit;
+}
+
+/* Thin themed scrollbars (match the design's subtle rails). */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Animations used across the chat surface + tool chips. */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes thinkBounce {
+  0%,
+  75%,
+  100% {
+    transform: translateY(0) scale(0.7);
+    opacity: 0.45;
+  }
+  35% {
+    transform: translateY(-5px) scale(1);
+    opacity: 1;
+  }
+}
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}

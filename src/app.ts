@@ -147,7 +147,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   healthcheckPlugin(app); // GET /health (liveness)
 
-  // Serve the AI Chat widget UI same-origin at /widget (public; no-op if web/app isn't built).
+  // Serve the AI Chat widget UI same-origin at /widget (public; no-op if apps/mytrion-crm/app isn't built).
   await registerWidgetStatic(app);
 
   // Discover Zoho MCP tools once at boot and register them (flag-gated). Non-fatal AND bounded: a

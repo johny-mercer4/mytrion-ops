@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.build.json",
-    "build:widget": "corepack pnpm -C web install --frozen-lockfile && corepack pnpm -C web build",
+    "build:widget": "corepack pnpm -C apps/mytrion-crm install --frozen-lockfile && corepack pnpm -C apps/mytrion-crm build",
     "start": "node dist/server.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

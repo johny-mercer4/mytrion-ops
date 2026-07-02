@@ -1,0 +1,1 @@
+import{j as r}from"./index-C0IiPWG8.js";import{M as e}from"./MytrionScaffold-BUW8U8ci.js";import"./MytrionShell-CQE0aG2Q.js";function s(){return r.jsx(e,{id:"manager",buildNotes:["Team oversight: per-agent metrics roll-up","Cross-department KPI dashboard (scope depends on OPEN DECISION: manager hierarchy)","Approvals / escalations queue"]})}export{s as default};
