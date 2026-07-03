@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { env } from '../../src/config/env.js';
-import { contextFromClaims } from '../../src/modules/auth/authService.js';
+import { authService, contextFromClaims } from '../../src/modules/auth/authService.js';
 import {
   signAccessToken,
   signOauthState,
+  signRefreshToken,
   verifyOauthState,
   verifyToken,
   type TokenClaims,
@@ -81,6 +82,25 @@ describe('contextFromClaims — worker branch (session-authoritative RBAC)', () 
     expect(ctx.sessionVerified).toBe(true);
     expect(ctx.allDepartmentAccess).toBe(false);
     expect(ctx.profiles).toEqual(['Sales Rep']);
+  });
+});
+
+describe('authService.refresh — worker sessions stay signed in without re-auth', () => {
+  it('re-issues a fresh worker session from a refresh token (no users-table lookup)', async () => {
+    const claims: TokenClaims = {
+      ...baseClaims,
+      worker: { zohoUserId: '555', userName: 'Alice', profile: 'Administrator', zohoRole: 'CEO' },
+    };
+    const result = await authService.refresh(await signRefreshToken(claims));
+    expect(result.tokenType).toBe('Bearer');
+    expect(result.accessToken).toBeTruthy();
+    expect(result.refreshToken).toBeTruthy();
+    // WorkerSession (not the users-table LoginResult) — identity comes straight from the token.
+    if (!('worker' in result)) throw new Error('expected a worker session');
+    expect(result.worker.zohoUserId).toBe('555');
+    // The rotated tokens are valid and still carry the verified worker identity.
+    expect((await verifyToken(result.accessToken, 'access')).worker?.zohoUserId).toBe('555');
+    expect((await verifyToken(result.refreshToken, 'refresh')).worker?.zohoUserId).toBe('555');
   });
 });
 

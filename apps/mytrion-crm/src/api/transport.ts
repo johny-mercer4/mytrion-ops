@@ -56,7 +56,10 @@ export async function refreshBearer(): Promise<boolean> {
         credentials: 'same-origin',
       });
       if (!res.ok) {
-        clearSession();
+        // Only a definitive auth rejection (expired/invalid/malformed refresh token) ends the
+        // session. Transient failures — 5xx, a deploy in progress, a proxy hiccup — must NOT log
+        // the worker out; keep the session so the next attempt can succeed once the backend is back.
+        if (res.status === 400 || res.status === 401 || res.status === 403) clearSession();
         return false;
       }
       const json = (await res.json()) as {

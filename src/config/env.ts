@@ -118,8 +118,12 @@ const EnvSchema = z.object({
 
   // --- Auth ---
   JWT_SECRET: z.string().default(''),
-  JWT_ACCESS_TTL: z.string().default('15m'),
-  JWT_REFRESH_TTL: z.string().default('30d'),
+  // Access token is short-lived; the SPA refreshes it transparently on 401 (never a re-login).
+  JWT_ACCESS_TTL: z.string().default('1h'),
+  // Refresh token = how long a signed-in worker stays logged in WITHOUT re-authenticating. It
+  // rotates on every refresh, so any use within this window slides it forward — a worker who opens
+  // the app at least once every 90 days effectively never has to sign in again.
+  JWT_REFRESH_TTL: z.string().default('90d'),
   PASSWORD_PEPPER: z.string().default(''),
 
   // --- Encryption (vendor credentials at rest) ---
