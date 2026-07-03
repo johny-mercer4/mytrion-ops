@@ -16,15 +16,24 @@ function accountsBase(): string {
   return env.ZOHO_ACCOUNTS_DOMAIN.replace(/\/+$/, '');
 }
 
-/** The Zoho authorization URL to send the worker's browser to. */
+/**
+ * The Zoho authorization URL to send the worker's browser to.
+ *
+ * We deliberately DON'T send `prompt=consent` or `access_type=offline`:
+ *  - We only need a one-shot access token to read the worker's CurrentUser; we never persist Zoho's
+ *    refresh token (our own JWT is the session), so offline access is pointless.
+ *  - `prompt=consent` forces Zoho's consent + org-picker screen on EVERY login. Omitting it means
+ *    Zoho shows it only on the first authorization and then reuses the worker's choice, so returning
+ *    workers go straight through. (The org-picker itself only ever appears for accounts that belong
+ *    to more than one CRM org; single-org employees never see it — there is no authorize-URL param
+ *    to pre-select an org or suppress the picker; it's Zoho-side consent UI.)
+ */
 export function buildAuthorizeUrl(state: string): string {
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: env.ZOHO_SERVER_CLIENT_ID,
     scope: env.ZOHO_OAUTH_SCOPES,
     redirect_uri: env.ZOHO_OAUTH_REDIRECT_URI,
-    access_type: 'offline',
-    prompt: 'consent',
     state,
   });
   return `${accountsBase()}/oauth/v2/auth?${params.toString()}`;
