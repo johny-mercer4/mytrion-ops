@@ -116,9 +116,9 @@ const EnvSchema = z.object({
   ADMIN_USERS: z.string().default(''),
   BYPASS_USERS: z.string().default(''),
   // "Act as agent" picker: which Zoho CRM profile / role names count as sales agents (CSV,
-  // case-insensitive exact match on either). Confirm the live org values. GET /v1/admin/agents?all=1
-  // bypasses this filter (admin-only) when the exact names are still unknown.
-  SALES_AGENT_PROFILE_NAMES: z.string().default('Sales'),
+  // case-insensitive SUBSTRING match, so "Sales Agent" also matches region roles like
+  // "Uzbekistan Sales Agent"). GET /v1/admin/agents?all=1 bypasses this filter (admin-only).
+  SALES_AGENT_PROFILE_NAMES: z.string().default('Sales Agent'),
   SALES_AGENT_ROLE_NAMES: z.string().default('Sales Agent'),
 
   // --- Auth ---

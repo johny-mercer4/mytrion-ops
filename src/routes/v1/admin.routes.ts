@@ -11,23 +11,29 @@ import { userRepo, type UpdateUserPatch } from '../../repos/userRepo.js';
 import { ROLES, AUDIENCES } from '../../types/tenantContext.js';
 import { requireContext } from './helpers.js';
 
-/** Case-insensitive exact-match set from a CSV env value. */
-function nameSet(csv: string): Set<string> {
-  return new Set(
-    csv
-      .split(',')
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean),
-  );
+/** Lowercased, trimmed term list from a CSV env value. */
+function terms(csv: string): string[] {
+  return csv
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
 }
 
-/** True if a CRM user's profile OR role marks them as a sales agent (per env config). */
+/** True if `value` contains any of the terms (case-insensitive substring). */
+function containsAny(value: string | null, list: string[]): boolean {
+  if (!value) return false;
+  const v = value.trim().toLowerCase();
+  return list.some((t) => v.includes(t));
+}
+
+/**
+ * True if a CRM user's profile OR role marks them as a sales agent. Substring match so a term like
+ * "Sales Agent" catches the "Sales Agent" profile AND region roles ("Uzbekistan Sales Agent", …).
+ */
 function isSalesAgent(u: CrmUser): boolean {
-  const profiles = nameSet(env.SALES_AGENT_PROFILE_NAMES);
-  const roles = nameSet(env.SALES_AGENT_ROLE_NAMES);
   return (
-    (u.profile != null && profiles.has(u.profile.trim().toLowerCase())) ||
-    (u.role != null && roles.has(u.role.trim().toLowerCase()))
+    containsAny(u.profile, terms(env.SALES_AGENT_PROFILE_NAMES)) ||
+    containsAny(u.role, terms(env.SALES_AGENT_ROLE_NAMES))
   );
 }
 
