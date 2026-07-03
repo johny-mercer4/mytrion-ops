@@ -132,6 +132,11 @@ export async function buildApp(): Promise<FastifyInstance> {
       'x-department-access',
       'x-all-departments',
       'x-zoho-user-id',
+      // Admin "act as agent" impersonation (honored only for a verified admin session).
+      'x-act-as-zoho-user-id',
+      'x-act-as-user-name',
+      'x-act-as-profile',
+      'x-act-as-role',
     ],
     credentials: true,
   });

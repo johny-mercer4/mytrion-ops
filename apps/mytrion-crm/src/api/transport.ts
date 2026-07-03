@@ -9,6 +9,7 @@
  */
 import { devApiKey, resolveApiConfig, v1Url } from './config';
 import { clearSession, getSession, setSession, type SessionWorker } from './session';
+import { actAsHeaders } from './impersonation';
 
 export class ApiError extends Error {
   code: string;
@@ -24,14 +25,24 @@ export class ApiError extends Error {
 export interface RequestOptions {
   query?: Record<string, string | number | undefined> | undefined;
   body?: unknown;
+  /** Set false to send AS the real admin (no act-as headers) — e.g. listing agents to impersonate. */
+  impersonate?: boolean;
 }
 
-/** Bearer from the worker session, else the dev API key for a cross-origin local backend. */
-export function authHeaders(): Record<string, string> {
+/** Session Bearer (else dev API key). No impersonation headers — the base principal. */
+function principalHeaders(): Record<string, string> {
   const token = getSession()?.accessToken;
   if (token) return { Authorization: `Bearer ${token}` };
   const key = devApiKey();
   return key ? { 'x-api-key': key } : {};
+}
+
+/**
+ * Auth headers for a request: the principal (Bearer/key) plus, when impersonating, the x-act-as-*
+ * headers so the backend runs as the picked agent. Pass `impersonate:false` to omit act-as.
+ */
+export function authHeaders(impersonate = true): Record<string, string> {
+  return impersonate ? { ...principalHeaders(), ...actAsHeaders() } : principalHeaders();
 }
 
 // De-duplicate concurrent refreshes: many in-flight requests hitting 401 at once share one refresh.
@@ -110,7 +121,7 @@ export async function request(
   const url = buildUrl(path, opts.query);
 
   const doFetch = async (): Promise<Response> => {
-    const headers: Record<string, string> = { ...authHeaders() };
+    const headers: Record<string, string> = { ...authHeaders(opts.impersonate !== false) };
     if (method !== 'GET') headers['Content-Type'] = 'application/json';
     return fetch(url, {
       method,

@@ -66,6 +66,12 @@ export async function auditFromContext(
     detail?: Record<string, unknown>;
   },
 ): Promise<void> {
+  // When impersonating (admin "act as agent"), attribute the row to the impersonated userId but
+  // record the real admin in detail so the action is traceable to a person.
+  const detail =
+    ctx.impersonatorUserId !== undefined
+      ? { ...(fields.detail ?? {}), impersonatorUserId: ctx.impersonatorUserId }
+      : fields.detail;
   await audit({
     tenantId: ctx.tenantId,
     audience: ctx.audience,
@@ -73,5 +79,6 @@ export async function auditFromContext(
     requestId: ctx.requestId,
     ...(ctx.actingAgent !== undefined ? { actingAgent: ctx.actingAgent } : {}),
     ...fields,
+    ...(detail !== undefined ? { detail } : {}),
   });
 }

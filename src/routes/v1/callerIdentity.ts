@@ -158,17 +158,66 @@ function workerContext(request: FastifyRequest, body: CallerIdentityBody): Tenan
  * Build the per-request security context. Customer markers win over worker fields; strict mode
  * locks customers down, legacy mode preserves today's behavior but warns about what will change.
  */
+/** Department VIEW from the request body (which Mytrion the caller is looking at). */
+function departmentView(body: CallerIdentityBody): string[] {
+  return normalizeDepartments([...toArray(body.department_scope), ...(body.departmentAccess ?? [])]);
+}
+
+/**
+ * Admin "act as agent" impersonation target from x-act-as-* headers. Only honored for a verified
+ * admin (allDepartmentAccess) session — the caller. Returns null when not impersonating.
+ */
+function readActAs(
+  request: FastifyRequest,
+): { zohoUserId: string; userName?: string; profile?: string; role?: string } | null {
+  const h = request.headers;
+  const one = (v: string | string[] | undefined): string | undefined => {
+    const s = (Array.isArray(v) ? v[0] : v)?.trim();
+    return s ? s : undefined;
+  };
+  const zohoUserId = one(h['x-act-as-zoho-user-id']);
+  if (!zohoUserId) return null;
+  const out: { zohoUserId: string; userName?: string; profile?: string; role?: string } = { zohoUserId };
+  const userName = one(h['x-act-as-user-name']);
+  const profile = one(h['x-act-as-profile']);
+  const role = one(h['x-act-as-role']);
+  if (userName) out.userName = userName;
+  if (profile) out.profile = profile;
+  if (role) out.role = role;
+  return out;
+}
+
 export function buildCallerContext(request: FastifyRequest, body: CallerIdentityBody): TenantContext {
   // Verified worker session (Zoho OAuth): identity is authoritative — ignore ALL client-supplied
   // identity fields. Only the department VIEW (which Mytrion) is taken from the request, and only
   // for non-admin workers (admins already see everything). Owner-scoping uses the verified userId.
   const base = requireContext(request);
   if (base.sessionVerified) {
+    // Admin "act as agent": an admin may impersonate a target agent (from CRM) so the whole request
+    // runs AS that agent — owner-scoped data becomes the target's. Gated to admins; audited.
+    const actAs = base.allDepartmentAccess ? readActAs(request) : null;
+    if (actAs) {
+      const targetAllAccess = resolveAllDepartmentAccess({
+        profile: actAs.profile,
+        role: actAs.role,
+        userName: actAs.userName,
+      });
+      const ctx: TenantContext = {
+        ...base,
+        userId: `zoho:${actAs.zohoUserId}`,
+        allDepartmentAccess: targetAllAccess,
+        departments: targetAllAccess ? [] : departmentView(body),
+        profiles: actAs.profile ? [actAs.profile] : [],
+        impersonatorUserId: base.userId,
+      };
+      // Owner-scoped tools resolve the acting agent by userId (zoho:<id>) and userName — set both.
+      if (actAs.userName) ctx.userName = actAs.userName;
+      if (actAs.role) ctx.callerRole = actAs.role;
+      else delete ctx.callerRole;
+      return ctx;
+    }
     if (base.allDepartmentAccess) return base;
-    const departments = normalizeDepartments([
-      ...toArray(body.department_scope),
-      ...(body.departmentAccess ?? []),
-    ]);
+    const departments = departmentView(body);
     return departments.length > 0 ? { ...base, departments } : base;
   }
   if (!hasCustomerMarkers(body)) return workerContext(request, body);

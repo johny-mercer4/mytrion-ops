@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 import { useUserContext } from '../../context/UserContextProvider';
-import { MYTRIONS, type MytrionId } from '../../access/mytrions.config';
+import { MYTRIONS, agentKeyFor, type MytrionId } from '../../access/mytrions.config';
 import { ChatPanel } from '../../features/chat/ChatPanel';
 import { TopBar } from '../../components/TopBar';
 import { HomeIcon } from '../../components/icons';
@@ -31,6 +31,7 @@ export function MytrionShell({
   const user = useUserContext();
   const m = MYTRIONS[id];
   const department = m.allDepartments ? null : m.department;
+  const agentKey = agentKeyFor(id); // department Mytrions → direct-to-child; admin → orchestrator
   const items: NavItem[] = nav ?? [{ key: 'home', label: 'Home', icon: <HomeIcon />, active: true }];
 
   return (
@@ -54,7 +55,7 @@ export function MytrionShell({
 
         <div className={styles.center}>{children}</div>
 
-        <ChatPanel context={user} department={department} />
+        <ChatPanel context={user} department={department} agentKey={agentKey} />
       </div>
     </div>
   );

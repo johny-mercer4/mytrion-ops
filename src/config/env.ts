@@ -115,6 +115,11 @@ const EnvSchema = z.object({
   //   BYPASS_USERS → hard RBAC bypass (skips audience/scope/write/department gates entirely).
   ADMIN_USERS: z.string().default(''),
   BYPASS_USERS: z.string().default(''),
+  // "Act as agent" picker: which Zoho CRM profile / role names count as sales agents (CSV,
+  // case-insensitive exact match on either). Confirm the live org values. GET /v1/admin/agents?all=1
+  // bypasses this filter (admin-only) when the exact names are still unknown.
+  SALES_AGENT_PROFILE_NAMES: z.string().default('Sales'),
+  SALES_AGENT_ROLE_NAMES: z.string().default('Sales Agent'),
 
   // --- Auth ---
   JWT_SECRET: z.string().default(''),

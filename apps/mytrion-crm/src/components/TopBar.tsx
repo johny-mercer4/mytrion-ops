@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom';
 import { useUserContext } from '../context/UserContextProvider';
+import { isAdmin } from '../access/resolveAccess';
 import { logout } from '../api/auth';
 import { useTheme } from '../hooks/useTheme';
+import { ActAsPicker } from './ActAsPicker';
 import { BrandMark } from './BrandMark';
 import { MoonIcon, SunIcon, SwitchIcon, XIcon } from './icons';
 import styles from './TopBar.module.css';
@@ -37,6 +39,7 @@ export function TopBar({
       </div>
 
       <div className={styles.right}>
+        {isAdmin(user) && <ActAsPicker />}
         {showSwitch && (
           <Link to="/" className={styles.switch}>
             <SwitchIcon size={13} />

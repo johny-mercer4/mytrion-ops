@@ -65,6 +65,12 @@ export interface TenantContext {
    * the request. The static API_KEY (systemContext) leaves this unset.
    */
   sessionVerified?: boolean;
+  /**
+   * Set when an admin (allDepartmentAccess) is acting AS another agent via x-act-as-* headers:
+   * the identity fields above ARE the impersonated agent, and this records the real admin's userId
+   * for audit attribution. Only ever set from a verified admin session (see callerIdentity.ts).
+   */
+  impersonatorUserId?: string;
   requestId: string;
 }
 

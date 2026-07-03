@@ -1,7 +1,10 @@
 /**
- * Streaming chat (POST /v1/chat/stream, Server-Sent Events). Same-origin direct fetch + body
- * .getReader() for live tokens — no CORS, so the Zoho HTTP proxy fallback is gone. Respects an
- * AbortSignal at every await so a cancelled turn never dispatches late frames.
+ * Streaming turns over Server-Sent Events. Two endpoints share one transport:
+ *   - streamChat  → POST /v1/chat/stream  (legacy single-agent loop; RAG runs every turn)
+ *   - streamAgent → POST /v1/agent        (orchestrator/department agent; RAG is a tool the agent
+ *                                          calls only when needed — so "hi" does no retrieval)
+ * Both use the Bearer session + one-shot refresh-on-401 retry (a 401 is pre-processing, so retrying
+ * the non-idempotent turn once is safe) and respect an AbortSignal at every await.
  */
 import { authHeaders, refreshBearer } from './transport';
 import { getSession } from './session';
@@ -15,15 +18,36 @@ export interface ChatRequestBody {
   profile?: string;
   role?: string;
   department_scope?: string | string[];
+  /** Department agent key for direct-to-child on /v1/agent (omit → orchestrator mode). */
+  agent?: string;
+}
+
+export interface ElicitationOption {
+  label: string;
+  value: string;
+  hint?: string;
+}
+
+/** A generative-UI prompt the agent surfaces (e.g. crm.pick_my_client's client picker). */
+export interface Elicitation {
+  prompt: string;
+  field?: string;
+  multiSelect?: boolean;
+  options: ElicitationOption[];
 }
 
 export interface StreamHandlers {
-  onStart?(data: { conversationId?: string }): void;
+  onStart?(data: { conversationId?: string; agent?: string }): void;
   onStatus?(data: { state?: string; label?: string }): void;
   onContext?(data: { passages?: number }): void;
   onToolCall?(data: { name?: string }): void;
   onToolResult?(data: { name?: string; status?: string }): void;
-  onToken?(data: { text?: string }): void;
+  /** Chat path emits `{text}`, agent path emits `{delta}` — read either. */
+  onToken?(data: { text?: string; delta?: string }): void;
+  /** Agent-path only: which child is running ("Consulting Sales…"). */
+  onAgent?(data: { key?: string; state?: string }): void;
+  /** Agent-path only: a dynamic-UI picker the user must answer (their pick is the next turn). */
+  onElicitation?(data: Elicitation): void;
   onDone?(data: { message?: string; ragPassages?: number; conversationId?: string }): void;
   onError?(message: string): void;
 }
@@ -50,21 +74,24 @@ function dispatchFrame(frame: string, h: StreamHandlers): void {
     case 'tool_call': h.onToolCall?.(data); break;
     case 'tool_result': h.onToolResult?.(data); break;
     case 'token': h.onToken?.(data); break;
+    case 'agent': h.onAgent?.(data); break;
+    case 'elicitation': h.onElicitation?.(data as unknown as Elicitation); break;
     case 'done': h.onDone?.(data); break;
     case 'error': h.onError?.(typeof data.message === 'string' ? data.message : 'Stream error.'); break;
     default: break;
   }
 }
 
-export async function streamChat(
-  body: ChatRequestBody,
+/** Shared SSE transport: POST `path`, stream frames to `handlers`, refresh-on-401 once, honor abort. */
+async function runSSE(
+  path: string,
+  body: unknown,
   handlers: StreamHandlers,
   signal?: AbortSignal,
 ): Promise<void> {
   const { baseUrl } = resolveApiConfig();
-  const url = v1Url(baseUrl, '/chat/stream');
+  const url = v1Url(baseUrl, path);
 
-  // Re-read headers each attempt so a refreshed Bearer token is picked up on retry.
   const doFetch = (): Promise<Response> =>
     fetch(url, {
       method: 'POST',
@@ -77,8 +104,6 @@ export async function streamChat(
   let res: Response;
   try {
     res = await doFetch();
-    // A 401 is rejected pre-processing (no turn started), so refreshing + retrying once is safe
-    // even though /chat/stream is otherwise non-idempotent.
     if (res.status === 401 && getSession() && (await refreshBearer())) {
       res = await doFetch();
     }
@@ -87,10 +112,10 @@ export async function streamChat(
     throw e;
   }
 
-  // A non-OK status is a genuine backend error (request received + processed). Do NOT retry —
-  // POST /chat/stream is not idempotent; a retry would start a second turn.
+  // A non-OK status is a genuine backend error (received + processed). Do NOT retry — a turn is not
+  // idempotent; a retry would start a second one.
   if (!res.ok) {
-    let msg = `Chat service returned HTTP ${res.status}.`;
+    let msg = `The AI service returned HTTP ${res.status}.`;
     try {
       const j = (await res.json()) as { error?: { message?: string } };
       msg = j?.error?.message ?? msg;
@@ -132,7 +157,15 @@ export async function streamChat(
     buffer = parts.pop() ?? '';
     for (const frame of parts) dispatchFrame(frame, handlers);
   }
-  // Flush a trailing frame only on a clean end — after an abort, a truncated-but-parseable frame
-  // must not fire a handler for a turn the caller already walked away from.
   if (!aborted && buffer.trim()) dispatchFrame(buffer, handlers);
+}
+
+/** Legacy single-agent chat (always-on RAG). Kept as a fallback when the agent runtime is off. */
+export function streamChat(body: ChatRequestBody, handlers: StreamHandlers, signal?: AbortSignal): Promise<void> {
+  return runSSE('/chat/stream', body, handlers, signal);
+}
+
+/** Orchestrator / department-agent turn. RAG is model-invoked (a greeting triggers no retrieval). */
+export function streamAgent(body: ChatRequestBody, handlers: StreamHandlers, signal?: AbortSignal): Promise<void> {
+  return runSSE('/agent', { ...body, stream: true }, handlers, signal);
 }

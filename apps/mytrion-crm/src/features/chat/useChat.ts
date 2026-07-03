@@ -5,9 +5,13 @@ import {
   listConversations,
   type ConversationSummary,
 } from '../../api/chat';
-import { streamChat, type ChatRequestBody } from '../../api/stream';
+import { streamAgent, streamChat, type ChatRequestBody, type Elicitation } from '../../api/stream';
+import { AGENT_LABELS, type AgentKey } from '../../access/mytrions.config';
 import type { UserContext } from '../../context/userContext';
 import type { UiMessage } from './types';
+
+/** Route through the orchestrator/agent runtime by default; VITE_USE_AGENT=0 falls back to /v1/chat. */
+const USE_AGENT_RUNTIME = import.meta.env.VITE_USE_AGENT !== '0';
 
 interface State {
   messages: UiMessage[];
@@ -23,6 +27,7 @@ type Action =
   | { type: 'patchAssistant'; patch: Partial<UiMessage> }
   | { type: 'addTool'; name: string }
   | { type: 'updateTool'; name: string; status: string }
+  | { type: 'setElicitation'; elicitation: Elicitation }
   | { type: 'setConversationId'; id: string }
   | { type: 'streamEnd' }
   | { type: 'setConversations'; conversations: ConversationSummary[] }
@@ -61,9 +66,10 @@ function reducer(state: State, action: Action): State {
         streaming: true,
         error: null,
         messages: [
-          ...state.messages,
-          { id: action.userId, role: 'user', text: action.text, status: '', passages: null, error: '', tools: [], streaming: false },
-          { id: action.assistantId, role: 'assistant', text: '', status: 'Thinking…', passages: null, error: '', tools: [], streaming: true },
+          // Retire any open picker: sending IS the answer to it.
+          ...state.messages.map((m) => (m.elicitation ? { ...m, elicitation: null } : m)),
+          { id: action.userId, role: 'user', text: action.text, status: '', passages: null, error: '', tools: [], streaming: false, elicitation: null },
+          { id: action.assistantId, role: 'assistant', text: '', status: 'Thinking…', passages: null, error: '', tools: [], streaming: true, elicitation: null },
         ],
       };
     case 'appendToken':
@@ -87,6 +93,8 @@ function reducer(state: State, action: Action): State {
           tools: m.tools.map((t) => (t.name === action.name ? { ...t, status: action.status } : t)),
         })),
       };
+    case 'setElicitation':
+      return { ...state, messages: patchLastAssistant(state.messages, (m) => ({ ...m, elicitation: action.elicitation })) };
     case 'setConversationId':
       return { ...state, conversationId: action.id };
     case 'streamEnd':
@@ -120,7 +128,11 @@ export interface ChatController {
   refreshConversations(): Promise<void>;
 }
 
-export function useChat(ctx: UserContext, department: string | string[] | null): ChatController {
+export function useChat(
+  ctx: UserContext,
+  department: string | string[] | null,
+  agentKey: AgentKey | null = null,
+): ChatController {
   const [state, dispatch] = useReducer(reducer, EMPTY);
   const abortRef = useRef<AbortController | null>(null);
   const zohoUserId = ctx.userId;
@@ -155,10 +167,13 @@ export function useChat(ctx: UserContext, department: string | string[] | null):
       if (ctx.profile) body.profile = ctx.profile;
       if (ctx.role) body.role = ctx.role;
       if (department) body.department_scope = department;
+      if (agentKey && USE_AGENT_RUNTIME) body.agent = agentKey;
+
+      const run = USE_AGENT_RUNTIME ? streamAgent : streamChat;
 
       void (async () => {
         try {
-          await streamChat(
+          await run(
             body,
             {
               onStart: (d) => d.conversationId && dispatch({ type: 'setConversationId', id: d.conversationId }),
@@ -166,7 +181,16 @@ export function useChat(ctx: UserContext, department: string | string[] | null):
               onContext: (d) => dispatch({ type: 'patchAssistant', patch: { passages: d.passages ?? null } }),
               onToolCall: (d) => d.name && dispatch({ type: 'addTool', name: d.name }),
               onToolResult: (d) => d.name && dispatch({ type: 'updateTool', name: d.name, status: d.status ?? 'ok' }),
-              onToken: (d) => d.text && dispatch({ type: 'appendToken', text: d.text }),
+              // Agent path emits {delta}; chat path emits {text}.
+              onToken: (d) => { const t = d.delta ?? d.text; if (t) dispatch({ type: 'appendToken', text: t }); },
+              // "Consulting Sales…" as a child starts (agent path only).
+              onAgent: (d) => {
+                if (d.state === 'start' && d.key) {
+                  const label = AGENT_LABELS[d.key as AgentKey] ?? d.key;
+                  dispatch({ type: 'patchAssistant', patch: { status: `Consulting ${label}…` } });
+                }
+              },
+              onElicitation: (d) => dispatch({ type: 'setElicitation', elicitation: d }),
               onDone: (d) => {
                 if (d.conversationId) dispatch({ type: 'setConversationId', id: d.conversationId });
                 dispatch({ type: 'patchAssistant', patch: { ...(typeof d.message === 'string' && d.message ? { text: d.message } : {}), ...(d.ragPassages != null ? { passages: d.ragPassages } : {}) } });
@@ -190,7 +214,7 @@ export function useChat(ctx: UserContext, department: string | string[] | null):
         }
       })();
     },
-    [ctx, department, state.conversationId, state.streaming, refreshConversations],
+    [ctx, department, agentKey, state.conversationId, state.streaming, refreshConversations],
   );
 
   const newConversation = useCallback(() => {
@@ -213,6 +237,7 @@ export function useChat(ctx: UserContext, department: string | string[] | null):
           error: m.error ?? '',
           tools: Array.isArray(m.tools) ? m.tools : [],
           streaming: false,
+          elicitation: null,
         }));
         dispatch({ type: 'loadTranscript', conversationId: id, messages: ui });
       } catch (e) {

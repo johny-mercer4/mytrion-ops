@@ -218,3 +218,39 @@ export const MYTRION_ORDER: MytrionId[] = [
 export function isMytrionId(value: string): value is MytrionId {
   return Object.prototype.hasOwnProperty.call(MYTRIONS, value);
 }
+
+/**
+ * Backend department agent keys (mirror of src/modules/agents/types.ts AGENT_KEYS). The chat UI sends
+ * `agent:<key>` to POST /v1/agent for direct-to-child. Every non-admin MytrionId equals its agent key;
+ * `admin` has no agent (→ orchestrator mode). `marketing`/`analyst` have no Mytrion but appear in an
+ * admin's orchestrator run, so their labels are still needed.
+ */
+export type AgentKey =
+  | 'customer-service'
+  | 'billing'
+  | 'verification'
+  | 'retention'
+  | 'sales'
+  | 'marketing'
+  | 'finance'
+  | 'analyst'
+  | 'manager'
+  | 'collection';
+
+export const AGENT_LABELS: Record<AgentKey, string> = {
+  sales: 'Sales',
+  billing: 'Billing',
+  collection: 'Collection',
+  finance: 'Finance',
+  retention: 'Retention',
+  verification: 'Verification',
+  'customer-service': 'Customer Service',
+  marketing: 'Marketing',
+  analyst: 'Analyst',
+  manager: 'Manager',
+};
+
+/** The department agent for a Mytrion. `admin` → null (orchestrator routes across the caller's agents). */
+export function agentKeyFor(id: MytrionId): AgentKey | null {
+  return id === 'admin' ? null : (id as AgentKey);
+}

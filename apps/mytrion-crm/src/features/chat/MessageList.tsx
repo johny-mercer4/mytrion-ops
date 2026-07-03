@@ -5,7 +5,13 @@ import type { UiMessage } from './types';
 import styles from './MessageList.module.css';
 
 /** Scrolling transcript. Auto-sticks to the bottom as tokens stream in. */
-export function MessageList({ messages }: { messages: UiMessage[] }) {
+export function MessageList({
+  messages,
+  onPick,
+}: {
+  messages: UiMessage[];
+  onPick?: (value: string) => void;
+}) {
   const endRef = useRef<HTMLDivElement>(null);
 
   // The reducer returns a fresh `messages` array on every relevant change (token, tool, status,
@@ -32,7 +38,7 @@ export function MessageList({ messages }: { messages: UiMessage[] }) {
   return (
     <div className={styles.list}>
       {messages.map((m) => (
-        <MessageBubble key={m.id} message={m} />
+        <MessageBubble key={m.id} message={m} onPick={onPick} />
       ))}
       <div ref={endRef} />
     </div>

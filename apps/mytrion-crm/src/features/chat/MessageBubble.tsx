@@ -4,7 +4,13 @@ import type { UiMessage } from './types';
 import styles from './MessageBubble.module.css';
 
 /** A single chat turn. Assistant rows surface tool chips, thinking dots, grounding, and errors. */
-export function MessageBubble({ message }: { message: UiMessage }) {
+export function MessageBubble({
+  message,
+  onPick,
+}: {
+  message: UiMessage;
+  onPick?: ((value: string) => void) | undefined;
+}) {
   const isUser = message.role === 'user';
 
   if (isUser) {
@@ -19,7 +25,14 @@ export function MessageBubble({ message }: { message: UiMessage }) {
   const hasGrounding = message.passages != null && message.passages > 0;
 
   // A finished assistant turn with nothing to show: drop the row entirely (no blank gem row).
-  if (!message.streaming && !message.text && !message.error && message.tools.length === 0 && !hasGrounding) {
+  if (
+    !message.streaming &&
+    !message.text &&
+    !message.error &&
+    message.tools.length === 0 &&
+    !hasGrounding &&
+    !message.elicitation
+  ) {
     return null;
   }
 
@@ -69,6 +82,27 @@ export function MessageBubble({ message }: { message: UiMessage }) {
         )}
 
         {message.error && <div className={styles.errText}>{message.error}</div>}
+
+        {!message.streaming && message.elicitation && (
+          <div className={styles.picker}>
+            {message.elicitation.prompt && (
+              <div className={styles.pickerPrompt}>{message.elicitation.prompt}</div>
+            )}
+            <div className={styles.pickerOptions}>
+              {message.elicitation.options.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={styles.pickerBtn}
+                  onClick={() => onPick?.(opt.value)}
+                >
+                  <span>{opt.label}</span>
+                  {opt.hint && <span className={styles.pickerHint}>{opt.hint}</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
