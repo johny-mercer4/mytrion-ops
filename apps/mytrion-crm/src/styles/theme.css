@@ -1,18 +1,20 @@
 /*
- * Mytrion AI design tokens — ported from the MytrionOpsDesign system.
- * Dark ("Soft Midnight") is the default on :root; light ("Cool White") applies under
- * [data-theme="light"] (toggled by useTheme on <html>). Components read token names only,
- * so they are theme-agnostic.
+ * Mytrion CRM design tokens — the durable source of truth (see DESIGN_SYSTEM.md).
+ * Dark ("Soft Midnight") is the default on :root; light applies under [data-theme="light"]
+ * (toggled by useTheme on <html>). Per-module accents live in global.css ([data-mytrion]).
+ * Components read token names ONLY — no hardcoded hex, no arbitrary px.
  */
 :root {
-  /* Soft Midnight — dark (default) */
-  --bg-primary: #0b0e13;
-  --bg-secondary: #0f131a;
-  --surface: #161a22;
-  --surface-alt: #11151c;
+  color-scheme: dark;
+
+  /* ── Color — Soft Midnight (dark, default) ───────────────────────────────── */
+  --bg-primary: #12161e;
+  --bg-secondary: #161b24;
+  --surface: #1b212c;
+  --surface-alt: #161a23;
   --surface-raised: rgba(255, 255, 255, 0.045);
-  --sidebar-bg: #0d1117;
-  --header-bg: #0d1117;
+  --sidebar-bg: #13171f;
+  --header-bg: #13171f;
   --text-primary: #e7eaf0;
   --text-secondary: #a9b0bd;
   --text-muted: #6e7682;
@@ -32,26 +34,97 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
   --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.42), 0 2px 6px rgba(0, 0, 0, 0.32);
   --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.58), 0 6px 16px rgba(0, 0, 0, 0.42);
-  color-scheme: dark;
 
-  /* radii */
+  /* ── Status tints — one scale (tracks the status color via color-mix in both themes) ── */
+  --tint-good-bg: color-mix(in srgb, var(--success) 13%, transparent);
+  --tint-good-bd: color-mix(in srgb, var(--success) 30%, transparent);
+  --tint-warn-bg: color-mix(in srgb, var(--warning) 13%, transparent);
+  --tint-warn-bd: color-mix(in srgb, var(--warning) 30%, transparent);
+  --tint-bad-bg: color-mix(in srgb, var(--danger) 13%, transparent);
+  --tint-bad-bd: color-mix(in srgb, var(--danger) 30%, transparent);
+  --tint-info-bg: var(--accent-soft);
+  --tint-info-bd: color-mix(in srgb, var(--accent) 30%, transparent);
+  --tint-neutral-bg: var(--surface-alt);
+  --tint-neutral-bd: var(--border);
+
+  /* ── Radii ───────────────────────────────────────────────────────────────── */
+  --radius-xs: 3px;
   --radius-sm: 5px;
   --radius-md: 9px;
   --radius-lg: 13px;
   --radius-full: 999px;
 
-  /* type */
+  /* ── Type scale (size + line-height + weight) ──────────────────────────────── */
+  --text-2xs: 10.5px;
+  --lh-2xs: 14px;
+  --text-xs: 12px;
+  --lh-xs: 16px;
+  --text-sm: 13px;
+  --lh-sm: 18px;
+  --text-base: 14px;
+  --lh-base: 20px;
+  --text-md: 15px;
+  --lh-md: 22px;
+  --text-lg: 18px;
+  --lh-lg: 24px;
+  --text-xl: 22px;
+  --lh-xl: 28px;
+  --text-2xl: 26px;
+  --lh-2xl: 31px;
+  --text-3xl: 32px;
+  --lh-3xl: 37px;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --fw-extra: 800;
+
+  /* ── Spacing — 4px rhythm ──────────────────────────────────────────────────── */
+  --space-0_5: 2px;
+  --space-1: 4px;
+  --space-1_5: 6px;
+  --space-2: 8px;
+  --space-2_5: 10px;
+  --space-3: 12px;
+  --space-3_5: 14px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ── Motion ────────────────────────────────────────────────────────────────── */
+  --dur-fast: 120ms;
+  --dur-base: 170ms;
+  --dur-slow: 220ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.4, 0, 0, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  /* ── Z-index scale ─────────────────────────────────────────────────────────── */
+  --z-base: 0;
+  --z-raised: 10;
+  --z-sticky: 100;
+  --z-dropdown: 1000;
+  --z-overlay: 2000;
+  --z-modal: 2100;
+  --z-toast: 3000;
+  --z-tooltip: 4000;
+
+  /* ── Fonts ─────────────────────────────────────────────────────────────────── */
   --font-head: 'Rajdhani', system-ui, sans-serif;
   --font-body: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
-  /* the assistant "gem" gradient (also the fuel-mark sibling accent) */
+  /* ── Brand gradients: Gem on AI surfaces, FuelMark in the masthead ─────────── */
   --gem: linear-gradient(135deg, #4285f4 0%, #9b72cb 52%, #d96570 100%);
   --fuel: linear-gradient(135deg, #fb923c, #f97316);
 }
 
 [data-theme='light'] {
-  /* Cool White — light */
+  color-scheme: light;
   --bg-primary: #f6f8fb;
   --bg-secondary: #eef1f6;
   --surface: #ffffff;
@@ -78,5 +151,4 @@
   --shadow-sm: 0 1px 2px rgba(20, 30, 50, 0.06);
   --shadow-md: 0 8px 22px rgba(20, 30, 50, 0.08), 0 2px 6px rgba(20, 30, 50, 0.05);
   --shadow-lg: 0 20px 48px rgba(20, 30, 50, 0.14), 0 6px 16px rgba(20, 30, 50, 0.08);
-  color-scheme: light;
 }

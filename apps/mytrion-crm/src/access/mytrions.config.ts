@@ -119,7 +119,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     allowedRoles: [],
     allowedUsernames: [],
     adminBypass: true,
-    status: 'new',
+    status: 'ported',
   },
   finance: {
     id: 'finance',
@@ -166,7 +166,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     allowedRoles: [],
     allowedUsernames: [],
     adminBypass: true,
-    status: 'new',
+    status: 'ported',
   },
   verification: {
     id: 'verification',
@@ -181,7 +181,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     allowedRoles: [],
     allowedUsernames: [],
     adminBypass: true,
-    status: 'new',
+    status: 'ported',
   },
   manager: {
     id: 'manager',
