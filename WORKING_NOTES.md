@@ -1151,3 +1151,25 @@ Fixed the "typing hi does slow RAG" report + made the Sales agent capable/ground
   attaches `x-act-as-*` on every request (`impersonate:false` for the picker fetch itself).
 - **Note (local env)**: `.env` has DUPLICATE `API_KEY` and `OPENAI_API_KEY` entries — worth cleaning up.
 - 313 tests green; lint/typecheck + backend & frontend builds clean.
+
+## 2026-07-03 — Apply the MytrionPolish design system (colors, app shell, AI chat, admin)
+
+Applied the delivered design system (`~/Desktop/MytrionPolish`: DESIGN_SYSTEM.md + .dc.html mockups)
+to `apps/mytrion-crm`. Commits e20f14a → f3d7945 → ec2172c.
+
+- **Tokens (e20f14a)** — `theme.css`: softer "Soft Midnight" surfaces (bg #12161e / surface #1b212c /
+  rails #13171f) + NEW scales: type (`--text-2xs…3xl` + `--lh-*`/`--fw-*`), spacing (`--space-*` 4px),
+  status tints (`--tint-*` via color-mix), motion (`--dur-*`/`--ease-*`), z-index, `--radius-xs`.
+  `global.css`: bridged tints/radius into `@theme`; reconciled per-module accents (sales→blue #4d9dff,
+  verification→indigo #6d7cff, admin cyan + manager teal); global `:focus-visible`, `::selection`,
+  `prefers-reduced-motion` killswitch. `mytrions.config`: collection/retention/verification → `ported`.
+- **Shell + chat (f3d7945)** — MytrionShell rail active state = soft accent square + 2px inset accent
+  bar; TopBar tokenized + sign-out danger hover; ChatPanel/Composer/MessageList/MessageBubble tokenized
+  (composer pill radius-lg + focus glow + 30px accent send; tool-chip tone recipe; gem thinking dots).
+- **Admin (ec2172c)** — new shared `admin/admin.module.css`; rail now switches panels (was a dead TODO):
+  Knowledge Base (stat tiles + grid table + status pills), Train (sources + run form + active-run),
+  Knowledge Browser (search + filter chips + scored result cards), Octane-Scope (lifecycle stepper +
+  stage detail w/ Blueprint/Departments/Automations/Details). All mock data.
+- Design extracted from the (large) mockups via two read-only sub-agents; exact token CSS pulled
+  verbatim from `Design System.dc.html`. Fonts still CDN (self-hosting deferred — no font files).
+  Remaining for the full "polish every page" brief: the 8 non-admin module pages + shared primitives.
