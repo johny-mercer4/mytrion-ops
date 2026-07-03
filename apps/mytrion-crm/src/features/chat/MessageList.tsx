@@ -24,7 +24,7 @@ export function MessageList({
     return (
       <div className={styles.list}>
         <div className={styles.empty}>
-          <Gem size={32} />
+          <Gem size={44} />
           <p className={styles.emptyTitle}>Ask Mytrion</p>
           <p className={styles.emptyHint}>
             Grounded in your knowledge base and scoped to your department — ask about policies,

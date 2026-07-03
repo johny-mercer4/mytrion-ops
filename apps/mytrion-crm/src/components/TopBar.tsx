@@ -59,7 +59,12 @@ export function TopBar({
           {initials(user.userName)}
         </span>
         {user.trusted && (
-          <button type="button" className={styles.switch} onClick={logout} title="Sign out">
+          <button
+            type="button"
+            className={`${styles.switch} ${styles.signout}`}
+            onClick={logout}
+            title="Sign out"
+          >
             <XIcon size={13} />
             Sign out
           </button>
