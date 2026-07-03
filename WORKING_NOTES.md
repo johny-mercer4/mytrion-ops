@@ -1125,3 +1125,29 @@ the confidential client). All gated behind `FF_ZOHO_OAUTH_ENABLED` (default off)
 - Tests: `tests/unit/zoho-oauth.test.ts` (worker-claim round-trip, oauth-state sign/verify + negatives,
   contextFromClaims worker branch, startLogin URL) + session-authoritative cases added to
   `caller-identity.test.ts`. Full suite green: 312 tests. lint/typecheck/build clean.
+
+## 2026-07-03 — Chat → agent runtime, Sales agent hardening, admin "act as agent"
+
+Fixed the "typing hi does slow RAG" report + made the Sales agent capable/grounded (commit 612d887).
+
+- **Root cause**: chat UI posted to single-agent `/v1/chat/stream`, which ran `retrieveGrounding`
+  UNCONDITIONALLY every turn (planner + multi-query embeds + hybrid SQL + judge) — even for "hi".
+- **Fix (Part A)**: chat now streams through `/v1/agent` (orchestrator runtime) where RAG is the
+  model-invoked `knowledge_search` tool → a greeting does ZERO retrieval. Dept Mytrions send
+  `agent:<key>` (direct-to-child); admin sends none (orchestrator). `stream.ts` generalized
+  (`streamAgent`, `agent`/`elicitation` events, token `delta ?? text`); `agentKeyFor(id)` maps
+  Mytrion→AGENT_KEY (admin→null; fixes management→manager). `/v1/chat` kept as fallback (`VITE_USE_AGENT=0`).
+  Verified live: "hi" → no tool_call; policy Q → `knowledge_search` fires, grounds, cites docIds.
+- **Sales agent (Part B)**: enriched byte-stable persona (`OCTANE_CONTEXT`/`OWNER_SCOPE_RULE`/
+  `RAG_USAGE_RULE` in shared.ts + a Sales capability catalog). `RAG_USAGE_RULE` now MANDATES grounding
+  policy/procedure via knowledge_search (no answering from memory → cites or says "not documented").
+  Model = `gpt-5.4-mini` (manifest.model, Sales only). `FF_AGENTIC_RAG=0` → single-pass kNN over
+  Global∪Sales. `docs/knowledge/sales/sales-playbook.md` ingested to the `sales` namespace (7 chunks).
+- **Admin "act as agent" (Part C)**: `GET /v1/admin/agents` (allDepartmentAccess-gated) lists active
+  Sales-profile CRM users via `zohoCrm.listActiveUsers` (Zoho Users API, `?type=ActiveUsers`, env
+  `SALES_AGENT_PROFILE_NAMES`/`_ROLE_NAMES`, `?all=1` bypasses filter). `buildCallerContext` honors
+  `x-act-as-*` headers for a verified admin → runs AS the rep (owner-scoped), records
+  `impersonatorUserId` for audit. Frontend: `ImpersonationProvider` + TopBar `ActAsPicker` + transport
+  attaches `x-act-as-*` on every request (`impersonate:false` for the picker fetch itself).
+- **Note (local env)**: `.env` has DUPLICATE `API_KEY` and `OPENAI_API_KEY` entries — worth cleaning up.
+- 313 tests green; lint/typecheck + backend & frontend builds clean.
