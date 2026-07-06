@@ -1276,3 +1276,31 @@ same key model as the widget's MYTRION_OPS_API_URL/KEY org variables). Branch bu
   + 37 web green; lint/typecheck/builds clean.**
 - Deploy notes: run `pnpm db:migrate` (0016_carrier_users) on deploy; FF_CLIENT_LOGIN_ENABLED=0 is the
   kill switch; ADMIN_PROFILE_MARKERS env override wins over the new default if set in Render.
+
+## 2026-07-07 (2) — Enriched audit trail + Audit Log tab in Mytrion Admin
+
+"Which user (name/id/profile/role) — or which carrier COMPANY — pressed what, when", for internal
+workers and client users alike, visible in the Admin.
+
+- **audit_log identity columns (migration 0017)**: user_name, profile, caller_role (Zoho role),
+  role (internal RBAC role), company (carrier/application tags for customer-audience actors),
+  impersonator_user_id (promoted from detail jsonb). `auditFromContext` now stamps ALL of them from
+  the session context automatically — so every existing call site (toolDispatcher tool.call,
+  orchestratorService agent.turn/select, chatService, approvals, knowledge.embed, carrier_user.*)
+  got the enrichment for free. Client sessions carry `profile` in their token claims now
+  (ClientIdentity.profile, set at login from the carrier_users row) → ctx.profiles → audit.
+- **New audit coverage**: automation.log (who triggered which automation — the /automation/logs
+  route only wrote its own table before), knowledge.delete (single + bulk), knowledge.verify,
+  scope_risk.create/update/delete. Logins were already audited (auth.login / auth.zoho.login /
+  auth.client_login) — now enriched with userName/profile/role/company columns.
+- **GET /v1/admin/audit upgraded**: guard switched from JWT-only adminOnly to sessionOrApiKey +
+  role-admin (same gate as /carrier-users, so the dev API-key transport works); filters action
+  (PREFIX match — 'auth.' = all auth events), audience, status, user_id + limit/offset; returns
+  {entries (tenantId stripped), total}.
+- **Admin → Audit Log tab (new)**: action-preset chips (Logins / Chat / Tools / Knowledge /
+  Automations / Carrier users), audience + status chips, client-side text filter, table
+  (When · User (+as-agent-by) · Profile·Role · Company · Action · Status), row click → detail
+  modal (full identity grid + pretty-printed detail JSON), Load more pagination.
+- Tests: 390 backend green (6 new: worker/client/impersonator identity stamping; endpoint filter
+  forwarding + no-tenantId DTO; RBAC worker/client 403, admin ok) + 37 web.
+- Deploy: run `pnpm db:migrate` (0017 audit columns; additive, no backfill — old rows show '—').

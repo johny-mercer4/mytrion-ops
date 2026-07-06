@@ -52,6 +52,16 @@ const updateUserSchema = z.object({
   status: z.enum(['active', 'disabled']).optional(),
 });
 
+const auditQuerySchema = z.object({
+  /** Action PREFIX ('auth.' matches every auth event; exact names work too). */
+  action: z.string().max(120).optional(),
+  audience: z.enum(AUDIENCES).optional(),
+  status: z.enum(['ok', 'denied', 'error']).optional(),
+  user_id: z.string().max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+});
+
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
   const adminOnly: RouteShorthandOptions = {
     onRequest: [app.authenticate],
@@ -130,17 +140,32 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.get<{ Querystring: { action?: string; limit?: string } }>(
-    '/admin/audit',
-    adminOnly,
-    async (request) => {
-      const ctx = requireContext(request);
-      const limit = request.query.limit ? Number(request.query.limit) : undefined;
-      const entries = await auditRepo.list(ctx, {
-        ...(request.query.action ? { action: request.query.action } : {}),
-        ...(limit !== undefined && Number.isFinite(limit) ? { limit } : {}),
-      });
-      return { entries };
-    },
-  );
+  // Audit trail for the Mytrion Admin: who (user/name/profile/role/company) did what, when.
+  // Guard: session OR static API key (dev transport), then a role-admin check — same gate as
+  // /carrier-users, so admin-profile workers and the trusted widget key pass, 'worker'
+  // sessions and customer sessions are denied.
+  app.get('/admin/audit', { onRequest: [app.sessionOrApiKey] }, async (request) => {
+    const ctx = requireContext(request);
+    if (ctx.role !== 'admin' && !ctx.bypassRbac) {
+      throw new RBACError('Audit log requires admin access');
+    }
+    const q = auditQuerySchema.parse(request.query);
+    const filter = {
+      ...(q.action ? { action: q.action } : {}),
+      ...(q.audience ? { audience: q.audience } : {}),
+      ...(q.status ? { status: q.status } : {}),
+      ...(q.user_id ? { userId: q.user_id } : {}),
+      ...(q.limit !== undefined ? { limit: q.limit } : {}),
+      ...(q.offset !== undefined ? { offset: q.offset } : {}),
+    };
+    const [entries, total] = await Promise.all([
+      auditRepo.list(ctx, filter),
+      auditRepo.count(ctx, filter),
+    ]);
+    // Drop tenantId from the wire DTO; everything else is display data for the admin.
+    return {
+      entries: entries.map(({ tenantId: _tenantId, ...rest }) => rest),
+      total,
+    };
+  });
 }

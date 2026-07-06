@@ -4,6 +4,7 @@ import { DEFAULT_RETRIEVAL_K, MAX_RETRIEVAL_K } from '../../config/constants.js'
 import { env } from '../../config/env.js';
 import { normalizeDepartment, normalizeDepartments } from '../../lib/department.js';
 import { AppError, NotFoundError } from '../../lib/errors.js';
+import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { ingestDocument, type IngestResult } from '../../modules/knowledge/ingestService.js';
 import { retrieve } from '../../modules/knowledge/retriever.js';
 import { knowledgeRepo } from '../../repos/knowledgeRepo.js';
@@ -181,6 +182,13 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     const ctx = requireContext(request);
     const deleted = await knowledgeRepo.deleteDoc(ctx, request.params.id);
     if (!deleted) throw new NotFoundError(`No document with id ${request.params.id}`);
+    await auditFromContext(ctx, {
+      action: 'knowledge.delete',
+      status: 'ok',
+      resourceType: 'knowledge_doc',
+      resourceId: request.params.id,
+      detail: { title: deleted.title, chunksDeleted: deleted.chunkCount },
+    });
     return { deleted };
   }
 
@@ -193,6 +201,12 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     const ctx = withDepartmentAccess(requireContext(request), request);
     const verified = await knowledgeRepo.markVerified(ctx, request.params.id);
     if (!verified) throw new NotFoundError('Document not found');
+    await auditFromContext(ctx, {
+      action: 'knowledge.verify',
+      status: 'ok',
+      resourceType: 'knowledge_doc',
+      resourceId: request.params.id,
+    });
     return { verified: true, id: request.params.id };
   });
 
@@ -207,6 +221,12 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       if (row) deleted.push(row);
       else notFound.push(id);
     }
+    await auditFromContext(ctx, {
+      action: 'knowledge.delete',
+      status: 'ok',
+      resourceType: 'knowledge_doc',
+      detail: { bulk: true, deleted: deleted.map((d) => d.id), notFound },
+    });
     return { deleted, notFound };
   });
 

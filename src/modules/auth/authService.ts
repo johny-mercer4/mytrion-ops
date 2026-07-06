@@ -97,6 +97,7 @@ export function contextFromClaims(claims: TokenClaims, requestId: string): Tenan
       requestId,
     };
     if (c.login) ctx.userName = c.login;
+    if (c.profile) ctx.profiles = [c.profile];
     return ctx;
   }
   return {

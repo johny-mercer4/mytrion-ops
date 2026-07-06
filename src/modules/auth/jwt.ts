@@ -32,6 +32,8 @@ export interface ClientIdentity {
   carrierId: string;
   applicationId?: string;
   login?: string;
+  /** Access profile label assigned by the admin (e.g. 'Carrier Owner') — audit display. */
+  profile?: string;
 }
 
 export interface TokenClaims {
@@ -72,8 +74,10 @@ function parseClient(raw: unknown): ClientIdentity | undefined {
   const c: ClientIdentity = { carrierUserId, carrierId };
   const applicationId = str(r['applicationId']);
   const login = str(r['login']);
+  const profile = str(r['profile']);
   if (applicationId) c.applicationId = applicationId;
   if (login) c.login = login;
+  if (profile) c.profile = profile;
   return c;
 }
 

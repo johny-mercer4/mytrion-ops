@@ -37,6 +37,7 @@ export const clientAuthService = {
       carrierId: row.carrierId,
       ...(row.applicationId ? { applicationId: row.applicationId } : {}),
       login: row.login,
+      ...(row.profile ? { profile: row.profile } : {}),
     };
     const claims: TokenClaims = {
       userId: `client:${row.id}`,
