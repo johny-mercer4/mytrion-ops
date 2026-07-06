@@ -22,6 +22,7 @@ import { applyDepartmentPolicy } from './modules/agents/departmentAgents.js';
 import { loadMcpTools } from './modules/tools/mcpTools.js';
 import { toolRegistry } from './modules/tools/index.js';
 import { adminRoutes } from './routes/v1/admin.routes.js';
+import { carrierUsersRoutes } from './routes/v1/carrierUsers.routes.js';
 import { agentRoutes } from './routes/v1/agent.routes.js';
 import { authRoutes } from './routes/v1/auth.routes.js';
 import { automationRoutes } from './routes/v1/automation.routes.js';
@@ -184,6 +185,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(automationRoutes);
       await v1.register(moneyCodeRoutes);
       await v1.register(adminRoutes);
+      await v1.register(carrierUsersRoutes);
       await v1.register(agentRoutes);
       await v1.register(tasksRoutes);
       await v1.register(filesRoutes);

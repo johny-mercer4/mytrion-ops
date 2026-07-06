@@ -85,6 +85,9 @@ export const StopIcon = ({ size = 12, className, style }: IconProps) => (
 export const HistoryIcon = ({ size = 13, className, style }: IconProps) =>
   stroke(size, 'M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8m0-5v5h5m4-1v5l4 2', 2, className, style);
 
+export const UsersIcon = ({ size = 19, className, style }: IconProps) =>
+  stroke(size, 'M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-2.5-1.34M5 11a3 3 0 102.5-1.34', 2, className, style);
+
 /** The four-point fuel "spark" used in the brand mark and assistant gem (filled). */
 export const Sparkle = ({ size = 16, className, style }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className} style={style} aria-hidden="true">

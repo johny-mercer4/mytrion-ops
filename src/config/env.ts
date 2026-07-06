@@ -124,7 +124,10 @@ const EnvSchema = z.object({
   ZOHO_MCP_URL: z.string().default(''),
 
   // --- Department RBAC: profile/role substrings that grant UNLIMITED access (all depts + all tools). ---
-  ADMIN_PROFILE_MARKERS: z.string().default('administrator,manager,developer'),
+  // 'ceo' matches the Zoho ROLE the frontend also treats as admin (ADMIN_ROLES in
+  // mytrions.config.ts) — the two admin predicates must stay aligned or CEO sessions
+  // get 'worker' role backend-side and 403 on admin-only routes.
+  ADMIN_PROFILE_MARKERS: z.string().default('administrator,manager,developer,ceo'),
   // Per-user overrides matched on the caller's `user_name` (case-insensitive). Accepts CSV or a
   // bracketed list, e.g. ADMIN_USERS=[alice,bob] or ADMIN_USERS=alice,bob.
   //   ADMIN_USERS  → granted all-department access (see everything, like an admin marker).
@@ -303,6 +306,10 @@ const EnvSchema = z.object({
   FF_WORKER_DEPT_STRICT: flag('0'),
   // Zoho OAuth worker sign-in (/v1/auth/zoho/*) + Bearer-session identity on caller routes.
   FF_ZOHO_OAUTH_ENABLED: flag('0'),
+  // Carrier-client login/password sign-in (/v1/auth/client/login — carrier_users accounts,
+  // consumed by the future Telegram mini-app + the /client page). Sessions are locked to
+  // audience 'customer'. On by default; set 0 to kill the endpoint instantly.
+  FF_CLIENT_LOGIN_ENABLED: flag('1'),
   // Multi-agent orchestrator endpoint (POST /v1/agent). FF_DEEP_AGENTS_ENABLED is kept as a
   // deprecated alias — either flag enables the endpoint.
   FF_ORCHESTRATOR_ENABLED: flag('0'),

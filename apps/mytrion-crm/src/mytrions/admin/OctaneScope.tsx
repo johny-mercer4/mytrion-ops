@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { ScopeIcon } from '../../components/icons';
+import { useEffect, useState } from 'react';
+import { createRisk, deleteRisk, listRisks, updateRisk, type RiskCategory, type ScopeRiskItem } from '../../api/scope';
+import { PlusIcon, ScopeIcon, XIcon } from '../../components/icons';
 import s from './admin.module.css';
 
 interface Stage {
@@ -117,8 +118,28 @@ const LIFECYCLES: Record<'intake' | 'after', Stage[]> = {
   ],
 };
 
-const SUBTABS = ['Blueprint', 'Departments', 'Automations', 'Details'] as const;
+const SUBTABS = ['Blueprint', 'Departments', 'Automations', 'Details', 'Risk Items'] as const;
 type SubTab = (typeof SUBTABS)[number];
+
+/**
+ * Stage key → /v1/scope/risks nodeId. The intake ids match the RnD widget's nodes exactly,
+ * so risk items edited here and in the Zoho widget are the SAME records.
+ */
+const NODE_IDS: Record<string, string> = {
+  leadgen: 'lead-generation',
+  leadcycle: 'lead-cycle',
+  wex: 'wex-cycle',
+  deal: 'deal-cycle',
+  client: 'client-stage',
+  verification: 'after-verification',
+  retention: 'after-retention',
+};
+
+const RISK_CATEGORIES: Array<{ key: RiskCategory; label: string }> = [
+  { key: 'blocker', label: 'Blockers' },
+  { key: 'red_flag', label: 'Red Flags' },
+  { key: 'manual', label: 'Manual Processes' },
+];
 
 /** Admin Octane-Scope — the client lifecycle map (Intake + After), stage by stage. */
 export function OctaneScope() {
@@ -271,8 +292,125 @@ export function OctaneScope() {
               </div>
             </>
           )}
+
+          {sub === 'Risk Items' && <RiskItems nodeId={NODE_IDS[stage.key] ?? stage.key} />}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Live Blockers / Red Flags / Manual editor for one lifecycle node (/v1/scope/risks). */
+function RiskItems({ nodeId }: { nodeId: string }) {
+  const [items, setItems] = useState<ScopeRiskItem[] | null>(null);
+  const [error, setError] = useState('');
+  const [drafts, setDrafts] = useState<Record<RiskCategory, string>>({
+    blocker: '',
+    red_flag: '',
+    manual: '',
+  });
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setItems(null);
+    setError('');
+    setDrafts({ blocker: '', red_flag: '', manual: '' });
+    listRisks(nodeId)
+      .then((res) => alive && setItems(res.items))
+      .catch((e: unknown) => {
+        if (!alive) return;
+        setError(e instanceof Error ? e.message : String(e));
+        setItems([]); // stop the perpetual "Loading…" row; the error note explains the failure
+      });
+    return () => {
+      alive = false;
+    };
+  }, [nodeId]);
+
+  async function add(category: RiskCategory) {
+    const label = drafts[category].trim();
+    if (!label || busy) return;
+    setBusy(true);
+    try {
+      const res = await createRisk({ nodeId, category, label });
+      setItems((prev) => [...(prev ?? []), res.item]);
+      setDrafts((d) => ({ ...d, [category]: '' }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function rename(item: ScopeRiskItem) {
+    const label = window.prompt('Edit item', item.label)?.trim();
+    if (!label || label === item.label) return;
+    try {
+      const res = await updateRisk(item.id, { label });
+      setItems((prev) => (prev ?? []).map((x) => (x.id === item.id ? res.item : x)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function remove(item: ScopeRiskItem) {
+    try {
+      await deleteRisk(item.id);
+      setItems((prev) => (prev ?? []).filter((x) => x.id !== item.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  return (
+    <div className={s.deptGrid}>
+      {error && (
+        <p className={s.errorNote} role="alert" style={{ gridColumn: '1 / -1' }}>
+          {error}
+        </p>
+      )}
+      {RISK_CATEGORIES.map(({ key, label }) => {
+        const list = (items ?? []).filter((i) => i.category === key);
+        return (
+          <div key={key} className={s.deptCard}>
+            <div className={s.deptName}>
+              <span
+                className={s.dot}
+                style={{
+                  background:
+                    key === 'blocker' ? 'var(--danger)' : key === 'red_flag' ? 'var(--warning, var(--accent))' : 'var(--accent)',
+                }}
+              />
+              {label}
+            </div>
+            {items === null && <div className={s.deptItem}>Loading…</div>}
+            {list.map((item) => (
+              <div key={item.id} className={s.riskRow}>
+                <button type="button" className={s.riskLabel} onClick={() => void rename(item)} title="Click to edit">
+                  {item.label}
+                </button>
+                <button type="button" className={s.iconBtn} aria-label={`Delete ${item.label}`} onClick={() => void remove(item)}>
+                  <XIcon size={10} />
+                </button>
+              </div>
+            ))}
+            {items !== null && list.length === 0 && <div className={s.deptItem}>None recorded.</div>}
+            <div className={s.inlineRow}>
+              <input
+                className={s.input}
+                value={drafts[key]}
+                onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))}
+                onKeyDown={(e) => e.key === 'Enter' && void add(key)}
+                placeholder={`Add ${label.toLowerCase().replace(/s$/, '')}…`}
+              />
+              <button type="button" className={s.miniBtn} disabled={busy || !drafts[key].trim()} onClick={() => void add(key)}>
+                <PlusIcon size={11} />
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

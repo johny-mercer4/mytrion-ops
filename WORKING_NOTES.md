@@ -1231,3 +1231,48 @@ Five commits: cf3c65e (llm reliability) → b0a5457 (RAG/stream) → 8bd9797 (RB
   `tool_calls` for non-read calls by non-admin workers (they lose write access BY DESIGN) and confirm
   the Telegram shim sends only carrier_id/chat_id (or set FF_CUSTOMER_SCOPE_STRICT=0 temporarily);
   enable FF_AGENT_CHECKPOINTS=1 in staging when convenient (multi-turn agent context).
+
+## 2026-07-07 — Admin wired live (agent-scope port) + Carrier User Management + client login
+
+Ported ALL functionality from the Zoho "Agent Scope" widget (~/Desktop/Octane-Project/zoho-octane/app/agent-scope)
+into the Mytrion Admin, wired to our own API (prod: same-origin session Bearer; dev: VITE_API_URL + VITE_API_KEY —
+same key model as the widget's MYTRION_OPS_API_URL/KEY org variables). Branch build.
+
+- **Admin tabs now LIVE** (were all mock): Knowledge Base (GET /knowledge/stats + /docs; row click →
+  detail modal with metadata + embedded-chunk inspector via /docs/:id/chunks — the widget's "JSON
+  contents" view; Mark verified; Delete), Train (dropzone .md/.txt/.json ≤1MB ≤20/batch → POST
+  /knowledge/embed per file with normalized department tag + preset chips; idempotent skip; paste-text
+  card; result tally; KB remounts after a run), Knowledge Browser (POST /knowledge/query with
+  department chips incl. Global; doc-title resolution; latency), Octane-Scope gains a live "Risk
+  Items" sub-tab (Blockers/Red Flags/Manual CRUD on /scope/risks; intake nodeIds match the widget's —
+  lead-generation/lead-cycle/wex-cycle/deal-cycle — so both UIs edit the SAME records). AI Chat: the
+  docked ChatPanel already covers the widget's chat (streaming + conversations) — nothing to port.
+- **Carrier User Management (new tab)** — carrier_users table (migration 0016; separate from internal
+  users on purpose), carrierUserRepo, /v1/carrier-users CRUD (role-admin gate: static API key +
+  admin-profile workers pass, 'worker'-role sessions 403; bcrypt via hashPassword; audited
+  admin.carrier_user.*; password never echoed/logged). UI: table (Carrier Id, Application Id, Login,
+  Agent (Zoho user via /admin/agents datalist w/ manual fallback), Profile, Status, Last login) +
+  create form with password generator (shown once), reset-password / disable / delete actions.
+- **Carrier-client login** — POST /v1/auth/client/login (FF_CLIENT_LOGIN_ENABLED, default 1) mints a
+  LOCKED-DOWN customer session: audience 'customer', viewer role, NO scopes, departments = carrier/
+  application tags from the signed client claims; buildCallerContext returns the base ctx untouched
+  for customer sessions (body identity/act-as fully inert); refresh re-checks the row is still active
+  (disable kills sessions within one access-token TTL). /client page wired (own localStorage session,
+  octane.clientSession.v1) — ready for the Telegram mini-app.
+- **Adversarial review workflow (3 reviewers → 14 findings → 13 confirmed, all fixed)**. Highlights:
+  (1) SECURITY: conversation CRUD trusted body zoho_user_id / fell back tenant-wide — a client session
+  could read/rename/delete ANY conversation. Fixed: verified non-admin sessions are owner-locked to
+  the token identity (conversationOwner helper); admin/API-key behavior unchanged. (2) SECURITY:
+  knowledge + scope routes were reachable by customer sessions → audience gate (internal/partner).
+  (3) /knowledge/query now honors departmentAccess as a NARROWING filter (admin sessions carry
+  allDepartmentAccess, so the browser chips were a silent no-op in prod). (4) Train's 10MB cap lied —
+  /knowledge/embed caps content at 1M chars / 2MB body → 1MB + honest copy. (5) 'ceo' added to
+  ADMIN_PROFILE_MARKERS (frontend admits CEO to Admin; backend derived 'worker' → 403s). Plus React
+  fixes: modal Escape/focus/role + drag-close guard, browser titles ref→state, RiskItems error/draft
+  reset, agent-picker id resolution at submit time, dropzone keyboard/running guards.
+- **Tests: 384 backend (21 carrier: admin gate, hashed create, no-hash echo, audit redaction, login
+  lockdown incl. buildCallerContext spoof matrix, refresh-after-disable, containment: client session
+  403 on knowledge/scope + owner-locked conversation read/delete for clients AND non-admin workers)
+  + 37 web green; lint/typecheck/builds clean.**
+- Deploy notes: run `pnpm db:migrate` (0016_carrier_users) on deploy; FF_CLIENT_LOGIN_ENABLED=0 is the
+  kill switch; ADMIN_PROFILE_MARKERS env override wins over the new default if set in Render.

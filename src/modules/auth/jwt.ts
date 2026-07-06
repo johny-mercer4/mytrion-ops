@@ -21,6 +21,19 @@ export interface WorkerIdentity {
   zohoRole?: string;
 }
 
+/**
+ * Verified CARRIER-CLIENT identity embedded in a session token (login/password from
+ * carrier_users). The context minted from these claims is locked down server-side:
+ * audience 'customer', viewer role, no scopes, departments = the company tags — request
+ * bodies can never widen it (see contextFromClaims + buildCallerContext).
+ */
+export interface ClientIdentity {
+  carrierUserId: string;
+  carrierId: string;
+  applicationId?: string;
+  login?: string;
+}
+
 export interface TokenClaims {
   userId: string;
   tenantId: string;
@@ -28,6 +41,8 @@ export interface TokenClaims {
   role: Role;
   /** Present for Zoho-worker sessions; absent on the dormant email/password + system paths. */
   worker?: WorkerIdentity;
+  /** Present for carrier-client sessions (login/password via /auth/client/login). */
+  client?: ClientIdentity;
 }
 
 function parseWorker(raw: unknown): WorkerIdentity | undefined {
@@ -47,6 +62,21 @@ function parseWorker(raw: unknown): WorkerIdentity | undefined {
   return w;
 }
 
+function parseClient(raw: unknown): ClientIdentity | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const r = raw as Record<string, unknown>;
+  const str = (v: unknown): string | undefined => (typeof v === 'string' && v.length > 0 ? v : undefined);
+  const carrierUserId = str(r['carrierUserId']);
+  const carrierId = str(r['carrierId']);
+  if (!carrierUserId || !carrierId) return undefined;
+  const c: ClientIdentity = { carrierUserId, carrierId };
+  const applicationId = str(r['applicationId']);
+  const login = str(r['login']);
+  if (applicationId) c.applicationId = applicationId;
+  if (login) c.login = login;
+  return c;
+}
+
 function secretKey(): Uint8Array {
   const secret = env.JWT_SECRET || (isProduction ? '' : DEV_FALLBACK_SECRET);
   if (!secret) throw new AuthError('JWT_SECRET is not configured');
@@ -60,6 +90,7 @@ async function sign(claims: TokenClaims, type: TokenType, ttl: string): Promise<
     role: claims.role,
     tokenType: type,
     ...(claims.worker ? { worker: claims.worker } : {}),
+    ...(claims.client ? { client: claims.client } : {}),
   })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
     .setSubject(claims.userId)
@@ -101,7 +132,15 @@ export async function verifyToken(token: string, expectedType: TokenType): Promi
   }
 
   const worker = parseWorker(payload['worker']);
-  return { userId: sub, tenantId, audience: audienceKind, role, ...(worker ? { worker } : {}) };
+  const client = parseClient(payload['client']);
+  return {
+    userId: sub,
+    tenantId,
+    audience: audienceKind,
+    role,
+    ...(worker ? { worker } : {}),
+    ...(client ? { client } : {}),
+  };
 }
 
 // ── Short-lived signed OAuth state (CSRF for the Zoho login redirect) ────────────────────────

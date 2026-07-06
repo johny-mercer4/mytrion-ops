@@ -9,6 +9,27 @@ import type { Conversation, Message } from '../../db/schema/index.js';
 import { sseCorsHeaders } from '../../lib/cors.js';
 import { requireContext } from './helpers.js';
 import { buildCallerContext, callerIdentitySchema, ownerCtx, toArray } from './callerIdentity.js';
+import type { TenantContext } from '../../types/tenantContext.js';
+
+/**
+ * Conversation OWNER for the CRUD routes. A verified NON-ADMIN session (worker or carrier
+ * client) is always locked to its own token identity — a body/query `zoho_user_id` must never
+ * re-point the owner, and the tenant-wide repo fallbacks are reserved for admin authority /
+ * the trusted API-key frontend. Returns `owned:true` when the owner-scoped repo variants are
+ * mandatory.
+ */
+function conversationOwner(
+  request: FastifyRequest,
+  requestedZohoUserId?: string,
+  requestedUserName?: string,
+): { ctx: TenantContext; owned: boolean } {
+  const base = requireContext(request);
+  if (base.sessionVerified && !base.allDepartmentAccess) {
+    return { ctx: base, owned: true };
+  }
+  const ctx = ownerCtx(base, requestedZohoUserId, requestedUserName);
+  return { ctx, owned: Boolean(requestedZohoUserId ?? requestedUserName) };
+}
 
 const stringOrList = z.union([z.string(), z.array(z.string().max(120)).max(50)]);
 const scopeSchema = z.union([z.string(), z.array(z.string().max(60)).max(50)]);
@@ -135,7 +156,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   // Create a new (possibly empty) conversation up front.
   app.post('/chat/conversations', guard, async (request, reply) => {
     const body = createConversationSchema.parse(request.body);
-    const ctx = ownerCtx(requireContext(request), body.zoho_user_id, body.user_name);
+    const { ctx } = conversationOwner(request, body.zoho_user_id, body.user_name);
     const created = await conversationRepo.create(ctx, {
       ...(body.title !== undefined ? { title: body.title } : {}),
       ...(body.zoho_user_id !== undefined ? { zohoUserId: body.zoho_user_id } : {}),
@@ -151,7 +172,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   // List a user's conversations (most-recent first) + total.
   app.get('/chat/conversations', guard, async (request) => {
     const q = listQuerySchema.parse(request.query);
-    const ctx = ownerCtx(requireContext(request), q.zoho_user_id ?? q.zohoUserId);
+    const { ctx } = conversationOwner(request, q.zoho_user_id ?? q.zohoUserId);
     const page = { limit: q.limit ?? 30, offset: q.offset ?? 0 };
     const [rows, total] = await Promise.all([
       conversationRepo.listForUser(ctx, page),
@@ -161,13 +182,12 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // Fetch one conversation + its clean transcript (chronological).
-  // Owner-scoped when zoho_user_id is supplied (the widget always has it) so a caller can't read
-  // another user's chat by id; tenant-scoped fallback only when no owner is given (admin).
+  // Owner-scoped for every verified non-admin session AND whenever an owner is supplied, so a
+  // caller can't read another user's chat by id; tenant-scoped fallback only for admin/API-key.
   app.get<{ Params: { id: string } }>('/chat/conversations/:id', guard, async (request) => {
     const q = idScopeQuerySchema.parse(request.query);
-    const zid = q.zoho_user_id ?? q.zohoUserId;
-    const ctx = ownerCtx(requireContext(request), zid);
-    const conversation = zid
+    const { ctx, owned } = conversationOwner(request, q.zoho_user_id ?? q.zohoUserId);
+    const conversation = owned
       ? await conversationRepo.findOwned(ctx, request.params.id)
       : await conversationRepo.findById(ctx, request.params.id);
     if (!conversation) throw new NotFoundError('Conversation not found');
@@ -175,29 +195,29 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     return { conversation: conversationDto(conversation), messages: messages.map(messageDto) };
   });
 
-  // Rename / update (owner-scoped when zoho_user_id is supplied).
+  // Rename / update (owner-scoped for every verified non-admin session).
   app.post<{ Params: { id: string } }>('/chat/conversations/:id', guard, async (request) => {
     const body = updateConversationSchema.parse(request.body);
-    const ctx = ownerCtx(requireContext(request), body.zoho_user_id);
+    const { ctx, owned } = conversationOwner(request, body.zoho_user_id);
     const patch = {
       ...(body.title !== undefined ? { title: body.title } : {}),
       ...(body.department_scope !== undefined ? { departmentScope: body.department_scope } : {}),
     };
-    const updated = body.zoho_user_id
+    const updated = owned
       ? await conversationRepo.updateOwned(ctx, request.params.id, patch)
       : await conversationRepo.update(ctx, request.params.id, patch);
     if (!updated) throw new NotFoundError('Conversation not found');
     return { conversation: conversationDto(updated) };
   });
 
-  // Delete (POST alias) — cascades to messages (owner-scoped when zoho_user_id is supplied).
+  // Delete (POST alias) — cascades to messages (owner-scoped for verified non-admin sessions).
   app.post<{ Params: { id: string } }>(
     '/chat/conversations/:id/delete',
     guard,
     async (request: FastifyRequest<{ Params: { id: string } }>) => {
       const body = deleteBodySchema.parse(request.body ?? {});
-      const ctx = ownerCtx(requireContext(request), body.zoho_user_id);
-      const deleted = body.zoho_user_id
+      const { ctx, owned } = conversationOwner(request, body.zoho_user_id);
+      const deleted = owned
         ? await conversationRepo.deleteByIdOwned(ctx, request.params.id)
         : await conversationRepo.deleteById(ctx, request.params.id);
       if (!deleted) throw new NotFoundError('Conversation not found');

@@ -75,3 +75,26 @@
   line-height: 1.5;
   color: var(--danger, #d64545);
 }
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.input {
+  width: 100%;
+  padding: 10px 12px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-primary, var(--surface));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+}

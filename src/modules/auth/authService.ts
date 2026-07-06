@@ -1,6 +1,8 @@
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import type { User } from '../../db/schema/index.js';
 import { AuthError } from '../../lib/errors.js';
+import { normalizeDepartments } from '../../lib/department.js';
+import { carrierUserRepo } from '../../repos/carrierUserRepo.js';
 import { userRepo } from '../../repos/userRepo.js';
 import type { Audience, Role, TenantContext } from '../../types/tenantContext.js';
 import { signAccessToken, signRefreshToken, verifyToken, type TokenClaims } from './jwt.js';
@@ -9,6 +11,7 @@ import { scopesForRole } from './permissions.js';
 import { workerRoleFor } from './workerRole.js';
 // Type-only (erased at compile): no runtime import cycle — zohoAuthService value-imports nothing here.
 import type { PublicWorker, WorkerSession } from './zohoAuthService.js';
+import type { ClientSession } from './clientAuthService.js';
 
 export interface PublicUser {
   id: string;
@@ -73,6 +76,27 @@ export function contextFromClaims(claims: TokenClaims, requestId: string): Tenan
     if (w.userName) ctx.userName = w.userName;
     if (w.profile) ctx.profiles = [w.profile];
     if (w.zohoRole) ctx.callerRole = w.zohoRole;
+    return ctx;
+  }
+  // Carrier-client session (login/password from carrier_users): locked down server-side
+  // regardless of the token's stored role/audience — audience 'customer' (deny-by-default
+  // for tools/agents), viewer role, NO scopes, departments = the company tags only. This
+  // mirrors customerContext for unverified Telegram callers; here the tags are VERIFIED
+  // (from the signed token, minted off the carrier_users row at login).
+  if (claims.client) {
+    const c = claims.client;
+    const ctx: TenantContext = {
+      tenantId: claims.tenantId,
+      userId: `client:${c.carrierUserId}`,
+      audience: 'customer',
+      role: 'viewer',
+      scopes: [],
+      departments: normalizeDepartments([c.carrierId, ...(c.applicationId ? [c.applicationId] : [])]),
+      allDepartmentAccess: false,
+      sessionVerified: true,
+      requestId,
+    };
+    if (c.login) ctx.userName = c.login;
     return ctx;
   }
   return {
@@ -140,7 +164,7 @@ export const authService = {
   },
 
   /** Exchange a valid refresh token for a fresh token pair (rotating). */
-  async refresh(refreshToken: string): Promise<LoginResult | WorkerSession> {
+  async refresh(refreshToken: string): Promise<LoginResult | WorkerSession | ClientSession> {
     const claims = await verifyToken(refreshToken, 'refresh');
     // Worker (Zoho) session: the identity is self-contained in the token, so re-issue directly.
     // There is no users-table row for a `zoho:<id>` principal — a findById would 404.
@@ -164,6 +188,19 @@ export const authService = {
         role: w.zohoRole ?? null,
       };
       return { accessToken, refreshToken: newRefresh, tokenType: 'Bearer', worker };
+    }
+    // Carrier-client session: re-check the account is still active/present before rotating —
+    // disabling a carrier user in the admin kills their sessions within one access-token TTL.
+    if (claims.client) {
+      const row = await carrierUserRepo.findByIdAny(claims.tenantId, claims.client.carrierUserId);
+      if (!row || row.status !== 'active') {
+        throw new AuthError('Account is no longer active');
+      }
+      const [accessToken, newRefresh] = await Promise.all([
+        signAccessToken(claims),
+        signRefreshToken(claims),
+      ]);
+      return { accessToken, refreshToken: newRefresh, tokenType: 'Bearer', client: claims.client };
     }
     const ctx = contextFromClaims(claims, 'refresh');
     const user = await userRepo.findById(ctx, claims.userId);

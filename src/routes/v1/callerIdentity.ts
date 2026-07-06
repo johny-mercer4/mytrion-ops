@@ -261,6 +261,10 @@ export async function buildCallerContext(
   // for non-admin workers (admins already see everything). Owner-scoping uses the verified userId.
   const base = requireContext(request);
   if (base.sessionVerified) {
+    // Carrier-client session (audience 'customer' from verified token claims): the context is
+    // already locked to the carrier's own company tags — body identity/scope fields are fully
+    // ignored (no department view, no act-as, no worker merge).
+    if (base.audience === 'customer') return base;
     // Admin "act as agent": an admin may impersonate a target agent (from CRM) so the whole request
     // runs AS that agent — owner-scoped data becomes the target's. Gated to admins; audited.
     const actAsId = base.allDepartmentAccess ? readActAsId(request) : null;

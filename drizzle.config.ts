@@ -9,6 +9,7 @@ export default defineConfig({
   schema: [
     './src/db/schema/tenants.ts',
     './src/db/schema/users.ts',
+    './src/db/schema/carrier_users.ts',
     './src/db/schema/conversations.ts',
     './src/db/schema/messages.ts',
     './src/db/schema/tool_calls.ts',

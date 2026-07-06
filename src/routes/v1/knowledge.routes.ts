@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { DEFAULT_RETRIEVAL_K, MAX_RETRIEVAL_K } from '../../config/constants.js';
 import { env } from '../../config/env.js';
-import { normalizeDepartment } from '../../lib/department.js';
+import { normalizeDepartment, normalizeDepartments } from '../../lib/department.js';
 import { AppError, NotFoundError } from '../../lib/errors.js';
 import { ingestDocument, type IngestResult } from '../../modules/knowledge/ingestService.js';
 import { retrieve } from '../../modules/knowledge/retriever.js';
@@ -67,7 +67,12 @@ function assertIngestEnabled(): void {
  * list ingested docs, and inspect embedded chunks. Authenticated by the static API_KEY.
  */
 export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
-  const guard = { onRequest: [app.sessionOrApiKey] };
+  // Internal management surface: customer sessions (carrier-client logins) are denied outright —
+  // several repo paths here are tenant-scoped only, and the KB is internal data regardless.
+  const guard = {
+    onRequest: [app.sessionOrApiKey],
+    preHandler: [app.requireAudience('internal', 'partner')],
+  };
 
   // --- Ingest: raw text body ---
   app.post('/knowledge/embed', guard, async (request) => {
@@ -208,7 +213,19 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
   // --- Retrieve: RBAC-scoped kNN search (caller passes department access) ---
   app.post('/knowledge/query', guard, async (request) => {
     const body = querySchema.parse(request.body);
-    const ctx = withDepartmentAccess(requireContext(request), request, body);
+    let ctx = withDepartmentAccess(requireContext(request), request, body);
+    // An EXPLICIT departmentAccess filter (without allDepartments) is a NARROWING request —
+    // the admin retrieval-test UI scopes "what would a sales agent see". withDepartmentAccess
+    // can only widen (admin sessions already carry allDepartmentAccess), so apply the narrow
+    // here. Safe under this route's trust model: admins already see everything, and unverified
+    // API-key callers are already trusted to assert departmentAccess.
+    if (body.departmentAccess !== undefined && body.allDepartments !== true) {
+      ctx = {
+        ...ctx,
+        allDepartmentAccess: false,
+        departments: normalizeDepartments(body.departmentAccess),
+      };
+    }
     const passages = await retrieve(ctx, body.query, body.limit ?? DEFAULT_RETRIEVAL_K);
     return { passages };
   });

@@ -1,5 +1,6 @@
 export * from './tenants.js';
 export * from './users.js';
+export * from './carrier_users.js';
 export * from './conversations.js';
 export * from './messages.js';
 export * from './tool_calls.js';
