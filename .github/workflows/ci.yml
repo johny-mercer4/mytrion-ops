@@ -34,3 +34,9 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Web install
+        run: pnpm -C apps/mytrion-crm install --frozen-lockfile
+
+      - name: Web typecheck + test
+        run: pnpm -C apps/mytrion-crm typecheck && pnpm -C apps/mytrion-crm test

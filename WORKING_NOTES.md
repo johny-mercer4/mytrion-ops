@@ -1173,3 +1173,61 @@ to `apps/mytrion-crm`. Commits e20f14a → f3d7945 → ec2172c.
 - Design extracted from the (large) mockups via two read-only sub-agents; exact token CSS pulled
   verbatim from `Design System.dc.html`. Fonts still CDN (self-hosting deferred — no font files).
   Remaining for the full "polish every page" brief: the 8 non-admin module pages + shared primitives.
+
+## 2026-07-06 — Agentic-core hardening pass (backend + web + evals) — branch feature/agentic-hardening
+
+Full review/hardening of the agentic core per the approved plan (~/.claude/plans/please-review-and-harden-golden-spark.md).
+Five commits: cf3c65e (llm reliability) → b0a5457 (RAG/stream) → 8bd9797 (RBAC) → b916125 (evals) → 1473d50 (web).
+
+- **LLM reliability (P1)** — new `modelParams.ts` (reasoning-tier detection: gpt-5*/o* get
+  `max_completion_tokens`, NO temperature — fixes the live Sales `gpt-5.4-mini` + `temperature:0`
+  rejection); output caps + client timeouts everywhere (`OPENAI_TIMEOUT_MS`/`AGENT_MODEL_TIMEOUT_MS`/
+  `*_MAX_OUTPUT_TOKENS`); wall-clock budget is now a REAL abort (AbortController → streamEvents
+  `config.signal`); `computeCost` charges unknown model ids at conservative gpt-4o rates (warn once)
+  instead of silently disabling `AGENT_MAX_COST_USD`; `gpt-5.4-mini` pricing corrected to $0.75/$4.50;
+  `fetchWithTimeout` on serverCrm/zohoCrm/zohoOAuth (cmp/telegram/desk/people = follow-up chore).
+- **Agentic RAG + stream contract (P2)** — sufficiency judge is strict (`=== true`; parse failure ⇒
+  insufficient — a dead judge can no longer certify coverage); embed batching (`EMBED_BATCH_SIZE`);
+  post-hoc citation validation (`citationCheck.ts`): hallucinated `[Sn]` markers are stripped from the
+  canonical `done.message`, validated sources returned. SSE additions: `agent` events carry `label`,
+  live `context {passages, citations}` from knowledge_search, `done` carries `ragPassages` + `citations`
+  (+ agentKey/agentPath as before), Composio construction failures emit `status {state:'degraded'}` +
+  audit. Brief window 3 turns/3600 chars; unused tiktoken dep dropped (char heuristics documented).
+- **RBAC role model (P3)** — role is DERIVED from the verified Zoho profile. New `worker` role (read
+  scopes only) for non-admin-profile workers — the registry write gate is now real for them; derivation
+  applied at mint/verify/refresh so STALE pre-fix `role:'admin'` tokens re-verify as worker on deploy
+  (no re-login). Act-as targets verified server-side against a cached CRM directory
+  (`actAsDirectory.ts`) — `x-act-as-profile/role/user-name` headers ignored, impersonation runs with
+  the TARGET's authority, fail-closed + audited. `FF_CUSTOMER_SCOPE_STRICT` default flipped to 1 (env
+  override = rollback until the Telegram shim stops sending worker fields). New `FF_WORKER_DEPT_STRICT`
+  (default 0) bounds worker departments by profile — enable after validating the profile→department
+  mapping against the live Zoho roster. Residual: the static API_KEY path stays role admin
+  (trusted-frontend anchor) — next hardening target once all worker traffic is on sessions.
+- **Evals (P4)** — `scripts/evalLive.ts` finally exists (was the deferred follow-up): 38 golden tasks
+  (routing/greeting/refusal/grounding/tool-selection/delegation/rbac) through the REAL `runAgentTurn`
+  against real OpenAI + a dev DB; deterministic checks (routes/tools/agentPath⊆RBAC) outrank the
+  gpt-5.4-mini judge (byte-stable rubrics, reference passages in-context, 3-vote majority on
+  grounding/rbac); thresholds gate exit (rbac/greeting 1.0, routing ≥0.9, grounding ≥0.8); ~$0.2-0.3/run,
+  suite cap `EVAL_MAX_COST_USD`. **Refuses non-localhost DBs** unless `EVAL_I_KNOW_THIS_IS_NOT_PROD=1`
+  (it writes conversations/agent_runs + ingests fixtures) — local `.env` points at Render prod, so the
+  BASELINE RUN IS STILL PENDING: point `MYTRION_OPS_DATABASE_URL` at a scratch DB and run
+  `pnpm eval:live`, then record per-category rates here. CI-safe subset `agent-scripted-turn.test.ts`
+  drives the real graph with a `ScriptedChatModel` (greeting short-circuit, delegation round-trip incl.
+  the ToolStrategy `extract-N` handshake, runtime tool-binding golden, budget/recursion trips, pre-model
+  RBAC) — runs in `pnpm test`, no key/DB.
+- **Web chat (P5)** — vitest+jsdom+RTL inside `apps/mytrion-crm` (37 tests, now in CI); Stop generation
+  (composer morph + Esc, partial kept); typed 429/5xx/network errors + per-message Retry; scroll
+  anchoring (no mid-read yank + jump button); sanitized markdown (react-markdown/remark-gfm/
+  rehype-sanitize); ErrorBoundaries (root / per-Mytrion keyed with chunk-reload / chat dock);
+  history overlay in the dock + restore-last-conversation per user; persistent answered-by chip with
+  handoff trail + expandable sources (degrades to count-only against older backends); aria-live status,
+  role=log/alert, elicitation focus mgmt + real multiSelect; mobile dock height bound (70dvh) + 16px
+  composer font (<640px).
+- Housekeeping: `.env` duplicate `API_KEY`/`OPENAI_API_KEY` removed (identical values; dotenv used the
+  first anyway); CI also typechecks+tests the web app.
+- **State: 363 backend + 37 web tests green; lint/typecheck/builds clean.** Live smokes pending (need a
+  non-prod DB): eval baseline (above), and a manual streamed turn to verify the gpt-5.4-mini param fix +
+  citations end-to-end. Rollout order for prod: P1/P2 are safe immediately; before deploying P3, audit
+  `tool_calls` for non-read calls by non-admin workers (they lose write access BY DESIGN) and confirm
+  the Telegram shim sends only carrier_id/chat_id (or set FF_CUSTOMER_SCOPE_STRICT=0 temporarily);
+  enable FF_AGENT_CHECKPOINTS=1 in staging when convenient (multi-turn agent context).
