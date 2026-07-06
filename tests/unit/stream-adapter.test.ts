@@ -83,7 +83,7 @@ describe('consumeAgentStream', () => {
     expect(kinds).toEqual(['token', 'agent', 'tool_call', 'tool_result', 'agent', 'token']);
     expect(events.filter((e) => e.event === 'token').map((e) => (e.data as { delta: string }).delta))
       .toEqual(['Working… ', 'Done.']);
-    expect(events[1]!.data).toEqual({ key: 'billing', state: 'start' });
+    expect(events[1]!.data).toEqual({ key: 'billing', state: 'start', label: 'Billing' });
   });
 
   it('falls back to accumulated root tokens when no chain-end message exists', async () => {
@@ -132,8 +132,8 @@ describe('consumeAgentStream', () => {
     );
     expect(outcome.agentPath).toEqual(['finance']);
     expect(events.filter((e) => e.event === 'agent')).toEqual([
-      { event: 'agent', data: { key: 'finance', state: 'start' } },
-      { event: 'agent', data: { key: 'finance', state: 'done' } },
+      { event: 'agent', data: { key: 'finance', state: 'start', label: 'Finance' } },
+      { event: 'agent', data: { key: 'finance', state: 'done', label: 'Finance' } },
     ]);
   });
 

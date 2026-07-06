@@ -15,12 +15,13 @@ import type { TenantContext } from '../../types/tenantContext.js';
 import { auditFromContext } from '../audit/auditLogger.js';
 import { messageStore } from '../chat/messageStore.js';
 import type { SSEStream } from '../chat/streaming.js';
+import { validateCitations, type WireCitation } from '../knowledge/agentic/citationCheck.js';
 import { costTracker } from '../llm/costTracker.js';
 import { agentRegistry } from './agentRegistry.js';
 import { BudgetExceededError, BudgetMeter } from './budget.js';
 import { buildTurnBrief, recentHistorySummary } from './briefBuilder.js';
 import { ensureCheckpointerReady, getCheckpointer, threadIdFor } from './checkpointer.js';
-import { runWithAgentContext } from './context.js';
+import { runWithAgentContext, type RunCollector } from './context.js';
 import { resolveAgentModelId } from './models.js';
 import { buildOrchestrator, buildSingleAgent } from './orchestrator.js';
 import { RunTracker } from './runTracker.js';
@@ -47,6 +48,10 @@ export interface AgentTurnResult {
   agentPath: string[];
   toolCalls: Array<{ name: string; status: string }>;
   usage: { promptTokens: number; completionTokens: number; totalCost: number };
+  /** Knowledge passages retrieved across the run (the widget's grounding count). */
+  ragPassages: number;
+  /** Validated sources backing the answer (post-run [Sn] marker check). */
+  citations: WireCitation[];
   /** Present when the agent asked the user to pick from options (generative UI). */
   elicitation?: Elicitation;
 }
@@ -141,7 +146,9 @@ async function executeTurn(
   const modelId = resolveAgentModelId(manifest);
   const tracker = new RunTracker(modelId, budget);
   const startedAt = Date.now();
-  const collect: { elicitation?: Elicitation } = {}; // filled by a tool that asked the user to choose
+  // Filled during the run: elicitation by choice tools, citations by knowledge_search,
+  // warnings by degraded construction (e.g. Composio unreachable).
+  const collect: RunCollector = {};
 
   sse?.send('status', { state: 'running' });
 
@@ -156,7 +163,14 @@ async function executeTurn(
   let errorMsg: string | undefined;
   try {
     outcome = await runWithAgentContext(
-      { ctx, conversationId: conv.id, budget, agentRunId, collect },
+      {
+        ctx,
+        conversationId: conv.id,
+        budget,
+        agentRunId,
+        collect,
+        ...(sse ? { emit: (event: string, data: unknown) => sse.send(event, data) } : {}),
+      },
       async () => {
         const agent = manifest
           ? await buildSingleAgent(manifest, ctx)
@@ -204,7 +218,25 @@ async function executeTurn(
     sse?.send('elicitation', collect.elicitation);
   }
 
-  const finalText = outcome.finalText || 'The agent produced no answer.';
+  // Construction-time degradations (e.g. Composio unreachable) — tell the user + audit.
+  if (collect.warnings?.length) {
+    sse?.send('status', { state: 'degraded', warnings: collect.warnings });
+  }
+
+  // Post-hoc grounding check: strip [Sn] markers that don't map to a passage retrieved this
+  // run. Streamed tokens may still contain them — `done.message` is the canonical text and
+  // the widget re-renders from it.
+  const validated = validateCitations(
+    outcome.finalText || 'The agent produced no answer.',
+    collect.citations ?? [],
+  );
+  if (validated.strippedMarkers.length > 0) {
+    logger.warn(
+      { agentKey, agentRunId, strippedMarkers: validated.strippedMarkers },
+      'stripped citation markers not backed by retrieved passages',
+    );
+  }
+  const finalText = validated.text || 'The agent produced no answer.';
   const usage = {
     promptTokens: tracker.promptTokens,
     completionTokens: tracker.completionTokens,
@@ -219,6 +251,7 @@ async function executeTurn(
       promptTokens: usage.promptTokens,
       completionTokens: usage.completionTokens,
       tools: outcome.toolCalls,
+      ...(collect.ragPassages !== undefined ? { ragPassages: collect.ragPassages } : {}),
       ...(opts.departmentScope !== undefined ? { departmentScope: opts.departmentScope } : {}),
       ...(errorMsg !== undefined ? { error: errorMsg } : {}),
     });
@@ -252,6 +285,10 @@ async function executeTurn(
         agentPath: outcome.agentPath,
         tools: outcome.toolCalls.length,
         durationMs: Date.now() - startedAt,
+        ...(collect.warnings?.length ? { warnings: collect.warnings } : {}),
+        ...(validated.strippedMarkers.length > 0
+          ? { strippedMarkers: validated.strippedMarkers }
+          : {}),
       },
     });
   } catch (err) {
@@ -271,6 +308,8 @@ async function executeTurn(
     agentPath: outcome.agentPath,
     toolCalls: outcome.toolCalls,
     usage,
+    ragPassages: collect.ragPassages ?? 0,
+    citations: validated.usedCitations,
     ...(outcome.elicitation ? { elicitation: outcome.elicitation } : {}),
   };
   sse?.send('done', result);

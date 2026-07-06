@@ -6,8 +6,11 @@
 import { messageStore } from '../chat/messageStore.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
-const MAX_HISTORY_CHARS = 2400; // ≈600 tokens — cheap mechanical trim, no extra LLM call
-const RECENT_TURNS = 2;
+// Char heuristics on purpose (not tiktoken): every dynamic block here is hard-capped and
+// one-directional, so real token counting would add WASM init + per-call cost with no
+// enforcement gain at these sizes. Revisit only if history budgets grow substantially.
+const MAX_HISTORY_CHARS = 3600; // ≈900 tokens — cheap mechanical trim, no extra LLM call
+const RECENT_TURNS = 3;
 
 function compact(text: string, max: number): string {
   const clean = text.replace(/\s+/g, ' ').trim();

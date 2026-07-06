@@ -11,7 +11,9 @@
  */
 import type { StreamEvent } from '@langchain/core/tracers/log_stream';
 import type { SSEStream } from '../chat/streaming.js';
+import { agentRegistry } from './agentRegistry.js';
 import type { Elicitation } from './elicitation.js';
+import { isAgentKey } from './types.js';
 
 export interface StreamOutcome {
   finalText: string;
@@ -27,6 +29,12 @@ export interface StreamOutcome {
 interface AgentEventPayload {
   key: string;
   state: 'start' | 'done';
+  /** Human display name from the manifest (the UI may still map key → its own label). */
+  label: string;
+}
+
+function labelFor(key: string): string {
+  return (isAgentKey(key) ? agentRegistry.get(key)?.label : undefined) ?? key;
 }
 
 /** UI-only tools that shouldn't surface as operational tool_call/tool_result noise. */
@@ -105,7 +113,7 @@ export async function consumeAgentStream(
           const key = subagentTypeOf(event.data?.input);
           if (key) {
             agentPath.push(key);
-            sink?.send('agent', { key, state: 'start' } satisfies AgentEventPayload);
+            sink?.send('agent', { key, state: 'start', label: labelFor(key) } satisfies AgentEventPayload);
           }
           break;
         }
@@ -116,7 +124,9 @@ export async function consumeAgentStream(
       case 'on_tool_end': {
         if (event.name === 'task') {
           const key = subagentTypeOf(event.data?.input) ?? agentPath.at(-1);
-          if (key) sink?.send('agent', { key, state: 'done' } satisfies AgentEventPayload);
+          if (key) {
+            sink?.send('agent', { key, state: 'done', label: labelFor(key) } satisfies AgentEventPayload);
+          }
           break;
         }
         if (event.name === 'write_todos' || UI_TOOL_NAMES.has(event.name)) break;

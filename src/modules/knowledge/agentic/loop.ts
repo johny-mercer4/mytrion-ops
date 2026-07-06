@@ -60,7 +60,9 @@ export async function agenticRetrieve(
     citations,
     groundingBlock,
     hops,
-    sufficient: sufficient || passages.length > 0,
+    // Report the judged verdict honestly — "we found something" is not "this suffices".
+    // Callers already get the passages either way; `sufficient` steers escalation.
+    sufficient,
     suggestWebSearch: passages.length === 0 || (!sufficient && passages.length < Math.min(3, k)),
   };
 }

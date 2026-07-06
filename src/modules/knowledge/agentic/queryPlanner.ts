@@ -1,7 +1,8 @@
 /**
  * Query planning + sufficiency judging for the agentic retrieval loop. One cheap model call
- * each; BOTH degrade safely (planner → the original question; judge → "sufficient") so a
- * flaky model can never break retrieval or spin the loop.
+ * each; both degrade safely — the planner falls back to the original question, and the judge
+ * falls back to "insufficient" (honest: a dead judge can't certify coverage; the loop is
+ * still bounded because RAG_MAX_HOPS caps hops and empty missingQueries breaks out).
  */
 import { env } from '../../../config/env.js';
 import { logger } from '../../../lib/logger.js';
@@ -76,13 +77,15 @@ export async function judgeSufficiency(
     const raw = res.choices[0]?.message?.content ?? '';
     const parsed = JSON.parse(raw) as { sufficient?: unknown; missingQueries?: unknown };
     return {
-      sufficient: parsed.sufficient !== false,
+      // Strict: only an explicit true counts. A missing/garbled field must not silently
+      // certify coverage — that bias caused under-retrieval on judge hiccups.
+      sufficient: parsed.sufficient === true,
       missingQueries: Array.isArray(parsed.missingQueries)
         ? parsed.missingQueries.filter((q): q is string => typeof q === 'string' && q.trim().length > 0).slice(0, 2)
         : [],
     };
   } catch (err) {
-    logger.warn({ err }, 'RAG sufficiency judge failed; accepting current passages');
-    return { sufficient: true, missingQueries: [] };
+    logger.warn({ err }, 'RAG sufficiency judge failed; treating passages as insufficient');
+    return { sufficient: false, missingQueries: [] };
   }
 }

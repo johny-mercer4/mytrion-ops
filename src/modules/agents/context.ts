@@ -9,8 +9,19 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { TenantContext } from '../../types/tenantContext.js';
+import type { WireCitation } from '../../modules/knowledge/agentic/citationCheck.js';
 import type { BudgetMeter } from './budget.js';
 import type { ElicitationHolder } from './elicitation.js';
+
+/** Everything tools/compilers report back out of a run besides the answer itself. */
+export interface RunCollector extends ElicitationHolder {
+  /** RAG citations gathered by knowledge_search calls (validated post-run). */
+  citations?: WireCitation[];
+  /** Passages retrieved across the run (the widget's "grounded in N passages" count). */
+  ragPassages?: number;
+  /** Degradations worth surfacing (e.g. Composio tools failed to build). */
+  warnings?: string[];
+}
 
 export interface AgentRunContext {
   ctx: TenantContext;
@@ -19,8 +30,10 @@ export interface AgentRunContext {
   budget?: BudgetMeter;
   /** agent_runs.id for this run — stamped onto tool_calls/audit rows. */
   agentRunId?: string;
-  /** Collects a generative-UI choice a tool asked for; surfaced on the turn result. */
-  collect?: ElicitationHolder;
+  /** Collects generative-UI choices, citations, and warnings; surfaced on the turn result. */
+  collect?: RunCollector;
+  /** Emit an SSE event mid-run (absent on non-stream turns). */
+  emit?: (event: string, data: unknown) => void;
 }
 
 const storage = new AsyncLocalStorage<AgentRunContext>();
@@ -37,4 +50,12 @@ export function requireAgentContext(): AgentRunContext {
     throw new Error('Agent tool invoked outside of an agent run context');
   }
   return current;
+}
+
+/**
+ * Soft variant for code that also runs outside a turn (e.g. agent compilation in tests or
+ * warm-up paths) — reporting hooks no-op instead of throwing.
+ */
+export function getAgentContext(): AgentRunContext | undefined {
+  return storage.getStore();
 }

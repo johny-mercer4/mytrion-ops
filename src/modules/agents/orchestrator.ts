@@ -11,6 +11,7 @@ import { logger } from '../../lib/logger.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { agentRegistry } from './agentRegistry.js';
 import { narrowContext } from './authority.js';
+import { getAgentContext } from './context.js';
 import { getCheckpointer } from './checkpointer.js';
 import { resolveAgentModel, resolveOrchestratorModel } from './models.js';
 import { childSystemPrompt, ORCHESTRATOR_PROMPT } from './prompts.js';
@@ -43,8 +44,16 @@ async function childTools(manifest: AgentManifest, callerCtx: TenantContext): Pr
         })),
       );
     } catch (err) {
-      // Composio being unreachable/misconfigured must never take down agent construction.
+      // Composio being unreachable/misconfigured must never take down agent construction —
+      // but the degradation must not be silent either: report it onto the run so the turn
+      // can tell the user/audit that external tools were missing.
       logger.warn({ err, agent: manifest.key }, 'composio tools unavailable; continuing without');
+      const run = getAgentContext();
+      if (run?.collect) {
+        (run.collect.warnings ??= []).push(
+          `External (Composio) tools were unavailable for the ${manifest.label} agent this turn.`,
+        );
+      }
     }
   }
   return tools;
