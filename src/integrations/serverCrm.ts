@@ -7,6 +7,7 @@
  * (get/post) that tools build on.
  */
 import { env } from '../config/env.js';
+import { fetchWithTimeout } from '../lib/http.js';
 
 export function serverCrmBaseUrl(): string {
   if (!env.SERVER_CRM_URL) throw new Error('[server-crm] SERVER_CRM_URL is not configured');
@@ -40,7 +41,7 @@ export async function serverCrmRequest<T = unknown>(
   const init: RequestInit = { method, headers: serverCrmAuthHeaders() };
   if (opts.body !== undefined) init.body = JSON.stringify(opts.body);
 
-  const res = await fetch(url, init);
+  const res = await fetchWithTimeout(url, init);
   const text = await res.text();
   if (!res.ok) {
     throw new Error(`[server-crm] ${method} ${path} → HTTP ${res.status}: ${text.slice(0, 300)}`);

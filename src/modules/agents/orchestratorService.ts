@@ -145,6 +145,12 @@ async function executeTurn(
 
   sse?.send('status', { state: 'running' });
 
+  // Wall-clock deadline as a real abort: assertOk() only runs on tool calls / charges, so a
+  // single long model generation would otherwise outlive the budget. The signal propagates
+  // through LangGraph's RunnableConfig to model/tool nodes.
+  const wallAbort = new AbortController();
+  const wallTimer = setTimeout(() => wallAbort.abort(), budget.remainingWallMs());
+
   let outcome: StreamOutcome;
   let status: 'ok' | 'error' = 'ok';
   let errorMsg: string | undefined;
@@ -168,6 +174,7 @@ async function executeTurn(
             version: 'v2',
             callbacks: [tracker],
             recursionLimit,
+            signal: wallAbort.signal,
             ...(checkpointing ? { configurable: { thread_id: threadIdFor(ctx.tenantId, conv.id) } } : {}),
           },
         );
@@ -176,15 +183,19 @@ async function executeTurn(
     );
   } catch (err) {
     status = 'error';
-    errorMsg = errorMessage(err);
     // LangGraph/deepagents wraps tool errors (MiddlewareError etc.), so a budget breach may reach
-    // us via err.cause rather than as a direct instance — unwrap the chain to detect it.
-    const budgetHit = hasBudgetCause(err);
+    // us via err.cause rather than as a direct instance — unwrap the chain to detect it. A fired
+    // wall deadline surfaces as an abort, not a BudgetExceededError, so check the signal too.
+    const wallHit = wallAbort.signal.aborted;
+    errorMsg = wallHit ? 'the run hit its wall-clock time limit' : errorMessage(err);
+    const budgetHit = hasBudgetCause(err) || wallHit;
     const friendly = budgetHit
       ? `I had to stop early: ${errorMsg}. Here is what I have so far — please narrow the request.`
       : `The agent run failed: ${errorMsg}`;
     outcome = { finalText: friendly, toolCalls: [], agentPath: tracker.agentPath };
     logger.warn({ err: errorMsg, agentKey, budgetHit }, 'agent turn failed');
+  } finally {
+    clearTimeout(wallTimer);
   }
 
   // A tool asked the user to choose (generative UI) — surface the picker on the result + stream.

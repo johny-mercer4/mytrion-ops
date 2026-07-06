@@ -8,6 +8,7 @@
  * The redirect URI is registered on the Zoho server app and must byte-match ZOHO_OAUTH_REDIRECT_URI;
  * Zoho sends the browser back there with ?code&state, and the SPA relays it to the callback route.
  */
+import { fetchWithTimeout } from '../lib/http.js';
 import { env } from '../config/env.js';
 import { AppError, AuthError } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
@@ -53,7 +54,7 @@ export async function exchangeCodeForToken(code: string): Promise<string> {
     redirect_uri: env.ZOHO_OAUTH_REDIRECT_URI,
     code,
   });
-  const res = await fetch(`${accountsBase()}/oauth/v2/token`, {
+  const res = await fetchWithTimeout(`${accountsBase()}/oauth/v2/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
@@ -88,7 +89,7 @@ interface CrmUsersResponse {
 /** Read the signed-in worker's CRM user record (type=CurrentUser) → the RBAC identity fields. */
 export async function fetchCurrentUser(accessToken: string): Promise<ZohoWorker> {
   const base = env.ZOHO_CRM_API_DOMAIN.replace(/\/+$/, '');
-  const res = await fetch(`${base}/users?type=CurrentUser`, {
+  const res = await fetchWithTimeout(`${base}/users?type=CurrentUser`, {
     headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
   });
   if (!res.ok) {

@@ -50,6 +50,15 @@ export class BudgetMeter {
     this.assertOk();
   }
 
+  /**
+   * Milliseconds left before the wall-clock budget trips (never negative). Used to arm an
+   * AbortController deadline so a single long model generation — which never passes through
+   * countToolCall/charge — still gets interrupted.
+   */
+  remainingWallMs(): number {
+    return Math.max(0, this.budget.maxWallMs - (this.now() - this.startedAt));
+  }
+
   /** Throw when any limit is breached. Cheap — safe to call between loop iterations. */
   assertOk(): void {
     if (this.toolCalls > this.budget.maxToolCalls) {

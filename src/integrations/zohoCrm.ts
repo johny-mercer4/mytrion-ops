@@ -7,6 +7,7 @@
  * not hardcoded here. We only guard that the statement is a single read-only SELECT.
  * See .claude/skills/zoho-crm-api/SKILL.md §5 (COQL) and §0 (endpoints).
  */
+import { fetchWithTimeout } from '../lib/http.js';
 import { authHeaders, baseUrl } from './wrapper.js';
 
 /** COQL hard limits (skill §5): max 200 rows per page, offset ≤ 100k. */
@@ -46,7 +47,7 @@ export function assertReadOnlyCoql(selectQuery: string): string {
 export async function runCoql(selectQuery: string): Promise<CoqlResult> {
   const query = assertReadOnlyCoql(selectQuery);
   const url = `${baseUrl('zoho_crm').replace(/\/+$/, '')}/coql`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { ...(await authHeaders('zoho_crm')), 'Content-Type': 'application/json' },
     body: JSON.stringify({ select_query: query }),
@@ -107,7 +108,7 @@ export async function listActiveUsers(): Promise<CrmUser[]> {
   const out: CrmUser[] = [];
   const MAX_PAGES = 5; // 200/page → up to 1000 users; ample for an org's roster
   for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const res = await fetch(`${root}/users?type=ActiveUsers&page=${page}&per_page=200`, {
+    const res = await fetchWithTimeout(`${root}/users?type=ActiveUsers&page=${page}&per_page=200`, {
       headers: await authHeaders('zoho_crm'),
     });
     if (res.status === 204) break;
@@ -135,7 +136,7 @@ export async function listActiveUsers(): Promise<CrmUser[]> {
 /** Connectivity check: `GET /org` returns the CRM org profile (scope ZohoCRM.org.READ). */
 export async function getOrg(): Promise<OrgInfo> {
   const url = `${baseUrl('zoho_crm').replace(/\/+$/, '')}/org`;
-  const res = await fetch(url, { headers: await authHeaders('zoho_crm') });
+  const res = await fetchWithTimeout(url, { headers: await authHeaders('zoho_crm') });
   const text = await res.text();
   if (!res.ok) {
     throw new Error(`[zoho-crm] GET /org HTTP ${res.status}: ${text.slice(0, 300)}`);

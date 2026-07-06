@@ -5,15 +5,19 @@
  */
 import { ChatOpenAI } from '@langchain/openai';
 import { env } from '../../config/env.js';
+import { chatOpenAIFields } from '../llm/modelParams.js';
 import { models } from '../llm/openaiClient.js';
 import type { AgentManifest } from './types.js';
 
 function makeChatModel(model: string): ChatOpenAI {
+  // chatOpenAIFields: reasoning-tier models (Sales' gpt-5.4-mini) reject temperature and
+  // take maxCompletionTokens; classic models get temperature:0 + maxTokens.
   return new ChatOpenAI({
     model,
     apiKey: env.OPENAI_API_KEY || 'sk-not-configured',
-    temperature: 0,
     maxRetries: 2,
+    timeout: env.AGENT_MODEL_TIMEOUT_MS,
+    ...chatOpenAIFields(model, env.AGENT_MAX_OUTPUT_TOKENS),
   });
 }
 

@@ -39,4 +39,14 @@ describe('BudgetMeter', () => {
     meter.charge(-5);
     expect(meter.snapshot().costUsd).toBe(0);
   });
+
+  it('reports remaining wall-clock time, floored at zero', () => {
+    let now = 0;
+    const meter = new BudgetMeter(budget, () => now);
+    expect(meter.remainingWallMs()).toBe(1000);
+    now = 600;
+    expect(meter.remainingWallMs()).toBe(400);
+    now = 5000;
+    expect(meter.remainingWallMs()).toBe(0);
+  });
 });

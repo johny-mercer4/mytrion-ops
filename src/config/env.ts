@@ -38,6 +38,13 @@ const EnvSchema = z.object({
   OPEN_AI_FOUR_O_MINI: z.string().default('gpt-4o-mini-2024-07-18'),
   OPEN_AI_FIVE_O_MINI: z.string().default('gpt-5.4-mini-2026-03-17'),
   OPEN_AI_EMBEDDING_SMALL: z.string().default('text-embedding-3-small'),
+  // Client-level deadline for every raw OpenAI/Groq SDK call (chat, RAG planner/judge,
+  // rerank, memory, web search, embeddings). A hung provider call must never hang a turn.
+  OPENAI_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
+  // Output cap for the chat pipeline's main completions (max_tokens / max_completion_tokens).
+  LLM_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().default(4096),
+  // Embedding batch cap: embeddings.create is called with at most this many inputs per request.
+  EMBED_BATCH_SIZE: z.coerce.number().int().positive().max(2048).default(128),
 
   // --- Groq (fast/cheap worker via the OpenAI-compatible API). Off unless FF_GROQ_ENABLED. ---
   GROQ_API_KEY: z.string().default(''),
@@ -65,6 +72,13 @@ const EnvSchema = z.object({
   AGENT_MAX_TOOL_CALLS: z.coerce.number().int().positive().default(20),
   AGENT_MAX_COST_USD: z.coerce.number().positive().default(0.5),
   AGENT_MAX_WALL_MS: z.coerce.number().int().positive().default(120_000),
+  // Per-call deadline for agent-path ChatOpenAI requests (ms). Distinct from the wall-clock
+  // budget: this bounds ONE model call, the budget bounds the whole run.
+  AGENT_MODEL_TIMEOUT_MS: z.coerce.number().int().positive().default(90_000),
+  // Output cap for agent-path model calls (maxTokens / maxCompletionTokens on ChatOpenAI).
+  AGENT_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().default(4096),
+  // Deadline for outbound integration HTTP calls (serverCrm, Zoho) via fetchWithTimeout.
+  OUTBOUND_HTTP_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   // Checkpointed threads idle longer than this are swept by a background job.
   AGENT_CHECKPOINT_TTL_DAYS: z.coerce.number().int().positive().default(30),
   // Long-term agent memory (FF_AGENT_MEMORY): decay half-life + per-(agent,dept) row cap.
