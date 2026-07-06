@@ -36,3 +36,4 @@ tmp/
 # Generated metadata catalogs (keep the dir, ignore contents)
 metadataScripts/output/*
 !metadataScripts/output/.gitkeep
+eval-reports/

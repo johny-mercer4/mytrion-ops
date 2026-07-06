@@ -79,6 +79,8 @@ const EnvSchema = z.object({
   AGENT_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().default(4096),
   // Deadline for outbound integration HTTP calls (serverCrm, Zoho) via fetchWithTimeout.
   OUTBOUND_HTTP_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  // Suite-level spend cap for scripts/evalLive.ts (agent turns + judge calls, USD).
+  EVAL_MAX_COST_USD: z.coerce.number().positive().default(2),
   // Checkpointed threads idle longer than this are swept by a background job.
   AGENT_CHECKPOINT_TTL_DAYS: z.coerce.number().int().positive().default(30),
   // Long-term agent memory (FF_AGENT_MEMORY): decay half-life + per-(agent,dept) row cap.
