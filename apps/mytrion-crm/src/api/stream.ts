@@ -6,7 +6,7 @@
  * Both use the Bearer session + one-shot refresh-on-401 retry (a 401 is pre-processing, so retrying
  * the non-idempotent turn once is safe) and respect an AbortSignal at every await.
  */
-import { authHeaders, refreshBearer } from './transport';
+import { ApiError, authHeaders, refreshBearer } from './transport';
 import { getSession } from './session';
 import { resolveApiConfig, v1Url } from './config';
 
@@ -36,23 +36,39 @@ export interface Elicitation {
   options: ElicitationOption[];
 }
 
+/** A knowledge source backing the answer (agent path; validated server-side post-run). */
+export interface Citation {
+  id: string;
+  title: string;
+  marker?: string;
+}
+
 export interface StreamHandlers {
   onStart?(data: { conversationId?: string; agent?: string }): void;
-  onStatus?(data: { state?: string; label?: string }): void;
-  onContext?(data: { passages?: number }): void;
+  onStatus?(data: { state?: string; label?: string; warnings?: string[] }): void;
+  onContext?(data: { passages?: number; citations?: Citation[] }): void;
   onToolCall?(data: { name?: string }): void;
   onToolResult?(data: { name?: string; status?: string }): void;
   /** Chat path emits `{text}`, agent path emits `{delta}` — read either. */
   onToken?(data: { text?: string; delta?: string }): void;
   /** Agent-path only: which child is running ("Consulting Sales…"). */
-  onAgent?(data: { key?: string; state?: string }): void;
+  onAgent?(data: { key?: string; state?: string; label?: string }): void;
   /** Agent-path only: a dynamic-UI picker the user must answer (their pick is the next turn). */
   onElicitation?(data: Elicitation): void;
-  onDone?(data: { message?: string; ragPassages?: number; conversationId?: string }): void;
+  /** `done` is authoritative: message/attribution/citations overwrite in-flight accumulation. */
+  onDone?(data: {
+    message?: string;
+    ragPassages?: number;
+    conversationId?: string;
+    agentKey?: string;
+    agentPath?: string[];
+    citations?: Citation[];
+  }): void;
   onError?(message: string): void;
 }
 
-function dispatchFrame(frame: string, h: StreamHandlers): void {
+/** Exported for tests — the pure SSE frame parser/dispatcher. */
+export function dispatchFrame(frame: string, h: StreamHandlers): void {
   if (!frame.trim()) return;
   let ev = 'message';
   let dataStr = '';
@@ -113,16 +129,19 @@ async function runSSE(
   }
 
   // A non-OK status is a genuine backend error (received + processed). Do NOT retry — a turn is not
-  // idempotent; a retry would start a second one.
+  // idempotent; a retry would start a second one. Typed ApiError so the UI can distinguish
+  // rate limits (429) from server faults (5xx).
   if (!res.ok) {
     let msg = `The AI service returned HTTP ${res.status}.`;
+    let code: string | undefined;
     try {
-      const j = (await res.json()) as { error?: { message?: string } };
+      const j = (await res.json()) as { error?: { message?: string; code?: string } };
       msg = j?.error?.message ?? msg;
+      code = j?.error?.code;
     } catch {
       /* non-JSON */
     }
-    throw new Error(msg);
+    throw new ApiError(msg, code ?? `HTTP_${res.status}`, res.status);
   }
 
   // No readable stream (older runtime) → parse the whole body once, honoring abort.

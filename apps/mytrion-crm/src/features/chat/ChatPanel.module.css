@@ -36,6 +36,35 @@
   color: var(--text-muted);
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  flex: none;
+}
+
+/* The transcript area the history overlay covers. */
+.bodyWrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Visually hidden live region for screen readers. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .new {
   display: flex;
   align-items: center;
@@ -74,11 +103,17 @@
   padding: var(--space-3_5) var(--space-4);
 }
 
-/* On narrow screens the dock drops below the content (handled by the shell). */
+/* On narrow screens the dock drops below the content (handled by the shell). A bounded height
+   keeps the transcript scrolling INTERNALLY so the composer stays reachable on phones. */
 @media (max-width: 1024px) {
   .dock {
     width: 100%;
     border-left: none;
     border-top: 1px solid var(--border);
+    max-height: 70dvh;
+    min-height: 40dvh;
+  }
+  .composerWrap {
+    padding-bottom: calc(var(--space-3_5) + env(safe-area-inset-bottom));
   }
 }

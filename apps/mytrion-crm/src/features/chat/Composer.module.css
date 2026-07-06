@@ -60,3 +60,18 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Stop morph of the action button */
+.stop {
+  background: var(--danger);
+}
+.stop:hover {
+  background: color-mix(in srgb, var(--danger) 85%, black);
+}
+
+/* iOS zooms inputs under 16px — bump the composer font on phones (token in theme.css). */
+@media (max-width: 640px) {
+  .input {
+    font-size: var(--text-input-mobile);
+  }
+}

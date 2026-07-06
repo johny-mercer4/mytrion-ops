@@ -1,15 +1,25 @@
 import { Gem } from '../../components/Gem';
 import { CheckIcon, XIcon } from '../../components/icons';
+import { AGENT_LABELS, type AgentKey } from '../../access/mytrions.config';
+import { ElicitationPicker } from './ElicitationPicker';
+import { Markdown } from './Markdown';
+import { SourcesList } from './SourcesList';
 import type { UiMessage } from './types';
 import styles from './MessageBubble.module.css';
+
+function agentLabel(key: string): string {
+  return AGENT_LABELS[key as AgentKey] ?? key;
+}
 
 /** A single chat turn. Assistant rows surface tool chips, thinking dots, grounding, and errors. */
 export function MessageBubble({
   message,
   onPick,
+  onRetry,
 }: {
   message: UiMessage;
   onPick?: ((value: string) => void) | undefined;
+  onRetry?: ((assistantId: string) => void) | undefined;
 }) {
   const isUser = message.role === 'user';
 
@@ -22,7 +32,10 @@ export function MessageBubble({
   }
 
   const thinking = message.streaming && !message.text && !message.error;
-  const hasGrounding = message.passages != null && message.passages > 0;
+  const hasGrounding =
+    (message.passages != null && message.passages > 0) ||
+    (message.citations != null && message.citations.length > 0);
+  const answeredBy = !message.streaming && message.agentKey ? message.agentKey : null;
 
   // A finished assistant turn with nothing to show: drop the row entirely (no blank gem row).
   if (
@@ -40,8 +53,22 @@ export function MessageBubble({
     <div className={styles.assistantRow}>
       <Gem size={28} />
       <div className={styles.body}>
-        {message.tools.length > 0 && (
+        {(message.tools.length > 0 || answeredBy) && (
           <div className={styles.chips}>
+            {answeredBy && (
+              <span
+                className={`${styles.chip} ${styles.chipAgent}`}
+                title={
+                  message.agentPath.length > 1
+                    ? `Handoff: ${message.agentPath.map(agentLabel).join(' → ')}`
+                    : `Answered by the ${agentLabel(answeredBy)} agent`
+                }
+              >
+                {message.agentPath.length > 1
+                  ? message.agentPath.map(agentLabel).join(' → ')
+                  : agentLabel(answeredBy)}
+              </span>
+            )}
             {message.tools.map((t) => {
               const ok = t.status === 'ok';
               const running = t.status === 'running';
@@ -69,39 +96,32 @@ export function MessageBubble({
 
         {message.text && (
           <div className={styles.text}>
-            {message.text}
+            <Markdown text={message.text} />
             {message.streaming && <span className={styles.caret} aria-hidden="true" />}
           </div>
         )}
 
+        {message.stopped && !message.streaming && (
+          <div className={styles.stoppedNote}>Stopped — partial answer kept.</div>
+        )}
+
         {!message.streaming && hasGrounding && (
-          <div className={styles.grounding}>
-            <CheckIcon size={11} />
-            Grounded in {message.passages} passage{message.passages === 1 ? '' : 's'}
+          <SourcesList passages={message.passages} citations={message.citations} />
+        )}
+
+        {message.error && (
+          <div className={styles.errText} role="alert">
+            <span>{message.error}</span>
+            {onRetry && !message.streaming && (
+              <button type="button" className={styles.retryBtn} onClick={() => onRetry(message.id)}>
+                Retry
+              </button>
+            )}
           </div>
         )}
 
-        {message.error && <div className={styles.errText}>{message.error}</div>}
-
         {!message.streaming && message.elicitation && (
-          <div className={styles.picker}>
-            {message.elicitation.prompt && (
-              <div className={styles.pickerPrompt}>{message.elicitation.prompt}</div>
-            )}
-            <div className={styles.pickerOptions}>
-              {message.elicitation.options.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  className={styles.pickerBtn}
-                  onClick={() => onPick?.(opt.value)}
-                >
-                  <span>{opt.label}</span>
-                  {opt.hint && <span className={styles.pickerHint}>{opt.hint}</span>}
-                </button>
-              ))}
-            </div>
-          </div>
+          <ElicitationPicker elicitation={message.elicitation} onPick={onPick} />
         )}
       </div>
     </div>

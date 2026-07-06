@@ -5,10 +5,17 @@ import {
   listConversations,
   type ConversationSummary,
 } from '../../api/chat';
-import { streamAgent, streamChat, type ChatRequestBody, type Elicitation } from '../../api/stream';
+import {
+  streamAgent,
+  streamChat,
+  type ChatRequestBody,
+  type Elicitation,
+} from '../../api/stream';
+import { ApiError } from '../../api/transport';
 import { AGENT_LABELS, type AgentKey } from '../../access/mytrions.config';
 import type { UserContext } from '../../context/userContext';
-import type { UiMessage } from './types';
+import { getLastConversationId, setLastConversationId } from './chatStorage';
+import { blankMessage, type ErrorKind, type UiMessage } from './types';
 
 /** Route through the orchestrator/agent runtime by default; VITE_USE_AGENT=0 falls back to /v1/chat. */
 const USE_AGENT_RUNTIME = import.meta.env.VITE_USE_AGENT !== '0';
@@ -28,8 +35,11 @@ type Action =
   | { type: 'addTool'; name: string }
   | { type: 'updateTool'; name: string; status: string }
   | { type: 'setElicitation'; elicitation: Elicitation }
+  | { type: 'appendAgentPath'; key: string }
   | { type: 'setConversationId'; id: string }
+  | { type: 'stopStream' }
   | { type: 'streamEnd' }
+  | { type: 'retryTurn'; assistantId: string }
   | { type: 'setConversations'; conversations: ConversationSummary[] }
   | { type: 'loadTranscript'; conversationId: string; messages: UiMessage[] }
   | { type: 'newConversation' }
@@ -49,16 +59,34 @@ function uid(): string {
 /** Apply `fn` to the last assistant message immutably. */
 function patchLastAssistant(messages: UiMessage[], fn: (m: UiMessage) => UiMessage): UiMessage[] {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (messages[i]!.role === 'assistant') {
+    const m = messages[i];
+    if (m && m.role === 'assistant') {
       const next = messages.slice();
-      next[i] = fn(messages[i]!);
+      next[i] = fn(m);
       return next;
     }
   }
   return messages;
 }
 
-function reducer(state: State, action: Action): State {
+/** Classify a stream failure so the bubble copy + retry affordance fit the cause. */
+export function classifyStreamError(e: unknown): { message: string; kind: ErrorKind } {
+  if (e instanceof ApiError) {
+    if (e.status === 429) {
+      return { message: 'Too many requests — wait a moment, then retry.', kind: 'rate-limit' };
+    }
+    if (e.status >= 500) {
+      return { message: `The AI service had a problem (${e.message})`, kind: 'server' };
+    }
+    if (e.code === 'NETWORK' || e.status === 0) {
+      return { message: 'Connection lost — check your network and retry.', kind: 'network' };
+    }
+    return { message: e.message, kind: 'stream' };
+  }
+  return { message: e instanceof Error ? e.message : String(e), kind: 'stream' };
+}
+
+export function reducer(state: State, action: Action): State {
   switch (action.type) {
     case 'send':
       return {
@@ -68,8 +96,8 @@ function reducer(state: State, action: Action): State {
         messages: [
           // Retire any open picker: sending IS the answer to it.
           ...state.messages.map((m) => (m.elicitation ? { ...m, elicitation: null } : m)),
-          { id: action.userId, role: 'user', text: action.text, status: '', passages: null, error: '', tools: [], streaming: false, elicitation: null },
-          { id: action.assistantId, role: 'assistant', text: '', status: 'Thinking…', passages: null, error: '', tools: [], streaming: true, elicitation: null },
+          blankMessage(action.userId, 'user', action.text),
+          { ...blankMessage(action.assistantId, 'assistant'), status: 'Thinking…', streaming: true },
         ],
       };
     case 'appendToken':
@@ -95,10 +123,35 @@ function reducer(state: State, action: Action): State {
       };
     case 'setElicitation':
       return { ...state, messages: patchLastAssistant(state.messages, (m) => ({ ...m, elicitation: action.elicitation })) };
+    case 'appendAgentPath':
+      return {
+        ...state,
+        messages: patchLastAssistant(state.messages, (m) =>
+          m.agentPath.at(-1) === action.key
+            ? m
+            : { ...m, agentKey: action.key, agentPath: [...m.agentPath, action.key] },
+        ),
+      };
     case 'setConversationId':
       return { ...state, conversationId: action.id };
+    case 'stopStream':
+      // User pressed Stop: keep partial text, mark the row; the aborted stream's finally still
+      // runs streamEnd (idempotent) and detaches the controller itself.
+      return {
+        ...state,
+        streaming: false,
+        messages: patchLastAssistant(state.messages, (m) => ({ ...m, streaming: false, stopped: true, status: '' })),
+      };
     case 'streamEnd':
+      // Minimal finalize — must not clear stopped/agentPath/citations set earlier in the turn.
       return { ...state, streaming: false, messages: patchLastAssistant(state.messages, (m) => ({ ...m, streaming: false, status: '' })) };
+    case 'retryTurn': {
+      const idx = state.messages.findIndex((m) => m.id === action.assistantId);
+      if (idx < 0) return state;
+      // Remove the failed assistant row and its preceding user row (the pair being retried).
+      const from = idx > 0 && state.messages[idx - 1]?.role === 'user' ? idx - 1 : idx;
+      return { ...state, messages: [...state.messages.slice(0, from), ...state.messages.slice(idx + 1)] };
+    }
     case 'setConversations':
       return { ...state, conversations: action.conversations };
     case 'loadTranscript':
@@ -122,8 +175,12 @@ export interface ChatController {
   streaming: boolean;
   error: string | null;
   send(text: string): void;
+  /** Abort the in-flight generation, keeping the partial answer. */
+  stop(): void;
+  /** Re-send the user message behind a failed assistant row. */
+  retry(assistantId: string): void;
   newConversation(): void;
-  openConversation(id: string): Promise<void>;
+  openConversation(id: string, opts?: { silent?: boolean }): Promise<void>;
   removeConversation(id: string): Promise<void>;
   refreshConversations(): Promise<void>;
 }
@@ -135,6 +192,7 @@ export function useChat(
 ): ChatController {
   const [state, dispatch] = useReducer(reducer, EMPTY);
   const abortRef = useRef<AbortController | null>(null);
+  const restoredForRef = useRef<string | null>(null);
   const zohoUserId = ctx.userId;
 
   const refreshConversations = useCallback(async () => {
@@ -176,32 +234,60 @@ export function useChat(
           await run(
             body,
             {
-              onStart: (d) => d.conversationId && dispatch({ type: 'setConversationId', id: d.conversationId }),
+              onStart: (d) => {
+                if (d.conversationId) {
+                  dispatch({ type: 'setConversationId', id: d.conversationId });
+                  setLastConversationId(zohoUserId, d.conversationId);
+                }
+              },
               onStatus: (d) => dispatch({ type: 'patchAssistant', patch: { status: d.label ?? '' } }),
-              onContext: (d) => dispatch({ type: 'patchAssistant', patch: { passages: d.passages ?? null } }),
+              onContext: (d) =>
+                dispatch({
+                  type: 'patchAssistant',
+                  patch: {
+                    passages: d.passages ?? null,
+                    ...(d.citations ? { citations: d.citations } : {}),
+                  },
+                }),
               onToolCall: (d) => d.name && dispatch({ type: 'addTool', name: d.name }),
               onToolResult: (d) => d.name && dispatch({ type: 'updateTool', name: d.name, status: d.status ?? 'ok' }),
               // Agent path emits {delta}; chat path emits {text}.
               onToken: (d) => { const t = d.delta ?? d.text; if (t) dispatch({ type: 'appendToken', text: t }); },
-              // "Consulting Sales…" as a child starts (agent path only).
+              // "Consulting Sales…" as a child starts (agent path only) + persist the trail.
               onAgent: (d) => {
                 if (d.state === 'start' && d.key) {
-                  const label = AGENT_LABELS[d.key as AgentKey] ?? d.key;
+                  const label = AGENT_LABELS[d.key as AgentKey] ?? d.label ?? d.key;
+                  dispatch({ type: 'appendAgentPath', key: d.key });
                   dispatch({ type: 'patchAssistant', patch: { status: `Consulting ${label}…` } });
                 }
               },
               onElicitation: (d) => dispatch({ type: 'setElicitation', elicitation: d }),
               onDone: (d) => {
-                if (d.conversationId) dispatch({ type: 'setConversationId', id: d.conversationId });
-                dispatch({ type: 'patchAssistant', patch: { ...(typeof d.message === 'string' && d.message ? { text: d.message } : {}), ...(d.ragPassages != null ? { passages: d.ragPassages } : {}) } });
+                if (d.conversationId) {
+                  dispatch({ type: 'setConversationId', id: d.conversationId });
+                  setLastConversationId(zohoUserId, d.conversationId);
+                }
+                // done is authoritative — its message/attribution/citations replace accumulation.
+                dispatch({
+                  type: 'patchAssistant',
+                  patch: {
+                    ...(typeof d.message === 'string' && d.message ? { text: d.message } : {}),
+                    ...(d.ragPassages != null ? { passages: d.ragPassages } : {}),
+                    ...(d.agentPath && d.agentPath.length > 0
+                      ? { agentPath: d.agentPath, agentKey: d.agentPath.at(-1) ?? null }
+                      : {}),
+                    ...(d.citations ? { citations: d.citations } : {}),
+                  },
+                });
               },
-              onError: (msg) => dispatch({ type: 'patchAssistant', patch: { error: msg } }),
+              onError: (msg) => dispatch({ type: 'patchAssistant', patch: { error: msg, errorKind: 'stream' } }),
             },
             controller.signal,
           );
         } catch (e) {
           if (abortRef.current === controller) {
-            dispatch({ type: 'patchAssistant', patch: { error: e instanceof Error ? e.message : String(e) } });
+            const { message, kind } = classifyStreamError(e);
+            dispatch({ type: 'patchAssistant', patch: { error: message, errorKind: kind } });
           }
         } finally {
           // Only finalize if this is still the active stream. If New chat / a newer turn replaced the
@@ -214,33 +300,54 @@ export function useChat(
         }
       })();
     },
-    [ctx, department, agentKey, state.conversationId, state.streaming, refreshConversations],
+    [ctx, department, agentKey, state.conversationId, state.streaming, refreshConversations, zohoUserId],
+  );
+
+  const stop = useCallback(() => {
+    if (!abortRef.current) return;
+    // Abort but KEEP the ref (unlike newConversation): the stream's finally must still run
+    // streamEnd + detach itself, preserving the identity-guard semantics.
+    abortRef.current.abort();
+    dispatch({ type: 'stopStream' });
+  }, []);
+
+  const retry = useCallback(
+    (assistantId: string) => {
+      if (state.streaming) return;
+      const idx = state.messages.findIndex((m) => m.id === assistantId);
+      const userRow = idx > 0 ? state.messages[idx - 1] : undefined;
+      if (!userRow || userRow.role !== 'user' || !userRow.text) return;
+      dispatch({ type: 'retryTurn', assistantId });
+      send(userRow.text);
+    },
+    [state.streaming, state.messages, send],
   );
 
   const newConversation = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null; // detach: the aborted stream's finally is now inert (won't touch state)
+    setLastConversationId(zohoUserId, null);
     dispatch({ type: 'newConversation' });
-  }, []);
+  }, [zohoUserId]);
 
   const openConversation = useCallback(
-    async (id: string) => {
+    async (id: string, opts: { silent?: boolean } = {}) => {
       if (state.streaming || id === state.conversationId) return;
       try {
         const { messages } = await getConversation(id, zohoUserId);
         const ui: UiMessage[] = messages.map((m) => ({
-          id: m.id,
-          role: m.role,
-          text: m.content ?? '',
-          status: '',
+          ...blankMessage(m.id, m.role, m.content ?? ''),
           passages: m.ragPassages,
           error: m.error ?? '',
           tools: Array.isArray(m.tools) ? m.tools : [],
-          streaming: false,
-          elicitation: null,
         }));
         dispatch({ type: 'loadTranscript', conversationId: id, messages: ui });
+        setLastConversationId(zohoUserId, id);
       } catch (e) {
+        if (opts.silent) {
+          setLastConversationId(zohoUserId, null); // stale/deleted id — stop restoring it
+          return;
+        }
         dispatch({ type: 'setError', error: e instanceof Error ? e.message : String(e) });
       }
     },
@@ -254,6 +361,7 @@ export function useChat(
         if (id === state.conversationId) {
           abortRef.current?.abort(); // a stream may still be writing to the conversation we just deleted
           abortRef.current = null;
+          setLastConversationId(zohoUserId, null);
           dispatch({ type: 'newConversation' });
         }
         await refreshConversations();
@@ -264,6 +372,17 @@ export function useChat(
     [zohoUserId, state.conversationId, refreshConversations],
   );
 
+  // Restore the last conversation once per user — only into an untouched chat. Deliberately
+  // depends on zohoUserId alone (the restoredForRef guard makes re-runs no-ops anyway).
+  useEffect(() => {
+    if (!zohoUserId || restoredForRef.current === zohoUserId) return;
+    restoredForRef.current = zohoUserId;
+    const last = getLastConversationId(zohoUserId);
+    if (last && state.messages.length === 0 && !state.streaming) {
+      void openConversation(last, { silent: true });
+    }
+  }, [zohoUserId, state.messages.length, state.streaming, openConversation]);
+
   // Create-up-front is intentionally omitted: /chat/stream auto-creates and returns the id in `start`.
   return {
     messages: state.messages,
@@ -272,6 +391,8 @@ export function useChat(
     streaming: state.streaming,
     error: state.error,
     send,
+    stop,
+    retry,
     newConversation,
     openConversation,
     removeConversation,

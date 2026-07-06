@@ -75,6 +75,16 @@ export const SunIcon = ({ size = 15, className, style }: IconProps) => (
 export const ChatIcon = ({ size = 16, className, style }: IconProps) =>
   stroke(size, 'M8 10h.01M12 10h.01M16 10h.01M21 12a8 8 0 01-11.3 7.3L3 21l1.7-6.7A8 8 0 1121 12z', 2, className, style);
 
+/** Filled square — Stop generation. */
+export const StopIcon = ({ size = 12, className, style }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className} style={style} aria-hidden="true">
+    <rect x="6" y="6" width="12" height="12" rx="2" />
+  </svg>
+);
+
+export const HistoryIcon = ({ size = 13, className, style }: IconProps) =>
+  stroke(size, 'M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8m0-5v5h5m4-1v5l4 2', 2, className, style);
+
 /** The four-point fuel "spark" used in the brand mark and assistant gem (filled). */
 export const Sparkle = ({ size = 16, className, style }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className} style={style} aria-hidden="true">

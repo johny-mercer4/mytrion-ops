@@ -35,3 +35,37 @@
   font-size: var(--text-xs);
   line-height: var(--lh-sm);
 }
+
+/* wrapper so the scroll-to-bottom button can float over the list */
+.listWrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.toBottom {
+  position: absolute;
+  right: var(--space-4);
+  bottom: var(--space-3);
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+.toBottom:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}

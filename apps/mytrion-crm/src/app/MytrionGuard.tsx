@@ -4,6 +4,7 @@ import { useUserContext } from '../context/UserContextProvider';
 import { canAccess } from '../access/resolveAccess';
 import { MYTRIONS, isMytrionId } from '../access/mytrions.config';
 import { MYTRION_MODULES } from '../mytrions/registry';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { StatusMessage } from '../components/StatusMessage';
 import { Forbidden } from './Forbidden';
 import { NotFound } from './NotFound';
@@ -23,9 +24,13 @@ export function MytrionGuard() {
   }
 
   const Module = MYTRION_MODULES[mytrion];
+  // Boundary keyed by slug: navigating to another Mytrion resets a crashed one. Also catches
+  // lazy-chunk load failures after a deploy (fallback offers Reload).
   return (
-    <Suspense fallback={<StatusMessage>Loading {MYTRIONS[mytrion].title}…</StatusMessage>}>
-      <Module />
-    </Suspense>
+    <ErrorBoundary key={mytrion}>
+      <Suspense fallback={<StatusMessage>Loading {MYTRIONS[mytrion].title}…</StatusMessage>}>
+        <Module />
+      </Suspense>
+    </ErrorBoundary>
   );
 }

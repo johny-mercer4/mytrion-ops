@@ -2,6 +2,7 @@ import { type ReactNode } from 'react';
 import { useUserContext } from '../../context/UserContextProvider';
 import { MYTRIONS, agentKeyFor, type MytrionId } from '../../access/mytrions.config';
 import { ChatPanel } from '../../features/chat/ChatPanel';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { TopBar } from '../../components/TopBar';
 import { HomeIcon } from '../../components/icons';
 import styles from './MytrionShell.module.css';
@@ -55,7 +56,10 @@ export function MytrionShell({
 
         <div className={styles.center}>{children}</div>
 
-        <ChatPanel context={user} department={department} agentKey={agentKey} />
+        {/* A chat crash must never take down the working surface — remount on retry. */}
+        <ErrorBoundary>
+          <ChatPanel context={user} department={department} agentKey={agentKey} />
+        </ErrorBoundary>
       </div>
     </div>
   );

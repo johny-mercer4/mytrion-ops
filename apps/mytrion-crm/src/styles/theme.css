@@ -57,6 +57,8 @@
   /* ── Type scale (size + line-height + weight) ──────────────────────────────── */
   --text-2xs: 10.5px;
   --lh-2xs: 14px;
+  /* Composer font on phones — 16px is the iOS threshold below which Safari auto-zooms inputs. */
+  --text-input-mobile: 16px;
   --text-xs: 12px;
   --lh-xs: 16px;
   --text-sm: 13px;
