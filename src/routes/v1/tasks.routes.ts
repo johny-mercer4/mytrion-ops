@@ -70,7 +70,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
     requireJobs();
     requireOrchestrator();
     const body = createTaskSchema.parse(request.body);
-    const ctx = buildCallerContext(request, body);
+    const ctx = await buildCallerContext(request, body);
     if (body.agent) {
       const manifest = isAgentKey(body.agent) ? agentRegistry.get(body.agent) : undefined;
       const access = manifest ? agentRegistry.checkAccess(manifest, ctx) : { ok: false as const };
@@ -104,14 +104,14 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
   app.get('/agent/tasks', guard, async (request) => {
     requireJobs();
     const q = z.object({ limit: z.coerce.number().int().min(1).max(100).optional() }).parse(request.query);
-    const ctx = buildCallerContext(request, callerIdentitySchema.parse(request.query));
+    const ctx = await buildCallerContext(request, callerIdentitySchema.parse(request.query));
     const tasks = await agentTaskRepo.listForRequester(ctx, q.limit ?? 30);
     return { tasks: tasks.map(taskDto) };
   });
 
   app.get<{ Params: { id: string } }>('/agent/tasks/:id', guard, async (request) => {
     requireJobs();
-    const ctx = buildCallerContext(request, callerIdentitySchema.parse(request.query));
+    const ctx = await buildCallerContext(request, callerIdentitySchema.parse(request.query));
     const task = await agentTaskRepo.findById(ctx, request.params.id);
     if (!task) throw new NotFoundError('Task not found');
     return { task: taskDto(task) };
@@ -120,7 +120,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
   // SSE progress: polls the (indexed) task row — works across multiple instances.
   app.get<{ Params: { id: string } }>('/agent/tasks/:id/stream', guard, async (request, reply) => {
     requireJobs();
-    const ctx = buildCallerContext(request, callerIdentitySchema.parse(request.query));
+    const ctx = await buildCallerContext(request, callerIdentitySchema.parse(request.query));
     const first = await agentTaskRepo.findById(ctx, request.params.id);
     if (!first) throw new NotFoundError('Task not found');
 
@@ -149,7 +149,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
 
   app.post<{ Params: { id: string } }>('/agent/tasks/:id/cancel', guard, async (request) => {
     requireJobs();
-    const ctx = buildCallerContext(request, callerIdentitySchema.parse(request.body ?? {}));
+    const ctx = await buildCallerContext(request, callerIdentitySchema.parse(request.body ?? {}));
     const cancelled = await agentTaskRepo.cancel(ctx, request.params.id);
     if (!cancelled) throw new NotFoundError('Task not found or not cancellable');
     if (cancelled.jobId) {
@@ -167,7 +167,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
   // Queue/state counts + recent failures — admin (allDepartmentAccess) only.
   app.get('/agent/jobs/stats', guard, async (request) => {
     requireJobs();
-    const ctx = buildCallerContext(request, callerIdentitySchema.parse(request.query));
+    const ctx = await buildCallerContext(request, callerIdentitySchema.parse(request.query));
     if (!ctx.allDepartmentAccess && !ctx.bypassRbac) {
       throw new RBACError('Job stats require all-department (admin) access');
     }

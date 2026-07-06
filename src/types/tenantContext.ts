@@ -16,6 +16,12 @@ export type Audience = (typeof AUDIENCES)[number];
 
 export const ROLES = [
   'admin',
+  /**
+   * A signed-in Octane worker WITHOUT an admin-marker Zoho profile. Read scopes only — the
+   * registry's write gate (riskClass !== 'read' requires role 'admin') is real for workers.
+   * Derived from the verified Zoho profile at token mint/verify/refresh (workerRole.ts).
+   */
+  'worker',
   'ops',
   'finance',
   'support',

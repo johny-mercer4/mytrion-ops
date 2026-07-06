@@ -83,6 +83,28 @@ describe('contextFromClaims — worker branch (session-authoritative RBAC)', () 
     expect(ctx.allDepartmentAccess).toBe(false);
     expect(ctx.profiles).toEqual(['Sales Rep']);
   });
+
+  it('re-derives the role from the verified profile — a stale admin claim yields a worker', () => {
+    // baseClaims carries role:'admin' (a pre-fix token); the Sales Rep profile must win.
+    const ctx = contextFromClaims(
+      { ...baseClaims, userId: 'zoho:6', worker: { zohoUserId: '6', profile: 'Sales Rep', zohoRole: 'Agent' } },
+      'rq',
+    );
+    expect(ctx.role).toBe('worker');
+    expect(ctx.scopes).not.toContain('*');
+    expect(ctx.scopes).toEqual(
+      expect.arrayContaining(['zoho_crm:read', 'servercrm:read', 'zoho_desk:read', 'zoho_people:read']),
+    );
+  });
+
+  it('an admin-marker profile derives the admin role (full scopes)', () => {
+    const ctx = contextFromClaims(
+      { ...baseClaims, worker: { zohoUserId: '555', profile: 'Administrator' } },
+      'rq',
+    );
+    expect(ctx.role).toBe('admin');
+    expect(ctx.scopes).toEqual(['*']);
+  });
 });
 
 describe('authService.refresh — worker sessions stay signed in without re-auth', () => {
@@ -101,6 +123,28 @@ describe('authService.refresh — worker sessions stay signed in without re-auth
     // The rotated tokens are valid and still carry the verified worker identity.
     expect((await verifyToken(result.accessToken, 'access')).worker?.zohoUserId).toBe('555');
     expect((await verifyToken(result.refreshToken, 'refresh')).worker?.zohoUserId).toBe('555');
+  });
+
+  it('rotation re-derives the role: a stale admin token for a non-admin worker rotates to worker', async () => {
+    const stale: TokenClaims = {
+      ...baseClaims, // role:'admin' — the pre-fix mint
+      userId: 'zoho:6',
+      worker: { zohoUserId: '6', userName: 'Bob', profile: 'Sales Rep', zohoRole: 'Sales Agent' },
+    };
+    const result = await authService.refresh(await signRefreshToken(stale));
+    if (!('worker' in result)) throw new Error('expected a worker session');
+    expect((await verifyToken(result.accessToken, 'access')).role).toBe('worker');
+    expect((await verifyToken(result.refreshToken, 'refresh')).role).toBe('worker');
+  });
+
+  it('rotation preserves admin for admin-profile workers', async () => {
+    const claims: TokenClaims = {
+      ...baseClaims,
+      worker: { zohoUserId: '555', profile: 'Administrator' },
+    };
+    const result = await authService.refresh(await signRefreshToken(claims));
+    if (!('worker' in result)) throw new Error('expected a worker session');
+    expect((await verifyToken(result.accessToken, 'access')).role).toBe('admin');
   });
 });
 

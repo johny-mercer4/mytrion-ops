@@ -24,6 +24,7 @@ export default defineConfig({
       FF_AGENT_CHECKPOINTS: '0',
       FF_BROWSER_ENABLED: '0',
       FF_CUSTOMER_SCOPE_STRICT: '0',
+      FF_WORKER_DEPT_STRICT: '0',
     },
     coverage: {
       provider: 'v8',

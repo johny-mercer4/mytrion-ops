@@ -22,6 +22,7 @@ import {
   type TokenClaims,
   type WorkerIdentity,
 } from './jwt.js';
+import { workerRoleFor } from './workerRole.js';
 
 export interface PublicWorker {
   zohoUserId: string;
@@ -35,9 +36,10 @@ export interface WorkerSession extends AuthTokens {
   worker: PublicWorker;
 }
 
-/** Session-token claims for a signed-in worker. Internal role 'admin' = full scopes ('*'); the
- * real per-request gate is department + allDepartmentAccess (derived from the Zoho profile), which
- * matches how the static API_KEY caller works. */
+/** Session-token claims for a signed-in worker. The internal role is DERIVED from the verified
+ * Zoho profile (workerRoleFor): admin-marker profiles get 'admin' (full scopes); everyone else
+ * gets 'worker' (read scopes), which keeps write-risk tools admin-only. The token's role is a
+ * hint only — contextFromClaims re-derives it from the embedded worker identity on every verify. */
 function claimsFor(worker: ZohoWorker): TokenClaims {
   const identity: WorkerIdentity = { zohoUserId: worker.zohoUserId };
   if (worker.fullName) identity.userName = worker.fullName;
@@ -48,7 +50,11 @@ function claimsFor(worker: ZohoWorker): TokenClaims {
     userId: `zoho:${worker.zohoUserId}`,
     tenantId: DEFAULT_TENANT_ID,
     audience: 'internal',
-    role: 'admin',
+    role: workerRoleFor({
+      userName: worker.fullName,
+      profile: worker.profile,
+      zohoRole: worker.role,
+    }),
     worker: identity,
   };
 }

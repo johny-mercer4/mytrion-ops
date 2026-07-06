@@ -45,14 +45,14 @@ export async function approvalsRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/approvals', guard, async (request) => {
     const q = listQuery.parse(request.query);
-    const ctx = buildCallerContext(request, callerIdentitySchema.parse(request.query));
+    const ctx = await buildCallerContext(request, callerIdentitySchema.parse(request.query));
     requireAdmin(ctx);
     const rows = await approvalRepo.list(ctx, q.status ?? 'pending', q.limit ?? 50);
     return { approvals: rows.map(approvalDto) };
   });
 
   app.post<{ Params: { id: string } }>('/approvals/:id/approve', guard, async (request) => {
-    const ctx = buildCallerContext(request, callerIdentitySchema.parse(request.body ?? {}));
+    const ctx = await buildCallerContext(request, callerIdentitySchema.parse(request.body ?? {}));
     requireAdmin(ctx);
     const decided = await approvalRepo.decide(ctx, request.params.id, 'approved', ctx.userName ?? ctx.userId);
     if (!decided) throw new NotFoundError('Approval not found, already decided, or expired');
@@ -61,7 +61,7 @@ export async function approvalsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post<{ Params: { id: string } }>('/approvals/:id/deny', guard, async (request) => {
-    const ctx = buildCallerContext(request, callerIdentitySchema.parse(request.body ?? {}));
+    const ctx = await buildCallerContext(request, callerIdentitySchema.parse(request.body ?? {}));
     requireAdmin(ctx);
     const decided = await approvalRepo.decide(ctx, request.params.id, 'denied', ctx.userName ?? ctx.userId);
     if (!decided) throw new NotFoundError('Approval not found, already decided, or expired');

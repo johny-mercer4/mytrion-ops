@@ -134,6 +134,9 @@ const EnvSchema = z.object({
   // "Uzbekistan Sales Agent"). GET /v1/admin/agents?all=1 bypasses this filter (admin-only).
   SALES_AGENT_PROFILE_NAMES: z.string().default('Sales Agent'),
   SALES_AGENT_ROLE_NAMES: z.string().default('Sales Agent'),
+  // TTL for the cached CRM users directory that VERIFIES act-as targets server-side
+  // (x-act-as-* identity headers are never trusted; see actAsDirectory.ts).
+  ACT_AS_DIRECTORY_TTL_MS: z.coerce.number().int().positive().default(300_000),
 
   // --- Auth ---
   JWT_SECRET: z.string().default(''),
@@ -288,8 +291,14 @@ const EnvSchema = z.object({
   // Strict customer isolation: requests carrying customer markers (carrier_id / application_id /
   // chat_id) get a locked-down 'customer' context — client-supplied department_scope /
   // allDepartments / profile / role / user_name are IGNORED and scope derives solely from the
-  // company id. Off = legacy behavior + a loud warning, so the Telegram shim can migrate first.
-  FF_CUSTOMER_SCOPE_STRICT: flag('0'),
+  // company id. ON by default (hardening pass 2026-07): set to 0 only as a temporary rollback
+  // while a legacy client (Telegram shim) still sends worker-style scope fields.
+  FF_CUSTOMER_SCOPE_STRICT: flag('1'),
+  // Strict worker departments: bound a verified NON-admin worker's department view by the
+  // departments derived from their Zoho profile/role (deriveWorkerDepartments). Off until the
+  // profile→department mapping is validated against the live Zoho roster — an unmapped profile
+  // would silently drop the worker to Global-only knowledge.
+  FF_WORKER_DEPT_STRICT: flag('0'),
   // Zoho OAuth worker sign-in (/v1/auth/zoho/*) + Bearer-session identity on caller routes.
   FF_ZOHO_OAUTH_ENABLED: flag('0'),
   // Multi-agent orchestrator endpoint (POST /v1/agent). FF_DEEP_AGENTS_ENABLED is kept as a

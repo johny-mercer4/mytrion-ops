@@ -51,7 +51,7 @@ export async function filesRoutes(app: FastifyInstance): Promise<void> {
       }
     }
     const identity = callerIdentitySchema.parse(fields);
-    const ctx = buildCallerContext(request, identity);
+    const ctx = await buildCallerContext(request, identity);
     const stored = await storeFile(ctx, {
       name: part.filename || 'upload',
       mime: part.mimetype || 'application/octet-stream',
@@ -67,28 +67,28 @@ export async function filesRoutes(app: FastifyInstance): Promise<void> {
   app.get('/files', guard, async (request) => {
     requireFiles();
     const q = z.object({ limit: z.coerce.number().int().min(1).max(100).optional() }).parse(request.query);
-    const ctx = buildCallerContext(request, callerIdentitySchema.parse(request.query));
+    const ctx = await buildCallerContext(request, callerIdentitySchema.parse(request.query));
     const files = await fileRepo.listVisible(ctx, q.limit ?? 50);
     return { files: files.map(fileDto) };
   });
 
   app.get<{ Params: { id: string } }>('/files/:id', guard, async (request) => {
     requireFiles();
-    const ctx = buildCallerContext(request, callerIdentitySchema.parse(request.query));
+    const ctx = await buildCallerContext(request, callerIdentitySchema.parse(request.query));
     const { file } = await presignFile(ctx, request.params.id);
     return { file: fileDto(file) };
   });
 
   app.get<{ Params: { id: string } }>('/files/:id/download', guard, async (request) => {
     requireFiles();
-    const ctx = buildCallerContext(request, callerIdentitySchema.parse(request.query));
+    const ctx = await buildCallerContext(request, callerIdentitySchema.parse(request.query));
     const { file, url, expiresAt } = await presignFile(ctx, request.params.id);
     return { id: file.id, name: file.name, url, expiresAt };
   });
 
   app.post<{ Params: { id: string } }>('/files/:id/delete', guard, async (request) => {
     requireFiles();
-    const ctx = buildCallerContext(request, callerIdentitySchema.parse(request.body ?? {}));
+    const ctx = await buildCallerContext(request, callerIdentitySchema.parse(request.body ?? {}));
     await deleteFile(ctx, request.params.id);
     return { deleted: true, id: request.params.id };
   });

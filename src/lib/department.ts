@@ -106,6 +106,31 @@ export function isBypassUser(userName?: string | null): boolean {
 }
 
 /**
+ * Server-side department derivation for a verified non-admin worker: map their Zoho
+ * profile/role names onto KNOWN_DEPARTMENTS by case-insensitive substring (e.g. profile
+ * "Sales Agent" → 'sales', role "Uzbekistan Customer Service" → 'customer-service').
+ * Used behind FF_WORKER_DEPT_STRICT to BOUND the body-asserted department view — an
+ * unknown profile derives [] which would drop the worker to Global-only knowledge, hence
+ * the staged flag.
+ */
+export function deriveWorkerDepartments(
+  profile?: string | readonly string[] | null,
+  zohoRole?: string | null,
+): string[] {
+  const values = [
+    ...(Array.isArray(profile) ? profile : profile ? [profile as string] : []),
+    ...(zohoRole ? [zohoRole] : []),
+  ].map((v) => String(v).toLowerCase());
+  const out = new Set<string>();
+  for (const dept of KNOWN_DEPARTMENTS) {
+    // Match both hyphenated and spaced spellings ("customer-service" / "Customer Service").
+    const spaced = dept.replace(/-/g, ' ');
+    if (values.some((v) => v.includes(dept) || v.includes(spaced))) out.add(dept);
+  }
+  return [...out];
+}
+
+/**
  * The single source of truth for the "see everything" bypass, applied identically to RAG
  * and tools. True when the caller explicitly asks (`allDepartments`) OR carries an admin
  * marker on their profile OR their role. Keep this the ONLY place that decides the bypass

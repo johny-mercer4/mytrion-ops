@@ -19,7 +19,17 @@
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { env } from '../../config/env.js';
-import { isBypassUser, normalizeDepartments, resolveAllDepartmentAccess } from '../../lib/department.js';
+import {
+  deriveWorkerDepartments,
+  isBypassUser,
+  normalizeDepartments,
+  resolveAllDepartmentAccess,
+} from '../../lib/department.js';
+import { RBACError } from '../../lib/errors.js';
+import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import { resolveActAsTarget } from '../../modules/auth/actAsDirectory.js';
+import { workerRoleFor } from '../../modules/auth/workerRole.js';
+import { scopesForRole } from '../../modules/auth/permissions.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireContext, withDepartmentAccess } from './helpers.js';
 
@@ -164,12 +174,11 @@ function departmentView(body: CallerIdentityBody): string[] {
 }
 
 /**
- * Admin "act as agent" impersonation target from x-act-as-* headers. Only honored for a verified
- * admin (allDepartmentAccess) session — the caller. Returns null when not impersonating.
+ * The admin "act as agent" TARGET id from the x-act-as-zoho-user-id header. This is the ONLY
+ * act-as input the client controls — the target's real name/profile/role are looked up in the
+ * CRM directory (actAsDirectory). Legacy x-act-as-user-name/-profile/-role headers are ignored.
  */
-function readActAs(
-  request: FastifyRequest,
-): { zohoUserId: string; userName?: string; profile?: string; role?: string } | null {
+function readActAsId(request: FastifyRequest): string | null {
   const h = request.headers;
   const one = (v: string | string[] | undefined): string | undefined => {
     const s = (Array.isArray(v) ? v[0] : v)?.trim();
@@ -177,17 +186,76 @@ function readActAs(
   };
   const zohoUserId = one(h['x-act-as-zoho-user-id']);
   if (!zohoUserId) return null;
-  const out: { zohoUserId: string; userName?: string; profile?: string; role?: string } = { zohoUserId };
-  const userName = one(h['x-act-as-user-name']);
-  const profile = one(h['x-act-as-profile']);
-  const role = one(h['x-act-as-role']);
-  if (userName) out.userName = userName;
-  if (profile) out.profile = profile;
-  if (role) out.role = role;
-  return out;
+  if (h['x-act-as-profile'] || h['x-act-as-role'] || h['x-act-as-user-name']) {
+    request.log.info(
+      'act-as identity headers ignored; the target identity is verified from the CRM directory',
+    );
+  }
+  return zohoUserId;
 }
 
-export function buildCallerContext(request: FastifyRequest, body: CallerIdentityBody): TenantContext {
+/**
+ * Impersonated context for a verified admin acting AS a CRM agent. The target's authority is
+ * derived from their VERIFIED CRM profile/role — the request runs with the target's role and
+ * scopes (an admin acting as a sales rep is a worker for the duration), and the real admin's
+ * userId is recorded for audit attribution. Fail-closed on unknown targets.
+ */
+async function actAsContext(
+  request: FastifyRequest,
+  base: TenantContext,
+  body: CallerIdentityBody,
+  targetId: string,
+): Promise<TenantContext> {
+  const target = await resolveActAsTarget(targetId);
+  if (!target) {
+    await auditFromContext(base, {
+      action: 'auth.act_as',
+      status: 'denied',
+      detail: { target: targetId, reason: 'unknown or inactive CRM user' },
+    });
+    throw new RBACError(`Unknown act-as target '${targetId}'`);
+  }
+  const role = workerRoleFor({
+    userName: target.name,
+    profile: target.profile,
+    zohoRole: target.role,
+  });
+  const targetAllAccess = role === 'admin';
+  const ctx: TenantContext = {
+    ...base,
+    userId: `zoho:${target.zohoUserId}`,
+    role,
+    scopes: scopesForRole(role),
+    allDepartmentAccess: targetAllAccess,
+    departments: targetAllAccess ? [] : departmentView(body),
+    profiles: target.profile ? [target.profile] : [],
+    impersonatorUserId: base.userId,
+  };
+  // Owner-scoped tools resolve the acting agent by userId (zoho:<id>) and userName — set both.
+  if (target.name) ctx.userName = target.name;
+  else delete ctx.userName;
+  if (target.role) ctx.callerRole = target.role;
+  else delete ctx.callerRole;
+  await auditFromContext(ctx, {
+    action: 'auth.act_as',
+    status: 'ok',
+    detail: { target: target.zohoUserId, impersonator: base.userId },
+  });
+  return ctx;
+}
+
+/** Verified non-admin worker departments: the body view, bounded by the profile-derived set. */
+function verifiedWorkerDepartments(base: TenantContext, body: CallerIdentityBody): string[] {
+  const view = departmentView(body);
+  if (!env.FF_WORKER_DEPT_STRICT) return view;
+  const derived = deriveWorkerDepartments(base.profiles, base.callerRole ?? null);
+  return view.length > 0 ? view.filter((d) => derived.includes(d)) : derived;
+}
+
+export async function buildCallerContext(
+  request: FastifyRequest,
+  body: CallerIdentityBody,
+): Promise<TenantContext> {
   // Verified worker session (Zoho OAuth): identity is authoritative — ignore ALL client-supplied
   // identity fields. Only the department VIEW (which Mytrion) is taken from the request, and only
   // for non-admin workers (admins already see everything). Owner-scoping uses the verified userId.
@@ -195,29 +263,10 @@ export function buildCallerContext(request: FastifyRequest, body: CallerIdentity
   if (base.sessionVerified) {
     // Admin "act as agent": an admin may impersonate a target agent (from CRM) so the whole request
     // runs AS that agent — owner-scoped data becomes the target's. Gated to admins; audited.
-    const actAs = base.allDepartmentAccess ? readActAs(request) : null;
-    if (actAs) {
-      const targetAllAccess = resolveAllDepartmentAccess({
-        profile: actAs.profile,
-        role: actAs.role,
-        userName: actAs.userName,
-      });
-      const ctx: TenantContext = {
-        ...base,
-        userId: `zoho:${actAs.zohoUserId}`,
-        allDepartmentAccess: targetAllAccess,
-        departments: targetAllAccess ? [] : departmentView(body),
-        profiles: actAs.profile ? [actAs.profile] : [],
-        impersonatorUserId: base.userId,
-      };
-      // Owner-scoped tools resolve the acting agent by userId (zoho:<id>) and userName — set both.
-      if (actAs.userName) ctx.userName = actAs.userName;
-      if (actAs.role) ctx.callerRole = actAs.role;
-      else delete ctx.callerRole;
-      return ctx;
-    }
+    const actAsId = base.allDepartmentAccess ? readActAsId(request) : null;
+    if (actAsId) return actAsContext(request, base, body, actAsId);
     if (base.allDepartmentAccess) return base;
-    const departments = departmentView(body);
+    const departments = verifiedWorkerDepartments(base, body);
     return departments.length > 0 ? { ...base, departments } : base;
   }
   if (!hasCustomerMarkers(body)) return workerContext(request, body);

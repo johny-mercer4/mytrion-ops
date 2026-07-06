@@ -49,7 +49,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
       throw new NotFoundError('Agent endpoint is disabled (set FF_ORCHESTRATOR_ENABLED).');
     }
     const body = agentTurnSchema.parse(request.body);
-    const ctx = buildCallerContext(request, body);
+    const ctx = await buildCallerContext(request, body);
     // Lazy import: keeps the heavy LangChain/LangGraph deps out of cold start when the flag is off.
     const service = await import('../../modules/agents/orchestratorService.js');
 
@@ -74,7 +74,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
       throw new NotFoundError('DeepAgents endpoint is disabled (set FF_ORCHESTRATOR_ENABLED).');
     }
     const body = agentTurnSchema.parse(request.body);
-    const ctx = buildCallerContext(request, body);
+    const ctx = await buildCallerContext(request, body);
     const service = await import('../../modules/agents/orchestratorService.js');
     const result = await service.runAgentTurn(body.message, ctx, turnOptions(body));
     return { answer: result.message, conversationId: result.conversationId };

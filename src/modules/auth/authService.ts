@@ -1,12 +1,12 @@
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import type { User } from '../../db/schema/index.js';
 import { AuthError } from '../../lib/errors.js';
-import { resolveAllDepartmentAccess } from '../../lib/department.js';
 import { userRepo } from '../../repos/userRepo.js';
 import type { Audience, Role, TenantContext } from '../../types/tenantContext.js';
 import { signAccessToken, signRefreshToken, verifyToken, type TokenClaims } from './jwt.js';
 import { verifyPassword } from './password.js';
 import { scopesForRole } from './permissions.js';
+import { workerRoleFor } from './workerRole.js';
 // Type-only (erased at compile): no runtime import cycle — zohoAuthService value-imports nothing here.
 import type { PublicWorker, WorkerSession } from './zohoAuthService.js';
 
@@ -51,24 +51,22 @@ export function toPublicUser(user: User): PublicUser {
  * recomputed from role here (never trusted from the token).
  */
 export function contextFromClaims(claims: TokenClaims, requestId: string): TenantContext {
-  // Zoho-worker session: identity is VERIFIED (from the signed token). scopes come from the
-  // internal role as always; allDepartmentAccess is derived from the worker's Zoho profile/role
-  // ("see everything" markers), never from client input. The department VIEW is applied per
-  // request in buildCallerContext.
+  // Zoho-worker session: identity is VERIFIED (from the signed token). The internal role is
+  // RE-DERIVED from the embedded worker identity — never trusted from claims.role — so a role
+  // policy change (or a stale pre-fix 'admin' token) takes effect for live sessions on deploy.
+  // allDepartmentAccess uses the same predicate, so role and bypass can't diverge. The
+  // department VIEW is applied per request in buildCallerContext.
   if (claims.worker) {
     const w = claims.worker;
+    const role = workerRoleFor({ userName: w.userName, profile: w.profile, zohoRole: w.zohoRole });
     const ctx: TenantContext = {
       tenantId: claims.tenantId,
       userId: claims.userId,
       audience: claims.audience,
-      role: claims.role,
-      scopes: scopesForRole(claims.role),
+      role,
+      scopes: scopesForRole(role),
       departments: [],
-      allDepartmentAccess: resolveAllDepartmentAccess({
-        profile: w.profile,
-        role: w.zohoRole,
-        userName: w.userName,
-      }),
+      allDepartmentAccess: role === 'admin',
       sessionVerified: true,
       requestId,
     };
@@ -146,11 +144,17 @@ export const authService = {
     const claims = await verifyToken(refreshToken, 'refresh');
     // Worker (Zoho) session: the identity is self-contained in the token, so re-issue directly.
     // There is no users-table row for a `zoho:<id>` principal — a findById would 404.
+    // The role is RE-DERIVED before re-signing — never copied from the old token — so rotation
+    // migrates stale claims instead of perpetuating them for another refresh-TTL window.
     if (claims.worker) {
       const w = claims.worker;
+      const rotated: TokenClaims = {
+        ...claims,
+        role: workerRoleFor({ userName: w.userName, profile: w.profile, zohoRole: w.zohoRole }),
+      };
       const [accessToken, newRefresh] = await Promise.all([
-        signAccessToken(claims),
-        signRefreshToken(claims),
+        signAccessToken(rotated),
+        signRefreshToken(rotated),
       ]);
       const worker: PublicWorker = {
         zohoUserId: w.zohoUserId,

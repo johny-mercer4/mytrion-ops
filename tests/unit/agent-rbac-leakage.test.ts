@@ -142,3 +142,46 @@ describe('dispatch-by-name is denied even when a model hallucinates a tool it wa
     ).rejects.toThrow(RBACError);
   });
 });
+
+describe("worker role (Zoho OAuth non-admin) — the write gate is real, departments still bound", () => {
+  // A verified sales worker as contextFromClaims now mints them: role 'worker', read scopes.
+  const salesWorker = () =>
+    makeContext({
+      role: 'worker',
+      audience: 'internal',
+      departments: ['sales'],
+      allDepartmentAccess: false,
+    });
+
+  it('retrieval SQL stays sales-scoped through every manifest', () => {
+    const foreign = KNOWN_DEPARTMENTS.filter((d) => d !== 'sales');
+    for (const manifest of ALL_AGENT_MANIFESTS) {
+      const ectx = effectiveRetrievalContext(salesWorker(), manifest);
+      const { params } = knowledgeRepo.buildSearchQuery(ectx, EMBEDDING, 6).toSQL();
+      const paramStrings = params.filter((p): p is string => typeof p === 'string');
+      for (const dept of foreign) expect(paramStrings).not.toContain(dept);
+    }
+  });
+
+  it('keeps the sales tool set through the sales agent (read scopes suffice)', () => {
+    const bound = boundToolNames(salesWorker(), 'sales');
+    expect(bound).toContain('agent.sales_snapshot');
+    expect(bound).toContain('zoho_crm.query');
+    expect(bound).toContain('crm.pick_my_client');
+  });
+
+  it('never gets a non-read tool bound through ANY agent', () => {
+    for (const manifest of ALL_AGENT_MANIFESTS) {
+      const bound = boundToolNames(salesWorker(), manifest.key);
+      for (const name of bound) {
+        expect(toolRegistry.get(name)?.riskClass).toBe('read');
+      }
+    }
+  });
+
+  it('cannot dispatch a write tool by name — role gate, not just binding', async () => {
+    await expect(
+      dispatchTool('telegram.send_message', { text: 'hi' }, salesWorker()),
+    ).rejects.toThrow(RBACError);
+  });
+});

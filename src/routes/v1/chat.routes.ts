@@ -116,12 +116,12 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/chat', guard, async (request) => {
     const body = chatSchema.parse(request.body);
-    return runChatTurn(body.conversationId, body.message, buildCallerContext(request, body), optionsFrom(body));
+    return runChatTurn(body.conversationId, body.message, await buildCallerContext(request, body), optionsFrom(body));
   });
 
   app.post('/chat/stream', guard, async (request, reply) => {
     const body = chatSchema.parse(request.body);
-    const ctx = buildCallerContext(request, body);
+    const ctx = await buildCallerContext(request, body);
     const sse = startSSE(reply, sseCorsHeaders(request.headers.origin));
     try {
       await streamChatTurn(body.conversationId, body.message, ctx, sse, optionsFrom(body));
