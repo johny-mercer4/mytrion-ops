@@ -7,8 +7,12 @@ import { request } from './transport';
 
 export interface ClientIdentity {
   carrierUserId: string;
-  carrierId: string;
+  /** 'owner' (fleet — all cards) or 'driver' (one card, child of an owner). */
+  clientProfile: 'owner' | 'driver';
+  carrierId?: string;
   applicationId?: string;
+  cardId?: string;
+  parentUserId?: string;
   login?: string;
 }
 

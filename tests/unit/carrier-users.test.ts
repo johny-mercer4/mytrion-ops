@@ -23,6 +23,8 @@ vi.mock('../../src/repos/carrierUserRepo.js', async (importOriginal) => {
       create: vi.fn(),
       update: vi.fn(async () => null),
       deleteById: vi.fn(async () => false),
+      countChildren: vi.fn(async () => 0),
+      populateCarrierId: vi.fn(async () => []),
       updateLastLogin: vi.fn(async () => undefined),
     },
   };
@@ -79,15 +81,42 @@ afterAll(async () => {
 
 const API_KEY_HEADERS = { 'x-api-key': 'test-secret-key' };
 
+// Shared row fixture for the profile-model suites ('correct-horse-9' hash prepared once).
+let baseHash = '';
+beforeAll(async () => {
+  baseHash = await hashPassword('correct-horse-9');
+});
+function activeRowBase(): CarrierUser {
+  return {
+    id: 'cu_1',
+    tenantId: DEFAULT_TENANT_ID,
+    profile: 'owner',
+    carrierId: '5758544',
+    applicationId: null,
+    parentUserId: null,
+    cardId: null,
+    login: 'acme.owner',
+    passwordHash: baseHash,
+    agentName: 'Rep Riley',
+    agentZohoUserId: '777',
+    status: 'active',
+    lastLoginAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  } as CarrierUser;
+}
+
 function dto(overrides: Partial<CarrierUserDto> = {}): CarrierUserDto {
   return {
     id: 'cu_1',
+    profile: 'owner',
     carrierId: '5758544',
     applicationId: null,
+    parentUserId: null,
+    cardId: null,
     login: 'acme.owner',
     agentName: 'Rep Riley',
     agentZohoUserId: '777',
-    profile: 'Carrier Owner',
     status: 'active',
     lastLoginAt: null,
     createdAt: '2026-07-06T00:00:00.000Z',
@@ -144,7 +173,7 @@ describe('carrier-users routes — admin gate', () => {
       tenantId: DEFAULT_TENANT_ID,
       audience: 'customer',
       role: 'viewer',
-      client: { carrierUserId: 'cu_1', carrierId: '5758544' },
+      client: { carrierUserId: 'cu_1', clientProfile: 'owner', carrierId: '5758544' },
     });
     const res = await app.inject({
       method: 'GET',
@@ -163,11 +192,11 @@ describe('carrier-users routes — CRUD', () => {
       url: '/v1/carrier-users',
       headers: { ...API_KEY_HEADERS, 'content-type': 'application/json' },
       payload: {
+        profile: 'owner',
         carrier_id: 5758544,
         login: 'Acme.Owner',
         password: 'super-secret-1',
         agent_name: 'Rep Riley',
-        profile: 'Carrier Owner',
       },
     });
     expect(res.statusCode).toBe(201);
@@ -249,13 +278,15 @@ describe('carrier-client login (/v1/auth/client/login + clientAuthService)', () 
     ({
       id: 'cu_1',
       tenantId: DEFAULT_TENANT_ID,
+      profile: 'owner',
       carrierId: '5758544',
       applicationId: 'APP-9',
+      parentUserId: null,
+      cardId: null,
       login: 'acme.owner',
       passwordHash,
       agentName: 'Rep Riley',
       agentZohoUserId: '777',
-      profile: 'Carrier Owner',
       status: 'active',
       lastLoginAt: null,
       createdAt: new Date(),
@@ -307,7 +338,7 @@ describe('carrier-client login (/v1/auth/client/login + clientAuthService)', () 
       tenantId: DEFAULT_TENANT_ID,
       audience: 'customer',
       role: 'viewer',
-      client: { carrierUserId: 'cu_1', carrierId: '5758544', login: 'acme.owner' },
+      client: { carrierUserId: 'cu_1', clientProfile: 'owner', carrierId: '5758544', login: 'acme.owner' },
     };
     const ctx = contextFromClaims(claims, 'rq');
     const request = {
@@ -368,7 +399,7 @@ describe('client session containment — the new login surface cannot reach inte
       tenantId: DEFAULT_TENANT_ID,
       audience: 'customer',
       role: 'viewer',
-      client: { carrierUserId: 'cu_1', carrierId: '5758544', login: 'acme.owner' },
+      client: { carrierUserId: 'cu_1', clientProfile: 'owner', carrierId: '5758544', login: 'acme.owner' },
     });
   }
 
@@ -430,5 +461,200 @@ describe('client session containment — the new login surface cannot reach inte
     });
     const owned = vi.mocked(conversationRepo.findOwned);
     expect((owned.mock.calls.at(-1)?.[0] as { userId: string }).userId).toBe('zoho:42');
+  });
+});
+
+describe('owner/driver profile model', () => {
+  it('provisions an owner on the application id ALONE (carrier id comes later)', async () => {
+    repo.create.mockResolvedValueOnce(dto({ carrierId: null, applicationId: 'app-1024' }));
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier-users',
+      headers: { ...API_KEY_HEADERS, 'content-type': 'application/json' },
+      payload: { profile: 'owner', application_id: 'APP-1024', login: 'early.bird', password: 'super-secret-1' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(repo.create.mock.calls.at(-1)?.[1]).toMatchObject({
+      profile: 'owner',
+      applicationId: 'APP-1024',
+    });
+  });
+
+  it('rejects an owner with NEITHER carrier_id nor application_id', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier-users',
+      headers: { ...API_KEY_HEADERS, 'content-type': 'application/json' },
+      payload: { profile: 'owner', login: 'untied', password: 'super-secret-1' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(repo.create).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ login: 'untied' }));
+  });
+
+  it('rejects a driver without a parent, and a parent that is not an active OWNER', async () => {
+    const noParent = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier-users',
+      headers: { ...API_KEY_HEADERS, 'content-type': 'application/json' },
+      payload: { profile: 'driver', card_id: '90210', login: 'lone.driver', password: 'super-secret-1' },
+    });
+    expect(noParent.statusCode).toBe(400);
+
+    // Parent exists but is itself a driver.
+    repo.findById.mockResolvedValueOnce({
+      ...activeRowBase(), id: 'cu_drv', profile: 'driver',
+    } as CarrierUser);
+    const driverParent = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier-users',
+      headers: { ...API_KEY_HEADERS, 'content-type': 'application/json' },
+      payload: { profile: 'driver', parent_user_id: 'cu_drv', login: 'chained', password: 'super-secret-1' },
+    });
+    expect(driverParent.statusCode).toBe(400);
+
+    // Parent owner exists but is disabled.
+    repo.findById.mockResolvedValueOnce({
+      ...activeRowBase(), id: 'cu_off', status: 'disabled',
+    } as CarrierUser);
+    const disabledParent = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier-users',
+      headers: { ...API_KEY_HEADERS, 'content-type': 'application/json' },
+      payload: { profile: 'driver', parent_user_id: 'cu_off', login: 'orphan', password: 'super-secret-1' },
+    });
+    expect(disabledParent.statusCode).toBe(400);
+  });
+
+  it('creates a driver under an active owner (card assignable now or later)', async () => {
+    repo.findById.mockResolvedValueOnce(activeRowBase() as CarrierUser);
+    repo.create.mockResolvedValueOnce(
+      dto({ id: 'cu_d1', profile: 'driver', parentUserId: 'cu_1', cardId: '90210', carrierId: null }),
+    );
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier-users',
+      headers: { ...API_KEY_HEADERS, 'content-type': 'application/json' },
+      payload: { profile: 'driver', parent_user_id: 'cu_1', card_id: 90210, login: 'road.runner', password: 'super-secret-1' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(repo.create.mock.calls.at(-1)?.[1]).toMatchObject({
+      profile: 'driver',
+      parentUserId: 'cu_1',
+      cardId: '90210',
+    });
+  });
+
+  it('deleting an owner with drivers is blocked (409)', async () => {
+    repo.countChildren.mockResolvedValueOnce(2);
+    const deletesBefore = repo.deleteById.mock.calls.length;
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier-users/cu_1/delete',
+      headers: { ...API_KEY_HEADERS, 'content-type': 'application/json' },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(409);
+    expect(repo.deleteById.mock.calls.length).toBe(deletesBefore); // never reached the delete
+  });
+
+  it('populate-carrier back-fills every application-provisioned account and audits', async () => {
+    repo.populateCarrierId.mockResolvedValueOnce([
+      dto({ id: 'cu_a', carrierId: '777001', applicationId: 'app-1024' }),
+      dto({ id: 'cu_b', carrierId: '777001', applicationId: 'app-1024' }),
+    ]);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier-users/populate-carrier',
+      headers: { ...API_KEY_HEADERS, 'content-type': 'application/json' },
+      payload: { application_id: 'APP-1024', carrier_id: 777001 },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ count: 2 });
+    expect(repo.populateCarrierId).toHaveBeenCalledWith(expect.anything(), 'APP-1024', '777001');
+    expect(auditFromContext).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ action: 'admin.carrier_user.populate_carrier' }),
+    );
+  });
+});
+
+describe('driver login — inheritance + parent lockout', () => {
+  let driverHash = '';
+  beforeAll(async () => {
+    driverHash = await hashPassword('drive-safe-99');
+  });
+
+  const ownerRow = (): CarrierUser =>
+    ({ ...activeRowBase(), id: 'cu_own', carrierId: '5758544', applicationId: 'app-9' }) as CarrierUser;
+  const driverRow = (overrides: Partial<CarrierUser> = {}): CarrierUser =>
+    ({
+      ...activeRowBase(),
+      id: 'cu_d1',
+      profile: 'driver',
+      carrierId: null,
+      applicationId: null,
+      parentUserId: 'cu_own',
+      cardId: '90210',
+      login: 'road.runner',
+      passwordHash: driverHash,
+      ...overrides,
+    }) as CarrierUser;
+
+  it('a driver session inherits the parent company and carries the card tie', async () => {
+    repo.findByLoginForAuth.mockResolvedValueOnce(driverRow());
+    repo.findByIdAny.mockResolvedValueOnce(ownerRow()); // parent lookup
+    const session = await clientAuthService.login('road.runner', 'drive-safe-99');
+    expect(session.client).toMatchObject({
+      clientProfile: 'driver',
+      carrierId: '5758544', // inherited from the parent
+      applicationId: 'app-9',
+      cardId: '90210',
+      parentUserId: 'cu_own',
+    });
+
+    const ctx = contextFromClaims(
+      { userId: 'client:cu_d1', tenantId: DEFAULT_TENANT_ID, audience: 'customer', role: 'viewer', client: session.client },
+      'rq',
+    );
+    expect(ctx.client).toMatchObject({ profile: 'driver', cardId: '90210', carrierId: '5758544' });
+    expect(ctx.departments).toEqual(['5758544', 'app-9']); // company scope, same as the fleet
+    expect(ctx.profiles).toEqual(['Driver']);
+  });
+
+  it('a driver cannot log in when the parent owner is disabled or gone', async () => {
+    repo.findByLoginForAuth.mockResolvedValueOnce(driverRow());
+    repo.findByIdAny.mockResolvedValueOnce({ ...ownerRow(), status: 'disabled' } as CarrierUser);
+    await expect(clientAuthService.login('road.runner', 'drive-safe-99')).rejects.toThrow(/invalid/i);
+
+    repo.findByLoginForAuth.mockResolvedValueOnce(driverRow());
+    repo.findByIdAny.mockResolvedValueOnce(undefined);
+    await expect(clientAuthService.login('road.runner', 'drive-safe-99')).rejects.toThrow(/invalid/i);
+  });
+
+  it('refresh re-derives the identity: a back-filled carrier id reaches the rotated token', async () => {
+    repo.findByLoginForAuth.mockResolvedValueOnce({
+      ...activeRowBase(),
+      carrierId: null,
+      applicationId: 'app-1024',
+    } as CarrierUser);
+    const session = await clientAuthService.login('acme.owner', 'correct-horse-9');
+    expect(session.client.carrierId).toBeUndefined();
+
+    // The application converted; populate-carrier back-filled the row. Refresh must pick it up.
+    repo.findByIdAny.mockResolvedValueOnce({
+      ...activeRowBase(),
+      carrierId: '777001',
+      applicationId: 'app-1024',
+    } as CarrierUser);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/refresh',
+      headers: { 'content-type': 'application/json' },
+      payload: { refreshToken: session.refreshToken },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { accessToken: string; client?: { carrierId?: string } };
+    expect(body.client?.carrierId).toBe('777001');
+    expect((await verifyToken(body.accessToken, 'access')).client?.carrierId).toBe('777001');
   });
 });

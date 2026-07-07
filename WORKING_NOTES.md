@@ -1304,3 +1304,38 @@ workers and client users alike, visible in the Admin.
 - Tests: 390 backend green (6 new: worker/client/impersonator identity stamping; endpoint filter
   forwarding + no-tenantId DTO; RBAC worker/client 403, admin ok) + 37 web.
 - Deploy: run `pnpm db:migrate` (0017 audit columns; additive, no backfill — old rows show '—').
+
+## 2026-07-07 (3) — Client management: Owner/Driver profile model + application-first provisioning
+
+The carrier client setup, done properly (backend + Mytrion Admin):
+
+- **Profile model (migration 0018)**: carrier_users.profile is now a typed enum — 'owner' (fleet;
+  RBAC tie = carrier_id OR application_id; sees every card of the carrier) and 'driver' (CHILD of an
+  owner via parent_user_id; RBAC tie = card_id — the card carries the limits). carrier_id is NULLABLE:
+  an account can be provisioned with just login/password/profile + the application id (the unique
+  key), and the carrier id is populated later. New columns parent_user_id + card_id, indexes on
+  (tenant, application_id) and (tenant, parent_user_id).
+- **Typed RBAC descriptor**: TenantContext gains `client?: ClientAccess {profile, carrierId?,
+  applicationId?, cardId?, parentUserId?}` derived from SIGNED claims — card-/carrier-scoped tools
+  (the future mini-app surface) read this to bound what a session sees. ctx.profiles = ['Owner'|'Driver']
+  → audit rows show the profile automatically.
+- **Driver inheritance + lockout**: at login (and on every refresh) a driver's company scope is
+  INHERITED from its parent owner (clientIdentityFor); a missing/disabled parent denies the driver
+  with the same generic message. Refresh re-derives the whole identity from the row, so a back-filled
+  carrier id, a newly assigned card, or a disabled parent takes effect on the next rotation.
+- **Populate-later, automatically**: POST /v1/carrier-users/populate-carrier {application_id,
+  carrier_id} back-fills carrier_id on EVERY account under that application whose carrier is still
+  empty (audited: admin.carrier_user.populate_carrier). Callable by the admin UI today and by a
+  conversion automation/webhook with the API key tomorrow (servercrm has no app→carrier endpoint yet
+  — checked). Owner delete is blocked (409) while drivers point at it; drivers require an ACTIVE
+  owner parent at creation.
+- **Admin UI rework**: Owner/Driver toggle in the create form (owner: carrier + application with
+  "at least one" rule; driver: parent-owner select + optional card), table shows Login · Profile pill ·
+  Carrier Id (or a "Set carrier…" action that uses populate-carrier for application families) ·
+  Application · Card/↳Parent · Agent · Status, plus per-row Card assignment for drivers. /client page
+  shows profile + card/company on sign-in.
+- Tests: 399 backend green (+9: application-only owner, neither-id 400, driver parent matrix
+  (missing/driver-parent/disabled-parent), driver create with card, owner-delete 409, populate-carrier
+  back-fill + audit, driver login inheritance + ctx.client descriptor, parent lockout, refresh picks
+  up back-filled carrier) + 37 web. Deploy: `pnpm db:migrate` applies 0018 (carrier_id nullable,
+  profile enum default 'owner' w/ backfill guard, parent/card columns).

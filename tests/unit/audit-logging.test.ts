@@ -85,10 +85,10 @@ describe('auditFromContext — full actor identity on every row', () => {
         role: 'viewer',
         client: {
           carrierUserId: 'cu_1',
+          clientProfile: 'owner',
           carrierId: '5758544',
           applicationId: 'APP-9',
           login: 'acme.owner',
-          profile: 'Carrier Owner',
         },
       },
       'rq-2',
@@ -98,7 +98,7 @@ describe('auditFromContext — full actor identity on every row', () => {
     expect(row).toMatchObject({
       userId: 'client:cu_1',
       userName: 'acme.owner',
-      profile: 'Carrier Owner',
+      profile: 'Owner',
       role: 'viewer',
       audience: 'customer',
       company: '5758544, app-9',
@@ -196,7 +196,7 @@ describe('GET /v1/admin/audit — gate + filters', () => {
       tenantId: DEFAULT_TENANT_ID,
       audience: 'customer',
       role: 'viewer',
-      client: { carrierUserId: 'cu_1', carrierId: '5758544' },
+      client: { carrierUserId: 'cu_1', clientProfile: 'owner', carrierId: '5758544' },
     });
     for (const token of [workerToken, clientToken]) {
       const res = await app.inject({

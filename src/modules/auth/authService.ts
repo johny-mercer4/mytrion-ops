@@ -11,7 +11,8 @@ import { scopesForRole } from './permissions.js';
 import { workerRoleFor } from './workerRole.js';
 // Type-only (erased at compile): no runtime import cycle — zohoAuthService value-imports nothing here.
 import type { PublicWorker, WorkerSession } from './zohoAuthService.js';
-import type { ClientSession } from './clientAuthService.js';
+// Safe value import: clientAuthService only type-imports from this module (AuthTokens).
+import { clientIdentityFor, type ClientSession } from './clientAuthService.js';
 
 export interface PublicUser {
   id: string;
@@ -82,7 +83,9 @@ export function contextFromClaims(claims: TokenClaims, requestId: string): Tenan
   // regardless of the token's stored role/audience — audience 'customer' (deny-by-default
   // for tools/agents), viewer role, NO scopes, departments = the company tags only. This
   // mirrors customerContext for unverified Telegram callers; here the tags are VERIFIED
-  // (from the signed token, minted off the carrier_users row at login).
+  // (from the signed token, minted off the carrier_users row at login). The typed
+  // ctx.client descriptor carries the RBAC tie — owner (fleet): every card of the carrier;
+  // driver: ONE card (with the card's limits) — for card-/carrier-scoped tools to enforce.
   if (claims.client) {
     const c = claims.client;
     const ctx: TenantContext = {
@@ -91,13 +94,23 @@ export function contextFromClaims(claims: TokenClaims, requestId: string): Tenan
       audience: 'customer',
       role: 'viewer',
       scopes: [],
-      departments: normalizeDepartments([c.carrierId, ...(c.applicationId ? [c.applicationId] : [])]),
+      departments: normalizeDepartments([
+        ...(c.carrierId ? [c.carrierId] : []),
+        ...(c.applicationId ? [c.applicationId] : []),
+      ]),
       allDepartmentAccess: false,
       sessionVerified: true,
+      client: {
+        profile: c.clientProfile,
+        ...(c.carrierId ? { carrierId: c.carrierId } : {}),
+        ...(c.applicationId ? { applicationId: c.applicationId } : {}),
+        ...(c.cardId ? { cardId: c.cardId } : {}),
+        ...(c.parentUserId ? { parentUserId: c.parentUserId } : {}),
+      },
       requestId,
     };
     if (c.login) ctx.userName = c.login;
-    if (c.profile) ctx.profiles = [c.profile];
+    ctx.profiles = [c.clientProfile === 'driver' ? 'Driver' : 'Owner'];
     return ctx;
   }
   return {
@@ -192,16 +205,23 @@ export const authService = {
     }
     // Carrier-client session: re-check the account is still active/present before rotating —
     // disabling a carrier user in the admin kills their sessions within one access-token TTL.
+    // The identity is RE-DERIVED from the row (not copied from the old token) so a back-filled
+    // carrier id, a newly assigned card, or a disabled PARENT owner takes effect on rotation.
     if (claims.client) {
       const row = await carrierUserRepo.findByIdAny(claims.tenantId, claims.client.carrierUserId);
       if (!row || row.status !== 'active') {
         throw new AuthError('Account is no longer active');
       }
+      const client = await clientIdentityFor(claims.tenantId, row);
+      if (!client) {
+        throw new AuthError('Account is no longer active');
+      }
+      const rotated: TokenClaims = { ...claims, client };
       const [accessToken, newRefresh] = await Promise.all([
-        signAccessToken(claims),
-        signRefreshToken(claims),
+        signAccessToken(rotated),
+        signRefreshToken(rotated),
       ]);
-      return { accessToken, refreshToken: newRefresh, tokenType: 'Bearer', client: claims.client };
+      return { accessToken, refreshToken: newRefresh, tokenType: 'Bearer', client };
     }
     const ctx = contextFromClaims(claims, 'refresh');
     const user = await userRepo.findById(ctx, claims.userId);

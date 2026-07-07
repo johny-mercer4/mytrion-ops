@@ -3,16 +3,16 @@ import {
   createCarrierUser,
   deleteCarrierUser,
   listCarrierUsers,
+  populateCarrier,
   updateCarrierUser,
+  type CarrierProfile,
   type CarrierUser,
 } from '../../api/carrierUsers';
 import { listAgents, type AgentUser } from '../../api/agents';
 import { PlusIcon, SearchIcon } from '../../components/icons';
 import s from './admin.module.css';
 
-const COLS = { gridTemplateColumns: '0.9fr 0.9fr 1.3fr 1.1fr 1fr 0.8fr 1.2fr' } as const;
-
-const PROFILE_PRESETS = ['Carrier Owner', 'Dispatcher', 'Accountant'];
+const COLS = { gridTemplateColumns: '1.2fr 0.7fr 1fr 0.8fr 1fr 1fr 0.7fr 1.5fr' } as const;
 
 function generatePassword(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
@@ -23,8 +23,10 @@ function generatePassword(): string {
 
 /**
  * Carrier User Management — login/password accounts that give CARRIER COMPANIES access to
- * Mytrion Ops (audience 'customer'; future Telegram mini-app + the /client page). Sessions
- * minted from these accounts are locked to the carrier's own data.
+ * Mytrion Ops (audience 'customer'; future Telegram mini-app + the /client page).
+ * Owner (fleet): tied to the carrier/application id — sees every card of the carrier.
+ * Driver: child of an owner, tied to ONE card (the card carries the limits). Accounts can
+ * be provisioned on the application id alone; the carrier id is populated later.
  */
 export function CarrierUsers() {
   const [users, setUsers] = useState<CarrierUser[]>([]);
@@ -39,7 +41,7 @@ export function CarrierUsers() {
     setLoading(true);
     setError('');
     try {
-      const res = await listCarrierUsers({ limit: 100 });
+      const res = await listCarrierUsers({ limit: 200 });
       setUsers(res.users);
       setTotal(res.total);
     } catch (e) {
@@ -53,10 +55,13 @@ export function CarrierUsers() {
     void load();
   }, [load]);
 
+  const byId = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
+  const owners = useMemo(() => users.filter((u) => u.profile === 'owner'), [users]);
+
   const filtered = users.filter((u) => {
     const q = query.trim().toLowerCase();
     if (!q) return true;
-    return [u.carrierId, u.applicationId ?? '', u.login, u.agentName ?? '', u.profile ?? '']
+    return [u.carrierId ?? '', u.applicationId ?? '', u.login, u.agentName ?? '', u.profile, u.cardId ?? '']
       .join(' ')
       .toLowerCase()
       .includes(q);
@@ -67,6 +72,9 @@ export function CarrierUsers() {
       const next = u.status === 'active' ? 'disabled' : 'active';
       const res = await updateCarrierUser(u.id, { status: next });
       setUsers((prev) => prev.map((x) => (x.id === u.id ? res.user : x)));
+      if (u.profile === 'owner' && next === 'disabled') {
+        setNotice(`Owner ${u.login} disabled — its drivers can no longer sign in.`);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -78,6 +86,38 @@ export function CarrierUsers() {
     try {
       await updateCarrierUser(u.id, { password });
       setNotice(`New password for ${u.login}: ${password} — copy it now; it is not stored in plain text.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  /** Back-fill the carrier id — for the whole application family when one exists. */
+  async function setCarrier(u: CarrierUser) {
+    const carrierId = window.prompt(
+      u.applicationId
+        ? `Carrier id for application ${u.applicationId} (back-fills every account under it):`
+        : `Carrier id for ${u.login}:`,
+    )?.trim();
+    if (!carrierId) return;
+    try {
+      if (u.applicationId) {
+        const res = await populateCarrier(u.applicationId, carrierId);
+        setNotice(`Carrier ${carrierId} populated on ${res.count} account(s) under ${u.applicationId}.`);
+      } else {
+        await updateCarrierUser(u.id, { carrierId });
+      }
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function setCard(u: CarrierUser) {
+    const cardId = window.prompt(`Card for driver ${u.login} (the RBAC tie + limits):`, u.cardId ?? '')?.trim();
+    if (cardId === undefined || cardId === '') return;
+    try {
+      const res = await updateCarrierUser(u.id, { cardId });
+      setUsers((prev) => prev.map((x) => (x.id === u.id ? res.user : x)));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -95,12 +135,13 @@ export function CarrierUsers() {
   }
 
   return (
-    <div className={s.panel}>
+    <div className={`${s.panel} ${s.panelWide}`}>
       <div className={s.head}>
         <div>
           <h2 className={s.h2}>Carrier User Management</h2>
           <p className={s.sub}>
-            Login/password access to Mytrion Ops for carrier companies (Telegram mini-app ready).
+            Owner (fleet) accounts see every card of the carrier; Driver accounts are tied to one
+            card. Provision on the application id alone and populate the carrier id later.
           </p>
         </div>
         <button type="button" className={s.primaryBtn} onClick={() => setShowForm((v) => !v)}>
@@ -111,12 +152,13 @@ export function CarrierUsers() {
 
       {showForm && (
         <CreateForm
+          owners={owners}
           onCreated={(user, password) => {
             setUsers((prev) => [user, ...prev]);
             setTotal((t) => t + 1);
             setShowForm(false);
             setNotice(
-              `Created ${user.login} (carrier ${user.carrierId}). Password: ${password} — share it securely; it is not retrievable later.`,
+              `Created ${user.profile} ${user.login}${user.carrierId ? ` (carrier ${user.carrierId})` : user.applicationId ? ` (application ${user.applicationId})` : ''}. Password: ${password} — share it securely; it is not retrievable later.`,
             );
           }}
           onError={(msg) => setError(msg)}
@@ -140,7 +182,7 @@ export function CarrierUsers() {
           className={s.searchInput}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by carrier id, login, agent…"
+          placeholder="Search by carrier id, application, login, card, agent…"
         />
         <span className={s.chipMeta}>
           {total} account{total === 1 ? '' : 's'}
@@ -149,11 +191,12 @@ export function CarrierUsers() {
 
       <div className={s.table}>
         <div className={s.tHead} style={COLS}>
-          <span>Carrier Id</span>
-          <span>Application Id</span>
           <span>Login</span>
-          <span>Agent (Zoho user)</span>
           <span>Profile</span>
+          <span>Carrier Id</span>
+          <span>Application</span>
+          <span>Card / Parent</span>
+          <span>Agent (Zoho user)</span>
           <span className={s.right}>Status</span>
           <span className={s.right}>Actions</span>
         </div>
@@ -161,11 +204,26 @@ export function CarrierUsers() {
         {!loading &&
           filtered.map((u) => (
             <div key={u.id} className={s.tRow} style={COLS}>
-              <span className={s.mono}>{u.carrierId}</span>
-              <span className={s.mono}>{u.applicationId ?? '—'}</span>
               <span className={s.docTitle}>{u.login}</span>
+              <span>
+                <span className={`${s.pill} ${u.profile === 'owner' ? s.pillInfo : s.pillNeutral}`}>
+                  {u.profile === 'owner' ? 'Owner' : 'Driver'}
+                </span>
+              </span>
+              <span className={s.mono}>
+                {u.carrierId ?? (
+                  <button type="button" className={s.miniBtn} onClick={() => void setCarrier(u)}>
+                    Set carrier…
+                  </button>
+                )}
+              </span>
+              <span className={s.mono}>{u.applicationId ?? '—'}</span>
+              <span className={s.mono}>
+                {u.profile === 'driver'
+                  ? `${u.cardId ?? 'no card'} · ↳ ${byId.get(u.parentUserId ?? '')?.login ?? u.parentUserId ?? '?'}`
+                  : '—'}
+              </span>
               <span className={s.deptText}>{u.agentName ?? '—'}</span>
-              <span className={s.deptText}>{u.profile ?? '—'}</span>
               <span className={s.right}>
                 <span className={`${s.pill} ${u.status === 'active' ? s.pillGood : s.pillBad}`}>
                   <span className={s.dot} />
@@ -173,6 +231,11 @@ export function CarrierUsers() {
                 </span>
               </span>
               <span className={`${s.right} ${s.rowActions}`}>
+                {u.profile === 'driver' && (
+                  <button type="button" className={s.miniBtn} onClick={() => void setCard(u)}>
+                    Card
+                  </button>
+                )}
                 <button type="button" className={s.miniBtn} onClick={() => void resetPassword(u)}>
                   Reset pw
                 </button>
@@ -187,7 +250,7 @@ export function CarrierUsers() {
           ))}
         {!loading && filtered.length === 0 && (
           <div className={s.none}>
-            {users.length === 0 ? 'No carrier users yet — create the first one.' : 'No accounts match your search.'}
+            {users.length === 0 ? 'No carrier users yet — create the first owner.' : 'No accounts match your search.'}
           </div>
         )}
       </div>
@@ -196,18 +259,22 @@ export function CarrierUsers() {
 }
 
 function CreateForm({
+  owners,
   onCreated,
   onError,
 }: {
+  owners: CarrierUser[];
   onCreated: (user: CarrierUser, password: string) => void;
   onError: (message: string) => void;
 }) {
+  const [profile, setProfile] = useState<CarrierProfile>('owner');
   const [carrierId, setCarrierId] = useState('');
   const [applicationId, setApplicationId] = useState('');
+  const [parentUserId, setParentUserId] = useState('');
+  const [cardId, setCardId] = useState('');
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState(generatePassword());
   const [agentName, setAgentName] = useState('');
-  const [profile, setProfile] = useState(PROFILE_PRESETS[0] ?? '');
   const [agents, setAgents] = useState<AgentUser[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -233,19 +300,29 @@ function CreateForm({
     };
   }, []);
 
+  const isOwner = profile === 'owner';
+  const valid =
+    login.trim().length >= 3 &&
+    password.length >= 8 &&
+    (isOwner
+      ? carrierId.trim().length > 0 || applicationId.trim().length > 0
+      : parentUserId.length > 0);
+
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (busy || !valid) return;
     setBusy(true);
     try {
       const res = await createCarrierUser({
-        carrierId: carrierId.trim(),
-        ...(applicationId.trim() ? { applicationId: applicationId.trim() } : {}),
+        profile,
+        ...(isOwner && carrierId.trim() ? { carrierId: carrierId.trim() } : {}),
+        ...(isOwner && applicationId.trim() ? { applicationId: applicationId.trim() } : {}),
+        ...(!isOwner ? { parentUserId } : {}),
+        ...(!isOwner && cardId.trim() ? { cardId: cardId.trim() } : {}),
         login: login.trim(),
         password,
         ...(agentName.trim() ? { agentName: agentHit?.name ?? agentName.trim() } : {}),
         ...(agentHit ? { agentZohoUserId: agentHit.zohoUserId } : {}),
-        ...(profile.trim() ? { profile: profile.trim() } : {}),
       });
       onCreated(res.user, password);
     } catch (err) {
@@ -255,23 +332,65 @@ function CreateForm({
     }
   }
 
-  const valid = carrierId.trim().length > 0 && login.trim().length >= 3 && password.length >= 8;
-
   return (
     <form className={`${s.card} ${s.cardPad}`} onSubmit={(e) => void submit(e)}>
       <span className={s.cardTitle}>New carrier user</span>
+
+      <div className={s.chipRow} style={{ margin: 'var(--space-3) 0 0' }} role="radiogroup" aria-label="Profile">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={isOwner}
+          className={`${s.filterChip} ${isOwner ? s.filterChipOn : ''}`}
+          onClick={() => setProfile('owner')}
+        >
+          Owner (fleet — all cards)
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={!isOwner}
+          className={`${s.filterChip} ${!isOwner ? s.filterChipOn : ''}`}
+          onClick={() => setProfile('driver')}
+        >
+          Driver (one card, child of an owner)
+        </button>
+      </div>
+
       <div className={s.formGrid}>
-        <div className={s.field}>
-          <span className={s.fieldLabel}>Carrier Id *</span>
-          <input className={`${s.input} ${s.mono}`} value={carrierId} onChange={(e) => setCarrierId(e.target.value)} placeholder="5758544" required />
-        </div>
-        <div className={s.field}>
-          <span className={s.fieldLabel}>Application Id</span>
-          <input className={`${s.input} ${s.mono}`} value={applicationId} onChange={(e) => setApplicationId(e.target.value)} placeholder="APP-1024 (optional)" />
-        </div>
+        {isOwner ? (
+          <>
+            <div className={s.field}>
+              <span className={s.fieldLabel}>Carrier Id (blank if not a carrier yet)</span>
+              <input className={`${s.input} ${s.mono}`} value={carrierId} onChange={(e) => setCarrierId(e.target.value)} placeholder="5758544" />
+            </div>
+            <div className={s.field}>
+              <span className={s.fieldLabel}>Application Id (the unique key pre-carrier)</span>
+              <input className={`${s.input} ${s.mono}`} value={applicationId} onChange={(e) => setApplicationId(e.target.value)} placeholder="APP-1024 — at least one of the two" />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className={s.field}>
+              <span className={s.fieldLabel}>Parent owner *</span>
+              <select className={s.select} value={parentUserId} onChange={(e) => setParentUserId(e.target.value)}>
+                <option value="">Choose the fleet account…</option>
+                {owners.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.login} {o.carrierId ? `· carrier ${o.carrierId}` : o.applicationId ? `· app ${o.applicationId}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className={s.field}>
+              <span className={s.fieldLabel}>Card Id (assignable later)</span>
+              <input className={`${s.input} ${s.mono}`} value={cardId} onChange={(e) => setCardId(e.target.value)} placeholder="the driver's card" />
+            </div>
+          </>
+        )}
         <div className={s.field}>
           <span className={s.fieldLabel}>Login *</span>
-          <input className={s.input} value={login} onChange={(e) => setLogin(e.target.value)} placeholder="acme.owner" required minLength={3} autoComplete="off" />
+          <input className={s.input} value={login} onChange={(e) => setLogin(e.target.value)} placeholder={isOwner ? 'acme.owner' : 'acme.driver1'} required minLength={3} autoComplete="off" />
         </div>
         <div className={s.field}>
           <span className={s.fieldLabel}>Password * (shown once on create)</span>
@@ -297,18 +416,10 @@ function CreateForm({
             ))}
           </datalist>
         </div>
-        <div className={s.field}>
-          <span className={s.fieldLabel}>Profile</span>
-          <input className={s.input} value={profile} onChange={(e) => setProfile(e.target.value)} list="carrier-profiles" />
-          <datalist id="carrier-profiles">
-            {PROFILE_PRESETS.map((p) => (
-              <option key={p} value={p} />
-            ))}
-          </datalist>
-        </div>
       </div>
+
       <button type="submit" className={s.primaryBtn} style={{ alignSelf: 'flex-start' }} disabled={!valid || busy}>
-        {busy ? 'Creating…' : 'Create carrier user'}
+        {busy ? 'Creating…' : `Create ${isOwner ? 'owner' : 'driver'}`}
       </button>
     </form>
   );

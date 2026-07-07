@@ -127,6 +127,13 @@
       "when": 1783376833746,
       "tag": "0017_rich_fallen_one",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1783439162529,
+      "tag": "0018_silly_talos",
+      "breakpoints": true
     }
   ]
 }
