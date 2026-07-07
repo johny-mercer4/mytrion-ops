@@ -1364,3 +1364,32 @@ Carrier accounts are now provisioned FROM the already-defined clients in the dat
 - Tests: 407 backend green (8 new: browse/text/numeric query construction incl. is_active +
   ordering, DTO mapping, limit cap, route gate worker-403, DWH 502 mapping) + 37 web. Live-smoked
   against the real DWH: 'grant' → GRANT EXPRESS LLC (newest first); '5837' → carrier-prefix hits.
+
+## 2026-07-08 — Octane Scope: full RnD-widget UI/UX port (React Flow) in Mytrion Admin
+
+- **Why** — the admin tab's Octane-Scope was a compact stepper+card sketch; the real design lives in
+  the Zoho RnD widget (`zoho-octane/app/agent-scope`, octane-business-panel). Ported that UI/UX 1:1
+  into `apps/mytrion-crm/src/mytrions/admin/scope/` (13 files, all under the 600-line cap), and
+  upgraded the blueprints from the widget's static dagre board to interactive **React Flow** graphs.
+- **Scene** — parallax far grid + ambient flood + vignette; horizontally draggable/zoomable camera
+  (0.5–1.8×); Catmull-Rom gradient road with flowing dash + offset-path particles; pulsing stage
+  orbs; floating glass stage cards with scroll-linked opacity/active detection; WEX ⇄ Deal
+  interconnect arc; bottom progress rail; keyboard (←/→ stages, Esc closes). After lifecycle =
+  Client hub with edge-trimmed gradient spokes (Collection hangs off Billing). Clicking the
+  terminal Client Stage switches to the After hub, same as the widget.
+- **Drill-down** — sub-tabs Blueprint / Departments / Automations / Details. Blueprints are
+  @xyflow/react + @dagrejs/dagre (same layout params, kind-colored bezier edges + arrowheads +
+  label pills, dept chips + tools lines + simple-icons logos on nodes, side-hint and note-column
+  handling) with fitView, pan/zoom, drag, Controls (bottom-left) and a MiniMap on graphs > 8 nodes.
+  Lead-Gen keeps its custom Distribution-Engine diagram under Automations.
+- **Risk items** — Details tab hosts the widget's editable Blockers / Red Flags / Manual sections
+  (icon picker form, hover row actions, spinners, toasts) against the existing /v1/scope/risks API.
+  Node ids now match the widget exactly (`lead-generation`… + After cycle ids `verification`,
+  `retention`, `customer-service`, `billing`, `collection`) — the old `after-*` ids were a split
+  brain with the Zoho widget; both UIs now edit the same records.
+- **Theme** — scene runs the widget's cinematic palette keyed off `<html data-theme>` via a
+  MutationObserver hook, so the TopBar toggle re-themes it live (verified both modes headlessly).
+- Deps: apps/mytrion-crm + @xyflow/react 12.11.2, @dagrejs/dagre 3.0.0. Removed the old
+  OctaneScope.tsx + its now-orphaned admin.module.css blocks.
+- Verified: web typecheck + 37 tests, root lint/typecheck + 407 tests, vite build, and a headless
+  Chrome walkthrough (road, modal tabs, After hub, Verification blueprint, light mode).

@@ -5,7 +5,7 @@ import { AuditLog } from './AuditLog';
 import { CarrierUsers } from './CarrierUsers';
 import { KnowledgeBase } from './KnowledgeBase';
 import { KnowledgeBrowser } from './KnowledgeBrowser';
-import { OctaneScope } from './OctaneScope';
+import { OctaneScope } from './scope/OctaneScope';
 import { Train } from './Train';
 
 type Tab = 'kb' | 'train' | 'browser' | 'scope' | 'carriers' | 'audit';

@@ -1,0 +1,479 @@
+/* =====================================================
+   Octane Scope — drill-down widgets: React Flow blueprint
+   theming, blueprint nodes/notes, department blocks,
+   automation rule cards, metric grid and risk sections.
+   ===================================================== */
+
+/* ── React Flow canvas (replaces the widget's static dagre board) ── */
+.oct-bp-flow { position: absolute; inset: 0; }
+.oct-bp-flow .react-flow { background: transparent; }
+.oct-bp-flow .react-flow__attribution {
+    background: transparent;
+    color: var(--sub);
+    opacity: .55;
+    font-size: 9px;
+}
+.oct-bp-flow .react-flow__controls {
+    background: var(--glass);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--gb);
+    border-radius: 4px;
+    box-shadow: none;
+    overflow: hidden;
+}
+.oct-bp-flow .react-flow__controls-button {
+    background: transparent;
+    border-bottom: 1px solid var(--gb);
+    width: 30px;
+    height: 28px;
+}
+.oct-bp-flow .react-flow__controls-button:last-child { border-bottom: none; }
+.oct-bp-flow .react-flow__controls-button:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.oct-bp-flow .react-flow__controls-button svg { fill: var(--sub); }
+.oct-bp-flow .react-flow__controls-button:hover svg { fill: var(--ink); }
+.oct-bp-flow .react-flow__minimap {
+    background: var(--bg1);
+    border: 1px solid var(--gb);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.oct-bp-flow .react-flow__minimap svg { background: var(--bg1); }
+.oct-bp-flow .react-flow__edge-textbg { rx: 5px; }
+.oct-bp-flow .react-flow__node { cursor: grab; }
+.oct-bp-flow .react-flow__node:active { cursor: grabbing; }
+
+/* invisible edge anchors on the custom nodes */
+.oct-bphandle {
+    opacity: 0;
+    width: 2px;
+    height: 2px;
+    min-width: 0;
+    min-height: 0;
+    border: none;
+    background: transparent;
+    pointer-events: none;
+}
+
+/* ── Blueprint custom node (icon + label, themed by --c) ── */
+.oct-bpnode {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 9px 13px;
+    background: var(--glass);
+    border: 1px solid var(--gb);
+    border-left: 3px solid var(--c);
+    border-radius: 7px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, .4);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink);
+}
+.oct-bpnode__body { display: flex; align-items: center; gap: 9px; }
+.oct-bpnode__icon { display: flex; flex: none; color: var(--c); }
+.oct-bpnode__label { line-height: 1.2; text-align: left; }
+.oct-bpnode__depts { display: flex; flex-wrap: wrap; gap: 5px; }
+.oct-bpnode__dept {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    background: color-mix(in srgb, var(--dc) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--dc) 55%, transparent);
+    border-radius: 999px;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: .02em;
+    color: var(--dc);
+    white-space: nowrap;
+}
+/* per-stage tools/platforms line (attached inside the node) */
+.oct-bpnode__tools {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+    margin-top: 1px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--gb);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 500;
+    line-height: 1.4;
+    letter-spacing: .01em;
+    color: var(--sub);
+}
+.oct-bpnode__tools-ic { flex: none; margin-top: 1.5px; color: var(--c); opacity: .85; }
+.oct-bpnode__logo {
+    display: flex;
+    width: 22px;
+    height: 22px;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    border-radius: 4px;
+}
+.oct-bpnode__abbr {
+    display: flex;
+    width: 22px;
+    height: 22px;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--c) 16%, transparent);
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px;
+    font-weight: 600;
+    color: var(--c);
+}
+
+/* ── Blueprint annotation note (right-column callouts) ── */
+.oct-bpnote {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 8px 12px;
+    background: color-mix(in srgb, var(--ink) 5%, transparent);
+    border: 1px dashed var(--gb);
+    border-left: 2px solid color-mix(in srgb, var(--ink) 22%, transparent);
+    border-radius: 6px;
+    font-size: 11px;
+    line-height: 1.4;
+    font-style: italic;
+    color: var(--sub);
+}
+
+/* ── Empty-state for an unmapped blueprint ── */
+.oct-bp-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+    color: var(--sub);
+    font-size: 13px;
+}
+
+/* ── Blueprint type selector (multi-blueprint cycles) ── */
+.oct-bp-switch { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 26px 0; flex: none; }
+.oct-bp-switch__btn {
+    border: 1px solid var(--gb);
+    background: var(--glass);
+    color: var(--sub);
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 12px;
+    padding: 7px 14px;
+    border-radius: 6px;
+    transition: color .15s, border-color .15s, background .15s;
+}
+.oct-bp-switch__btn:hover { color: var(--ink); }
+.oct-bp-switch__btn.active {
+    color: var(--ink);
+    border-color: var(--ink);
+    background: color-mix(in srgb, var(--ink) 10%, var(--glass));
+}
+
+/* ── Departments sub-tab: clickable blocks (expand → tools & platforms) ── */
+.oct-dept-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 14px;
+    align-items: start;
+}
+.oct-dept-block {
+    border: 1px solid var(--gb);
+    border-left: 3px solid var(--d);
+    border-radius: 8px;
+    padding: 18px 20px;
+    background: var(--glass);
+    cursor: pointer;
+    transition: border-color .15s, box-shadow .15s, transform .15s;
+}
+.oct-dept-block:hover {
+    border-color: var(--d);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .35), 0 0 0 1px color-mix(in srgb, var(--d) 30%, transparent);
+}
+.oct-dept-block__head { display: flex; align-items: center; gap: 11px; }
+.oct-dept-block__icon { display: flex; color: var(--d); flex: none; }
+.oct-dept-block__name { font-weight: 700; font-size: 16px; color: var(--ink); }
+.oct-dept-block__chev { margin-left: auto; color: var(--sub); transition: transform .2s ease, color .2s; flex: none; }
+.oct-dept-block:hover .oct-dept-block__chev { color: var(--d); }
+.oct-dept-block__chev.open { transform: rotate(90deg); }
+.oct-dept-block__items { margin-top: 11px; display: flex; flex-direction: column; gap: 7px; }
+.oct-dept-block__item {
+    position: relative;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink);
+    opacity: .82;
+    line-height: 1.5;
+    padding-left: 20px;
+    text-wrap: pretty;
+}
+.oct-dept-block__item::before {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: .62em;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--d);
+    box-shadow: 0 0 7px var(--d);
+}
+.oct-dept-block__detail {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+    animation: octRise .3s ease backwards;
+}
+.oct-dept-block__detail-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: .14em;
+    color: var(--sub);
+    margin-bottom: 10px;
+}
+.oct-dept-block__logos { display: flex; flex-wrap: wrap; gap: 8px; }
+.oct-dept-chip {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 13px;
+    white-space: nowrap;
+    color: var(--ink);
+    border: 1px solid var(--gb);
+    border-radius: 5px;
+    padding: 7px 13px 7px 7px;
+    background: var(--glass);
+}
+.oct-dept-chip__tile {
+    display: flex;
+    width: 26px;
+    height: 26px;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    border-radius: 4px;
+}
+.oct-dept-block__empty { font-size: 12.5px; color: var(--sub); font-style: italic; }
+
+/* ── Automations / Metrics grids ── */
+.oct-auto-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
+    gap: 12px;
+    align-items: start;
+}
+.oct-metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 10px;
+}
+
+/* ── Automation rule cards (WHEN → THEN) ── */
+.oct-rule {
+    border: 1px solid var(--gb);
+    border-left: 3px solid var(--c);
+    border-radius: 8px;
+    background: var(--glass);
+    overflow: hidden;
+}
+.oct-rule__head {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+}
+.oct-rule__icon {
+    display: flex;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    color: var(--c);
+    border: 1px solid color-mix(in srgb, var(--c) 40%, var(--gb));
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--c) 10%, transparent);
+}
+.oct-rule__title { font-size: 14px; font-weight: 700; color: var(--ink); line-height: 1.3; }
+.oct-rule__badge {
+    margin-left: auto;
+    flex: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8.5px;
+    letter-spacing: .12em;
+    color: var(--c);
+    border: 1px solid color-mix(in srgb, var(--c) 45%, var(--gb));
+    border-radius: 3px;
+    padding: 2px 6px;
+}
+.oct-rule__desc { padding: 11px 16px 14px; font-size: 12.5px; line-height: 1.45; color: var(--sub); }
+.oct-rule__body { padding: 13px 16px; display: flex; flex-direction: column; gap: 4px; }
+.oct-rule__row { display: flex; align-items: flex-start; gap: 10px; }
+.oct-rule__tag {
+    flex: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    padding: 3px 7px;
+    border-radius: 4px;
+    margin-top: 1px;
+}
+.oct-rule__tag--when { color: #F59E0B; background: rgba(245, 158, 11, .14); }
+.oct-rule__tag--then { color: #2ECC71; background: rgba(46, 204, 113, .14); }
+.oct-rule__txt { font-size: 13px; color: var(--ink); opacity: .9; line-height: 1.5; text-wrap: pretty; }
+.oct-rule__arrow { display: flex; padding-left: 14px; color: var(--sub); opacity: .7; }
+
+/* ── Risk sections — per-category colour via --rc ── */
+.oct-risk {
+    margin-top: 30px;
+    border-top: 1px solid var(--line);
+    padding-top: 24px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+    align-items: start;
+}
+.oct-risk-sec {
+    border: 1px solid color-mix(in srgb, var(--rc) 30%, var(--gb));
+    border-left: 3px solid var(--rc);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--rc) 7%, transparent);
+    padding: 14px 16px;
+}
+.oct-risk-sec__label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: .14em;
+    color: var(--rc);
+    margin-bottom: 11px;
+}
+.oct-risk-list { display: flex; flex-direction: column; gap: 7px; }
+
+/* loading spinner (initial fetch + per-row delete + save) */
+.oct-risk-loading {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 22px 4px;
+    color: var(--sub);
+    font-size: 13px;
+}
+.oct-risk-spin {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    flex: none;
+    border-radius: 50%;
+    border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
+    border-top-color: currentColor;
+    animation: octSpin 0.7s linear infinite;
+}
+.oct-risk-spin--row { width: 13px; height: 13px; color: var(--rc); margin-top: 2px; }
+
+/* ── editable risk rows + add/edit form ── */
+.oct-risk-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    flex: none;
+    border: 1px solid color-mix(in srgb, var(--rc) 35%, transparent);
+    background: color-mix(in srgb, var(--rc) 9%, transparent);
+    color: var(--rc);
+    cursor: pointer;
+    border-radius: 5px;
+    transition: background .15s, color .15s;
+}
+.oct-risk-add:hover { background: color-mix(in srgb, var(--rc) 20%, transparent); }
+.oct-risk-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--ink);
+    opacity: .92;
+}
+.oct-risk-row__icon { display: flex; flex: none; color: var(--rc); margin-top: 2px; }
+.oct-risk-row__text { flex: 1; text-wrap: pretty; }
+.oct-risk-row__act { display: flex; gap: 4px; flex: none; opacity: 0; transition: opacity .15s; }
+.oct-risk-row:hover .oct-risk-row__act { opacity: 1; }
+.oct-risk-row__act button {
+    display: flex;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--sub);
+    padding: 2px;
+    border-radius: 4px;
+    transition: color .15s, background .15s;
+}
+.oct-risk-row__act button:hover { color: var(--rc); background: color-mix(in srgb, var(--rc) 12%, transparent); }
+.oct-risk-form {
+    border: 1px solid color-mix(in srgb, var(--rc) 30%, transparent);
+    background: color-mix(in srgb, var(--rc) 5%, transparent);
+    border-radius: 6px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+}
+.oct-risk-form__input {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg0);
+    border: 1px solid var(--gb);
+    border-radius: 5px;
+    padding: 8px 10px;
+    font-size: 12.5px;
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    outline: none;
+}
+.oct-risk-form__input:focus { border-color: var(--rc); }
+.oct-risk-form__icons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    max-height: 86px;
+    overflow-y: auto;
+}
+.oct-risk-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    flex: none;
+    border: 1px solid var(--gb);
+    background: var(--glass);
+    color: var(--sub);
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all .12s;
+}
+.oct-risk-icon:hover { color: var(--ink); }
+.oct-risk-icon.active { color: #fff; background: var(--rc); border-color: var(--rc); }
+.oct-risk-form__act { display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
+.oct-risk-empty { font-size: 12px; color: var(--sub); font-style: italic; opacity: .7; }
