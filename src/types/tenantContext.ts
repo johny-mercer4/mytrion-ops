@@ -31,6 +31,22 @@ export const ROLES = [
 ] as const;
 export type Role = (typeof ROLES)[number];
 
+/**
+ * Verified carrier-client access descriptor (from signed session claims). The RBAC ties:
+ * 'owner' (fleet) → carrierId/applicationId — every card of the carrier;
+ * 'driver' (child of an owner) → cardId — that one card only, with the card's limits.
+ * Card-/carrier-scoped tools MUST read this to bound what a client session may see.
+ */
+export interface ClientAccess {
+  profile: 'owner' | 'driver';
+  carrierId?: string;
+  applicationId?: string;
+  /** Driver only: the single card this account is tied to. */
+  cardId?: string;
+  /** Driver only: the owner (fleet) account it belongs to. */
+  parentUserId?: string;
+}
+
 export interface TenantContext {
   /** Always 'octane' for internal users; a partner tenant id for external users. */
   tenantId: string;
@@ -77,6 +93,8 @@ export interface TenantContext {
    * for audit attribution. Only ever set from a verified admin session (see callerIdentity.ts).
    */
   impersonatorUserId?: string;
+  /** Verified carrier-client access (customer-audience login sessions only). */
+  client?: ClientAccess;
   requestId: string;
 }
 

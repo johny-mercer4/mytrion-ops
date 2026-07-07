@@ -44,9 +44,19 @@ export function ClientLogin() {
           <FuelMark size={42} />
           <h1 className={screen.title}>Signed in</h1>
           <p className={screen.body}>
-            You're signed in as <strong>{session.client.login ?? 'carrier user'}</strong> for
-            carrier <strong>{session.client.carrierId}</strong>. The carrier portal and Telegram
-            mini-app experience are on their way — your access is ready.
+            You're signed in as <strong>{session.client.login ?? 'carrier user'}</strong> (
+            {session.client.clientProfile === 'driver' ? 'Driver' : 'Owner'}
+            {session.client.clientProfile === 'driver' && session.client.cardId
+              ? ` · card ${session.client.cardId}`
+              : ''}
+            ) for{' '}
+            <strong>
+              {session.client.carrierId
+                ? `carrier ${session.client.carrierId}`
+                : `application ${session.client.applicationId ?? '—'}`}
+            </strong>
+            . The carrier portal and Telegram mini-app experience are on their way — your access is
+            ready.
           </p>
           <button
             type="button"

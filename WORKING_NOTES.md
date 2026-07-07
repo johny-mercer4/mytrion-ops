@@ -1304,3 +1304,63 @@ workers and client users alike, visible in the Admin.
 - Tests: 390 backend green (6 new: worker/client/impersonator identity stamping; endpoint filter
   forwarding + no-tenantId DTO; RBAC worker/client 403, admin ok) + 37 web.
 - Deploy: run `pnpm db:migrate` (0017 audit columns; additive, no backfill — old rows show '—').
+
+## 2026-07-07 (3) — Client management: Owner/Driver profile model + application-first provisioning
+
+The carrier client setup, done properly (backend + Mytrion Admin):
+
+- **Profile model (migration 0018)**: carrier_users.profile is now a typed enum — 'owner' (fleet;
+  RBAC tie = carrier_id OR application_id; sees every card of the carrier) and 'driver' (CHILD of an
+  owner via parent_user_id; RBAC tie = card_id — the card carries the limits). carrier_id is NULLABLE:
+  an account can be provisioned with just login/password/profile + the application id (the unique
+  key), and the carrier id is populated later. New columns parent_user_id + card_id, indexes on
+  (tenant, application_id) and (tenant, parent_user_id).
+- **Typed RBAC descriptor**: TenantContext gains `client?: ClientAccess {profile, carrierId?,
+  applicationId?, cardId?, parentUserId?}` derived from SIGNED claims — card-/carrier-scoped tools
+  (the future mini-app surface) read this to bound what a session sees. ctx.profiles = ['Owner'|'Driver']
+  → audit rows show the profile automatically.
+- **Driver inheritance + lockout**: at login (and on every refresh) a driver's company scope is
+  INHERITED from its parent owner (clientIdentityFor); a missing/disabled parent denies the driver
+  with the same generic message. Refresh re-derives the whole identity from the row, so a back-filled
+  carrier id, a newly assigned card, or a disabled parent takes effect on the next rotation.
+- **Populate-later, automatically**: POST /v1/carrier-users/populate-carrier {application_id,
+  carrier_id} back-fills carrier_id on EVERY account under that application whose carrier is still
+  empty (audited: admin.carrier_user.populate_carrier). Callable by the admin UI today and by a
+  conversion automation/webhook with the API key tomorrow (servercrm has no app→carrier endpoint yet
+  — checked). Owner delete is blocked (409) while drivers point at it; drivers require an ACTIVE
+  owner parent at creation.
+- **Admin UI rework**: Owner/Driver toggle in the create form (owner: carrier + application with
+  "at least one" rule; driver: parent-owner select + optional card), table shows Login · Profile pill ·
+  Carrier Id (or a "Set carrier…" action that uses populate-carrier for application families) ·
+  Application · Card/↳Parent · Agent · Status, plus per-row Card assignment for drivers. /client page
+  shows profile + card/company on sign-in.
+- Tests: 399 backend green (+9: application-only owner, neither-id 400, driver parent matrix
+  (missing/driver-parent/disabled-parent), driver create with card, owner-delete 409, populate-carrier
+  back-fill + audit, driver login inheritance + ctx.client descriptor, parent lockout, refresh picks
+  up back-filled carrier) + 37 web. Deploy: `pnpm db:migrate` applies 0018 (carrier_id nullable,
+  profile enum default 'owner' w/ backfill guard, parent/card columns).
+
+## 2026-07-07 (4) — Client provisioning from the DWH directory (octane.intm_zoho_deals)
+
+Carrier accounts are now provisioned FROM the already-defined clients in the data warehouse.
+
+- **pnpm dwh:inspect (new script)** — DWH metadata explorer: schemas / tables (--schema, --like) /
+  columns + row counts (--table) / sample rows (--sample) / ad-hoc read-only SQL (--query). Session
+  is enforced read-only. Used it to map octane.intm_zoho_deals: 79-column SCD view, 20,294 active
+  rows (is_active=true → exactly one row per deal), with deal_name, carrier_id, application_id,
+  application_date, stage, owner_id (Zoho agent id).
+- **GET /v1/carrier-clients (admin-gated)** — the client directory: active deals ordered by
+  application_date DESC. Searchable exactly as asked: company name (deal_name ILIKE contains) OR
+  carrier id / application id (numeric q → prefix match on both, still also matching names).
+  DWH failures map to 502 DWH_ERROR; unconfigured → 503. Integration in src/integrations/
+  dwhClients.ts over the existing read-only dwh.ts pool.
+- **carrier_users.company_name (migration 0019, applied)** — stored on pick/create, shown as a
+  Company column (drivers inherit the parent's for display), and included in the local account
+  search — so accounts are searchable by company name too.
+- **Admin UI** — the Owner create form gains a "Find the client" search (debounced, min 2 chars,
+  newest applications first; rows show company · carrier/app id · application date · stage);
+  picking one fills carrier id, application id, company name, and the agent (deal owner_id matched
+  against the Zoho agents list, raw id fallback).
+- Tests: 407 backend green (8 new: browse/text/numeric query construction incl. is_active +
+  ordering, DTO mapping, limit cap, route gate worker-403, DWH 502 mapping) + 37 web. Live-smoked
+  against the real DWH: 'grant' → GRANT EXPRESS LLC (newest first); '5837' → carrier-prefix hits.

@@ -26,14 +26,22 @@ export interface WorkerIdentity {
  * carrier_users). The context minted from these claims is locked down server-side:
  * audience 'customer', viewer role, no scopes, departments = the company tags — request
  * bodies can never widen it (see contextFromClaims + buildCallerContext).
+ *
+ * RBAC ties: 'owner' (fleet) → carrierId/applicationId (all cards); 'driver' → cardId
+ * (one card + its limits), with the company scope INHERITED from the parent at login
+ * (the effective ids are embedded here so every request derives the same bound).
  */
 export interface ClientIdentity {
   carrierUserId: string;
-  carrierId: string;
+  /** 'owner' (fleet — all cards) or 'driver' (single card, child of an owner). */
+  clientProfile: 'owner' | 'driver';
+  carrierId?: string;
   applicationId?: string;
+  /** Driver only: the card this session is tied to. */
+  cardId?: string;
+  /** Driver only: the owner account it belongs to. */
+  parentUserId?: string;
   login?: string;
-  /** Access profile label assigned by the admin (e.g. 'Carrier Owner') — audit display. */
-  profile?: string;
 }
 
 export interface TokenClaims {
@@ -69,15 +77,22 @@ function parseClient(raw: unknown): ClientIdentity | undefined {
   const r = raw as Record<string, unknown>;
   const str = (v: unknown): string | undefined => (typeof v === 'string' && v.length > 0 ? v : undefined);
   const carrierUserId = str(r['carrierUserId']);
+  if (!carrierUserId) return undefined;
+  // Tokens from before the profile model default to 'owner' (they were carrier-tied fleets).
+  const clientProfile = r['clientProfile'] === 'driver' ? 'driver' : 'owner';
   const carrierId = str(r['carrierId']);
-  if (!carrierUserId || !carrierId) return undefined;
-  const c: ClientIdentity = { carrierUserId, carrierId };
   const applicationId = str(r['applicationId']);
+  // An account must be tied to SOMETHING verifiable: a company id, or (drivers) a card/parent.
+  const cardId = str(r['cardId']);
+  const parentUserId = str(r['parentUserId']);
+  if (!carrierId && !applicationId && !cardId && !parentUserId) return undefined;
+  const c: ClientIdentity = { carrierUserId, clientProfile };
   const login = str(r['login']);
-  const profile = str(r['profile']);
+  if (carrierId) c.carrierId = carrierId;
   if (applicationId) c.applicationId = applicationId;
+  if (cardId) c.cardId = cardId;
+  if (parentUserId) c.parentUserId = parentUserId;
   if (login) c.login = login;
-  if (profile) c.profile = profile;
   return c;
 }
 

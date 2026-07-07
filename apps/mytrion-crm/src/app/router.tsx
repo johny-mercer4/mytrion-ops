@@ -21,18 +21,32 @@ import { WorkerLayout } from './WorkerLayout';
  * completes. Identity params are stripped after capture, so /m/billing is the clean canonical URL
  * and cross-Mytrion navigation stays client-side (no re-redirect through Zoho).
  */
-const router = createBrowserRouter([
+const router = createBrowserRouter(
+  [
+    {
+      element: <WorkerLayout />,
+      children: [
+        { path: '/', element: <Landing /> },
+        { path: '/m/:mytrion', element: <MytrionGuard /> },
+      ],
+    },
+    { path: '/client', element: <ClientLogin /> },
+    { path: '*', element: <NotFound /> },
+  ],
   {
-    element: <WorkerLayout />,
-    children: [
-      { path: '/', element: <Landing /> },
-      { path: '/m/:mytrion', element: <MytrionGuard /> },
-    ],
+    // Opt into the v7 behaviors now — silences the dev-console deprecation warnings and
+    // makes the eventual react-router v7 upgrade a no-op for these semantics.
+    future: {
+      v7_relativeSplatPath: true,
+      v7_fetcherPersist: true,
+      v7_normalizeFormMethod: true,
+      v7_partialHydration: true,
+      v7_skipActionErrorRevalidation: true,
+    },
   },
-  { path: '/client', element: <ClientLogin /> },
-  { path: '*', element: <NotFound /> },
-]);
+);
 
 export function AppRouter() {
-  return <RouterProvider router={router} />;
+  // v7_startTransition wraps router state updates in React.startTransition (the v7 default).
+  return <RouterProvider router={router} future={{ v7_startTransition: true }} />;
 }

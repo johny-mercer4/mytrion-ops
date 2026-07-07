@@ -1,0 +1,1 @@
+ALTER TABLE "carrier_users" ADD COLUMN "company_name" text;

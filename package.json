@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "dev:all": "bash scripts/dev-local.sh",
     "build": "tsc -p tsconfig.build.json",
     "build:widget": "corepack pnpm -C apps/mytrion-crm install --frozen-lockfile && corepack pnpm -C apps/mytrion-crm build",
     "start": "node dist/server.js",
@@ -22,6 +23,7 @@
     "meta:zoho-desk": "tsx metadataScripts/zohoDeskAnalyzer.ts",
     "meta:zoho-people": "tsx metadataScripts/zohoPeopleAnalyzer.ts",
     "meta:dwh": "tsx metadataScripts/dwhAnalyzer.ts",
+    "dwh:inspect": "tsx scripts/dwhInspect.ts",
     "zoho:smoke": "tsx scripts/zoho-smoke.ts",
     "zoho:mcp-probe": "tsx scripts/zoho-mcp-probe.ts",
     "lint": "eslint . --ext .ts",

@@ -95,7 +95,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         company: [result.client.carrierId, result.client.applicationId]
           .filter(Boolean)
           .join(', '),
-        ...(result.client.profile ? { profile: result.client.profile } : {}),
+        profile: result.client.clientProfile === 'driver' ? 'Driver' : 'Owner',
         action: 'auth.client_login',
         status: 'ok',
         requestId: request.requestId,
