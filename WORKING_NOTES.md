@@ -1339,3 +1339,28 @@ The carrier client setup, done properly (backend + Mytrion Admin):
   back-fill + audit, driver login inheritance + ctx.client descriptor, parent lockout, refresh picks
   up back-filled carrier) + 37 web. Deploy: `pnpm db:migrate` applies 0018 (carrier_id nullable,
   profile enum default 'owner' w/ backfill guard, parent/card columns).
+
+## 2026-07-07 (4) — Client provisioning from the DWH directory (octane.intm_zoho_deals)
+
+Carrier accounts are now provisioned FROM the already-defined clients in the data warehouse.
+
+- **pnpm dwh:inspect (new script)** — DWH metadata explorer: schemas / tables (--schema, --like) /
+  columns + row counts (--table) / sample rows (--sample) / ad-hoc read-only SQL (--query). Session
+  is enforced read-only. Used it to map octane.intm_zoho_deals: 79-column SCD view, 20,294 active
+  rows (is_active=true → exactly one row per deal), with deal_name, carrier_id, application_id,
+  application_date, stage, owner_id (Zoho agent id).
+- **GET /v1/carrier-clients (admin-gated)** — the client directory: active deals ordered by
+  application_date DESC. Searchable exactly as asked: company name (deal_name ILIKE contains) OR
+  carrier id / application id (numeric q → prefix match on both, still also matching names).
+  DWH failures map to 502 DWH_ERROR; unconfigured → 503. Integration in src/integrations/
+  dwhClients.ts over the existing read-only dwh.ts pool.
+- **carrier_users.company_name (migration 0019, applied)** — stored on pick/create, shown as a
+  Company column (drivers inherit the parent's for display), and included in the local account
+  search — so accounts are searchable by company name too.
+- **Admin UI** — the Owner create form gains a "Find the client" search (debounced, min 2 chars,
+  newest applications first; rows show company · carrier/app id · application date · stage);
+  picking one fills carrier id, application id, company name, and the agent (deal owner_id matched
+  against the Zoho agents list, raw id fallback).
+- Tests: 407 backend green (8 new: browse/text/numeric query construction incl. is_active +
+  ordering, DTO mapping, limit cap, route gate worker-403, DWH 502 mapping) + 37 web. Live-smoked
+  against the real DWH: 'grant' → GRANT EXPRESS LLC (newest first); '5837' → carrier-prefix hits.

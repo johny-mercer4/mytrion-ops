@@ -16,6 +16,7 @@ export interface CarrierUser {
   applicationId: string | null;
   parentUserId: string | null;
   cardId: string | null;
+  companyName: string | null;
   login: string;
   agentName: string | null;
   agentZohoUserId: string | null;
@@ -31,6 +32,7 @@ export interface CreateCarrierUserInput {
   applicationId?: string;
   parentUserId?: string;
   cardId?: string;
+  companyName?: string;
   login: string;
   password: string;
   agentName?: string;
@@ -58,6 +60,7 @@ export async function createCarrierUser(input: CreateCarrierUserInput): Promise<
       ...(input.applicationId ? { application_id: input.applicationId } : {}),
       ...(input.parentUserId ? { parent_user_id: input.parentUserId } : {}),
       ...(input.cardId ? { card_id: input.cardId } : {}),
+      ...(input.companyName ? { company_name: input.companyName } : {}),
       login: input.login,
       password: input.password,
       ...(input.agentName ? { agent_name: input.agentName } : {}),
@@ -87,6 +90,24 @@ export async function updateCarrierUser(
       ...(patch.agentName !== undefined ? { agent_name: patch.agentName } : {}),
     },
   })) as { user: CarrierUser };
+}
+
+/** A client from the DWH directory (octane.intm_zoho_deals) — what accounts are provisioned FROM. */
+export interface DwhClient {
+  companyName: string | null;
+  stage: string | null;
+  carrierId: string | null;
+  applicationId: string | null;
+  applicationDate: string | null;
+  ownerZohoUserId: string | null;
+}
+
+/** Search the DWH client directory by company name, carrier id, or application id. */
+export async function searchClients(q: string, limit = 15): Promise<DwhClient[]> {
+  const data = (await request('GET', '/carrier-clients', {
+    query: { q: q || undefined, limit },
+  })) as { clients: DwhClient[] };
+  return data.clients;
 }
 
 /** Back-fill the carrier id for EVERYTHING provisioned under an application id. */

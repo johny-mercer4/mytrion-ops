@@ -4,15 +4,17 @@ import {
   deleteCarrierUser,
   listCarrierUsers,
   populateCarrier,
+  searchClients,
   updateCarrierUser,
   type CarrierProfile,
   type CarrierUser,
+  type DwhClient,
 } from '../../api/carrierUsers';
 import { listAgents, type AgentUser } from '../../api/agents';
 import { PlusIcon, SearchIcon } from '../../components/icons';
 import s from './admin.module.css';
 
-const COLS = { gridTemplateColumns: '1.2fr 0.7fr 1fr 0.8fr 1fr 1fr 0.7fr 1.5fr' } as const;
+const COLS = { gridTemplateColumns: '1.1fr 0.6fr 1.2fr 0.9fr 0.75fr 0.95fr 0.9fr 0.65fr 1.4fr' } as const;
 
 function generatePassword(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
@@ -61,7 +63,7 @@ export function CarrierUsers() {
   const filtered = users.filter((u) => {
     const q = query.trim().toLowerCase();
     if (!q) return true;
-    return [u.carrierId ?? '', u.applicationId ?? '', u.login, u.agentName ?? '', u.profile, u.cardId ?? '']
+    return [u.companyName ?? '', u.carrierId ?? '', u.applicationId ?? '', u.login, u.agentName ?? '', u.profile, u.cardId ?? '']
       .join(' ')
       .toLowerCase()
       .includes(q);
@@ -182,7 +184,7 @@ export function CarrierUsers() {
           className={s.searchInput}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by carrier id, application, login, card, agent…"
+          placeholder="Search by company name, carrier id, application id, login, card…"
         />
         <span className={s.chipMeta}>
           {total} account{total === 1 ? '' : 's'}
@@ -193,6 +195,7 @@ export function CarrierUsers() {
         <div className={s.tHead} style={COLS}>
           <span>Login</span>
           <span>Profile</span>
+          <span>Company</span>
           <span>Carrier Id</span>
           <span>Application</span>
           <span>Card / Parent</span>
@@ -209,6 +212,9 @@ export function CarrierUsers() {
                 <span className={`${s.pill} ${u.profile === 'owner' ? s.pillInfo : s.pillNeutral}`}>
                   {u.profile === 'owner' ? 'Owner' : 'Driver'}
                 </span>
+              </span>
+              <span className={s.deptText}>
+                {u.companyName ?? (u.profile === 'driver' ? byId.get(u.parentUserId ?? '')?.companyName ?? '—' : '—')}
               </span>
               <span className={s.mono}>
                 {u.carrierId ?? (
@@ -270,6 +276,7 @@ function CreateForm({
   const [profile, setProfile] = useState<CarrierProfile>('owner');
   const [carrierId, setCarrierId] = useState('');
   const [applicationId, setApplicationId] = useState('');
+  const [companyName, setCompanyName] = useState('');
   const [parentUserId, setParentUserId] = useState('');
   const [cardId, setCardId] = useState('');
   const [login, setLogin] = useState('');
@@ -277,6 +284,45 @@ function CreateForm({
   const [agentName, setAgentName] = useState('');
   const [agents, setAgents] = useState<AgentUser[]>([]);
   const [busy, setBusy] = useState(false);
+
+  // ── DWH client picker: provision FROM the already-defined clients (intm zoho deals,
+  // newest applications first; searchable by company name / carrier id / application id).
+  const [clientQuery, setClientQuery] = useState('');
+  const [clientResults, setClientResults] = useState<DwhClient[] | null>(null);
+  const [clientBusy, setClientBusy] = useState(false);
+  const [clientError, setClientError] = useState('');
+  useEffect(() => {
+    if (profile !== 'owner') return;
+    const q = clientQuery.trim();
+    if (q.length < 2) {
+      setClientResults(null);
+      setClientError('');
+      return;
+    }
+    setClientBusy(true);
+    const timer = setTimeout(() => {
+      searchClients(q, 15)
+        .then((clients) => {
+          setClientResults(clients);
+          setClientError('');
+        })
+        .catch((e: unknown) => setClientError(e instanceof Error ? e.message : String(e)))
+        .finally(() => setClientBusy(false));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [clientQuery, profile]);
+
+  function pickClient(c: DwhClient) {
+    setCarrierId(c.carrierId ?? '');
+    setApplicationId(c.applicationId ?? '');
+    setCompanyName(c.companyName ?? '');
+    if (c.ownerZohoUserId) {
+      const hit = agents.find((a) => a.zohoUserId === c.ownerZohoUserId);
+      setAgentName(hit?.name ?? c.ownerZohoUserId);
+    }
+    setClientResults(null);
+    setClientQuery(c.companyName ?? '');
+  }
 
   // Resolve the Zoho user id from whatever is currently typed/picked — computed at submit
   // time (not inside onChange) so it survives late agent-list loads and case differences.
@@ -317,6 +363,7 @@ function CreateForm({
         profile,
         ...(isOwner && carrierId.trim() ? { carrierId: carrierId.trim() } : {}),
         ...(isOwner && applicationId.trim() ? { applicationId: applicationId.trim() } : {}),
+        ...(isOwner && companyName.trim() ? { companyName: companyName.trim() } : {}),
         ...(!isOwner ? { parentUserId } : {}),
         ...(!isOwner && cardId.trim() ? { cardId: cardId.trim() } : {}),
         login: login.trim(),
@@ -357,9 +404,51 @@ function CreateForm({
         </button>
       </div>
 
+      {isOwner && (
+        <div className={s.field} style={{ marginTop: 'var(--space-3)', position: 'relative' }}>
+          <span className={s.fieldLabel}>Find the client (DWH — company name, carrier id, or application id)</span>
+          <input
+            className={s.input}
+            value={clientQuery}
+            onChange={(e) => setClientQuery(e.target.value)}
+            placeholder="e.g. GRANT EXPRESS / 5837332 / 892408 — newest applications first"
+            autoComplete="off"
+          />
+          {clientBusy && <span className={s.chipMeta}>searching…</span>}
+          {clientError && <p className={s.errorNote}>{clientError}</p>}
+          {clientResults && (
+            <div className={s.clientPick} role="listbox" aria-label="Matching clients">
+              {clientResults.map((c, i) => (
+                <button
+                  key={`${c.carrierId ?? ''}:${c.applicationId ?? ''}:${i}`}
+                  type="button"
+                  role="option"
+                  aria-selected="false"
+                  className={s.clientPickRow}
+                  onClick={() => pickClient(c)}
+                >
+                  <span className={s.docTitle}>{c.companyName ?? '(unnamed deal)'}</span>
+                  <span className={s.checkMeta}>
+                    {c.carrierId ? `carrier ${c.carrierId}` : 'no carrier yet'}
+                    {c.applicationId ? ` · app ${c.applicationId}` : ''}
+                    {c.applicationDate ? ` · ${c.applicationDate}` : ''}
+                    {c.stage ? ` · ${c.stage}` : ''}
+                  </span>
+                </button>
+              ))}
+              {clientResults.length === 0 && <div className={s.none}>No clients match.</div>}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className={s.formGrid}>
         {isOwner ? (
           <>
+            <div className={s.field}>
+              <span className={s.fieldLabel}>Company name</span>
+              <input className={s.input} value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="filled from the picked client" />
+            </div>
             <div className={s.field}>
               <span className={s.fieldLabel}>Carrier Id (blank if not a carrier yet)</span>
               <input className={`${s.input} ${s.mono}`} value={carrierId} onChange={(e) => setCarrierId(e.target.value)} placeholder="5758544" />

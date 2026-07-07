@@ -18,6 +18,7 @@ export interface CarrierUserDto {
   applicationId: string | null;
   parentUserId: string | null;
   cardId: string | null;
+  companyName: string | null;
   login: string;
   agentName: string | null;
   agentZohoUserId: string | null;
@@ -33,6 +34,7 @@ export interface CreateCarrierUserInput {
   applicationId?: string | undefined;
   parentUserId?: string | undefined;
   cardId?: string | undefined;
+  companyName?: string | undefined;
   login: string;
   passwordHash: string;
   agentName?: string | undefined;
@@ -44,6 +46,7 @@ export interface UpdateCarrierUserInput {
   applicationId?: string | null | undefined;
   cardId?: string | null | undefined;
   parentUserId?: string | undefined;
+  companyName?: string | null | undefined;
   passwordHash?: string | undefined;
   agentName?: string | null | undefined;
   agentZohoUserId?: string | null | undefined;
@@ -58,6 +61,7 @@ export function toCarrierUserDto(row: CarrierUser): CarrierUserDto {
     applicationId: row.applicationId,
     parentUserId: row.parentUserId,
     cardId: row.cardId,
+    companyName: row.companyName,
     login: row.login,
     agentName: row.agentName,
     agentZohoUserId: row.agentZohoUserId,
@@ -143,6 +147,7 @@ export const carrierUserRepo = {
       applicationId: trimOrNull(input.applicationId),
       parentUserId: trimOrNull(input.parentUserId),
       cardId: trimOrNull(input.cardId),
+      companyName: trimOrNull(input.companyName),
       login: input.login.trim().toLowerCase(),
       passwordHash: input.passwordHash,
       agentName: trimOrNull(input.agentName),
@@ -170,6 +175,7 @@ export const carrierUserRepo = {
     if (patch.applicationId !== undefined) set.applicationId = trimOrNull(patch.applicationId);
     if (patch.cardId !== undefined) set.cardId = trimOrNull(patch.cardId);
     if (patch.parentUserId !== undefined) set.parentUserId = trimOrNull(patch.parentUserId);
+    if (patch.companyName !== undefined) set.companyName = trimOrNull(patch.companyName);
     if (patch.passwordHash !== undefined) set.passwordHash = patch.passwordHash;
     if (patch.agentName !== undefined) set.agentName = trimOrNull(patch.agentName);
     if (patch.agentZohoUserId !== undefined) set.agentZohoUserId = trimOrNull(patch.agentZohoUserId);

@@ -40,6 +40,8 @@ export const carrierUsers = pgTable(
     parentUserId: text('parent_user_id'),
     /** Driver only: the card this account is tied to (the card carries the limits). */
     cardId: text('card_id'),
+    /** Company display name (from the DWH client directory) — search/display only. */
+    companyName: text('company_name'),
     /** Sign-in name (unique per tenant; case-insensitive — stored lowercased). */
     login: text('login').notNull(),
     passwordHash: text('password_hash').notNull(),

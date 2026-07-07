@@ -16,6 +16,8 @@ import { z } from 'zod';
 import { AppError, ConflictError, NotFoundError, RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { hashPassword } from '../../modules/auth/password.js';
+import { searchDwhClients } from '../../integrations/dwhClients.js';
+import { env } from '../../config/env.js';
 import { carrierUserRepo } from '../../repos/carrierUserRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireContext } from './helpers.js';
@@ -36,6 +38,7 @@ const createSchema = z
     application_id: idString.optional(),
     parent_user_id: z.string().max(120).optional(),
     card_id: idString.optional(),
+    company_name: z.string().max(300).optional(),
     login: z
       .string()
       .min(3)
@@ -77,6 +80,7 @@ const updateSchema = z
     carrier_id: idString.nullable().optional(),
     application_id: idString.nullable().optional(),
     card_id: idString.nullable().optional(),
+    company_name: z.string().max(300).nullable().optional(),
     password: z.string().min(8).max(200).optional(),
     agent_name: z.string().max(200).nullable().optional(),
     agent_zoho_user_id: z.string().max(120).nullable().optional(),
@@ -134,6 +138,36 @@ export async function carrierUsersRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
+  /**
+   * The DWH client directory (octane.intm_zoho_deals, active rows, newest applications
+   * first) — what the admin provisions accounts FROM. Searchable by company name,
+   * carrier id, or application id.
+   */
+  app.get('/carrier-clients', guard, async (request) => {
+    requireAdmin(request);
+    if (!env.DWH_DATABASE_URL) {
+      throw new AppError('The data warehouse is not configured (DWH_DATABASE_URL)', {
+        statusCode: 503,
+        code: 'DWH_UNCONFIGURED',
+        expose: true,
+      });
+    }
+    const q = z
+      .object({ q: z.string().max(200).optional(), limit: z.coerce.number().int().min(1).max(100).optional() })
+      .parse(request.query);
+    try {
+      const clients = await searchDwhClients({ q: q.q, limit: q.limit });
+      return { clients };
+    } catch (err) {
+      throw new AppError('Data warehouse query failed', {
+        statusCode: 502,
+        code: 'DWH_ERROR',
+        cause: err,
+        expose: true,
+      });
+    }
+  });
+
   app.post('/carrier-users', guard, async (request, reply) => {
     const ctx = requireAdmin(request);
     const body = createSchema.parse(request.body);
@@ -146,6 +180,7 @@ export async function carrierUsersRoutes(app: FastifyInstance): Promise<void> {
       applicationId: body.application_id,
       parentUserId: body.parent_user_id,
       cardId: body.card_id,
+      companyName: body.company_name,
       login: body.login,
       passwordHash: await hashPassword(body.password),
       agentName: body.agent_name,
@@ -203,6 +238,7 @@ export async function carrierUsersRoutes(app: FastifyInstance): Promise<void> {
       ...(body.carrier_id !== undefined ? { carrierId: body.carrier_id } : {}),
       ...(body.application_id !== undefined ? { applicationId: body.application_id } : {}),
       ...(body.card_id !== undefined ? { cardId: body.card_id } : {}),
+      ...(body.company_name !== undefined ? { companyName: body.company_name } : {}),
       ...(body.password !== undefined ? { passwordHash: await hashPassword(body.password) } : {}),
       ...(body.agent_name !== undefined ? { agentName: body.agent_name } : {}),
       ...(body.agent_zoho_user_id !== undefined
