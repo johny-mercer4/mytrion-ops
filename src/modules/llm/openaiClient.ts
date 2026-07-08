@@ -13,7 +13,11 @@ let groqClient: OpenAI | null = null;
  */
 export function getOpenAI(): OpenAI {
   if (!openaiClient) {
-    openaiClient = new OpenAI({ apiKey: env.OPENAI_API_KEY || 'sk-not-configured', maxRetries: 2 });
+    openaiClient = new OpenAI({
+      apiKey: env.OPENAI_API_KEY || 'sk-not-configured',
+      maxRetries: 2,
+      timeout: env.OPENAI_TIMEOUT_MS,
+    });
   }
   return openaiClient;
 }
@@ -28,6 +32,7 @@ export function getGroq(): OpenAI {
       apiKey: env.GROQ_API_KEY || 'gsk-not-configured',
       baseURL: env.GROQ_BASE_URL,
       maxRetries: 2,
+      timeout: env.OPENAI_TIMEOUT_MS,
     });
   }
   return groqClient;

@@ -10,6 +10,23 @@ import { agentSalesSnapshotTool } from './definitions/agent_sales_snapshot.js';
 import { agentDebtorsTool } from './definitions/agent_debtors.js';
 import { agentActivityTool } from './definitions/agent_activity.js';
 import {
+  crmCarrierBalanceTool,
+  crmCarrierOverviewTool,
+  crmListCardsTool,
+  crmListMyClientsTool,
+  crmPaymentInfoTool,
+  crmPickMyClientTool,
+  crmTransactionsTool,
+} from './definitions/servercrm_client.js';
+import { uiRequestChoiceTool } from './definitions/ui_choice.js';
+import {
+  fileGenerateCsvTool,
+  fileGenerateExcelTool,
+  fileGeneratePdfTool,
+  fileGetLinkTool,
+} from './definitions/file_generate.js';
+import { fileAnalyzeTool, fileIngestToKnowledgeTool } from './definitions/file_analyze.js';
+import {
   telegramGetChatTool,
   telegramGetMeTool,
   telegramGetUpdatesTool,
@@ -33,6 +50,28 @@ export const allTools: RegisteredTool[] = [
   registerTool(agentSalesSnapshotTool),
   registerTool(agentDebtorsTool),
   registerTool(agentActivityTool),
+  // servercrm client/carrier self-service READ tools (owner-guarded per-call; map to the
+  // self-service widget automation blocks). ui.request_choice = generative-UI elicitation.
+  registerTool(crmListMyClientsTool),
+  registerTool(crmPickMyClientTool),
+  registerTool(crmCarrierBalanceTool),
+  registerTool(crmCarrierOverviewTool),
+  registerTool(crmListCardsTool),
+  registerTool(crmTransactionsTool),
+  registerTool(crmPaymentInfoTool),
+  registerTool(uiRequestChoiceTool),
+  // File generation/analysis (flag-gated; storage = MinIO/S3). generate/analyze are read-class
+  // by ratified decision (tenant-scoped, audited artifacts); ingest_to_knowledge stays write.
+  ...(env.FF_FILES_ENABLED
+    ? [
+        registerTool(fileGenerateCsvTool),
+        registerTool(fileGenerateExcelTool),
+        registerTool(fileGeneratePdfTool),
+        registerTool(fileGetLinkTool),
+        registerTool(fileAnalyzeTool),
+        registerTool(fileIngestToKnowledgeTool),
+      ]
+    : []),
   // Native Telegram toolkit (flag-gated). Sends are write-risk → admin-gated by the dispatcher.
   ...(env.FF_TELEGRAM_ENABLED
     ? [

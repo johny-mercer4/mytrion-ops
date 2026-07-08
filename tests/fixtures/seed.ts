@@ -21,6 +21,8 @@ export function makeContext(overrides: Partial<TenantContext> & { role?: Role } 
   if (overrides.userName !== undefined) ctx.userName = overrides.userName;
   if (overrides.profiles !== undefined) ctx.profiles = overrides.profiles;
   if (overrides.callerRole !== undefined) ctx.callerRole = overrides.callerRole;
+  if (overrides.bypassRbac !== undefined) ctx.bypassRbac = overrides.bypassRbac;
+  if (overrides.actingAgent !== undefined) ctx.actingAgent = overrides.actingAgent;
   return ctx;
 }
 

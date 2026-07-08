@@ -2,8 +2,9 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { DEFAULT_RETRIEVAL_K, MAX_RETRIEVAL_K } from '../../config/constants.js';
 import { env } from '../../config/env.js';
-import { normalizeDepartment } from '../../lib/department.js';
+import { normalizeDepartment, normalizeDepartments } from '../../lib/department.js';
 import { AppError, NotFoundError } from '../../lib/errors.js';
+import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { ingestDocument, type IngestResult } from '../../modules/knowledge/ingestService.js';
 import { retrieve } from '../../modules/knowledge/retriever.js';
 import { knowledgeRepo } from '../../repos/knowledgeRepo.js';
@@ -67,7 +68,12 @@ function assertIngestEnabled(): void {
  * list ingested docs, and inspect embedded chunks. Authenticated by the static API_KEY.
  */
 export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
-  const guard = { onRequest: [app.apiKeyAuth] };
+  // Internal management surface: customer sessions (carrier-client logins) are denied outright —
+  // several repo paths here are tenant-scoped only, and the KB is internal data regardless.
+  const guard = {
+    onRequest: [app.sessionOrApiKey],
+    preHandler: [app.requireAudience('internal', 'partner')],
+  };
 
   // --- Ingest: raw text body ---
   app.post('/knowledge/embed', guard, async (request) => {
@@ -176,12 +182,33 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     const ctx = requireContext(request);
     const deleted = await knowledgeRepo.deleteDoc(ctx, request.params.id);
     if (!deleted) throw new NotFoundError(`No document with id ${request.params.id}`);
+    await auditFromContext(ctx, {
+      action: 'knowledge.delete',
+      status: 'ok',
+      resourceType: 'knowledge_doc',
+      resourceId: request.params.id,
+      detail: { title: deleted.title, chunksDeleted: deleted.chunkCount },
+    });
     return { deleted };
   }
 
   app.delete<{ Params: { id: string } }>('/knowledge/docs/:id', guard, deleteOne);
   // POST alias — Zoho's server-side proxy reliably supports POST but not always DELETE.
   app.post<{ Params: { id: string } }>('/knowledge/docs/:id/delete', guard, deleteOne);
+
+  // Freshness attest: resets last_verified_at so retrieval stops demoting the doc as stale.
+  app.post<{ Params: { id: string } }>('/knowledge/docs/:id/verify', guard, async (request) => {
+    const ctx = withDepartmentAccess(requireContext(request), request);
+    const verified = await knowledgeRepo.markVerified(ctx, request.params.id);
+    if (!verified) throw new NotFoundError('Document not found');
+    await auditFromContext(ctx, {
+      action: 'knowledge.verify',
+      status: 'ok',
+      resourceType: 'knowledge_doc',
+      resourceId: request.params.id,
+    });
+    return { verified: true, id: request.params.id };
+  });
 
   // Bulk delete: POST /knowledge/docs/delete  { ids: [...] }
   app.post('/knowledge/docs/delete', guard, async (request) => {
@@ -194,13 +221,31 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       if (row) deleted.push(row);
       else notFound.push(id);
     }
+    await auditFromContext(ctx, {
+      action: 'knowledge.delete',
+      status: 'ok',
+      resourceType: 'knowledge_doc',
+      detail: { bulk: true, deleted: deleted.map((d) => d.id), notFound },
+    });
     return { deleted, notFound };
   });
 
   // --- Retrieve: RBAC-scoped kNN search (caller passes department access) ---
   app.post('/knowledge/query', guard, async (request) => {
     const body = querySchema.parse(request.body);
-    const ctx = withDepartmentAccess(requireContext(request), request, body);
+    let ctx = withDepartmentAccess(requireContext(request), request, body);
+    // An EXPLICIT departmentAccess filter (without allDepartments) is a NARROWING request —
+    // the admin retrieval-test UI scopes "what would a sales agent see". withDepartmentAccess
+    // can only widen (admin sessions already carry allDepartmentAccess), so apply the narrow
+    // here. Safe under this route's trust model: admins already see everything, and unverified
+    // API-key callers are already trusted to assert departmentAccess.
+    if (body.departmentAccess !== undefined && body.allDepartments !== true) {
+      ctx = {
+        ...ctx,
+        allDepartmentAccess: false,
+        departments: normalizeDepartments(body.departmentAccess),
+      };
+    }
     const passages = await retrieve(ctx, body.query, body.limit ?? DEFAULT_RETRIEVAL_K);
     return { passages };
   });

@@ -768,3 +768,599 @@ subagent in the orchestrator. Native tool-caller (toolDispatcher) left intact (c
   from the authenticated company id (else self-escalation). (2) "Global" (untagged) knowledge is visible to
   every scope incl. customers — audit tagging before exposing internal docs. (3) no 'customer' audience yet
   (all API_KEY callers are 'internal').
+
+## 2026-07-02 — Agentic Core v2, M0: security & agent foundation (10 manifests, authority narrowing, customer lockdown)
+
+Kickoff of the approved Agentic Core v2 plan (orchestrator + 10 department child agents on LangGraph,
+pg-boss, agentic RAG, MinIO files, Composio browser). Decisions locked with the user: OpenAI-only for
+now (Groq stays dormant), browser automation via Composio toolkits, file storage on MinIO (S3 API),
+Collection added as the 10th agent. This session = M0, everything default-off / no runtime change:
+
+- **AgentManifest layer** (`src/modules/agents/types.ts`, `manifests/*` — one file per agent,
+  `agentRegistry.ts` mirroring ToolRegistry): typed manifests for customer-service, billing,
+  verification, retention, sales, marketing, finance, analyst, manager, collection. Manifests declare
+  departments (access grant), operatingDepartments (cross-dept cap for analyst/manager), tool
+  allowlist, ragScope, readOnly, delegatesTo. `departmentAgents.ts` is now a DERIVED SHIM off the
+  manifests (same exports; /v1/chat personas + applyDepartmentPolicy unchanged in behavior, policy
+  extended: finance/marketing/manager tiers now grant their tools — test expectations updated).
+  'marketing' added to KNOWN_DEPARTMENTS.
+- **Authority narrowing** (`authority.ts`): narrowContext (child depts = caller ∩ operating; admins
+  bounded to the operating list; allDepartmentAccess + bypassRbac ALWAYS dropped; sets ctx.actingAgent),
+  narrowRagScope (ragScope is a cap, never a grant), effectiveRetrievalContext (what scoped RAG will use).
+- **Customer-trust fix** (the 2026-07-01 OPEN item): new `routes/v1/callerIdentity.ts` with explicit
+  workerContext/customerContext builders; chat.routes now uses buildCallerContext. New 'customer'
+  audience (deny-by-default everywhere; knowledge.search opted in — retrieval is audience-exact so
+  customers only see customer-audience docs). FF_CUSTOMER_SCOPE_STRICT (default 0 = legacy + loud
+  warning listing fields that will be ignored; 1 = customer requests get viewer role, NO scopes,
+  departments = company tag only, client scope/profile/user_name fields ignored). Telegram shim must
+  migrate before flipping.
+- **Audit attribution** (migration 0008): tool_calls + audit_log gain acting_agent + agent_run_id;
+  new agent_runs table (per-run status/tokens/cost) + agentRunRepo. DispatchOptions gains
+  {readOnly, actingAgent, agentRunId}; dispatcher denies non-read tools under readOnly (defense in
+  depth for analyst/manager) and stamps attribution on ok/error/denied rows.
+- **Injection defenses + budgets**: `security/untrusted.ts` (wrapUntrusted with delimiter-smuggling
+  neutralization + control-char strip; sanitizeToolResult with truncation notice; UNTRUSTED_RULE added
+  to the system prompt). Wired at boundaries: RAG grounding (chatService), web search output,
+  Composio afterExecute (payload → untrusted_content). `agents/budget.ts` BudgetMeter
+  (AGENT_MAX_TOOL_CALLS/COST_USD/WALL_MS env knobs) ready for the M1 run loop.
+- **Tests: 216 green** (was 181). New suites: agent-registry (selection matrix incl. customer/partner
+  denial), agent-authority (narrowing invariants, table-driven over all 10), caller-identity (hostile
+  customer lockdown + legacy warn path), untrusted (smuggling/ANSI/canary — secret-shaped env values
+  never in prompts), budget, and the headline **agent-rbac-leakage** suite (retrieval SQL never
+  references foreign departments through any agent; hostile reformulation can't change the WHERE;
+  dispatch-by-name denied + audited with actingAgent; read-only gate holds for admins).
+- Note for later milestones: zoho_mcp.* stays admin-sentinel (unavailable inside child agents — revisit
+  when Composio covers Zoho breadth); Composio output wrapping changes tool payload shape to
+  {untrusted_content} — verify against live Composio in M5.
+
+## 2026-07-02 — Agentic Core v2, M1: orchestrator runtime (POST /v1/agent, 10 compiled agents, checkpointer)
+
+- **Compiler** (`src/modules/agents/orchestrator.ts`): AgentManifest → deepagents SubAgent per request,
+  AFTER agentRegistry RBAC filtering — a sales caller's orchestrator contains only sales+marketing.
+  Children get: per-agent scoped knowledge_search (effectiveRetrievalContext — the leakage-tested fn),
+  registry tools (RBAC ∩ allowlist, dispatched under the NARROWED ctx captured at build time, readOnly
+  + actingAgent + agentRunId stamped), webSearch (manifest.webSearch: marketing), Composio filtered by
+  manifest.composioToolkits with longest-prefix toolkit matching (manager only, admin-gated; failures
+  degrade — never break construction). Children return structured AgentResult (answer/citations/
+  toolsUsed/confidence/escalate) via responseFormat; escalation is advisory — parent re-delegates only
+  within the RBAC-filtered set. Direct-to-child mode compiles one agent, no orchestrator hop.
+- **deepagents module absorbed** into `src/modules/agents/` (context/models/prompts/tools moved,
+  toolCaller→agentTools, rag→scopedRag, composioTools→composio); `deepagents` pinned exact 1.10.5
+  (compiler file is the single API seam). Old 4-generic-subagent stack deleted.
+- **Service** (`orchestratorService.ts`): runAgentTurn/streamAgentTurn share one streamEvents
+  consumption path (`streamAdapter.ts` — SSE vocabulary start/status/token/tool_call/tool_result/done
+  + new `agent` {key,state} events; ONLY root tokens stream, child runs surface as progress; final =
+  last root chain-end message). Persistence mirrors chatService (appendUser/appendAssistant, auto-title,
+  bumpForTurn) so widget transcripts are pipeline-agnostic. BudgetMeter per run (tool calls counted in
+  wrappers; cost charged from RunTracker usage); breach → friendly partial answer + audit. agent_runs
+  row per run (status/model/tokens/cost/duration) + costTracker + audit `agent.turn`.
+- **Durability**: `checkpointer.ts` PostgresSaver (own pg pool max 5, `langgraph` schema) behind
+  FF_AGENT_CHECKPOINTS; setup() runs from scripts/migrate.ts (library owns that schema's DDL);
+  threadId = tenantId:conversationId with findOwned guard. Brief builder packs date/user/departments +
+  ≤600-token mechanical history summary into the HUMAN message (system prompts stay byte-stable for
+  prompt caching). TTL sweep job lands with pg-boss (M2).
+- **API**: POST /v1/agent {message, conversationId?, agent?, stream?} + caller-identity fields
+  (shared callerIdentitySchema); /v1/agent/deep kept as deprecated alias returning {answer}.
+  FF_ORCHESTRATOR_ENABLED (or legacy FF_DEEP_AGENTS_ENABLED) gates both. LANGSMITH_* env passthrough.
+- **Tests: 228 green.** New: agent-compiler (per-caller subagent sets), stream-adapter (token routing,
+  child silence, task boundaries, error tools), integration gate paths (404 off / 401 / 403 cross-dept
+  direct-to-child / 400 unknown agent). Deferred: web app sends `agent` param (needs a web build cycle;
+  /v1/chat stays the widget default until the flag flips); per-child token cost split is approximated
+  at the run level (tool attribution is exact via tool_calls.acting_agent).
+
+## 2026-07-02 — Agentic Core v2, M2: pg-boss job infrastructure (async agent runs + cron automations)
+
+- **pg-boss 12.24.1** on the app Postgres, own self-migrating `pgboss` schema (never modeled in
+  drizzle; no ordering hazard with release migrations). `src/modules/jobs/`: boss.ts (lazy singleton,
+  pool max 3, dbSslOption reuse, graceful stop {graceful, close, timeout 25s} inside Render's SIGTERM
+  window), catalog.ts (typed `defineJob` + zod payloads; payloads embed the caller's TenantContext
+  verbatim via `tenantContextSchema` + `payloadToContext` — workers execute with EXACTLY the
+  requester's authority), queue.ts (parse-before-send), scheduler.ts (idempotent cron upsert +
+  stray-schedule cleanup, tz=JOBS_CRON_TZ), systemContext.ts (cron authority: department-scoped,
+  admin role for write-risk notifies, NO allDepartmentAccess/bypass).
+- **Deployment shape**: JOBS_WORKER_MODE=inline (default — web service runs workers in-process) |
+  send-only (dedicated Render Background Worker runs `node dist/worker.js`, same image) | off.
+  server.ts boots jobs after listen; shutdown order stopJobs → app.close → closeDb. `src/worker.ts`
+  entry built NOW so the second-service flip is config-only.
+- **Job catalog**: `agent.run` (retry 1, expire 15m, dead-letters; singleton per taskId),
+  cron automations — collection debtor-sweep (weekday 08:00), retention weekly-scan (Mon 09:00),
+  verification recheck-reminders (daily 07:00) — each: scoped systemContext → agent_tasks row →
+  direct-to-child runAgentTurn with a canned prompt → automation_logs row → optional Telegram
+  summary THROUGH dispatchTool (explicitly elevated notify ctx; audited). `maintenance.checkpoint-
+  ttl-sweep` (nightly; deletes langgraph threads whose newest checkpoint ts < now-TTL). `jobs.dead`
+  dead-letter sink (audit `job.dead` + mark task failed).
+- **agent_tasks table** (migration 0009) + agentTaskRepo: tenant-scoped, owner-isolated listing,
+  `markRunning` transitions only from queued/running/failed (re-delivered completed/cancelled jobs
+  ack without re-running — the idempotency guard).
+- **Routes** `tasks.routes.ts`: POST /v1/agent/tasks (fail-fast agent RBAC → row → enqueue → 202
+  {taskId}), GET list/:id, GET /:id/stream (SSE row-poll 1.5s, 10m cap, keep-alive comments),
+  POST /:id/cancel (row transition authoritative + best-effort boss.cancel), GET /agent/jobs/stats
+  (allDepartmentAccess only; pgboss.job counts + recent failures via validated schema identifier).
+- **Tests: 236 green.** jobs-catalog (cron↔queue integrity, payload round-trip preserves authority
+  verbatim, payloadToContext strips explicit-undefineds, malformed rejected), systemContext scoping,
+  integration 503/401 gates. NOTE: no live pg-boss lifecycle test — deliberately not pointed at the
+  Render DB; M2 smoke happens in dev per plan (docker Postgres) before flipping FF_JOBS_ENABLED.
+
+## 2026-07-02 — Agentic Core v2, M3: agentic RAG (hybrid RRF + retrieval loop + citations)
+
+- **Hybrid retrieval** (migration 0010): `knowledge_chunks.content_tsv` STORED generated tsvector
+  column (drizzle `generatedAlwaysAs` + customType) + GIN index. New `repos/knowledgeSearchRepo.ts`:
+  buildVectorQuery/buildFullTextQuery (websearch_to_tsquery + ts_rank_cd) — BOTH legs reuse the now-
+  exported `departmentFilter` chokepoint + tenant/audience predicates, join knowledge_docs for titles.
+  `resolveRetrievalContext(ctx, scope)` = intersection-only cap (bounds admins to the cap list).
+- **Agentic loop** `modules/knowledge/agentic/`: queryPlanner (1–3 sub-queries + sufficiency judge —
+  BOTH degrade safely: planner→original question, judge→sufficient), hybrid.ts (parallel legs per
+  sub-query, RRF fuse 1/(K+rank), dedupe across hops; full-text leg degrades to vector-only on
+  error/flag-off), rerank.ts (optional listwise LLM rerank, FF_RAG_RERANK), loop.ts (plan → retrieve →
+  top-score short-circuit (RAG_SUFFICIENT_SCORE≈rank-1-both-legs) → judge → refine ≤ RAG_MAX_HOPS;
+  sets suggestWebSearch for the CALLER to decide), citations.ts ([S1..Sn] markers + cite-instruction
+  OUTSIDE the UNTRUSTED wrapper).
+- **Wiring**: chatService.retrieveGrounding honors FF_AGENTIC_RAG (lazy import); scopedRag honors it
+  per child agent (retrieval ctx unchanged — effectiveRetrievalContext already encodes the cap) and
+  surfaces a thin-coverage hint. Flags default OFF: FF_RAG_HYBRID, FF_AGENTIC_RAG, FF_RAG_RERANK —
+  flip after evalRetrieval in dev.
+- **Eval harness**: `scripts/evalRetrieval.ts` + `tests/fixtures/retrieval-corpus.json` (10 docs
+  across 8 dept tags + Global, 10 labeled queries) → recall@6/MRR for single-shot vs hybrid vs
+  agentic against a dev DB (checksum-idempotent ingest; requires OPENAI + DB, run manually).
+- **Tests: 244 green.** hybrid-retrieval suite: cap semantics (never widens, bounds admins), both
+  legs' SQL scoping under a hostile reformulated query (query string is a PARAMETER, dept params stay
+  the caller's), RRF fusion math/determinism, full-text degradation, grounding-block markers.
+- Deferred/noted: citation objects aren't yet persisted to message metadata (markers live in the
+  grounding block; the model cites [Sn] in its answer text) — revisit with the web app citations UI.
+
+## 2026-07-02 — Agentic Core v2, M4: files on MinIO (generate + analyze + routes + Telegram delivery)
+
+- **Storage**: `modules/files/storage/` ObjectStorage interface + S3 adapter (@aws-sdk/client-s3,
+  forcePathStyle for MinIO; R2 swap = env-only: S3_ENDPOINT/S3_REGION=auto/S3_FORCE_PATH_STYLE=0).
+  Lazy singleton + setStorageForTests seam. Keys: `<tenant>/<kind>/<yyyy-mm>/<fileId>/<name>`
+  (sanitized, no '..'). getBuffer enforces PARSE_MAX_BYTES via HEAD + stream cap.
+- **Catalog**: `file_assets` (migration 0011) + fileRepo — visibility mirrors knowledge RBAC
+  (NULL-dept tenant-global OR caller dept OR ownership OR allDepartmentAccess; exported
+  fileVisibilityFilter for SQL assertions). storeFile: size caps, customer callers NEVER set
+  department tags (owner-scoped only), audit `file.store`/`file.delete`.
+- **Generation** (riskClass 'read' — the plan-ratified deviation, commented in code):
+  file.generate_csv (csv-stringify, 100k-row cap), file.generate_excel (exceljs, per-sheet specs),
+  file.generate_pdf (pdfkit, structured title/sections/tables spec, 2k-row guard), file.get_link.
+- **Analysis**: parse/ (unpdf 200-page cap, exceljs 50k-row, csv-parse, mammoth docx, text;
+  2M-char extract cap) → file.analyze (read; optional question → one LLM pass over UNTRUSTED-
+  wrapped content) + file.ingest_to_knowledge (WRITE, admin-sentinel; non-admins can only tag
+  their own departments; >2MB routes through new `knowledge.bulk-ingest` pg-boss queue with
+  agent_tasks tracking — finally unlocks pdf/xlsx/docx → RAG).
+- **Exposure**: FILE_TOOLS (5 read tools) added to ALL 10 manifests (registered only when
+  FF_FILES_ENABLED, inert otherwise); tool registration flag-gated in tools/index.ts so tool
+  counts/tests unchanged with the flag off. Routes `/v1/files` (multipart upload w/ per-route cap,
+  list, metadata, presigned download, delete; global multipart ceiling raised to FILE_MAX_SIZE_MB).
+  telegram.send_document now accepts `fileId` (RBAC-checked fresh presign; requires MinIO to be
+  publicly reachable for Telegram fetches — else fall back to a URL upload later).
+- docker-compose: added `minio` service (console :9001; bucket `octane-files` created via console).
+- **Tests: 258 green.** files (generators round-trip via exceljs/csv-parse/%PDF header, caps,
+  key sanitization, hostile customer department tag ignored), file-rbac (visibility SQL scoping +
+  ownership escape hatch; file tools available to every real department; ingest stays admin-sentinel).
+
+## 2026-07-02 — Agentic Core v2, M5: browser automation via Composio + hygiene
+
+- **browserTools.ts** (agents/tools): Composio-backed browser/scrape tools behind FF_BROWSER_ENABLED
+  + the existing admin gate. Toolkit universe = COMPOSIO_BROWSER_TOOLKITS (default FIRECRAWL; add the
+  Composio Browserbase toolkit slug for interactive sessions AFTER verifying it in the dashboard).
+  Guardrails all fail-closed: beforeExecute domain allowlist over every URL-ish arg (suffix match,
+  lookalike-host safe; EMPTY BROWSER_ALLOWED_DOMAINS = deny all navigation), interactive write verbs
+  (navigate/click/fill/type/press/act/…) dropped unless FF_BROWSER_WRITES, per-toolkit in-memory
+  token bucket (COMPOSIO_RATE_PER_MIN), audit + UNTRUSTED wrap via the shared afterExecute hook.
+  Exposed via new manifest capability `browser: true` — marketing only at launch.
+- **Composio hygiene**: buildComposioToolsFor now fetches PER TOOLKIT (one chatty toolkit can't crowd
+  others out of COMPOSIO_TOOL_LIMIT; per-toolkit failures skip, not break), takes optional extra
+  beforeExecute (the domain gate composes after the rate check), and requireEnabled opt-out for the
+  browser universe. security/rateBucket.ts = minimal sliding-window limiter (no Redis by design).
+- Web search complement: FIRECRAWL arrives through this same path — enabling it for search-grade
+  scraping = connect the key in the Composio dashboard; no code change (verbs are read-class).
+- **Tests: 265 green** — allowlist deny-by-default + suffix/lookalike cases, nested URL extraction,
+  write-verb classification, flag-off no-op, rate bucket window behavior.
+
+## 2026-07-02 — Agentic Core v2, M6: write approvals, agent memory, knowledge freshness, golden policy suite
+
+- **Write approvals (FF_WRITE_APPROVALS — unlocks agent writes safely)**: migration 0012 `approvals`
+  table + approvalRepo (pending→approved/denied once, TTL 24h, hourly expiry cron). dispatchTool
+  gains `viaAgent`: agent-proposed non-read tools park as pending approvals AFTER checkAccess (an
+  agent can't queue what its principal couldn't do — approval is a gate, never authority); the model
+  receives {pendingApprovalId, message}. agentTools wrappers set viaAgent — direct API/admin usage
+  untouched. `/v1/approvals` (admin-only): list, approve → approvalExecutor re-builds the PROPOSER's
+  snapshot ctx, re-runs checkAccess (policy drift), dispatches with original attribution, records
+  executed/failed; deny. Decisions only via authenticated HTTP (never Telegram callbacks).
+- **Agent memory (FF_AGENT_MEMORY)**: migration 0013 `agent_memories` (embedding+HNSW, importance,
+  per-user, dept-scoped like knowledge; deliberately NOT knowledge_docs — model-generated text stays
+  UNTRUSTED + decays). memoryRepo (search bumps access stats; evictBeyondCap 500/(agent,dept);
+  decayAndEvict exp half-life, drop <0.05). agents/memory.ts: end-of-turn distillation (≤3 durable
+  facts, fire-and-forget) + recall appended to scoped RAG output inside UNTRUSTED source=memory
+  ("do NOT cite as knowledge"). Nightly `maintenance.memory-decay` cron.
+- **Knowledge freshness**: migration 0014 knowledge_docs origin/effective_at/expires_at/
+  last_verified_at. Staleness computed AT QUERY TIME in both hybrid legs (no scan job needed):
+  stale = past expiry OR unverified > STALE_DOC_DAYS (180) → half weight in RRF fusion + "may be
+  outdated" in citation headers. POST /v1/knowledge/docs/:id/verify resets last_verified_at.
+  Deferred: FF_INGEST_AUTOTAG auto-tagging (suggestion-only feature — later).
+- **Golden policy suite** (tests/unit/agent-golden.test.ts): locks per-agent posture — exact bound
+  registry tools under the agent's own-department caller, effective RAG departments, read-only set
+  == {analyst, manager}, valid delegatesTo, non-trivial personas; adding an AGENT_KEY without a
+  golden record fails CI. Behavioral scripted-model evals deferred to scripts/evalLive (follow-up).
+- **Tests: 281 green** (approvals park/deny-before-park/legacy-off/executor-outcome included).
+
+## 2026-07-02 — Agentic Core v2: adversarial review fixes (8 confirmed defects)
+
+Ran an 11-agent adversarial review (3 dimensions × find→verify) over the M0–M6 build. 8 confirmed
+defects fixed (all flag-on production issues; tsc+281 tests had passed but didn't cover these):
+
+- **[CRITICAL] file cross-customer leak** (fileRepo/file_assets/fileService): file_assets had NO
+  audience column and customer uploads stored dept=NULL (global), so the isNull(dept) visibility
+  branch let any customer read any other customer's + internal files. Fix: added `audience` column
+  (migration 0015), visibility now ALWAYS partitions by audience, and customers get OWNERSHIP-ONLY
+  visibility (no global branch). storeFile stamps ctx.audience; markDeleted audience-scoped.
+- **[CRITICAL] pg-boss dead-letter ordering** (boss.ts): createQueue in ALL_JOBS order created
+  'jobs.dead' LAST, but v12 validates the deadLetter target exists first → deterministic crash-loop
+  on first FF_JOBS_ENABLED boot. Fix: create dead-letter target queues before their referrers.
+- **[MAJOR] read-only agents got Composio/browser writes** (orchestrator/composio/browserTools):
+  manager (readOnly) received Composio write tools when FF_COMPOSIO_WRITES on, bypassing the
+  dispatcher readOnly gate + approvals (Composio executes remotely). Fix: buildComposioToolsFor +
+  buildBrowserTools take `readOnly` → strip write tools at binding regardless of the flag; orchestrator
+  passes manifest.readOnly. Also fixed a latent bug: browser path now sets requireEnabled:false so
+  FIRECRAWL isn't intersected away by the org toolkit list.
+- **[MAJOR] budget/recursion unbounded** (orchestratorService/scopedRag): manifest.maxIterations was
+  never applied (deepagents default ~unbounded) and budget breaches were swallowed. Fix: wire
+  recursionLimit (child cap direct; orchestrator = 2×cap+6), unwrap wrapped BudgetExceededError via
+  the cause chain, and count scopedRag calls against the tool-call budget.
+- **[MAJOR] FF_JOBS_ENABLED bypassed the orchestrator gate + auto-ran LLM crons** (tasks.routes/
+  scheduler): /v1/agent/tasks ran full agent turns and department cron automations DM'd Telegram with
+  only FF_JOBS on. Fix: POST /agent/tasks now also requires FF_ORCHESTRATOR_ENABLED; applySchedules
+  gates the 3 department automations on the orchestrator flag (maintenance crons always run).
+- **[MAJOR] checkpointer schema not in deploy path** (checkpointer): setupCheckpointer only ran from
+  scripts/migrate.ts, which isn't in the runtime image → 42P01 on every turn with FF_AGENT_CHECKPOINTS
+  on. Fix: ensureCheckpointerReady() — idempotent, memoized setup() called before the first
+  checkpointed run.
+- **[MAJOR] agentPath always empty** (streamAdapter): subagentTypeOf only matched an object task
+  input, but streamEvents v2 emits data.input={input:'<json string>'} → no `agent` SSE events, empty
+  agentPath. Fix: parse the stringified form too.
+- Tests: 289 green (+ composio-tools, jobs-queue-order, customer file-isolation, stringified-task
+  stream cases). Migration 0015 (file_assets.audience).
+
+## 2026-07-02 — Rollout: migrations applied + feature flags enabled (files/jobs held)
+
+- **Migrations 0008–0015 applied to the app Postgres** (MYTRION_OPS_DATABASE_URL) via `pnpm db:migrate`
+  (user-approved). Verified live: new tables agent_runs, agent_tasks, file_assets, approvals,
+  agent_memories; new columns file_assets.audience, knowledge_chunks.content_tsv,
+  tool_calls.acting_agent, knowledge_docs.last_verified_at. DWH untouched.
+- **render.yaml: enabled 6 flags** as explicit envVars (override the env group):
+  FF_ORCHESTRATOR_ENABLED, FF_RAG_HYBRID, FF_AGENTIC_RAG, FF_BROWSER_ENABLED, FF_WRITE_APPROVALS,
+  FF_AGENT_MEMORY.
+- **Held FF_JOBS_ENABLED** (excluded per request) and **FF_FILES_ENABLED** — the latter would crash
+  boot (assertRuntimeSecrets requires S3_ENDPOINT/ACCESS_KEY_ID/SECRET_ACCESS_KEY/BUCKET, none set).
+  To finish files later: add S3_* (MinIO) to the octane-assistant-secrets env group, then set
+  FF_FILES_ENABLED=1. FF_AGENT_CHECKPOINTS left off (not requested).
+- Pre-deploy setup still needed for browser to FUNCTION (not a boot blocker): real COMPOSIO_API_KEY
+  + BROWSER_ALLOWED_DOMAINS in the env group (empty allowlist = deny-all, fail-closed).
+- Note: FF_AGENTIC_RAG enabled without running scripts/evalRetrieval.ts against prod on purpose —
+  that harness ingests 10 fixture docs and would pollute the live knowledge base; run it against a
+  scratch/dev DB to measure recall before relying on hybrid quality.
+
+## 2026-07-02 — Live end-to-end test (admin scope, real backends) + recursionLimit fix
+
+Ran the API locally (flags on) against real OpenAI + app DB + servercrm with admin scope. Verified:
+- **RAG**: /v1/chat grounded a billing question in 6 real KB passages (agentic hybrid loop, FF_AGENTIC_RAG+FF_RAG_HYBRID on).
+- **Orchestrator**: /v1/agent delegated to the verification child (agentPath=["verification"] — confirms the streamAdapter stringified-task fix), which called scoped knowledge_search and synthesized a grounded answer.
+- **Operational read tool**: direct-to-child billing agent dispatched agent.debtors → servercrm (real HTTP; returned "agent not found" for the fake admin name, handled gracefully). tool_calls.acting_agent="billing" recorded.
+- **Agent-selection RBAC**: sales-scoped caller → finance agent = 403 RBAC_DENIED (pre-LLM). Non-admin → /v1/approvals = 403; admin = 200 (0 pending — read-only launch posture, no write tools bound to agents).
+- **Persistence**: agent_runs rows with token/cost attribution; 3 agent_memories distilled (FF_AGENT_MEMORY); tool_call attribution.
+
+**Bug found + fixed (live test):** recursionLimit was mapped 1:1 from AGENT_MAX_CHILD_ITERATIONS(8),
+but LangGraph counts every graph super-step (model/tool/deepagents-middleware nodes), so a single
+child agent hit "Recursion limit of 8" before finishing one tool round. Fixed: recursionLimit =
+childCap*5+10 (single) / childCap*6+24 (orchestrator); the BudgetMeter (tool-call/cost/wall) remains
+the real runaway guard. Re-tested green; 289 unit tests pass.
+
+## 2026-07-02 — Real use case: servercrm client self-service tools + owner-scoping + dynamic-UI picker
+
+Mapped the self-service widget's automation blocks + servercrm to AI agent tools. First slice = the
+owner-scoped READ tools every sales/customer-service agent uses to serve THEIR OWN clients by carrier,
+plus the "which client?" generative-UI flow. Grounded in a live exploration of zoho-octane
+(app/self-service automation blocks: C-8 balance, C-28 account status, C-24 cards, C-15 transactions,
+Q-2 payment info; department codes C/Q/V/M) and servercrm (/api/clients/by-agent/:zohoUserId roster;
+/api/agent/dwh/carrier-*).
+
+- **New tools** (`tools/definitions/servercrm_client.ts`, all read, servercrm:read):
+  crm.list_my_clients, crm.pick_my_client (server-built picker), crm.carrier_balance (C-8),
+  crm.carrier_overview (C-28), crm.list_cards (C-24), crm.transactions (C-15), crm.payment_info (Q-2).
+  Added to the sales + customer-service manifests (+ CLIENT_SERVICE_RULE persona).
+- **OWNER-SCOPING (security-critical, per user)**: the picklist comes ONLY from the caller's own
+  zoho_user_id (ctx.userId `zoho:<id>` → /api/clients/by-agent/:id) — an agent NEVER sees another
+  agent's carriers. Every carrier-keyed tool calls `assertCarrierOwned(ctx, carrierId)` first
+  (targeted by-agent lookup); non-owned → RBACError. Admins (allDepartmentAccess) bypass. servercrm
+  does NOT enforce this — our layer does. `fetchAgentRoster` coerces servercrm 0/1 flags → booleans.
+- **Dynamic-UI elicitation** (`agents/elicitation.ts`): a tool that needs a choice returns an
+  `elicitation` field; the per-agent tool wrapper stashes it into the run's ElicitationHolder;
+  orchestratorService surfaces it on AgentTurnResult.elicitation + an `elicitation` SSE event.
+  crm.pick_my_client builds the options SERVER-SIDE (model passes only an optional search) — no
+  model-copied option arrays. States: resolved (1 match → carrier_id) / choose (picklist shown) /
+  too_many (>25 → ask to narrow) / none. Generic ui.request_choice kept (universal) but removed from
+  the sales/CS flow so the model can't re-present with invented options.
+- **Live-tested (sales agent Frank Harrison, real servercrm)**: named client → resolve → REAL balance
+  (ALI CARGO INC: EFS $1,000, limit $3,000, used $303.09, remaining $2,696.91); ambiguous "ALI" → REAL
+  server-built picklist (ALI CARGO INC/5816381, ALI FAMILY TRUCKING/5759008, ALITRANS LLC/5772232, …);
+  foreign carrier 5794015 (another agent's) → DENIED + audited ("not in your client list"). 299 tests.
+- Bugs caught + fixed by live testing: empty-string optional params abort LangChain pre-handler
+  validation (relaxed schemas); servercrm booleans-as-numbers broke output validation (toBool coerce);
+  model hand-copying 70 options → hallucinated picklist (switched to server-built crm.pick_my_client).
+- Writes (card activation/limits/override, money code, WEX BOCA) deferred → they go behind the M6
+  approval flow. UI rendering of the picker is the frontend's job (later); backend contract is done.
+
+## 2026-07-03 — Auth architecture: Zoho OAuth worker sign-in (session-authoritative RBAC)
+
+Set up portal auth: workers sign in with their own Zoho account (authorization-code flow, backend is
+the confidential client). All gated behind `FF_ZOHO_OAUTH_ENABLED` (default off). Client login/password
+(Type 2) intentionally NOT built yet.
+
+- **env** (`config/env.ts`): `ZOHO_SERVER_CLIENT_ID` / `ZOHO_SERVER_CLIENT_SECRET` (separate "server"
+  app from the tool-integration Zoho creds), `ZOHO_OAUTH_REDIRECT_URI` (default `http://localhost:5173`,
+  must byte-match the Zoho console), `ZOHO_OAUTH_SCOPES` (default `ZohoCRM.users.READ`), flag
+  `FF_ZOHO_OAUTH_ENABLED`. assertRuntimeSecrets requires the two secrets + JWT_SECRET when the flag is on.
+- **Flow**: SPA `GET /v1/auth/zoho/login` → `{authorizeUrl, state}` (state = short-lived signed JWT, CSRF)
+  → browser to Zoho → back to the SPA origin with `?code&state` → SPA relays to `POST /v1/auth/zoho/callback`
+  → backend verifies state, exchanges the code (server-side w/ client_secret), reads CRM `CurrentUser`
+  (id/name/email/profile/role), and mints a Bearer session (`integrations/zohoOAuth.ts`,
+  `modules/auth/zohoAuthService.ts`).
+- **Session-authoritative identity (the security win)**: the access token carries a verified
+  `worker` claim (`jwt.ts` `WorkerIdentity`); `contextFromClaims` builds a ctx with `sessionVerified:true`,
+  `userId=zoho:<id>`, and `allDepartmentAccess` derived from the VERIFIED Zoho profile — never from the
+  request body. `buildCallerContext` short-circuits on `sessionVerified`: ALL client-supplied identity
+  (zoho_user_id/user_name/profile/role/allDepartments) is ignored; only the department VIEW
+  (`department_scope`) is honored, and only for non-all-access workers. Closes the self-escalation hole
+  the old "advisory URL identity" model had. `refresh` re-issues worker sessions from the token (no
+  users-table row for a `zoho:<id>` principal).
+- **Guard**: new `plugins/combinedAuth.ts` decorates `sessionOrApiKey` (Bearer session → verified ctx,
+  else falls through to the static API_KEY → system identity). Backward-compatible with
+  `Authorization: Bearer <API_KEY>`. All caller routes (chat/agent/tasks/files/approvals/knowledge/scope/
+  money-codes/automation) switched `apiKeyAuth` → `sessionOrApiKey`. `/auth/me` returns the worker
+  identity for verified sessions (no user lookup).
+- **Frontend** (`apps/mytrion-crm`): `api/session.ts` (token store), `api/auth.ts` (begin/complete/logout),
+  transport sends `Authorization: Bearer` with a deduped refresh-on-401 retry (`stream.ts` too);
+  `UserContextProvider` rewritten as an auth boot state machine (complete callback → resume session →
+  dev-mock → login gate); `LoginGate` "Sign in with Zoho"; TopBar sign-out. Identity now derives from
+  the verified session, not spoofable URL params. Dev bypass: `VITE_DEV_MOCK_AUTH=1`.
+- Tests: `tests/unit/zoho-oauth.test.ts` (worker-claim round-trip, oauth-state sign/verify + negatives,
+  contextFromClaims worker branch, startLogin URL) + session-authoritative cases added to
+  `caller-identity.test.ts`. Full suite green: 312 tests. lint/typecheck/build clean.
+
+## 2026-07-03 — Chat → agent runtime, Sales agent hardening, admin "act as agent"
+
+Fixed the "typing hi does slow RAG" report + made the Sales agent capable/grounded (commit 612d887).
+
+- **Root cause**: chat UI posted to single-agent `/v1/chat/stream`, which ran `retrieveGrounding`
+  UNCONDITIONALLY every turn (planner + multi-query embeds + hybrid SQL + judge) — even for "hi".
+- **Fix (Part A)**: chat now streams through `/v1/agent` (orchestrator runtime) where RAG is the
+  model-invoked `knowledge_search` tool → a greeting does ZERO retrieval. Dept Mytrions send
+  `agent:<key>` (direct-to-child); admin sends none (orchestrator). `stream.ts` generalized
+  (`streamAgent`, `agent`/`elicitation` events, token `delta ?? text`); `agentKeyFor(id)` maps
+  Mytrion→AGENT_KEY (admin→null; fixes management→manager). `/v1/chat` kept as fallback (`VITE_USE_AGENT=0`).
+  Verified live: "hi" → no tool_call; policy Q → `knowledge_search` fires, grounds, cites docIds.
+- **Sales agent (Part B)**: enriched byte-stable persona (`OCTANE_CONTEXT`/`OWNER_SCOPE_RULE`/
+  `RAG_USAGE_RULE` in shared.ts + a Sales capability catalog). `RAG_USAGE_RULE` now MANDATES grounding
+  policy/procedure via knowledge_search (no answering from memory → cites or says "not documented").
+  Model = `gpt-5.4-mini` (manifest.model, Sales only). `FF_AGENTIC_RAG=0` → single-pass kNN over
+  Global∪Sales. `docs/knowledge/sales/sales-playbook.md` ingested to the `sales` namespace (7 chunks).
+- **Admin "act as agent" (Part C)**: `GET /v1/admin/agents` (allDepartmentAccess-gated) lists active
+  Sales-profile CRM users via `zohoCrm.listActiveUsers` (Zoho Users API, `?type=ActiveUsers`, env
+  `SALES_AGENT_PROFILE_NAMES`/`_ROLE_NAMES`, `?all=1` bypasses filter). `buildCallerContext` honors
+  `x-act-as-*` headers for a verified admin → runs AS the rep (owner-scoped), records
+  `impersonatorUserId` for audit. Frontend: `ImpersonationProvider` + TopBar `ActAsPicker` + transport
+  attaches `x-act-as-*` on every request (`impersonate:false` for the picker fetch itself).
+- **Note (local env)**: `.env` has DUPLICATE `API_KEY` and `OPENAI_API_KEY` entries — worth cleaning up.
+- 313 tests green; lint/typecheck + backend & frontend builds clean.
+
+## 2026-07-03 — Apply the MytrionPolish design system (colors, app shell, AI chat, admin)
+
+Applied the delivered design system (`~/Desktop/MytrionPolish`: DESIGN_SYSTEM.md + .dc.html mockups)
+to `apps/mytrion-crm`. Commits e20f14a → f3d7945 → ec2172c.
+
+- **Tokens (e20f14a)** — `theme.css`: softer "Soft Midnight" surfaces (bg #12161e / surface #1b212c /
+  rails #13171f) + NEW scales: type (`--text-2xs…3xl` + `--lh-*`/`--fw-*`), spacing (`--space-*` 4px),
+  status tints (`--tint-*` via color-mix), motion (`--dur-*`/`--ease-*`), z-index, `--radius-xs`.
+  `global.css`: bridged tints/radius into `@theme`; reconciled per-module accents (sales→blue #4d9dff,
+  verification→indigo #6d7cff, admin cyan + manager teal); global `:focus-visible`, `::selection`,
+  `prefers-reduced-motion` killswitch. `mytrions.config`: collection/retention/verification → `ported`.
+- **Shell + chat (f3d7945)** — MytrionShell rail active state = soft accent square + 2px inset accent
+  bar; TopBar tokenized + sign-out danger hover; ChatPanel/Composer/MessageList/MessageBubble tokenized
+  (composer pill radius-lg + focus glow + 30px accent send; tool-chip tone recipe; gem thinking dots).
+- **Admin (ec2172c)** — new shared `admin/admin.module.css`; rail now switches panels (was a dead TODO):
+  Knowledge Base (stat tiles + grid table + status pills), Train (sources + run form + active-run),
+  Knowledge Browser (search + filter chips + scored result cards), Octane-Scope (lifecycle stepper +
+  stage detail w/ Blueprint/Departments/Automations/Details). All mock data.
+- Design extracted from the (large) mockups via two read-only sub-agents; exact token CSS pulled
+  verbatim from `Design System.dc.html`. Fonts still CDN (self-hosting deferred — no font files).
+  Remaining for the full "polish every page" brief: the 8 non-admin module pages + shared primitives.
+
+## 2026-07-06 — Agentic-core hardening pass (backend + web + evals) — branch feature/agentic-hardening
+
+Full review/hardening of the agentic core per the approved plan (~/.claude/plans/please-review-and-harden-golden-spark.md).
+Five commits: cf3c65e (llm reliability) → b0a5457 (RAG/stream) → 8bd9797 (RBAC) → b916125 (evals) → 1473d50 (web).
+
+- **LLM reliability (P1)** — new `modelParams.ts` (reasoning-tier detection: gpt-5*/o* get
+  `max_completion_tokens`, NO temperature — fixes the live Sales `gpt-5.4-mini` + `temperature:0`
+  rejection); output caps + client timeouts everywhere (`OPENAI_TIMEOUT_MS`/`AGENT_MODEL_TIMEOUT_MS`/
+  `*_MAX_OUTPUT_TOKENS`); wall-clock budget is now a REAL abort (AbortController → streamEvents
+  `config.signal`); `computeCost` charges unknown model ids at conservative gpt-4o rates (warn once)
+  instead of silently disabling `AGENT_MAX_COST_USD`; `gpt-5.4-mini` pricing corrected to $0.75/$4.50;
+  `fetchWithTimeout` on serverCrm/zohoCrm/zohoOAuth (cmp/telegram/desk/people = follow-up chore).
+- **Agentic RAG + stream contract (P2)** — sufficiency judge is strict (`=== true`; parse failure ⇒
+  insufficient — a dead judge can no longer certify coverage); embed batching (`EMBED_BATCH_SIZE`);
+  post-hoc citation validation (`citationCheck.ts`): hallucinated `[Sn]` markers are stripped from the
+  canonical `done.message`, validated sources returned. SSE additions: `agent` events carry `label`,
+  live `context {passages, citations}` from knowledge_search, `done` carries `ragPassages` + `citations`
+  (+ agentKey/agentPath as before), Composio construction failures emit `status {state:'degraded'}` +
+  audit. Brief window 3 turns/3600 chars; unused tiktoken dep dropped (char heuristics documented).
+- **RBAC role model (P3)** — role is DERIVED from the verified Zoho profile. New `worker` role (read
+  scopes only) for non-admin-profile workers — the registry write gate is now real for them; derivation
+  applied at mint/verify/refresh so STALE pre-fix `role:'admin'` tokens re-verify as worker on deploy
+  (no re-login). Act-as targets verified server-side against a cached CRM directory
+  (`actAsDirectory.ts`) — `x-act-as-profile/role/user-name` headers ignored, impersonation runs with
+  the TARGET's authority, fail-closed + audited. `FF_CUSTOMER_SCOPE_STRICT` default flipped to 1 (env
+  override = rollback until the Telegram shim stops sending worker fields). New `FF_WORKER_DEPT_STRICT`
+  (default 0) bounds worker departments by profile — enable after validating the profile→department
+  mapping against the live Zoho roster. Residual: the static API_KEY path stays role admin
+  (trusted-frontend anchor) — next hardening target once all worker traffic is on sessions.
+- **Evals (P4)** — `scripts/evalLive.ts` finally exists (was the deferred follow-up): 38 golden tasks
+  (routing/greeting/refusal/grounding/tool-selection/delegation/rbac) through the REAL `runAgentTurn`
+  against real OpenAI + a dev DB; deterministic checks (routes/tools/agentPath⊆RBAC) outrank the
+  gpt-5.4-mini judge (byte-stable rubrics, reference passages in-context, 3-vote majority on
+  grounding/rbac); thresholds gate exit (rbac/greeting 1.0, routing ≥0.9, grounding ≥0.8); ~$0.2-0.3/run,
+  suite cap `EVAL_MAX_COST_USD`. **Refuses non-localhost DBs** unless `EVAL_I_KNOW_THIS_IS_NOT_PROD=1`
+  (it writes conversations/agent_runs + ingests fixtures) — local `.env` points at Render prod, so the
+  BASELINE RUN IS STILL PENDING: point `MYTRION_OPS_DATABASE_URL` at a scratch DB and run
+  `pnpm eval:live`, then record per-category rates here. CI-safe subset `agent-scripted-turn.test.ts`
+  drives the real graph with a `ScriptedChatModel` (greeting short-circuit, delegation round-trip incl.
+  the ToolStrategy `extract-N` handshake, runtime tool-binding golden, budget/recursion trips, pre-model
+  RBAC) — runs in `pnpm test`, no key/DB.
+- **Web chat (P5)** — vitest+jsdom+RTL inside `apps/mytrion-crm` (37 tests, now in CI); Stop generation
+  (composer morph + Esc, partial kept); typed 429/5xx/network errors + per-message Retry; scroll
+  anchoring (no mid-read yank + jump button); sanitized markdown (react-markdown/remark-gfm/
+  rehype-sanitize); ErrorBoundaries (root / per-Mytrion keyed with chunk-reload / chat dock);
+  history overlay in the dock + restore-last-conversation per user; persistent answered-by chip with
+  handoff trail + expandable sources (degrades to count-only against older backends); aria-live status,
+  role=log/alert, elicitation focus mgmt + real multiSelect; mobile dock height bound (70dvh) + 16px
+  composer font (<640px).
+- Housekeeping: `.env` duplicate `API_KEY`/`OPENAI_API_KEY` removed (identical values; dotenv used the
+  first anyway); CI also typechecks+tests the web app.
+- **State: 363 backend + 37 web tests green; lint/typecheck/builds clean.** Live smokes pending (need a
+  non-prod DB): eval baseline (above), and a manual streamed turn to verify the gpt-5.4-mini param fix +
+  citations end-to-end. Rollout order for prod: P1/P2 are safe immediately; before deploying P3, audit
+  `tool_calls` for non-read calls by non-admin workers (they lose write access BY DESIGN) and confirm
+  the Telegram shim sends only carrier_id/chat_id (or set FF_CUSTOMER_SCOPE_STRICT=0 temporarily);
+  enable FF_AGENT_CHECKPOINTS=1 in staging when convenient (multi-turn agent context).
+
+## 2026-07-07 — Admin wired live (agent-scope port) + Carrier User Management + client login
+
+Ported ALL functionality from the Zoho "Agent Scope" widget (~/Desktop/Octane-Project/zoho-octane/app/agent-scope)
+into the Mytrion Admin, wired to our own API (prod: same-origin session Bearer; dev: VITE_API_URL + VITE_API_KEY —
+same key model as the widget's MYTRION_OPS_API_URL/KEY org variables). Branch build.
+
+- **Admin tabs now LIVE** (were all mock): Knowledge Base (GET /knowledge/stats + /docs; row click →
+  detail modal with metadata + embedded-chunk inspector via /docs/:id/chunks — the widget's "JSON
+  contents" view; Mark verified; Delete), Train (dropzone .md/.txt/.json ≤1MB ≤20/batch → POST
+  /knowledge/embed per file with normalized department tag + preset chips; idempotent skip; paste-text
+  card; result tally; KB remounts after a run), Knowledge Browser (POST /knowledge/query with
+  department chips incl. Global; doc-title resolution; latency), Octane-Scope gains a live "Risk
+  Items" sub-tab (Blockers/Red Flags/Manual CRUD on /scope/risks; intake nodeIds match the widget's —
+  lead-generation/lead-cycle/wex-cycle/deal-cycle — so both UIs edit the SAME records). AI Chat: the
+  docked ChatPanel already covers the widget's chat (streaming + conversations) — nothing to port.
+- **Carrier User Management (new tab)** — carrier_users table (migration 0016; separate from internal
+  users on purpose), carrierUserRepo, /v1/carrier-users CRUD (role-admin gate: static API key +
+  admin-profile workers pass, 'worker'-role sessions 403; bcrypt via hashPassword; audited
+  admin.carrier_user.*; password never echoed/logged). UI: table (Carrier Id, Application Id, Login,
+  Agent (Zoho user via /admin/agents datalist w/ manual fallback), Profile, Status, Last login) +
+  create form with password generator (shown once), reset-password / disable / delete actions.
+- **Carrier-client login** — POST /v1/auth/client/login (FF_CLIENT_LOGIN_ENABLED, default 1) mints a
+  LOCKED-DOWN customer session: audience 'customer', viewer role, NO scopes, departments = carrier/
+  application tags from the signed client claims; buildCallerContext returns the base ctx untouched
+  for customer sessions (body identity/act-as fully inert); refresh re-checks the row is still active
+  (disable kills sessions within one access-token TTL). /client page wired (own localStorage session,
+  octane.clientSession.v1) — ready for the Telegram mini-app.
+- **Adversarial review workflow (3 reviewers → 14 findings → 13 confirmed, all fixed)**. Highlights:
+  (1) SECURITY: conversation CRUD trusted body zoho_user_id / fell back tenant-wide — a client session
+  could read/rename/delete ANY conversation. Fixed: verified non-admin sessions are owner-locked to
+  the token identity (conversationOwner helper); admin/API-key behavior unchanged. (2) SECURITY:
+  knowledge + scope routes were reachable by customer sessions → audience gate (internal/partner).
+  (3) /knowledge/query now honors departmentAccess as a NARROWING filter (admin sessions carry
+  allDepartmentAccess, so the browser chips were a silent no-op in prod). (4) Train's 10MB cap lied —
+  /knowledge/embed caps content at 1M chars / 2MB body → 1MB + honest copy. (5) 'ceo' added to
+  ADMIN_PROFILE_MARKERS (frontend admits CEO to Admin; backend derived 'worker' → 403s). Plus React
+  fixes: modal Escape/focus/role + drag-close guard, browser titles ref→state, RiskItems error/draft
+  reset, agent-picker id resolution at submit time, dropzone keyboard/running guards.
+- **Tests: 384 backend (21 carrier: admin gate, hashed create, no-hash echo, audit redaction, login
+  lockdown incl. buildCallerContext spoof matrix, refresh-after-disable, containment: client session
+  403 on knowledge/scope + owner-locked conversation read/delete for clients AND non-admin workers)
+  + 37 web green; lint/typecheck/builds clean.**
+- Deploy notes: run `pnpm db:migrate` (0016_carrier_users) on deploy; FF_CLIENT_LOGIN_ENABLED=0 is the
+  kill switch; ADMIN_PROFILE_MARKERS env override wins over the new default if set in Render.
+
+## 2026-07-07 (2) — Enriched audit trail + Audit Log tab in Mytrion Admin
+
+"Which user (name/id/profile/role) — or which carrier COMPANY — pressed what, when", for internal
+workers and client users alike, visible in the Admin.
+
+- **audit_log identity columns (migration 0017)**: user_name, profile, caller_role (Zoho role),
+  role (internal RBAC role), company (carrier/application tags for customer-audience actors),
+  impersonator_user_id (promoted from detail jsonb). `auditFromContext` now stamps ALL of them from
+  the session context automatically — so every existing call site (toolDispatcher tool.call,
+  orchestratorService agent.turn/select, chatService, approvals, knowledge.embed, carrier_user.*)
+  got the enrichment for free. Client sessions carry `profile` in their token claims now
+  (ClientIdentity.profile, set at login from the carrier_users row) → ctx.profiles → audit.
+- **New audit coverage**: automation.log (who triggered which automation — the /automation/logs
+  route only wrote its own table before), knowledge.delete (single + bulk), knowledge.verify,
+  scope_risk.create/update/delete. Logins were already audited (auth.login / auth.zoho.login /
+  auth.client_login) — now enriched with userName/profile/role/company columns.
+- **GET /v1/admin/audit upgraded**: guard switched from JWT-only adminOnly to sessionOrApiKey +
+  role-admin (same gate as /carrier-users, so the dev API-key transport works); filters action
+  (PREFIX match — 'auth.' = all auth events), audience, status, user_id + limit/offset; returns
+  {entries (tenantId stripped), total}.
+- **Admin → Audit Log tab (new)**: action-preset chips (Logins / Chat / Tools / Knowledge /
+  Automations / Carrier users), audience + status chips, client-side text filter, table
+  (When · User (+as-agent-by) · Profile·Role · Company · Action · Status), row click → detail
+  modal (full identity grid + pretty-printed detail JSON), Load more pagination.
+- Tests: 390 backend green (6 new: worker/client/impersonator identity stamping; endpoint filter
+  forwarding + no-tenantId DTO; RBAC worker/client 403, admin ok) + 37 web.
+- Deploy: run `pnpm db:migrate` (0017 audit columns; additive, no backfill — old rows show '—').
+
+## 2026-07-07 (3) — Client management: Owner/Driver profile model + application-first provisioning
+
+The carrier client setup, done properly (backend + Mytrion Admin):
+
+- **Profile model (migration 0018)**: carrier_users.profile is now a typed enum — 'owner' (fleet;
+  RBAC tie = carrier_id OR application_id; sees every card of the carrier) and 'driver' (CHILD of an
+  owner via parent_user_id; RBAC tie = card_id — the card carries the limits). carrier_id is NULLABLE:
+  an account can be provisioned with just login/password/profile + the application id (the unique
+  key), and the carrier id is populated later. New columns parent_user_id + card_id, indexes on
+  (tenant, application_id) and (tenant, parent_user_id).
+- **Typed RBAC descriptor**: TenantContext gains `client?: ClientAccess {profile, carrierId?,
+  applicationId?, cardId?, parentUserId?}` derived from SIGNED claims — card-/carrier-scoped tools
+  (the future mini-app surface) read this to bound what a session sees. ctx.profiles = ['Owner'|'Driver']
+  → audit rows show the profile automatically.
+- **Driver inheritance + lockout**: at login (and on every refresh) a driver's company scope is
+  INHERITED from its parent owner (clientIdentityFor); a missing/disabled parent denies the driver
+  with the same generic message. Refresh re-derives the whole identity from the row, so a back-filled
+  carrier id, a newly assigned card, or a disabled parent takes effect on the next rotation.
+- **Populate-later, automatically**: POST /v1/carrier-users/populate-carrier {application_id,
+  carrier_id} back-fills carrier_id on EVERY account under that application whose carrier is still
+  empty (audited: admin.carrier_user.populate_carrier). Callable by the admin UI today and by a
+  conversion automation/webhook with the API key tomorrow (servercrm has no app→carrier endpoint yet
+  — checked). Owner delete is blocked (409) while drivers point at it; drivers require an ACTIVE
+  owner parent at creation.
+- **Admin UI rework**: Owner/Driver toggle in the create form (owner: carrier + application with
+  "at least one" rule; driver: parent-owner select + optional card), table shows Login · Profile pill ·
+  Carrier Id (or a "Set carrier…" action that uses populate-carrier for application families) ·
+  Application · Card/↳Parent · Agent · Status, plus per-row Card assignment for drivers. /client page
+  shows profile + card/company on sign-in.
+- Tests: 399 backend green (+9: application-only owner, neither-id 400, driver parent matrix
+  (missing/driver-parent/disabled-parent), driver create with card, owner-delete 409, populate-carrier
+  back-fill + audit, driver login inheritance + ctx.client descriptor, parent lockout, refresh picks
+  up back-filled carrier) + 37 web. Deploy: `pnpm db:migrate` applies 0018 (carrier_id nullable,
+  profile enum default 'owner' w/ backfill guard, parent/card columns).
+
+## 2026-07-07 (4) — Client provisioning from the DWH directory (octane.intm_zoho_deals)
+
+Carrier accounts are now provisioned FROM the already-defined clients in the data warehouse.
+
+- **pnpm dwh:inspect (new script)** — DWH metadata explorer: schemas / tables (--schema, --like) /
+  columns + row counts (--table) / sample rows (--sample) / ad-hoc read-only SQL (--query). Session
+  is enforced read-only. Used it to map octane.intm_zoho_deals: 79-column SCD view, 20,294 active
+  rows (is_active=true → exactly one row per deal), with deal_name, carrier_id, application_id,
+  application_date, stage, owner_id (Zoho agent id).
+- **GET /v1/carrier-clients (admin-gated)** — the client directory: active deals ordered by
+  application_date DESC. Searchable exactly as asked: company name (deal_name ILIKE contains) OR
+  carrier id / application id (numeric q → prefix match on both, still also matching names).
+  DWH failures map to 502 DWH_ERROR; unconfigured → 503. Integration in src/integrations/
+  dwhClients.ts over the existing read-only dwh.ts pool.
+- **carrier_users.company_name (migration 0019, applied)** — stored on pick/create, shown as a
+  Company column (drivers inherit the parent's for display), and included in the local account
+  search — so accounts are searchable by company name too.
+- **Admin UI** — the Owner create form gains a "Find the client" search (debounced, min 2 chars,
+  newest applications first; rows show company · carrier/app id · application date · stage);
+  picking one fills carrier id, application id, company name, and the agent (deal owner_id matched
+  against the Zoho agents list, raw id fallback).
+- Tests: 407 backend green (8 new: browse/text/numeric query construction incl. is_active +
+  ordering, DTO mapping, limit cap, route gate worker-403, DWH 502 mapping) + 37 web. Live-smoked
+  against the real DWH: 'grant' → GRANT EXPRESS LLC (newest first); '5837' → carrier-prefix hits.

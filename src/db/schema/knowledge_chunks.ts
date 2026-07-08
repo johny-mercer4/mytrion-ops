@@ -1,11 +1,20 @@
 import { createId } from '@paralleldrive/cuid2';
-import { index, integer, jsonb, pgTable, text, timestamp, vector } from 'drizzle-orm/pg-core';
+import { sql, type SQL } from 'drizzle-orm';
+import { customType, index, integer, jsonb, pgTable, text, timestamp, vector } from 'drizzle-orm/pg-core';
 import type { Audience } from '../../types/tenantContext.js';
+
+/** Postgres tsvector — drizzle has no built-in; value is read-only (generated column). */
+const tsvector = customType<{ data: string }>({
+  dataType() {
+    return 'tsvector';
+  },
+});
 
 /**
  * A chunk of a knowledge doc plus its embedding. `embedding` is a pgvector column;
  * dimension 1536 matches OpenAI text-embedding-3-small (see EMBEDDING_DIMENSIONS).
  * The HNSW index uses cosine distance — match it in the retriever's ORDER BY.
+ * `content_tsv` is a stored generated column powering the hybrid (BM25-ish) retrieval leg.
  */
 export const knowledgeChunks = pgTable(
   'knowledge_chunks',
@@ -22,6 +31,9 @@ export const knowledgeChunks = pgTable(
     content: text('content').notNull(),
     tokenCount: integer('token_count'),
     embedding: vector('embedding', { dimensions: 1536 }),
+    contentTsv: tsvector('content_tsv').generatedAlwaysAs(
+      (): SQL => sql`to_tsvector('english', ${knowledgeChunks.content})`,
+    ),
     metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -33,6 +45,7 @@ export const knowledgeChunks = pgTable(
       'hnsw',
       table.embedding.op('vector_cosine_ops'),
     ),
+    tsvIdx: index('knowledge_chunks_tsv_idx').using('gin', table.contentTsv),
   }),
 );
 

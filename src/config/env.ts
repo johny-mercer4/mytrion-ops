@@ -38,6 +38,13 @@ const EnvSchema = z.object({
   OPEN_AI_FOUR_O_MINI: z.string().default('gpt-4o-mini-2024-07-18'),
   OPEN_AI_FIVE_O_MINI: z.string().default('gpt-5.4-mini-2026-03-17'),
   OPEN_AI_EMBEDDING_SMALL: z.string().default('text-embedding-3-small'),
+  // Client-level deadline for every raw OpenAI/Groq SDK call (chat, RAG planner/judge,
+  // rerank, memory, web search, embeddings). A hung provider call must never hang a turn.
+  OPENAI_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
+  // Output cap for the chat pipeline's main completions (max_tokens / max_completion_tokens).
+  LLM_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().default(4096),
+  // Embedding batch cap: embeddings.create is called with at most this many inputs per request.
+  EMBED_BATCH_SIZE: z.coerce.number().int().positive().max(2048).default(128),
 
   // --- Groq (fast/cheap worker via the OpenAI-compatible API). Off unless FF_GROQ_ENABLED. ---
   GROQ_API_KEY: z.string().default(''),
@@ -52,6 +59,48 @@ const EnvSchema = z.object({
   // model alias, e.g. gpt-4o-mini / gpt-4o; dated snapshots may not support it).
   DEEP_AGENTS_MODEL: z.string().default(''),
   DEEP_WEB_SEARCH_MODEL: z.string().default('gpt-4o-mini'),
+  // --- Multi-agent core (orchestrator + department child agents) ---
+  // Orchestrator model ('' → DEEP_AGENTS_MODEL → default chat model) and default child model.
+  ORCHESTRATOR_MODEL: z.string().default(''),
+  AGENT_CHILD_MODEL: z.string().default(''),
+  // Child tool-call rounds (converted to a LangGraph recursionLimit with headroom in
+  // orchestratorService — each round is several graph super-steps). Manifest may override.
+  AGENT_MAX_CHILD_ITERATIONS: z.coerce.number().int().positive().max(50).default(8),
+  // Tool output cap inside agent runs (chars) — keeps one chatty tool from flooding a context.
+  AGENT_TOOL_OUTPUT_MAX_CHARS: z.coerce.number().int().positive().default(8000),
+  // Per-run budget guards (BudgetMeter): tool calls, LLM dollars, wall-clock.
+  AGENT_MAX_TOOL_CALLS: z.coerce.number().int().positive().default(20),
+  AGENT_MAX_COST_USD: z.coerce.number().positive().default(0.5),
+  AGENT_MAX_WALL_MS: z.coerce.number().int().positive().default(120_000),
+  // Per-call deadline for agent-path ChatOpenAI requests (ms). Distinct from the wall-clock
+  // budget: this bounds ONE model call, the budget bounds the whole run.
+  AGENT_MODEL_TIMEOUT_MS: z.coerce.number().int().positive().default(90_000),
+  // Output cap for agent-path model calls (maxTokens / maxCompletionTokens on ChatOpenAI).
+  AGENT_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().default(4096),
+  // Deadline for outbound integration HTTP calls (serverCrm, Zoho) via fetchWithTimeout.
+  OUTBOUND_HTTP_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  // Suite-level spend cap for scripts/evalLive.ts (agent turns + judge calls, USD).
+  EVAL_MAX_COST_USD: z.coerce.number().positive().default(2),
+  // Checkpointed threads idle longer than this are swept by a background job.
+  AGENT_CHECKPOINT_TTL_DAYS: z.coerce.number().int().positive().default(30),
+  // Long-term agent memory (FF_AGENT_MEMORY): decay half-life + per-(agent,dept) row cap.
+  AGENT_MEMORY_HALFLIFE_DAYS: z.coerce.number().int().positive().default(30),
+  AGENT_MEMORY_MAX_PER_KEY: z.coerce.number().int().positive().default(500),
+  // --- Agentic RAG ---
+  // Planner/judge model for query decomposition + sufficiency ('' → default chat model).
+  RAG_PLANNER_MODEL: z.string().default(''),
+  RAG_MAX_HOPS: z.coerce.number().int().min(1).max(4).default(2),
+  RAG_MULTIQUERY_MAX: z.coerce.number().int().min(1).max(5).default(3),
+  RAG_RRF_K: z.coerce.number().int().positive().default(60),
+  RAG_CANDIDATES_PER_LEG: z.coerce.number().int().min(5).max(100).default(30),
+  // Short-circuit the sufficiency judge when the top fused score is at least this
+  // (0.032 ≈ rank-1 in both legs for a single query at RRF_K=60).
+  RAG_SUFFICIENT_SCORE: z.coerce.number().positive().default(0.032),
+  // Docs unverified for longer than this are demoted in retrieval and flagged in citations.
+  STALE_DOC_DAYS: z.coerce.number().int().positive().default(180),
+  // Optional LangSmith tracing passthrough (traces contain message content — staging only).
+  LANGSMITH_TRACING: z.string().default(''),
+  LANGSMITH_API_KEY: z.string().default(''),
 
   // --- Composio (external tool-calling gateway for the DeepAgents external-tools subagent). ---
   // Off unless FF_COMPOSIO_ENABLED. Shared-org-account model: one fixed Composio user owns the
@@ -71,22 +120,53 @@ const EnvSchema = z.object({
   // primary user directly. Callers can still override per-call with an explicit chatId.
   TELEGRAM_CHAT_ID_MAIN: z.string().default(''),
 
+  // --- Carrier onboarding bot (separate from the assistant's own Telegram integration above) ---
+  // Deep-linked from the carrier invite flow: https://t.me/<username>?start=<inviteId>. The bot
+  // itself (webhook + mini-app) is future work; today we only need the username to build the link.
+  TELEGRAM_CARRIER_BOT_USERNAME: z.string().default(''),
+  TELEGRAM_CARRIER_BOT_TOKEN: z.string().default(''),
+  // Public HTTPS URL of apps/mini-app once deployed — the inline web_app button's target (`/start`
+  // fallback path only).
+  TELEGRAM_CARRIER_MINI_APP_URL: z.string().default(''),
+  // BotFather-registered named Mini App short name (Bot Settings -> Configure Mini App). Set →
+  // links use https://t.me/<bot>/<shortname>?startapp=<id>.
+  TELEGRAM_CARRIER_MINI_APP_SHORT_NAME: z.string().default(''),
+  // '1' when the bot's MAIN App is configured in BotFather (Edit Bot -> Configure Mini App -> Main
+  // App URL = <origin>/mini-app/). Then links use https://t.me/<bot>?startapp=<id> (no short name)
+  // and open the mini-app directly. Off → ?start= fallback (needs a bot /start reply, not built).
+  TELEGRAM_CARRIER_MINI_APP_DIRECT: z.string().default(''),
+
   // --- Zoho MCP (hosted; "Authorize via Connection" → headless, URL embeds the credential). ---
   ZOHO_MCP_URL: z.string().default(''),
 
   // --- Department RBAC: profile/role substrings that grant UNLIMITED access (all depts + all tools). ---
-  ADMIN_PROFILE_MARKERS: z.string().default('administrator,manager,developer'),
+  // 'ceo' matches the Zoho ROLE the frontend also treats as admin (ADMIN_ROLES in
+  // mytrions.config.ts) — the two admin predicates must stay aligned or CEO sessions
+  // get 'worker' role backend-side and 403 on admin-only routes.
+  ADMIN_PROFILE_MARKERS: z.string().default('administrator,manager,developer,ceo'),
   // Per-user overrides matched on the caller's `user_name` (case-insensitive). Accepts CSV or a
   // bracketed list, e.g. ADMIN_USERS=[alice,bob] or ADMIN_USERS=alice,bob.
   //   ADMIN_USERS  → granted all-department access (see everything, like an admin marker).
   //   BYPASS_USERS → hard RBAC bypass (skips audience/scope/write/department gates entirely).
   ADMIN_USERS: z.string().default(''),
   BYPASS_USERS: z.string().default(''),
+  // "Act as agent" picker: which Zoho CRM profile / role names count as sales agents (CSV,
+  // case-insensitive SUBSTRING match, so "Sales Agent" also matches region roles like
+  // "Uzbekistan Sales Agent"). GET /v1/admin/agents?all=1 bypasses this filter (admin-only).
+  SALES_AGENT_PROFILE_NAMES: z.string().default('Sales Agent'),
+  SALES_AGENT_ROLE_NAMES: z.string().default('Sales Agent'),
+  // TTL for the cached CRM users directory that VERIFIES act-as targets server-side
+  // (x-act-as-* identity headers are never trusted; see actAsDirectory.ts).
+  ACT_AS_DIRECTORY_TTL_MS: z.coerce.number().int().positive().default(300_000),
 
   // --- Auth ---
   JWT_SECRET: z.string().default(''),
-  JWT_ACCESS_TTL: z.string().default('15m'),
-  JWT_REFRESH_TTL: z.string().default('30d'),
+  // Access token is short-lived; the SPA refreshes it transparently on 401 (never a re-login).
+  JWT_ACCESS_TTL: z.string().default('1h'),
+  // Refresh token = how long a signed-in worker stays logged in WITHOUT re-authenticating. It
+  // rotates on every refresh, so any use within this window slides it forward — a worker who opens
+  // the app at least once every 90 days effectively never has to sign in again.
+  JWT_REFRESH_TTL: z.string().default('90d'),
   PASSWORD_PEPPER: z.string().default(''),
 
   // --- Encryption (vendor credentials at rest) ---
@@ -98,6 +178,16 @@ const EnvSchema = z.object({
   ZOHO_CLIENT_SECRET: z.string().default(''),
   // Optional shared refresh token; used as a fallback when a service-specific one is unset.
   ZOHO_REFRESH_TOKEN: z.string().default(''),
+
+  // --- Zoho OAuth login (WORKER sign-in — authorization-code flow). A SEPARATE "server" app
+  // whose redirect URI is registered in the Zoho console (must exactly match ZOHO_OAUTH_REDIRECT_URI).
+  ZOHO_SERVER_CLIENT_ID: z.string().default(''),
+  ZOHO_SERVER_CLIENT_SECRET: z.string().default(''),
+  // Where Zoho sends the browser back with ?code&state — the SPA relays it to /v1/auth/zoho/callback.
+  // MUST byte-match a redirect URI registered on the Zoho server app (local dev: the Vite origin).
+  ZOHO_OAUTH_REDIRECT_URI: z.string().default('http://localhost:5173'),
+  // Scope for reading the signed-in worker's CRM user (id, name, email, profile, role → RBAC).
+  ZOHO_OAUTH_SCOPES: z.string().default('ZohoCRM.users.READ'),
 
   // The *_API_DOMAIN / *_BASE_URL values are the FULL versioned API roots; callers append
   // only the resource path (e.g. `${ZOHO_CRM_API_DOMAIN}/settings/modules`).
@@ -162,16 +252,46 @@ const EnvSchema = z.object({
   // R2 ignores region but the S3 SDK requires one; 'auto' is correct for R2.
   R2_REGION: z.string().default('auto'),
 
-  // --- Browser automation: Browserbase ---
+  // --- File storage: MinIO (self-hosted, S3-compatible). R2 swaps in later via env only:
+  // set S3_ENDPOINT to the R2 endpoint, S3_REGION=auto, S3_FORCE_PATH_STYLE=0.
+  S3_ENDPOINT: z.string().default(''),
+  S3_ACCESS_KEY_ID: z.string().default(''),
+  S3_SECRET_ACCESS_KEY: z.string().default(''),
+  S3_BUCKET: z.string().default(''),
+  S3_REGION: z.string().default('us-east-1'),
+  // MinIO requires path-style addressing (bucket in the path, not the host).
+  S3_FORCE_PATH_STYLE: flag('1'),
+  S3_PRESIGN_TTL_SECONDS: z.coerce.number().int().positive().max(86_400).default(900),
+  // Hard cap for uploads AND generated artifacts.
+  FILE_MAX_SIZE_MB: z.coerce.number().int().positive().max(200).default(25),
+  // Parse-path memory guardrail (Render starter plan): max bytes loaded for file analysis.
+  PARSE_MAX_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
+
+  // --- Browser automation: Browserbase (legacy direct stubs — superseded by Composio toolkits) ---
   BROWSERBASE_API_KEY: z.string().default(''),
   BROWSERBASE_PROJECT_ID: z.string().default(''),
   BROWSERBASE_BASE_URL: z.string().default('https://api.browserbase.com'),
+
+  // --- Browser automation via Composio toolkits (FIRECRAWL for scraping; add the Composio
+  // Browserbase toolkit slug for interactive sessions once verified in the dashboard) ---
+  COMPOSIO_BROWSER_TOOLKITS: z.string().default('FIRECRAWL'),
+  // CSV of allowed hostnames/suffixes for browser/scrape targets. EMPTY = deny all navigation
+  // (fail closed) — set explicitly before enabling browser automation.
+  BROWSER_ALLOWED_DOMAINS: z.string().default(''),
+  // Simple in-memory per-toolkit rate limit for Composio executions.
+  COMPOSIO_RATE_PER_MIN: z.coerce.number().int().positive().default(30),
 
   // --- Feature flags ---
   FF_PARTNER_AUDIENCE_ENABLED: flag('1'),
   FF_KNOWLEDGE_INGEST_ENABLED: flag('1'),
   // Always-on RAG: inject RBAC-scoped pgvector passages into every chat turn.
   FF_RAG_ENABLED: flag('1'),
+  // Hybrid retrieval (vector + full-text RRF fusion). Requires the content_tsv migration.
+  FF_RAG_HYBRID: flag('0'),
+  // Agentic retrieval loop (multi-query planning + sufficiency-driven refinement + citations).
+  FF_AGENTIC_RAG: flag('0'),
+  // Optional LLM rerank of fused candidates (adds a model call per retrieval).
+  FF_RAG_RERANK: flag('0'),
   // Route worker/tool-calling turns to Groq (gpt-oss). Off → all turns stay on OpenAI.
   FF_GROQ_ENABLED: flag('0'),
   // Expose Zoho MCP tools to the chat agent (read tools only unless FF_ZOHO_MCP_WRITES). Off by default.
@@ -189,6 +309,52 @@ const EnvSchema = z.object({
   // Expose the native Telegram toolkit (send/get tools) to the agent. Sends are write-risk →
   // admin-gated by the dispatcher regardless; this just registers the toolkit.
   FF_TELEGRAM_ENABLED: flag('1'),
+  // Strict customer isolation: requests carrying customer markers (carrier_id / application_id /
+  // chat_id) get a locked-down 'customer' context — client-supplied department_scope /
+  // allDepartments / profile / role / user_name are IGNORED and scope derives solely from the
+  // company id. ON by default (hardening pass 2026-07): set to 0 only as a temporary rollback
+  // while a legacy client (Telegram shim) still sends worker-style scope fields.
+  FF_CUSTOMER_SCOPE_STRICT: flag('1'),
+  // Strict worker departments: bound a verified NON-admin worker's department view by the
+  // departments derived from their Zoho profile/role (deriveWorkerDepartments). Off until the
+  // profile→department mapping is validated against the live Zoho roster — an unmapped profile
+  // would silently drop the worker to Global-only knowledge.
+  FF_WORKER_DEPT_STRICT: flag('0'),
+  // Zoho OAuth worker sign-in (/v1/auth/zoho/*) + Bearer-session identity on caller routes.
+  FF_ZOHO_OAUTH_ENABLED: flag('0'),
+  // Carrier-client login/password sign-in (/v1/auth/client/login — carrier_users accounts,
+  // consumed by the future Telegram mini-app + the /client page). Sessions are locked to
+  // audience 'customer'. On by default; set 0 to kill the endpoint instantly.
+  FF_CLIENT_LOGIN_ENABLED: flag('1'),
+  // Multi-agent orchestrator endpoint (POST /v1/agent). FF_DEEP_AGENTS_ENABLED is kept as a
+  // deprecated alias — either flag enables the endpoint.
+  FF_ORCHESTRATOR_ENABLED: flag('0'),
+  // Durable LangGraph threads (PostgresSaver in the 'langgraph' schema). Off = stateless runs.
+  FF_AGENT_CHECKPOINTS: flag('0'),
+  // File generation/analysis tools + /v1/files routes (MinIO/S3 storage).
+  FF_FILES_ENABLED: flag('0'),
+  // Browser automation via Composio toolkits (admin-gated; domain-allowlisted; fail closed).
+  FF_BROWSER_ENABLED: flag('0'),
+  // Human-in-the-loop approvals: agent-proposed write/destructive tools park as pending
+  // approvals (24h TTL) instead of executing. Unlocks agent writes safely.
+  FF_WRITE_APPROVALS: flag('0'),
+  // Long-term agent memory: end-of-run distillation + UNTRUSTED recall in scoped RAG.
+  FF_AGENT_MEMORY: flag('0'),
+  // Interactive browser WRITE actions (navigate/click/fill/…). Off = scrape/read-class only.
+  FF_BROWSER_WRITES: flag('0'),
+  // Background jobs (pg-boss on the app Postgres, own 'pgboss' schema — self-migrating).
+  FF_JOBS_ENABLED: flag('0'),
+  // inline: this process runs boss + workers + schedules (default, single Render service).
+  // send-only: this process only enqueues; a dedicated worker (dist/worker.js) executes.
+  // off: /v1/agent/tasks returns 503.
+  JOBS_WORKER_MODE: z.enum(['inline', 'send-only', 'off']).default('inline'),
+  PGBOSS_SCHEMA: z
+    .string()
+    .regex(/^[a-z_][a-z0-9_]*$/, 'must be a plain lowercase identifier')
+    .default('pgboss'),
+  // Batch size for the agent-run queue worker (how many agent runs execute concurrently).
+  JOBS_CONCURRENCY: z.coerce.number().int().positive().max(10).default(2),
+  JOBS_CRON_TZ: z.string().default('America/Chicago'),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -238,6 +404,17 @@ export function assertRuntimeSecrets(): void {
   if (env.FF_ZOHO_MCP_ENABLED && !env.ZOHO_MCP_URL) missing.push('ZOHO_MCP_URL');
   if (env.FF_COMPOSIO_ENABLED && !env.COMPOSIO_API_KEY) missing.push('COMPOSIO_API_KEY');
   if (env.FF_TELEGRAM_ENABLED && !env.TELEGRAM_BOT_TOKEN) missing.push('TELEGRAM_BOT_TOKEN');
+  if (env.FF_ZOHO_OAUTH_ENABLED) {
+    if (!env.ZOHO_SERVER_CLIENT_ID) missing.push('ZOHO_SERVER_CLIENT_ID');
+    if (!env.ZOHO_SERVER_CLIENT_SECRET) missing.push('ZOHO_SERVER_CLIENT_SECRET');
+    if (!env.JWT_SECRET) missing.push('JWT_SECRET');
+  }
+  if (env.FF_FILES_ENABLED) {
+    if (!env.S3_ENDPOINT) missing.push('S3_ENDPOINT');
+    if (!env.S3_ACCESS_KEY_ID) missing.push('S3_ACCESS_KEY_ID');
+    if (!env.S3_SECRET_ACCESS_KEY) missing.push('S3_SECRET_ACCESS_KEY');
+    if (!env.S3_BUCKET) missing.push('S3_BUCKET');
+  }
 
   if (missing.length === 0) return;
 

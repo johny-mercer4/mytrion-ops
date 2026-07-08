@@ -12,7 +12,11 @@ import * as schema from './schema/index.js';
 export function dbSslOption(url: string): false | { rejectUnauthorized: false } {
   try {
     const host = new URL(url).hostname;
-    const isLocal = host === 'localhost' || host === '127.0.0.1' || host === 'postgres';
+    const isLocal =
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === 'postgres' ||
+      host === 'host.docker.internal';
     return isLocal ? false : { rejectUnauthorized: false };
   } catch {
     return false;

@@ -12,9 +12,24 @@ export interface AuditInput {
   status: AuditStatus;
   audience?: TenantContext['audience'];
   userId?: string;
+  /** Actor display name — worker user_name / carrier login. */
+  userName?: string;
+  /** External profile(s) — Zoho profile for workers, access profile for carrier users. */
+  profile?: string;
+  /** External (Zoho) role name. */
+  callerRole?: string;
+  /** Internal RBAC role the request ran with. */
+  role?: string;
+  /** Carrier/application tag(s) for customer-audience actors. */
+  company?: string;
+  /** Real admin's userId when running under act-as impersonation. */
+  impersonatorUserId?: string;
   resourceType?: string;
   resourceId?: string;
   toolName?: string;
+  /** Child agent acting on the caller's behalf (multi-agent attribution). */
+  actingAgent?: string;
+  agentRunId?: string;
   detail?: Record<string, unknown>;
   requestId?: string;
   ip?: string;
@@ -35,9 +50,19 @@ export async function audit(input: AuditInput): Promise<void> {
     };
     if (input.audience !== undefined) entry.audience = input.audience;
     if (input.userId !== undefined) entry.userId = input.userId;
+    if (input.userName !== undefined) entry.userName = input.userName;
+    if (input.profile !== undefined) entry.profile = input.profile;
+    if (input.callerRole !== undefined) entry.callerRole = input.callerRole;
+    if (input.role !== undefined) entry.role = input.role;
+    if (input.company !== undefined) entry.company = input.company;
+    if (input.impersonatorUserId !== undefined) {
+      entry.impersonatorUserId = input.impersonatorUserId;
+    }
     if (input.resourceType !== undefined) entry.resourceType = input.resourceType;
     if (input.resourceId !== undefined) entry.resourceId = input.resourceId;
     if (input.toolName !== undefined) entry.toolName = input.toolName;
+    if (input.actingAgent !== undefined) entry.actingAgent = input.actingAgent;
+    if (input.agentRunId !== undefined) entry.agentRunId = input.agentRunId;
     if (input.detail !== undefined) entry.detail = input.detail;
     if (input.requestId !== undefined) entry.requestId = input.requestId;
     if (input.ip !== undefined) entry.ip = input.ip;
@@ -48,7 +73,13 @@ export async function audit(input: AuditInput): Promise<void> {
   }
 }
 
-/** Convenience that fills tenant/audience/user/request from the security context. */
+/**
+ * Convenience that stamps the FULL actor identity from the security context onto the row —
+ * who (userName/userId), with what authority (profile, Zoho role, internal role), for which
+ * company (customer-audience carrier/application tags), plus request + multi-agent
+ * attribution. Works identically for internal workers and carrier-client sessions, so
+ * "which user / which company pressed what, when" is answerable from the columns alone.
+ */
 export async function auditFromContext(
   ctx: TenantContext,
   fields: {
@@ -57,14 +88,28 @@ export async function auditFromContext(
     resourceType?: string;
     resourceId?: string;
     toolName?: string;
+    agentRunId?: string;
     detail?: Record<string, unknown>;
   },
 ): Promise<void> {
+  // Customer-audience contexts carry their company id(s) as department tags.
+  const company = ctx.audience === 'customer' ? ctx.departments.join(', ') : undefined;
   await audit({
     tenantId: ctx.tenantId,
     audience: ctx.audience,
     userId: ctx.userId,
+    role: ctx.role,
     requestId: ctx.requestId,
+    ...(ctx.userName !== undefined ? { userName: ctx.userName } : {}),
+    ...(ctx.profiles && ctx.profiles.length > 0 ? { profile: ctx.profiles.join(', ') } : {}),
+    ...(ctx.callerRole !== undefined ? { callerRole: ctx.callerRole } : {}),
+    ...(company ? { company } : {}),
+    // When impersonating (admin "act as agent"), the row is attributed to the impersonated
+    // identity; the real admin lands in its own column so the action traces to a person.
+    ...(ctx.impersonatorUserId !== undefined
+      ? { impersonatorUserId: ctx.impersonatorUserId }
+      : {}),
+    ...(ctx.actingAgent !== undefined ? { actingAgent: ctx.actingAgent } : {}),
     ...fields,
   });
 }

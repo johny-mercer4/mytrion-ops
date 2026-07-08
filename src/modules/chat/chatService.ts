@@ -12,6 +12,7 @@ import { retrieve } from '../knowledge/retriever.js';
 import { costTracker } from '../llm/costTracker.js';
 import { createCompletion, newTurnModel, streamTurn } from './completion.js';
 import { buildSystemPrompt, knowledgeGroundingNote } from '../llm/promptBuilder.js';
+import { wrapUntrusted } from '../security/untrusted.js';
 import { toolRegistry } from '../tools/index.js';
 import { messageStore } from './messageStore.js';
 import type { SSEStream } from './streaming.js';
@@ -169,12 +170,23 @@ async function retrieveGrounding(
 ): Promise<{ content: string; count: number } | null> {
   if (!env.FF_RAG_ENABLED) return null;
   try {
+    if (env.FF_AGENTIC_RAG) {
+      // Multi-query hybrid loop with [Sn] citations (module enforces the same repo-level RBAC).
+      const { agenticRetrieve } = await import('../knowledge/agentic/loop.js');
+      const result = await agenticRetrieve(ctx, query, { k: DEFAULT_RETRIEVAL_K });
+      if (result.passages.length === 0) return null;
+      return { content: result.groundingBlock, count: result.passages.length };
+    }
     const passages = await retrieve(ctx, query, DEFAULT_RETRIEVAL_K);
     if (passages.length === 0) return null;
     const body = passages
       .map((p, i) => `[#${i + 1} · doc ${p.docId} · score ${p.score.toFixed(3)}]\n${p.content}`)
       .join('\n\n');
-    return { content: `${knowledgeGroundingNote()}\n\n${body}`, count: passages.length };
+    // Passages are retrieved DATA (a trust boundary): wrapped so injected instructions inert.
+    return {
+      content: `${knowledgeGroundingNote()}\n\n${wrapUntrusted('kb', body)}`,
+      count: passages.length,
+    };
   } catch (err) {
     logger.warn({ err: errorMessage(err) }, 'RAG grounding retrieval failed; continuing without it');
     return null;

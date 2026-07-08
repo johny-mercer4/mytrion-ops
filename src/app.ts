@@ -12,15 +12,19 @@ import { isAllowedOrigin } from './lib/cors.js';
 import { logger } from './lib/logger.js';
 import { apiKeyAuthPlugin } from './plugins/apiKeyAuth.js';
 import { authPlugin } from './plugins/auth.js';
+import { combinedAuthPlugin } from './plugins/combinedAuth.js';
 import { errorHandlerPlugin } from './plugins/errorHandler.js';
 import { healthcheckPlugin } from './plugins/healthcheck.js';
 import { rbacPlugin } from './plugins/rbac.js';
 import { requestContextPlugin } from './plugins/requestContext.js';
 import { registerWidgetStatic } from './plugins/widgetStatic.js';
+import { registerMiniAppStatic } from './plugins/miniAppStatic.js';
 import { applyDepartmentPolicy } from './modules/agents/departmentAgents.js';
 import { loadMcpTools } from './modules/tools/mcpTools.js';
 import { toolRegistry } from './modules/tools/index.js';
 import { adminRoutes } from './routes/v1/admin.routes.js';
+import { carrierUsersRoutes } from './routes/v1/carrierUsers.routes.js';
+import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
 import { agentRoutes } from './routes/v1/agent.routes.js';
 import { authRoutes } from './routes/v1/auth.routes.js';
 import { automationRoutes } from './routes/v1/automation.routes.js';
@@ -30,6 +34,9 @@ import { integrationsRoutes } from './routes/v1/integrations.routes.js';
 import { knowledgeRoutes } from './routes/v1/knowledge.routes.js';
 import { moneyCodeRoutes } from './routes/v1/moneyCode.routes.js';
 import { scopeRoutes } from './routes/v1/scope.routes.js';
+import { approvalsRoutes } from './routes/v1/approvals.routes.js';
+import { filesRoutes } from './routes/v1/files.routes.js';
+import { tasksRoutes } from './routes/v1/tasks.routes.js';
 import { toolsRoutes } from './routes/v1/tools.routes.js';
 
 function loggerOption() {
@@ -111,6 +118,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   errorHandlerPlugin(app);
   authPlugin(app);
   apiKeyAuthPlugin(app);
+  combinedAuthPlugin(app);
   rbacPlugin(app);
 
   await app.register(helmet, { contentSecurityPolicy: false });
@@ -127,6 +135,11 @@ export async function buildApp(): Promise<FastifyInstance> {
       'x-department-access',
       'x-all-departments',
       'x-zoho-user-id',
+      // Admin "act as agent" impersonation (honored only for a verified admin session).
+      'x-act-as-zoho-user-id',
+      'x-act-as-user-name',
+      'x-act-as-profile',
+      'x-act-as-role',
     ],
     credentials: true,
   });
@@ -134,7 +147,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(rateLimit, { max: 120, timeWindow: '1 minute' });
   // File uploads for knowledge training (POST /v1/knowledge/upload).
   await app.register(multipart, {
-    limits: { fileSize: 10_000_000, files: 20, fields: 10 },
+    // Global ceiling; /v1/files/upload additionally enforces FILE_MAX_SIZE_MB per request.
+    limits: { fileSize: Math.max(10_000_000, env.FILE_MAX_SIZE_MB * 1024 * 1024), files: 20, fields: 20 },
   });
 
   if (!isProduction && !isTest) {
@@ -143,8 +157,12 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   healthcheckPlugin(app); // GET /health (liveness)
 
-  // Serve the AI Chat widget UI same-origin at /widget (public; no-op if web/app isn't built).
+  // Serve the AI Chat widget UI same-origin at /widget (public; no-op if apps/mytrion-crm/app isn't built).
   await registerWidgetStatic(app);
+
+  // Serve the Telegram carrier onboarding mini-app same-origin at /mini-app (public; no-op if
+  // apps/mini-app/app isn't built). BotFather Main App URL = <origin>/mini-app/.
+  await registerMiniAppStatic(app);
 
   // Discover Zoho MCP tools once at boot and register them (flag-gated). Non-fatal AND bounded: a
   // slow/hung MCP endpoint must never block startup (Render deploy/health timeouts), so we race
@@ -173,7 +191,12 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(automationRoutes);
       await v1.register(moneyCodeRoutes);
       await v1.register(adminRoutes);
+      await v1.register(carrierUsersRoutes);
+      await v1.register(carrierMiniAppRoutes);
       await v1.register(agentRoutes);
+      await v1.register(tasksRoutes);
+      await v1.register(filesRoutes);
+      await v1.register(approvalsRoutes);
       await v1.register(integrationsRoutes);
     },
     { prefix: API_PREFIX },

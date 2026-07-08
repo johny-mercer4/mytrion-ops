@@ -33,6 +33,11 @@ coverage/
 tmp/
 .cache/
 
+# Playwright MCP scratch output (console logs / page snapshots) + ad-hoc screenshots
+.playwright-mcp/
+/*.png
+
 # Generated metadata catalogs (keep the dir, ignore contents)
 metadataScripts/output/*
 !metadataScripts/output/.gitkeep
+eval-reports/

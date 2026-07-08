@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { NotFoundError } from '../../lib/errors.js';
+import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { scopeRiskRepo } from '../../repos/scopeRiskRepo.js';
 import { requireContext } from './helpers.js';
 
@@ -38,7 +39,11 @@ const bulkDeleteSchema = z.object({ ids: z.array(z.string().min(1)).min(1).max(2
  * (the Zoho server-side proxy only issues GET/POST), so update/delete use POST aliases.
  */
 export async function scopeRoutes(app: FastifyInstance): Promise<void> {
-  const guard = { onRequest: [app.apiKeyAuth] };
+  // Internal RnD data — customer sessions (carrier-client logins) are denied outright.
+  const guard = {
+    onRequest: [app.sessionOrApiKey],
+    preHandler: [app.requireAudience('internal', 'partner')],
+  };
 
   // List — by node (?nodeId=...) or, with no nodeId, every node's items for bulk preload.
   app.get('/scope/risks', guard, async (request) => {
@@ -55,6 +60,13 @@ export async function scopeRoutes(app: FastifyInstance): Promise<void> {
     const ctx = requireContext(request);
     const body = createSchema.parse(request.body);
     const item = await scopeRiskRepo.create(ctx, body);
+    await auditFromContext(ctx, {
+      action: 'scope_risk.create',
+      status: 'ok',
+      resourceType: 'scope_risk',
+      resourceId: item.id,
+      detail: { nodeId: item.nodeId, category: item.category, label: item.label },
+    });
     void reply.code(201);
     return { item };
   });
@@ -66,6 +78,12 @@ export async function scopeRoutes(app: FastifyInstance): Promise<void> {
     const { ids } = bulkDeleteSchema.parse(request.body);
     const deleted = await scopeRiskRepo.deleteMany(ctx, ids);
     const notFound = ids.filter((id) => !deleted.includes(id));
+    await auditFromContext(ctx, {
+      action: 'scope_risk.delete',
+      status: 'ok',
+      resourceType: 'scope_risk',
+      detail: { bulk: true, deleted, notFound },
+    });
     return { deleted, notFound };
   });
 
@@ -75,6 +93,13 @@ export async function scopeRoutes(app: FastifyInstance): Promise<void> {
     const patch = updateSchema.parse(request.body);
     const item = await scopeRiskRepo.update(ctx, request.params.id, patch);
     if (!item) throw new NotFoundError(`No scope risk item with id ${request.params.id}`);
+    await auditFromContext(ctx, {
+      action: 'scope_risk.update',
+      status: 'ok',
+      resourceType: 'scope_risk',
+      resourceId: item.id,
+      detail: { fields: Object.keys(patch) },
+    });
     return { item };
   });
 
@@ -86,6 +111,12 @@ export async function scopeRoutes(app: FastifyInstance): Promise<void> {
       const ctx = requireContext(request);
       const deleted = await scopeRiskRepo.deleteById(ctx, request.params.id);
       if (!deleted) throw new NotFoundError(`No scope risk item with id ${request.params.id}`);
+      await auditFromContext(ctx, {
+        action: 'scope_risk.delete',
+        status: 'ok',
+        resourceType: 'scope_risk',
+        resourceId: request.params.id,
+      });
       return { deleted: true, id: request.params.id };
     },
   );

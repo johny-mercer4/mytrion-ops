@@ -1,0 +1,171 @@
+/* Global reset + base. Tokens live in theme.css; component styling lives in each
+   component's *.module.css or Tailwind utilities. One token-driven system (see DESIGN_SYSTEM.md). */
+@import 'tailwindcss';
+@import './theme.css';
+
+/* Bridges Tailwind's semantic names onto the design tokens in theme.css, so `bg-card`,
+   `text-muted-foreground`, `bg-tint-good-bg`, etc. resolve to the same values the CSS-Modules
+   components use — one token system, and [data-theme="light"] keeps working via the cascade.
+   No `dark:` variant on purpose: colors swap through the CSS custom-property cascade. */
+@theme inline {
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--text-primary);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--text-primary);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--on-accent);
+  --color-secondary: var(--surface-alt);
+  --color-secondary-foreground: var(--text-primary);
+  --color-muted: var(--surface-alt);
+  --color-muted-foreground: var(--text-muted);
+  --color-accent: var(--surface-raised);
+  --color-accent-foreground: var(--text-primary);
+  --color-destructive: var(--danger);
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: var(--accent);
+  --color-good: var(--success);
+  --color-warn: var(--warning);
+  --color-bad: var(--danger);
+  --color-brand-purple: var(--purple);
+  --color-brand-orange: var(--orange);
+  /* status tints (one scale — kills the /10 /12 /14 drift) */
+  --color-tint-good-bg: var(--tint-good-bg);
+  --color-tint-good-bd: var(--tint-good-bd);
+  --color-tint-warn-bg: var(--tint-warn-bg);
+  --color-tint-warn-bd: var(--tint-warn-bd);
+  --color-tint-bad-bg: var(--tint-bad-bg);
+  --color-tint-bad-bd: var(--tint-bad-bd);
+  --color-tint-info-bg: var(--tint-info-bg);
+  --color-tint-info-bd: var(--tint-info-bd);
+  --color-tint-neutral-bg: var(--tint-neutral-bg);
+  --color-tint-neutral-bd: var(--tint-neutral-bd);
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-lg);
+  --font-sans: var(--font-body);
+  --font-heading: var(--font-head);
+  --font-mono: var(--font-mono);
+}
+
+/* Per-Mytrion accent — set data-mytrion="<id>" on a module root to swap --accent* to that
+   module's hue; everything else (bg/surface/text/status) stays the shared scale. Dark is the
+   default; [data-theme="light"] overrides. Reconciled per DESIGN_SYSTEM.md §7. */
+/* Atlassian Design System blue (Jira's brand token: Blue B400 #0C66E4 light / Blue.400 #579DFF dark). */
+[data-mytrion='admin'] { --accent: #579dff; --accent-strong: #85b8ff; --on-accent: #08153a; --accent-soft: rgba(87, 157, 255, 0.14); --accent-glow: rgba(87, 157, 255, 0.28); }
+[data-theme='light'] [data-mytrion='admin'] { --accent: #0c66e4; --accent-strong: #0055cc; --on-accent: #fff; --accent-soft: rgba(12, 102, 228, 0.1); --accent-glow: rgba(12, 102, 228, 0.2); }
+
+[data-mytrion='sales'] { --accent: #4d9dff; --accent-strong: #7bb6ff; --on-accent: #04122e; --accent-soft: rgba(77, 157, 255, 0.13); --accent-glow: rgba(77, 157, 255, 0.28); }
+[data-theme='light'] [data-mytrion='sales'] { --accent: #2563eb; --accent-strong: #1d4ed8; --on-accent: #fff; --accent-soft: rgba(37, 99, 235, 0.1); --accent-glow: rgba(37, 99, 235, 0.2); }
+
+[data-mytrion='billing'] { --accent: #8b5cf6; --accent-strong: #a482f8; --on-accent: #160a2e; --accent-soft: rgba(139, 92, 246, 0.13); --accent-glow: rgba(139, 92, 246, 0.28); }
+[data-theme='light'] [data-mytrion='billing'] { --accent: #7c3aed; --accent-strong: #6d28d9; --on-accent: #fff; --accent-soft: rgba(124, 58, 237, 0.1); --accent-glow: rgba(124, 58, 237, 0.2); }
+
+[data-mytrion='collection'] { --accent: #f0564e; --accent-strong: #f6817a; --on-accent: #2a0908; --accent-soft: rgba(240, 86, 78, 0.13); --accent-glow: rgba(240, 86, 78, 0.28); }
+[data-theme='light'] [data-mytrion='collection'] { --accent: #d5342b; --accent-strong: #c22b23; --on-accent: #fff; --accent-soft: rgba(213, 52, 43, 0.1); --accent-glow: rgba(213, 52, 43, 0.2); }
+
+[data-mytrion='finance'] { --accent: #10b981; --accent-strong: #34d399; --on-accent: #04231a; --accent-soft: rgba(16, 185, 129, 0.13); --accent-glow: rgba(16, 185, 129, 0.28); }
+[data-theme='light'] [data-mytrion='finance'] { --accent: #0e9e6e; --accent-strong: #0b8a5f; --on-accent: #fff; --accent-soft: rgba(14, 158, 110, 0.1); --accent-glow: rgba(14, 158, 110, 0.2); }
+
+[data-mytrion='customer-service'] { --accent: #e0a83e; --accent-strong: #f2c86a; --on-accent: #241a06; --accent-soft: rgba(224, 168, 62, 0.14); --accent-glow: rgba(224, 168, 62, 0.28); }
+[data-theme='light'] [data-mytrion='customer-service'] { --accent: #b4770f; --accent-strong: #ce9022; --on-accent: #fff; --accent-soft: rgba(180, 119, 15, 0.1); --accent-glow: rgba(180, 119, 15, 0.2); }
+
+[data-mytrion='retention'] { --accent: #e85dc0; --accent-strong: #f08fd4; --on-accent: #2a0a22; --accent-soft: rgba(232, 93, 192, 0.13); --accent-glow: rgba(232, 93, 192, 0.28); }
+[data-theme='light'] [data-mytrion='retention'] { --accent: #c0269e; --accent-strong: #db3ab5; --on-accent: #fff; --accent-soft: rgba(192, 38, 158, 0.1); --accent-glow: rgba(192, 38, 158, 0.2); }
+
+[data-mytrion='verification'] { --accent: #6d7cff; --accent-strong: #94a0ff; --on-accent: #0a0c2e; --accent-soft: rgba(109, 124, 255, 0.14); --accent-glow: rgba(109, 124, 255, 0.28); }
+[data-theme='light'] [data-mytrion='verification'] { --accent: #4f46e5; --accent-strong: #4338ca; --on-accent: #fff; --accent-soft: rgba(79, 70, 229, 0.1); --accent-glow: rgba(79, 70, 229, 0.2); }
+
+[data-mytrion='manager'] { --accent: #2dd4bf; --accent-strong: #5ee0d0; --on-accent: #04231f; --accent-soft: rgba(45, 212, 191, 0.13); --accent-glow: rgba(45, 212, 191, 0.28); }
+[data-theme='light'] [data-mytrion='manager'] { --accent: #0d9488; --accent-strong: #0b8177; --on-accent: #fff; --accent-soft: rgba(13, 148, 136, 0.1); --accent-glow: rgba(13, 148, 136, 0.2); }
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--lh-base);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button {
+  font-family: inherit;
+}
+
+/* Global keyboard focus ring — every interactive element (DESIGN_SYSTEM.md §8). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+::selection {
+  background: var(--accent-glow);
+  color: var(--text-primary);
+}
+
+/* Thin themed scrollbars (match the design's subtle rails). */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: var(--radius-sm);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Animations used across the chat surface + tool chips. */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes thinkBounce {
+  0%,
+  75%,
+  100% {
+    transform: translateY(0) scale(0.7);
+    opacity: 0.45;
+  }
+  35% {
+    transform: translateY(-5px) scale(1);
+    opacity: 1;
+  }
+}
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Respect reduced-motion: neutralize animations + transitions app-wide. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

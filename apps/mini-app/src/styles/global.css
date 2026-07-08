@@ -1,0 +1,85 @@
+@import 'tailwindcss';
+
+/* A small, self-contained token set (this app is a single-purpose surface — not the full
+   multi-tenant theme system apps/mytrion-crm uses), but the same SEMANTIC names + Blue B400
+   brand color, so components ported from mytrion-crm/src/components/ui work unmodified. */
+:root {
+  --background: #f7f8f9;
+  --foreground: #172b4d;
+  --card: #ffffff;
+  --card-foreground: #172b4d;
+  --primary: #0c66e4;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f2f4;
+  --secondary-foreground: #172b4d;
+  --muted: #f1f2f4;
+  --muted-foreground: #626f86;
+  --border: #dcdfe4;
+  --ring: #0c66e4;
+  --destructive: #ae2e24;
+  --success: #1f845a;
+  --radius-xs: 3px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0e1420;
+    --foreground: #e7eaf0;
+    --card: #161d2b;
+    --card-foreground: #e7eaf0;
+    --primary: #579dff;
+    --primary-foreground: #08153a;
+    --secondary: #1c2534;
+    --secondary-foreground: #e7eaf0;
+    --muted: #1c2534;
+    --muted-foreground: #8a92a1;
+    --border: #2a3444;
+    --ring: #579dff;
+    --destructive: #f87168;
+    --success: #4bce97;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --radius-xs: var(--radius-xs);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+}

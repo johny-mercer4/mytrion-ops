@@ -4,8 +4,10 @@
  * streaming turns. Kept separate from chatService so that file stays under the size cap.
  */
 import type OpenAI from 'openai';
+import { env } from '../../config/env.js';
 import { errorMessage } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
+import { completionParams } from '../llm/modelParams.js';
 import { getClient, models, type Provider } from '../llm/openaiClient.js';
 import { resolveModel } from '../llm/modelRouter.js';
 import type { SSEStream } from './streaming.js';
@@ -45,23 +47,28 @@ function fallBackToOpenAI(turn: TurnModel, err: unknown): void {
   turn.fellBack = true;
 }
 
+/** Base params for the turn's current model: output cap + model-aware sampling params. */
+function turnParams(turn: TurnModel, messages: ChatMessage[], tools: ChatTool[]) {
+  return {
+    model: turn.model,
+    messages,
+    ...completionParams(turn.model, env.LLM_MAX_OUTPUT_TOKENS),
+    ...(tools.length > 0 ? { tools, tool_choice: 'auto' as const } : {}),
+  };
+}
+
 /** Non-streaming completion with one-shot fallback to OpenAI on a Groq error. */
 export async function createCompletion(
   turn: TurnModel,
   messages: ChatMessage[],
   tools: ChatTool[],
 ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
-  const params = {
-    model: turn.model,
-    messages,
-    ...(tools.length > 0 ? { tools, tool_choice: 'auto' as const } : {}),
-  };
   try {
-    return await getClient(turn.provider).chat.completions.create(params);
+    return await getClient(turn.provider).chat.completions.create(turnParams(turn, messages, tools));
   } catch (err) {
     if (turn.provider === 'openai') throw err;
     fallBackToOpenAI(turn, err);
-    return getClient('openai').chat.completions.create({ ...params, model: turn.model });
+    return getClient('openai').chat.completions.create(turnParams(turn, messages, tools));
   }
 }
 
@@ -72,11 +79,9 @@ function openStream(
   tools: ChatTool[],
 ): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
   const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
-    model: turn.model,
-    messages,
+    ...turnParams(turn, messages, tools),
     stream: true,
     stream_options: { include_usage: true },
-    ...(tools.length > 0 ? { tools, tool_choice: 'auto' as const } : {}),
   };
   return getClient(turn.provider).chat.completions.create(params);
 }

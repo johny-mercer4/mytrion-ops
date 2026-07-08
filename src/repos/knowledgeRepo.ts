@@ -40,8 +40,9 @@ export interface UpdateDocPatch {
  * RBAC department filter for retrieval. Managers (allDepartmentAccess) get no restriction.
  * Otherwise: always include global (NULL) chunks, plus any in the caller's departments.
  * Returns undefined when unrestricted so `and(...)` simply drops it.
+ * Exported: the SINGLE chokepoint every retrieval leg (vector, full-text, memory) must reuse.
  */
-function departmentFilter(ctx: TenantContext): SQL | undefined {
+export function departmentFilter(ctx: TenantContext): SQL | undefined {
   if (ctx.allDepartmentAccess) return undefined;
   const col = knowledgeChunks.departmentAccess;
   if (ctx.departments.length === 0) return isNull(col);
@@ -49,6 +50,16 @@ function departmentFilter(ctx: TenantContext): SQL | undefined {
 }
 
 export const knowledgeRepo = {
+  /** Freshness attest: reset the doc's last_verified_at (admin action via /knowledge/docs/:id/verify). */
+  async markVerified(ctx: TenantContext, id: string): Promise<boolean> {
+    const rows = await db
+      .update(knowledgeDocs)
+      .set({ lastVerifiedAt: sql`now()`, updatedAt: sql`now()` })
+      .where(and(eq(knowledgeDocs.tenantId, ctx.tenantId), eq(knowledgeDocs.id, id)))
+      .returning({ id: knowledgeDocs.id });
+    return rows.length > 0;
+  },
+
   async createDoc(
     ctx: TenantContext,
     input: {

@@ -8,6 +8,12 @@ import type { Audience, Role } from '../../types/tenantContext.js';
  */
 export const rolePermissions: Record<Role, { scopes: string[]; audiences: Audience[] }> = {
   admin: { scopes: ['*'], audiences: ['internal', 'partner'] },
+  // Signed-in Octane worker without an admin profile: READ scopes only (least privilege —
+  // no telegram:*), so non-read tools stay admin-gated. Department access still bounds reads.
+  worker: {
+    scopes: ['zoho_crm:read', 'servercrm:read', 'zoho_desk:read', 'zoho_people:read'],
+    audiences: ['internal'],
+  },
   ops: {
     scopes: ['zoho_crm:read', 'octane_card:read', 'octane_tx:read', 'partner:read'],
     audiences: ['internal'],

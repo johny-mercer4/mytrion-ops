@@ -8,11 +8,92 @@ const DEV_FALLBACK_SECRET = 'dev-insecure-jwt-secret-do-not-use-in-prod';
 
 type TokenType = 'access' | 'refresh';
 
+/**
+ * Verified worker identity embedded in a session token (from Zoho OAuth). Once a worker is logged
+ * in, this is the SOURCE OF TRUTH for RBAC — the backend derives the context from these claims and
+ * ignores client-supplied identity in the request body (no id spoofing / self-escalation).
+ */
+export interface WorkerIdentity {
+  zohoUserId: string;
+  userName?: string;
+  email?: string;
+  profile?: string;
+  zohoRole?: string;
+}
+
+/**
+ * Verified CARRIER-CLIENT identity embedded in a session token (login/password from
+ * carrier_users). The context minted from these claims is locked down server-side:
+ * audience 'customer', viewer role, no scopes, departments = the company tags — request
+ * bodies can never widen it (see contextFromClaims + buildCallerContext).
+ *
+ * RBAC ties: 'owner' (fleet) → carrierId/applicationId (all cards); 'driver' → cardId
+ * (one card + its limits), with the company scope INHERITED from the parent at login
+ * (the effective ids are embedded here so every request derives the same bound).
+ */
+export interface ClientIdentity {
+  carrierUserId: string;
+  /** 'owner' (fleet — all cards) or 'driver' (single card, child of an owner). */
+  clientProfile: 'owner' | 'driver';
+  carrierId?: string;
+  applicationId?: string;
+  /** Driver only: the card this session is tied to. */
+  cardId?: string;
+  /** Driver only: the owner account it belongs to. */
+  parentUserId?: string;
+  login?: string;
+}
+
 export interface TokenClaims {
   userId: string;
   tenantId: string;
   audience: Audience;
   role: Role;
+  /** Present for Zoho-worker sessions; absent on the dormant email/password + system paths. */
+  worker?: WorkerIdentity;
+  /** Present for carrier-client sessions (login/password via /auth/client/login). */
+  client?: ClientIdentity;
+}
+
+function parseWorker(raw: unknown): WorkerIdentity | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const r = raw as Record<string, unknown>;
+  if (typeof r['zohoUserId'] !== 'string' || r['zohoUserId'].length === 0) return undefined;
+  const str = (v: unknown): string | undefined => (typeof v === 'string' && v.length > 0 ? v : undefined);
+  const w: WorkerIdentity = { zohoUserId: r['zohoUserId'] };
+  const userName = str(r['userName']);
+  const email = str(r['email']);
+  const profile = str(r['profile']);
+  const zohoRole = str(r['zohoRole']);
+  if (userName) w.userName = userName;
+  if (email) w.email = email;
+  if (profile) w.profile = profile;
+  if (zohoRole) w.zohoRole = zohoRole;
+  return w;
+}
+
+function parseClient(raw: unknown): ClientIdentity | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const r = raw as Record<string, unknown>;
+  const str = (v: unknown): string | undefined => (typeof v === 'string' && v.length > 0 ? v : undefined);
+  const carrierUserId = str(r['carrierUserId']);
+  if (!carrierUserId) return undefined;
+  // Tokens from before the profile model default to 'owner' (they were carrier-tied fleets).
+  const clientProfile = r['clientProfile'] === 'driver' ? 'driver' : 'owner';
+  const carrierId = str(r['carrierId']);
+  const applicationId = str(r['applicationId']);
+  // An account must be tied to SOMETHING verifiable: a company id, or (drivers) a card/parent.
+  const cardId = str(r['cardId']);
+  const parentUserId = str(r['parentUserId']);
+  if (!carrierId && !applicationId && !cardId && !parentUserId) return undefined;
+  const c: ClientIdentity = { carrierUserId, clientProfile };
+  const login = str(r['login']);
+  if (carrierId) c.carrierId = carrierId;
+  if (applicationId) c.applicationId = applicationId;
+  if (cardId) c.cardId = cardId;
+  if (parentUserId) c.parentUserId = parentUserId;
+  if (login) c.login = login;
+  return c;
 }
 
 function secretKey(): Uint8Array {
@@ -27,6 +108,8 @@ async function sign(claims: TokenClaims, type: TokenType, ttl: string): Promise<
     audienceKind: claims.audience,
     role: claims.role,
     tokenType: type,
+    ...(claims.worker ? { worker: claims.worker } : {}),
+    ...(claims.client ? { client: claims.client } : {}),
   })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
     .setSubject(claims.userId)
@@ -67,5 +150,37 @@ export async function verifyToken(token: string, expectedType: TokenType): Promi
     throw new AuthError('Malformed token claims');
   }
 
-  return { userId: sub, tenantId, audience: audienceKind, role };
+  const worker = parseWorker(payload['worker']);
+  const client = parseClient(payload['client']);
+  return {
+    userId: sub,
+    tenantId,
+    audience: audienceKind,
+    role,
+    ...(worker ? { worker } : {}),
+    ...(client ? { client } : {}),
+  };
+}
+
+// ── Short-lived signed OAuth state (CSRF for the Zoho login redirect) ────────────────────────
+const OAUTH_STATE_TTL = '10m';
+
+/** Sign an opaque, tamper-proof state value the SPA echoes back through the Zoho redirect. */
+export async function signOauthState(nonce: string): Promise<string> {
+  return new SignJWT({ nonce, use: 'zoho-oauth-state' })
+    .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+    .setIssuer(ISSUER)
+    .setIssuedAt()
+    .setExpirationTime(OAUTH_STATE_TTL)
+    .sign(secretKey());
+}
+
+/** Verify the state came from us and hasn't expired. Throws AuthError otherwise. */
+export async function verifyOauthState(state: string): Promise<void> {
+  try {
+    const { payload } = await jwtVerify(state, secretKey(), { issuer: ISSUER });
+    if (payload['use'] !== 'zoho-oauth-state') throw new Error('wrong state use');
+  } catch (err) {
+    throw new AuthError('Invalid or expired OAuth state', { cause: err });
+  }
 }

@@ -1,11 +1,18 @@
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import type { User } from '../../db/schema/index.js';
 import { AuthError } from '../../lib/errors.js';
+import { normalizeDepartments } from '../../lib/department.js';
+import { carrierUserRepo } from '../../repos/carrierUserRepo.js';
 import { userRepo } from '../../repos/userRepo.js';
 import type { Audience, Role, TenantContext } from '../../types/tenantContext.js';
 import { signAccessToken, signRefreshToken, verifyToken, type TokenClaims } from './jwt.js';
 import { verifyPassword } from './password.js';
 import { scopesForRole } from './permissions.js';
+import { workerRoleFor } from './workerRole.js';
+// Type-only (erased at compile): no runtime import cycle — zohoAuthService value-imports nothing here.
+import type { PublicWorker, WorkerSession } from './zohoAuthService.js';
+// Safe value import: clientAuthService only type-imports from this module (AuthTokens).
+import { clientIdentityFor, type ClientSession } from './clientAuthService.js';
 
 export interface PublicUser {
   id: string;
@@ -48,6 +55,64 @@ export function toPublicUser(user: User): PublicUser {
  * recomputed from role here (never trusted from the token).
  */
 export function contextFromClaims(claims: TokenClaims, requestId: string): TenantContext {
+  // Zoho-worker session: identity is VERIFIED (from the signed token). The internal role is
+  // RE-DERIVED from the embedded worker identity — never trusted from claims.role — so a role
+  // policy change (or a stale pre-fix 'admin' token) takes effect for live sessions on deploy.
+  // allDepartmentAccess uses the same predicate, so role and bypass can't diverge. The
+  // department VIEW is applied per request in buildCallerContext.
+  if (claims.worker) {
+    const w = claims.worker;
+    const role = workerRoleFor({ userName: w.userName, profile: w.profile, zohoRole: w.zohoRole });
+    const ctx: TenantContext = {
+      tenantId: claims.tenantId,
+      userId: claims.userId,
+      audience: claims.audience,
+      role,
+      scopes: scopesForRole(role),
+      departments: [],
+      allDepartmentAccess: role === 'admin',
+      sessionVerified: true,
+      requestId,
+    };
+    if (w.userName) ctx.userName = w.userName;
+    if (w.profile) ctx.profiles = [w.profile];
+    if (w.zohoRole) ctx.callerRole = w.zohoRole;
+    return ctx;
+  }
+  // Carrier-client session (login/password from carrier_users): locked down server-side
+  // regardless of the token's stored role/audience — audience 'customer' (deny-by-default
+  // for tools/agents), viewer role, NO scopes, departments = the company tags only. This
+  // mirrors customerContext for unverified Telegram callers; here the tags are VERIFIED
+  // (from the signed token, minted off the carrier_users row at login). The typed
+  // ctx.client descriptor carries the RBAC tie — owner (fleet): every card of the carrier;
+  // driver: ONE card (with the card's limits) — for card-/carrier-scoped tools to enforce.
+  if (claims.client) {
+    const c = claims.client;
+    const ctx: TenantContext = {
+      tenantId: claims.tenantId,
+      userId: `client:${c.carrierUserId}`,
+      audience: 'customer',
+      role: 'viewer',
+      scopes: [],
+      departments: normalizeDepartments([
+        ...(c.carrierId ? [c.carrierId] : []),
+        ...(c.applicationId ? [c.applicationId] : []),
+      ]),
+      allDepartmentAccess: false,
+      sessionVerified: true,
+      client: {
+        profile: c.clientProfile,
+        ...(c.carrierId ? { carrierId: c.carrierId } : {}),
+        ...(c.applicationId ? { applicationId: c.applicationId } : {}),
+        ...(c.cardId ? { cardId: c.cardId } : {}),
+        ...(c.parentUserId ? { parentUserId: c.parentUserId } : {}),
+      },
+      requestId,
+    };
+    if (c.login) ctx.userName = c.login;
+    ctx.profiles = [c.clientProfile === 'driver' ? 'Driver' : 'Owner'];
+    return ctx;
+  }
   return {
     tenantId: claims.tenantId,
     userId: claims.userId,
@@ -113,8 +178,51 @@ export const authService = {
   },
 
   /** Exchange a valid refresh token for a fresh token pair (rotating). */
-  async refresh(refreshToken: string): Promise<LoginResult> {
+  async refresh(refreshToken: string): Promise<LoginResult | WorkerSession | ClientSession> {
     const claims = await verifyToken(refreshToken, 'refresh');
+    // Worker (Zoho) session: the identity is self-contained in the token, so re-issue directly.
+    // There is no users-table row for a `zoho:<id>` principal — a findById would 404.
+    // The role is RE-DERIVED before re-signing — never copied from the old token — so rotation
+    // migrates stale claims instead of perpetuating them for another refresh-TTL window.
+    if (claims.worker) {
+      const w = claims.worker;
+      const rotated: TokenClaims = {
+        ...claims,
+        role: workerRoleFor({ userName: w.userName, profile: w.profile, zohoRole: w.zohoRole }),
+      };
+      const [accessToken, newRefresh] = await Promise.all([
+        signAccessToken(rotated),
+        signRefreshToken(rotated),
+      ]);
+      const worker: PublicWorker = {
+        zohoUserId: w.zohoUserId,
+        userName: w.userName ?? null,
+        email: w.email ?? null,
+        profile: w.profile ?? null,
+        role: w.zohoRole ?? null,
+      };
+      return { accessToken, refreshToken: newRefresh, tokenType: 'Bearer', worker };
+    }
+    // Carrier-client session: re-check the account is still active/present before rotating —
+    // disabling a carrier user in the admin kills their sessions within one access-token TTL.
+    // The identity is RE-DERIVED from the row (not copied from the old token) so a back-filled
+    // carrier id, a newly assigned card, or a disabled PARENT owner takes effect on rotation.
+    if (claims.client) {
+      const row = await carrierUserRepo.findByIdAny(claims.tenantId, claims.client.carrierUserId);
+      if (!row || row.status !== 'active') {
+        throw new AuthError('Account is no longer active');
+      }
+      const client = await clientIdentityFor(claims.tenantId, row);
+      if (!client) {
+        throw new AuthError('Account is no longer active');
+      }
+      const rotated: TokenClaims = { ...claims, client };
+      const [accessToken, newRefresh] = await Promise.all([
+        signAccessToken(rotated),
+        signRefreshToken(rotated),
+      ]);
+      return { accessToken, refreshToken: newRefresh, tokenType: 'Bearer', client };
+    }
     const ctx = contextFromClaims(claims, 'refresh');
     const user = await userRepo.findById(ctx, claims.userId);
     if (!user || user.status !== 'active') {

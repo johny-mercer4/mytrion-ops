@@ -5,13 +5,14 @@ import fastifyStatic from '@fastify/static';
 import type { FastifyInstance } from 'fastify';
 import { logger } from '../lib/logger.js';
 
-// Locate <repo>/web/app robustly across layouts (tsx-dev = src/plugins, prod = dist/plugins, plus a
-// cwd fallback and a WIDGET_DIR override) so a deploy whose CWD differs still finds the build.
+// Locate <repo>/apps/mytrion-crm/app robustly across layouts (tsx-dev = src/plugins, prod =
+// dist/plugins, plus a cwd fallback and a WIDGET_DIR override) so a deploy whose CWD differs still
+// finds the build.
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const WIDGET_DIR_CANDIDATES = [
   process.env.WIDGET_DIR,
-  path.resolve(HERE, '..', '..', 'web', 'app'),
-  path.resolve(process.cwd(), 'web', 'app'),
+  path.resolve(HERE, '..', '..', 'apps', 'mytrion-crm', 'app'),
+  path.resolve(process.cwd(), 'apps', 'mytrion-crm', 'app'),
 ].filter((d): d is string => Boolean(d));
 
 export function resolveWidgetDir(): string | null {
@@ -22,11 +23,11 @@ export function resolveWidgetDir(): string | null {
 }
 
 /**
- * Serve the built AI Chat widget (web/app) under /widget so the UI lives same-origin with the API.
- * Same-origin is the whole point: the widget's direct (live-token) streaming fetch then needs no
- * CORS allowlisting at all. The files are public on purpose — they hold no secrets (the backend key
- * comes from a Zoho org variable at runtime). No-op when the build is absent (dev/test, or the API
- * deployed without first building web/).
+ * Serve the built AI Chat widget (apps/mytrion-crm/app) under /widget so the UI lives same-origin
+ * with the API. Same-origin is the whole point: the widget's direct (live-token) streaming fetch
+ * then needs no CORS allowlisting at all. The files are public on purpose — they hold no secrets
+ * (the backend key comes from a Zoho org variable at runtime). No-op when the build is absent
+ * (dev/test, or the API deployed without first building apps/mytrion-crm/).
  *
  * Encapsulated so its single hook only touches /widget responses. helmet applies global headers
  * that would block a cross-origin iframe; for /widget only we relax them so Zoho CRM can embed the
@@ -40,7 +41,7 @@ export async function registerWidgetStatic(app: FastifyInstance): Promise<void> 
   if (!widgetDir) {
     logger.warn(
       { tried: WIDGET_DIR_CANDIDATES },
-      'widget build not found — /widget static host disabled (did the deploy run `pnpm --dir web build`?)',
+      'widget build not found — /widget static host disabled (did the deploy run `pnpm --dir apps/mytrion-crm build`?)',
     );
     return;
   }

@@ -1,0 +1,159 @@
+/*
+ * Mytrion CRM design tokens — the durable source of truth (see DESIGN_SYSTEM.md).
+ * Dark ("Soft Midnight") is the default on :root; light applies under [data-theme="light"]
+ * (toggled by useTheme on <html>). Per-module accents live in global.css ([data-mytrion]).
+ * Components read token names ONLY — no hardcoded hex, no arbitrary px.
+ */
+:root {
+  color-scheme: dark;
+
+  /* ── Color — Soft Midnight (dark, default) ───────────────────────────────── */
+  --bg-primary: #12161e;
+  --bg-secondary: #161b24;
+  --surface: #1b212c;
+  --surface-alt: #161a23;
+  --surface-raised: rgba(255, 255, 255, 0.045);
+  --sidebar-bg: #13171f;
+  --header-bg: #13171f;
+  --text-primary: #e7eaf0;
+  --text-secondary: #a9b0bd;
+  --text-muted: #6e7682;
+  --border: rgba(255, 255, 255, 0.09);
+  --border-light: rgba(255, 255, 255, 0.06);
+  --border-dark: rgba(255, 255, 255, 0.045);
+  --accent: #38bef0;
+  --accent-strong: #2cb6ec;
+  --on-accent: #04131c;
+  --accent-soft: rgba(56, 190, 240, 0.12);
+  --accent-glow: rgba(56, 190, 240, 0.26);
+  --success: #34d399;
+  --warning: #fbbf4d;
+  --danger: #f4716f;
+  --purple: #a78bfa;
+  --orange: #fb8a3c;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.42), 0 2px 6px rgba(0, 0, 0, 0.32);
+  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.58), 0 6px 16px rgba(0, 0, 0, 0.42);
+
+  /* ── Status tints — one scale (tracks the status color via color-mix in both themes) ── */
+  --tint-good-bg: color-mix(in srgb, var(--success) 13%, transparent);
+  --tint-good-bd: color-mix(in srgb, var(--success) 30%, transparent);
+  --tint-warn-bg: color-mix(in srgb, var(--warning) 13%, transparent);
+  --tint-warn-bd: color-mix(in srgb, var(--warning) 30%, transparent);
+  --tint-bad-bg: color-mix(in srgb, var(--danger) 13%, transparent);
+  --tint-bad-bd: color-mix(in srgb, var(--danger) 30%, transparent);
+  --tint-info-bg: var(--accent-soft);
+  --tint-info-bd: color-mix(in srgb, var(--accent) 30%, transparent);
+  --tint-neutral-bg: var(--surface-alt);
+  --tint-neutral-bd: var(--border);
+
+  /* ── Radii ───────────────────────────────────────────────────────────────── */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 9px;
+  --radius-lg: 13px;
+  --radius-full: 999px;
+
+  /* ── Type scale (size + line-height + weight) ──────────────────────────────── */
+  --text-2xs: 10.5px;
+  --lh-2xs: 14px;
+  /* Composer font on phones — 16px is the iOS threshold below which Safari auto-zooms inputs. */
+  --text-input-mobile: 16px;
+  --text-xs: 12px;
+  --lh-xs: 16px;
+  --text-sm: 14px;
+  --lh-sm: 19px;
+  --text-base: 14px;
+  --lh-base: 20px;
+  --text-md: 15px;
+  --lh-md: 22px;
+  --text-lg: 18px;
+  --lh-lg: 24px;
+  --text-xl: 22px;
+  --lh-xl: 28px;
+  --text-2xl: 26px;
+  --lh-2xl: 31px;
+  --text-3xl: 32px;
+  --lh-3xl: 37px;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --fw-extra: 800;
+
+  /* ── Spacing — 4px rhythm ──────────────────────────────────────────────────── */
+  --space-0_5: 2px;
+  --space-1: 4px;
+  --space-1_5: 6px;
+  --space-2: 8px;
+  --space-2_5: 10px;
+  --space-3: 12px;
+  --space-3_5: 14px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ── Motion ────────────────────────────────────────────────────────────────── */
+  --dur-fast: 120ms;
+  --dur-base: 170ms;
+  --dur-slow: 220ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.4, 0, 0, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  /* ── Z-index scale ─────────────────────────────────────────────────────────── */
+  --z-base: 0;
+  --z-raised: 10;
+  --z-sticky: 100;
+  --z-dropdown: 1000;
+  --z-overlay: 2000;
+  --z-modal: 2100;
+  --z-toast: 3000;
+  --z-tooltip: 4000;
+
+  /* ── Fonts ─────────────────────────────────────────────────────────────────── */
+  --font-head: 'Rajdhani', system-ui, sans-serif;
+  /* Jira's actual documented font stack (their real "Charlie"/Atlassian Sans typeface is
+     proprietary — no public CDN/license). This is what Jira literally ships as fallback:
+     native San Francisco on Mac, Segoe UI on Windows, Roboto elsewhere. */
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* ── Brand gradients: Gem on AI surfaces, FuelMark in the masthead ─────────── */
+  --gem: linear-gradient(135deg, #4285f4 0%, #9b72cb 52%, #d96570 100%);
+  --fuel: linear-gradient(135deg, #fb923c, #f97316);
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  --bg-primary: #f6f8fb;
+  --bg-secondary: #eef1f6;
+  --surface: #ffffff;
+  --surface-alt: #f3f5f9;
+  --surface-raised: rgba(16, 24, 40, 0.035);
+  --sidebar-bg: #ffffff;
+  --header-bg: #ffffff;
+  --text-primary: #18202e;
+  --text-secondary: #4d5666;
+  --text-muted: #8a92a1;
+  --border: rgba(20, 30, 50, 0.1);
+  --border-light: rgba(20, 30, 50, 0.07);
+  --border-dark: rgba(20, 30, 50, 0.05);
+  --accent: #0c8fc7;
+  --accent-strong: #0e9ad6;
+  --on-accent: #ffffff;
+  --accent-soft: rgba(12, 143, 199, 0.1);
+  --accent-glow: rgba(12, 143, 199, 0.2);
+  --success: #1f9d62;
+  --warning: #b9791a;
+  --danger: #d14545;
+  --purple: #6d52d6;
+  --orange: #d9641a;
+  --shadow-sm: 0 1px 2px rgba(20, 30, 50, 0.06);
+  --shadow-md: 0 8px 22px rgba(20, 30, 50, 0.08), 0 2px 6px rgba(20, 30, 50, 0.05);
+  --shadow-lg: 0 20px 48px rgba(20, 30, 50, 0.14), 0 6px 16px rgba(20, 30, 50, 0.08);
+}

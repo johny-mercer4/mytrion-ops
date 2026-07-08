@@ -20,8 +20,12 @@ RUN pnpm install --prod --frozen-lockfile
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/src/db/migrations ./src/db/migrations
 # The AI Chat widget (vendored in git) is served same-origin at /widget. The runtime stage must
-# carry it explicitly — tsc emits only dist/, so without this COPY the image has no /app/web/app
-# and /widget 404s ("widget build not found"). Path matches widgetStatic's resolver (/app/web/app).
-COPY --from=build /app/web/app ./web/app
+# carry it explicitly — tsc emits only dist/, so without this COPY the image has no
+# /app/apps/mytrion-crm/app and /widget 404s ("widget build not found"). Path matches
+# widgetStatic's resolver (/app/apps/mytrion-crm/app).
+COPY --from=build /app/apps/mytrion-crm/app ./apps/mytrion-crm/app
+# The Telegram carrier mini-app (vendored in git) is served same-origin at /mini-app — carry it
+# into runtime too (matches miniAppStatic's resolver: /app/apps/mini-app/app).
+COPY --from=build /app/apps/mini-app/app ./apps/mini-app/app
 EXPOSE 3001
 CMD ["node", "dist/server.js"]
