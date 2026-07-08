@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   registeredMiniAppCompanies,
@@ -15,6 +15,7 @@ export interface RegisteredMiniAppCompanyDto {
   applicationId: string | null;
   companyName: string | null;
   cardId: string | null;
+  driverName: string | null;
   companyType: CarrierCompanyType | null;
   cardCount: number | null;
   telegramUserId: string;
@@ -32,6 +33,7 @@ export interface UpsertRegisteredMiniAppCompanyInput {
   applicationId?: string | undefined;
   companyName?: string | undefined;
   cardId?: string | undefined;
+  driverName?: string | undefined;
   companyType?: CarrierCompanyType | undefined;
   cardCount?: number | undefined;
 }
@@ -44,6 +46,7 @@ function toDto(row: RegisteredMiniAppCompany): RegisteredMiniAppCompanyDto {
     applicationId: row.applicationId,
     companyName: row.companyName,
     cardId: row.cardId,
+    driverName: row.driverName,
     companyType: row.companyType,
     cardCount: row.cardCount,
     telegramUserId: row.telegramUserId,
@@ -75,6 +78,24 @@ export const registeredMiniAppCompanyRepo = {
     return rows.map(toDto);
   },
 
+  /** Registered drivers of one carrier — the owner's fleet roster (who's actually signed in). */
+  async listDriversByCarrier(
+    ctx: TenantContext,
+    carrierId: string,
+  ): Promise<RegisteredMiniAppCompanyDto[]> {
+    const rows = await db
+      .select()
+      .from(registeredMiniAppCompanies)
+      .where(
+        and(
+          eq(registeredMiniAppCompanies.tenantId, ctx.tenantId),
+          eq(registeredMiniAppCompanies.carrierId, carrierId),
+          eq(registeredMiniAppCompanies.profile, 'driver'),
+        ),
+      );
+    return rows.map(toDto);
+  },
+
   /** Re-opening the same invite link just confirms the existing registration (upsert on telegram_user_id). */
   async upsert(
     ctx: TenantContext,
@@ -91,6 +112,7 @@ export const registeredMiniAppCompanyRepo = {
       applicationId: input.applicationId ?? null,
       companyName: input.companyName ?? null,
       cardId: input.cardId ?? null,
+      driverName: input.driverName ?? null,
       companyType: input.companyType ?? null,
       cardCount: input.cardCount ?? null,
     };
@@ -108,6 +130,7 @@ export const registeredMiniAppCompanyRepo = {
           applicationId: input.applicationId ?? null,
           companyName: input.companyName ?? null,
           cardId: input.cardId ?? null,
+          driverName: input.driverName ?? null,
           companyType: input.companyType ?? null,
           cardCount: input.cardCount ?? null,
           updatedAt: new Date(),

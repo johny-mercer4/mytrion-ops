@@ -35,6 +35,7 @@ export function CarrierUserForm({
   const [applicationId, setApplicationId] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [cardId, setCardId] = useState('');
+  const [driverName, setDriverName] = useState('');
   const [busy, setBusy] = useState(false);
   const [inviteUrl, setInviteUrl] = useState('');
 
@@ -49,6 +50,7 @@ export function CarrierUserForm({
     setApplicationId('');
     setCompanyName('');
     setCardId('');
+    setDriverName('');
     setInviteUrl('');
   }, [profile]);
 
@@ -136,14 +138,16 @@ export function CarrierUserForm({
   const companyType = cardCount === null ? null : cardCount <= 1 ? 'owner-operator' : 'fleet-manager';
 
   const hasTie = carrierId.trim().length > 0 || applicationId.trim().length > 0;
-  const valid = isOwner ? hasTie : hasTie && cardId.trim().length > 0;
+  const valid = isOwner ? hasTie : hasTie && cardId.trim().length > 0 && driverName.trim().length > 0;
 
   const blocker = !valid
     ? !hasTie
       ? 'Pick a client (or enter a carrier / application id manually).'
       : !isOwner && !cardId.trim()
         ? 'Pick the card this driver is for.'
-        : ''
+        : !isOwner && !driverName.trim()
+          ? "Enter the driver's name."
+          : ''
     : '';
 
   async function generateInvite(e: FormEvent) {
@@ -157,6 +161,7 @@ export function CarrierUserForm({
         ...(applicationId.trim() ? { applicationId: applicationId.trim() } : {}),
         ...(companyName.trim() ? { companyName: companyName.trim() } : {}),
         ...(!isOwner && cardId.trim() ? { cardId: cardId.trim() } : {}),
+        ...(!isOwner && driverName.trim() ? { driverName: driverName.trim() } : {}),
       });
       setInviteUrl(res.inviteUrl);
       copyToClipboard(res.inviteUrl);
@@ -375,6 +380,19 @@ export function CarrierUserForm({
                 </span>
               </>
             )}
+          </div>
+        )}
+        {!isOwner && carrierId.trim() && (
+          <div className={s.field}>
+            <span className={s.fieldLabel}>Driver name</span>
+            <input
+              className={s.input}
+              value={driverName}
+              onChange={(e) => setDriverName(e.target.value)}
+              placeholder="e.g. Akmal Karimov"
+              maxLength={200}
+            />
+            <span className={s.fieldHint}>Who drives this card — shown on the fleet roster.</span>
           </div>
         )}
         {!isOwner && !carrierId.trim() && (

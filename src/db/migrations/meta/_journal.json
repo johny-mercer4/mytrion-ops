@@ -169,6 +169,13 @@
       "when": 1783535398488,
       "tag": "0023_odd_toad",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1783546948791,
+      "tag": "0024_luxuriant_the_professor",
+      "breakpoints": true
     }
   ]
 }

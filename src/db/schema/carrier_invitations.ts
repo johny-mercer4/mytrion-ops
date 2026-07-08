@@ -35,8 +35,10 @@ export const carrierInvitations = pgTable(
     carrierId: text('carrier_id'),
     applicationId: text('application_id'),
     companyName: text('company_name'),
-    /** Driver only: the one fuel card this invite is for. */
+    /** Driver only: the one fuel card this invite is for (must be an ACTIVE card; one driver per card). */
     cardId: text('card_id'),
+    /** Driver only: the driver's name, entered by whoever created the invite (owner/admin/agent). */
+    driverName: text('driver_name'),
     /** Owner only — a driver invite doesn't need this (one specific card is already known). */
     companyType: text('company_type').$type<CarrierCompanyType>(),
     /** Active fuel card count at invite time — the raw number companyType was derived from. */

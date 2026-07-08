@@ -16,6 +16,7 @@ export interface CarrierInvitationDto {
   applicationId: string | null;
   companyName: string | null;
   cardId: string | null;
+  driverName: string | null;
   companyType: CarrierCompanyType | null;
   cardCount: number | null;
   agentName: string | null;
@@ -32,6 +33,8 @@ export interface CreateCarrierInvitationInput {
   companyName?: string | undefined;
   /** Driver only. */
   cardId?: string | undefined;
+  /** Driver only. */
+  driverName?: string | undefined;
   /** Owner only — pre-resolved by the caller (route layer talks to the DWH, not the repo). */
   companyType?: CarrierCompanyType | undefined;
   cardCount?: number | undefined;
@@ -49,6 +52,7 @@ function toDto(row: CarrierInvitation): CarrierInvitationDto {
     applicationId: row.applicationId,
     companyName: row.companyName,
     cardId: row.cardId,
+    driverName: row.driverName,
     companyType: row.companyType,
     cardCount: row.cardCount,
     agentName: row.agentName,
@@ -74,6 +78,7 @@ export const carrierInvitationRepo = {
       applicationId: trimOrNull(input.applicationId),
       companyName: trimOrNull(input.companyName),
       cardId: trimOrNull(input.cardId),
+      driverName: trimOrNull(input.driverName),
       companyType: input.companyType ?? null,
       cardCount: input.cardCount ?? null,
       agentName: trimOrNull(input.agentName),
@@ -82,6 +87,49 @@ export const carrierInvitationRepo = {
     };
     const rows = await db.insert(carrierInvitations).values(values).returning();
     return toDto(firstOrThrow(rows, 'Failed to insert carrier invitation'));
+  },
+
+  /**
+   * A still-live driver invite for this exact card (one-driver-per-card guard). "Live" = a pending
+   * invite that hasn't expired; an expired/superseded one doesn't block re-issuing the card.
+   */
+  async findLiveDriverByCard(
+    ctx: TenantContext,
+    carrierId: string,
+    cardId: string,
+  ): Promise<CarrierInvitation | undefined> {
+    const rows = await db
+      .select()
+      .from(carrierInvitations)
+      .where(
+        and(
+          eq(carrierInvitations.tenantId, ctx.tenantId),
+          eq(carrierInvitations.carrierId, carrierId),
+          eq(carrierInvitations.cardId, cardId),
+          eq(carrierInvitations.profile, 'driver'),
+          eq(carrierInvitations.status, 'pending'),
+        ),
+      );
+    return rows.find((r) => r.expiresAt.getTime() >= Date.now());
+  },
+
+  /** All live (pending, unexpired) driver invites for a carrier — the owner's "invite sent" column. */
+  async listLiveDriverInvitesByCarrier(
+    ctx: TenantContext,
+    carrierId: string,
+  ): Promise<CarrierInvitationDto[]> {
+    const rows = await db
+      .select()
+      .from(carrierInvitations)
+      .where(
+        and(
+          eq(carrierInvitations.tenantId, ctx.tenantId),
+          eq(carrierInvitations.carrierId, carrierId),
+          eq(carrierInvitations.profile, 'driver'),
+          eq(carrierInvitations.status, 'pending'),
+        ),
+      );
+    return rows.filter((r) => r.expiresAt.getTime() >= Date.now()).map(toDto);
   },
 
   async findById(ctx: TenantContext, id: string): Promise<CarrierInvitation | undefined> {

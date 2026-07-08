@@ -158,7 +158,7 @@ export function CarrierUsers() {
               {g.drivers.map((d) => (
                 <div key={d.id} className={s.tRow} style={COLS}>
                   <span className={s.cellStack} style={{ paddingLeft: 'var(--space-4)' }}>
-                    <span className={s.docTitle}>↳ Driver</span>
+                    <span className={s.docTitle}>↳ {d.driverName ?? 'Driver'}</span>
                     <span className={s.cellSub}>card {d.cardId ?? '?'}</span>
                   </span>
                   <span>

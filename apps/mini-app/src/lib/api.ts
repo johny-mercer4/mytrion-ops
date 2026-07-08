@@ -89,3 +89,40 @@ export async function redeemRegistration(id: string, initData: string): Promise<
     initData,
   })) as RedeemResult;
 }
+
+// ── Owner fleet management (owner-authenticated via initData) ────────────────────────────────
+export type CardStatus = 'registered' | 'pending' | 'open';
+
+export interface FleetCard {
+  cardId: string | null;
+  cardNumber: string | null;
+  cardType: string | null;
+  driverName: string | null;
+  status: CardStatus;
+}
+
+export interface FleetResponse {
+  company: { companyName: string | null; carrierId: string; companyType: CompanyType | null };
+  fleet: FleetCard[];
+}
+
+export async function fetchFleet(initData: string): Promise<FleetResponse> {
+  return (await request('POST', '/carrier/mini-app/fleet', { initData })) as FleetResponse;
+}
+
+export interface DriverInviteResult {
+  invite: { id: string; cardId: string | null; driverName: string | null };
+  inviteUrl: string;
+}
+
+export async function createDriverInvite(
+  initData: string,
+  cardId: string,
+  driverName: string,
+): Promise<DriverInviteResult> {
+  return (await request('POST', '/carrier/mini-app/driver-invites', {
+    initData,
+    cardId,
+    driverName,
+  })) as DriverInviteResult;
+}

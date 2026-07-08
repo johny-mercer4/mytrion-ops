@@ -26,6 +26,8 @@ export const registeredMiniAppCompanies = pgTable(
     companyName: text('company_name'),
     /** Driver only. */
     cardId: text('card_id'),
+    /** Driver only: the driver's name captured on the invite. */
+    driverName: text('driver_name'),
     /** Carried over from the invite — tells the mini-app which experience to render: just this
      * one card (owner-operator) or the full fleet (trucks/drivers/cards, fleet-manager). */
     companyType: text('company_type').$type<CarrierCompanyType>(),

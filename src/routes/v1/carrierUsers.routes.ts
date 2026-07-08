@@ -21,7 +21,7 @@ import { searchDwhOperators } from '../../integrations/dwhOperators.js';
 import { listDwhCards } from '../../integrations/dwhCards.js';
 import { env } from '../../config/env.js';
 import { carrierUserRepo } from '../../repos/carrierUserRepo.js';
-import { carrierInvitationRepo } from '../../repos/carrierInvitationRepo.js';
+import { createCarrierInvite } from '../../modules/carrier/inviteService.js';
 import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompanyRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireContext } from './helpers.js';
@@ -107,6 +107,8 @@ const createInviteSchema = z
     company_name: z.string().max(300).optional(),
     /** Driver only — which of the carrier's active cards this invite is for. */
     card_id: idString.optional(),
+    /** Driver only — the driver's name. */
+    driver_name: z.string().max(200).optional(),
     agent_name: z.string().max(200).optional(),
     agent_zoho_user_id: z.string().max(120).optional(),
   })
@@ -118,12 +120,49 @@ const createInviteSchema = z
         message: 'An invite needs a carrier_id or an application_id (the unique key)',
       });
     }
-    if (v.profile === 'driver' && !v.card_id?.trim()) {
+    if (v.profile === 'driver') {
+      if (!v.card_id?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['card_id'],
+          message: 'A driver invite needs the card it belongs to',
+        });
+      }
+      if (!v.driver_name?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['driver_name'],
+          message: 'A driver invite needs the driver name',
+        });
+      }
+    }
+  });
+
+// Self-service (sales agent): same shape minus agent fields — the agent is taken from the session.
+const selfServiceInviteSchema = z
+  .object({
+    profile: z.enum(['owner', 'driver']).default('owner'),
+    carrier_id: idString.optional(),
+    application_id: idString.optional(),
+    company_name: z.string().max(300).optional(),
+    card_id: idString.optional(),
+    driver_name: z.string().max(200).optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (!v.carrier_id?.trim() && !v.application_id?.trim()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['card_id'],
-        message: 'A driver invite needs the card it belongs to',
+        path: ['carrier_id'],
+        message: 'An invite needs a carrier_id or an application_id',
       });
+    }
+    if (v.profile === 'driver') {
+      if (!v.card_id?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['card_id'], message: 'A driver invite needs a card' });
+      }
+      if (!v.driver_name?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['driver_name'], message: 'A driver invite needs the driver name' });
+      }
     }
   });
 
@@ -270,52 +309,20 @@ export async function carrierUsersRoutes(app: FastifyInstance): Promise<void> {
    */
   app.post('/carrier-invitations', guard, async (request, reply) => {
     const ctx = requireAdmin(request);
-    if (!env.TELEGRAM_CARRIER_BOT_USERNAME) {
-      throw new AppError('The carrier bot is not configured (TELEGRAM_CARRIER_BOT_USERNAME)', {
-        statusCode: 503,
-        code: 'BOT_UNCONFIGURED',
-        expose: true,
-      });
-    }
     const body = createInviteSchema.parse(request.body);
 
-    // Company type has no explicit field in servercrm/DWH — active card count is the real-world
-    // proxy (1 card = drives it themself, 2+ = managing a fleet of drivers). Owner only: a driver
-    // invite already names its one specific card, nothing to detect. Best-effort: an
-    // application-only invite (no carrier id yet) or a DWH hiccup just leaves it undetermined
-    // rather than blocking invite creation — the admin still needs to be able to send the link.
-    let companyType: 'owner-operator' | 'fleet-manager' | undefined;
-    let cardCount: number | undefined;
-    if (body.profile === 'owner' && body.carrier_id && env.DWH_DATABASE_URL) {
-      try {
-        const cards = await listDwhCards(body.carrier_id);
-        cardCount = cards.length;
-        companyType = cardCount <= 1 ? 'owner-operator' : 'fleet-manager';
-      } catch {
-        // undetermined — see comment above
-      }
-    }
-
-    const invite = await carrierInvitationRepo.create(ctx, {
+    // All rules (tie, active-card, one-driver-per-card, owner company-type detection, link format)
+    // live in the shared service so admin / mini-app / sales-widget stay consistent.
+    const { invite, inviteUrl } = await createCarrierInvite(ctx, {
       profile: body.profile,
       ...(body.carrier_id ? { carrierId: body.carrier_id } : {}),
       ...(body.application_id ? { applicationId: body.application_id } : {}),
       ...(body.company_name ? { companyName: body.company_name } : {}),
       ...(body.card_id ? { cardId: body.card_id } : {}),
-      ...(companyType ? { companyType } : {}),
-      ...(cardCount !== undefined ? { cardCount } : {}),
+      ...(body.driver_name ? { driverName: body.driver_name } : {}),
       ...(body.agent_name ? { agentName: body.agent_name } : {}),
       ...(body.agent_zoho_user_id ? { agentZohoUserId: body.agent_zoho_user_id } : {}),
     });
-    // Direct mini-app open needs a one-time BotFather registration (Main App URL, or a named Mini
-    // App short name). With either set the link uses ?startapp= and opens the mini-app immediately;
-    // otherwise fall back to ?start= (a bot /start reply — not built, so configure BotFather).
-    const bot = env.TELEGRAM_CARRIER_BOT_USERNAME;
-    const inviteUrl = env.TELEGRAM_CARRIER_MINI_APP_SHORT_NAME
-      ? `https://t.me/${bot}/${env.TELEGRAM_CARRIER_MINI_APP_SHORT_NAME}?startapp=${invite.id}`
-      : env.TELEGRAM_CARRIER_MINI_APP_DIRECT === '1'
-        ? `https://t.me/${bot}?startapp=${invite.id}`
-        : `https://t.me/${bot}?start=${invite.id}`;
     await auditFromContext(ctx, {
       action: 'admin.carrier_invitation.create',
       status: 'ok',
@@ -324,6 +331,80 @@ export async function carrierUsersRoutes(app: FastifyInstance): Promise<void> {
       detail: {
         ...(invite.carrierId ? { carrierId: invite.carrierId } : {}),
         ...(invite.applicationId ? { applicationId: invite.applicationId } : {}),
+      },
+    });
+    return reply.code(201).send({ invite, inviteUrl });
+  });
+
+  /**
+   * Self-service invite creation for a SALES AGENT (the Zoho self-service widget) — scoped to the
+   * agent's OWN client companies. Any signed-in Zoho worker may call, but a non-admin can only
+   * create an invite for a carrier whose Zoho deal they own (owner_id in intm_zoho_deals ==
+   * caller). The agent is stamped from the verified session, never the request body. Fail-closed:
+   * if the DWH can't confirm ownership, a non-admin is denied.
+   */
+  app.post('/carrier-invitations/self-service', guard, async (request, reply) => {
+    const ctx = requireContext(request);
+    if (ctx.audience !== 'internal') {
+      throw new RBACError('Self-service invites are for Octane sales agents only');
+    }
+    const body = selfServiceInviteSchema.parse(request.body);
+    const isAdmin = ctx.role === 'admin' || Boolean(ctx.bypassRbac);
+    // Worker owner id is `zoho:<id>` (see callerIdentity.identityFrom) — the agent's Zoho user id.
+    const callerZohoId = ctx.userId.startsWith('zoho:') ? ctx.userId.slice('zoho:'.length) : '';
+
+    // Scope: the target must be one of the caller's own clients (unless admin). We look the deal up
+    // by carrier/application id and match its owner to the caller.
+    let resolvedCompanyName: string | undefined;
+    if (!isAdmin) {
+      if (!callerZohoId) {
+        throw new RBACError('Your session has no Zoho identity — cannot scope invites to your clients');
+      }
+      if (!env.DWH_DATABASE_URL) {
+        throw new AppError('Cannot verify client ownership (data warehouse unconfigured)', {
+          statusCode: 503,
+          code: 'DWH_UNCONFIGURED',
+          expose: true,
+        });
+      }
+      const key = (body.carrier_id ?? body.application_id ?? '').trim();
+      const clients = await searchDwhClients({ q: key, limit: 25 });
+      const match = clients.find(
+        (c) =>
+          (body.carrier_id && c.carrierId === body.carrier_id.trim()) ||
+          (body.application_id && c.applicationId === body.application_id.trim()),
+      );
+      if (!match) {
+        throw new NotFoundError('That client was not found in your Zoho deals');
+      }
+      if (match.ownerZohoUserId !== callerZohoId) {
+        throw new RBACError('You can only create invites for your own client companies');
+      }
+      resolvedCompanyName = match.companyName ?? undefined;
+    }
+
+    const { invite, inviteUrl } = await createCarrierInvite(ctx, {
+      profile: body.profile,
+      ...(body.carrier_id ? { carrierId: body.carrier_id } : {}),
+      ...(body.application_id ? { applicationId: body.application_id } : {}),
+      ...(body.company_name ?? resolvedCompanyName
+        ? { companyName: body.company_name ?? resolvedCompanyName }
+        : {}),
+      ...(body.card_id ? { cardId: body.card_id } : {}),
+      ...(body.driver_name ? { driverName: body.driver_name } : {}),
+      // Agent attribution comes from the verified session, not the body.
+      ...(callerZohoId ? { agentZohoUserId: callerZohoId } : {}),
+      ...(ctx.userName ? { agentName: ctx.userName } : {}),
+    });
+    await auditFromContext(ctx, {
+      action: 'sales.carrier_invitation.create',
+      status: 'ok',
+      resourceType: 'carrier_invitation',
+      resourceId: invite.id,
+      detail: {
+        ...(invite.carrierId ? { carrierId: invite.carrierId } : {}),
+        ...(invite.applicationId ? { applicationId: invite.applicationId } : {}),
+        selfService: true,
       },
     });
     return reply.code(201).send({ invite, inviteUrl });

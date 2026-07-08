@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import {
   ApiError,
+  createDriverInvite,
+  fetchFleet,
   fetchRegistrationPreview,
   redeemRegistration,
+  type FleetCard,
   type FleetSummary,
   type RegistrationPreview,
   type RegistrationView,
@@ -93,19 +96,119 @@ function ConfirmScreen({
   );
 }
 
-function FleetSummaryCard({ fleet }: { fleet: FleetSummary }) {
-  const total = fleet.cardCount ?? 0;
+function CardRowManager({
+  card,
+  initData,
+  onIssued,
+}: {
+  card: FleetCard;
+  initData: string;
+  onIssued: (cardId: string, driverName: string) => void;
+}) {
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [link, setLink] = useState('');
+  const [err, setErr] = useState('');
+
+  function issue() {
+    if (!card.cardId || !name.trim()) return;
+    setBusy(true);
+    setErr('');
+    createDriverInvite(initData, card.cardId, name.trim())
+      .then((res) => {
+        setLink(res.inviteUrl);
+        onIssued(card.cardId!, name.trim());
+      })
+      .catch((e) => setErr(e instanceof ApiError ? e.message : 'Could not create the link.'))
+      .finally(() => setBusy(false));
+  }
+
   return (
-    <Card className="mt-4 text-left">
+    <div className="border-t border-border py-3 first:border-t-0 first:pt-0">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-semibold">Your fleet</span>
-        <Badge variant="default">
-          {fleet.registeredDrivers} of {total} driver{total === 1 ? '' : 's'} registered
+        <span className="text-sm font-semibold">Card {card.cardNumber ?? card.cardId ?? '—'}</span>
+        <Badge variant={card.status === 'open' ? 'outline' : 'default'}>
+          {card.status === 'registered' ? 'Registered' : card.status === 'pending' ? 'Invite sent' : 'No driver'}
         </Badge>
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">
-        Send each driver their own registration link to add them to the fleet.
-      </p>
+      {card.driverName && <p className="mt-1 text-xs text-muted-foreground">Driver: {card.driverName}</p>}
+
+      {card.status === 'open' && !link && (
+        <div className="mt-2 flex gap-2">
+          <input
+            className="h-10 flex-1 rounded-xs border border-border bg-background px-3 text-sm outline-none focus:border-ring"
+            placeholder="Driver name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <Button className="w-auto px-3" size="sm" disabled={busy || !name.trim()} onClick={issue}>
+            {busy ? <Spinner className="size-4" /> : 'Create link'}
+          </Button>
+        </div>
+      )}
+      {link && (
+        <div className="mt-2 flex gap-2">
+          <input
+            className="h-10 flex-1 rounded-xs border border-border bg-muted px-3 font-mono text-xs outline-none"
+            readOnly
+            value={link}
+            onFocus={(e) => e.currentTarget.select()}
+          />
+          <Button
+            className="w-auto px-3"
+            size="sm"
+            variant="outline"
+            onClick={() => navigator.clipboard?.writeText(link)}
+          >
+            Copy
+          </Button>
+        </div>
+      )}
+      {err && <p className="mt-1 text-xs text-destructive">{err}</p>}
+    </div>
+  );
+}
+
+function FleetManager({ initData }: { initData: string }) {
+  const [cards, setCards] = useState<FleetCard[] | null>(null);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    fetchFleet(initData)
+      .then((res) => setCards(res.fleet))
+      .catch((e) => setErr(e instanceof ApiError ? e.message : 'Could not load your fleet.'));
+  }, [initData]);
+
+  function markIssued(cardId: string, driverName: string) {
+    setCards((prev) =>
+      prev
+        ? prev.map((c) => (c.cardId === cardId ? { ...c, status: 'pending', driverName } : c))
+        : prev,
+    );
+  }
+
+  const registered = cards?.filter((c) => c.status === 'registered').length ?? 0;
+  return (
+    <Card className="mt-4 text-left">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="text-sm font-bold">Your fleet</span>
+        {cards && (
+          <span className="text-xs text-muted-foreground">
+            {registered} of {cards.length} registered
+          </span>
+        )}
+      </div>
+      {!cards && !err && (
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Spinner className="size-4 text-primary" />
+          <span className="text-sm">Loading your cards…</span>
+        </div>
+      )}
+      {err && <p className="text-sm text-destructive">{err}</p>}
+      {cards?.length === 0 && <p className="text-sm text-muted-foreground">No active cards found.</p>}
+      {cards?.map((c) => (
+        <CardRowManager key={c.cardId ?? c.cardNumber} card={c} initData={initData} onIssued={markIssued} />
+      ))}
     </Card>
   );
 }
@@ -113,11 +216,14 @@ function FleetSummaryCard({ fleet }: { fleet: FleetSummary }) {
 function SuccessScreen({
   registration,
   fleet,
+  initData,
 }: {
   registration: RegistrationView;
   fleet?: FleetSummary;
+  initData: string;
 }) {
   const isDriver = registration.profile === 'driver';
+  const isFleet = registration.profile === 'owner' && registration.companyType === 'fleet-manager';
   return (
     <Screen>
       <Card className="flex flex-col items-center gap-2 text-center">
@@ -126,10 +232,23 @@ function SuccessScreen({
         <p className="text-sm text-muted-foreground">
           {isDriver
             ? `You're linked to ${registration.companyName ?? 'your company'}'s fleet. You'll get updates here in Telegram.`
-            : `${registration.companyName ?? 'Your company'} is now registered with Octane. You'll get updates here in Telegram.`}
+            : `${registration.companyName ?? 'Your company'} is now registered with Octane.`}
         </p>
       </Card>
-      {fleet && <FleetSummaryCard fleet={fleet} />}
+      {isFleet ? (
+        <FleetManager initData={initData} />
+      ) : (
+        fleet && (
+          <Card className="mt-4 text-left">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold">Your fleet</span>
+              <Badge variant="default">
+                {fleet.registeredDrivers} of {fleet.cardCount ?? 0} registered
+              </Badge>
+            </div>
+          </Card>
+        )
+      )}
     </Screen>
   );
 }
@@ -199,7 +318,13 @@ export function App() {
   if (view.state === 'error') return <ErrorScreen message={view.message} />;
   if (view.state === 'already-registered') return <AlreadyRegisteredScreen companyName={view.companyName} />;
   if (view.state === 'success') {
-    return <SuccessScreen registration={view.registration} {...(view.fleet ? { fleet: view.fleet } : {})} />;
+    return (
+      <SuccessScreen
+        registration={view.registration}
+        initData={wa?.initData ?? ''}
+        {...(view.fleet ? { fleet: view.fleet } : {})}
+      />
+    );
   }
   return <ConfirmScreen preview={view.preview} firstName={firstName} busy={busy} onConfirm={() => confirm(view.preview)} />;
 }

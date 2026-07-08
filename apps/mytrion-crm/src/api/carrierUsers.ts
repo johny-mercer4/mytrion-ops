@@ -159,6 +159,8 @@ export interface CarrierInvitation {
   companyName: string | null;
   /** Driver only. */
   cardId: string | null;
+  /** Driver only. */
+  driverName: string | null;
   /** Owner only — auto-detected from active card count, null until a carrier id resolves it. */
   companyType: CarrierCompanyType | null;
   cardCount: number | null;
@@ -175,6 +177,7 @@ export async function createCarrierInvitation(input: {
   applicationId?: string;
   companyName?: string;
   cardId?: string;
+  driverName?: string;
   agentName?: string;
   agentZohoUserId?: string;
 }): Promise<{ invite: CarrierInvitation; inviteUrl: string }> {
@@ -185,6 +188,7 @@ export async function createCarrierInvitation(input: {
       ...(input.applicationId ? { application_id: input.applicationId } : {}),
       ...(input.companyName ? { company_name: input.companyName } : {}),
       ...(input.cardId ? { card_id: input.cardId } : {}),
+      ...(input.driverName ? { driver_name: input.driverName } : {}),
       ...(input.agentName ? { agent_name: input.agentName } : {}),
       ...(input.agentZohoUserId ? { agent_zoho_user_id: input.agentZohoUserId } : {}),
     },
@@ -200,6 +204,7 @@ export interface RegisteredCompany {
   applicationId: string | null;
   companyName: string | null;
   cardId: string | null;
+  driverName: string | null;
   companyType: CarrierCompanyType | null;
   cardCount: number | null;
   telegramUserId: string;
