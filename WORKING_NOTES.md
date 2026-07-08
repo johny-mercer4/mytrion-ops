@@ -1433,3 +1433,10 @@ Carrier accounts are now provisioned FROM the already-defined clients in the dat
   wiring Cases/OpenPool to the API is the next step; blueprint TBD).
 - Verified: root lint + typecheck + 425 tests (18 new), web typecheck, live-DWH query smoke.
 - NOT yet applied: `pnpm db:migrate` (app DB is the live Render Postgres — run at deploy time).
+
+## 2026-07-08 (4) — Migration 0020 applied + Retention UI design prompt
+
+- Applied `pnpm db:migrate` against the app Postgres (Render). Verified live: 29 columns,
+  5 indexes incl. the partial open-case unique, 0 rows. DWH untouched (drizzle never sees it).
+- Added `docs/RETENTION_UI_DESIGN_PROMPT.md` — self-contained prompt for the Claude Design
+  session that will redesign the Retention Mytrion UI against the live /v1/retention API.
