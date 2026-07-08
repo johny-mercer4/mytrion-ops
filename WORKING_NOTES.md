@@ -1393,3 +1393,14 @@ Carrier accounts are now provisioned FROM the already-defined clients in the dat
   OctaneScope.tsx + its now-orphaned admin.module.css blocks.
 - Verified: web typecheck + 37 tests, root lint/typecheck + 407 tests, vite build, and a headless
   Chrome walkthrough (road, modal tabs, After hub, Verification blueprint, light mode).
+
+## 2026-07-08 (2) — Fix: blueprint canvas flicker on zoom
+
+- Blueprint nodes (`.oct-bpnode`) flickered constantly while zooming the React Flow canvas.
+  Cause: `backdrop-filter: blur(6px)` on nodes inside `.react-flow__viewport`, whose CSS
+  transform updates every zoom tick — Chromium/Safari re-rasterize the filtered backdrop per
+  frame (known React Flow gotcha), and every node was its own backdrop root.
+- Fix: replaced the node blur with the same glass tint composited over an opaque base —
+  `background: linear-gradient(var(--glass), var(--glass)) var(--bg1)` — visually equivalent in
+  both themes. Controls/MiniMap keep their blur (they sit outside the transformed viewport).
+- Verified: mytrion-crm typecheck + vite build.

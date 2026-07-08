@@ -65,13 +65,13 @@
     width: 100%;
     box-sizing: border-box;
     padding: 9px 13px;
-    background: var(--glass);
+    /* glass tint composited over an opaque base — no backdrop-filter here: inside the
+       zoomed .react-flow__viewport it re-rasterizes per frame and flickers on zoom */
+    background: linear-gradient(var(--glass), var(--glass)) var(--bg1);
     border: 1px solid var(--gb);
     border-left: 3px solid var(--c);
     border-radius: 7px;
     box-shadow: 0 6px 16px rgba(0, 0, 0, .4);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
     font-size: 12.5px;
     font-weight: 600;
     color: var(--ink);
