@@ -1440,3 +1440,10 @@ Carrier accounts are now provisioned FROM the already-defined clients in the dat
   5 indexes incl. the partial open-case unique, 0 rows. DWH untouched (drizzle never sees it).
 - Added `docs/RETENTION_UI_DESIGN_PROMPT.md` — self-contained prompt for the Claude Design
   session that will redesign the Retention Mytrion UI against the live /v1/retention API.
+
+## 2026-07-09 — Retention case-sync cadence: every 5 minutes
+
+- `automation.retention.case-sync` cron changed 05:00 nightly → `*/5 * * * *`. Rationale:
+  cases and returned-closures surface near-real-time; singleton queue policy means runs never
+  overlap, and the DWH scan is one seconds-fast read-only query. 30s would be pointlessly
+  heavy on the warehouse. Design prompt copy updated to match (5-minute freshness).

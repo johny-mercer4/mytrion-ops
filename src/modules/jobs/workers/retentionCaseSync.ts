@@ -1,6 +1,6 @@
 /**
- * Nightly retention case sync worker — runs the DWH frequency-breach scan and generates
- * retention cases before shift start (SOP: the reps' list must be ready each morning).
+ * Retention case sync worker (cron, every 5 minutes) — runs the DWH frequency-breach scan
+ * and generates retention cases near-real-time, so the reps' list is always current.
  * Deterministic data job (no LLM). Scoped to the retention department; audited like a
  * manual /v1/retention/sync trigger, with trigger 'cron'.
  */
