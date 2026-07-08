@@ -49,6 +49,7 @@
     "@fastify/static": "^7",
     "@fastify/swagger": "^8.15.0",
     "@fastify/swagger-ui": "^4.2.0",
+    "@fastify/websocket": "^10",
     "@langchain/core": "^1.2.1",
     "@langchain/langgraph": "^1.4.7",
     "@langchain/langgraph-checkpoint-postgres": "^1.0.4",
@@ -77,6 +78,7 @@
     "postgres": "^3.4.4",
     "soap": "^1.1.0",
     "unpdf": "^1.6.2",
+    "ws": "^8.21.0",
     "zod": "^3.23.8",
     "zod-to-json-schema": "^3.23.3"
   },
@@ -86,6 +88,7 @@
     "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.11.10",
     "@types/supertest": "^6.0.2",
+    "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.5.0",
     "@typescript-eslint/parser": "^8.5.0",
     "@vitest/coverage-v8": "^2.1.1",

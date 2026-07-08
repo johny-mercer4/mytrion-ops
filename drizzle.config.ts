@@ -25,6 +25,7 @@ export default defineConfig({
     './src/db/schema/approvals.ts',
     './src/db/schema/agent_memories.ts',
     './src/db/schema/retention_cases.ts',
+    './src/db/schema/inbox_events.ts',
   ],
   out: './src/db/migrations',
   dialect: 'postgresql',

@@ -1447,3 +1447,23 @@ Carrier accounts are now provisioned FROM the already-defined clients in the dat
   cases and returned-closures surface near-real-time; singleton queue policy means runs never
   overlap, and the DWH scan is one seconds-fast read-only query. 30s would be pointlessly
   heavy on the warehouse. Design prompt copy updated to match (5-minute freshness).
+
+## 2026-07-09 (2) — inbox_events entity + native WebSocket pub/sub
+
+- **Entity** — `inbox_events` (migration `0021`, APPLIED to the app Postgres; DWH untouched):
+  priority (low/medium/high), tag, type (dot-namespaced slug), owner as owner_kind + owner_id
+  ('worker' → Zoho user id, 'client' → carrier_users id), plus title/detail/read_at.
+  Owner-feed composite index; the table is the durable feed behind the realtime push.
+- **Realtime** — our own native WebSocket (@fastify/websocket 10 / `ws`, no Redis):
+  `GET /v1/realtime?token=<jwt|API_KEY>` (token lifted from query → same sessionOrApiKey
+  guard). In-process hub (`src/modules/realtime/hub.ts`) with topic grammar
+  `inbox:<worker|client>:<id>` + `inbox:all` firehose. Sockets auto-subscribe to their OWN
+  topic from the verified session; foreign topics/firehose are admin-only; subscribe /
+  unsubscribe / ping over JSON frames.
+- **REST** — POST /v1/inbox/events (admin; persist FIRST, then publish live), owner-scoped
+  GET list (+unread count; admins may inspect any owner), :id/read (owner-or-admin),
+  read-all, :id/delete (admin). Writes audited.
+- Caveat noted in hub docs: hub is per-process; in a split send-only worker deploy, worker-
+  created events persist but need a pg NOTIFY bridge for live push (not built).
+- Verified: lint, typecheck, 440 tests (15 new) incl. a LIVE ws end-to-end (real listener,
+  real ws client: hello/auto-subscribe, denied foreign subscribe, REST create → socket frame).
