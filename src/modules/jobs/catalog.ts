@@ -93,6 +93,13 @@ export const retentionScanJob = defineJob({
   queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 600, deadLetter: DEAD_LETTER_QUEUE },
 });
 
+/** Nightly: DWH frequency-breach scan → create/refresh/close retention cases (no LLM). */
+export const retentionCaseSyncJob = defineJob({
+  name: 'automation.retention.case-sync',
+  schema: emptyPayload,
+  queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 600, deadLetter: DEAD_LETTER_QUEUE },
+});
+
 export const verificationRecheckJob = defineJob({
   name: 'automation.verification.recheck-reminders',
   schema: emptyPayload,
@@ -133,6 +140,7 @@ export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
   memoryDecayJob,
   debtorSweepJob,
   retentionScanJob,
+  retentionCaseSyncJob,
   verificationRecheckJob,
   checkpointSweepJob,
   deadLetterJob,
@@ -149,6 +157,7 @@ export const DEPARTMENT_AUTOMATION_QUEUES = new Set<string>([
 export const CRON_SCHEDULES: Array<{ name: string; cron: string }> = [
   { name: debtorSweepJob.name, cron: '0 8 * * 1-5' }, // weekday mornings
   { name: retentionScanJob.name, cron: '0 9 * * 1' }, // Monday morning
+  { name: retentionCaseSyncJob.name, cron: '0 5 * * *' }, // nightly, before shift start
   { name: verificationRecheckJob.name, cron: '0 7 * * *' }, // daily
   { name: checkpointSweepJob.name, cron: '30 3 * * *' }, // nightly
   { name: approvalsExpiryJob.name, cron: '15 * * * *' }, // hourly

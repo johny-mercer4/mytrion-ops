@@ -31,6 +31,7 @@ import { healthRoutes } from './routes/v1/health.routes.js';
 import { integrationsRoutes } from './routes/v1/integrations.routes.js';
 import { knowledgeRoutes } from './routes/v1/knowledge.routes.js';
 import { moneyCodeRoutes } from './routes/v1/moneyCode.routes.js';
+import { retentionRoutes } from './routes/v1/retention.routes.js';
 import { scopeRoutes } from './routes/v1/scope.routes.js';
 import { approvalsRoutes } from './routes/v1/approvals.routes.js';
 import { filesRoutes } from './routes/v1/files.routes.js';
@@ -186,6 +187,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(moneyCodeRoutes);
       await v1.register(adminRoutes);
       await v1.register(carrierUsersRoutes);
+      await v1.register(retentionRoutes);
       await v1.register(agentRoutes);
       await v1.register(tasksRoutes);
       await v1.register(filesRoutes);

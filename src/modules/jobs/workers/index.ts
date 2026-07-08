@@ -10,10 +10,12 @@ import {
   checkpointSweepJob,
   deadLetterJob,
   agentRunJob,
+  retentionCaseSyncJob,
 } from '../catalog.js';
 import { handleAgentRunJobs } from './agentRun.js';
 import { bulkIngestJob, handleBulkIngestJobs } from './knowledgeIngest.js';
 import { AUTOMATIONS, makeAutomationHandler } from './automations.js';
+import { runRetentionCaseSync } from './retentionCaseSync.js';
 import {
   decayAgentMemories,
   handleDeadLetterJobs,
@@ -29,6 +31,9 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
     await boss.work(spec.queue, { batchSize: 1 }, async () => handler());
   }
 
+  await boss.work(retentionCaseSyncJob.name, { batchSize: 1 }, async () =>
+    runRetentionCaseSync(),
+  );
   await boss.work(bulkIngestJob.name, { batchSize: 1 }, handleBulkIngestJobs);
   await boss.work(checkpointSweepJob.name, { batchSize: 1 }, async () => sweepStaleCheckpoints());
   await boss.work(approvalsExpiryJob.name, { batchSize: 1 }, async () => sweepExpiredApprovals());

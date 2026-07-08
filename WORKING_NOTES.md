@@ -1404,3 +1404,32 @@ Carrier accounts are now provisioned FROM the already-defined clients in the dat
   `background: linear-gradient(var(--glass), var(--glass)) var(--bg1)` — visually equivalent in
   both themes. Controls/MiniMap keep their blur (they sit outside the transformed viewport).
 - Verified: mytrion-crm typecheck + vite build.
+
+## 2026-07-08 (3) — Retention setup: single entity, CRUD, auto-generation from the DWH
+
+- **Entity** — `retention_cases` (migration `0020`): ONE table carrying the whole workflow.
+  Phase ladder `sales → retention → open_pool → citi` (citi = final; the sales rep gets the
+  first window per the future-workflow flowchart), SOP stage classification
+  (`inactive_no_reason | inactive_reason_noted | out_of_reach | pending | assigned_to_agent`),
+  outcome, inactivity reason + note, out-of-reach attempt counter, open-pool assignment state,
+  and DWH frequency metrics (class/threshold/last-tx/days-inactive/tx-count/gallons/cards).
+  Partial unique index: one OPEN case per (tenant, carrier); closed rows keep episode history.
+- **Auto-generation** — `src/integrations/dwhRetention.ts` scans `octane.dim_company` (active,
+  non-debtor, has swiped — debtors excluded at the source per the flowchart) joined with 90-day
+  aggregates from `octane.mart_transaction_line_items`. Frequency classes high/medium/low =
+  expected tx every 2/5/7 days (classified from avg 90-day gap); a carrier BREACHES when
+  days-inactive exceeds its threshold. Query validated read-only against the live DWH via
+  `pnpm dwh:inspect` (returns high-volume carriers 3–7 days quiet — exactly the SOP priority).
+- **Sync** — `src/modules/retention/retentionSync.ts`: breach without an open case → create
+  (phase `sales`, source `auto`); breach with an open case → refresh metrics; open case whose
+  carrier transacted after creation and is back inside threshold → close `returned` ("Returned"
+  branch). `citi` cases are never auto-closed. Runs nightly (`automation.retention.case-sync`,
+  cron 05:00, no LLM) and on demand via `POST /v1/retention/sync` (admin).
+- **CRUD** — `/v1/retention/cases` list/get/create/patch (+ POST `:id/delete` alias). Reads +
+  case-work writes need the retention department (x-department-access honored for INTERNAL
+  callers only — a customer session can never claim a department; a test caught that hole and
+  the gate now audience-checks first). Delete + sync are admin-only. All writes audited.
+- Frontend: `apps/mytrion-crm/src/api/retention.ts` typed client (module UI still on fixtures —
+  wiring Cases/OpenPool to the API is the next step; blueprint TBD).
+- Verified: root lint + typecheck + 425 tests (18 new), web typecheck, live-DWH query smoke.
+- NOT yet applied: `pnpm db:migrate` (app DB is the live Render Postgres — run at deploy time).

@@ -15,3 +15,4 @@ export * from './agent_tasks.js';
 export * from './file_assets.js';
 export * from './approvals.js';
 export * from './agent_memories.js';
+export * from './retention_cases.js';
