@@ -93,8 +93,18 @@ export function buildServerCrmCall(
         expose: true,
       });
     }
+    const str = String(value);
+    // encodeURIComponent leaves '.' intact, and `new URL()` normalizes '..'/'.' segments —
+    // a path param of '..' could redirect the call to a different endpoint. Reject them.
+    if (str === '.' || str === '..') {
+      throw new AppError(`Invalid path param '${name}'`, {
+        statusCode: 400,
+        code: 'VALIDATION_ERROR',
+        expose: true,
+      });
+    }
     delete leftovers[name];
-    return encodeURIComponent(String(value));
+    return encodeURIComponent(str);
   });
   return { path, leftovers };
 }

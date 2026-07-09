@@ -70,6 +70,36 @@ describe('parseFunctionOutput', () => {
     expect(parseFunctionOutput('billing form not found')).toBe('billing form not found');
     expect(parseFunctionOutput('  ')).toBeNull();
   });
+
+  it('wraps a bracket-less comma-joined record list into an array (announcements)', () => {
+    expect(parseFunctionOutput('{"a":1},{"a":2}')).toEqual([{ a: 1 }, { a: 2 }]);
+    // a single valid object is not mistaken for a list
+    expect(parseFunctionOutput('{"a":1}')).toEqual({ a: 1 });
+  });
+});
+
+describe('cardAction unwrap (destructive EFS idiom)', () => {
+  it('returns the unwrapped body when there is no explicit failure flag', async () => {
+    fetchMock.mockResolvedValueOnce(zohoResponse({ Result: { newStatus: 'INACTIVE', cardNumber: '70…' } }));
+    await expect(executeZohoFunction('mytrioncardstatus', {}, { unwrap: 'cardAction' })).resolves.toEqual({
+      newStatus: 'INACTIVE',
+      cardNumber: '70…',
+    });
+  });
+
+  it('throws when the unwrapped body carries an explicit failure', async () => {
+    fetchMock.mockResolvedValueOnce(zohoResponse({ data: { success: false, message: 'card not found' } }));
+    await expect(
+      executeZohoFunction('mytrioncardstatus', {}, { unwrap: 'cardAction' }),
+    ).rejects.toThrow('card not found');
+  });
+});
+
+describe('crashed-function envelope', () => {
+  it('throws when code!==success and there is no details.output', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ code: 'error', details: {} }), { status: 200 }));
+    await expect(executeZohoFunction('fn', {})).rejects.toThrow(/code: error/);
+  });
 });
 
 describe('executeZohoFunction — request shape', () => {

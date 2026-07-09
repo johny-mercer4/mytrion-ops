@@ -196,7 +196,7 @@ export const AUTOMATION_SPECS: Record<string, AutomationSpec> = {
       const res = await callTouchpoint('carrier.billing_form_info', {
         carrierId: requireCarrier(target),
       });
-      if (typeof res === 'string' || !res.billingForm) {
+      if (!res || typeof res === 'string' || !res.billingForm) {
         return { kind: 'ack', message: 'No billing form on file for this carrier.' };
       }
       return {
@@ -247,9 +247,10 @@ export const AUTOMATION_SPECS: Record<string, AutomationSpec> = {
     run: async (target, input) => {
       const res = await callTouchpoint('dwh.transactions', {
         carrierId: requireCarrier(target),
+        // /api/agent/dwh/* uses the day|week|month|… vocabulary (NOT last_30).
         ...(input.from && input.to
           ? { range: 'custom', from: input.from, to: input.to }
-          : { range: 'last_30' }),
+          : { range: 'month' }),
         limit: 200,
       });
       const rows = (res.data ?? []).slice(0, 100).map((tx) => {
@@ -317,18 +318,20 @@ export const AUTOMATION_SPECS: Record<string, AutomationSpec> = {
     ],
     run: async (target, input) => {
       const carrierId = requireCarrier(target);
-      const cardNumber = input.fields.cardNumber ?? '';
+      const cardNumber = (input.fields.cardNumber ?? '').trim();
+      const unitNumber = input.fields.unitNumber?.trim();
+      const driverId = input.fields.driverId?.trim();
       await callTouchpoint('dwh.card_activate', { carrierId, cardNumber });
       const rows: KVRow[] = [{ label: 'Card', value: cardNumber }, { label: 'Status', value: 'ACTIVATED' }];
-      if (input.fields.unitNumber || input.fields.driverId) {
+      if (unitNumber || driverId) {
         await callTouchpoint('efs.card_info', {
           carrierId,
           cardNumber,
-          ...(input.fields.unitNumber ? { unitNumber: input.fields.unitNumber } : {}),
-          ...(input.fields.driverId ? { driverId: input.fields.driverId } : {}),
+          ...(unitNumber ? { unitNumber } : {}),
+          ...(driverId ? { driverId } : {}),
         });
-        if (input.fields.unitNumber) rows.push({ label: 'Unit number', value: input.fields.unitNumber });
-        if (input.fields.driverId) rows.push({ label: 'Driver ID', value: input.fields.driverId });
+        if (unitNumber) rows.push({ label: 'Unit number', value: unitNumber });
+        if (driverId) rows.push({ label: 'Driver ID', value: driverId });
       }
       return { kind: 'kv', title: 'Card activated', rows };
     },
@@ -338,7 +341,11 @@ export const AUTOMATION_SPECS: Record<string, AutomationSpec> = {
     // Eligibility view: live EFS statuses — replacement itself still routes via the fraud team.
     run: async (target) => {
       const res = await callTouchpoint('efs.cards', { carrierId: requireCarrier(target) });
-      const rows = (res.data ?? []).map((c) => [fmt(c.card_number), fmt(c.status)]);
+      // /api/efs/cards summaries are camelCase (cardNumber); DWH card rows are snake_case.
+      const rows = (res.data ?? []).map((c) => [
+        fmt((c as { cardNumber?: unknown; card_number?: unknown }).cardNumber ?? c.card_number),
+        fmt(c.status),
+      ]);
       return { kind: 'table', title: 'Live card statuses (hold-for-fraud = replacement eligible)', columns: ['Card', 'Status'], rows };
     },
   },

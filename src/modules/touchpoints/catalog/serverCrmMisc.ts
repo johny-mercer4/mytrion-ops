@@ -4,7 +4,7 @@
  */
 import { z } from 'zod';
 import type { Touchpoint } from '../types.js';
-import { carrierId, cardNumber, idString, limit, rangeKeyword, shortText, ymdDate } from './common.js';
+import { carrierId, cardNumber, idString, limit, salesRange, shortText, ymdDate } from './common.js';
 
 export const serverCrmMiscTouchpoints: Touchpoint[] = [
   {
@@ -109,7 +109,7 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
     pathTemplate: '/api/salesMytrion/fetchInvoices',
     paramsSchema: z.object({
       carrierId,
-      range: rangeKeyword.optional(),
+      range: salesRange.optional(),
       status: z.string().max(40).optional(),
       from: ymdDate.optional(),
       to: ymdDate.optional(),

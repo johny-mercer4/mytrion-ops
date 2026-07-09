@@ -5,7 +5,7 @@
  */
 import { z } from 'zod';
 import type { Touchpoint } from '../types.js';
-import { carrierId, cardNumber, idString, limit, rangeKeyword, shortText, ymdDate } from './common.js';
+import { carrierId, cardNumber, dwhRange, idString, limit, shortText, ymdDate } from './common.js';
 
 const carrierOnly = z.object({ carrierId });
 
@@ -94,7 +94,7 @@ export const serverCrmAgentTouchpoints: Touchpoint[] = [
     carrierParam: 'carrierId',
     method: 'GET',
     pathTemplate: '/api/agent/dwh/cards/{carrierId}/last-used',
-    paramsSchema: z.object({ carrierId, range: rangeKeyword.default('all_time') }),
+    paramsSchema: z.object({ carrierId, range: dwhRange.default('all_time') }),
   },
   {
     kind: 'servercrm',
@@ -106,7 +106,7 @@ export const serverCrmAgentTouchpoints: Touchpoint[] = [
     pathTemplate: '/api/agent/dwh/transactions/{carrierId}',
     paramsSchema: z.object({
       carrierId,
-      range: rangeKeyword.optional(),
+      range: dwhRange.optional(),
       limit: limit(5000, 5000).optional(),
       from: ymdDate.optional(),
       to: ymdDate.optional(),
@@ -122,7 +122,7 @@ export const serverCrmAgentTouchpoints: Touchpoint[] = [
     pathTemplate: '/api/agent/dwh/transactions/{carrierId}/invoices',
     paramsSchema: z.object({
       carrierId,
-      range: rangeKeyword.optional(),
+      range: dwhRange.optional(),
       from: ymdDate.optional(),
       to: ymdDate.optional(),
     }),

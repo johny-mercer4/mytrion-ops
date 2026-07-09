@@ -154,11 +154,11 @@ describe('servercrm call building', () => {
   });
 
   it('GET leftovers become query params; POST leftovers become the body', async () => {
-    await dispatchTouchpoint(salesCtx(), 'dwh.transactions', { carrierId: '5', range: 'last_30' });
+    await dispatchTouchpoint(salesCtx(), 'dwh.transactions', { carrierId: '5', range: 'month' });
     expect(serverCrmRequestMock).toHaveBeenCalledWith(
       'GET',
       '/api/agent/dwh/transactions/5',
-      { query: { range: 'last_30' } },
+      { query: { range: 'month' } },
     );
 
     serverCrmRequestMock.mockClear();
@@ -197,5 +197,10 @@ describe('error mapping', () => {
   it('missing path param is a 400 AppError', () => {
     const tp = getTouchpoint('dwh.carrier_balance') as ServerCrmTouchpoint;
     expect(() => buildServerCrmCall(tp, {})).toThrow(AppError);
+  });
+
+  it('rejects a dot-segment path param that URL normalization would redirect', () => {
+    const tp = getTouchpoint('dwh.carrier_balance') as ServerCrmTouchpoint;
+    expect(() => buildServerCrmCall(tp, { carrierId: '..' })).toThrow(AppError);
   });
 });

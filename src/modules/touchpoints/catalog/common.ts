@@ -9,8 +9,24 @@ export const idString = z
 export const carrierId = idString;
 export const cardNumber = z.string().min(4).max(30);
 
-/** Date range keyword used by servercrm reporting endpoints. */
-export const rangeKeyword = z.enum(['last_7', 'last_30', 'last_90', 'all_time', 'custom']);
+/**
+ * Two DISTINCT range vocabularies exist in servercrm (verified against the reference):
+ *  - dwhRange   → /api/agent/dwh/* (transactions, invoices, cards/last-used): _resolveRange
+ *                 accepts day|week|month|quarter|half_year|year|all_time|custom, 400 otherwise.
+ *  - salesRange → /api/salesMytrion/fetchInvoices: last_7|last_30|last_90|custom.
+ * Using the wrong list is a 400 from the upstream, so keep them separate.
+ */
+export const dwhRange = z.enum([
+  'day',
+  'week',
+  'month',
+  'quarter',
+  'half_year',
+  'year',
+  'all_time',
+  'custom',
+]);
+export const salesRange = z.enum(['last_7', 'last_30', 'last_90', 'custom']);
 
 /** yyyy-mm-dd (the widget's date inputs). */
 export const ymdDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected yyyy-mm-dd');

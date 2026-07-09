@@ -46,7 +46,8 @@ export const carrierDelugeTouchpoints: Touchpoint[] = [
     riskClass: 'destructive',
     carrierParam: 'carrierId',
     functionNames: ['mytrioncardstatus'],
-    unwrap: 'permissive',
+    // Destructive EFS action — a failure payload must NOT read as success (widget parity).
+    unwrap: 'cardAction',
     paramsSchema: z.object({
       carrierId,
       cardNumber,
@@ -60,7 +61,7 @@ export const carrierDelugeTouchpoints: Touchpoint[] = [
     riskClass: 'destructive',
     carrierParam: 'carrierId',
     functionNames: ['mytrioncardlimits'],
-    unwrap: 'permissive',
+    unwrap: 'cardAction',
     paramsSchema: z.object({
       carrierId,
       cardNumber,

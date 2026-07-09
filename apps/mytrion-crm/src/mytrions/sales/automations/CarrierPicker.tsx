@@ -27,8 +27,12 @@ export function CarrierPicker({
   useEffect(() => {
     const q = query.trim();
     if (q.length < 2) {
+      // Bump the sequence so a search already in flight can't land its stale results
+      // (and reopen the dropdown) after the input was cleared.
+      seq.current++;
       setResults([]);
       setSearching(false);
+      setOpen(false);
       return;
     }
     setSearching(true);

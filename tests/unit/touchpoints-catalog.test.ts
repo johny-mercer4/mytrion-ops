@@ -115,6 +115,17 @@ describe('param schemas', () => {
     ).not.toThrow();
   });
 
+  it('uses the DWH range vocabulary for /api/agent/dwh/* and the sales vocabulary for salesMytrion', () => {
+    const tx = getTouchpoint('dwh.transactions');
+    expect(() => tx?.paramsSchema.parse({ carrierId: '1', range: 'month' })).not.toThrow();
+    // 'last_30' belongs to the salesMytrion endpoint, NOT the DWH agent endpoints.
+    expect(() => tx?.paramsSchema.parse({ carrierId: '1', range: 'last_30' })).toThrow();
+
+    const inv = getTouchpoint('sales_mytrion.fetch_invoices');
+    expect(() => inv?.paramsSchema.parse({ carrierId: '1', range: 'last_30' })).not.toThrow();
+    expect(() => inv?.paramsSchema.parse({ carrierId: '1', range: 'month' })).toThrow();
+  });
+
   it('rejects missing required params and smuggled enum values', () => {
     const status = getTouchpoint('cards.status');
     expect(() => status?.paramsSchema.parse({ carrierId: '1', cardNumber: '7083051234' })).toThrow();

@@ -50,8 +50,11 @@ export type DelugeArgs = Record<string, unknown>;
  *  - 'status'      — requires `status === 'success'`, else throws with the payload message.
  *  - 'successFlag' — requires `success === true` (loose: also accepts 'true'/'success').
  *  - 'permissive'  — returns `data ?? Result ?? Response ?? parsed` without judging.
+ *  - 'cardAction'  — the widget's EFS card idiom: unwrap `data/Result/Response`, then treat
+ *                    an EXPLICIT failure flag (success:false | status:'error' | error/
+ *                    errorMessage present) as a failure; otherwise return the unwrapped body.
  */
-export type UnwrapMode = 'status' | 'successFlag' | 'permissive';
+export type UnwrapMode = 'status' | 'successFlag' | 'permissive' | 'cardAction';
 
 export interface ExecuteZohoFunctionOptions {
   /** Use this token instead of the managed cache (disables the 401 retry). */
@@ -81,6 +84,16 @@ export function parseFunctionOutput(raw: string): unknown {
     try {
       return JSON.parse(repaired);
     } catch {
+      // Some functions (mytrionfetchannouncements) emit a bracket-LESS comma-joined record
+      // list: `{...},{...}`. The widget wraps it in [] before parsing — only when the wrap
+      // yields a valid array (plain error text still falls through to the raw string).
+      if (/^\{.*\}$/s.test(text) && text.includes('},{')) {
+        try {
+          return JSON.parse(`[${text}]`);
+        } catch {
+          /* fall through */
+        }
+      }
       return text;
     }
   }
@@ -96,12 +109,28 @@ function messageOf(payload: unknown): string {
 }
 
 function applyUnwrap(functionName: string, payload: unknown, mode: UnwrapMode): unknown {
-  if (mode === 'permissive') {
-    if (payload && typeof payload === 'object') {
-      const p = payload as Record<string, unknown>;
-      return p.data ?? p.Result ?? p.Response ?? payload;
+  if (mode === 'permissive' || mode === 'cardAction') {
+    const unwrapped =
+      payload && typeof payload === 'object'
+        ? ((payload as Record<string, unknown>).data ??
+          (payload as Record<string, unknown>).Result ??
+          (payload as Record<string, unknown>).Response ??
+          payload)
+        : payload;
+    // cardAction: after unwrapping, reject only on an EXPLICIT failure signal (matches the
+    // widget). A body with none of these keys is treated as success (EFS echo-backs).
+    if (mode === 'cardAction' && unwrapped && typeof unwrapped === 'object') {
+      const u = unwrapped as Record<string, unknown>;
+      const explicitFailure =
+        u.success === false ||
+        u.success === 'false' ||
+        u.status === 'error' ||
+        u.status === 'failure' ||
+        (u.error != null && u.error !== '') ||
+        (u.errorMessage != null && u.errorMessage !== '');
+      if (explicitFailure) throw new ZohoFunctionError(messageOf(unwrapped), { functionName });
     }
-    return payload;
+    return unwrapped;
   }
   const p = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
   const ok =
@@ -187,10 +216,21 @@ export async function executeZohoFunction<T = unknown>(
         httpStatus: exec.httpStatus,
       });
     }
-    const details = (body as { details?: { output?: unknown } }).details;
-    const rawOutput = details?.output;
-    output =
-      typeof rawOutput === 'string' ? parseFunctionOutput(rawOutput) : (rawOutput ?? null);
+    const envelope = body as { code?: unknown; details?: { output?: unknown } };
+    const rawOutput = envelope.details?.output;
+    // Zoho answers a crashed function with HTTP 200 + a non-'success' code and no output.
+    // Don't let that surface as a silent null "success" on permissive touchpoints.
+    if (
+      (rawOutput === undefined || rawOutput === null) &&
+      typeof envelope.code === 'string' &&
+      envelope.code.toLowerCase() !== 'success'
+    ) {
+      throw new ZohoFunctionError(`Zoho function '${functionName}' failed (code: ${envelope.code})`, {
+        functionName,
+        httpStatus: exec.httpStatus,
+      });
+    }
+    output = typeof rawOutput === 'string' ? parseFunctionOutput(rawOutput) : (rawOutput ?? null);
   }
   return applyUnwrap(functionName, output, opts.unwrap ?? 'permissive') as T;
 }

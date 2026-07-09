@@ -1467,3 +1467,18 @@ Carrier accounts are now provisioned FROM the already-defined clients in the dat
   created events persist but need a pg NOTIFY bridge for live push (not built).
 - Verified: lint, typecheck, 440 tests (15 new) incl. a LIVE ws end-to-end (real listener,
   real ws client: hello/auto-subscribe, denied foreign subscribe, REST create → socket frame).
+
+## 2026-07-09 → 07-10 — Touchpoints layer (Deluge + servercrm) for the Sales Mytrion
+
+- **Reusable wrappers.** `src/integrations/zohoFunctions.ts` — `executeZohoFunction(name, args, {accessToken?, unwrap})` (managed token by default, ported from the servercrm ref: body-less POST to `{origin}/crm/v2/functions/<name>/actions/execute?auth_type=oauth&arguments=<json>`, `details.output` parse w/ numeric-key repair, 401 invalidate+retry-once, casing fallback pairs). servercrm wrapper already existed (`serverCrm.ts`); added `ServerCrmHttpError` (status + body) for 4xx-passthrough vs 502 mapping.
+- **Catalog + dispatcher.** `src/modules/touchpoints/` — 48 declarative entries (22 Deluge, 26 servercrm) split by domain, each with a zod schema + risk class + identity/carrier annotations. One dispatcher: internal-audience + `sales` dept gate (destructive tier behind `FF_TOUCHPOINT_DESTRUCTIVE_SALES`, default on = widget parity), session-authoritative identity injection (`serverCrmScope`), `assertCarrierOwned`, path templating + query/body split, error mapping. Route `POST /v1/touchpoints/:key` + `GET /v1/touchpoints` discovery; writes/destructive audited (PAN masked), reads not.
+- **Sales Automations tab is LIVE** (was a setTimeout stub): DWH client typeahead (`CarrierPicker` over `searchClients`), 12 flows wired (balance, account-status, payments w/ Deluge fallback, tracking, billing-form, invoices + signed-url download, transactions, wex-tasks, card-activation, card-replacement, fraud-hold, efs-login link), inline result views, per-run `automation_logs` post. money-code stays `comingSoon`.
+- **Adversarial review (partial workflow) — fixes applied:**
+  - Range vocab: `/api/agent/dwh/*` uses `day|week|month|…|custom` (NOT `last_*`); only `/api/salesMytrion/fetchInvoices` uses `last_7|last_30|last_90`. Split into `dwhRange`/`salesRange`; transactions default was `last_30` (would 400 every run) → `month`. VERIFIED live (`range=month` → 200).
+  - `efs.cards` returns camelCase `cardNumber` (card-replacement read `card_number` → all '—') → read both. VERIFIED live.
+  - `cards.status`/`cards.limits` → new `cardAction` unwrap (throws on explicit EFS failure flag; permissive was silently succeeding).
+  - Crashed-Deluge envelope (`code!=success`, no output) now throws instead of null-success; `mytrionfetchannouncements` bracket-less list wrapped to array.
+  - Dot-segment (`..`) path params rejected (URL normalization redirect); billing-form null-crash guarded; CarrierPicker stale-results seq bump; invoice-download error toast; card fields trimmed.
+- Accepted (widget-parity, not regressions): `invoice_signed_url` has no per-carrier ownership check and `fraud.hold_release` takes a caller `agentEmail` — both match the legacy widget's static-key behavior; servercrm itself doesn't enforce them. Audit logs the client-sent params (actor identity is separate) rather than post-injection values.
+- Read-only live smoke: `scripts/touchpointsSmoke.ts` (`pnpm tsx`), verifies token flow + parsing against real Zoho + servercrm, no writes.
+- Verified: root lint + typecheck + 486 tests; web typecheck + 51 tests; live smoke green.

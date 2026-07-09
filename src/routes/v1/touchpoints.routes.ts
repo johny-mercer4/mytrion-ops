@@ -24,6 +24,16 @@ const dispatchSchema = callerIdentitySchema.extend({
   params: z.record(z.unknown()).default({}),
 });
 
+/** Mask full card numbers (PAN) in audited params — keep the last 4 for traceability. */
+function redactParams(params: unknown): unknown {
+  if (typeof params !== 'object' || params === null) return params;
+  const out: Record<string, unknown> = { ...(params as Record<string, unknown>) };
+  if (typeof out.cardNumber === 'string' && out.cardNumber.length > 4) {
+    out.cardNumber = `•••• ${out.cardNumber.slice(-4)}`;
+  }
+  return out;
+}
+
 async function auditInvocation(
   ctx: TenantContext,
   key: string,
@@ -102,7 +112,7 @@ export async function touchpointsRoutes(app: FastifyInstance): Promise<void> {
         } else if (shouldAudit) {
           await auditInvocation(ctx, key, 'error', {
             ...baseDetail,
-            params: body.params,
+            params: redactParams(body.params),
             error: err instanceof AppError ? err.message : 'internal error',
           });
         }

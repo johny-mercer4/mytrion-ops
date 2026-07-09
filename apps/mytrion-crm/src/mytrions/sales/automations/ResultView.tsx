@@ -6,8 +6,10 @@
 import { useState } from 'react';
 import { CheckCircle2, Download, ExternalLink, Loader2 } from 'lucide-react';
 
+import { ApiError } from '@/api/transport';
 import { callTouchpoint } from '@/api/touchpoints';
 import type { KVRow, Outcome } from './specs';
+import { useToast } from '../Toast';
 
 function KVGrid({ rows }: { rows: KVRow[] }) {
   if (rows.length === 0) return <p className="text-sm text-muted-foreground">Nothing to show.</p>;
@@ -54,6 +56,7 @@ function DataTable({ columns, rows }: { columns: string[]; rows: string[][] }) {
 }
 
 function InvoiceRow({ row }: { row: { id: string; label: string; status: string; amount: string } }) {
+  const { push } = useToast();
   const [busy, setBusy] = useState<'pdf' | 'excel' | null>(null);
   async function download(type: 'pdf' | 'excel') {
     setBusy(type);
@@ -63,6 +66,10 @@ function InvoiceRow({ row }: { row: { id: string; label: string; status: string;
         type,
       });
       if (url) window.open(url, '_blank', 'noopener');
+      else push('error', `No ${type.toUpperCase()} available for ${row.label}.`);
+    } catch (err) {
+      const message = err instanceof ApiError || err instanceof Error ? err.message : 'Download failed.';
+      push('error', message);
     } finally {
       setBusy(null);
     }
