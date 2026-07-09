@@ -1,0 +1,98 @@
+/**
+ * Carrier-scoped Deluge touchpoints — tracking, payments, billing forms, card actions,
+ * CMP invoice search, maintenance tickets. Every entry is keyed on a carrier the caller
+ * must own (carrierParam → assertCarrierOwned for non-admins).
+ */
+import { z } from 'zod';
+import type { Touchpoint } from '../types.js';
+import { carrierId, cardNumber, idString, shortText } from './common.js';
+
+export const carrierDelugeTouchpoints: Touchpoint[] = [
+  {
+    kind: 'deluge',
+    key: 'carrier.trucking_number_request',
+    title: 'Tracking numbers (FedEx card shipments)',
+    riskClass: 'read',
+    carrierParam: 'carrierId',
+    functionNames: ['mytriontruckingnumberrequest'],
+    unwrap: 'status',
+    paramsSchema: z.object({ carrierId }),
+  },
+  {
+    kind: 'deluge',
+    key: 'carrier.check_payment',
+    title: 'Payment / CMP invoice check',
+    riskClass: 'read',
+    carrierParam: 'carrierId',
+    functionNames: ['mytrionCheckPayment', 'mytrioncheckpayment'],
+    unwrap: 'status',
+    paramsSchema: z.object({ carrierId }),
+  },
+  {
+    kind: 'deluge',
+    key: 'carrier.billing_form_info',
+    title: 'Billing form + verification notes',
+    riskClass: 'read',
+    carrierParam: 'carrierId',
+    // "not found" arrives as a plain string — a clean empty state, not an error.
+    functionNames: ['mytrionfetchbillingforminfo', 'mytrionFetchBillingFormInfo'],
+    unwrap: 'permissive',
+    paramsSchema: z.object({ carrierId }),
+  },
+  {
+    kind: 'deluge',
+    key: 'cards.status',
+    title: 'Card activate / deactivate (EFS)',
+    riskClass: 'destructive',
+    carrierParam: 'carrierId',
+    functionNames: ['mytrioncardstatus'],
+    unwrap: 'permissive',
+    paramsSchema: z.object({
+      carrierId,
+      cardNumber,
+      action: z.enum(['ACTIVATE', 'DEACTIVATE']),
+    }),
+  },
+  {
+    kind: 'deluge',
+    key: 'cards.limits',
+    title: 'Card limit increase / decrease (EFS)',
+    riskClass: 'destructive',
+    carrierParam: 'carrierId',
+    functionNames: ['mytrioncardlimits'],
+    unwrap: 'permissive',
+    paramsSchema: z.object({
+      carrierId,
+      cardNumber,
+      limitId: shortText(40),
+      limitValue: idString,
+      action: z.enum(['INCREASE', 'DECREASE']),
+    }),
+  },
+  {
+    kind: 'deluge',
+    key: 'invoices.search',
+    title: 'Live CMP invoice search',
+    riskClass: 'read',
+    carrierParam: 'carrierId',
+    functionNames: ['mytrionSearchInvoices', 'mytrionsearchinvoices'],
+    unwrap: 'status',
+    paramsSchema: z.object({ carrierId }),
+  },
+  {
+    kind: 'deluge',
+    key: 'maintenance.create',
+    title: 'Maintenance ticket (mechanical / tire)',
+    riskClass: 'write',
+    carrierParam: 'carrierId',
+    functionNames: ['createmaintenance'],
+    unwrap: 'permissive',
+    paramsSchema: z.object({
+      companyName: shortText(300),
+      companyId: idString,
+      number: shortText(40),
+      type: z.enum(['Mechanical', 'Tire Replacement']),
+      carrierId,
+    }),
+  },
+];

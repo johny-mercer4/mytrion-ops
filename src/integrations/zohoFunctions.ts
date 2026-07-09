@@ -39,8 +39,11 @@ export class ZohoFunctionError extends AppError {
   }
 }
 
-/** Deluge argument maps are flat key/value; undefined entries are dropped before send. */
-export type DelugeArgs = Record<string, string | number | boolean | null | undefined>;
+/**
+ * Deluge argument map — serialized whole into the `arguments` query param. Values may be
+ * nested (e.g. mytrioncreatelead's createPayload object); undefined entries are dropped.
+ */
+export type DelugeArgs = Record<string, unknown>;
 
 /**
  * How to detect success in the function output (widget conventions):
