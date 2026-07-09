@@ -13,6 +13,8 @@ import {
   type RegistrationView,
 } from './lib/api';
 import { getRegistrationId, getTelegramWebApp, type TelegramWebAppUser } from './lib/telegram';
+import { FuelCard } from './components/fuel-card';
+import { Logo, LogoLockup } from './components/logo';
 import { Avatar, AvatarFallback, AvatarImage } from './components/ui/avatar';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
@@ -37,9 +39,12 @@ function Screen({ children }: { children: React.ReactNode }) {
 function LoadingScreen() {
   return (
     <Screen>
-      <div className="flex flex-col items-center gap-3 text-muted-foreground">
-        <Spinner className="text-primary" />
-        <p className="text-sm">Checking your registration link…</p>
+      <div className="flex flex-col items-center gap-4">
+        <Logo size={56} />
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Spinner className="size-4 text-primary" />
+          <p className="text-sm">Checking your registration link…</p>
+        </div>
       </div>
     </Screen>
   );
@@ -48,11 +53,15 @@ function LoadingScreen() {
 function ErrorScreen({ message }: { message: string }) {
   return (
     <Screen>
-      <Card className="flex flex-col items-center gap-3 text-center">
-        <div className="text-2xl">⚠️</div>
+      <div className="mb-5 flex justify-center">
+        <Logo size={48} className="opacity-40 grayscale" />
+      </div>
+      <Card className="flex flex-col items-center gap-2 text-center">
         <h1 className="text-base font-bold">This link isn't valid</h1>
         <p className="text-sm text-muted-foreground">{message}</p>
-        <p className="text-xs text-muted-foreground">Contact your Octane rep for a new registration link.</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Contact your Octane rep for a new registration link.
+        </p>
       </Card>
     </Screen>
   );
@@ -72,19 +81,23 @@ function ConfirmScreen({
   const isDriver = preview.profile === 'driver';
   return (
     <Screen>
-      <div className="mb-5 text-center">
-        <h1 className="text-lg font-bold">Hi {firstName} 👋</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {isDriver ? 'Confirm you drive for:' : "Confirm you're registering:"}
-        </p>
+      <div className="mb-6 flex flex-col items-center gap-4 text-center">
+        <Logo size={64} />
+        <div>
+          <h1 className="text-lg font-bold">Hi {firstName}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {isDriver ? 'Confirm you drive for:' : "Confirm you're registering:"}
+          </p>
+        </div>
       </div>
       <Card className="flex flex-col gap-1">
         <CardRow label="Company" value={preview.companyName ?? '—'} />
         {!isDriver && preview.companyType && (
           <CardRow
             label="Account type"
+            // Quiet on purpose: the CTA below is the only thing wearing the brand gradient.
             value={
-              <Badge variant={preview.companyType === 'fleet-manager' ? 'default' : 'secondary'}>
+              <Badge variant="secondary">
                 {preview.companyType === 'fleet-manager' ? 'Fleet manager' : 'Owner-operator'}
               </Badge>
             }
@@ -127,48 +140,60 @@ function CardRowManager({
   }
 
   return (
-    <div className="border-t border-border py-3 first:border-t-0 first:pt-0">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-semibold">Card {card.cardNumber ?? card.cardId ?? '—'}</span>
-        <Badge variant={card.status === 'open' ? 'outline' : 'default'}>
-          {card.status === 'registered' ? 'Registered' : card.status === 'pending' ? 'Invite sent' : 'No driver'}
-        </Badge>
-      </div>
-      {card.driverName && <p className="mt-1 text-xs text-muted-foreground">Driver: {card.driverName}</p>}
-
+    <FuelCard
+      cardNumber={card.cardNumber}
+      cardId={card.cardId}
+      cardType={card.cardType}
+      driverName={card.driverName}
+      status={card.status}
+    >
       {card.status === 'open' && !link && (
-        <div className="mt-2 flex gap-2">
+        <div className="flex flex-col gap-2">
           <input
-            className="h-10 flex-1 rounded-xs border border-border bg-background px-3 text-sm outline-none focus:border-ring"
-            placeholder="Driver name"
+            className="h-12 w-full rounded-sm border border-border bg-background px-3.5 text-sm outline-none focus:border-ring"
+            placeholder="Driver's name"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
-          <Button className="w-auto px-3" size="sm" disabled={busy || !name.trim()} onClick={issue}>
-            {busy ? <Spinner className="size-4" /> : 'Create link'}
+          <Button disabled={busy || !name.trim()} onClick={issue}>
+            {busy ? <Spinner className="size-4" /> : 'Create driver link'}
           </Button>
         </div>
       )}
+
       {link && (
-        <div className="mt-2 flex gap-2">
-          <input
-            className="h-10 flex-1 rounded-xs border border-border bg-muted px-3 font-mono text-xs outline-none"
-            readOnly
-            value={link}
-            onFocus={(e) => e.currentTarget.select()}
-          />
-          <Button
-            className="w-auto px-3"
-            size="sm"
-            variant="outline"
-            onClick={() => navigator.clipboard?.writeText(link)}
-          >
-            Copy
-          </Button>
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-muted-foreground">
+            Send this link to {name || 'your driver'} — it works once.
+          </p>
+          <div className="flex gap-2">
+            <input
+              className="h-12 min-w-0 flex-1 rounded-sm border border-border bg-muted px-3.5 font-mono text-xs outline-none"
+              readOnly
+              value={link}
+              onFocus={(e) => e.currentTarget.select()}
+            />
+            <Button
+              className="w-auto px-4"
+              variant="outline"
+              onClick={() => navigator.clipboard?.writeText(link)}
+            >
+              Copy
+            </Button>
+          </div>
         </div>
       )}
-      {err && <p className="mt-1 text-xs text-destructive">{err}</p>}
-    </div>
+
+      {card.status !== 'open' && !link && (
+        <p className="text-xs text-muted-foreground">
+          {card.status === 'registered'
+            ? 'This driver has signed in on Telegram.'
+            : 'Waiting for the driver to open their link.'}
+        </p>
+      )}
+
+      {err && <p className="mt-2 text-xs text-destructive">{err}</p>}
+    </FuelCard>
   );
 }
 
@@ -192,27 +217,35 @@ function FleetManager({ initData }: { initData: string }) {
 
   const registered = cards?.filter((c) => c.status === 'registered').length ?? 0;
   return (
-    <Card className="mt-4 text-left">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <span className="text-sm font-bold">Your fleet</span>
-        {cards && (
+    <section className="mt-6">
+      <div className="mb-3 flex items-baseline justify-between gap-3 px-1">
+        <h2 className="text-sm font-bold">Your fleet</h2>
+        {cards && cards.length > 0 && (
           <span className="text-xs text-muted-foreground">
             {registered} of {cards.length} registered
           </span>
         )}
       </div>
+
       {!cards && !err && (
-        <div className="flex items-center gap-2 text-muted-foreground">
+        <div className="flex items-center gap-2 px-1 text-muted-foreground">
           <Spinner className="size-4 text-primary" />
           <span className="text-sm">Loading your cards…</span>
         </div>
       )}
-      {err && <p className="text-sm text-destructive">{err}</p>}
-      {cards?.length === 0 && <p className="text-sm text-muted-foreground">No active cards found.</p>}
-      {cards?.map((c) => (
-        <CardRowManager key={c.cardId ?? c.cardNumber} card={c} initData={initData} onIssued={markIssued} />
-      ))}
-    </Card>
+      {err && <p className="px-1 text-sm text-destructive">{err}</p>}
+      {cards?.length === 0 && (
+        <Card className="text-center">
+          <p className="text-sm text-muted-foreground">No active fuel cards on this carrier yet.</p>
+        </Card>
+      )}
+
+      <div className="flex flex-col gap-3">
+        {cards?.map((c) => (
+          <CardRowManager key={c.cardId ?? c.cardNumber} card={c} initData={initData} onIssued={markIssued} />
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -243,16 +276,21 @@ function Header({
   const name =
     [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'Octane user';
   return (
-    <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-card px-4 py-3">
-      <Avatar size="lg">
-        {user?.photo_url && <AvatarImage src={user.photo_url} alt={name} />}
-        <AvatarFallback>{initialsOf(user)}</AvatarFallback>
-      </Avatar>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-bold">{name}</p>
-        <p className="truncate text-xs text-muted-foreground">{companyName ?? 'Octane carrier'}</p>
+    <header className="sticky top-0 z-10 border-b border-border bg-card">
+      <div className="flex items-center justify-between px-4 pt-3">
+        <LogoLockup size={22} />
+        {role && <Badge variant="secondary">{role}</Badge>}
       </div>
-      {role && <Badge variant="secondary">{role}</Badge>}
+      <div className="flex items-center gap-3 px-4 pt-3 pb-3">
+        <Avatar size="lg">
+          {user?.photo_url && <AvatarImage src={user.photo_url} alt={name} />}
+          <AvatarFallback>{initialsOf(user)}</AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold">{name}</p>
+          <p className="truncate text-xs text-muted-foreground">{companyName ?? 'Octane carrier'}</p>
+        </div>
+      </div>
     </header>
   );
 }
