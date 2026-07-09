@@ -39,6 +39,7 @@ import { approvalsRoutes } from './routes/v1/approvals.routes.js';
 import { filesRoutes } from './routes/v1/files.routes.js';
 import { tasksRoutes } from './routes/v1/tasks.routes.js';
 import { toolsRoutes } from './routes/v1/tools.routes.js';
+import { touchpointsRoutes } from './routes/v1/touchpoints.routes.js';
 
 function loggerOption() {
   if (isTest) return false;
@@ -194,6 +195,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(carrierUsersRoutes);
       await v1.register(retentionRoutes);
       await v1.register(realtimeRoutes);
+      await v1.register(touchpointsRoutes);
       await v1.register(agentRoutes);
       await v1.register(tasksRoutes);
       await v1.register(filesRoutes);
