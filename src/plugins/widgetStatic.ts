@@ -23,9 +23,10 @@ export function resolveWidgetDir(): string | null {
 }
 
 /**
- * Serve the built AI Chat widget (apps/mytrion-crm/app) under /widget so the UI lives same-origin
- * with the API. Same-origin is the whole point: the widget's direct (live-token) streaming fetch
- * then needs no CORS allowlisting at all. The files are public on purpose — they hold no secrets
+ * Serve the built Mytrion CRM app (apps/mytrion-crm/app) under /crm so the UI lives same-origin
+ * with the API (legacy /widget still redirects here). Same-origin is the whole point: the app's
+ * direct (live-token) streaming fetch then needs no CORS allowlisting at all. The files are public
+ * on purpose — they hold no secrets
  * (the backend key comes from a Zoho org variable at runtime). No-op when the build is absent
  * (dev/test, or the API deployed without first building apps/mytrion-crm/).
  *
@@ -59,7 +60,7 @@ export async function registerWidgetStatic(app: FastifyInstance): Promise<void> 
     });
     await scope.register(fastifyStatic, {
       root: widgetDir,
-      prefix: '/widget/',
+      prefix: '/crm/',
       index: ['index.html'],
       // index.html must revalidate so a redeploy is picked up; vite's hashed assets cache hard.
       setHeaders: (res, filePath) => {
@@ -69,9 +70,12 @@ export async function registerWidgetStatic(app: FastifyInstance): Promise<void> 
         );
       },
     });
-    // Bare /widget → /widget/ so the index resolves.
-    scope.get('/widget', async (_req, reply) => reply.redirect('/widget/'));
+    // Bare /crm → /crm/ so the index resolves.
+    scope.get('/crm', async (_req, reply) => reply.redirect('/crm/'));
+    // Legacy: the app was served at /widget before the rename. Keep redirecting so an older Zoho
+    // widget Base URL or a bookmark doesn't 404.
+    scope.get('/widget', async (_req, reply) => reply.redirect('/crm/'));
   });
 
-  logger.info({ dir: widgetDir }, 'serving AI Chat widget at /widget/');
+  logger.info({ dir: widgetDir }, 'serving the Mytrion CRM app at /crm/');
 }

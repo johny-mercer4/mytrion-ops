@@ -8,6 +8,8 @@ export interface TelegramWebAppUser {
   username?: string;
   first_name?: string;
   last_name?: string;
+  /** Telegram serves this only when the user's profile photo is public. */
+  photo_url?: string;
 }
 
 export interface TelegramWebApp {

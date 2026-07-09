@@ -5,12 +5,15 @@ import {
   fetchFleet,
   fetchRegistrationPreview,
   redeemRegistration,
+  type CompanyType,
   type FleetCard,
   type FleetSummary,
+  type Profile,
   type RegistrationPreview,
   type RegistrationView,
 } from './lib/api';
-import { getRegistrationId, getTelegramWebApp } from './lib/telegram';
+import { getRegistrationId, getTelegramWebApp, type TelegramWebAppUser } from './lib/telegram';
+import { Avatar, AvatarFallback, AvatarImage } from './components/ui/avatar';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
 import { Card, CardRow } from './components/ui/card';
@@ -20,7 +23,7 @@ type View =
   | { state: 'loading' }
   | { state: 'error'; message: string }
   | { state: 'confirm'; preview: RegistrationPreview }
-  | { state: 'already-registered'; companyName: string | null }
+  | { state: 'already-registered'; companyName: string | null; registration?: RegistrationView }
   | { state: 'success'; registration: RegistrationView; fleet?: FleetSummary };
 
 function Screen({ children }: { children: React.ReactNode }) {
@@ -213,19 +216,86 @@ function FleetManager({ initData }: { initData: string }) {
   );
 }
 
+/** The three roles the DB records: driver, or an owner split by company type. */
+function roleLabel(profile: Profile, companyType: CompanyType | null): string {
+  if (profile === 'driver') return 'Driver';
+  return companyType === 'fleet-manager' ? 'Fleet manager' : 'Owner-operator';
+}
+
+function initialsOf(user: TelegramWebAppUser | undefined): string {
+  const letters = [user?.first_name?.[0], user?.last_name?.[0]].filter(Boolean).join('');
+  return letters || user?.username?.[0]?.toUpperCase() || '?';
+}
+
+/**
+ * The signed-in header — the mini-app reads identity straight from Telegram (initDataUnsafe), so
+ * there's no name/photo to fetch. Sticky, like a native mobile app's title bar.
+ */
+function Header({
+  user,
+  role,
+  companyName,
+}: {
+  user: TelegramWebAppUser | undefined;
+  role?: string;
+  companyName: string | null;
+}) {
+  const name =
+    [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'Octane user';
+  return (
+    <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-card px-4 py-3">
+      <Avatar size="lg">
+        {user?.photo_url && <AvatarImage src={user.photo_url} alt={name} />}
+        <AvatarFallback>{initialsOf(user)}</AvatarFallback>
+      </Avatar>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-bold">{name}</p>
+        <p className="truncate text-xs text-muted-foreground">{companyName ?? 'Octane carrier'}</p>
+      </div>
+      {role && <Badge variant="secondary">{role}</Badge>}
+    </header>
+  );
+}
+
+/** Signed-in layout: header pinned, content scrolls under it (no vertical centering). */
+function AppShell({
+  user,
+  role,
+  companyName,
+  children,
+}: {
+  user: TelegramWebAppUser | undefined;
+  role?: string;
+  companyName: string | null;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="min-h-dvh bg-background">
+      <Header user={user} {...(role ? { role } : {})} companyName={companyName} />
+      <main className="mx-auto w-full max-w-sm p-4">{children}</main>
+    </div>
+  );
+}
+
 function SuccessScreen({
   registration,
   fleet,
   initData,
+  user,
 }: {
   registration: RegistrationView;
   fleet?: FleetSummary;
   initData: string;
+  user: TelegramWebAppUser | undefined;
 }) {
   const isDriver = registration.profile === 'driver';
   const isFleet = registration.profile === 'owner' && registration.companyType === 'fleet-manager';
   return (
-    <Screen>
+    <AppShell
+      user={user}
+      role={roleLabel(registration.profile, registration.companyType)}
+      companyName={registration.companyName}
+    >
       <Card className="flex flex-col items-center gap-2 text-center">
         <div className="text-2xl">✅</div>
         <h1 className="text-base font-bold">You're registered!</h1>
@@ -249,19 +319,27 @@ function SuccessScreen({
           </Card>
         )
       )}
-    </Screen>
+    </AppShell>
   );
 }
 
-function AlreadyRegisteredScreen({ companyName }: { companyName: string | null }) {
+function AlreadyRegisteredScreen({
+  companyName,
+  user,
+  role,
+}: {
+  companyName: string | null;
+  user: TelegramWebAppUser | undefined;
+  role?: string;
+}) {
   return (
-    <Screen>
+    <AppShell user={user} {...(role ? { role } : {})} companyName={companyName}>
       <Card className="flex flex-col items-center gap-2 text-center">
         <div className="text-2xl">👍</div>
         <h1 className="text-base font-bold">Already registered</h1>
         <p className="text-sm text-muted-foreground">{companyName ?? 'This company'} was already registered.</p>
       </Card>
-    </Screen>
+    </AppShell>
   );
 }
 
@@ -303,7 +381,11 @@ export function App() {
     redeemRegistration(preview.id, wa.initData)
       .then((result) => {
         if ('alreadyRegistered' in result) {
-          setView({ state: 'already-registered', companyName: result.registration.companyName });
+          setView({
+            state: 'already-registered',
+            companyName: result.registration.companyName,
+            registration: result.registration,
+          });
         } else {
           setView({ state: 'success', registration: result.registration, ...(result.fleet ? { fleet: result.fleet } : {}) });
         }
@@ -314,14 +396,26 @@ export function App() {
       .finally(() => setBusy(false));
   }
 
+  const tgUser = wa?.initDataUnsafe.user;
+
   if (view.state === 'loading') return <LoadingScreen />;
   if (view.state === 'error') return <ErrorScreen message={view.message} />;
-  if (view.state === 'already-registered') return <AlreadyRegisteredScreen companyName={view.companyName} />;
+  if (view.state === 'already-registered') {
+    const reg = view.registration;
+    return (
+      <AlreadyRegisteredScreen
+        companyName={view.companyName}
+        user={tgUser}
+        {...(reg ? { role: roleLabel(reg.profile, reg.companyType) } : {})}
+      />
+    );
+  }
   if (view.state === 'success') {
     return (
       <SuccessScreen
         registration={view.registration}
         initData={wa?.initData ?? ''}
+        user={tgUser}
         {...(view.fleet ? { fleet: view.fleet } : {})}
       />
     );

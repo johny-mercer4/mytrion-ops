@@ -157,7 +157,8 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   healthcheckPlugin(app); // GET /health (liveness)
 
-  // Serve the AI Chat widget UI same-origin at /widget (public; no-op if apps/mytrion-crm/app isn't built).
+  // Serve the Mytrion CRM app same-origin at /crm — legacy /widget redirects there (public; no-op
+  // if apps/mytrion-crm/app isn't built).
   await registerWidgetStatic(app);
 
   // Serve the Telegram carrier onboarding mini-app same-origin at /mini-app (public; no-op if

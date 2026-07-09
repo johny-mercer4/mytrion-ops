@@ -7,10 +7,10 @@ services:
     # Dockerfile authoritative for build/runtime; this block is effectively documentation.
     runtime: node
     plan: starter
-    # Plain tsc build (reliable). The widget UI (apps/mytrion-crm/app) is VENDORED in git and served
-    # same-origin at /widget, so the deploy needs no web build step. Zoho Base URL:
-    # <url>/widget/index.html (regenerate apps/mytrion-crm/app with `pnpm build:widget` and recommit
-    # when the widget changes.)
+    # Plain tsc build (reliable). The CRM UI (apps/mytrion-crm/app) is VENDORED in git and served
+    # same-origin at /crm (legacy /widget redirects there), so the deploy needs no web build step.
+    # Zoho Base URL: <url>/crm/index.html (regenerate apps/mytrion-crm/app with `pnpm build:widget`
+    # and recommit when the CRM app changes.)
     buildCommand: pnpm install --frozen-lockfile && pnpm build
     startCommand: pnpm start
     healthCheckPath: /health
