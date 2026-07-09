@@ -2,9 +2,12 @@ import { useId } from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * The Octane mark: a black ring, a white gap, and the amber->orange fuel drop. Inline SVG rather
- * than a raster asset so it stays crisp at any size, needs no network fetch inside Telegram, and
- * inherits nothing from the theme (the mark is fixed-color by design).
+ * The Octane mark: a ring, a gap, and the amber->orange fuel drop. Inline SVG rather than a raster
+ * asset so it stays crisp at any size and needs no network fetch inside Telegram.
+ *
+ * The ring is --logo-ring (black on light surfaces, WHITE on dark) and the gap is transparent, so
+ * the mark reads on the user's Telegram theme instead of vanishing into a dark background. Only the
+ * fuel drop is fixed-color — it IS the brand.
  *
  * If you have the official vector, drop it in and swap this component's paths — the geometry here
  * is traced from the logo, not exported from source.
@@ -26,10 +29,9 @@ export function Logo({ className, size = 32 }: { className?: string; size?: numb
           <stop offset="1" stopColor="var(--brand-orange)" />
         </linearGradient>
       </defs>
-      {/* outer black ring */}
-      <circle cx="50" cy="50" r="50" fill="#000000" />
-      {/* white gap */}
-      <circle cx="50" cy="50" r="37" fill="#ffffff" />
+      {/* the ring — stroked, not a filled disc, so the gap stays transparent and picks up whatever
+          surface the mark sits on (light card, dark Telegram theme, the fuel card's wash) */}
+      <circle cx="50" cy="50" r="44" fill="none" stroke="var(--logo-ring)" strokeWidth="12" />
       {/* the fuel drop: a disc that nearly fills the ring, its top edge a shallow liquid meniscus */}
       <path
         d="M20 52

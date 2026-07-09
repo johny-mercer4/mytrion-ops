@@ -12,7 +12,13 @@ import {
   type RegistrationPreview,
   type RegistrationView,
 } from './lib/api';
-import { getRegistrationId, getTelegramWebApp, type TelegramWebAppUser } from './lib/telegram';
+import {
+  getRegistrationId,
+  getTelegramWebApp,
+  haptic,
+  syncTelegramTheme,
+  type TelegramWebAppUser,
+} from './lib/telegram';
 import { FuelCard } from './components/fuel-card';
 import { Logo, LogoLockup } from './components/logo';
 import { Avatar, AvatarFallback, AvatarImage } from './components/ui/avatar';
@@ -54,7 +60,7 @@ function ErrorScreen({ message }: { message: string }) {
   return (
     <Screen>
       <div className="mb-5 flex justify-center">
-        <Logo size={48} className="opacity-40 grayscale" />
+        <Logo size={48} />
       </div>
       <Card className="flex flex-col items-center gap-2 text-center">
         <h1 className="text-base font-bold">This link isn't valid</h1>
@@ -132,10 +138,14 @@ function CardRowManager({
     setErr('');
     createDriverInvite(initData, card.cardId, name.trim())
       .then((res) => {
+        haptic('success');
         setLink(res.inviteUrl);
         onIssued(card.cardId!, name.trim());
       })
-      .catch((e) => setErr(e instanceof ApiError ? e.message : 'Could not create the link.'))
+      .catch((e) => {
+        haptic('error');
+        setErr(e instanceof ApiError ? e.message : 'Could not create the link.');
+      })
       .finally(() => setBusy(false));
   }
 
@@ -276,7 +286,10 @@ function Header({
   const name =
     [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'Octane user';
   return (
-    <header className="sticky top-0 z-10 border-b border-border bg-card">
+    <header
+      className="sticky top-0 z-10 border-b border-border bg-card"
+      style={{ paddingTop: 'env(safe-area-inset-top)' }}
+    >
       <div className="flex items-center justify-between px-4 pt-3">
         <LogoLockup size={22} />
         {role && <Badge variant="secondary">{role}</Badge>}
@@ -390,6 +403,7 @@ export function App() {
   useEffect(() => {
     wa?.ready();
     wa?.expand();
+    syncTelegramTheme();
     const id = getRegistrationId();
     if (!id) {
       setView({ state: 'error', message: 'This link is missing its registration id.' });
@@ -416,8 +430,10 @@ export function App() {
       return;
     }
     setBusy(true);
+    haptic('tap');
     redeemRegistration(preview.id, wa.initData)
       .then((result) => {
+        haptic('success');
         if ('alreadyRegistered' in result) {
           setView({
             state: 'already-registered',
@@ -429,6 +445,7 @@ export function App() {
         }
       })
       .catch((e) => {
+        haptic('error');
         setView({ state: 'error', message: e instanceof ApiError ? e.message : 'Registration failed.' });
       })
       .finally(() => setBusy(false));

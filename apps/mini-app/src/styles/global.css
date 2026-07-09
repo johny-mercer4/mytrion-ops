@@ -28,6 +28,8 @@
   --brand-orange: #ff5a00;
   --primary: #ff6a00;
   --primary-foreground: #17130f;
+  /* The mark's ring inverts with the surface; only the drop is fixed-color. */
+  --logo-ring: #000000;
 
   --destructive: #d1373a;
   --success: #1f845a;
@@ -51,7 +53,33 @@
     --primary-foreground: #17130f;
     --destructive: #f87168;
     --success: #4bce97;
+    --logo-ring: #ffffff;
   }
+}
+
+/*
+  Telegram's theme is not the OS theme — a user can run Telegram dark on a light phone. lib/telegram
+  mirrors WebApp.colorScheme onto <html data-theme>, and this block must win over the media query
+  above for exactly that case.
+*/
+:root[data-theme='dark'] {
+  --fb-background: #0f1115;
+  --fb-foreground: #e9ecf1;
+  --fb-card: #171a20;
+  --fb-secondary: #1d2128;
+  --fb-muted-foreground: #8b93a1;
+  --fb-border: #272c35;
+
+  --primary: #ff8a2b;
+  --primary-foreground: #17130f;
+  --destructive: #f87168;
+  --success: #4bce97;
+  --logo-ring: #ffffff;
+}
+
+:root[data-theme='light'] {
+  --logo-ring: #000000;
+  --primary: #ff6a00;
 }
 
 :root {
@@ -117,6 +145,19 @@ body {
   -webkit-font-smoothing: antialiased;
   /* Telegram's chrome overlaps the viewport bottom on notched devices. */
   padding-bottom: env(safe-area-inset-bottom);
+  /* App, not page: no rubber-band scroll past the ends, no blue tap flash, no accidental
+     text selection when a thumb rests on a label. */
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* …but the generated links and card numbers exist to be copied. */
+input,
+[data-selectable] {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* Card numbers are data, not prose: fixed-width digits so they don't jitter between cards. */

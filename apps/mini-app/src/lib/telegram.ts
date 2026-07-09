@@ -12,12 +12,19 @@ export interface TelegramWebAppUser {
   photo_url?: string;
 }
 
+export interface TelegramHapticFeedback {
+  impactOccurred: (style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft') => void;
+  notificationOccurred: (type: 'error' | 'success' | 'warning') => void;
+}
+
 export interface TelegramWebApp {
   initData: string;
   initDataUnsafe: { start_param?: string; user?: TelegramWebAppUser };
   ready: () => void;
   expand: () => void;
   colorScheme?: 'light' | 'dark';
+  onEvent?: (event: string, handler: () => void) => void;
+  HapticFeedback?: TelegramHapticFeedback;
 }
 
 declare global {
@@ -28,6 +35,30 @@ declare global {
 
 export function getTelegramWebApp(): TelegramWebApp | null {
   return window.Telegram?.WebApp ?? null;
+}
+
+/**
+ * Mirror Telegram's colorScheme onto <html data-theme>. Telegram's theme is NOT the OS theme — a
+ * user can run Telegram dark on a light phone — so prefers-color-scheme alone would leave the
+ * logo's ring black on a black surface. Re-applied on themeChanged, which Telegram fires when the
+ * user switches theme with the app open.
+ */
+export function syncTelegramTheme(): void {
+  const wa = getTelegramWebApp();
+  if (!wa) return;
+  const apply = (): void => {
+    document.documentElement.dataset['theme'] = wa.colorScheme ?? 'light';
+  };
+  apply();
+  wa.onEvent?.('themeChanged', apply);
+}
+
+/** Native-feeling touch response. No-op outside Telegram. */
+export function haptic(kind: 'success' | 'error' | 'tap'): void {
+  const h = getTelegramWebApp()?.HapticFeedback;
+  if (!h) return;
+  if (kind === 'tap') h.impactOccurred('light');
+  else h.notificationOccurred(kind);
 }
 
 /**
