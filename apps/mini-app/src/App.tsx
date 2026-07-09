@@ -16,7 +16,7 @@ import {
   getRegistrationId,
   getTelegramWebApp,
   haptic,
-  syncTelegramTheme,
+  forceLightTheme,
   type TelegramWebAppUser,
 } from './lib/telegram';
 import { FuelCard } from './components/fuel-card';
@@ -403,7 +403,7 @@ export function App() {
   useEffect(() => {
     wa?.ready();
     wa?.expand();
-    syncTelegramTheme();
+    forceLightTheme();
     const id = getRegistrationId();
     if (!id) {
       setView({ state: 'error', message: 'This link is missing its registration id.' });

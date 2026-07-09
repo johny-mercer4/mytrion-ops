@@ -3,32 +3,36 @@
 /*
   Octane — mobile support app for trucking companies, living inside Telegram.
 
-  Surfaces follow the USER'S Telegram theme: Telegram injects --tg-theme-* custom properties onto
-  <html> (light, dark, or a custom theme). We bind our semantic tokens to those first and fall back
-  to our own palette when the app is opened outside Telegram (browser preview). The fallbacks are
-  their own variables so the prefers-color-scheme block only swaps the FALLBACK — the Telegram
-  value keeps winning wherever it exists.
+  LIGHT ONLY, on purpose. We deliberately do NOT follow the user's Telegram theme here: the brand is
+  a black ring and an amber->orange drop on white, and the fuel cards read as physical objects only
+  on a light surface. Binding --tg-theme-* would drag the app dark whenever the user runs Telegram
+  dark, so the palette below is fixed and lib/telegram's forceLightTheme() also asks Telegram to
+  paint its own header, background and bottom bar to match. (If a dark theme is ever wanted,
+  reintroduce the tokens under :root[data-theme='dark'] and set that attribute from
+  WebApp.colorScheme — Telegram's theme is not the OS theme, so prefers-color-scheme is not enough.)
 
-  The accent is Octane's brand amber->orange (the logo's fuel drop on black), not Telegram's button
-  color: this is a branded surface, and orange reads unmistakably as Octane against Telegram's blue
-  chrome. Note --primary-foreground is near-black, not white: white on #FF6A00 is ~2.9:1 and fails
-  AA for body text, while near-black clears 7:1 — and it matches the logo's black ring.
+  The accent is Octane's brand amber->orange (the logo's fuel drop). Note --primary-foreground is
+  near-black, not white: white on #FF6A00 is ~2.9:1 and fails AA for body text, while near-black
+  clears 7:1 — and it matches the logo's black ring.
 */
 :root {
-  /* fallbacks (outside Telegram) — light */
-  --fb-background: #f2f3f5;
-  --fb-foreground: #14181f;
-  --fb-card: #ffffff;
-  --fb-secondary: #e9ebef;
-  --fb-muted-foreground: #6b7684;
-  --fb-border: #e2e5ea;
+  --background: #f2f3f5;
+  --foreground: #14181f;
+  --card: #ffffff;
+  --card-foreground: #14181f;
+  --secondary: #e9ebef;
+  --secondary-foreground: #14181f;
+  --muted: #eef0f3;
+  --muted-foreground: #6b7684;
+  --border: #e2e5ea;
 
   /* Brand — the logo's gradient, as tokens. */
   --brand-amber: #ffd200;
   --brand-orange: #ff5a00;
   --primary: #ff6a00;
   --primary-foreground: #17130f;
-  /* The mark's ring inverts with the surface; only the drop is fixed-color. */
+  --ring: var(--primary);
+  /* The mark's ring: black, since the app is always light. */
   --logo-ring: #000000;
 
   --destructive: #d1373a;
@@ -38,62 +42,6 @@
   --radius-sm: 10px; /* inputs, chips */
   --radius-md: 12px; /* buttons */
   --radius-lg: 16px; /* cards, sheets */
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --fb-background: #0f1115;
-    --fb-foreground: #e9ecf1;
-    --fb-card: #171a20;
-    --fb-secondary: #1d2128;
-    --fb-muted-foreground: #8b93a1;
-    --fb-border: #272c35;
-
-    --primary: #ff8a2b;
-    --primary-foreground: #17130f;
-    --destructive: #f87168;
-    --success: #4bce97;
-    --logo-ring: #ffffff;
-  }
-}
-
-/*
-  Telegram's theme is not the OS theme — a user can run Telegram dark on a light phone. lib/telegram
-  mirrors WebApp.colorScheme onto <html data-theme>, and this block must win over the media query
-  above for exactly that case.
-*/
-:root[data-theme='dark'] {
-  --fb-background: #0f1115;
-  --fb-foreground: #e9ecf1;
-  --fb-card: #171a20;
-  --fb-secondary: #1d2128;
-  --fb-muted-foreground: #8b93a1;
-  --fb-border: #272c35;
-
-  --primary: #ff8a2b;
-  --primary-foreground: #17130f;
-  --destructive: #f87168;
-  --success: #4bce97;
-  --logo-ring: #ffffff;
-}
-
-:root[data-theme='light'] {
-  --logo-ring: #000000;
-  --primary: #ff6a00;
-}
-
-:root {
-  /* secondary_bg is Telegram's "behind the sections" color — the right one for a page background. */
-  --background: var(--tg-theme-secondary-bg-color, var(--fb-background));
-  --foreground: var(--tg-theme-text-color, var(--fb-foreground));
-  --card: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, var(--fb-card)));
-  --card-foreground: var(--foreground);
-  --secondary: var(--tg-theme-secondary-bg-color, var(--fb-secondary));
-  --secondary-foreground: var(--foreground);
-  --muted: var(--secondary);
-  --muted-foreground: var(--tg-theme-hint-color, var(--fb-muted-foreground));
-  --border: var(--tg-theme-section-separator-color, var(--fb-border));
-  --ring: var(--primary);
 }
 
 @theme inline {
@@ -129,6 +77,11 @@ body,
 #root {
   margin: 0;
   min-height: 100%;
+}
+
+/* The app is light even when the phone is dark — keep form controls and scrollbars light too. */
+:root {
+  color-scheme: light;
 }
 
 body {

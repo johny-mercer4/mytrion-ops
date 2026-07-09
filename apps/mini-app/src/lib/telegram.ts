@@ -24,6 +24,9 @@ export interface TelegramWebApp {
   expand: () => void;
   colorScheme?: 'light' | 'dark';
   onEvent?: (event: string, handler: () => void) => void;
+  setHeaderColor?: (color: string) => void;
+  setBackgroundColor?: (color: string) => void;
+  setBottomBarColor?: (color: string) => void;
   HapticFeedback?: TelegramHapticFeedback;
 }
 
@@ -37,17 +40,23 @@ export function getTelegramWebApp(): TelegramWebApp | null {
   return window.Telegram?.WebApp ?? null;
 }
 
+/** The app's own surfaces (see styles/global.css) — Telegram's chrome is painted to match. */
+const HEADER_COLOR = '#ffffff';
+const BACKGROUND_COLOR = '#f2f3f5';
+
 /**
- * Mirror Telegram's colorScheme onto <html data-theme>. Telegram's theme is NOT the OS theme — a
- * user can run Telegram dark on a light phone — so prefers-color-scheme alone would leave the
- * logo's ring black on a black surface. Re-applied on themeChanged, which Telegram fires when the
- * user switches theme with the app open.
+ * The app is light-only, so ask Telegram to paint ITS chrome light too. Without this, a user on
+ * Telegram's dark theme gets a black header and bottom bar wrapped around a white app. Re-applied
+ * on themeChanged, which Telegram fires (and which resets its chrome) when the user switches theme
+ * with the app open.
  */
-export function syncTelegramTheme(): void {
+export function forceLightTheme(): void {
   const wa = getTelegramWebApp();
   if (!wa) return;
   const apply = (): void => {
-    document.documentElement.dataset['theme'] = wa.colorScheme ?? 'light';
+    wa.setHeaderColor?.(HEADER_COLOR);
+    wa.setBackgroundColor?.(BACKGROUND_COLOR);
+    wa.setBottomBarColor?.(HEADER_COLOR);
   };
   apply();
   wa.onEvent?.('themeChanged', apply);
