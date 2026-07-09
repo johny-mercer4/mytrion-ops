@@ -175,6 +175,16 @@ export interface TouchpointMap {
     result: CardLimitsResult;
   };
   'efs.cards': { params: { carrierId: string }; result: EfsCardsResult };
+  'efs.card_info': {
+    params: {
+      carrierId: string;
+      cardNumber: string;
+      unitNumber?: string;
+      driverId?: string;
+      driverName?: string;
+    };
+    result: Record<string, unknown>;
+  };
   'efs.card_override': { params: { carrierId: string; cardNumber: string }; result: CardActionResult };
   'fraud.hold_release': {
     params: {
