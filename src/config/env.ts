@@ -136,6 +136,10 @@ const EnvSchema = z.object({
   // and open the mini-app directly. Off → ?start= fallback (needs a bot /start reply, not built).
   TELEGRAM_CARRIER_MINI_APP_DIRECT: z.string().default(''),
 
+  // '1' → apply pending Drizzle migrations at boot (see db/migrate.ts). Set in the Render env group
+  // so a deploy migrates the DB itself; off by default so tests/local/tooling never auto-migrate.
+  DB_MIGRATE_ON_BOOT: z.string().default(''),
+
   // --- Zoho MCP (hosted; "Authorize via Connection" → headless, URL embeds the credential). ---
   ZOHO_MCP_URL: z.string().default(''),
 

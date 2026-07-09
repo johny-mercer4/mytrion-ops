@@ -38,6 +38,9 @@ services:
       # Long-term agent memory (distill + UNTRUSTED recall + nightly decay). Requires migration 0013.
       - key: FF_AGENT_MEMORY
         value: "1"
+      # Apply pending DB migrations at boot so a deploy needs no separate migrate step (db/migrate.ts).
+      - key: DB_MIGRATE_ON_BOOT
+        value: "1"
       # NOT enabled here on purpose:
       #   FF_JOBS_ENABLED       — excluded per request (pg-boss workers/crons stay off).
       #   FF_FILES_ENABLED      — would crash boot: assertRuntimeSecrets() requires S3_ENDPOINT /
