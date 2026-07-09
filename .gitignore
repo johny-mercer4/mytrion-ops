@@ -41,3 +41,6 @@ tmp/
 metadataScripts/output/*
 !metadataScripts/output/.gitkeep
 eval-reports/
+
+# Design-tool handoff export (reference only; spec lives in apps/mini-app/DESIGN_SPEC.md)
+apps/design_handoff_octane_mini_app/

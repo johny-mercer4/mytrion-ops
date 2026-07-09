@@ -28,6 +28,8 @@ export interface CreateCarrierInviteArgs {
   driverName?: string | undefined;
   agentName?: string | undefined;
   agentZohoUserId?: string | undefined;
+  /** Invite lifetime in hours (owner-issued driver links are 24h; default is the repo's 7 days). */
+  ttlHours?: number | undefined;
 }
 
 /** Build the Telegram deep link. ?startapp= (direct open) once BotFather is configured, else ?start=. */
@@ -143,6 +145,7 @@ export async function createCarrierInvite(
     ...(cardCount !== undefined ? { cardCount } : {}),
     ...(args.agentName?.trim() ? { agentName: args.agentName.trim() } : {}),
     ...(args.agentZohoUserId?.trim() ? { agentZohoUserId: args.agentZohoUserId.trim() } : {}),
+    ...(args.ttlHours !== undefined ? { ttlHours: args.ttlHours } : {}),
   });
   return { invite, inviteUrl: buildInviteUrl(invite.id) };
 }

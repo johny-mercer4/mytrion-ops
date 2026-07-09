@@ -10,6 +10,8 @@ export interface TelegramWebAppUser {
   last_name?: string;
   /** Telegram serves this only when the user's profile photo is public. */
   photo_url?: string;
+  /** IETF tag, e.g. 'ru', 'en', 'uz' — the seed for the app's default language. */
+  language_code?: string;
 }
 
 export interface TelegramHapticFeedback {

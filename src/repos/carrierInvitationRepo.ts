@@ -42,6 +42,8 @@ export interface CreateCarrierInvitationInput {
   agentZohoUserId?: string | undefined;
   /** Invite lifetime in days (default 7). */
   ttlDays?: number | undefined;
+  /** Invite lifetime in hours — takes precedence over ttlDays (owner-issued driver links are 24h). */
+  ttlHours?: number | undefined;
 }
 
 function toDto(row: CarrierInvitation): CarrierInvitationDto {
@@ -70,7 +72,10 @@ export const carrierInvitationRepo = {
     ctx: TenantContext,
     input: CreateCarrierInvitationInput,
   ): Promise<CarrierInvitationDto> {
-    const ttlDays = input.ttlDays ?? 7;
+    const ttlMs =
+      input.ttlHours !== undefined
+        ? input.ttlHours * 60 * 60 * 1000
+        : (input.ttlDays ?? 7) * 24 * 60 * 60 * 1000;
     const values: NewCarrierInvitation = {
       tenantId: ctx.tenantId,
       profile: input.profile,
@@ -83,7 +88,7 @@ export const carrierInvitationRepo = {
       cardCount: input.cardCount ?? null,
       agentName: trimOrNull(input.agentName),
       agentZohoUserId: trimOrNull(input.agentZohoUserId),
-      expiresAt: new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000),
+      expiresAt: new Date(Date.now() + ttlMs),
     };
     const rows = await db.insert(carrierInvitations).values(values).returning();
     return toDto(firstOrThrow(rows, 'Failed to insert carrier invitation'));
@@ -113,8 +118,12 @@ export const carrierInvitationRepo = {
     return rows.find((r) => r.expiresAt.getTime() >= Date.now());
   },
 
-  /** All live (pending, unexpired) driver invites for a carrier — the owner's "invite sent" column. */
-  async listLiveDriverInvitesByCarrier(
+  /**
+   * All pending driver invites for a carrier, INCLUDING expired ones — the owner's fleet screen
+   * shows expired links as their own state ("Link expired" -> regenerate). When one card has both
+   * an expired and a fresh invite (after a regenerate), the freshest wins per card downstream.
+   */
+  async listPendingDriverInvitesByCarrier(
     ctx: TenantContext,
     carrierId: string,
   ): Promise<CarrierInvitationDto[]> {
@@ -129,7 +138,7 @@ export const carrierInvitationRepo = {
           eq(carrierInvitations.status, 'pending'),
         ),
       );
-    return rows.filter((r) => r.expiresAt.getTime() >= Date.now()).map(toDto);
+    return rows.map(toDto);
   },
 
   async findById(ctx: TenantContext, id: string): Promise<CarrierInvitation | undefined> {

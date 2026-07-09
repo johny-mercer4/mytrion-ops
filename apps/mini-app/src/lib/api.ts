@@ -54,6 +54,8 @@ export interface RegistrationPreview {
   companyName: string | null;
   companyType: CompanyType | null;
   cardCount: number | null;
+  /** ISO deadline — drives the "This link expires in …" pill on the confirm screen. */
+  expiresAt?: string;
 }
 
 export type PreviewResult =
@@ -99,6 +101,9 @@ export interface FleetCard {
   cardType: string | null;
   driverName: string | null;
   status: CardStatus;
+  /** Pending only — the generated link + its 24h deadline; "expired" is derived from expiresAt. */
+  link?: string | null;
+  expiresAt?: string | null;
 }
 
 export interface FleetResponse {
@@ -113,6 +118,7 @@ export async function fetchFleet(initData: string): Promise<FleetResponse> {
 export interface DriverInviteResult {
   invite: { id: string; cardId: string | null; driverName: string | null };
   inviteUrl: string;
+  expiresAt: string;
 }
 
 export async function createDriverInvite(

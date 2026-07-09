@@ -45,12 +45,26 @@ export function Logo({ className, size = 32 }: { className?: string; size?: numb
   );
 }
 
-/** Mark + wordmark, for the header and the launch screen. */
+/**
+ * Icon + OCTANE wordmark, side by side. The one lockup — used everywhere (header and splash).
+ * Wordmark is Inter Tight 800 uppercase (octanefuel.com's typeface); sized off the icon (≈0.6×) so
+ * the two always scale together.
+ */
 export function LogoLockup({ className, size = 28 }: { className?: string; size?: number }) {
   return (
     <div className={cn('flex items-center gap-2', className)}>
       <Logo size={size} />
-      <span className="text-base font-bold tracking-tight">Octane</span>
+      <span
+        className="font-extrabold tracking-[0.02em] uppercase"
+        style={{ fontSize: Math.round(size * 0.6), fontWeight: 800, lineHeight: 1 }}
+      >
+        OCTANE
+      </span>
     </div>
   );
+}
+
+/** Alias kept so the larger splash/loading/error screens read intentionally; same icon + name. */
+export function LogoStacked({ className, size = 40 }: { className?: string; size?: number }) {
+  return <LogoLockup {...(className ? { className } : {})} size={size} />;
 }

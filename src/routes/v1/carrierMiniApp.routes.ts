@@ -14,7 +14,7 @@ import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { listDwhCards } from '../../integrations/dwhCards.js';
 import { carrierInvitationRepo } from '../../repos/carrierInvitationRepo.js';
 import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompanyRepo.js';
-import { createCarrierInvite } from '../../modules/carrier/inviteService.js';
+import { buildInviteUrl, createCarrierInvite } from '../../modules/carrier/inviteService.js';
 import { parseInitDataUser, verifyTelegramInitData, type TelegramWebAppUser } from '../../integrations/telegramCarrierBot.js';
 import type { RegisteredMiniAppCompany } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
@@ -130,6 +130,8 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
         companyName: invite.companyName,
         companyType: invite.companyType,
         cardCount: invite.cardCount,
+        // Drives the "This link expires in 23h 40m" pill on the confirm screen.
+        expiresAt: invite.expiresAt.toISOString(),
       },
       status: 'pending' as const,
     };
@@ -249,10 +251,15 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     const [cards, drivers, pending] = await Promise.all([
       env.DWH_DATABASE_URL ? listDwhCards(carrierId).catch(() => []) : Promise.resolve([]),
       registeredMiniAppCompanyRepo.listDriversByCarrier(ctx, carrierId),
-      carrierInvitationRepo.listLiveDriverInvitesByCarrier(ctx, carrierId),
+      carrierInvitationRepo.listPendingDriverInvitesByCarrier(ctx, carrierId),
     ]);
     const registeredByCard = new Map(drivers.map((d) => [d.cardId, d]));
-    const pendingByCard = new Map(pending.map((p) => [p.cardId, p]));
+    // Freshest pending invite per card — after a regenerate the expired one must not shadow it.
+    const pendingByCard = new Map<string | null, (typeof pending)[number]>();
+    for (const p of pending) {
+      const existing = pendingByCard.get(p.cardId);
+      if (!existing || p.expiresAt > existing.expiresAt) pendingByCard.set(p.cardId, p);
+    }
 
     const fleet = cards.map((card) => {
       const reg = card.cardId ? registeredByCard.get(card.cardId) : undefined;
@@ -263,6 +270,10 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
         cardType: card.cardType,
         driverName: reg?.driverName ?? pend?.driverName ?? null,
         status: reg ? ('registered' as const) : pend ? ('pending' as const) : ('open' as const),
+        // Pending only: the link + its deadline, so the owner can re-copy it and the UI can show
+        // the live countdown or the "Link expired" state (derived client-side from expiresAt).
+        link: !reg && pend ? buildInviteUrl(pend.id) : null,
+        expiresAt: !reg && pend ? pend.expiresAt : null,
       };
     });
     return {
@@ -286,6 +297,8 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       ...(registration.companyName ? { companyName: registration.companyName } : {}),
       cardId: body.cardId,
       driverName: body.driverName,
+      // Owner-issued links are short-lived by design: 24 hours, then "Link expired" -> regenerate.
+      ttlHours: 24,
     });
     await auditFromContext(ctx, {
       action: 'mini_app.driver_invite.create',
@@ -294,7 +307,11 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       resourceId: invite.id,
       detail: { carrierId, cardId: body.cardId, driverName: body.driverName },
     });
-    return reply.code(201).send({ invite: { id: invite.id, cardId: invite.cardId, driverName: invite.driverName }, inviteUrl });
+    return reply.code(201).send({
+      invite: { id: invite.id, cardId: invite.cardId, driverName: invite.driverName },
+      inviteUrl,
+      expiresAt: invite.expiresAt,
+    });
   });
 }
 
