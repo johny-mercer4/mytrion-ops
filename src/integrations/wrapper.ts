@@ -86,4 +86,9 @@ export function resetAuthCache(): void {
   zohoTokenCache.clear();
 }
 
-export const wrapper = { authHeaders, baseUrl, getZohoToken, resetAuthCache };
+/** Drop ONE service's cached token (post-401 forced refresh without nuking the others). */
+export function invalidateZohoToken(service: ZohoService): void {
+  zohoTokenCache.delete(service);
+}
+
+export const wrapper = { authHeaders, baseUrl, getZohoToken, invalidateZohoToken, resetAuthCache };
