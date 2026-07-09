@@ -1,23 +1,25 @@
 import { useMemo, useState } from 'react';
 import {
   Bell,
+  ChartBar,
   Clock,
   Megaphone,
   Phone,
   PhoneCall,
+  RotateCw,
+  ShieldCheck,
   Sparkles,
   Wrench,
 } from 'lucide-react';
 
+import { getSession } from '@/api/session';
+import { useImpersonation } from '@/context/ImpersonationProvider';
 import { DetailDialog } from '@/components/mytrion/detail-dialog';
+import { StatusBadge, type StatusTone } from '@/components/mytrion/status-badge';
 import { Button } from '@/components/ui/button';
 import {
-  ACTIVITY_BY_RANGE,
-  ANNOUNCEMENTS,
   CALL_TO_ACTIONS,
-  INBOX_ITEMS,
   RANGE_LABEL,
-  SNAPSHOT_GROUPS,
   type Announcement,
   type AnnouncementType,
   type ActivityRange,
@@ -25,12 +27,22 @@ import {
   workdayProgress,
 } from './data';
 import { InboxRow } from './InboxRow';
+import { loadActivity, loadAnnouncements, loadSnapshot, useLoad, type InboxFeed } from './live';
 
 const ANNOUNCEMENT_META: Record<AnnouncementType, { icon: typeof Sparkles; className: string; label: string }> = {
   ai: { icon: Sparkles, className: 'bg-primary/14 text-primary', label: 'AI' },
   policy: { icon: Megaphone, className: 'bg-purple-500/14 text-brand-purple', label: 'Policy' },
   system: { icon: Wrench, className: 'bg-warn/14 text-warn', label: 'System' },
   update: { icon: Bell, className: 'bg-good/14 text-good', label: 'Update' },
+  analytics: { icon: ChartBar, className: 'bg-primary/14 text-primary', label: 'Analytics' },
+  security: { icon: ShieldCheck, className: 'bg-bad/14 text-bad', label: 'Security' },
+};
+
+const PRIORITY_TONE: Record<string, StatusTone> = {
+  critical: 'bad',
+  high: 'warn',
+  medium: 'info',
+  low: 'good',
 };
 
 const SNAPSHOT_TONE_CLASS: Record<string, string> = {
@@ -41,23 +53,56 @@ const SNAPSHOT_TONE_CLASS: Record<string, string> = {
   purple: 'text-brand-purple',
 };
 
-export function Home({ onOpenAutomations, onOpenInbox }: { onOpenAutomations: () => void; onOpenInbox: () => void }) {
-  const [range, setRange] = useState<ActivityRange>('daily');
+function SectionState({ loading, error, onRetry }: { loading: boolean; error: string | null; onRetry: () => void }) {
+  if (loading) return <div className="py-6 text-center text-sm text-muted-foreground">Loading…</div>;
+  if (error)
+    return (
+      <div className="py-6 text-center text-sm">
+        <p className="text-bad">{error}</p>
+        <Button variant="outline" size="sm" className="mt-2" onClick={onRetry}>
+          Retry
+        </Button>
+      </div>
+    );
+  return null;
+}
+
+export function Home({
+  inbox,
+  onOpenAutomations,
+  onOpenInbox,
+}: {
+  inbox: InboxFeed;
+  onOpenAutomations: () => void;
+  onOpenInbox: () => void;
+}) {
+  const { actingAs } = useImpersonation();
+  const [range, setRange] = useState<ActivityRange>('weekly');
   const [openAnnouncement, setOpenAnnouncement] = useState<Announcement | null>(null);
   const now = useMemo(() => new Date(), []);
   const { pct, clock } = workdayProgress(now);
-  const stats = ACTIVITY_BY_RANGE[range];
   const dateLabel = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
-  const activityTiles = [
-    { icon: Phone, value: stats.calls, label: 'Calls' },
-    { icon: PhoneCall, value: stats.notes, label: 'Notes' },
-    { icon: Sparkles, value: stats.leadsCreated, label: 'Leads Created' },
-    { icon: Bell, value: stats.leadsReceived, label: 'Leads Received' },
-    { icon: Megaphone, value: stats.interested, label: 'Interested' },
-    { icon: Wrench, value: stats.applications, label: 'Applications' },
-    { icon: Clock, value: stats.tasksDone, label: 'Tasks Done' },
-  ];
+  // The widget greets the EFFECTIVE user — the act-as target when an admin is switched.
+  const displayName = actingAs?.name ?? getSession()?.worker.userName ?? 'there';
+  const firstName = displayName.split(/\s+/)[0] ?? displayName;
+
+  const snapshot = useLoad(loadSnapshot, []);
+  const announcements = useLoad(loadAnnouncements, []);
+  const activity = useLoad(() => loadActivity(range), [range]);
+
+  const stats = activity.data;
+  const activityTiles = stats
+    ? [
+        { icon: Phone, value: stats.calls, label: 'Calls' },
+        { icon: PhoneCall, value: stats.notes, label: 'Notes' },
+        { icon: Sparkles, value: stats.leadsCreated, label: 'Leads Created' },
+        { icon: Bell, value: stats.leadsReceived, label: 'Leads Received' },
+        { icon: Megaphone, value: stats.interested, label: 'Interested' },
+        { icon: Wrench, value: stats.applications, label: 'Applications' },
+        { icon: Clock, value: stats.tasksDone, label: 'Tasks Done' },
+      ]
+    : [];
 
   return (
     <div className="flex flex-col gap-4 p-6">
@@ -65,7 +110,9 @@ export function Home({ onOpenAutomations, onOpenInbox }: { onOpenAutomations: ()
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr]">
         <div className="flex flex-col justify-center rounded-lg border bg-card p-6">
           <div className="text-xs font-semibold text-muted-foreground">{dateLabel}</div>
-          <h1 className="font-heading mt-1.5 text-3xl font-bold">{greeting(now.getHours())}, Dana</h1>
+          <h1 className="font-heading mt-1.5 text-3xl font-bold">
+            {greeting(now.getHours())}, {firstName}
+          </h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
             Here&apos;s what&apos;s happening with your accounts today.
           </p>
@@ -97,12 +144,18 @@ export function Home({ onOpenAutomations, onOpenInbox }: { onOpenAutomations: ()
             <Megaphone className="size-4 text-primary" />
             Updates &amp; Announcements
           </div>
-          <span className="rounded-md border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10.5px] font-bold text-primary">
-            {ANNOUNCEMENTS.length} new
-          </span>
+          {announcements.data ? (
+            <span className="rounded-md border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10.5px] font-bold text-primary">
+              {announcements.data.length}
+            </span>
+          ) : null}
         </div>
+        <SectionState loading={announcements.loading} error={announcements.error} onRetry={announcements.reload} />
+        {announcements.data && announcements.data.length === 0 ? (
+          <div className="py-4 text-center text-sm text-muted-foreground">No announcements right now.</div>
+        ) : null}
         <div className="flex gap-3 overflow-x-auto pb-1">
-          {ANNOUNCEMENTS.map((a) => {
+          {(announcements.data ?? []).map((a) => {
             const meta = ANNOUNCEMENT_META[a.type];
             const Icon = meta.icon;
             return (
@@ -114,7 +167,7 @@ export function Home({ onOpenAutomations, onOpenInbox }: { onOpenAutomations: ()
                 <span className={`flex size-8 items-center justify-center rounded-md ${meta.className}`}>
                   <Icon className="size-4" />
                 </span>
-                <div className="text-sm font-semibold leading-snug">{a.title}</div>
+                <div className="line-clamp-2 text-sm font-semibold leading-snug">{a.title}</div>
                 <div className="text-[10.5px] text-muted-foreground">{a.time}</div>
               </button>
             );
@@ -124,9 +177,16 @@ export function Home({ onOpenAutomations, onOpenInbox }: { onOpenAutomations: ()
 
       {/* Today's Snapshot */}
       <div className="rounded-lg border bg-card p-5">
-        <div className="font-heading mb-3 text-sm font-bold">Today&apos;s Snapshot</div>
+        <div className="mb-3 flex items-center justify-between">
+          <div className="font-heading text-sm font-bold">Today&apos;s Snapshot</div>
+          <Button variant="ghost" size="sm" onClick={snapshot.reload} disabled={snapshot.loading}>
+            <RotateCw className="size-3.5" />
+            Refresh
+          </Button>
+        </div>
+        <SectionState loading={snapshot.loading} error={snapshot.error} onRetry={snapshot.reload} />
         <div className="flex flex-col gap-4">
-          {SNAPSHOT_GROUPS.map((g) => (
+          {(snapshot.data?.groups ?? []).map((g) => (
             <div key={g.title}>
               <div className="mb-2 text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">{g.title}</div>
               <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
@@ -160,6 +220,7 @@ export function Home({ onOpenAutomations, onOpenInbox }: { onOpenAutomations: ()
             ))}
           </div>
         </div>
+        <SectionState loading={activity.loading} error={activity.error} onRetry={activity.reload} />
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-7">
           {activityTiles.map((t) => (
             <div key={t.label} className="flex flex-col items-center gap-1.5 rounded-md border bg-muted/30 px-2 py-3 text-center">
@@ -201,15 +262,26 @@ export function Home({ onOpenAutomations, onOpenInbox }: { onOpenAutomations: ()
       {/* Recent Inbox */}
       <div className="rounded-lg border bg-card p-5">
         <div className="mb-3 flex items-center justify-between">
-          <div className="font-heading text-sm font-bold">Recent Inbox</div>
+          <div className="font-heading text-sm font-bold">
+            Recent Inbox
+            {inbox.unread > 0 ? (
+              <span className="ml-2 rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+                {inbox.unread} unread
+              </span>
+            ) : null}
+          </div>
           <Button variant="ghost" size="sm" onClick={onOpenInbox}>
             View all
           </Button>
         </div>
         <div className="flex flex-col gap-2">
-          {INBOX_ITEMS.slice(0, 3).map((item) => (
-            <InboxRow key={item.id} item={item} onClick={() => onOpenInbox()} />
-          ))}
+          {inbox.loading ? (
+            <div className="py-4 text-center text-sm text-muted-foreground">Loading…</div>
+          ) : inbox.items.length === 0 ? (
+            <div className="py-4 text-center text-sm text-muted-foreground">All caught up!</div>
+          ) : (
+            inbox.items.slice(0, 3).map((item) => <InboxRow key={item.id} item={item} onClick={() => onOpenInbox()} />)
+          )}
         </div>
       </div>
 
@@ -223,6 +295,7 @@ export function Home({ onOpenAutomations, onOpenInbox }: { onOpenAutomations: ()
 function AnnouncementModal({ announcement, onClose }: { announcement: Announcement; onClose: () => void }) {
   const meta = ANNOUNCEMENT_META[announcement.type];
   const Icon = meta.icon;
+  const priorityTone = announcement.priority ? PRIORITY_TONE[announcement.priority] : undefined;
   return (
     <DetailDialog
       open
@@ -231,10 +304,13 @@ function AnnouncementModal({ announcement, onClose }: { announcement: Announceme
       subtitle={announcement.time}
       size="md"
       badges={
-        <span className={`flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[10.5px] font-bold ${meta.className}`}>
-          <Icon className="size-3.5" />
-          {meta.label}
-        </span>
+        <>
+          <span className={`flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[10.5px] font-bold ${meta.className}`}>
+            <Icon className="size-3.5" />
+            {meta.label}
+          </span>
+          {priorityTone ? <StatusBadge tone={priorityTone}>{announcement.priority}</StatusBadge> : null}
+        </>
       }
       footer={
         <Button variant="outline" onClick={onClose}>

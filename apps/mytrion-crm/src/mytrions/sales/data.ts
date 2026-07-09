@@ -5,7 +5,7 @@
 
 // ---- Announcements (Home) ----
 
-export type AnnouncementType = 'ai' | 'policy' | 'system' | 'update';
+export type AnnouncementType = 'ai' | 'policy' | 'system' | 'update' | 'analytics' | 'security';
 
 export interface Announcement {
   id: string;
@@ -13,6 +13,8 @@ export interface Announcement {
   title: string;
   time: string;
   content: string;
+  /** Zoho announcement priority (critical/high/medium/low) — badge in the modal. */
+  priority?: string;
 }
 
 export const ANNOUNCEMENTS: Announcement[] = [
@@ -278,7 +280,17 @@ export function automationById(id: string): Automation | undefined {
 
 // ---- Inbox ----
 
-export type InboxType = 'alert' | 'billing' | 'task' | 'lead';
+// Live CRM inbox adds the widget's type set (task/reminder/warning/critical/info);
+// alert/billing/lead remain for fixture compatibility.
+export type InboxType =
+  | 'alert'
+  | 'billing'
+  | 'task'
+  | 'lead'
+  | 'reminder'
+  | 'warning'
+  | 'critical'
+  | 'info';
 export type InboxPriority = 'critical' | 'high' | 'medium' | 'low' | 'normal';
 
 export interface InboxItem {

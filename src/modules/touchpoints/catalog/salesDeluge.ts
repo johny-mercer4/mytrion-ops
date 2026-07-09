@@ -36,7 +36,9 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
     riskClass: 'write',
     identityParam: 'userId',
     functionNames: ['mytrioncreatelead'],
-    unwrap: 'successFlag',
+    // Permissive on purpose: the widget inspects {success, leadId, response} itself —
+    // a DUPLICATE_DATA failure carries the EXISTING lead id the UI must link to.
+    unwrap: 'permissive',
     paramsSchema: z.object({
       userId: idString.optional(),
       createPayload: z

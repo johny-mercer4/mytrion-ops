@@ -1482,3 +1482,36 @@ Carrier accounts are now provisioned FROM the already-defined clients in the dat
 - Accepted (widget-parity, not regressions): `invoice_signed_url` has no per-carrier ownership check and `fraud.hold_release` takes a caller `agentEmail` — both match the legacy widget's static-key behavior; servercrm itself doesn't enforce them. Audit logs the client-sent params (actor identity is separate) rather than post-injection values.
 - Read-only live smoke: `scripts/touchpointsSmoke.ts` (`pnpm tsx`), verifies token flow + parsing against real Zoho + servercrm, no writes.
 - Verified: root lint + typecheck + 486 tests; web typecheck + 51 tests; live smoke green.
+
+## 2026-07-10 — Sales Mytrion goes LIVE (widget UI/UX port) + admin user switching
+
+- **All six Sales panels wired to the exact widget touchpoints** (fixtures gone):
+  Home (mytrionhomesnapshot groups + trends, mytrionfetchannouncements w/ priority modal,
+  /api/agent/activity KPIs w/ Today/Week/Month, live inbox preview + real greeting name);
+  Inbox (mytrionfetchinbox, widget filter tabs All/Unread/Tasks/Alerts/Reminders, localStorage
+  read-state, optimistic mytriondeleteinboxmessage, sourceUrl CTA for tasks/reminders);
+  Data Center (clients: /api/clients/by-agent w/ CMP debt + LOC/Prepay filters + widget sort;
+  leads: mytriondatacenterleads grouped by lead status w/ UTM pills); Dashboard (Sales:
+  mytrionAgentSalesDashboard cycle KPIs/donuts/utilization/cards-by-company/activity chart/tx
+  table w/ totals; Company: gauges vs widget targets 15/105/450 fills + 6.7M gal; Debtors:
+  mytriondbdebtorsinfo cards w/ hard-debtor pills + invoice drill; Performance: activity KPIs +
+  /api/agent/activity/leaderboard w/ metric toggle + YOU highlight); Carriers (live
+  /api/sales/carriers/search + status chips + per-row mytrioncreatelead w/ DUPLICATE_DATA →
+  "Exists" link, widget payload building); Create (lead form w/ 10-digit phone validation,
+  escalation w/ the widget's 10 reasons → createescalationticket; Desk-first support ticket
+  deferred). ClientDetailModal: live clients/:id/recent-transactions.
+- **Admin user switching = ActAsPicker (already in TopBar) + module remount**: SalesMytrion
+  keys on actingAs.zohoUserId — switching agents refetches every panel AS that agent (backend
+  act-as rewrites identity; server-injected userId/agentName follow). Widget parity with
+  selectImpersonatedUser + currentUser.id watchers.
+- `sales/live.ts` — the mapping layer (useLoad hook + fetchers per touchpoint, widget response
+  parsing: snapshot grouping/tones, inbox type map task/assignment→reminder/warning/critical,
+  HTML stripping, by-agent sort, lead-outcome DUPLICATE_DATA parsing). leads.create unwrap →
+  permissive (backend) so the UI can link the existing lead.
+- **Tested every feature one by one, LIVE** (scripts/salesPanelSmoke.ts): 15/15 as a real
+  sales agent (Franklyn Jobs — the act-as path), 13/14 as admin (agent_sales needs a carrier
+  book → now a friendly "no carriers" state). Caught + fixed: leaderboard rows under
+  `leaderboard` (not `data`); agent_sales dim_company-miss handling. Writes validated to the
+  schema boundary only (no junk in prod CRM).
+- Removed dead fixtures (dashboardData.ts, CarrierDetailModal, DashboardInvoices).
+- Verified: root lint (0 errors) + 486 tests; web typecheck + 51 tests; live smoke 15/15.

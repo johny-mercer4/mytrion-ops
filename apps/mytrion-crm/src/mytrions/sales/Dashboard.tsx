@@ -1,27 +1,28 @@
 import { useState } from 'react';
 
-import { SALES_INVOICES } from './dashboardData';
 import { DashboardSales } from './DashboardSales';
-import { DashboardInvoices } from './DashboardInvoices';
+import { DashboardCompany } from './DashboardCompany';
 import { DashboardDebtors } from './DashboardDebtors';
+import { DashboardPerformance } from './DashboardPerformance';
 
-type SubTab = 'sales' | 'invoices' | 'debtors';
+// Widget dashboard tabs: Sales / Company / Debtors / Performance (Power BI stays in Zoho).
+type SubTab = 'sales' | 'company' | 'debtors' | 'performance';
 
 export function Dashboard() {
   const [subTab, setSubTab] = useState<SubTab>('sales');
-  const openInvoices = SALES_INVOICES.filter((i) => i.status !== 'paid').length;
 
-  const tabs: { id: SubTab; label: string; badge?: number }[] = [
+  const tabs: { id: SubTab; label: string }[] = [
     { id: 'sales', label: 'Sales' },
-    { id: 'invoices', label: 'Invoices', badge: openInvoices },
+    { id: 'company', label: 'Company' },
     { id: 'debtors', label: 'Debtors' },
+    { id: 'performance', label: 'Performance' },
   ];
 
   return (
     <div className="flex flex-col gap-4 p-6">
       <div>
         <h2 className="font-heading text-2xl font-bold">Dashboard</h2>
-        <p className="text-sm text-muted-foreground">Sales performance, invoices, and debtor tracking.</p>
+        <p className="text-sm text-muted-foreground">Sales performance, company targets, and debtor tracking.</p>
       </div>
 
       <div className="flex items-center gap-1 border-b">
@@ -36,9 +37,6 @@ export function Dashboard() {
               }`}
             >
               {t.label}
-              {t.badge ? (
-                <span className="rounded-full bg-primary/14 px-1.5 py-0.5 text-[10px] font-bold text-primary">{t.badge}</span>
-              ) : null}
               {active ? <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-primary" /> : null}
             </button>
           );
@@ -46,8 +44,9 @@ export function Dashboard() {
       </div>
 
       {subTab === 'sales' ? <DashboardSales /> : null}
-      {subTab === 'invoices' ? <DashboardInvoices /> : null}
+      {subTab === 'company' ? <DashboardCompany /> : null}
       {subTab === 'debtors' ? <DashboardDebtors /> : null}
+      {subTab === 'performance' ? <DashboardPerformance /> : null}
     </div>
   );
 }
