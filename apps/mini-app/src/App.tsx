@@ -101,6 +101,10 @@ function CtaButton({ children, onClick, disabled, style }: { children: ReactNode
         cursor: 'pointer',
         boxShadow: CTA_SHADOW,
         opacity: disabled ? 0.6 : 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
         ...style,
       }}
     >
@@ -281,7 +285,7 @@ function AlreadyScreen({ company, onContinue }: { company: string; onContinue: (
 
 function AppHeader({ user, onOpenProfile }: { user: TelegramWebAppUser | undefined; onOpenProfile: () => void }) {
   return (
-    <div style={{ position: 'sticky', top: 0, zIndex: 5, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 18px', background: 'var(--card)', borderBottom: '1px solid var(--border)', flex: 'none' }}>
+    <div style={{ flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'calc(13px + env(safe-area-inset-top)) 18px 13px', background: 'var(--card)', borderBottom: '1px solid var(--border)' }}>
       <LogoLockup size={22} />
       <button
         type="button"
@@ -385,8 +389,8 @@ function Home({ session, activities, onOpenService, onViewFleet }: { session: Se
               <span style={{ width: 30, height: 30, borderRadius: '50%', flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'color-mix(in srgb, var(--success) 15%, transparent)', color: 'var(--success)' }}>
                 <Icon name="check" size={15} strokeWidth={2.4} className="" />
               </span>
-              <span style={{ flex: 1, fontSize: 14, color: 'var(--fg)' }}>{a.action}</span>
-              <span style={{ fontSize: 12, color: 'var(--muted-fg)', flex: 'none' }}>{a.at}</span>
+              <span style={{ flex: 1, fontSize: 14, color: 'var(--fg)' }}>{t(a.actionKey)}</span>
+              <span style={{ fontSize: 12, color: 'var(--muted-fg)', flex: 'none' }}>{t(a.atKey, a.atN !== undefined ? { n: a.atN } : undefined)}</span>
             </div>
           ))}
         </div>
@@ -494,7 +498,7 @@ function FleetView({
 
   return (
     <div style={{ padding: '0 16px 44px' }}>
-      <div style={{ position: 'sticky', top: 63, zIndex: 4, background: 'var(--background)', margin: '0 -16px', padding: '10px 16px 2px' }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 4, background: 'var(--background)', margin: '0 -16px', padding: '10px 16px 2px' }}>
         <button type="button" className="press" onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 5, border: 'none', background: 'transparent', color: 'var(--muted-fg)', fontFamily: "'Inter Tight'", fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: '6px 8px 6px 0', marginBottom: 2 }}>
           <BackChevron />
           <span>{t('common.home')}</span>
@@ -564,7 +568,7 @@ function FleetView({
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
                         <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('card.name')}</label>
                         <input className="selectable" value={drafts[id] ?? ''} onChange={(e) => setDrafts((d) => ({ ...d, [id]: e.target.value }))} placeholder={t('card.namePh')} style={{ height: 46, border: '1px solid var(--border)', borderRadius: 10, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Inter Tight'", fontSize: 15, padding: '0 13px', width: '100%' }} />
-                        <button type="button" className="press" disabled={busy || !(drafts[id] ?? '').trim()} onClick={() => void run(id, onCreate)} style={{ height: 46, border: 'none', borderRadius: 10, background: GRADIENT, color: '#17130F', fontFamily: "'Inter Tight'", fontWeight: 600, fontSize: 14, cursor: 'pointer', opacity: busy || !(drafts[id] ?? '').trim() ? 0.6 : 1 }}>
+                        <button type="button" className="press" disabled={busy || !(drafts[id] ?? '').trim()} onClick={() => void run(id, onCreate)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, border: 'none', borderRadius: 10, background: GRADIENT, color: '#17130F', fontFamily: "'Inter Tight'", fontWeight: 600, fontSize: 14, cursor: 'pointer', opacity: busy || !(drafts[id] ?? '').trim() ? 0.6 : 1 }}>
                           {busy ? <Spinner size={18} /> : t('card.create')}
                         </button>
                       </div>
@@ -591,7 +595,7 @@ function FleetView({
                           <span style={{ flex: 'none', color: 'var(--destructive)' }}><Icon name="clock" size={16} strokeWidth={2} className="" /></span>
                           <div style={{ fontSize: 13, color: 'var(--fg)', lineHeight: 1.4 }}>{t('card.expiredNotice', { name: c.driverName ?? '' })}</div>
                         </div>
-                        <button type="button" className="press" disabled={busy} onClick={() => void run(id, onRegenerate)} style={{ height: 46, border: 'none', borderRadius: 10, background: GRADIENT, color: '#17130F', fontFamily: "'Inter Tight'", fontWeight: 600, fontSize: 14, cursor: 'pointer', opacity: busy ? 0.6 : 1 }}>
+                        <button type="button" className="press" disabled={busy} onClick={() => void run(id, onRegenerate)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, border: 'none', borderRadius: 10, background: GRADIENT, color: '#17130F', fontFamily: "'Inter Tight'", fontWeight: 600, fontSize: 14, cursor: 'pointer', opacity: busy ? 0.6 : 1 }}>
                           {busy ? <Spinner size={18} /> : t('card.regenerate')}
                         </button>
                       </div>
@@ -628,8 +632,8 @@ function ProfileSheet({ user, company, roleLabel, theme, onTheme, onClose }: { u
   }, []);
   return (
     <>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0, zIndex: 40, background: 'rgba(0,0,0,.42)', animation: 'octfade .2s ease' }} />
-      <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 41, background: 'var(--card)', borderRadius: '20px 20px 0 0', padding: '10px 20px calc(34px + env(safe-area-inset-bottom))', boxShadow: '0 -8px 40px rgba(0,0,0,.28)', animation: 'octsheet .28s cubic-bezier(.32,.72,0,1)' }}>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'rgba(0,0,0,.42)', animation: 'octfade .2s ease' }} />
+      <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 41, background: 'var(--card)', borderRadius: '20px 20px 0 0', padding: '10px 20px calc(34px + env(safe-area-inset-bottom))', boxShadow: '0 -8px 40px rgba(0,0,0,.28)', animation: 'octsheet .28s cubic-bezier(.32,.72,0,1)' }}>
         <div style={{ width: 38, height: 4, borderRadius: 2, background: 'var(--border)', margin: '0 auto 18px' }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 22 }}>
           <div style={{ width: 52, height: 52, borderRadius: '50%', overflow: 'hidden', background: user?.photo_url ? undefined : GRADIENT, color: '#17130F', fontWeight: 700, fontSize: 19, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
@@ -698,8 +702,8 @@ function ActionSheet({ service, session, company, fullName, onClose }: { service
 
   return (
     <>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0, zIndex: 42, background: 'rgba(0,0,0,.42)', animation: 'octfade .2s ease' }} />
-      <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 43, maxHeight: '84%', display: 'flex', flexDirection: 'column', background: 'var(--card)', borderRadius: '20px 20px 0 0', boxShadow: '0 -8px 40px rgba(0,0,0,.28)', animation: 'octsheet .28s cubic-bezier(.32,.72,0,1)' }}>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 42, background: 'rgba(0,0,0,.42)', animation: 'octfade .2s ease' }} />
+      <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 43, maxHeight: '84%', display: 'flex', flexDirection: 'column', background: 'var(--card)', borderRadius: '20px 20px 0 0', boxShadow: '0 -8px 40px rgba(0,0,0,.28)', animation: 'octsheet .28s cubic-bezier(.32,.72,0,1)' }}>
         <div style={{ flex: 'none', padding: '10px 20px 6px' }}>
           <div style={{ width: 38, height: 4, borderRadius: 2, background: 'var(--border)', margin: '0 auto 12px' }} />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
@@ -859,7 +863,7 @@ function InvoiceView({ id, billToName, billToCompany, onClose }: { id: string; b
   const { t } = useI18n();
   const doc = INVOICE_DOCS[id]!;
   return (
-    <div style={{ position: 'absolute', inset: 0, zIndex: 46, display: 'flex', flexDirection: 'column', background: '#33363c', animation: 'octfade .2s ease' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 46, display: 'flex', flexDirection: 'column', background: '#33363c', animation: 'octfade .2s ease' }}>
       <div style={{ flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '16px 12px 10px', background: '#212327' }}>
         <button type="button" className="press" onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: 4, border: 'none', background: 'transparent', color: '#cdd2da', fontFamily: "'Inter Tight'", fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: '6px 8px 6px 4px' }}><BackChevron />{t('common.back')}</button>
         <span className="selectable" style={{ fontSize: 13, fontWeight: 600, color: '#eef1f5', fontVariantNumeric: 'tabular-nums' }}>{id}.pdf</span>

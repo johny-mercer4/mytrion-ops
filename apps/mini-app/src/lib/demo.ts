@@ -120,38 +120,41 @@ export const TRACKING = (ownCard: string, isDriver: boolean) => ({
 
 export interface ActivityItem {
   id: string;
-  action: string;
+  /** i18n key for the action label (act.*). */
+  actionKey: string;
+  /** i18n key for the relative time (time.*), with optional {n}. */
+  atKey: string;
+  atN?: number;
   status: 'done' | 'pending' | 'failed';
-  at: string;
 }
 
 export function seedActivities(isDriver: boolean): ActivityItem[] {
   if (isDriver) {
     return [
-      { id: 'a1', action: 'Transactions viewed', status: 'done', at: '2m ago' },
-      { id: 'a2', action: 'Tracking checked', status: 'done', at: 'Yesterday' },
+      { id: 'a1', actionKey: 'act.txns', atKey: 'time.min', atN: 2, status: 'done' },
+      { id: 'a2', actionKey: 'act.tracking', atKey: 'time.yesterday', status: 'done' },
     ];
   }
   return [
-    { id: 'a1', action: 'Balance checked', status: 'done', at: '2m ago' },
-    { id: 'a2', action: 'Invoice downloaded', status: 'done', at: '1h ago' },
-    { id: 'a3', action: 'Transactions viewed', status: 'done', at: 'Yesterday' },
+    { id: 'a1', actionKey: 'act.balance', atKey: 'time.min', atN: 2, status: 'done' },
+    { id: 'a2', actionKey: 'act.invoices', atKey: 'time.hour', atN: 1, status: 'done' },
+    { id: 'a3', actionKey: 'act.txns', atKey: 'time.yesterday', status: 'done' },
   ];
 }
 
-const ACTIVITY_LABEL: Record<string, string> = {
-  balance: 'Balance checked',
-  status: 'Account status viewed',
-  txns: 'Transactions viewed',
-  invoices: 'Invoices viewed',
-  payment: 'Payment info viewed',
-  lastused: 'Card usage checked',
-  tracking: 'Tracking checked',
+const ACTIVITY_KEY: Record<string, string> = {
+  balance: 'act.balance',
+  status: 'act.status',
+  txns: 'act.txns',
+  invoices: 'act.invoices',
+  payment: 'act.payment',
+  lastused: 'act.lastused',
+  tracking: 'act.tracking',
 };
 
 export function logActivity(list: ActivityItem[], key: string): ActivityItem[] {
   return [
-    { id: 'a' + Date.now(), action: ACTIVITY_LABEL[key] ?? 'Action', status: 'done' as const, at: 'Just now' },
+    { id: 'a' + Date.now(), actionKey: ACTIVITY_KEY[key] ?? 'act.balance', atKey: 'time.justNow', status: 'done' as const },
     ...list,
   ].slice(0, 6);
 }
