@@ -79,7 +79,9 @@ function GaugeRow({ title, gauges, unit }: { title: string; gauges: GaugeSpec[];
       <div className="font-heading mb-3 text-sm font-bold">{title}</div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {gauges.map((g) => {
-          const pct = g.target ? Math.min((g.value / g.target) * 100, 100) : null;
+          // Bar width caps at 100%, but the label shows the true percentage (over-target wins).
+          const rawPct = g.target ? (g.value / g.target) * 100 : null;
+          const pct = rawPct === null ? null : Math.min(rawPct, 100);
           return (
             <div key={g.label} className="rounded-md border bg-muted/30 p-4">
               <div className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">{g.label}</div>
@@ -96,7 +98,7 @@ function GaugeRow({ title, gauges, unit }: { title: string; gauges: GaugeSpec[];
                     />
                   </div>
                   <div className="mt-1.5 text-[10.5px] text-muted-foreground">
-                    {Math.round(pct)}% of {num(g.target)}
+                    {Math.round(rawPct ?? 0)}% of {num(g.target)}
                   </div>
                 </>
               ) : (

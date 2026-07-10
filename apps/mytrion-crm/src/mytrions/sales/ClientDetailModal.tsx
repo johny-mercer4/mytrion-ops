@@ -36,14 +36,21 @@ export function ClientDetailModal({
   }
 
   const fmt = (v: unknown): string => (v == null || v === '' ? '—' : String(v));
-  const rows = (recent.data?.data ?? []).map((tx) => {
+  const rows = (recent.data?.data ?? []).map((tx, i) => {
     const r = tx as Record<string, unknown>;
     return {
-      key: String(r.transaction_id ?? Math.random()),
+      // A multi-grade fueling event yields multiple rows sharing one transaction_id — index the key.
+      key: `${r.transaction_id ?? 'tx'}-${i}`,
       station: fmt(r.location_name),
       date: String(r.transaction_date ?? '').slice(0, 10),
-      gallons: Number(r.transaction_fuel_quantity ?? r.fuel_quantity ?? 0) || 0,
-      amount: Number(r.net_total ?? r.amount ?? 0) || 0,
+      gallons: Number(r.transaction_fuel_quantity ?? r.line_item_fuel_quantity ?? 0) || 0,
+      // net_total is 0 on many fuel rows (the charge lands in funded_total / line_item_amount) —
+      // fall through so the modal shows a real dollar figure, not $0.
+      amount:
+        Number(r.net_total ?? 0) ||
+        Number(r.funded_total ?? 0) ||
+        Number(r.line_item_amount ?? 0) ||
+        0,
     };
   });
 

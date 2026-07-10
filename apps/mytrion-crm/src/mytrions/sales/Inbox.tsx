@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import type { InboxPriority } from './data';
 import { InboxRow } from './InboxRow';
 import type { InboxFeed, LiveInboxItem } from './live';
+import { useToast } from './Toast';
 
 // Widget filter tabs: All / Unread / Tasks / Alerts (warning+critical) / Reminders (reminder+info).
 type Filter = 'all' | 'unread' | 'task' | 'alerts' | 'reminders';
@@ -22,6 +23,7 @@ const PRIORITY_TONE: Record<InboxPriority, StatusTone> = {
 
 export function Inbox({ feed }: { feed: InboxFeed }) {
   const { items, loading, error, reload } = feed;
+  const { push } = useToast();
   const [filter, setFilter] = useState<Filter>('all');
   const [openItem, setOpenItem] = useState<LiveInboxItem | null>(null);
 
@@ -96,7 +98,12 @@ export function Inbox({ feed }: { feed: InboxFeed }) {
           </div>
         ) : (
           filtered.map((item) => (
-            <InboxRow key={item.id} item={item} onClick={openAndRead} onDelete={feed.remove} />
+            <InboxRow
+              key={item.id}
+              item={item}
+              onClick={openAndRead}
+              onDelete={(it) => feed.remove(it, (msg) => push('error', msg))}
+            />
           ))
         )}
       </div>

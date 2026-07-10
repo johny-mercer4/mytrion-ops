@@ -97,7 +97,8 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
     riskClass: 'read',
     method: 'POST',
     pathTemplate: '/api/sales/carriers/search',
-    paramsSchema: z.object({ query: shortText(300), limit: limit(100, 25).optional() }),
+    // Widget fetch window is 200 or 500 — don't cap below what the UI offers.
+    paramsSchema: z.object({ query: shortText(300), limit: limit(500, 200).optional() }),
   },
   {
     kind: 'servercrm',

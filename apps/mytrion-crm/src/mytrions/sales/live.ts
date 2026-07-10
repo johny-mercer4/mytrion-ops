@@ -102,7 +102,8 @@ export async function loadSnapshot(): Promise<SnapshotData> {
         { label: 'Active Customers', value: num(n('active_clients')), tone: 'accent' },
         { label: 'Need Attention', value: n('inactive_clients') === 0 ? '✓' : num(n('inactive_clients')), tone: n('inactive_clients') > 0 ? 'bad' : 'good' },
         { label: 'Stuck Applications', value: num(n('stuck_deals_count')), tone: n('stuck_deals_count') > 0 ? 'warn' : 'good' },
-        { label: 'Money Owed', value: n('total_debt_amount') > 0 ? `-${money(n('total_debt_amount'))}` : '$0', tone: n('total_hard_debtors') > 0 ? 'bad' : n('total_debt_amount') > 0 ? 'warn' : 'good' },
+        // Widget tone: hard debtors → orange (warn), else any debt → red (bad), else good.
+        { label: 'Money Owed', value: n('total_debt_amount') > 0 ? `-${money(n('total_debt_amount'))}` : '$0', tone: n('total_hard_debtors') > 0 ? 'warn' : n('total_debt_amount') > 0 ? 'bad' : 'good' },
       ],
     },
     {
@@ -138,7 +139,7 @@ export async function loadAnnouncements(): Promise<Announcement[]> {
     return {
       id: `ann-${i}-${a.Created_Time ?? ''}`,
       type: ANN_TYPES.includes(type) ? type : 'update',
-      title: a.Subject ?? a.Name ?? '(untitled)',
+      title: a.Subject || a.Name || '(untitled)',
       time: relTime(a.Created_Time),
       content: a.Content ?? '',
       ...(priority ? { priority } : {}),
@@ -234,7 +235,7 @@ export async function loadInbox(): Promise<LiveInboxItem[]> {
       recordId: String(m.recordId ?? m.id ?? ''),
       type: mapInboxType(m.type),
       priority,
-      title: m.subject ?? m.name ?? '(no subject)',
+      title: m.subject || m.name || '(no subject)',
       desc: stripHtml(m.content ?? ''),
       time: relTime(m.createdTime),
       rawTime: Number.isNaN(raw) ? 0 : raw,
@@ -259,7 +260,7 @@ export interface InboxFeed {
   markRead: (id: string) => void;
   markAllRead: () => void;
   /** Optimistic delete (widget behavior): remove locally first, fire the touchpoint after. */
-  remove: (item: LiveInboxItem) => void;
+  remove: (item: LiveInboxItem, onError?: (message: string) => void) => void;
 }
 
 /** One shared CRM-inbox feed — Home's preview and the Inbox panel render the same items. */
@@ -282,9 +283,12 @@ export function useInboxFeed(): InboxFeed {
     });
   }, []);
 
-  const remove = useCallback((item: LiveInboxItem) => {
+  const remove = useCallback((item: LiveInboxItem, onError?: (message: string) => void) => {
     setItems((prev) => prev.filter((i) => i.id !== item.id));
-    void deleteInboxMessage(item.recordId).catch(() => undefined);
+    // Widget deletes by the message's own id (recordId === id there). Surface failures.
+    void deleteInboxMessage(item.recordId || item.id).catch((err: unknown) => {
+      onError?.(err instanceof Error ? err.message : 'Failed to delete the message.');
+    });
   }, []);
 
   return {
@@ -324,10 +328,12 @@ export async function loadClients(): Promise<ClientRow[]> {
     const debtDays = Number(c.computed_debt_days ?? 0) || 0;
     const overdue = Number(c.overdue_invoices_count ?? 0) || 0;
     const terms = String(c.payment_terms ?? '');
-    const limitText = /prepay/i.test(terms)
+    const creditLimit = Number(c.credit_limit ?? 0);
+    // Widget: prepay tolerates hyphen/space; a real credit line needs credit_limit > 0.
+    const limitText = /pre.?pay/i.test(terms)
       ? money(c.prepay_balance ?? c.balance)
-      : c.credit_limit != null
-        ? `${money(c.balance)} / ${money(c.credit_limit)}`
+      : Number.isFinite(creditLimit) && creditLimit > 0
+        ? `${money(c.balance)} / ${money(creditLimit)}`
         : money(c.balance);
     return {
       carrierId: String(c.carrier_id ?? ''),
@@ -373,7 +379,7 @@ function mapLead(r: DatacenterLead, converted: boolean): LeadRow {
     phone: r.phone ?? '',
     source: r.lead_source ?? '',
     utm: r.utm_source ?? '',
-    status: r.lead_status ?? 'Unknown',
+    status: r.lead_status || 'Unknown',
     created: relTime(r.created_time),
     company: r.company === '-' ? '' : (r.company ?? ''),
     converted,
@@ -405,7 +411,9 @@ export function leadUrl(id: string): string {
 
 function leadOutcomeOf(res: CreateLeadResult): LeadOutcome {
   if (res.success && res.leadId) return { status: 'created', leadId: String(res.leadId) };
-  const text = JSON.stringify(res.response ?? res);
+  // `response` may be a JSON string OR an already-parsed object (widget handles both).
+  const raw = res.response;
+  const text = typeof raw === 'string' ? raw : JSON.stringify(raw ?? res);
   if (/DUPLICATE_DATA/i.test(text)) {
     const idMatch = /"id"\s*:\s*"?(\d{6,})"?/.exec(text);
     return { status: 'duplicate', leadId: idMatch?.[1] ?? null };
@@ -415,9 +423,11 @@ function leadOutcomeOf(res: CreateLeadResult): LeadOutcome {
 
 /** Widget payload building: name split, digits-only 10-char phone, optional extras. */
 export async function createLeadFromCarrier(row: CarrierSearchRow): Promise<LeadOutcome> {
+  // Widget: only split off a last name when there are 2+ tokens; a single-word owner name
+  // stays in BOTH first and last (never an empty firstName).
   const parts = (row.owner_full_name ?? '').trim().split(/\s+/).filter(Boolean);
-  const lastName = parts.length > 0 ? String(parts.pop()) : 'Unknown';
-  const firstName = parts.join(' ');
+  const lastName = parts.length > 1 ? String(parts.pop()) : (parts[0] ?? 'Unknown');
+  const firstName = parts.length > 1 ? parts.join(' ') : (parts[0] ?? '');
   const phone = (row.phone_number ?? '').replace(/\D/g, '').slice(0, 10);
   const payload: Record<string, string> = {
     firstName,

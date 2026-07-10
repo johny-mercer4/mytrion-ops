@@ -69,9 +69,10 @@ export function DashboardSales() {
       newCards: acc.newCards + r.newCards,
       tx: acc.tx + r.tx,
       volume: acc.volume + r.volume,
+      discount: acc.discount + r.discount,
       total: acc.total + r.total,
     }),
-    { newCards: 0, tx: 0, volume: 0, total: 0 },
+    { newCards: 0, tx: 0, volume: 0, discount: 0, total: 0 },
   );
 
   if (load.loading) {
@@ -218,7 +219,7 @@ export function DashboardSales() {
                 <span className="text-right font-mono">{txTotals.newCards}</span>
                 <span className="text-right font-mono">{txTotals.tx}</span>
                 <span className="text-right font-mono">{num(Math.round(txTotals.volume))}</span>
-                <span />
+                <span className="text-right font-mono">{money(txTotals.discount)}</span>
                 <span className="text-right font-mono text-good">{money(txTotals.total)}</span>
               </div>
             </>

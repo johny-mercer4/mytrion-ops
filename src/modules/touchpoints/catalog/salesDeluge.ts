@@ -43,10 +43,13 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
       userId: idString.optional(),
       createPayload: z
         .object({
-          firstName: shortText(100),
+          // firstName + phone are legitimately blank for broker-snapshot leads (the widget's
+          // First-name field is optional and many FMCSA rows carry no phone) — only lastName +
+          // companyName are required.
+          firstName: z.string().max(100).optional(),
           lastName: shortText(100),
           companyName: shortText(300),
-          phone: shortText(30),
+          phone: z.string().max(30).optional(),
         })
         .passthrough(), // optional extras: email, dot, fullAddress, truckSize, salutation, …
     }),

@@ -69,7 +69,7 @@ export function Create() {
 /** Widget lead form: salutation, first/last, company*, phone* (exactly 10 digits). */
 function LeadForm() {
   const { push } = useToast();
-  const [salutation, setSalutation] = useState('Mr.');
+  const [salutation, setSalutation] = useState('Mr');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -108,8 +108,8 @@ function LeadForm() {
       <div className="grid grid-cols-[0.5fr_1fr_1fr] gap-4">
         <Field label="Salutation">
           <select value={salutation} onChange={(e) => setSalutation(e.target.value)} className={fieldClass}>
-            <option>Mr.</option>
-            <option>Ms.</option>
+            <option value="Mr">Mr</option>
+            <option value="Ms">Ms</option>
           </select>
         </Field>
         <Field label="First name">

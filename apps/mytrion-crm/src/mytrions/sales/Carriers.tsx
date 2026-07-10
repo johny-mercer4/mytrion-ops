@@ -80,6 +80,8 @@ export function Carriers() {
       if (outcome.status === 'created') push('success', `Lead created for ${row.owner_full_name ?? 'carrier'}.`);
       else if (outcome.status === 'duplicate') push('info', 'This carrier already has a lead in CRM.');
       else push('error', outcome.message);
+    } catch (err) {
+      push('error', err instanceof Error ? err.message : 'Lead creation failed.');
     } finally {
       setLeadBusy(null);
     }

@@ -277,6 +277,8 @@ export function Home({
         <div className="flex flex-col gap-2">
           {inbox.loading ? (
             <div className="py-4 text-center text-sm text-muted-foreground">Loading…</div>
+          ) : inbox.error ? (
+            <div className="py-4 text-center text-sm text-bad">{inbox.error}</div>
           ) : inbox.items.length === 0 ? (
             <div className="py-4 text-center text-sm text-muted-foreground">All caught up!</div>
           ) : (
