@@ -120,6 +120,26 @@ const EnvSchema = z.object({
   // primary user directly. Callers can still override per-call with an explicit chatId.
   TELEGRAM_CHAT_ID_MAIN: z.string().default(''),
 
+  // --- Carrier onboarding bot (separate from the assistant's own Telegram integration above) ---
+  // Deep-linked from the carrier invite flow: https://t.me/<username>?start=<inviteId>. The bot
+  // itself (webhook + mini-app) is future work; today we only need the username to build the link.
+  TELEGRAM_CARRIER_BOT_USERNAME: z.string().default(''),
+  TELEGRAM_CARRIER_BOT_TOKEN: z.string().default(''),
+  // Public HTTPS URL of apps/mini-app once deployed — the inline web_app button's target (`/start`
+  // fallback path only).
+  TELEGRAM_CARRIER_MINI_APP_URL: z.string().default(''),
+  // BotFather-registered named Mini App short name (Bot Settings -> Configure Mini App). Set →
+  // links use https://t.me/<bot>/<shortname>?startapp=<id>.
+  TELEGRAM_CARRIER_MINI_APP_SHORT_NAME: z.string().default(''),
+  // '1' when the bot's MAIN App is configured in BotFather (Edit Bot -> Configure Mini App -> Main
+  // App URL = <origin>/mini-app/). Then links use https://t.me/<bot>?startapp=<id> (no short name)
+  // and open the mini-app directly. Off → ?start= fallback (needs a bot /start reply, not built).
+  TELEGRAM_CARRIER_MINI_APP_DIRECT: z.string().default(''),
+
+  // '1' → apply pending Drizzle migrations at boot (see db/migrate.ts). Set in the Render env group
+  // so a deploy migrates the DB itself; off by default so tests/local/tooling never auto-migrate.
+  DB_MIGRATE_ON_BOOT: z.string().default(''),
+
   // --- Zoho MCP (hosted; "Authorize via Connection" → headless, URL embeds the credential). ---
   ZOHO_MCP_URL: z.string().default(''),
 

@@ -37,3 +37,6 @@ tmp/
 metadataScripts/output/*
 !metadataScripts/output/.gitkeep
 eval-reports/
+.playwright-mcp/
+/*.png
+apps/design_handoff_octane_mini_app/

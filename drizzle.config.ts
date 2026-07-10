@@ -10,6 +10,8 @@ export default defineConfig({
     './src/db/schema/tenants.ts',
     './src/db/schema/users.ts',
     './src/db/schema/carrier_users.ts',
+    './src/db/schema/carrier_invitations.ts',
+    './src/db/schema/registered_mini_app_companies.ts',
     './src/db/schema/conversations.ts',
     './src/db/schema/messages.ts',
     './src/db/schema/tool_calls.ts',

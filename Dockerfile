@@ -24,5 +24,8 @@ COPY --from=build /app/src/db/migrations ./src/db/migrations
 # /app/apps/mytrion-crm/app and /widget 404s ("widget build not found"). Path matches
 # widgetStatic's resolver (/app/apps/mytrion-crm/app).
 COPY --from=build /app/apps/mytrion-crm/app ./apps/mytrion-crm/app
+# The Telegram carrier mini-app (vendored in git) is served same-origin at /mini-app — carry it
+# into runtime too (matches miniAppStatic's resolver: /app/apps/mini-app/app).
+COPY --from=build /app/apps/mini-app/app ./apps/mini-app/app
 EXPOSE 3001
 CMD ["node", "dist/server.js"]

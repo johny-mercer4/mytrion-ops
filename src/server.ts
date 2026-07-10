@@ -1,11 +1,14 @@
 import { buildApp } from './app.js';
 import { assertRuntimeSecrets, env } from './config/env.js';
 import { closeDb } from './db/client.js';
+import { runMigrationsOnBoot } from './db/migrate.js';
 import { logger } from './lib/logger.js';
 import { jobsEnabled, startJobs, stopJobs } from './modules/jobs/boss.js';
 
 async function main(): Promise<void> {
   assertRuntimeSecrets();
+  // Bring the schema forward before serving (no-op unless DB_MIGRATE_ON_BOOT=1).
+  await runMigrationsOnBoot();
   const app = await buildApp();
 
   await app.listen({ port: env.PORT, host: '0.0.0.0' });

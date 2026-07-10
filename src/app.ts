@@ -19,11 +19,13 @@ import { healthcheckPlugin } from './plugins/healthcheck.js';
 import { rbacPlugin } from './plugins/rbac.js';
 import { requestContextPlugin } from './plugins/requestContext.js';
 import { registerWidgetStatic } from './plugins/widgetStatic.js';
+import { registerMiniAppStatic } from './plugins/miniAppStatic.js';
 import { applyDepartmentPolicy } from './modules/agents/departmentAgents.js';
 import { loadMcpTools } from './modules/tools/mcpTools.js';
 import { toolRegistry } from './modules/tools/index.js';
 import { adminRoutes } from './routes/v1/admin.routes.js';
 import { carrierUsersRoutes } from './routes/v1/carrierUsers.routes.js';
+import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
 import { agentRoutes } from './routes/v1/agent.routes.js';
 import { authRoutes } from './routes/v1/auth.routes.js';
 import { automationRoutes } from './routes/v1/automation.routes.js';
@@ -165,6 +167,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Serve the AI Chat widget UI same-origin at /widget (public; no-op if apps/mytrion-crm/app isn't built).
   await registerWidgetStatic(app);
 
+  // Serve the Telegram carrier onboarding mini-app same-origin at /mini-app (public; no-op if
+  // apps/mini-app/app isn't built). BotFather Main App URL = <origin>/mini-app/.
+  await registerMiniAppStatic(app);
+
   // Discover Zoho MCP tools once at boot and register them (flag-gated). Non-fatal AND bounded: a
   // slow/hung MCP endpoint must never block startup (Render deploy/health timeouts), so we race
   // discovery against a hard deadline and continue with native tools if it loses.
@@ -193,6 +199,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(moneyCodeRoutes);
       await v1.register(adminRoutes);
       await v1.register(carrierUsersRoutes);
+      await v1.register(carrierMiniAppRoutes);
       await v1.register(retentionRoutes);
       await v1.register(realtimeRoutes);
       await v1.register(touchpointsRoutes);
