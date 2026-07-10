@@ -184,6 +184,13 @@ const EnvSchema = z.object({
   // Zoho custom-function (Deluge) execution root. Blank = derived from the ORIGIN of
   // ZOHO_CRM_API_DOMAIN + '/crm/v2/functions' — the functions API is v2, not v8.
   ZOHO_FUNCTIONS_BASE_URL: z.string().default(''),
+  // Which org the Deluge executor targets. PRODUCTION by default; flip to 'sandbox' (plus
+  // the two vars below) to point every executeZohoFunction call at the CRM sandbox with
+  // zero code change.
+  ZOHO_FUNCTIONS_ENV: z.enum(['production', 'sandbox']).default('production'),
+  ZOHO_FUNCTIONS_SANDBOX_BASE_URL: z.string().default('https://sandbox.zohoapis.com/crm/v2/functions'),
+  // Refresh token minted against the SANDBOX org (falls back to the prod CRM token).
+  ZOHO_CRM_SANDBOX_REFRESH_TOKEN: z.string().default(''),
 
   // --- Zoho Desk ---
   ZOHO_DESK_REFRESH_TOKEN: z.string().default(''),

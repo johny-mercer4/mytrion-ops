@@ -35,3 +35,26 @@ export const limit = (max: number, def: number) =>
   z.coerce.number().int().min(1).max(max).default(def);
 
 export const shortText = (max: number) => z.string().min(1).max(max);
+
+/**
+ * Bounded passthrough filter map for read-only LIST endpoints whose upstream owns the
+ * filter vocabulary (the finance widget forwards panel filters verbatim; servercrm
+ * validates them). Keys must be identifier-shaped, values are scalars, and the map is
+ * size-capped — enough to keep the query surface sane without re-enumerating every
+ * panel's filters here.
+ */
+export const looseFilters = (maxKeys = 20) =>
+  z
+    .record(z.union([z.string().max(300), z.number(), z.boolean()]))
+    .default({})
+    .superRefine((v, ctx) => {
+      const keys = Object.keys(v);
+      if (keys.length > maxKeys) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `At most ${maxKeys} filters` });
+      }
+      for (const k of keys) {
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]{0,60}$/.test(k)) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Invalid filter name '${k}'` });
+        }
+      }
+    });

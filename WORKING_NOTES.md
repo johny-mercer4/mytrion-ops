@@ -1524,3 +1524,27 @@ Carrier accounts are now provisioned FROM the already-defined clients in the dat
   - MEDIUM: salutation `Mr.`/`Ms.` → `Mr`/`Ms` (CRM picklist); single-word owner name kept in BOTH first+last (was empty firstName); LOC filter `/loc|line of credit|credit/`, prepay `/pre.?pay/`, credit_limit>0 gate for limitText; duplicate-lead id parse handles string OR object `response`; inbox delete-by-id (not the upstream recordId) + error toast; inbox/announcement titles use `||` (empty subject fallback); Home inbox-preview error state; DashboardCompany label shows true % (bar caps at 100); DashboardSales discount total column; Money-Owed tone (hard→warn, debt→bad).
   - Skipped as cosmetic (documented): errored-metric "—" vs 0, 48h announcement badge, live clock ticking, 91-bucket sparkline slice, WS live-push.
 - Verified: backend lint 0 errors + typecheck + touchpoint tests; web typecheck + 51 tests; live re-walkthrough green.
+
+## 2026-07-10 (3) — Finance Mytrion backend migration + Deluge prod/sandbox switch
+
+- **Deluge env switch**: executor now targets PRODUCTION by default and flips to the CRM
+  sandbox with env only — `ZOHO_FUNCTIONS_ENV=sandbox` + `ZOHO_FUNCTIONS_SANDBOX_BASE_URL`
+  (default https://sandbox.zohoapis.com/crm/v2/functions) + `ZOHO_CRM_SANDBOX_REFRESH_TOKEN`
+  (falls back to the prod CRM token). New 'crm_sandbox' token service (own cache slot) so
+  prod/sandbox tokens never mix. Zero code change to switch.
+- **Finance touchpoints (backend only, UI later)** — 21 new catalog entries, dept-gated
+  to 'finance': 3 Deluge (`finance.balance_run` = mytrionfinancebalancerun (the only write,
+  fire-and-forget), `finance.parent_snapshot` = mytrionfinanceparentsnapshot (status unwrap),
+  `finance.smart_events` = mytrionfetchsmartevents {limit,offset}) + 18 servercrm reads
+  (main-transactions ±count, smart-balance audits ±count, clients ±count, payments ±count,
+  debtors ±count, analytics fueling-patterns ±per-carrier, segments aggregate/clients,
+  clients-fueling-on, and finance-scoped client drilldowns invoices/payment-transactions/
+  recent-transactions — deliberately org-wide, NO per-agent carrier ownership, matching the
+  widget's org-wide static-key access; the sales entries keep their owner gate).
+  List endpoints take a bounded `looseFilters` map (identifier keys, scalar values, ≤20) —
+  the widget forwarded panel filters verbatim and servercrm owns the vocabulary.
+- **Tested every finance touchpoint one by one, LIVE** (scripts/financePanelSmoke.ts):
+  21/21 — both Deluge functions against PROD (real EFS snapshot + smart events) and all 18
+  servercrm reads; balance_run schema-validated only (no write fired). One catch during
+  smoke: clients-fueling-on requires date|dayOfWeek (upstream rule, widget always sends it).
+- Verified: lint 0 errors, typecheck, 490 tests (5 new incl. the sandbox-env suite).
