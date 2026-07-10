@@ -97,14 +97,15 @@ export const SNAPSHOT_GROUPS: SnapshotGroup[] = [
 
 export type ActivityRange = 'daily' | 'weekly' | 'monthly';
 
+// null = that metric's upstream errored (render "—", not 0).
 export interface ActivityStats {
-  calls: number;
-  notes: number;
-  leadsCreated: number;
-  leadsReceived: number;
-  interested: number;
-  applications: number;
-  tasksDone: number;
+  calls: number | null;
+  notes: number | null;
+  leadsCreated: number | null;
+  leadsReceived: number | null;
+  interested: number | null;
+  applications: number | null;
+  tasksDone: number | null;
 }
 
 export const ACTIVITY_BY_RANGE: Record<ActivityRange, ActivityStats> = {

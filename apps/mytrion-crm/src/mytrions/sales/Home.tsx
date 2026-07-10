@@ -225,7 +225,9 @@ export function Home({
           {activityTiles.map((t) => (
             <div key={t.label} className="flex flex-col items-center gap-1.5 rounded-md border bg-muted/30 px-2 py-3 text-center">
               <t.icon className="size-4 text-primary" />
-              <div className="font-heading text-lg font-bold">{t.value}</div>
+              <div className={`font-heading text-lg font-bold ${t.value === null ? 'text-muted-foreground' : ''}`}>
+                {t.value === null ? '—' : t.value}
+              </div>
               <div className="text-[9.5px] text-muted-foreground uppercase">{t.label}</div>
             </div>
           ))}

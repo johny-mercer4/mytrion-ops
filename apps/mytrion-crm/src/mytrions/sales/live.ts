@@ -89,6 +89,16 @@ export interface SnapshotData {
   updatedAt: number;
 }
 
+type SnapTone = SnapshotGroup['cells'][number]['tone'];
+
+/** Map an up/down trend string to a tile tone; `neutral` falls back to the given default. */
+function trendTone(trend: unknown, fallback: SnapTone = 'good'): SnapTone {
+  const t = String(trend ?? '').toLowerCase();
+  if (t === 'up') return 'good';
+  if (t === 'down') return 'bad';
+  return fallback;
+}
+
 export async function loadSnapshot(): Promise<SnapshotData> {
   const raw = await callTouchpoint('dashboard.home_snapshot', {});
   const first = Array.isArray(raw) ? raw[0] : raw;
@@ -108,10 +118,11 @@ export async function loadSnapshot(): Promise<SnapshotData> {
     },
     {
       title: 'This Week',
+      // Tone follows the widget's *_trend signal (up → good/green, down → bad/red).
       cells: [
-        { label: 'Fuel Transactions', value: num(n('swipes_this_week')), tone: 'good' },
-        { label: 'Gallons Pumped', value: gal('gallons_this_week'), tone: 'purple' },
-        { label: 'New Cards', value: num(n('new_cards_this_week')), tone: 'accent' },
+        { label: 'Fuel Transactions', value: num(n('swipes_this_week')), tone: trendTone(s.swipes_trend) },
+        { label: 'Gallons Pumped', value: gal('gallons_this_week'), tone: trendTone(s.gallons_trend, 'purple') },
+        { label: 'New Cards', value: num(n('new_cards_this_week')), tone: trendTone(s.new_cards_trend, 'accent') },
       ],
     },
     {
@@ -149,9 +160,12 @@ export async function loadAnnouncements(): Promise<Announcement[]> {
 
 // ---- Home + Dashboard: agent activity (/api/agent/activity/:zohoUserId) ----
 
-function metric(res: AgentActivityResult, key: string, field: 'count' | 'completed' = 'count'): number {
+// null = the metric's upstream source errored (servercrm returns per-metric {error} in a
+// 2xx) → the tile shows "—", NOT a real 0 (widget parity, home-panel.js).
+function metric(res: AgentActivityResult, key: string, field: 'count' | 'completed' = 'count'): number | null {
   const m = res.metrics?.[key];
-  if (!m || m.error) return 0;
+  if (!m) return 0;
+  if (m.error) return null;
   const v = m[field];
   return typeof v === 'number' ? v : 0;
 }

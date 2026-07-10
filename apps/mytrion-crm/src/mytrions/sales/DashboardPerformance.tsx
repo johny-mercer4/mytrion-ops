@@ -32,12 +32,15 @@ export function DashboardPerformance() {
   );
 
   const m = activity.data?.metrics ?? {};
-  const mv = (key: string, field: 'count' | 'completed' | 'value_total' | 'value_avg' = 'count'): number => {
+  // null = the metric's upstream errored → render "—" instead of a fake 0.
+  const mv = (key: string, field: 'count' | 'completed' | 'value_total' | 'value_avg' = 'count'): number | null => {
     const entry = m[key];
-    if (!entry || entry.error) return 0;
+    if (!entry) return 0;
+    if (entry.error) return null;
     const v = (entry as Record<string, unknown>)[field];
     return typeof v === 'number' ? v : 0;
   };
+  const kpi = (v: number | null, asMoney = false): string => (v === null ? '—' : asMoney ? money(v) : num(v));
 
   const myZohoId = actingAs?.zohoUserId ?? getSession()?.worker.zohoUserId ?? '';
   const rows = board.data?.leaderboard ?? board.data?.data ?? [];
@@ -74,11 +77,11 @@ export function DashboardPerformance() {
 
       {activity.error ? <p className="text-sm text-bad">{activity.error}</p> : null}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <StatCard icon={Trophy} value={money(mv('deals_value_created', 'value_total'))} label="Deal Value Created" tint="good" />
-        <StatCard icon={Trophy} value={num(mv('deals_value_created'))} label="Deals Created" tint="primary" />
-        <StatCard icon={Trophy} value={num(mv('leads_created'))} label="Leads Created" tint="purple" />
-        <StatCard icon={Trophy} value={num(mv('applications_filled'))} label="Applications" tint="warn" />
-        <StatCard icon={Trophy} value={num(mv('calls', 'completed'))} label="Calls" tint="primary" />
+        <StatCard icon={Trophy} value={kpi(mv('deals_value_created', 'value_total'), true)} label="Deal Value Created" tint="good" />
+        <StatCard icon={Trophy} value={kpi(mv('deals_value_created'))} label="Deals Created" tint="primary" />
+        <StatCard icon={Trophy} value={kpi(mv('leads_created'))} label="Leads Created" tint="purple" />
+        <StatCard icon={Trophy} value={kpi(mv('applications_filled'))} label="Applications" tint="warn" />
+        <StatCard icon={Trophy} value={kpi(mv('calls', 'completed'))} label="Calls" tint="primary" />
       </div>
 
       <div className="overflow-x-auto rounded-lg border bg-card">
