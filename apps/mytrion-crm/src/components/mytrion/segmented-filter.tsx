@@ -27,7 +27,7 @@ export function SegmentedFilter({ options, value, onChange, className }: Segment
             onClick={() => onChange(opt.id)}
             data-active={active}
             className={cn(
-              'rounded-xs border px-3 py-1.5 text-xs font-semibold transition-colors',
+              'rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors',
               active
                 ? 'border-primary bg-primary text-primary-foreground'
                 : 'border-border bg-card text-muted-foreground hover:text-foreground',

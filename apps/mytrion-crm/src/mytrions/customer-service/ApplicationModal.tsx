@@ -104,7 +104,7 @@ export function ApplicationModal({
             <div className="font-heading mb-2 text-xs font-bold tracking-wide text-primary uppercase">
               CS Notes
             </div>
-            <div className="rounded-xs border bg-muted/30 p-3 text-sm text-muted-foreground">{app.notes}</div>
+            <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">{app.notes}</div>
           </section>
         ) : null}
       </div>

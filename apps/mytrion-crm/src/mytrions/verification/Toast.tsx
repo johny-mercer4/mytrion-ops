@@ -38,7 +38,7 @@ export function ToastViewport({ toast }: { toast: ToastState | null }) {
   const Icon = KIND_ICON[toast.kind];
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-5 z-50 flex justify-center px-4">
-      <div className={`pointer-events-auto flex max-w-md items-start gap-2.5 rounded-xs border bg-card px-4 py-3 shadow-lg ${KIND_CLASS[toast.kind]}`}>
+      <div className={`pointer-events-auto flex max-w-md items-start gap-2.5 rounded-lg border bg-card px-4 py-3 shadow-lg ${KIND_CLASS[toast.kind]}`}>
         <Icon className="mt-0.5 size-4 flex-none" />
         <div>
           <div className="text-sm font-semibold text-foreground">{toast.title}</div>

@@ -49,7 +49,7 @@ export function Toast({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: 
     <button
       type="button"
       onClick={() => onDismiss(toast.id)}
-      className={`pointer-events-auto flex items-center gap-2 rounded-xs border px-3.5 py-2.5 text-xs font-semibold shadow-lg backdrop-blur-sm ${KIND_CLASS[toast.kind]}`}
+      className={`pointer-events-auto flex items-center gap-2 rounded-md border px-3.5 py-2.5 text-xs font-semibold shadow-lg backdrop-blur-sm ${KIND_CLASS[toast.kind]}`}
     >
       <Icon className="size-3.5 flex-none" />
       {toast.message}

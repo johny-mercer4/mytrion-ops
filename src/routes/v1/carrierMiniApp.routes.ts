@@ -18,6 +18,8 @@ import { buildInviteUrl, createCarrierInvite } from '../../modules/carrier/invit
 import { parseInitDataUser, verifyTelegramInitData, type TelegramWebAppUser } from '../../integrations/telegramCarrierBot.js';
 import type { RegisteredMiniAppCompany } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
+import { RBACError } from '../../lib/errors.js';
+import { requireContext } from './helpers.js';
 
 /** Tenant-scoping only — no admin authority. Repos key off ctx.tenantId; audit reads the rest. */
 function lookupCtx(): TenantContext {
@@ -107,7 +109,51 @@ async function requireRegisteredOwner(
   };
 }
 
+const createInviteSchema = z.object({
+  profile: z.enum(['owner', 'driver']).default('owner'),
+  carrier_id: z.union([z.string().max(120), z.number()]).transform(String).optional(),
+  application_id: z.union([z.string().max(120), z.number()]).transform(String).optional(),
+  company_name: z.string().max(300).optional(),
+  card_id: z.union([z.string().max(120), z.number()]).transform(String).optional(),
+  driver_name: z.string().max(200).optional(),
+});
+
 export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> {
+  const guard = { onRequest: [app.sessionOrApiKey] };
+
+  /**
+   * Admin-gated: generate a carrier registration link (owner or driver). This is the seed for the
+   * mini-app — an admin sends an owner the link; the owner then hands out per-card driver links
+   * from inside the app. Kept here (not in carrierUsers.routes) so the whole carrier-onboarding
+   * feature is self-contained.
+   */
+  app.post('/carrier-invitations', guard, async (request, reply) => {
+    const ctx = requireContext(request);
+    if (ctx.role !== 'admin' && !ctx.bypassRbac) {
+      throw new RBACError('Generating carrier invites requires admin access');
+    }
+    const body = createInviteSchema.parse(request.body);
+    const { invite, inviteUrl } = await createCarrierInvite(ctx, {
+      profile: body.profile,
+      ...(body.carrier_id ? { carrierId: body.carrier_id } : {}),
+      ...(body.application_id ? { applicationId: body.application_id } : {}),
+      ...(body.company_name ? { companyName: body.company_name } : {}),
+      ...(body.card_id ? { cardId: body.card_id } : {}),
+      ...(body.driver_name ? { driverName: body.driver_name } : {}),
+    });
+    await auditFromContext(ctx, {
+      action: 'admin.carrier_invitation.create',
+      status: 'ok',
+      resourceType: 'carrier_invitation',
+      resourceId: invite.id,
+      detail: {
+        ...(invite.carrierId ? { carrierId: invite.carrierId } : {}),
+        ...(invite.applicationId ? { applicationId: invite.applicationId } : {}),
+      },
+    });
+    return reply.code(201).send({ invite, inviteUrl });
+  });
+
   /** Invite preview — what the mini-app shows on the Confirm screen before the user acts. */
   app.get('/carrier-invitations/:id/public', async (request) => {
     const { id } = request.params as { id: string };

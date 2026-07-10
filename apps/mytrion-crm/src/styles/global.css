@@ -55,9 +55,8 @@
 /* Per-Mytrion accent — set data-mytrion="<id>" on a module root to swap --accent* to that
    module's hue; everything else (bg/surface/text/status) stays the shared scale. Dark is the
    default; [data-theme="light"] overrides. Reconciled per DESIGN_SYSTEM.md §7. */
-/* Atlassian Design System blue (Jira's brand token: Blue B400 #0C66E4 light / Blue.400 #579DFF dark). */
-[data-mytrion='admin'] { --accent: #579dff; --accent-strong: #85b8ff; --on-accent: #08153a; --accent-soft: rgba(87, 157, 255, 0.14); --accent-glow: rgba(87, 157, 255, 0.28); }
-[data-theme='light'] [data-mytrion='admin'] { --accent: #0c66e4; --accent-strong: #0055cc; --on-accent: #fff; --accent-soft: rgba(12, 102, 228, 0.1); --accent-glow: rgba(12, 102, 228, 0.2); }
+[data-mytrion='admin'] { --accent: #38bef0; --accent-strong: #2cb6ec; --on-accent: #04131c; --accent-soft: rgba(56, 190, 240, 0.12); --accent-glow: rgba(56, 190, 240, 0.26); }
+[data-theme='light'] [data-mytrion='admin'] { --accent: #0c8fc7; --accent-strong: #0e9ad6; --on-accent: #fff; --accent-soft: rgba(12, 143, 199, 0.1); --accent-glow: rgba(12, 143, 199, 0.2); }
 
 [data-mytrion='sales'] { --accent: #4d9dff; --accent-strong: #7bb6ff; --on-accent: #04122e; --accent-soft: rgba(77, 157, 255, 0.13); --accent-glow: rgba(77, 157, 255, 0.28); }
 [data-theme='light'] [data-mytrion='sales'] { --accent: #2563eb; --accent-strong: #1d4ed8; --on-accent: #fff; --accent-soft: rgba(37, 99, 235, 0.1); --accent-glow: rgba(37, 99, 235, 0.2); }

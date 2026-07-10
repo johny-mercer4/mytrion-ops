@@ -7,10 +7,10 @@ services:
     # Dockerfile authoritative for build/runtime; this block is effectively documentation.
     runtime: node
     plan: starter
-    # Plain tsc build (reliable). The CRM UI (apps/mytrion-crm/app) is VENDORED in git and served
-    # same-origin at /crm (legacy /widget redirects there), so the deploy needs no web build step.
-    # Zoho Base URL: <url>/crm/index.html (regenerate apps/mytrion-crm/app with `pnpm build:widget`
-    # and recommit when the CRM app changes.)
+    # Plain tsc build (reliable). The widget UI (apps/mytrion-crm/app) is VENDORED in git and served
+    # same-origin at /widget, so the deploy needs no web build step. Zoho Base URL:
+    # <url>/widget/index.html (regenerate apps/mytrion-crm/app with `pnpm build:widget` and recommit
+    # when the widget changes.)
     buildCommand: pnpm install --frozen-lockfile && pnpm build
     startCommand: pnpm start
     healthCheckPath: /health
@@ -38,9 +38,6 @@ services:
       # Long-term agent memory (distill + UNTRUSTED recall + nightly decay). Requires migration 0013.
       - key: FF_AGENT_MEMORY
         value: "1"
-      # Apply pending DB migrations at boot so a deploy needs no separate migrate step (db/migrate.ts).
-      - key: DB_MIGRATE_ON_BOOT
-        value: "1"
       # NOT enabled here on purpose:
       #   FF_JOBS_ENABLED       — excluded per request (pg-boss workers/crons stay off).
       #   FF_FILES_ENABLED      — would crash boot: assertRuntimeSecrets() requires S3_ENDPOINT /
@@ -51,8 +48,3 @@ services:
       # plus OPENAI_API_KEY, API_KEY, JWT_SECRET, ENCRYPTION_KEY, ZOHO_*, etc.) come
       # from the env group. No Render-managed DB: this engine uses the external Mytrion OPS DB.
       - fromGroup: octane-assistant-secrets
-    # The Telegram carrier mini-app (apps/mini-app) is NOT a separate Render service: it's built
-    # (vendored to apps/mini-app/app) and served SAME-ORIGIN by this backend at /mini-app/ — so it
-    # shares the API's origin (no CORS) and BotFather's Main App URL is <origin>/mini-app/. The
-    # Dockerfile copies apps/mini-app/app into the runtime image; rebuild + recommit it with
-    # `pnpm -C apps/mini-app build` when the mini-app changes (same convention as the widget).

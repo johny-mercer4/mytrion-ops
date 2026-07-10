@@ -76,7 +76,7 @@ export function Cases() {
   }
 
   return (
-    <div className="flex flex-col gap-3.5 p-5">
+    <div className="flex flex-col gap-4 p-6">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="font-heading text-2xl font-bold">Retention Cases</h2>
@@ -87,7 +87,7 @@ export function Cases() {
         <button
           type="button"
           onClick={() => push('info', 'Refreshed')}
-          className="flex size-8 flex-none items-center justify-center rounded-xs border bg-card text-muted-foreground hover:text-foreground"
+          className="flex size-8 flex-none items-center justify-center rounded-md border bg-card text-muted-foreground hover:text-foreground"
           aria-label="Refresh"
         >
           <RefreshCw className="size-4" />
@@ -145,18 +145,18 @@ function KanbanColumn({
   const meta = STAGE_META[stage];
   return (
     <div
-      className="flex w-72 flex-none flex-col gap-2.5 rounded-xs border-t-2 bg-card/60 p-2.5"
+      className="flex w-72 flex-none flex-col gap-2.5 rounded-lg border-t-2 bg-card/60 p-2.5"
       style={{ borderTopColor: meta.colorVar }}
     >
       <div className="flex items-center justify-between px-1">
         <span className="font-heading text-xs font-bold tracking-wide uppercase">{meta.label}</span>
-        <span className="rounded-xs border bg-secondary px-1.5 py-0.5 font-mono text-[10px] font-semibold text-secondary-foreground">
+        <span className="rounded-md border bg-secondary px-1.5 py-0.5 font-mono text-[10px] font-semibold text-secondary-foreground">
           {cases.length}
         </span>
       </div>
       <div className="flex flex-col gap-2">
         {cases.length === 0 ? (
-          <div className="rounded-xs border border-dashed p-4 text-center text-[11px] text-muted-foreground">
+          <div className="rounded-md border border-dashed p-4 text-center text-[11px] text-muted-foreground">
             No cases
           </div>
         ) : (
@@ -172,7 +172,7 @@ function CaseCard({ c, onOpen }: { c: RetentionCase; onOpen: (c: RetentionCase) 
     <button
       type="button"
       onClick={() => onOpen(c)}
-      className="flex flex-col gap-2.5 rounded-xs border bg-card p-3 text-left shadow-sm hover:border-primary/40"
+      className="flex flex-col gap-2.5 rounded-md border bg-card p-3 text-left shadow-sm hover:border-primary/40"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -192,7 +192,7 @@ function CaseCard({ c, onOpen }: { c: RetentionCase; onOpen: (c: RetentionCase) 
             {initials(c.owner)}
           </span>
           {c.competitor ? (
-            <span className="flex items-center gap-0.5 truncate rounded-xs bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            <span className="flex items-center gap-0.5 truncate rounded-md bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
               <Zap className="size-2.5" />
               {c.competitor}
             </span>

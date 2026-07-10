@@ -1,38 +1,76 @@
-import { CreditCard, Droplets, Truck, Wallet } from 'lucide-react';
+import { AlertTriangle, CalendarClock, CreditCard, Wallet } from 'lucide-react';
 
+import { callTouchpoint } from '@/api/touchpoints';
 import { DetailDialog } from '@/components/mytrion/detail-dialog';
-import { StatusBadge } from '@/components/mytrion/status-badge';
+import { StatusBadge, type StatusTone } from '@/components/mytrion/status-badge';
 import { Button } from '@/components/ui/button';
-import { type Client, fmtCompact, fmtCurrency, fuelActivityFor, statusTone } from './data';
+import { money, useLoad, type ClientRow } from './live';
 import { useToast } from './Toast';
 
+const CLIENT_TONE: Record<ClientRow['status'], StatusTone> = {
+  active: 'good',
+  inactive: 'neutral',
+  suspended: 'bad',
+};
+
+/** Client drilldown — live recent fuel activity from servercrm (widget parity). */
 export function ClientDetailModal({
   client,
   onClose,
   onRunAction,
 }: {
-  client: Client;
+  client: ClientRow;
   onClose: () => void;
   onRunAction: () => void;
 }) {
   const { push } = useToast();
-  const activity = fuelActivityFor(client);
-  const owed = client.balance < 0;
+  const recent = useLoad(
+    () => callTouchpoint('clients.recent_transactions', { carrierId: client.carrierId, limit: 8 }),
+    [client.carrierId],
+  );
 
   function quickAction(label: string) {
     onClose();
     onRunAction();
-    push('info', `Opening ${label} for ${client.name}…`);
+    push('info', `Opening ${label} for ${client.company}…`);
   }
+
+  const fmt = (v: unknown): string => (v == null || v === '' ? '—' : String(v));
+  const rows = (recent.data?.data ?? []).map((tx, i) => {
+    const r = tx as Record<string, unknown>;
+    return {
+      // A multi-grade fueling event yields multiple rows sharing one transaction_id — index the key.
+      key: `${r.transaction_id ?? 'tx'}-${i}`,
+      station: fmt(r.location_name),
+      date: String(r.transaction_date ?? '').slice(0, 10),
+      gallons: Number(r.transaction_fuel_quantity ?? r.line_item_fuel_quantity ?? 0) || 0,
+      // net_total is 0 on many fuel rows (the charge lands in funded_total / line_item_amount) —
+      // fall through so the modal shows a real dollar figure, not $0.
+      amount:
+        Number(r.net_total ?? 0) ||
+        Number(r.funded_total ?? 0) ||
+        Number(r.line_item_amount ?? 0) ||
+        0,
+    };
+  });
 
   return (
     <DetailDialog
       open
       onOpenChange={(o) => !o && onClose()}
-      title={client.name}
-      subtitle={`Carrier #${client.id} · ${client.city}`}
+      title={client.company}
+      subtitle={`Carrier #${client.carrierId}${client.dealStage ? ` · ${client.dealStage}` : ''}`}
       size="lg"
-      badges={<StatusBadge tone={statusTone(client.status)}>{client.status}</StatusBadge>}
+      badges={
+        <>
+          <StatusBadge tone={CLIENT_TONE[client.status]}>{client.status}</StatusBadge>
+          {client.terms ? (
+            <span className="rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+              {client.terms}
+            </span>
+          ) : null}
+        </>
+      }
       footer={
         <Button variant="outline" onClick={onClose}>
           Close
@@ -41,30 +79,43 @@ export function ClientDetailModal({
     >
       <div className="flex flex-col gap-5">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Cell icon={Wallet} value={owed ? `-${fmtCurrency(client.balance)}` : fmtCurrency(client.balance)} label="Balance" tone={owed ? 'text-bad' : 'text-good'} />
-          <Cell icon={Droplets} value={fmtCompact(client.gallons)} label="Gallons" tone="text-brand-purple" />
-          <Cell icon={CreditCard} value={String(client.cards)} label="Cards" tone="text-primary" />
-          <Cell icon={Truck} value={String(client.units)} label="Units" tone="text-foreground" />
+          <Cell icon={Wallet} value={client.limitText} label="Balance / Limit" tone="text-primary" />
+          <Cell
+            icon={AlertTriangle}
+            value={client.debt > 0 ? `-${money(client.debt)}` : '$0'}
+            label="Outstanding Debt"
+            tone={client.isDebtor ? 'text-bad' : 'text-good'}
+          />
+          <Cell icon={CalendarClock} value={client.debtDays > 0 ? `${client.debtDays}d` : '—'} label="Debt Age" tone="text-warn" />
+          <Cell icon={CreditCard} value={client.dot || '—'} label="DOT" tone="text-foreground" />
         </div>
 
         <section>
           <div className="font-heading mb-2.5 text-xs font-bold tracking-wide text-primary uppercase">
             Recent Fuel Activity
           </div>
-          <div className="flex flex-col gap-1.5">
-            {activity.map((row) => (
-              <div key={row.station} className="flex items-center justify-between rounded-xs border bg-muted/30 px-3 py-2 text-xs">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-semibold">{row.station}</div>
-                  <div className="text-[10px] text-muted-foreground">{row.date}</div>
+          {recent.loading ? (
+            <div className="py-4 text-center text-sm text-muted-foreground">Loading…</div>
+          ) : recent.error ? (
+            <div className="py-4 text-center text-sm text-bad">{recent.error}</div>
+          ) : rows.length === 0 ? (
+            <div className="py-4 text-center text-sm text-muted-foreground">No recent transactions.</div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {rows.map((row) => (
+                <div key={row.key} className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2 text-xs">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-semibold">{row.station}</div>
+                    <div className="text-[10px] text-muted-foreground">{row.date}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-mono font-semibold">{row.gallons.toFixed(1)} gal</div>
+                    <div className="font-mono text-[10px] text-muted-foreground">{money(row.amount)}</div>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <div className="font-mono font-semibold">{row.gallons} gal</div>
-                  <div className="font-mono text-[10px] text-muted-foreground">{fmtCurrency(row.amount)}</div>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <section>
@@ -90,9 +141,9 @@ export function ClientDetailModal({
 
 function Cell({ icon: Icon, value, label, tone }: { icon: typeof Wallet; value: string; label: string; tone: string }) {
   return (
-    <div className="rounded-xs border bg-muted/30 p-3">
+    <div className="rounded-md border bg-muted/30 p-3">
       <Icon className={`size-4 ${tone}`} />
-      <div className={`font-heading mt-1.5 text-lg font-bold ${tone}`}>{value}</div>
+      <div className={`font-heading mt-1.5 truncate text-lg font-bold ${tone}`}>{value}</div>
       <div className="text-[10px] text-muted-foreground uppercase">{label}</div>
     </div>
   );

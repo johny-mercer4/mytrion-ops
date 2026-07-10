@@ -90,7 +90,7 @@ export function ArrayReport() {
   }
 
   return (
-    <div className="flex flex-col gap-3.5 p-5">
+    <div className="flex flex-col gap-4 p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-heading text-2xl font-bold">Array Template Report</h2>
@@ -104,7 +104,7 @@ export function ArrayReport() {
             onClick={() => setSearch('')}
             title="Refresh"
             aria-label="Refresh"
-            className="flex size-8 flex-none items-center justify-center rounded-xs border bg-card text-muted-foreground hover:text-foreground"
+            className="flex size-8 flex-none items-center justify-center rounded-md border bg-card text-muted-foreground hover:text-foreground"
           >
             <RefreshCw className="size-3.5" />
           </button>
@@ -132,7 +132,7 @@ export function ArrayReport() {
         <SegmentedFilter options={STATUS_FILTERS} value={status} onChange={setStatus} />
       </div>
 
-      <div className="overflow-x-auto rounded-xs border bg-card">
+      <div className="overflow-x-auto rounded-lg border bg-card">
         {/* min-w keeps the 10-column grid from squishing on phones; overflow-x-auto on the
             wrapper above makes it swipeable instead of clipping the trailing columns. */}
         <div className="min-w-270">
@@ -191,7 +191,7 @@ export function ArrayReport() {
       ) : null}
 
       {toast ? (
-        <div className="fixed right-5 bottom-5 z-50 flex max-w-sm items-start gap-3 rounded-xs border border-l-4 border-l-good bg-card px-4 py-3 shadow-lg">
+        <div className="fixed right-5 bottom-5 z-50 flex max-w-sm items-start gap-3 rounded-lg border border-l-4 border-l-good bg-card px-4 py-3 shadow-lg">
           <span className="mt-1 size-2 flex-none rounded-full bg-good" />
           <div>
             <div className="text-sm font-bold">{toast.label}</div>
@@ -256,7 +256,7 @@ function ArrayRecordDetail({
             <span className="font-heading text-xs font-bold tracking-wide text-primary uppercase">Excel Row Preview</span>
             <span className="font-mono text-[10.5px] text-muted-foreground">← Array template</span>
           </div>
-          <div className="overflow-x-auto rounded-xs border">
+          <div className="overflow-x-auto rounded-md border">
             <div className="flex min-w-fit">
               {cells.map((cell) => (
                 <div key={cell.label} className="min-w-30 flex-none border-r px-3 py-2.5 last:border-r-0">
@@ -270,7 +270,7 @@ function ArrayRecordDetail({
 
         <section>
           <div className="font-heading mb-2 text-xs font-bold tracking-wide text-primary uppercase">Collector Notes</div>
-          <div className="rounded-xs border bg-muted/30 p-3.5 text-sm text-muted-foreground">{r.notes}</div>
+          <div className="rounded-md border bg-muted/30 p-3.5 text-sm text-muted-foreground">{r.notes}</div>
         </section>
 
         <section>

@@ -50,7 +50,7 @@ export function Automations() {
   }, [search]);
 
   return (
-    <div className="flex flex-col gap-3.5 p-5">
+    <div className="flex flex-col gap-4 p-6">
       <div>
         <h2 className="font-heading text-2xl font-bold">Self-Service Actions</h2>
         <p className="text-sm text-muted-foreground">Run common carrier and billing actions without leaving the assistant.</p>
@@ -75,16 +75,16 @@ export function Automations() {
               key={a.id}
               disabled={!actionable}
               onClick={() => actionable && setOpenAutomation(a)}
-              className={`flex flex-col items-start gap-2.5 rounded-xs border bg-card p-4 text-left transition-colors ${
+              className={`flex flex-col items-start gap-2.5 rounded-lg border bg-card p-4 text-left transition-colors ${
                 actionable ? 'hover:bg-muted/40' : 'cursor-not-allowed opacity-55'
               }`}
             >
               <div className="flex w-full items-start justify-between">
-                <span className="flex size-9 items-center justify-center rounded-xs bg-primary/12 text-primary">
+                <span className="flex size-9 items-center justify-center rounded-md bg-primary/12 text-primary">
                   <Icon className="size-4.5" />
                 </span>
                 {a.comingSoon ? (
-                  <span className="rounded-xs border border-warn/30 bg-warn/10 px-1.5 py-0.5 text-[9.5px] font-bold text-warn">SOON</span>
+                  <span className="rounded-md border border-warn/30 bg-warn/10 px-1.5 py-0.5 text-[9.5px] font-bold text-warn">SOON</span>
                 ) : actionable ? (
                   <ChevronRight className="size-4 text-muted-foreground" />
                 ) : null}
@@ -92,7 +92,7 @@ export function Automations() {
               <div className="font-semibold">{a.title}</div>
               <div className="flex flex-wrap gap-1.5">
                 {a.codes.map((c) => (
-                  <span key={c} className="rounded-xs border bg-secondary px-1.5 py-0.5 font-mono text-[9.5px] font-bold text-secondary-foreground">
+                  <span key={c} className="rounded-md border bg-secondary px-1.5 py-0.5 font-mono text-[9.5px] font-bold text-secondary-foreground">
                     {c}
                   </span>
                 ))}
@@ -102,7 +102,7 @@ export function Automations() {
           );
         })}
         {filtered.length === 0 ? (
-          <div className="col-span-full rounded-xs border bg-card p-10 text-center text-sm text-muted-foreground">
+          <div className="col-span-full rounded-lg border bg-card p-10 text-center text-sm text-muted-foreground">
             No automations match your search.
           </div>
         ) : null}

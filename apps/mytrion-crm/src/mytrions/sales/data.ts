@@ -5,7 +5,7 @@
 
 // ---- Announcements (Home) ----
 
-export type AnnouncementType = 'ai' | 'policy' | 'system' | 'update';
+export type AnnouncementType = 'ai' | 'policy' | 'system' | 'update' | 'analytics' | 'security';
 
 export interface Announcement {
   id: string;
@@ -13,6 +13,8 @@ export interface Announcement {
   title: string;
   time: string;
   content: string;
+  /** Zoho announcement priority (critical/high/medium/low) — badge in the modal. */
+  priority?: string;
 }
 
 export const ANNOUNCEMENTS: Announcement[] = [
@@ -95,14 +97,15 @@ export const SNAPSHOT_GROUPS: SnapshotGroup[] = [
 
 export type ActivityRange = 'daily' | 'weekly' | 'monthly';
 
+// null = that metric's upstream errored (render "—", not 0).
 export interface ActivityStats {
-  calls: number;
-  notes: number;
-  leadsCreated: number;
-  leadsReceived: number;
-  interested: number;
-  applications: number;
-  tasksDone: number;
+  calls: number | null;
+  notes: number | null;
+  leadsCreated: number | null;
+  leadsReceived: number | null;
+  interested: number | null;
+  applications: number | null;
+  tasksDone: number | null;
 }
 
 export const ACTIVITY_BY_RANGE: Record<ActivityRange, ActivityStats> = {
@@ -278,7 +281,17 @@ export function automationById(id: string): Automation | undefined {
 
 // ---- Inbox ----
 
-export type InboxType = 'alert' | 'billing' | 'task' | 'lead';
+// Live CRM inbox adds the widget's type set (task/reminder/warning/critical/info);
+// alert/billing/lead remain for fixture compatibility.
+export type InboxType =
+  | 'alert'
+  | 'billing'
+  | 'task'
+  | 'lead'
+  | 'reminder'
+  | 'warning'
+  | 'critical'
+  | 'info';
 export type InboxPriority = 'critical' | 'high' | 'medium' | 'low' | 'normal';
 
 export interface InboxItem {

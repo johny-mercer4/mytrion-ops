@@ -38,7 +38,7 @@ export function Home() {
   const maxPriority = Math.max(...OPEN_TICKETS_BY_PRIORITY.map((p) => p.count));
 
   return (
-    <div className="flex flex-col gap-3.5 p-5">
+    <div className="flex flex-col gap-4 p-6">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="font-heading text-2xl font-bold">Home</h2>
@@ -50,7 +50,7 @@ export function Home() {
         </Button>
       </div>
 
-      <div className="flex items-center justify-between gap-3 rounded-xs border bg-card p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3 rounded-lg border bg-card p-4 shadow-sm">
         <div className="flex items-center gap-3.5">
           <span className="flex size-11 flex-none items-center justify-center rounded-full bg-primary font-heading text-sm font-bold text-primary-foreground">
             DW
@@ -84,9 +84,9 @@ export function Home() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
-        <div className="flex flex-col gap-3.5">
-          <div className="rounded-xs border bg-card p-4 shadow-sm">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="flex flex-col gap-4">
+          <div className="rounded-lg border bg-card p-4 shadow-sm">
             <h3 className="font-heading mb-3 text-xs font-bold tracking-wide text-muted-foreground uppercase">
               My Performance
             </h3>
@@ -98,7 +98,7 @@ export function Home() {
             </div>
           </div>
 
-          <div className="rounded-xs border bg-card p-4 shadow-sm">
+          <div className="rounded-lg border bg-card p-4 shadow-sm">
             <h3 className="font-heading mb-3 text-xs font-bold tracking-wide text-muted-foreground uppercase">
               Recent Activity
             </h3>
@@ -117,7 +117,7 @@ export function Home() {
           </div>
         </div>
 
-        <div className="rounded-xs border bg-card p-4 shadow-sm">
+        <div className="rounded-lg border bg-card p-4 shadow-sm">
           <h3 className="font-heading mb-3 text-xs font-bold tracking-wide text-muted-foreground uppercase">
             Open Tickets by Priority
           </h3>
@@ -149,7 +149,7 @@ export function Home() {
 
 function MiniStat({ value, label }: { value: string; label: string }) {
   return (
-    <div className="rounded-xs border bg-muted/30 p-3">
+    <div className="rounded-md border bg-muted/30 p-3">
       <div className="font-heading text-xl font-bold">{value}</div>
       <div className="mt-0.5 text-[10px] tracking-wide text-muted-foreground uppercase">{label}</div>
     </div>

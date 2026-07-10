@@ -3,6 +3,7 @@ import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
+import websocket from '@fastify/websocket';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import Fastify, { type FastifyInstance } from 'fastify';
@@ -33,11 +34,14 @@ import { healthRoutes } from './routes/v1/health.routes.js';
 import { integrationsRoutes } from './routes/v1/integrations.routes.js';
 import { knowledgeRoutes } from './routes/v1/knowledge.routes.js';
 import { moneyCodeRoutes } from './routes/v1/moneyCode.routes.js';
+import { realtimeRoutes } from './routes/v1/realtime.routes.js';
+import { retentionRoutes } from './routes/v1/retention.routes.js';
 import { scopeRoutes } from './routes/v1/scope.routes.js';
 import { approvalsRoutes } from './routes/v1/approvals.routes.js';
 import { filesRoutes } from './routes/v1/files.routes.js';
 import { tasksRoutes } from './routes/v1/tasks.routes.js';
 import { toolsRoutes } from './routes/v1/tools.routes.js';
+import { touchpointsRoutes } from './routes/v1/touchpoints.routes.js';
 
 function loggerOption() {
   if (isTest) return false;
@@ -144,6 +148,9 @@ export async function buildApp(): Promise<FastifyInstance> {
     credentials: true,
   });
   await app.register(sensible);
+  // Native WebSocket support (GET /v1/realtime — inbox pub/sub). Registered at the root so
+  // the versioned scope's websocket routes can attach; 1 MiB frame cap.
+  await app.register(websocket, { options: { maxPayload: 1_048_576 } });
   await app.register(rateLimit, { max: 120, timeWindow: '1 minute' });
   // File uploads for knowledge training (POST /v1/knowledge/upload).
   await app.register(multipart, {
@@ -157,8 +164,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   healthcheckPlugin(app); // GET /health (liveness)
 
-  // Serve the Mytrion CRM app same-origin at /crm — legacy /widget redirects there (public; no-op
-  // if apps/mytrion-crm/app isn't built).
+  // Serve the AI Chat widget UI same-origin at /widget (public; no-op if apps/mytrion-crm/app isn't built).
   await registerWidgetStatic(app);
 
   // Serve the Telegram carrier onboarding mini-app same-origin at /mini-app (public; no-op if
@@ -194,6 +200,9 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(adminRoutes);
       await v1.register(carrierUsersRoutes);
       await v1.register(carrierMiniAppRoutes);
+      await v1.register(retentionRoutes);
+      await v1.register(realtimeRoutes);
+      await v1.register(touchpointsRoutes);
       await v1.register(agentRoutes);
       await v1.register(tasksRoutes);
       await v1.register(filesRoutes);

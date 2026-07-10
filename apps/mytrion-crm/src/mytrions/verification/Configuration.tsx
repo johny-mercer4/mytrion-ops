@@ -20,7 +20,7 @@ export function Configuration() {
   }
 
   return (
-    <div className="flex flex-col gap-5 p-5">
+    <div className="flex flex-col gap-5 p-6">
       <div>
         <h2 className="font-heading text-2xl font-bold">Configuration</h2>
         <p className="text-sm text-muted-foreground">Vendor integrations, hard-stop thresholds & policy rules from SOP v3.3</p>
@@ -35,7 +35,7 @@ export function Configuration() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ThresholdTable icon={SlidersHorizontal} title="Financial Hard-Stops" rows={FINANCIAL_HARD_STOPS} />
         <ThresholdTable icon={Layers} title="Limit & Policy Rules" rows={LIMIT_POLICY_RULES} />
       </div>
@@ -44,7 +44,7 @@ export function Configuration() {
         <SectionHeader icon={ShieldCheck} title="Tier Classification" />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {TIERS.map((t) => (
-            <div key={t.id} className="rounded-xs border bg-card p-4" style={{ borderTopWidth: 3, borderTopColor: t.color }}>
+            <div key={t.id} className="rounded-lg border bg-card p-4" style={{ borderTopWidth: 3, borderTopColor: t.color }}>
               <div className="font-heading text-sm font-bold">{t.label}</div>
               <div className="mt-1 text-xs text-muted-foreground">{t.desc}</div>
             </div>
@@ -68,7 +68,7 @@ function SectionHeader({ icon: Icon, title }: { icon: typeof ShieldCheck; title:
 
 function VendorCard({ vendor, onToggle }: { vendor: VendorToggle; onToggle: () => void }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xs border bg-card p-3.5">
+    <div className="flex items-center justify-between gap-3 rounded-lg border bg-card p-3.5">
       <div className="flex items-center gap-2.5">
         <span className={`size-2 flex-none rounded-full ${vendor.on ? 'bg-good' : 'bg-muted-foreground/40'}`} />
         <div>
@@ -104,7 +104,7 @@ function ThresholdTable({
   rows: { label: string; value: string; hint: string }[];
 }) {
   return (
-    <div className="rounded-xs border bg-card">
+    <div className="rounded-lg border bg-card">
       <div className="flex items-center gap-2 border-b px-4 py-3">
         <Icon className="size-4 text-primary" />
         <span className="font-heading text-sm font-bold">{title}</span>
@@ -116,7 +116,7 @@ function ThresholdTable({
               <div className="font-medium">{r.label}</div>
               {r.hint ? <div className="text-[11px] text-muted-foreground">{r.hint}</div> : null}
             </div>
-            <span className="flex-none rounded-xs border bg-secondary px-2 py-0.5 font-mono text-xs font-semibold text-secondary-foreground">
+            <span className="flex-none rounded-md border bg-secondary px-2 py-0.5 font-mono text-xs font-semibold text-secondary-foreground">
               {r.value}
             </span>
           </div>

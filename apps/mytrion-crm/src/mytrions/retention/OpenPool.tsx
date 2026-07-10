@@ -58,12 +58,12 @@ export function OpenPool() {
   }
 
   return (
-    <div className="flex flex-col gap-3.5 p-5">
+    <div className="flex flex-col gap-4 p-6">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="font-heading text-2xl font-bold">Open Pool</h2>
-            <span className="rounded-xs border bg-secondary px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-secondary-foreground uppercase">
+            <span className="rounded-md border bg-secondary px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-secondary-foreground uppercase">
               Deal Assignment
             </span>
           </div>
@@ -77,7 +77,7 @@ export function OpenPool() {
           <button
             type="button"
             onClick={() => push('info', 'Refreshed')}
-            className="flex size-8 flex-none items-center justify-center rounded-xs border bg-card text-muted-foreground hover:text-foreground"
+            className="flex size-8 flex-none items-center justify-center rounded-md border bg-card text-muted-foreground hover:text-foreground"
             aria-label="Refresh"
           >
             <RefreshCw className="size-4" />
@@ -102,7 +102,7 @@ export function OpenPool() {
         <SegmentedFilter options={ASSIGN_FILTERS} value={assignFilter} onChange={(id) => setAssignFilter(id as 'all' | PoolAssignment)} />
       </div>
 
-      <div className="overflow-x-auto rounded-xs border bg-card">
+      <div className="overflow-x-auto rounded-lg border bg-card">
         {/* 11 columns — min-w + overflow-x-auto wrapper keeps this swipeable on phones
             instead of clipping the trailing columns (Billing DataCenter/Debtors pattern). */}
         <div className="min-w-270">
@@ -188,7 +188,7 @@ function StatPill({
     warn: 'text-warn',
   };
   return (
-    <div className="flex items-center gap-2.5 rounded-xs border bg-card px-3.5 py-2.5">
+    <div className="flex items-center gap-2.5 rounded-lg border bg-card px-3.5 py-2.5">
       <span className={`font-heading text-xl font-bold ${toneClass[tone]}`}>{value}</span>
       <span className="text-[10.5px] tracking-wide text-muted-foreground uppercase">{label}</span>
     </div>

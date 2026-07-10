@@ -21,6 +21,25 @@ export function serverCrmAuthHeaders(): Record<string, string> {
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
+/**
+ * Typed non-2xx failure so proxy layers can map the upstream status (4xx passthrough vs
+ * 502). Message format matches the historical plain-Error text — existing catch sites
+ * and tests that string-match keep working.
+ */
+export class ServerCrmHttpError extends Error {
+  readonly status: number;
+  /** Upstream response body, truncated to 300 chars. */
+  readonly bodyText: string;
+
+  constructor(method: HttpMethod, path: string, status: number, bodyText: string) {
+    const truncated = bodyText.slice(0, 300);
+    super(`[server-crm] ${method} ${path} → HTTP ${status}: ${truncated}`);
+    this.name = 'ServerCrmHttpError';
+    this.status = status;
+    this.bodyText = truncated;
+  }
+}
+
 export interface ServerCrmRequestOptions {
   query?: Record<string, string | number | boolean | undefined>;
   body?: unknown;
@@ -44,7 +63,7 @@ export async function serverCrmRequest<T = unknown>(
   const res = await fetchWithTimeout(url, init);
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`[server-crm] ${method} ${path} → HTTP ${res.status}: ${text.slice(0, 300)}`);
+    throw new ServerCrmHttpError(method, path, res.status, text);
   }
   return (text ? JSON.parse(text) : {}) as T;
 }

@@ -1,12 +1,10 @@
-/* Fills whatever hosts it: the launcher's modal (sized by ChatLauncher.module.css) or the full
-   /m/:mytrion/chat page (standalone). Header/body/composer stack; body scrolls internally. */
-.panel {
-  width: 100%;
-  height: 100%;
-  flex: 1;
+.dock {
+  width: 404px;
+  flex: none;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  border-left: 1px solid var(--border);
   background: var(--surface-alt);
 }
 
@@ -43,27 +41,6 @@
   align-items: center;
   gap: var(--space-1_5);
   flex: none;
-}
-
-/* Icon-only header actions — pop out / close. */
-.headerIconBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition:
-    color var(--dur-fast) var(--ease-standard),
-    background var(--dur-fast) var(--ease-standard);
-}
-.headerIconBtn:hover {
-  color: var(--text-secondary);
-  background: var(--surface-raised);
 }
 
 /* The transcript area the history overlay covers. */
@@ -126,7 +103,16 @@
   padding: var(--space-3_5) var(--space-4);
 }
 
-@media (max-width: 640px) {
+/* On narrow screens the dock drops below the content (handled by the shell). A bounded height
+   keeps the transcript scrolling INTERNALLY so the composer stays reachable on phones. */
+@media (max-width: 1024px) {
+  .dock {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    max-height: 70dvh;
+    min-height: 40dvh;
+  }
   .composerWrap {
     padding-bottom: calc(var(--space-3_5) + env(safe-area-inset-bottom));
   }

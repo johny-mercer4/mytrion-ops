@@ -1,0 +1,550 @@
+/**
+ * Octane Scope — the After lifecycle: a Client hub with connected cycles.
+ * Verbatim port of AS_AFTER from the RnD widget's octane-business-panel; cycle
+ * ids double as /v1/scope/risks nodeIds, shared with the Zoho widget.
+ */
+import type { CycleDef } from './model';
+
+export const OCT_AFTER_W = 1640;
+
+export const OCT_AFTER_CENTER = { id: 'client', label: 'Client', icon: 'user', color: '#2ECC71' };
+
+export const OCT_AFTER_CYCLES: CycleDef[] = [
+  {
+    id: 'verification', label: 'Verification Cycle', short: 'Verification', icon: 'check', color: '#4ADE80', from: 'client',
+    title: 'Verification Cycle',
+    desc: 'Once a client is live, Verification owns the ongoing controls — limit increases, reactivations, daily insurance monitoring, card/fleet changes, and billing-cycle changes (SOP v3.3 §5–§6).',
+    departments: [
+      { name: 'Verification', color: '#4ADE80', icon: 'check', items: ['Owns all post-onboarding controls', 'Limit increases, reactivations, card/fleet changes', 'Daily FMCSA insurance monitoring', 'Weekly blacklist + fraud-pattern checks'], platforms: ['FMCSA', 'Highway', 'CreditSafe', 'Plaid', 'Stripe', 'iSoftPull', 'CMP', 'LOC Calculator'] },
+      { name: 'Verification Lead', color: '#22C55E', icon: 'user', items: ['Final approvals, tier overrides, exceptions', 'Exceptions need CFO / CEO / COO written order'], platforms: ['CMP'] },
+      { name: 'Customer Service', color: '#F97316', icon: 'phone', items: ['7-day insurance follow-up with the client', 'Sends new Billing Form + Plaid links'], platforms: ['Zoho Desk', 'Telegram'] },
+      { name: 'Billing', color: '#6366F1', icon: 'dollar', items: ['Blocks cards after the 7-day grace', 'Confirms deposits on a billing-cycle change'], platforms: ['EFS'] },
+    ],
+    blueprints: [
+      {
+        name: 'Limit Increase',
+        flow: {
+          nodes: [
+            { id: 'li-request', label: 'Increase Requested', kind: 'start', icon: 'dollar', tools: 'Zoho Desk · CMP' },
+            { id: 'li-elig', label: 'Eligibility Check', kind: 'decision', icon: 'check', tools: 'CMP (5 paid invoices · active insurance · <10 late)' },
+            { id: 'li-hold', label: 'Hold — Notify Client', kind: 'bad', icon: 'ban' },
+            { id: 'li-fresh', label: 'Fresh Financial Data', kind: 'call', icon: 'refresh', tools: 'Plaid · Stripe · Bank Statements' },
+            { id: 'li-recalc', label: 'Recalculate Weekly Income', kind: 'call', icon: 'chart', tools: 'LOC Calculator (Synology)' },
+            { id: 'li-fleet', label: 'Fleet Expansion?', kind: 'decision', icon: 'people' },
+            { id: 'li-lease', label: 'Lease-Based Limit · $2,500/truck', kind: 'info', icon: 'clipboard', tools: 'Lease Agreement · CMP' },
+            { id: 'li-cap', label: 'Apply $5,000 Cap', kind: 'call', icon: 'sliders' },
+            { id: 'li-approve', label: 'Verification Lead Approval', kind: 'decision', icon: 'user' },
+            { id: 'li-deny', label: 'Decline / Stage Later', kind: 'bad', icon: 'cross' },
+            { id: 'li-apply', label: 'Apply New Limit (EFS)', kind: 'win', icon: 'card', tools: 'EFS · CMP' },
+          ], edges: [
+            { from: 'li-request', to: 'li-elig' },
+            { from: 'li-elig', to: 'li-hold', label: 'Not met' },
+            { from: 'li-elig', to: 'li-fresh', label: 'Met' },
+            { from: 'li-fresh', to: 'li-recalc' },
+            { from: 'li-recalc', to: 'li-fleet' },
+            { from: 'li-fleet', to: 'li-lease', label: 'Yes' },
+            { from: 'li-fleet', to: 'li-cap', label: 'No' },
+            { from: 'li-lease', to: 'li-cap' },
+            { from: 'li-cap', to: 'li-approve' },
+            { from: 'li-approve', to: 'li-deny', label: 'Declined' },
+            { from: 'li-approve', to: 'li-apply', label: 'Approved' },
+          ],
+        },
+      },
+      {
+        name: 'Account Reactivation',
+        flow: {
+          nodes: [
+            { id: 'ra-inactive', label: '45-Day Inactive', kind: 'start', icon: 'clock', tools: 'CMP' },
+            { id: 'ra-type', label: 'Previously Active?', kind: 'decision', icon: 'people' },
+            { id: 'ra-fmcsa', label: 'Re-verify FMCSA + Insurance', kind: 'call', icon: 'eye', tools: 'FMCSA · Highway' },
+            { id: 'ra-late', label: 'Late Payments < 10?', kind: 'decision', icon: 'check', tools: 'CMP' },
+            { id: 'ra-decline', label: 'Decline — Flag in CMP', kind: 'bad', icon: 'cross' },
+            { id: 'ra-billform', label: 'New Billing Form', kind: 'call', icon: 'dollar', tools: 'Zoho Desk · CMP' },
+            { id: 'ra-plaid', label: 'Plaid Reconnection', kind: 'call', icon: 'refresh', tools: 'Plaid' },
+            { id: 'ra-restore', label: 'Restore Last Limit (Type A)', kind: 'win', icon: 'dollar', tools: 'EFS · CMP' },
+            { id: 'ra-full', label: 'Full Re-verification (Steps 1–4)', kind: 'call', icon: 'clipboard', tools: 'FMCSA · Plaid · iSoftPull' },
+            { id: 'ra-cf', label: 'Set Limit — CF Formula (Type B)', kind: 'win', icon: 'sliders', tools: 'LOC Calculator (Synology)' },
+          ], edges: [
+            { from: 'ra-inactive', to: 'ra-type' },
+            { from: 'ra-type', to: 'ra-fmcsa', label: 'Type A · trusted' },
+            { from: 'ra-type', to: 'ra-full', label: 'Type B · never started' },
+            { from: 'ra-fmcsa', to: 'ra-late' },
+            { from: 'ra-late', to: 'ra-decline', label: '10 or more' },
+            { from: 'ra-late', to: 'ra-billform', label: 'Under 10' },
+            { from: 'ra-billform', to: 'ra-plaid' },
+            { from: 'ra-plaid', to: 'ra-restore' },
+            { from: 'ra-full', to: 'ra-cf' },
+          ],
+        },
+      },
+      {
+        name: 'Insurance Monitoring',
+        flow: {
+          nodes: [
+            { id: 'im-daily', label: 'Daily FMCSA Scan', kind: 'start', icon: 'eye', tools: 'FMCSA' },
+            { id: 'im-issue', label: 'Insurance Issue?', kind: 'decision', icon: 'check' },
+            { id: 'im-ok', label: 'Active — No Action', kind: 'good', icon: 'check' },
+            { id: 'im-exception', label: 'New (<10 inv) or India?', kind: 'decision', icon: 'ban', tools: 'CMP' },
+            { id: 'im-block', label: 'Immediate Block', kind: 'bad', icon: 'ban', tools: 'EFS' },
+            { id: 'im-freeze', label: 'Freeze Limit (Day 0)', kind: 'call', icon: 'clock', tools: 'EFS · CMP' },
+            { id: 'im-cs', label: 'CS Contacts Client · 7-Day', kind: 'info', icon: 'phone', tools: 'Zoho Desk · Telegram' },
+            { id: 'im-day7', label: 'Updated by Day 7?', kind: 'decision', icon: 'calendar', tools: 'FMCSA' },
+            { id: 'im-restore', label: 'Restore Limit', kind: 'win', icon: 'check', tools: 'EFS' },
+            { id: 'im-escalate', label: 'Escalate to Billing → Block', kind: 'bad', icon: 'dollar', tools: 'EFS' },
+          ], edges: [
+            { from: 'im-daily', to: 'im-issue' },
+            { from: 'im-issue', to: 'im-ok', label: 'Active' },
+            { from: 'im-issue', to: 'im-exception', label: 'Issue' },
+            { from: 'im-exception', to: 'im-block', label: 'Yes' },
+            { from: 'im-exception', to: 'im-freeze', label: 'No · 7-day' },
+            { from: 'im-freeze', to: 'im-cs' },
+            { from: 'im-cs', to: 'im-day7' },
+            { from: 'im-day7', to: 'im-restore', label: 'Updated' },
+            { from: 'im-day7', to: 'im-escalate', label: 'No update' },
+          ],
+        },
+      },
+      {
+        name: 'Additional Cards / Fleet',
+        flow: {
+          nodes: [
+            { id: 'ac-request', label: 'Card Request', kind: 'start', icon: 'card', tools: 'Zoho Desk · CMP' },
+            { id: 'ac-reason', label: 'Reason?', kind: 'decision', icon: 'clipboard' },
+            { id: 'ac-lost', label: 'Lost / Stolen', kind: 'bad', icon: 'ban' },
+            { id: 'ac-deactivate', label: 'Deactivate + 1:1 Replacement', kind: 'call', icon: 'refresh', tools: 'EFS' },
+            { id: 'ac-expansion', label: 'New Driver / Expansion', kind: 'info', icon: 'people' },
+            { id: 'ac-fleet', label: 'Verify Fleet Growth', kind: 'call', icon: 'eye', tools: 'FMCSA · Highway · Plaid' },
+            { id: 'ac-count', label: 'Cards Requested?', kind: 'decision', icon: 'card' },
+            { id: 'ac-internal', label: '1–20 — Internal', kind: 'good', icon: 'check' },
+            { id: 'ac-wex', label: '21+ — WEX-Funded App', kind: 'handoff', icon: 'external', tools: 'WEX' },
+            { id: 'ac-issue', label: 'Issue Cards (EFS)', kind: 'win', icon: 'card', tools: 'EFS' },
+          ], edges: [
+            { from: 'ac-request', to: 'ac-reason' },
+            { from: 'ac-reason', to: 'ac-lost', label: 'Lost / Stolen' },
+            { from: 'ac-reason', to: 'ac-expansion', label: 'Expansion' },
+            { from: 'ac-lost', to: 'ac-deactivate' },
+            { from: 'ac-deactivate', to: 'ac-issue' },
+            { from: 'ac-expansion', to: 'ac-fleet' },
+            { from: 'ac-fleet', to: 'ac-count' },
+            { from: 'ac-count', to: 'ac-internal', label: '1–20' },
+            { from: 'ac-count', to: 'ac-wex', label: '21+' },
+            { from: 'ac-internal', to: 'ac-issue' },
+          ],
+        },
+      },
+      {
+        name: 'Billing Cycle Change',
+        flow: {
+          nodes: [
+            { id: 'bc-request', label: '1-Week Cycle Request', kind: 'start', icon: 'calendar', tools: 'Zoho Desk · CMP' },
+            { id: 'bc-invoices', label: '10 Clean Invoices?', kind: 'decision', icon: 'check', tools: 'CMP' },
+            { id: 'bc-decline', label: 'Decline', kind: 'bad', icon: 'cross' },
+            { id: 'bc-late', label: 'Late-Payment Loyalty Scale', kind: 'call', icon: 'sliders', tools: 'CMP (tenure scale)' },
+            { id: 'bc-approve', label: 'Verification Decision', kind: 'decision', icon: 'user' },
+            { id: 'bc-finance', label: 'Finance: Deposit + Insurance', kind: 'info', icon: 'dollar', tools: 'EFS' },
+            { id: 'bc-activate', label: 'Activate 1-Week Cycle', kind: 'win', icon: 'check', tools: 'EFS · CMP' },
+          ], edges: [
+            { from: 'bc-request', to: 'bc-invoices' },
+            { from: 'bc-invoices', to: 'bc-decline', label: 'No' },
+            { from: 'bc-invoices', to: 'bc-late', label: 'Yes' },
+            { from: 'bc-late', to: 'bc-approve' },
+            { from: 'bc-approve', to: 'bc-decline', label: 'Declined' },
+            { from: 'bc-approve', to: 'bc-finance', label: 'Approved' },
+            { from: 'bc-finance', to: 'bc-activate' },
+          ],
+        },
+      },
+    ],
+    autoBy: 'Verification',
+    autos: [
+      { icon: 'eye', title: 'Daily FMCSA insurance monitor', when: 'A daily scan flags an inactive / expired policy on FMCSA', then: 'The credit limit is frozen and CS + the agent are notified (Day 0)' },
+      { icon: 'ban', title: 'Weekly blacklist cross-check', when: 'The weekly run matches a name / phone / email / EIN / IP', then: 'The account is flagged in CMP and routed for immediate review' },
+      { icon: 'clock', title: '45-day inactivity detector', when: 'No transactions or card usage for 45 days', then: 'The account is queued for reactivation (Type A / Type B)' },
+      { icon: 'check', title: 'Limit-increase eligibility gate', when: 'A limit increase is requested', then: 'Auto-checks 5 paid invoices, active insurance and <10 late payments before review' },
+    ],
+    platforms: ['FMCSA', 'Highway', 'CreditSafe', 'Plaid', 'Stripe', 'iSoftPull', 'EFS', 'WEX', 'CMP', 'LOC Calculator', 'RingCentral', 'Outlook'],
+    metrics: [{ label: 'Same-day completion (before 12:00)', icon: 'clock' }, { label: 'Limit-increase SLA 24–48h', icon: 'chart' }],
+  },
+  {
+    id: 'retention', label: 'Retention Cycle', short: 'Retention', icon: 'refresh', color: '#00BFFF', from: 'client',
+    title: 'Retention Cycle',
+    desc: 'Retention wins back clients who stopped using the card — classify by last transaction, screen debtors, run outreach, log the inactivity reason, and report (Retention SOP — Stage 4).',
+    departments: [
+      { name: 'Retention', color: '#00BFFF', icon: 'refresh', items: ['Daily new inactive / lost processing (call · text · email)', 'Open Pool request review', 'Lifecycle-stage handling', 'Outreach + notes + correct task closure'], platforms: ['Zoho CRM', 'RingCentral', 'Telegram', 'Outlook'] },
+      { name: 'Billing', color: '#6366F1', icon: 'dollar', items: ['Debtor status via TSS Accounting', 'Card stays off until payment / prepay resolved'], platforms: ['EFS', 'Zoho CRM'] },
+      { name: 'Verification', color: '#4ADE80', icon: 'check', items: ['Plaid / limit / verification inactivity reasons'], platforms: ['Plaid', 'FMCSA'] },
+    ],
+    blueprints: [
+      {
+        // Retention SOP §4 — the end-to-end retention workflow.
+        name: 'Retention Process',
+        flow: {
+          nodes: [
+            { id: 'rp-cohort', label: 'Build Cohort', kind: 'start', icon: 'people', tools: 'Customer Success · Lost Clients list' },
+            { id: 'rp-classify', label: 'Classify by Last Transaction', kind: 'call', icon: 'clock', tools: 'Customer Success Process' },
+            { id: 'rp-debtor', label: 'Check Debtors', kind: 'call', icon: 'dollar', tools: 'TSS Accounting Spreadsheet' },
+            { id: 'rp-clean', label: 'Clean List (split debtors / returned)', kind: 'call', icon: 'sliders' },
+            { id: 'rp-comments', label: 'Add Comments / Notes', kind: 'call', icon: 'clipboard', tools: 'Deals · Tasks · Retention Modules' },
+            { id: 'rp-reason', label: 'Determine Inactivity Reason', kind: 'call', icon: 'flag', tools: 'Reason taxonomy (Automations tab)' },
+            { id: 'rp-outreach', label: 'Outreach: Call / Text / Email', kind: 'call', icon: 'phone', tools: 'RingCentral · Telegram · Outlook' },
+            { id: 'rp-task', label: 'Close Task (note + Completed)', kind: 'call', icon: 'check', tools: 'Zoho Tasks' },
+            { id: 'rp-report', label: 'Update Retention Report', kind: 'win', icon: 'chart', tools: 'Spreadsheet / CRM' },
+          ], edges: [
+            { from: 'rp-cohort', to: 'rp-classify' },
+            { from: 'rp-classify', to: 'rp-debtor' },
+            { from: 'rp-debtor', to: 'rp-clean' },
+            { from: 'rp-clean', to: 'rp-comments' },
+            { from: 'rp-comments', to: 'rp-reason' },
+            { from: 'rp-reason', to: 'rp-outreach' },
+            { from: 'rp-outreach', to: 'rp-task' },
+            { from: 'rp-task', to: 'rp-report' },
+          ],
+        },
+      },
+      {
+        // Retention SOP §1–§2 — status classification + debtor / prepay gating.
+        name: 'Status Rules',
+        flow: {
+          nodes: [
+            { id: 'sr-client', label: 'Client in Retention', kind: 'start', icon: 'user' },
+            { id: 'sr-lasttxn', label: 'Last Transaction?', kind: 'decision', icon: 'clock' },
+            { id: 'sr-active', label: 'Active / Returned', kind: 'good', icon: 'check', tools: 'Last txn ≤ 10 days' },
+            { id: 'sr-inactive', label: 'Inactive — Outreach', kind: 'info', icon: 'ban', tools: 'Last txn 11+ days' },
+            { id: 'sr-tss', label: 'Debtor? (TSS Accounting)', kind: 'decision', icon: 'dollar' },
+            { id: 'sr-debtor', label: 'Debtor — Hold', kind: 'bad', icon: 'ban', tools: 'No activation until billing / payment resolved' },
+            { id: 'sr-prepay', label: 'Prepay-only Comment?', kind: 'decision', icon: 'clipboard' },
+            { id: 'sr-prepay-hold', label: 'Prepay only — fund first', kind: 'info', icon: 'dollar' },
+            { id: 'sr-outreach', label: 'Retention Outreach', kind: 'good', icon: 'phone' },
+          ], edges: [
+            { from: 'sr-client', to: 'sr-lasttxn' },
+            { from: 'sr-lasttxn', to: 'sr-active', label: '≤ 10 days' },
+            { from: 'sr-lasttxn', to: 'sr-inactive', label: '11+ days' },
+            { from: 'sr-inactive', to: 'sr-tss' },
+            { from: 'sr-tss', to: 'sr-debtor', label: 'TSS Inactive' },
+            { from: 'sr-tss', to: 'sr-prepay', label: 'TSS Active' },
+            { from: 'sr-prepay', to: 'sr-prepay-hold', label: 'Yes' },
+            { from: 'sr-prepay', to: 'sr-outreach', label: 'No' },
+          ],
+        },
+      },
+    ],
+    autoBy: 'Retention',
+    // Retention SOP §5 — Inactivity Reason taxonomy (the catalog Retention picks from).
+    autos: [
+      { icon: 'sliders', code: 'OPS', title: 'Operation Issues', desc: 'Address change, app/card operational issue, station/network issue, card problem.' },
+      { icon: 'user', code: 'PERS', title: 'Personal Issues', desc: 'Health, family issue, driver in hospital, personal break.' },
+      { icon: 'people', code: 'CO-DRV', title: 'Company Driver', desc: 'Driver uses a company card / another company provides the card / contract under another company.' },
+      { icon: 'dollar', code: 'DISC', title: 'Low Discounts', desc: 'Client says the discount is low; uses a competitor / PFJ / company card for better prices.' },
+      { icon: 'ban', code: 'OOB', title: 'Out of Business', desc: 'Company closed, no longer operating, business stopped permanently.' },
+      { icon: 'dollar', code: 'PAY', title: 'Payment Issues (Billing Cycle)', desc: 'Billing cycle, deposit, invoice or payment timing; cannot use due to payment structure.' },
+      { icon: 'flag', code: 'SVC', title: 'Not Satisfied With Service', desc: 'Complaint about customer service, app, service quality, or a broken promise.' },
+      { icon: 'clock', code: 'IDLE', title: 'Not Running', desc: 'Not working now, no loads, CDL expired, will start later.' },
+      { icon: 'calendar', code: 'VAC', title: 'On Vacation', desc: 'On vacation, abroad, or a temporary break.' },
+      { icon: 'refresh', code: 'TRUCK', title: 'Issues With Truck', desc: 'Truck repair, truck issue, no truck, mechanical downtime.' },
+      { icon: 'dollar', code: 'FEES', title: 'Arguing Regarding Fees', desc: 'Dispute about fees, transaction fee, or extra charges.' },
+      { icon: 'external', code: 'WEX', title: 'WEX Closed', desc: 'WEX account / card closed or a related issue.' },
+      { icon: 'ban', code: 'DEBT', title: 'Debtor', desc: 'Accounting status inactive / unpaid invoice / collection / prepay only.' },
+      { icon: 'check', code: 'VERIF', title: 'Verification Issues (Plaid, Limit)', desc: 'Plaid, LOC, credit limit, verification, low credit score, or limit-approval issue.' },
+      { icon: 'mail', code: 'NA', title: 'NA / Texted / No Clear Reason', desc: 'Only NA, VM, texted, emailed, Spanish, or agent-notified — no clear business reason.' },
+    ],
+    platforms: ['Zoho CRM', 'RingCentral', 'Telegram', 'Outlook', 'EFS', 'Plaid'],
+    metrics: [{ label: 'Gross retention %', icon: 'chart' }, { label: 'Debtor-adjusted retention %', icon: 'dollar' }, { label: 'Returned count', icon: 'refresh' }, { label: 'Still inactive', icon: 'clock' }],
+  },
+  {
+    id: 'customer-service', label: 'Customer Service Cycle', short: 'Cust. Service', icon: 'phone', color: '#F97316', from: 'client',
+    title: 'Customer Service Cycle',
+    desc: 'Customers reach support directly or via their Sales agent; Customer Service runs everything from its Zoho Desk hub.',
+    departments: [
+      { name: 'Customer Service', color: '#F97316', icon: 'phone', items: ['Owns the ticket hub (Zoho Desk)', 'Responds via Telegram / call', 'Funds & fixes via EFS'], platforms: ['Zoho Desk', 'EFS', 'Telegram'] },
+      { name: 'Sales', color: '#00BFFF', icon: 'user', items: ['Relays client requests to CS'], platforms: ['Zoho CRM', 'Telegram'] },
+    ],
+    blueprints: [
+      {
+        name: 'Direct — Customer',
+        flow: {
+          nodes: [
+            { id: 'client', label: 'Client', kind: 'start', icon: 'user' },
+            { id: 'ch-telegram', label: 'Telegram', kind: 'call', platform: 'Telegram' },
+            { id: 'ch-outlook', label: 'Outlook', kind: 'call', platform: 'Outlook' },
+            { id: 'ch-gmail', label: 'Gmail', kind: 'call', platform: 'Gmail' },
+            { id: 'ch-whatsapp', label: 'WhatsApp', kind: 'call', platform: 'WhatsApp' },
+            { id: 'ch-app', label: 'Octane App', kind: 'call', platform: 'Octane App' },
+            { id: 'ch-phone', label: 'Phone Call', kind: 'call', icon: 'phone' },
+            { id: 'cs', label: 'Customer Service · Zoho Desk hub', kind: 'good', platform: 'Zoho Desk' },
+            { id: 'act-desk', label: 'Action in Zoho Desk', kind: 'info', platform: 'Zoho Desk' },
+            { id: 'act-efs', label: 'Action in EFS', kind: 'info', platform: 'EFS' },
+            { id: 'act-telegram', label: 'Respond in Telegram', kind: 'info', platform: 'Telegram' },
+            { id: 'act-call', label: 'Respond by Call', kind: 'info', icon: 'phone' },
+          ], edges: [
+            { from: 'client', to: 'ch-telegram' }, { from: 'client', to: 'ch-outlook' },
+            { from: 'client', to: 'ch-gmail' }, { from: 'client', to: 'ch-whatsapp' },
+            { from: 'client', to: 'ch-app' }, { from: 'client', to: 'ch-phone' },
+            { from: 'ch-telegram', to: 'cs' }, { from: 'ch-outlook', to: 'cs' },
+            { from: 'ch-gmail', to: 'cs' }, { from: 'ch-whatsapp', to: 'cs' },
+            { from: 'ch-app', to: 'cs' }, { from: 'ch-phone', to: 'cs' },
+            { from: 'cs', to: 'act-desk' }, { from: 'cs', to: 'act-efs' },
+            { from: 'cs', to: 'act-telegram' }, { from: 'cs', to: 'act-call' },
+          ],
+        },
+      },
+      {
+        name: 'Via Sales Agent',
+        flow: {
+          nodes: [
+            { id: 'sales', label: 'Sales Agent', kind: 'start', icon: 'user' },
+            { id: 'ch-crm', label: 'Zoho CRM / Widgets', kind: 'call', platform: 'Zoho CRM' },
+            { id: 'ch-telegram', label: 'Telegram', kind: 'call', platform: 'Telegram' },
+            { id: 'ch-call', label: 'Call', kind: 'call', icon: 'phone' },
+            { id: 'cs', label: 'Customer Service · Zoho Desk hub', kind: 'good', platform: 'Zoho Desk' },
+            { id: 'act-desk', label: 'Action in Zoho Desk', kind: 'info', platform: 'Zoho Desk' },
+            { id: 'act-efs', label: 'Action in EFS', kind: 'info', platform: 'EFS' },
+            { id: 'act-telegram', label: 'Respond in Telegram', kind: 'info', platform: 'Telegram' },
+            { id: 'act-call', label: 'Respond by Call', kind: 'info', icon: 'phone' },
+          ], edges: [
+            { from: 'sales', to: 'ch-crm' }, { from: 'sales', to: 'ch-telegram' }, { from: 'sales', to: 'ch-call' },
+            { from: 'ch-crm', to: 'cs' }, { from: 'ch-telegram', to: 'cs' }, { from: 'ch-call', to: 'cs' },
+            { from: 'cs', to: 'act-desk' }, { from: 'cs', to: 'act-efs' },
+            { from: 'cs', to: 'act-telegram' }, { from: 'cs', to: 'act-call' },
+          ],
+        },
+      },
+      {
+        // CS SOP v1.0 §17 — Maintenance Coordination (tire / oil / truck-wash).
+        name: 'Maintenance',
+        flow: {
+          nodes: [
+            { id: 'mt-request', label: 'Maintenance Request', kind: 'start', icon: 'phone' },
+            { id: 'mt-info', label: 'Collect Driver Info', kind: 'call', icon: 'user', tools: 'Name · Unit # · Phone · Last-5 card' },
+            { id: 'mt-type', label: 'Job Type?', kind: 'decision', icon: 'clipboard' },
+            { id: 'mt-shop', label: 'Tire / Oil — Find Shop', kind: 'call', icon: 'globe', tools: "Love's / Speedco portal" },
+            { id: 'mt-confirm', label: 'Confirm Availability', kind: 'call', icon: 'phone' },
+            { id: 'mt-wo', label: 'Create Work Order', kind: 'call', icon: 'clipboard' },
+            { id: 'mt-estimate', label: 'Approve Estimate w/ Driver', kind: 'call', icon: 'check' },
+            { id: 'mt-po', label: 'Issue PO (Reference # ×2)', kind: 'call', icon: 'dollar' },
+            { id: 'mt-wash', label: 'Truck Wash — Blue Beacon', kind: 'info', icon: 'refresh', tools: 'secure.bluebeacon.com (LOC only)' },
+            { id: 'mt-assign', label: 'Assign Unit + Check-in Info', kind: 'call', icon: 'user' },
+            { id: 'mt-case', label: 'Zoho Maintenance Case', kind: 'good', icon: 'clipboard', tools: 'Zoho' },
+            { id: 'mt-invoice', label: 'Billing Issues Invoice', kind: 'win', icon: 'dollar', tools: 'Billing' },
+          ], edges: [
+            { from: 'mt-request', to: 'mt-info' },
+            { from: 'mt-info', to: 'mt-type' },
+            { from: 'mt-type', to: 'mt-shop', label: 'Tire / Oil' },
+            { from: 'mt-type', to: 'mt-wash', label: 'Truck Wash · LOC' },
+            { from: 'mt-shop', to: 'mt-confirm' },
+            { from: 'mt-confirm', to: 'mt-wo' },
+            { from: 'mt-wo', to: 'mt-estimate' },
+            { from: 'mt-estimate', to: 'mt-po' },
+            { from: 'mt-po', to: 'mt-case' },
+            { from: 'mt-wash', to: 'mt-assign' },
+            { from: 'mt-assign', to: 'mt-case' },
+            { from: 'mt-case', to: 'mt-invoice' },
+          ],
+        },
+      },
+    ],
+    autoBy: 'Self-Service',
+    // Active C-series (Customer Service) ticket types from the Self-Service widget —
+    // excludes Coming-Soon / Under-Maintenance types and the Q-series (Billing).
+    autos: [
+      { icon: 'card', code: 'C-1', title: 'Card Activation', desc: 'Activate a new or replacement card; optionally set Unit # and Driver ID in the same step.' },
+      { icon: 'clipboard', code: 'C-2 / C-19', title: 'Application Update — WEX Tasks', desc: 'View the latest application updates and WEX task responses for a deal.' },
+      { icon: 'ban', code: 'C-3', title: 'Card Deactivation', desc: 'Submit a card deactivation request via the ticketing system.' },
+      { icon: 'sliders', code: 'C-4 / C-5', title: 'Increase / Decrease Limits', desc: 'Request a spending-limit adjustment (increase or decrease) in EFS for a carrier.' },
+      { icon: 'card', code: 'C-6', title: 'Card Replacement', desc: "Issue replacement cards when a card is on 'hold for fraud' (free overnight, fee waived)." },
+      { icon: 'refresh', code: 'C-7', title: 'Account Reactivation', desc: 'Reactivate a suspended or deactivated carrier account (eligibility check first).' },
+      { icon: 'dollar', code: 'C-8', title: 'Balance Check', desc: 'View the current account balance for a carrier.' },
+      { icon: 'chart', code: 'C-15', title: 'Transactions Report', desc: 'Fetch, filter, group and export carrier transaction reports (PDF / Excel / CSV).' },
+      { icon: 'external', code: 'C-22', title: 'Tracking Number Request', desc: 'Check the card-order tracking number and shipment status.' },
+      { icon: 'clock', code: 'C-24', title: 'Card Last Used Check', desc: 'Review the latest known usage date for cards tied to a carrier.' },
+      { icon: 'user', code: 'C-26', title: 'Unit / Driver ID Change', desc: 'Update unit numbers, driver IDs, or driver names linked to an account.' },
+      { icon: 'eye', code: 'C-28', title: 'Account Status Check', desc: 'Combined check across EFS balance, outstanding debt, and EFS card status.' },
+      { icon: 'clipboard', code: 'C-29', title: 'WEX Applications', desc: 'Live follow-up read of a WEX application: status, credit decision, and setup details.' },
+    ],
+    platforms: ['Zoho Desk', 'EFS', 'Zoho CRM', 'Telegram', 'Gmail', 'Outlook', 'WhatsApp', 'Octane App'],
+  },
+  {
+    id: 'billing', label: 'Billing Cycle', short: 'Billing', icon: 'dollar', color: '#8B5CF6', from: 'client',
+    title: 'Billing Cycle',
+    desc: 'After a client fuels, Billing generates invoices from EFS swipes, validates and charges them, follows up on non-payment, and runs prepay funding (Billing SOP §3).',
+    departments: [
+      { name: 'Billing', color: '#8B5CF6', icon: 'dollar', items: ['Generates invoices (Python) from EFS swipes', 'Checks mismatches + discounts, then sends', 'Charges via Direct Payment or Auto Pay', 'Follows up; deactivates cards + debtor list on non-payment'], platforms: ['EFS', 'Merchant', 'Outlook', 'Zoho CRM'] },
+      { name: 'Verification', color: '#4ADE80', icon: 'check', items: ['Plaid verification to switch 2-week → 1-week cycle'], platforms: ['Plaid'] },
+      { name: 'Customer Service', color: '#F97316', icon: 'phone', items: ['Relays billing questions / fee disputes (Q-series)'], platforms: ['Zoho Desk', 'RingCentral'] },
+    ],
+    blueprints: [
+      {
+        // Billing SOP §3.1–§3.3 — invoice generation, mismatch fix, discount check.
+        name: 'Invoice Generation',
+        flow: {
+          nodes: [
+            { id: 'bg-swipe', label: 'Card Swiped → EFS Txn', kind: 'start', icon: 'card', tools: 'EFS' },
+            { id: 'bg-date', label: 'Select Processing Date', kind: 'call', icon: 'calendar', tools: 'per billing cycle' },
+            { id: 'bg-sort', label: 'Sort: Carrier ID · Cycle · Fees', kind: 'call', icon: 'sliders' },
+            { id: 'bg-update', label: 'Update Stations + Discounts', kind: 'call', icon: 'dollar' },
+            { id: 'bg-generate', label: 'Generate Invoices', kind: 'call', icon: 'bolt', tools: 'Python' },
+            { id: 'bg-money', label: 'Money Code Use Report', kind: 'info', icon: 'clipboard', tools: 'EFS Parent Account' },
+            { id: 'bg-mismatch', label: 'Mismatches?', kind: 'decision', icon: 'eye' },
+            { id: 'bg-fix', label: 'Admin Fixes Mismatch', kind: 'info', icon: 'refresh' },
+            { id: 'bg-discounts', label: 'Check Discounts', kind: 'call', icon: 'check' },
+            { id: 'bg-send', label: 'Auto-send Invoices', kind: 'win', icon: 'mail', tools: 'Outlook' },
+          ], edges: [
+            { from: 'bg-swipe', to: 'bg-date' },
+            { from: 'bg-date', to: 'bg-sort' },
+            { from: 'bg-sort', to: 'bg-update' },
+            { from: 'bg-update', to: 'bg-generate' },
+            { from: 'bg-generate', to: 'bg-money' },
+            { from: 'bg-money', to: 'bg-mismatch' },
+            { from: 'bg-mismatch', to: 'bg-fix', label: 'Found' },
+            { from: 'bg-mismatch', to: 'bg-discounts', label: 'Clean' },
+            { from: 'bg-fix', to: 'bg-discounts' },
+            { from: 'bg-discounts', to: 'bg-send' },
+          ],
+        },
+      },
+      {
+        // Billing SOP §3.7–§3.8 — charging + follow-up on non-payment.
+        name: 'Charging & Follow-up',
+        flow: {
+          nodes: [
+            { id: 'cg-invoice', label: 'Invoice Due', kind: 'start', icon: 'dollar' },
+            { id: 'cg-method', label: 'Payment Method?', kind: 'decision', icon: 'card' },
+            { id: 'cg-direct', label: 'Direct Payment', kind: 'info', icon: 'dollar', tools: 'Zelle · Wire · ACH' },
+            { id: 'cg-auto', label: 'Auto Pay', kind: 'info', icon: 'refresh', tools: 'Merchant (1.9%) / Bank' },
+            { id: 'cg-paid', label: 'Paid by Due Date?', kind: 'decision', icon: 'check' },
+            { id: 'cg-done', label: 'Payment Received', kind: 'win', icon: 'check' },
+            { id: 'cg-call', label: 'Call Reminder', kind: 'call', icon: 'phone' },
+            { id: 'cg-final', label: 'Final Reminder (Email / SMS)', kind: 'call', icon: 'mail' },
+            { id: 'cg-deactivate', label: 'Deactivate Cards + Debtor List', kind: 'bad', icon: 'ban', tools: 'EFS · TSS Debtor list' },
+          ], edges: [
+            { from: 'cg-invoice', to: 'cg-method' },
+            { from: 'cg-method', to: 'cg-direct', label: 'Direct' },
+            { from: 'cg-method', to: 'cg-auto', label: 'Auto Pay' },
+            { from: 'cg-direct', to: 'cg-paid' },
+            { from: 'cg-auto', to: 'cg-paid' },
+            { from: 'cg-paid', to: 'cg-done', label: 'Paid' },
+            { from: 'cg-paid', to: 'cg-call', label: 'Missed / failed' },
+            { from: 'cg-call', to: 'cg-final' },
+            { from: 'cg-final', to: 'cg-deactivate' },
+          ],
+        },
+      },
+      {
+        // Billing SOP §3.1 — billing-cycle cadence + 2-week → 1-week switch via Plaid.
+        name: 'Billing Cycles',
+        flow: {
+          nodes: [
+            { id: 'bcy-client', label: 'Client Account', kind: 'start', icon: 'user' },
+            { id: 'bcy-type', label: 'Cycle Type?', kind: 'decision', icon: 'calendar' },
+            { id: 'bcy-1', label: '1-Cycle · Mon invoice → Tue pay', kind: 'info', icon: 'dollar' },
+            { id: 'bcy-2', label: '2-Cycle · Mon + Thu invoices', kind: 'info', icon: 'dollar' },
+            { id: 'bcy-switch', label: 'Request 2 → 1 Switch?', kind: 'decision', icon: 'refresh' },
+            { id: 'bcy-plaid', label: 'Plaid Verification', kind: 'call', icon: 'check', tools: 'Plaid → Verification' },
+            { id: 'bcy-approved', label: 'Approved — New Terms', kind: 'good', icon: 'check' },
+          ], edges: [
+            { from: 'bcy-client', to: 'bcy-type' },
+            { from: 'bcy-type', to: 'bcy-1', label: '1-cycle' },
+            { from: 'bcy-type', to: 'bcy-2', label: '2-cycle' },
+            { from: 'bcy-2', to: 'bcy-switch' },
+            { from: 'bcy-switch', to: 'bcy-plaid', label: 'Yes' },
+            { from: 'bcy-plaid', to: 'bcy-approved' },
+          ],
+        },
+      },
+      {
+        // Billing SOP §3.11 — prepay client funding.
+        name: 'Prepay Funding',
+        flow: {
+          nodes: [
+            { id: 'pp-client', label: 'Prepay Client', kind: 'start', icon: 'user' },
+            { id: 'pp-zelle', label: 'Funds via Zelle', kind: 'call', icon: 'dollar', tools: 'info@tsst.ai' },
+            { id: 'pp-transfer', label: 'Billing → EFS Transfer', kind: 'call', icon: 'refresh', tools: 'EFS' },
+            { id: 'pp-balance', label: 'Balance Available', kind: 'win', icon: 'check' },
+          ], edges: [
+            { from: 'pp-client', to: 'pp-zelle' },
+            { from: 'pp-zelle', to: 'pp-transfer' },
+            { from: 'pp-transfer', to: 'pp-balance' },
+          ],
+        },
+      },
+    ],
+    autoBy: 'Billing',
+    autos: [
+      { icon: 'bolt', title: 'Python invoice generation', when: 'Swipes are sorted by Carrier ID, cycle and fees', then: 'Invoices are generated in bulk via Python from the EFS data' },
+      { icon: 'mail', title: 'Auto invoice delivery (Outlook)', when: 'Invoices pass review', then: 'The system auto-emails each invoice to the client through Outlook' },
+      { icon: 'refresh', title: 'Auto Pay charge', when: 'An invoice reaches its due date', then: 'Merchant (card · 1.9% fee) or Bank auto-pay charges the saved method' },
+      { icon: 'ban', title: 'Non-payment auto-deactivation', when: 'Payment is still missing after call + final reminder', then: 'Fuel cards are deactivated and the client is added to the TSS Debtor list' },
+    ],
+    platforms: ['EFS', 'Merchant', 'Outlook', 'Plaid', 'CreditSafe', 'FMCSA', 'RingCentral', 'Zoho CRM'],
+    metrics: [{ label: 'Invoice generation AHT', icon: 'clock', value: '4h' }, { label: 'Charging AHT', icon: 'dollar', value: '3h' }, { label: 'Billing follow-up AHT', icon: 'phone', value: '6–8h' }, { label: 'Bill collection target', icon: 'chart', value: '100%' }],
+  },
+  {
+    id: 'collection', label: 'Collection', short: 'Collection', icon: 'clipboard', color: '#EF4444', from: 'billing',
+    title: 'Collection',
+    desc: 'When a deactivated client stays unpaid, Collection gathers the outstanding invoices, escalates to a collection agency, and runs the bad-debt write-off timeline (Billing SOP §3.9–§3.10).',
+    departments: [
+      { name: 'Collection', color: '#EF4444', icon: 'clipboard', items: ['Collects unpaid invoices after deactivation', 'Files reports to the Collection Agency', 'Runs the bad-debt write-off timeline'], platforms: ['Outlook', 'RingCentral', 'Zoho CRM'] },
+      { name: 'Billing', color: '#8B5CF6', icon: 'dollar', items: ['Hands off debtors after follow-up fails'], platforms: ['EFS'] },
+      { name: 'Insurance', color: '#06B6D4', icon: 'check', items: ['10-day window in the bad-debt timeline'], platforms: ['Allianz'] },
+    ],
+    blueprints: [
+      {
+        // Billing SOP §3.9 — collecting unpaid invoices → collection agency.
+        name: 'Collections',
+        flow: {
+          nodes: [
+            { id: 'cl-unpaid', label: 'Unpaid 1 Month After Deactivation', kind: 'start', icon: 'clock' },
+            { id: 'cl-collect', label: 'Collect All Unpaid Invoices', kind: 'call', icon: 'clipboard' },
+            { id: 'cl-final', label: 'Final Follow-up', kind: 'call', icon: 'phone' },
+            { id: 'cl-paid', label: 'Paid?', kind: 'decision', icon: 'check' },
+            { id: 'cl-resolved', label: 'Resolved', kind: 'win', icon: 'check' },
+            { id: 'cl-agency', label: 'File Report → Collection Agency', kind: 'handoff', icon: 'external' },
+            { id: 'cl-outcome', label: 'Agency Outcome', kind: 'decision', icon: 'dollar' },
+            { id: 'cl-full', label: 'Collected in Full', kind: 'good', icon: 'check' },
+            { id: 'cl-partial', label: 'Collected Partially', kind: 'info', icon: 'dollar' },
+            { id: 'cl-fail', label: 'Uncollectible → Bad Debt', kind: 'bad', icon: 'cross' },
+          ], edges: [
+            { from: 'cl-unpaid', to: 'cl-collect' },
+            { from: 'cl-collect', to: 'cl-final' },
+            { from: 'cl-final', to: 'cl-paid' },
+            { from: 'cl-paid', to: 'cl-resolved', label: 'Paid' },
+            { from: 'cl-paid', to: 'cl-agency', label: 'Unpaid' },
+            { from: 'cl-agency', to: 'cl-outcome' },
+            { from: 'cl-outcome', to: 'cl-full', label: 'Full' },
+            { from: 'cl-outcome', to: 'cl-partial', label: 'Partial' },
+            { from: 'cl-outcome', to: 'cl-fail', label: 'None' },
+          ],
+        },
+      },
+      {
+        // Billing SOP §3.10 — bad-debt escalation timeline.
+        name: 'Bad Debt Timeline',
+        flow: {
+          nodes: [
+            { id: 'bd-unresolved', label: 'Unresolved Debt', kind: 'start', icon: 'clock' },
+            { id: 'bd-tss', label: 'TSS Holds — 20 Days', kind: 'call', icon: 'calendar' },
+            { id: 'bd-coll', label: 'Collection Dept — 30 Days', kind: 'call', icon: 'clipboard' },
+            { id: 'bd-ins', label: 'Insurance Dept — 10 Days', kind: 'call', icon: 'check', tools: 'Allianz' },
+            { id: 'bd-check', label: 'Resolved?', kind: 'decision', icon: 'dollar' },
+            { id: 'bd-resolved', label: 'Resolved', kind: 'win', icon: 'check' },
+            { id: 'bd-baddebt', label: 'Bad Debt — Write-off', kind: 'bad', icon: 'cross' },
+          ], edges: [
+            { from: 'bd-unresolved', to: 'bd-tss' },
+            { from: 'bd-tss', to: 'bd-coll' },
+            { from: 'bd-coll', to: 'bd-ins' },
+            { from: 'bd-ins', to: 'bd-check' },
+            { from: 'bd-check', to: 'bd-resolved', label: 'Yes' },
+            { from: 'bd-check', to: 'bd-baddebt', label: 'No' },
+          ],
+        },
+      },
+    ],
+    autoBy: 'Collection',
+    autos: [
+      { icon: 'clipboard', title: 'Unpaid-invoice rollup', when: 'Cards stay deactivated and unpaid for a month', then: 'All outstanding invoices are gathered and a report is filed' },
+      { icon: 'flag', title: 'Bad-debt escalation clock', when: 'The debt stays unresolved', then: 'Account moves TSS (20d) → Collection (30d) → Insurance (10d) → bad-debt write-off' },
+    ],
+    platforms: ['Outlook', 'RingCentral', 'Zoho CRM', 'EFS', 'Allianz'],
+    metrics: [{ label: 'Collected in full', icon: 'check' }, { label: 'Collected partial', icon: 'dollar' }, { label: 'Bad-debt write-offs', icon: 'flag' }],
+  },
+];

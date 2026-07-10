@@ -18,7 +18,7 @@ export function Dashboard() {
   const [tab, setTab] = useState<SubTab>('debtors');
 
   return (
-    <div className="flex flex-col gap-3.5 p-5">
+    <div className="flex flex-col gap-4 p-6">
       <div>
         <h2 className="font-heading text-2xl font-bold">Dashboard</h2>
         <p className="text-sm text-muted-foreground">Debtors, payments, fueling patterns & segmentation</p>

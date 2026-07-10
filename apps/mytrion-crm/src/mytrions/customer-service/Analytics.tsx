@@ -48,7 +48,7 @@ export function Analytics() {
   const maxLead = useMemo(() => Math.max(...block.leaderboard.map((r) => r.col1)), [block]);
 
   return (
-    <div className="flex flex-col gap-3.5 p-5">
+    <div className="flex flex-col gap-4 p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-heading text-2xl font-bold">Analytics</h2>
@@ -58,7 +58,7 @@ export function Analytics() {
           <select
             value={range}
             onChange={(e) => setRange(e.target.value)}
-            className="rounded-xs border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground outline-none focus:border-primary/55"
+            className="rounded-md border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground outline-none focus:border-primary/55"
           >
             {RANGE_OPTIONS.map((r) => (
               <option key={r} value={r}>
@@ -83,7 +83,7 @@ export function Analytics() {
               type="button"
               onClick={() => setSubTab(t.id)}
               className={cn(
-                'flex items-center gap-1.5 rounded-xs border px-3 py-1.5 text-xs font-semibold transition-colors',
+                'flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors',
                 active
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-border bg-card text-muted-foreground hover:text-foreground',
@@ -99,7 +99,7 @@ export function Analytics() {
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {block.kpis.map((k) => (
-          <div key={k.label} className="rounded-xs border bg-card p-4 shadow-sm">
+          <div key={k.label} className="rounded-lg border bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div className="font-heading text-2xl leading-none font-bold">{k.value}</div>
               {k.delta ? <DeltaPill prev={k.delta.prev} current={k.delta.current} higherIsBetter={k.delta.higherIsBetter} /> : null}
@@ -110,8 +110,8 @@ export function Analytics() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
-        <div className="rounded-xs border bg-card p-4 shadow-sm">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="rounded-lg border bg-card p-4 shadow-sm">
           <h3 className="font-heading mb-3 text-xs font-bold tracking-wide text-muted-foreground uppercase">
             Volume
           </h3>
@@ -130,7 +130,7 @@ export function Analytics() {
           </div>
         </div>
 
-        <div className="rounded-xs border bg-card p-4 shadow-sm">
+        <div className="rounded-lg border bg-card p-4 shadow-sm">
           <h3 className="font-heading mb-3 text-xs font-bold tracking-wide text-muted-foreground uppercase">
             Breakdown
           </h3>
@@ -153,7 +153,7 @@ export function Analytics() {
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xs border bg-card">
+      <div className="overflow-x-auto rounded-lg border bg-card">
         <div className="flex items-center justify-between border-b px-4 py-3">
           <div className="font-heading text-sm font-bold">Agent Leaderboard</div>
         </div>

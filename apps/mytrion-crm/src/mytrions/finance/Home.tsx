@@ -19,7 +19,7 @@ export function Home({ onNavigate }: { onNavigate: (tab: FinanceTab) => void }) 
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
   return (
-    <div className="flex flex-col gap-5 p-5">
+    <div className="flex flex-col gap-5 p-6">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="font-heading text-2xl font-bold">Good {greeting()}, Dana</h2>
@@ -31,7 +31,7 @@ export function Home({ onNavigate }: { onNavigate: (tab: FinanceTab) => void }) 
         </span>
       </div>
 
-      <div className="rounded-xs border border-l-4 border-l-primary bg-card p-5 shadow-sm">
+      <div className="rounded-lg border border-l-4 border-l-primary bg-card p-5 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
           <div>
             <div className="text-xs font-semibold text-muted-foreground">Parent Balance · EFS Account</div>
@@ -106,9 +106,9 @@ function ShortcutCard({
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-3.5 rounded-xs border bg-card p-4 text-left shadow-sm transition-colors hover:border-primary/45 hover:bg-muted/40"
+      className="flex items-center gap-3.5 rounded-lg border bg-card p-4 text-left shadow-sm transition-colors hover:border-primary/45 hover:bg-muted/40"
     >
-      <span className="flex size-10 flex-none items-center justify-center rounded-xs bg-primary/12 text-primary">
+      <span className="flex size-10 flex-none items-center justify-center rounded-md bg-primary/12 text-primary">
         {icon}
       </span>
       <div className="min-w-0 flex-1">

@@ -13,41 +13,27 @@
   min-height: 0;
 }
 
-/* left nav rail — labeled by default (real Jira's expanded sidebar), collapsible to the old
-   icon-only rail. Width transitions so collapsing reads as one continuous panel, not a swap. */
+/* left icon nav rail */
 .rail {
-  width: 208px;
+  width: 64px;
   flex: none;
   background: var(--sidebar-bg);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  padding: var(--space-3) var(--space-2);
-  overflow: hidden;
-  transition: width var(--dur-fast) var(--ease-standard);
-}
-.railCollapsed {
-  width: 64px;
-}
-
-.railItems {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-0_5);
-  min-height: 0;
-  overflow-y: auto;
+  align-items: center;
+  gap: var(--space-1_5);
+  padding: var(--space-3_5) 0;
 }
 
 .railBtn {
   position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-2_5);
-  width: 100%;
-  height: 38px;
-  padding: 0 var(--space-2_5);
-  border-radius: var(--radius-xs);
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-md);
   border: none;
   background: none;
   color: var(--text-muted);
@@ -56,52 +42,16 @@
     color var(--dur-fast) var(--ease-standard),
     background var(--dur-fast) var(--ease-standard);
 }
-.railCollapsed .railBtn {
-  justify-content: center;
-  padding: 0;
-}
 .railBtn:hover {
   color: var(--text-secondary);
   background: var(--surface-raised);
 }
-/* selected: soft accent-tinted row with a 2px accent bar on the left edge (inset shadow) */
+/* selected: soft accent-tinted square with a 2px accent bar on the left edge (inset shadow) */
 .railActive,
 .railActive:hover {
   background: var(--accent-soft);
   color: var(--accent);
   box-shadow: inset 2px 0 0 var(--accent);
-}
-
-.railLabel {
-  font-size: var(--text-sm);
-  font-weight: var(--fw-medium);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.railCollapseBtn {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2_5);
-  height: 34px;
-  padding: 0 var(--space-2_5);
-  margin-top: var(--space-2);
-  border: none;
-  border-top: 1px solid var(--border);
-  border-radius: 0;
-  background: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  flex: none;
-  transition: color var(--dur-fast) var(--ease-standard);
-}
-.railCollapsed .railCollapseBtn {
-  justify-content: center;
-  padding: 0;
-}
-.railCollapseBtn:hover {
-  color: var(--text-secondary);
 }
 
 /* center content (scrolls) */
@@ -111,40 +61,18 @@
   min-width: 0;
 }
 
-/* 768px, not 1024px — real Jira keeps its vertical rail down to actual tablet/phone widths;
-   1024px was catching ordinary laptop/half-screen windows and collapsing them to a top bar.
-   Below it the rail always drops to an icon-only top bar — no room for labels, and no point
-   collapsing what's already compact — regardless of the desktop collapsed preference. */
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .body {
     flex-direction: column;
   }
-  .rail,
-  .railCollapsed {
+  .rail {
     width: 100%;
     flex-direction: row;
     justify-content: flex-start;
-    align-items: center;
     gap: var(--space-2);
     padding: var(--space-2) var(--space-3);
     border-right: none;
     border-bottom: 1px solid var(--border);
-  }
-  .railItems {
-    flex-direction: row;
-    overflow-y: visible;
-    overflow-x: auto;
-  }
-  .railBtn {
-    width: 42px;
-    height: 42px;
-    justify-content: center;
-    padding: 0;
-    flex: none;
-  }
-  .railLabel,
-  .railCollapseBtn {
-    display: none;
   }
   .railActive,
   .railActive:hover {

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { UserContext } from '../../context/userContext';
 import type { AgentKey } from '../../access/mytrions.config';
 import { Gem } from '../../components/Gem';
-import { ExternalLinkIcon, HistoryIcon, PlusIcon, XIcon } from '../../components/icons';
+import { HistoryIcon, PlusIcon } from '../../components/icons';
 import { Composer } from './Composer';
 import { ConversationList } from './ConversationList';
 import { MessageList } from './MessageList';
@@ -10,30 +10,20 @@ import { useChat } from './useChat';
 import styles from './ChatPanel.module.css';
 
 /**
- * The AI Chat content — header (gem + scope + pop-out + close + History + New), the streaming
- * transcript, and the composer. Rendered inside the launcher's modal (`onClose` closes it) or,
- * standalone, as the full `/m/:mytrion/chat` page (no close/pop-out — it IS the popped-out tab).
- * `department` is the active scope forwarded to the backend (null = broad/admin); `agentKey`
- * selects the department agent for direct-to-child (null = orchestrator mode). History is an
- * in-panel overlay; the last conversation restores on reload (useChat).
+ * The docked AI Chat (right rail of every Mytrion): header (gem + scope + History + New), the
+ * streaming transcript, and the composer. Shared by all Mytrions; `department` is the active scope
+ * forwarded to the backend (null = broad/admin), and `agentKey` selects the department agent for
+ * direct-to-child (null = orchestrator mode). History is an in-dock overlay; the last conversation
+ * restores on reload (useChat).
  */
 export function ChatPanel({
   context,
   department,
   agentKey = null,
-  popoutHref,
-  standalone = false,
-  onClose,
 }: {
   context: UserContext;
   department?: string | string[] | null;
   agentKey?: AgentKey | null;
-  /** Shown as an "open in a new tab" button in modal mode (not standalone). */
-  popoutHref?: string;
-  /** True for the dedicated /chat tab itself — no close/pop-out affordances. */
-  standalone?: boolean;
-  /** Closes the launcher modal. Omitted (and ignored) in standalone mode. */
-  onClose?: () => void;
 }) {
   const chat = useChat(context, department ?? null, agentKey);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -50,7 +40,7 @@ export function ChatPanel({
   })();
 
   return (
-    <div className={styles.panel}>
+    <div className={styles.dock}>
       <div className={styles.header}>
         <div className={styles.title}>
           <Gem size={26} />
@@ -60,17 +50,6 @@ export function ChatPanel({
           </div>
         </div>
         <div className={styles.headerActions}>
-          {!standalone && popoutHref && (
-            <button
-              type="button"
-              className={styles.headerIconBtn}
-              aria-label="Open AI Chat in a new tab"
-              title="Open in a new tab"
-              onClick={() => window.open(popoutHref, '_blank', 'noopener,noreferrer')}
-            >
-              <ExternalLinkIcon size={13} />
-            </button>
-          )}
           <button
             type="button"
             className={styles.new}
@@ -89,17 +68,6 @@ export function ChatPanel({
             <PlusIcon size={12} />
             New
           </button>
-          {!standalone && onClose && (
-            <button
-              type="button"
-              className={styles.headerIconBtn}
-              aria-label="Close AI Chat"
-              title="Close"
-              onClick={onClose}
-            >
-              <XIcon size={12} />
-            </button>
-          )}
         </div>
       </div>
 

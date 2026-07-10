@@ -77,7 +77,7 @@ export function CitiModal({
           <div className="font-heading mb-2 text-xs font-bold tracking-wide text-primary uppercase">
             Notes
           </div>
-          <div className="rounded-xs border bg-muted/30 p-3 text-sm text-muted-foreground">
+          <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
             {client.notes || 'No notes on record.'}
           </div>
         </section>

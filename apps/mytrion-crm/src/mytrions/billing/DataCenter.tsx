@@ -60,7 +60,7 @@ export function DataCenter() {
   }
 
   return (
-    <div className="flex flex-col gap-3.5 p-5">
+    <div className="flex flex-col gap-4 p-6">
       <div>
         <h2 className="font-heading text-2xl font-bold">Data Center</h2>
         <p className="text-sm text-muted-foreground">{deals.length} deals loaded · carrier billing records</p>
@@ -83,13 +83,13 @@ export function DataCenter() {
         <SegmentedFilter options={PAY_FILTERS} value={payFilter} onChange={setPayFilter} />
       </div>
 
-      <div className="overflow-x-auto rounded-xs border bg-card">
+      <div className="overflow-x-auto rounded-lg border bg-card">
         <div className="flex items-center justify-between border-b px-4 py-3">
           <div className="font-heading flex items-center gap-2 text-sm font-bold">
             <Layers className="size-4 text-primary" />
             Deal Records
           </div>
-          <span className="rounded-xs border bg-secondary px-2.5 py-0.5 font-mono text-[11px] font-semibold text-secondary-foreground">
+          <span className="rounded-md border bg-secondary px-2.5 py-0.5 font-mono text-[11px] font-semibold text-secondary-foreground">
             {filtered.length} records
           </span>
         </div>
@@ -214,7 +214,7 @@ function DealDetail({ deal, onClose, onEdit }: { deal: Deal; onClose: () => void
             Debtor Status
           </div>
           {debtor ? (
-            <div className="rounded-xs border border-bad/24 bg-bad/8 p-3.5">
+            <div className="rounded-md border border-bad/24 bg-bad/8 p-3.5">
               <div className="mb-2 flex items-center gap-1.5 text-xs font-bold text-bad">
                 Active Debtor {debtor.isHard ? <StatusBadge tone="bad">HARD</StatusBadge> : null}
               </div>
@@ -223,7 +223,7 @@ function DealDetail({ deal, onClose, onEdit }: { deal: Deal; onClose: () => void
               <Row k="Open Invoices" v={String(debtor.invoiceCount)} />
             </div>
           ) : (
-            <div className="flex items-center gap-2 rounded-xs border border-good/24 bg-good/8 px-3.5 py-3 text-sm font-semibold text-good">
+            <div className="flex items-center gap-2 rounded-md border border-good/24 bg-good/8 px-3.5 py-3 text-sm font-semibold text-good">
               ✓ No outstanding debt on record
             </div>
           )}
@@ -234,7 +234,7 @@ function DealDetail({ deal, onClose, onEdit }: { deal: Deal; onClose: () => void
             {isPrepay ? 'Prepay Balance' : 'Invoices'}
           </div>
           {isPrepay ? (
-            <div className="rounded-xs border border-primary/24 bg-primary/8 p-3.5">
+            <div className="rounded-md border border-primary/24 bg-primary/8 p-3.5">
               <StatusBadge tone="info">PREPAY ACCOUNT</StatusBadge>
               <div className="mt-2.5 text-sm text-muted-foreground">
                 Active prepay account — top-ups draw down against fuel and card activity as it posts.
@@ -246,12 +246,12 @@ function DealDetail({ deal, onClose, onEdit }: { deal: Deal; onClose: () => void
                 const paid = iv.total - iv.remaining;
                 const status = iv.remaining <= 0 ? 'Paid' : paid > 0 ? 'Partial' : 'Pending';
                 return (
-                  <div key={iv.num} className="rounded-xs border bg-muted/30 p-3">
+                  <div key={iv.num} className="rounded-md border bg-muted/30 p-3">
                     <div className="mb-2 flex items-center justify-between">
                       <span className="font-mono text-xs font-bold">#{iv.num}</span>
                       <StatusBadge tone={status === 'Paid' ? 'good' : 'warn'}>{status}</StatusBadge>
                     </div>
-                    <div className="flex gap-3.5 text-xs">
+                    <div className="flex gap-4 text-xs">
                       <span>Total <b className="font-mono">{fmtCurrency(iv.total)}</b></span>
                       <span>Paid <b className="font-mono text-good">{fmtCurrency(paid)}</b></span>
                       {iv.remaining > 0 ? <span>Remaining <b className="font-mono text-bad">{fmtCurrency(iv.remaining)}</b></span> : null}
@@ -272,8 +272,8 @@ function DealDetail({ deal, onClose, onEdit }: { deal: Deal; onClose: () => void
           {txns.length > 0 ? (
             <div className="flex flex-col gap-1.5">
               {txns.map((t) => (
-                <div key={t.recordId} className="flex items-center gap-2.5 rounded-xs border bg-muted/30 px-2.5 py-2 text-xs">
-                  <span className="rounded-xs bg-secondary px-1.5 py-0.5 font-mono font-bold text-secondary-foreground uppercase">
+                <div key={t.recordId} className="flex items-center gap-2.5 rounded-md border bg-muted/30 px-2.5 py-2 text-xs">
+                  <span className="rounded-md bg-secondary px-1.5 py-0.5 font-mono font-bold text-secondary-foreground uppercase">
                     {t.source}
                   </span>
                   <span className="min-w-0 flex-1 truncate font-semibold">{t.sender}</span>
@@ -319,7 +319,7 @@ function EditDeal({
         </>
       }
     >
-      <div className="flex flex-col gap-3.5">
+      <div className="flex flex-col gap-4">
         <Field label="Payment Type / Billing">
           <select value={payType} onChange={(e) => setPayType(e.target.value as PayType)} className={selectClass}>
             {PAY_OPTIONS.map((p) => (
@@ -353,7 +353,7 @@ function EditDeal({
 }
 
 const selectClass =
-  'w-full rounded-xs border bg-muted/40 px-3 py-2 text-sm outline-none focus:border-primary/55 focus:ring-3 focus:ring-primary/12';
+  'w-full rounded-md border bg-muted/40 px-3 py-2 text-sm outline-none focus:border-primary/55 focus:ring-3 focus:ring-primary/12';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

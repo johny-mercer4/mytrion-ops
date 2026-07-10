@@ -17,7 +17,7 @@ import {
 
 const SOURCE_OPTIONS = ['all', 'zelle', 'chase', 'mx', 'stripe', 'ach', 'wire', 'check', 'card'];
 const selectClass =
-  'rounded-xs border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground outline-none focus:border-primary/55';
+  'rounded-md border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground outline-none focus:border-primary/55';
 
 export function Transactions() {
   const [search, setSearch] = useState('');
@@ -56,7 +56,7 @@ export function Transactions() {
   const unmapped = filtered.filter((t) => !t.carrierId).length;
 
   return (
-    <div className="flex flex-col gap-3.5 p-5">
+    <div className="flex flex-col gap-4 p-6">
       <div>
         <h2 className="font-heading text-2xl font-bold">Payment Transactions</h2>
         <p className="text-sm text-muted-foreground">{TRANSACTIONS.length} total records · live ledger</p>
@@ -91,9 +91,9 @@ export function Transactions() {
         </select>
       </div>
 
-      <div className="flex flex-col gap-3.5">
+      <div className="flex flex-col gap-4">
         {groups.length === 0 ? (
-          <div className="rounded-xs border bg-card p-10 text-center text-sm text-muted-foreground">
+          <div className="rounded-lg border bg-card p-10 text-center text-sm text-muted-foreground">
             No transactions found. Try adjusting your search or filters.
           </div>
         ) : (
@@ -108,14 +108,14 @@ export function Transactions() {
                 </span>
                 <span className="h-px flex-1 bg-border" />
               </div>
-              <div className="overflow-hidden rounded-xs border bg-card">
+              <div className="overflow-hidden rounded-lg border bg-card">
                 {items.map((t) => (
                   <button
                     key={t.recordId}
                     onClick={() => setOpenTx(t)}
                     className="flex w-full items-center gap-3 border-b px-4 py-3 text-left text-sm last:border-b-0 hover:bg-muted/40"
                   >
-                    <span className="min-w-13 flex-none rounded-xs bg-secondary px-1.5 py-1 text-center font-mono text-[9px] font-extrabold tracking-wide text-secondary-foreground uppercase">
+                    <span className="min-w-13 flex-none rounded-md bg-secondary px-1.5 py-1 text-center font-mono text-[9px] font-extrabold tracking-wide text-secondary-foreground uppercase">
                       {srcLabel(t.source)}
                     </span>
                     <div className="min-w-0 flex-1">
@@ -159,12 +159,12 @@ function TransactionDetail({ tx, onClose }: { tx: Transaction; onClose: () => vo
       size="md"
       badges={<StatusBadge tone="good">{fmtCurrency(tx.amount)}</StatusBadge>}
       footer={
-        <button onClick={onClose} className="rounded-xs border px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground">
+        <button onClick={onClose} className="rounded-md border px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground">
           Close
         </button>
       }
     >
-      <div className="flex flex-col gap-3.5">
+      <div className="flex flex-col gap-4">
         <section>
           <div className="font-heading mb-2.5 text-xs font-bold tracking-wide text-primary uppercase">
             Transaction Details

@@ -1,0 +1,436 @@
+/**
+ * Touchpoint key → { params, result } map. Keys MUST match the backend catalog
+ * (src/modules/touchpoints/catalog/*) exactly — hand-duplicated per repo convention.
+ * Phase 1 types only what the Sales Automations tab consumes; the map grows as more
+ * panels get wired (entries are cheap; result interfaces are the bulk).
+ *
+ * Identity note: user-keyed touchpoints (dashboards, inbox, rosters) take NO identity
+ * params from the UI — the backend injects the verified session's Zoho user id.
+ */
+
+// ---- result shapes (widget-observed; fields the UI actually renders) ----
+
+export interface CarrierBalance {
+  account_type?: string;
+  payment_terms?: string;
+  company_name?: string;
+  credit_limit?: number | string | null;
+  credit_remaining?: number | string | null;
+  credit_used?: number | string | null;
+  balance?: number | string | null;
+  efs_balance?: number | string | null;
+  billing_cycle?: string | null;
+  efs_error?: string | null;
+}
+
+export interface CarrierOverview {
+  company_name?: string;
+  payment_terms?: string;
+  account_type?: string;
+  is_active?: boolean;
+  credit_limit?: number | string | null;
+  efs_balance?: number | string | null;
+  efs_error?: string | null;
+  cmp_debt?: {
+    total_debt?: number;
+    invoice_count?: number;
+    max_debt_days?: number;
+    is_hard_debtor?: boolean;
+    worst_status?: string;
+    error?: string;
+  };
+  cards?: { count?: number; active_count?: number; error?: string };
+}
+
+export interface TrackingResult {
+  dealName?: string;
+  fedexTracking?: string | null;
+  trackingInfo?: Array<{ trackingNumber?: string; startDate?: string; cardsOrdered?: number | string }>;
+}
+
+export interface PaymentInfoResult {
+  window?: unknown;
+  invoices?: { count?: number; totals?: Record<string, number | string | null>; data?: unknown[] };
+  payments?: { count?: number; total_amount?: number | string; by_source?: Record<string, unknown>; data?: unknown[] };
+}
+
+export interface CmpInvoiceList {
+  invoices?: Array<{
+    invoiceNumber?: string;
+    status?: string;
+    totalAmount?: number | string;
+    totalPaid?: number | string;
+    remainingAmount?: number | string;
+    period?: string;
+    createdDate?: string;
+    id?: string | number;
+  }>;
+}
+
+export interface SalesInvoicesResult {
+  data?: Array<Record<string, unknown>>;
+  count?: number;
+  summary?: Record<string, unknown>;
+}
+
+export interface WexTasksResult {
+  wexTasks?: Array<{ sbj?: string; description?: string; createdDate?: string }>;
+  dealId?: string;
+}
+
+export interface WexApplicationResult {
+  appId?: string | number;
+  found?: boolean;
+  status?: string;
+  statusGroup?: string;
+  lastModified?: string;
+  application?: Record<string, unknown>;
+}
+
+export interface CardActionResult {
+  previousStatus?: string;
+  newStatus?: string;
+  cardNumber?: string;
+  message?: string;
+}
+
+export interface CardLimitsResult {
+  limitId?: string;
+  previousLimit?: number | string;
+  newLimit?: number | string;
+  message?: string;
+}
+
+export interface EfsCardsResult {
+  count?: number;
+  data?: Array<{ card_number?: string; status?: string; [k: string]: unknown }>;
+}
+
+export interface BillingFormResult {
+  deal?: { billingVerification?: string };
+  billingForm?: Record<string, unknown> | null;
+  notes?: Array<{ title?: string; content?: string; createdTime?: string; createdBy?: string }>;
+}
+
+export interface MoneyCodePreview {
+  company_name?: string;
+  available?: number | string;
+  eligible?: boolean;
+  drawn?: number | string;
+  credit_limit?: number | string;
+  billing_cycle_label?: string;
+}
+
+export interface MoneyCodeDrawResult {
+  money_code_amount?: number | string;
+  available_after?: number | string;
+  valid_until?: string;
+  company_name?: string;
+  request_id?: string | number;
+}
+
+export interface SignedUrlResult {
+  url?: string;
+  expiresIn?: number;
+}
+
+// ---- panel result shapes (user-keyed touchpoints; identity is server-injected) ----
+
+/** mytrionhomesnapshot — arrives as {snapshot, brief_context} or a 1-element array of it. */
+export interface HomeSnapshotFields {
+  active_clients?: number;
+  inactive_clients?: number;
+  stuck_deals_count?: number;
+  total_debt_amount?: number;
+  total_debtors?: number;
+  total_hard_debtors?: number;
+  swipes_this_week?: number;
+  swipes_trend?: string;
+  gallons_this_week?: number;
+  gallons_trend?: string;
+  new_cards_this_week?: number;
+  new_cards_trend?: string;
+  swipes_today?: number;
+  gallons_today?: number;
+  new_cards_today?: number;
+  [k: string]: unknown;
+}
+export type HomeSnapshotResult =
+  | { snapshot?: HomeSnapshotFields; brief_context?: string }
+  | Array<{ snapshot?: HomeSnapshotFields; brief_context?: string }>;
+
+export interface ZohoAnnouncement {
+  Type?: string;
+  Subject?: string;
+  Name?: string;
+  Content?: string;
+  Priority?: string;
+  Created_Time?: string;
+}
+
+export interface InboxListResult {
+  status?: string;
+  messages?: Array<{
+    id?: string | number;
+    recordId?: string | number;
+    type?: string;
+    priority?: string;
+    subject?: string;
+    name?: string;
+    content?: string;
+    createdTime?: string;
+    tag?: string;
+    sourceUrl?: string;
+    ownerId?: string | number;
+  }>;
+}
+
+export interface DatacenterLead {
+  id?: string | number;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  phone?: string;
+  lead_source?: string;
+  utm_source?: string;
+  lead_status?: string;
+  application_id?: string | number;
+  created_time?: string;
+  company?: string;
+}
+export interface DatacenterLeadsResult {
+  converted?: DatacenterLead[];
+  unconverted?: DatacenterLead[];
+}
+
+export interface ByAgentClientRow {
+  carrier_id?: number | string;
+  company_name?: string;
+  deal_stage?: string;
+  payment_terms?: string | null;
+  credit_limit?: number | string | null;
+  balance?: number | string | null;
+  prepay_balance?: number | string | null;
+  computed_is_active?: boolean | number | string | null;
+  is_loc_suspended?: boolean | number | string | null;
+  computed_debt?: number | string | null;
+  computed_debt_days?: number | string | null;
+  overdue_invoices_count?: number | string | null;
+  dot?: number | string | null;
+  [k: string]: unknown;
+}
+
+export interface AgentActivityResult {
+  success?: boolean;
+  resolved_by?: string;
+  range?: { from?: string; to?: string; days_in_range?: number };
+  metrics?: Record<string, { count?: number; completed?: number; total_duration_sec?: number; error?: string; [k: string]: unknown }>;
+  averages?: Record<string, number>;
+}
+
+export interface LeaderboardRow {
+  rank?: number;
+  agent_name?: string;
+  deal_count?: number;
+  value_total?: number;
+  value_avg?: number;
+  zoho_user_id?: string | number;
+}
+export interface LeaderboardResult {
+  success?: boolean;
+  /** servercrm returns the rows under `leaderboard` (verified live). */
+  leaderboard?: LeaderboardRow[];
+  data?: LeaderboardRow[];
+  current_agent?: { zoho_user_id?: string | number; rank?: number; found_in_top?: boolean };
+}
+
+/** mytrionAgentSalesDashboard — {success, data:{cycle,kpi,cardsByCompany,dailyActivity,transactions}} */
+export interface SalesDashboardResult {
+  success?: boolean;
+  data?: {
+    cycle?: { start?: string; end?: string };
+    kpi?: Record<string, number | string | null>;
+    cardsByCompany?: Array<Record<string, unknown>>;
+    dailyActivity?: Array<Record<string, unknown>>;
+    cardActivity?: Array<Record<string, unknown>>;
+    transactions?: Array<Record<string, unknown>>;
+  };
+  error?: string;
+}
+
+export interface CompanyDashboardResult {
+  status?: string;
+  data?: {
+    as_of?: string;
+    week_start?: string;
+    fills_today?: number;
+    fills_this_week?: number;
+    fills_this_month?: number;
+    gallons_today?: number;
+    gallons_this_week?: number;
+    gallons_this_month?: number;
+    [k: string]: unknown;
+  };
+}
+
+export interface DebtorsResult {
+  debtors?: Array<{
+    carrier_id?: number | string;
+    deal_name?: string;
+    company_name?: string;
+    is_hard_debtor?: boolean;
+    worst_status?: string;
+    total_remaining?: number;
+    total_paid?: number;
+    total_owed?: number;
+    invoice_count?: number;
+    max_debt_days?: number;
+    invoices?: Array<Record<string, unknown>>;
+    [k: string]: unknown;
+  }>;
+  total_debtors?: number;
+  total_hard_debtors?: number;
+  total_debt_amount?: number;
+}
+
+export interface CarrierSearchRow {
+  id?: string | number;
+  dot_number?: string | number;
+  owner_full_name?: string;
+  phone_number?: string;
+  email?: string;
+  operating_status?: string;
+  power_units?: number | string;
+  physical_address?: string;
+  truck_size?: string;
+  add_date?: string;
+  change_date?: string;
+}
+export interface CarrierSearchResult {
+  success?: boolean;
+  carriers?: CarrierSearchRow[];
+  total?: number;
+  more_records?: boolean;
+  message?: string;
+}
+
+/** mytrioncreatelead — permissive: the UI inspects success/leadId/response (DUPLICATE_DATA). */
+export interface CreateLeadResult {
+  success?: boolean;
+  leadId?: string | number;
+  message?: string;
+  response?: unknown;
+}
+
+export interface CreateEscalationResult {
+  ticketId?: string | number;
+  escalationId?: string | number;
+  message?: string;
+}
+
+export interface TransactionsResult {
+  totals?: Record<string, number | string | null>;
+  data?: Array<Record<string, unknown>>;
+  pagination?: Record<string, unknown>;
+}
+
+// ---- the key map ----
+
+export interface TouchpointMap {
+  'dwh.carrier_balance': { params: { carrierId: string }; result: CarrierBalance };
+  'dwh.carrier_overview': { params: { carrierId: string }; result: CarrierOverview };
+  'dwh.payment_info': { params: { carrierId: string; days?: number }; result: PaymentInfoResult };
+  'dwh.transactions': {
+    params: { carrierId: string; range?: string; from?: string; to?: string; limit?: number };
+    result: TransactionsResult;
+  };
+  'dwh.cards': { params: { carrierId: string }; result: EfsCardsResult };
+  'dwh.card_activate': { params: { carrierId: string; cardNumber: string }; result: Record<string, unknown> };
+  'dwh.money_code': { params: { carrierId: string }; result: MoneyCodePreview };
+  'dwh.money_code_draw': {
+    params: { carrierId: string; amount: number; moneycode_reason: string };
+    result: MoneyCodeDrawResult;
+  };
+  'carrier.trucking_number_request': { params: { carrierId: string }; result: TrackingResult };
+  'carrier.check_payment': { params: { carrierId: string }; result: CmpInvoiceList };
+  'carrier.billing_form_info': { params: { carrierId: string }; result: BillingFormResult | string };
+  'cards.status': {
+    params: { carrierId: string; cardNumber: string; action: 'ACTIVATE' | 'DEACTIVATE' };
+    result: CardActionResult;
+  };
+  'cards.limits': {
+    params: {
+      carrierId: string;
+      cardNumber: string;
+      limitId: string;
+      limitValue: string;
+      action: 'INCREASE' | 'DECREASE';
+    };
+    result: CardLimitsResult;
+  };
+  'efs.cards': { params: { carrierId: string }; result: EfsCardsResult };
+  'efs.card_info': {
+    params: {
+      carrierId: string;
+      cardNumber: string;
+      unitNumber?: string;
+      driverId?: string;
+      driverName?: string;
+    };
+    result: Record<string, unknown>;
+  };
+  'efs.card_override': { params: { carrierId: string; cardNumber: string }; result: CardActionResult };
+  'fraud.hold_release': {
+    params: {
+      companyName: string;
+      carrierId: string;
+      agentEmail: string;
+      cardNumber: string;
+      ticketType?: 'fraud_hold' | 'fraud_release';
+    };
+    result: Record<string, unknown>;
+  };
+  'application.update': { params: { appId: string }; result: WexTasksResult };
+  'wex.application': { params: { appId: string }; result: WexApplicationResult };
+  'sales_mytrion.fetch_invoices': {
+    params: { carrierId: string; range?: string; status?: string; from?: string; to?: string };
+    result: SalesInvoicesResult;
+  };
+  'sales_mytrion.invoice_signed_url': {
+    params: { invoiceId: string; type?: 'pdf' | 'excel' };
+    result: SignedUrlResult;
+  };
+  // ---- panel touchpoints (identity server-injected; params are empty or filters only) ----
+  'dashboard.home_snapshot': { params: Record<string, never>; result: HomeSnapshotResult };
+  'inbox.announcements': { params: Record<string, never>; result: ZohoAnnouncement[] | ZohoAnnouncement };
+  'inbox.list': { params: Record<string, never>; result: InboxListResult };
+  'inbox.delete_message': { params: { recordId: string }; result: unknown };
+  'leads.datacenter': { params: Record<string, never>; result: DatacenterLeadsResult };
+  'clients.by_agent': { params: Record<string, never>; result: { success?: boolean; data?: ByAgentClientRow[] } };
+  'clients.recent_transactions': {
+    params: { carrierId: string; limit?: number };
+    result: { success?: boolean; data?: Array<Record<string, unknown>>; count?: number };
+  };
+  'activity.agent': { params: { range?: 'daily' | 'weekly' | 'monthly' }; result: AgentActivityResult };
+  'activity.leaderboard': {
+    params: { range?: string; limit?: number; metric?: 'value_total' | 'deal_count' | 'value_avg' };
+    result: LeaderboardResult;
+  };
+  'dashboard.agent_sales': {
+    params: { startDate?: string; endDate?: string };
+    result: SalesDashboardResult;
+  };
+  'dashboard.company': { params: Record<string, never>; result: CompanyDashboardResult };
+  'dashboard.debtors': { params: Record<string, never>; result: DebtorsResult };
+  'sales.carriers_search': { params: { query: string; limit?: number }; result: CarrierSearchResult };
+  'leads.create': {
+    params: { createPayload: Record<string, string> };
+    result: CreateLeadResult;
+  };
+  'tickets.create_escalation': {
+    params: { escalationReason: string; questionSubject: string; description: string; attachmentUrl?: string };
+    result: CreateEscalationResult;
+  };
+}
+
+export type TouchpointKey = keyof TouchpointMap;

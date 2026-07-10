@@ -1364,3 +1364,163 @@ Carrier accounts are now provisioned FROM the already-defined clients in the dat
 - Tests: 407 backend green (8 new: browse/text/numeric query construction incl. is_active +
   ordering, DTO mapping, limit cap, route gate worker-403, DWH 502 mapping) + 37 web. Live-smoked
   against the real DWH: 'grant' → GRANT EXPRESS LLC (newest first); '5837' → carrier-prefix hits.
+
+## 2026-07-08 — Octane Scope: full RnD-widget UI/UX port (React Flow) in Mytrion Admin
+
+- **Why** — the admin tab's Octane-Scope was a compact stepper+card sketch; the real design lives in
+  the Zoho RnD widget (`zoho-octane/app/agent-scope`, octane-business-panel). Ported that UI/UX 1:1
+  into `apps/mytrion-crm/src/mytrions/admin/scope/` (13 files, all under the 600-line cap), and
+  upgraded the blueprints from the widget's static dagre board to interactive **React Flow** graphs.
+- **Scene** — parallax far grid + ambient flood + vignette; horizontally draggable/zoomable camera
+  (0.5–1.8×); Catmull-Rom gradient road with flowing dash + offset-path particles; pulsing stage
+  orbs; floating glass stage cards with scroll-linked opacity/active detection; WEX ⇄ Deal
+  interconnect arc; bottom progress rail; keyboard (←/→ stages, Esc closes). After lifecycle =
+  Client hub with edge-trimmed gradient spokes (Collection hangs off Billing). Clicking the
+  terminal Client Stage switches to the After hub, same as the widget.
+- **Drill-down** — sub-tabs Blueprint / Departments / Automations / Details. Blueprints are
+  @xyflow/react + @dagrejs/dagre (same layout params, kind-colored bezier edges + arrowheads +
+  label pills, dept chips + tools lines + simple-icons logos on nodes, side-hint and note-column
+  handling) with fitView, pan/zoom, drag, Controls (bottom-left) and a MiniMap on graphs > 8 nodes.
+  Lead-Gen keeps its custom Distribution-Engine diagram under Automations.
+- **Risk items** — Details tab hosts the widget's editable Blockers / Red Flags / Manual sections
+  (icon picker form, hover row actions, spinners, toasts) against the existing /v1/scope/risks API.
+  Node ids now match the widget exactly (`lead-generation`… + After cycle ids `verification`,
+  `retention`, `customer-service`, `billing`, `collection`) — the old `after-*` ids were a split
+  brain with the Zoho widget; both UIs now edit the same records.
+- **Theme** — scene runs the widget's cinematic palette keyed off `<html data-theme>` via a
+  MutationObserver hook, so the TopBar toggle re-themes it live (verified both modes headlessly).
+- Deps: apps/mytrion-crm + @xyflow/react 12.11.2, @dagrejs/dagre 3.0.0. Removed the old
+  OctaneScope.tsx + its now-orphaned admin.module.css blocks.
+- Verified: web typecheck + 37 tests, root lint/typecheck + 407 tests, vite build, and a headless
+  Chrome walkthrough (road, modal tabs, After hub, Verification blueprint, light mode).
+
+## 2026-07-08 (2) — Fix: blueprint canvas flicker on zoom
+
+- Blueprint nodes (`.oct-bpnode`) flickered constantly while zooming the React Flow canvas.
+  Cause: `backdrop-filter: blur(6px)` on nodes inside `.react-flow__viewport`, whose CSS
+  transform updates every zoom tick — Chromium/Safari re-rasterize the filtered backdrop per
+  frame (known React Flow gotcha), and every node was its own backdrop root.
+- Fix: replaced the node blur with the same glass tint composited over an opaque base —
+  `background: linear-gradient(var(--glass), var(--glass)) var(--bg1)` — visually equivalent in
+  both themes. Controls/MiniMap keep their blur (they sit outside the transformed viewport).
+- Verified: mytrion-crm typecheck + vite build.
+
+## 2026-07-08 (3) — Retention setup: single entity, CRUD, auto-generation from the DWH
+
+- **Entity** — `retention_cases` (migration `0020`): ONE table carrying the whole workflow.
+  Phase ladder `sales → retention → open_pool → citi` (citi = final; the sales rep gets the
+  first window per the future-workflow flowchart), SOP stage classification
+  (`inactive_no_reason | inactive_reason_noted | out_of_reach | pending | assigned_to_agent`),
+  outcome, inactivity reason + note, out-of-reach attempt counter, open-pool assignment state,
+  and DWH frequency metrics (class/threshold/last-tx/days-inactive/tx-count/gallons/cards).
+  Partial unique index: one OPEN case per (tenant, carrier); closed rows keep episode history.
+- **Auto-generation** — `src/integrations/dwhRetention.ts` scans `octane.dim_company` (active,
+  non-debtor, has swiped — debtors excluded at the source per the flowchart) joined with 90-day
+  aggregates from `octane.mart_transaction_line_items`. Frequency classes high/medium/low =
+  expected tx every 2/5/7 days (classified from avg 90-day gap); a carrier BREACHES when
+  days-inactive exceeds its threshold. Query validated read-only against the live DWH via
+  `pnpm dwh:inspect` (returns high-volume carriers 3–7 days quiet — exactly the SOP priority).
+- **Sync** — `src/modules/retention/retentionSync.ts`: breach without an open case → create
+  (phase `sales`, source `auto`); breach with an open case → refresh metrics; open case whose
+  carrier transacted after creation and is back inside threshold → close `returned` ("Returned"
+  branch). `citi` cases are never auto-closed. Runs nightly (`automation.retention.case-sync`,
+  cron 05:00, no LLM) and on demand via `POST /v1/retention/sync` (admin).
+- **CRUD** — `/v1/retention/cases` list/get/create/patch (+ POST `:id/delete` alias). Reads +
+  case-work writes need the retention department (x-department-access honored for INTERNAL
+  callers only — a customer session can never claim a department; a test caught that hole and
+  the gate now audience-checks first). Delete + sync are admin-only. All writes audited.
+- Frontend: `apps/mytrion-crm/src/api/retention.ts` typed client (module UI still on fixtures —
+  wiring Cases/OpenPool to the API is the next step; blueprint TBD).
+- Verified: root lint + typecheck + 425 tests (18 new), web typecheck, live-DWH query smoke.
+- NOT yet applied: `pnpm db:migrate` (app DB is the live Render Postgres — run at deploy time).
+
+## 2026-07-08 (4) — Migration 0020 applied + Retention UI design prompt
+
+- Applied `pnpm db:migrate` against the app Postgres (Render). Verified live: 29 columns,
+  5 indexes incl. the partial open-case unique, 0 rows. DWH untouched (drizzle never sees it).
+- Added `docs/RETENTION_UI_DESIGN_PROMPT.md` — self-contained prompt for the Claude Design
+  session that will redesign the Retention Mytrion UI against the live /v1/retention API.
+
+## 2026-07-09 — Retention case-sync cadence: every 5 minutes
+
+- `automation.retention.case-sync` cron changed 05:00 nightly → `*/5 * * * *`. Rationale:
+  cases and returned-closures surface near-real-time; singleton queue policy means runs never
+  overlap, and the DWH scan is one seconds-fast read-only query. 30s would be pointlessly
+  heavy on the warehouse. Design prompt copy updated to match (5-minute freshness).
+
+## 2026-07-09 (2) — inbox_events entity + native WebSocket pub/sub
+
+- **Entity** — `inbox_events` (migration `0021`, APPLIED to the app Postgres; DWH untouched):
+  priority (low/medium/high), tag, type (dot-namespaced slug), owner as owner_kind + owner_id
+  ('worker' → Zoho user id, 'client' → carrier_users id), plus title/detail/read_at.
+  Owner-feed composite index; the table is the durable feed behind the realtime push.
+- **Realtime** — our own native WebSocket (@fastify/websocket 10 / `ws`, no Redis):
+  `GET /v1/realtime?token=<jwt|API_KEY>` (token lifted from query → same sessionOrApiKey
+  guard). In-process hub (`src/modules/realtime/hub.ts`) with topic grammar
+  `inbox:<worker|client>:<id>` + `inbox:all` firehose. Sockets auto-subscribe to their OWN
+  topic from the verified session; foreign topics/firehose are admin-only; subscribe /
+  unsubscribe / ping over JSON frames.
+- **REST** — POST /v1/inbox/events (admin; persist FIRST, then publish live), owner-scoped
+  GET list (+unread count; admins may inspect any owner), :id/read (owner-or-admin),
+  read-all, :id/delete (admin). Writes audited.
+- Caveat noted in hub docs: hub is per-process; in a split send-only worker deploy, worker-
+  created events persist but need a pg NOTIFY bridge for live push (not built).
+- Verified: lint, typecheck, 440 tests (15 new) incl. a LIVE ws end-to-end (real listener,
+  real ws client: hello/auto-subscribe, denied foreign subscribe, REST create → socket frame).
+
+## 2026-07-09 → 07-10 — Touchpoints layer (Deluge + servercrm) for the Sales Mytrion
+
+- **Reusable wrappers.** `src/integrations/zohoFunctions.ts` — `executeZohoFunction(name, args, {accessToken?, unwrap})` (managed token by default, ported from the servercrm ref: body-less POST to `{origin}/crm/v2/functions/<name>/actions/execute?auth_type=oauth&arguments=<json>`, `details.output` parse w/ numeric-key repair, 401 invalidate+retry-once, casing fallback pairs). servercrm wrapper already existed (`serverCrm.ts`); added `ServerCrmHttpError` (status + body) for 4xx-passthrough vs 502 mapping.
+- **Catalog + dispatcher.** `src/modules/touchpoints/` — 48 declarative entries (22 Deluge, 26 servercrm) split by domain, each with a zod schema + risk class + identity/carrier annotations. One dispatcher: internal-audience + `sales` dept gate (destructive tier behind `FF_TOUCHPOINT_DESTRUCTIVE_SALES`, default on = widget parity), session-authoritative identity injection (`serverCrmScope`), `assertCarrierOwned`, path templating + query/body split, error mapping. Route `POST /v1/touchpoints/:key` + `GET /v1/touchpoints` discovery; writes/destructive audited (PAN masked), reads not.
+- **Sales Automations tab is LIVE** (was a setTimeout stub): DWH client typeahead (`CarrierPicker` over `searchClients`), 12 flows wired (balance, account-status, payments w/ Deluge fallback, tracking, billing-form, invoices + signed-url download, transactions, wex-tasks, card-activation, card-replacement, fraud-hold, efs-login link), inline result views, per-run `automation_logs` post. money-code stays `comingSoon`.
+- **Adversarial review (partial workflow) — fixes applied:**
+  - Range vocab: `/api/agent/dwh/*` uses `day|week|month|…|custom` (NOT `last_*`); only `/api/salesMytrion/fetchInvoices` uses `last_7|last_30|last_90`. Split into `dwhRange`/`salesRange`; transactions default was `last_30` (would 400 every run) → `month`. VERIFIED live (`range=month` → 200).
+  - `efs.cards` returns camelCase `cardNumber` (card-replacement read `card_number` → all '—') → read both. VERIFIED live.
+  - `cards.status`/`cards.limits` → new `cardAction` unwrap (throws on explicit EFS failure flag; permissive was silently succeeding).
+  - Crashed-Deluge envelope (`code!=success`, no output) now throws instead of null-success; `mytrionfetchannouncements` bracket-less list wrapped to array.
+  - Dot-segment (`..`) path params rejected (URL normalization redirect); billing-form null-crash guarded; CarrierPicker stale-results seq bump; invoice-download error toast; card fields trimmed.
+- Accepted (widget-parity, not regressions): `invoice_signed_url` has no per-carrier ownership check and `fraud.hold_release` takes a caller `agentEmail` — both match the legacy widget's static-key behavior; servercrm itself doesn't enforce them. Audit logs the client-sent params (actor identity is separate) rather than post-injection values.
+- Read-only live smoke: `scripts/touchpointsSmoke.ts` (`pnpm tsx`), verifies token flow + parsing against real Zoho + servercrm, no writes.
+- Verified: root lint + typecheck + 486 tests; web typecheck + 51 tests; live smoke green.
+
+## 2026-07-10 — Sales Mytrion goes LIVE (widget UI/UX port) + admin user switching
+
+- **All six Sales panels wired to the exact widget touchpoints** (fixtures gone):
+  Home (mytrionhomesnapshot groups + trends, mytrionfetchannouncements w/ priority modal,
+  /api/agent/activity KPIs w/ Today/Week/Month, live inbox preview + real greeting name);
+  Inbox (mytrionfetchinbox, widget filter tabs All/Unread/Tasks/Alerts/Reminders, localStorage
+  read-state, optimistic mytriondeleteinboxmessage, sourceUrl CTA for tasks/reminders);
+  Data Center (clients: /api/clients/by-agent w/ CMP debt + LOC/Prepay filters + widget sort;
+  leads: mytriondatacenterleads grouped by lead status w/ UTM pills); Dashboard (Sales:
+  mytrionAgentSalesDashboard cycle KPIs/donuts/utilization/cards-by-company/activity chart/tx
+  table w/ totals; Company: gauges vs widget targets 15/105/450 fills + 6.7M gal; Debtors:
+  mytriondbdebtorsinfo cards w/ hard-debtor pills + invoice drill; Performance: activity KPIs +
+  /api/agent/activity/leaderboard w/ metric toggle + YOU highlight); Carriers (live
+  /api/sales/carriers/search + status chips + per-row mytrioncreatelead w/ DUPLICATE_DATA →
+  "Exists" link, widget payload building); Create (lead form w/ 10-digit phone validation,
+  escalation w/ the widget's 10 reasons → createescalationticket; Desk-first support ticket
+  deferred). ClientDetailModal: live clients/:id/recent-transactions.
+- **Admin user switching = ActAsPicker (already in TopBar) + module remount**: SalesMytrion
+  keys on actingAs.zohoUserId — switching agents refetches every panel AS that agent (backend
+  act-as rewrites identity; server-injected userId/agentName follow). Widget parity with
+  selectImpersonatedUser + currentUser.id watchers.
+- `sales/live.ts` — the mapping layer (useLoad hook + fetchers per touchpoint, widget response
+  parsing: snapshot grouping/tones, inbox type map task/assignment→reminder/warning/critical,
+  HTML stripping, by-agent sort, lead-outcome DUPLICATE_DATA parsing). leads.create unwrap →
+  permissive (backend) so the UI can link the existing lead.
+- **Tested every feature one by one, LIVE** (scripts/salesPanelSmoke.ts): 15/15 as a real
+  sales agent (Franklyn Jobs — the act-as path), 13/14 as admin (agent_sales needs a carrier
+  book → now a friendly "no carriers" state). Caught + fixed: leaderboard rows under
+  `leaderboard` (not `data`); agent_sales dim_company-miss handling. Writes validated to the
+  schema boundary only (no junk in prod CRM).
+- Removed dead fixtures (dashboardData.ts, CarrierDetailModal, DashboardInvoices).
+- Verified: root lint (0 errors) + 486 tests; web typecheck + 51 tests; live smoke 15/15.
+
+## 2026-07-10 (2) — Sales Mytrion end-to-end re-audit (live browser + multi-agent code audit)
+
+- **Drove the real app headlessly (Playwright + minted JWT session)** through every tab/block/modal, as admin then acting-as a real agent (Franklyn Jobs): Home (snapshot/announcements/activity + range toggle), Inbox (list + item modal), Data Center (clients + leads tabs + client modal w/ live recent fuel), Create (lead + escalation + 10 reasons + ticket placeholder), Automations (Balance Check end-to-end vs live EFS), Dashboard (Sales/Company/Debtors/Performance + leaderboard YOU badge), Carriers (live search 200 rows + lead buttons). Act-as verified: greeting + inbox(1 unread)/clients/dashboards all switch to the agent. 22/23 steps (the 1 miss = a transient servercrm 502 on agent_sales; verified 2/2 OK via backend, and the panel shows a Retry).
+- **7-panel adversarial code audit** (vs the widget reference + live shapes). Fixes applied:
+  - HIGH: `leads.create` schema rejected blank firstName/phone the widget legally sends (broker rows) → made optional; `sales.carriers_search` limit capped at 100 but UI sends 200/500 → raised to 500; `Carriers.createLead` had no catch → added; ClientDetailModal fuel amounts all showed **$0** (net_total is 0 on fuel rows; charge is in funded_total) → fallback net_total→funded_total→line_item_amount (verified live: now $232/$338/…); duplicate React keys on multi-grade fuel rows → indexed key.
+  - MEDIUM: salutation `Mr.`/`Ms.` → `Mr`/`Ms` (CRM picklist); single-word owner name kept in BOTH first+last (was empty firstName); LOC filter `/loc|line of credit|credit/`, prepay `/pre.?pay/`, credit_limit>0 gate for limitText; duplicate-lead id parse handles string OR object `response`; inbox delete-by-id (not the upstream recordId) + error toast; inbox/announcement titles use `||` (empty subject fallback); Home inbox-preview error state; DashboardCompany label shows true % (bar caps at 100); DashboardSales discount total column; Money-Owed tone (hard→warn, debt→bad).
+  - Skipped as cosmetic (documented): errored-metric "—" vs 0, 48h announcement badge, live clock ticking, 91-bucket sparkline slice, WS live-push.
+- Verified: backend lint 0 errors + typecheck + touchpoint tests; web typecheck + 51 tests; live re-walkthrough green.

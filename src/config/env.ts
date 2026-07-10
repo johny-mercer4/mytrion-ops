@@ -201,6 +201,9 @@ const EnvSchema = z.object({
   ZOHO_CRM_CLIENT_SECRET: z.string().default(''),
   ZOHO_CRM_REFRESH_TOKEN: z.string().default(''),
   ZOHO_CRM_API_DOMAIN: z.string().default('https://www.zohoapis.com/crm/v8'),
+  // Zoho custom-function (Deluge) execution root. Blank = derived from the ORIGIN of
+  // ZOHO_CRM_API_DOMAIN + '/crm/v2/functions' — the functions API is v2, not v8.
+  ZOHO_FUNCTIONS_BASE_URL: z.string().default(''),
 
   // --- Zoho Desk ---
   ZOHO_DESK_REFRESH_TOKEN: z.string().default(''),
@@ -303,6 +306,9 @@ const EnvSchema = z.object({
   // Additionally expose Zoho MCP WRITE tools (create/update/upsert). Off by default (read-only posture).
   FF_ZOHO_MCP_WRITES: flag('0'),
   FF_AUDIT_LOG_ENABLED: flag('1'),
+  // Sales workers may run DESTRUCTIVE touchpoints (card deactivate/limits, money-code draw,
+  // fraud release, EFS override) — widget parity, ON by default. 0 = admin-only, no code change.
+  FF_TOUCHPOINT_DESTRUCTIVE_SALES: flag('1'),
   // DeepAgents orchestrator endpoint (POST /v1/agent/deep). Off by default; lazy-loaded when on.
   FF_DEEP_AGENTS_ENABLED: flag('0'),
   // Composio external tool-calling (adds the external-tools subagent + /v1/integrations/composio/*).

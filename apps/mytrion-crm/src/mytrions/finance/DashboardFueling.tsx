@@ -47,7 +47,7 @@ export function DashboardFueling() {
   );
 
   return (
-    <div className="flex flex-col gap-3.5">
+    <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard icon={ListChecks} value={weekTx.toLocaleString('en-US')} label="Transactions · 7-day window" tint="primary" />
         <StatCard icon={Wallet} value={fmtCompact(weekSpend)} label={`Avg ${fmtCompact(weekSpend / weekTx)}/tx`} tint="good" />
@@ -55,7 +55,7 @@ export function DashboardFueling() {
         <StatCard icon={Clock3} value="18.4h" label="Median · p25 11.2h · p75 31.8h" tint="warn" />
       </div>
 
-      <div className="rounded-xs border bg-card p-4 shadow-sm">
+      <div className="rounded-lg border bg-card p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
           <div className="font-heading text-xs font-bold tracking-wide text-muted-foreground uppercase">
             Volume by Day of Week
@@ -83,7 +83,7 @@ export function DashboardFueling() {
         </div>
       </div>
 
-      <div className="rounded-xs border bg-card p-4 shadow-sm">
+      <div className="rounded-lg border bg-card p-4 shadow-sm">
         <div className="mb-3 font-heading text-xs font-bold tracking-wide text-muted-foreground uppercase">
           Volume by Hour of Day
         </div>
@@ -109,12 +109,12 @@ export function DashboardFueling() {
         <div className="mt-2 text-[11px] text-muted-foreground">Peak: {peakHours.map((h) => `${h}:00`).join(', ')}</div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
-        <div className="rounded-xs border bg-card p-4 shadow-sm">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="rounded-lg border bg-card p-4 shadow-sm">
           <div className="mb-3 font-heading text-xs font-bold tracking-wide text-muted-foreground uppercase">Top Locations</div>
           <div className="flex flex-col gap-2">
             {TOP_LOCATIONS.map((l, i) => (
-              <div key={l.loc} className="flex items-center gap-3 rounded-xs border bg-muted/30 px-3 py-2 text-xs">
+              <div key={l.loc} className="flex items-center gap-3 rounded-md border bg-muted/30 px-3 py-2 text-xs">
                 <span className="flex size-6 flex-none items-center justify-center rounded-full bg-primary/12 text-[10px] font-bold text-primary">
                   {i + 1}
                 </span>
@@ -128,11 +128,11 @@ export function DashboardFueling() {
           </div>
         </div>
 
-        <div className="rounded-xs border bg-card p-4 shadow-sm">
+        <div className="rounded-lg border bg-card p-4 shadow-sm">
           <div className="mb-3 font-heading text-xs font-bold tracking-wide text-muted-foreground uppercase">Top Carriers</div>
           <div className="flex flex-col gap-2">
             {TOP_CARRIERS.map((c, i) => (
-              <div key={c.carrier} className="flex items-center gap-3 rounded-xs border bg-muted/30 px-3 py-2 text-xs">
+              <div key={c.carrier} className="flex items-center gap-3 rounded-md border bg-muted/30 px-3 py-2 text-xs">
                 <span className="flex size-6 flex-none items-center justify-center rounded-full bg-primary/12 text-[10px] font-bold text-primary">
                   {i + 1}
                 </span>

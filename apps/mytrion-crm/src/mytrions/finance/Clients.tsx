@@ -80,7 +80,7 @@ export function Clients() {
   const inactiveCount = CLIENTS.length - activeClientCount();
 
   return (
-    <div className="flex flex-col gap-3.5 p-5">
+    <div className="flex flex-col gap-4 p-6">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="font-heading text-2xl font-bold">Clients</h2>
@@ -126,7 +126,7 @@ export function Clients() {
 
       <div className="flex flex-col gap-2">
         {filtered.length === 0 ? (
-          <div className="rounded-xs border bg-card p-10 text-center text-sm text-muted-foreground">
+          <div className="rounded-lg border bg-card p-10 text-center text-sm text-muted-foreground">
             No clients found. Try adjusting your search or filters.
           </div>
         ) : (
@@ -136,7 +136,7 @@ export function Clients() {
               <button
                 key={c.carrier}
                 onClick={() => setOpenClient(c)}
-                className="flex w-full items-center gap-3 rounded-xs border bg-card px-4 py-3 text-left text-sm shadow-sm hover:border-primary/45 hover:bg-muted/40"
+                className="flex w-full items-center gap-3 rounded-lg border bg-card px-4 py-3 text-left text-sm shadow-sm hover:border-primary/45 hover:bg-muted/40"
               >
                 <span className={`flex size-9 flex-none items-center justify-center rounded-full text-xs font-bold ${avatarClass}`}>
                   {initials(c.company)}
@@ -172,7 +172,7 @@ function ToggleChip({ active, label, onClick }: { active: boolean; label: string
       type="button"
       onClick={onClick}
       data-active={active}
-      className={`rounded-xs border px-3 py-1.5 text-xs font-semibold transition-colors ${
+      className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
         active ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-muted-foreground hover:text-foreground'
       }`}
     >
@@ -207,7 +207,7 @@ function ClientDrilldown({ client, onClose }: { client: Client; onClose: () => v
         </>
       }
       footer={
-        <button onClick={onClose} className="rounded-xs border px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground">
+        <button onClick={onClose} className="rounded-md border px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground">
           Close
         </button>
       }
@@ -290,8 +290,8 @@ function PaymentsTab({ payments }: { payments: ClientPayment[] }) {
   return (
     <div className="flex flex-col gap-2">
       {payments.map((p, i) => (
-        <div key={i} className="flex items-center gap-3 rounded-xs border bg-muted/30 px-3 py-2.5 text-xs">
-          <span className="min-w-13 flex-none rounded-xs bg-secondary px-1.5 py-1 text-center font-mono text-[9px] font-extrabold tracking-wide text-secondary-foreground uppercase">
+        <div key={i} className="flex items-center gap-3 rounded-md border bg-muted/30 px-3 py-2.5 text-xs">
+          <span className="min-w-13 flex-none rounded-md bg-secondary px-1.5 py-1 text-center font-mono text-[9px] font-extrabold tracking-wide text-secondary-foreground uppercase">
             {p.src}
           </span>
           <div className="min-w-0 flex-1">
@@ -312,8 +312,8 @@ function FuelTab({ fuel }: { fuel: ClientFuel[] }) {
   return (
     <div className="flex flex-col gap-2">
       {fuel.map((f, i) => (
-        <div key={i} className="flex items-center gap-3 rounded-xs border bg-muted/30 px-3 py-2.5 text-xs">
-          <span className="flex size-8 flex-none items-center justify-center rounded-xs bg-primary/12 text-primary">
+        <div key={i} className="flex items-center gap-3 rounded-md border bg-muted/30 px-3 py-2.5 text-xs">
+          <span className="flex size-8 flex-none items-center justify-center rounded-md bg-primary/12 text-primary">
             <Fuel className="size-3.5" />
           </span>
           <div className="min-w-0 flex-1">
@@ -322,7 +322,7 @@ function FuelTab({ fuel }: { fuel: ClientFuel[] }) {
               {dateFull(f.date)} · {f.grade} · {fmtCurrency(f.ppu)}/gal
             </div>
           </div>
-          <span className="rounded-xs bg-warn/12 px-1.5 py-0.5 text-center font-mono text-[10.5px] font-bold text-warn">{f.gal.toFixed(2)} gal</span>
+          <span className="rounded-md bg-warn/12 px-1.5 py-0.5 text-center font-mono text-[10.5px] font-bold text-warn">{f.gal.toFixed(2)} gal</span>
           <span className="min-w-16 flex-none text-right font-mono font-bold">{fmtCurrency(f.amt)}</span>
         </div>
       ))}
@@ -332,7 +332,7 @@ function FuelTab({ fuel }: { fuel: ClientFuel[] }) {
 
 function InfoTab({ client }: { client: Client }) {
   return (
-    <div className="flex flex-col gap-3.5">
+    <div className="flex flex-col gap-4">
       <section>
         <div className="font-heading mb-2.5 text-xs font-bold tracking-wide text-primary uppercase">Company</div>
         <dl className="flex flex-col gap-1.5 text-sm">

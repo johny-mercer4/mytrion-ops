@@ -81,7 +81,7 @@ export function ApplicationModal({
       }
     >
       <div className="flex flex-col gap-5">
-        <div className="flex items-center justify-between rounded-xs border bg-muted/30 px-3.5 py-2.5">
+        <div className="flex items-center justify-between rounded-md border bg-muted/30 px-3.5 py-2.5">
           <div className="flex items-center gap-2 text-sm">
             <span className="flex size-7 items-center justify-center rounded-full bg-primary/15 text-[11px] font-bold text-primary">
               {initials(app.agent)}
@@ -167,11 +167,11 @@ function NewApplicationBody({
       </section>
 
       {app.docs.length > 0 ? (
-        <div className="rounded-xs border border-warn/30 bg-warn/8 p-3.5">
+        <div className="rounded-md border border-warn/30 bg-warn/8 p-3.5">
           <div className="mb-2 text-xs font-bold text-warn">Documents required from client (72h SLA)</div>
           <div className="flex flex-wrap gap-1.5">
             {app.docs.map((d) => (
-              <span key={d} className="rounded-xs border bg-card px-2 py-1 text-[11px] font-medium">
+              <span key={d} className="rounded-md border bg-card px-2 py-1 text-[11px] font-medium">
                 {d}
               </span>
             ))}
@@ -259,7 +259,7 @@ function ClientRequestBody({ req }: { req: Extract<Application, { kind: 'req' }>
 
   return (
     <>
-      <div className="rounded-xs border bg-muted/30 p-3.5 text-sm">{req.detail}</div>
+      <div className="rounded-md border bg-muted/30 p-3.5 text-sm">{req.detail}</div>
 
       <section>
         <div className="mb-2.5 flex items-center justify-between">
@@ -317,7 +317,7 @@ function StepTracker({ current }: { current: number }) {
 
 function VendorCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xs border bg-card p-3">
+    <div className="rounded-md border bg-card p-3">
       <div className="mb-2 text-xs font-bold text-primary">{title}</div>
       <div className="flex flex-col gap-1.5">{children}</div>
     </div>
@@ -338,7 +338,7 @@ function CheckRow({ label, tone, value }: { label: string; tone: PassTone | null
 
 function MiniCheckCard({ label, tone, value, hint }: { label: string; tone: PassTone; value: string; hint: string }) {
   return (
-    <div className="rounded-xs border bg-card p-2.5">
+    <div className="rounded-md border bg-card p-2.5">
       <div className="mb-1 flex items-center justify-between gap-1">
         <span className="text-[10px] font-semibold text-muted-foreground uppercase">{label}</span>
         <StatusBadge tone={tone === 'pass' ? 'good' : 'bad'}>{tone === 'pass' ? 'PASS' : 'STOP'}</StatusBadge>
@@ -351,14 +351,14 @@ function MiniCheckCard({ label, tone, value, hint }: { label: string; tone: Pass
 
 function CashFlowStrip({ income, expenses, fuel, loc }: { income: number; expenses: number; fuel: number; loc: number }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xs border bg-muted/30 p-3">
+    <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 p-3">
       <FormulaChip label="Weekly Income" value={fmtCurrency(income)} tone="good" />
       <span className="text-muted-foreground">−</span>
       <FormulaChip label="Weekly Expenses" value={fmtCurrency(expenses)} tone="bad" />
       <span className="text-muted-foreground">+</span>
       <FormulaChip label="Weekly Fuel" value={fmtCurrency(fuel)} tone="warn" />
       <span className="text-muted-foreground">=</span>
-      <div className="rounded-xs border border-primary/30 bg-primary/10 px-3 py-1.5">
+      <div className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5">
         <div className="text-[10px] font-semibold text-primary uppercase">Base LOC</div>
         <div className="font-mono text-sm font-bold text-primary">{fmtCurrency(loc)}</div>
       </div>
@@ -369,7 +369,7 @@ function CashFlowStrip({ income, expenses, fuel, loc }: { income: number; expens
 function FormulaChip({ label, value, tone }: { label: string; value: string; tone: 'good' | 'bad' | 'warn' }) {
   const toneClass = { good: 'text-good', bad: 'text-bad', warn: 'text-warn' }[tone];
   return (
-    <div className="rounded-xs border bg-card px-2.5 py-1.5">
+    <div className="rounded-md border bg-card px-2.5 py-1.5">
       <div className="text-[10px] font-semibold text-muted-foreground uppercase">{label}</div>
       <div className={`font-mono text-sm font-bold ${toneClass}`}>{value}</div>
     </div>
@@ -396,7 +396,7 @@ function DecisionPanel({
   return (
     <section>
       <SectionTitle>Decision</SectionTitle>
-      <div className="flex flex-col gap-3 rounded-xs border bg-card p-3.5">
+      <div className="flex flex-col gap-3 rounded-md border bg-card p-3.5">
         <ToggleRow
           value={decision}
           onChange={(v) => setDecision(v as Decision)}
@@ -460,7 +460,7 @@ function ToggleRow({
             key={opt.id}
             type="button"
             onClick={() => onChange(opt.id)}
-            className={`rounded-xs border px-3 py-1.5 text-xs font-semibold transition-colors ${
+            className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
               active ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-muted-foreground hover:text-foreground'
             }`}
           >

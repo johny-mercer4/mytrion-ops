@@ -92,11 +92,11 @@ export function CaseDetail({
     >
       <div className="flex flex-col gap-5">
         <section className="grid grid-cols-3 gap-3">
-          <div className="rounded-xs border bg-muted/30 p-3">
+          <div className="rounded-md border bg-muted/30 p-3">
             <div className="text-[10px] tracking-wide text-muted-foreground uppercase">Value at Risk</div>
             <div className="mt-1 font-mono text-lg font-bold text-bad">{fmtMrr(c.mrr)}</div>
           </div>
-          <div className="rounded-xs border bg-muted/30 p-3">
+          <div className="rounded-md border bg-muted/30 p-3">
             <div className="text-[10px] tracking-wide text-muted-foreground uppercase">Owner</div>
             <div className="mt-1 flex items-center gap-1.5 text-sm font-bold text-primary">
               <span className="flex size-5 items-center justify-center rounded-full bg-primary/15 text-[10px]">
@@ -105,7 +105,7 @@ export function CaseDetail({
               {c.owner}
             </div>
           </div>
-          <div className="rounded-xs border bg-muted/30 p-3">
+          <div className="rounded-md border bg-muted/30 p-3">
             <div className="text-[10px] tracking-wide text-muted-foreground uppercase">Days in Stage</div>
             <div className={`mt-1 text-lg font-bold ${c.days >= 14 ? 'text-bad' : 'text-foreground'}`}>
               {c.days}d
@@ -122,7 +122,7 @@ export function CaseDetail({
             {riskFactors(c).map((f) => {
               const Icon = FACTOR_ICON[f.tone];
               return (
-                <div key={f.label} className={`flex gap-2.5 rounded-xs border p-3 text-xs ${FACTOR_CLASS[f.tone]}`}>
+                <div key={f.label} className={`flex gap-2.5 rounded-md border p-3 text-xs ${FACTOR_CLASS[f.tone]}`}>
                   <Icon className="mt-0.5 size-3.5 flex-none" />
                   <div>
                     <div className="font-bold">{f.label}</div>

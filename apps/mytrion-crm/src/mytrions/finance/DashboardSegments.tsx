@@ -37,8 +37,8 @@ export function DashboardSegments() {
   const classified = activePattern ? CLASSIFIED_CLIENTS.filter((c) => c.pattern === activePattern) : CLASSIFIED_CLIENTS;
 
   return (
-    <div className="flex flex-col gap-3.5">
-      <div className="rounded-xs border bg-card p-4 shadow-sm">
+    <div className="flex flex-col gap-4">
+      <div className="rounded-lg border bg-card p-4 shadow-sm">
         <div className="mb-3 font-heading text-xs font-bold tracking-wide text-muted-foreground uppercase">
           Fueling Pattern Mix
         </div>
@@ -57,7 +57,7 @@ export function DashboardSegments() {
                 <button
                   key={p}
                   onClick={() => setActivePattern(active ? null : p)}
-                  className={`flex items-center gap-2.5 rounded-xs border px-3 py-1.5 text-left text-xs transition-colors ${
+                  className={`flex items-center gap-2.5 rounded-md border px-3 py-1.5 text-left text-xs transition-colors ${
                     active ? 'border-primary/55 bg-primary/8' : 'border-transparent hover:bg-muted/40'
                   }`}
                 >
@@ -71,7 +71,7 @@ export function DashboardSegments() {
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xs border bg-card">
+      <div className="overflow-x-auto rounded-lg border bg-card">
         <div className="min-w-140">
           <div className="border-b px-4 py-2.5 font-heading text-xs font-bold tracking-wide text-muted-foreground uppercase">
             Fleet Breakdown by Terms
@@ -97,7 +97,7 @@ export function DashboardSegments() {
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xs border bg-card">
+      <div className="overflow-x-auto rounded-lg border bg-card">
         <div className="min-w-140">
           <div className="flex items-center justify-between border-b px-4 py-2.5">
             <span className="font-heading text-xs font-bold tracking-wide text-muted-foreground uppercase">
@@ -140,7 +140,7 @@ export function DashboardSegments() {
         </div>
       </div>
 
-      <div className="rounded-xs border bg-card p-4 shadow-sm">
+      <div className="rounded-lg border bg-card p-4 shadow-sm">
         <div className="mb-3 font-heading text-xs font-bold tracking-wide text-muted-foreground uppercase">
           Who fueled on {DAYS[dow]}
         </div>
@@ -149,7 +149,7 @@ export function DashboardSegments() {
             <button
               key={d}
               onClick={() => setDow(i)}
-              className={`rounded-xs border px-3 py-1.5 text-xs font-semibold transition-colors ${
+              className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
                 dow === i ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -159,7 +159,7 @@ export function DashboardSegments() {
         </div>
         <div className="flex flex-col gap-2">
           {TOP_CARRIERS.slice(0, 4).map((c, i) => (
-            <div key={c.carrier} className="flex items-center gap-3 rounded-xs border bg-muted/30 px-3 py-2 text-xs">
+            <div key={c.carrier} className="flex items-center gap-3 rounded-md border bg-muted/30 px-3 py-2 text-xs">
               <span className="flex size-6 flex-none items-center justify-center rounded-full bg-primary/12 text-[10px] font-bold text-primary">
                 {i + 1}
               </span>

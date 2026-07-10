@@ -71,7 +71,7 @@ export function DashboardDebtors() {
   }, [minAge, terms]);
 
   return (
-    <div className="flex flex-col gap-3.5">
+    <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard icon={Users} value={String(DASHBOARD_DEBTORS.length)} label={`Avg ${fmtCurrency(avgDebt)} each`} tint="primary" />
         <StatCard icon={Wallet} value={fmtCurrency(totalDebt)} label="Total Debt" tint="bad" />
@@ -79,7 +79,7 @@ export function DashboardDebtors() {
         <StatCard icon={FileWarning} value={String(overdueInvoices)} label="Overdue Invoices" tint="purple" />
       </div>
 
-      <div className="rounded-xs border bg-card p-4 shadow-sm">
+      <div className="rounded-lg border bg-card p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
           <div className="font-heading text-xs font-bold tracking-wide text-muted-foreground uppercase">
             Accounts Receivable Aging
@@ -115,7 +115,7 @@ export function DashboardDebtors() {
         <SegmentedFilter options={TERMS_FILTERS} value={terms} onChange={setTerms} />
       </div>
 
-      <div className="overflow-x-auto rounded-xs border bg-card">
+      <div className="overflow-x-auto rounded-lg border bg-card">
         <div className="min-w-140">
           <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-2.5 border-b bg-muted/40 px-4 py-2.5 text-[10px] font-bold tracking-wide text-muted-foreground uppercase">
             <span>Carrier</span>

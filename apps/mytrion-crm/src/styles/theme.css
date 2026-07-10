@@ -61,8 +61,8 @@
   --text-input-mobile: 16px;
   --text-xs: 12px;
   --lh-xs: 16px;
-  --text-sm: 14px;
-  --lh-sm: 19px;
+  --text-sm: 13px;
+  --lh-sm: 18px;
   --text-base: 14px;
   --lh-base: 20px;
   --text-md: 15px;
@@ -117,10 +117,7 @@
 
   /* ── Fonts ─────────────────────────────────────────────────────────────────── */
   --font-head: 'Rajdhani', system-ui, sans-serif;
-  /* Jira's actual documented font stack (their real "Charlie"/Atlassian Sans typeface is
-     proprietary — no public CDN/license). This is what Jira literally ships as fallback:
-     native San Francisco on Mac, Segoe UI on Windows, Roboto elsewhere. */
-  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
   /* ── Brand gradients: Gem on AI surfaces, FuelMark in the masthead ─────────── */

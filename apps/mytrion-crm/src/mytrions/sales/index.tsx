@@ -9,8 +9,8 @@ import {
   Zap,
 } from 'lucide-react';
 
+import { useImpersonation } from '@/context/ImpersonationProvider';
 import { MytrionShell, type NavItem } from '../_shared/MytrionShell';
-import { INBOX_ITEMS } from './data';
 import { Home } from './Home';
 import { Automations } from './Automations';
 import { Inbox } from './Inbox';
@@ -18,20 +18,31 @@ import { DataCenter } from './DataCenter';
 import { Create } from './Create';
 import { Carriers } from './Carriers';
 import { Dashboard } from './Dashboard';
+import { useInboxFeed } from './live';
 import { ToastProvider } from './Toast';
 
 type Tab = 'home' | 'inbox' | 'datacenter' | 'create' | 'automations' | 'dashboard' | 'carriers';
 
-/** Sales Mytrion — home, automations, inbox, data center, create, carriers, dashboard. */
+/**
+ * Sales Mytrion — home, automations, inbox, data center, create, carriers, dashboard.
+ * Panels are LIVE (touchpoints). Admin act-as: switching the target in the TopBar picker
+ * remounts the whole module (the `key` below), so every panel refetches AS that agent —
+ * the React equivalent of the widget's currentUser.id watchers.
+ */
 export default function SalesMytrion() {
+  const { actingAs } = useImpersonation();
+  return <SalesMytrionInner key={actingAs?.zohoUserId ?? 'self'} />;
+}
+
+function SalesMytrionInner() {
   const [tab, setTab] = useState<Tab>('home');
-  const unreadCount = INBOX_ITEMS.filter((i) => i.unread).length;
+  const inbox = useInboxFeed();
 
   const nav: NavItem[] = [
     { key: 'home', label: 'Home', icon: <HomeIcon size={19} />, active: tab === 'home', onClick: () => setTab('home') },
     {
       key: 'inbox',
-      label: unreadCount > 0 ? `Inbox (${unreadCount})` : 'Inbox',
+      label: inbox.unread > 0 ? `Inbox (${inbox.unread})` : 'Inbox',
       icon: <InboxIcon size={19} />,
       active: tab === 'inbox',
       onClick: () => setTab('inbox'),
@@ -47,8 +58,10 @@ export default function SalesMytrion() {
     <div data-mytrion="sales" className="contents">
       <ToastProvider>
         <MytrionShell id="sales" nav={nav}>
-          {tab === 'home' ? <Home onOpenAutomations={() => setTab('automations')} onOpenInbox={() => setTab('inbox')} /> : null}
-          {tab === 'inbox' ? <Inbox /> : null}
+          {tab === 'home' ? (
+            <Home inbox={inbox} onOpenAutomations={() => setTab('automations')} onOpenInbox={() => setTab('inbox')} />
+          ) : null}
+          {tab === 'inbox' ? <Inbox feed={inbox} /> : null}
           {tab === 'datacenter' ? <DataCenter onOpenAutomations={() => setTab('automations')} /> : null}
           {tab === 'create' ? <Create /> : null}
           {tab === 'automations' ? <Automations /> : null}

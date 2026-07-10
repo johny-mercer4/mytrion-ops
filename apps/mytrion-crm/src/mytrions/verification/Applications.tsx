@@ -93,7 +93,7 @@ export function Applications() {
   }
 
   return (
-    <div className="flex flex-col gap-3.5 p-5">
+    <div className="flex flex-col gap-4 p-6">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="font-heading text-2xl font-bold">Applications</h2>
@@ -163,7 +163,7 @@ function SubTabButton({ active, onClick, label, count }: { active: boolean; onCl
       }`}
     >
       {label}
-      <span className="rounded-xs border bg-secondary px-1.5 py-0.5 font-mono text-[10px] font-semibold text-secondary-foreground">{count}</span>
+      <span className="rounded-md border bg-secondary px-1.5 py-0.5 font-mono text-[10px] font-semibold text-secondary-foreground">{count}</span>
     </button>
   );
 }
@@ -182,7 +182,7 @@ const STEP_LABELS = ['Carrier Lookup', 'Financial', 'Credit', 'Limit & Decision'
 
 function NewApplicationsTable({ rows, onOpen }: { rows: NewApplication[]; onOpen: (a: Application) => void }) {
   return (
-    <div className="overflow-x-auto rounded-xs border bg-card">
+    <div className="overflow-x-auto rounded-lg border bg-card">
       {/* min-w keeps the 7-column grid from squishing on phones; overflow-x-auto on the
           wrapper above makes it swipeable instead of clipping the trailing columns. */}
       <div className="min-w-240">
@@ -246,7 +246,7 @@ const REQ_ICON_LABEL: Record<string, string> = {
 
 function ClientRequestsTable({ rows, onOpen }: { rows: ClientRequest[]; onOpen: (a: Application) => void }) {
   return (
-    <div className="overflow-x-auto rounded-xs border bg-card">
+    <div className="overflow-x-auto rounded-lg border bg-card">
       {/* min-w keeps the 7-column grid from squishing on phones; overflow-x-auto on the
           wrapper above makes it swipeable instead of clipping the trailing columns. */}
       <div className="min-w-220">
@@ -274,7 +274,7 @@ function ClientRequestsTable({ rows, onOpen }: { rows: ClientRequest[]; onOpen: 
               </span>
               <span className="font-mono text-xs text-muted-foreground">{r.carrierId}</span>
               <span className="flex items-center gap-1.5 truncate text-xs">
-                <span className="flex size-5 flex-none items-center justify-center rounded-xs bg-secondary text-[11px] font-bold text-secondary-foreground">
+                <span className="flex size-5 flex-none items-center justify-center rounded-md bg-secondary text-[11px] font-bold text-secondary-foreground">
                   {REQ_ICON_LABEL[r.reqType] ?? '•'}
                 </span>
                 {r.reqType}

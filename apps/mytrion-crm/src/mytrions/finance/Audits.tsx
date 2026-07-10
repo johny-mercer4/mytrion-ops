@@ -56,7 +56,7 @@ export function Audits() {
   const notFoundCount = EVENT_AUDITS.filter((a) => a.status === 'NOT_FOUND').length;
 
   return (
-    <div className="flex flex-col gap-3.5 p-5">
+    <div className="flex flex-col gap-4 p-6">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="font-heading text-2xl font-bold">Smart Balance Audits</h2>
@@ -88,7 +88,7 @@ export function Audits() {
       </div>
 
       {notFoundCount > 0 ? (
-        <div className="flex items-center gap-2 rounded-xs border border-warn/30 bg-warn/10 px-3.5 py-2.5 text-sm font-semibold text-warn">
+        <div className="flex items-center gap-2 rounded-md border border-warn/30 bg-warn/10 px-3.5 py-2.5 text-sm font-semibold text-warn">
           <AlertTriangle className="size-4 flex-none" />
           {notFoundCount} audit{notFoundCount === 1 ? '' : 's'} pending EFS confirmation — will resolve on next cron tick.
         </div>
@@ -96,7 +96,7 @@ export function Audits() {
 
       <div className="flex flex-col gap-2">
         {filtered.length === 0 ? (
-          <div className="rounded-xs border bg-card p-10 text-center text-sm text-muted-foreground">
+          <div className="rounded-lg border bg-card p-10 text-center text-sm text-muted-foreground">
             No audits found. Try adjusting your search or filters.
           </div>
         ) : (
@@ -104,10 +104,10 @@ export function Audits() {
             <button
               key={a.id}
               onClick={() => setOpenAudit(a)}
-              className="flex w-full items-center gap-3 rounded-xs border bg-card px-4 py-3 text-left text-sm shadow-sm hover:border-primary/45 hover:bg-muted/40"
+              className="flex w-full items-center gap-3 rounded-lg border bg-card px-4 py-3 text-left text-sm shadow-sm hover:border-primary/45 hover:bg-muted/40"
             >
               <span
-                className={`flex size-9 flex-none items-center justify-center rounded-xs ${a.type === 'SWEEP' ? 'bg-good/12 text-good' : 'bg-primary/12 text-primary'}`}
+                className={`flex size-9 flex-none items-center justify-center rounded-md ${a.type === 'SWEEP' ? 'bg-good/12 text-good' : 'bg-primary/12 text-primary'}`}
               >
                 {a.type === 'SWEEP' ? <ArrowDownCircle className="size-4" /> : <ArrowUpCircle className="size-4" />}
               </span>
@@ -146,12 +146,12 @@ function AuditDetail({ audit, onClose }: { audit: EventAudit; onClose: () => voi
         </>
       }
       footer={
-        <button onClick={onClose} className="rounded-xs border px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground">
+        <button onClick={onClose} className="rounded-md border px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground">
           Close
         </button>
       }
     >
-      <div className="flex flex-col gap-3.5">
+      <div className="flex flex-col gap-4">
         <section>
           <div className="font-heading mb-2.5 text-xs font-bold tracking-wide text-primary uppercase">Transfer Details</div>
           <dl className="flex flex-col gap-1.5 text-sm">

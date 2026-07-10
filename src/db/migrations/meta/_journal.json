@@ -145,36 +145,15 @@
     {
       "idx": 20,
       "version": "7",
-      "when": 1783525189779,
-      "tag": "0020_stale_frank_castle",
+      "when": 1783535681149,
+      "tag": "0020_friendly_ma_gnuci",
       "breakpoints": true
     },
     {
       "idx": 21,
       "version": "7",
-      "when": 1783525702349,
-      "tag": "0021_burly_thunderbolts",
-      "breakpoints": true
-    },
-    {
-      "idx": 22,
-      "version": "7",
-      "when": 1783534718308,
-      "tag": "0022_jittery_shinobi_shaw",
-      "breakpoints": true
-    },
-    {
-      "idx": 23,
-      "version": "7",
-      "when": 1783535398488,
-      "tag": "0023_odd_toad",
-      "breakpoints": true
-    },
-    {
-      "idx": 24,
-      "version": "7",
-      "when": 1783546948791,
-      "tag": "0024_luxuriant_the_professor",
+      "when": 1783545500119,
+      "tag": "0021_red_onslaught",
       "breakpoints": true
     }
   ]

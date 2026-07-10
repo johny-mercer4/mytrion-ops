@@ -112,7 +112,7 @@ export function CaseDetail({
           <EscalationStepper states={states} />
         </section>
 
-        <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <section>
             <div className="font-heading mb-2.5 text-xs font-bold tracking-wide text-primary uppercase">
               Outstanding Invoices
@@ -122,7 +122,7 @@ export function CaseDetail({
                 <div className="text-sm text-muted-foreground">No invoices on record.</div>
               ) : (
                 invoices.map((iv) => (
-                  <div key={iv.id} className="flex items-center justify-between rounded-xs border bg-muted/30 px-3 py-2 text-xs">
+                  <div key={iv.id} className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2 text-xs">
                     <div>
                       <div className="font-mono font-bold">{iv.id}</div>
                       <div className="mt-0.5 text-[11px] text-muted-foreground">
@@ -142,8 +142,8 @@ export function CaseDetail({
             </div>
             <div className="flex flex-col gap-2">
               {activity.map((a, i) => (
-                <div key={i} className="flex items-start gap-2.5 rounded-xs border bg-muted/30 px-3 py-2 text-xs">
-                  <span className="mt-0.5 flex size-6 flex-none items-center justify-center rounded-xs bg-primary/12 font-mono text-[9px] font-bold text-primary uppercase">
+                <div key={i} className="flex items-start gap-2.5 rounded-md border bg-muted/30 px-3 py-2 text-xs">
+                  <span className="mt-0.5 flex size-6 flex-none items-center justify-center rounded-md bg-primary/12 font-mono text-[9px] font-bold text-primary uppercase">
                     {initials(a.channel)}
                   </span>
                   <div className="min-w-0">
@@ -159,7 +159,7 @@ export function CaseDetail({
         </div>
 
         {c.arrayRef ? (
-          <div className="flex items-center gap-3 rounded-xs border border-brand-purple/28 bg-brand-purple/8 p-3.5">
+          <div className="flex items-center gap-3 rounded-md border border-brand-purple/28 bg-brand-purple/8 p-3.5">
             <FileArchive className="size-5 flex-none text-brand-purple" />
             <div className="min-w-0 flex-1">
               <div className="text-sm font-bold text-brand-purple">Filed to Array collection agency</div>
@@ -172,7 +172,7 @@ export function CaseDetail({
         ) : null}
 
         {c.stage === 'plan' ? (
-          <div className="rounded-xs border border-good/28 bg-good/8 p-3.5">
+          <div className="rounded-md border border-good/28 bg-good/8 p-3.5">
             <div className="flex items-center justify-between">
               <span className="text-sm font-bold text-good">Active payment plan</span>
               <span className="font-mono text-xs text-muted-foreground">
@@ -253,7 +253,7 @@ function StatCell({ label, value, tint }: { label: string; value: string; tint: 
   const cls =
     tint === 'good' ? 'bg-good/10 text-good' : tint === 'bad' ? 'bg-bad/10 text-bad' : tint === 'warn' ? 'bg-warn/10 text-warn' : 'bg-muted text-foreground';
   return (
-    <div className={`rounded-xs border p-3.5 ${cls}`}>
+    <div className={`rounded-lg border p-3.5 ${cls}`}>
       <div className="font-mono text-lg font-bold">{value}</div>
       <div className="mt-1 text-[10px] tracking-wide uppercase opacity-80">{label}</div>
     </div>

@@ -1,7 +1,6 @@
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { ClientLogin } from './ClientLogin';
 import { Landing } from './Landing';
-import { MytrionChatPage } from './MytrionChatPage';
 import { MytrionGuard } from './MytrionGuard';
 import { NotFound } from './NotFound';
 import { WorkerLayout } from './WorkerLayout';
@@ -29,7 +28,6 @@ const router = createBrowserRouter(
       children: [
         { path: '/', element: <Landing /> },
         { path: '/m/:mytrion', element: <MytrionGuard /> },
-        { path: '/m/:mytrion/chat', element: <MytrionChatPage /> },
       ],
     },
     { path: '/client', element: <ClientLogin /> },

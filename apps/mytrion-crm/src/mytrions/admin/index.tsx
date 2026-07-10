@@ -5,7 +5,7 @@ import { AuditLog } from './AuditLog';
 import { CarrierUsers } from './CarrierUsers';
 import { KnowledgeBase } from './KnowledgeBase';
 import { KnowledgeBrowser } from './KnowledgeBrowser';
-import { OctaneScope } from './OctaneScope';
+import { OctaneScope } from './scope/OctaneScope';
 import { Train } from './Train';
 
 type Tab = 'kb' | 'train' | 'browser' | 'scope' | 'carriers' | 'audit';
@@ -26,15 +26,13 @@ export default function AdminMytrion() {
   ];
 
   return (
-    <div data-mytrion="admin" className="contents">
-      <MytrionShell id="admin" nav={nav}>
-        {tab === 'kb' && <KnowledgeBase key={kbRefreshKey} onAddSource={() => setTab('train')} />}
-        {tab === 'train' && <Train onTrained={() => setKbRefreshKey((k) => k + 1)} />}
-        {tab === 'browser' && <KnowledgeBrowser />}
-        {tab === 'carriers' && <CarrierUsers />}
-        {tab === 'audit' && <AuditLog />}
-        {tab === 'scope' && <OctaneScope />}
-      </MytrionShell>
-    </div>
+    <MytrionShell id="admin" nav={nav}>
+      {tab === 'kb' && <KnowledgeBase key={kbRefreshKey} onAddSource={() => setTab('train')} />}
+      {tab === 'train' && <Train onTrained={() => setKbRefreshKey((k) => k + 1)} />}
+      {tab === 'browser' && <KnowledgeBrowser />}
+      {tab === 'carriers' && <CarrierUsers />}
+      {tab === 'audit' && <AuditLog />}
+      {tab === 'scope' && <OctaneScope />}
+    </MytrionShell>
   );
 }

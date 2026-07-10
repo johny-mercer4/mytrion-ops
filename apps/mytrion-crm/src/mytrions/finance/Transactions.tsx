@@ -40,7 +40,7 @@ export function Transactions() {
   }, [search]);
 
   return (
-    <div className="flex flex-col gap-3.5 p-5">
+    <div className="flex flex-col gap-4 p-6">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="font-heading text-2xl font-bold">Transactions</h2>
@@ -71,7 +71,7 @@ export function Transactions() {
         <SegmentedFilter options={PERIOD_PRESETS} value={period} onChange={setPeriod} />
       </div>
 
-      <div className="overflow-x-auto rounded-xs border bg-card">
+      <div className="overflow-x-auto rounded-lg border bg-card">
         <div className="min-w-160 divide-y">
           {filtered.length === 0 ? (
             <div className="p-10 text-center text-sm text-muted-foreground">
@@ -84,7 +84,7 @@ export function Transactions() {
                 onClick={() => setOpenTx(t)}
                 className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm hover:bg-muted/40"
               >
-                <span className="flex size-9 flex-none items-center justify-center rounded-xs bg-primary/12 text-primary">
+                <span className="flex size-9 flex-none items-center justify-center rounded-md bg-primary/12 text-primary">
                   <Fuel className="size-4" />
                 </span>
                 <div className="min-w-0 flex-1">
@@ -94,7 +94,7 @@ export function Transactions() {
                   </div>
                 </div>
                 <StatusBadge tone={t.grade === 'DEF' ? 'info' : 'neutral'}>{t.grade}</StatusBadge>
-                <span className="min-w-16.5 flex-none rounded-xs bg-warn/12 px-1.5 py-0.5 text-center font-mono text-[10.5px] font-bold text-warn">
+                <span className="min-w-16.5 flex-none rounded-md bg-warn/12 px-1.5 py-0.5 text-center font-mono text-[10.5px] font-bold text-warn">
                   {t.gal.toFixed(2)} gal
                 </span>
                 <span className="min-w-18.5 flex-none text-right font-mono text-sm font-bold text-primary">
@@ -126,12 +126,12 @@ function TransactionDetail({ tx, onClose }: { tx: TransactionLine; onClose: () =
         </>
       }
       footer={
-        <button onClick={onClose} className="rounded-xs border px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground">
+        <button onClick={onClose} className="rounded-md border px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground">
           Close
         </button>
       }
     >
-      <div className="flex flex-col gap-3.5">
+      <div className="flex flex-col gap-4">
         <section>
           <div className="font-heading mb-2.5 text-xs font-bold tracking-wide text-primary uppercase">Transaction</div>
           <dl className="flex flex-col gap-1.5 text-sm">

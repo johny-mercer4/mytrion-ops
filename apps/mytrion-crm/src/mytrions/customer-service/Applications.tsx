@@ -45,7 +45,7 @@ export function Applications() {
   }
 
   return (
-    <div className="flex flex-col gap-3.5 p-5">
+    <div className="flex flex-col gap-4 p-6">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="font-heading text-2xl font-bold">Applications</h2>
@@ -75,7 +75,7 @@ export function Applications() {
         className="max-w-sm"
       />
 
-      <div className="overflow-x-auto rounded-xs border bg-card">
+      <div className="overflow-x-auto rounded-lg border bg-card">
         {/* min-w keeps the 8-column grid from squishing on phones; overflow-x-auto on the
             wrapper above makes it swipeable instead of clipping the trailing columns. */}
         <div className="min-w-230">

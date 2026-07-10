@@ -65,7 +65,7 @@ export function Inbox() {
   }
 
   return (
-    <div className="flex flex-col gap-3.5 p-5">
+    <div className="flex flex-col gap-4 p-6">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="font-heading text-2xl font-bold">Inbox</h2>
@@ -89,7 +89,7 @@ export function Inbox() {
         <NotificationGroup label="Today" items={grouped.today} onRead={markRead} />
         <NotificationGroup label="Earlier" items={grouped.earlier} onRead={markRead} />
         {filtered.length === 0 ? (
-          <div className="rounded-xs border bg-card p-10 text-center text-sm text-muted-foreground">
+          <div className="rounded-lg border bg-card p-10 text-center text-sm text-muted-foreground">
             No notifications match this filter.
           </div>
         ) : null}
@@ -117,7 +117,7 @@ function NotificationGroup({
         <span className="text-[11px] text-muted-foreground">{items.length}</span>
         <span className="h-px flex-1 bg-border" />
       </div>
-      <div className="overflow-hidden rounded-xs border bg-card">
+      <div className="overflow-hidden rounded-lg border bg-card">
         {items.map((n) => {
           const Icon = TYPE_ICON[n.type];
           return (
@@ -127,7 +127,7 @@ function NotificationGroup({
               className="flex w-full items-start gap-3 border-b px-4 py-3 text-left text-sm last:border-b-0 hover:bg-muted/40"
             >
               <span
-                className={`mt-0.5 flex size-8 flex-none items-center justify-center rounded-xs ${
+                className={`mt-0.5 flex size-8 flex-none items-center justify-center rounded-md ${
                   n.alert ? 'bg-bad/14 text-bad' : 'bg-primary/12 text-primary'
                 }`}
               >

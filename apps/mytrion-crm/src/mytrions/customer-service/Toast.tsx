@@ -36,7 +36,7 @@ export function Toast({ toast, onDismiss }: { toast: ToastState; onDismiss: () =
     <div className="pointer-events-none fixed inset-x-0 bottom-5 z-50 flex justify-center px-4">
       <div
         className={cn(
-          'pointer-events-auto flex items-center gap-2 rounded-xs border px-4 py-2.5 text-sm font-semibold shadow-lg',
+          'pointer-events-auto flex items-center gap-2 rounded-md border px-4 py-2.5 text-sm font-semibold shadow-lg',
           KIND_CLASS[toast.kind],
         )}
       >

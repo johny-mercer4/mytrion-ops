@@ -8,7 +8,7 @@ import { StatusBadge } from '@/components/mytrion/status-badge';
 import { DEBTORS, type Debtor, fmtCurrency } from './data';
 
 const selectClass =
-  'rounded-xs border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground outline-none focus:border-primary/55';
+  'rounded-md border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground outline-none focus:border-primary/55';
 
 export function Debtors() {
   const [search, setSearch] = useState('');
@@ -31,7 +31,7 @@ export function Debtors() {
   const hardCount = DEBTORS.filter((d) => d.isHard).length;
 
   return (
-    <div className="flex flex-col gap-3.5 p-5">
+    <div className="flex flex-col gap-4 p-6">
       <div>
         <h2 className="font-heading text-2xl font-bold">Debtors Dashboard</h2>
         <p className="text-sm text-muted-foreground">Company-wide accounts with pending or partial payments</p>
@@ -62,7 +62,7 @@ export function Debtors() {
         </select>
       </div>
 
-      <div className="overflow-x-auto rounded-xs border bg-card">
+      <div className="overflow-x-auto rounded-lg border bg-card">
         {/* min-w keeps the 8-column grid (incl. the Remaining $ figure) from squishing on
             phones; overflow-x-auto on the wrapper above makes it swipeable instead of clipping it. */}
         <div className="min-w-200">
@@ -126,7 +126,7 @@ function DebtorDetail({ debtor, onClose }: { debtor: Debtor; onClose: () => void
         </StatusBadge>
       }
       footer={
-        <button onClick={onClose} className="rounded-xs border px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground">
+        <button onClick={onClose} className="rounded-md border px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground">
           Close
         </button>
       }
@@ -154,7 +154,7 @@ function DebtorDetail({ debtor, onClose }: { debtor: Debtor; onClose: () => void
         {debtor.invoices.map((iv) => (
           <div
             key={iv.num}
-            className={`grid grid-cols-4 gap-2.5 rounded-xs border bg-muted/30 p-3 text-xs ${iv.age >= 15 ? 'border-bad/30' : ''}`}
+            className={`grid grid-cols-4 gap-2.5 rounded-md border bg-muted/30 p-3 text-xs ${iv.age >= 15 ? 'border-bad/30' : ''}`}
           >
             <div>
               <div className="font-mono font-bold">#{iv.num}</div>

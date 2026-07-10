@@ -100,7 +100,7 @@ export function Cases() {
   }
 
   return (
-    <div className="flex flex-col gap-3.5 p-5">
+    <div className="flex flex-col gap-4 p-6">
       <div>
         <h2 className="font-heading text-2xl font-bold">Collection Cases</h2>
         <p className="text-sm text-muted-foreground">
@@ -121,7 +121,7 @@ export function Cases() {
           onClick={() => setSearch('')}
           title="Refresh"
           aria-label="Refresh"
-          className="flex size-8 flex-none items-center justify-center rounded-xs border bg-card text-muted-foreground hover:text-foreground"
+          className="flex size-8 flex-none items-center justify-center rounded-md border bg-card text-muted-foreground hover:text-foreground"
         >
           <RefreshCw className="size-3.5" />
         </button>
@@ -135,11 +135,11 @@ export function Cases() {
           {STAGE_ORDER.map((stage) => {
             const rows = filtered.filter((c) => c.stage === stage);
             return (
-              <div key={stage} className="w-70 flex-none rounded-xs border bg-card/60">
+              <div key={stage} className="w-70 flex-none rounded-lg border bg-card/60">
                 <div className="flex items-center gap-2 border-b px-3 py-2.5">
                   <span className={`size-2 flex-none rounded-full ${COLUMN_DOT[stage]}`} />
                   <span className="font-heading text-xs font-bold uppercase">{stageTitle(stage)}</span>
-                  <span className="ml-auto rounded-xs border bg-secondary px-1.5 py-0.5 font-mono text-[10px] font-semibold text-secondary-foreground">
+                  <span className="ml-auto rounded-md border bg-secondary px-1.5 py-0.5 font-mono text-[10px] font-semibold text-secondary-foreground">
                     {rows.length}
                   </span>
                 </div>
@@ -195,14 +195,14 @@ function CaseCard({ c, onClick }: { c: CollectionCase; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="flex w-full flex-col gap-2 rounded-xs border bg-card p-3 text-left transition-colors hover:border-primary/45"
+      className="flex w-full flex-col gap-2 rounded-md border bg-card p-3 text-left transition-colors hover:border-primary/45"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-[13px] font-semibold">{c.company}</div>
           <div className="font-mono text-[10.5px] text-muted-foreground">{c.carrierId}</div>
         </div>
-        <span className={`flex-none rounded-xs bg-muted px-1.5 py-0.5 text-[9.5px] font-bold uppercase ${priorityColorClass(c.priority)}`}>
+        <span className={`flex-none rounded-md bg-muted px-1.5 py-0.5 text-[9.5px] font-bold uppercase ${priorityColorClass(c.priority)}`}>
           {priorityLabel(c.priority)}
         </span>
       </div>
@@ -213,7 +213,7 @@ function CaseCard({ c, onClick }: { c: CollectionCase; onClick: () => void }) {
       <div className="text-[10.5px] text-muted-foreground">{sub}</div>
 
       <div className="flex items-center justify-between border-t pt-2">
-        <span className="flex size-5 flex-none items-center justify-center rounded-xs bg-secondary font-mono text-[9px] font-bold text-secondary-foreground">
+        <span className="flex size-5 flex-none items-center justify-center rounded-md bg-secondary font-mono text-[9px] font-bold text-secondary-foreground">
           {initials(c.owner)}
         </span>
         <span className={`text-[10.5px] font-semibold ${meta.color}`}>{meta.text}</span>
@@ -228,7 +228,7 @@ function Toast({ kind, label, msg }: { kind: 'success' | 'info' | 'warn'; label:
   const border = kind === 'success' ? 'border-l-good' : kind === 'warn' ? 'border-l-warn' : 'border-l-primary';
   const dot = kind === 'success' ? 'bg-good' : kind === 'warn' ? 'bg-warn' : 'bg-primary';
   return (
-    <div className={`fixed right-5 bottom-5 z-50 flex max-w-sm items-start gap-3 rounded-xs border border-l-4 bg-card px-4 py-3 shadow-lg ${border}`}>
+    <div className={`fixed right-5 bottom-5 z-50 flex max-w-sm items-start gap-3 rounded-lg border border-l-4 bg-card px-4 py-3 shadow-lg ${border}`}>
       <span className={`mt-1 size-2 flex-none rounded-full ${dot}`} />
       <div>
         <div className="text-sm font-bold">{label}</div>
