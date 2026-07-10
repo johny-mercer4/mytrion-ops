@@ -62,8 +62,26 @@ export interface ExecuteZohoFunctionOptions {
   unwrap?: UnwrapMode | undefined;
 }
 
-/** Functions API root: env override, else ORIGIN of ZOHO_CRM_API_DOMAIN + /crm/v2/functions. */
+/** The org the executor targets — PRODUCTION unless ZOHO_FUNCTIONS_ENV=sandbox. */
+export function activeZohoFunctionsEnv(): 'production' | 'sandbox' {
+  return env.ZOHO_FUNCTIONS_ENV;
+}
+
+/** The token service matching the active env (sandbox orgs need their own refresh token). */
+function tokenService(): 'crm' | 'crm_sandbox' {
+  return activeZohoFunctionsEnv() === 'sandbox' ? 'crm_sandbox' : 'crm';
+}
+
+/**
+ * Functions API root for the ACTIVE env:
+ *  - production: ZOHO_FUNCTIONS_BASE_URL override, else ORIGIN of ZOHO_CRM_API_DOMAIN
+ *    + /crm/v2/functions.
+ *  - sandbox:    ZOHO_FUNCTIONS_SANDBOX_BASE_URL (+ the sandbox refresh token).
+ */
 export function zohoFunctionsBaseUrl(): string {
+  if (activeZohoFunctionsEnv() === 'sandbox') {
+    return env.ZOHO_FUNCTIONS_SANDBOX_BASE_URL.trim().replace(/\/+$/, '');
+  }
   const configured = env.ZOHO_FUNCTIONS_BASE_URL.trim().replace(/\/+$/, '');
   if (configured) return configured;
   return `${new URL(env.ZOHO_CRM_API_DOMAIN).origin}/crm/v2/functions`;
@@ -182,13 +200,14 @@ export async function executeZohoFunction<T = unknown>(
   opts: ExecuteZohoFunctionOptions = {},
 ): Promise<T> {
   const managed = opts.accessToken === undefined;
-  let token = opts.accessToken ?? (await getZohoToken('crm')).accessToken;
+  const service = tokenService();
+  let token = opts.accessToken ?? (await getZohoToken(service)).accessToken;
   let exec: RawExecution;
   try {
     exec = await executeOnce(functionName, args, token);
     if (exec.httpStatus === 401 && managed) {
-      invalidateZohoToken('crm');
-      token = (await getZohoToken('crm')).accessToken;
+      invalidateZohoToken(service);
+      token = (await getZohoToken(service)).accessToken;
       exec = await executeOnce(functionName, args, token);
     }
   } catch (err) {

@@ -10,7 +10,9 @@
  */
 import { env } from '../config/env.js';
 
-export type ZohoService = 'crm' | 'desk' | 'people' | 'projects';
+/** 'crm_sandbox' — the CRM SANDBOX org (own refresh token); used by the Deluge executor
+ * when ZOHO_FUNCTIONS_ENV=sandbox. Falls back to the prod CRM token if none is set. */
+export type ZohoService = 'crm' | 'crm_sandbox' | 'desk' | 'people' | 'projects';
 
 export interface ZohoServiceConfig {
   service: ZohoService;
@@ -37,6 +39,9 @@ interface TokenResponse {
 
 const REFRESH_TOKEN_BY_SERVICE: Record<ZohoService, string> = {
   crm: env.ZOHO_CRM_REFRESH_TOKEN,
+  // Sandbox org tokens are minted separately; falling back to the prod CRM token keeps a
+  // half-configured sandbox from hard-failing (Zoho then simply targets the prod org).
+  crm_sandbox: env.ZOHO_CRM_SANDBOX_REFRESH_TOKEN || env.ZOHO_CRM_REFRESH_TOKEN,
   desk: env.ZOHO_DESK_REFRESH_TOKEN,
   people: env.ZOHO_PEOPLE_REFRESH_TOKEN,
   projects: env.ZOHO_PROJECTS_REFRESH_TOKEN,

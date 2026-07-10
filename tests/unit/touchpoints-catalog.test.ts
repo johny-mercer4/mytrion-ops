@@ -38,8 +38,41 @@ describe('catalog shape', () => {
   it('has unique keys and the expected size', () => {
     const keys = all.map((t) => t.key);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(22);
-    expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(26);
+    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(25);
+    expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(44);
+  });
+
+  it('finance touchpoints are finance-department scoped and cover the widget surface', () => {
+    const finance = all.filter((t) => t.key.startsWith('finance.'));
+    expect(finance).toHaveLength(21);
+    for (const tp of finance) {
+      expect(tp.departments, `${tp.key} must be finance-gated`).toEqual(['finance']);
+    }
+    // The widget's three Deluge functions, exactly.
+    const fns = finance.flatMap((t) => (t.kind === 'deluge' ? [...t.functionNames] : []));
+    expect(fns.sort()).toEqual([
+      'mytrionfetchsmartevents',
+      'mytrionfinancebalancerun',
+      'mytrionfinanceparentsnapshot',
+    ]);
+    // balance_run is the only finance write; everything else is read-only.
+    expect(finance.filter((t) => t.riskClass !== 'read').map((t) => t.key)).toEqual([
+      'finance.balance_run',
+    ]);
+    // Finance client drilldowns are org-wide: no per-agent carrier ownership gate.
+    for (const key of ['finance.client_invoices', 'finance.client_payments', 'finance.client_recent_transactions']) {
+      expect(getTouchpoint(key)?.carrierParam, `${key} must NOT be owner-scoped`).toBeUndefined();
+    }
+  });
+
+  it('finance list filters accept scalars and reject junk keys', () => {
+    const list = getTouchpoint('finance.main_transactions');
+    expect(list?.paramsSchema.parse({ limit: 50, page: 2, search: 'ZHU LLC' })).toEqual({
+      limit: 50,
+      page: 2,
+      search: 'ZHU LLC',
+    });
+    expect(() => list?.paramsSchema.parse({ 'bad key!': 'x' })).toThrow();
   });
 
   it('covers every legacy Deluge function (primary names)', () => {
@@ -67,7 +100,8 @@ describe('catalog shape', () => {
 
   it('every servercrm {carrierId} template declares carrierParam; user-keyed entries declare identityParam', () => {
     for (const tp of all) {
-      if (tp.kind === 'servercrm' && tp.pathTemplate.includes('{carrierId}')) {
+      // finance.* drilldowns are deliberately org-wide (widget parity) — exempt.
+      if (tp.kind === 'servercrm' && tp.pathTemplate.includes('{carrierId}') && !tp.key.startsWith('finance.')) {
         expect(tp.carrierParam, `${tp.key} needs carrierParam`).toBe('carrierId');
       }
       if (tp.kind === 'servercrm' && tp.pathTemplate.includes('{zohoUserId}')) {

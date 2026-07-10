@@ -5,8 +5,10 @@
  */
 import type { Touchpoint } from '../types.js';
 import { carrierDelugeTouchpoints } from './carrierDeluge.js';
+import { financeDelugeTouchpoints } from './financeDeluge.js';
 import { salesDelugeTouchpoints } from './salesDeluge.js';
 import { serverCrmAgentTouchpoints } from './serverCrmAgent.js';
+import { serverCrmFinanceTouchpoints } from './serverCrmFinance.js';
 import { serverCrmMiscTouchpoints } from './serverCrmMisc.js';
 import { ticketsDelugeTouchpoints } from './ticketsDeluge.js';
 
@@ -14,8 +16,10 @@ const ALL: Touchpoint[] = [
   ...carrierDelugeTouchpoints,
   ...salesDelugeTouchpoints,
   ...ticketsDelugeTouchpoints,
+  ...financeDelugeTouchpoints,
   ...serverCrmAgentTouchpoints,
   ...serverCrmMiscTouchpoints,
+  ...serverCrmFinanceTouchpoints,
 ];
 
 const byKey = new Map<string, Touchpoint>();

@@ -61,6 +61,9 @@ export function baseUrl(platform: Platform): string {
   switch (platform) {
     case 'zoho_crm':
       return env.ZOHO_CRM_API_DOMAIN;
+    case 'zoho_crm_sandbox':
+      // Sandbox REST root derives from the sandbox functions root's origin.
+      return `${new URL(env.ZOHO_FUNCTIONS_SANDBOX_BASE_URL).origin}/crm/v8`;
     case 'zoho_desk':
       return env.ZOHO_DESK_BASE_URL;
     case 'zoho_people':
