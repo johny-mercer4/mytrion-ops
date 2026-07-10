@@ -88,6 +88,12 @@ export const HistoryIcon = ({ size = 13, className, style }: IconProps) =>
 export const UsersIcon = ({ size = 19, className, style }: IconProps) =>
   stroke(size, 'M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-2.5-1.34M5 11a3 3 0 102.5-1.34', 2, className, style);
 
+export const BuildingIcon = ({ size = 14, className, style }: IconProps) =>
+  stroke(size, 'M3 21h18M5 21V5a2 2 0 012-2h10a2 2 0 012 2v16M9 7h.01M9 11h.01M9 15h.01M15 7h.01M15 11h.01M15 15h.01', 2, className, style);
+
+export const PersonIcon = ({ size = 14, className, style }: IconProps) =>
+  stroke(size, 'M16 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z', 2, className, style);
+
 /** The four-point fuel "spark" used in the brand mark and assistant gem (filled). */
 export const Sparkle = ({ size = 16, className, style }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className} style={style} aria-hidden="true">

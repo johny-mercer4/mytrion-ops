@@ -4,14 +4,16 @@
  * invite id in the URL is the capability (opaque cuid2, unguessable); the ACTUAL identity proof is
  * the Telegram `initData` HMAC verified in the redeem step (verifyTelegramInitData).
  */
+import { createHmac } from 'node:crypto';
 import { createId } from '@paralleldrive/cuid2';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AppError, ConflictError, NotFoundError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
-import { env } from '../../config/env.js';
+import { env, isProduction } from '../../config/env.js';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { listDwhCards } from '../../integrations/dwhCards.js';
+import { searchDwhOperators } from '../../integrations/dwhOperators.js';
 import { carrierInvitationRepo } from '../../repos/carrierInvitationRepo.js';
 import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompanyRepo.js';
 import { buildInviteUrl, createCarrierInvite } from '../../modules/carrier/inviteService.js';
@@ -153,6 +155,126 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     });
     return reply.code(201).send({ invite, inviteUrl });
   });
+
+  const requireAdmin = (request: Parameters<typeof requireContext>[0]) => {
+    const ctx = requireContext(request);
+    if (ctx.role !== 'admin' && !ctx.bypassRbac) {
+      throw new RBACError('Carrier onboarding requires admin access');
+    }
+    return ctx;
+  };
+
+  /**
+   * DWH operator logins (servercrm) — admin looks up a carrier's existing operator when seeding an
+   * owner invite. Searchable by carrier id (prefix) or company name.
+   */
+  app.get('/carrier-users/dwh-operators', guard, async (request) => {
+    requireAdmin(request);
+    if (!env.DWH_DATABASE_URL) {
+      throw new AppError('The data warehouse is not configured (DWH_DATABASE_URL)', {
+        statusCode: 503,
+        code: 'DWH_UNCONFIGURED',
+        expose: true,
+      });
+    }
+    const q = z
+      .object({ q: z.string().max(200).optional(), limit: z.coerce.number().int().min(1).max(100).optional() })
+      .parse(request.query);
+    try {
+      const operators = await searchDwhOperators({ q: q.q, limit: q.limit });
+      return { operators };
+    } catch (err) {
+      throw new AppError('Data warehouse query failed', {
+        statusCode: 502,
+        code: 'DWH_ERROR',
+        cause: err,
+        expose: true,
+      });
+    }
+  });
+
+  /**
+   * The carrier's active fuel cards (octane.stg_cmp_card, current rows) — what the admin picks a
+   * driver's card_id FROM when generating a driver link. No driver identity lives on the card.
+   */
+  app.get('/carrier-users/dwh-cards', guard, async (request) => {
+    requireAdmin(request);
+    if (!env.DWH_DATABASE_URL) {
+      throw new AppError('The data warehouse is not configured (DWH_DATABASE_URL)', {
+        statusCode: 503,
+        code: 'DWH_UNCONFIGURED',
+        expose: true,
+      });
+    }
+    const q = z
+      .object({ carrier_id: z.string().min(1).max(120), limit: z.coerce.number().int().min(1).max(200).optional() })
+      .parse(request.query);
+    try {
+      const cards = await listDwhCards(q.carrier_id, q.limit);
+      return { cards };
+    } catch (err) {
+      throw new AppError('Data warehouse query failed', {
+        statusCode: 502,
+        code: 'DWH_ERROR',
+        cause: err,
+        expose: true,
+      });
+    }
+  });
+
+  /**
+   * Companies/drivers that actually FINISHED sign-in in the mini-app (registered_mini_app_companies)
+   * — distinct from carrier_invitations (a sent link, maybe never opened). This is what the admin's
+   * Carrier User Management tree renders.
+   */
+  app.get('/carrier-registrations', guard, async (request) => {
+    const ctx = requireAdmin(request);
+    const registrations = await registeredMiniAppCompanyRepo.list(ctx);
+    return { registrations };
+  });
+
+  /**
+   * DEV ONLY — mint a validly-signed Telegram initData for a fake user, so the mini-app's full flow
+   * (confirm → redeem → fleet) can be clicked through in a local browser without the real Telegram
+   * client. NOT registered under NODE_ENV=production (the deployed image sets it), so it can never
+   * forge identities in prod. Public in dev on purpose — the local mini-app dev shim fetches it.
+   */
+  if (!isProduction) {
+    app.get('/carrier-invitations/dev/mock-init-data', async (request) => {
+      if (!env.TELEGRAM_CARRIER_BOT_TOKEN) {
+        throw new AppError('Bot token not set — cannot sign a dev initData', {
+          statusCode: 503,
+          code: 'BOT_UNCONFIGURED',
+          expose: true,
+        });
+      }
+      const q = z
+        .object({
+          id: z.coerce.number().int().optional(),
+          username: z.string().max(60).optional(),
+          first_name: z.string().max(60).optional(),
+          last_name: z.string().max(60).optional(),
+        })
+        .parse(request.query);
+      const user = {
+        id: q.id ?? 990000001,
+        first_name: q.first_name ?? 'Local',
+        last_name: q.last_name ?? 'Tester',
+        username: q.username ?? 'local_tester',
+      };
+      const params = new URLSearchParams();
+      params.set('auth_date', String(Math.floor(Date.now() / 1000)));
+      params.set('query_id', 'AAE_devmock');
+      params.set('user', JSON.stringify(user));
+      const dataCheckString = [...params.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => `${k}=${v}`)
+        .join('\n');
+      const secret = createHmac('sha256', 'WebAppData').update(env.TELEGRAM_CARRIER_BOT_TOKEN).digest();
+      params.set('hash', createHmac('sha256', secret).update(dataCheckString).digest('hex'));
+      return { initData: params.toString(), user };
+    });
+  }
 
   /** Invite preview — what the mini-app shows on the Confirm screen before the user acts. */
   app.get('/carrier-invitations/:id/public', async (request) => {
