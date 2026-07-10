@@ -254,6 +254,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
           username: z.string().max(60).optional(),
           first_name: z.string().max(60).optional(),
           last_name: z.string().max(60).optional(),
+          language_code: z.string().max(10).optional(),
         })
         .parse(request.query);
       const user = {
@@ -261,6 +262,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
         first_name: q.first_name ?? 'Local',
         last_name: q.last_name ?? 'Tester',
         username: q.username ?? 'local_tester',
+        ...(q.language_code ? { language_code: q.language_code } : {}),
       };
       const params = new URLSearchParams();
       params.set('auth_date', String(Math.floor(Date.now() / 1000)));

@@ -18,8 +18,13 @@ export async function installDevTelegram(): Promise<void> {
   if (!token || params.get('dev') !== '1') return; // strictly opt-in
 
   const base = (import.meta.env.VITE_API_URL ?? '').trim();
+  const uid = params.get('uid'); // optional: pick a distinct fake user so multiple roles are testable
+  const lang = params.get('lang'); // optional: seed the Telegram user's language_code
+  const q = new URLSearchParams();
+  if (uid) q.set('id', uid);
+  if (lang) q.set('language_code', lang);
   try {
-    const res = (await fetch(`${base}/v1/carrier-invitations/dev/mock-init-data`).then((r) => r.json())) as {
+    const res = (await fetch(`${base}/v1/carrier-invitations/dev/mock-init-data?${q}`).then((r) => r.json())) as {
       initData: string;
       user: TelegramWebAppUser;
     };

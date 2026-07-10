@@ -729,15 +729,15 @@ function ActionSheet({ service, session, company, fullName, onClose }: { service
                   </div>
                 ))}
               </div>
-              <div style={{ fontSize: 12, color: 'var(--muted-fg)', marginTop: 14, lineHeight: 1.5 }}>Line-of-credit account · billed weekly. Available updates as transactions post.</div>
+              <div style={{ fontSize: 12, color: 'var(--muted-fg)', marginTop: 14, lineHeight: 1.5 }}>{t('balance.locNote')}</div>
             </>
           ) : service === 'status' ? (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: 'color-mix(in srgb, var(--success) 13%, transparent)', borderRadius: 12, marginBottom: 14 }}>
                 <span style={{ width: 30, height: 30, borderRadius: '50%', background: 'color-mix(in srgb, var(--success) 20%, transparent)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><Icon name="check" size={17} strokeWidth={2.4} className="" /></span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>Account active · in good standing</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{t('status.active')}</span>
               </div>
-              <SectionLabel>Debt</SectionLabel>
+              <SectionLabel>{t('status.debt')}</SectionLabel>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
                 {STATUS_TILES.map((tile) => (
                   <div key={tile.label} style={{ background: 'var(--secondary)', borderRadius: 12, padding: '12px 14px' }}>
@@ -746,7 +746,7 @@ function ActionSheet({ service, session, company, fullName, onClose }: { service
                   </div>
                 ))}
               </div>
-              <SectionLabel>Cards</SectionLabel>
+              <SectionLabel>{t('status.cards')}</SectionLabel>
               <div style={{ background: 'var(--secondary)', borderRadius: 12, overflow: 'hidden' }}>
                 {cards.map((c) => (
                   <div key={c.num} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
@@ -763,24 +763,24 @@ function ActionSheet({ service, session, company, fullName, onClose }: { service
               <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--secondary)', borderRadius: 10, marginBottom: 12 }}>
                 {(['7d', '30d', 'custom'] as const).map((r) => (
                   <button key={r} type="button" onClick={() => setRange(r)} style={{ flex: 1, height: 34, border: 'none', borderRadius: 8, fontFamily: "'Inter Tight'", fontWeight: 600, fontSize: 13, cursor: 'pointer', background: range === r ? 'var(--card)' : 'transparent', color: range === r ? 'var(--fg)' : 'var(--muted-fg)', boxShadow: range === r ? '0 1px 2px rgba(0,0,0,.14)' : 'none' }}>
-                    {r === '7d' ? '7 days' : r === '30d' ? '30 days' : 'Custom'}
+                    {r === '7d' ? t('txns.7d') : r === '30d' ? t('txns.30d') : t('txns.custom')}
                   </button>
                 ))}
               </div>
               {range === 'custom' && (
                 <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
                   <label style={{ flex: 1 }}>
-                    <span style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 5 }}>From</span>
+                    <span style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.from')}</span>
                     <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: '100%', height: 42, border: '1px solid var(--border)', borderRadius: 10, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Inter Tight'", fontSize: 13, padding: '0 11px' }} />
                   </label>
                   <label style={{ flex: 1 }}>
-                    <span style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 5 }}>To</span>
+                    <span style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.to')}</span>
                     <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ width: '100%', height: 42, border: '1px solid var(--border)', borderRadius: 10, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Inter Tight'", fontSize: 13, padding: '0 11px' }} />
                   </label>
                 </div>
               )}
               {txns.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>No transactions in this range.</div>
+                <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('txns.empty')}</div>
               ) : (
                 <div style={{ background: 'var(--secondary)', borderRadius: 12, overflow: 'hidden' }}>
                   {txns.map((tx, i) => (
@@ -804,8 +804,8 @@ function ActionSheet({ service, session, company, fullName, onClose }: { service
                   <div key={k} onClick={() => { haptic('tap'); setViewInvoice(k); }} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '12px 14px', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}>
                     <span style={{ width: 34, height: 34, borderRadius: 8, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card)', color: 'var(--muted-fg)' }}><Icon name="doc" size={17} strokeWidth={2} className="" /></span>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>Invoice #{k}</div>
-                      <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2 }}>{d.date} · {d.total} · {d.paid ? 'Paid' : 'Due'}</div>
+                      <div className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{t('invoice.num', { n: k })}</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2 }}>{d.date} · {d.total} · {d.paid ? t('invoice.paid') : t('invoice.due')}</div>
                     </div>
                     <span style={{ border: '1px solid var(--border)', borderRadius: 8, background: 'var(--card)', color: 'var(--fg)', fontFamily: "'Inter Tight'", fontWeight: 600, fontSize: 12.5, padding: '7px 12px', flex: 'none' }}>{t('common.view')}</span>
                   </div>
@@ -828,7 +828,7 @@ function ActionSheet({ service, session, company, fullName, onClose }: { service
                   <span className="selectable" style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {c.num}</span>
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: 13, color: 'var(--fg)' }}>{c.last}, 2026</div>
-                    <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 1 }}>{i === 0 ? '1 day ago' : i === 1 ? '2 days ago' : '9 days ago'}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 1 }}>{t('time.dayN', { n: i === 0 ? 1 : i === 1 ? 2 : 9 })}</div>
                   </div>
                 </div>
               ))}
@@ -841,10 +841,10 @@ function ActionSheet({ service, session, company, fullName, onClose }: { service
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '6px 0 4px' }}>
                     <span style={{ width: 54, height: 54, borderRadius: '50%', background: 'color-mix(in srgb, var(--primary) 14%, transparent)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}><Icon name="pin" size={26} strokeWidth={2} className="" /></span>
                     <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)' }}>{tr.status}</div>
-                    <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3 }}>Card •••• {tr.card} · {tr.eta}</div>
+                    <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3 }}>{t('track.cardLabel')} •••• {tr.card} · {tr.eta}</div>
                   </div>
                   <div style={{ background: 'var(--secondary)', borderRadius: 12, padding: '13px 14px', marginTop: 14 }}>
-                    <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)' }}>Tracking number</div>
+                    <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('track.number')}</div>
                     <div className="selectable" style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tr.number}</div>
                   </div>
                 </>
