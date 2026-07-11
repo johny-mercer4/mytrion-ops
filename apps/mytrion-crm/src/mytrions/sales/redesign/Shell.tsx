@@ -6,11 +6,14 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { getSession } from '@/api/session';
-import { useImpersonation } from '@/context/ImpersonationProvider';
 import { s, Svg } from './dc';
 import { SalesContext, type ClientRecord, type DetailVM, type SalesCtx } from './ctx';
-import { badge, NAV, NAVLABEL, timeParts, USER } from './salesData';
+import { badge, NAV, NAVLABEL, timeParts } from './salesData';
+import { useSessionUser } from './sessionUser';
+import { useLoad, loadClientCards, loadClientActivity } from './live';
+import { useUserContext } from '@/context/UserContextProvider';
+import { agentKeyFor } from '@/access/mytrions.config';
+import { useChat } from '@/features/chat/useChat';
 import './theme.css';
 
 import { HomeTab } from './tabs/HomeTab';
@@ -27,30 +30,12 @@ const SUN = 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.
 const MOON = 'M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z';
 const SPARK = 'M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z';
 
-interface ChatMsg {
-  id: number;
-  role: 'ai' | 'user';
-  text: string;
-}
-
-/** Canned copilot replies (reference pickReply). */
-function pickReply(t: string): string {
-  const q = t.toLowerCase();
-  if (q.includes('balance') || q.includes('owe'))
-    return "Coastal Haul Co. is your only account with a balance right now — they're 14 days past due at $4,280 and flagged as a soft debtor. RICS Logistics owes $1,240 and Meridian $620. Want me to draft a payment reminder for Coastal Haul?";
-  if (q.includes('stuck') || q.includes('application'))
-    return 'You have 2 applications sitting over 6 days: Blue Ridge Freight (#884120, docs pending) and RICS Logistics (#872228, awaiting voided check). Blue Ridge is closest to done — one call should clear it. Should I open the WEX application view?';
-  if (q.includes('fraud') || q.includes('hold') || q.includes('rics'))
-    return 'RICS Logistics card ••4471 was auto-held after 3 declined swipes in Newark, NJ — the driver is likely stranded. The pattern matches their usual route, so it looks legitimate. I can walk you through releasing the hold or granting a 30-minute override. Which do you prefer?';
-  if (q.includes('follow') || q.includes('email') || q.includes('draft'))
-    return 'Here\'s a draft for RICS Logistics: "Hi Richard — noticed application #872228 is just waiting on the voided check. If you can send it over today, we\'ll have cards shipping by tomorrow. Happy to hop on a quick call." Want me to adjust the tone or send it?';
-  if (q.includes('gallon') || q.includes('volume') || q.includes('week'))
-    return "Your carriers pumped 48,210 gallons this week — up 6% over last week and your best week this cycle. Blue Ridge Freight and Meridian drove most of the lift. You're currently 3rd on the regional leaderboard.";
-  return 'Got it. I can pull pipeline numbers, check a carrier\'s balance or cards, draft follow-ups, or run an automation for you. For example, try "check balance for Coastal Haul" or "any stuck applications?"';
-}
-
 export function SalesRedesign() {
-  const { actingAs } = useImpersonation();
+  const user = useSessionUser();
+  const userCtx = useUserContext();
+  // The bespoke copilot is the department's real agent (streams from /v1/agent, tool-grounded),
+  // scoped to Sales — the same runtime the shared ChatPanel uses, just in this shell's chrome.
+  const chat = useChat(userCtx, 'sales', agentKeyFor('sales'));
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [section, setSection] = useState('home');
   const [booting, setBooting] = useState(true);
@@ -63,12 +48,7 @@ export function SalesRedesign() {
   // chat
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
-  const [chatTyping, setChatTyping] = useState(false);
-  const [chatMessages, setChatMessages] = useState<ChatMsg[]>([
-    { id: 1, role: 'ai', text: "Hey Marcus — I'm Mytrion, your sales copilot. Ask me about your pipeline, a carrier, cards, or invoices and I'll pull it up." },
-  ]);
   const chatBody = useRef<HTMLDivElement | null>(null);
-  const streamRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setBooting(false), 1750);
@@ -76,7 +56,6 @@ export function SalesRedesign() {
     return () => {
       clearTimeout(t);
       clearInterval(clock);
-      if (streamRef.current) clearInterval(streamRef.current);
     };
   }, []);
 
@@ -101,31 +80,21 @@ export function SalesRedesign() {
       if (chatBody.current) chatBody.current.scrollTop = chatBody.current.scrollHeight;
     });
   }, []);
+  // Keep the transcript pinned to the newest token as the agent streams.
+  useEffect(() => {
+    if (chatOpen) scrollChat();
+  }, [chat.messages, chatOpen, scrollChat]);
 
-  const sendChat = useCallback(() => {
-    const t = chatInput.trim();
-    if (!t) return;
-    setChatMessages((m) => [...m, { id: Date.now(), role: 'user', text: t }]);
-    setChatInput('');
-    setChatTyping(true);
-    scrollChat();
-    setTimeout(() => {
-      const full = pickReply(t);
-      const id = Date.now() + 1;
-      setChatTyping(false);
-      setChatMessages((m) => [...m, { id, role: 'ai', text: '' }]);
-      const words = full.split(' ');
-      let i = 0;
-      if (streamRef.current) clearInterval(streamRef.current);
-      streamRef.current = setInterval(() => {
-        i++;
-        const partial = words.slice(0, i).join(' ');
-        setChatMessages((m) => m.map((x) => (x.id === id ? { ...x, text: partial } : x)));
-        scrollChat();
-        if (i >= words.length && streamRef.current) clearInterval(streamRef.current);
-      }, 42);
-    }, 850);
-  }, [chatInput, scrollChat]);
+  const sendChat = useCallback(
+    (raw?: string) => {
+      const t = (raw ?? chatInput).trim();
+      if (!t || chat.streaming) return;
+      chat.send(t);
+      setChatInput('');
+      scrollChat();
+    },
+    [chatInput, chat, scrollChat],
+  );
 
   const ctx: SalesCtx = useMemo(
     () => ({
@@ -140,9 +109,9 @@ export function SalesRedesign() {
   );
 
   const T = timeParts();
-  const displayName = actingAs?.name ?? getSession()?.worker.userName ?? USER.name;
-  const initials = displayName.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || USER.initials;
-  const chatChips = ['Any stuck applications?', 'Check balance for Coastal Haul', 'Draft a follow-up for RICS', "This week's volume?"];
+  const displayName = user.name;
+  const initials = user.initials;
+  const chatChips = ['Any stuck applications?', 'Which clients need attention?', 'Summarize my portfolio', "This week's fuel volume?"];
 
   return (
     <SalesContext.Provider value={ctx}>
@@ -210,7 +179,7 @@ export function SalesRedesign() {
               <div style={s('width:32px;height:32px;border-radius:50%;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0')}>{initials}</div>
               <div style={s('line-height:1.2;min-width:0')}>
                 <div style={s('font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{displayName}</div>
-                <div style={s('font-size:10px;color:var(--muted);white-space:nowrap')}>{USER.role}</div>
+                <div style={s('font-size:10px;color:var(--muted);white-space:nowrap')}>{user.role}</div>
               </div>
             </div>
           </div>
@@ -300,8 +269,19 @@ export function SalesRedesign() {
               </button>
             </div>
             <div ref={chatBody} className="ss-scroll" style={s('flex:1;min-height:0;padding:16px;display:flex;flex-direction:column;gap:12px;background:var(--bg)')}>
-              {chatMessages.map((m) => {
+              {chat.messages.length === 0 && (
+                <div style={s('display:flex;gap:8px;align-items:flex-end')}>
+                  <div style={s('width:26px;height:26px;border-radius:8px;background:linear-gradient(140deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
+                    <Svg d={SPARK} size={14} stroke="#fff" />
+                  </div>
+                  <div style={s('max-width:80%;padding:11px 13px;border-radius:14px 14px 14px 4px;background:var(--surface);border:1px solid var(--border);font-size:13px;line-height:1.5;color:var(--text)')}>
+                    Hey {user.first} — I'm Mytrion, your sales copilot. Ask me about your pipeline, a carrier, cards, or invoices and I'll pull it up.
+                  </div>
+                </div>
+              )}
+              {chat.messages.map((m) => {
                 const ai = m.role !== 'user';
+                const dots = ai && m.streaming && !m.text;
                 return (
                   <div key={m.id} style={s(`display:flex;gap:8px;align-items:flex-end;${ai ? '' : 'flex-direction:row-reverse'}`)}>
                     {ai && (
@@ -309,30 +289,30 @@ export function SalesRedesign() {
                         <Svg d={SPARK} size={14} stroke="#fff" />
                       </div>
                     )}
-                    <div style={s(ai ? 'max-width:80%;padding:11px 13px;border-radius:14px 14px 14px 4px;background:var(--surface);border:1px solid var(--border);font-size:13px;line-height:1.5;color:var(--text)' : 'max-width:80%;padding:11px 13px;border-radius:14px 14px 4px 14px;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;font-size:13px;line-height:1.5')}>{m.text}</div>
+                    {dots ? (
+                      <div style={s('display:flex;gap:4px;padding:12px 14px;border-radius:14px 14px 14px 4px;background:var(--surface);border:1px solid var(--border)')}>
+                        <span style={s('width:6px;height:6px;border-radius:50%;background:var(--muted);animation:ss-dot 1.2s infinite')} />
+                        <span style={s('width:6px;height:6px;border-radius:50%;background:var(--muted);animation:ss-dot 1.2s infinite .2s')} />
+                        <span style={s('width:6px;height:6px;border-radius:50%;background:var(--muted);animation:ss-dot 1.2s infinite .4s')} />
+                      </div>
+                    ) : (
+                      <div style={s(ai ? 'max-width:80%;padding:11px 13px;border-radius:14px 14px 14px 4px;background:var(--surface);border:1px solid var(--border);font-size:13px;line-height:1.5;color:var(--text);white-space:pre-wrap' : 'max-width:80%;padding:11px 13px;border-radius:14px 14px 4px 14px;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;font-size:13px;line-height:1.5;white-space:pre-wrap')}>
+                        {m.error ? <span style={s('color:var(--danger)')}>{m.error}</span> : m.text}
+                      </div>
+                    )}
                   </div>
                 );
               })}
-              {chatTyping && (
-                <div style={s('display:flex;gap:8px;align-items:flex-end')}>
-                  <div style={s('width:26px;height:26px;border-radius:8px;background:linear-gradient(140deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;flex-shrink:0')}><Svg d={SPARK} size={14} stroke="#fff" /></div>
-                  <div style={s('display:flex;gap:4px;padding:12px 14px;border-radius:14px 14px 14px 4px;background:var(--surface);border:1px solid var(--border)')}>
-                    <span style={s('width:6px;height:6px;border-radius:50%;background:var(--muted);animation:ss-dot 1.2s infinite')} />
-                    <span style={s('width:6px;height:6px;border-radius:50%;background:var(--muted);animation:ss-dot 1.2s infinite .2s')} />
-                    <span style={s('width:6px;height:6px;border-radius:50%;background:var(--muted);animation:ss-dot 1.2s infinite .4s')} />
-                  </div>
-                </div>
-              )}
             </div>
             <div style={s('flex-shrink:0;border-top:1px solid var(--border);background:var(--surface)')}>
               <div style={s('display:flex;gap:7px;padding:11px 13px 0;overflow-x:auto')}>
                 {chatChips.map((c) => (
-                  <button key={c} onClick={() => { setChatInput(''); setChatMessages((m) => [...m, { id: Date.now(), role: 'user', text: c }]); setChatTyping(true); scrollChat(); setTimeout(() => { const full = pickReply(c); const id = Date.now() + 1; setChatTyping(false); setChatMessages((m) => [...m, { id, role: 'ai', text: '' }]); const words = full.split(' '); let i = 0; if (streamRef.current) clearInterval(streamRef.current); streamRef.current = setInterval(() => { i++; setChatMessages((m) => m.map((x) => (x.id === id ? { ...x, text: words.slice(0, i).join(' ') } : x))); scrollChat(); if (i >= words.length && streamRef.current) clearInterval(streamRef.current); }, 42); }, 850); }} className="ss-tab-x" style={s('flex-shrink:0;padding:6px 11px;border-radius:99px;border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap')}>{c}</button>
+                  <button key={c} onClick={() => sendChat(c)} disabled={chat.streaming} className="ss-tab-x" style={s('flex-shrink:0;padding:6px 11px;border-radius:99px;border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap')}>{c}</button>
                 ))}
               </div>
               <div style={s('display:flex;gap:9px;align-items:flex-end;padding:11px 13px 13px')}>
                 <input value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); sendChat(); } }} placeholder="Ask about pipeline, cards, invoices…" className="ss-in" style={s('flex:1;height:40px;padding:0 13px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px')} />
-                <button onClick={sendChat} aria-label="Send" className="ss-btn-p" style={s('width:40px;height:40px;flex-shrink:0;border-radius:11px;border:none;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center')}>
+                <button onClick={() => sendChat()} aria-label="Send" className="ss-btn-p" style={s('width:40px;height:40px;flex-shrink:0;border-radius:11px;border:none;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center')}>
                   <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
                 </button>
               </div>
@@ -380,6 +360,8 @@ function ClientModal({
   const statusBadge = badge(lbl, col);
   const balColor = client.balance.startsWith('-') ? 'var(--danger)' : 'var(--ok)';
   const initials = client.name.split(' ').map((w) => w[0]).slice(0, 2).join('');
+  const cardsL = useLoad(() => loadClientCards(client.id), [client.id]);
+  const actL = useLoad(() => loadClientActivity(client.id), [client.id]);
   const avStyle = `width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:19px;background:color-mix(in srgb,${col} 16%,transparent);color:${col}`;
   const tabs: Array<['overview' | 'cards' | 'activity', string]> = [['overview', 'Overview'], ['cards', 'Cards'], ['activity', 'Activity']];
   return (
@@ -428,29 +410,41 @@ function ClientModal({
           )}
           {clientTab === 'cards' && (
             <div style={s('display:flex;flex-direction:column;gap:10px')}>
-              {[['•••• 4471', 'FRAUD HOLD', 'var(--danger)', 'J. Alvarez · Unit 1042'], ['•••• 9982', 'ACTIVE', 'var(--ok)', 'M. Doyle · Unit 0771'], ['•••• 1205', 'ACTIVE', 'var(--ok)', 'No driver assigned']].map(([num, st, c, meta]) => (
-                <div key={num} style={s('display:flex;align-items:center;gap:12px;padding:13px 15px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
-                  <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600")}>{num}</span>
-                  <span style={s(`font-size:10px;font-weight:700;padding:3px 8px;border-radius:99px;background:color-mix(in srgb,${c} 16%,transparent);color:${c}`)}>{st}</span>
-                  <span style={s('margin-left:auto;font-size:11.5px;color:var(--muted)')}>{meta}</span>
+              {cardsL.loading && <div style={s('font-size:12.5px;color:var(--muted);padding:8px 2px')}>Loading cards…</div>}
+              {cardsL.error && <div style={s('font-size:12.5px;color:var(--danger);padding:8px 2px')}>Couldn't load cards — {cardsL.error}</div>}
+              {!cardsL.loading && !cardsL.error && (cardsL.data?.length ?? 0) === 0 && (
+                <div style={s('font-size:12.5px;color:var(--muted);padding:8px 2px')}>No cards on file for this carrier.</div>
+              )}
+              {(cardsL.data ?? []).map((card, i) => (
+                <div key={`${card.num}-${i}`} style={s('display:flex;align-items:center;gap:12px;padding:13px 15px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
+                  <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600")}>{card.num}</span>
+                  <span style={s(`font-size:10px;font-weight:700;padding:3px 8px;border-radius:99px;background:color-mix(in srgb,${card.tone} 16%,transparent);color:${card.tone}`)}>{card.status}</span>
                 </div>
               ))}
             </div>
           )}
           {clientTab === 'activity' && (
             <div style={s('display:flex;flex-direction:column;gap:0')}>
-              {[['var(--accent)', 'Card ••4471 auto-held (fraud)', 'Today, 9:04 AM · 3 declined swipes in Newark, NJ', true], ['var(--violet)', '142.6 gal fueled', 'Yesterday · $486.20 · Card ••4471', true], ['var(--ok)', 'Application #872228 opened', 'Jul 03 · Fleet expansion — 12 units', false]].map(([dot, title, sub, line], i) => (
-                <div key={i} style={s('display:flex;gap:12px')}>
-                  <div style={s('display:flex;flex-direction:column;align-items:center')}>
-                    <div style={s(`width:9px;height:9px;border-radius:50%;background:${dot as string}`)} />
-                    {line ? <div style={s('width:2px;flex:1;background:var(--border)')} /> : null}
+              {actL.loading && <div style={s('font-size:12.5px;color:var(--muted);padding:8px 2px')}>Loading activity…</div>}
+              {actL.error && <div style={s('font-size:12.5px;color:var(--danger);padding:8px 2px')}>Couldn't load activity — {actL.error}</div>}
+              {!actL.loading && !actL.error && (actL.data?.length ?? 0) === 0 && (
+                <div style={s('font-size:12.5px;color:var(--muted);padding:8px 2px')}>No recent transactions for this carrier.</div>
+              )}
+              {(actL.data ?? []).map((ev, i, arr) => {
+                const line = i < arr.length - 1;
+                return (
+                  <div key={i} style={s('display:flex;gap:12px')}>
+                    <div style={s('display:flex;flex-direction:column;align-items:center')}>
+                      <div style={s(`width:9px;height:9px;border-radius:50%;background:${ev.tone}`)} />
+                      {line ? <div style={s('width:2px;flex:1;background:var(--border)')} /> : null}
+                    </div>
+                    <div style={s(line ? 'padding-bottom:18px' : '')}>
+                      <div style={s('font-size:12.5px;font-weight:700')}>{ev.title}</div>
+                      <div style={s('font-size:11px;color:var(--muted);margin-top:2px')}>{ev.sub}</div>
+                    </div>
                   </div>
-                  <div style={s(line ? 'padding-bottom:18px' : '')}>
-                    <div style={s('font-size:12.5px;font-weight:700')}>{title}</div>
-                    <div style={s('font-size:11px;color:var(--muted);margin-top:2px')}>{sub}</div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

@@ -1605,3 +1605,27 @@ Carrier accounts are now provisioned FROM the already-defined clients in the dat
   vite widget build succeeds, and all 22 touchpoint keys the UI calls exist in the backend catalog
   (no runtime 404s). Live Desk smoke (listTickets + comments) confirmed earlier.
 - Rewiring fanned out one agent per tab via a workflow (8/8, 0 errors), then integrated by hand.
+
+### Live-verify hardening (same day) — killed the last mock/fake surfaces
+
+A headless Chrome walkthrough with a real minted worker session (act-as a real agent so the
+DWH agent lookups resolve) surfaced leftover fabricated content the tab rewire hadn't touched.
+All fixed:
+- **Identity was hardcoded.** salesData `USER = {name:'Marcus Reyes', role:'Senior Sales Agent'}`
+  drove the Home greeting ("Good morning, Marcus"), the user-card role, and the copilot opener.
+  New `redesign/sessionUser.ts` → `useSessionUser()` derives name/first/initials/role from the real
+  session + act-as. Shell + HomeTab now show the signed-in worker (verified: "Good morning, Adam" /
+  "Adam Johnson" when acting as that agent). USER remains only for the mock Pool filter.
+- **Client drilldown modal Cards/Activity were static reference rows** (card ••4471, J. Alvarez,
+  fake transactions). Wired to live `dwh.cards` (card_number + Active/Inactive status) and
+  `dwh.transactions` (recent line items → gallons/amount/card/date) via new `live.ts`
+  loadClientCards/loadClientActivity, with loading/empty/error states.
+- **The AI copilot returned canned `pickReply` strings** inventing carrier balances ("Coastal Haul
+  owes $4,280"). Replaced with the real department agent: `useChat(useUserContext(), 'sales',
+  agentKeyFor('sales'))` — the same /v1/agent streaming runtime the shared ChatPanel uses, in the
+  bespoke floating-copilot chrome. Verified a real grounded reply streamed back. Suggestion chips
+  degenericized (no fabricated carrier names).
+- Live walkthrough result: every /v1 call 200 (touchpoints, /desk/tickets, /agent,
+  /chat/conversations, dashboard.agent_sales), Dashboard renders real carrier transactions,
+  servercrm WS connects + subscribes (generic + ticket-scoped frames). NOTE: dashboard.agent_sales
+  502s for a worker who isn't in the DWH dim_company (expected — real agents resolve fine).

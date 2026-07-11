@@ -402,3 +402,50 @@ export async function loadTicketMessages(ticketId: string): Promise<TicketMsgVM[
     };
   });
 }
+
+// ---- Client drilldown modal: cards (dwh.cards) + activity (dwh.transactions) ----
+
+function maskCard(raw: unknown): string {
+  const digits = String(raw ?? '').replace(/\D/g, '');
+  return digits ? `•••• ${digits.slice(-4)}` : '—';
+}
+
+export interface ClientCardVM {
+  num: string;
+  status: string;
+  tone: string;
+}
+/** A carrier's cards from the DWH (card_number + Active/Inactive/Unknown status only). */
+export async function loadClientCards(carrierId: string): Promise<ClientCardVM[]> {
+  if (!carrierId) return [];
+  const res = await callTouchpoint('dwh.cards', { carrierId });
+  return (res.data ?? []).map((c) => {
+    const up = String(c.status ?? '').trim().toUpperCase();
+    const tone = up === 'ACTIVE' ? 'var(--ok)' : up === 'INACTIVE' ? 'var(--muted)' : 'var(--warn)';
+    return { num: maskCard(c.card_number), status: up || 'UNKNOWN', tone };
+  });
+}
+
+export interface ClientActivityVM {
+  title: string;
+  sub: string;
+  tone: string;
+}
+/** A carrier's recent fuel-card transactions (DWH line items) as an activity feed. */
+export async function loadClientActivity(carrierId: string): Promise<ClientActivityVM[]> {
+  if (!carrierId) return [];
+  const res = await callTouchpoint('dwh.transactions', { carrierId, limit: 15 });
+  const rows = (res.data ?? []).slice(0, 15);
+  return rows.map((r) => {
+    const gal = n(r.line_item_fuel_quantity ?? r.fuel_quantity);
+    const amt = r.line_item_amount ?? r.amount;
+    const card = maskCard(r.card_number);
+    const loc = String(r.location_name ?? r.merchant_name ?? r.location ?? '').trim();
+    const date = r.transaction_date ? relTime(String(r.transaction_date)) : '';
+    const title = gal > 0 ? `${gal.toLocaleString('en-US', { maximumFractionDigits: 1 })} gal fueled` : 'Fuel transaction';
+    const sub = [date, amt != null ? money(amt) : '', card !== '—' ? `Card ${card}` : '', loc]
+      .filter(Boolean)
+      .join(' · ');
+    return { title, sub, tone: 'var(--violet)' };
+  });
+}

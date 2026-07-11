@@ -10,7 +10,8 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { s, Svg } from '../dc';
-import { ICO, iconBox, badge, deptStyle, timeParts, USER } from '../salesData';
+import { ICO, iconBox, badge, deptStyle, timeParts } from '../salesData';
+import { useSessionUser } from '../sessionUser';
 import { CALL_TO_ACTIONS } from '../../data';
 import {
   useLoad,
@@ -105,6 +106,7 @@ function StateNote({ tone, children }: { tone: 'muted' | 'danger'; children: Rea
 
 export function HomeTab() {
   const { openDetail, go } = useSales();
+  const user = useSessionUser();
 
   // ---- live data ----
   const snap = useLoad(loadSnapshot, []);
@@ -300,7 +302,7 @@ export function HomeTab() {
         <div style={s('position:relative;overflow:hidden;border-radius:18px;padding:26px 28px;background:linear-gradient(120deg, rgba(var(--accent-rgb),.14), rgba(var(--violet-rgb),.10)), var(--surface);border:1px solid var(--border)')}>
           <div style={s('position:absolute;right:-40px;top:-40px;width:190px;height:190px;border-radius:50%;background:radial-gradient(circle,rgba(var(--accent-rgb),.22),transparent 70%);pointer-events:none')}></div>
           <div style={s('font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent)')}>{dateLabel}</div>
-          <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:30px;letter-spacing:.01em;margin-top:8px;line-height:1.1')}>Good {timeOfDay}, <span style={s('background:linear-gradient(120deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent')}>{USER.first}</span></div>
+          <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:30px;letter-spacing:.01em;margin-top:8px;line-height:1.1')}>Good {timeOfDay}, <span style={s('background:linear-gradient(120deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent')}>{user.first}</span></div>
           <div style={s('font-size:13.5px;color:var(--text2);margin-top:8px;max-width:440px')}>Here's your briefing for today. You're ahead of the queue — {inboxUnread} items need a look.</div>
           <div style={s('display:flex;gap:10px;margin-top:18px')}>
             <button onClick={goAuto} className="ss-btn-p" style={s('height:38px;padding:0 16px;border-radius:10px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer;display:flex;align-items:center;gap:7px')}><Svg d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" size={15} strokeWidth={2.2} />Run an action</button>
