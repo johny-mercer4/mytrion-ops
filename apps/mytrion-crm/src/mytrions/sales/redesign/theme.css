@@ -47,6 +47,8 @@ html,body{height:100%;margin:0}
   .ss-skel{background:linear-gradient(90deg,var(--raised) 25%,rgba(255,255,255,.06) 37%,var(--raised) 63%);background-size:900px 100%;animation:ss-shimmer 1.4s infinite linear;border-radius:8px}
   .light .ss-skel{background:linear-gradient(90deg,rgba(15,23,42,.05) 25%,rgba(15,23,42,.1) 37%,rgba(15,23,42,.05) 63%);background-size:900px 100%;animation:ss-shimmer 1.4s infinite linear}
   .ss-tab-x:hover{color:var(--text)!important;background:var(--raised)!important}
+  .ss-vw-opt{transition:background .12s}
+  .ss-vw-opt:hover{background:var(--alt)!important}
   .ss-card-h{transition:transform .16s cubic-bezier(.2,0,0,1),box-shadow .16s,border-color .16s}
   .ss-card-h:hover{transform:translateY(-2px);border-color:rgba(var(--accent-rgb),.4)!important;box-shadow:0 6px 24px rgba(var(--accent-rgb),.14),var(--shadow)!important}
   .ss-btn-p{transition:filter .15s,transform .1s}

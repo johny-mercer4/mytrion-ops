@@ -12,8 +12,11 @@ import { badge, NAV, NAVLABEL, timeParts } from './salesData';
 import { useSessionUser } from './sessionUser';
 import { useLoad, loadClientCards, loadClientActivity } from './live';
 import { useUserContext } from '@/context/UserContextProvider';
+import { useImpersonation } from '@/context/ImpersonationProvider';
 import { agentKeyFor } from '@/access/mytrions.config';
+import { isAdmin } from '@/access/resolveAccess';
 import { useChat } from '@/features/chat/useChat';
+import { ViewAsPicker } from './ViewAsPicker';
 import './theme.css';
 
 import { HomeTab } from './tabs/HomeTab';
@@ -33,6 +36,8 @@ const SPARK = 'M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z';
 export function SalesRedesign() {
   const user = useSessionUser();
   const userCtx = useUserContext();
+  const admin = isAdmin(userCtx);
+  const { actingAs } = useImpersonation();
   // The bespoke copilot is the department's real agent (streams from /v1/agent, tool-grounded),
   // scoped to Sales — the same runtime the shared ChatPanel uses, just in this shell's chrome.
   const chat = useChat(userCtx, 'sales', agentKeyFor('sales'));
@@ -187,12 +192,15 @@ export function SalesRedesign() {
 
         {/* MAIN COLUMN */}
         <div style={s('flex:1;min-width:0;display:flex;flex-direction:column')}>
-          <div style={s('flex-shrink:0;height:54px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;border-bottom:1px solid var(--border);background:color-mix(in srgb, var(--bg) 60%, transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);position:relative;z-index:15')}>
+          <div style={s('flex-shrink:0;height:54px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 24px;border-bottom:1px solid var(--border);background:color-mix(in srgb, var(--bg) 60%, transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);position:relative;z-index:15')}>
             <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase")}>{NAVLABEL[section] ?? ''}</div>
-            <div style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted)")}>{T.timeFmt}</div>
+            {admin && <ViewAsPicker />}
+            <div style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);margin-left:auto")}>{T.timeFmt}</div>
           </div>
           <main className="ss-scroll" style={s('flex:1;min-height:0;position:relative')}>
-            <div id="ss-panels" style={s('max-width:1180px;margin:0 auto;padding:24px 24px 90px')}>
+            {/* Keyed on the acted-as agent: switching "View as" remounts the panels so every
+                tab refetches under the new identity (the transport sends fresh x-act-as headers). */}
+            <div id="ss-panels" key={actingAs?.zohoUserId ?? 'self'} style={s('max-width:1180px;margin:0 auto;padding:24px 24px 90px')}>
               {section === 'home' && <HomeTab />}
               {section === 'inbox' && <InboxTab />}
               {section === 'tickets' && <TicketsTab />}

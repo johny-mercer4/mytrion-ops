@@ -1629,3 +1629,23 @@ All fixed:
   /chat/conversations, dashboard.agent_sales), Dashboard renders real carrier transactions,
   servercrm WS connects + subscribes (generic + ticket-scoped frames). NOTE: dashboard.agent_sales
   502s for a worker who isn't in the DWH dim_company (expected — real agents resolve fine).
+
+### Admin "View as" + Sales-Agent direct routing
+
+Two access/UX features on top of the live redesign:
+- **Admin "View as" picker** (`redesign/ViewAsPicker.tsx`) — ports the self-service reference's
+  top-bar impersonation control into the bespoke shell's visual language. Admin-only (shell gates on
+  `isAdmin(useUserContext())`); reuses the existing `useImpersonation` store + `listAgents`
+  (/v1/admin/agents). Picking an agent shows an "ADMIN VIEW · <name> · EXIT" banner and the whole
+  shell runs as that rep (the impersonation store attaches x-act-as-* headers the backend already
+  honors). The tab panels are keyed on the acted-as zohoUserId, so switching remounts + refetches
+  every tab (and the copilot) under the new identity. Verified live: greeting/user-card switch,
+  panels reload, Exit restores admin.
+- **Sales agents land straight in Sales Mytrion.** Every rep's CRM profile is exactly "Sales Agent"
+  (region is in the ROLE). Added substring profile matching to the frontend access resolver:
+  `MytrionAccessRule.profileContainsAny` + a `containsAny` helper in resolveAccess.ts; sales now
+  grants `profileContainsAny: ['Sales Agent']` (mirrors the backend's sales-agent detection). A
+  profile containing "Sales Agent" resolves to ONLY sales, so the existing Landing (1 accessible →
+  auto-enter) navigates them straight to /m/sales — no picker, no View-as control. Admins still get
+  the multi-Mytrion picker. Covered by `src/access/resolveAccess.test.ts` (6 tests) + live-verified
+  (agent from `/` → /m/sales; admin from `/` → picker).
