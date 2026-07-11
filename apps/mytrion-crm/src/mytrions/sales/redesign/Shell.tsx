@@ -10,7 +10,7 @@ import { s, Svg } from './dc';
 import { SalesContext, type ClientRecord, type DetailVM, type SalesCtx } from './ctx';
 import { badge, NAV, NAVLABEL, timeParts } from './salesData';
 import { useSessionUser } from './sessionUser';
-import { useLoad, loadClientCards, loadClientActivity } from './live';
+import { useLoad, loadClientCards, loadClientActivity, loadInbox, loadTickets } from './live';
 import { useUserContext } from '@/context/UserContextProvider';
 import { useImpersonation } from '@/context/ImpersonationProvider';
 import { agentKeyFor } from '@/access/mytrions.config';
@@ -38,6 +38,15 @@ export function SalesRedesign() {
   const userCtx = useUserContext();
   const admin = isAdmin(userCtx);
   const { actingAs } = useImpersonation();
+  // Real nav-badge counts, refetched when the acted-as agent changes. Inbox = messages awaiting the
+  // rep; Tickets = open (not-closed) tickets. Open Pool has no badge until its data flow is rebuilt.
+  const actAsKey = actingAs?.zohoUserId ?? 'self';
+  const inboxCount = useLoad(() => loadInbox().then((x) => x.length), [actAsKey]);
+  const openTix = useLoad(() => loadTickets().then((r) => r.tickets.filter((t) => !/closed/i.test(t.status)).length), [actAsKey]);
+  const badgeCounts: Record<string, number | undefined> = {
+    inbox: inboxCount.data ?? undefined,
+    tickets: openTix.data ?? undefined,
+  };
   // The bespoke copilot is the department's real agent (streams from /v1/agent, tool-grounded),
   // scoped to Sales — the same runtime the shared ChatPanel uses, just in this shell's chrome.
   const chat = useChat(userCtx, 'sales', agentKeyFor('sales'));
@@ -168,8 +177,8 @@ export function SalesRedesign() {
                 <button key={n.id} onClick={() => go(n.id)} className="ss-tab-x" style={s(style)}>
                   <Svg d={n.icon} size={18} style={{ flexShrink: 0 }} />
                   <span style={s('flex:1;text-align:left')}>{n.label}</span>
-                  {n.badge ? (
-                    <span style={s('background:var(--accent);color:#fff;font-size:9.5px;font-weight:800;min-width:18px;height:18px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px')}>{n.badge}</span>
+                  {badgeCounts[n.id] ? (
+                    <span style={s('background:var(--accent);color:#fff;font-size:9.5px;font-weight:800;min-width:18px;height:18px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px')}>{badgeCounts[n.id]}</span>
                   ) : null}
                 </button>
               );
@@ -200,7 +209,7 @@ export function SalesRedesign() {
           <main className="ss-scroll" style={s('flex:1;min-height:0;position:relative')}>
             {/* Keyed on the acted-as agent: switching "View as" remounts the panels so every
                 tab refetches under the new identity (the transport sends fresh x-act-as headers). */}
-            <div id="ss-panels" key={actingAs?.zohoUserId ?? 'self'} style={s('max-width:1180px;margin:0 auto;padding:24px 24px 90px')}>
+            <div id="ss-panels" key={actAsKey} style={s('max-width:1180px;margin:0 auto;padding:24px 24px 90px')}>
               {section === 'home' && <HomeTab />}
               {section === 'inbox' && <InboxTab />}
               {section === 'tickets' && <TicketsTab />}

@@ -94,6 +94,36 @@ export async function listTickets(input: ListTicketsInput = {}): Promise<TicketS
   return rows.map(toSummary);
 }
 
+/**
+ * List recent tickets as RAW objects with the related entities the dashboard renders — the same
+ * shape `searchTicketsByCreator` returns, so the route can fall back to this when the search scope
+ * is missing without losing the account/contact/assignee/department the UI needs. `include` pulls
+ * the nested `contact.account.accountName`, `assignee`, `team` and `department` (name) in one call.
+ */
+export async function listTicketsDetailed(input: ListTicketsInput = {}): Promise<Record<string, unknown>[]> {
+  const url = new URL(deskUrl('/tickets'));
+  url.searchParams.set('from', '1');
+  url.searchParams.set('limit', String(clampLimit(input.limit, MAX_TICKET_LIMIT)));
+  url.searchParams.set('sortBy', input.sortBy ?? '-createdTime');
+  url.searchParams.set('include', 'contacts,assignee,team,departments');
+  if (input.status) url.searchParams.set('status', input.status);
+  if (input.departmentId) url.searchParams.set('departmentId', input.departmentId);
+  return deskGet<Record<string, unknown>>(url);
+}
+
+/**
+ * A ticket's threads — the actual customer↔agent messages (email/web/escalation content), oldest
+ * first. `direction: 'in'` is the requester, `'out'` an agent reply. Auto-created tickets (e.g.
+ * Rejection Reports) carry their body here as the description thread, NOT as a comment — the
+ * conversation view merges these with agent comments.
+ */
+export async function getTicketThreads(ticketId: string, limit = 30): Promise<Record<string, unknown>[]> {
+  const url = new URL(deskUrl(`/tickets/${encodeURIComponent(ticketId)}/threads`));
+  url.searchParams.set('from', '1');
+  url.searchParams.set('limit', String(clampLimit(limit, MAX_TICKET_LIMIT)));
+  return deskGet<Record<string, unknown>>(url);
+}
+
 export interface DeskDepartment {
   id: string;
   name?: string;

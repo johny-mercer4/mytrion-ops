@@ -1668,3 +1668,23 @@ Live audit of the Home tab (acting as a real agent) surfaced snapshot/inbox gaps
 - Verified live (act-as Adam Johnson): snapshot renders real week data + Volume Trend −47%; inbox
   list + modal populated with a single clean MEDIUM/HIGH badge; activity 13 calls; servercrm WS
   OPEN→subscribe→subscribed ("● LIVE").
+
+### Tickets audit + real nav badges
+
+- **Ticket cards showed Agent N/A / Company — / Contact —.** The Desk route falls back to
+  `listTickets` (search scope missing → `scoped:false`), and `toSummary()` strips
+  account/contact/assignee/department. Added `listTicketsDetailed` (raw objects,
+  `include=contacts,assignee,team,departments`) and pointed the fallback at it. `mapTicket` now
+  reads the real nesting the reference uses — company = `contact.account.accountName`, contact =
+  `contact.firstName+lastName`, department = `department.name` (object), owner = escalation `team.name`
+  else `assignee.firstName+lastName` (null = genuinely unassigned → "N/A"). Live: "AZAEL TRANSPORT
+  SERVICE", "BEKA STAR LLC / Bekzod Musinov", "Customer Service", etc.
+- **Ticket conversation was empty.** Auto-created Rejection Reports carry their body as a THREAD
+  (threadCount 1, commentCount 0), but `loadTicketMessages` only fetched comments. Added
+  `getTicketThreads` + the `/desk/tickets/:id/comments` endpoint now returns `{threads, comments}`;
+  the adapter merges them oldest→newest ('in' thread = requester, 'out' = us). Live: the
+  "Error Code: 787 … INACTIVE CARD … SAN ANTONIO … LOVES #242" thread renders.
+- **Nav badges were hardcoded (4/2/7).** Removed the literals from `salesData.NAV`; the Shell now
+  computes them from real data — Inbox = `loadInbox().length`, Tickets = open (non-closed) count —
+  keyed on the acted-as agent so they refetch on "View as". Open Pool has no badge until its data
+  flow is rebuilt (no fake number). Live: Inbox 24, Tickets 43.

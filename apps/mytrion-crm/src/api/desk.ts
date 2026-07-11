@@ -14,10 +14,17 @@ export interface DeskTicket {
   priority?: string;
   channel?: string;
   departmentId?: string;
-  department?: string;
-  assignee?: { name?: string } | null;
+  /** With ?include=departments this is an object; older/stripped payloads may be a string. */
+  department?: { id?: string; name?: string } | string | null;
+  team?: { id?: string; name?: string } | null;
+  assignee?: { name?: string; firstName?: string | null; lastName?: string | null } | null;
   contactName?: string;
-  contact?: { firstName?: string; lastName?: string } | null;
+  /** With ?include=contacts the account name is nested under contact.account. */
+  contact?: {
+    firstName?: string | null;
+    lastName?: string | null;
+    account?: { accountName?: string } | null;
+  } | null;
   accountName?: string;
   createdTime?: string;
   dueDate?: string;
@@ -37,6 +44,20 @@ export interface DeskComment {
   [k: string]: unknown;
 }
 
+/** A ticket thread — the requester/agent message body (email/web/escalation), not an agent comment. */
+export interface DeskThread {
+  id?: string | number;
+  summary?: string;
+  content?: string;
+  /** 'in' = requester, 'out' = agent reply. */
+  direction?: string;
+  author?: { name?: string; firstName?: string | null; lastName?: string | null; type?: string } | null;
+  createdTime?: string;
+  isDescriptionThread?: boolean;
+  attachmentCount?: number;
+  [k: string]: unknown;
+}
+
 export async function listDeskTickets(opts: { limit?: number; zohoUserId?: string } = {}): Promise<{
   tickets: DeskTicket[];
   scoped: boolean;
@@ -46,10 +67,14 @@ export async function listDeskTickets(opts: { limit?: number; zohoUserId?: strin
   })) as { tickets: DeskTicket[]; scoped: boolean };
 }
 
-export async function listDeskComments(ticketId: string, limit = 50): Promise<{ comments: DeskComment[] }> {
-  return (await request('GET', `/desk/tickets/${encodeURIComponent(ticketId)}/comments`, {
+export async function listDeskComments(
+  ticketId: string,
+  limit = 50,
+): Promise<{ comments: DeskComment[]; threads: DeskThread[] }> {
+  const res = (await request('GET', `/desk/tickets/${encodeURIComponent(ticketId)}/comments`, {
     query: { limit },
-  })) as { comments: DeskComment[] };
+  })) as { comments?: DeskComment[]; threads?: DeskThread[] };
+  return { comments: res.comments ?? [], threads: res.threads ?? [] };
 }
 
 export async function replyDeskTicket(ticketId: string, content: string, isPublic = true): Promise<unknown> {

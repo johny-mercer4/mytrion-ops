@@ -13,7 +13,8 @@ import { AppError, RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
   getTicketComments,
-  listTickets,
+  getTicketThreads,
+  listTicketsDetailed,
   postTicketComment,
   searchTicketsByCreator,
 } from '../../integrations/zohoDesk.js';
@@ -76,7 +77,9 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
         return { tickets, scoped: true };
       } catch (err) {
         if (err instanceof Error && /SCOPE_MISMATCH|403/.test(err.message)) {
-          const tickets = await listTickets({ limit: q.limit ?? 50 });
+          // Fall back to the recent-tickets list — DETAILED so account/contact/assignee/department
+          // still render (the plain summary strips them). Flagged via `scoped:false`.
+          const tickets = await listTicketsDetailed({ limit: q.limit ?? 50 });
           return { tickets, scoped: false };
         }
         throw err;
@@ -86,14 +89,21 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  /** One ticket's conversation. */
+  /**
+   * One ticket's conversation — the requester↔agent THREADS (the ticket's actual body/replies)
+   * plus agent COMMENTS. Auto-created tickets carry their content as a thread, not a comment, so
+   * threads alone are what make the pane non-empty. The UI merges + sorts the two by time.
+   */
   app.get('/desk/tickets/:id/comments', guard, async (request) => {
     requireSalesAccess(request);
     const { id } = request.params as { id: string };
     const q = commentsQuery.parse(request.query);
     try {
-      const comments = await getTicketComments(id, q.limit);
-      return { comments };
+      const [threads, comments] = await Promise.all([
+        getTicketThreads(id, q.limit).catch(() => [] as Record<string, unknown>[]),
+        getTicketComments(id, q.limit).catch(() => [] as Record<string, unknown>[]),
+      ]);
+      return { threads, comments };
     } catch (err) {
       throw deskError(err);
     }

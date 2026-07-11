@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { getSession } from '@/api/session';
-import { listDeskComments, listDeskTickets, type DeskComment, type DeskTicket } from '@/api/desk';
+import { listDeskComments, listDeskTickets, type DeskComment, type DeskThread, type DeskTicket } from '@/api/desk';
 import { callTouchpoint } from '@/api/touchpoints';
 import { ICO } from './salesData';
 
@@ -378,23 +378,39 @@ export interface TicketVM {
   escalated: boolean;
   overdue: boolean;
 }
+/** A person's display name from firstName/lastName, tolerating nulls. */
+function fullName(o: { firstName?: string | null; lastName?: string | null } | null | undefined): string {
+  if (!o) return '';
+  return `${o.firstName ?? ''} ${o.lastName ?? ''}`.trim();
+}
+
 function mapTicket(t: DeskTicket): TicketVM {
   const cf = (t.cf ?? {}) as Record<string, unknown>;
   const channel = String(t.channel ?? 'Customer Service');
-  const contactName =
-    t.contactName ??
-    (t.contact ? `${t.contact.firstName ?? ''} ${t.contact.lastName ?? ''}`.trim() : '') ??
+  const escalated = channel === 'Escalation' || t.channel === 'Escalation';
+  // Company = the contact's account (with ?include=contacts it's nested), then legacy/cf fallbacks.
+  const company =
+    t.contact?.account?.accountName ??
+    (typeof t.accountName === 'string' ? t.accountName : '') ??
     '';
+  // Contact = the requester (firstName+lastName, or the flat contactName).
+  const contactName = fullName(t.contact) || t.contactName || '';
+  // Department name (object with ?include=departments, else a plain string on older payloads).
+  const deptName = typeof t.department === 'string' ? t.department : (t.department?.name ?? '');
+  // Owner: escalations belong to a team; normal tickets to the assignee (null = unassigned).
+  const owner = escalated
+    ? t.team?.name ?? (typeof cf.cf_original_stream_manager === 'string' ? cf.cf_original_stream_manager : '')
+    : fullName(t.assignee) || t.assignee?.name || '';
   return {
     id: String(t.id ?? ''),
     num: String(t.ticketNumber ?? t.number ?? t.id ?? ''),
     subject: String(t.subject ?? '(no subject)'),
-    company: String(t.accountName ?? cf.cf_carrier_id_application_id ?? '—'),
+    company: company || String(cf.cf_carrier_id_application_id ?? '—'),
     channel,
-    dept: String(t.department ?? cf.cf_target_department ?? '—'),
+    dept: deptName || String(cf.cf_target_department ?? '—'),
     targetDept: String(cf.cf_target_department ?? ''),
     contact: contactName || '—',
-    agent: String(t.assignee?.name ?? 'N/A'),
+    agent: owner || 'N/A',
     priority: String(t.priority ?? 'Normal'),
     status: String(t.status ?? 'Open'),
     ticketType: String(cf.cf_ticket_type ?? 'N/A'),
@@ -402,7 +418,7 @@ function mapTicket(t: DeskTicket): TicketVM {
     description: stripHtml(String((t as { description?: string }).description ?? '—')),
     ageHrs: hoursSince(t.createdTime),
     unread: 0,
-    escalated: channel === 'Escalation',
+    escalated,
     overdue: Boolean(t.isOverDue),
   };
 }
@@ -420,16 +436,38 @@ export interface TicketMsgVM {
 }
 export async function loadTicketMessages(ticketId: string): Promise<TicketMsgVM[]> {
   const myId = getSession()?.worker.zohoUserId ?? '';
-  const res = await listDeskComments(ticketId, 50);
-  return (res.comments ?? []).map((c: DeskComment) => {
+  const { threads, comments } = await listDeskComments(ticketId, 50);
+  const ms = (v: string | undefined): number => {
+    const t = v ? new Date(v).getTime() : 0;
+    return Number.isNaN(t) ? 0 : t;
+  };
+  // Threads are the actual requester/agent messages (the ticket body + email replies); an
+  // 'out' thread is ours. Comments are agent notes. Merge and sort oldest→newest as a timeline.
+  const fromThreads = (threads ?? [])
+    .map((t: DeskThread) => {
+      const text = stripHtml(String(t.content ?? t.summary ?? ''));
+      if (!text) return null;
+      const outbound = t.direction === 'out';
+      return {
+        from: outbound ? 'me' : fullName(t.author) || t.author?.name || 'Customer',
+        type: 'comment' as const,
+        text,
+        time: relTime(t.createdTime),
+        _ts: ms(t.createdTime),
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+  const fromComments = (comments ?? []).map((c: DeskComment) => {
     const outbound = c.direction === 'out' || String(c.commenterId ?? '') === String(myId);
     return {
       from: outbound ? 'me' : (c.author?.name ?? 'Support'),
       type: 'comment' as const,
       text: stripHtml(String(c.content ?? '')),
       time: relTime(c.commentedTime),
+      _ts: ms(c.commentedTime),
     };
   });
+  return [...fromThreads, ...fromComments].sort((a, b) => a._ts - b._ts).map(({ _ts, ...m }) => m);
 }
 
 // ---- Client drilldown modal: cards (dwh.cards) + activity (dwh.transactions) ----
