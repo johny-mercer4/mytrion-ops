@@ -1,26 +1,31 @@
 /**
- * Automations tab — Sales Mytrion redesign. Self-service catalog over AUTOMATIONS: search box +
- * dept-colored card grid with code chips and a disabled "soon" state. Clicking a card opens the
- * automation modal — a multi-variant runner (WEX search, deal/card pickers, limit fields, invoice
- * / transaction filters, BOCA/close form, replacement address, simple info) that steps through
- * config → running (phased progress) → done (result table or success). Ported verbatim from the
- * reference prototype's auto* handlers / renderVals() view-model (see ref/script.js).
+ * Automations tab — Sales Mytrion redesign. Self-service catalog over the (static) AUTOMATIONS
+ * action catalog: search box + dept-colored card grid, then a multi-variant runner modal (WEX
+ * search, deal/card pickers, limit fields, invoice / transaction filters, address / note forms).
+ * LIVE data: the deal picker searches the agent's real clients (clients.by_agent), the card picker
+ * lists live cards (dwh.cards / efs.cards), and RUN dispatches the matching touchpoint per action
+ * (balance→dwh.carrier_balance, transactions→dwh.transactions, invoices→sales_mytrion.fetch_invoices,
+ * money-code→dwh.money_code, card actions→cards.status / cards.limits / efs.card_override, verify→
+ * dwh.carrier_overview, wex→wex.application), rendering the returned rows in the existing markup and
+ * firing pushToast + logAutomation. Actions with no self-service touchpoint show a "not available"
+ * note (no fake result). View-model / JSX preserved from the reference prototype.
  */
 import { useEffect, useRef, useState } from 'react';
 import { s, Svg, Badge } from '../dc';
 import { badge, deptStyle, iconBox, type BadgeVM } from '../salesData';
-import { AUTOMATIONS, DEALS, CARDS, WEXRESULTS, LIMITTYPES, INVROWS, TXNROWS } from '../mock';
+import { callTouchpoint, logAutomation } from '@/api/touchpoints';
+import { getSession } from '@/api/session';
+import { useLoad, money } from '../live';
 import { useSales } from '../ctx';
+import {
+  AUTO_LIST, LIMITTYPES, RUNNABLE, PHASE_MAP,
+  loadDeals, loadCards, mapWex,
+  str, gal, shortCard, fmtDate, titleStatus, mapInvRange, daysWindow,
+  type Automation, type Deal, type Card, type WexResult, type InvRow, type TxnRow, type DonePayload,
+} from '../autoLive';
 
-// ---------- types ----------
+// ---------- local UI types ----------
 
-interface Automation {
-  id: string; title: string; codes: readonly string[]; dept: string; icon: string; desc: string;
-  top?: boolean; kind?: string; verb?: string; limits?: boolean; soon?: boolean;
-}
-interface Deal { id: string; name: string; company: string; app: string; carrier: string; phone: string; }
-interface Card { id: string; number: string; status: string; driver: string; unit: string; }
-interface WexResult { company: string; appId: string; contact: string; status: string; group: string; }
 interface Addr { address: string; city: string; state: string; zip: string; }
 interface WexQ { appId: string; last: string; mc: string; }
 type Step = 'config' | 'running' | 'done';
@@ -28,10 +33,6 @@ type LimitDir = 'increase' | 'decrease';
 
 // ---------- constants / pure helpers (from renderVals) ----------
 
-const AUTO_LIST: readonly Automation[] = AUTOMATIONS;
-const DEAL_LIST: readonly Deal[] = DEALS;
-const CARD_LIST: readonly Card[] = CARDS;
-const WEX_LIST: readonly WexResult[] = WEXRESULTS;
 const DEPT_COL: Record<string, string> = { C: 'var(--orange)', Q: 'var(--accent)', V: 'var(--ok)', M: 'var(--violet)' };
 const cardCol: Record<string, string> = { active: 'var(--ok)', fraud: 'var(--danger)', inactive: 'var(--muted)' };
 const grad = 'linear-gradient(120deg,var(--accent),var(--accent-2))';
@@ -41,6 +42,10 @@ const inp44 = 'width:100%;height:44px;padding:0 14px;border-radius:12px;border:1
 const labelCss = 'font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
 const pickLabelCss = 'font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em';
 const dropCss = 'position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:5;border-radius:12px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);overflow:hidden';
+const dropMsg = 'padding:14px;font-size:12.5px;color:var(--muted);text-align:center';
+const dropErr = 'padding:14px;font-size:12.5px;color:var(--danger);text-align:center';
+const noteWarn = 'padding:14px 16px;border-radius:12px;background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);font-size:12.5px;color:var(--text2);line-height:1.5';
+const noteErr = 'padding:12px 14px;border-radius:11px;background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);font-size:12.5px;color:var(--danger);line-height:1.5';
 const mono = "font-family:'JetBrains Mono',monospace";
 
 const invRanges = ['Last 30 days', 'Last 90 days', 'This year', 'Custom range'];
@@ -78,21 +83,31 @@ export function AutoTab() {
   const [autoLimitDir, setAutoLimitDir] = useState<LimitDir>('increase');
   const [autoProgress, setAutoProgress] = useState(0);
   const [autoPhase, setAutoPhase] = useState('');
-  const [autoResult, setAutoResult] = useState<{ kind: string } | null>(null);
+  const [autoResult, setAutoResult] = useState<DonePayload | null>(null);
   const [autoAddr, setAutoAddr] = useState<Addr>({ address: '', city: '', state: '', zip: '' });
   const [autoNote, setAutoNote] = useState('');
   const [autoDue, setAutoDue] = useState('');
   const [autoInvStatus, setAutoInvStatus] = useState('all');
   const [autoInvRange, setAutoInvRange] = useState('Last 30 days');
   const [autoTxnRange, setAutoTxnRange] = useState('30');
+  const [autoRunErr, setAutoRunErr] = useState<string | null>(null);
+  const [invRows, setInvRows] = useState<InvRow[]>([]);
+  const [txnRows, setTxnRows] = useState<TxnRow[]>([]);
   const [wexQ, setWexQ] = useState<WexQ>({ appId: '', last: '', mc: '' });
   const [wexSearching, setWexSearching] = useState(false);
   const [wexResults, setWexResults] = useState<readonly WexResult[] | null>(null);
+  const [wexErr, setWexErr] = useState<string | null>(null);
 
   const progTimer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const fetchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const wexTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => { clearInterval(progTimer.current); clearTimeout(fetchTimer.current); clearTimeout(wexTimer.current); }, []);
+  useEffect(() => () => { clearInterval(progTimer.current); clearTimeout(fetchTimer.current); }, []);
+
+  // ---------- live data (real clients + cards) ----------
+  const dealsLoad = useLoad(loadDeals, []);
+  const DEAL_LIST = dealsLoad.data ?? [];
+  const cardCarrier = autoModal?.kind === 'card' && autoDeal ? autoDeal.carrier : '';
+  const cardsLoad = useLoad(() => (cardCarrier ? loadCards(cardCarrier) : Promise.resolve<Card[]>([])), [cardCarrier]);
+  const CARD_LIST = cardsLoad.data ?? [];
 
   // ---------- handlers (reference auto* methods) ----------
   const openAuto = (a: Automation): void => {
@@ -100,9 +115,10 @@ export function AutoTab() {
     setAutoModal(a); setAutoStep('config'); setAutoDeal(null); setAutoCard(null);
     setAutoDealQuery(''); setAutoShowDrop(false); setAutoCardQuery(''); setAutoShowCardDrop(false);
     setAutoLimitType(LIMITTYPES[0]); setAutoLimitValue(''); setAutoLimitDir('increase');
-    setAutoProgress(0); setAutoPhase(''); setAutoResult(null);
+    setAutoProgress(0); setAutoPhase(''); setAutoResult(null); setAutoRunErr(null);
+    setInvRows([]); setTxnRows([]);
     setAutoAddr({ address: '', city: '', state: '', zip: '' }); setAutoNote(''); setAutoDue('');
-    setWexQ({ appId: '', last: '', mc: '' }); setWexSearching(false); setWexResults(null);
+    setWexQ({ appId: '', last: '', mc: '' }); setWexSearching(false); setWexResults(null); setWexErr(null);
   };
   const closeAuto = (): void => { if (autoStep === 'running') return; clearInterval(progTimer.current); setAutoModal(null); };
   const setDealQuery = (v: string): void => { setAutoDealQuery(v); setAutoShowDrop(true); };
@@ -115,37 +131,135 @@ export function AutoTab() {
   const setWexField = (k: keyof WexQ, v: string): void => setWexQ((q) => ({ ...q, [k]: v }));
   const downloadAuto = (): void => pushToast('Download started', 'Your file is being prepared');
   const runWex = (): void => {
-    setWexSearching(true); setWexResults(null); clearTimeout(wexTimer.current);
-    wexTimer.current = setTimeout(() => { setWexSearching(false); setWexResults(WEX_LIST); }, 1300);
+    const appId = wexQ.appId.trim();
+    setWexResults(null); setWexErr(null);
+    if (!appId) { setWexErr("Enter an Application ID — name / MC-only search isn't available."); return; }
+    setWexSearching(true);
+    callTouchpoint('wex.application', { appId })
+      .then((res) => { if (!res || res.found === false) setWexResults([]); else setWexResults([mapWex(res, appId)]); })
+      .catch((e: unknown) => { setWexErr(e instanceof Error ? e.message : 'Search failed.'); setWexResults([]); })
+      .finally(() => setWexSearching(false));
   };
-  const resetAuto = (): void => { setAutoStep('config'); setAutoProgress(0); setAutoResult(null); setAutoCard(null); };
+  const resetAuto = (): void => {
+    setAutoStep('config'); setAutoProgress(0); setAutoResult(null); setAutoCard(null);
+    setAutoRunErr(null); setInvRows([]); setTxnRows([]);
+  };
+
+  const carrierIdOf = (): string => {
+    const c = autoDeal?.carrier?.trim();
+    if (!c) throw new Error('This client has no carrier id yet — pick a converted client.');
+    return c;
+  };
+
+  const runTouchpoint = async (bm: Automation): Promise<DonePayload> => {
+    const cid = carrierIdOf();
+    const card = autoCard?.number ?? '';
+    switch (bm.id) {
+      case 'invoices': {
+        const res = await callTouchpoint('sales_mytrion.fetch_invoices', {
+          carrierId: cid, range: mapInvRange(autoInvRange),
+          ...(autoInvStatus !== 'all' ? { status: autoInvStatus } : {}),
+        });
+        setInvRows((res.data ?? []).map((inv, i) => {
+          const r = inv as Record<string, unknown>;
+          return {
+            inv: str(r.invoice_ref ?? r.invoice_number ?? r.invoice_id ?? r.id) || `INV-${i + 1}`,
+            date: fmtDate(r.period ?? r.created_date ?? r.createdDate ?? r.invoice_date),
+            amount: money(r.total_amount ?? r.amount),
+            status: titleStatus(r.status),
+          };
+        }));
+        return { kind: 'invoices' };
+      }
+      case 'transactions': {
+        const { from, to } = daysWindow(autoTxnRange);
+        const res = await callTouchpoint('dwh.transactions', { carrierId: cid, range: 'custom', from, to, limit: 200 });
+        setTxnRows((res.data ?? []).slice(0, 100).map((tx) => {
+          const r = tx as Record<string, unknown>;
+          return {
+            date: fmtDate(r.transaction_date ?? r.date),
+            card: shortCard(r.card_number),
+            driver: str(r.driver_name ?? r.driver ?? r.location_name) || '—',
+            gallons: gal(r.transaction_fuel_quantity ?? r.line_item_fuel_quantity ?? r.fuel_quantity),
+            amount: money(r.net_total ?? r.line_item_amount ?? r.amount),
+          };
+        }));
+        return { kind: 'transactions' };
+      }
+      case 'balance': {
+        const bal = await callTouchpoint('dwh.carrier_balance', { carrierId: cid });
+        const parts = [`available balance ${money(bal.efs_balance ?? bal.balance)}`];
+        if (bal.credit_limit != null) parts.push(`on a ${money(bal.credit_limit)} line`);
+        if (bal.credit_remaining != null) parts.push(`${money(bal.credit_remaining)} remaining`);
+        if (bal.efs_error) parts.push(`(EFS: ${bal.efs_error})`);
+        return { kind: 'message', message: `${str(bal.company_name) || 'This carrier'} — ${parts.join(', ')}.` };
+      }
+      case 'money-code': {
+        const mc = await callTouchpoint('dwh.money_code', { carrierId: cid });
+        const msg = mc.eligible
+          ? `eligible — ${money(mc.available)} available of a ${money(mc.credit_limit)} line${mc.billing_cycle_label ? ` (${mc.billing_cycle_label})` : ''}.`
+          : `not eligible for a money code right now${mc.available != null ? ` — ${money(mc.available)} available.` : '.'}`;
+        return { kind: 'message', message: `${str(mc.company_name) || 'This carrier'} is ${msg}` };
+      }
+      case 'verification': {
+        const ov = await callTouchpoint('dwh.carrier_overview', { carrierId: cid });
+        return {
+          kind: 'message',
+          message: `${str(ov.company_name) || 'This carrier'}: account ${ov.is_active ? 'active' : 'inactive'}, ${ov.cards?.active_count ?? 0} active cards, open debt ${money(ov.cmp_debt?.total_debt ?? 0)}.`,
+        };
+      }
+      case 'card-activation': {
+        const res = await callTouchpoint('cards.status', { carrierId: cid, cardNumber: card, action: 'ACTIVATE' });
+        return { kind: 'message', message: str(res.message) || `Card ${shortCard(card)} set to ${str(res.newStatus) || 'ACTIVE'}.` };
+      }
+      case 'limits-change': {
+        const res = await callTouchpoint('cards.limits', {
+          carrierId: cid, cardNumber: card, limitId: autoLimitType, limitValue: autoLimitValue,
+          action: autoLimitDir === 'increase' ? 'INCREASE' : 'DECREASE',
+        });
+        return { kind: 'message', message: str(res.message) || `${autoLimitType} ${autoLimitDir}d to ${autoLimitValue} on card ${shortCard(card)}.` };
+      }
+      case 'fraud-hold-release': {
+        const email = getSession()?.worker.email ?? '';
+        if (!email) throw new Error('Your session has no email — the fraud team reply needs one.');
+        await callTouchpoint('fraud.hold_release', {
+          companyName: autoDeal?.name ?? '', carrierId: cid, agentEmail: email, cardNumber: card, ticketType: 'fraud_release',
+        });
+        return { kind: 'message', message: `Release request sent to the fraud team — they'll reply to ${email}.` };
+      }
+      case 'override-card': {
+        const res = await callTouchpoint('efs.card_override', { carrierId: cid, cardNumber: card });
+        return { kind: 'message', message: str(res.message) || `Card ${shortCard(card)} granted a temporary active window.` };
+      }
+      default:
+        throw new Error('This action is not available for self-service.');
+    }
+  };
+
   const runAuto = (): void => {
     const bm = autoModal;
     if (!bm) return;
-    if (bm.kind === 'invoices' || bm.kind === 'transactions') {
-      const k = bm.kind;
-      setAutoStep('running'); setAutoProgress(35);
-      setAutoPhase(k === 'invoices' ? 'Fetching invoices from WorkDrive…' : 'Pulling transaction records…');
-      clearTimeout(fetchTimer.current);
-      fetchTimer.current = setTimeout(() => { setAutoStep('done'); setAutoResult({ kind: k }); }, 1500);
-      return;
-    }
-    const phaseMap: Record<string, string[]> = {
-      card: ['Connecting to EFS…', 'Locating card record…', 'Applying update…', 'Confirming with EFS…'],
-      form: ['Opening WEX Salesforce…', 'Locating application…', 'Submitting request…', 'Assigning to owner…'],
-      simple: ['Authenticating…', 'Querying account…', 'Formatting response…'],
-      ticket: ['Validating request…', 'Creating ticket…', 'Routing to team…'],
-    };
-    const phases = phaseMap[bm.kind ?? ''] ?? ['Working…', 'Finishing…'];
-    setAutoStep('running'); setAutoProgress(0); setAutoPhase(phases[0] ?? '');
-    let p = 0;
+    setAutoRunErr(null); setAutoResult(null); setAutoStep('running');
+    const phases = PHASE_MAP[bm.kind ?? ''] ?? ['Working…', 'Finishing…'];
+    let p = 6; setAutoProgress(6); setAutoPhase(phases[0] ?? 'Working…');
     clearInterval(progTimer.current);
     progTimer.current = setInterval(() => {
-      p = Math.min(100, p + (4 + Math.random() * 7));
+      p = Math.min(92, p + (3 + Math.random() * 6));
       const idx = Math.min(phases.length - 1, Math.floor((p / 100) * phases.length));
       setAutoProgress(Math.round(p)); setAutoPhase(phases[idx] ?? '');
-      if (p >= 100) { clearInterval(progTimer.current); setTimeout(() => setAutoStep('done'), 300); }
-    }, 150);
+    }, 160);
+    runTouchpoint(bm)
+      .then((payload) => {
+        clearInterval(progTimer.current); setAutoProgress(100); setAutoResult(payload);
+        fetchTimer.current = setTimeout(() => setAutoStep('done'), 240);
+        pushToast(`${bm.title} complete`, autoDeal ? `Ran for ${autoDeal.name}` : 'Done');
+        logAutomation(bm.id);
+      })
+      .catch((e: unknown) => {
+        clearInterval(progTimer.current); setAutoProgress(0);
+        setAutoRunErr(e instanceof Error ? e.message : 'The action failed — try again.');
+        setAutoStep('config');
+      });
   };
 
   // ---------- view-model (mirrors renderVals) ----------
@@ -165,24 +279,20 @@ export function AutoTab() {
   const needsDeal = !!kind && kind !== 'search';
   const needsCard = kind === 'card' && hasDeal;
   const isLimits = !!b?.limits && hasCard;
-  const canRun =
+  const unavailable = !!b && kind !== 'search' && !RUNNABLE.has(b.id);
+  const canRun = !unavailable && (
     kind === 'invoices' || kind === 'transactions' ? hasDeal
       : kind === 'card' ? hasCard && (!b?.limits || autoLimitValue.length > 0)
         : kind === 'form' || kind === 'simple' || kind === 'ticket' ? hasDeal
-          : false;
+          : false);
   const runVerb = kind === 'invoices' ? 'Get Invoices' : kind === 'transactions' ? 'Fetch Transactions' : b?.verb || 'Submit';
-  const successMsg =
-    kind === 'ticket' ? "Your request was filed and routed to the right team. You'll get an inbox update when it's actioned."
-      : kind === 'simple' && b?.id === 'balance' ? 'Coastal Haul Co. has $12,480 available on a $20,000 line. 14 days past due.'
-        : kind === 'simple' && b?.id === 'money-code' ? 'Money code 8842-1190-3357 issued for $500. It expires in 24 hours.'
-          : kind === 'simple' ? 'Carrier verified with FMCSA. DOT and MC are active and in good standing.'
-            : `${b?.verb || 'Action'} completed for ${autoDeal?.company || 'the selected deal'}.`;
+  const successMsg = autoResult?.message ?? `${runVerb} completed for ${autoDeal?.name ?? 'the selected client'}.`;
 
   const autoCardDisplay = autoCard ? `•••• ${autoCard.number.slice(-4)}` : '';
   const autoCardBadge: BadgeVM = autoCard ? badge(autoCard.status.toUpperCase(), cardCol[autoCard.status] ?? 'var(--muted)') : { text: '', style: '' };
   const wexResultsVM = (wexResults ?? []).map((r) => ({ ...r, statusBadge: badge(r.group, r.group === 'Complete' ? 'var(--ok)' : 'var(--warn)') }));
   const wexShow = wexResults !== null && !wexSearching;
-  const invRowsVM = INVROWS.map((r) => ({ ...r, statusBadge: badge(r.status, r.status === 'Paid' ? 'var(--ok)' : 'var(--danger)') }));
+  const invRowsVM = invRows.map((r) => ({ ...r, statusBadge: badge(r.status, r.status === 'Paid' ? 'var(--ok)' : 'var(--danger)') }));
   const autoResultInvoices = autoResult?.kind === 'invoices';
   const autoResultTxn = autoResult?.kind === 'transactions';
   const autoIsResultTable = autoResultInvoices || autoResultTxn;
@@ -239,7 +349,7 @@ export function AutoTab() {
                 <div style={s('display:flex;flex-direction:column;gap:18px')}>
                   {kind === 'search' && (
                     <div>
-                      <div style={s('font-size:12.5px;color:var(--text2);margin-bottom:12px')}>Search WEX applications directly. Fill any field — at least one required.</div>
+                      <div style={s('font-size:12.5px;color:var(--text2);margin-bottom:12px')}>Search WEX applications directly. Enter an Application ID.</div>
                       <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
                         <div><Lbl t="Application ID" /><input value={wexQ.appId} onChange={(e) => setWexField('appId', e.target.value)} placeholder="e.g. 872228" className="ss-in" style={s(inp40)} /></div>
                         <div><Lbl t="Last Name" /><input value={wexQ.last} onChange={(e) => setWexField('last', e.target.value)} placeholder="e.g. Crossan" className="ss-in" style={s(inp40)} /></div>
@@ -251,7 +361,9 @@ export function AutoTab() {
                           {skel8.map((sk) => <div key={sk} style={s('display:flex;gap:10px;padding:13px;border-radius:11px;background:var(--alt);border:1px solid var(--border2)')}><div className="ss-skel" style={s('flex:1;height:14px')}></div><div className="ss-skel" style={s('width:60px;height:14px')}></div></div>)}
                         </div>
                       )}
-                      {wexShow && (
+                      {wexErr && <div style={s(`margin-top:16px;${dropErr}`)}>{wexErr}</div>}
+                      {wexShow && wexResultsVM.length === 0 && !wexErr && <div style={s(`margin-top:16px;${dropMsg}`)}>No application found for that ID.</div>}
+                      {wexShow && wexResultsVM.length > 0 && (
                         <div style={s('margin-top:16px;display:flex;flex-direction:column;gap:9px')}>
                           {wexResultsVM.map((r) => (
                             <div key={r.appId} className="ss-card-h" style={s('padding:13px 15px;border-radius:12px;background:var(--alt);border:1px solid var(--border);cursor:pointer')}>
@@ -280,13 +392,15 @@ export function AutoTab() {
                           <input value={autoDealQuery} onChange={(e) => setDealQuery(e.target.value)} onFocus={() => setAutoShowDrop(true)} placeholder="Search by name, company, app ID, carrier or phone…" className="ss-in" style={s(inp44)} />
                           {autoShowDrop && (
                             <div style={s(`${dropCss};max-height:230px;overflow-y:auto`)}>
-                              {filteredDeals.map((d) => (
+                              {dealsLoad.loading && <div style={s(dropMsg)}>Loading clients…</div>}
+                              {dealsLoad.error && <div style={s(dropErr)}>{dealsLoad.error}</div>}
+                              {!dealsLoad.loading && !dealsLoad.error && filteredDeals.map((d) => (
                                 <div key={d.id} onMouseDown={() => selectDeal(d)} className="ss-tab-x" style={s('padding:12px 15px;cursor:pointer;border-bottom:1px solid var(--border2)')}>
                                   <div style={s('font-size:13px;font-weight:700')}>{d.name}</div>
                                   <div style={s(`font-size:11px;color:var(--muted);margin-top:3px;${mono}`)}>{d.company} · App {d.app} · {d.phone}</div>
                                 </div>
                               ))}
-                              {filteredDeals.length === 0 && autoDealQuery.length > 0 && <div style={s('padding:14px;font-size:12.5px;color:var(--muted);text-align:center')}>No matching deals</div>}
+                              {!dealsLoad.loading && !dealsLoad.error && filteredDeals.length === 0 && autoDealQuery.length > 0 && <div style={s('padding:14px;font-size:12.5px;color:var(--muted);text-align:center')}>No matching deals</div>}
                             </div>
                           )}
                         </div>
@@ -309,14 +423,16 @@ export function AutoTab() {
                           <input value={autoCardQuery} onChange={(e) => setCardQuery(e.target.value)} onFocus={() => setAutoShowCardDrop(true)} placeholder="Search card number…" className="ss-in" style={s(inp44)} />
                           {autoShowCardDrop && (
                             <div style={s(`${dropCss};max-height:220px;overflow-y:auto`)}>
-                              {filteredCards.map((c) => (
+                              {cardsLoad.loading && <div style={s(dropMsg)}>Loading cards…</div>}
+                              {cardsLoad.error && <div style={s(dropErr)}>{cardsLoad.error}</div>}
+                              {!cardsLoad.loading && !cardsLoad.error && filteredCards.map((c) => (
                                 <div key={c.id} onMouseDown={() => selectCard(c)} className="ss-tab-x" style={s('display:flex;align-items:center;gap:10px;padding:12px 15px;cursor:pointer;border-bottom:1px solid var(--border2)')}>
                                   <span style={s(`${mono};font-size:13px;font-weight:600`)}>{`•••• ${c.number.slice(-4)}`}</span>
                                   <Badge vm={badge(c.status.toUpperCase(), cardCol[c.status] ?? 'var(--muted)')} />
                                   <span style={s('font-size:11px;color:var(--muted);margin-left:auto')}>{`${c.driver || 'No driver'} · Unit ${c.unit || '—'}`}</span>
                                 </div>
                               ))}
-                              {filteredCards.length === 0 && <div style={s('padding:14px;font-size:12.5px;color:var(--muted);text-align:center')}>No matching cards</div>}
+                              {!cardsLoad.loading && !cardsLoad.error && filteredCards.length === 0 && <div style={s('padding:14px;font-size:12.5px;color:var(--muted);text-align:center')}>No matching cards</div>}
                             </div>
                           )}
                         </div>
@@ -377,14 +493,18 @@ export function AutoTab() {
                   )}
 
                   {kind === 'simple' && hasDeal && (
-                    <div style={s('padding:14px 16px;border-radius:12px;background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:12.5px;color:var(--text2);line-height:1.5')}><strong style={s('color:var(--text)')}>Ready.</strong> This will run against <strong style={s('color:var(--text)')}>{autoDeal?.company}</strong> and return an instant result — no ticket created.</div>
+                    <div style={s('padding:14px 16px;border-radius:12px;background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:12.5px;color:var(--text2);line-height:1.5')}><strong style={s('color:var(--text)')}>Ready.</strong> This will run against <strong style={s('color:var(--text)')}>{autoDeal?.name}</strong> and return an instant result — no ticket created.</div>
                   )}
 
                   {kind !== 'search' && (
-                    <div style={s('display:flex;justify-content:flex-end;padding-top:2px')}>
-                      {canRun
-                        ? <button onClick={runAuto} className="ss-btn-p" style={s(btnP('height:44px;padding:0 24px;border-radius:12px;font-size:13.5px;box-shadow:0 6px 18px rgba(var(--accent-rgb),.35)'))}>{runVerb}</button>
-                        : <button disabled style={s('height:44px;padding:0 24px;border-radius:12px;border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:13.5px;cursor:not-allowed')}>{runVerb}</button>}
+                    <div style={s('display:flex;flex-direction:column;gap:12px;padding-top:2px')}>
+                      {unavailable && <div style={s(noteWarn)}>This action isn&apos;t available for self-service yet — file a ticket and the team will handle it.</div>}
+                      {autoRunErr && <div style={s(noteErr)}>{autoRunErr}</div>}
+                      <div style={s('display:flex;justify-content:flex-end')}>
+                        {canRun
+                          ? <button onClick={runAuto} className="ss-btn-p" style={s(btnP('height:44px;padding:0 24px;border-radius:12px;font-size:13.5px;box-shadow:0 6px 18px rgba(var(--accent-rgb),.35)'))}>{runVerb}</button>
+                          : <button disabled style={s('height:44px;padding:0 24px;border-radius:12px;border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:13.5px;cursor:not-allowed')}>{runVerb}</button>}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -414,7 +534,7 @@ export function AutoTab() {
                   {autoResultTxn && (
                     <div style={s('border-radius:13px;border:1px solid var(--border);overflow:hidden')}>
                       <div style={s('display:grid;grid-template-columns:0.8fr 1fr 1.2fr 1fr 1fr;gap:8px;padding:11px 15px;background:var(--alt);font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}><span>Date</span><span>Card</span><span>Driver</span><span style={s('text-align:right')}>Gallons</span><span style={s('text-align:right')}>Amount</span></div>
-                      {TXNROWS.map((r, i) => (
+                      {txnRows.map((r, i) => (
                         <div key={i} style={s('display:grid;grid-template-columns:0.8fr 1fr 1.2fr 1fr 1fr;gap:8px;padding:12px 15px;border-top:1px solid var(--border2);align-items:center;font-size:12.5px')}><span style={s('color:var(--text2)')}>{r.date}</span><span style={s(mono)}>{r.card}</span><span style={s('color:var(--text2)')}>{r.driver}</span><span style={s(`text-align:right;${mono}`)}>{r.gallons}</span><span style={s(`text-align:right;${mono};font-weight:600`)}>{r.amount}</span></div>
                       ))}
                     </div>

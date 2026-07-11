@@ -2,10 +2,13 @@
  * Sales Mytrion redesign — Create tab. Ported from the reference prototype (create.html +
  * script.js renderVals/create handlers) at pixel fidelity: a single "Create a Ticket" form
  * with a department picker (C/Q/V/M colored cards), a Low/Normal/High/Critical priority
- * picker, subject + details fields, and a submit button that spins for ~1.6s then toasts.
- * All form state is local; the toast is delivered through the shared shell context.
+ * picker, subject + details fields, and a submit button that spins while the request is in
+ * flight then toasts. All form state is local; on submit it files a real support/escalation
+ * ticket via the `tickets.create_escalation` touchpoint (identity server-injected) and the
+ * toast is delivered through the shared shell context. No mock data.
  */
 import { useState } from 'react';
+import { callTouchpoint } from '@/api/touchpoints';
 import { s } from '../dc';
 import { useSales } from '../ctx';
 
@@ -89,16 +92,32 @@ export function CreateTab() {
   const createCanSubmit = subjectFilled && !createSubmitting;
   const createCannot = !subjectFilled || createSubmitting;
 
-  const submitCreate = () => {
+  // Department selection drives the escalation reason (identity is server-injected).
+  const deptReason = (id: string): string => DEPTS.find(([d]) => d === id)?.[1] ?? 'Other';
+
+  const submitCreate = async (): Promise<void> => {
     if (createSubmitting) return;
-    if (!createSubject.trim()) return;
+    const subject = createSubject.trim();
+    if (!subject) return;
     setCreateSubmitting(true);
-    setTimeout(() => {
-      setCreateSubmitting(false);
+    try {
+      const res = await callTouchpoint('tickets.create_escalation', {
+        escalationReason: deptReason(createDept),
+        questionSubject: subject,
+        description: createBody,
+        attachmentUrl: '',
+      });
+      if (!res.ticketId || !res.escalationId) {
+        throw new Error(res.message || 'Ticket was not created — no ticket id returned.');
+      }
       setCreateSubject('');
       setCreateBody('');
       pushToast('Ticket created', 'Routed to the right team — you’ll see updates in your inbox');
-    }, 1600);
+    } catch (e) {
+      pushToast('Couldn’t create ticket', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setCreateSubmitting(false);
+    }
   };
 
   return (
@@ -168,7 +187,7 @@ export function CreateTab() {
         <div style={s('display:flex;justify-content:flex-end')}>
           {createCanSubmit && (
             <button
-              onClick={submitCreate}
+              onClick={() => void submitCreate()}
               className="ss-btn-p"
               style={s(
                 'height:46px;padding:0 26px;border-radius:12px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:13.5px;cursor:pointer;box-shadow:0 6px 18px rgba(var(--accent-rgb),.35)',

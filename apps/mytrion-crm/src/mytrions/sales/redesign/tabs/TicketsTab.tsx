@@ -2,57 +2,20 @@
  * Sales Mytrion redesign — Tickets tab. A two-pane Desk console: a searchable/filterable
  * ticket list on the left and a conversation thread on the right, with a slide-in details
  * panel. Ported verbatim from the reference prototype's `isTickets` slice + renderVals()
- * ticket view-model; per-tab state (selection, filter, search, reply, spin, details) lives
- * in local React state, and reply/read mutations run against a local copy of the mock data.
+ * ticket view-model; per-tab UI state (selection, filter, search, reply, spin, details) lives
+ * in local React state. Data is LIVE: the list comes from Zoho Desk (`loadTickets`, creator-
+ * scoped server-side), the open thread from `loadTicketMessages`, replies POST via
+ * `replyDeskTicket`, and a servercrm WebSocket reloads on `ticket_comment_added`.
  */
 import { useEffect, useRef, useState } from 'react';
 
+import { replyDeskTicket } from '@/api/desk';
+import { getSession } from '@/api/session';
 import { s } from '../dc';
 import { badge, type BadgeVM } from '../salesData';
 import { useSales } from '../ctx';
-import { TICKETS, TICKET_MSGS } from '../mock';
-
-// ---------- types over the (readonly) mock data ----------
-
-interface Ticket {
-  id: string;
-  num: string;
-  subject: string;
-  company: string;
-  channel: string;
-  dept: string;
-  targetDept: string;
-  contact: string;
-  agent: string;
-  priority: string;
-  status: string;
-  ticketType: string;
-  carrierId: string;
-  description: string;
-  ageHrs: number;
-  unread: number;
-  escalated: boolean;
-  overdue: boolean;
-}
-
-interface TicketFile {
-  name: string;
-  size: string;
-}
-
-interface TicketMsg {
-  from: string;
-  type: 'comment' | 'attachment';
-  text?: string;
-  time: string;
-  file?: TicketFile;
-}
-
-type RawMsg = { from: string; type: string; text?: string; time: string; file?: TicketFile };
-
-// The mock arrays are our own literals; these assertions only widen their `as const` types.
-const ALL_TICKETS = TICKETS as readonly Ticket[];
-const RAW_MSGS = TICKET_MSGS as Readonly<Record<string, readonly RawMsg[]>>;
+import { useLoad, loadTickets, loadTicketMessages, type TicketVM, type TicketMsgVM } from '../live';
+import { useServerCrmSocket } from '../useServerCrmSocket';
 
 type TicketFilter = 'all' | 'active' | 'closed';
 
@@ -95,19 +58,6 @@ const ageText = (h: number): string => {
 
 const statusBadgeOf = (st: string): BadgeVM => badge(st, tkStatusMap[st] || 'var(--muted)');
 
-function seedMsgs(): Record<string, TicketMsg[]> {
-  const out: Record<string, TicketMsg[]> = {};
-  for (const key of Object.keys(RAW_MSGS)) {
-    out[key] = (RAW_MSGS[key] || []).map((m) => {
-      const msg: TicketMsg = { from: m.from, type: m.type === 'attachment' ? 'attachment' : 'comment', time: m.time };
-      if (m.text !== undefined) msg.text = m.text;
-      if (m.file !== undefined) msg.file = m.file;
-      return msg;
-    });
-  }
-  return out;
-}
-
 const FILTERS: readonly [TicketFilter, string][] = [
   ['all', 'All'],
   ['active', 'In Progress'],
@@ -119,23 +69,60 @@ const DETAIL_ROW_STYLE = 'font-size:10px;font-weight:800;letter-spacing:.07em;te
 export function TicketsTab() {
   const { pushToast } = useSales();
 
-  const [selectedTicket, setSelectedTicket] = useState<string>('t1');
+  const [selectedTicket, setSelectedTicket] = useState<string>('');
   const [ticketFilter, setTicketFilter] = useState<TicketFilter>('all');
   const [ticketSearch, setTicketSearch] = useState<string>('');
   const [ticketReply, setTicketReply] = useState<string>('');
   const [ticketsSpin, setTicketsSpin] = useState<boolean>(false);
   const [ticketDetailsOpen, setTicketDetailsOpen] = useState<boolean>(false);
-  const [msgs, setMsgs] = useState<Record<string, TicketMsg[]>>(seedMsgs);
   const [readIds, setReadIds] = useState<Set<string>>(() => new Set<string>());
 
   const spinRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
 
+  // ---------- live data ----------
+  const ticketsLoad = useLoad(loadTickets, []);
+  const msgsLoad = useLoad(
+    () => (selectedTicket ? loadTicketMessages(selectedTicket) : Promise.resolve<TicketMsgVM[]>([])),
+    [selectedTicket],
+  );
+
+  const allTickets: TicketVM[] = ticketsLoad.data?.tickets ?? [];
+  const scoped = ticketsLoad.data?.scoped ?? true;
+
+  // Auto-select the first ticket once the list loads; keep the current selection if still present.
+  useEffect(() => {
+    const list = ticketsLoad.data?.tickets;
+    const first = list?.[0];
+    if (!first) return;
+    setSelectedTicket((cur) => (cur && list.some((t) => t.id === cur) ? cur : first.id));
+  }, [ticketsLoad.data]);
+
+  // ---------- real-time (servercrm WS) ----------
+  const zohoUserId = getSession()?.worker.zohoUserId ?? '';
+  const ticketIds = allTickets.map((t) => t.id);
+  const ticketIdsKey = ticketIds.join(',');
+  const { resubscribe } = useServerCrmSocket({
+    enabled: !!zohoUserId,
+    subscribe: { type: 'subscribe', userId: zohoUserId, ticketIds },
+    onMessage: (m) => {
+      if (m.type === 'ticket_comment_added' || m.type === 'ticket_attachment_added') {
+        msgsLoad.reload();
+        ticketsLoad.reload();
+      }
+    },
+  });
+  // Push a fresh subscribe frame whenever the loaded ticket-id set changes.
+  useEffect(() => {
+    resubscribe();
+    // eslint-disable-next-line
+  }, [ticketIdsKey]);
+
   // Auto-scroll the thread to the bottom on selection change / new reply (reference scrollTicket).
   useEffect(() => {
     const el = bodyRef.current;
     if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
-  }, [selectedTicket, msgs]);
+  }, [selectedTicket, msgsLoad.data]);
 
   useEffect(() => () => { if (spinRef.current) clearTimeout(spinRef.current); }, []);
 
@@ -152,23 +139,29 @@ export function TicketsTab() {
 
   const refreshTickets = (): void => {
     setTicketsSpin(true);
+    ticketsLoad.reload();
+    msgsLoad.reload();
     if (spinRef.current) clearTimeout(spinRef.current);
     spinRef.current = setTimeout(() => setTicketsSpin(false), 900);
   };
 
-  const sendTicketReply = (): void => {
+  const sendTicketReply = async (): Promise<void> => {
     const text = ticketReply.trim();
-    if (!text) return;
-    const id = selectedTicket;
-    const now = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-    setMsgs((prev) => ({ ...prev, [id]: [...(prev[id] || []), { from: 'me', type: 'comment', text, time: now }] }));
+    if (!text || !selectedTicket) return;
     setTicketReply('');
+    try {
+      await replyDeskTicket(selectedTicket, text);
+      msgsLoad.reload();
+      ticketsLoad.reload();
+    } catch (e) {
+      pushToast('Reply failed', e instanceof Error ? e.message : 'Could not send your reply.');
+    }
   };
 
   const ticketReplyKey = (e: React.KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendTicketReply();
+      void sendTicketReply();
     }
   };
 
@@ -177,7 +170,7 @@ export function TicketsTab() {
   // ---------- view-model ----------
   const tkF = ticketFilter;
   const tq = ticketSearch.toLowerCase();
-  let tkList = ALL_TICKETS.filter((t) =>
+  let tkList = allTickets.filter((t) =>
     tkF === 'all' ? true : tkF === 'closed' ? isClosedStatus(t.status) : !isClosedStatus(t.status),
   );
   if (tq) {
@@ -187,12 +180,12 @@ export function TicketsTab() {
   }
   const ticketListEmpty = tkList.length === 0;
 
-  const tkSel = ALL_TICKETS.find((t) => t.id === selectedTicket);
+  const tkSel = allTickets.find((t) => t.id === selectedTicket);
   const tkEsc = tkSel?.channel === 'Escalation';
   const tkClosed = isClosedStatus(tkSel?.status || '');
   const tkOpen = !tkClosed;
 
-  const threadMsgs = msgs[selectedTicket] || [];
+  const threadMsgs = msgsLoad.data ?? [];
   const tkInitials = (tkSel?.contact || '?').split(' ').map((w) => w[0]).slice(0, 2).join('');
   const tkStatusBadge = tkSel?.status ? statusBadgeOf(tkSel.status) : { text: '', style: '' };
   const tkPrioBadge = tkSel?.priority ? badge(tkSel.priority, tkPrioCol[tkSel.priority] || 'var(--muted)') : { text: '', style: '' };
@@ -223,7 +216,7 @@ export function TicketsTab() {
             <div style={s('display:flex;align-items:center;justify-content:space-between;margin-bottom:11px')}>
               <span style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.05em;text-transform:uppercase')}>My Tickets</span>
               <div style={s('display:flex;align-items:center;gap:7px')}>
-                <span style={s('font-size:10.5px;font-weight:700;color:var(--ok);display:flex;align-items:center;gap:5px')}><span style={s('width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 22%,transparent)')} />LIVE</span>
+                <span title={scoped ? undefined : 'Showing recent tickets — Desk search scope unavailable'} style={s('font-size:10.5px;font-weight:700;color:var(--ok);display:flex;align-items:center;gap:5px')}><span style={s('width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 22%,transparent)')} />LIVE</span>
                 <button onClick={refreshTickets} aria-label="Refresh" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={s(ticketsSpinStyle)}><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg></button>
               </div>
             </div>
@@ -241,6 +234,12 @@ export function TicketsTab() {
             </div>
           </div>
           <div className="ss-scroll" style={s('flex:1;min-height:0;padding:11px;display:flex;flex-direction:column;gap:9px')}>
+            {ticketsLoad.loading && allTickets.length === 0 && (
+              <div style={s('padding:40px 16px;text-align:center;color:var(--muted);font-size:12.5px')}>Loading…</div>
+            )}
+            {ticketsLoad.error && (
+              <div style={s('padding:40px 16px;text-align:center;color:var(--danger);font-size:12.5px')}>{ticketsLoad.error}</div>
+            )}
             {tkList.map((t) => {
               const active = selectedTicket === t.id;
               const esc = t.channel === 'Escalation';
@@ -267,7 +266,7 @@ export function TicketsTab() {
                 </button>
               );
             })}
-            {ticketListEmpty && (
+            {ticketListEmpty && !ticketsLoad.loading && !ticketsLoad.error && (
               <div style={s('padding:40px 16px;text-align:center;color:var(--muted);font-size:12.5px')}>No tickets match your search.</div>
             )}
           </div>
@@ -291,6 +290,12 @@ export function TicketsTab() {
               </div>
               <div ref={bodyRef} className="ss-scroll" style={s('flex:1;min-height:0;padding:18px;display:flex;flex-direction:column;gap:14px;background:var(--bg)')}>
                 <div style={s('text-align:center;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)')}>{tkSel.channel} · opened {ageText(tkSel.ageHrs)} ago</div>
+                {msgsLoad.loading && threadMsgs.length === 0 && (
+                  <div style={s('text-align:center;color:var(--muted);font-size:12.5px;padding:20px')}>Loading…</div>
+                )}
+                {msgsLoad.error && (
+                  <div style={s('text-align:center;color:var(--danger);font-size:12.5px;padding:20px')}>{msgsLoad.error}</div>
+                )}
                 {threadMsgs.map((m, i) => {
                   const me = m.from === 'me';
                   const who = me ? 'You' : m.from || tkSel.agent || 'Support';
@@ -331,7 +336,7 @@ export function TicketsTab() {
               )}
             </>
           ) : (
-            <div style={s('flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--muted);padding:24px;text-align:center')}><div style={s('width:64px;height:64px;border-radius:16px;background:var(--raised);display:flex;align-items:center;justify-content:center;color:var(--accent)')}><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg></div><div style={s('font-size:14px;font-weight:700;color:var(--text)')}>No ticket selected</div><div style={s('font-size:12.5px')}>Pick a ticket from the list to view the thread and reply.</div></div>
+            <div style={s('flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--muted);padding:24px;text-align:center')}><div style={s('width:64px;height:64px;border-radius:16px;background:var(--raised);display:flex;align-items:center;justify-content:center;color:var(--accent)')}><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg></div><div style={s('font-size:14px;font-weight:700;color:var(--text)')}>{ticketsLoad.loading ? 'Loading tickets…' : ticketsLoad.error ? 'Could not load tickets' : 'No ticket selected'}</div><div style={s('font-size:12.5px')}>{ticketsLoad.error ? ticketsLoad.error : 'Pick a ticket from the list to view the thread and reply.'}</div></div>
           )}
         </div>
       </div>

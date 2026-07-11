@@ -3,17 +3,19 @@
  * `isInbox` slice + renderVals() view-model (script.js). Filter tabs (All/Unread/Tasks/
  * Alerts/Reminders) with live counts; message rows with a type icon + colored bar, priority
  * badge, tag, unread dot, per-row mark-read + delete actions; "Mark all read"; empty state.
- * Read-state and delete are local state over the INBOX array; rows open the shared detail
- * modal via openDetail (the reference's openInbox payload).
+ * DATA: live CRM inbox via loadInbox() (inbox.list); delete via deleteInboxMessage (optimistic);
+ * read-state kept local in localStorage; real-time refresh over the servercrm WebSocket
+ * (subscribe {type:'subscribe'} → reload on crm_inbox_notification).
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { s, Svg } from '../dc';
-import { INBOX } from '../mock';
 import { badge, iconBox, ICO } from '../salesData';
 import { useSales } from '../ctx';
+import { useLoad, loadInbox, deleteInboxMessage, type InboxVM } from '../live';
+import { useServerCrmSocket } from '../useServerCrmSocket';
 
-type InboxItem = (typeof INBOX)[number];
+type InboxItem = InboxVM;
 type IType = InboxItem['type'];
 type FilterId = 'all' | 'unread' | 'task' | 'alert' | 'reminder';
 
@@ -32,11 +34,49 @@ const TAB_DEFS: ReadonlyArray<readonly [FilterId, string]> = [
   ['all', 'All'], ['unread', 'Unread'], ['task', 'Tasks'], ['alert', 'Alerts'], ['reminder', 'Reminders'],
 ];
 
+// ---- read-state (local, persisted to localStorage) ----
+const READ_KEY = 'octane.sales.redesign.inbox.read';
+function loadReadIds(): Record<string, boolean> {
+  try {
+    const ids = JSON.parse(localStorage.getItem(READ_KEY) ?? '[]') as string[];
+    const r: Record<string, boolean> = {};
+    for (const id of ids) r[id] = true;
+    return r;
+  } catch {
+    return {};
+  }
+}
+function persistReadIds(read: Record<string, boolean>): void {
+  try {
+    const ids = Object.keys(read).filter((k) => read[k]);
+    localStorage.setItem(READ_KEY, JSON.stringify(ids.slice(-500)));
+  } catch {
+    /* noop */
+  }
+}
+
 export function InboxTab() {
   const { openDetail, pushToast } = useSales();
   const [inboxFilter, setInboxFilter] = useState<string>('all');
-  const [read, setRead] = useState<Record<string, boolean>>({});
-  const [items, setItems] = useState<InboxItem[]>(() => [...INBOX]);
+  const [read, setRead] = useState<Record<string, boolean>>(() => loadReadIds());
+  const [items, setItems] = useState<InboxItem[]>([]);
+
+  // ---- live data (inbox.list) mirrored into local state for optimistic delete ----
+  const { data, loading, error, reload } = useLoad(loadInbox, []);
+  useEffect(() => {
+    if (data) setItems(data);
+  }, [data]);
+  useEffect(() => {
+    persistReadIds(read);
+  }, [read]);
+
+  // ---- real-time: reload when a new CRM inbox notification arrives ----
+  useServerCrmSocket({
+    subscribe: { type: 'subscribe' },
+    onMessage: (msg) => {
+      if (msg.type === 'crm_inbox_notification') reload();
+    },
+  });
 
   // ---- view-model (mirrors renderVals()) ----
   const fMatch = (i: InboxItem): boolean => {
@@ -55,8 +95,10 @@ export function InboxTab() {
     reminder: items.filter((i) => i.type === 'reminder' || i.type === 'info').length,
   };
   const filtered = items.filter(fMatch);
+  const isInitialLoading = loading && items.length === 0;
+  const hasError = Boolean(error) && items.length === 0;
   const inboxHas = filtered.length > 0;
-  const inboxEmpty = filtered.length === 0;
+  const inboxEmpty = !isInitialLoading && !hasError && filtered.length === 0;
   const inboxUnreadHas = iCount.unread > 0;
   const inboxEmptyLabel = inboxFilter === 'all' ? '' : inboxFilter + ' ';
 
@@ -75,6 +117,9 @@ export function InboxTab() {
     e.stopPropagation();
     setItems((xs) => xs.filter((x) => x.id !== i.id));
     pushToast('Message removed', '');
+    void deleteInboxMessage(i.id).catch((err: unknown) => {
+      pushToast('Delete failed', err instanceof Error ? err.message : 'Could not remove the message');
+    });
   };
   const openInbox = (i: InboxItem) => {
     setRead((sr) => ({ ...sr, [i.id]: true }));
@@ -117,6 +162,12 @@ export function InboxTab() {
           );
         })}
       </div>
+      {isInitialLoading && (
+        <div style={s('text-align:center;padding:64px 20px;color:var(--muted);font-size:13px')}>Loading…</div>
+      )}
+      {hasError && (
+        <div style={s('text-align:center;padding:64px 20px;color:var(--danger);font-size:13px')}>{error}</div>
+      )}
       {inboxHas && (
         <div style={s('display:flex;flex-direction:column;gap:11px')}>
           {filtered.map((i) => {

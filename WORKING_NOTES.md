@@ -1575,3 +1575,33 @@ Carrier accounts are now provisioned FROM the already-defined clients in the dat
 - NOTE: this pass uses the reference's mock data to lock the exact visual. Next pass wires the six
   already-live tabs (Home/DataCenter/Dashboard/Carriers/Create/Automations) onto the existing
   touchpoints, Tickets→Zoho Desk, Open Pool→retention — per the "re-skin, keep data live" decision.
+
+## 2026-07-11 — Sales Mytrion redesign: LIVE data pass (mock → touchpoints + Zoho Desk + servercrm WS)
+
+- Removed all mock/fake data from the redesign. Every tab now reads real backend data; the only
+  remaining fixture is `redesign/mock.ts` → `DEALPOOL`, kept solely for the Open Pool tab, whose
+  live flow is being rebuilt separately (per the user's "Open Pool connection not needed — we'll
+  re-do" decision). When Pool is wired, delete mock.ts + its PoolTab import.
+- New adapter layer `redesign/live.ts` (+ `autoLive.ts` for the Automations run flows) exposes
+  `useLoad(fn)` → {data,loading,error,reload} and typed loaders over the touchpoint client:
+  Home snapshot/announcements/activity/inbox, Inbox list+delete, Records clients.by_agent,
+  Dashboard dashboard.agent_sales, Carriers sales.carriers_search, Tickets via the new /v1/desk
+  client. Same view-model shapes the mock arrays had, so tab JSX changed minimally; each tab gained
+  loading skeletons + error + empty states.
+- Data source per tab: Home/Inbox/Records/Dashboard/Carriers → Deluge/servercrm touchpoints;
+  Create → tickets.create_escalation; Automations → 11 real touchpoints (dwh.*, cards.*, efs.*,
+  fraud.hold_release, wex.application, dwh.money_code) via autoLive; Tickets → Zoho Desk
+  (list creator-scoped w/ recent-tickets fallback, conversation, reply). Pool → DEALPOOL (fixture).
+- Real-time: `redesign/useServerCrmSocket.ts` reconnecting hook (ports the self-service widget's
+  socket + ticket-dashboard subscribe protocol; default `wss://servercrm-wyhh.onrender.com`,
+  override VITE_SERVERCRM_WS_URL). Wired in Home (inbox notifications refresh snapshot/inbox),
+  Inbox (crm_inbox_notification → reload), Tickets (subscribe {userId,ticketIds};
+  ticket_comment_added/attachment → reload thread/list).
+- Backend added for Desk: `integrations/zohoDesk.ts` searchTicketsByCreator / getTicketComments /
+  postTicketComment; `routes/v1/desk.routes.ts` (GET /desk/tickets [session-authoritative creator
+  scope, admin ?zoho_user_id; SCOPE_MISMATCH/403 → listTickets fallback `scoped:false`],
+  GET .../comments, POST .../reply [audited desk.ticket.reply]); registered in app.ts.
+- Verified: web typecheck clean, backend typecheck clean, redesign lint 0 errors/0 warnings,
+  vite widget build succeeds, and all 22 touchpoint keys the UI calls exist in the backend catalog
+  (no runtime 404s). Live Desk smoke (listTickets + comments) confirmed earlier.
+- Rewiring fanned out one agent per tab via a workflow (8/8, 0 errors), then integrated by hand.

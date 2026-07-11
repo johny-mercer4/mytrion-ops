@@ -1,14 +1,25 @@
 /**
  * Sales Mytrion redesign — Dashboard tab. Ported verbatim from the reference prototype
  * (Sales Mytrion.dc.html `isDash` slice + renderVals() dashboard block). Sub-tabs
- * Sales / Invoices / Transactions / Cards are local `dashSub` state; each panel computes
- * its view-model inline from the mock arrays, mirroring the reference renderVals().
- * Applications & Money Codes intentionally live in Data Center (per the slice).
+ * Sales / Invoices / Transactions / Cards are local `dashSub` state; the JSX/layout is
+ * unchanged — only the data source is swapped from the mock arrays to live adapters.
+ *
+ * DATA:
+ *   - Sales sub-tab → loadDashboard() (dashboard.agent_sales): kpi donuts + card utilization +
+ *     new-cards, Cards-by-Company bars, Card-Activity line (buildLine over .activity), and the
+ *     Transaction Details table (.txTable). The two hero cards derive Card Swipes from the
+ *     activity series and Total Gallons from the transaction-detail rows.
+ *   - Invoices sub-tab → sales_mytrion.fetch_invoices is per-carrier only; with no carrier
+ *     context here it renders a friendly placeholder (no mock invoices).
+ *   - Transactions sub-tab → per-swipe detail is per-carrier only → placeholder.
+ *   - Cards sub-tab → Active / Inactive / Used-this-cycle derived from loadDashboard() kpi.
+ * A "not found in dim_company" upstream miss (agent with no carrier book) surfaces as a
+ * friendly empty state rather than an error.
  */
-import { useState } from 'react';
-import { DASHTABS, RECORDS, DASHACT, INVROWS, TXNROWS } from '../mock';
-import { badge, buildLine, timeParts, ICO, type BadgeVM } from '../salesData';
-import { s, Svg, Badge } from '../dc';
+import { useState, type ReactNode } from 'react';
+import { buildLine, timeParts, ICO } from '../salesData';
+import { s, Svg } from '../dc';
+import { useLoad, loadDashboard, numFmt } from '../live';
 
 // ---------- view-model types ----------
 
@@ -25,13 +36,6 @@ interface TxTableRow {
   gallons: string;
   total: string;
 }
-interface InvRowVM {
-  inv: string;
-  date: string;
-  amount: string;
-  status: string;
-  statusBadge: BadgeVM;
-}
 interface DashDotVM {
   cx: string;
   cy: string;
@@ -44,47 +48,99 @@ interface CardBreakVM {
   pct: string;
 }
 
+// ---------- helpers ----------
+
+const parseNum = (v: string): number => Number(v.replace(/[^0-9.-]/g, '')) || 0;
+function compactNum(v: number): string {
+  if (v >= 1e6) return (v / 1e6).toFixed(2) + 'M';
+  if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K';
+  return numFmt(Math.round(v));
+}
+
+const DASH_SUBTABS: { id: string; label: string; badge?: string }[] = [
+  { id: 'sales', label: 'Sales' },
+  { id: 'invoices', label: 'Invoices' },
+  { id: 'transactions', label: 'Transactions' },
+  { id: 'cards', label: 'Cards' },
+];
+
+function State({ children, tone }: { children: ReactNode; tone?: 'error' }) {
+  const color = tone === 'error' ? 'var(--danger)' : 'var(--muted)';
+  return <div style={s(`text-align:center;padding:64px 20px;color:${color};font-size:13px`)}>{children}</div>;
+}
+
+function PlaceholderCard({ children }: { children: ReactNode }) {
+  return (
+    <div style={s('padding:40px 20px;border-radius:16px;background:var(--surface);border:1px solid var(--border);text-align:center;color:var(--muted);font-size:13px')}>
+      {children}
+    </div>
+  );
+}
+
+const NO_CARRIERS = /dim_company/i;
+
 // ---------- SALES ----------
 
 function SalesPanel() {
+  const dash = useLoad(loadDashboard, []);
+
+  if (dash.loading) return <State>Loading…</State>;
+  if (dash.error) {
+    if (NO_CARRIERS.test(dash.error)) {
+      return (
+        <State>
+          No carriers are assigned to this agent yet — the dashboard lights up once the book has
+          active carriers. (Admins: use the user switcher to view an agent.)
+        </State>
+      );
+    }
+    return <State tone="error">{dash.error}</State>;
+  }
+  const d = dash.data;
+  if (!d) return null;
+
+  const kn = (key: string): number => d.kpi[key] ?? 0;
+
   const CIRC = 263.9;
   const donutDash = (p: number): string => `${((p / 100) * CIRC).toFixed(1)} ${CIRC}`;
-  const donutCompanies = donutDash(78);
-  const donutCards = donutDash(64);
+  const donutCompanies = donutDash(kn('active_companies_pct'));
+  const donutCards = donutDash(kn('active_cards_pct'));
+  const utilPct = kn('total_cards_pct');
 
-  const maxAct = Math.max(...RECORDS.map((c) => c.active));
+  const maxAct = Math.max(...d.bars.map((b) => b.active), 1);
   const stColMap: Record<string, string> = {
     active: 'var(--ok)',
-    attention: 'var(--warn)',
-    debtor: 'var(--danger)',
+    inactive: 'var(--warn)',
+    stuck: 'var(--danger)',
   };
-  const dashBars: DashBarVM[] = RECORDS.map((c) => ({
-    name: c.name,
-    val: String(c.active),
-    pct: Math.round((c.active / maxAct) * 100) + '%',
-    dotCol: stColMap[c.status] ?? 'var(--muted)',
+  const dashBars: DashBarVM[] = d.bars.map((b) => ({
+    name: b.name,
+    val: String(b.active),
+    pct: Math.round((b.active / maxAct) * 100) + '%',
+    dotCol: stColMap[b.status] ?? 'var(--muted)',
   }));
 
-  const L = buildLine([...DASHACT], 520, 150);
-  const dashLineArea = L.area;
-  const dashLinePath = L.line;
-  const dashDots: DashDotVM[] = L.pts.map((p) => ({
+  const act = d.activity;
+  const L = act.length >= 2 ? buildLine(act, 520, 150) : null;
+  const dashLineArea = L?.area ?? '';
+  const dashLinePath = L?.line ?? '';
+  const dashDots: DashDotVM[] = (L?.pts ?? []).map((p) => ({
     cx: p.x.toFixed(1),
     cy: p.y.toFixed(1),
     val: String(p.val),
   }));
-  const dashLabels: string[] = DASHACT.map((d) => d.m);
+  const dashLabels: string[] = act.map((dd) => dd.m);
 
-  const newCardsArr = [4, 2, 1, 3, 5, 2];
-  const txArr = [182, 240, 96, 88, 310, 120];
-  const totalArr = [6240, 8180, 3120, 2980, 11040, 4200];
-  const txTable: TxTableRow[] = RECORDS.map((c, i) => ({
-    name: c.name,
-    newCards: String(newCardsArr[i] || 1),
-    tx: String(txArr[i] || 50),
-    gallons: c.gallons,
-    total: '$' + (totalArr[i] || 1000).toLocaleString(),
+  const txTable: TxTableRow[] = d.txTable.map((r) => ({
+    name: r.name,
+    newCards: String(r.newCards),
+    tx: String(r.tx),
+    gallons: r.gallons,
+    total: r.total,
   }));
+
+  const totalSwipes = act.reduce((a, r) => a + r.tx, 0);
+  const totalGallons = d.txTable.reduce((a, r) => a + parseNum(r.gallons), 0);
 
   return (
     <div style={s('display:flex;flex-direction:column;gap:16px')}>
@@ -95,7 +151,7 @@ function SalesPanel() {
               <Svg d={ICO.fuel} size={22} />
             </div>
             <div>
-              <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:28px")}>1.24M</div>
+              <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:28px")}>{compactNum(totalGallons)}</div>
               <div style={s('font-size:11.5px;color:var(--muted);font-weight:600;letter-spacing:.03em;text-transform:uppercase')}>Total Gallons · This Cycle</div>
             </div>
           </div>
@@ -106,7 +162,7 @@ function SalesPanel() {
               <Svg d={ICO.card} size={22} />
             </div>
             <div>
-              <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:28px")}>7,412</div>
+              <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:28px")}>{numFmt(totalSwipes)}</div>
               <div style={s('font-size:11.5px;color:var(--muted);font-weight:600;letter-spacing:.03em;text-transform:uppercase')}>Card Swipes · This Cycle</div>
             </div>
           </div>
@@ -123,8 +179,8 @@ function SalesPanel() {
                   <circle cx="50" cy="50" r="42" fill="none" stroke="var(--ok)" strokeWidth="9" strokeLinecap="round" strokeDasharray={donutCompanies} />
                 </svg>
                 <div style={s('position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center')}>
-                  <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:18px")}>124</div>
-                  <div style={s('font-size:11px;color:var(--ok);font-weight:700')}>78%</div>
+                  <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:18px")}>{numFmt(kn('active_companies'))}</div>
+                  <div style={s('font-size:11px;color:var(--ok);font-weight:700')}>{Math.round(kn('active_companies_pct'))}%</div>
                 </div>
               </div>
               <div style={s('font-size:11px;font-weight:700;color:var(--text2);margin-top:8px')}>Active Companies</div>
@@ -136,8 +192,8 @@ function SalesPanel() {
                   <circle cx="50" cy="50" r="42" fill="none" stroke="var(--accent)" strokeWidth="9" strokeLinecap="round" strokeDasharray={donutCards} />
                 </svg>
                 <div style={s('position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center')}>
-                  <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:18px")}>312</div>
-                  <div style={s('font-size:11px;color:var(--accent);font-weight:700')}>64%</div>
+                  <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:18px")}>{numFmt(kn('active_cards'))}</div>
+                  <div style={s('font-size:11px;color:var(--accent);font-weight:700')}>{Math.round(kn('active_cards_pct'))}%</div>
                 </div>
               </div>
               <div style={s('font-size:11px;font-weight:700;color:var(--text2);margin-top:8px')}>Active Cards</div>
@@ -147,22 +203,22 @@ function SalesPanel() {
         <div style={s('padding:20px;border-radius:16px;background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;gap:14px')}>
           <div>
             <div style={s('font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em')}>Cards Used This Cycle</div>
-            <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:26px;margin-top:3px")}>287</div>
+            <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:26px;margin-top:3px")}>{numFmt(kn('unique_cards_used'))}</div>
             <div style={s('height:7px;border-radius:99px;background:var(--raised);margin-top:8px;overflow:hidden')}>
-              <div style={s('height:100%;width:92%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-2))')} />
+              <div style={s(`height:100%;width:${Math.min(utilPct, 100)}%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-2))`)} />
             </div>
-            <div style={s('font-size:11px;color:var(--muted);margin-top:5px')}><strong style={s('color:var(--accent)')}>92%</strong> of active cards utilized</div>
+            <div style={s('font-size:11px;color:var(--muted);margin-top:5px')}><strong style={s('color:var(--accent)')}>{Math.round(utilPct)}%</strong> of active cards utilized</div>
           </div>
         </div>
         <div style={s('padding:20px;border-radius:16px;background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;gap:16px')}>
           <div>
             <div style={s('font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em')}>New Cards · Cycle</div>
-            <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:24px;color:var(--ok)")}>34</div>
+            <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:24px;color:var(--ok)")}>{numFmt(kn('new_cards_cycle'))}</div>
           </div>
           <div style={s('height:1px;background:var(--border)')} />
           <div>
             <div style={s('font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em')}>Last 7 Days</div>
-            <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:24px;color:var(--ok)")}>11</div>
+            <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:24px;color:var(--ok)")}>{numFmt(kn('new_cards_7d'))}</div>
           </div>
         </div>
       </div>
@@ -198,8 +254,8 @@ function SalesPanel() {
               </defs>
               <path d={dashLineArea} fill="url(#ssArea)" />
               <path d={dashLinePath} fill="none" stroke="var(--accent)" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
-              {dashDots.map((d, i) => (
-                <circle key={i} cx={d.cx} cy={d.cy} r="3" fill="var(--accent)" />
+              {dashDots.map((dd, i) => (
+                <circle key={i} cx={dd.cx} cy={dd.cy} r="3" fill="var(--accent)" />
               ))}
             </svg>
             <div style={s('display:flex;justify-content:space-between;margin-top:8px')}>
@@ -221,15 +277,19 @@ function SalesPanel() {
             <span style={s('text-align:right')}>Gallons</span>
             <span style={s('text-align:right')}>Total</span>
           </div>
-          {txTable.map((r) => (
-            <div key={r.name} style={s('display:grid;grid-template-columns:1.6fr 1fr 1fr 1.1fr 1fr;gap:8px;padding:12px 15px;border-top:1px solid var(--border2);align-items:center;font-size:12.5px')}>
-              <span style={s('font-weight:600')}>{r.name}</span>
-              <span style={s("text-align:right;font-family:'JetBrains Mono',monospace;color:var(--ok)")}>{r.newCards}</span>
-              <span style={s("text-align:right;font-family:'JetBrains Mono',monospace")}>{r.tx}</span>
-              <span style={s("text-align:right;font-family:'JetBrains Mono',monospace;color:var(--violet)")}>{r.gallons}</span>
-              <span style={s("text-align:right;font-family:'JetBrains Mono',monospace;font-weight:600")}>{r.total}</span>
-            </div>
-          ))}
+          {txTable.length === 0 ? (
+            <div style={s('padding:26px 15px;text-align:center;color:var(--muted);font-size:12.5px;border-top:1px solid var(--border2)')}>No transactions this cycle.</div>
+          ) : (
+            txTable.map((r) => (
+              <div key={r.name} style={s('display:grid;grid-template-columns:1.6fr 1fr 1fr 1.1fr 1fr;gap:8px;padding:12px 15px;border-top:1px solid var(--border2);align-items:center;font-size:12.5px')}>
+                <span style={s('font-weight:600')}>{r.name}</span>
+                <span style={s("text-align:right;font-family:'JetBrains Mono',monospace;color:var(--ok)")}>{r.newCards}</span>
+                <span style={s("text-align:right;font-family:'JetBrains Mono',monospace")}>{r.tx}</span>
+                <span style={s("text-align:right;font-family:'JetBrains Mono',monospace;color:var(--violet)")}>{r.gallons}</span>
+                <span style={s("text-align:right;font-family:'JetBrains Mono',monospace;font-weight:600")}>{r.total}</span>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>
@@ -239,91 +299,55 @@ function SalesPanel() {
 // ---------- INVOICES ----------
 
 function InvoicesPanel() {
-  const invRowsD: InvRowVM[] = INVROWS.map((r) => ({
-    ...r,
-    statusBadge: badge(r.status, r.status === 'Paid' ? 'var(--ok)' : 'var(--danger)'),
-  }));
-
+  // sales_mytrion.fetch_invoices is per-carrier only; the dashboard has no carrier context,
+  // so there is no agent-wide invoice source to render here.
   return (
-    <div style={s('display:flex;flex-direction:column;gap:16px')}>
-      <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:16px')}>
-        <div style={s('padding:20px;border-radius:16px;background:var(--surface);border:1px solid var(--border)')}>
-          <div style={s('font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em')}>Outstanding</div>
-          <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:26px;margin-top:6px;color:var(--danger)")}>$10,392</div>
-          <div style={s('font-size:11.5px;color:var(--muted);margin-top:3px')}>Across 2 invoices</div>
-        </div>
-        <div style={s('padding:20px;border-radius:16px;background:var(--surface);border:1px solid var(--border)')}>
-          <div style={s('font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em')}>Paid · 90 days</div>
-          <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:26px;margin-top:6px;color:var(--ok)")}>$22,410</div>
-          <div style={s('font-size:11.5px;color:var(--muted);margin-top:3px')}>On time</div>
-        </div>
-        <div style={s('padding:20px;border-radius:16px;background:var(--surface);border:1px solid var(--border)')}>
-          <div style={s('font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em')}>Overdue</div>
-          <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:26px;margin-top:6px;color:var(--orange)")}>1</div>
-          <div style={s('font-size:11.5px;color:var(--muted);margin-top:3px')}>Needs follow-up</div>
-        </div>
-      </div>
-      <div style={s('padding:20px;border-radius:16px;background:var(--surface);border:1px solid var(--border)')}>
-        <div style={s('font-size:13px;font-weight:700;margin-bottom:14px')}>Recent Invoices</div>
-        <div style={s('border-radius:12px;border:1px solid var(--border);overflow:hidden')}>
-          <div style={s('display:grid;grid-template-columns:1.4fr 1.2fr 1fr auto;gap:8px;padding:11px 15px;background:var(--alt);font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)')}>
-            <span>Invoice</span>
-            <span>Date</span>
-            <span style={s('text-align:right')}>Amount</span>
-            <span>Status</span>
-          </div>
-          {invRowsD.map((r) => (
-            <div key={r.inv} style={s('display:grid;grid-template-columns:1.4fr 1.2fr 1fr auto;gap:8px;padding:12px 15px;border-top:1px solid var(--border2);align-items:center;font-size:12.5px')}>
-              <span style={s("font-family:'JetBrains Mono',monospace;color:var(--accent)")}>{r.inv}</span>
-              <span style={s('color:var(--text2)')}>{r.date}</span>
-              <span style={s("text-align:right;font-family:'JetBrains Mono',monospace;font-weight:600")}>{r.amount}</span>
-              <Badge vm={r.statusBadge} />
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
+    <PlaceholderCard>
+      Invoices are pulled per carrier. Open a carrier from Data Center or Carriers to fetch and
+      download its WorkDrive invoices.
+    </PlaceholderCard>
   );
 }
 
 // ---------- TRANSACTIONS ----------
 
 function TransactionsPanel() {
+  // Per-swipe fuel transactions are a per-carrier report (dwh.transactions); no agent-wide
+  // per-transaction feed exists, so this is a placeholder until a carrier is selected.
   return (
-    <div style={s('padding:20px;border-radius:16px;background:var(--surface);border:1px solid var(--border)')}>
-      <div style={s('display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px')}>
-        <span style={s('font-size:13px;font-weight:700')}>Fuel Transactions · Last 30 days</span>
-        <span style={s('font-size:12px;color:var(--muted)')}>614 gallons · <strong style={s('color:var(--text)')}>$2,093.60</strong></span>
-      </div>
-      <div style={s('border-radius:12px;border:1px solid var(--border);overflow:hidden')}>
-        <div style={s('display:grid;grid-template-columns:0.8fr 1fr 1.2fr 1fr 1fr;gap:8px;padding:11px 15px;background:var(--alt);font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)')}>
-          <span>Date</span>
-          <span>Card</span>
-          <span>Driver</span>
-          <span style={s('text-align:right')}>Gallons</span>
-          <span style={s('text-align:right')}>Amount</span>
-        </div>
-        {TXNROWS.map((r, i) => (
-          <div key={i} style={s('display:grid;grid-template-columns:0.8fr 1fr 1.2fr 1fr 1fr;gap:8px;padding:12px 15px;border-top:1px solid var(--border2);align-items:center;font-size:12.5px')}>
-            <span style={s('color:var(--text2)')}>{r.date}</span>
-            <span style={s("font-family:'JetBrains Mono',monospace")}>{r.card}</span>
-            <span style={s('color:var(--text2)')}>{r.driver}</span>
-            <span style={s("text-align:right;font-family:'JetBrains Mono',monospace")}>{r.gallons}</span>
-            <span style={s("text-align:right;font-family:'JetBrains Mono',monospace;font-weight:600")}>{r.amount}</span>
-          </div>
-        ))}
-      </div>
-    </div>
+    <PlaceholderCard>
+      Fuel transaction details are available per carrier. Open a carrier to view its swipe-level
+      transactions for any date range.
+    </PlaceholderCard>
   );
 }
 
 // ---------- CARDS ----------
 
 function CardsPanel() {
+  const dash = useLoad(loadDashboard, []);
+
+  if (dash.loading) return <State>Loading…</State>;
+  if (dash.error) {
+    if (NO_CARRIERS.test(dash.error)) {
+      return <State>No carriers are assigned to this agent yet — card totals appear once the book has active carriers.</State>;
+    }
+    return <State tone="error">{dash.error}</State>;
+  }
+  const d = dash.data;
+  if (!d) return null;
+
+  const kn = (key: string): number => d.kpi[key] ?? 0;
+  const total = kn('total_cards');
+  const active = kn('active_cards');
+  const inactive = Math.max(0, total - active);
+  const used = kn('unique_cards_used');
+  const pctOf = (x: number): string => (total > 0 ? Math.round((x / total) * 100) + '%' : '0%');
+
   const cardBreak: CardBreakVM[] = [
-    { label: 'Active', count: 49, col: 'var(--ok)', pct: '73%' },
-    { label: 'Inactive', count: 12, col: 'var(--muted)', pct: '18%' },
-    { label: 'Fraud hold', count: 6, col: 'var(--danger)', pct: '9%' },
+    { label: 'Active', count: active, col: 'var(--ok)', pct: pctOf(active) },
+    { label: 'Inactive', count: inactive, col: 'var(--muted)', pct: pctOf(inactive) },
+    { label: 'Used · Cycle', count: used, col: 'var(--accent)', pct: pctOf(used) },
   ];
   return (
     <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:16px')}>
@@ -357,7 +381,7 @@ export function DashTab() {
         <div style={s('font-size:12.5px;color:var(--muted);margin-top:2px')}>{todayDate}</div>
       </div>
       <div style={s('display:flex;gap:6px;margin-bottom:18px;overflow-x:auto;padding:4px;border-radius:13px;background:var(--surface);border:1px solid var(--border)')}>
-        {DASHTABS.map((t) => {
+        {DASH_SUBTABS.map((t) => {
           const on = dashSub === t.id;
           const badgeVal = 'badge' in t ? t.badge : undefined;
           const hasBadge = !!badgeVal;

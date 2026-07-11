@@ -2,18 +2,33 @@
  * Sales Mytrion redesign — Home tab. Ported verbatim from the reference prototype's `isHome`
  * slice + `renderVals()` view-model: hero briefing, workday progress, Updates & Announcements,
  * Today's Snapshot (skeleton → 3 groups), Your Activity (range toggle + daily average strip),
- * and the Quick Actions / Recent Inbox two-column footer. Per-tab UI state (snapshot loading +
- * spin, activity range, inbox read map) lives locally; cross-tab affordances come from useSales().
+ * and the Quick Actions / Recent Inbox two-column footer. The JSX/design is unchanged; the data
+ * source is now LIVE — loadSnapshot / loadAnnouncements / loadActivity / loadInbox via useLoad,
+ * with the servercrm WebSocket reloading announcements + inbox in real time. Per-tab UI state
+ * (activity range, inbox read map, clock tick) stays local; cross-tab affordances come from
+ * useSales(). The Quick Actions cards render the static CALL_TO_ACTIONS catalog (action config).
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { s, Svg } from '../dc';
-import { ANN, INBOX, AUTOMATIONS } from '../mock';
 import { ICO, iconBox, badge, deptStyle, timeParts, USER } from '../salesData';
+import { CALL_TO_ACTIONS } from '../../data';
+import {
+  useLoad,
+  loadSnapshot,
+  loadAnnouncements,
+  loadActivity,
+  loadInbox,
+  numFmt,
+  money,
+  type AnnVM,
+  type InboxVM,
+} from '../live';
+import { useServerCrmSocket } from '../useServerCrmSocket';
 import { useSales } from '../ctx';
 
-type AnnItem = (typeof ANN)[number];
-type InboxItem = (typeof INBOX)[number];
-type InboxType = InboxItem['type'];
+type AnnItem = AnnVM;
+type InboxItem = InboxVM;
+type InboxType = InboxVM['type'];
 
 interface SnapCell {
   icon: string;
@@ -79,34 +94,51 @@ const COL_OF: Record<InboxType, string> = {
   info: 'var(--ok)',
 };
 
+/** Centered muted "Loading…" / red error text — the design's own light-weight states. */
+function StateNote({ tone, children }: { tone: 'muted' | 'danger'; children: ReactNode }) {
+  return (
+    <div style={s(`width:100%;padding:22px;text-align:center;color:var(--${tone});font-size:12.5px;font-weight:600`)}>
+      {children}
+    </div>
+  );
+}
+
 export function HomeTab() {
   const { openDetail, go } = useSales();
 
-  // ---- local per-tab state (reference renderVals inputs) ----
-  const [snapLoading, setSnapLoading] = useState<boolean>(true);
-  const [snapSpin, setSnapSpin] = useState<boolean>(false);
+  // ---- live data ----
+  const snap = useLoad(loadSnapshot, []);
+  const dailyAct = useLoad(() => loadActivity('today'), []); // snapshot "Tasks Done" (today)
+  const ann = useLoad(loadAnnouncements, []);
+  const inbox = useLoad(loadInbox, []);
+
+  // ---- local per-tab state ----
   const [activityRange, setActivityRange] = useState<string>('week');
   const [inboxRead, setInboxRead] = useState<Record<string, boolean>>({});
   const [, setTick] = useState<number>(0); // drives the 30s clock re-render
-  const snapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const act = useLoad(
+    () => loadActivity(activityRange as 'today' | 'week' | 'month'),
+    [activityRange],
+  );
 
   useEffect(() => {
-    snapTimer.current = setTimeout(() => setSnapLoading(false), 2100);
     const clock = setInterval(() => setTick((t) => t + 1), 30000);
-    return () => {
-      if (snapTimer.current) clearTimeout(snapTimer.current);
-      clearInterval(clock);
-    };
+    return () => clearInterval(clock);
   }, []);
 
+  // Real-time: announcements + inbox reload on the matching servercrm frame.
+  useServerCrmSocket({
+    subscribe: { type: 'subscribe' },
+    onMessage: (msg) => {
+      if (msg.type === 'sales_announcement') ann.reload();
+      else if (msg.type === 'crm_inbox_notification') inbox.reload();
+    },
+  });
+
   const refreshSnapshot = (): void => {
-    setSnapLoading(true);
-    setSnapSpin(true);
-    if (snapTimer.current) clearTimeout(snapTimer.current);
-    snapTimer.current = setTimeout(() => {
-      setSnapLoading(false);
-      setSnapSpin(false);
-    }, 1400);
+    snap.reload();
+    dailyAct.reload();
   };
 
   const openInbox = (i: InboxItem): void => {
@@ -145,9 +177,12 @@ export function HomeTab() {
   const workdayPct = T.pct;
   const workdayFill = `${T.pct}%`;
   const workdayKnob = `${Math.min(T.pct, 96)}%`;
-  const inboxUnread = INBOX.filter((i) => !inboxRead[i.id]).length;
-  const snapReady = !snapLoading;
-  const snapSpinCss = snapSpin ? 'animation:ss-spin .9s linear infinite' : '';
+  const annData = ann.data ?? [];
+  const inboxData = inbox.data ?? [];
+  const inboxUnread = inboxData.filter((i) => !inboxRead[i.id]).length;
+  const snapLoading = snap.loading;
+  const snapReady = !snap.loading && !snap.error && !!snap.data;
+  const snapSpinCss = snap.loading ? 'animation:ss-spin .9s linear infinite' : '';
   const skel8 = [1, 2, 3, 4, 5, 6, 7, 8];
 
   const green = 'var(--ok)';
@@ -164,32 +199,33 @@ export function HomeTab() {
     label,
     help,
   });
+  const sf = snap.data;
   const snapshotGroups: SnapGroup[] = [
     {
       label: 'Your Clients',
       cells: [
-        mk('users', accent, 124, 'Active Customers', 'Fueled in the last 10 days'),
-        mk('lead', red, 3, 'Need Attention', 'Quiet 10+ days — worth a call'),
-        mk('clock', orange, 2, 'Stuck Applications', 'Sitting 15+ days'),
-        mk('money', red, '-$6.1k', 'Money Owed', '3 debtors · 1 hard'),
+        mk('users', accent, numFmt(sf?.active_clients ?? 0), 'Active Customers', 'Fueled in the last 10 days'),
+        mk('lead', red, numFmt(sf?.inactive_clients ?? 0), 'Need Attention', 'Quiet 10+ days — worth a call'),
+        mk('clock', orange, numFmt(sf?.stuck_deals_count ?? 0), 'Stuck Applications', 'Sitting 15+ days'),
+        mk('money', red, money(-(sf?.total_debt_amount ?? 0)), 'Money Owed', `${numFmt(sf?.total_debtors ?? 0)} debtors · ${numFmt(sf?.total_hard_debtors ?? 0)} hard`),
       ],
     },
     {
       label: 'This Week',
       cells: [
-        mk('card', green, '1,208', 'Fuel Transactions', '↑ 6% vs last week'),
-        mk('fuel', violet, '48,210', 'Gallons Pumped', 'Mon–today · best this cycle'),
-        mk('card', accent, 34, 'New Cards', 'Activated for new units'),
-        mk('trend', green, '+6%', 'Volume Trend', 'Week over week'),
+        mk('card', green, numFmt(sf?.swipes_this_week ?? 0), 'Fuel Transactions', 'Mon–today this week'),
+        mk('fuel', violet, numFmt(sf?.gallons_this_week ?? 0), 'Gallons Pumped', 'Gallons this cycle'),
+        mk('card', accent, numFmt(sf?.new_cards_this_week ?? 0), 'New Cards', 'Activated for new units'),
+        mk('trend', green, sf?.volume_trend ?? '—', 'Volume Trend', 'Week over week'),
       ],
     },
     {
       label: 'Today',
       cells: [
-        mk('card', accent, 182, 'Fuel Transactions', 'So far today'),
-        mk('fuel', violet, '7,340', 'Gallons Pumped', 'So far today'),
-        mk('card', green, 6, 'New Cards', 'Activated today'),
-        mk('check', green, 9, 'Tasks Done', 'Cleared from your queue'),
+        mk('card', accent, numFmt(sf?.swipes_today ?? 0), 'Fuel Transactions', 'So far today'),
+        mk('fuel', violet, numFmt(sf?.gallons_today ?? 0), 'Gallons Pumped', 'So far today'),
+        mk('card', green, numFmt(sf?.new_cards_today ?? 0), 'New Cards', 'Activated today'),
+        mk('check', green, numFmt(dailyAct.data?.tasks ?? 0), 'Tasks Done', 'Cleared from your queue'),
       ],
     },
   ];
@@ -200,21 +236,27 @@ export function HomeTab() {
     value: String(value),
     label,
   });
+  const ac = act.data;
   const activityTiles: ActTile[] = [
-    at('calls', accent, 28, 'Calls'),
-    at('notes', violet, 15, 'Notes'),
-    at('lead', green, 7, 'Leads +'),
-    at('inbox', accent, 12, 'Received'),
-    at('star', amber, 5, 'Interested'),
-    at('doc', violet, 4, 'Apps'),
-    at('check', green, 9, 'Tasks'),
+    at('calls', accent, ac?.calls ?? 0, 'Calls'),
+    at('notes', violet, ac?.notes ?? 0, 'Notes'),
+    at('lead', green, ac?.leads ?? 0, 'Leads +'),
+    at('inbox', accent, ac?.received ?? 0, 'Received'),
+    at('star', amber, ac?.interested ?? 0, 'Interested'),
+    at('doc', violet, ac?.apps ?? 0, 'Apps'),
+    at('check', green, ac?.tasks ?? 0, 'Tasks'),
   ];
-  const rangeMult = activityRange === 'today' ? 0.2 : activityRange === 'month' ? 4 : 1;
+  const rangeDays = activityRange === 'today' ? 1 : activityRange === 'month' ? 30 : 7;
   const av = (v: number, l: string): ActAvg => ({
-    value: String((v * rangeMult).toFixed(1)).replace('.0', ''),
+    value: (v / rangeDays).toFixed(1).replace('.0', ''),
     label: l,
   });
-  const activityAverages: ActAvg[] = [av(5.6, 'calls'), av(3, 'notes'), av(1.4, 'leads'), av(0.8, 'apps')];
+  const activityAverages: ActAvg[] = [
+    av(ac?.calls ?? 0, 'calls'),
+    av(ac?.notes ?? 0, 'notes'),
+    av(ac?.leads ?? 0, 'leads'),
+    av(ac?.apps ?? 0, 'apps'),
+  ];
   const rangeDefs: [string, string][] = [
     ['today', 'Today'],
     ['week', 'Week'],
@@ -230,14 +272,14 @@ export function HomeTab() {
     };
   });
 
-  const ctaCards: CtaCard[] = AUTOMATIONS.filter((a) => 'top' in a && a.top).map((a) => ({
-    name: a.title,
+  const ctaCards: CtaCard[] = CALL_TO_ACTIONS.filter((a) => a.top).map((a) => ({
+    name: a.name,
     desc: a.desc,
-    top: true,
+    top: a.top,
     codes: a.codes.map((c) => ({ text: c, style: deptStyle(c) })),
   }));
 
-  const inboxPreview: InboxPreviewVM[] = INBOX.slice(0, 3).map((i) => ({
+  const inboxPreview: InboxPreviewVM[] = inboxData.slice(0, 3).map((i) => ({
     id: i.id,
     title: i.title,
     desc: i.desc,
@@ -283,10 +325,13 @@ export function HomeTab() {
       {/* announcements */}
       <div style={s('display:flex;align-items:center;justify-content:space-between;margin:22px 2px 12px')}>
         <div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Svg d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.952 9.168-5v14c-1.543-3.048-5.068-5-9.168-5H7a3.988 3.988 0 01-1.564-.317z" size={17} /></span>Updates &amp; Announcements</div>
-        <span style={s('font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:3px 9px;border-radius:99px;background:rgba(var(--accent-rgb),.14);color:var(--accent)')}>2 NEW</span>
+        <span style={s('font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:3px 9px;border-radius:99px;background:rgba(var(--accent-rgb),.14);color:var(--accent)')}>{annData.length} NEW</span>
       </div>
       <div style={s('display:flex;gap:12px;overflow-x:auto;padding-bottom:6px')}>
-        {ANN.map((a) => (
+        {ann.loading && <StateNote tone="muted">Loading…</StateNote>}
+        {ann.error && <StateNote tone="danger">{ann.error}</StateNote>}
+        {!ann.loading && !ann.error && annData.length === 0 && <StateNote tone="muted">No announcements</StateNote>}
+        {annData.map((a) => (
           <div key={a.title} onClick={() => openAnn(a)} className="ss-card-h" style={s('flex:0 0 300px;display:flex;gap:12px;padding:15px;border-radius:14px;background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
             <div style={s(iconBox(a.color, 40))}><Svg d={a.icon} size={18} /></div>
             <div style={s('min-width:0')}>
@@ -318,6 +363,7 @@ export function HomeTab() {
               ))}
             </div>
           )}
+          {snap.error && <StateNote tone="danger">{snap.error}</StateNote>}
           {snapReady && (
             <div>
               {snapshotGroups.map((g) => (
@@ -351,21 +397,27 @@ export function HomeTab() {
           </div>
         </div>
         <div style={s('padding:18px 20px')}>
-          <div style={s('display:grid;grid-template-columns:repeat(7,1fr);gap:11px')}>
-            {activityTiles.map((t) => (
-              <div key={t.label} style={s('padding:13px;border-radius:12px;background:var(--alt);border:1px solid var(--border2);text-align:center')}>
-                <div style={s(t.iconStyle)}><Svg d={t.icon} size={16} /></div>
-                <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:19px;margin-top:9px")}>{t.value}</div>
-                <div style={s('font-size:10.5px;color:var(--muted);margin-top:2px')}>{t.label}</div>
+          {act.loading && <StateNote tone="muted">Loading…</StateNote>}
+          {!act.loading && act.error && <StateNote tone="danger">{act.error}</StateNote>}
+          {!act.loading && !act.error && (
+            <>
+              <div style={s('display:grid;grid-template-columns:repeat(7,1fr);gap:11px')}>
+                {activityTiles.map((t) => (
+                  <div key={t.label} style={s('padding:13px;border-radius:12px;background:var(--alt);border:1px solid var(--border2);text-align:center')}>
+                    <div style={s(t.iconStyle)}><Svg d={t.icon} size={16} /></div>
+                    <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:19px;margin-top:9px")}>{t.value}</div>
+                    <div style={s('font-size:10.5px;color:var(--muted);margin-top:2px')}>{t.label}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div style={s('margin-top:14px;padding:13px 16px;border-radius:12px;background:linear-gradient(120deg,rgba(var(--accent-rgb),.08),transparent);border:1px solid var(--border2);display:flex;align-items:center;gap:16px;flex-wrap:wrap')}>
-            <span style={s('font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)')}>Daily average</span>
-            {activityAverages.map((a) => (
-              <span key={a.label} style={s('font-size:12px;color:var(--text2)')}><strong style={s("font-family:'JetBrains Mono',monospace;color:var(--text)")}>{a.value}</strong> {a.label}/day</span>
-            ))}
-          </div>
+              <div style={s('margin-top:14px;padding:13px 16px;border-radius:12px;background:linear-gradient(120deg,rgba(var(--accent-rgb),.08),transparent);border:1px solid var(--border2);display:flex;align-items:center;gap:16px;flex-wrap:wrap')}>
+                <span style={s('font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)')}>Daily average</span>
+                {activityAverages.map((a) => (
+                  <span key={a.label} style={s('font-size:12px;color:var(--text2)')}><strong style={s("font-family:'JetBrains Mono',monospace;color:var(--text)")}>{a.value}</strong> {a.label}/day</span>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -392,6 +444,9 @@ export function HomeTab() {
         <div>
           <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" /></svg></span>Recent Inbox</div><button onClick={goInbox} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:7px')}>View all →</button></div>
           <div style={s('display:flex;flex-direction:column;gap:10px')}>
+            {inbox.loading && <StateNote tone="muted">Loading…</StateNote>}
+            {inbox.error && <StateNote tone="danger">{inbox.error}</StateNote>}
+            {!inbox.loading && !inbox.error && inboxData.length === 0 && <StateNote tone="muted">No messages</StateNote>}
             {inboxPreview.map((i) => (
               <div key={i.id} onClick={i.onClick} className="ss-card-h" style={s('display:flex;gap:12px;padding:13px 14px;border-radius:13px;background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm);position:relative;overflow:hidden')}>
                 <div style={s(`position:absolute;left:0;top:0;bottom:0;width:3px;background:${i.barColor}`)}></div>

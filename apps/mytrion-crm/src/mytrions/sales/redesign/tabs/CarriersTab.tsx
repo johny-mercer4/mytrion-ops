@@ -1,61 +1,63 @@
 /**
- * Sales Mytrion redesign — Carriers tab. Ported from the reference prototype
- * (carriers.html + script.js carrier handlers) at pixel fidelity: a single "Carrier Lookup"
- * search field that, on Enter or button click, shows a skeleton "searching" state for ~1.3s
- * then resolves to a matched RECORDS account card (or the first record as a fallback). The
- * idle empty state shows until the first search. All state is local.
+ * Sales Mytrion redesign — Carriers tab. "Carrier Lookup": a single search field that, on Enter
+ * or button click, queries the real FMCSA broker snapshot (sales.carriers_search) and renders the
+ * matching carriers using the design's account-card primitives (one card per result). Shows a
+ * skeleton "searching" state, a red error state, a muted empty state, and the idle prompt until the
+ * first search. All state is local; search is user-triggered (no live feed for this tab).
  */
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { s, Svg, Badge } from '../dc';
 import { badge } from '../salesData';
-import { RECORDS } from '../mock';
-
-type CarrierRec = (typeof RECORDS)[number];
-
-const recStatus: Record<CarrierRec['status'], [string, string]> = {
-  active: ['Active', 'var(--ok)'],
-  attention: ['Needs attention', 'var(--orange)'],
-  debtor: ['Debtor', 'var(--danger)'],
-};
+import { searchCarriers, type CarrierSearchVM } from '../live';
 
 const TRUCK_D =
   'M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1M9 17a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0z';
 
+/** FMCSA operating status → tone color (mirrors the old Carriers tab's statusTone). */
+function statusColor(status: string): string {
+  const x = status.toLowerCase();
+  if (/^authorized/.test(x) || x === 'active') return 'var(--ok)';
+  if (/out.of.service|revoked|inactive/.test(x)) return 'var(--danger)';
+  return 'var(--orange)';
+}
+
 export function CarriersTab() {
   const [carrierQuery, setCarrierQuery] = useState<string>('');
   const [carrierSearching, setCarrierSearching] = useState<boolean>(false);
-  const [carrierResult, setCarrierResult] = useState<CarrierRec | null>(null);
-  const carTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [results, setResults] = useState<CarrierSearchVM[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [hasSearched, setHasSearched] = useState<boolean>(false);
 
-  // ----- view-model (mirrors renderVals() `carriers` block) -----
-  const carrierCard = carrierResult
-    ? {
-        ...carrierResult,
-        statusBadge: badge(recStatus[carrierResult.status][0], recStatus[carrierResult.status][1]),
-        balColor: carrierResult.balance.startsWith('-') ? 'var(--danger)' : 'var(--ok)',
-      }
-    : null;
-  const carrierHas = !!carrierCard;
-  const carrierIdle = !carrierResult && !carrierSearching;
+  // ----- view-model: each live carrier row mapped onto the account-card slots -----
+  const carrierCards = (results ?? []).map((c) => ({
+    ...c,
+    statusBadge: badge(c.status, statusColor(c.status)),
+    statusColor: statusColor(c.status),
+  }));
 
-  const runCarrierSearch = (): void => {
+  const carrierIdle = !carrierSearching && !error && !hasSearched;
+  const carrierEmpty = !carrierSearching && !error && hasSearched && carrierCards.length === 0;
+  const carrierHas = !carrierSearching && !error && carrierCards.length > 0;
+
+  const runCarrierSearch = async (): Promise<void> => {
     const q = carrierQuery.trim();
-    if (!q) return;
+    if (!q || carrierSearching) return;
     setCarrierSearching(true);
-    setCarrierResult(null);
-    if (carTimer.current) clearTimeout(carTimer.current);
-    carTimer.current = setTimeout(() => {
-      const rec =
-        RECORDS.find((r) =>
-          (r.name + ' ' + r.carrier + ' ' + r.mc + ' ' + r.dot).toLowerCase().includes(q.toLowerCase()),
-        ) ?? RECORDS[0];
+    setError(null);
+    setHasSearched(true);
+    try {
+      const rows = await searchCarriers(q);
+      setResults(rows);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Search failed');
+      setResults(null);
+    } finally {
       setCarrierSearching(false);
-      setCarrierResult(rec);
-    }, 1300);
+    }
   };
 
   const carrierKey = (e: React.KeyboardEvent<HTMLInputElement>): void => {
-    if (e.key === 'Enter') runCarrierSearch();
+    if (e.key === 'Enter') void runCarrierSearch();
   };
 
   return (
@@ -98,7 +100,7 @@ export function CarriersTab() {
           )}
         />
         <button
-          onClick={runCarrierSearch}
+          onClick={() => void runCarrierSearch()}
           className="ss-btn-p"
           style={s(
             'position:absolute;right:8px;top:8px;height:32px;padding:0 18px;border-radius:9px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer',
@@ -124,6 +126,9 @@ export function CarriersTab() {
           </div>
         </div>
       )}
+      {error && (
+        <div style={s('text-align:center;padding:56px 20px;color:var(--danger);font-size:13px')}>{error}</div>
+      )}
       {carrierIdle && (
         <div style={s('text-align:center;padding:56px 20px;color:var(--muted)')}>
           <div
@@ -148,72 +153,82 @@ export function CarriersTab() {
           <div style={s('font-size:13px')}>Search for a carrier to see their account at a glance.</div>
         </div>
       )}
-      {carrierHas && carrierCard && (
-        <div
-          className="ss-fu"
-          style={s(
-            'padding:22px;border-radius:16px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-sm)',
-          )}
-        >
-          <div style={s('display:flex;align-items:center;gap:14px')}>
+      {carrierEmpty && (
+        <div style={s('text-align:center;padding:56px 20px;color:var(--muted);font-size:13px')}>
+          No carriers found for “{carrierQuery.trim()}”.
+        </div>
+      )}
+      {carrierHas && (
+        <div style={s('display:flex;flex-direction:column;gap:14px')}>
+          {carrierCards.map((carrierCard, i) => (
             <div
+              key={`${carrierCard.dot}-${i}`}
+              className="ss-fu"
               style={s(
-                'width:52px;height:52px;border-radius:14px;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;display:flex;align-items:center;justify-content:center',
+                'padding:22px;border-radius:16px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-sm)',
               )}
             >
-              <Svg d={TRUCK_D} size={24} strokeWidth={1.8} />
-            </div>
-            <div style={s('flex:1')}>
-              <div style={s('font-size:16px;font-weight:700')}>{carrierCard.name}</div>
-              <div
-                style={s(
-                  "font-size:11.5px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:3px",
-                )}
-              >
-                {carrierCard.carrier} · MC {carrierCard.mc} · DOT {carrierCard.dot}
+              <div style={s('display:flex;align-items:center;gap:14px')}>
+                <div
+                  style={s(
+                    'width:52px;height:52px;border-radius:14px;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;display:flex;align-items:center;justify-content:center',
+                  )}
+                >
+                  <Svg d={TRUCK_D} size={24} strokeWidth={1.8} />
+                </div>
+                <div style={s('flex:1')}>
+                  <div style={s('font-size:16px;font-weight:700')}>{carrierCard.owner}</div>
+                  <div
+                    style={s(
+                      "font-size:11.5px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:3px",
+                    )}
+                  >
+                    {carrierCard.address || '—'}
+                  </div>
+                </div>
+                <Badge vm={carrierCard.statusBadge} />
+              </div>
+              <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:20px')}>
+                <div style={s('padding:14px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
+                  <div style={s("font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600")}>
+                    {carrierCard.dot}
+                  </div>
+                  <div style={s('font-size:10.5px;color:var(--muted);margin-top:3px')}>DOT #</div>
+                </div>
+                <div style={s('padding:14px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
+                  <div
+                    style={s("font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:var(--ok)")}
+                  >
+                    {carrierCard.units}
+                  </div>
+                  <div style={s('font-size:10.5px;color:var(--muted);margin-top:3px')}>Power Units</div>
+                </div>
+                <div style={s('padding:14px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
+                  <div
+                    style={s(
+                      "font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:var(--violet)",
+                    )}
+                  >
+                    {carrierCard.phone}
+                  </div>
+                  <div style={s('font-size:10.5px;color:var(--muted);margin-top:3px')}>Phone</div>
+                </div>
+                <div style={s('padding:14px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
+                  <div
+                    style={s(
+                      `font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:${carrierCard.statusColor}`,
+                    )}
+                  >
+                    {carrierCard.status}
+                  </div>
+                  <div style={s('font-size:10.5px;color:var(--muted);margin-top:3px')}>Status</div>
+                </div>
+              </div>
+              <div style={s('margin-top:16px;font-size:12.5px;color:var(--muted)')}>
+                Email: <strong style={s('color:var(--text2)')}>{carrierCard.email}</strong>
               </div>
             </div>
-            <Badge vm={carrierCard.statusBadge} />
-          </div>
-          <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:20px')}>
-            <div style={s('padding:14px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
-              <div style={s("font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600")}>
-                {carrierCard.cards}
-              </div>
-              <div style={s('font-size:10.5px;color:var(--muted);margin-top:3px')}>Total Cards</div>
-            </div>
-            <div style={s('padding:14px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
-              <div
-                style={s("font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:var(--ok)")}
-              >
-                {carrierCard.active}
-              </div>
-              <div style={s('font-size:10.5px;color:var(--muted);margin-top:3px')}>Active</div>
-            </div>
-            <div style={s('padding:14px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
-              <div
-                style={s(
-                  "font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:var(--violet)",
-                )}
-              >
-                {carrierCard.gallons}
-              </div>
-              <div style={s('font-size:10.5px;color:var(--muted);margin-top:3px')}>Gallons</div>
-            </div>
-            <div style={s('padding:14px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
-              <div
-                style={s(
-                  `font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:${carrierCard.balColor}`,
-                )}
-              >
-                {carrierCard.balance}
-              </div>
-              <div style={s('font-size:10.5px;color:var(--muted);margin-top:3px')}>Balance</div>
-            </div>
-          </div>
-          <div style={s('margin-top:16px;font-size:12.5px;color:var(--muted)')}>
-            Contact: <strong style={s('color:var(--text2)')}>{carrierCard.contact}</strong> · {carrierCard.phone}
-          </div>
+          ))}
         </div>
       )}
     </div>
