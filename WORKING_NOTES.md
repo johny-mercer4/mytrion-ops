@@ -1649,3 +1649,22 @@ Two access/UX features on top of the live redesign:
   auto-enter) navigates them straight to /m/sales — no picker, no View-as control. Admins still get
   the multi-Mytrion picker. Covered by `src/access/resolveAccess.test.ts` (6 tests) + live-verified
   (agent from `/` → /m/sales; admin from `/` → picker).
+
+### Home-tab data audit fixes
+
+Live audit of the Home tab (acting as a real agent) surfaced snapshot/inbox gaps — all fixed:
+- **Volume Trend showed "—".** `loadSnapshot` declared `volume_trend` but never populated it. Now it
+  computes the week-over-week gallons change from `gallons_this_week` vs `gallons_last_week` (new
+  `pctChange` helper) → e.g. "-47%", colored by direction (up=green/down=red/flat=accent). The
+  "This Week / Fuel Transactions" caption now shows the swipes trend ("↓ 29% vs last week") instead
+  of a static string. Added `gallons_last_week`/`swipes_last_week` to `SnapshotFields`.
+- **Today's Snapshot metrics** (swipes/gallons/new-cards today) were already correctly mapped from
+  `snapshot.*_today`; they read 0 only because the test agent genuinely had no activity *today* (the
+  This Week row shows real 12 tx / 807.97 gal / 1 card). No code change needed there — the wiring is
+  correct; Volume Trend was the real bug.
+- **Inbox detail modal had an empty grey pill.** The badges array always included `badge(i.tag, …)`
+  even when the inbox item's `tag` was "" (it usually is in real data). Made the tag badge/pill
+  conditional in HomeTab + InboxTab (modal + row) — now only the priority badge shows.
+- Verified live (act-as Adam Johnson): snapshot renders real week data + Volume Trend −47%; inbox
+  list + modal populated with a single clean MEDIUM/HIGH badge; activity 13 calls; servercrm WS
+  OPEN→subscribe→subscribed ("● LIVE").

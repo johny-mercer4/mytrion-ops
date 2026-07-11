@@ -152,7 +152,7 @@ export function HomeTab() {
       iconStyle: iconBox(COL_OF[i.type], 44),
       metaLabel: 'Received:',
       meta: i.time,
-      badges: [badge(i.prio.toUpperCase(), COL_OF[i.type]), badge(i.tag, 'var(--muted)')],
+      badges: [badge(i.prio.toUpperCase(), COL_OF[i.type]), ...(i.tag ? [badge(i.tag, 'var(--muted)')] : [])],
     });
   };
 
@@ -215,10 +215,10 @@ export function HomeTab() {
     {
       label: 'This Week',
       cells: [
-        mk('card', green, numFmt(sf?.swipes_this_week ?? 0), 'Fuel Transactions', 'Mon–today this week'),
+        mk('card', green, numFmt(sf?.swipes_this_week ?? 0), 'Fuel Transactions', sf?.fuel_tx_caption ?? 'Mon–today this week'),
         mk('fuel', violet, numFmt(sf?.gallons_this_week ?? 0), 'Gallons Pumped', 'Gallons this cycle'),
         mk('card', accent, numFmt(sf?.new_cards_this_week ?? 0), 'New Cards', 'Activated for new units'),
-        mk('trend', green, sf?.volume_trend ?? '—', 'Volume Trend', 'Week over week'),
+        mk('trend', sf?.volume_trend_dir === 'down' ? red : sf?.volume_trend_dir === 'up' ? green : accent, sf?.volume_trend ?? '—', 'Volume Trend', 'Week over week'),
       ],
     },
     {

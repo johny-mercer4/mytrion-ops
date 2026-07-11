@@ -81,6 +81,14 @@ function stripHtml(html: string): string {
 
 // ---- Home: snapshot (dashboard.home_snapshot) ----
 
+/** Week-over-week % change → a display string ("+6%" / "-47%" / "—") + a direction. */
+export function pctChange(cur: number, prev: number): { text: string; dir: 'up' | 'down' | 'flat' } {
+  if (!prev) return cur > 0 ? { text: 'New', dir: 'up' } : { text: '—', dir: 'flat' };
+  const pct = Math.round(((cur - prev) / prev) * 100);
+  if (pct === 0) return { text: '0%', dir: 'flat' };
+  return { text: `${pct > 0 ? '+' : ''}${pct}%`, dir: pct > 0 ? 'up' : 'down' };
+}
+
 export interface SnapshotFields {
   active_clients: number;
   inactive_clients: number;
@@ -91,10 +99,16 @@ export interface SnapshotFields {
   swipes_this_week: number;
   gallons_this_week: number;
   new_cards_this_week: number;
+  swipes_last_week: number;
+  gallons_last_week: number;
   swipes_today: number;
   gallons_today: number;
   new_cards_today: number;
-  volume_trend?: string;
+  /** Week-over-week gallons change, e.g. "+6%" / "-47%" / "—". */
+  volume_trend: string;
+  volume_trend_dir: 'up' | 'down' | 'flat';
+  /** Fuel-transactions week-over-week caption, e.g. "↑ 6% vs last week". */
+  fuel_tx_caption: string;
 }
 
 export async function loadSnapshot(): Promise<SnapshotFields> {
@@ -102,6 +116,16 @@ export async function loadSnapshot(): Promise<SnapshotFields> {
   const first = Array.isArray(raw) ? raw[0] : raw;
   const s = ((first as { snapshot?: Record<string, unknown> })?.snapshot ?? {}) as Record<string, unknown>;
   const g = (k: string): number => n(s[k]);
+  const gallonsW = g('gallons_this_week');
+  const gallonsLW = g('gallons_last_week');
+  const swipesW = g('swipes_this_week');
+  const swipesLW = g('swipes_last_week');
+  const vol = pctChange(gallonsW, gallonsLW);
+  const tx = pctChange(swipesW, swipesLW);
+  const arrow = tx.dir === 'up' ? '↑' : tx.dir === 'down' ? '↓' : '→';
+  // The arrow carries the direction, so strip the sign from the % (no "↓ -29%").
+  const fuel_tx_caption =
+    tx.dir === 'flat' || tx.text === '—' ? 'Same as last week' : `${arrow} ${tx.text.replace(/[+-]/, '')} vs last week`;
   return {
     active_clients: g('active_clients'),
     inactive_clients: g('inactive_clients'),
@@ -109,12 +133,17 @@ export async function loadSnapshot(): Promise<SnapshotFields> {
     total_debt_amount: g('total_debt_amount'),
     total_debtors: g('total_debtors'),
     total_hard_debtors: g('total_hard_debtors'),
-    swipes_this_week: g('swipes_this_week'),
-    gallons_this_week: g('gallons_this_week'),
+    swipes_this_week: swipesW,
+    gallons_this_week: gallonsW,
     new_cards_this_week: g('new_cards_this_week'),
+    swipes_last_week: swipesLW,
+    gallons_last_week: gallonsLW,
     swipes_today: g('swipes_today'),
     gallons_today: g('gallons_today'),
     new_cards_today: g('new_cards_today'),
+    volume_trend: vol.text,
+    volume_trend_dir: vol.dir,
+    fuel_tx_caption,
   };
 }
 

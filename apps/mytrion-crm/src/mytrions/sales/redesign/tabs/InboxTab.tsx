@@ -130,7 +130,7 @@ export function InboxTab() {
       iconStyle: iconBox(colOf[i.type], 44),
       metaLabel: 'Received:',
       meta: i.time,
-      badges: [badge(i.prio.toUpperCase(), colOf[i.type]), badge(i.tag, 'var(--muted)')],
+      badges: [badge(i.prio.toUpperCase(), colOf[i.type]), ...(i.tag ? [badge(i.tag, 'var(--muted)')] : [])],
     });
   };
 
@@ -186,7 +186,7 @@ export function InboxTab() {
                   <div style={s('display:flex;align-items:center;gap:7px;margin-top:9px;flex-wrap:wrap')}>
                     <span style={s("font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace")}>{i.time}</span>
                     <span style={s(prioBadge.style)}>{prioBadge.text}</span>
-                    <span style={s('font-size:10px;font-weight:700;padding:3px 8px;border-radius:99px;background:var(--raised);color:var(--text2)')}>{i.tag}</span>
+                    {i.tag && <span style={s('font-size:10px;font-weight:700;padding:3px 8px;border-radius:99px;background:var(--raised);color:var(--text2)')}>{i.tag}</span>}
                   </div>
                 </div>
                 <div style={s('display:flex;flex-direction:column;gap:6px;flex-shrink:0')}>
