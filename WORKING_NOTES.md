@@ -1719,3 +1719,21 @@ Live audit of the Home tab (acting as a real agent) surfaced snapshot/inbox gaps
   - Empty (attachment-only) comments no longer render blank bubbles.
   - Thread bodies were truncated (list returns only `summary`); the conversation route now fetches
     each thread's full `content` via `getTicketThread` (recent 15, parallel, falls back to summary).
+
+### Inbox — real-time events matched to the user id (self-service parity)
+
+Made the Inbox tab behave exactly like the reference `self-service/js/components/inbox-panel.js`:
+- The fetch was already right — `inbox.list` = the reference's `mytrionfetchinbox` Deluge, with
+  `identityParam:'userId'`, so it's server-scoped to the effective (act-as) user.
+- **The gap was the WebSocket.** We reloaded on EVERY `crm_inbox_notification`. The reference's
+  `_handleWsMessage` only reacts when `data.ownerId === currentUser.id`. Now the InboxTab computes
+  `currentUserId = actingAs?.zohoUserId ?? worker.zohoUserId` and, on a `crm_inbox_notification`,
+  toasts the subject + refetches ONLY when `ownerId === currentUserId` — otherwise ignores it.
+  (The socket still sends the generic `{type:'subscribe'}`; matching is receive-side, as in the ref.)
+- Added the toast on a matching new message, and a real Live/OFFLINE indicator driven by the socket
+  open/close (`wsReady`) instead of a static "LIVE".
+- Aligned `mapInboxType` to `_mapType` exactly (only `assignment`→reminder; else→info). Real inbox
+  data (types Info/Task/Assignment/Update, priorities medium/high only) renders identically.
+- Verified by mocking the WebSocket in-browser and injecting notifications: a non-matching ownerId
+  is ignored (no reload, no toast); a matching ownerId (the acted-as agent's id) fires the toast +
+  a refetch. Live indicator shows LIVE when connected.

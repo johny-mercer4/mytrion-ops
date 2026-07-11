@@ -210,10 +210,12 @@ export interface InboxVM {
   time: string;
   tag: string;
 }
+// Matches the reference self-service InboxPanel._mapType exactly: only 'assignment' becomes a
+// (yellow, record-linked) reminder; task/warning/critical map through; everything else → info.
 function mapInboxType(t: string | undefined): InboxVM['type'] {
   const x = (t ?? '').toLowerCase();
   if (x === 'task') return 'task';
-  if (x === 'assignment' || x === 'reminder') return 'reminder';
+  if (x === 'assignment') return 'reminder';
   if (x === 'warning') return 'warning';
   if (x === 'critical') return 'critical';
   return 'info';

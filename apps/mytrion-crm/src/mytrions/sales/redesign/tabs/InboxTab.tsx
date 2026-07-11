@@ -9,6 +9,8 @@
  */
 import { useEffect, useState } from 'react';
 import type { MouseEvent } from 'react';
+import { getSession } from '@/api/session';
+import { useImpersonation } from '@/context/ImpersonationProvider';
 import { s, Svg } from '../dc';
 import { badge, iconBox, ICO } from '../salesData';
 import { useSales } from '../ctx';
@@ -57,9 +59,15 @@ function persistReadIds(read: Record<string, boolean>): void {
 
 export function InboxTab() {
   const { openDetail, pushToast } = useSales();
+  const { actingAs } = useImpersonation();
   const [inboxFilter, setInboxFilter] = useState<string>('all');
   const [read, setRead] = useState<Record<string, boolean>>(() => loadReadIds());
   const [items, setItems] = useState<InboxItem[]>([]);
+  const [wsReady, setWsReady] = useState(false);
+
+  // The effective CRM user this inbox belongs to (the acted-as agent for an admin, else the
+  // signed-in worker) — the same id the fetch is scoped to and that WS events must match.
+  const currentUserId = String(actingAs?.zohoUserId ?? getSession()?.worker.zohoUserId ?? '');
 
   // ---- live data (inbox.list) mirrored into local state for optimistic delete ----
   const { data, loading, error, reload } = useLoad(loadInbox, []);
@@ -70,11 +78,19 @@ export function InboxTab() {
     persistReadIds(read);
   }, [read]);
 
-  // ---- real-time: reload when a new CRM inbox notification arrives ----
+  // ---- real-time: only react to a notification addressed to THIS user (ownerId === currentUserId),
+  //      exactly like the reference self-service InboxPanel._handleWsMessage — toast + refetch. ----
   useServerCrmSocket({
     subscribe: { type: 'subscribe' },
+    onOpen: () => setWsReady(true),
+    onClose: () => setWsReady(false),
     onMessage: (msg) => {
-      if (msg.type === 'crm_inbox_notification') reload();
+      if (msg.type !== 'crm_inbox_notification') return;
+      const ownerId = String(msg.ownerId ?? '');
+      if (ownerId && currentUserId && ownerId === currentUserId) {
+        pushToast('New message', String(msg.subject ?? msg.name ?? 'New notification'));
+        reload();
+      }
     },
   });
 
@@ -142,8 +158,8 @@ export function InboxTab() {
           <div style={s('font-size:12.5px;color:var(--muted);margin-top:2px')}>Reminders, alerts &amp; tasks assigned to you</div>
         </div>
         <div style={s('display:flex;align-items:center;gap:9px')}>
-          <span style={s('display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--ok)')}>
-            <span style={s('width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 22%,transparent)')}></span>LIVE
+          <span style={s(`display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:${wsReady ? 'var(--ok)' : 'var(--muted)'}`)}>
+            <span style={s(`width:7px;height:7px;border-radius:50%;background:${wsReady ? 'var(--ok)' : 'var(--muted)'};box-shadow:0 0 0 3px color-mix(in srgb,${wsReady ? 'var(--ok)' : 'var(--muted)'} 22%,transparent)`)}></span>{wsReady ? 'LIVE' : 'OFFLINE'}
           </span>
           {inboxUnreadHas && (
             <button onClick={markAllRead} className="ss-ico-btn" style={s('height:34px;padding:0 13px;border-radius:9px;border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:12px;font-weight:700;cursor:pointer')}>Mark all read</button>
