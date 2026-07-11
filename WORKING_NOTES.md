@@ -1548,3 +1548,30 @@ Carrier accounts are now provisioned FROM the already-defined clients in the dat
   servercrm reads; balance_run schema-validated only (no write fired). One catch during
   smoke: clients-fueling-on requires date|dayOfWeek (upstream rule, widget always sends it).
 - Verified: lint 0 errors, typecheck, 490 tests (5 new incl. the sandbox-env suite).
+
+## 2026-07-11 — Sales Mytrion redesign: bespoke shell + all tabs ported (branch feature/SalesMytrion)
+
+- Ported the full new Sales Mytrion UI/UX from the reference prototype (~/Desktop/SalesMytrion/
+  Sales Mytrion.dc.html — a self-contained React design export) into apps/mytrion-crm/src/
+  mytrions/sales/redesign/. FAITHFUL, till-the-minute detail: verbatim theme tokens (dark+light),
+  Rajdhani/Inter/JetBrains fonts, inline-style fidelity via a `s()` css-string→CSSProperties helper.
+- Bespoke self-contained shell (replaces the shared MytrionShell for Sales): boot loader, sidebar
+  with nav badges, top bar + live clock, dark-mode toggle, user card (session/act-as name), floating
+  AI copilot (streaming canned replies), toast, shared detail + client-drilldown modals.
+- 9 tabs (Loaders showcase intentionally dropped as a nav item — its loaders live inline in the
+  real tabs): Home (hero/snapshot/activity/quick-actions/recent-inbox), Inbox (filter tabs + row
+  actions), **Tickets** (NEW — two-pane Desk console: list + conversation thread + reply),
+  **Open Pool** (NEW — claimable-deals table w/ multi-select, filters, assign modal), Data Center
+  (clients/applications/money-codes), Create (dept/priority ticket form), Automations (catalog +
+  full run modal: deal/card pickers, limits/invoices/txn/form/simple variants, progress→result),
+  Dashboard (donuts, cards-by-company, activity chart, tx table + sub-tabs), Carriers (search→card).
+- Built via a design-canvas MVVM split: template.html ({{ }} markup) + renderVals() (view-model).
+  Foundation (theme/helpers/data/ctx/shell) hand-built; the 9 tab components fanned out to a
+  parallel workflow (9/9, 0 errors) then integrated. Registry entry (sales/index.tsx) now points at
+  the redesign; old MytrionShell-based tabs + live.ts retained for the live-wiring pass.
+- Verified: web typecheck + lint clean, 51 web tests pass, and a headless Chrome walkthrough of
+  every tab in LIGHT + DARK — pixel-faithful to the reference (Home, Tickets, Open Pool, Dashboard,
+  automation modal all confirmed).
+- NOTE: this pass uses the reference's mock data to lock the exact visual. Next pass wires the six
+  already-live tabs (Home/DataCenter/Dashboard/Carriers/Create/Automations) onto the existing
+  touchpoints, Tickets→Zoho Desk, Open Pool→retention — per the "re-skin, keep data live" decision.
