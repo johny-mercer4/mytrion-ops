@@ -14,7 +14,7 @@ import { getSession } from '@/api/session';
 import { s } from '../dc';
 import { badge, type BadgeVM } from '../salesData';
 import { useSales } from '../ctx';
-import { useLoad, loadTickets, loadTicketMessages, type TicketVM, type TicketMsgVM } from '../live';
+import { useLoad, loadTickets, loadTicketMessages, isTicketClosed, type TicketVM, type TicketMsgVM } from '../live';
 import { useServerCrmSocket } from '../useServerCrmSocket';
 
 type TicketFilter = 'all' | 'active' | 'closed';
@@ -40,10 +40,6 @@ const tkPrioCol: Record<string, string> = {
   Low: 'var(--muted)',
 };
 
-const isClosedStatus = (st: string): boolean => {
-  const x = (st || '').toLowerCase();
-  return x.includes('close') || x.includes('cancel') || x === 'resolved';
-};
 
 const ageColor = (h: number): string =>
   h < 1 ? 'var(--ok)' : h < 24 ? 'var(--accent)' : h < 72 ? 'var(--warn)' : h < 168 ? 'var(--orange)' : 'var(--danger)';
@@ -171,7 +167,7 @@ export function TicketsTab() {
   const tkF = ticketFilter;
   const tq = ticketSearch.toLowerCase();
   let tkList = allTickets.filter((t) =>
-    tkF === 'all' ? true : tkF === 'closed' ? isClosedStatus(t.status) : !isClosedStatus(t.status),
+    tkF === 'all' ? true : tkF === 'closed' ? isTicketClosed(t.status) : !isTicketClosed(t.status),
   );
   if (tq) {
     tkList = tkList.filter((t) =>
@@ -182,7 +178,7 @@ export function TicketsTab() {
 
   const tkSel = allTickets.find((t) => t.id === selectedTicket);
   const tkEsc = tkSel?.channel === 'Escalation';
-  const tkClosed = isClosedStatus(tkSel?.status || '');
+  const tkClosed = isTicketClosed(tkSel?.status || '');
   const tkOpen = !tkClosed;
 
   const threadMsgs = msgsLoad.data ?? [];
@@ -209,7 +205,14 @@ export function TicketsTab() {
 
   return (
     <>
-      <div className="ss-fu" style={s('display:flex;gap:14px;height:calc(100vh - 150px);min-height:480px')}>
+      <div className="ss-fu" style={s('display:flex;flex-direction:column;gap:10px;height:100%;min-height:0')}>
+        {!scoped && (
+          <div style={s('flex-shrink:0;display:flex;align-items:center;gap:9px;padding:9px 13px;border-radius:11px;background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 34%,transparent);font-size:12px;color:var(--text2);line-height:1.4')}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+            <span>Showing <strong style={s('color:var(--text)')}>recent org tickets</strong> — filtering to your own tickets needs the Desk <em>search</em> permission on the connection.</span>
+          </div>
+        )}
+        <div style={s('flex:1;min-height:0;display:flex;gap:14px')}>
         {/* LIST */}
         <div style={s('width:300px;flex-shrink:0;display:flex;flex-direction:column;border-radius:16px;background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
           <div style={s('padding:14px 15px 12px;border-bottom:1px solid var(--border)')}>
@@ -338,6 +341,7 @@ export function TicketsTab() {
           ) : (
             <div style={s('flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--muted);padding:24px;text-align:center')}><div style={s('width:64px;height:64px;border-radius:16px;background:var(--raised);display:flex;align-items:center;justify-content:center;color:var(--accent)')}><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg></div><div style={s('font-size:14px;font-weight:700;color:var(--text)')}>{ticketsLoad.loading ? 'Loading tickets…' : ticketsLoad.error ? 'Could not load tickets' : 'No ticket selected'}</div><div style={s('font-size:12.5px')}>{ticketsLoad.error ? ticketsLoad.error : 'Pick a ticket from the list to view the thread and reply.'}</div></div>
           )}
+        </div>
         </div>
       </div>
 

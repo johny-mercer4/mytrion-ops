@@ -39,8 +39,14 @@ export interface DeskComment {
   commenterId?: string;
   isPublic?: boolean;
   commentedTime?: string;
-  author?: { name?: string; type?: string } | null;
-  direction?: string;
+  /** Zoho Desk exposes the writer as `commenter` (a Desk agent), NOT `author` (that's a thread field). */
+  commenter?: {
+    name?: string;
+    email?: string;
+    type?: string;
+    firstName?: string | null;
+    lastName?: string | null;
+  } | null;
   [k: string]: unknown;
 }
 
@@ -51,7 +57,7 @@ export interface DeskThread {
   content?: string;
   /** 'in' = requester, 'out' = agent reply. */
   direction?: string;
-  author?: { name?: string; firstName?: string | null; lastName?: string | null; type?: string } | null;
+  author?: { name?: string; email?: string; firstName?: string | null; lastName?: string | null; type?: string } | null;
   createdTime?: string;
   isDescriptionThread?: boolean;
   attachmentCount?: number;

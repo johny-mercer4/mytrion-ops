@@ -124,6 +124,22 @@ export async function getTicketThreads(ticketId: string, limit = 30): Promise<Re
   return deskGet<Record<string, unknown>>(url);
 }
 
+/**
+ * One thread's FULL object — the list endpoint returns only a truncated `summary` preview; the full
+ * `content` (the whole message body) is only on this per-thread GET. Used to expand the conversation
+ * so long customer emails aren't cut off. Returns the raw thread object.
+ */
+export async function getTicketThread(ticketId: string, threadId: string): Promise<Record<string, unknown>> {
+  const url = deskUrl(`/tickets/${encodeURIComponent(ticketId)}/threads/${encodeURIComponent(threadId)}`);
+  const res = await fetch(url, { headers: await authHeaders('zoho_desk') });
+  if (res.status === 204) return {};
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`[zoho-desk] GET /tickets/${ticketId}/threads/${threadId} HTTP ${res.status}: ${text.slice(0, 200)}`);
+  }
+  return text ? (JSON.parse(text) as Record<string, unknown>) : {};
+}
+
 export interface DeskDepartment {
   id: string;
   name?: string;
@@ -154,6 +170,8 @@ export async function getTicketComments(ticketId: string, limit = 50): Promise<R
   url.searchParams.set('from', '1');
   url.searchParams.set('limit', String(clampLimit(limit, MAX_TICKET_LIMIT)));
   url.searchParams.set('sortBy', 'commentedTime');
+  // NOTE: Desk embeds the `commenter` (name/email/type) by default here — do NOT add
+  // include=commenter (it's not an allowed value and 422s the whole request).
   return deskGet<Record<string, unknown>>(url);
 }
 

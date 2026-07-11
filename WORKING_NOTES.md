@@ -1688,3 +1688,34 @@ Live audit of the Home tab (acting as a real agent) surfaced snapshot/inbox gaps
   computes them from real data — Inbox = `loadInbox().length`, Tickets = open (non-closed) count —
   keyed on the acted-as agent so they refetch on "View as". Open Pool has no badge until its data
   flow is rebuilt (no fake number). Live: Inbox 24, Tickets 43.
+
+### Tickets layout (full-bleed) + collapsible sidebar + conversation correctness
+
+- **Full width/height Tickets.** `#ss-panels` centered every tab under `max-width:1180px`, cramping
+  the Tickets two-pane console. Added a `FULL_BLEED` set (currently `tickets`): those drop the
+  centering — `<main>` overflow hidden, `#ss-panels` `height:100%;padding` with no max-width, tab
+  root `height:100%` (border-box under `.ss-root`). Other tabs still center. Verified Tickets
+  1442×946 flush-left; Home/Dashboard stay centered; switching restores.
+- **Collapsible sidebar.** `navCollapsed` state (persisted `ss.nav.collapsed`) + a topbar toggle
+  (PANEL icon). Collapsed → 68px icons-only (logo, centered nav icons with badge OVERLAYS, theme +
+  avatar); expanded → 238px, width-transitioned. Verified 238↔68.
+- **Ticket scoping is org-wide until the Desk token gets the search scope.** The list is creator-
+  scoped via `/tickets/search?customField1=cf_crm_created_by_id:<crmUserId>` (correct, matches the
+  reference), but the Desk refresh token lacks `Desk.search.READ` → 403 SCOPE_MISMATCH → falls back
+  to recent org tickets (`scoped:false`). Neither the DWH table nor servercrm has a creator column,
+  so there is NO scope-free path. Added a visible amber banner in the tab when `scoped:false`.
+  FIX (user action): re-mint `ZOHO_DESK_REFRESH_TOKEN` with `Desk.search.READ` added — then
+  `searchTicketsByCreator` scopes per-user with zero code change.
+- **Conversation correctness** (adversarial code-review workflow → 7 confirmed findings, all fixed;
+  verified against live Desk data, which also caught a bad `include=commenter` I'd added that 422s
+  the whole comments request):
+  - Sidebar Tickets badge counted Resolved/Cancelled as open. Extracted canonical `isTicketClosed`
+    (Closed/Cancelled/Resolved) into live.ts; Shell badge + TicketsTab share it.
+  - `useLoad` didn't reset `data` on deps change → badges showed the PREVIOUS agent's count after a
+    View-as switch (stuck on error). Now clears data when the deps key changes.
+  - Comments rendered every writer as "Support": Desk exposes the writer as `commenter` (name/email),
+    NOT `author`, and `commenterId` (Desk agent id) ≠ CRM zohoUserId. Now reads `commenter.name` and
+    detects "me" by EMAIL match. Live: "Leo Isaac" / "You" render correctly.
+  - Empty (attachment-only) comments no longer render blank bubbles.
+  - Thread bodies were truncated (list returns only `summary`); the conversation route now fetches
+    each thread's full `content` via `getTicketThread` (recent 15, parallel, falls back to summary).

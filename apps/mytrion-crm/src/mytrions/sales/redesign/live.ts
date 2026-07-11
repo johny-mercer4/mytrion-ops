@@ -4,7 +4,7 @@
  * tab swaps `import … from '../mock'` for a `useLoad(loadX)` with loading/error/empty. NO mock/
  * fake data — every array here comes from a real backend call.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getSession } from '@/api/session';
 import { listDeskComments, listDeskTickets, type DeskComment, type DeskThread, type DeskTicket } from '@/api/desk';
@@ -26,8 +26,16 @@ export function useLoad<T>(fn: () => Promise<T>, deps: unknown[]): Loaded<T> {
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const reload = useCallback(() => setTick((t) => t + 1), []);
+  const depsKey = JSON.stringify(deps);
+  const prevKey = useRef(depsKey);
   useEffect(() => {
     let off = false;
+    // Drop stale data when the INPUTS change (e.g. a View-as switch) so the previous subject's
+    // result can't outlive the switch or survive an error. A plain reload() keeps the old value.
+    if (prevKey.current !== depsKey) {
+      prevKey.current = depsKey;
+      setData(null);
+    }
     setLoading(true);
     setError(null);
     fn()
@@ -38,8 +46,14 @@ export function useLoad<T>(fn: () => Promise<T>, deps: unknown[]): Loaded<T> {
       off = true;
     };
     // eslint-disable-next-line
-  }, [tick, ...deps]);
+  }, [tick, depsKey]);
   return { data, loading, error, reload };
+}
+
+/** Canonical "is this ticket closed" test — Closed / Cancelled / Resolved all count as not-open. */
+export function isTicketClosed(status: string | undefined): boolean {
+  const x = (status ?? '').toLowerCase();
+  return x.includes('close') || x.includes('cancel') || x === 'resolved';
 }
 
 // ---- formatting ----
@@ -435,21 +449,25 @@ export interface TicketMsgVM {
   file?: { name: string; size: string };
 }
 export async function loadTicketMessages(ticketId: string): Promise<TicketMsgVM[]> {
-  const myId = getSession()?.worker.zohoUserId ?? '';
+  // Identify OUR messages by email — Desk comment/thread authors carry a Desk agent id, not the
+  // session's CRM zohoUserId (different id spaces), so id comparison never matches. Email does.
+  const myEmail = (getSession()?.worker.email ?? '').trim().toLowerCase();
+  const isMe = (email: string | null | undefined): boolean => !!email && email.trim().toLowerCase() === myEmail;
   const { threads, comments } = await listDeskComments(ticketId, 50);
   const ms = (v: string | undefined): number => {
     const t = v ? new Date(v).getTime() : 0;
     return Number.isNaN(t) ? 0 : t;
   };
-  // Threads are the actual requester/agent messages (the ticket body + email replies); an
-  // 'out' thread is ours. Comments are agent notes. Merge and sort oldest→newest as a timeline.
+  // Threads are the actual requester↔agent messages (the ticket body + email replies): 'in' is the
+  // requester, 'out' an agent. Comments are agent notes (writer under `commenter`). Merge + sort.
   const fromThreads = (threads ?? [])
     .map((t: DeskThread) => {
       const text = stripHtml(String(t.content ?? t.summary ?? ''));
       if (!text) return null;
       const outbound = t.direction === 'out';
+      const mine = outbound && isMe(t.author?.email);
       return {
-        from: outbound ? 'me' : fullName(t.author) || t.author?.name || 'Customer',
+        from: mine ? 'me' : fullName(t.author) || t.author?.name || (outbound ? 'Agent' : 'Customer'),
         type: 'comment' as const,
         text,
         time: relTime(t.createdTime),
@@ -457,16 +475,20 @@ export async function loadTicketMessages(ticketId: string): Promise<TicketMsgVM[
       };
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
-  const fromComments = (comments ?? []).map((c: DeskComment) => {
-    const outbound = c.direction === 'out' || String(c.commenterId ?? '') === String(myId);
-    return {
-      from: outbound ? 'me' : (c.author?.name ?? 'Support'),
-      type: 'comment' as const,
-      text: stripHtml(String(c.content ?? '')),
-      time: relTime(c.commentedTime),
-      _ts: ms(c.commentedTime),
-    };
-  });
+  const fromComments = (comments ?? [])
+    .map((c: DeskComment) => {
+      const text = stripHtml(String(c.content ?? ''));
+      if (!text) return null; // attachment-only / empty note → no blank bubble
+      const cm = c.commenter;
+      return {
+        from: isMe(cm?.email) ? 'me' : fullName(cm) || cm?.name || 'Support',
+        type: 'comment' as const,
+        text,
+        time: relTime(c.commentedTime),
+        _ts: ms(c.commentedTime),
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
   return [...fromThreads, ...fromComments].sort((a, b) => a._ts - b._ts).map(({ _ts, ...m }) => m);
 }
 

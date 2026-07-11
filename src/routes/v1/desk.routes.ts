@@ -13,6 +13,7 @@ import { AppError, RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
   getTicketComments,
+  getTicketThread,
   getTicketThreads,
   listTicketsDetailed,
   postTicketComment,
@@ -99,11 +100,26 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string };
     const q = commentsQuery.parse(request.query);
     try {
-      const [threads, comments] = await Promise.all([
+      const [threadList, comments] = await Promise.all([
         getTicketThreads(id, q.limit).catch(() => [] as Record<string, unknown>[]),
         getTicketComments(id, q.limit).catch(() => [] as Record<string, unknown>[]),
       ]);
-      return { threads, comments };
+      // The thread LIST only carries a truncated `summary`; fetch each thread's full `content` in
+      // parallel (bounded to the most recent 15) so long messages aren't cut off. Falls back to the
+      // summary if the per-thread GET fails.
+      const recent = threadList.slice(-15);
+      const enriched = await Promise.all(
+        recent.map(async (t) => {
+          if (typeof t.content === 'string' && t.content) return t;
+          try {
+            const full = await getTicketThread(id, String(t.id ?? ''));
+            return typeof full.content === 'string' && full.content ? { ...t, content: full.content } : t;
+          } catch {
+            return t;
+          }
+        }),
+      );
+      return { threads: enriched, comments };
     } catch (err) {
       throw deskError(err);
     }

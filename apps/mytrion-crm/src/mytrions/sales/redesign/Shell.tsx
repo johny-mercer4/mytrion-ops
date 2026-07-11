@@ -10,7 +10,7 @@ import { s, Svg } from './dc';
 import { SalesContext, type ClientRecord, type DetailVM, type SalesCtx } from './ctx';
 import { badge, NAV, NAVLABEL, timeParts } from './salesData';
 import { useSessionUser } from './sessionUser';
-import { useLoad, loadClientCards, loadClientActivity, loadInbox, loadTickets } from './live';
+import { useLoad, loadClientCards, loadClientActivity, loadInbox, loadTickets, isTicketClosed } from './live';
 import { useUserContext } from '@/context/UserContextProvider';
 import { useImpersonation } from '@/context/ImpersonationProvider';
 import { agentKeyFor } from '@/access/mytrions.config';
@@ -32,6 +32,10 @@ import { CarriersTab } from './tabs/CarriersTab';
 const SUN = 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z';
 const MOON = 'M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z';
 const SPARK = 'M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z';
+const PANEL = 'M9 4v16M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6z';
+
+/** Tabs that render edge-to-edge (own scroll/height), bypassing the centered max-width wrapper. */
+const FULL_BLEED = new Set(['tickets']);
 
 export function SalesRedesign() {
   const user = useSessionUser();
@@ -42,16 +46,36 @@ export function SalesRedesign() {
   // rep; Tickets = open (not-closed) tickets. Open Pool has no badge until its data flow is rebuilt.
   const actAsKey = actingAs?.zohoUserId ?? 'self';
   const inboxCount = useLoad(() => loadInbox().then((x) => x.length), [actAsKey]);
-  const openTix = useLoad(() => loadTickets().then((r) => r.tickets.filter((t) => !/closed/i.test(t.status)).length), [actAsKey]);
+  const openTix = useLoad(() => loadTickets().then((r) => r.tickets.filter((t) => !isTicketClosed(t.status)).length), [actAsKey]);
   const badgeCounts: Record<string, number | undefined> = {
     inbox: inboxCount.data ?? undefined,
     tickets: openTix.data ?? undefined,
   };
+  // Collapsible sidebar (icons-only), persisted. Full-bleed tabs (Tickets) fill the whole panel.
+  const [navCollapsed, setNavCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('ss.nav.collapsed') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleNav = useCallback(() => {
+    setNavCollapsed((c) => {
+      const next = !c;
+      try {
+        localStorage.setItem('ss.nav.collapsed', next ? '1' : '0');
+      } catch {
+        /* storage disabled — state still toggles for this tab */
+      }
+      return next;
+    });
+  }, []);
   // The bespoke copilot is the department's real agent (streams from /v1/agent, tool-grounded),
   // scoped to Sales — the same runtime the shared ChatPanel uses, just in this shell's chrome.
   const chat = useChat(userCtx, 'sales', agentKeyFor('sales'));
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [section, setSection] = useState('home');
+  const fullBleed = FULL_BLEED.has(section);
   const [booting, setBooting] = useState(true);
   const [, tick] = useState(0);
   const [toast, setToast] = useState<{ title: string; msg: string } | null>(null);
@@ -157,27 +181,34 @@ export function SalesRedesign() {
         )}
 
         {/* SIDEBAR */}
-        <aside style={s('flex-shrink:0;width:238px;display:flex;flex-direction:column;background:color-mix(in srgb, var(--bg) 84%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-right:1px solid var(--border);position:relative;z-index:30')}>
-          <div style={s('display:flex;align-items:center;gap:11px;padding:18px 18px 16px')}>
+        <aside style={s(`flex-shrink:0;width:${navCollapsed ? '68px' : '238px'};transition:width .18s cubic-bezier(.2,0,0,1);display:flex;flex-direction:column;background:color-mix(in srgb, var(--bg) 84%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-right:1px solid var(--border);position:relative;z-index:30`)}>
+          <div style={s(`display:flex;align-items:center;gap:11px;padding:18px ${navCollapsed ? '0' : '18px'} 16px;${navCollapsed ? 'justify-content:center' : ''}`)}>
             <div style={s('width:36px;height:36px;border-radius:11px;background:linear-gradient(140deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(var(--accent-rgb),.4);flex-shrink:0')}>
               <Svg d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" size={20} stroke="#fff" />
             </div>
-            <div style={s('line-height:1.1;min-width:0')}>
-              <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.08em;text-transform:uppercase")}>
-                Sales <span style={s('color:var(--accent)')}>Mytrion</span>
+            {!navCollapsed && (
+              <div style={s('line-height:1.1;min-width:0')}>
+                <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.08em;text-transform:uppercase")}>
+                  Sales <span style={s('color:var(--accent)')}>Mytrion</span>
+                </div>
+                <div style={s("font-size:9.5px;color:var(--muted);font-weight:600;letter-spacing:.07em;text-transform:uppercase")}>Sales Intelligence</div>
               </div>
-              <div style={s("font-size:9.5px;color:var(--muted);font-weight:600;letter-spacing:.07em;text-transform:uppercase")}>Sales Intelligence</div>
-            </div>
+            )}
           </div>
           <nav className="ss-scroll" style={s('flex:1;min-height:0;padding:6px 12px;display:flex;flex-direction:column;gap:3px')}>
             {NAV.map((n) => {
               const active = section === n.id;
-              const style = `display:flex;align-items:center;gap:11px;padding:10px 12px;border:none;width:100%;background:${active ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${active ? 'var(--accent)' : 'var(--muted)'};font-size:13px;font-weight:${active ? 700 : 600};cursor:pointer;border-radius:10px;box-shadow:${active ? 'inset 2.5px 0 0 var(--accent)' : 'none'};transition:all .14s`;
+              const style = `display:flex;align-items:center;gap:11px;padding:10px ${navCollapsed ? '0' : '12px'};${navCollapsed ? 'justify-content:center' : ''};border:none;width:100%;background:${active ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${active ? 'var(--accent)' : 'var(--muted)'};font-size:13px;font-weight:${active ? 700 : 600};cursor:pointer;border-radius:10px;box-shadow:${active ? 'inset 2.5px 0 0 var(--accent)' : 'none'};transition:background .14s,color .14s`;
               return (
-                <button key={n.id} onClick={() => go(n.id)} className="ss-tab-x" style={s(style)}>
-                  <Svg d={n.icon} size={18} style={{ flexShrink: 0 }} />
-                  <span style={s('flex:1;text-align:left')}>{n.label}</span>
-                  {badgeCounts[n.id] ? (
+                <button key={n.id} onClick={() => go(n.id)} title={navCollapsed ? n.label : undefined} className="ss-tab-x" style={s(style)}>
+                  <span style={s('position:relative;flex-shrink:0;display:inline-flex')}>
+                    <Svg d={n.icon} size={18} style={{ flexShrink: 0 }} />
+                    {navCollapsed && badgeCounts[n.id] ? (
+                      <span style={s('position:absolute;top:-6px;right:-7px;background:var(--accent);color:#fff;font-size:8px;font-weight:800;min-width:14px;height:14px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 3px;border:1.5px solid var(--bg)')}>{badgeCounts[n.id]}</span>
+                    ) : null}
+                  </span>
+                  {!navCollapsed && <span style={s('flex:1;text-align:left')}>{n.label}</span>}
+                  {!navCollapsed && badgeCounts[n.id] ? (
                     <span style={s('background:var(--accent);color:#fff;font-size:9.5px;font-weight:800;min-width:18px;height:18px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px')}>{badgeCounts[n.id]}</span>
                   ) : null}
                 </button>
@@ -185,16 +216,18 @@ export function SalesRedesign() {
             })}
           </nav>
           <div style={s('padding:12px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px')}>
-            <button onClick={ctx.toggleTheme} aria-label="Toggle theme" className="ss-ico-btn" style={s("height:38px;padding:0 12px;display:flex;align-items:center;gap:9px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase")}>
+            <button onClick={ctx.toggleTheme} title={navCollapsed ? 'Toggle theme' : undefined} aria-label="Toggle theme" className="ss-ico-btn" style={s(`height:38px;padding:0 ${navCollapsed ? '0' : '12px'};display:flex;align-items:center;${navCollapsed ? 'justify-content:center' : 'gap:9px'};border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase`)}>
               <Svg d={theme === 'light' ? MOON : SUN} size={16} style={{ flexShrink: 0 }} />
-              <span style={s('flex:1;text-align:left')}>{theme === 'light' ? 'Dark' : 'Light'} mode</span>
+              {!navCollapsed && <span style={s('flex:1;text-align:left')}>{theme === 'light' ? 'Dark' : 'Light'} mode</span>}
             </button>
-            <div style={s('display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;background:var(--surface);border:1px solid var(--border)')}>
+            <div title={navCollapsed ? displayName : undefined} style={s(`display:flex;align-items:center;gap:10px;padding:8px ${navCollapsed ? '0' : '10px'};${navCollapsed ? 'justify-content:center' : ''};border-radius:12px;background:var(--surface);border:1px solid var(--border)`)}>
               <div style={s('width:32px;height:32px;border-radius:50%;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0')}>{initials}</div>
-              <div style={s('line-height:1.2;min-width:0')}>
-                <div style={s('font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{displayName}</div>
-                <div style={s('font-size:10px;color:var(--muted);white-space:nowrap')}>{user.role}</div>
-              </div>
+              {!navCollapsed && (
+                <div style={s('line-height:1.2;min-width:0')}>
+                  <div style={s('font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{displayName}</div>
+                  <div style={s('font-size:10px;color:var(--muted);white-space:nowrap')}>{user.role}</div>
+                </div>
+              )}
             </div>
           </div>
         </aside>
@@ -202,14 +235,20 @@ export function SalesRedesign() {
         {/* MAIN COLUMN */}
         <div style={s('flex:1;min-width:0;display:flex;flex-direction:column')}>
           <div style={s('flex-shrink:0;height:54px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 24px;border-bottom:1px solid var(--border);background:color-mix(in srgb, var(--bg) 60%, transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);position:relative;z-index:15')}>
-            <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase")}>{NAVLABEL[section] ?? ''}</div>
+            <div style={s('display:flex;align-items:center;gap:13px;min-width:0')}>
+              <button onClick={toggleNav} aria-label={navCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={navCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} className="ss-ico-btn" style={s('width:32px;height:32px;flex-shrink:0;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
+                <Svg d={PANEL} size={16} />
+              </button>
+              <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis")}>{NAVLABEL[section] ?? ''}</div>
+            </div>
             {admin && <ViewAsPicker />}
-            <div style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);margin-left:auto")}>{T.timeFmt}</div>
+            <div style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);margin-left:auto;flex-shrink:0")}>{T.timeFmt}</div>
           </div>
-          <main className="ss-scroll" style={s('flex:1;min-height:0;position:relative')}>
+          <main className={fullBleed ? undefined : 'ss-scroll'} style={s(`flex:1;min-height:0;position:relative;${fullBleed ? 'overflow:hidden;display:flex' : ''}`)}>
             {/* Keyed on the acted-as agent: switching "View as" remounts the panels so every
-                tab refetches under the new identity (the transport sends fresh x-act-as headers). */}
-            <div id="ss-panels" key={actAsKey} style={s('max-width:1180px;margin:0 auto;padding:24px 24px 90px')}>
+                tab refetches under the new identity (the transport sends fresh x-act-as headers).
+                Full-bleed tabs (Tickets) fill the whole panel; others center under a max-width. */}
+            <div id="ss-panels" key={actAsKey} style={s(fullBleed ? 'flex:1;min-width:0;height:100%;padding:16px 18px' : 'max-width:1180px;margin:0 auto;padding:24px 24px 90px')}>
               {section === 'home' && <HomeTab />}
               {section === 'inbox' && <InboxTab />}
               {section === 'tickets' && <TicketsTab />}
