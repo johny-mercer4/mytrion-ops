@@ -100,6 +100,52 @@ export interface DeskDepartment {
   isEnabled?: boolean;
 }
 
+/**
+ * Search the tickets a given CRM user created — the Sales ticket dashboard's list. Filters on
+ * the custom field `cf_crm_created_by_id` (set when a ticket is created from the widget), newest
+ * first. Returns the RAW Desk ticket objects (the dashboard needs custom fields + names), so the
+ * route/UI maps them. `from` is 1-based; Desk caps `limit` at 99.
+ */
+export async function searchTicketsByCreator(
+  crmUserId: string,
+  opts: { from?: number; limit?: number } = {},
+): Promise<Record<string, unknown>[]> {
+  const url = new URL(deskUrl('/tickets/search'));
+  url.searchParams.set('customField1', `cf_crm_created_by_id:${crmUserId}`);
+  url.searchParams.set('from', String(Math.max(1, Math.trunc(opts.from ?? 1))));
+  url.searchParams.set('limit', String(clampLimit(opts.limit, MAX_TICKET_LIMIT)));
+  // /tickets/search wraps rows in `{ data: [...] }` on 200 and 204s when empty (deskGet handles both).
+  return deskGet<Record<string, unknown>>(url);
+}
+
+/** A ticket's conversation (comments + agent replies), oldest→newest as the UI renders them. */
+export async function getTicketComments(ticketId: string, limit = 50): Promise<Record<string, unknown>[]> {
+  const url = new URL(deskUrl(`/tickets/${encodeURIComponent(ticketId)}/comments`));
+  url.searchParams.set('from', '1');
+  url.searchParams.set('limit', String(clampLimit(limit, MAX_TICKET_LIMIT)));
+  url.searchParams.set('sortBy', 'commentedTime');
+  return deskGet<Record<string, unknown>>(url);
+}
+
+/** Post an agent reply/comment on a ticket. `isPublic` true = customer-visible reply. */
+export async function postTicketComment(
+  ticketId: string,
+  content: string,
+  isPublic = true,
+): Promise<Record<string, unknown>> {
+  const url = deskUrl(`/tickets/${encodeURIComponent(ticketId)}/comments`);
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { ...(await authHeaders('zoho_desk')), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content, contentType: 'plainText', isPublic }),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`[zoho-desk] POST /tickets/${ticketId}/comments HTTP ${res.status}: ${text.slice(0, 300)}`);
+  }
+  return text ? (JSON.parse(text) as Record<string, unknown>) : {};
+}
+
 /** List departments — useful both for connectivity checks and mapping a name → departmentId. */
 export async function listDepartments(limit = 50): Promise<DeskDepartment[]> {
   const url = new URL(deskUrl('/departments'));
