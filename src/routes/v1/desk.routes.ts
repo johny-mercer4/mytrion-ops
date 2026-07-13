@@ -24,7 +24,6 @@ import {
   searchTicketsByCreator,
   uploadDeskFile,
 } from '../../integrations/zohoDesk.js';
-import { attachFileToRecord } from '../../integrations/zohoCrm.js';
 import { dispatchTouchpoint } from '../../modules/touchpoints/dispatcher.js';
 import { resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
 import type { TenantContext } from '../../types/tenantContext.js';
@@ -277,21 +276,14 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
         dealId: f.dealId,
         deskTicketId,
       }).catch((e: unknown) => warnings.push(`crm-link: ${e instanceof Error ? e.message : 'failed'}`));
-      // Attachment: upload to the Deal record (the working, verified path — the file is preserved and
-      // linked to the deal the ticket is about). We then ALSO try to hand it onto the Desk ticket, but
-      // that transfer is best-effort/silent: the org's Desk token can't attach to tickets directly and
-      // the upload Deluge currently rejects the id, so we never fail the ticket over it.
+      // Attachment: upload the file to Desk and hand it onto the NEW ticket as a comment attachment —
+      // the same working path the conversation reply uses (real-dept tickets accept it). Best-effort:
+      // the ticket already exists, so we never fail the create over an attachment hiccup.
       if (file) {
         try {
-          const attachmentId = await attachFileToRecord('Deals', f.dealId, file.name, file.buffer, file.mime);
+          const uploadId = await uploadDeskFile(file.buffer, file.name, file.mime);
+          await postTicketComment(deskTicketId, `📎 ${file.name}`, true, [uploadId]);
           attached = true;
-          await dispatchTouchpoint(ctx, 'tickets.upload_attachment', {
-            ticketId: deskTicketId,
-            dealId: f.dealId,
-            attachmentId,
-            fileName: file.name,
-            orgId: env.ZOHO_DESK_ORG_ID,
-          }).catch((e: unknown) => warnings.push(`ticket-transfer: ${e instanceof Error ? e.message : 'failed'}`));
         } catch (e) {
           warnings.push(`attachment: ${e instanceof Error ? e.message : 'failed'}`);
         }
@@ -338,17 +330,13 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
       }
       const warnings: string[] = [];
       let attached = false;
+      // Attach the file onto the escalation's Desk ticket (the returned ticketId) as a comment
+      // attachment — the reliable path. Best-effort: the escalation already exists.
       if (file) {
         try {
-          const attachmentId = await attachFileToRecord('Escalation_Request', escalationId, file.name, file.buffer, file.mime);
+          const uploadId = await uploadDeskFile(file.buffer, file.name, file.mime);
+          await postTicketComment(ticketId, `📎 ${file.name}`, true, [uploadId]);
           attached = true;
-          await dispatchTouchpoint(ctx, 'tickets.upload_escalation_attachment', {
-            ticketId,
-            recordId: escalationId,
-            attachmentId,
-            fileName: file.name,
-            orgId: env.ZOHO_DESK_ORG_ID,
-          }).catch((e: unknown) => warnings.push(`ticket-transfer: ${e instanceof Error ? e.message : 'failed'}`));
         } catch (e) {
           warnings.push(`attachment: ${e instanceof Error ? e.message : 'failed'}`);
         }
