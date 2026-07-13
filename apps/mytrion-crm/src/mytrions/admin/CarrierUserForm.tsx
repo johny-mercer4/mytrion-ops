@@ -10,7 +10,6 @@ import {
   type DwhOperator,
 } from '../../api/carrierUsers';
 import { BuildingIcon, PersonIcon, SearchIcon, SendArrowIcon } from '../../components/icons';
-import { Button } from '@/components/ui/button';
 import { copyToClipboard } from './carrierUserUtil';
 import s from './admin.module.css';
 
@@ -411,19 +410,19 @@ export function CarrierUserForm({
       {inviteUrl ? (
         <div className={s.inlineRow}>
           <input className={`${s.input} ${s.mono}`} readOnly value={inviteUrl} onFocus={(e) => e.currentTarget.select()} />
-          <Button type="button" variant="outline" onClick={() => copyToClipboard(inviteUrl)}>
+          <button type="button" className={s.ghostBtn} onClick={() => copyToClipboard(inviteUrl)}>
             Copy
-          </Button>
-          <Button type="button" variant="ghost" onClick={() => setInviteUrl('')}>
+          </button>
+          <button type="button" className={s.ghostBtn} onClick={() => setInviteUrl('')}>
             Generate another
-          </Button>
+          </button>
         </div>
       ) : (
         <div className={s.inlineRow}>
-          <Button type="submit" disabled={!valid || busy}>
+          <button type="submit" className={s.primaryBtn} disabled={!valid || busy}>
             <SendArrowIcon size={13} />
             {busy ? 'Generating…' : 'Generate registration link'}
-          </Button>
+          </button>
           {blocker && <span className={s.fieldHint}>{blocker}</span>}
         </div>
       )}
