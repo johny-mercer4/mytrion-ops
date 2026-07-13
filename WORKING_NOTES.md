@@ -1956,3 +1956,18 @@ Brought Sales Automations transaction reports and invoice downloads in line with
 
 **Files:** `txnReport.ts`, `txnReportExport.ts`, `txnExportLibs.ts`, `AutoResultPanels.tsx`,
 `autoRunners.ts`, `AutoTab.tsx`, vendor scripts under `apps/mytrion-crm/public/vendor/mytrion/`.
+
+## 2026-07-14 — Automations UI: dropdown clip, txn filters, DnD catalog, categories
+
+Follow-up after export parity commit (`792491e`):
+
+1. **Deal/Card dropdown clip** — modal `overflow:hidden` was clipping absolute lists.
+   Portaled floating dropdown (`AutoFloatingDrop.tsx`) with flip-up + Escape/outside close.
+2. **Txn report filters** — widened results modal (820px); split layout so Display/Output/
+   Match By stay in a dedicated scroll pane above the list (`splitLayout` on
+   `AutoTransactionsPanel`). Download still runs `processTransactions` → `downloadTxnReport`.
+3. **Catalog DnD** — HTML5 drag reorder; order in localStorage
+   `sales-auto-catalog-order:<zohoUserId>` (else `sales-auto-catalog-order`). Default =
+   `AUTO_LIST` order.
+4. **Categories** — section headers with icons: C→Customer Service, Q→Billing, V→Verification,
+   M→Management (`AutoCatalog.tsx` + `autoCatalogOrder.ts`).

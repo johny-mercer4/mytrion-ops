@@ -1,13 +1,11 @@
 /**
- * Automations tab — Sales Mytrion redesign. Catalog grid + runner modal over the self-service
- * action set (autoLive / autoRunners). Deal picker from clients.by_agent (+ CRM deal ids), card
- * picker from dwh.cards / efs.cards, RUN dispatches touchpoints or Desk ticket creates.
+ * Automations tab — catalog + runner modal (deal/card pickers, touchpoint / Desk dispatch).
  */
 import { useEffect, useRef, useState } from 'react';
 import type { MoneyCodePreview } from '@/api/touchpointTypes';
 import { callTouchpoint, logAutomation } from '@/api/touchpoints';
 import { s, Svg, Badge } from '../dc';
-import { badge, deptStyle, iconBox, type BadgeVM } from '../salesData';
+import { badge, deptStyle, type BadgeVM } from '../salesData';
 import { useLoad, money } from '../live';
 import { useSales } from '../ctx';
 import {
@@ -18,13 +16,14 @@ import {
 } from '../autoLive';
 import { runAutomation } from '../autoRunners';
 import { AutoInvoicesPanel, AutoTransactionsPanel } from '../AutoResultPanels';
+import { AutoCatalog } from '../AutoCatalog';
+import { AutoFloatingDrop } from '../AutoFloatingDrop';
 import { TXN_RANGE_PRESETS, type TxnReportState } from '../txnReport';
 
 interface WexQ { appId: string; last: string; mc: string; }
 type Step = 'config' | 'running' | 'done';
 type LimitDir = 'increase' | 'decrease';
 
-const DEPT_COL: Record<string, string> = { C: 'var(--orange)', Q: 'var(--accent)', V: 'var(--ok)', M: 'var(--violet)' };
 const cardCol: Record<string, string> = { active: 'var(--ok)', fraud: 'var(--danger)', inactive: 'var(--muted)' };
 const grad = 'linear-gradient(120deg,var(--accent),var(--accent-2))';
 const inp40 = 'width:100%;height:40px;padding:0 12px;border-radius:10px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px';
@@ -32,9 +31,9 @@ const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:11px;border:1
 const inp44 = 'width:100%;height:44px;padding:0 14px;border-radius:12px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px';
 const labelCss = 'font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
 const pickLabelCss = 'font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em';
-const dropCss = 'position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:5;border-radius:12px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);overflow:hidden';
 const dropMsg = 'padding:14px;font-size:12.5px;color:var(--muted);text-align:center';
 const dropErr = 'padding:14px;font-size:12.5px;color:var(--danger);text-align:center';
+const dropRow = 'padding:12px 15px;cursor:pointer;border-bottom:1px solid var(--border2)';
 const noteWarn = 'padding:14px 16px;border-radius:12px;background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);font-size:12.5px;color:var(--text2);line-height:1.5';
 const noteErr = 'padding:12px 14px;border-radius:11px;background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);font-size:12.5px;color:var(--danger);line-height:1.5';
 const mono = "font-family:'JetBrains Mono',monospace";
@@ -57,8 +56,6 @@ const daysAgoIso = (n: number) => {
   return d.toISOString().slice(0, 10);
 };
 const skel8 = [1, 2, 3, 4, 5, 6, 7, 8];
-const catalogCard = (soon: boolean): string =>
-  `text-align:left;padding:17px;border-radius:15px;background:var(--surface);border:1px solid var(--border);cursor:${soon ? 'default' : 'pointer'};box-shadow:var(--shadow-sm);position:relative;overflow:hidden;opacity:${soon ? 0.55 : 1};width:100%;display:flex;flex-direction:column;gap:11px`;
 const limitBtn = (on: boolean, col: string): string =>
   `flex:1;padding:9px;border-radius:9px;border:1px solid ${on ? col : 'var(--border)'};background:${on ? `color-mix(in srgb,${col} 16%,transparent)` : 'var(--alt)'};color:${on ? col : 'var(--muted)'};font-size:12.5px;font-weight:700;cursor:pointer;transition:all .14s`;
 const btnP = (extra: string): string => `border:none;background:${grad};color:#fff;font-weight:700;cursor:pointer;${extra}`;
@@ -111,6 +108,8 @@ export function AutoTab() {
 
   const progTimer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const fetchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const dealInputRef = useRef<HTMLInputElement | null>(null);
+  const cardInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => () => { clearInterval(progTimer.current); clearTimeout(fetchTimer.current); }, []);
 
   const dealsLoad = useLoad(loadDeals, []);
@@ -268,6 +267,8 @@ export function AutoTab() {
   const autoResultTxn = autoResult?.kind === 'transactions';
   const autoResultTable = autoResult?.kind === 'table' ? autoResult : null;
   const autoIsResultTable = autoResultInvoices || autoResultTxn || !!autoResultTable;
+  const modalMaxW = autoStep === 'done' && (autoResultTxn || autoResultInvoices) ? '820px' : '640px';
+  const bodyTxnSplit = autoStep === 'done' && autoResultTxn;
 
   return (
     <>
@@ -281,32 +282,12 @@ export function AutoTab() {
           <input value={autoSearch} onChange={(e) => setAutoSearch(e.target.value)} placeholder="Search by name, code (e.g. C-16), or keyword…" className="ss-in" style={s('width:100%;height:46px;padding:0 44px;border-radius:13px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;box-shadow:var(--shadow-sm)')} />
           {autoSearch && <button onClick={() => setAutoSearch('')} aria-label="Clear" className="ss-ico-btn" style={s('position:absolute;right:11px;top:50%;transform:translateY(-50%);width:26px;height:26px;border-radius:7px;border:none;background:var(--alt);color:var(--muted);cursor:pointer')}>✕</button>}
         </div>
-        {autoCatalog.length === 0 && (
-          <div style={s('text-align:center;padding:56px 20px;color:var(--muted)')}>
-            <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:17px;text-transform:uppercase;color:var(--text)')}>No actions match your search</div>
-            <div style={s('font-size:13px;margin-top:5px')}>Try a code like <strong style={s('color:var(--text2)')}>C-16</strong> or a keyword like <strong style={s('color:var(--text2)')}>fraud</strong>.</div>
-          </div>
-        )}
-        <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:14px')}>
-          {autoCatalog.map((a) => (
-            <button key={a.id} onClick={() => openAuto(a)} className="ss-card-h" style={s(catalogCard(!!a.soon))}>
-              <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:8px')}>
-                <div style={s(iconBox(DEPT_COL[a.dept] ?? 'var(--accent)', 42))}><Svg d={a.icon} size={21} strokeWidth={1.8} /></div>
-                {a.soon && <span style={s('font-size:9px;font-weight:800;letter-spacing:.05em;padding:3px 8px;border-radius:99px;background:var(--raised);color:var(--muted)')}>SOON</span>}
-              </div>
-              <div>
-                <div style={s('font-size:14px;font-weight:700')}>{a.title}</div>
-                <div style={s('display:flex;gap:5px;margin-top:6px;flex-wrap:wrap')}>{a.codes.map((c) => <span key={c} style={s(deptStyle(c))}>{c}</span>)}</div>
-                <div style={s('font-size:12px;color:var(--muted);margin-top:8px;line-height:1.45')}>{a.desc}</div>
-              </div>
-            </button>
-          ))}
-        </div>
+        <AutoCatalog items={autoCatalog} onOpen={openAuto} />
       </div>
 
       {b && (
         <div onClick={closeAuto} style={s('position:fixed;inset:0;z-index:115;background:rgba(3,7,14,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
-          <div onClick={(e) => e.stopPropagation()} style={s('width:100%;max-width:640px;max-height:88vh;display:flex;flex-direction:column;border-radius:20px;background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}>
+          <div onClick={(e) => e.stopPropagation()} style={s(`width:100%;max-width:${modalMaxW};max-height:88vh;display:flex;flex-direction:column;border-radius:20px;background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
             <div style={s('flex-shrink:0;padding:20px 22px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px')}>
               <div style={s('flex:1;min-width:0')}>
                 <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:18px;letter-spacing:.03em;text-transform:uppercase')}>{b.title}</div>
@@ -315,7 +296,12 @@ export function AutoTab() {
               </div>
               <button onClick={closeAuto} aria-label="Close" className="ss-ico-btn" style={s('width:32px;height:32px;border-radius:9px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>{closeX16}</button>
             </div>
-            <div className="ss-scroll" style={s('flex:1;min-height:0;padding:22px')}>
+            <div
+              className={bodyTxnSplit ? undefined : 'ss-scroll'}
+              style={s(bodyTxnSplit
+                ? 'flex:1;min-height:0;padding:22px;display:flex;flex-direction:column;overflow:hidden'
+                : 'flex:1;min-height:0;padding:22px')}
+            >
               {autoStep === 'config' && (
                 <div style={s('display:flex;flex-direction:column;gap:18px')}>
                   {kind === 'search' && (
@@ -359,21 +345,27 @@ export function AutoTab() {
                           <button onClick={clearDeal} aria-label="Clear deal" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer')}>✕</button>
                         </div>
                       ) : (
-                        <div style={s('position:relative')}>
-                          <input value={autoDealQuery} onChange={(e) => setDealQuery(e.target.value)} onFocus={() => setAutoShowDrop(true)} placeholder="Search by name, company, app ID, carrier or phone…" className="ss-in" style={s(inp44)} />
-                          {autoShowDrop && (
-                            <div style={s(`${dropCss};max-height:230px;overflow-y:auto`)}>
-                              {dealsLoad.loading && <div style={s(dropMsg)}>Loading clients…</div>}
-                              {dealsLoad.error && <div style={s(dropErr)}>{dealsLoad.error}</div>}
-                              {!dealsLoad.loading && !dealsLoad.error && filteredDeals.map((d) => (
-                                <div key={d.id} onMouseDown={() => selectDeal(d)} className="ss-tab-x" style={s('padding:12px 15px;cursor:pointer;border-bottom:1px solid var(--border2)')}>
-                                  <div style={s('font-size:13px;font-weight:700')}>{d.name}</div>
-                                  <div style={s(`font-size:11px;color:var(--muted);margin-top:3px;${mono}`)}>{d.company} · App {d.app} · {d.phone}</div>
-                                </div>
-                              ))}
-                              {!dealsLoad.loading && !dealsLoad.error && filteredDeals.length === 0 && autoDealQuery.length > 0 && <div style={s('padding:14px;font-size:12.5px;color:var(--muted);text-align:center')}>No matching deals</div>}
-                            </div>
-                          )}
+                        <div>
+                          <input
+                            ref={dealInputRef}
+                            value={autoDealQuery}
+                            onChange={(e) => setDealQuery(e.target.value)}
+                            onFocus={() => setAutoShowDrop(true)}
+                            placeholder="Search by name, company, app ID, carrier or phone…"
+                            className="ss-in"
+                            style={s(inp44)}
+                          />
+                          <AutoFloatingDrop open={autoShowDrop} anchorRef={dealInputRef} maxHeight={230} onClose={() => setAutoShowDrop(false)}>
+                            {dealsLoad.loading && <div style={s(dropMsg)}>Loading clients…</div>}
+                            {dealsLoad.error && <div style={s(dropErr)}>{dealsLoad.error}</div>}
+                            {!dealsLoad.loading && !dealsLoad.error && filteredDeals.map((d) => (
+                              <div key={d.id} onMouseDown={() => selectDeal(d)} className="ss-tab-x" style={s(dropRow)}>
+                                <div style={s('font-size:13px;font-weight:700')}>{d.name}</div>
+                                <div style={s(`font-size:11px;color:var(--muted);margin-top:3px;${mono}`)}>{d.company} · App {d.app} · {d.phone}</div>
+                              </div>
+                            ))}
+                            {!dealsLoad.loading && !dealsLoad.error && filteredDeals.length === 0 && autoDealQuery.length > 0 && <div style={s(dropMsg)}>No matching deals</div>}
+                          </AutoFloatingDrop>
                         </div>
                       )}
                     </div>
@@ -390,22 +382,28 @@ export function AutoTab() {
                           <button onClick={clearCard} aria-label="Clear card" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer')}>✕</button>
                         </div>
                       ) : (
-                        <div style={s('position:relative')}>
-                          <input value={autoCardQuery} onChange={(e) => setCardQuery(e.target.value)} onFocus={() => setAutoShowCardDrop(true)} placeholder="Search card number…" className="ss-in" style={s(inp44)} />
-                          {autoShowCardDrop && (
-                            <div style={s(`${dropCss};max-height:220px;overflow-y:auto`)}>
-                              {cardsLoad.loading && <div style={s(dropMsg)}>Loading cards…</div>}
-                              {cardsLoad.error && <div style={s(dropErr)}>{cardsLoad.error}</div>}
-                              {!cardsLoad.loading && !cardsLoad.error && filteredCards.map((c) => (
-                                <div key={c.id} onMouseDown={() => selectCard(c)} className="ss-tab-x" style={s('display:flex;align-items:center;gap:10px;padding:12px 15px;cursor:pointer;border-bottom:1px solid var(--border2)')}>
-                                  <span style={s(`${mono};font-size:13px;font-weight:600`)}>{`•••• ${c.number.slice(-4)}`}</span>
-                                  <Badge vm={badge(c.status.toUpperCase(), cardCol[c.status] ?? 'var(--muted)')} />
-                                  <span style={s('font-size:11px;color:var(--muted);margin-left:auto')}>{`${c.driver || 'No driver'} · Unit ${c.unit || '—'}`}</span>
-                                </div>
-                              ))}
-                              {!cardsLoad.loading && !cardsLoad.error && filteredCards.length === 0 && <div style={s('padding:14px;font-size:12.5px;color:var(--muted);text-align:center')}>No matching cards</div>}
-                            </div>
-                          )}
+                        <div>
+                          <input
+                            ref={cardInputRef}
+                            value={autoCardQuery}
+                            onChange={(e) => setCardQuery(e.target.value)}
+                            onFocus={() => setAutoShowCardDrop(true)}
+                            placeholder="Search card number…"
+                            className="ss-in"
+                            style={s(inp44)}
+                          />
+                          <AutoFloatingDrop open={autoShowCardDrop} anchorRef={cardInputRef} maxHeight={220} onClose={() => setAutoShowCardDrop(false)}>
+                            {cardsLoad.loading && <div style={s(dropMsg)}>Loading cards…</div>}
+                            {cardsLoad.error && <div style={s(dropErr)}>{cardsLoad.error}</div>}
+                            {!cardsLoad.loading && !cardsLoad.error && filteredCards.map((c) => (
+                              <div key={c.id} onMouseDown={() => selectCard(c)} className="ss-tab-x" style={s(`display:flex;align-items:center;gap:10px;${dropRow}`)}>
+                                <span style={s(`${mono};font-size:13px;font-weight:600`)}>{`•••• ${c.number.slice(-4)}`}</span>
+                                <Badge vm={badge(c.status.toUpperCase(), cardCol[c.status] ?? 'var(--muted)')} />
+                                <span style={s('font-size:11px;color:var(--muted);margin-left:auto')}>{`${c.driver || 'No driver'} · Unit ${c.unit || '—'}`}</span>
+                              </div>
+                            ))}
+                            {!cardsLoad.loading && !cardsLoad.error && filteredCards.length === 0 && <div style={s(dropMsg)}>No matching cards</div>}
+                          </AutoFloatingDrop>
                         </div>
                       )}
                     </div>
@@ -557,10 +555,10 @@ export function AutoTab() {
               )}
 
               {autoStep === 'done' && (autoIsResultTable ? (
-                <div>
+                <div style={s(bodyTxnSplit ? 'flex:1;min-height:0;display:flex;flex-direction:column;gap:14px' : '')}>
                   {autoResultInvoices && <AutoInvoicesPanel rows={invRows} onToast={pushToast} />}
                   {autoResultTxn && (
-                    <AutoTransactionsPanel report={txnReport} onToast={pushToast} />
+                    <AutoTransactionsPanel report={txnReport} onToast={pushToast} splitLayout />
                   )}
                   {autoResultTable && (
                     <div style={s('border-radius:13px;border:1px solid var(--border);overflow:hidden')}>
@@ -575,7 +573,7 @@ export function AutoTab() {
                       ))}
                     </div>
                   )}
-                  <div style={s('display:flex;justify-content:flex-end;gap:10px;margin-top:18px')}>
+                  <div style={s(`display:flex;justify-content:flex-end;gap:10px;${bodyTxnSplit ? 'flex-shrink:0;padding-top:4px' : 'margin-top:18px'}`)}>
                     <button onClick={resetAuto} className="ss-ico-btn" style={s('height:42px;padding:0 18px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>↩ Run another</button>
                     <button onClick={closeAuto} className="ss-btn-p" style={s(btnP('height:42px;padding:0 22px;border-radius:11px;font-size:12.5px'))}>Done</button>
                   </div>
