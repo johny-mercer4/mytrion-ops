@@ -1971,3 +1971,29 @@ Follow-up after export parity commit (`792491e`):
    `AUTO_LIST` order.
 4. **Categories** — section headers with icons: C→Customer Service, Q→Billing, V→Verification,
    M→Management (`AutoCatalog.tsx` + `autoCatalogOrder.ts`).
+
+## 2026-07-14 — Automations UI Polish (Modal-level Results)
+
+- Replaced toasts with inline modal-level success/error banners in `AutoInvoicesPanel` and `AutoTransactionsPanel`.
+- Moved general automation run errors (`autoRunErr`) from the config form to a dedicated full-screen error view in the `done` step (matching the success screen).
+- Removed redundant toasts from `AutoTab.tsx` since results are now fully visible at the modal level.
+
+## 2026-07-14 — Data Center / Create / Carriers / Tickets batch (COQL 2000, NY EST, Create Lead, paste-to-attach)
+
+- **COQL bulk** — `salesDataCenter.ts` `clampLimit` + `fetchAgentLeads`/`fetchAgentDeals` raised
+  200→2000 (verified live: `rows=2000, more=true`), so the Data Center pulls the full owner-scoped
+  set instead of one page.
+- **Workday clock in NY** — `salesData.ts` `timeParts()` now computes the workday % + clock in
+  `America/New_York` via `Intl.DateTimeFormat`, regardless of the viewer's timezone (the floor runs
+  on NY hours).
+- **Carriers tab filters** — `CarriersTab.tsx` gained the self-service filter bar (status chips with
+  live counts, Min-units, Load-limit select, Clear); `live.ts` `searchCarriers(query, limit)` +
+  `CarrierSearchVM.unitsNum` back the filtering.
+- **Create Lead** — new `CreateLeadForm` (`createTicketForms.tsx`) wired as the Create tab's 3rd mode
+  (`CreateTab.tsx`); salutation/firstName/lastName*/companyName*/phone(10-digit) → `leads.create`
+  touchpoint (mytrioncreatelead). DUPLICATE_DATA links to the existing lead instead of erroring.
+- **Paste-to-attach** — `AttachZone` (Create/Escalation) grabs a clipboard file/image via a document
+  paste listener while empty; the Tickets composer input gained `onPaste`. Drag-drop + click already
+  existed; paste is the new path.
+- Transactions PDF/Excel export parity (self-service) landed earlier via the concurrent Automations
+  session (`792491e`/`62e4391`) — not re-done here.

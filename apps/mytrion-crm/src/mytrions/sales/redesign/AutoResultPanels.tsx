@@ -39,13 +39,12 @@ function statusBadge(status: string): BadgeVM {
 
 export function AutoInvoicesPanel({
   rows,
-  onToast,
 }: {
   rows: InvRow[];
-  onToast: (title: string, msg: string) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dlBusy, setDlBusy] = useState<string | null>(null);
+  const [panelMsg, setPanelMsg] = useState<{ title: string; body: string; type: 'success' | 'error' } | null>(null);
 
   const allIds = useMemo(() => rows.map((r) => r.id).filter(Boolean), [rows]);
   const allSelected = allIds.length > 0 && allIds.every((id) => selected.has(id));
@@ -66,30 +65,41 @@ export function AutoInvoicesPanel({
   const onOne = (row: InvRow, type: 'pdf' | 'excel') => {
     if (!row.id) return;
     setDlBusy(`${row.id}-${type}`);
+    setPanelMsg(null);
     downloadInvoice(row.id, type, row.inv)
-      .then(() => onToast('Download', `${type.toUpperCase()} for ${row.inv}`))
-      .catch((err: unknown) => onToast('Download failed', err instanceof Error ? err.message : String(err)))
+      .then(() => setPanelMsg({ title: 'Download', body: `${type.toUpperCase()} for ${row.inv}`, type: 'success' }))
+      .catch((err: unknown) => setPanelMsg({ title: 'Download failed', body: err instanceof Error ? err.message : String(err), type: 'error' }))
       .finally(() => setDlBusy(null));
   };
 
   const onBulk = (type: 'pdf' | 'excel') => {
     const list = rows.filter((r) => selected.has(r.id) && r.id);
     if (!list.length) {
-      onToast('Invoices', 'Select at least one invoice.');
+      setPanelMsg({ title: 'Invoices', body: 'Select at least one invoice.', type: 'error' });
       return;
     }
     setDlBusy(`bulk-${type}`);
-    downloadInvoicesSequential(list, type, (msg) => onToast('Downloading', msg))
+    setPanelMsg(null);
+    downloadInvoicesSequential(list, type, (msg) => setPanelMsg({ title: 'Downloading', body: msg, type: 'success' }))
       .then(({ ok, fail }) => {
-        if (fail === 0) onToast('Downloaded', `${ok} invoice(s) (${type.toUpperCase()}).`);
-        else if (ok === 0) onToast('Download failed', 'Could not download the selected invoice(s).');
-        else onToast('Partial', `Downloaded ${ok}, ${fail} failed.`);
+        if (fail === 0) setPanelMsg({ title: 'Downloaded', body: `${ok} invoice(s) (${type.toUpperCase()}).`, type: 'success' });
+        else if (ok === 0) setPanelMsg({ title: 'Download failed', body: 'Could not download the selected invoice(s).', type: 'error' });
+        else setPanelMsg({ title: 'Partial', body: `Downloaded ${ok}, ${fail} failed.`, type: 'error' });
       })
       .finally(() => setDlBusy(null));
   };
 
   return (
     <div style={s('display:flex;flex-direction:column;gap:12px')}>
+      {panelMsg && (
+        <div style={s(`padding:12px 14px;border-radius:11px;background:color-mix(in srgb,var(--${panelMsg.type === 'error' ? 'danger' : 'ok'}) 12%,transparent);border:1px solid color-mix(in srgb,var(--${panelMsg.type === 'error' ? 'danger' : 'ok'}) 30%,transparent);font-size:12.5px;color:var(--${panelMsg.type === 'error' ? 'danger' : 'ok'});line-height:1.5;display:flex;justify-content:space-between;align-items:flex-start`)}>
+          <div>
+            <strong style={s('display:block;margin-bottom:2px')}>{panelMsg.title}</strong>
+            {panelMsg.body}
+          </div>
+          <button onClick={() => setPanelMsg(null)} style={s('background:none;border:none;cursor:pointer;color:inherit;opacity:0.7;padding:4px')} aria-label="Dismiss">✕</button>
+        </div>
+      )}
       <div style={s('display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between')}>
         <label style={s('display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text2);cursor:pointer')}>
           <input type="checkbox" checked={allSelected} onChange={toggleAll} />
@@ -126,6 +136,7 @@ export function AutoInvoicesPanel({
         {rows.map((r) => (
           <div
             key={r.inv + r.id}
+            className="ss-row-h"
             style={s('display:grid;grid-template-columns:28px 1.2fr 1fr 0.9fr auto auto;gap:8px;padding:12px 15px;border-top:1px solid var(--border2);align-items:center;font-size:12.5px')}
           >
             <input type="checkbox" checked={selected.has(r.id)} disabled={!r.id} onChange={() => toggle(r.id)} />
@@ -169,11 +180,9 @@ const DISPLAY_CHECKS: Array<[keyof TxnExportOptions, string]> = [
 
 export function AutoTransactionsPanel({
   report,
-  onToast,
   splitLayout = false,
 }: {
   report: TxnReportState | null;
-  onToast: (title: string, msg: string) => void;
   /** When true (Automations modal results), options stay in a dedicated scroll pane above the list. */
   splitLayout?: boolean;
 }) {
@@ -183,6 +192,7 @@ export function AutoTransactionsPanel({
     chainNames: [],
   });
   const [busy, setBusy] = useState(false);
+  const [panelMsg, setPanelMsg] = useState<{ title: string; body: string; type: 'success' | 'error' } | null>(null);
 
   const set = <K extends keyof TxnExportOptions>(k: K, v: TxnExportOptions[K]) =>
     setOpts((o) => ({ ...o, [k]: v }));
@@ -240,13 +250,14 @@ export function AutoTransactionsPanel({
 
   const onDownload = () => {
     if (!report) {
-      onToast('Report', 'Fetch transactions first.');
+      setPanelMsg({ title: 'Report', body: 'Fetch transactions first.', type: 'error' });
       return;
     }
     setBusy(true);
+    setPanelMsg(null);
     downloadTxnReport(report, opts)
-      .then(() => onToast('Download', `Transactions ${opts.format.toUpperCase()} started.`))
-      .catch((err: unknown) => onToast('Export failed', err instanceof Error ? err.message : String(err)))
+      .then(() => setPanelMsg({ title: 'Download', body: `Transactions ${opts.format.toUpperCase()} started.`, type: 'success' }))
+      .catch((err: unknown) => setPanelMsg({ title: 'Export failed', body: err instanceof Error ? err.message : String(err), type: 'error' }))
       .finally(() => setBusy(false));
   };
 
@@ -262,6 +273,15 @@ export function AutoTransactionsPanel({
 
   const optionsBlock = report && report.transactions.length > 0 ? (
     <div style={s('padding:14px;border-radius:13px;border:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;gap:16px')}>
+      {panelMsg && (
+        <div style={s(`padding:12px 14px;border-radius:11px;background:color-mix(in srgb,var(--${panelMsg.type === 'error' ? 'danger' : 'ok'}) 12%,transparent);border:1px solid color-mix(in srgb,var(--${panelMsg.type === 'error' ? 'danger' : 'ok'}) 30%,transparent);font-size:12.5px;color:var(--${panelMsg.type === 'error' ? 'danger' : 'ok'});line-height:1.5;display:flex;justify-content:space-between;align-items:flex-start`)}>
+          <div>
+            <strong style={s('display:block;margin-bottom:2px')}>{panelMsg.title}</strong>
+            {panelMsg.body}
+          </div>
+          <button onClick={() => setPanelMsg(null)} style={s('background:none;border:none;cursor:pointer;color:inherit;opacity:0.7;padding:4px')} aria-label="Dismiss">✕</button>
+        </div>
+      )}
       <div>
         <div style={s(sectionLabel)}>
           Display Features <span style={s('font-weight:500;text-transform:none;letter-spacing:0;opacity:.7')}>optional</span>
@@ -427,11 +447,12 @@ export function AutoTransactionsPanel({
             <span style={s('text-align:right')}>Gallons</span>
             <span style={s('text-align:right')}>Amount</span>
           </div>
-          {g.transactions.slice(0, 40).map((tx) => (
-            <div
-              key={tx.id}
-              style={s('display:grid;grid-template-columns:0.9fr 1fr 1.2fr 0.8fr 0.9fr;gap:8px;padding:10px 14px;border-top:1px solid var(--border2);align-items:center;font-size:12.5px')}
-            >
+              {g.transactions.slice(0, 40).map((tx) => (
+                <div
+                  key={tx.id}
+                  className="ss-row-h"
+                  style={s('display:grid;grid-template-columns:0.9fr 1fr 1.2fr 0.8fr 0.9fr;gap:8px;padding:10px 14px;border-top:1px solid var(--border2);align-items:center;font-size:12.5px')}
+                >
               <span style={s('color:var(--text2)')}>{String(tx.transactionDate).slice(0, 10)}</span>
               <span style={s(mono)}>
                 {opts.showEntireCardNumber ? tx.cardNumber : `•••• ${String(tx.cardNumber).slice(-4)}`}

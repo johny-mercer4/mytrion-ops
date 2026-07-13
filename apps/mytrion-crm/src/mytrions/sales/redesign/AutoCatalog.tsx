@@ -22,27 +22,22 @@ const DEPT_COL: Record<string, string> = {
 };
 
 const catalogCard = (soon: boolean, dragging: boolean): string =>
-  `text-align:left;padding:17px;border-radius:15px;background:var(--surface);border:1px solid ${dragging ? 'var(--accent)' : 'var(--border)'};cursor:${soon ? 'default' : 'grab'};box-shadow:var(--shadow-sm);position:relative;overflow:hidden;opacity:${soon ? 0.55 : dragging ? 0.72 : 1};width:100%;display:flex;flex-direction:column;gap:11px;transition:border-color .14s,opacity .14s`;
+  `text-align:left;padding:18px;border-radius:16px;background:var(--surface);border:1px solid ${dragging ? 'var(--accent)' : 'var(--border)'};cursor:${soon ? 'default' : 'grab'};box-shadow:${dragging ? '0 12px 32px rgba(0,0,0,0.15)' : 'var(--shadow-sm)'};transform:${dragging ? 'scale(1.02)' : 'scale(1)'};position:relative;overflow:hidden;opacity:${soon ? 0.55 : dragging ? 0.95 : 1};width:100%;display:flex;flex-direction:column;gap:12px;transition:all .2s cubic-bezier(0.2, 0, 0, 1)`;
 
 function CategoryHeader({ category, count }: { category: AutoCategory; count: number }) {
   return (
-    <div style={s('display:flex;align-items:center;gap:10px;margin:4px 0 10px')}>
-      <div style={s(iconBox(category.color, 34))}>
-        <Svg d={category.icon} size={17} strokeWidth={1.9} />
+    <div style={s('display:flex;align-items:center;gap:12px;margin:8px 0 14px')}>
+      <div style={s(iconBox(category.color, 38))}>
+        <Svg d={category.icon} size={20} strokeWidth={2} />
       </div>
       <div style={s('flex:1;min-width:0')}>
-        <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.05em;text-transform:uppercase')}>
+        <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:17px;letter-spacing:.04em;text-transform:uppercase;color:var(--text)')}>
           {category.label}
         </div>
-        <div style={s('font-size:11.5px;color:var(--muted);margin-top:1px')}>
+        <div style={s('font-size:12px;color:var(--muted);margin-top:2px')}>
           {count} action{count === 1 ? '' : 's'}
         </div>
       </div>
-      <span
-        style={s(`font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;padding:3px 8px;border-radius:7px;color:${category.color};background:color-mix(in srgb,${category.color} 14%,transparent)`)}
-      >
-        {category.code === 'other' ? '—' : category.code}
-      </span>
     </div>
   );
 }

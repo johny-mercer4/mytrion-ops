@@ -51,6 +51,8 @@ html,body{height:100%;margin:0}
   .ss-vw-opt:hover{background:var(--alt)!important}
   .ss-card-h{transition:transform .16s cubic-bezier(.2,0,0,1),box-shadow .16s,border-color .16s}
   .ss-card-h:hover{transform:translateY(-2px);border-color:rgba(var(--accent-rgb),.4)!important;box-shadow:0 6px 24px rgba(var(--accent-rgb),.14),var(--shadow)!important}
+  .ss-row-h{transition:background .15s}
+  .ss-row-h:hover{background:var(--alt)}
   .ss-btn-p{transition:filter .15s,transform .1s}
   .ss-btn-p:hover{filter:brightness(1.08)}
   .ss-btn-p:active{transform:translateY(1px)}

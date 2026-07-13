@@ -5,9 +5,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { MoneyCodePreview } from '@/api/touchpointTypes';
 import { callTouchpoint, logAutomation } from '@/api/touchpoints';
 import { s, Svg, Badge } from '../dc';
-import { badge, deptStyle, type BadgeVM } from '../salesData';
+import { badge, deptStyle, iconBox, type BadgeVM } from '../salesData';
 import { useLoad, money } from '../live';
-import { useSales } from '../ctx';
 import {
   AUTO_LIST, LIMITTYPES, MONEY_CODE_REASONS, RUNNABLE, PHASE_MAP,
   loadDeals, loadCards, loadMoneyCodePreview, mapWex, mapWexSearchRow,
@@ -24,6 +23,7 @@ interface WexQ { appId: string; last: string; mc: string; }
 type Step = 'config' | 'running' | 'done';
 type LimitDir = 'increase' | 'decrease';
 
+const DEPT_COL: Record<string, string> = { C: 'var(--orange)', Q: 'var(--accent)', V: 'var(--ok)', M: 'var(--violet)' };
 const cardCol: Record<string, string> = { active: 'var(--ok)', fraud: 'var(--danger)', inactive: 'var(--muted)' };
 const grad = 'linear-gradient(120deg,var(--accent),var(--accent-2))';
 const inp40 = 'width:100%;height:40px;padding:0 12px;border-radius:10px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px';
@@ -67,7 +67,6 @@ const UD0: UnitDriverForm = { unitNumber: '', driverName: '', driverId: '' };
 const MC0: MoneyCodeForm = { amount: '', reason: MONEY_CODE_REASONS[0], unitNumber: '' };
 
 export function AutoTab() {
-  const { pushToast } = useSales();
   const [autoSearch, setAutoSearch] = useState('');
   const [autoModal, setAutoModal] = useState<Automation | null>(null);
   const [autoStep, setAutoStep] = useState<Step>('config');
@@ -213,13 +212,12 @@ export function AutoTab() {
         clearInterval(progTimer.current); setAutoProgress(100); setAutoResult(payload);
         fetchTimer.current = setTimeout(() => setAutoStep('done'), 240);
         if (payload.kind === 'link') window.open(payload.url, '_blank', 'noopener');
-        pushToast(`${bm.title} complete`, autoDeal ? `Ran for ${autoDeal.name}` : 'Done');
         logAutomation(bm.id);
       })
       .catch((e: unknown) => {
         clearInterval(progTimer.current); setAutoProgress(0);
         setAutoRunErr(e instanceof Error ? e.message : 'The action failed — try again.');
-        setAutoStep('config');
+        setAutoStep('done');
       });
   };
 
@@ -287,20 +285,23 @@ export function AutoTab() {
 
       {b && (
         <div onClick={closeAuto} style={s('position:fixed;inset:0;z-index:115;background:rgba(3,7,14,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
-          <div onClick={(e) => e.stopPropagation()} style={s(`width:100%;max-width:${modalMaxW};max-height:88vh;display:flex;flex-direction:column;border-radius:20px;background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
-            <div style={s('flex-shrink:0;padding:20px 22px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px')}>
-              <div style={s('flex:1;min-width:0')}>
-                <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:18px;letter-spacing:.03em;text-transform:uppercase')}>{b.title}</div>
-                <div style={s('display:flex;gap:6px;margin-top:7px;flex-wrap:wrap')}>{b.codes.map((c) => <span key={c} style={s(deptStyle(c))}>{c}</span>)}</div>
-                <div style={s('font-size:12.5px;color:var(--muted);margin-top:8px;line-height:1.5')}>{b.desc}</div>
+          <div onClick={(e) => e.stopPropagation()} style={s(`width:100%;max-width:${modalMaxW};max-height:88vh;display:flex;flex-direction:column;border-radius:24px;background:var(--surface);border:1px solid var(--border);box-shadow:0 24px 48px rgba(0,0,0,0.2);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
+            <div style={s('flex-shrink:0;padding:24px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:16px;background:linear-gradient(180deg,rgba(var(--accent-rgb),0.03),transparent)')}>
+              <div style={s(iconBox(DEPT_COL[b.dept] ?? 'var(--accent)', 48))}>
+                <Svg d={b.icon} size={24} strokeWidth={2} />
               </div>
-              <button onClick={closeAuto} aria-label="Close" className="ss-ico-btn" style={s('width:32px;height:32px;border-radius:9px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>{closeX16}</button>
+              <div style={s('flex:1;min-width:0')}>
+                <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;letter-spacing:.03em;text-transform:uppercase;color:var(--text)')}>{b.title}</div>
+                <div style={s('display:flex;gap:6px;margin-top:6px;flex-wrap:wrap')}>{b.codes.map((c) => <span key={c} style={s(deptStyle(c))}>{c}</span>)}</div>
+                <div style={s('font-size:13px;color:var(--muted);margin-top:8px;line-height:1.5')}>{b.desc}</div>
+              </div>
+              <button onClick={closeAuto} aria-label="Close" className="ss-ico-btn" style={s('width:36px;height:36px;border-radius:10px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:background .15s')}>{closeX16}</button>
             </div>
             <div
               className={bodyTxnSplit ? undefined : 'ss-scroll'}
               style={s(bodyTxnSplit
-                ? 'flex:1;min-height:0;padding:22px;display:flex;flex-direction:column;overflow:hidden'
-                : 'flex:1;min-height:0;padding:22px')}
+                ? 'flex:1;min-height:0;padding:24px;display:flex;flex-direction:column;overflow:hidden'
+                : 'flex:1;min-height:0;padding:24px')}
             >
               {autoStep === 'config' && (
                 <div style={s('display:flex;flex-direction:column;gap:18px')}>
@@ -359,7 +360,7 @@ export function AutoTab() {
                             {dealsLoad.loading && <div style={s(dropMsg)}>Loading clients…</div>}
                             {dealsLoad.error && <div style={s(dropErr)}>{dealsLoad.error}</div>}
                             {!dealsLoad.loading && !dealsLoad.error && filteredDeals.map((d) => (
-                              <div key={d.id} onMouseDown={() => selectDeal(d)} className="ss-tab-x" style={s(dropRow)}>
+                              <div key={d.id} onMouseDown={() => selectDeal(d)} className="ss-row-h" style={s(dropRow)}>
                                 <div style={s('font-size:13px;font-weight:700')}>{d.name}</div>
                                 <div style={s(`font-size:11px;color:var(--muted);margin-top:3px;${mono}`)}>{d.company} · App {d.app} · {d.phone}</div>
                               </div>
@@ -396,7 +397,7 @@ export function AutoTab() {
                             {cardsLoad.loading && <div style={s(dropMsg)}>Loading cards…</div>}
                             {cardsLoad.error && <div style={s(dropErr)}>{cardsLoad.error}</div>}
                             {!cardsLoad.loading && !cardsLoad.error && filteredCards.map((c) => (
-                              <div key={c.id} onMouseDown={() => selectCard(c)} className="ss-tab-x" style={s(`display:flex;align-items:center;gap:10px;${dropRow}`)}>
+                              <div key={c.id} onMouseDown={() => selectCard(c)} className="ss-row-h" style={s(`display:flex;align-items:center;gap:10px;${dropRow}`)}>
                                 <span style={s(`${mono};font-size:13px;font-weight:600`)}>{`•••• ${c.number.slice(-4)}`}</span>
                                 <Badge vm={badge(c.status.toUpperCase(), cardCol[c.status] ?? 'var(--muted)')} />
                                 <span style={s('font-size:11px;color:var(--muted);margin-left:auto')}>{`${c.driver || 'No driver'} · Unit ${c.unit || '—'}`}</span>
@@ -532,7 +533,6 @@ export function AutoTab() {
                   {kind !== 'search' && (
                     <div style={s('display:flex;flex-direction:column;gap:12px;padding-top:2px')}>
                       {unavailable && <div style={s(noteWarn)}>This action isn&apos;t available for self-service yet — file a ticket and the team will handle it.</div>}
-                      {autoRunErr && <div style={s(noteErr)}>{autoRunErr}</div>}
                       <div style={s('display:flex;justify-content:flex-end')}>
                         {canRun
                           ? <button onClick={runAuto} className="ss-btn-p" style={s(btnP('height:44px;padding:0 24px;border-radius:12px;font-size:13.5px;box-shadow:0 6px 18px rgba(var(--accent-rgb),.35)'))}>{runVerb}</button>
@@ -544,21 +544,36 @@ export function AutoTab() {
               )}
 
               {autoStep === 'running' && (
-                <div style={s('padding:24px 4px')}>
-                  <div style={s('display:flex;align-items:center;gap:12px;margin-bottom:16px')}>
-                    <div style={s('width:22px;height:22px;border-radius:50%;border:2.5px solid var(--border);border-top-color:var(--accent);animation:ss-spin .8s linear infinite')}></div>
-                    <div style={s('flex:1')}><div style={s('font-size:14px;font-weight:700')}>{autoPhase}</div><div style={s('font-size:11.5px;color:var(--muted);margin-top:2px')}>Keep this window open — closing now loses task status.</div></div>
-                    <div style={s(`${mono};font-size:15px;font-weight:600;color:var(--accent)`)}>{autoProgress}%</div>
+                <div style={s('padding:40px 20px;display:flex;flex-direction:column;align-items:center;text-align:center')}>
+                  <div style={s('position:relative;width:64px;height:64px;margin-bottom:24px')}>
+                    <div style={s('position:absolute;inset:0;border-radius:50%;border:3px solid var(--border);opacity:0.5')}></div>
+                    <div style={s('position:absolute;inset:0;border-radius:50%;border:3px solid transparent;border-top-color:var(--accent);animation:ss-spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite')}></div>
+                    <div style={s(`position:absolute;inset:0;display:flex;align-items:center;justify-content:center;${mono};font-size:13px;font-weight:700;color:var(--accent)`)}>{autoProgress}%</div>
                   </div>
-                  <div style={s('height:8px;border-radius:99px;background:var(--raised);overflow:hidden')}><div style={s(`height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-2));width:${autoProgress}%;transition:width .18s linear`)}></div></div>
+                  <div style={s('font-family:Rajdhani,sans-serif;font-size:20px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;margin-bottom:6px')}>{autoPhase}</div>
+                  <div style={s('font-size:13px;color:var(--muted);max-width:280px;line-height:1.5')}>Keep this window open. Closing now loses task status.</div>
+                  <div style={s('width:100%;max-width:320px;height:6px;border-radius:99px;background:var(--raised);overflow:hidden;margin-top:24px')}>
+                    <div style={s(`height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-2));width:${autoProgress}%;transition:width .2s ease-out`)}></div>
+                  </div>
                 </div>
               )}
 
-              {autoStep === 'done' && (autoIsResultTable ? (
+              {autoStep === 'done' && (autoRunErr ? (
+                <div style={s('text-align:center;padding:32px 10px')}>
+                  <div style={s('width:64px;height:64px;border-radius:50%;background:color-mix(in srgb,var(--danger) 12%,transparent);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;color:var(--danger);box-shadow:0 0 0 8px color-mix(in srgb,var(--danger) 4%,transparent)')}>
+                    <Svg d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" size={32} strokeWidth={2.2} />
+                  </div>
+                  <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;text-transform:uppercase;letter-spacing:.03em;color:var(--text)')}>{`${runVerb} Failed`}</div>
+                  <div style={s('font-size:14px;color:var(--text2);margin-top:10px;max-width:360px;margin-left:auto;margin-right:auto;line-height:1.6')}>{autoRunErr}</div>
+                  <div style={s('display:flex;justify-content:center;gap:12px;margin-top:28px')}>
+                    <button onClick={resetAuto} className="ss-btn-p" style={s(btnP('height:44px;padding:0 24px;border-radius:12px;font-size:13.5px;box-shadow:0 4px 12px rgba(var(--accent-rgb),.2)'))}>Try again</button>
+                  </div>
+                </div>
+              ) : autoIsResultTable ? (
                 <div style={s(bodyTxnSplit ? 'flex:1;min-height:0;display:flex;flex-direction:column;gap:14px' : '')}>
-                  {autoResultInvoices && <AutoInvoicesPanel rows={invRows} onToast={pushToast} />}
+                  {autoResultInvoices && <AutoInvoicesPanel rows={invRows} />}
                   {autoResultTxn && (
-                    <AutoTransactionsPanel report={txnReport} onToast={pushToast} splitLayout />
+                    <AutoTransactionsPanel report={txnReport} splitLayout />
                   )}
                   {autoResultTable && (
                     <div style={s('border-radius:13px;border:1px solid var(--border);overflow:hidden')}>
@@ -567,7 +582,7 @@ export function AutoTab() {
                         {autoResultTable.columns.map((c) => <span key={c}>{c}</span>)}
                       </div>
                       {autoResultTable.rows.map((row, i) => (
-                        <div key={i} style={s(`display:grid;grid-template-columns:repeat(${autoResultTable.columns.length},1fr);gap:8px;padding:12px 15px;border-top:1px solid var(--border2);font-size:12.5px`)}>
+                        <div key={i} className="ss-row-h" style={s(`display:grid;grid-template-columns:repeat(${autoResultTable.columns.length},1fr);gap:8px;padding:12px 15px;border-top:1px solid var(--border2);font-size:12.5px`)}>
                           {row.map((cell, j) => <span key={j} style={s(j === 0 ? mono : 'color:var(--text2)')}>{cell}</span>)}
                         </div>
                       ))}
@@ -579,13 +594,15 @@ export function AutoTab() {
                   </div>
                 </div>
               ) : (
-                <div style={s('text-align:center;padding:20px 10px')}>
-                  <div style={s('width:66px;height:66px;border-radius:50%;background:color-mix(in srgb,var(--ok) 16%,transparent);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;color:var(--ok)')}><Svg d="M20 6L9 17l-5-5" size={34} strokeWidth={2.4} /></div>
-                  <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:19px;text-transform:uppercase;letter-spacing:.04em')}>{`${runVerb} complete`}</div>
-                  <div style={s('font-size:13px;color:var(--text2);margin-top:8px;max-width:400px;margin-left:auto;margin-right:auto;line-height:1.55')}>{successMsg}</div>
-                  <div style={s('display:flex;justify-content:center;gap:10px;margin-top:22px')}>
-                    <button onClick={resetAuto} className="ss-ico-btn" style={s('height:42px;padding:0 18px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>Run another</button>
-                    <button onClick={closeAuto} className="ss-btn-p" style={s(btnP('height:42px;padding:0 22px;border-radius:11px;font-size:12.5px'))}>Done</button>
+                <div style={s('text-align:center;padding:32px 10px')}>
+                  <div style={s('width:64px;height:64px;border-radius:50%;background:color-mix(in srgb,var(--ok) 12%,transparent);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;color:var(--ok);box-shadow:0 0 0 8px color-mix(in srgb,var(--ok) 4%,transparent)')}>
+                    <Svg d="M20 6L9 17l-5-5" size={32} strokeWidth={2.5} />
+                  </div>
+                  <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;text-transform:uppercase;letter-spacing:.03em;color:var(--text)')}>{`${runVerb} complete`}</div>
+                  <div style={s('font-size:14px;color:var(--text2);margin-top:10px;max-width:360px;margin-left:auto;margin-right:auto;line-height:1.6')}>{successMsg}</div>
+                  <div style={s('display:flex;justify-content:center;gap:12px;margin-top:28px')}>
+                    <button onClick={resetAuto} className="ss-ico-btn" style={s('height:44px;padding:0 20px;border-radius:12px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:13.5px;cursor:pointer;transition:background .15s')}>Run another</button>
+                    <button onClick={closeAuto} className="ss-btn-p" style={s(btnP('height:44px;padding:0 28px;border-radius:12px;font-size:13.5px;box-shadow:0 4px 12px rgba(var(--accent-rgb),.2)'))}>Done</button>
                   </div>
                 </div>
               ))}
