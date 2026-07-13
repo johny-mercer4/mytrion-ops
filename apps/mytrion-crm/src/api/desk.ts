@@ -51,6 +51,8 @@ export interface DeskComment {
     firstName?: string | null;
     lastName?: string | null;
   } | null;
+  /** Server-set: this comment was posted via the app's Desk agent → it's the caller's own ("me"). */
+  mine?: boolean;
   [k: string]: unknown;
 }
 

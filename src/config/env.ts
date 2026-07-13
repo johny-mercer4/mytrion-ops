@@ -216,6 +216,10 @@ const EnvSchema = z.object({
   ZOHO_DESK_REFRESH_TOKEN: z.string().default(''),
   ZOHO_DESK_BASE_URL: z.string().default('https://desk.zoho.com/api/v1'),
   ZOHO_DESK_ORG_ID: z.string().default(''),
+  // The Desk agent the app posts comments as (the shared "Sales Agent Rep" account tied to the
+  // Desk token). Ticket comments with this commenterId are the caller's own → rendered as "me"
+  // (right-aligned), matching the reference dashboard's zohoDeskAdminId.
+  ZOHO_DESK_AGENT_ID: z.string().default('1057080000010543217'),
 
   // --- Zoho People ---
   ZOHO_PEOPLE_REFRESH_TOKEN: z.string().default(''),

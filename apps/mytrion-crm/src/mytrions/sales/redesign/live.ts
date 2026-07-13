@@ -6,7 +6,6 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { getSession } from '@/api/session';
 import { listDeskComments, listDeskTickets, type DeskComment, type DeskThread, type DeskTicket } from '@/api/desk';
 import { getImpersonation } from '@/api/impersonation';
 import { callTouchpoint } from '@/api/touchpoints';
@@ -456,25 +455,22 @@ export interface TicketMsgVM {
   file?: { name: string; size: string };
 }
 export async function loadTicketMessages(ticketId: string): Promise<TicketMsgVM[]> {
-  // Identify OUR messages by email — Desk comment/thread authors carry a Desk agent id, not the
-  // session's CRM zohoUserId (different id spaces), so id comparison never matches. Email does.
-  const myEmail = (getSession()?.worker.email ?? '').trim().toLowerCase();
-  const isMe = (email: string | null | undefined): boolean => !!email && email.trim().toLowerCase() === myEmail;
   const { threads, comments } = await listDeskComments(ticketId, 50);
   const ms = (v: string | undefined): number => {
     const t = v ? new Date(v).getTime() : 0;
     return Number.isNaN(t) ? 0 : t;
   };
-  // Threads are the actual requester↔agent messages (the ticket body + email replies): 'in' is the
-  // requester, 'out' an agent. Comments are agent notes (writer under `commenter`). Merge + sort.
+  // Placement (matches the reference dashboard): the caller's OWN posts go right ("me"), everyone
+  // else left. The app posts REPLIES as COMMENTS via its shared Desk agent, which the server flags
+  // as `mine`. THREADS are the requester's inbound message + any other-agent email replies — never
+  // the caller's, so they render left, labelled by author.
   const fromThreads = (threads ?? [])
     .map((t: DeskThread) => {
       const text = stripHtml(String(t.content ?? t.summary ?? ''));
       if (!text) return null;
       const outbound = t.direction === 'out';
-      const mine = outbound && isMe(t.author?.email);
       return {
-        from: mine ? 'me' : fullName(t.author) || t.author?.name || (outbound ? 'Agent' : 'Customer'),
+        from: fullName(t.author) || t.author?.name || (outbound ? 'Agent' : 'Customer'),
         type: 'comment' as const,
         text,
         time: relTime(t.createdTime),
@@ -488,7 +484,7 @@ export async function loadTicketMessages(ticketId: string): Promise<TicketMsgVM[
       if (!text) return null; // attachment-only / empty note → no blank bubble
       const cm = c.commenter;
       return {
-        from: isMe(cm?.email) ? 'me' : fullName(cm) || cm?.name || 'Support',
+        from: c.mine ? 'me' : fullName(cm) || cm?.name || 'Support',
         type: 'comment' as const,
         text,
         time: relTime(c.commentedTime),

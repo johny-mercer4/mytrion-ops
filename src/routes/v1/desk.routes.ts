@@ -9,6 +9,7 @@
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { env } from '../../config/env.js';
 import { AppError, RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
@@ -119,7 +120,11 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
           }
         }),
       );
-      return { threads: enriched, comments };
+      // Flag the caller's OWN comments — those posted via the app's shared Desk agent — so the UI
+      // right-aligns them as "me" (the reference matches commenterId to a fixed zohoDeskAdminId).
+      const agentId = env.ZOHO_DESK_AGENT_ID;
+      const flagged = comments.map((c) => ({ ...c, mine: String(c.commenterId ?? '') === agentId }));
+      return { threads: enriched, comments: flagged };
     } catch (err) {
       throw deskError(err);
     }

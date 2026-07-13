@@ -64,7 +64,7 @@ const FILTERS: readonly [TicketFilter, string][] = [
 const DETAIL_ROW_STYLE = 'font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)';
 
 export function TicketsTab() {
-  const { pushToast } = useSales();
+  const { pushToast, go } = useSales();
 
   const [selectedTicket, setSelectedTicket] = useState<string>('');
   const [ticketFilter, setTicketFilter] = useState<TicketFilter>('all');
@@ -229,6 +229,10 @@ export function TicketsTab() {
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={s('position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted)')}><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
               <input value={ticketSearch} onChange={(e) => setTicketSearch(e.currentTarget.value)} placeholder="Search tickets…" className="ss-in" style={s('width:100%;height:36px;padding:0 12px 0 34px;border-radius:10px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:12.5px')} />
             </div>
+            <button onClick={() => go('create')} className="ss-btn-p" style={s('width:100%;height:36px;margin-bottom:9px;border-radius:10px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px')}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+              New Ticket
+            </button>
             <div style={s('display:flex;gap:3px;padding:3px;border-radius:9px;background:var(--alt);border:1px solid var(--border2)')}>
               {FILTERS.map(([id, label]) => {
                 const on = tkF === id;
