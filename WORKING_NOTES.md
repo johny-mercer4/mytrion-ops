@@ -1781,3 +1781,73 @@ returns full display data + the creator id, HTTP 200, no search scope).
     Verified: WS comment → badge 2 → open the ticket → badge 0, store `{}`.
 - One shell socket handles both event types; tabs keep their own sockets for tab-specific needs.
   Stores are `useSyncExternalStore` so shell + tabs stay in lock-step.
+
+---
+
+## 2026-07-14 — Data Center via Zoho CRM COQL + Tickets enhancements
+
+### Data Center (RecordsTab) — five sub-tabs, real data, updated-reference styling
+
+Ported the updated reference's `isRecords` slice (`~/Desktop/SalesMytrion/project/Sales
+Mytrion.dc.html`): **Clients / Leads / Deals / Rejection Reports / Money Codes**, each with a
+per-tab search and a board/list toggle for the pipeline tabs. Lead & deal cards open detail modals.
+
+**Data sources (per what actually owns the data):**
+- **Leads / Deals / Rejections → Zoho CRM COQL**, owner-scoped (`Owner = '<zohoUserId>'` — the org's
+  live COQL convention, verified against servercrm + probing `/coql`). New read-only path:
+  - `src/integrations/salesDataCenter.ts` — `fetchAgentLeads/Deals/Rejections` build validated COQL
+    (field API names + rejection-state values verified against live `/settings/fields` metadata; a
+    single unknown column 400s the whole query). Owner id is `^\d+$`-guarded (no COQL injection).
+  - `src/routes/v1/dataCenter.routes.ts` — `GET /v1/data-center/{leads,deals,rejections}`, modeled on
+    desk.routes: internal + sales-department gate, `resolveZohoUserId` (non-admin locked to self,
+    admin/act-as may target an agent via `?zoho_user_id`). Registered in `app.ts`.
+  - Frontend: `api/dataCenter.ts` (client) → `redesign/dataCenterLive.ts` (VMs + loaders + bucket
+    maps; Lead `Status`/Deal `Stage` picklists bucketed into a clean 5-col pipeline) →
+    `dataCenterViews.tsx` (kanban/list) + `dataCenterModals.tsx` (lead/deal drilldowns, wired through
+    `ctx`/`Shell`). RecordsTab is the shell (sub-tabs + toolbar + Clients grid + Money empty state).
+  - **Rejections** come from the Deals module (`Stage in ('Closed Lost',…)` OR `Application_Status in
+    ('Disqualified','Closed/Lost','Closed/Fraud')`) — the Applications module carries no Owner, so it
+    can't be agent-scoped; Deals mirror the application decision and do have Owner.
+- **Clients → servercrm `clients.by_agent`** (unchanged): the DWH is the only source with
+  balance/cards/gallons, so "every field populated" requires it — CRM Accounts lack those.
+- **Money Codes → styled empty state**: not a Zoho module (issued via EFS; only a Postgres
+  `money_code_requests` table, which isn't agent-scoped) — honest empty state, no COQL source.
+
+Live-verified (Playwright, as a productive CRM owner): leads=200, deals=200, rejections=106 rows
+flowing COQL→route→UI; kanban columns, stats, rejection breakdown, and lead/deal modals all render.
+
+### Tickets — more-visible loading, send-button fix, and reference enhancements
+
+- **Send button no longer hidden by the copilot FAB**: the full-bleed composer reserves right padding
+  (78px) so the send button clears the fixed FAB. Verified: send right=1583, FAB left=1598 (no
+  overlap).
+- **Skeleton loading** (`.ss-skel`): list shows 6 shimmer cards; the thread shows shimmer bubbles —
+  replaces the small "Loading…" text.
+- **Reference enhancements**: SLA badge (per-priority countdown; header + list), priority left-border
+  on rows, an **Overdue** filter, canned **quick-reply** chips (keyed on ticket type), and a
+  **Resolve/Reopen** action → new `POST /v1/desk/tickets/:id/status` (Desk `PATCH`, audited;
+  `updateTicketStatus` in `zohoDesk.ts`).
+
+Verified: `pnpm typecheck` + `pnpm test` (490) green (backend); web typecheck + build green.
+
+---
+
+## 2026-07-14 — zohoMetadataFetcher + Zoho API reference refresh
+
+### Research
+
+- Re-read CRM v8 [field-meta](https://www.zoho.com/crm/developer/docs/api/v8/field-meta.html), [COQL Overview](https://www.zoho.com/crm/developer/docs/api/v8/COQL-Overview.html), [COQL Get Records](https://www.zoho.com/crm/developer/docs/api/v8/Get-Records-through-COQL-Query.html), and Desk [OrganizationFields](https://desk.zoho.com/DeskAPIDocument#OrganizationFields).
+- COQL Overview (current): SELECT ≤**500** fields, WHERE ≤**25** criteria, LIMIT ≤**2000**/call (default 200), same-criteria pagination ≤**100k**. Older error-message copy still cites 50/200 — skill now prefers Overview numbers.
+
+### Script
+
+- Added `metadataScripts/zohoMetadataFetcher.ts` + `pnpm meta:fetch`.
+  - `pnpm meta:fetch -- crm <ModuleApiName>` → `GET /settings/fields?module=` (PROD `ZOHO_CRM_REFRESH_TOKEN`).
+  - `pnpm meta:fetch -- desk <module>` → `GET /organizationFields?module=` + `orgId` (PROD Desk token).
+  - Prints `api_name`/`apiName` + data type; `--json` / `--write` optional.
+- Verified live PROD: **Leads** 103 fields · **tickets** 45 fields → `metadataScripts/output/zoho-{crm-Leads,desk-tickets}.{json,md}` (git-ignored).
+
+### Cursor / Claude reference
+
+- Updated `.claude/skills/zoho-crm-api` (COQL limits + meta:fetch), `zoho-desk-api`, skills README.
+- Added `.cursor/rules/zoho-api-reference.mdc` (globs on integrations/tools/metadataScripts) so Cursor auto-applies the same conventions.

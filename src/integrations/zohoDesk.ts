@@ -248,6 +248,24 @@ export async function postTicketComment(
   return text ? (JSON.parse(text) as Record<string, unknown>) : {};
 }
 
+/** Update a ticket's status (e.g. 'Closed' to resolve, 'Open' to reopen). Desk `PATCH /tickets/{id}`. */
+export async function updateTicketStatus(
+  ticketId: string,
+  status: string,
+): Promise<Record<string, unknown>> {
+  const url = deskUrl(`/tickets/${encodeURIComponent(ticketId)}`);
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: { ...(await authHeaders('zoho_desk')), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`[zoho-desk] PATCH /tickets/${ticketId} HTTP ${res.status}: ${text.slice(0, 300)}`);
+  }
+  return text ? (JSON.parse(text) as Record<string, unknown>) : {};
+}
+
 /** List departments — useful both for connectivity checks and mapping a name → departmentId. */
 export async function listDepartments(limit = 50): Promise<DeskDepartment[]> {
   const url = new URL(deskUrl('/departments'));

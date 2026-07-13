@@ -19,6 +19,7 @@ import {
   listTicketsByCreator,
   postTicketComment,
   searchTicketsByCreator,
+  updateTicketStatus,
 } from '../../integrations/zohoDesk.js';
 import { resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
 import type { TenantContext } from '../../types/tenantContext.js';
@@ -48,6 +49,7 @@ const replyBody = z.object({
   content: z.string().min(1).max(8000),
   is_public: z.boolean().optional(),
 });
+const statusBody = z.object({ status: z.enum(['Open', 'Closed']) });
 
 function deskError(err: unknown): AppError {
   return new AppError('Zoho Desk request failed', {
@@ -145,6 +147,27 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
         detail: { length: body.content.length, isPublic: body.is_public ?? true },
       });
       return { comment };
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw deskError(err);
+    }
+  });
+
+  /** Resolve ('Closed') or reopen ('Open') a ticket (write — audited). POST alias (Zoho-proxy-safe). */
+  app.post('/desk/tickets/:id/status', guard, async (request) => {
+    const ctx = requireSalesAccess(request);
+    const { id } = request.params as { id: string };
+    const body = statusBody.parse(request.body);
+    try {
+      const ticket = await updateTicketStatus(id, body.status);
+      await auditFromContext(ctx, {
+        action: 'desk.ticket.status',
+        status: 'ok',
+        resourceType: 'desk_ticket',
+        resourceId: id,
+        detail: { status: body.status },
+      });
+      return { ticket };
     } catch (err) {
       if (err instanceof AppError) throw err;
       throw deskError(err);

@@ -27,6 +27,7 @@ import { adminRoutes } from './routes/v1/admin.routes.js';
 import { carrierUsersRoutes } from './routes/v1/carrierUsers.routes.js';
 import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
 import { deskRoutes } from './routes/v1/desk.routes.js';
+import { dataCenterRoutes } from './routes/v1/dataCenter.routes.js';
 import { agentRoutes } from './routes/v1/agent.routes.js';
 import { authRoutes } from './routes/v1/auth.routes.js';
 import { automationRoutes } from './routes/v1/automation.routes.js';
@@ -205,6 +206,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(realtimeRoutes);
       await v1.register(touchpointsRoutes);
       await v1.register(deskRoutes);
+      await v1.register(dataCenterRoutes);
       await v1.register(agentRoutes);
       await v1.register(tasksRoutes);
       await v1.register(filesRoutes);

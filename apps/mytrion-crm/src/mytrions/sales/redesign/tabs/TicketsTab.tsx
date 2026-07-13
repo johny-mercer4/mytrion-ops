@@ -9,7 +9,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 
-import { replyDeskTicket } from '@/api/desk';
+import { replyDeskTicket, setDeskTicketStatus } from '@/api/desk';
 import { getSession } from '@/api/session';
 import { s } from '../dc';
 import { badge, type BadgeVM } from '../salesData';
@@ -18,7 +18,7 @@ import { useLoad, loadTickets, loadTicketMessages, isTicketClosed, type TicketVM
 import { useServerCrmSocket } from '../useServerCrmSocket';
 import { useTicketUnread, clearTicketUnread } from '../ticketUnread';
 
-type TicketFilter = 'all' | 'active' | 'closed';
+type TicketFilter = 'all' | 'overdue' | 'active' | 'closed';
 
 // ---------- reference view-model helpers ----------
 
@@ -42,21 +42,42 @@ const tkPrioCol: Record<string, string> = {
 };
 
 
-const ageColor = (h: number): string =>
-  h < 1 ? 'var(--ok)' : h < 24 ? 'var(--accent)' : h < 72 ? 'var(--warn)' : h < 168 ? 'var(--orange)' : 'var(--danger)';
-
-const ageStyle = (h: number): string =>
-  `font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:color-mix(in srgb,${ageColor(h || 0)} 15%,transparent);color:${ageColor(h || 0)}`;
-
 const ageText = (h: number): string => {
   const hh = h || 0;
   return hh < 1 ? `${Math.max(1, Math.round(hh * 60))}m` : hh < 24 ? `${Math.round(hh)}h` : `${Math.round(hh / 24)}d`;
 };
 
+// SLA — a target response window per priority; the badge counts down (or up, once overdue).
+const slaTargetOf = (p: string): number => (p === 'High' || p === 'Critical' ? 4 : p === 'Low' ? 72 : 24);
+const slaRemainOf = (t: TicketVM): number => slaTargetOf(t.priority) - (t.ageHrs || 0);
+const isOverdue = (t: TicketVM): boolean => !isTicketClosed(t.status) && slaRemainOf(t) < 0;
+const fmtH = (h: number): string => {
+  const x = Math.max(0, h);
+  return x < 1 ? `${Math.max(1, Math.round(x * 60))}m` : x < 24 ? `${Math.round(x)}h` : `${Math.round(x / 24)}d`;
+};
+function slaInfo(t: TicketVM): { text: string; col: string } {
+  if (isTicketClosed(t.status)) return { text: t.status, col: 'var(--muted)' };
+  const rem = slaRemainOf(t);
+  if (rem < 0) return { text: `Overdue ${fmtH(-rem)}`, col: 'var(--danger)' };
+  return { text: `Due in ${fmtH(rem)}`, col: rem < slaTargetOf(t.priority) * 0.25 ? 'var(--warn)' : 'var(--ok)' };
+}
+
+// Canned replies, keyed on the ticket type (falls back to a generic set).
+const QUICK_REPLIES: Record<string, string[]> = {
+  'Card Issue': ['Grant a 30-minute override now', 'Confirm the last 3 swipe locations', 'Card reactivated — try again'],
+  'Billing Dispute': ['Pulling the invoice now — one moment', 'Credit requested, shows next cycle', 'Could you attach the statement?'],
+  Verification: ['Re-running FMCSA verification now', 'DOT/MC verified — cards can ship', 'Need updated authority docs'],
+  'Credit Request': ['Escalated to Finance for approval', 'Reviewing payment history now', 'Approved — new limit is active'],
+  'Card Request': ['Cards shipping to address on file', 'Please confirm the shipping address', 'Tracking will arrive by email'],
+  'Money Code': ['Money code issued — expires in 24h', 'Confirming the driver + amount', 'Redeemed successfully'],
+};
+const QUICK_REPLIES_DEFAULT = ['Looking into this now — one moment', 'Could you share a document or photo?', 'This is resolved — anything else?'];
+
 const statusBadgeOf = (st: string): BadgeVM => badge(st, tkStatusMap[st] || 'var(--muted)');
 
 const FILTERS: readonly [TicketFilter, string][] = [
   ['all', 'All'],
+  ['overdue', 'Overdue'],
   ['active', 'In Progress'],
   ['closed', 'Closed'],
 ];
@@ -72,6 +93,7 @@ export function TicketsTab() {
   const [ticketReply, setTicketReply] = useState<string>('');
   const [ticketsSpin, setTicketsSpin] = useState<boolean>(false);
   const [ticketDetailsOpen, setTicketDetailsOpen] = useState<boolean>(false);
+  const [resolving, setResolving] = useState<boolean>(false);
   const unreadCounts = useTicketUnread();
 
   const spinRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -163,13 +185,36 @@ export function TicketsTab() {
     }
   };
 
+  // Resolve ('Closed') / reopen ('Open') the selected ticket via the Desk write endpoint (audited).
+  const resolveTicket = async (): Promise<void> => {
+    const t = allTickets.find((x) => x.id === selectedTicket);
+    if (!t || resolving) return;
+    const next = isTicketClosed(t.status) ? 'Open' : 'Closed';
+    setResolving(true);
+    try {
+      await setDeskTicketStatus(t.id, next);
+      pushToast(next === 'Closed' ? 'Ticket resolved' : 'Ticket reopened', `#${t.num} is now ${next}.`);
+      ticketsLoad.reload();
+    } catch (e) {
+      pushToast('Could not update ticket', e instanceof Error ? e.message : 'Status change failed.');
+    } finally {
+      setResolving(false);
+    }
+  };
+
   const ticketAttach = (): void => pushToast('Attach a file', 'Drag a file into the reply box, or pick one to attach.');
 
   // ---------- view-model ----------
   const tkF = ticketFilter;
   const tq = ticketSearch.toLowerCase();
   let tkList = allTickets.filter((t) =>
-    tkF === 'all' ? true : tkF === 'closed' ? isTicketClosed(t.status) : !isTicketClosed(t.status),
+    tkF === 'all'
+      ? true
+      : tkF === 'overdue'
+        ? isOverdue(t)
+        : tkF === 'closed'
+          ? isTicketClosed(t.status)
+          : !isTicketClosed(t.status),
   );
   if (tq) {
     tkList = tkList.filter((t) =>
@@ -186,8 +231,13 @@ export function TicketsTab() {
   const threadMsgs = msgsLoad.data ?? [];
   const tkInitials = (tkSel?.contact || '?').split(' ').map((w) => w[0]).slice(0, 2).join('');
   const tkStatusBadge = tkSel?.status ? statusBadgeOf(tkSel.status) : { text: '', style: '' };
-  const tkPrioBadge = tkSel?.priority ? badge(tkSel.priority, tkPrioCol[tkSel.priority] || 'var(--muted)') : { text: '', style: '' };
   const tkCompany = (tkEsc ? tkSel?.targetDept : tkSel?.company) || '—';
+  const tkSla = tkSel ? slaInfo(tkSel) : { text: '', col: 'var(--muted)' };
+  const tkResolveLabel = tkClosed ? 'Reopen' : 'Resolve';
+  const tkResolveIcon = tkClosed
+    ? 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15'
+    : 'M5 13l4 4L19 7';
+  const quickReplies = tkSel ? QUICK_REPLIES[tkSel.ticketType] ?? QUICK_REPLIES_DEFAULT : QUICK_REPLIES_DEFAULT;
 
   const detailRows: [string, string, boolean][] = tkSel
     ? [
@@ -216,7 +266,7 @@ export function TicketsTab() {
         )}
         <div style={s('flex:1;min-height:0;display:flex;gap:14px')}>
         {/* LIST */}
-        <div style={s('width:300px;flex-shrink:0;display:flex;flex-direction:column;border-radius:16px;background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
+        <div style={s('width:320px;flex-shrink:0;display:flex;flex-direction:column;border-radius:16px;background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
           <div style={s('padding:14px 15px 12px;border-bottom:1px solid var(--border)')}>
             <div style={s('display:flex;align-items:center;justify-content:space-between;margin-bottom:11px')}>
               <span style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.05em;text-transform:uppercase')}>My Tickets</span>
@@ -243,9 +293,17 @@ export function TicketsTab() {
             </div>
           </div>
           <div className="ss-scroll" style={s('flex:1;min-height:0;padding:11px;display:flex;flex-direction:column;gap:9px')}>
-            {ticketsLoad.loading && allTickets.length === 0 && (
-              <div style={s('padding:40px 16px;text-align:center;color:var(--muted);font-size:12.5px')}>Loading…</div>
-            )}
+            {ticketsLoad.loading && allTickets.length === 0 &&
+              Array.from({ length: 6 }).map((_, i) => (
+                <div key={`sk-${i}`} style={s('display:flex;flex-direction:column;gap:10px;padding:13px 14px;border-radius:13px;border:1px solid var(--border);background:var(--surface)')}>
+                  <div className="ss-skel" style={s('height:13px;width:82%;border-radius:6px')} />
+                  <div className="ss-skel" style={s('height:10px;width:44%;border-radius:6px')} />
+                  <div style={s('display:flex;align-items:center;gap:8px')}>
+                    <div className="ss-skel" style={s('width:22px;height:22px;border-radius:50%')} />
+                    <div className="ss-skel" style={s('height:10px;flex:1;border-radius:6px')} />
+                  </div>
+                </div>
+              ))}
             {ticketsLoad.error && (
               <div style={s('padding:40px 16px;text-align:center;color:var(--danger);font-size:12.5px')}>{ticketsLoad.error}</div>
             )}
@@ -253,24 +311,27 @@ export function TicketsTab() {
               const active = selectedTicket === t.id;
               const esc = t.channel === 'Escalation';
               const unreadN = unreadCounts[t.id] ?? 0;
-              const sBadge = statusBadgeOf(t.status);
+              const prioCol = tkPrioCol[t.priority] || 'var(--muted)';
+              const statusCol = tkStatusMap[t.status] || 'var(--muted)';
+              const sla = slaInfo(t);
+              const company = (esc ? t.targetDept : t.company) || '—';
+              const contact = t.contact || '—';
+              const contactInitials = contact === '—' ? '?' : contact.split(' ').map((w) => w[0]).slice(0, 2).join('');
               return (
-                <button key={t.id} onClick={() => selectTicket(t.id)} className="ss-card-h" style={s(`display:flex;flex-direction:column;gap:8px;padding:12px 13px;border-radius:12px;border:1px solid ${active ? 'rgba(var(--accent-rgb),.5)' : 'var(--border)'};background:${active ? 'rgba(var(--accent-rgb),.10)' : 'var(--surface)'};cursor:pointer;transition:all .14s;text-align:left;width:100%`)}>
-                  <div style={s('display:flex;align-items:flex-start;gap:8px')}>
-                    <div style={s('flex:1;min-width:0;font-size:13px;font-weight:700;line-height:1.35;text-align:left;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical')}>{t.subject}</div>
-                    <span style={s(`${sBadge.style};flex-shrink:0;white-space:nowrap`)}>{sBadge.text}</span>
+                <button key={t.id} onClick={() => selectTicket(t.id)} className="ss-card-h" style={s(`position:relative;display:flex;flex-direction:column;gap:9px;padding:13px 14px 13px 15px;border-radius:13px;border:1px solid ${active ? 'rgba(var(--accent-rgb),.5)' : 'var(--border)'};border-left:3px solid ${prioCol};background:${active ? 'rgba(var(--accent-rgb),.09)' : 'var(--surface)'};cursor:pointer;transition:all .14s;text-align:left;width:100%`)}>
+                  <div style={s('font-size:13px;font-weight:700;line-height:1.35;text-align:left;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical')}>{t.subject}</div>
+                  <div style={s('display:flex;align-items:center;gap:8px;font-size:11px')}>
+                    <span style={s("font-family:'JetBrains Mono',monospace;color:var(--muted)")}>#{t.num}</span>
+                    <span style={s('color:var(--border)')}>·</span>
+                    <span style={s(`color:${statusCol};font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`)}>{t.status}</span>
                   </div>
-                  <div style={s('display:flex;align-items:center;gap:8px;padding-bottom:8px;border-bottom:1px solid var(--border2)')}>
-                    <span style={s("font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)")}>#{t.num}</span>
-                    <span style={s(ageStyle(t.ageHrs))}>{ageText(t.ageHrs)}</span>
+                  <div style={s('display:flex;align-items:center;gap:8px')}>
+                    <div style={s("width:22px;height:22px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--raised);color:var(--text2);font-size:9.5px;font-weight:700;font-family:Rajdhani,sans-serif")}>{contactInitials}</div>
+                    <span style={s('font-size:11.5px;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{contact} · {company}</span>
+                    <span style={s(`margin-left:auto;flex-shrink:0;font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;background:color-mix(in srgb,${sla.col} 14%,transparent);color:${sla.col};white-space:nowrap`)}>{sla.text}</span>
                     {unreadN > 0 && (
-                      <span style={s('margin-left:auto;min-width:20px;height:20px;padding:0 6px;border-radius:99px;background:var(--danger);color:#fff;font-size:10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center')}>{unreadN > 99 ? '99+' : unreadN}</span>
+                      <span style={s('flex-shrink:0;min-width:18px;height:18px;padding:0 5px;border-radius:99px;background:var(--danger);color:#fff;font-size:10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center')}>{unreadN > 99 ? '99+' : unreadN}</span>
                     )}
-                  </div>
-                  <div style={s('display:flex;flex-direction:column;gap:5px;font-size:11.5px')}>
-                    <div style={s('display:flex;align-items:center;gap:7px')}><span style={s('color:var(--muted);flex-shrink:0')}>{esc ? 'Team' : 'Agent'}</span><span style={s('margin-left:auto;font-weight:700;color:var(--accent);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{t.agent || 'N/A'}</span></div>
-                    <div style={s('display:flex;align-items:center;gap:7px')}><span style={s('color:var(--muted);flex-shrink:0')}>{esc ? 'Dept' : 'Company'}</span><span style={s('margin-left:auto;font-weight:600;color:var(--text2);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{(esc ? t.targetDept : t.company) || '—'}</span></div>
-                    <div style={s('display:flex;align-items:center;gap:7px')}><span style={s('color:var(--muted);flex-shrink:0')}>{esc ? 'Requester' : 'Contact'}</span><span style={s('margin-left:auto;font-weight:600;color:var(--text2);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{t.contact || 'N/A'}</span></div>
                   </div>
                 </button>
               );
@@ -292,16 +353,34 @@ export function TicketsTab() {
                   <div style={s("font-size:11.5px;color:var(--muted);margin-top:3px;font-family:'JetBrains Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis")}>#{tkSel.num} · {tkCompany} · {tkSel.contact || 'N/A'}</div>
                 </div>
                 <div style={s('display:flex;align-items:center;gap:6px;flex-shrink:0')}>
-                  <span style={s(tkPrioBadge.style)}>{tkPrioBadge.text}</span>
+                  {tkSla.text && (
+                    <span style={s(`flex-shrink:0;font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:99px;background:color-mix(in srgb,${tkSla.col} 14%,transparent);color:${tkSla.col};white-space:nowrap`)}>{tkSla.text}</span>
+                  )}
                   <span style={s(tkStatusBadge.style)}>{tkStatusBadge.text}</span>
-                  <button onClick={() => setTicketDetailsOpen((v) => !v)} aria-label="Ticket details" className="ss-ico-btn" style={s('width:34px;height:34px;margin-left:2px;border-radius:9px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><line x1="12" y1="11" x2="12" y2="16" /><line x1="12" y1="8" x2="12" y2="8" /></svg></button>
+                  <button onClick={() => void resolveTicket()} disabled={resolving} aria-label={tkResolveLabel} title={tkResolveLabel} className="ss-ico-btn" style={s(`height:34px;padding:0 13px;display:flex;align-items:center;gap:7px;border-radius:9px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:${resolving ? 'default' : 'pointer'};opacity:${resolving ? '.6' : '1'};font-size:12px;font-weight:700`)}>
+                    {resolving ? (
+                      <span style={s('width:14px;height:14px;border-radius:50%;border:2px solid var(--border);border-top-color:var(--accent);animation:ss-spin .8s linear infinite')} />
+                    ) : (
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d={tkResolveIcon} /></svg>
+                    )}
+                    {tkResolveLabel}
+                  </button>
+                  <button onClick={() => setTicketDetailsOpen((v) => !v)} aria-label="Ticket details" className="ss-ico-btn" style={s('width:34px;height:34px;border-radius:9px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0')}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><line x1="12" y1="11" x2="12" y2="16" /><line x1="12" y1="8" x2="12" y2="8" /></svg></button>
                 </div>
               </div>
               <div ref={bodyRef} className="ss-scroll" style={s('flex:1;min-height:0;padding:18px;display:flex;flex-direction:column;gap:14px;background:var(--bg)')}>
                 <div style={s('text-align:center;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)')}>{tkSel.channel} · opened {ageText(tkSel.ageHrs)} ago</div>
-                {msgsLoad.loading && threadMsgs.length === 0 && (
-                  <div style={s('text-align:center;color:var(--muted);font-size:12.5px;padding:20px')}>Loading…</div>
-                )}
+                {msgsLoad.loading &&
+                  threadMsgs.length === 0 &&
+                  [0, 1, 2].map((i) => {
+                    const me = i % 2 === 1;
+                    return (
+                      <div key={`mk-${i}`} style={s(`display:flex;gap:9px;align-items:flex-end;${me ? 'flex-direction:row-reverse' : ''}`)}>
+                        <div className="ss-skel" style={s('width:28px;height:28px;border-radius:50%;flex-shrink:0')} />
+                        <div className="ss-skel" style={s(`height:${me ? 38 : 48}px;width:${me ? '52%' : '64%'};border-radius:14px`)} />
+                      </div>
+                    );
+                  })}
                 {msgsLoad.error && (
                   <div style={s('text-align:center;color:var(--danger);font-size:12.5px;padding:20px')}>{msgsLoad.error}</div>
                 )}
@@ -334,10 +413,19 @@ export function TicketsTab() {
                 })}
               </div>
               {tkOpen && (
-                <div style={s('flex-shrink:0;padding:12px 14px;border-top:1px solid var(--border);display:flex;gap:10px;align-items:flex-end')}>
-                  <button onClick={ticketAttach} aria-label="Attach file" className="ss-ico-btn" style={s('width:40px;height:40px;flex-shrink:0;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg></button>
-                  <input value={ticketReply} onChange={(e) => setTicketReply(e.currentTarget.value)} onKeyDown={ticketReplyKey} placeholder="Type a reply…" className="ss-in" style={s('flex:1;height:40px;padding:0 14px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px')} />
-                  <button onClick={sendTicketReply} aria-label="Send reply" className="ss-btn-p" style={s('width:40px;height:40px;flex-shrink:0;border-radius:11px;border:none;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center')}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg></button>
+                // The right padding keeps the composer (incl. the send button) clear of the shell's
+                // fixed AI-copilot FAB, which floats over the bottom-right corner on this full-bleed tab.
+                <div style={s('flex-shrink:0;border-top:1px solid var(--border)')}>
+                  <div className="ss-scroll" style={s('display:flex;gap:7px;padding:11px 78px 0 14px;overflow-x:auto')}>
+                    {quickReplies.map((qr) => (
+                      <button key={qr} onClick={() => setTicketReply(qr)} className="ss-tab-x" style={s('flex-shrink:0;padding:6px 12px;border-radius:99px;border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap')}>{qr}</button>
+                    ))}
+                  </div>
+                  <div style={s('padding:11px 78px 12px 14px;display:flex;gap:10px;align-items:flex-end')}>
+                    <button onClick={ticketAttach} aria-label="Attach file" className="ss-ico-btn" style={s('width:40px;height:40px;flex-shrink:0;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg></button>
+                    <input value={ticketReply} onChange={(e) => setTicketReply(e.currentTarget.value)} onKeyDown={ticketReplyKey} placeholder="Type a reply…" className="ss-in" style={s('flex:1;height:40px;padding:0 14px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px')} />
+                    <button onClick={sendTicketReply} aria-label="Send reply" className="ss-btn-p" style={s('width:40px;height:40px;flex-shrink:0;border-radius:11px;border:none;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center')}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg></button>
+                  </div>
                 </div>
               )}
               {tkClosed && (

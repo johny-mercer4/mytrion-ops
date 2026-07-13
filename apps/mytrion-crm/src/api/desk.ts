@@ -97,3 +97,11 @@ export async function replyDeskTicket(ticketId: string, content: string, isPubli
     headers: DESK_HEADERS,
   });
 }
+
+/** Resolve ('Closed') or reopen ('Open') a ticket. */
+export async function setDeskTicketStatus(ticketId: string, status: 'Open' | 'Closed'): Promise<unknown> {
+  return request('POST', `/desk/tickets/${encodeURIComponent(ticketId)}/status`, {
+    body: { status },
+    headers: DESK_HEADERS,
+  });
+}

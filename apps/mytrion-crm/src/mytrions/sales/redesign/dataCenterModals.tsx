@@ -1,0 +1,126 @@
+/**
+ * Data Center drilldowns — the Lead and Deal detail modals (ported from the reference prototype's
+ * openLead / openDeal modals). Read-only views over a LeadVM / DealVM; the shell owns their open
+ * state and renders them, mirroring ClientModal.
+ */
+import { s, Svg } from './dc';
+import { badge } from './salesData';
+import { DEAL_STAGE_META, LEAD_STAGE_META, TEMP_COL, type DealVM, type LeadVM } from './dataCenterLive';
+
+const CLOSE = 'M18 6L6 18M6 6l12 12';
+
+function avStyle(col: string): string {
+  return `width:52px;height:52px;border-radius:14px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:19px;background:color-mix(in srgb,${col} 16%,transparent);color:${col}`;
+}
+const CARD = 'padding:15px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)';
+const CARD_LABEL = 'font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em';
+
+function StatCard({ label, value, mono, color }: { label: string; value: string; mono?: boolean; color?: string }) {
+  return (
+    <div style={s(CARD)}>
+      <div style={s(CARD_LABEL)}>{label}</div>
+      <div style={s(`${mono ? "font-family:'JetBrains Mono',monospace;font-size:20px" : 'font-size:14px'};font-weight:700;margin-top:5px${color ? `;color:${color}` : ''}`)}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+export function LeadModal({ lead, onClose }: { lead: LeadVM; onClose: () => void }) {
+  const meta = LEAD_STAGE_META[lead.stage];
+  const stageBadge = badge(meta.label, meta.col);
+  const tempBadge = badge(lead.temp.toUpperCase(), TEMP_COL[lead.temp]);
+  return (
+    <div onClick={onClose} style={s('position:fixed;inset:0;z-index:120;background:rgba(3,7,14,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
+      <div onClick={(e) => e.stopPropagation()} style={s(`width:100%;max-width:540px;max-height:86vh;display:flex;flex-direction:column;border-radius:20px;background:var(--surface);border:1px solid var(--border);border-top:3px solid ${meta.col};box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
+        <div style={s('padding:22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px')}>
+          <div style={s(avStyle(meta.col))}>{lead.initials}</div>
+          <div style={s('flex:1;min-width:0')}>
+            <div style={s('font-size:17px;font-weight:700')}>{lead.company}</div>
+            <div style={s('font-size:11.5px;color:var(--muted);margin-top:3px')}>{lead.contact} · {lead.title}</div>
+          </div>
+          <span style={s(tempBadge.style)}>{tempBadge.text}</span>
+          <button onClick={onClose} aria-label="Close" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
+            <Svg d={CLOSE} size={15} strokeWidth={2.4} />
+          </button>
+        </div>
+        <div className="ss-scroll" style={s('flex:1;min-height:0;padding:22px')}>
+          <div style={s('display:flex;align-items:center;gap:10px;margin-bottom:16px')}>
+            <span style={s(stageBadge.style)}>{stageBadge.text}</span>
+            <span style={s('font-size:11.5px;color:var(--muted)')}>Last activity {lead.last}</span>
+          </div>
+          <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
+            <StatCard label="Potential Value" value={lead.valueFmt} mono color={meta.col} />
+            <StatCard label="Fleet Size" value={`${lead.trucks} trucks`} mono />
+            <StatCard label="Source" value={lead.source} />
+            <StatCard label="Status" value={lead.status} />
+          </div>
+          <div style={s(`margin-top:14px;${CARD}`)}>
+            <div style={s(`${CARD_LABEL};margin-bottom:6px`)}>Contact</div>
+            <div style={s("font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace")}>{lead.phone}</div>
+            <div style={s("font-size:12px;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{lead.email}</div>
+          </div>
+          <div style={s(`margin-top:14px;${CARD}`)}>
+            <div style={s(`${CARD_LABEL};margin-bottom:6px`)}>Notes</div>
+            <div style={s('font-size:13px;line-height:1.6;color:var(--text2);white-space:pre-wrap')}>{lead.note}</div>
+          </div>
+        </div>
+        <div style={s('padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px')}>
+          <button onClick={onClose} style={s('height:38px;padding:0 18px;border-radius:10px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function DealModal({ deal, onClose }: { deal: DealVM; onClose: () => void }) {
+  const meta = DEAL_STAGE_META[deal.stage];
+  const stageBadge = badge(meta.label, meta.col);
+  return (
+    <div onClick={onClose} style={s('position:fixed;inset:0;z-index:120;background:rgba(3,7,14,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
+      <div onClick={(e) => e.stopPropagation()} style={s(`width:100%;max-width:560px;max-height:86vh;display:flex;flex-direction:column;border-radius:20px;background:var(--surface);border:1px solid var(--border);border-top:3px solid ${meta.col};box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
+        <div style={s('padding:22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px')}>
+          <div style={s(avStyle(meta.col))}>{deal.initials}</div>
+          <div style={s('flex:1;min-width:0')}>
+            <div style={s('font-size:17px;font-weight:700')}>{deal.company}</div>
+            <div style={s('font-size:11.5px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{deal.name}</div>
+          </div>
+          <span style={s(stageBadge.style)}>{stageBadge.text}</span>
+          <button onClick={onClose} aria-label="Close" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
+            <Svg d={CLOSE} size={15} strokeWidth={2.4} />
+          </button>
+        </div>
+        <div className="ss-scroll" style={s('flex:1;min-height:0;padding:22px')}>
+          <div style={s(`margin-bottom:16px;${CARD}`)}>
+            <div style={s('display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:8px')}>
+              <span style={s('text-transform:uppercase;letter-spacing:.05em;font-weight:700')}>Win probability</span>
+              <span style={s(`color:${meta.col};font-weight:800;font-family:'JetBrains Mono',monospace`)}>{deal.prob}%</span>
+            </div>
+            <div style={s('height:8px;border-radius:99px;background:var(--raised);overflow:hidden')}>
+              <div style={s(`height:100%;width:${deal.prob}%;background:${meta.col}`)} />
+            </div>
+            <div style={s('font-size:11px;color:var(--muted);margin-top:9px')}>Expected close {deal.close}</div>
+          </div>
+          <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
+            <StatCard label="Deal Value" value={deal.valueFmt} mono color={meta.col} />
+            <StatCard label="Cards" value={String(deal.cards)} mono />
+            <StatCard label="Application" value={deal.app} />
+            <StatCard label="Carrier" value={deal.carrier} />
+          </div>
+          <div style={s(`margin-top:14px;${CARD}`)}>
+            <div style={s(`${CARD_LABEL};margin-bottom:6px`)}>Contact</div>
+            <div style={s('font-size:13px;font-weight:600')}>{deal.contact}</div>
+            <div style={s("font-size:12px;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{deal.phone}</div>
+          </div>
+          <div style={s(`margin-top:14px;${CARD}`)}>
+            <div style={s(`${CARD_LABEL};margin-bottom:6px`)}>Notes</div>
+            <div style={s('font-size:13px;line-height:1.6;color:var(--text2);white-space:pre-wrap')}>{deal.note}</div>
+          </div>
+        </div>
+        <div style={s('padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px')}>
+          <button onClick={onClose} style={s('height:38px;padding:0 18px;border-radius:10px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}

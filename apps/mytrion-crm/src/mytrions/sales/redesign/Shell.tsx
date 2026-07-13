@@ -19,6 +19,8 @@ import { agentKeyFor } from '@/access/mytrions.config';
 import { isAdmin } from '@/access/resolveAccess';
 import { useChat } from '@/features/chat/useChat';
 import { ViewAsPicker } from './ViewAsPicker';
+import { LeadModal, DealModal } from './dataCenterModals';
+import type { DealVM, LeadVM } from './dataCenterLive';
 import './theme.css';
 
 import { HomeTab } from './tabs/HomeTab';
@@ -85,6 +87,8 @@ export function SalesRedesign() {
   const [detail, setDetail] = useState<DetailVM | null>(null);
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [clientTab, setClientTab] = useState<'overview' | 'cards' | 'activity'>('overview');
+  const [lead, setLead] = useState<LeadVM | null>(null);
+  const [deal, setDeal] = useState<DealVM | null>(null);
 
   // chat
   const [chatOpen, setChatOpen] = useState(false);
@@ -144,6 +148,8 @@ export function SalesRedesign() {
       pushToast,
       openDetail: setDetail,
       openClient,
+      openLead: setLead,
+      openDeal: setDeal,
       go,
     }),
     [theme, pushToast, openClient, go],
@@ -321,6 +327,10 @@ export function SalesRedesign() {
             onRun={() => { setClient(null); go('auto'); }}
           />
         )}
+
+        {/* DATA CENTER — LEAD / DEAL DRILLDOWNS */}
+        {lead && <LeadModal lead={lead} onClose={() => setLead(null)} />}
+        {deal && <DealModal deal={deal} onClose={() => setDeal(null)} />}
 
         {/* AI CHAT LAUNCHER */}
         <button onClick={() => setChatOpen((o) => { const next = !o; if (next) scrollChat(); return next; })} aria-label="Open Mytrion AI" className="ss-btn-p" style={s('position:fixed;right:24px;bottom:24px;z-index:90;width:58px;height:58px;border-radius:50%;border:none;cursor:pointer;background:linear-gradient(140deg,var(--accent),var(--accent-2));box-shadow:0 8px 28px rgba(var(--accent-rgb),.5);display:flex;align-items:center;justify-content:center')}>

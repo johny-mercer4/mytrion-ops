@@ -6,6 +6,7 @@
  */
 import { createContext, useContext } from 'react';
 import type { BadgeVM } from './salesData';
+import type { DealVM, LeadVM } from './dataCenterLive';
 
 /** A detail-modal payload (announcements, inbox items). */
 export interface DetailVM {
@@ -40,6 +41,9 @@ export interface SalesCtx {
   pushToast: (title: string, msg: string) => void;
   openDetail: (d: DetailVM) => void;
   openClient: (c: ClientRecord) => void;
+  /** Data Center drilldowns — the lead / deal detail modals (owned by the shell). */
+  openLead: (l: LeadVM) => void;
+  openDeal: (d: DealVM) => void;
   /** Jump to another tab (e.g. Home CTA → Automations). */
   go: (section: string) => void;
 }
