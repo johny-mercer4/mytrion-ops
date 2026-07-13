@@ -135,7 +135,11 @@ export function CarrierUserForm({
       .finally(() => setCardsBusy(false));
   }, [carrierId]);
   const cardCount = cards?.length ?? null;
-  const companyType = cardCount === null ? null : cardCount <= 1 ? 'owner-operator' : 'fleet-manager';
+  // 0 cards is undetermined, not "owner-operator" — mirrors the backend's own detection rule
+  // (src/modules/carrier/inviteService.ts) so the preview never shows the picked-a-type message
+  // and the "no active cards" warning at the same time.
+  const companyType =
+    cardCount === null || cardCount === 0 ? null : cardCount === 1 ? 'owner-operator' : 'fleet-manager';
 
   const hasTie = carrierId.trim().length > 0 || applicationId.trim().length > 0;
   const valid = isOwner ? hasTie : hasTie && cardId.trim().length > 0 && driverName.trim().length > 0;

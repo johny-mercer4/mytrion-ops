@@ -4,7 +4,6 @@
  * invite id in the URL is the capability (opaque cuid2, unguessable); the ACTUAL identity proof is
  * the Telegram `initData` HMAC verified in the redeem step (verifyTelegramInitData).
  */
-import { createHmac } from 'node:crypto';
 import { createId } from '@paralleldrive/cuid2';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -17,7 +16,12 @@ import { searchDwhOperators } from '../../integrations/dwhOperators.js';
 import { carrierInvitationRepo } from '../../repos/carrierInvitationRepo.js';
 import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompanyRepo.js';
 import { buildInviteUrl, createCarrierInvite } from '../../modules/carrier/inviteService.js';
-import { parseInitDataUser, verifyTelegramInitData, type TelegramWebAppUser } from '../../integrations/telegramCarrierBot.js';
+import {
+  parseInitDataUser,
+  signTelegramInitData,
+  verifyTelegramInitData,
+  type TelegramWebAppUser,
+} from '../../integrations/telegramCarrierBot.js';
 import type { RegisteredMiniAppCompany } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { RBACError } from '../../lib/errors.js';
@@ -118,6 +122,12 @@ const createInviteSchema = z.object({
   company_name: z.string().max(300).optional(),
   card_id: z.union([z.string().max(120), z.number()]).transform(String).optional(),
   driver_name: z.string().max(200).optional(),
+  // Accepted so createCarrierInvite's existing agent-attribution support (see inviteService.ts)
+  // isn't silently dropped by zod for any caller that sends it — the admin panel's CarrierUserForm
+  // has no picker for this today, but the Zoho sales self-service flow inviteService.ts's docstring
+  // anticipates does.
+  agent_name: z.string().max(200).optional(),
+  agent_zoho_user_id: z.string().max(120).optional(),
 });
 
 export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> {
@@ -142,6 +152,8 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       ...(body.company_name ? { companyName: body.company_name } : {}),
       ...(body.card_id ? { cardId: body.card_id } : {}),
       ...(body.driver_name ? { driverName: body.driver_name } : {}),
+      ...(body.agent_name ? { agentName: body.agent_name } : {}),
+      ...(body.agent_zoho_user_id ? { agentZohoUserId: body.agent_zoho_user_id } : {}),
     });
     await auditFromContext(ctx, {
       action: 'admin.carrier_invitation.create',
@@ -236,10 +248,12 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   /**
    * DEV ONLY — mint a validly-signed Telegram initData for a fake user, so the mini-app's full flow
    * (confirm → redeem → fleet) can be clicked through in a local browser without the real Telegram
-   * client. NOT registered under NODE_ENV=production (the deployed image sets it), so it can never
-   * forge identities in prod. Public in dev on purpose — the local mini-app dev shim fetches it.
+   * client. Gated on an EXPLICIT opt-in flag, not just `!isProduction` — NODE_ENV defaults to
+   * 'development' when unset, so a misconfigured staging/preview deploy sharing the real prod bot
+   * token could otherwise expose an endpoint that mints a validly-signed identity for ANY Telegram
+   * user id. FF_DEV_MOCK_TELEGRAM_ENABLED must be deliberately set to '1' (local .env only).
    */
-  if (!isProduction) {
+  if (!isProduction && env.FF_DEV_MOCK_TELEGRAM_ENABLED) {
     app.get('/carrier-invitations/dev/mock-init-data', async (request) => {
       if (!env.TELEGRAM_CARRIER_BOT_TOKEN) {
         throw new AppError('Bot token not set — cannot sign a dev initData', {
@@ -264,17 +278,12 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
         username: q.username ?? 'local_tester',
         ...(q.language_code ? { language_code: q.language_code } : {}),
       };
-      const params = new URLSearchParams();
-      params.set('auth_date', String(Math.floor(Date.now() / 1000)));
-      params.set('query_id', 'AAE_devmock');
-      params.set('user', JSON.stringify(user));
-      const dataCheckString = [...params.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([k, v]) => `${k}=${v}`)
-        .join('\n');
-      const secret = createHmac('sha256', 'WebAppData').update(env.TELEGRAM_CARRIER_BOT_TOKEN).digest();
-      params.set('hash', createHmac('sha256', secret).update(dataCheckString).digest('hex'));
-      return { initData: params.toString(), user };
+      const initData = signTelegramInitData({
+        auth_date: String(Math.floor(Date.now() / 1000)),
+        query_id: 'AAE_devmock',
+        user: JSON.stringify(user),
+      });
+      return { initData, user };
     });
   }
 

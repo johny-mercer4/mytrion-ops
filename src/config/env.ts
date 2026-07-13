@@ -313,6 +313,11 @@ const EnvSchema = z.object({
   // Additionally expose Zoho MCP WRITE tools (create/update/upsert). Off by default (read-only posture).
   FF_ZOHO_MCP_WRITES: flag('0'),
   FF_AUDIT_LOG_ENABLED: flag('1'),
+  // Dev-only route that mints a validly-signed Telegram initData for a fake user (local mini-app
+  // testing without a real Telegram client). Off by default — gating solely on NODE_ENV!=='production'
+  // is not enough, since NODE_ENV defaults to 'development' when unset (a misconfigured staging/
+  // preview env sharing the prod bot token would otherwise expose it). Explicit opt-in required.
+  FF_DEV_MOCK_TELEGRAM_ENABLED: flag('0'),
   // Sales workers may run DESTRUCTIVE touchpoints (card deactivate/limits, money-code draw,
   // fraud release, EFS override) — widget parity, ON by default. 0 = admin-only, no code change.
   FF_TOUCHPOINT_DESTRUCTIVE_SALES: flag('1'),

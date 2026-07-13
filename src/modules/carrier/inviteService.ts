@@ -128,7 +128,9 @@ export async function createCarrierInvite(
     try {
       const cards = await listDwhCards(carrierId);
       cardCount = cards.length;
-      companyType = cardCount <= 1 ? 'owner-operator' : 'fleet-manager';
+      // 0 cards is undetermined (not "owner-operator") — matches the catch branch below, which
+      // also leaves companyType unset when the DWH lookup itself fails.
+      companyType = cardCount === 0 ? undefined : cardCount === 1 ? 'owner-operator' : 'fleet-manager';
     } catch {
       // undetermined — an application-only invite or a DWH hiccup shouldn't block sending the link
     }
