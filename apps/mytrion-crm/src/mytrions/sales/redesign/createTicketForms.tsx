@@ -1,15 +1,17 @@
 /**
- * Create-tab forms — the 3-step "Create a Ticket" wizard (Department → Deal → Details) and the
- * "Escalate Request" form, ported from the updated reference (SalesMytrion222). Both file real
- * work: the wizard POSTs a Desk support ticket (createDeskTicket), the escalation form POSTs an
- * escalation request (createEscalation) — each with an optional drag/drop attachment (≤20MB).
+ * Create-tab forms — the 3-step "Create a Ticket" wizard (Department → Deal → Details), the
+ * "Escalate Request" form, and the "Create Lead" form. The ticket wizard POSTs a Desk support ticket
+ * (createDeskTicket), the escalation form POSTs an escalation request (createEscalation) — each with
+ * an optional paste/drag/drop attachment (≤20MB) — and the lead form calls the mytrioncreatelead
+ * Deluge via the leads.create touchpoint.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { s } from './dc';
 import { useSales } from './ctx';
 import { useLoad, loadClientCards, type ClientCardVM } from './live';
 import { loadDeals, type DealVM } from './dataCenterLive';
 import { createDeskTicket, createEscalation, type CreateTicketInput } from '@/api/desk';
+import { callTouchpoint } from '@/api/touchpoints';
 
 type DeptSlug = 'cs' | 'billing' | 'verification' | 'maintenance';
 
@@ -47,7 +49,7 @@ const FIELD = 'width:100%;height:44px;padding:0 14px;border-radius:12px;border:1
 function AttachZone({ id, file, onFile }: { id: string; file: File | null; onFile: (f: File | null) => void }) {
   const [dragging, setDragging] = useState(false);
   const { pushToast } = useSales();
-  const take = (f: File | undefined): void => {
+  const take = (f: File | null | undefined): void => {
     if (!f) return;
     if (f.size > MAX_BYTES) {
       pushToast('File too large', 'Attachments must be 20MB or smaller.');
@@ -55,6 +57,29 @@ function AttachZone({ id, file, onFile }: { id: string; file: File | null; onFil
     }
     onFile(f);
   };
+  // Paste-to-attach: while the zone is empty, grab a file/image from the clipboard anywhere in the
+  // form. Plain-text pastes (into the subject/body inputs) carry no files, so this is a no-op there.
+  useEffect(() => {
+    if (file) return;
+    const onPaste = (e: ClipboardEvent): void => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const it of Array.from(items)) {
+        if (it.kind === 'file') {
+          const f = it.getAsFile();
+          if (f) {
+            take(f);
+            e.preventDefault();
+            break;
+          }
+        }
+      }
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+    // take/onFile/pushToast are stable across renders; re-bind only when the file slot toggles.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file]);
   if (file) {
     return (
       <div style={s('display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-radius:12px;background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.3)')}>
@@ -76,7 +101,7 @@ function AttachZone({ id, file, onFile }: { id: string; file: File | null; onFil
         style={s(`display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;width:100%;padding:22px;border:1.5px dashed ${dragging ? 'var(--accent)' : 'var(--border)'};border-radius:14px;background:${dragging ? 'rgba(var(--accent-rgb),.08)' : 'var(--alt)'};cursor:pointer;transition:border-color .15s,background .15s;text-align:center`)}
       >
         <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M7 16a4 4 0 0 1-.88-7.9A5 5 0 0 1 16 6a5 5 0 0 1 1 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-        <div style={s('font-size:12.5px;color:var(--text2)')}><span style={s('color:var(--accent);font-weight:700')}>Click to upload</span> or drag &amp; drop</div>
+        <div style={s('font-size:12.5px;color:var(--text2)')}><span style={s('color:var(--accent);font-weight:700')}>Click to upload</span>, drag &amp; drop, or paste</div>
         <div style={s('font-size:10.5px;color:var(--faint)')}>PNG, JPG, PDF, DOC, XLS, CSV · max 20MB</div>
       </label>
       <input id={id} type="file" onChange={(e) => take(e.currentTarget.files?.[0])} style={{ display: 'none' }} />
@@ -398,6 +423,93 @@ export function EscalationForm() {
         <div style={s('display:flex;justify-content:flex-end;padding-top:2px')}>
           <button onClick={() => void submit()} disabled={!canSubmit} className={canSubmit ? 'ss-btn-p' : undefined} style={s(canSubmit ? 'height:46px;padding:0 28px;border-radius:12px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:13.5px;cursor:pointer;box-shadow:0 6px 18px rgba(var(--accent-rgb),.35)' : submitting ? 'height:46px;padding:0 28px;border-radius:12px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:9px;opacity:.85' : 'height:46px;padding:0 28px;border-radius:12px;border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:13.5px;cursor:not-allowed')}>
             {submitting ? (<><span style={s('width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;animation:ss-spin .8s linear infinite')} />Creating…</>) : 'Create Escalation Ticket'}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ---------- create lead ----------
+
+const SALUTATIONS = ['Mr', 'Ms'];
+
+/**
+ * Create Lead — the widget's mytrioncreatelead form (self-service create-panel parity). Last name and
+ * company are required; the phone must be exactly 10 digits (dashes/brackets/spaces are stripped
+ * before validation). Calls the leads.create touchpoint; a DUPLICATE_DATA response links to the
+ * existing CRM lead instead of erroring.
+ */
+export function CreateLeadForm() {
+  const { pushToast } = useSales();
+  const [salutation, setSalutation] = useState('Mr');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [company, setCompany] = useState('');
+  const [phone, setPhone] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const digits = phone.replace(/\D/g, '').slice(0, 10);
+  const canSubmit = !!(lastName.trim() && company.trim() && digits.length === 10) && !submitting;
+
+  const submit = async (): Promise<void> => {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    try {
+      const res = await callTouchpoint('leads.create', {
+        createPayload: {
+          salutation,
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          companyName: company.trim(),
+          phone: digits,
+        },
+      });
+      // Permissive result: a real failure carries no leadId; a duplicate carries the existing one.
+      if (res.success === false && !res.leadId) {
+        throw new Error(res.message || 'Lead was not created.');
+      }
+      const duplicate = res.success === false && !!res.leadId;
+      const name = company.trim();
+      setSalutation('Mr'); setFirstName(''); setLastName(''); setCompany(''); setPhone('');
+      pushToast(
+        duplicate ? 'Lead already exists' : 'Lead created',
+        duplicate ? `${name} is already in the CRM — linked to the existing lead.` : `${name} was added to your leads.`,
+      );
+    } catch (e) {
+      pushToast('Couldn’t create lead', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <div style={s('margin-bottom:20px')}>
+        <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.04em;text-transform:uppercase')}>Create a Lead</div>
+        <div style={s('font-size:12.5px;color:var(--muted);margin-top:3px')}>Add a new lead to your pipeline. Last name, company, and a 10-digit phone are required.</div>
+      </div>
+      <div style={s('padding:22px;border-radius:18px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:17px')}>
+        <div style={s('display:grid;grid-template-columns:110px 1fr 1fr;gap:12px')}>
+          <div>
+            <div style={s(LABEL)}>Title</div>
+            <select value={salutation} onChange={(e) => setSalutation(e.currentTarget.value)} className="ss-in" style={s(`${FIELD};cursor:pointer`)}>
+              {SALUTATIONS.map((sv) => <option key={sv} value={sv}>{sv}</option>)}
+            </select>
+          </div>
+          <div><div style={s(LABEL)}>First Name</div><input value={firstName} onChange={(e) => setFirstName(e.currentTarget.value)} placeholder="First name" className="ss-in" style={s(FIELD)} /></div>
+          <div><div style={s(LABEL)}>Last Name <span style={s('color:var(--accent)')}>*</span></div><input value={lastName} onChange={(e) => setLastName(e.currentTarget.value)} placeholder="Last name" className="ss-in" style={s(FIELD)} /></div>
+        </div>
+        <div><div style={s(LABEL)}>Company Name <span style={s('color:var(--accent)')}>*</span></div><input value={company} onChange={(e) => setCompany(e.currentTarget.value)} placeholder="The company they own or work for" className="ss-in" style={s(FIELD)} /></div>
+        <div>
+          <div style={s('display:flex;align-items:center;justify-content:space-between;margin-bottom:8px')}>
+            <div style={s(`${LABEL};margin-bottom:0`)}>Phone <span style={s('color:var(--accent)')}>*</span></div>
+            <span style={s(`font-size:10.5px;font-weight:700;font-family:'JetBrains Mono',monospace;color:${digits.length === 10 ? 'var(--ok)' : 'var(--faint)'}`)}>{digits.length}/10 digits</span>
+          </div>
+          <input value={phone} onChange={(e) => setPhone(e.currentTarget.value)} inputMode="numeric" placeholder="10-digit phone — no dashes, brackets, or spaces" className="ss-in" style={s(FIELD)} />
+        </div>
+        <div style={s('display:flex;justify-content:flex-end;padding-top:2px')}>
+          <button onClick={() => void submit()} disabled={!canSubmit} className={canSubmit ? 'ss-btn-p' : undefined} style={s(canSubmit ? 'height:46px;padding:0 28px;border-radius:12px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:13.5px;cursor:pointer;box-shadow:0 6px 18px rgba(var(--accent-rgb),.35)' : submitting ? 'height:46px;padding:0 28px;border-radius:12px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:9px;opacity:.85' : 'height:46px;padding:0 28px;border-radius:12px;border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:13.5px;cursor:not-allowed')}>
+            {submitting ? (<><span style={s('width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;animation:ss-spin .8s linear infinite')} />Creating…</>) : 'Create Lead'}
           </button>
         </div>
       </div>

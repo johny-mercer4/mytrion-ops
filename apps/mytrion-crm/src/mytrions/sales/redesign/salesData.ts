@@ -100,18 +100,29 @@ export const USER = { name: 'Marcus Reyes', first: 'Marcus', initials: 'MR', rol
 
 // ---------- time / workday ----------
 
+const NY_TZ = 'America/New_York';
+
 export function timeParts(now: Date = new Date()) {
-  const h = now.getHours();
+  // The workday progress + clock are always in New York (EST/EDT), regardless of the viewer's
+  // own timezone — the sales floor runs on NY hours.
+  const p = new Intl.DateTimeFormat('en-US', {
+    timeZone: NY_TZ,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(now);
+  const h = Number(p.find((x) => x.type === 'hour')?.value ?? '0') % 24;
+  const min = Number(p.find((x) => x.type === 'minute')?.value ?? '0');
   const tod = h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
   const startMin = 9 * 60;
   const endMin = 18 * 60;
-  const nowMin = Math.max(startMin, Math.min(endMin, h * 60 + now.getMinutes()));
+  const nowMin = Math.max(startMin, Math.min(endMin, h * 60 + min));
   const pct = Math.round(((nowMin - startMin) / (endMin - startMin)) * 100);
   return {
     tod,
     pct: Math.max(2, pct),
-    timeFmt: now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-    dateLabel: now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }),
+    timeFmt: now.toLocaleTimeString('en-US', { timeZone: NY_TZ, hour: 'numeric', minute: '2-digit', hour12: true }),
+    dateLabel: now.toLocaleDateString('en-US', { timeZone: NY_TZ, weekday: 'long', month: 'long', day: 'numeric' }),
   };
 }
 

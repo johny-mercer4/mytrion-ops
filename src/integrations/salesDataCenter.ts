@@ -31,20 +31,20 @@ function assertOwnerId(ownerId: string): string {
   return ownerId;
 }
 
-/** Bound the row count to COQL's per-page max (200). */
+/** Bound the row count. COQL accepts up to 2000 rows per query (bulk), so pull the full set. */
 function clampLimit(limit: number): number {
-  return Math.min(200, Math.max(1, Math.trunc(limit) || 200));
+  return Math.min(2000, Math.max(1, Math.trunc(limit) || 2000));
 }
 
 /** The agent's Leads (newest-modified first). */
-export async function fetchAgentLeads(ownerId: string, limit = 200): Promise<CrmRow[]> {
+export async function fetchAgentLeads(ownerId: string, limit = 2000): Promise<CrmRow[]> {
   const uid = assertOwnerId(ownerId);
   const q = `select ${LEAD_FIELDS} from Leads where Owner = '${uid}' order by Modified_Time desc limit 0, ${clampLimit(limit)}`;
   return (await runCoql(q)).rows;
 }
 
 /** The agent's Deals (newest-modified first). */
-export async function fetchAgentDeals(ownerId: string, limit = 200): Promise<CrmRow[]> {
+export async function fetchAgentDeals(ownerId: string, limit = 2000): Promise<CrmRow[]> {
   const uid = assertOwnerId(ownerId);
   const q = `select ${DEAL_FIELDS} from Deals where Owner = '${uid}' order by Modified_Time desc limit 0, ${clampLimit(limit)}`;
   return (await runCoql(q)).rows;

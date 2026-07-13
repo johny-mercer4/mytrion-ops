@@ -21,23 +21,61 @@ function statusColor(status: string): string {
   return 'var(--orange)';
 }
 
+// Status filter chips + bucket (ported from the self-service carrier-search-panel reference).
+const STATUS_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'authorized', label: 'Authorized' },
+  { id: 'not_authorized', label: 'Not Authorized' },
+  { id: 'out_of_service', label: 'Out of Service' },
+] as const;
+type CarrierStatusKey = (typeof STATUS_FILTERS)[number]['id'];
+function statusKey(status: string): Exclude<CarrierStatusKey, 'all'> | 'other' {
+  const st = status.toLowerCase();
+  if (st.includes('out of service')) return 'out_of_service';
+  if (st.includes('not authorized') || st.includes('revoked')) return 'not_authorized';
+  if (st.includes('authorized')) return 'authorized';
+  return 'other';
+}
+const FETCH_LIMITS = [200, 500] as const;
+
 export function CarriersTab() {
   const [carrierQuery, setCarrierQuery] = useState<string>('');
   const [carrierSearching, setCarrierSearching] = useState<boolean>(false);
   const [results, setResults] = useState<CarrierSearchVM[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState<boolean>(false);
+  const [statusFilter, setStatusFilter] = useState<CarrierStatusKey>('all');
+  const [minUnits, setMinUnits] = useState<string>('');
+  const [fetchLimit, setFetchLimit] = useState<number>(200);
 
-  // ----- view-model: each live carrier row mapped onto the account-card slots -----
-  const carrierCards = (results ?? []).map((c) => ({
+  // ----- filters (reference: status chips + min power units) applied over the loaded results -----
+  const all = results ?? [];
+  const minU = Number(minUnits);
+  const filtered = all.filter((c) => {
+    if (statusFilter !== 'all' && statusKey(c.status) !== statusFilter) return false;
+    if (Number.isFinite(minU) && minU > 0 && c.unitsNum < minU) return false;
+    return true;
+  });
+  const counts: Record<string, number> = { all: all.length, authorized: 0, not_authorized: 0, out_of_service: 0 };
+  for (const c of all) {
+    const k = statusKey(c.status);
+    if (k in counts) counts[k] = (counts[k] ?? 0) + 1;
+  }
+  const hasActiveFilters = statusFilter !== 'all' || minUnits.trim() !== '';
+  const clearFilters = (): void => {
+    setStatusFilter('all');
+    setMinUnits('');
+  };
+
+  const carrierCards = filtered.map((c) => ({
     ...c,
     statusBadge: badge(c.status, statusColor(c.status)),
     statusColor: statusColor(c.status),
   }));
 
   const carrierIdle = !carrierSearching && !error && !hasSearched;
-  const carrierEmpty = !carrierSearching && !error && hasSearched && carrierCards.length === 0;
-  const carrierHas = !carrierSearching && !error && carrierCards.length > 0;
+  const carrierEmpty = !carrierSearching && !error && hasSearched && all.length === 0;
+  const carrierHas = !carrierSearching && !error && all.length > 0;
 
   const runCarrierSearch = async (): Promise<void> => {
     const q = carrierQuery.trim();
@@ -46,7 +84,7 @@ export function CarriersTab() {
     setError(null);
     setHasSearched(true);
     try {
-      const rows = await searchCarriers(q);
+      const rows = await searchCarriers(q, fetchLimit);
       setResults(rows);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Search failed');
@@ -159,6 +197,41 @@ export function CarriersTab() {
         </div>
       )}
       {carrierHas && (
+        <div style={s('display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:16px')}>
+          {STATUS_FILTERS.map((f) => {
+            const on = statusFilter === f.id;
+            return (
+              <button key={f.id} onClick={() => setStatusFilter(f.id)} style={s(`display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:99px;border:1px solid ${on ? 'var(--accent)' : 'var(--border)'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:11.5px;font-weight:700;cursor:pointer;transition:all .14s`)}>
+                {f.label}
+                <span style={s(`font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;color:${on ? 'var(--accent)' : 'var(--faint)'}`)}>{counts[f.id] ?? 0}</span>
+              </button>
+            );
+          })}
+          <div style={s('display:flex;align-items:center;gap:7px;margin-left:4px')}>
+            <span style={s('font-size:11px;color:var(--muted);font-weight:600')}>Min units</span>
+            <input type="number" min={0} value={minUnits} onChange={(e) => setMinUnits(e.currentTarget.value)} placeholder="0" className="ss-in" style={s('width:72px;height:32px;padding:0 10px;border-radius:9px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:12.5px')} />
+          </div>
+          <div style={s('display:flex;align-items:center;gap:7px')}>
+            <span style={s('font-size:11px;color:var(--muted);font-weight:600')}>Load</span>
+            <select value={fetchLimit} onChange={(e) => setFetchLimit(Number(e.currentTarget.value))} className="ss-in" style={s('height:32px;padding:0 8px;border-radius:9px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:12.5px;cursor:pointer')}>
+              {FETCH_LIMITS.map((l) => (<option key={l} value={l}>{l}</option>))}
+            </select>
+          </div>
+          {hasActiveFilters && (
+            <button onClick={clearFilters} style={s('padding:6px 12px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:11.5px;font-weight:700;cursor:pointer')}>Clear</button>
+          )}
+          <span style={s('margin-left:auto;font-size:11px;color:var(--faint)')}>
+            {filtered.length}{filtered.length !== all.length ? ` of ${all.length}` : ''} carrier{filtered.length === 1 ? '' : 's'}
+          </span>
+        </div>
+      )}
+      {carrierHas && filtered.length === 0 && (
+        <div style={s('text-align:center;padding:44px 20px;color:var(--muted);font-size:13px')}>
+          No carriers match the current filters.{' '}
+          <button onClick={clearFilters} style={s('border:none;background:transparent;color:var(--accent);font-weight:700;cursor:pointer;font-size:13px')}>Clear filters</button>
+        </div>
+      )}
+      {carrierHas && filtered.length > 0 && (
         <div style={s('display:flex;flex-direction:column;gap:14px')}>
           {carrierCards.map((carrierCard, i) => (
             <div

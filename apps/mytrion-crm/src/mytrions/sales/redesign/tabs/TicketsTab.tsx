@@ -201,13 +201,28 @@ export function TicketsTab() {
     }
   };
 
-  const onPickFile = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    const f = e.currentTarget.files?.[0] ?? null;
+  const takeAttach = (f: File | null): void => {
     if (f && f.size > 20 * 1024 * 1024) {
       pushToast('File too large', 'Attachments must be 20MB or smaller.');
       return;
     }
     setAttachFile(f);
+  };
+
+  const onPickFile = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    takeAttach(e.currentTarget.files?.[0] ?? null);
+  };
+
+  // Paste-to-attach in the composer: grab a pasted file/image; let plain-text pastes fall through.
+  const onPasteReply = (e: React.ClipboardEvent<HTMLInputElement>): void => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const it of Array.from(items)) {
+      if (it.kind === 'file') {
+        const f = it.getAsFile();
+        if (f) { takeAttach(f); e.preventDefault(); break; }
+      }
+    }
   };
 
   const downloadAttachment = (file: NonNullable<TicketMsgVM['file']>): void => {
@@ -431,7 +446,7 @@ export function TicketsTab() {
                   <div style={s('padding:11px 78px 12px 14px;display:flex;gap:10px;align-items:flex-end')}>
                     <input ref={fileInputRef} type="file" onChange={onPickFile} style={{ display: 'none' }} />
                     <button onClick={() => fileInputRef.current?.click()} aria-label="Attach file" title="Attach a file" className="ss-ico-btn" style={s(`width:40px;height:40px;flex-shrink:0;border-radius:11px;border:1px solid ${attachFile ? 'rgba(var(--accent-rgb),.5)' : 'var(--border)'};background:${attachFile ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${attachFile ? 'var(--accent)' : 'var(--text2)'};cursor:pointer;display:flex;align-items:center;justify-content:center`)}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg></button>
-                    <input value={ticketReply} onChange={(e) => setTicketReply(e.currentTarget.value)} onKeyDown={ticketReplyKey} placeholder={attachFile ? 'Add a message (optional)…' : 'Type a reply…'} className="ss-in" style={s('flex:1;height:40px;padding:0 14px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px')} />
+                    <input value={ticketReply} onChange={(e) => setTicketReply(e.currentTarget.value)} onKeyDown={ticketReplyKey} onPaste={onPasteReply} placeholder={attachFile ? 'Add a message (optional)…' : 'Type or paste a reply…'} className="ss-in" style={s('flex:1;height:40px;padding:0 14px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px')} />
                     <button onClick={sendTicketReply} disabled={sending} aria-label="Send reply" className="ss-btn-p" style={s(`width:40px;height:40px;flex-shrink:0;border-radius:11px;border:none;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;cursor:${sending ? 'default' : 'pointer'};opacity:${sending ? '.7' : '1'};display:flex;align-items:center;justify-content:center`)}>{sending ? <span style={s('width:15px;height:15px;border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;animation:ss-spin .8s linear infinite')} /> : <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}</button>
                   </div>
                 </div>

@@ -357,10 +357,11 @@ export interface CarrierSearchVM {
   email: string;
   status: string;
   units: string;
+  unitsNum: number;
   address: string;
 }
-export async function searchCarriers(query: string): Promise<CarrierSearchVM[]> {
-  const res = await callTouchpoint('sales.carriers_search', { query, limit: 200 });
+export async function searchCarriers(query: string, limit = 200): Promise<CarrierSearchVM[]> {
+  const res = await callTouchpoint('sales.carriers_search', { query, limit });
   return (res.carriers ?? []).map((c) => ({
     dot: String(c.dot_number ?? '—'),
     owner: String(c.owner_full_name ?? '—'),
@@ -368,6 +369,7 @@ export async function searchCarriers(query: string): Promise<CarrierSearchVM[]> 
     email: String(c.email ?? '—'),
     status: String(c.operating_status ?? 'unknown'),
     units: String(c.power_units ?? '—'),
+    unitsNum: typeof c.power_units === 'number' ? c.power_units : Number(c.power_units) || 0,
     address: String(c.physical_address ?? ''),
   }));
 }
