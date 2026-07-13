@@ -10,7 +10,9 @@ import { s, Svg } from './dc';
 import { SalesContext, type ClientRecord, type DetailVM, type SalesCtx } from './ctx';
 import { badge, NAV, NAVLABEL, timeParts } from './salesData';
 import { useSessionUser } from './sessionUser';
-import { useLoad, loadClientCards, loadClientActivity, loadInbox, loadTickets, isTicketClosed } from './live';
+import { useLoad, loadClientCards, loadClientActivity } from './live';
+import { useSidebarBadges } from './sidebarBadges';
+import { getSession } from '@/api/session';
 import { useUserContext } from '@/context/UserContextProvider';
 import { useImpersonation } from '@/context/ImpersonationProvider';
 import { agentKeyFor } from '@/access/mytrions.config';
@@ -42,14 +44,15 @@ export function SalesRedesign() {
   const userCtx = useUserContext();
   const admin = isAdmin(userCtx);
   const { actingAs } = useImpersonation();
-  // Real nav-badge counts, refetched when the acted-as agent changes. Inbox = messages awaiting the
-  // rep; Tickets = open (not-closed) tickets. Open Pool has no badge until its data flow is rebuilt.
   const actAsKey = actingAs?.zohoUserId ?? 'self';
-  const inboxCount = useLoad(() => loadInbox().then((x) => x.length), [actAsKey]);
-  const openTix = useLoad(() => loadTickets().then((r) => r.tickets.filter((t) => !isTicketClosed(t.status)).length), [actAsKey]);
+  // The effective CRM user (acted-as agent for an admin, else the signed-in worker).
+  const currentUserId = String(actingAs?.zohoUserId ?? getSession()?.worker.zohoUserId ?? '');
+  // Live, UNREAD sidebar counts over one servercrm socket: Inbox = messages not yet read (drops as
+  // the tab marks them read); Tickets = unread ticket messages (bumped by WS, cleared on open).
+  const liveBadges = useSidebarBadges(currentUserId);
   const badgeCounts: Record<string, number | undefined> = {
-    inbox: inboxCount.data ?? undefined,
-    tickets: openTix.data ?? undefined,
+    inbox: liveBadges.inbox || undefined,
+    tickets: liveBadges.tickets || undefined,
   };
   // Collapsible sidebar (icons-only), persisted. Full-bleed tabs (Tickets) fill the whole panel.
   const [navCollapsed, setNavCollapsed] = useState(() => {
@@ -187,20 +190,40 @@ export function SalesRedesign() {
               <Svg d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" size={20} stroke="#fff" />
             </div>
             {!navCollapsed && (
-              <div style={s('line-height:1.1;min-width:0')}>
-                <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.08em;text-transform:uppercase")}>
-                  Sales <span style={s('color:var(--accent)')}>Mytrion</span>
+              <>
+                <div style={s('line-height:1.1;min-width:0')}>
+                  <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.08em;text-transform:uppercase")}>
+                    Sales <span style={s('color:var(--accent)')}>Mytrion</span>
+                  </div>
+                  <div style={s("font-size:9.5px;color:var(--muted);font-weight:600;letter-spacing:.07em;text-transform:uppercase")}>Sales Intelligence</div>
                 </div>
-                <div style={s("font-size:9.5px;color:var(--muted);font-weight:600;letter-spacing:.07em;text-transform:uppercase")}>Sales Intelligence</div>
-              </div>
+                <button onClick={toggleNav} aria-label="Collapse sidebar" title="Collapse sidebar" className="ss-ico-btn" style={s('margin-left:auto;width:28px;height:28px;flex-shrink:0;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
+                  <Svg d={PANEL} size={15} />
+                </button>
+              </>
             )}
           </div>
+          {navCollapsed && (
+            <div style={s('display:flex;justify-content:center;padding:0 0 8px')}>
+              <button onClick={toggleNav} aria-label="Expand sidebar" title="Expand sidebar" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
+                <Svg d={PANEL} size={15} />
+              </button>
+            </div>
+          )}
           <nav className="ss-scroll" style={s('flex:1;min-height:0;padding:6px 12px;display:flex;flex-direction:column;gap:3px')}>
             {NAV.map((n) => {
               const active = section === n.id;
-              const style = `display:flex;align-items:center;gap:11px;padding:10px ${navCollapsed ? '0' : '12px'};${navCollapsed ? 'justify-content:center' : ''};border:none;width:100%;background:${active ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${active ? 'var(--accent)' : 'var(--muted)'};font-size:13px;font-weight:${active ? 700 : 600};cursor:pointer;border-radius:10px;box-shadow:${active ? 'inset 2.5px 0 0 var(--accent)' : 'none'};transition:background .14s,color .14s`;
+              const soon = n.comingSoon === true;
+              const style = `display:flex;align-items:center;gap:11px;padding:10px ${navCollapsed ? '0' : '12px'};${navCollapsed ? 'justify-content:center' : ''};border:none;width:100%;background:${active ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${active ? 'var(--accent)' : 'var(--muted)'};font-size:13px;font-weight:${active ? 700 : 600};cursor:${soon ? 'default' : 'pointer'};opacity:${soon ? '.5' : '1'};border-radius:10px;box-shadow:${active ? 'inset 2.5px 0 0 var(--accent)' : 'none'};transition:background .14s,color .14s`;
               return (
-                <button key={n.id} onClick={() => go(n.id)} title={navCollapsed ? n.label : undefined} className="ss-tab-x" style={s(style)}>
+                <button
+                  key={n.id}
+                  onClick={soon ? undefined : () => go(n.id)}
+                  disabled={soon}
+                  title={soon ? `${n.label} — coming soon` : navCollapsed ? n.label : undefined}
+                  className={soon ? undefined : 'ss-tab-x'}
+                  style={s(style)}
+                >
                   <span style={s('position:relative;flex-shrink:0;display:inline-flex')}>
                     <Svg d={n.icon} size={18} style={{ flexShrink: 0 }} />
                     {navCollapsed && badgeCounts[n.id] ? (
@@ -208,7 +231,9 @@ export function SalesRedesign() {
                     ) : null}
                   </span>
                   {!navCollapsed && <span style={s('flex:1;text-align:left')}>{n.label}</span>}
-                  {!navCollapsed && badgeCounts[n.id] ? (
+                  {!navCollapsed && soon ? (
+                    <span style={s('font-size:8.5px;font-weight:800;letter-spacing:.05em;padding:2px 7px;border-radius:99px;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)')}>SOON</span>
+                  ) : !navCollapsed && badgeCounts[n.id] ? (
                     <span style={s('background:var(--accent);color:#fff;font-size:9.5px;font-weight:800;min-width:18px;height:18px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px')}>{badgeCounts[n.id]}</span>
                   ) : null}
                 </button>
@@ -235,12 +260,7 @@ export function SalesRedesign() {
         {/* MAIN COLUMN */}
         <div style={s('flex:1;min-width:0;display:flex;flex-direction:column')}>
           <div style={s('flex-shrink:0;height:54px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 24px;border-bottom:1px solid var(--border);background:color-mix(in srgb, var(--bg) 60%, transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);position:relative;z-index:15')}>
-            <div style={s('display:flex;align-items:center;gap:13px;min-width:0')}>
-              <button onClick={toggleNav} aria-label={navCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={navCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} className="ss-ico-btn" style={s('width:32px;height:32px;flex-shrink:0;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
-                <Svg d={PANEL} size={16} />
-              </button>
-              <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis")}>{NAVLABEL[section] ?? ''}</div>
-            </div>
+            <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0")}>{NAVLABEL[section] ?? ''}</div>
             {admin && <ViewAsPicker />}
             <div style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);margin-left:auto;flex-shrink:0")}>{T.timeFmt}</div>
           </div>

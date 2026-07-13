@@ -16,6 +16,7 @@ import { badge, iconBox, ICO } from '../salesData';
 import { useSales } from '../ctx';
 import { useLoad, loadInbox, deleteInboxMessage, type InboxVM } from '../live';
 import { useServerCrmSocket } from '../useServerCrmSocket';
+import { useInboxRead, markInboxRead, markInboxReadMany } from '../inboxRead';
 
 type InboxItem = InboxVM;
 type IType = InboxItem['type'];
@@ -36,32 +37,12 @@ const TAB_DEFS: ReadonlyArray<readonly [FilterId, string]> = [
   ['all', 'All'], ['unread', 'Unread'], ['task', 'Tasks'], ['alert', 'Alerts'], ['reminder', 'Reminders'],
 ];
 
-// ---- read-state (local, persisted to localStorage) ----
-const READ_KEY = 'octane.sales.redesign.inbox.read';
-function loadReadIds(): Record<string, boolean> {
-  try {
-    const ids = JSON.parse(localStorage.getItem(READ_KEY) ?? '[]') as string[];
-    const r: Record<string, boolean> = {};
-    for (const id of ids) r[id] = true;
-    return r;
-  } catch {
-    return {};
-  }
-}
-function persistReadIds(read: Record<string, boolean>): void {
-  try {
-    const ids = Object.keys(read).filter((k) => read[k]);
-    localStorage.setItem(READ_KEY, JSON.stringify(ids.slice(-500)));
-  } catch {
-    /* noop */
-  }
-}
-
 export function InboxTab() {
   const { openDetail, pushToast } = useSales();
   const { actingAs } = useImpersonation();
   const [inboxFilter, setInboxFilter] = useState<string>('all');
-  const [read, setRead] = useState<Record<string, boolean>>(() => loadReadIds());
+  // Read-state lives in the shared store so marking a message read here drops the sidebar Inbox badge.
+  const read = useInboxRead();
   const [items, setItems] = useState<InboxItem[]>([]);
   const [wsReady, setWsReady] = useState(false);
 
@@ -74,9 +55,6 @@ export function InboxTab() {
   useEffect(() => {
     if (data) setItems(data);
   }, [data]);
-  useEffect(() => {
-    persistReadIds(read);
-  }, [read]);
 
   // ---- real-time: only react to a notification addressed to THIS user (ownerId === currentUserId),
   //      exactly like the reference self-service InboxPanel._handleWsMessage — toast + refetch. ----
@@ -120,14 +98,12 @@ export function InboxTab() {
 
   // ---- handlers ----
   const markAllRead = () => {
-    const r = { ...read };
-    items.forEach((i) => { r[i.id] = true; });
-    setRead(r);
+    markInboxReadMany(items.map((i) => i.id));
     pushToast('All caught up', 'Marked everything as read');
   };
   const markReadOnly = (i: InboxItem, e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
-    setRead((sr) => ({ ...sr, [i.id]: true }));
+    markInboxRead(i.id);
   };
   const deleteInbox = (i: InboxItem, e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
@@ -138,7 +114,7 @@ export function InboxTab() {
     });
   };
   const openInbox = (i: InboxItem) => {
-    setRead((sr) => ({ ...sr, [i.id]: true }));
+    markInboxRead(i.id);
     openDetail({
       title: i.title,
       body: i.desc,

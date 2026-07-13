@@ -72,6 +72,8 @@ export interface NavItem {
   label: string;
   icon: string;
   badge?: number;
+  /** Rendered disabled with a "Coming soon" tag; not navigable. */
+  comingSoon?: boolean;
 }
 
 export const NAV: NavItem[] = [
@@ -79,9 +81,9 @@ export const NAV: NavItem[] = [
   // Badges are filled in at runtime from real counts (see Shell.badgeCounts); no hardcoded numbers.
   { id: 'inbox', label: 'Inbox', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
   { id: 'tickets', label: 'Tickets', icon: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 20l1.3-3.9A7.96 7.96 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z' },
-  // Open Pool is disabled for now (its live data flow is being rebuilt). Re-enable by restoring
-  // this nav entry — the PoolTab component + its `section === 'pool'` render are still wired.
-  // { id: 'pool', label: 'Open Pool', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4' },
+  // Open Pool is shown but disabled ("Coming soon") — its live data flow is being rebuilt. Drop
+  // `comingSoon` to re-enable; the PoolTab component + its `section === 'pool'` render stay wired.
+  { id: 'pool', label: 'Open Pool', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4', comingSoon: true },
   { id: 'records', label: 'Data Center', icon: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4' },
   { id: 'create', label: 'Create', icon: 'M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z' },
   { id: 'auto', label: 'Automations', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },

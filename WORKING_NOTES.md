@@ -1762,3 +1762,22 @@ returns full display data + the creator id, HTTP 200, no search scope).
   no banner; `?zoho_user_id=<agent>` as admin → 7 tickets, all theirs. Limitation: the fallback only
   covers a recency window (~600 recent org tickets); adding `Desk.search.READ` to the Desk token
   removes the bound (search returns ALL of the caller's tickets) with zero code change.
+
+### Real-time UNREAD sidebar badges + collapse button + Open Pool "Coming soon"
+
+- **Sidebar collapse button.** Moved the collapse toggle INTO the sidebar (header, right of the
+  brand when expanded; a centered button when collapsed) and removed the topbar one. Verified 68↔238.
+- **Open Pool = "Coming soon".** Restored the nav entry with `comingSoon: true` (NavItem flag):
+  disabled/greyed with a "SOON" tag, not navigable. The PoolTab render stays wired.
+- **Both nav badges are now UNREAD counts that decrement when read** (the user's ask), driven by ONE
+  shell-level servercrm socket (`sidebarBadges.useSidebarBadges`) so they update from any tab:
+  - `inboxRead.ts` — shared persisted read-set; the InboxTab mark-read / mark-all-read / open write
+    to it, so the Inbox badge (= items not read) drops immediately. Verified 25 → none after "Mark
+    all read". A new `crm_inbox_notification` (ownerId match) refetches → +1 unread.
+  - `ticketUnread.ts` — shared persisted per-ticket unread counts. The shell socket bumps a ticket on
+    `ticket_comment_added`/`ticket_attachment_added` (subscribe `{type:'subscribe', userId,
+    ticketIds}` — the reference's exact frame; filtered to the caller's ticket ids). The TicketsTab
+    clears on select/open (and reactively for the open ticket) + shows a per-row unread badge.
+    Verified: WS comment → badge 2 → open the ticket → badge 0, store `{}`.
+- One shell socket handles both event types; tabs keep their own sockets for tab-specific needs.
+  Stores are `useSyncExternalStore` so shell + tabs stay in lock-step.

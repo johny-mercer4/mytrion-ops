@@ -16,6 +16,7 @@ import { badge, type BadgeVM } from '../salesData';
 import { useSales } from '../ctx';
 import { useLoad, loadTickets, loadTicketMessages, isTicketClosed, type TicketVM, type TicketMsgVM } from '../live';
 import { useServerCrmSocket } from '../useServerCrmSocket';
+import { useTicketUnread, clearTicketUnread } from '../ticketUnread';
 
 type TicketFilter = 'all' | 'active' | 'closed';
 
@@ -71,7 +72,7 @@ export function TicketsTab() {
   const [ticketReply, setTicketReply] = useState<string>('');
   const [ticketsSpin, setTicketsSpin] = useState<boolean>(false);
   const [ticketDetailsOpen, setTicketDetailsOpen] = useState<boolean>(false);
-  const [readIds, setReadIds] = useState<Set<string>>(() => new Set<string>());
+  const unreadCounts = useTicketUnread();
 
   const spinRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -93,6 +94,12 @@ export function TicketsTab() {
     if (!first) return;
     setSelectedTicket((cur) => (cur && list.some((t) => t.id === cur) ? cur : first.id));
   }, [ticketsLoad.data]);
+
+  // The open ticket is "read": clear its unread whenever it accrues (incl. a live comment that
+  // arrives while it's on screen), so the sidebar badge never counts what the user is looking at.
+  useEffect(() => {
+    if (selectedTicket && unreadCounts[selectedTicket]) clearTicketUnread(selectedTicket);
+  }, [selectedTicket, unreadCounts]);
 
   // ---------- real-time (servercrm WS) ----------
   const zohoUserId = getSession()?.worker.zohoUserId ?? '';
@@ -124,12 +131,7 @@ export function TicketsTab() {
 
   // ---------- handlers ----------
   const selectTicket = (id: string): void => {
-    setReadIds((prev) => {
-      if (prev.has(id)) return prev;
-      const next = new Set(prev);
-      next.add(id);
-      return next;
-    });
+    clearTicketUnread(id); // opening a ticket marks its new messages read → drops the sidebar badge
     setSelectedTicket(id);
   };
 
@@ -246,7 +248,7 @@ export function TicketsTab() {
             {tkList.map((t) => {
               const active = selectedTicket === t.id;
               const esc = t.channel === 'Escalation';
-              const unreadN = readIds.has(t.id) ? 0 : t.unread || 0;
+              const unreadN = unreadCounts[t.id] ?? 0;
               const sBadge = statusBadgeOf(t.status);
               return (
                 <button key={t.id} onClick={() => selectTicket(t.id)} className="ss-card-h" style={s(`display:flex;flex-direction:column;gap:8px;padding:12px 13px;border-radius:12px;border:1px solid ${active ? 'rgba(var(--accent-rgb),.5)' : 'var(--border)'};background:${active ? 'rgba(var(--accent-rgb),.10)' : 'var(--surface)'};cursor:pointer;transition:all .14s;text-align:left;width:100%`)}>
