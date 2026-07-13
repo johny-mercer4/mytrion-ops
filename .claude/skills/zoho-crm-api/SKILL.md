@@ -9,7 +9,7 @@ description: Zoho CRM REST API v8 reference — OAuth/scopes, metadata (modules/
 - **Auth:** `wrapper.authHeaders('zoho_crm')` ([src/integrations/wrapper.ts](../../../src/integrations/wrapper.ts)) → `Authorization: Zoho-oauthtoken <token>`; access token cached per service (refresh handled by `src/integrations/zoho.ts`).
 - **Base URL:** `zoho.baseUrl('zoho_crm')` → env `ZOHO_CRM_API_DOMAIN` (default `https://www.zohoapis.com/crm/v8`).
 - **Scopes:** `ZOHO_CRM_REFRESH_TOKEN` must be minted with the scopes in §1 below (settings.*, modules.*, coql, bulk, search → `ZohoSearch.securesearch.READ`).
-- **Our org's live module/field API names:** `pnpm meta:zoho-crm` → `metadataScripts/output/zoho-crm.{json,md}` (git-ignored). Use those for exact `api_name`s; use this skill for *how* to call.
+- **Our org's live module/field API names:** `pnpm meta:zoho-crm` → `metadataScripts/output/zoho-crm.{json,md}` (git-ignored). For **one module** (api names + data types only): `pnpm meta:fetch -- crm <ModuleApiName>` → `metadataScripts/zohoMetadataFetcher.ts`. Use those for exact `api_name`s; use this skill for *how* to call.
 - **Wiring:** expose calls as `ToolManifest` tools dispatched through `toolDispatcher` (RBAC + department/`Administrator` gating). Prefer COQL / Bulk Read for large pulls; respect the v8 mandatory-`fields` rule.
 
 ---
@@ -280,13 +280,13 @@ Gotchas: `equals` behaves like *contains* for plain text fields (not picklists).
 
 ## 5. COQL (CRM Object Query Language)
 
-Docs: [Get-Records-through-COQL-Query](https://www.zoho.com/crm/developer/docs/api/v8/Get-Records-through-COQL-Query.html)
+Docs: [COQL Overview](https://www.zoho.com/crm/developer/docs/api/v8/COQL-Overview.html) (limits/syntax), [Get-Records-through-COQL-Query](https://www.zoho.com/crm/developer/docs/api/v8/Get-Records-through-COQL-Query.html) (comparators, samples). Prefer Field Metadata (`GET /settings/fields?module=…` or `pnpm meta:fetch -- crm <Module>`) for exact field API names used in SELECT/WHERE.
 
-`POST /coql`. Scope `ZohoCRM.coql.READ` (+ module READ). Body:
+`POST /coql`. Scope `ZohoCRM.coql.READ` (+ module READ; `ZohoCRM.settings.fields.READ` if using `include_meta`). Body:
 ```json
 { "select_query": "select Last_Name, First_Name, Account_Name.Account_Name from Contacts where Last_Name = 'Boyle' and Account_Name.Account_Name = 'Zylker' limit 0, 200" }
 ```
-Grammar: `SELECT <fields> FROM <module> [WHERE <conditions>] [GROUP BY <fields>] [ORDER BY <fields> ASC|DESC] [LIMIT [offset,] limit]`.
+Grammar: `SELECT <fields> FROM <module> [WHERE <conditions>] [GROUP BY <fields>] [ORDER BY <fields> ASC|DESC] [LIMIT offset, limit]`.
 
 **Operators by type:**
 - Text/Picklist: `=`, `!=`, `like`, `not like`, `in`, `not in`, `is null`, `is not null`
@@ -294,24 +294,26 @@ Grammar: `SELECT <fields> FROM <module> [WHERE <conditions>] [GROUP BY <fields>]
 - Number/Date/DateTime: `=`, `!=`, `>`, `>=`, `<`, `<=`, `between`, `not between`, `in`, `not in`, `is null`, `is not null`
 - Boolean: `=`
 
-`like` wildcards: `tech%` (starts), `%tech` (ends), `%tech%` (contains). Combine with `and`/`or` + parentheses.
+`like` wildcards: `tech%` (starts), `%tech` (ends), `%tech%` (contains). Combine with `and`/`or` + parentheses. Alias response keys with `AS` (`select Account_Name AS 'Account id'`).
 
-**Joins / relations:** dot notation on lookup fields, **max 2 joins** — `Account_Name.Account_Name`, `Account_Name.Parent_Account.Account_Name`. Polymorphic lookups (Tasks/Calls/Events) use arrow form `What_Id->Accounts.Account_Name`. Custom view: `FROM Leads#1234`.
+**Joins / relations:** dot notation on lookup fields, **max 2 joins** — `Account_Name.Account_Name`, `Account_Name.Parent_Account.Account_Name`. Polymorphic lookups (Tasks/Calls/Events) use arrow form `What_Id->Accounts.Account_Name`. Custom view: `FROM Leads#1234`. Prefix `!` on a module API name when disambiguating from a field (`!Leads.Owner.role.id`).
 
-**Limits:**
+**Limits (v8 COQL Overview — prefer these over older error-message copy that still cites 50/200):**
 
 | Constraint | Max |
 |---|---|
-| Fields per SELECT | 50 |
-| Rows per call | 200 |
-| Total via pagination | 100,000 |
-| LIMIT offset cap | 100,000 |
+| Fields per SELECT | **500** |
+| WHERE criteria | **25** |
+| Rows per call (LIMIT) | **2000** (default 200) |
+| Total via pagination (same criteria) | **100,000** |
 | Joins | 2 |
 | Values in `in`/`not in` | 100 |
-| ORDER BY fields | 10 |
-| GROUP BY fields | 4 |
+| Dynamic formula fields in SELECT | 5 |
+| Aggregate functions | `SUM`, `MAX`, `MIN`, `AVG`, `COUNT` (with `GROUP BY` when mixed with non-aggregates) |
 
-Paginate by incrementing the `LIMIT` offset (`limit 200,200`, `limit 400,200`, …) while `more_records` is true. HTTP **204** = no rows matched.
+**API credits by LIMIT:** 1–200 → 1 credit · 201–1000 → 2 · 1001–2000 → 3.
+
+Paginate with `LIMIT offset, limit` while `more_records` is true. Beyond 100k matching rows, add `id > {last_id}` (and adjust sort keys) or use Bulk Read. HTTP **204** = no rows matched. Quote SQL-reserved keywords / special characters in field names.
 
 ---
 
@@ -433,7 +435,7 @@ In multi-record ops this appears **per element** inside `data` (positional), so 
 - **Search needs `ZohoSearch.securesearch.READ`** in addition to the module scope.
 - **Bulk path order** is `/crm/bulk/v8/...`; bulk **upload** goes to the separate `content.zohoapis.{dc}` host.
 - **Partial success is the norm** for multi-record writes/deletes — parse per-record `code`.
-- **Pagination ceilings:** plain `page` caps at 2,000; use `page_token` (Get Records) / `LIMIT` offset (COQL, ≤100k) / Bulk Read (≤200k/page). Search hard-caps at 2,000.
+- **Pagination ceilings:** plain `page` caps at 2,000; use `page_token` (Get Records) / `LIMIT` offset (COQL Overview: ≤2000/call, ≤100k same criteria) / Bulk Read (≤200k/page). Search hard-caps at 2,000.
 - **DC consistency:** mint and use tokens on the user's DC; trust `api_domain` from the refresh response. CA accounts host is `accounts.zohocloud.ca`.
 - **Read-after-write:** the search index lags; use COQL (or fetch by id) immediately after a write.
 - **Write limits:** 100 records/call for insert/update/upsert/delete/notes; 500 for tags; 10 files (20 MB) for ZFS; 25,000 records/CSV for Bulk Write.
@@ -441,4 +443,4 @@ In multi-record ops this appears **per element** inside `data` (positional), so 
 ---
 
 ### Primary sources
-[v8 index](https://www.zoho.com/crm/developer/docs/api/v8/) · [OAuth](https://www.zoho.com/crm/developer/docs/api/v8/oauth-overview.html) · [Refresh](https://www.zoho.com/crm/developer/docs/api/v8/refresh.html) · [Scopes](https://www.zoho.com/crm/developer/docs/api/v8/scopes.html) · [Get records](https://www.zoho.com/crm/developer/docs/api/v8/get-records.html) · [Search](https://www.zoho.com/crm/developer/docs/api/v8/search-records.html) · [COQL](https://www.zoho.com/crm/developer/docs/api/v8/Get-Records-through-COQL-Query.html) · [Field meta](https://www.zoho.com/crm/developer/docs/api/v8/field-meta.html) · [Bulk Read](https://www.zoho.com/crm/developer/docs/api/v8/bulk-read/create-job.html) · [Bulk Write](https://www.zoho.com/crm/developer/docs/api/v8/bulk-write/upload-file.html) · [API limits](https://www.zoho.com/crm/developer/docs/api/v8/api-limits.html)
+[v8 index](https://www.zoho.com/crm/developer/docs/api/v8/) · [OAuth](https://www.zoho.com/crm/developer/docs/api/v8/oauth-overview.html) · [Refresh](https://www.zoho.com/crm/developer/docs/api/v8/refresh.html) · [Scopes](https://www.zoho.com/crm/developer/docs/api/v8/scopes.html) · [Get records](https://www.zoho.com/crm/developer/docs/api/v8/get-records.html) · [Search](https://www.zoho.com/crm/developer/docs/api/v8/search-records.html) · [COQL Overview](https://www.zoho.com/crm/developer/docs/api/v8/COQL-Overview.html) · [COQL Get Records](https://www.zoho.com/crm/developer/docs/api/v8/Get-Records-through-COQL-Query.html) · [Field meta](https://www.zoho.com/crm/developer/docs/api/v8/field-meta.html) · [Bulk Read](https://www.zoho.com/crm/developer/docs/api/v8/bulk-read/create-job.html) · [Bulk Write](https://www.zoho.com/crm/developer/docs/api/v8/bulk-write/upload-file.html) · [API limits](https://www.zoho.com/crm/developer/docs/api/v8/api-limits.html)
