@@ -91,6 +91,7 @@ export function SalesRedesign() {
   const [clientTab, setClientTab] = useState<'overview' | 'cards' | 'activity'>('overview');
   const [lead, setLead] = useState<LeadVM | null>(null);
   const [deal, setDeal] = useState<DealVM | null>(null);
+  const [focusTicket, setFocusTicket] = useState<string | null>(null);
 
   // chat
   const [chatOpen, setChatOpen] = useState(false);
@@ -121,6 +122,13 @@ export function SalesRedesign() {
     setClient(c);
     setClientTab('overview');
   }, []);
+  // Jump to Tickets and flag the ticket the tab should auto-open (e.g. after Create).
+  const openTicket = useCallback((ticketId: string) => {
+    setFocusTicket(ticketId);
+    setSection('tickets');
+    setDetail(null);
+  }, []);
+  const clearFocusTicket = useCallback(() => setFocusTicket(null), []);
 
   const scrollChat = useCallback(() => {
     requestAnimationFrame(() => {
@@ -153,8 +161,11 @@ export function SalesRedesign() {
       openLead: setLead,
       openDeal: setDeal,
       go,
+      openTicket,
+      focusTicketId: focusTicket,
+      clearFocusTicket,
     }),
-    [theme, pushToast, openClient, go],
+    [theme, pushToast, openClient, go, openTicket, focusTicket, clearFocusTicket],
   );
 
   const T = timeParts();

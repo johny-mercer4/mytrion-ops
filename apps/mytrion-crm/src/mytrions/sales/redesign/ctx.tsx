@@ -46,6 +46,11 @@ export interface SalesCtx {
   openDeal: (d: DealVM) => void;
   /** Jump to another tab (e.g. Home CTA → Automations). */
   go: (section: string) => void;
+  /** Jump to the Tickets tab and auto-open a specific ticket (e.g. after Create). */
+  openTicket: (ticketId: string) => void;
+  /** The ticket the Tickets tab should auto-select on entry (consumed via clearFocusTicket). */
+  focusTicketId: string | null;
+  clearFocusTicket: () => void;
 }
 
 export const SalesContext = createContext<SalesCtx | null>(null);

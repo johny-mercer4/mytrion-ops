@@ -13,13 +13,13 @@ import { runCoql } from './zohoCrm.js';
 /** Selected Lead fields (validated queryable). Lookups (Owner) come back as `{name,id}`. */
 const LEAD_FIELDS =
   'id, Company, Full_Name, Designation, Phone, Email, Annual_Revenue, Trucks, Lead_Source, ' +
-  'Status, Rating, Last_Activity_Time, Modified_Time, Description';
+  'Status, Rating, Last_Activity_Time, Modified_Time, Created_Time, utm_source, Converted__s, Description';
 
 /** Selected Deal fields (validated queryable). Account_Name/Contact_Name are lookups (`{name,id}`). */
 const DEAL_FIELDS =
   'id, Deal_Name, Account_Name, Amount, Credit_Line_Approved, Cards_Requested, Stage, Probability, ' +
   'Closing_Date, Contact_Name, First_name, Last_Name, Phone, Cell, Email, Application_ID, Carrier_ID, ' +
-  'Modified_Time, Description';
+  'Application_Date, Created_Time, utm_source, Modified_Time, Description';
 
 export type CrmRow = Record<string, unknown>;
 

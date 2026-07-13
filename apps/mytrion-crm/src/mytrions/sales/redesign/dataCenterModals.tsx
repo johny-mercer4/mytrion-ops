@@ -5,7 +5,7 @@
  */
 import { s, Svg } from './dc';
 import { badge } from './salesData';
-import { DEAL_STAGE_ORDER, LEAD_STATUS_ORDER, stageColor, TEMP_COL, type DealVM, type LeadVM } from './dataCenterLive';
+import { dealStageColor, leadStatusColor, type DealVM, type LeadVM } from './dataCenterLive';
 
 const CLOSE = 'M18 6L6 18M6 6l12 12';
 
@@ -36,9 +36,9 @@ export function LeadModal({
   /** Click-to-dial via RingCentral Embeddable (Sales shell wires this). */
   onCall?: (phone: string) => void;
 }) {
-  const meta = { col: stageColor(LEAD_STATUS_ORDER, lead.status), label: lead.status };
+  const meta = { col: leadStatusColor(lead.status), label: lead.status };
   const stageBadge = badge(meta.label, meta.col);
-  const tempBadge = badge(lead.temp.toUpperCase(), TEMP_COL[lead.temp]);
+  const flagBadge = lead.converted ? badge('Converted', 'var(--ok)') : stageBadge;
   const canCall = Boolean(onCall && lead.phone.trim());
   return (
     <div onClick={onClose} style={s('position:fixed;inset:0;z-index:120;background:rgba(3,7,14,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
@@ -49,7 +49,7 @@ export function LeadModal({
             <div style={s('font-size:17px;font-weight:700')}>{lead.company}</div>
             <div style={s('font-size:11.5px;color:var(--muted);margin-top:3px')}>{lead.contact} · {lead.title}</div>
           </div>
-          <span style={s(tempBadge.style)}>{tempBadge.text}</span>
+          <span style={s(flagBadge.style)}>{flagBadge.text}</span>
           <button onClick={onClose} aria-label="Close" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
             <Svg d={CLOSE} size={15} strokeWidth={2.4} />
           </button>
@@ -57,7 +57,7 @@ export function LeadModal({
         <div className="ss-scroll" style={s('flex:1;min-height:0;padding:22px')}>
           <div style={s('display:flex;align-items:center;gap:10px;margin-bottom:16px')}>
             <span style={s(stageBadge.style)}>{stageBadge.text}</span>
-            <span style={s('font-size:11.5px;color:var(--muted)')}>Last activity {lead.last}</span>
+            {lead.created && <span style={s('font-size:11.5px;color:var(--muted)')}>Created {lead.created}</span>}
           </div>
           <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
             <StatCard label="Potential Value" value={lead.valueFmt} mono color={meta.col} />
@@ -108,7 +108,7 @@ export function LeadModal({
 }
 
 export function DealModal({ deal, onClose }: { deal: DealVM; onClose: () => void }) {
-  const meta = { col: stageColor(DEAL_STAGE_ORDER, deal.stage), label: deal.stage };
+  const meta = { col: dealStageColor(deal.stage), label: deal.stage };
   const stageBadge = badge(meta.label, meta.col);
   return (
     <div onClick={onClose} style={s('position:fixed;inset:0;z-index:120;background:rgba(3,7,14,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>

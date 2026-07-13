@@ -1,37 +1,28 @@
 /**
- * Automations tab — Sales Mytrion redesign. Self-service catalog over the (static) AUTOMATIONS
- * action catalog: search box + dept-colored card grid, then a multi-variant runner modal (WEX
- * search, deal/card pickers, limit fields, invoice / transaction filters, address / note forms).
- * LIVE data: the deal picker searches the agent's real clients (clients.by_agent), the card picker
- * lists live cards (dwh.cards / efs.cards), and RUN dispatches the matching touchpoint per action
- * (balance→dwh.carrier_balance, transactions→dwh.transactions, invoices→sales_mytrion.fetch_invoices,
- * money-code→dwh.money_code, card actions→cards.status / cards.limits / efs.card_override, verify→
- * dwh.carrier_overview, wex→wex.application), rendering the returned rows in the existing markup and
- * firing pushToast + logAutomation. Actions with no self-service touchpoint show a "not available"
- * note (no fake result). View-model / JSX preserved from the reference prototype.
+ * Automations tab — Sales Mytrion redesign. Catalog grid + runner modal over the self-service
+ * action set (autoLive / autoRunners). Deal picker from clients.by_agent (+ CRM deal ids), card
+ * picker from dwh.cards / efs.cards, RUN dispatches touchpoints or Desk ticket creates.
  */
 import { useEffect, useRef, useState } from 'react';
+import type { MoneyCodePreview } from '@/api/touchpointTypes';
+import { callTouchpoint, logAutomation } from '@/api/touchpoints';
 import { s, Svg, Badge } from '../dc';
 import { badge, deptStyle, iconBox, type BadgeVM } from '../salesData';
-import { callTouchpoint, logAutomation } from '@/api/touchpoints';
-import { getSession } from '@/api/session';
 import { useLoad, money } from '../live';
 import { useSales } from '../ctx';
 import {
-  AUTO_LIST, LIMITTYPES, RUNNABLE, PHASE_MAP,
-  loadDeals, loadCards, mapWex,
-  str, gal, shortCard, fmtDate, titleStatus, mapInvRange, daysWindow,
-  type Automation, type Deal, type Card, type WexResult, type InvRow, type TxnRow, type DonePayload,
+  AUTO_LIST, LIMITTYPES, MONEY_CODE_REASONS, RUNNABLE, PHASE_MAP,
+  loadDeals, loadCards, loadMoneyCodePreview, mapWex, mapWexSearchRow,
+  type Automation, type Deal, type Card, type WexResult, type InvRow,
+  type DonePayload, type Addr, type UnitDriverForm, type MoneyCodeForm,
 } from '../autoLive';
+import { runAutomation } from '../autoRunners';
+import { AutoInvoicesPanel, AutoTransactionsPanel } from '../AutoResultPanels';
+import { TXN_RANGE_PRESETS, type TxnReportState } from '../txnReport';
 
-// ---------- local UI types ----------
-
-interface Addr { address: string; city: string; state: string; zip: string; }
 interface WexQ { appId: string; last: string; mc: string; }
 type Step = 'config' | 'running' | 'done';
 type LimitDir = 'increase' | 'decrease';
-
-// ---------- constants / pure helpers (from renderVals) ----------
 
 const DEPT_COL: Record<string, string> = { C: 'var(--orange)', Q: 'var(--accent)', V: 'var(--ok)', M: 'var(--violet)' };
 const cardCol: Record<string, string> = { active: 'var(--ok)', fraud: 'var(--danger)', inactive: 'var(--muted)' };
@@ -47,28 +38,39 @@ const dropErr = 'padding:14px;font-size:12.5px;color:var(--danger);text-align:ce
 const noteWarn = 'padding:14px 16px;border-radius:12px;background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);font-size:12.5px;color:var(--text2);line-height:1.5';
 const noteErr = 'padding:12px 14px;border-radius:11px;background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);font-size:12.5px;color:var(--danger);line-height:1.5';
 const mono = "font-family:'JetBrains Mono',monospace";
-
-const invRanges = ['Last 30 days', 'Last 90 days', 'This year', 'Custom range'];
-const invStatuses = [{ value: 'all', label: 'All' }, { value: 'paid', label: 'Paid only' }, { value: 'overdue', label: 'Overdue only' }];
-const txnRanges = [{ value: '7', label: 'Last 7 days' }, { value: '30', label: 'Last 30 days' }, { value: '90', label: 'Last 90 days' }, { value: 'custom', label: 'Custom range' }];
+const invRanges = [
+  { label: 'Last 7 Days', range: 'last_7' },
+  { label: 'Last 30 Days', range: 'last_30' },
+  { label: 'Last 90 Days', range: 'last_90' },
+  { label: 'Custom Range', range: 'custom' },
+];
+const invStatuses = [
+  { value: 'all', label: 'All Statuses' },
+  { value: 'PENDING', label: 'Pending' },
+  { value: 'PAID', label: 'Paid' },
+];
+const txnRanges = TXN_RANGE_PRESETS.map((p) => ({ value: p.value, label: p.label }));
+const todayIso = () => new Date().toISOString().slice(0, 10);
+const daysAgoIso = (n: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+};
 const skel8 = [1, 2, 3, 4, 5, 6, 7, 8];
-
 const catalogCard = (soon: boolean): string =>
   `text-align:left;padding:17px;border-radius:15px;background:var(--surface);border:1px solid var(--border);cursor:${soon ? 'default' : 'pointer'};box-shadow:var(--shadow-sm);position:relative;overflow:hidden;opacity:${soon ? 0.55 : 1};width:100%;display:flex;flex-direction:column;gap:11px`;
 const limitBtn = (on: boolean, col: string): string =>
   `flex:1;padding:9px;border-radius:9px;border:1px solid ${on ? col : 'var(--border)'};background:${on ? `color-mix(in srgb,${col} 16%,transparent)` : 'var(--alt)'};color:${on ? col : 'var(--muted)'};font-size:12.5px;font-weight:700;cursor:pointer;transition:all .14s`;
 const btnP = (extra: string): string => `border:none;background:${grad};color:#fff;font-weight:700;cursor:pointer;${extra}`;
-
 function Lbl({ t }: { t: string }) { return <div style={s(labelCss)}>{t}</div>; }
-
 const closeX16 = (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
 );
+const UD0: UnitDriverForm = { unitNumber: '', driverName: '', driverId: '' };
+const MC0: MoneyCodeForm = { amount: '', reason: MONEY_CODE_REASONS[0], unitNumber: '' };
 
 export function AutoTab() {
   const { pushToast } = useSales();
-
-  // ---------- local state (reference auto* / wex* state) ----------
   const [autoSearch, setAutoSearch] = useState('');
   const [autoModal, setAutoModal] = useState<Automation | null>(null);
   const [autoStep, setAutoStep] = useState<Step>('config');
@@ -78,7 +80,7 @@ export function AutoTab() {
   const [autoShowDrop, setAutoShowDrop] = useState(false);
   const [autoCardQuery, setAutoCardQuery] = useState('');
   const [autoShowCardDrop, setAutoShowCardDrop] = useState(false);
-  const [autoLimitType, setAutoLimitType] = useState<string>(LIMITTYPES[0]);
+  const [autoLimitType, setAutoLimitType] = useState<string>(LIMITTYPES[0].value);
   const [autoLimitValue, setAutoLimitValue] = useState('');
   const [autoLimitDir, setAutoLimitDir] = useState<LimitDir>('increase');
   const [autoProgress, setAutoProgress] = useState(0);
@@ -87,12 +89,21 @@ export function AutoTab() {
   const [autoAddr, setAutoAddr] = useState<Addr>({ address: '', city: '', state: '', zip: '' });
   const [autoNote, setAutoNote] = useState('');
   const [autoDue, setAutoDue] = useState('');
+  const [unitDriver, setUnitDriver] = useState<UnitDriverForm>(UD0);
+  const [moneyForm, setMoneyForm] = useState<MoneyCodeForm>(MC0);
+  const [mcPreview, setMcPreview] = useState<MoneyCodePreview | null>(null);
+  const [mcPreviewErr, setMcPreviewErr] = useState<string | null>(null);
+  const [mcPreviewLoading, setMcPreviewLoading] = useState(false);
   const [autoInvStatus, setAutoInvStatus] = useState('all');
-  const [autoInvRange, setAutoInvRange] = useState('Last 30 days');
-  const [autoTxnRange, setAutoTxnRange] = useState('30');
+  const [autoInvRange, setAutoInvRange] = useState('Last 30 Days');
+  const [autoInvFrom, setAutoInvFrom] = useState(daysAgoIso(30));
+  const [autoInvTo, setAutoInvTo] = useState(todayIso());
+  const [autoTxnRange, setAutoTxnRange] = useState('month');
+  const [autoTxnFrom, setAutoTxnFrom] = useState(daysAgoIso(30));
+  const [autoTxnTo, setAutoTxnTo] = useState(todayIso());
   const [autoRunErr, setAutoRunErr] = useState<string | null>(null);
   const [invRows, setInvRows] = useState<InvRow[]>([]);
-  const [txnRows, setTxnRows] = useState<TxnRow[]>([]);
+  const [txnReport, setTxnReport] = useState<TxnReportState | null>(null);
   const [wexQ, setWexQ] = useState<WexQ>({ appId: '', last: '', mc: '' });
   const [wexSearching, setWexSearching] = useState(false);
   const [wexResults, setWexResults] = useState<readonly WexResult[] | null>(null);
@@ -102,144 +113,86 @@ export function AutoTab() {
   const fetchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => { clearInterval(progTimer.current); clearTimeout(fetchTimer.current); }, []);
 
-  // ---------- live data (real clients + cards) ----------
   const dealsLoad = useLoad(loadDeals, []);
   const DEAL_LIST = dealsLoad.data ?? [];
-  const cardCarrier = autoModal?.kind === 'card' && autoDeal ? autoDeal.carrier : '';
+  const cardCarrier = autoModal?.kind === 'card' && autoDeal?.carrier ? autoDeal.carrier : '';
   const cardsLoad = useLoad(() => (cardCarrier ? loadCards(cardCarrier) : Promise.resolve<Card[]>([])), [cardCarrier]);
   const CARD_LIST = cardsLoad.data ?? [];
 
-  // ---------- handlers (reference auto* methods) ----------
+  useEffect(() => {
+    if (autoModal?.id !== 'money-code' || !autoDeal?.carrier) {
+      setMcPreview(null); setMcPreviewErr(null); setMcPreviewLoading(false);
+      return;
+    }
+    let off = false;
+    setMcPreviewLoading(true); setMcPreviewErr(null); setMcPreview(null);
+    loadMoneyCodePreview(autoDeal.carrier)
+      .then((p) => { if (!off) setMcPreview(p); })
+      .catch((e: unknown) => { if (!off) setMcPreviewErr(e instanceof Error ? e.message : 'Preview failed'); })
+      .finally(() => { if (!off) setMcPreviewLoading(false); });
+    return () => { off = true; };
+  }, [autoModal?.id, autoDeal?.carrier]);
+
   const openAuto = (a: Automation): void => {
     if (a.soon) return;
     setAutoModal(a); setAutoStep('config'); setAutoDeal(null); setAutoCard(null);
     setAutoDealQuery(''); setAutoShowDrop(false); setAutoCardQuery(''); setAutoShowCardDrop(false);
-    setAutoLimitType(LIMITTYPES[0]); setAutoLimitValue(''); setAutoLimitDir('increase');
+    setAutoLimitType(LIMITTYPES[0].value); setAutoLimitValue(''); setAutoLimitDir('increase');
     setAutoProgress(0); setAutoPhase(''); setAutoResult(null); setAutoRunErr(null);
-    setInvRows([]); setTxnRows([]);
+    setInvRows([]); setTxnReport(null); setUnitDriver(UD0); setMoneyForm(MC0);
     setAutoAddr({ address: '', city: '', state: '', zip: '' }); setAutoNote(''); setAutoDue('');
     setWexQ({ appId: '', last: '', mc: '' }); setWexSearching(false); setWexResults(null); setWexErr(null);
   };
   const closeAuto = (): void => { if (autoStep === 'running') return; clearInterval(progTimer.current); setAutoModal(null); };
   const setDealQuery = (v: string): void => { setAutoDealQuery(v); setAutoShowDrop(true); };
-  const selectDeal = (d: Deal): void => { setAutoDeal(d); setAutoShowDrop(false); setAutoDealQuery(''); };
+  const selectDeal = (d: Deal): void => { setAutoDeal(d); setAutoShowDrop(false); setAutoDealQuery(''); setAutoCard(null); };
   const clearDeal = (): void => { setAutoDeal(null); setAutoCard(null); };
   const setCardQuery = (v: string): void => { setAutoCardQuery(v); setAutoShowCardDrop(true); };
-  const selectCard = (c: Card): void => { setAutoCard(c); setAutoShowCardDrop(false); setAutoCardQuery(''); };
+  const selectCard = (c: Card): void => {
+    setAutoCard(c); setAutoShowCardDrop(false); setAutoCardQuery('');
+    setUnitDriver({ unitNumber: c.unit || '', driverName: c.driver || '', driverId: '' });
+  };
   const clearCard = (): void => setAutoCard(null);
   const setAddr = (k: keyof Addr, v: string): void => setAutoAddr((a) => ({ ...a, [k]: v }));
   const setWexField = (k: keyof WexQ, v: string): void => setWexQ((q) => ({ ...q, [k]: v }));
-  const downloadAuto = (): void => pushToast('Download started', 'Your file is being prepared');
+  const setUd = (k: keyof UnitDriverForm, v: string): void => setUnitDriver((f) => ({ ...f, [k]: v }));
+  const setMc = (k: keyof MoneyCodeForm, v: string): void => setMoneyForm((f) => ({ ...f, [k]: v }));
+
   const runWex = (): void => {
     const appId = wexQ.appId.trim();
+    const lastName = wexQ.last.trim();
+    const mc = wexQ.mc.trim();
     setWexResults(null); setWexErr(null);
-    if (!appId) { setWexErr("Enter an Application ID — name / MC-only search isn't available."); return; }
+    if (!appId && !lastName && !mc) { setWexErr('Enter an Application ID, last name, or MC number.'); return; }
     setWexSearching(true);
-    callTouchpoint('wex.application', { appId })
-      .then((res) => { if (!res || res.found === false) setWexResults([]); else setWexResults([mapWex(res, appId)]); })
+    const search = appId && !lastName && !mc
+      ? callTouchpoint('wex.application', { appId }).then((res) => {
+          if (!res || res.found === false) return [] as WexResult[];
+          return [mapWex(res, appId)];
+        })
+      : callTouchpoint('wex.applications_search', {
+          ...(appId ? { appId } : {}),
+          ...(lastName ? { lastName } : {}),
+          ...(mc ? { mc } : {}),
+        }).then((res) => {
+          const rows = (res.data ?? res.applications ?? []) as Array<Record<string, unknown>>;
+          return rows.map((r, i) => mapWexSearchRow(r, i));
+        });
+    search
+      .then((rows) => setWexResults(rows))
       .catch((e: unknown) => { setWexErr(e instanceof Error ? e.message : 'Search failed.'); setWexResults([]); })
       .finally(() => setWexSearching(false));
   };
+
   const resetAuto = (): void => {
     setAutoStep('config'); setAutoProgress(0); setAutoResult(null); setAutoCard(null);
-    setAutoRunErr(null); setInvRows([]); setTxnRows([]);
-  };
-
-  const carrierIdOf = (): string => {
-    const c = autoDeal?.carrier?.trim();
-    if (!c) throw new Error('This client has no carrier id yet — pick a converted client.');
-    return c;
-  };
-
-  const runTouchpoint = async (bm: Automation): Promise<DonePayload> => {
-    const cid = carrierIdOf();
-    const card = autoCard?.number ?? '';
-    switch (bm.id) {
-      case 'invoices': {
-        const res = await callTouchpoint('sales_mytrion.fetch_invoices', {
-          carrierId: cid, range: mapInvRange(autoInvRange),
-          ...(autoInvStatus !== 'all' ? { status: autoInvStatus } : {}),
-        });
-        setInvRows((res.data ?? []).map((inv, i) => {
-          const r = inv as Record<string, unknown>;
-          return {
-            inv: str(r.invoice_ref ?? r.invoice_number ?? r.invoice_id ?? r.id) || `INV-${i + 1}`,
-            date: fmtDate(r.period ?? r.created_date ?? r.createdDate ?? r.invoice_date),
-            amount: money(r.total_amount ?? r.amount),
-            status: titleStatus(r.status),
-          };
-        }));
-        return { kind: 'invoices' };
-      }
-      case 'transactions': {
-        const { from, to } = daysWindow(autoTxnRange);
-        const res = await callTouchpoint('dwh.transactions', { carrierId: cid, range: 'custom', from, to, limit: 200 });
-        setTxnRows((res.data ?? []).slice(0, 100).map((tx) => {
-          const r = tx as Record<string, unknown>;
-          return {
-            date: fmtDate(r.transaction_date ?? r.date),
-            card: shortCard(r.card_number),
-            driver: str(r.driver_name ?? r.driver ?? r.location_name) || '—',
-            gallons: gal(r.transaction_fuel_quantity ?? r.line_item_fuel_quantity ?? r.fuel_quantity),
-            amount: money(r.net_total ?? r.line_item_amount ?? r.amount),
-          };
-        }));
-        return { kind: 'transactions' };
-      }
-      case 'balance': {
-        const bal = await callTouchpoint('dwh.carrier_balance', { carrierId: cid });
-        const parts = [`available balance ${money(bal.efs_balance ?? bal.balance)}`];
-        if (bal.credit_limit != null) parts.push(`on a ${money(bal.credit_limit)} line`);
-        if (bal.credit_remaining != null) parts.push(`${money(bal.credit_remaining)} remaining`);
-        if (bal.efs_error) parts.push(`(EFS: ${bal.efs_error})`);
-        return { kind: 'message', message: `${str(bal.company_name) || 'This carrier'} — ${parts.join(', ')}.` };
-      }
-      case 'money-code': {
-        const mc = await callTouchpoint('dwh.money_code', { carrierId: cid });
-        const msg = mc.eligible
-          ? `eligible — ${money(mc.available)} available of a ${money(mc.credit_limit)} line${mc.billing_cycle_label ? ` (${mc.billing_cycle_label})` : ''}.`
-          : `not eligible for a money code right now${mc.available != null ? ` — ${money(mc.available)} available.` : '.'}`;
-        return { kind: 'message', message: `${str(mc.company_name) || 'This carrier'} is ${msg}` };
-      }
-      case 'verification': {
-        const ov = await callTouchpoint('dwh.carrier_overview', { carrierId: cid });
-        return {
-          kind: 'message',
-          message: `${str(ov.company_name) || 'This carrier'}: account ${ov.is_active ? 'active' : 'inactive'}, ${ov.cards?.active_count ?? 0} active cards, open debt ${money(ov.cmp_debt?.total_debt ?? 0)}.`,
-        };
-      }
-      case 'card-activation': {
-        const res = await callTouchpoint('cards.status', { carrierId: cid, cardNumber: card, action: 'ACTIVATE' });
-        return { kind: 'message', message: str(res.message) || `Card ${shortCard(card)} set to ${str(res.newStatus) || 'ACTIVE'}.` };
-      }
-      case 'limits-change': {
-        const res = await callTouchpoint('cards.limits', {
-          carrierId: cid, cardNumber: card, limitId: autoLimitType, limitValue: autoLimitValue,
-          action: autoLimitDir === 'increase' ? 'INCREASE' : 'DECREASE',
-        });
-        return { kind: 'message', message: str(res.message) || `${autoLimitType} ${autoLimitDir}d to ${autoLimitValue} on card ${shortCard(card)}.` };
-      }
-      case 'fraud-hold-release': {
-        const email = getSession()?.worker.email ?? '';
-        if (!email) throw new Error('Your session has no email — the fraud team reply needs one.');
-        await callTouchpoint('fraud.hold_release', {
-          companyName: autoDeal?.name ?? '', carrierId: cid, agentEmail: email, cardNumber: card, ticketType: 'fraud_release',
-        });
-        return { kind: 'message', message: `Release request sent to the fraud team — they'll reply to ${email}.` };
-      }
-      case 'override-card': {
-        const res = await callTouchpoint('efs.card_override', { carrierId: cid, cardNumber: card });
-        return { kind: 'message', message: str(res.message) || `Card ${shortCard(card)} granted a temporary active window.` };
-      }
-      default:
-        throw new Error('This action is not available for self-service.');
-    }
+    setAutoRunErr(null); setInvRows([]); setTxnReport(null);
   };
 
   const runAuto = (): void => {
     const bm = autoModal;
     if (!bm) return;
-    setAutoRunErr(null); setAutoResult(null); setAutoStep('running');
+    setAutoRunErr(null); setAutoResult(null); setAutoStep('running'); setTxnReport(null);
     const phases = PHASE_MAP[bm.kind ?? ''] ?? ['Working…', 'Finishing…'];
     let p = 6; setAutoProgress(6); setAutoPhase(phases[0] ?? 'Working…');
     clearInterval(progTimer.current);
@@ -248,10 +201,19 @@ export function AutoTab() {
       const idx = Math.min(phases.length - 1, Math.floor((p / 100) * phases.length));
       setAutoProgress(Math.round(p)); setAutoPhase(phases[idx] ?? '');
     }, 160);
-    runTouchpoint(bm)
+    runAutomation({
+      action: bm, deal: autoDeal, card: autoCard,
+      invRange: autoInvRange, invStatus: autoInvStatus,
+      invFrom: autoInvFrom, invTo: autoInvTo,
+      txnRange: autoTxnRange, txnFrom: autoTxnFrom, txnTo: autoTxnTo,
+      limitId: autoLimitType, limitValue: autoLimitValue, limitDir: autoLimitDir,
+      addr: autoAddr, note: autoNote, due: autoDue, unitDriver, moneyCode: moneyForm,
+      setInvRows, setTxnReport,
+    })
       .then((payload) => {
         clearInterval(progTimer.current); setAutoProgress(100); setAutoResult(payload);
         fetchTimer.current = setTimeout(() => setAutoStep('done'), 240);
+        if (payload.kind === 'link') window.open(payload.url, '_blank', 'noopener');
         pushToast(`${bm.title} complete`, autoDeal ? `Ran for ${autoDeal.name}` : 'Done');
         logAutomation(bm.id);
       })
@@ -262,42 +224,51 @@ export function AutoTab() {
       });
   };
 
-  // ---------- view-model (mirrors renderVals) ----------
   const aq = autoSearch.toLowerCase();
   const autoCatalog = AUTO_LIST.filter((a) => !aq || `${a.title} ${a.desc} ${a.codes.join(' ')}`.toLowerCase().includes(aq));
-
   const b = autoModal;
   const kind = b?.kind;
   const hasDeal = !!autoDeal;
   const hasCard = !!autoCard;
   const dq = autoDealQuery.toLowerCase();
-  const filteredDeals = DEAL_LIST.filter((d) => !dq || `${d.name} ${d.company} ${d.app} ${d.carrier} ${d.phone}`.toLowerCase().includes(dq));
+  const needsAppOnly = b?.id === 'boca-boe-link' || b?.id === 'close-app' || b?.id === 'wex-tasks';
+  const dealPool = DEAL_LIST.filter((d) => {
+    if (needsAppOnly) return d.app && d.app !== '—';
+    if (kind === 'form' || kind === 'ticket' || kind === 'wex-tasks') return true;
+    return !!d.carrier;
+  });
+  const filteredDeals = dealPool.filter((d) => !dq || `${d.name} ${d.company} ${d.app} ${d.carrier} ${d.phone}`.toLowerCase().includes(dq));
   const cardPool = b?.id === 'fraud-hold-release' || b?.id === 'override-card' ? CARD_LIST.filter((c) => c.status === 'fraud') : CARD_LIST;
   const cq = autoCardQuery.toLowerCase();
   const filteredCards = cardPool.filter((c) => !cq || c.number.includes(cq));
-
-  const needsDeal = !!kind && kind !== 'search';
+  const needsDeal = !!kind && kind !== 'search' && kind !== 'link';
   const needsCard = kind === 'card' && hasDeal;
   const isLimits = !!b?.limits && hasCard;
-  const unavailable = !!b && kind !== 'search' && !RUNNABLE.has(b.id);
+  const showUnitDriver = hasCard && (b?.id === 'unit-driver' || b?.id === 'card-activation');
+  const unavailable = !!b && !RUNNABLE.has(b.id);
+  const moneyReady = !!mcPreview?.eligible && moneyForm.amount.trim().length > 0 && moneyForm.reason.trim().length > 0 && moneyForm.unitNumber.trim().length > 0;
+  const unitReady = b?.id !== 'unit-driver' || [unitDriver.unitNumber, unitDriver.driverId, unitDriver.driverName].some((v) => v.trim());
+  const addrReady = b?.id !== 'card-replacement' || [autoAddr.address, autoAddr.city, autoAddr.state, autoAddr.zip].every((v) => v.trim());
   const canRun = !unavailable && (
-    kind === 'invoices' || kind === 'transactions' ? hasDeal
-      : kind === 'card' ? hasCard && (!b?.limits || autoLimitValue.length > 0)
-        : kind === 'form' || kind === 'simple' || kind === 'ticket' ? hasDeal
-          : false);
+    kind === 'link' ? true
+      : kind === 'invoices' || kind === 'transactions' || kind === 'simple' || kind === 'wex-tasks' ? hasDeal
+        : kind === 'money' ? hasDeal && moneyReady
+          : kind === 'card' ? hasCard && (!b?.limits || autoLimitValue.length > 0) && unitReady
+            : kind === 'form' || kind === 'ticket' ? hasDeal && addrReady
+              : false);
   const runVerb = kind === 'invoices' ? 'Get Invoices' : kind === 'transactions' ? 'Fetch Transactions' : b?.verb || 'Submit';
-  const successMsg = autoResult?.message ?? `${runVerb} completed for ${autoDeal?.name ?? 'the selected client'}.`;
-
+  const successMsg = autoResult?.kind === 'message' ? autoResult.message
+    : autoResult?.kind === 'link' ? autoResult.label
+      : `${runVerb} completed for ${autoDeal?.name ?? 'the selected client'}.`;
   const autoCardDisplay = autoCard ? `•••• ${autoCard.number.slice(-4)}` : '';
   const autoCardBadge: BadgeVM = autoCard ? badge(autoCard.status.toUpperCase(), cardCol[autoCard.status] ?? 'var(--muted)') : { text: '', style: '' };
   const wexResultsVM = (wexResults ?? []).map((r) => ({ ...r, statusBadge: badge(r.group, r.group === 'Complete' ? 'var(--ok)' : 'var(--warn)') }));
   const wexShow = wexResults !== null && !wexSearching;
-  const invRowsVM = invRows.map((r) => ({ ...r, statusBadge: badge(r.status, r.status === 'Paid' ? 'var(--ok)' : 'var(--danger)') }));
   const autoResultInvoices = autoResult?.kind === 'invoices';
   const autoResultTxn = autoResult?.kind === 'transactions';
-  const autoIsResultTable = autoResultInvoices || autoResultTxn;
+  const autoResultTable = autoResult?.kind === 'table' ? autoResult : null;
+  const autoIsResultTable = autoResultInvoices || autoResultTxn || !!autoResultTable;
 
-  // ---------- render ----------
   return (
     <>
       <div className="ss-fu">
@@ -325,7 +296,7 @@ export function AutoTab() {
               </div>
               <div>
                 <div style={s('font-size:14px;font-weight:700')}>{a.title}</div>
-                <div style={s('display:flex;gap:5px;margin-top:6px')}>{a.codes.map((c) => <span key={c} style={s(deptStyle(c))}>{c}</span>)}</div>
+                <div style={s('display:flex;gap:5px;margin-top:6px;flex-wrap:wrap')}>{a.codes.map((c) => <span key={c} style={s(deptStyle(c))}>{c}</span>)}</div>
                 <div style={s('font-size:12px;color:var(--muted);margin-top:8px;line-height:1.45')}>{a.desc}</div>
               </div>
             </button>
@@ -339,7 +310,7 @@ export function AutoTab() {
             <div style={s('flex-shrink:0;padding:20px 22px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px')}>
               <div style={s('flex:1;min-width:0')}>
                 <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:18px;letter-spacing:.03em;text-transform:uppercase')}>{b.title}</div>
-                <div style={s('display:flex;gap:6px;margin-top:7px')}>{b.codes.map((c) => <span key={c} style={s(deptStyle(c))}>{c}</span>)}</div>
+                <div style={s('display:flex;gap:6px;margin-top:7px;flex-wrap:wrap')}>{b.codes.map((c) => <span key={c} style={s(deptStyle(c))}>{c}</span>)}</div>
                 <div style={s('font-size:12.5px;color:var(--muted);margin-top:8px;line-height:1.5')}>{b.desc}</div>
               </div>
               <button onClick={closeAuto} aria-label="Close" className="ss-ico-btn" style={s('width:32px;height:32px;border-radius:9px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>{closeX16}</button>
@@ -349,24 +320,20 @@ export function AutoTab() {
                 <div style={s('display:flex;flex-direction:column;gap:18px')}>
                   {kind === 'search' && (
                     <div>
-                      <div style={s('font-size:12.5px;color:var(--text2);margin-bottom:12px')}>Search WEX applications directly. Enter an Application ID.</div>
+                      <div style={s('font-size:12.5px;color:var(--text2);margin-bottom:12px')}>Search WEX applications by Application ID, last name, or MC.</div>
                       <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
                         <div><Lbl t="Application ID" /><input value={wexQ.appId} onChange={(e) => setWexField('appId', e.target.value)} placeholder="e.g. 872228" className="ss-in" style={s(inp40)} /></div>
                         <div><Lbl t="Last Name" /><input value={wexQ.last} onChange={(e) => setWexField('last', e.target.value)} placeholder="e.g. Crossan" className="ss-in" style={s(inp40)} /></div>
                         <div><Lbl t="MC Number" /><input value={wexQ.mc} onChange={(e) => setWexField('mc', e.target.value)} placeholder="e.g. 285921" className="ss-in" style={s(inp40)} /></div>
                         <div style={s('display:flex;align-items:flex-end')}><button onClick={runWex} className="ss-btn-p" style={s(btnP('width:100%;height:40px;border-radius:10px;font-size:13px'))}>Search</button></div>
                       </div>
-                      {wexSearching && (
-                        <div style={s('margin-top:16px;display:flex;flex-direction:column;gap:9px')}>
-                          {skel8.map((sk) => <div key={sk} style={s('display:flex;gap:10px;padding:13px;border-radius:11px;background:var(--alt);border:1px solid var(--border2)')}><div className="ss-skel" style={s('flex:1;height:14px')}></div><div className="ss-skel" style={s('width:60px;height:14px')}></div></div>)}
-                        </div>
-                      )}
+                      {wexSearching && <div style={s('margin-top:16px;display:flex;flex-direction:column;gap:9px')}>{skel8.map((sk) => <div key={sk} style={s('display:flex;gap:10px;padding:13px;border-radius:11px;background:var(--alt);border:1px solid var(--border2)')}><div className="ss-skel" style={s('flex:1;height:14px')}></div><div className="ss-skel" style={s('width:60px;height:14px')}></div></div>)}</div>}
                       {wexErr && <div style={s(`margin-top:16px;${dropErr}`)}>{wexErr}</div>}
-                      {wexShow && wexResultsVM.length === 0 && !wexErr && <div style={s(`margin-top:16px;${dropMsg}`)}>No application found for that ID.</div>}
+                      {wexShow && wexResultsVM.length === 0 && !wexErr && <div style={s(`margin-top:16px;${dropMsg}`)}>No applications found.</div>}
                       {wexShow && wexResultsVM.length > 0 && (
                         <div style={s('margin-top:16px;display:flex;flex-direction:column;gap:9px')}>
                           {wexResultsVM.map((r) => (
-                            <div key={r.appId} className="ss-card-h" style={s('padding:13px 15px;border-radius:12px;background:var(--alt);border:1px solid var(--border);cursor:pointer')}>
+                            <div key={r.appId} className="ss-card-h" style={s('padding:13px 15px;border-radius:12px;background:var(--alt);border:1px solid var(--border)')}>
                               <div style={s('display:flex;align-items:center;justify-content:space-between;gap:8px')}><span style={s('font-size:13.5px;font-weight:700')}>{r.company}</span><Badge vm={r.statusBadge} /></div>
                               <div style={s(`font-size:11.5px;color:var(--muted);margin-top:5px;${mono}`)}>App #{r.appId} · {r.contact} · {r.status}</div>
                             </div>
@@ -376,6 +343,10 @@ export function AutoTab() {
                     </div>
                   )}
 
+                  {kind === 'link' && (
+                    <div style={s('padding:14px 16px;border-radius:12px;background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:12.5px;color:var(--text2);line-height:1.5')}>Opens the WEX EFS eManager credentials guide PDF in a new tab.</div>
+                  )}
+
                   {needsDeal && (
                     <div>
                       <div style={s(pickLabelCss)}>Select Deal</div>
@@ -383,7 +354,7 @@ export function AutoTab() {
                         <div style={s('display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:12px;background:linear-gradient(120deg,rgba(var(--accent-rgb),.08),transparent);border:1px solid var(--border)')}>
                           <div style={s('flex:1;min-width:0')}>
                             <div style={s('font-size:13.5px;font-weight:700')}>{autoDeal.name}</div>
-                            <div style={s(`font-size:11.5px;color:var(--muted);margin-top:4px;${mono}`)}>{autoDeal.company} · App {autoDeal.app} · {autoDeal.carrier}</div>
+                            <div style={s(`font-size:11.5px;color:var(--muted);margin-top:4px;${mono}`)}>{autoDeal.company} · App {autoDeal.app} · {autoDeal.carrier || 'no carrier'}</div>
                           </div>
                           <button onClick={clearDeal} aria-label="Clear deal" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer')}>✕</button>
                         </div>
@@ -440,10 +411,18 @@ export function AutoTab() {
                     </div>
                   )}
 
+                  {showUnitDriver && (
+                    <div style={s('display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px')}>
+                      <div><Lbl t="Unit #" /><input value={unitDriver.unitNumber} onChange={(e) => setUd('unitNumber', e.target.value)} placeholder="Unit" className="ss-in" style={s(inp42)} /></div>
+                      <div><Lbl t="Driver ID" /><input value={unitDriver.driverId} onChange={(e) => setUd('driverId', e.target.value)} placeholder="Driver ID" className="ss-in" style={s(inp42)} /></div>
+                      <div><Lbl t="Driver Name" /><input value={unitDriver.driverName} onChange={(e) => setUd('driverName', e.target.value)} placeholder="Name" className="ss-in" style={s(inp42)} /></div>
+                    </div>
+                  )}
+
                   {isLimits && (
                     <div style={s('display:flex;flex-direction:column;gap:14px')}>
                       <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-                        <div><Lbl t="Limit Type" /><select value={autoLimitType} onChange={(e) => setAutoLimitType(e.target.value)} className="ss-in" style={s(inp42)}>{LIMITTYPES.map((o) => <option key={o} value={o}>{o}</option>)}</select></div>
+                        <div><Lbl t="Limit Type" /><select value={autoLimitType} onChange={(e) => setAutoLimitType(e.target.value)} className="ss-in" style={s(inp42)}>{LIMITTYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
                         <div><Lbl t="New Value" /><input value={autoLimitValue} onChange={(e) => setAutoLimitValue(e.target.value)} type="number" placeholder="e.g. 2500" className="ss-in" style={s(inp42)} /></div>
                       </div>
                       <div>
@@ -457,28 +436,84 @@ export function AutoTab() {
                   )}
 
                   {kind === 'invoices' && (
-                    <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-                      <div><Lbl t="Date Range" /><select value={autoInvRange} onChange={(e) => setAutoInvRange(e.target.value)} className="ss-in" style={s(inp42)}>{invRanges.map((o) => <option key={o} value={o}>{o}</option>)}</select></div>
-                      <div><Lbl t="Status" /><select value={autoInvStatus} onChange={(e) => setAutoInvStatus(e.target.value)} className="ss-in" style={s(inp42)}>{invStatuses.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+                    <div style={s('display:flex;flex-direction:column;gap:12px')}>
+                      <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
+                        <div>
+                          <Lbl t="Quick Date Range" />
+                          <select value={autoInvRange} onChange={(e) => setAutoInvRange(e.target.value)} className="ss-in" style={s(inp42)}>
+                            {invRanges.map((o) => <option key={o.range} value={o.label}>{o.label}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <Lbl t="Status" />
+                          <select value={autoInvStatus} onChange={(e) => setAutoInvStatus(e.target.value)} className="ss-in" style={s(inp42)}>
+                            {invStatuses.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      {autoInvRange === 'Custom Range' && (
+                        <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
+                          <div><Lbl t="Start Date" /><input type="date" value={autoInvFrom} onChange={(e) => setAutoInvFrom(e.target.value)} className="ss-in" style={s(inp42)} /></div>
+                          <div><Lbl t="End Date" /><input type="date" value={autoInvTo} min={autoInvFrom} max={todayIso()} onChange={(e) => setAutoInvTo(e.target.value)} className="ss-in" style={s(inp42)} /></div>
+                        </div>
+                      )}
                     </div>
                   )}
 
                   {kind === 'transactions' && (
-                    <div><Lbl t="Date Range" /><select value={autoTxnRange} onChange={(e) => setAutoTxnRange(e.target.value)} className="ss-in" style={s(inp42)}>{txnRanges.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
-                  )}
-
-                  {kind === 'form' && hasDeal && (
-                    <div style={s('display:flex;flex-direction:column;gap:14px')}>
+                    <div style={s('display:flex;flex-direction:column;gap:12px')}>
                       <div>
-                        <Lbl t="Assigned To" />
-                        <div style={s('display:flex;align-items:center;gap:9px;height:42px;padding:0 12px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:13px')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s('color:var(--muted)')}><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>Application owner (locked)</div>
+                        <Lbl t="Date Range" />
+                        <select value={autoTxnRange} onChange={(e) => setAutoTxnRange(e.target.value)} className="ss-in" style={s(inp42)}>
+                          {txnRanges.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
                       </div>
-                      <div><div style={s(labelCss)}>Due Date <span style={s('font-weight:400;text-transform:none')}>(optional)</span></div><input value={autoDue} onChange={(e) => setAutoDue(e.target.value)} type="date" className="ss-in" style={s(inp42)} /></div>
-                      <div><Lbl t="Note" /><textarea value={autoNote} onChange={(e) => setAutoNote(e.target.value)} placeholder="Add a note for the team…" className="ss-in" style={s('width:100%;min-height:74px;padding:11px 12px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px;resize:vertical')}></textarea></div>
+                      {autoTxnRange === 'custom' && (
+                        <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
+                          <div><Lbl t="Start Date" /><input type="date" value={autoTxnFrom} max={todayIso()} onChange={(e) => setAutoTxnFrom(e.target.value)} className="ss-in" style={s(inp42)} /></div>
+                          <div><Lbl t="End Date" /><input type="date" value={autoTxnTo} min={autoTxnFrom} max={todayIso()} onChange={(e) => setAutoTxnTo(e.target.value)} className="ss-in" style={s(inp42)} /></div>
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  {b.id === 'card-replacement' && (
+                  {kind === 'money' && hasDeal && (
+                    <div style={s('display:flex;flex-direction:column;gap:14px')}>
+                      {mcPreviewLoading && <div style={s(dropMsg)}>Checking eligibility…</div>}
+                      {mcPreviewErr && <div style={s(noteErr)}>{mcPreviewErr}</div>}
+                      {mcPreview && (
+                        <div style={s(`padding:14px 16px;border-radius:12px;background:${mcPreview.eligible ? 'rgba(var(--accent-rgb),.08)' : 'color-mix(in srgb,var(--warn) 12%,transparent)'};border:1px solid ${mcPreview.eligible ? 'rgba(var(--accent-rgb),.2)' : 'color-mix(in srgb,var(--warn) 30%,transparent)'};font-size:12.5px;color:var(--text2);line-height:1.5`)}>
+                          {mcPreview.eligible
+                            ? <>Eligible — <strong style={s('color:var(--text)')}>{money(mcPreview.available)}</strong> available of a {money(mcPreview.credit_limit)} line{mcPreview.billing_cycle_label ? ` (${mcPreview.billing_cycle_label})` : ''}.</>
+                            : <>Not eligible right now{mcPreview.available != null ? ` — ${money(mcPreview.available)} available` : ''}.</>}
+                        </div>
+                      )}
+                      {mcPreview?.eligible && (
+                        <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
+                          <div><Lbl t="Amount" /><input value={moneyForm.amount} onChange={(e) => setMc('amount', e.target.value)} type="number" placeholder="e.g. 150" className="ss-in" style={s(inp42)} /></div>
+                          <div><Lbl t="Unit #" /><input value={moneyForm.unitNumber} onChange={(e) => setMc('unitNumber', e.target.value)} placeholder="Unit" className="ss-in" style={s(inp42)} /></div>
+                          <div style={s('grid-column:1 / -1')}><Lbl t="Reason" /><select value={moneyForm.reason} onChange={(e) => setMc('reason', e.target.value)} className="ss-in" style={s(inp42)}>{MONEY_CODE_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}</select></div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {(kind === 'form' || kind === 'ticket') && hasDeal && b.id !== 'card-replacement' && (
+                    <div style={s('display:flex;flex-direction:column;gap:14px')}>
+                      {kind === 'form' && (
+                        <>
+                          <div><div style={s(labelCss)}>Due Date <span style={s('font-weight:400;text-transform:none')}>(optional)</span></div><input value={autoDue} onChange={(e) => setAutoDue(e.target.value)} type="date" className="ss-in" style={s(inp42)} /></div>
+                          <div><Lbl t="Note" /><textarea value={autoNote} onChange={(e) => setAutoNote(e.target.value)} placeholder="Add a note for the team…" className="ss-in" style={s('width:100%;min-height:74px;padding:11px 12px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px;resize:vertical')}></textarea></div>
+                        </>
+                      )}
+                      {kind === 'ticket' && b.id === 'reactivation' && (
+                        <div><Lbl t="Note" /><textarea value={autoNote} onChange={(e) => setAutoNote(e.target.value)} placeholder="Why reactivate?" className="ss-in" style={s('width:100%;min-height:74px;padding:11px 12px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px;resize:vertical')}></textarea></div>
+                      )}
+                      <div style={s(noteWarn)}>This files a Customer Service ticket with the matching type code — same outcome as the Create tab, without leaving Automations.</div>
+                    </div>
+                  )}
+
+                  {b.id === 'card-replacement' && hasDeal && (
                     <div>
                       <div style={s('font-size:12.5px;color:var(--text2);margin-bottom:12px')}>Confirm the shipping address for the replacement cards.</div>
                       <div style={s('display:grid;grid-template-columns:2fr 1fr;gap:12px')}>
@@ -492,8 +527,8 @@ export function AutoTab() {
                     </div>
                   )}
 
-                  {kind === 'simple' && hasDeal && (
-                    <div style={s('padding:14px 16px;border-radius:12px;background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:12.5px;color:var(--text2);line-height:1.5')}><strong style={s('color:var(--text)')}>Ready.</strong> This will run against <strong style={s('color:var(--text)')}>{autoDeal?.name}</strong> and return an instant result — no ticket created.</div>
+                  {(kind === 'simple' || kind === 'wex-tasks') && hasDeal && (
+                    <div style={s('padding:14px 16px;border-radius:12px;background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:12.5px;color:var(--text2);line-height:1.5')}><strong style={s('color:var(--text)')}>Ready.</strong> This will run against <strong style={s('color:var(--text)')}>{autoDeal?.name}</strong> and return an instant result.</div>
                   )}
 
                   {kind !== 'search' && (
@@ -523,25 +558,26 @@ export function AutoTab() {
 
               {autoStep === 'done' && (autoIsResultTable ? (
                 <div>
-                  {autoResultInvoices && (
-                    <div style={s('border-radius:13px;border:1px solid var(--border);overflow:hidden')}>
-                      <div style={s('display:grid;grid-template-columns:1.4fr 1.2fr 1fr auto;gap:8px;padding:11px 15px;background:var(--alt);font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}><span>Invoice</span><span>Date</span><span style={s('text-align:right')}>Amount</span><span>Status</span></div>
-                      {invRowsVM.map((r) => (
-                        <div key={r.inv} style={s('display:grid;grid-template-columns:1.4fr 1.2fr 1fr auto;gap:8px;padding:12px 15px;border-top:1px solid var(--border2);align-items:center;font-size:12.5px')}><span style={s(`${mono};color:var(--accent)`)}>{r.inv}</span><span style={s('color:var(--text2)')}>{r.date}</span><span style={s(`text-align:right;${mono};font-weight:600`)}>{r.amount}</span><Badge vm={r.statusBadge} /></div>
-                      ))}
-                    </div>
-                  )}
+                  {autoResultInvoices && <AutoInvoicesPanel rows={invRows} onToast={pushToast} />}
                   {autoResultTxn && (
+                    <AutoTransactionsPanel report={txnReport} onToast={pushToast} />
+                  )}
+                  {autoResultTable && (
                     <div style={s('border-radius:13px;border:1px solid var(--border);overflow:hidden')}>
-                      <div style={s('display:grid;grid-template-columns:0.8fr 1fr 1.2fr 1fr 1fr;gap:8px;padding:11px 15px;background:var(--alt);font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}><span>Date</span><span>Card</span><span>Driver</span><span style={s('text-align:right')}>Gallons</span><span style={s('text-align:right')}>Amount</span></div>
-                      {txnRows.map((r, i) => (
-                        <div key={i} style={s('display:grid;grid-template-columns:0.8fr 1fr 1.2fr 1fr 1fr;gap:8px;padding:12px 15px;border-top:1px solid var(--border2);align-items:center;font-size:12.5px')}><span style={s('color:var(--text2)')}>{r.date}</span><span style={s(mono)}>{r.card}</span><span style={s('color:var(--text2)')}>{r.driver}</span><span style={s(`text-align:right;${mono}`)}>{r.gallons}</span><span style={s(`text-align:right;${mono};font-weight:600`)}>{r.amount}</span></div>
+                      <div style={s('padding:11px 15px;background:var(--alt);font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)')}>{autoResultTable.title}</div>
+                      <div style={s(`display:grid;grid-template-columns:repeat(${autoResultTable.columns.length},1fr);gap:8px;padding:10px 15px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--border2)`)}>
+                        {autoResultTable.columns.map((c) => <span key={c}>{c}</span>)}
+                      </div>
+                      {autoResultTable.rows.map((row, i) => (
+                        <div key={i} style={s(`display:grid;grid-template-columns:repeat(${autoResultTable.columns.length},1fr);gap:8px;padding:12px 15px;border-top:1px solid var(--border2);font-size:12.5px`)}>
+                          {row.map((cell, j) => <span key={j} style={s(j === 0 ? mono : 'color:var(--text2)')}>{cell}</span>)}
+                        </div>
                       ))}
                     </div>
                   )}
-                  <div style={s('display:flex;justify-content:space-between;gap:10px;margin-top:18px')}>
-                    <button onClick={resetAuto} className="ss-ico-btn" style={s('height:42px;padding:0 18px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>↩ New search</button>
-                    <button onClick={downloadAuto} className="ss-btn-p" style={s(btnP('height:42px;padding:0 20px;border-radius:11px;font-size:12.5px;display:flex;align-items:center;gap:7px'))}><Svg d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" size={15} />Download</button>
+                  <div style={s('display:flex;justify-content:flex-end;gap:10px;margin-top:18px')}>
+                    <button onClick={resetAuto} className="ss-ico-btn" style={s('height:42px;padding:0 18px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>↩ Run another</button>
+                    <button onClick={closeAuto} className="ss-btn-p" style={s(btnP('height:42px;padding:0 22px;border-radius:11px;font-size:12.5px'))}>Done</button>
                   </div>
                 </div>
               ) : (

@@ -124,7 +124,7 @@ const CR0: CrState = {
 };
 
 export function TicketWizard() {
-  const { pushToast } = useSales();
+  const { pushToast, openTicket } = useSales();
   const [cr, setCr] = useState<CrState>(CR0);
   const [att, setAtt] = useState<File | null>(null);
   const patch = (p: Partial<CrState>): void => setCr((c) => ({ ...c, ...p }));
@@ -172,8 +172,9 @@ export function TicketWizard() {
           ? res.attached
             ? 'Routed to the right team — file attached.'
             : 'Routed to the right team — the file couldn’t be attached.'
-          : 'Routed to the right team — you’ll see updates in your inbox.',
+          : 'Routed to the right team — opening it now.',
       );
+      if (res.ticketId) openTicket(res.ticketId); // jump to Tickets and open the new ticket
     } catch (e) {
       pushToast('Couldn’t create ticket', e instanceof Error ? e.message : 'Please try again.');
       patch({ submitting: false });
@@ -336,7 +337,7 @@ export function TicketWizard() {
 // ---------- escalation form ----------
 
 export function EscalationForm() {
-  const { pushToast } = useSales();
+  const { pushToast, openTicket } = useSales();
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [reason, setReason] = useState('');
@@ -358,8 +359,9 @@ export function EscalationForm() {
           ? res.attached
             ? 'Routed to the escalation team — file attached.'
             : 'Routed to the escalation team — the file couldn’t be attached.'
-          : 'Routed to the escalation team — updates will appear in your inbox.',
+          : 'Routed to the escalation team — opening it now.',
       );
+      if (res.ticketId) openTicket(res.ticketId); // jump to Tickets and open the escalation ticket
     } catch (e) {
       pushToast('Couldn’t create escalation', e instanceof Error ? e.message : 'Please try again.');
     } finally {

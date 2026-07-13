@@ -1903,3 +1903,56 @@ email/phone + type/card/subject/description/attachment), and the escalation form
 > ONLY and does not touch those. The vendored `apps/mytrion-crm/app` widget bundle was NOT re-committed
 > (a local rebuild would bake in the in-flight RingCentral source) — rebuild + commit the bundle once
 > the RingCentral work lands so the deployed widget includes both.
+
+---
+
+## 2026-07-14 — Sales Automations fully wired (self-service widget parity)
+
+Ported the remaining Automations gaps in Sales Mytrion redesign so the Auto tab matches the
+reference self-service widget end-to-end against existing touchpoints / Desk creates.
+
+**Was missing / stubbed:** 6 catalog actions showed "not available"; money-code was preview-only;
+WEX name/MC search unused; invoice Download was a toast stub; limit types were display labels not
+EFS product codes (ULSD/DEF/RFR/DSL); unit/driver prompts not sent on activation; catalog missing
+payments, tracking, billing-form, card-last-used, wex-tasks, card-deactivation, efs-login.
+
+**Wired:**
+- Expanded `AUTO_LIST` to 22 reference-aligned actions; `RUNNABLE` = all of them.
+- New `autoRunners.ts` — dispatch for every action (keeps `AutoTab.tsx` under the 600-line cap).
+- Reads: invoices (+ per-row PDF/Excel via `sales_mytrion.invoice_signed_url`), transactions,
+  payments (`dwh.payment_info` → Deluge fallback), billing-form, balance, account-status, tracking,
+  card-last-used, wex-tasks, WEX search (`wex.application` + `wex.applications_search`).
+- Writes: card activate (`dwh.card_activate` + optional `efs.card_info`), deactivate, limits,
+  unit/driver, fraud release, override, money-code **draw** (preview on deal select → amount /
+  reason / unit → `dwh.money_code_draw`).
+- Ticket-style (widget used Zapier / browser-automation): card-replacement, reactivation, BOCA,
+  close-app → `createDeskTicket` with matching C-* types (Ops-native path).
+- EFS login → opens credentials PDF + logs usage.
+- Tiny catalog fix: `dwh.money_code_draw` accepts optional `unit_number` (ServerCRM already did).
+- Deal picker enriched with Zoho Deal ids from CRM (needed for Desk ticket creates) + app-only
+  deals for BOCA / close / wex-tasks.
+
+**Remaining gaps (blocked without new backends):** live Photon address autocomplete; direct Zapier
+email webhook / browser-automation BOCA+close (Desk ticket is the substitute); money-code unit is
+forwarded only after the catalog schema allow-list (done).
+
+## 2026-07-14 — Automations export parity (txn PDF/Excel + invoice downloads)
+
+Brought Sales Automations transaction reports and invoice downloads in line with
+`zoho-octane/app/self-service` (automation-modal.js + pdf/excel/download-utils).
+
+**Transactions Report (C-15):**
+- Client-side PDF/Excel/CSV/Text via vendored `public/vendor/mytrion/{pdf,excel,download}-utils.js`
+  (identical to reference) + jsPDF CDN.
+- Fetch `dwh.transactions` limit 5000, group by `transaction_id`; merge invoice refs via
+  `dwh.transaction_invoices` on first download.
+- Full report options: Display Features, Group/Sort/Format, Match By filters, chain chips,
+  live filtered totals; export uses `processTransactions` (same filter/sort rules as reference).
+- Range presets match reference (`day`…`all_time` + `custom`); `half_year` → custom from/to.
+
+**Invoices:**
+- Presets Last 7/30/90 + Custom Range; status ALL / PENDING / PAID.
+- Per-row + bulk PDF/Excel: signed-url → blob → `deliverBlob` (named file), sequential bulk with delay.
+
+**Files:** `txnReport.ts`, `txnReportExport.ts`, `txnExportLibs.ts`, `AutoResultPanels.tsx`,
+`autoRunners.ts`, `AutoTab.tsx`, vendor scripts under `apps/mytrion-crm/public/vendor/mytrion/`.

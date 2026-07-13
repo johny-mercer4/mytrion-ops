@@ -85,9 +85,9 @@ const FILTERS: readonly [TicketFilter, string][] = [
 const DETAIL_ROW_STYLE = 'font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)';
 
 export function TicketsTab() {
-  const { pushToast, go } = useSales();
+  const { pushToast, go, focusTicketId, clearFocusTicket } = useSales();
 
-  const [selectedTicket, setSelectedTicket] = useState<string>('');
+  const [selectedTicket, setSelectedTicket] = useState<string>(focusTicketId ?? '');
   const [ticketFilter, setTicketFilter] = useState<TicketFilter>('all');
   const [ticketSearch, setTicketSearch] = useState<string>('');
   const [ticketReply, setTicketReply] = useState<string>('');
@@ -111,12 +111,20 @@ export function TicketsTab() {
   const allTickets: TicketVM[] = ticketsLoad.data?.tickets ?? [];
   const scoped = ticketsLoad.data?.scoped ?? true;
 
-  // Auto-select the first ticket once the list loads; keep the current selection if still present.
+  // Entering the tab via "open this ticket" (e.g. after Create): select it + consume the flag.
   useEffect(() => {
-    const list = ticketsLoad.data?.tickets;
-    const first = list?.[0];
+    if (focusTicketId) {
+      setSelectedTicket(focusTicketId);
+      clearFocusTicket();
+    }
+  }, [focusTicketId, clearFocusTicket]);
+
+  // Auto-select the first ticket once the list loads; never override an existing selection (a
+  // focused/just-created ticket may not be in the recency window yet — its thread still loads by id).
+  useEffect(() => {
+    const first = ticketsLoad.data?.tickets?.[0];
     if (!first) return;
-    setSelectedTicket((cur) => (cur && list.some((t) => t.id === cur) ? cur : first.id));
+    setSelectedTicket((cur) => cur || first.id);
   }, [ticketsLoad.data]);
 
   // The open ticket is "read": clear its unread whenever it accrues (incl. a live comment that

@@ -1,18 +1,18 @@
 /**
- * Data Center views — Leads & Deals (kanban / list) and the Rejection report. Ported from the
- * reference prototype's dcLeads / dcDeals / dcRejections slices, rendering the real CRM
- * view-models (LeadVM / DealVM / RejectionVM). Clicking a card opens the shell's lead/deal modal.
+ * Data Center views — Leads & Deals (kanban / list) and the Rejection report. The Leads & Deals
+ * cards render the EXACT fields from the zoho-octane self-service records-panel reference; the deal
+ * kanban uses its fixed 10-stage blueprint order + colors (Card Swiped=green, Closed Lost=red).
+ * Clicking a card opens the shell's lead/deal modal.
  */
 import { s } from './dc';
 import { badge } from './salesData';
-import { money } from './live';
 import { useSales } from './ctx';
 import {
-  DEAL_STAGE_ORDER,
-  LEAD_STATUS_ORDER,
-  columnsFor,
-  stageColor,
-  TEMP_COL,
+  dealColumns,
+  dealStageColor,
+  leadColumns,
+  leadStatusColor,
+  utmColor,
   type DealVM,
   type LeadVM,
   type RejectionVM,
@@ -22,22 +22,31 @@ const AV = (size = 34, fs = 13): string =>
   `width:${size}px;height:${size}px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:${fs}px;background:var(--raised);color:var(--text2)`;
 const COUNT_CHIP =
   "min-width:22px;height:20px;padding:0 7px;border-radius:99px;background:var(--raised);color:var(--muted);font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace";
+const SUB = 'font-size:11px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+const FOOT = 'display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;font-size:10.5px;color:var(--faint)';
 
-function Stats({ items }: { items: { label: string; value: string; col: string }[] }) {
+function utmPill(source: string) {
+  const c = utmColor(source);
   return (
-    <div style={s('display:flex;gap:26px;flex-wrap:wrap;align-items:baseline;margin:2px 2px 18px')}>
-      {items.map((st) => (
-        <div key={st.label} style={s('display:flex;align-items:baseline;gap:8px')}>
-          <span style={s(`font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:600;color:${st.col}`)}>{st.value}</span>
-          <span style={s('font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700')}>{st.label}</span>
-        </div>
-      ))}
-    </div>
+    <span style={s(`display:inline-block;margin-top:8px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;background:color-mix(in srgb,${c} 16%,transparent);color:${c}`)}>{source}</span>
   );
 }
 
 function EmptyRow({ msg }: { msg: string }) {
   return <div style={s('padding:44px;text-align:center;color:var(--muted);font-size:13px')}>{msg}</div>;
+}
+
+function KanbanCol({ col, count, children }: { col: { label: string; col: string }; count: number; children: React.ReactNode }) {
+  return (
+    <div style={s('flex:0 0 264px;width:264px;border-radius:16px;background:var(--alt);border:1px solid var(--border2);display:flex;flex-direction:column;max-height:640px')}>
+      <div style={s('display:flex;align-items:center;gap:9px;padding:13px 15px;border-bottom:1px solid var(--border2)')}>
+        <span style={s(`width:8px;height:8px;border-radius:50%;background:${col.col}`)} />
+        <span style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:13.5px;letter-spacing:.04em;text-transform:uppercase;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{col.label}</span>
+        <span style={s(COUNT_CHIP)}>{count}</span>
+      </div>
+      <div className="ss-scroll" style={s('padding:11px;display:flex;flex-direction:column;gap:10px;overflow-y:auto')}>{children}</div>
+    </div>
+  );
 }
 
 // ---------- Leads ----------
@@ -46,77 +55,66 @@ export function LeadsView({ leads, search, view }: { leads: LeadVM[]; search: st
   const { openLead } = useSales();
   const q = search.toLowerCase();
   const rows = q
-    ? leads.filter((l) => `${l.company} ${l.contact} ${l.source} ${l.status}`.toLowerCase().includes(q))
+    ? leads.filter((l) => `${l.contact} ${l.company} ${l.source} ${l.status} ${l.phone}`.toLowerCase().includes(q))
     : leads;
-  const total = rows.reduce((a, l) => a + l.value, 0);
-  const stats = [
-    { label: 'Open Leads', value: String(rows.length), col: 'var(--accent)' },
-    { label: 'Pipeline Value', value: total > 0 ? money(total) : '—', col: 'var(--text)' },
-    { label: 'Hot Leads', value: String(rows.filter((l) => l.temp === 'hot').length), col: 'var(--danger)' },
-    { label: 'Filled', value: String(rows.filter((l) => l.status === 'Application Filled').length), col: 'var(--ok)' },
-  ];
+
+  if (rows.length === 0) {
+    return <div style={s('border-radius:14px;border:1px solid var(--border);background:var(--surface)')}><EmptyRow msg="No leads found." /></div>;
+  }
+
+  const statusBadge = (l: LeadVM) =>
+    l.converted ? badge('Converted', 'var(--ok)') : badge(l.status || '—', leadStatusColor(l.status));
+
+  if (view === 'list') {
+    return (
+      <div style={s('border-radius:14px;border:1px solid var(--border);overflow:hidden;background:var(--surface)')}>
+        <div style={s('display:grid;grid-template-columns:1.4fr 1fr 1.2fr 0.8fr 1fr;gap:10px;padding:12px 16px;background:var(--alt);font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>
+          <span>Name</span><span>Status</span><span>Source</span><span>Created</span><span style={s('text-align:right')}>Phone</span>
+        </div>
+        {rows.map((ld) => {
+          const b = statusBadge(ld);
+          return (
+            <div key={ld.id} onClick={() => openLead(ld)} className="ss-tab-x" style={s('display:grid;grid-template-columns:1.4fr 1fr 1.2fr 0.8fr 1fr;gap:10px;padding:13px 16px;border-top:1px solid var(--border2);align-items:center;cursor:pointer;font-size:12.5px')}>
+              <div style={s('display:flex;align-items:center;gap:10px;min-width:0')}><div style={s(AV())}>{ld.initials}</div><span style={s('font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.contact}</span></div>
+              <span style={s(b.style)}>{b.text}</span>
+              <span style={s('color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.source || 'No source'}</span>
+              <span style={s('color:var(--muted)')}>{ld.created}</span>
+              <span style={s("text-align:right;color:var(--text2);font-family:'JetBrains Mono',monospace")}>{ld.phone || '—'}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
-    <>
-      <Stats items={stats} />
-      {rows.length === 0 ? (
-        <div style={s('border-radius:14px;border:1px solid var(--border);background:var(--surface)')}><EmptyRow msg="No leads match your search." /></div>
-      ) : view === 'kanban' ? (
-        <div className="ss-scroll" style={s('display:flex;gap:14px;overflow-x:auto;padding-bottom:12px;align-items:flex-start')}>
-          {columnsFor(LEAD_STATUS_ORDER, rows.map((l) => l.status)).map((col) => {
-            const cards = rows.filter((l) => l.status === col.key);
-            return (
-              <div key={col.key} style={s('flex:0 0 264px;width:264px;border-radius:16px;background:var(--alt);border:1px solid var(--border2);display:flex;flex-direction:column;max-height:600px')}>
-                <div style={s('display:flex;align-items:center;gap:9px;padding:13px 15px;border-bottom:1px solid var(--border2)')}>
-                  <span style={s(`width:8px;height:8px;border-radius:50%;background:${col.col}`)} />
-                  <span style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:13.5px;letter-spacing:.04em;text-transform:uppercase;flex:1')}>{col.label}</span>
-                  <span style={s(COUNT_CHIP)}>{cards.length}</span>
+    <div className="ss-scroll" style={s('display:flex;gap:14px;overflow-x:auto;padding-bottom:12px;align-items:flex-start')}>
+      {leadColumns(rows.map((l) => l.status)).map((col) => {
+        const cards = rows.filter((l) => l.status === col.key);
+        return (
+          <KanbanCol key={col.key} col={col} count={cards.length}>
+            {cards.map((ld) => {
+              const b = statusBadge(ld);
+              return (
+                <div key={ld.id} onClick={() => openLead(ld)} className="ss-card-h" style={s(`padding:13px;border-radius:13px;background:var(--surface);border:1px solid var(--border);border-left:3px solid ${col.col};cursor:pointer;box-shadow:var(--shadow-sm)`)}>
+                  <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:8px')}>
+                    <div style={s('font-size:13px;font-weight:700;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.contact}</div>
+                    <span style={s(`${b.style};flex-shrink:0;white-space:nowrap`)}>{b.text}</span>
+                  </div>
+                  <div style={s(SUB)}>{ld.source || 'No source'}</div>
+                  {ld.utmSource && utmPill(ld.utmSource)}
+                  <div style={s(FOOT)}>
+                    <span>{ld.created}</span>
+                    {ld.phone && <span style={s("font-family:'JetBrains Mono',monospace")}>{ld.phone}</span>}
+                  </div>
                 </div>
-                <div className="ss-scroll" style={s('padding:11px;display:flex;flex-direction:column;gap:10px;overflow-y:auto')}>
-                  {cards.map((ld) => (
-                    <div key={ld.id} onClick={() => openLead(ld)} className="ss-card-h" style={s('padding:13px;border-radius:13px;background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
-                      <div style={s('display:flex;align-items:center;gap:10px')}>
-                        <div style={s(AV())}>{ld.initials}</div>
-                        <div style={s('min-width:0;flex:1')}>
-                          <div style={s('font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.company}</div>
-                          <div style={s('font-size:10.5px;color:var(--muted);margin-top:2px')}>{ld.contact}</div>
-                        </div>
-                      </div>
-                      <div style={s('display:flex;align-items:center;justify-content:space-between;margin-top:11px')}>
-                        <span style={s("font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600")}>{ld.valueFmt}</span>
-                        <span style={s('display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);font-weight:600')}>
-                          <span style={s(`width:7px;height:7px;border-radius:50%;background:${TEMP_COL[ld.temp]}`)} />{ld.temp.charAt(0).toUpperCase() + ld.temp.slice(1)}
-                        </span>
-                      </div>
-                      <div style={s('margin-top:9px;font-size:10.5px;color:var(--muted)')}>{ld.trucks} trucks · {ld.last}</div>
-                    </div>
-                  ))}
-                  {cards.length === 0 && <div style={s('padding:14px;text-align:center;font-size:11px;color:var(--faint)')}>Empty</div>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div style={s('border-radius:14px;border:1px solid var(--border);overflow:hidden;background:var(--surface)')}>
-          <div style={s('display:grid;grid-template-columns:1.6fr 1.2fr 1fr 1fr 0.8fr;gap:10px;padding:12px 16px;background:var(--alt);font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>
-            <span>Company</span><span>Contact</span><span>Stage</span><span style={s('text-align:right')}>Value</span><span style={s('text-align:right')}>Temp</span>
-          </div>
-          {rows.map((ld) => {
-            const stCol = stageColor(LEAD_STATUS_ORDER, ld.status);
-            return (
-              <div key={ld.id} onClick={() => openLead(ld)} className="ss-tab-x" style={s('display:grid;grid-template-columns:1.6fr 1.2fr 1fr 1fr 0.8fr;gap:10px;padding:13px 16px;border-top:1px solid var(--border2);align-items:center;cursor:pointer;font-size:12.5px')}>
-                <div style={s('display:flex;align-items:center;gap:10px;min-width:0')}><div style={s(AV())}>{ld.initials}</div><span style={s('font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.company}</span></div>
-                <span style={s('color:var(--text2)')}>{ld.contact}</span>
-                <span style={s(`color:${stCol};font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`)}>{ld.status}</span>
-                <span style={s("text-align:right;font-family:'JetBrains Mono',monospace;font-weight:600")}>{ld.valueFmt}</span>
-                <span style={s('text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:6px;color:var(--muted);font-size:11.5px;font-weight:600')}><span style={s(`width:7px;height:7px;border-radius:50%;background:${TEMP_COL[ld.temp]}`)} />{ld.temp.charAt(0).toUpperCase() + ld.temp.slice(1)}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </>
+              );
+            })}
+            {cards.length === 0 && <div style={s('padding:14px;text-align:center;font-size:11px;color:var(--faint)')}>Empty</div>}
+          </KanbanCol>
+        );
+      })}
+    </div>
   );
 }
 
@@ -126,84 +124,56 @@ export function DealsView({ deals, search, view }: { deals: DealVM[]; search: st
   const { openDeal } = useSales();
   const q = search.toLowerCase();
   const rows = q
-    ? deals.filter((d) => `${d.company} ${d.name} ${d.app} ${d.contact}`.toLowerCase().includes(q))
+    ? deals.filter((d) => `${d.name} ${d.company} ${d.stage} ${d.carrierId} ${d.app}`.toLowerCase().includes(q))
     : deals;
-  const total = rows.reduce((a, d) => a + d.value, 0);
-  const weighted = Math.round(rows.reduce((a, d) => a + (d.value * d.prob) / 100, 0));
-  const stats = [
-    { label: 'Open Deals', value: String(rows.length), col: 'var(--accent)' },
-    { label: 'Pipeline Value', value: total > 0 ? money(total) : '—', col: 'var(--text)' },
-    { label: 'Weighted Forecast', value: weighted > 0 ? money(weighted) : '—', col: 'var(--violet)' },
-    { label: 'Closing This Week', value: String(rows.filter((d) => d.thisWeek).length), col: 'var(--warn)' },
-  ];
+
+  if (view === 'list') {
+    return (
+      <div style={s('border-radius:14px;border:1px solid var(--border);overflow:hidden;background:var(--surface)')}>
+        <div style={s('display:grid;grid-template-columns:1.6fr 1fr 0.9fr 0.9fr 0.8fr;gap:10px;padding:12px 16px;background:var(--alt);font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>
+          <span>Deal</span><span>Stage</span><span>Carrier</span><span>App ID</span><span style={s('text-align:right')}>Created</span>
+        </div>
+        {rows.map((dl) => (
+          <div key={dl.id} onClick={() => openDeal(dl)} className="ss-tab-x" style={s('display:grid;grid-template-columns:1.6fr 1fr 0.9fr 0.9fr 0.8fr;gap:10px;padding:13px 16px;border-top:1px solid var(--border2);align-items:center;cursor:pointer;font-size:12.5px')}>
+            <div style={s('display:flex;align-items:center;gap:10px;min-width:0')}><div style={s(AV())}>{dl.initials}</div><span style={s('font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{dl.name}</span></div>
+            <span style={s(`color:${dealStageColor(dl.stage)};font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`)}>{dl.stage}</span>
+            <span style={s("color:var(--text2);font-family:'JetBrains Mono',monospace")}>{dl.carrierId || '—'}</span>
+            <span style={s("color:var(--text2);font-family:'JetBrains Mono',monospace")}>{dl.app || '—'}</span>
+            <span style={s('text-align:right;color:var(--muted)')}>{dl.created}</span>
+          </div>
+        ))}
+        {rows.length === 0 && <EmptyRow msg="No deals found." />}
+      </div>
+    );
+  }
 
   return (
-    <>
-      <Stats items={stats} />
-      {rows.length === 0 ? (
-        <div style={s('border-radius:14px;border:1px solid var(--border);background:var(--surface)')}><EmptyRow msg="No deals match your search." /></div>
-      ) : view === 'kanban' ? (
-        <div className="ss-scroll" style={s('display:flex;gap:14px;overflow-x:auto;padding-bottom:12px;align-items:flex-start')}>
-          {columnsFor(DEAL_STAGE_ORDER, rows.map((d) => d.stage)).map((col) => {
-            const cards = rows.filter((d) => d.stage === col.key);
-            return (
-              <div key={col.key} style={s('flex:0 0 264px;width:264px;border-radius:16px;background:var(--alt);border:1px solid var(--border2);display:flex;flex-direction:column;max-height:600px')}>
-                <div style={s('display:flex;align-items:center;gap:9px;padding:13px 15px;border-bottom:1px solid var(--border2)')}>
-                  <span style={s(`width:8px;height:8px;border-radius:50%;background:${col.col}`)} />
-                  <span style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:13.5px;letter-spacing:.04em;text-transform:uppercase;flex:1')}>{col.label}</span>
-                  <span style={s(COUNT_CHIP)}>{cards.length}</span>
-                </div>
-                <div className="ss-scroll" style={s('padding:11px;display:flex;flex-direction:column;gap:10px;overflow-y:auto')}>
-                  {cards.map((dl) => (
-                    <div key={dl.id} onClick={() => openDeal(dl)} className="ss-card-h" style={s('padding:13px;border-radius:13px;background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
-                      <div style={s('display:flex;align-items:center;gap:10px')}>
-                        <div style={s(AV())}>{dl.initials}</div>
-                        <div style={s('min-width:0;flex:1')}>
-                          <div style={s('font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{dl.company}</div>
-                          <div style={s('font-size:10.5px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{dl.name}</div>
-                        </div>
-                      </div>
-                      <div style={s('display:flex;align-items:center;justify-content:space-between;margin-top:11px')}>
-                        <span style={s("font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600")}>{dl.valueFmt}</span>
-                        <span style={s('font-size:10.5px;color:var(--muted)')}>{dl.cards} cards</span>
-                      </div>
-                      <div style={s('margin-top:10px')}>
-                        <div style={s('display:flex;justify-content:space-between;font-size:9.5px;color:var(--muted);margin-bottom:4px')}><span>Win probability</span><span style={s('color:var(--text2);font-weight:700')}>{dl.prob}%</span></div>
-                        <div style={s('height:5px;border-radius:99px;background:var(--raised);overflow:hidden')}><div style={s(`height:100%;width:${dl.prob}%;background:var(--accent)`)} /></div>
-                      </div>
-                      <div style={s('margin-top:9px;font-size:10.5px;color:var(--muted)')}>Closes {dl.close}</div>
-                    </div>
-                  ))}
-                  {cards.length === 0 && <div style={s('padding:14px;text-align:center;font-size:11px;color:var(--faint)')}>Empty</div>}
+    <div className="ss-scroll" style={s('display:flex;gap:14px;overflow-x:auto;padding-bottom:12px;align-items:flex-start')}>
+      {dealColumns().map((col) => {
+        const cards = rows.filter((d) => d.stage === col.key);
+        return (
+          <KanbanCol key={col.key} col={col} count={cards.length}>
+            {cards.map((dl) => (
+              <div key={dl.id} onClick={() => openDeal(dl)} className="ss-card-h" style={s(`padding:13px;border-radius:13px;background:var(--surface);border:1px solid var(--border);border-left:3px solid ${col.col};cursor:pointer;box-shadow:var(--shadow-sm)`)}>
+                <div style={s('font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{dl.name}</div>
+                {dl.carrierId && <div style={s(SUB)}>Carrier: {dl.carrierId}</div>}
+                {dl.app && <div style={s(SUB)}>App ID: {dl.app}</div>}
+                {dl.utmSource && utmPill(dl.utmSource)}
+                <div style={s(FOOT)}>
+                  <span>{dl.created}</span>
+                  {dl.appDate && <span>App: {dl.appDate}</span>}
                 </div>
               </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div style={s('border-radius:14px;border:1px solid var(--border);overflow:hidden;background:var(--surface)')}>
-          <div style={s('display:grid;grid-template-columns:1.6fr 1.4fr 1fr 0.9fr 0.9fr;gap:10px;padding:12px 16px;background:var(--alt);font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>
-            <span>Company</span><span>Deal</span><span>Stage</span><span style={s('text-align:right')}>Value</span><span style={s('text-align:right')}>Close</span>
-          </div>
-          {rows.map((dl) => {
-            const stCol = stageColor(DEAL_STAGE_ORDER, dl.stage);
-            return (
-              <div key={dl.id} onClick={() => openDeal(dl)} className="ss-tab-x" style={s('display:grid;grid-template-columns:1.6fr 1.4fr 1fr 0.9fr 0.9fr;gap:10px;padding:13px 16px;border-top:1px solid var(--border2);align-items:center;cursor:pointer;font-size:12.5px')}>
-                <div style={s('display:flex;align-items:center;gap:10px;min-width:0')}><div style={s(AV())}>{dl.initials}</div><span style={s('font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{dl.company}</span></div>
-                <span style={s('color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{dl.name}</span>
-                <span style={s(`color:${stCol};font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`)}>{dl.stage}</span>
-                <span style={s("text-align:right;font-family:'JetBrains Mono',monospace;font-weight:600")}>{dl.valueFmt}</span>
-                <span style={s('text-align:right;color:var(--muted)')}>{dl.close}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </>
+            ))}
+            {cards.length === 0 && <div style={s('padding:14px;text-align:center;font-size:11px;color:var(--faint)')}>Empty</div>}
+          </KanbanCol>
+        );
+      })}
+    </div>
   );
 }
 
-// ---------- Rejections ----------
+// ---------- Rejections (from Zoho Desk — real "Rejection Report" tickets) ----------
 
 const REJ_STATUS_COL: Record<string, string> = {
   Open: 'var(--accent)',
@@ -213,10 +183,6 @@ const REJ_STATUS_COL: Record<string, string> = {
   Resolved: 'var(--ok)',
 };
 
-/**
- * Rejection reports — the real "Rejection Report: …" tickets from Zoho Desk. No computed totals, no
- * synthetic categories: just the report rows Desk created (company, reason/error, when, status).
- */
 export function RejectionsView({ rejections, search }: { rejections: RejectionVM[]; search: string }) {
   const q = search.toLowerCase();
   const rows = q

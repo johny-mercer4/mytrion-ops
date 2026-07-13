@@ -35,30 +35,43 @@ function withinDays(v: unknown, days: number): boolean {
   const now = Date.now();
   return d >= now && d <= now + days * 86_400_000;
 }
-// ---- shared pipeline metadata (REAL Zoho picklists) ----
+// ---- shared pipeline metadata (matches the self-service reference records-panel exactly) ----
 //
-// Kanban columns are the actual Zoho picklist values (Lead `Status` / Deal `Stage`), NOT invented
-// buckets — the values present in the data are rendered as columns, ordered by these canonical
-// picklist orders (verified live against /settings/fields). Unknown/blank values sort to the end.
+// Deal kanban = the FIXED 10-stage blueprint order (always shown, in this order). Lead kanban groups
+// by the real Lead `Status`. Colors + order are ported verbatim from zoho-octane self-service
+// records-panel (dealStageColor / leadStageColor / groupedDeals STAGE_ORDER).
 
-export const LEAD_STATUS_ORDER: string[] = [
-  'New Lead', 'Unaccounted', 'First Call', 'Second Call', 'Third Call', 'Follow-up',
-  'Email Follow-Up', 'Interested', 'Application Filled', 'Not Interested', 'Unqualified',
-];
 export const DEAL_STAGE_ORDER: string[] = [
-  'Qualification', 'Interested', 'Lead', 'Needs Analysis', 'Application Sent', 'Value Proposition',
-  'Application Filled', 'Vendor Validation', 'Id. Decision Makers', 'CS Validation', 'Proposal/Price Quote',
-  'Negotiation/Review', 'EFS Processing', 'Cards Sent', 'Cards Activated', 'Closed Lost to Competition',
-  'Card Funded', 'Billing Form Sent', 'Billing Form Filled', 'Closed Won', 'Closed Lost', 'Due Dilligence',
-  'Card Swiped', 'Application Processing', 'Application Approved', 'Cards Delivered',
+  'Application Filled', 'Application Processing', 'Application Approved', 'Cards Sent',
+  'Cards Delivered', 'Billing Form Sent', 'Billing Form Filled', 'Card Funded',
+  'Card Swiped', 'Closed Lost',
+];
+export const LEAD_STATUS_ORDER: string[] = [
+  'First Call', 'Second Call', 'Third Call', 'Follow-up', 'Email Follow-Up',
+  'Interested', 'Application Filled', 'Not Interested', 'Unqualified',
 ];
 
-const STAGE_PALETTE = ['var(--accent)', 'var(--cyan)', 'var(--violet)', 'var(--warn)', 'var(--ok)', 'var(--orange)', 'var(--danger)', 'var(--accent-2)'];
+// Reference color NAME → this theme's CSS var.
+const COLOR_VAR: Record<string, string> = {
+  blue: 'var(--accent)', indigo: 'var(--accent-2)', purple: 'var(--violet)', orange: 'var(--orange)',
+  yellow: 'var(--warn)', green: 'var(--ok)', red: 'var(--danger)', gray: 'var(--muted)',
+};
+const LEAD_STATUS_COLORNAME: Record<string, string> = {
+  'First Call': 'blue', 'Second Call': 'indigo', 'Third Call': 'purple', Interested: 'green',
+  'Application Filled': 'orange', 'Not Interested': 'red', 'Follow-up': 'yellow',
+  Unqualified: 'gray', 'Email Follow-Up': 'blue',
+};
+const DEAL_STAGE_COLORNAME: Record<string, string> = {
+  'Application Filled': 'blue', 'Application Processing': 'indigo', 'Application Approved': 'purple',
+  'Cards Sent': 'orange', 'Cards Delivered': 'yellow', 'Billing Form Sent': 'blue',
+  'Billing Form Filled': 'indigo', 'Card Funded': 'green', 'Card Swiped': 'green', 'Closed Lost': 'red',
+};
 
-/** Stable color for a stage/status value by its canonical picklist index (unknown → last slot). */
-export function stageColor(order: string[], value: string): string {
-  const i = order.indexOf(value);
-  return STAGE_PALETTE[(i < 0 ? order.length : i) % STAGE_PALETTE.length] as string;
+export function leadStatusColor(status: string): string {
+  return COLOR_VAR[LEAD_STATUS_COLORNAME[status] ?? 'gray'] as string;
+}
+export function dealStageColor(stage: string): string {
+  return COLOR_VAR[DEAL_STAGE_COLORNAME[stage] ?? 'gray'] as string;
 }
 
 export interface StageColumn {
@@ -67,67 +80,71 @@ export interface StageColumn {
   col: string;
 }
 
-/** Kanban columns = the distinct stage values PRESENT in the data, in canonical picklist order. */
-export function columnsFor(order: string[], present: string[]): StageColumn[] {
+/** Lead columns = the statuses PRESENT in the data, ordered by LEAD_STATUS_ORDER (unknown → end). */
+export function leadColumns(present: string[]): StageColumn[] {
   const seen = new Set(present.filter(Boolean));
-  const known = order.filter((s) => seen.has(s));
-  const extra = [...seen].filter((s) => !order.includes(s)); // custom/unknown values → end
-  return [...known, ...extra].map((v) => ({ key: v, label: v, col: stageColor(order, v) }));
+  const known = LEAD_STATUS_ORDER.filter((s) => seen.has(s));
+  const extra = [...seen].filter((s) => !LEAD_STATUS_ORDER.includes(s));
+  return [...known, ...extra].map((v) => ({ key: v, label: v, col: leadStatusColor(v) }));
+}
+/** Deal columns = the fixed 10-stage blueprint, always shown in order (matches the reference). */
+export function dealColumns(): StageColumn[] {
+  return DEAL_STAGE_ORDER.map((v) => ({ key: v, label: v, col: dealStageColor(v) }));
 }
 
-export const TEMP_COL: Record<'hot' | 'warm' | 'cold', string> = {
-  hot: 'var(--danger)',
-  warm: 'var(--orange)',
-  cold: 'var(--accent)',
-};
+/** utm_source → pill color (reference utmPillClass). */
+export function utmColor(source: string): string {
+  const s = source.toLowerCase();
+  if (s.includes('meta') || s.includes('facebook') || s.includes('instagram')) return 'var(--accent)';
+  if (s.includes('website') || s.includes('organic') || s.includes('google')) return 'var(--ok)';
+  return 'var(--muted)';
+}
 
 // ---- Leads ----
 
 export interface LeadVM {
   id: string;
-  company: string;
+  /** Card title = the person's full name (reference `fullName`). */
   contact: string;
+  company: string;
   initials: string;
   title: string;
   phone: string;
   email: string;
+  source: string;
+  /** The real Zoho Lead `Status` value — the kanban column key + badge. */
+  status: string;
+  converted: boolean;
+  utmSource: string;
+  /** Relative created time (reference `relDate(created_time)`). */
+  created: string;
   value: number;
   valueFmt: string;
   trucks: number;
-  source: string;
-  /** The real Zoho Lead `Status` value — the kanban column key. */
-  status: string;
-  temp: 'hot' | 'warm' | 'cold';
-  last: string;
   note: string;
 }
 
-/** Card "temperature" dot derived from the real Lead Status (no separate Zoho field for it). */
-function leadTemp(status: string): 'hot' | 'warm' | 'cold' {
-  if (status === 'Interested' || status === 'Application Filled') return 'hot';
-  if (['First Call', 'Second Call', 'Third Call', 'Follow-up', 'Email Follow-Up'].includes(status)) return 'warm';
-  return 'cold';
-}
-
 function mapLead(r: CrmRow): LeadVM {
+  const contact = str(r.Full_Name) || '—';
   const company = str(r.Company) || str(r.Full_Name) || '(unnamed lead)';
-  const status = str(r.Status) || 'Unaccounted';
+  const status = str(r.Status) || 'No Status';
   const value = n(r.Annual_Revenue);
   return {
     id: str(r.id),
+    contact,
     company,
-    contact: str(r.Full_Name) || '—',
-    initials: initialsOf(company),
+    initials: initialsOf(contact === '—' ? company : contact),
     title: str(r.Designation) || '—',
-    phone: str(r.Phone) || '—',
+    phone: str(r.Phone),
     email: str(r.Email) || '—',
+    source: str(r.Lead_Source),
+    status,
+    converted: r.Converted__s === true,
+    utmSource: str(r.utm_source),
+    created: relTime(str(r.Created_Time) || str(r.Modified_Time)) || '',
     value,
     valueFmt: value > 0 ? money(value) : '—',
     trucks: n(r.Trucks),
-    source: str(r.Lead_Source) || 'Unknown',
-    status,
-    temp: leadTemp(status),
-    last: relTime(str(r.Last_Activity_Time) || str(r.Modified_Time)) || '—',
     note: str(r.Description) || 'No notes on this lead yet.',
   };
 }
@@ -145,19 +162,23 @@ export interface DealVM {
   company: string;
   name: string;
   initials: string;
+  /** The real Zoho Deal `Stage` value — the kanban column key. */
+  stage: string;
+  /** Card fields (reference): raw carrier id, application id, utm source, created rel, app date. */
+  carrierId: string;
+  app: string;
+  utmSource: string;
+  created: string;
+  appDate: string;
   value: number;
   valueFmt: string;
   cards: number;
-  /** The real Zoho Deal `Stage` value — the kanban column key. */
-  stage: string;
   prob: number;
   close: string;
   contact: string;
   phone: string;
   email: string;
-  app: string;
   carrier: string;
-  carrierId: string;
   note: string;
   thisWeek: boolean;
 }
@@ -171,18 +192,21 @@ function mapDeal(r: CrmRow): DealVM {
     company,
     name: str(r.Deal_Name) || company,
     initials: initialsOf(company),
+    stage: str(r.Stage) || 'Application Filled',
+    carrierId: str(r.Carrier_ID),
+    app: str(r.Application_ID),
+    utmSource: str(r.utm_source),
+    created: relTime(str(r.Created_Time) || str(r.Modified_Time)) || '',
+    appDate: fmtDate(r.Application_Date),
     value,
     valueFmt: value > 0 ? money(value) : '—',
     cards: n(r.Cards_Requested),
-    stage: str(r.Stage) || 'Qualification',
     prob: n(r.Probability),
     close: fmtDate(r.Closing_Date) || '—',
     contact: contact || '—',
     phone: str(r.Phone) || str(r.Cell) || '—',
     email: str(r.Email),
-    app: str(r.Application_ID) || '—',
     carrier: r.Carrier_ID ? `CR-${str(r.Carrier_ID)}` : '—',
-    carrierId: str(r.Carrier_ID),
     note: str(r.Description) || 'No notes on this deal yet.',
     thisWeek: withinDays(r.Closing_Date, 7),
   };
