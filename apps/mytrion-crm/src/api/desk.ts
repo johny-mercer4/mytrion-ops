@@ -3,7 +3,7 @@
  * server-side (the session's CRM user id; admins may target an agent). `scoped:false` means the
  * Desk token lacked the search scope and the server fell back to recent tickets.
  */
-import { request, requestMultipart } from './transport';
+import { request, requestBlob, requestMultipart } from './transport';
 
 // The Desk ticket endpoints are Sales-Mytrion-scoped; assert the department so a signed-in Sales
 // agent (whose session carries no department by default) clears the route's sales-access gate.
@@ -85,12 +85,21 @@ export interface DeskTicket {
   [k: string]: unknown;
 }
 
+/** A Desk attachment on a comment/thread (id + name + byte size). */
+export interface DeskAttachment {
+  id?: string | number;
+  name?: string;
+  size?: string | number;
+  href?: string;
+}
+
 export interface DeskComment {
   id?: string | number;
   content?: string;
   commenterId?: string;
   isPublic?: boolean;
   commentedTime?: string;
+  attachments?: DeskAttachment[];
   /** Zoho Desk exposes the writer as `commenter` (a Desk agent), NOT `author` (that's a thread field). */
   commenter?: {
     name?: string;
@@ -109,6 +118,7 @@ export interface DeskThread {
   id?: string | number;
   summary?: string;
   content?: string;
+  attachments?: DeskAttachment[];
   /** 'in' = requester, 'out' = agent reply. */
   direction?: string;
   author?: { name?: string; email?: string; firstName?: string | null; lastName?: string | null; type?: string } | null;
@@ -139,17 +149,36 @@ export async function listDeskComments(
   return { comments: res.comments ?? [], threads: res.threads ?? [] };
 }
 
-export async function replyDeskTicket(ticketId: string, content: string, isPublic = true): Promise<unknown> {
-  return request('POST', `/desk/tickets/${encodeURIComponent(ticketId)}/reply`, {
-    body: { content, is_public: isPublic },
-    headers: DESK_HEADERS,
-  });
+/** Post an agent reply, optionally with a file attachment (sent multipart when a file is present). */
+export async function replyDeskTicket(
+  ticketId: string,
+  content: string,
+  file?: File | null,
+  isPublic = true,
+): Promise<unknown> {
+  const path = `/desk/tickets/${encodeURIComponent(ticketId)}/reply`;
+  if (file) {
+    const form = new FormData();
+    form.append('content', content);
+    form.append('is_public', String(isPublic));
+    form.append('file', file, file.name);
+    return requestMultipart(path, form, { headers: DESK_HEADERS });
+  }
+  return request('POST', path, { body: { content, is_public: isPublic }, headers: DESK_HEADERS });
 }
 
-/** Resolve ('Closed') or reopen ('Open') a ticket. */
-export async function setDeskTicketStatus(ticketId: string, status: 'Open' | 'Closed'): Promise<unknown> {
-  return request('POST', `/desk/tickets/${encodeURIComponent(ticketId)}/status`, {
-    body: { status },
-    headers: DESK_HEADERS,
-  });
+/** Download a ticket attachment (auth'd blob → browser save). */
+export async function downloadDeskAttachment(ticketId: string, attachmentId: string, fileName: string): Promise<void> {
+  const blob = await requestBlob(
+    `/desk/tickets/${encodeURIComponent(ticketId)}/attachments/${encodeURIComponent(attachmentId)}/content`,
+    { headers: DESK_HEADERS },
+  );
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName || 'attachment';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

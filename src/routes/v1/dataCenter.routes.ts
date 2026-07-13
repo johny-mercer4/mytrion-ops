@@ -1,20 +1,17 @@
 /**
- * Sales Data Center (/v1/data-center) — the Sales Mytrion "Data Center" tab's Leads / Deals /
- * Rejections, read from Zoho CRM via COQL (auth + base URL from the Zoho wrapper).
+ * Sales Data Center (/v1/data-center) — the Sales Mytrion "Data Center" tab's Leads / Deals
+ * (Zoho CRM via COQL) and Rejections (Zoho Desk "Rejection Report" tickets).
  *
- * Identity is session-authoritative (same as the Desk routes): every pull is scoped to the
- * caller's own CRM user id (the record Owner) via resolveZohoUserId — a non-admin only ever sees
- * their own pipeline; an admin (or act-as) may pass ?zoho_user_id to view another agent's. Reads
- * require the sales department (or admin). All three endpoints are read-only (COQL SELECT).
+ * Leads/Deals are session-authoritative: scoped to the caller's own CRM user id (the record Owner)
+ * via resolveZohoUserId — a non-admin only sees their own pipeline; an admin (or act-as) may pass
+ * ?zoho_user_id. Rejections are org-wide system reports. Reads require the sales department (or
+ * admin). All read-only.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AppError, RBACError } from '../../lib/errors.js';
-import {
-  fetchAgentDeals,
-  fetchAgentLeads,
-  fetchAgentRejections,
-} from '../../integrations/salesDataCenter.js';
+import { fetchAgentDeals, fetchAgentLeads } from '../../integrations/salesDataCenter.js';
+import { listRejectionReportTickets } from '../../integrations/zohoDesk.js';
 import { resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireContext, withDepartmentAccess } from './helpers.js';
@@ -73,13 +70,15 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  /** The caller's own rejected/declined Deals (the rejection report). */
+  /**
+   * Rejection reports — the auto-created "Rejection Report: …" tickets from Zoho Desk (there is no
+   * Desk custom module for these; they're ordinary tickets keyed by subject). Org-wide (they're
+   * system reports, not owner-scoped), returned newest-first within the recent window.
+   */
   app.get('/data-center/rejections', guard, async (request) => {
-    const ctx = requireSalesAccess(request);
-    const q = scopeQuery.parse(request.query);
-    const ownerId = resolveZohoUserId(ctx, q.zoho_user_id);
+    requireSalesAccess(request);
     try {
-      const rejections = await fetchAgentRejections(ownerId);
+      const rejections = await listRejectionReportTickets();
       return { rejections };
     } catch (err) {
       throw crmError(err);

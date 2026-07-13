@@ -35,63 +35,53 @@ function withinDays(v: unknown, days: number): boolean {
   const now = Date.now();
   return d >= now && d <= now + days * 86_400_000;
 }
-function isThisMonth(v: unknown): boolean {
-  const raw = str(v);
-  if (!raw) return false;
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return false;
-  const now = new Date();
-  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+// ---- shared pipeline metadata (REAL Zoho picklists) ----
+//
+// Kanban columns are the actual Zoho picklist values (Lead `Status` / Deal `Stage`), NOT invented
+// buckets — the values present in the data are rendered as columns, ordered by these canonical
+// picklist orders (verified live against /settings/fields). Unknown/blank values sort to the end.
+
+export const LEAD_STATUS_ORDER: string[] = [
+  'New Lead', 'Unaccounted', 'First Call', 'Second Call', 'Third Call', 'Follow-up',
+  'Email Follow-Up', 'Interested', 'Application Filled', 'Not Interested', 'Unqualified',
+];
+export const DEAL_STAGE_ORDER: string[] = [
+  'Qualification', 'Interested', 'Lead', 'Needs Analysis', 'Application Sent', 'Value Proposition',
+  'Application Filled', 'Vendor Validation', 'Id. Decision Makers', 'CS Validation', 'Proposal/Price Quote',
+  'Negotiation/Review', 'EFS Processing', 'Cards Sent', 'Cards Activated', 'Closed Lost to Competition',
+  'Card Funded', 'Billing Form Sent', 'Billing Form Filled', 'Closed Won', 'Closed Lost', 'Due Dilligence',
+  'Card Swiped', 'Application Processing', 'Application Approved', 'Cards Delivered',
+];
+
+const STAGE_PALETTE = ['var(--accent)', 'var(--cyan)', 'var(--violet)', 'var(--warn)', 'var(--ok)', 'var(--orange)', 'var(--danger)', 'var(--accent-2)'];
+
+/** Stable color for a stage/status value by its canonical picklist index (unknown → last slot). */
+export function stageColor(order: string[], value: string): string {
+  const i = order.indexOf(value);
+  return STAGE_PALETTE[(i < 0 ? order.length : i) % STAGE_PALETTE.length] as string;
 }
 
-// ---- shared pipeline metadata (ordered columns, colors) ----
-
-export interface StageMeta<K extends string> {
-  key: K;
+export interface StageColumn {
+  key: string;
   label: string;
   col: string;
 }
 
-export const LEAD_STAGES: StageMeta<LeadStage>[] = [
-  { key: 'new', label: 'New', col: 'var(--accent)' },
-  { key: 'contacted', label: 'Contacted', col: 'var(--cyan)' },
-  { key: 'interested', label: 'Interested', col: 'var(--violet)' },
-  { key: 'filled', label: 'Application Filled', col: 'var(--warn)' },
-  { key: 'closed', label: 'Closed', col: 'var(--muted)' },
-];
-export const DEAL_STAGES: StageMeta<DealStage>[] = [
-  { key: 'discovery', label: 'Discovery', col: 'var(--accent)' },
-  { key: 'application', label: 'Application', col: 'var(--cyan)' },
-  { key: 'underwriting', label: 'Underwriting', col: 'var(--violet)' },
-  { key: 'processing', label: 'Processing', col: 'var(--warn)' },
-  { key: 'activated', label: 'Activated', col: 'var(--ok)' },
-];
-export const LEAD_STAGE_META: Record<LeadStage, StageMeta<LeadStage>> = Object.fromEntries(
-  LEAD_STAGES.map((s) => [s.key, s]),
-) as Record<LeadStage, StageMeta<LeadStage>>;
-export const DEAL_STAGE_META: Record<DealStage, StageMeta<DealStage>> = Object.fromEntries(
-  DEAL_STAGES.map((s) => [s.key, s]),
-) as Record<DealStage, StageMeta<DealStage>>;
+/** Kanban columns = the distinct stage values PRESENT in the data, in canonical picklist order. */
+export function columnsFor(order: string[], present: string[]): StageColumn[] {
+  const seen = new Set(present.filter(Boolean));
+  const known = order.filter((s) => seen.has(s));
+  const extra = [...seen].filter((s) => !order.includes(s)); // custom/unknown values → end
+  return [...known, ...extra].map((v) => ({ key: v, label: v, col: stageColor(order, v) }));
+}
+
 export const TEMP_COL: Record<'hot' | 'warm' | 'cold', string> = {
   hot: 'var(--danger)',
   warm: 'var(--orange)',
   cold: 'var(--accent)',
 };
-/** Rejection reason-category → bar color (reference reasonPal). */
-export const REASON_COL: Record<string, string> = {
-  Credit: 'var(--danger)',
-  'Follow-up': 'var(--warn)',
-  Verification: 'var(--accent)',
-  Fraud: 'var(--violet)',
-  Duplicate: 'var(--cyan)',
-  Competition: 'var(--orange)',
-  Withdrawn: 'var(--muted)',
-  Other: 'var(--text2)',
-};
 
 // ---- Leads ----
-
-export type LeadStage = 'new' | 'contacted' | 'interested' | 'filled' | 'closed';
 
 export interface LeadVM {
   id: string;
@@ -105,37 +95,23 @@ export interface LeadVM {
   valueFmt: string;
   trucks: number;
   source: string;
+  /** The real Zoho Lead `Status` value — the kanban column key. */
   status: string;
-  stage: LeadStage;
   temp: 'hot' | 'warm' | 'cold';
   last: string;
   note: string;
 }
 
-// Real Lead `Status` picklist → pipeline bucket.
-const LEAD_STATUS_STAGE: Record<string, LeadStage> = {
-  Interested: 'interested',
-  'First Call': 'contacted',
-  'Second Call': 'contacted',
-  'Third Call': 'contacted',
-  'Follow-up': 'contacted',
-  'Email Follow-Up': 'contacted',
-  'Application Filled': 'filled',
-  'Not Interested': 'closed',
-  Unqualified: 'closed',
-};
-const LEAD_TEMP: Record<LeadStage, 'hot' | 'warm' | 'cold'> = {
-  interested: 'hot',
-  filled: 'hot',
-  contacted: 'warm',
-  new: 'cold',
-  closed: 'cold',
-};
+/** Card "temperature" dot derived from the real Lead Status (no separate Zoho field for it). */
+function leadTemp(status: string): 'hot' | 'warm' | 'cold' {
+  if (status === 'Interested' || status === 'Application Filled') return 'hot';
+  if (['First Call', 'Second Call', 'Third Call', 'Follow-up', 'Email Follow-Up'].includes(status)) return 'warm';
+  return 'cold';
+}
 
 function mapLead(r: CrmRow): LeadVM {
   const company = str(r.Company) || str(r.Full_Name) || '(unnamed lead)';
-  const status = str(r.Status);
-  const stage = LEAD_STATUS_STAGE[status] ?? 'new';
+  const status = str(r.Status) || 'Unaccounted';
   const value = n(r.Annual_Revenue);
   return {
     id: str(r.id),
@@ -149,9 +125,8 @@ function mapLead(r: CrmRow): LeadVM {
     valueFmt: value > 0 ? money(value) : '—',
     trucks: n(r.Trucks),
     source: str(r.Lead_Source) || 'Unknown',
-    status: status || 'New',
-    stage,
-    temp: LEAD_TEMP[stage],
+    status,
+    temp: leadTemp(status),
     last: relTime(str(r.Last_Activity_Time) || str(r.Modified_Time)) || '—',
     note: str(r.Description) || 'No notes on this lead yet.',
   };
@@ -165,8 +140,6 @@ export async function loadLeads(): Promise<LeadVM[]> {
 
 // ---- Deals ----
 
-export type DealStage = 'discovery' | 'application' | 'underwriting' | 'processing' | 'activated';
-
 export interface DealVM {
   id: string;
   company: string;
@@ -175,8 +148,8 @@ export interface DealVM {
   value: number;
   valueFmt: string;
   cards: number;
-  stage: DealStage;
-  rawStage: string;
+  /** The real Zoho Deal `Stage` value — the kanban column key. */
+  stage: string;
   prob: number;
   close: string;
   contact: string;
@@ -189,42 +162,10 @@ export interface DealVM {
   thisWeek: boolean;
 }
 
-// Real Deal `Stage` picklist → pipeline bucket. Lost/won-lost states are handled separately
-// (rejections); anything unmapped falls back to 'discovery' so no deal silently disappears.
-const DEAL_STAGE_BUCKET: Record<string, DealStage> = {
-  Qualification: 'discovery',
-  Interested: 'discovery',
-  Lead: 'discovery',
-  'Needs Analysis': 'discovery',
-  'Value Proposition': 'discovery',
-  'Id. Decision Makers': 'discovery',
-  'Due Dilligence': 'discovery',
-  'Application Sent': 'application',
-  'Application Filled': 'application',
-  'Application Processing': 'application',
-  'Vendor Validation': 'application',
-  'CS Validation': 'application',
-  'Proposal/Price Quote': 'application',
-  'Application Approved': 'underwriting',
-  'Negotiation/Review': 'underwriting',
-  'Billing Form Sent': 'underwriting',
-  'Billing Form Filled': 'underwriting',
-  'EFS Processing': 'processing',
-  'Card Funded': 'processing',
-  'Cards Sent': 'processing',
-  'Cards Delivered': 'processing',
-  'Cards Activated': 'activated',
-  'Card Swiped': 'activated',
-  'Closed Won': 'activated',
-};
-// Deals in these stages are shown in the Rejections report, not the active pipeline.
-const DEAL_EXCLUDE = new Set(['Closed Lost', 'Closed Lost to Competition']);
-
 function mapDeal(r: CrmRow): DealVM {
   const company = lookupName(r.Account_Name) || str(r.Deal_Name) || '(unnamed deal)';
   const contact = lookupName(r.Contact_Name) || `${str(r.First_name)} ${str(r.Last_Name)}`.trim();
   const value = n(r.Amount) || n(r.Credit_Line_Approved);
-  const rawStage = str(r.Stage);
   return {
     id: str(r.id),
     company,
@@ -233,8 +174,7 @@ function mapDeal(r: CrmRow): DealVM {
     value,
     valueFmt: value > 0 ? money(value) : '—',
     cards: n(r.Cards_Requested),
-    stage: DEAL_STAGE_BUCKET[rawStage] ?? 'discovery',
-    rawStage: rawStage || '—',
+    stage: str(r.Stage) || 'Qualification',
     prob: n(r.Probability),
     close: fmtDate(r.Closing_Date) || '—',
     contact: contact || '—',
@@ -251,71 +191,51 @@ function mapDeal(r: CrmRow): DealVM {
 export async function loadDeals(): Promise<DealVM[]> {
   const actAsId = getImpersonation()?.zohoUserId;
   const rows = await listDeals(actAsId);
-  return rows.filter((r) => !DEAL_EXCLUDE.has(str(r.Stage))).map(mapDeal);
+  return rows.map(mapDeal);
 }
 
-// ---- Rejections ----
+// ---- Rejection reports (from Zoho DESK — auto-created "Rejection Report" tickets) ----
+//
+// These are real Desk tickets whose subject is "Rejection Report: <Company> - Error <code>". No
+// synthetic categories, no computed totals — just the real report rows the Desk automation created.
 
 export interface RejectionVM {
   id: string;
+  number: string;
   company: string;
   initials: string;
-  appId: string;
   reason: string;
-  reasonCat: string;
   date: string;
-  severity: 'hard' | 'soft';
-  canRetry: boolean;
-  month: boolean;
+  status: string;
 }
 
-// Real `Reason_For_Loss__s` picklist → the report's reason category.
-const REASON_CAT: Record<string, string> = {
-  'Low Credit Score': 'Credit',
-  'Hard Decline': 'Credit',
-  Price: 'Credit',
-  'Low Discounts': 'Credit',
-  'Missed Follow Ups': 'Follow-up',
-  'Lack of response': 'Follow-up',
-  'Unqualified Customer': 'Verification',
-  'Wrong Target': 'Verification',
-  'Expectation Mismatch': 'Verification',
-  'Duplicate Deal': 'Duplicate',
-  'Not Interested': 'Withdrawn',
-  'Account Closed': 'Withdrawn',
-  'Future Interest': 'Withdrawn',
-  Competition: 'Competition',
-  'WEX Closed': 'Credit',
-};
-const HARD_CATS = new Set(['Credit', 'Fraud']);
+interface RejContact {
+  lastName?: string | null;
+  account?: { accountName?: string | null } | null;
+}
 
-function mapRejection(r: CrmRow): RejectionVM {
-  const company = lookupName(r.Account_Name) || str(r.Deal_Name) || '(unnamed)';
-  const appStatus = str(r.Application_Status);
-  const lossReason = str(r.Reason_For_Loss__s);
-  let reasonCat = REASON_CAT[lossReason] ?? 'Other';
-  if (appStatus === 'Closed/Fraud') reasonCat = 'Fraud';
-  const severity: 'hard' | 'soft' =
-    HARD_CATS.has(reasonCat) || appStatus === 'Closed/Fraud' || appStatus === 'Disqualified' ? 'hard' : 'soft';
-  const reason =
-    str(r.Reject_reason) || lossReason || str(r.Credit_Decision) || appStatus || 'Application rejected';
+function mapRejection(t: CrmRow): RejectionVM {
+  const subject = str(t.subject);
+  // "Rejection Report: <Company> - Error <code>" → split company / reason off the subject.
+  const m = subject.match(/^rejection report:\s*(.+?)\s*-\s*(.+)$/i);
+  const contact = (t.contact ?? {}) as RejContact;
+  const company =
+    str(contact.account?.accountName) || (m ? m[1] : '') || str(contact.lastName) || subject || '(unknown)';
+  const reason = (m ? m[2] : subject.replace(/^rejection report:\s*/i, '')) || 'Rejected';
+  const created = str(t.createdTime);
   return {
-    id: str(r.id),
+    id: str(t.id),
+    number: str(t.ticketNumber || t.number),
     company,
     initials: initialsOf(company),
-    appId: str(r.Application_ID) || '—',
     reason,
-    reasonCat,
-    date: fmtDate(r.Modified_Time) || relTime(str(r.Modified_Time)) || '—',
-    severity,
-    canRetry: severity === 'soft',
-    month: isThisMonth(r.Modified_Time),
+    date: fmtDate(created) || relTime(created) || '—',
+    status: str(t.status) || 'Open',
   };
 }
 
 export async function loadRejections(): Promise<RejectionVM[]> {
-  const actAsId = getImpersonation()?.zohoUserId;
-  const rows = await listRejections(actAsId);
+  const rows = await listRejections();
   return rows.map(mapRejection);
 }
 

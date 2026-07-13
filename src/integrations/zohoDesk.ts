@@ -146,7 +146,9 @@ export async function listTicketsByCreator(
   opts: { maxPages?: number } = {},
 ): Promise<Record<string, unknown>[]> {
   if (!crmUserId) return [];
-  const maxPages = Math.max(1, Math.min(opts.maxPages ?? 6, 12));
+  // Widen the recency window (was 6) so more of the caller's tickets surface without the Desk.search
+  // scope. Each page is 99; 20 pages ≈ 1,980 most-recent org tickets scanned, then creator-filtered.
+  const maxPages = Math.max(1, Math.min(opts.maxPages ?? 20, 30));
   const froms = Array.from({ length: maxPages }, (_, i) => 1 + i * MAX_TICKET_LIMIT);
   const pages = await Promise.all(
     froms.map((from) => ticketsPage(from, MAX_TICKET_LIMIT).catch(() => [] as Record<string, unknown>[])),
@@ -157,6 +159,33 @@ export async function listTicketsByCreator(
   for (const row of pages.flat()) {
     const cf = (row.cf ?? {}) as Record<string, unknown>;
     if (String(cf.cf_crm_created_by_id ?? '') !== target) continue;
+    const id = String(row.id ?? '');
+    if (id && seen.has(id)) continue;
+    if (id) seen.add(id);
+    out.push(row);
+  }
+  return out;
+}
+
+/**
+ * Rejection reports — the auto-created Desk tickets whose subject is
+ * "Rejection Report: <Company> - Error <code>". No Desk custom module exists for these; they are
+ * ordinary tickets distinguished by subject. Scans the recent-tickets window (Desk.search scope is
+ * unavailable) and keeps the rejection reports. `contact` (with the account name) rides along via
+ * the `contacts` include.
+ */
+export async function listRejectionReportTickets(
+  opts: { maxPages?: number } = {},
+): Promise<Record<string, unknown>[]> {
+  const maxPages = Math.max(1, Math.min(opts.maxPages ?? 6, 12));
+  const froms = Array.from({ length: maxPages }, (_, i) => 1 + i * MAX_TICKET_LIMIT);
+  const pages = await Promise.all(
+    froms.map((from) => ticketsPage(from, MAX_TICKET_LIMIT).catch(() => [] as Record<string, unknown>[])),
+  );
+  const seen = new Set<string>();
+  const out: Record<string, unknown>[] = [];
+  for (const row of pages.flat()) {
+    if (!/^rejection report/i.test(String(row.subject ?? ''))) continue;
     const id = String(row.id ?? '');
     if (id && seen.has(id)) continue;
     if (id) seen.add(id);
@@ -229,23 +258,58 @@ export async function getTicketComments(ticketId: string, limit = 50): Promise<R
   return deskGet<Record<string, unknown>>(url);
 }
 
-/** Post an agent reply/comment on a ticket. `isPublic` true = customer-visible reply. */
+/**
+ * Post an agent reply/comment on a ticket. `isPublic` true = customer-visible reply. Optional
+ * `attachmentIds` are ids from `uploadDeskFile` (Desk requires them in the comment body, NOT the
+ * `/uploads` id passed any other way).
+ */
 export async function postTicketComment(
   ticketId: string,
   content: string,
   isPublic = true,
+  attachmentIds: string[] = [],
 ): Promise<Record<string, unknown>> {
   const url = deskUrl(`/tickets/${encodeURIComponent(ticketId)}/comments`);
+  const body: Record<string, unknown> = { content, contentType: 'plainText', isPublic };
+  if (attachmentIds.length) body.attachmentIds = attachmentIds;
   const res = await fetch(url, {
     method: 'POST',
     headers: { ...(await authHeaders('zoho_desk')), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content, contentType: 'plainText', isPublic }),
+    body: JSON.stringify(body),
   });
   const text = await res.text();
   if (!res.ok) {
     throw new Error(`[zoho-desk] POST /tickets/${ticketId}/comments HTTP ${res.status}: ${text.slice(0, 300)}`);
   }
   return text ? (JSON.parse(text) as Record<string, unknown>) : {};
+}
+
+/** Upload a file to Desk (`POST /uploads`, multipart field `file`) → reusable attachment id. */
+export async function uploadDeskFile(buffer: Buffer, fileName: string, mime: string): Promise<string> {
+  const form = new FormData();
+  form.append('file', new Blob([new Uint8Array(buffer)], { type: mime || 'application/octet-stream' }), fileName);
+  const res = await fetch(deskUrl('/uploads'), { method: 'POST', headers: await authHeaders('zoho_desk'), body: form });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`[zoho-desk] POST /uploads HTTP ${res.status}: ${text.slice(0, 300)}`);
+  }
+  const id = text ? (JSON.parse(text) as { id?: string }).id : undefined;
+  if (!id) throw new Error(`[zoho-desk] POST /uploads returned no id: ${text.slice(0, 200)}`);
+  return id;
+}
+
+/** Download a ticket attachment's bytes (`GET /tickets/{id}/attachments/{attId}/content`). */
+export async function getTicketAttachmentContent(
+  ticketId: string,
+  attachmentId: string,
+): Promise<{ buffer: Buffer; contentType: string }> {
+  const url = deskUrl(`/tickets/${encodeURIComponent(ticketId)}/attachments/${encodeURIComponent(attachmentId)}/content`);
+  const res = await fetch(url, { headers: await authHeaders('zoho_desk') });
+  if (!res.ok) {
+    throw new Error(`[zoho-desk] GET attachment ${attachmentId} HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }
+  const buffer = Buffer.from(await res.arrayBuffer());
+  return { buffer, contentType: res.headers.get('content-type') || 'application/octet-stream' };
 }
 
 /**
@@ -308,24 +372,6 @@ export async function createDeskTicket(input: CreateDeskTicketInput): Promise<st
   const json = text ? (JSON.parse(text) as { id?: string }) : {};
   if (!json.id) throw new Error(`[zoho-desk] POST /tickets returned no id: ${text.slice(0, 200)}`);
   return json.id;
-}
-
-/** Update a ticket's status (e.g. 'Closed' to resolve, 'Open' to reopen). Desk `PATCH /tickets/{id}`. */
-export async function updateTicketStatus(
-  ticketId: string,
-  status: string,
-): Promise<Record<string, unknown>> {
-  const url = deskUrl(`/tickets/${encodeURIComponent(ticketId)}`);
-  const res = await fetch(url, {
-    method: 'PATCH',
-    headers: { ...(await authHeaders('zoho_desk')), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status }),
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`[zoho-desk] PATCH /tickets/${ticketId} HTTP ${res.status}: ${text.slice(0, 300)}`);
-  }
-  return text ? (JSON.parse(text) as Record<string, unknown>) : {};
 }
 
 /** List departments — useful both for connectivity checks and mapping a name → departmentId. */

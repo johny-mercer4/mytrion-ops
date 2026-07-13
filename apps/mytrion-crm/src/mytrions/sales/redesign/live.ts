@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { listDeskComments, listDeskTickets, type DeskComment, type DeskThread, type DeskTicket } from '@/api/desk';
+import { listDeskComments, listDeskTickets, type DeskTicket } from '@/api/desk';
 import { getImpersonation } from '@/api/impersonation';
 import { callTouchpoint } from '@/api/touchpoints';
 import { ICO } from './salesData';
@@ -452,47 +452,71 @@ export interface TicketMsgVM {
   type: 'comment' | 'attachment';
   text: string;
   time: string;
-  file?: { name: string; size: string };
+  /** Attachment payload (type='attachment') — `attId`/`ticketId` drive the download. */
+  file?: { name: string; size: string; attId: string; ticketId: string };
 }
+
+/** Human-readable byte size for a Desk attachment (`size` is a byte count string). */
+function fmtBytes(raw: string | number | undefined): string {
+  const b = typeof raw === 'number' ? raw : Number(String(raw ?? '').replace(/\D/g, '')) || 0;
+  if (b <= 0) return '';
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${Math.round(b / 1024)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+interface TicketMsgRow extends TicketMsgVM {
+  _ts: number;
+}
+
 export async function loadTicketMessages(ticketId: string): Promise<TicketMsgVM[]> {
   const { threads, comments } = await listDeskComments(ticketId, 50);
   const ms = (v: string | undefined): number => {
     const t = v ? new Date(v).getTime() : 0;
     return Number.isNaN(t) ? 0 : t;
   };
+  const attRows = (
+    atts: { id?: string | number; name?: string; size?: string | number }[] | undefined,
+    from: string,
+    time: string,
+    ts: number,
+  ): TicketMsgRow[] =>
+    (atts ?? [])
+      .filter((a) => a && a.id)
+      .map((a) => ({
+        from,
+        type: 'attachment' as const,
+        text: '',
+        time,
+        file: { name: String(a.name ?? 'attachment'), size: fmtBytes(a.size), attId: String(a.id), ticketId },
+        _ts: ts,
+      }));
+
   // Placement (matches the reference dashboard): the caller's OWN posts go right ("me"), everyone
   // else left. The app posts REPLIES as COMMENTS via its shared Desk agent, which the server flags
   // as `mine`. THREADS are the requester's inbound message + any other-agent email replies — never
-  // the caller's, so they render left, labelled by author.
-  const fromThreads = (threads ?? [])
-    .map((t: DeskThread) => {
-      const text = stripHtml(String(t.content ?? t.summary ?? ''));
-      if (!text) return null;
-      const outbound = t.direction === 'out';
-      return {
-        from: fullName(t.author) || t.author?.name || (outbound ? 'Agent' : 'Customer'),
-        type: 'comment' as const,
-        text,
-        time: relTime(t.createdTime),
-        _ts: ms(t.createdTime),
-      };
-    })
-    .filter((x): x is NonNullable<typeof x> => x !== null);
-  const fromComments = (comments ?? [])
-    .map((c: DeskComment) => {
-      const text = stripHtml(String(c.content ?? ''));
-      if (!text) return null; // attachment-only / empty note → no blank bubble
-      const cm = c.commenter;
-      return {
-        from: c.mine ? 'me' : fullName(cm) || cm?.name || 'Support',
-        type: 'comment' as const,
-        text,
-        time: relTime(c.commentedTime),
-        _ts: ms(c.commentedTime),
-      };
-    })
-    .filter((x): x is NonNullable<typeof x> => x !== null);
-  return [...fromThreads, ...fromComments].sort((a, b) => a._ts - b._ts).map(({ _ts, ...m }) => m);
+  // the caller's, so they render left, labelled by author. Attachments become their own bubbles.
+  const rows: TicketMsgRow[] = [];
+  for (const t of threads ?? []) {
+    const text = stripHtml(String(t.content ?? t.summary ?? ''));
+    const who = fullName(t.author) || t.author?.name || (t.direction === 'out' ? 'Agent' : 'Customer');
+    const ts = ms(t.createdTime);
+    const time = relTime(t.createdTime);
+    if (text) rows.push({ from: who, type: 'comment', text, time, _ts: ts });
+    rows.push(...attRows(t.attachments, who, time, ts));
+  }
+  for (const c of comments ?? []) {
+    const text = stripHtml(String(c.content ?? ''));
+    const cm = c.commenter;
+    const who = c.mine ? 'me' : fullName(cm) || cm?.name || 'Support';
+    const ts = ms(c.commentedTime);
+    const time = relTime(c.commentedTime);
+    // The app captions a file-only reply "📎 name"; drop that placeholder text when an attachment rides along.
+    const isCaption = /^📎\s/.test(text) && (c.attachments?.length ?? 0) > 0;
+    if (text && !isCaption) rows.push({ from: who, type: 'comment', text, time, _ts: ts });
+    rows.push(...attRows(c.attachments, who, time, ts));
+  }
+  return rows.sort((a, b) => a._ts - b._ts).map(({ _ts, ...m }) => m);
 }
 
 // ---- Client drilldown modal: cards (dwh.cards) + activity (dwh.transactions) ----

@@ -15,13 +15,14 @@ import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
   createDeskTicket,
   DESK_DEPARTMENTS,
+  getTicketAttachmentContent,
   getTicketComments,
   getTicketThread,
   getTicketThreads,
   listTicketsByCreator,
   postTicketComment,
   searchTicketsByCreator,
-  updateTicketStatus,
+  uploadDeskFile,
 } from '../../integrations/zohoDesk.js';
 import { attachFileToRecord } from '../../integrations/zohoCrm.js';
 import { dispatchTouchpoint } from '../../modules/touchpoints/dispatcher.js';
@@ -76,7 +77,6 @@ const replyBody = z.object({
   content: z.string().min(1).max(8000),
   is_public: z.boolean().optional(),
 });
-const statusBody = z.object({ status: z.enum(['Open', 'Closed']) });
 
 const createTicketFields = z.object({
   department: z.enum(['cs', 'billing', 'verification', 'maintenance']),
@@ -181,19 +181,43 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  /** Post an agent reply (write — audited). POST alias only (Zoho-proxy-safe). */
+  /**
+   * Post an agent reply (write — audited). Accepts JSON `{content,is_public}` OR multipart
+   * (`content` + `is_public` fields + an optional file). A file is uploaded to Desk (`/uploads`)
+   * and attached to the comment via `attachmentIds`.
+   */
   app.post('/desk/tickets/:id/reply', guard, async (request) => {
     const ctx = requireSalesAccess(request);
     const { id } = request.params as { id: string };
-    const body = replyBody.parse(request.body);
+    const isMultipart = String(request.headers['content-type'] ?? '').includes('multipart/form-data');
+    let content = '';
+    let isPublic = true;
+    let file: { name: string; mime: string; buffer: Buffer } | null = null;
+    if (isMultipart) {
+      const mp = await readMultipart(request);
+      content = (mp.fields.content ?? '').trim();
+      isPublic = mp.fields.is_public !== 'false';
+      file = mp.file;
+    } else {
+      const body = replyBody.parse(request.body);
+      content = body.content;
+      isPublic = body.is_public ?? true;
+    }
+    if (!content && !file) {
+      throw new AppError('Reply needs text or a file', { statusCode: 400, code: 'VALIDATION_ERROR', expose: true });
+    }
     try {
-      const comment = await postTicketComment(id, body.content, body.is_public ?? true);
+      const attachmentIds: string[] = [];
+      if (file) attachmentIds.push(await uploadDeskFile(file.buffer, file.name, file.mime));
+      // A Desk comment must carry content — caption a file-only reply.
+      const text = content || `📎 ${file?.name ?? 'attachment'}`;
+      const comment = await postTicketComment(id, text, isPublic, attachmentIds);
       await auditFromContext(ctx, {
         action: 'desk.ticket.reply',
         status: 'ok',
         resourceType: 'desk_ticket',
         resourceId: id,
-        detail: { length: body.content.length, isPublic: body.is_public ?? true },
+        detail: { length: text.length, isPublic, hasAttachment: !!file },
       });
       return { comment };
     } catch (err) {
@@ -202,23 +226,14 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  /** Resolve ('Closed') or reopen ('Open') a ticket (write — audited). POST alias (Zoho-proxy-safe). */
-  app.post('/desk/tickets/:id/status', guard, async (request) => {
-    const ctx = requireSalesAccess(request);
-    const { id } = request.params as { id: string };
-    const body = statusBody.parse(request.body);
+  /** Download a ticket attachment's bytes (proxies Desk with the org token; auth + sales-gated). */
+  app.get('/desk/tickets/:id/attachments/:attId/content', guard, async (request, reply) => {
+    requireSalesAccess(request);
+    const { id, attId } = request.params as { id: string; attId: string };
     try {
-      const ticket = await updateTicketStatus(id, body.status);
-      await auditFromContext(ctx, {
-        action: 'desk.ticket.status',
-        status: 'ok',
-        resourceType: 'desk_ticket',
-        resourceId: id,
-        detail: { status: body.status },
-      });
-      return { ticket };
+      const { buffer, contentType } = await getTicketAttachmentContent(id, attId);
+      return await reply.header('Content-Type', contentType).header('Content-Disposition', 'attachment').send(buffer);
     } catch (err) {
-      if (err instanceof AppError) throw err;
       throw deskError(err);
     }
   });

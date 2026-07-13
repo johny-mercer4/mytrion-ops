@@ -156,6 +156,22 @@ export async function requestMultipart(
   return json;
 }
 
+/** GET a binary response (attachment download) as a Blob, with the same auth + 401-refresh. */
+export async function requestBlob(path: string, opts: { headers?: Record<string, string> } = {}): Promise<Blob> {
+  const url = buildUrl(path);
+  const doFetch = (): Promise<Response> =>
+    fetch(url, { headers: { ...authHeaders(true), ...(opts.headers ?? {}) }, credentials: 'same-origin' });
+  let res: Response;
+  try {
+    res = await doFetch();
+    if (res.status === 401 && getSession() && (await refreshBearer())) res = await doFetch();
+  } catch (e) {
+    throw new ApiError(`Could not reach the backend. ${(e as Error)?.message ?? ''}`, 'NETWORK', 0);
+  }
+  if (!res.ok) throw new ApiError(`Download failed (HTTP ${res.status}).`, `HTTP_${res.status}`, res.status);
+  return res.blob();
+}
+
 export async function request(
   method: 'GET' | 'POST',
   path: string,

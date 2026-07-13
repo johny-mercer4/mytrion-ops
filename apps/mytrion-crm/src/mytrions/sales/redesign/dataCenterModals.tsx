@@ -5,7 +5,7 @@
  */
 import { s, Svg } from './dc';
 import { badge } from './salesData';
-import { DEAL_STAGE_META, LEAD_STAGE_META, TEMP_COL, type DealVM, type LeadVM } from './dataCenterLive';
+import { DEAL_STAGE_ORDER, LEAD_STATUS_ORDER, stageColor, TEMP_COL, type DealVM, type LeadVM } from './dataCenterLive';
 
 const CLOSE = 'M18 6L6 18M6 6l12 12';
 
@@ -36,7 +36,7 @@ export function LeadModal({
   /** Click-to-dial via RingCentral Embeddable (Sales shell wires this). */
   onCall?: (phone: string) => void;
 }) {
-  const meta = LEAD_STAGE_META[lead.stage];
+  const meta = { col: stageColor(LEAD_STATUS_ORDER, lead.status), label: lead.status };
   const stageBadge = badge(meta.label, meta.col);
   const tempBadge = badge(lead.temp.toUpperCase(), TEMP_COL[lead.temp]);
   const canCall = Boolean(onCall && lead.phone.trim());
@@ -108,7 +108,7 @@ export function LeadModal({
 }
 
 export function DealModal({ deal, onClose }: { deal: DealVM; onClose: () => void }) {
-  const meta = DEAL_STAGE_META[deal.stage];
+  const meta = { col: stageColor(DEAL_STAGE_ORDER, deal.stage), label: deal.stage };
   const stageBadge = badge(meta.label, meta.col);
   return (
     <div onClick={onClose} style={s('position:fixed;inset:0;z-index:120;background:rgba(3,7,14,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
