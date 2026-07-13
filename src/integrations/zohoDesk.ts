@@ -248,6 +248,68 @@ export async function postTicketComment(
   return text ? (JSON.parse(text) as Record<string, unknown>) : {};
 }
 
+/**
+ * Sales-Mytrion Desk departments (this org's ids — same as the legacy widget's const.js, verified
+ * live against the configured org). The create-ticket wizard picks one of these four.
+ */
+export type DeskDeptSlug = 'cs' | 'billing' | 'verification' | 'maintenance';
+export const DESK_DEPARTMENTS: Record<DeskDeptSlug, string> = {
+  cs: '1057080000000323033', // Customer Service
+  billing: '1057080000000329409', // Billing and Accounting
+  verification: '1057080000010223377', // Verification
+  maintenance: '1057080000006966104', // Maintenance
+};
+
+/** An inline Desk contact — Desk finds-or-creates it (no Desk contact-search scope needed). */
+export interface DeskContactInput {
+  lastName: string;
+  firstName?: string | undefined;
+  email?: string | undefined;
+  phone?: string | undefined;
+}
+
+export interface CreateDeskTicketInput {
+  subject: string;
+  description: string;
+  departmentId: string;
+  channel?: string;
+  contact: DeskContactInput;
+  cf?: Record<string, string | undefined>;
+}
+
+/**
+ * Create a Desk ticket (`POST /tickets`) with an INLINE contact object so Desk finds-or-creates the
+ * requester — this avoids the Desk contact-search scope the org's token lacks. Returns the new id.
+ */
+export async function createDeskTicket(input: CreateDeskTicketInput): Promise<string> {
+  const url = deskUrl('/tickets');
+  // Drop undefined cf values (Desk rejects nulls on some custom fields).
+  const cf: Record<string, string> = {};
+  for (const [k, v] of Object.entries(input.cf ?? {})) {
+    if (v !== undefined && v !== null && v !== '') cf[k] = v;
+  }
+  const body = {
+    subject: input.subject,
+    description: input.description,
+    departmentId: input.departmentId,
+    channel: input.channel ?? 'Ticket Form',
+    contact: input.contact,
+    ...(Object.keys(cf).length ? { cf } : {}),
+  };
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { ...(await authHeaders('zoho_desk')), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`[zoho-desk] POST /tickets HTTP ${res.status}: ${text.slice(0, 300)}`);
+  }
+  const json = text ? (JSON.parse(text) as { id?: string }) : {};
+  if (!json.id) throw new Error(`[zoho-desk] POST /tickets returned no id: ${text.slice(0, 200)}`);
+  return json.id;
+}
+
 /** Update a ticket's status (e.g. 'Closed' to resolve, 'Open' to reopen). Desk `PATCH /tickets/{id}`. */
 export async function updateTicketStatus(
   ticketId: string,

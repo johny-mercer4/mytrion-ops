@@ -1851,3 +1851,55 @@ Verified: `pnpm typecheck` + `pnpm test` (490) green (backend); web typecheck + 
 
 - Updated `.claude/skills/zoho-crm-api` (COQL limits + meta:fetch), `zoho-desk-api`, skills README.
 - Added `.cursor/rules/zoho-api-reference.mdc` (globs on integrations/tools/metadataScripts) so Cursor auto-applies the same conventions.
+
+### RingCentral Embeddable in Sales Mytrion (2026-07-14)
+
+- Env: `RINGCENTRAL_CLIENT_ID` / `CLIENT_SECRET` / `JWT` / `SERVER_URL` + `FF_RINGCENTRAL_ENABLED`.
+- Backend: `GET /v1/ringcentral/embed-config` (sales/admin) returns Embeddable `adapterUrl` (JWT auth, shared extension).
+- Sales UI: `RingCentralPhone` boots Embeddable on the Sales shell; Lead detail modal has **Call** → `rc-adapter-new-call` click-to-dial.
+- Status updates / recording / AI transcript deferred.
+
+---
+
+## 2026-07-14 — Create Ticket wizard + Escalation Request (live Desk/CRM writes + attachments)
+
+Rebuilt the Create tab from the updated reference (SalesMytrion222) as two modes (the legacy widget's
+two tabs): a 3-step **Create Ticket** wizard (Department → Deal → Details) and an **Escalate Request**
+form. Both file real work with an optional drag/drop attachment (≤20MB). Deluge/request reference:
+`~/Desktop/Octane-Project/zoho-octane/app/createtickettab.html` (+ `js/const.js`).
+
+- **Create Ticket** → `POST /v1/desk/tickets` (multipart). Server orchestrates the widget flow:
+  `createDeskTicket` (Desk `POST /tickets` with an **inline contact** so Desk finds-or-creates the
+  requester — the token lacks Desk contact-search scope, so we don't search) → `tickets.create_in_crm`
+  (mirror into the CRM Tickets module) → attachment. Stamped `cf_crm_created_by_id` = caller so it
+  shows in their ticket list. Depts resolve to this org's Desk dept ids (`DESK_DEPARTMENTS`, verified
+  live). Ticket types are the real C-/Q-/V-/M- lists per department.
+- **Escalate Request** → `POST /v1/desk/escalations` (multipart) → `tickets.create_escalation`
+  Deluge (Escalation_Request record + Desk ticket) → attachment. Reasons = the legacy list.
+- New backend: `zohoDesk.createDeskTicket` + `DESK_DEPARTMENTS`, `zohoCrm.attachFileToRecord` (CRM
+  Attachments API), two multipart routes in `desk.routes.ts` (audited). Frontend:
+  `transport.requestMultipart`, `api/desk.createDeskTicket/createEscalation`, `dataCenterLive` DealVM
+  gains `email`/`carrierId` (COQL `+Email`), `createTicketForms.tsx` (wizard + escalation + AttachZone),
+  thin `CreateTab.tsx` (mode toggle).
+
+**Attachments — where they land (important, verified live):** the file uploads + links to the CRM
+record (`attachFileToRecord` → Deals for tickets, Escalation_Request for escalations) — this WORKS
+(HTTP 200, `attached:true`). Transferring it onto the **Desk ticket itself** is currently blocked in
+this org: the Desk OAuth token 403s on every Desk attachment endpoint (`POST /tickets/{id}/attachments`,
+comment `attachmentIds`, `/uploads`+comment all FORBIDDEN), and the `uploadticketattachment` /
+`uploadescalationattachment` Deluge functions now require a `[FILE]`-typed argument (the widget's
+`attachmentId` call → `INVALID_DATA`; the Functions REST API won't take a multipart file → INVALID_REQUEST).
+So the ticket-transfer step is best-effort/silent — the file is safely on the linked CRM record. To also
+land it on the Desk ticket, the org must grant the Desk token attachment scope OR fix/redeploy the
+upload Deluge functions to the reference `attachmentId` signature; the wiring is already in place.
+
+Verified live (self-cleaning): create ticket + escalation both HTTP 200 with ids + `attached:true`;
+browser E2E — wizard step1 (dept cards) → step2 (real deals) → step3 (auto-filled contact/account/
+email/phone + type/card/subject/description/attachment), and the escalation form all render. Backend
+`pnpm test` (490) green; web typecheck + build green.
+
+> NOTE (concurrent work): a parallel RingCentral integration is in flight in shared files (Shell.tsx,
+> dataCenterModals.tsx, app.ts, config/env.ts, + `ringcentral*`). This commit is Create-ticket SOURCE
+> ONLY and does not touch those. The vendored `apps/mytrion-crm/app` widget bundle was NOT re-committed
+> (a local rebuild would bake in the in-flight RingCentral source) — rebuild + commit the bundle once
+> the RingCentral work lands so the deployed widget includes both.

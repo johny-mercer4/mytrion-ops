@@ -181,8 +181,10 @@ export interface DealVM {
   close: string;
   contact: string;
   phone: string;
+  email: string;
   app: string;
   carrier: string;
+  carrierId: string;
   note: string;
   thisWeek: boolean;
 }
@@ -237,8 +239,10 @@ function mapDeal(r: CrmRow): DealVM {
     close: fmtDate(r.Closing_Date) || '—',
     contact: contact || '—',
     phone: str(r.Phone) || str(r.Cell) || '—',
+    email: str(r.Email),
     app: str(r.Application_ID) || '—',
     carrier: r.Carrier_ID ? `CR-${str(r.Carrier_ID)}` : '—',
+    carrierId: str(r.Carrier_ID),
     note: str(r.Description) || 'No notes on this deal yet.',
     thisWeek: withinDays(r.Closing_Date, 7),
   };

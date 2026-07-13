@@ -3,11 +3,59 @@
  * server-side (the session's CRM user id; admins may target an agent). `scoped:false` means the
  * Desk token lacked the search scope and the server fell back to recent tickets.
  */
-import { request } from './transport';
+import { request, requestMultipart } from './transport';
 
 // The Desk ticket endpoints are Sales-Mytrion-scoped; assert the department so a signed-in Sales
 // agent (whose session carries no department by default) clears the route's sales-access gate.
 const DESK_HEADERS = { 'x-department-access': 'sales' } as const;
+
+export interface CreateTicketInput {
+  department: 'cs' | 'billing' | 'verification' | 'maintenance';
+  ticketType: string;
+  dealId: string;
+  subject: string;
+  description: string;
+  carrierId?: string | undefined;
+  applicationId?: string | undefined;
+  cardNumber?: string | undefined;
+  contactName?: string | undefined;
+  accountName?: string | undefined;
+  email?: string | undefined;
+  phone?: string | undefined;
+  submitterName?: string | undefined;
+}
+
+/** Append only the defined string fields, then an optional file, to a FormData. */
+function toForm(fields: Record<string, string | undefined>, file?: File | null): FormData {
+  const form = new FormData();
+  for (const [k, v] of Object.entries(fields)) {
+    if (v !== undefined && v !== null && v !== '') form.append(k, v);
+  }
+  if (file) form.append('file', file, file.name);
+  return form;
+}
+
+/** Create a support ticket (+ optional attachment). `attached` = the file was uploaded + linked. */
+export async function createDeskTicket(
+  input: CreateTicketInput,
+  file?: File | null,
+): Promise<{ ticketId: string; attached: boolean }> {
+  const res = (await requestMultipart('/desk/tickets', toForm({ ...input }, file), {
+    headers: DESK_HEADERS,
+  })) as { ticketId: string; attached?: boolean };
+  return { ticketId: res.ticketId, attached: res.attached ?? false };
+}
+
+/** Create an escalation request (+ optional attachment). Returns the ticket + escalation ids. */
+export async function createEscalation(
+  input: { subject: string; description: string; reason: string },
+  file?: File | null,
+): Promise<{ ticketId: string; escalationId: string; attached: boolean }> {
+  const res = (await requestMultipart('/desk/escalations', toForm({ ...input }, file), {
+    headers: DESK_HEADERS,
+  })) as { ticketId: string; escalationId: string; attached?: boolean };
+  return { ticketId: res.ticketId, escalationId: res.escalationId, attached: res.attached ?? false };
+}
 
 export interface DeskTicket {
   id: string | number;

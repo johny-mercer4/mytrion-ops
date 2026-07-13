@@ -133,6 +133,37 @@ export async function listActiveUsers(): Promise<CrmUser[]> {
   return out;
 }
 
+/**
+ * Attach a file to a CRM record (`POST /{module}/{id}/Attachments`, multipart field `file`).
+ * Mirrors the widget's `ZOHO.CRM.API.attachFile` — the ticket/escalation attachment Deluge functions
+ * then read this attachment off the record and push it to the Desk ticket. Returns the attachment id.
+ * Scope: ZohoCRM.modules.attachments.CREATE. 20 MB upload budget → 60s timeout.
+ */
+export async function attachFileToRecord(
+  module: string,
+  recordId: string,
+  fileName: string,
+  buffer: Buffer,
+  contentType = 'application/octet-stream',
+): Promise<string> {
+  const url = `${baseUrl('zoho_crm').replace(/\/+$/, '')}/${encodeURIComponent(module)}/${encodeURIComponent(recordId)}/Attachments`;
+  const form = new FormData();
+  form.append('file', new Blob([new Uint8Array(buffer)], { type: contentType }), fileName);
+  const res = await fetchWithTimeout(
+    url,
+    { method: 'POST', headers: await authHeaders('zoho_crm'), body: form },
+    60_000,
+  );
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`[zoho-crm] attach file to ${module}/${recordId} HTTP ${res.status}: ${text.slice(0, 300)}`);
+  }
+  const json = text ? (JSON.parse(text) as { data?: Array<{ details?: { id?: string } }> }) : {};
+  const id = json.data?.[0]?.details?.id;
+  if (!id) throw new Error(`[zoho-crm] attach file returned no id: ${text.slice(0, 200)}`);
+  return id;
+}
+
 /** Connectivity check: `GET /org` returns the CRM org profile (scope ZohoCRM.org.READ). */
 export async function getOrg(): Promise<OrgInfo> {
   const url = `${baseUrl('zoho_crm').replace(/\/+$/, '')}/org`;

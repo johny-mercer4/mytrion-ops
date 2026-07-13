@@ -13,6 +13,8 @@ import { env } from '../../config/env.js';
 import { AppError, RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
+  createDeskTicket,
+  DESK_DEPARTMENTS,
   getTicketComments,
   getTicketThread,
   getTicketThreads,
@@ -21,9 +23,34 @@ import {
   searchTicketsByCreator,
   updateTicketStatus,
 } from '../../integrations/zohoDesk.js';
+import { attachFileToRecord } from '../../integrations/zohoCrm.js';
+import { dispatchTouchpoint } from '../../modules/touchpoints/dispatcher.js';
 import { resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireContext, withDepartmentAccess } from './helpers.js';
+
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20 MB (matches the widget)
+
+/** Collect a mixed multipart body (form fields + one optional file) into a plain shape. */
+async function readMultipart(
+  request: FastifyRequest,
+): Promise<{ fields: Record<string, string>; file: { name: string; mime: string; buffer: Buffer } | null }> {
+  const fields: Record<string, string> = {};
+  let file: { name: string; mime: string; buffer: Buffer } | null = null;
+  for await (const part of request.parts({ limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 1 } })) {
+    if (part.type === 'file') {
+      const buffer = await part.toBuffer();
+      file = {
+        name: part.filename || 'attachment',
+        mime: part.mimetype || 'application/octet-stream',
+        buffer,
+      };
+    } else {
+      fields[part.fieldname] = typeof part.value === 'string' ? part.value : String(part.value ?? '');
+    }
+  }
+  return { fields, file };
+}
 
 /** Sales/admin gate (internal audience only) — mirrors the touchpoints department gate. */
 function requireSalesAccess(request: FastifyRequest): TenantContext {
@@ -50,6 +77,28 @@ const replyBody = z.object({
   is_public: z.boolean().optional(),
 });
 const statusBody = z.object({ status: z.enum(['Open', 'Closed']) });
+
+const createTicketFields = z.object({
+  department: z.enum(['cs', 'billing', 'verification', 'maintenance']),
+  ticketType: z.string().min(1).max(120),
+  dealId: z.string().min(1).max(60),
+  subject: z.string().min(1).max(300),
+  description: z.string().min(1).max(8000),
+  carrierId: z.string().max(60).optional(),
+  applicationId: z.string().max(60).optional(),
+  cardNumber: z.string().max(60).optional(),
+  contactName: z.string().max(200).optional(),
+  accountName: z.string().max(200).optional(),
+  email: z.string().max(200).optional(),
+  phone: z.string().max(60).optional(),
+  submitterName: z.string().max(200).optional(),
+});
+
+const createEscalationFields = z.object({
+  subject: z.string().min(1).max(300),
+  description: z.string().min(1).max(8000),
+  reason: z.string().min(1).max(120),
+});
 
 function deskError(err: unknown): AppError {
   return new AppError('Zoho Desk request failed', {
@@ -168,6 +217,135 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
         detail: { status: body.status },
       });
       return { ticket };
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw deskError(err);
+    }
+  });
+
+  /**
+   * Create a support ticket (multipart: form fields + optional attachment). Orchestrates the widget
+   * flow server-side: create the Desk ticket (inline contact — no search scope needed) → mirror into
+   * the CRM Tickets module → if a file is attached, upload it to the Deal and hand it to the ticket.
+   * The ticket is stamped with the caller's CRM user id so it appears in their own ticket list.
+   */
+  app.post('/desk/tickets', guard, async (request) => {
+    const ctx = requireSalesAccess(request);
+    const { fields, file } = await readMultipart(request);
+    const f = createTicketFields.parse(fields);
+    const crmUserId = resolveZohoUserId(ctx);
+    try {
+      const deskTicketId = await createDeskTicket({
+        subject: `CRM Ticket: ${f.subject}`,
+        description: f.description,
+        departmentId: DESK_DEPARTMENTS[f.department],
+        channel: 'Ticket Form',
+        contact: {
+          lastName: f.contactName || f.accountName || 'Customer',
+          email: f.email,
+          phone: f.phone,
+        },
+        cf: {
+          cf_ticket_type: f.ticketType,
+          cf_crm_created_by_id: crmUserId,
+          cf_deal_id: f.dealId,
+          cf_submitted_by: f.submitterName,
+          cf_carrier_id_application_id: f.carrierId || f.applicationId,
+          cf_card_number: f.cardNumber,
+        },
+      });
+      const warnings: string[] = [];
+      let attached = false;
+      // Mirror into the CRM Tickets module (best-effort — the Desk ticket already exists).
+      await dispatchTouchpoint(ctx, 'tickets.create_in_crm', {
+        subject: f.subject,
+        dealId: f.dealId,
+        deskTicketId,
+      }).catch((e: unknown) => warnings.push(`crm-link: ${e instanceof Error ? e.message : 'failed'}`));
+      // Attachment: upload to the Deal record (the working, verified path — the file is preserved and
+      // linked to the deal the ticket is about). We then ALSO try to hand it onto the Desk ticket, but
+      // that transfer is best-effort/silent: the org's Desk token can't attach to tickets directly and
+      // the upload Deluge currently rejects the id, so we never fail the ticket over it.
+      if (file) {
+        try {
+          const attachmentId = await attachFileToRecord('Deals', f.dealId, file.name, file.buffer, file.mime);
+          attached = true;
+          await dispatchTouchpoint(ctx, 'tickets.upload_attachment', {
+            ticketId: deskTicketId,
+            dealId: f.dealId,
+            attachmentId,
+            fileName: file.name,
+            orgId: env.ZOHO_DESK_ORG_ID,
+          }).catch((e: unknown) => warnings.push(`ticket-transfer: ${e instanceof Error ? e.message : 'failed'}`));
+        } catch (e) {
+          warnings.push(`attachment: ${e instanceof Error ? e.message : 'failed'}`);
+        }
+      }
+      await auditFromContext(ctx, {
+        action: 'desk.ticket.create',
+        status: 'ok',
+        resourceType: 'desk_ticket',
+        resourceId: deskTicketId,
+        detail: { department: f.department, ticketType: f.ticketType, dealId: f.dealId, attached, warnings },
+      });
+      return { ticketId: deskTicketId, attached };
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw deskError(err);
+    }
+  });
+
+  /**
+   * Create an escalation request (multipart: fields + optional attachment). Runs the
+   * `createescalationticket` Deluge (which builds the Escalation_Request record + Desk ticket), then
+   * uploads any attachment to the escalation record and hands it to the ticket.
+   */
+  app.post('/desk/escalations', guard, async (request) => {
+    const ctx = requireSalesAccess(request);
+    const { fields, file } = await readMultipart(request);
+    const f = createEscalationFields.parse(fields);
+    try {
+      const res = await dispatchTouchpoint(ctx, 'tickets.create_escalation', {
+        escalationReason: f.reason,
+        questionSubject: f.subject,
+        description: f.description,
+        attachmentUrl: '',
+      });
+      const out = (res.data ?? {}) as { ticketId?: string | number; escalationId?: string | number; message?: string };
+      const ticketId = out.ticketId ? String(out.ticketId) : '';
+      const escalationId = out.escalationId ? String(out.escalationId) : '';
+      if (!ticketId || !escalationId) {
+        throw new AppError(out.message || 'Escalation was not created — no ids returned.', {
+          statusCode: 502,
+          code: 'ZOHO_ESCALATION_ERROR',
+          expose: true,
+        });
+      }
+      const warnings: string[] = [];
+      let attached = false;
+      if (file) {
+        try {
+          const attachmentId = await attachFileToRecord('Escalation_Request', escalationId, file.name, file.buffer, file.mime);
+          attached = true;
+          await dispatchTouchpoint(ctx, 'tickets.upload_escalation_attachment', {
+            ticketId,
+            recordId: escalationId,
+            attachmentId,
+            fileName: file.name,
+            orgId: env.ZOHO_DESK_ORG_ID,
+          }).catch((e: unknown) => warnings.push(`ticket-transfer: ${e instanceof Error ? e.message : 'failed'}`));
+        } catch (e) {
+          warnings.push(`attachment: ${e instanceof Error ? e.message : 'failed'}`);
+        }
+      }
+      await auditFromContext(ctx, {
+        action: 'desk.escalation.create',
+        status: 'ok',
+        resourceType: 'desk_ticket',
+        resourceId: ticketId,
+        detail: { reason: f.reason, escalationId, attached, warnings },
+      });
+      return { ticketId, escalationId, attached };
     } catch (err) {
       if (err instanceof AppError) throw err;
       throw deskError(err);

@@ -115,6 +115,47 @@ function buildUrl(path: string, query?: RequestOptions['query']): string {
   return url;
 }
 
+/**
+ * POST a multipart/form-data body (fields + optional file). Same auth + 401-refresh + ApiError
+ * handling as `request`, but the browser sets the multipart Content-Type (with boundary) itself —
+ * so we must NOT set it. Used for ticket / escalation creation with an attachment.
+ */
+export async function requestMultipart(
+  path: string,
+  form: FormData,
+  opts: { headers?: Record<string, string>; impersonate?: boolean } = {},
+): Promise<unknown> {
+  const url = buildUrl(path);
+  const doFetch = (): Promise<Response> =>
+    fetch(url, {
+      method: 'POST',
+      headers: { ...authHeaders(opts.impersonate !== false), ...(opts.headers ?? {}) },
+      credentials: 'same-origin',
+      body: form,
+    });
+  let res: Response;
+  try {
+    res = await doFetch();
+    if (res.status === 401 && getSession() && (await refreshBearer())) res = await doFetch();
+  } catch (e) {
+    throw new ApiError(`Could not reach the backend. ${(e as Error)?.message ?? ''}`, 'NETWORK', 0);
+  }
+  const raw = await res.text();
+  let json: unknown = null;
+  if (raw.trim()) {
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      json = raw;
+    }
+  }
+  if (!res.ok) {
+    const err = json && typeof json === 'object' ? (json as { error?: { message?: string; code?: string } }).error : null;
+    throw new ApiError(err?.message ?? `Backend returned HTTP ${res.status}.`, err?.code ?? `HTTP_${res.status}`, res.status);
+  }
+  return json;
+}
+
 export async function request(
   method: 'GET' | 'POST',
   path: string,

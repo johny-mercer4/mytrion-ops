@@ -20,7 +20,7 @@ const LEAD_FIELDS =
 /** Selected Deal fields (validated queryable). Account_Name/Contact_Name are lookups (`{name,id}`). */
 const DEAL_FIELDS =
   'id, Deal_Name, Account_Name, Amount, Credit_Line_Approved, Cards_Requested, Stage, Probability, ' +
-  'Closing_Date, Contact_Name, First_name, Last_Name, Phone, Cell, Application_ID, Carrier_ID, ' +
+  'Closing_Date, Contact_Name, First_name, Last_Name, Phone, Cell, Email, Application_ID, Carrier_ID, ' +
   'Modified_Time, Description';
 
 /** Selected Deal fields for the rejection report. */
