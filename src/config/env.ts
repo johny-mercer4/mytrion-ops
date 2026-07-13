@@ -229,6 +229,14 @@ const EnvSchema = z.object({
   ZOHO_PROJECTS_REFRESH_TOKEN: z.string().default(''),
   ZOHO_PROJECTS_BASE_URL: z.string().default('https://projectsapi.zoho.com/api/v3'),
 
+  // --- RingCentral (Sales Mytrion Embeddable softphone; JWT = shared extension for now) ---
+  RINGCENTRAL_CLIENT_ID: z.string().default(''),
+  RINGCENTRAL_CLIENT_SECRET: z.string().default(''),
+  RINGCENTRAL_JWT: z.string().default(''),
+  RINGCENTRAL_SERVER_URL: z.string().default('https://platform.ringcentral.com'),
+  // Gates GET /v1/ringcentral/embed-config + the Sales softphone bootstrap.
+  FF_RINGCENTRAL_ENABLED: flag('0'),
+
   // --- Vendor: Octane internal API ---
   OCTANE_INTERNAL_API_URL: z.string().default(''),
   OCTANE_INTERNAL_API_KEY: z.string().default(''),

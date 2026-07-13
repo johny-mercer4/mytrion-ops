@@ -34,6 +34,7 @@ import { automationRoutes } from './routes/v1/automation.routes.js';
 import { chatRoutes } from './routes/v1/chat.routes.js';
 import { healthRoutes } from './routes/v1/health.routes.js';
 import { integrationsRoutes } from './routes/v1/integrations.routes.js';
+import { ringcentralRoutes } from './routes/v1/ringcentral.routes.js';
 import { knowledgeRoutes } from './routes/v1/knowledge.routes.js';
 import { moneyCodeRoutes } from './routes/v1/moneyCode.routes.js';
 import { realtimeRoutes } from './routes/v1/realtime.routes.js';
@@ -212,6 +213,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(filesRoutes);
       await v1.register(approvalsRoutes);
       await v1.register(integrationsRoutes);
+      await v1.register(ringcentralRoutes);
     },
     { prefix: API_PREFIX },
   );

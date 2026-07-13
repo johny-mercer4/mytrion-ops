@@ -20,6 +20,8 @@ import { isAdmin } from '@/access/resolveAccess';
 import { useChat } from '@/features/chat/useChat';
 import { ViewAsPicker } from './ViewAsPicker';
 import { LeadModal, DealModal } from './dataCenterModals';
+import { RingCentralPhone } from './RingCentralPhone';
+import { clickToDial } from './ringcentralDial';
 import type { DealVM, LeadVM } from './dataCenterLive';
 import './theme.css';
 
@@ -329,8 +331,29 @@ export function SalesRedesign() {
         )}
 
         {/* DATA CENTER — LEAD / DEAL DRILLDOWNS */}
-        {lead && <LeadModal lead={lead} onClose={() => setLead(null)} />}
+        {lead && (
+          <LeadModal
+            lead={lead}
+            onClose={() => setLead(null)}
+            onCall={(phone) => {
+              const ok = clickToDial(phone);
+              if (!ok) {
+                pushToast(
+                  'Phone',
+                  phone.trim()
+                    ? 'RingCentral is still loading — try again in a moment.'
+                    : 'No phone number on this lead.',
+                );
+              } else {
+                pushToast('Calling', phone);
+              }
+            }}
+          />
+        )}
         {deal && <DealModal deal={deal} onClose={() => setDeal(null)} />}
+
+        {/* RingCentral Embeddable softphone (floating widget; click-to-dial from Lead modal) */}
+        <RingCentralPhone />
 
         {/* AI CHAT LAUNCHER */}
         <button onClick={() => setChatOpen((o) => { const next = !o; if (next) scrollChat(); return next; })} aria-label="Open Mytrion AI" className="ss-btn-p" style={s('position:fixed;right:24px;bottom:24px;z-index:90;width:58px;height:58px;border-radius:50%;border:none;cursor:pointer;background:linear-gradient(140deg,var(--accent),var(--accent-2));box-shadow:0 8px 28px rgba(var(--accent-rgb),.5);display:flex;align-items:center;justify-content:center')}>
