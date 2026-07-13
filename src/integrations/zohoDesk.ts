@@ -13,6 +13,18 @@ const DEFAULT_LIMIT = 20;
 const MAX_TICKET_LIMIT = 99;
 const MAX_DEPARTMENT_LIMIT = 200;
 
+// Related entities to embed on ticket reads (nested contact.account, assignee, team, department name).
+const TICKET_INCLUDE = 'contacts,assignee,team,departments';
+// Standard + custom fields to surface. Listing `fields` makes Desk return the named custom fields
+// inline in `cf` (incl. cf_crm_created_by_id) WITHOUT the Desk.search scope — this is what lets us
+// creator-scope the list. Everything mapTicket renders must be listed here (fields restricts output).
+const TICKET_FIELDS = [
+  'id', 'ticketNumber', 'subject', 'status', 'statusType', 'priority', 'channel',
+  'createdTime', 'dueDate', 'isOverDue',
+  'cf_crm_created_by_id', 'cf_target_department', 'cf_carrier_id_application_id',
+  'cf_ticket_type', 'cf_original_stream_manager',
+].join(',');
+
 /** sortBy values Desk accepts for /tickets; '-' prefix = descending. */
 export type TicketSort = 'createdTime' | '-createdTime' | 'dueDate' | '-dueDate' | 'recentThread' | '-recentThread';
 
@@ -105,10 +117,52 @@ export async function listTicketsDetailed(input: ListTicketsInput = {}): Promise
   url.searchParams.set('from', '1');
   url.searchParams.set('limit', String(clampLimit(input.limit, MAX_TICKET_LIMIT)));
   url.searchParams.set('sortBy', input.sortBy ?? '-createdTime');
-  url.searchParams.set('include', 'contacts,assignee,team,departments');
+  url.searchParams.set('include', TICKET_INCLUDE);
   if (input.status) url.searchParams.set('status', input.status);
   if (input.departmentId) url.searchParams.set('departmentId', input.departmentId);
   return deskGet<Record<string, unknown>>(url);
+}
+
+/** One page of recent tickets carrying the display fields + `cf` (incl. cf_crm_created_by_id). */
+async function ticketsPage(from: number, limit: number): Promise<Record<string, unknown>[]> {
+  const url = new URL(deskUrl('/tickets'));
+  url.searchParams.set('from', String(Math.max(1, Math.trunc(from))));
+  url.searchParams.set('limit', String(clampLimit(limit, MAX_TICKET_LIMIT)));
+  url.searchParams.set('sortBy', '-createdTime');
+  url.searchParams.set('include', TICKET_INCLUDE);
+  url.searchParams.set('fields', TICKET_FIELDS);
+  return deskGet<Record<string, unknown>>(url);
+}
+
+/**
+ * Tickets created by a given CRM user, WITHOUT the Desk.search scope. Desk's `fields` param returns
+ * the `cf_crm_created_by_id` custom field inline in the list, so we page over the most-recent tickets
+ * (in parallel) and keep the ones whose creator matches — the same filter the reference dashboard runs
+ * server-side via /tickets/search. Bounded to `maxPages` × 99 recent tickets (a recency window; the
+ * search scope removes the bound). De-duped by id. Returns RAW ticket objects for the UI to map.
+ */
+export async function listTicketsByCreator(
+  crmUserId: string,
+  opts: { maxPages?: number } = {},
+): Promise<Record<string, unknown>[]> {
+  if (!crmUserId) return [];
+  const maxPages = Math.max(1, Math.min(opts.maxPages ?? 6, 12));
+  const froms = Array.from({ length: maxPages }, (_, i) => 1 + i * MAX_TICKET_LIMIT);
+  const pages = await Promise.all(
+    froms.map((from) => ticketsPage(from, MAX_TICKET_LIMIT).catch(() => [] as Record<string, unknown>[])),
+  );
+  const target = String(crmUserId);
+  const seen = new Set<string>();
+  const out: Record<string, unknown>[] = [];
+  for (const row of pages.flat()) {
+    const cf = (row.cf ?? {}) as Record<string, unknown>;
+    if (String(cf.cf_crm_created_by_id ?? '') !== target) continue;
+    const id = String(row.id ?? '');
+    if (id && seen.has(id)) continue;
+    if (id) seen.add(id);
+    out.push(row);
+  }
+  return out;
 }
 
 /**

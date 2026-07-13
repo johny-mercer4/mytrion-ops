@@ -15,7 +15,7 @@ import {
   getTicketComments,
   getTicketThread,
   getTicketThreads,
-  listTicketsDetailed,
+  listTicketsByCreator,
   postTicketComment,
   searchTicketsByCreator,
 } from '../../integrations/zohoDesk.js';
@@ -70,18 +70,18 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
       ...(q.limit !== undefined ? { limit: q.limit } : {}),
     };
     try {
-      // Creator-scoped search is the intended filter, but it needs the Desk.search scope on the
-      // OAuth token. When that scope is missing (SCOPE_MISMATCH), fall back to the recent-tickets
-      // list so the dashboard still shows real data — flagged via `scoped:false`.
+      // Creator-scoped search is the intended filter (returns ALL of the caller's tickets in one
+      // query), but it needs the Desk.search scope. When that scope is missing (SCOPE_MISMATCH), we
+      // STILL scope to the caller — `listTicketsByCreator` pages the recent tickets with the
+      // cf_crm_created_by_id custom field inline (Desk `fields` param) and keeps only theirs. Both
+      // paths are creator-scoped, so `scoped:true`; the fallback is just bounded to a recency window.
       try {
         const tickets = await searchTicketsByCreator(crmUserId, paging);
         return { tickets, scoped: true };
       } catch (err) {
         if (err instanceof Error && /SCOPE_MISMATCH|403/.test(err.message)) {
-          // Fall back to the recent-tickets list — DETAILED so account/contact/assignee/department
-          // still render (the plain summary strips them). Flagged via `scoped:false`.
-          const tickets = await listTicketsDetailed({ limit: q.limit ?? 50 });
-          return { tickets, scoped: false };
+          const tickets = await listTicketsByCreator(crmUserId, { maxPages: 6 });
+          return { tickets, scoped: true, windowed: true };
         }
         throw err;
       }

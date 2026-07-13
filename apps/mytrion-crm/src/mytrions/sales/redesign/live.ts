@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getSession } from '@/api/session';
 import { listDeskComments, listDeskTickets, type DeskComment, type DeskThread, type DeskTicket } from '@/api/desk';
+import { getImpersonation } from '@/api/impersonation';
 import { callTouchpoint } from '@/api/touchpoints';
 import { ICO } from './salesData';
 
@@ -439,7 +440,11 @@ function mapTicket(t: DeskTicket): TicketVM {
   };
 }
 export async function loadTickets(): Promise<{ tickets: TicketVM[]; scoped: boolean }> {
-  const res = await listDeskTickets({ limit: 50 });
+  // A real agent's own session scopes the list server-side. When an admin is "viewing as" an agent
+  // (act-as), pass that agent's id so the (admin-honored) ?zoho_user_id override scopes to THEM —
+  // the desk route resolves identity from the session, not the act-as headers.
+  const actAsId = getImpersonation()?.zohoUserId;
+  const res = await listDeskTickets({ limit: 50, ...(actAsId ? { zohoUserId: actAsId } : {}) });
   return { tickets: res.tickets.map(mapTicket), scoped: res.scoped };
 }
 

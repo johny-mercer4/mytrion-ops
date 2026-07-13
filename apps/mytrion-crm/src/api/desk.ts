@@ -5,6 +5,10 @@
  */
 import { request } from './transport';
 
+// The Desk ticket endpoints are Sales-Mytrion-scoped; assert the department so a signed-in Sales
+// agent (whose session carries no department by default) clears the route's sales-access gate.
+const DESK_HEADERS = { 'x-department-access': 'sales' } as const;
+
 export interface DeskTicket {
   id: string | number;
   ticketNumber?: string;
@@ -70,6 +74,7 @@ export async function listDeskTickets(opts: { limit?: number; zohoUserId?: strin
 }> {
   return (await request('GET', '/desk/tickets', {
     query: { limit: opts.limit ?? 50, zoho_user_id: opts.zohoUserId },
+    headers: DESK_HEADERS,
   })) as { tickets: DeskTicket[]; scoped: boolean };
 }
 
@@ -79,6 +84,7 @@ export async function listDeskComments(
 ): Promise<{ comments: DeskComment[]; threads: DeskThread[] }> {
   const res = (await request('GET', `/desk/tickets/${encodeURIComponent(ticketId)}/comments`, {
     query: { limit },
+    headers: DESK_HEADERS,
   })) as { comments?: DeskComment[]; threads?: DeskThread[] };
   return { comments: res.comments ?? [], threads: res.threads ?? [] };
 }
@@ -86,5 +92,6 @@ export async function listDeskComments(
 export async function replyDeskTicket(ticketId: string, content: string, isPublic = true): Promise<unknown> {
   return request('POST', `/desk/tickets/${encodeURIComponent(ticketId)}/reply`, {
     body: { content, is_public: isPublic },
+    headers: DESK_HEADERS,
   });
 }

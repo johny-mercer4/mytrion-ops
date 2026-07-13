@@ -1737,3 +1737,28 @@ Made the Inbox tab behave exactly like the reference `self-service/js/components
 - Verified by mocking the WebSocket in-browser and injecting notifications: a non-matching ownerId
   is ignored (no reload, no toast); a matching ownerId (the acted-as agent's id) fires the toast +
   a refetch. Live indicator shows LIVE when connected.
+
+### Tickets ARE now scoped to the current user — WITHOUT the Desk.search scope
+
+The reference dashboard filters `/tickets/search?customField1=cf_crm_created_by_id:<crmUserId>`, which
+needs `Desk.search` (our token lacks it → 403). Rather than showing org-wide tickets, discovered a
+scope-free path: **Desk's `fields` query param returns any named custom field inline in the list
+`cf` object** (verified: `?fields=…,cf_crm_created_by_id&include=contacts,assignee,team,departments`
+returns full display data + the creator id, HTTP 200, no search scope).
+- New `zohoDesk.listTicketsByCreator(crmUserId, {maxPages})` pages the recent tickets (parallel,
+  bounded to ~6×99 = a recency window), keeps only rows whose `cf.cf_crm_created_by_id === crmUserId`,
+  de-duped. `TICKET_FIELDS`/`TICKET_INCLUDE` constants define the exact projection mapTicket needs.
+- Desk route: still tries `searchTicketsByCreator` first (complete + fast when the scope exists);
+  on SCOPE_MISMATCH it now uses `listTicketsByCreator` and returns `scoped:true` (+ `windowed:true`).
+  So BOTH paths are creator-scoped — the org-wide banner never shows.
+- RBAC: the desk route requires `sales` dept, read from `x-department-access` (a worker session
+  carries no dept by default; only admins passed via allDepartmentAccess). Added a `headers` option
+  to the web `request()` transport and the desk client now asserts `x-department-access: sales` on
+  all three desk endpoints — so a signed-in Sales agent clears the gate.
+- Identity: the route resolves the caller from the SESSION (not act-as headers), so a real agent gets
+  their own tickets. For an admin using "View as", `loadTickets` now passes the acted-as id as
+  `?zoho_user_id` (admin-honored override) so it scopes to that agent too.
+- Verified live: real agent session (id 6227679000135957001) → 8 tickets, ALL theirs (0 not theirs),
+  no banner; `?zoho_user_id=<agent>` as admin → 7 tickets, all theirs. Limitation: the fallback only
+  covers a recency window (~600 recent org tickets); adding `Desk.search.READ` to the Desk token
+  removes the bound (search returns ALL of the caller's tickets) with zero code change.

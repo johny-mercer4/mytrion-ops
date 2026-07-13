@@ -27,6 +27,8 @@ export interface RequestOptions {
   body?: unknown;
   /** Set false to send AS the real admin (no act-as headers) — e.g. listing agents to impersonate. */
   impersonate?: boolean;
+  /** Extra request headers (e.g. `x-department-access` to assert the caller's department scope). */
+  headers?: Record<string, string> | undefined;
 }
 
 /** Session Bearer (else dev API key). No impersonation headers — the base principal. */
@@ -121,7 +123,7 @@ export async function request(
   const url = buildUrl(path, opts.query);
 
   const doFetch = async (): Promise<Response> => {
-    const headers: Record<string, string> = { ...authHeaders(opts.impersonate !== false) };
+    const headers: Record<string, string> = { ...authHeaders(opts.impersonate !== false), ...(opts.headers ?? {}) };
     if (method !== 'GET') headers['Content-Type'] = 'application/json';
     return fetch(url, {
       method,
