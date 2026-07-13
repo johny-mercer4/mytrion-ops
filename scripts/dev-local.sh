@@ -15,9 +15,12 @@ if command -v pnpm >/dev/null 2>&1; then PNPM="pnpm"; else PNPM="corepack pnpm";
 API_PORT=3001
 WEB_PORT=5173
 
-# ── 1. Dependencies (skipped when node_modules already exist) ────────────────
-[ -d node_modules ] || { echo "[setup] installing backend deps…"; $PNPM install; }
-[ -d apps/mytrion-crm/node_modules ] || { echo "[setup] installing web deps…"; $PNPM -C apps/mytrion-crm install; }
+# ── 1. Dependencies — ALWAYS sync (fast no-op when the lockfile is unchanged). ─
+# A bare "node_modules exists" check rots: a pull that adds a dependency keeps serving
+# code whose packages were never installed (vite: "Failed to resolve import …").
+echo "[setup] syncing deps…"
+$PNPM install --prefer-offline
+$PNPM -C apps/mytrion-crm install --prefer-offline
 
 # ── 2. Web env: point the app at the local API with the dev key + mock auth ──
 if [ ! -f apps/mytrion-crm/.env.local ]; then
