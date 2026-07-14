@@ -2003,3 +2003,18 @@ Follow-up after export parity commit (`792491e`):
 - Mapped each automation to its reference Heroicon from zoho-octane `automations-catalog.js` (e.g. activate=check-circle, deactivate=ban, limits=arrows, fraud=lock, override=gear, txn=bar-chart).
 - Svg renderer now splits multi-subpath icons (`z M…`) into separate `<path>` nodes so gear/invoice icons draw correctly.
 - Light-mode picklist fix: form inputs/selects/textareas use `--surface` (white) instead of muddy `--alt`; custom chevron on selects; floating deal/card dropdown uses white surface + softer shadow; row hover uses `--surface-2` in light mode.
+
+## 2026-07-14 — AWS MySQL integration (external DB access)
+
+- New `src/integrations/awsMysql.ts` mirrors the DWH Postgres wrapper (`dwh.ts`): a lazy pooled
+  `mysql2` connection from `AWS_MYSQL_DATABASE_URL`, exposed as `awsMysqlQuery(sql, params)` +
+  `closeAwsMysqlPool()`. Exported from the integrations barrel as `awsMysql`.
+- Added dep `mysql2@3.22.6`. Env: `AWS_MYSQL_DATABASE_URL` (URI/password auth) + `AWS_MYSQL_SSL`
+  (default on; RDS certs chain to Amazon Root CA in Node's store) + `AWS_MYSQL_READONLY` (default on;
+  pins `SET SESSION TRANSACTION READ ONLY` per connection — a read-only DB user is the real guarantee).
+- Auth today is URI/password; IAM database auth (via `@aws-sdk/rds-signer`, SDK v3 already present)
+  is documented but not wired. Placeholders differ from Postgres: mysql2 uses positional `?`, not `$1`.
+- The `.env` URL is a placeholder — real connectivity is gated on RDS network reachability from Render
+  (public access + security-group allowlist, or VPC peering), not on code.
+- Full how-to in new skill `.claude/skills/external-databases/SKILL.md`. lint (my files) + typecheck +
+  490 tests all green.

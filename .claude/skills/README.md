@@ -17,3 +17,10 @@ Reference skills for this repo. Each `SKILL.md` is auto-surfaced by Claude Code 
 - Build each capability as a `ToolManifest` tool dispatched via `toolDispatcher` (RBAC + department/`Administrator` gating).
 
 > These are point-in-time research snapshots (CRM v8 + Desk v1; COQL limits refreshed 2026-07 from [COQL Overview](https://www.zoho.com/crm/developer/docs/api/v8/COQL-Overview.html) + [DeskAPIDocument](https://desk.zoho.com/DeskAPIDocument)). Verify against the cited official doc URLs before relying on a fine detail.
+
+## Infrastructure
+
+| Skill | Covers |
+| --- | --- |
+| [`external-databases`](external-databases/SKILL.md) | Connecting to external SQL DBs — read-only DWH **Postgres** (`integrations/dwh.ts`, `pg`) + AWS RDS/Aurora **MySQL** (`integrations/awsMysql.ts`, `mysql2`): pooling, URI vs IAM auth, TLS, read-only enforcement, the `$1` vs `?` placeholder gotcha, RDS network prerequisites. |
+| [`llm-providers`](llm-providers/SKILL.md) | LLM provider strategy — OpenAI + adding Groq via the OpenAI-compatible `baseURL`, model routing, tool-call safety net. |

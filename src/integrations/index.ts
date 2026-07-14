@@ -4,6 +4,7 @@
  *
  *   zoho : Zoho OAuth across child services (CRM / Desk / Projects / People) — cached per service
  *   dwh  : read-only Data Warehouse Postgres (pooled)
+ *   awsMysql : external AWS RDS/Aurora MySQL (pooled, read-only by default)
  *   cmp  : CMP custom server — login/password -> bearer (sandbox by default)
  *   efs       : EFS CardManagement SOAP — parent + child session tokens
  *   serverCrm : our servercrm node server's agent API (proxy path; static x-api-key)
@@ -16,6 +17,7 @@
  */
 export * as zoho from './wrapper.js';
 export * as dwh from './dwh.js';
+export * as awsMysql from './awsMysql.js';
 export * as cmp from './cmp.js';
 export * as efs from './efs.js';
 export * as serverCrm from './serverCrm.js';

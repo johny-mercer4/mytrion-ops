@@ -31,6 +31,17 @@ const EnvSchema = z.object({
   // --- Data Warehouse (separate read Postgres; tool + metadata target) ---
   DWH_DATABASE_URL: z.string().default(''),
 
+  // --- AWS MySQL (external RDS/Aurora MySQL; tool target, mirrors the DWH wrapper) ---
+  // URI auth: mysql://user:pass@host:3306/db. For IAM database auth, mint a short-lived token with
+  // @aws-sdk/rds-signer and pass it as the password (not wired — add when needed).
+  AWS_MYSQL_DATABASE_URL: z.string().default(''),
+  // AWS RDS/Aurora terminate TLS with publicly-trusted certs (in Node's store) — verify by default.
+  // Set to '0' for a plaintext / non-RDS target (matches the DWH's ssl:false).
+  AWS_MYSQL_SSL: flag('1'),
+  // Read-only is the default (repo rule 7). Enforced per-connection via SET SESSION TRANSACTION
+  // READ ONLY; set to '0' to allow writes. A read-only DB user is the real guarantee — this is defence in depth.
+  AWS_MYSQL_READONLY: flag('1'),
+
   // --- OpenAI ---
   OPENAI_API_KEY: z.string().default(''),
   // Model IDs by role: FOUR_O_MINI = default chat, FIVE_O_MINI = reasoning/hard tasks,
