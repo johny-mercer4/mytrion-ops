@@ -215,11 +215,8 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(filesRoutes);
       await v1.register(approvalsRoutes);
       await v1.register(integrationsRoutes);
-<<<<<<< HEAD
       await v1.register(ringcentralRoutes);
-=======
       await v1.register(analyticsRoutes);
->>>>>>> 0d7fa3d (added new feat)
     },
     { prefix: API_PREFIX },
   );
