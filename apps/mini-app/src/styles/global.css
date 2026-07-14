@@ -4,65 +4,86 @@
   Octane — mobile support app for trucking companies, living inside Telegram.
 
   The theme is the USER'S choice, not the phone's and not Telegram's — lib/theme writes
-  <html data-theme> and persists it. Light is the default because the brand is a black ring and an
-  amber->orange drop on white. We do NOT bind --tg-theme-*: that would drag the app dark whenever
-  someone runs Telegram dark, overriding their choice here. Instead lib/theme asks Telegram to paint
-  its own header, background and bottom bar to match whichever theme is picked.
+  <html data-theme> and persists it. Dark is the default (v2 design). We do NOT bind --tg-theme-*:
+  that would drag the app to whatever Telegram's own theme is, overriding the user's choice here.
+  Instead lib/theme asks Telegram to paint its own header, background and bottom bar to match
+  whichever theme is picked.
 
-  The accent is Octane's brand amber->orange (the logo's fuel drop). Note --primary-foreground is
-  near-black, not white: white on #FF6A00 is ~2.9:1 and fails AA for body text, while near-black
-  clears 7:1 — and it matches the logo's black ring.
+  The accent is a flat blue (v2 rebrand) — the amber->orange gradient is now logo-mark-only (see
+  components/logo.tsx) plus the home hero's watermark motif and the invoice-paper mockup.
 */
 :root {
-  /* Eye-comfort light: a soft off-white page (not stark #fff, which glares on an OLED phone) with
-     cards a touch brighter so they lift off it, and near-black text rather than pure black. */
-  --background: #f4f5f7;
-  --foreground: #1b2029;
-  --card: #ffffff;
-  --card-foreground: #1b2029;
-  --secondary: #eceef1;
-  --secondary-foreground: #1b2029;
-  --muted: #eef0f2;
-  --muted-foreground: #667080;
-  --border: #e5e8ec;
+  --background: #0b0c10;
+  --foreground: #ffffff;
+  --card: #161922;
+  --card-foreground: #ffffff;
+  --secondary: #2a2e3a;
+  --secondary-foreground: #ffffff;
+  --muted: #1c202b;
+  --muted-foreground: #8a8f9c;
+  --border: rgba(255, 255, 255, 0.08);
 
-  /* Brand — the logo's gradient, as tokens. */
+  /* Brand — the logo's gradient, as tokens. Unchanged by the v2 rebrand: logo mark + invoice-paper
+     mockup only. */
   --brand-amber: #ffd200;
   --brand-orange: #ff5a00;
-  --primary: #ff6a00;
-  --primary-foreground: #17130f;
-  --ring: var(--primary);
-  /* The mark's ring: black, since the app is always light. */
-  --logo-ring: #000000;
+  --primary: #2451ff;
+  --primary-foreground: #ffffff;
+  --ring: #ffffff;
+  /* A second, brighter blue for text/icons sitting on a surface (vs. --primary's button fills) —
+     v2 uses two distinct blues per theme. */
+  --link-accent: #4d79ff;
+  /* The mark's ring: white on dark (default), black on light — set here and flipped below. */
+  --logo-ring: #ffffff;
 
-  --destructive: #d1373a;
-  --success: #1f845a;
+  --destructive: #f23f42;
+  --success: #2bd866;
+
+  /* Role badge (profile sheet "Owner"/"Fleet manager" pill). */
+  --owner-badge-bg: #17255e;
+  --owner-badge-fg: #4d79ff;
+
+  /* Card elevation. Dark cards already read as their own surface against the near-black page
+     (#161922 on #0B0C10), so borderless is fine there; on light, white-on-off-white has almost no
+     inherent contrast and reads as one flat plane without help — see the light override below. */
+  --card-shadow: none;
 
   /* Mobile radius scale — a 3px desktop-admin radius reads as an unfinished box on a phone. */
-  --radius-sm: 10px; /* inputs, chips */
-  --radius-md: 12px; /* buttons */
-  --radius-lg: 16px; /* cards, sheets */
+  --radius-sm: 12px; /* inputs, chips */
+  --radius-md: 14px; /* buttons */
+  --radius-lg: 24px; /* cards, sheets */
 }
 
-/* User-selected dark theme (data-theme='dark' on <html> from lib/theme).
-   Eye-comfort dark: a soft charcoal (not pure/near-black, which makes light text halate), cards a
-   step lighter for depth, and OFF-white text (#e4e7ee, not #fff) to keep contrast under ~14:1. */
-:root[data-theme='dark'] {
-  --background: #16181d;
-  --foreground: #e4e7ee;
-  --card: #1e2128;
-  --card-foreground: #e4e7ee;
-  --secondary: #262a31;
-  --secondary-foreground: #e4e7ee;
-  --muted: #262a31;
-  --muted-foreground: #949dab;
-  --border: #2d323b;
+/* User-selected light theme (data-theme='light' on <html> from lib/theme). */
+:root[data-theme='light'] {
+  --background: #f4f5f7;
+  --foreground: #111318;
+  --card: #ffffff;
+  --card-foreground: #111318;
+  --secondary: #e9ebf1;
+  --secondary-foreground: #111318;
+  --muted: #ffffff;
+  --muted-foreground: #7a8091;
+  /* Solid, visible gray — not the dark theme's faint 8%-white, which computes to a near-white
+     rgba(247,249,253) on a white card and vanishes entirely. This is what gives light-mode cards
+     an edge instead of bleeding into the page. */
+  --border: #e5e8ec;
 
-  --primary: #ff8a2b;
-  --destructive: #f87168;
-  --success: #4bce97;
-  --logo-ring: #ffffff;
-  color-scheme: dark;
+  --primary: #2451ff;
+  --primary-foreground: #ffffff;
+  --ring: #000000;
+  --link-accent: #2451ff;
+  --logo-ring: #000000;
+
+  --destructive: #d92b2e;
+  --success: #1dab53;
+
+  --owner-badge-bg: #dce4ff;
+  --owner-badge-fg: #2451ff;
+
+  /* Soft elevation to lift white cards off the off-white page — dark mode gets none (see above). */
+  --card-shadow: 0 1px 3px rgba(17, 19, 24, 0.07);
+  color-scheme: light;
 }
 
 @theme inline {
@@ -83,6 +104,9 @@
   --color-success: var(--success);
   --color-brand-amber: var(--brand-amber);
   --color-brand-orange: var(--brand-orange);
+  --color-link-accent: var(--link-accent);
+  --color-owner-badge-bg: var(--owner-badge-bg);
+  --color-owner-badge-fg: var(--owner-badge-fg);
 
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
@@ -101,22 +125,26 @@
   box-sizing: border-box;
 }
 
+/* Fixed to the viewport, not min-height: the app-root's internal flex column (sticky header +
+   scrollable body + fixed bottom tab bar) only works if nothing outside it can grow taller than
+   the screen and hand scrolling to the page instead of the inner scroll region. */
 html,
 body,
 #root {
   margin: 0;
-  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
-/* Default (unset data-theme) is light; the dark block above sets color-scheme: dark itself. */
+/* Default (unset data-theme) is dark; the light block above sets color-scheme: light itself. */
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 body {
-  /* Inter Tight — the octanefuel.com typeface (loaded in index.html); system stack while it loads. */
+  /* Geist (loaded in index.html); system stack while it loads. */
   font-family:
-    'Inter Tight',
+    'Geist',
     -apple-system,
     BlinkMacSystemFont,
     'Segoe UI',
@@ -182,13 +210,41 @@ input,
     opacity: 1;
   }
 }
+@keyframes octtoast {
+  from {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes octtoastright {
+  from {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
 
-/* Button press state — the prototype's style-active={ transform: scale(.97) }. */
+/* Button press state — the prototype's style-active={ transform: scale(.94) }, bouncier than v1. */
 .press {
-  transition: transform 0.08s ease;
+  transition: transform 0.16s cubic-bezier(0.34, 1.55, 0.6, 1);
 }
 .press:active {
-  transform: scale(0.97);
+  transform: scale(0.94);
+}
+
+/* Opacity-based press for list rows (Inbox) where a scale nudge reads as jittery. */
+.row-press {
+  transition: opacity 0.16s cubic-bezier(0.34, 1.55, 0.6, 1);
+}
+.row-press:active {
+  opacity: 0.55;
 }
 
 @media (prefers-reduced-motion: reduce) {
