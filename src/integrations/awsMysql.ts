@@ -4,29 +4,46 @@
  * AWS_MYSQL_DATABASE_URL; read-only is the default (AWS_MYSQL_READONLY) per the repo's
  * read-only-first rule. Callers that read AWS MySQL go through `awsMysqlQuery`.
  *
- * Auth: username/password in the connection URI (mysql://user:pass@host:3306/db). For IAM database
- * auth instead, mint a short-lived token with `@aws-sdk/rds-signer` (the AWS SDK v3 is already a
- * dependency) and pass it as the password — not wired here; add a token-refresh path when needed.
+ * Auth: discrete fields (AWS_MYSQL_HOST/_PORT/_USER/_PASSWORD/_DATABASE, preferred — password
+ * passed raw) or the connection URI (AWS_MYSQL_DATABASE_URL, mysql://user:pass@host:3306/db, whose
+ * password must be percent-encoded). For IAM database auth instead, mint a short-lived token with
+ * `@aws-sdk/rds-signer` (the AWS SDK v3 is already a dependency) and pass it as the password — not
+ * wired here; add a token-refresh path when needed.
  *
  * NOTE: MySQL placeholders are positional `?`, NOT Postgres `$1` — queries are not portable between
  * this wrapper and `dwhQuery`.
  */
 import mysql from 'mysql2/promise';
-import type { Pool, RowDataPacket } from 'mysql2/promise';
+import type { Pool, PoolOptions, RowDataPacket } from 'mysql2/promise';
 import type { PoolConnection } from 'mysql2';
 import { env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
 
 let pool: Pool | null = null;
 
-/** Lazily create the AWS MySQL pool. Throws if AWS_MYSQL_DATABASE_URL is unconfigured. */
+/** Discrete fields (raw password, tunnel-friendly) win over the URI; else fall back to the URI. */
+function connectionConfig(): PoolOptions {
+  if (env.AWS_MYSQL_HOST) {
+    return {
+      host: env.AWS_MYSQL_HOST,
+      port: env.AWS_MYSQL_PORT,
+      user: env.AWS_MYSQL_USER,
+      password: env.AWS_MYSQL_PASSWORD,
+      // Omit `database` when blank so the connection has no default schema (browse all).
+      ...(env.AWS_MYSQL_DATABASE ? { database: env.AWS_MYSQL_DATABASE } : {}),
+    };
+  }
+  return { uri: env.AWS_MYSQL_DATABASE_URL };
+}
+
+/** Lazily create the AWS MySQL pool. Throws if neither discrete fields nor the URI are configured. */
 export function getAwsMysqlPool(): Pool {
   if (pool) return pool;
-  if (!env.AWS_MYSQL_DATABASE_URL) {
-    throw new Error('[aws-mysql] AWS_MYSQL_DATABASE_URL is not configured');
+  if (!env.AWS_MYSQL_HOST && !env.AWS_MYSQL_DATABASE_URL) {
+    throw new Error('[aws-mysql] set AWS_MYSQL_HOST (+ _USER/_PASSWORD/_PORT/_DATABASE) or AWS_MYSQL_DATABASE_URL');
   }
   pool = mysql.createPool({
-    uri: env.AWS_MYSQL_DATABASE_URL,
+    ...connectionConfig(),
     // RDS/Aurora present publicly-trusted certs (Amazon Root CA, in Node's trust store) so verify
     // by default; AWS_MYSQL_SSL='0' drops to plaintext for a non-RDS / tunnelled target. Spread so
     // the `ssl` key is absent (not undefined) when off — exactOptionalPropertyTypes.

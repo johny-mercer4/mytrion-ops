@@ -39,8 +39,13 @@ Register it in [`src/integrations/index.ts`](../../src/integrations/index.ts) as
 ## AWS MySQL specifics
 
 ### Auth
-- **URI / password (wired):** `AWS_MYSQL_DATABASE_URL=mysql://user:pass@host:3306/db`. Simplest;
-  what `awsMysql.ts` uses today.
+- **Discrete fields (preferred, wired):** `AWS_MYSQL_HOST` / `_PORT` / `_USER` / `_PASSWORD` /
+  `_DATABASE`. The password is passed **raw** — no URL-encoding, so special chars (`%`, `{`, `[`, …)
+  just work. Through an SSH tunnel, `HOST=127.0.0.1` and `PORT` = the local forward (e.g. `3307`).
+  `awsMysql.ts` uses these whenever `AWS_MYSQL_HOST` is set.
+- **URI / password (fallback):** `AWS_MYSQL_DATABASE_URL=mysql://user:pass@host:3306/db`. ⚠️ Any
+  special char in the password **must be percent-encoded** or mysql2 throws `URI malformed` at pool
+  creation (a lone `%` is the usual culprit). Prefer the discrete fields to avoid this entirely.
 - **IAM database authentication (not wired — add when needed):** no static password. Mint a
   short-lived (~15 min) token and pass it as the password, refreshing before expiry. The AWS SDK v3
   is already a dependency (`@aws-sdk/client-s3`); add **`@aws-sdk/rds-signer`**:
@@ -77,7 +82,16 @@ RDS/Aurora lives in a VPC. Code connecting is not enough — the runtime (Render
 - **VPC peering / PrivateLink** between Render and the AWS VPC.
 Verify reachability (`nc -zv host 3306` from the runtime) before blaming the code.
 
+## Verifying a connection
+`scripts/mysqlInspect.ts` (`pnpm mysql:inspect`) exercises the pool end-to-end: no-arg lists
+databases + table counts, `--db <name>` lists tables, `--db <name> --table <t> [--sample N]` shows
+columns/row-count/samples, `--query "…"` runs ad-hoc read-only SQL. Start the SSH tunnel first — the
+app dials `127.0.0.1:3307`, it does not open the tunnel itself. (Verified live 2026-07-14 against
+`tss_db`, 92 tables.)
+
 ## Gotchas checklist
+- **`URI malformed`** at pool creation = an unencoded special char in the URI password. Fix: use the
+  discrete `AWS_MYSQL_*` fields (raw password), or percent-encode it.
 - `$1`/`$2` (pg) vs `?` (mysql2) — not interchangeable.
 - `mysql2/promise` `Pool.on(...)` is narrowly typed; attach events on `pool.pool` (base pool).
 - `mysql2` returns `[rows, fields]` from `.query()` — destructure `const [rows] = await pool.query(...)`.

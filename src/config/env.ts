@@ -32,9 +32,20 @@ const EnvSchema = z.object({
   DWH_DATABASE_URL: z.string().default(''),
 
   // --- AWS MySQL (external RDS/Aurora MySQL; tool target, mirrors the DWH wrapper) ---
-  // URI auth: mysql://user:pass@host:3306/db. For IAM database auth, mint a short-lived token with
-  // @aws-sdk/rds-signer and pass it as the password (not wired — add when needed).
+  // Two ways to point at it (discrete fields win when AWS_MYSQL_HOST is set):
+  //  1. Discrete (preferred — password passed RAW, no URL-encoding footgun):
+  //     AWS_MYSQL_HOST / _PORT / _USER / _PASSWORD / _DATABASE. Through an SSH tunnel, HOST is
+  //     127.0.0.1 and PORT is the local forward (e.g. 3307).
+  //  2. URI: mysql://user:pass@host:3306/db — but special chars in the password MUST be
+  //     percent-encoded or mysql2 throws "URI malformed".
+  // For IAM database auth, mint a short-lived token with @aws-sdk/rds-signer and use it as the
+  // password (not wired — add when needed).
   AWS_MYSQL_DATABASE_URL: z.string().default(''),
+  AWS_MYSQL_HOST: z.string().default(''),
+  AWS_MYSQL_PORT: z.coerce.number().int().positive().default(3306),
+  AWS_MYSQL_USER: z.string().default(''),
+  AWS_MYSQL_PASSWORD: z.string().default(''),
+  AWS_MYSQL_DATABASE: z.string().default(''),
   // AWS RDS/Aurora terminate TLS with publicly-trusted certs (in Node's store) — verify by default.
   // Set to '0' for a plaintext / non-RDS target (matches the DWH's ssl:false).
   AWS_MYSQL_SSL: flag('1'),
