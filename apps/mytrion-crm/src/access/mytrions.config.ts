@@ -5,6 +5,7 @@
  *   - allowedProfiles  → DEFAULT access: a CRM profile maps to a Mytrion.
  *   - allowedRoles     → optional access by CRM role.
  *   - allowedUsernames → ADDITIVE override: "these named users ALSO get in", regardless of profile.
+ *   - usernameContainsAny → SUBSTRING match on Zoho user_name (case-insensitive contains).
  *   - adminBypass      → anyone matching ADMIN_PROFILES / ADMIN_ROLES also gets in.
  *
  * `department` is the canonical backend slug (department_access) forwarded on chat/knowledge calls.
@@ -51,6 +52,11 @@ export interface MytrionAccessRule {
   allowedRoles: string[];
   /** ADDITIVE named-user overrides (case-insensitive) — get access regardless of profile/role. */
   allowedUsernames: string[];
+  /**
+   * SUBSTRING access by Zoho user_name — granted if userName CONTAINS any term (case-insensitive).
+   * Optional; omit for exact-only rules.
+   */
+  usernameContainsAny?: string[];
   /** Admins (ADMIN_PROFILES/ADMIN_ROLES) also get this Mytrion. */
   adminBypass: boolean;
   /** 'ported' = has an existing Zoho/Vue origin to port; 'new' = stub for the design agent. */
@@ -139,10 +145,12 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     hue: 'orange',
     department: 'finance',
     allDepartments: false,
-    allowedProfiles: ['Finance'],
+    // Restricted workspace: Administrator profile OR named finance operators (substring match).
+    allowedProfiles: ['Administrator'],
     allowedRoles: [],
     allowedUsernames: [],
-    adminBypass: true,
+    usernameContainsAny: ['Azimov', 'Mirjalol'],
+    adminBypass: false,
     status: 'ported',
     portedFrom: 'zoho-octane/app/mytrion-finance',
   },

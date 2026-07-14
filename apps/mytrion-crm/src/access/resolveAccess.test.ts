@@ -41,4 +41,20 @@ describe('resolveAccessibleMytrions', () => {
     expect(isAdmin(ctx({ role: 'CEO' }))).toBe(true);
     expect(isAdmin(ctx({ profile: 'Sales Agent' }))).toBe(false);
   });
+
+  it('grants finance to Administrator profile', () => {
+    expect(canAccess(ctx({ profile: 'Administrator' }), 'finance')).toBe(true);
+  });
+
+  it('grants finance when userName contains Azimov or Mirjalol', () => {
+    expect(canAccess(ctx({ profile: 'Sales Agent', userName: 'John Azimov' }), 'finance')).toBe(true);
+    expect(canAccess(ctx({ profile: 'Billing', userName: 'Mirjalol Karimov' }), 'finance')).toBe(true);
+    expect(canAccess(ctx({ profile: 'Sales Agent', userName: 'azimov.ops' }), 'finance')).toBe(true);
+  });
+
+  it('denies finance to unrelated users (no adminBypass)', () => {
+    expect(canAccess(ctx({ profile: 'Finance' }), 'finance')).toBe(false);
+    expect(canAccess(ctx({ profile: 'Sales Agent', userName: 'Random User' }), 'finance')).toBe(false);
+    expect(canAccess(ctx({ role: 'CEO', profile: 'Sales Agent' }), 'finance')).toBe(false);
+  });
 });

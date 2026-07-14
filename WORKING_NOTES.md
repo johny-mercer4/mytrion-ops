@@ -2018,3 +2018,22 @@ Follow-up after export parity commit (`792491e`):
   (public access + security-group allowlist, or VPC peering), not on code.
 - Full how-to in new skill `.claude/skills/external-databases/SKILL.md`. lint (my files) + typecheck +
   490 tests all green.
+
+## 2026-07-14 — Finance Mytrion redesign + restricted FBAC
+
+- Ported `FinanceMytrionDesign/Finance Mytrion.dc.html` into `apps/mytrion-crm/src/mytrions/finance/redesign/`:
+  green `.mf-root` theme, boot loader, sidebar (Home / Transactions / Clients / Dashboard), live header,
+  Home hero (balance + health ring + KPIs + attention list + live feed + AI insight), tx/client modals,
+  dashboard sub-tabs (debtors / payments / fueling patterns). Replaces old `MytrionShell` finance module.
+- FBAC: `finance` mytrion now grants **Administrator** profile OR `usernameContainsAny` substring match
+  (`Azimov`, `Mirjalol`); `adminBypass: false` so CEO/other admins do not auto-enter unless profile/username
+  matches. New field wired in `resolveAccess.ts` + tests.
+
+## 2026-07-14 — Postgres metadata scripts (catalog + per-table)
+
+- Added `metadataScripts/lib/pgCatalog.ts` shared introspection: schemas/tables/columns (incl. UDT),
+  PKs/FKs/indexes, `pg_stat_user_tables` activity, deprecation hints from `pg_description` comments.
+- `pnpm meta:pg-catalog` — full catalog export to `output/pg-catalog-{dwh|ops}.{json,md}` (`--target ops`
+  for app DB). `pnpm meta:pg-table -- <name>` — single-table lookup with column API names + activity.
+- `pnpm pg:inspect` — interactive CLI (schemas, table detail, samples). Refactored `meta:dwh` to use
+  the shared lib (now includes activity/deprecation fields). typecheck green.

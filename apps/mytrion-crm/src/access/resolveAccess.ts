@@ -35,6 +35,7 @@ export function ruleAllows(ctx: UserContext, rule: MytrionAccessRule, admin: boo
   if (containsAny(ctx.profile, rule.profileContainsAny)) return true; // substring profile grant
   if (inList(ctx.role, rule.allowedRoles)) return true;
   if (inList(ctx.userName, rule.allowedUsernames)) return true; // additive: named-user override
+  if (containsAny(ctx.userName, rule.usernameContainsAny)) return true; // substring username grant
   return false;
 }
 
