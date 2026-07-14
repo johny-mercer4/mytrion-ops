@@ -81,6 +81,7 @@ describe('tool gating through the live registry (widget path)', () => {
     expect(n).toEqual([
       'agent.activity',
       'agent.sales_snapshot',
+      'analytics.snapshot',
       'crm.carrier_balance',
       'crm.carrier_overview',
       'crm.list_cards',
@@ -98,12 +99,13 @@ describe('tool gating through the live registry (widget path)', () => {
 
   it('Billing sees debtors + CRM + RAG, not sales/desk/client-service tools', () => {
     const n = names(dept(['billing']));
-    expect(n).toEqual(['agent.debtors', 'knowledge.search', 'zoho_crm.query']);
+    expect(n).toEqual(['agent.debtors', 'analytics.snapshot', 'knowledge.search', 'zoho_crm.query']);
     expect(n).not.toContain('crm.carrier_balance');
   });
 
   it('Customer Service sees Desk tickets + CRM + client-service tools + RAG', () => {
     expect(names(dept(['customer-service']))).toEqual([
+      'analytics.snapshot',
       'crm.carrier_balance',
       'crm.carrier_overview',
       'crm.list_cards',

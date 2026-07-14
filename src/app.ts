@@ -24,6 +24,8 @@ import { applyDepartmentPolicy } from './modules/agents/departmentAgents.js';
 import { loadMcpTools } from './modules/tools/mcpTools.js';
 import { toolRegistry } from './modules/tools/index.js';
 import { adminRoutes } from './routes/v1/admin.routes.js';
+import { analyticsRoutes } from './routes/v1/analytics.routes.js';
+import { startAnalyticsWarmer } from './modules/analytics/cache.js';
 import { carrierUsersRoutes } from './routes/v1/carrierUsers.routes.js';
 import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
 import { deskRoutes } from './routes/v1/desk.routes.js';
@@ -213,10 +215,18 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(filesRoutes);
       await v1.register(approvalsRoutes);
       await v1.register(integrationsRoutes);
+<<<<<<< HEAD
       await v1.register(ringcentralRoutes);
+=======
+      await v1.register(analyticsRoutes);
+>>>>>>> 0d7fa3d (added new feat)
     },
     { prefix: API_PREFIX },
   );
+
+  // Live-analytics snapshot warmer: warm now, then recompute on the TTL cadence (default 2h) so
+  // dashboard GETs always hit a warm cache. No-op without a DWH; never runs in tests.
+  if (!isTest) startAnalyticsWarmer();
 
   return app;
 }
