@@ -9,11 +9,8 @@ import { FuelMark } from '../components/BrandMark';
 import screen from './Screen.module.css';
 
 /**
- * CLIENT sign-in — a separate, standalone page (route `/client`), deliberately OUTSIDE the worker
- * Zoho OAuth gate. Carrier accounts are provisioned by Octane admins (Carrier User Management);
- * there is intentionally NO sign-up. A successful login mints a locked-down customer session
- * (audience 'customer', scoped to the carrier's own data) — the same account the future Telegram
- * mini-app will use.
+ * Legacy carrier-client sign-in page. Kept in source while the retired password flow is being
+ * removed, but the production router no longer mounts `/client`.
  */
 export function ClientLogin() {
   const [session, setSession] = useState<ClientSession | null>(() => getClientSession());

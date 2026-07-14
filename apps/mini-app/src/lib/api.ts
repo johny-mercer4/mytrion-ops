@@ -54,13 +54,14 @@ export interface RegistrationPreview {
   companyName: string | null;
   companyType: CompanyType | null;
   cardCount: number | null;
+  agentName: string | null;
   /** ISO deadline — drives the "This link expires in …" pill on the confirm screen. */
   expiresAt?: string;
 }
 
 export type PreviewResult =
   | { invite: RegistrationPreview; status: 'pending' }
-  | { invite: null; status: 'redeemed'; companyName: string | null };
+  | { invite: null; status: 'redeemed'; companyName: string | null; agentName: string | null };
 
 export async function fetchRegistrationPreview(id: string): Promise<PreviewResult> {
   return (await request('GET', `/carrier-invitations/${encodeURIComponent(id)}/public`)) as PreviewResult;
@@ -74,6 +75,7 @@ export interface RegistrationView {
   companyType: CompanyType | null;
   cardCount: number | null;
   cardId: string | null;
+  agentName: string | null;
 }
 
 /** Aggregate fleet summary — counts only, deliberately no card numbers or driver identities. */
@@ -90,6 +92,10 @@ export async function redeemRegistration(id: string, initData: string): Promise<
   return (await request('POST', `/carrier-invitations/${encodeURIComponent(id)}/redeem`, {
     initData,
   })) as RedeemResult;
+}
+
+export async function fetchMiniAppSession(initData: string): Promise<{ registration: RegistrationView }> {
+  return (await request('POST', '/carrier/mini-app/session', { initData })) as { registration: RegistrationView };
 }
 
 // ── Owner fleet management (owner-authenticated via initData) ────────────────────────────────

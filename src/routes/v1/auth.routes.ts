@@ -5,7 +5,6 @@ import { env } from '../../config/env.js';
 import { AppError, NotFoundError } from '../../lib/errors.js';
 import { audit } from '../../modules/audit/auditLogger.js';
 import { authService, toPublicUser } from '../../modules/auth/authService.js';
-import { clientAuthService } from '../../modules/auth/clientAuthService.js';
 import { zohoAuthService } from '../../modules/auth/zohoAuthService.js';
 import { userRepo } from '../../repos/userRepo.js';
 import { requireContext } from './helpers.js';
@@ -18,11 +17,6 @@ const loginSchema = z.object({
 
 const refreshSchema = z.object({
   refreshToken: z.string().min(10),
-});
-
-const clientLoginSchema = z.object({
-  login: z.string().min(1).max(120),
-  password: z.string().min(1).max(200),
 });
 
 const zohoCallbackSchema = z.object({
@@ -75,45 +69,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     return authService.refresh(body.refreshToken);
   });
 
-  // ── Carrier-client sign-in (carrier_users accounts; Telegram mini-app / the /client page) ────
-  app.post('/auth/client/login', async (request) => {
-    if (!env.FF_CLIENT_LOGIN_ENABLED) {
-      throw new AppError('Client login is disabled (set FF_CLIENT_LOGIN_ENABLED).', {
-        statusCode: 503,
-        code: 'FEATURE_DISABLED',
-      });
-    }
-    const body = clientLoginSchema.parse(request.body);
-    try {
-      const result = await clientAuthService.login(body.login, body.password);
-      await audit({
-        tenantId: DEFAULT_TENANT_ID,
-        audience: 'customer',
-        userId: `client:${result.client.carrierUserId}`,
-        userName: result.client.login ?? body.login,
-        role: 'viewer',
-        company: [result.client.carrierId, result.client.applicationId]
-          .filter(Boolean)
-          .join(', '),
-        profile: result.client.clientProfile === 'driver' ? 'Driver' : 'Owner',
-        action: 'auth.client_login',
-        status: 'ok',
-        requestId: request.requestId,
-        ip: request.ip,
-        detail: { carrierId: result.client.carrierId },
-      });
-      return result;
-    } catch (err) {
-      await audit({
-        tenantId: DEFAULT_TENANT_ID,
-        action: 'auth.client_login',
-        status: 'denied',
-        requestId: request.requestId,
-        ip: request.ip,
-        detail: { login: body.login },
-      });
-      throw err;
-    }
+  // ── Retired carrier-client password sign-in ───────────────────────────────────────────────────
+  app.post('/auth/client/login', async () => {
+    throw new AppError('Client login/password is retired. Use the Telegram registration flow.', {
+      statusCode: 410,
+      code: 'FEATURE_DISABLED',
+      expose: true,
+    });
   });
 
   // ── Zoho OAuth worker sign-in (authorization-code) ───────────────────────────────────────────

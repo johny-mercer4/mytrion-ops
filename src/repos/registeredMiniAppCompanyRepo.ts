@@ -8,12 +8,17 @@ import {
 } from '../db/schema/index.js';
 import type { TenantContext } from '../types/tenantContext.js';
 
+type TransactionClient = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type DbClient = typeof db | TransactionClient;
+
 export interface RegisteredMiniAppCompanyDto {
   id: string;
   profile: 'owner' | 'driver';
   carrierId: string | null;
   applicationId: string | null;
   companyName: string | null;
+  agentName: string | null;
+  agentZohoUserId: string | null;
   cardId: string | null;
   driverName: string | null;
   companyType: CarrierCompanyType | null;
@@ -32,6 +37,8 @@ export interface UpsertRegisteredMiniAppCompanyInput {
   carrierId?: string | undefined;
   applicationId?: string | undefined;
   companyName?: string | undefined;
+  agentName?: string | undefined;
+  agentZohoUserId?: string | undefined;
   cardId?: string | undefined;
   driverName?: string | undefined;
   companyType?: CarrierCompanyType | undefined;
@@ -45,6 +52,8 @@ function toDto(row: RegisteredMiniAppCompany): RegisteredMiniAppCompanyDto {
     carrierId: row.carrierId,
     applicationId: row.applicationId,
     companyName: row.companyName,
+    agentName: row.agentName,
+    agentZohoUserId: row.agentZohoUserId,
     cardId: row.cardId,
     driverName: row.driverName,
     companyType: row.companyType,
@@ -59,8 +68,9 @@ export const registeredMiniAppCompanyRepo = {
   async findByTelegramUserId(
     ctx: TenantContext,
     telegramUserId: string,
+    client: DbClient = db,
   ): Promise<RegisteredMiniAppCompany | undefined> {
-    const rows = await db
+    const rows = await client
       .select()
       .from(registeredMiniAppCompanies)
       .where(eq(registeredMiniAppCompanies.telegramUserId, telegramUserId))
@@ -100,6 +110,7 @@ export const registeredMiniAppCompanyRepo = {
   async upsert(
     ctx: TenantContext,
     input: UpsertRegisteredMiniAppCompanyInput,
+    client: DbClient = db,
   ): Promise<RegisteredMiniAppCompany> {
     const values: NewRegisteredMiniAppCompany = {
       tenantId: ctx.tenantId,
@@ -111,12 +122,14 @@ export const registeredMiniAppCompanyRepo = {
       carrierId: input.carrierId ?? null,
       applicationId: input.applicationId ?? null,
       companyName: input.companyName ?? null,
+      agentName: input.agentName ?? null,
+      agentZohoUserId: input.agentZohoUserId ?? null,
       cardId: input.cardId ?? null,
       driverName: input.driverName ?? null,
       companyType: input.companyType ?? null,
       cardCount: input.cardCount ?? null,
     };
-    const rows = await db
+    const rows = await client
       .insert(registeredMiniAppCompanies)
       .values(values)
       .onConflictDoUpdate({
@@ -129,6 +142,8 @@ export const registeredMiniAppCompanyRepo = {
           carrierId: input.carrierId ?? null,
           applicationId: input.applicationId ?? null,
           companyName: input.companyName ?? null,
+          agentName: input.agentName ?? null,
+          agentZohoUserId: input.agentZohoUserId ?? null,
           cardId: input.cardId ?? null,
           driverName: input.driverName ?? null,
           companyType: input.companyType ?? null,

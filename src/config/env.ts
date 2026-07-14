@@ -378,10 +378,6 @@ const EnvSchema = z.object({
   FF_WORKER_DEPT_STRICT: flag('0'),
   // Zoho OAuth worker sign-in (/v1/auth/zoho/*) + Bearer-session identity on caller routes.
   FF_ZOHO_OAUTH_ENABLED: flag('0'),
-  // Carrier-client login/password sign-in (/v1/auth/client/login — carrier_users accounts,
-  // consumed by the future Telegram mini-app + the /client page). Sessions are locked to
-  // audience 'customer'. On by default; set 0 to kill the endpoint instantly.
-  FF_CLIENT_LOGIN_ENABLED: flag('1'),
   // Multi-agent orchestrator endpoint (POST /v1/agent). FF_DEEP_AGENTS_ENABLED is kept as a
   // deprecated alias — either flag enables the endpoint.
   FF_ORCHESTRATOR_ENABLED: flag('0'),

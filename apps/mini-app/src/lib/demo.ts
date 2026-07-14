@@ -1,9 +1,14 @@
 /**
  * DEMO DATA for the self-service sheets (balance, transactions, invoices, payment, last-used,
- * tracking) and the home hero — the figures the design prototype ships. The real numbers come from
- * EFS/servercrm integrations that are NOT built yet; when those endpoints land, this module is the
- * single place to replace with fetches. Everything here is presentation-shaped, not secret.
+ * tracking), the home hero, and the inbox — the figures the design prototype ships. The real
+ * numbers come from EFS/servercrm integrations that are NOT built yet; when those endpoints land,
+ * this module is the single place to replace with fetches. Everything here is presentation-shaped,
+ * not secret.
  */
+import type { IconName } from '../components/icons';
+
+/** The 7 canonical self-service sheets (each maps to a real, non-demo action eventually). */
+export type ServiceKey = 'balance' | 'status' | 'txns' | 'invoices' | 'payment' | 'lastused' | 'tracking';
 
 export interface BalanceTile {
   label: string;
@@ -118,43 +123,35 @@ export const TRACKING = (ownCard: string, isDriver: boolean) => ({
   eta: 'Est. Jul 10',
 });
 
-export interface ActivityItem {
+export interface InboxItem {
   id: string;
-  /** i18n key for the action label (act.*). */
-  actionKey: string;
+  icon: IconName;
+  /** CSS color value, or null to fall back to the theme's link-accent tint. */
+  color: string | null;
+  /** i18n key for the notification title (inbox.*) — ignored if `titleText` is set. */
+  titleKey: string;
+  /** Pre-resolved literal title, for notifications built at runtime (e.g. a generic service request) rather than seeded from a fixed key. */
+  titleText?: string;
+  /** i18n key for the notification body (inbox.*) — ignored if `bodyText` is set. */
+  bodyKey: string;
+  /** Pre-resolved literal body, see `titleText`. */
+  bodyText?: string;
   /** i18n key for the relative time (time.*), with optional {n}. */
   atKey: string;
   atN?: number;
-  status: 'done' | 'pending' | 'failed';
+  unread: boolean;
 }
 
-export function seedActivities(isDriver: boolean): ActivityItem[] {
+export function seedInbox(isDriver: boolean): InboxItem[] {
   if (isDriver) {
     return [
-      { id: 'a1', actionKey: 'act.txns', atKey: 'time.min', atN: 2, status: 'done' },
-      { id: 'a2', actionKey: 'act.tracking', atKey: 'time.yesterday', status: 'done' },
+      { id: 'n1', icon: 'card', color: 'var(--success)', titleKey: 'inbox.cardActivated.title', bodyKey: 'inbox.cardActivated.body', atKey: 'time.hour', atN: 2, unread: true },
+      { id: 'n2', icon: 'pin', color: null, titleKey: 'inbox.cardDelivered.title', bodyKey: 'inbox.cardDelivered.body', atKey: 'time.yesterday', unread: false },
     ];
   }
   return [
-    { id: 'a1', actionKey: 'act.balance', atKey: 'time.min', atN: 2, status: 'done' },
-    { id: 'a2', actionKey: 'act.invoices', atKey: 'time.hour', atN: 1, status: 'done' },
-    { id: 'a3', actionKey: 'act.txns', atKey: 'time.yesterday', status: 'done' },
+    { id: 'n1', icon: 'doc', color: null, titleKey: 'inbox.newInvoice.title', bodyKey: 'inbox.newInvoice.body', atKey: 'time.hour', atN: 1, unread: true },
+    { id: 'n2', icon: 'clock', color: 'var(--destructive)', titleKey: 'inbox.paymentDue.title', bodyKey: 'inbox.paymentDue.body', atKey: 'time.hour', atN: 3, unread: true },
+    { id: 'n3', icon: 'check', color: 'var(--success)', titleKey: 'inbox.paymentReceived.title', bodyKey: 'inbox.paymentReceived.body', atKey: 'time.yesterday', unread: false },
   ];
-}
-
-const ACTIVITY_KEY: Record<string, string> = {
-  balance: 'act.balance',
-  status: 'act.status',
-  txns: 'act.txns',
-  invoices: 'act.invoices',
-  payment: 'act.payment',
-  lastused: 'act.lastused',
-  tracking: 'act.tracking',
-};
-
-export function logActivity(list: ActivityItem[], key: string): ActivityItem[] {
-  return [
-    { id: 'a' + Date.now(), actionKey: ACTIVITY_KEY[key] ?? 'act.balance', atKey: 'time.justNow', status: 'done' as const },
-    ...list,
-  ].slice(0, 6);
 }

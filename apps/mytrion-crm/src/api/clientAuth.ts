@@ -1,7 +1,6 @@
 /**
- * Carrier-client sign-in (/v1/auth/client/login) + its own session store — deliberately
- * SEPARATE from the worker session (session.ts): a carrier login must never be mistaken
- * for a worker session by the app shell, and vice versa.
+ * Legacy carrier-client sign-in helper. Kept separate from the worker session store so any
+ * dormant password-flow state can never be mistaken for a Zoho worker session.
  */
 import { request } from './transport';
 

@@ -1,7 +1,7 @@
 /**
- * Carrier User Management + carrier-client login. RBAC coverage (CLAUDE.md rule 9 spirit):
- * the admin CRUD surface must reject worker-role and customer sessions, and a minted client
- * session must be locked down (audience customer, no scopes, own company tags only) with
+ * Carrier User Management + legacy carrier-client token behavior. RBAC coverage (CLAUDE.md rule 9
+ * spirit): the admin CRUD surface must reject worker-role and customer sessions, and any legacy
+ * client session must stay locked down (audience customer, no scopes, own company tags only) with
  * body identity fully ignored.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -270,7 +270,7 @@ describe('carrier-users routes — CRUD', () => {
   });
 });
 
-describe('carrier-client login (/v1/auth/client/login + clientAuthService)', () => {
+describe('legacy carrier-client tokens (public login retired)', () => {
   let passwordHash = '';
   beforeAll(async () => {
     passwordHash = await hashPassword('correct-horse-9');
@@ -296,19 +296,12 @@ describe('carrier-client login (/v1/auth/client/login + clientAuthService)', () 
       ...overrides,
     }) as CarrierUser;
 
-  it('mints a customer session whose context is locked to the carrier tags', async () => {
+  it('clientAuthService still mints a locked customer session for legacy-token handling', async () => {
     repo.findByLoginForAuth.mockResolvedValueOnce(activeRow());
-    const res = await app.inject({
-      method: 'POST',
-      url: '/v1/auth/client/login',
-      headers: { 'content-type': 'application/json' },
-      payload: { login: 'Acme.Owner', password: 'correct-horse-9' },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = res.json() as { accessToken: string; client: { carrierId: string } };
-    expect(body.client.carrierId).toBe('5758544');
+    const session = await clientAuthService.login('Acme.Owner', 'correct-horse-9');
+    expect(session.client.carrierId).toBe('5758544');
 
-    const claims = await verifyToken(body.accessToken, 'access');
+    const claims = await verifyToken(session.accessToken, 'access');
     const ctx = contextFromClaims(claims, 'rq');
     expect(ctx.audience).toBe('customer');
     expect(ctx.role).toBe('viewer');
@@ -317,6 +310,22 @@ describe('carrier-client login (/v1/auth/client/login + clientAuthService)', () 
     expect(ctx.allDepartmentAccess).toBe(false);
     expect(ctx.sessionVerified).toBe(true);
     expect(ctx.userId).toBe('client:cu_1');
+  });
+
+  it('public /v1/auth/client/login is retired', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/client/login',
+      headers: { 'content-type': 'application/json' },
+      payload: { login: 'acme.owner', password: 'correct-horse-9' },
+    });
+    expect(res.statusCode).toBe(410);
+    expect(res.json()).toMatchObject({
+      error: {
+        code: 'FEATURE_DISABLED',
+        message: 'Client login/password is retired. Use the Telegram registration flow.',
+      },
+    });
   });
 
   it('rejects a wrong password and a disabled account identically', async () => {
@@ -362,39 +371,27 @@ describe('carrier-client login (/v1/auth/client/login + clientAuthService)', () 
     expect(merged.impersonatorUserId).toBeUndefined();
   });
 
-  it('refresh rejects once the account is disabled', async () => {
+  it('refresh rejects legacy client sessions outright', async () => {
     repo.findByLoginForAuth.mockResolvedValueOnce(activeRow());
     const session = await clientAuthService.login('acme.owner', 'correct-horse-9');
 
-    repo.findByIdAny.mockResolvedValueOnce(activeRow({ status: 'disabled' }));
     const res = await app.inject({
       method: 'POST',
       url: '/v1/auth/refresh',
       headers: { 'content-type': 'application/json' },
       payload: { refreshToken: session.refreshToken },
     });
-    expect(res.statusCode).toBe(401);
-  });
-
-  it('refresh rotates tokens for an active account', async () => {
-    repo.findByLoginForAuth.mockResolvedValueOnce(activeRow());
-    const session = await clientAuthService.login('acme.owner', 'correct-horse-9');
-
-    repo.findByIdAny.mockResolvedValueOnce(activeRow());
-    const res = await app.inject({
-      method: 'POST',
-      url: '/v1/auth/refresh',
-      headers: { 'content-type': 'application/json' },
-      payload: { refreshToken: session.refreshToken },
+    expect(res.statusCode).toBe(410);
+    expect(res.json()).toMatchObject({
+      error: {
+        code: 'FEATURE_DISABLED',
+        message: 'Client login/password is retired. Use the Telegram registration flow.',
+      },
     });
-    expect(res.statusCode).toBe(200);
-    const body = res.json() as { accessToken: string; client?: { carrierId: string } };
-    expect(body.client?.carrierId).toBe('5758544');
-    expect((await verifyToken(body.accessToken, 'access')).client?.carrierUserId).toBe('cu_1');
   });
 });
 
-describe('client session containment — the new login surface cannot reach internal data', () => {
+describe('client session containment — legacy customer tokens cannot reach internal data', () => {
   async function clientToken(): Promise<string> {
     return signAccessToken({
       userId: 'client:cu_1',
@@ -633,30 +630,4 @@ describe('driver login — inheritance + parent lockout', () => {
     await expect(clientAuthService.login('road.runner', 'drive-safe-99')).rejects.toThrow(/invalid/i);
   });
 
-  it('refresh re-derives the identity: a back-filled carrier id reaches the rotated token', async () => {
-    repo.findByLoginForAuth.mockResolvedValueOnce({
-      ...activeRowBase(),
-      carrierId: null,
-      applicationId: 'app-1024',
-    } as CarrierUser);
-    const session = await clientAuthService.login('acme.owner', 'correct-horse-9');
-    expect(session.client.carrierId).toBeUndefined();
-
-    // The application converted; populate-carrier back-filled the row. Refresh must pick it up.
-    repo.findByIdAny.mockResolvedValueOnce({
-      ...activeRowBase(),
-      carrierId: '777001',
-      applicationId: 'app-1024',
-    } as CarrierUser);
-    const res = await app.inject({
-      method: 'POST',
-      url: '/v1/auth/refresh',
-      headers: { 'content-type': 'application/json' },
-      payload: { refreshToken: session.refreshToken },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = res.json() as { accessToken: string; client?: { carrierId?: string } };
-    expect(body.client?.carrierId).toBe('777001');
-    expect((await verifyToken(body.accessToken, 'access')).client?.carrierId).toBe('777001');
-  });
 });

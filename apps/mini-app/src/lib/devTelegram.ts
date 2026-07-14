@@ -1,9 +1,9 @@
 /**
  * DEV ONLY — when the app is opened in a plain browser (not the Telegram client) with
- * `?token=<id>&dev=1`, install a mock `window.Telegram.WebApp` whose `initData` is a real,
- * backend-signed payload for a fake user. This lets the full flow (confirm → redeem → fleet) be
- * clicked through locally. The whole module is behind `import.meta.env.DEV`, so it is
- * dead-code-eliminated from the production build.
+ * `?dev=1` (optionally with `?token=<id>`), install a mock `window.Telegram.WebApp` whose
+ * `initData` is a real, backend-signed payload for a fake user. With `token` it exercises the full
+ * invite flow; without it, it exercises the returning-user session bootstrap. The whole module is
+ * behind `import.meta.env.DEV`, so it is dead-code-eliminated from the production build.
  */
 import type { TelegramWebApp, TelegramWebAppUser } from './telegram';
 
@@ -15,7 +15,7 @@ export async function installDevTelegram(): Promise<void> {
   if (window.Telegram?.WebApp?.initData) return;
   const params = new URLSearchParams(window.location.search);
   const token = params.get('token');
-  if (!token || params.get('dev') !== '1') return; // strictly opt-in
+  if (params.get('dev') !== '1') return; // strictly opt-in
 
   const base = (import.meta.env.VITE_API_URL ?? '').trim();
   const uid = params.get('uid'); // optional: pick a distinct fake user so multiple roles are testable
@@ -31,7 +31,7 @@ export async function installDevTelegram(): Promise<void> {
     const noop = (): void => {};
     const mock: TelegramWebApp = {
       initData: res.initData,
-      initDataUnsafe: { start_param: token, user: res.user },
+      initDataUnsafe: { ...(token ? { start_param: token } : {}), user: res.user },
       ready: noop,
       expand: noop,
       onEvent: noop,
