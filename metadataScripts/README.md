@@ -31,7 +31,27 @@ run on demand once the relevant `.env` values are set.
 | `zohoCrmAnalyzer.ts`   | `pnpm meta:zoho-crm`   | Zoho CRM v8 settings API     | `output/zoho-crm.{json,md}`   |
 | `zohoDeskAnalyzer.ts`  | `pnpm meta:zoho-desk`  | Zoho Desk v1 API             | `output/zoho-desk.{json,md}`  |
 | `zohoPeopleAnalyzer.ts`| `pnpm meta:zoho-people`| Zoho People forms API        | `output/zoho-people.{json,md}`|
+| `zohoMetadataFetcher.ts` | `pnpm meta:fetch -- <crm\|desk> <Module>` | One module's fields (api name + data type) | stdout (+ optional `output/zoho-{service}-{module}.*`) |
 | `dwhAnalyzer.ts`       | `pnpm meta:dwh`        | DWH Postgres information_schema | `output/dwh.{json,md}`     |
+
+### Per-module fetcher (`zohoMetadataFetcher`)
+
+When you only need **one** module's field catalog (API names + data types), use the focused
+fetcher instead of the full org sweep:
+
+```bash
+pnpm meta:fetch -- crm Leads
+pnpm meta:fetch -- desk tickets
+pnpm meta:fetch -- crm Deals --write          # also write output/zoho-crm-Deals.{json,md}
+pnpm meta:fetch -- desk contacts --json       # fields array only
+```
+
+- **CRM:** `GET /settings/fields?module={api_name}` (v8 field-meta). Pass the CRM module API
+  name (`Leads`, `Contacts`, `Deals`, custom modules, …).
+- **Desk:** `GET /organizationFields?module={api_name}` with the `orgId` header. Module enum:
+  `tickets`, `contacts`, `accounts`, `tasks`, `calls`, `events`, `contracts`, `products`.
+- Uses **PROD** refresh tokens from `.env` (`ZOHO_CRM_REFRESH_TOKEN` / `ZOHO_DESK_REFRESH_TOKEN`),
+  never the sandbox CRM token.
 
 Each writes two files: a `.json` (machine-readable, for codegen/reference) and a `.md`
 (human-readable tables). The `output/` directory is git-ignored.

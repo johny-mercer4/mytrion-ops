@@ -22,6 +22,7 @@
     "meta:zoho-crm": "tsx metadataScripts/zohoCrmAnalyzer.ts",
     "meta:zoho-desk": "tsx metadataScripts/zohoDeskAnalyzer.ts",
     "meta:zoho-people": "tsx metadataScripts/zohoPeopleAnalyzer.ts",
+    "meta:fetch": "tsx metadataScripts/zohoMetadataFetcher.ts",
     "meta:dwh": "tsx metadataScripts/dwhAnalyzer.ts",
     "dwh:inspect": "tsx scripts/dwhInspect.ts",
     "zoho:smoke": "tsx scripts/zoho-smoke.ts",

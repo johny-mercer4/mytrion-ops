@@ -9,7 +9,7 @@ description: Zoho Desk REST API v1 reference — OAuth/scopes, the mandatory org
 - **Auth:** `wrapper.authHeaders('zoho_desk')` ([src/integrations/wrapper.ts](../../../src/integrations/wrapper.ts)) → `Authorization: Zoho-oauthtoken <token>` **plus** the `orgId` header (auto-attached from env `ZOHO_DESK_ORG_ID`). Token cached per service.
 - **Base URL:** `zoho.baseUrl('zoho_desk')` → env `ZOHO_DESK_BASE_URL` (default `https://desk.zoho.com/api/v1`).
 - **Scopes:** `ZOHO_DESK_REFRESH_TOKEN` minted with the scopes in §1.3 (min for a reply bot: `Desk.tickets.ALL,Desk.contacts.READ,Desk.basic.READ,Desk.search.READ`).
-- **Our org's live fields/departments:** `pnpm meta:zoho-desk` → `metadataScripts/output/zoho-desk.{json,md}` (git-ignored).
+- **Our org's live fields/departments:** `pnpm meta:zoho-desk` → `metadataScripts/output/zoho-desk.{json,md}` (git-ignored). For **one module** (api names + data types): `pnpm meta:fetch -- desk <module>` → `metadataScripts/zohoMetadataFetcher.ts` (`GET /organizationFields?module=`).
 - **Gotchas baked in (don't relearn the hard way):** update = **PATCH** (not PUT); delete = **POST `…/moveToTrash`** (not HTTP DELETE); empty list = **HTTP 204** (not `{data:[]}`); IDs are **strings** (never parse as JS number); `departmentId` is **required** on ticket/task/call/event lists.
 - **Wiring:** expose as `ToolManifest` tools → `toolDispatcher` (RBAC + department/`Administrator` gating). Use Count APIs (§8.3) instead of paging to totals.
 
