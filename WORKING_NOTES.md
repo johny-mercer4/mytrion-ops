@@ -1548,3 +1548,458 @@ Carrier accounts are now provisioned FROM the already-defined clients in the dat
   servercrm reads; balance_run schema-validated only (no write fired). One catch during
   smoke: clients-fueling-on requires date|dayOfWeek (upstream rule, widget always sends it).
 - Verified: lint 0 errors, typecheck, 490 tests (5 new incl. the sandbox-env suite).
+
+## 2026-07-11 — Sales Mytrion redesign: bespoke shell + all tabs ported (branch feature/SalesMytrion)
+
+- Ported the full new Sales Mytrion UI/UX from the reference prototype (~/Desktop/SalesMytrion/
+  Sales Mytrion.dc.html — a self-contained React design export) into apps/mytrion-crm/src/
+  mytrions/sales/redesign/. FAITHFUL, till-the-minute detail: verbatim theme tokens (dark+light),
+  Rajdhani/Inter/JetBrains fonts, inline-style fidelity via a `s()` css-string→CSSProperties helper.
+- Bespoke self-contained shell (replaces the shared MytrionShell for Sales): boot loader, sidebar
+  with nav badges, top bar + live clock, dark-mode toggle, user card (session/act-as name), floating
+  AI copilot (streaming canned replies), toast, shared detail + client-drilldown modals.
+- 9 tabs (Loaders showcase intentionally dropped as a nav item — its loaders live inline in the
+  real tabs): Home (hero/snapshot/activity/quick-actions/recent-inbox), Inbox (filter tabs + row
+  actions), **Tickets** (NEW — two-pane Desk console: list + conversation thread + reply),
+  **Open Pool** (NEW — claimable-deals table w/ multi-select, filters, assign modal), Data Center
+  (clients/applications/money-codes), Create (dept/priority ticket form), Automations (catalog +
+  full run modal: deal/card pickers, limits/invoices/txn/form/simple variants, progress→result),
+  Dashboard (donuts, cards-by-company, activity chart, tx table + sub-tabs), Carriers (search→card).
+- Built via a design-canvas MVVM split: template.html ({{ }} markup) + renderVals() (view-model).
+  Foundation (theme/helpers/data/ctx/shell) hand-built; the 9 tab components fanned out to a
+  parallel workflow (9/9, 0 errors) then integrated. Registry entry (sales/index.tsx) now points at
+  the redesign; old MytrionShell-based tabs + live.ts retained for the live-wiring pass.
+- Verified: web typecheck + lint clean, 51 web tests pass, and a headless Chrome walkthrough of
+  every tab in LIGHT + DARK — pixel-faithful to the reference (Home, Tickets, Open Pool, Dashboard,
+  automation modal all confirmed).
+- NOTE: this pass uses the reference's mock data to lock the exact visual. Next pass wires the six
+  already-live tabs (Home/DataCenter/Dashboard/Carriers/Create/Automations) onto the existing
+  touchpoints, Tickets→Zoho Desk, Open Pool→retention — per the "re-skin, keep data live" decision.
+
+## 2026-07-11 — Sales Mytrion redesign: LIVE data pass (mock → touchpoints + Zoho Desk + servercrm WS)
+
+- Removed all mock/fake data from the redesign. Every tab now reads real backend data; the only
+  remaining fixture is `redesign/mock.ts` → `DEALPOOL`, kept solely for the Open Pool tab, whose
+  live flow is being rebuilt separately (per the user's "Open Pool connection not needed — we'll
+  re-do" decision). When Pool is wired, delete mock.ts + its PoolTab import.
+- New adapter layer `redesign/live.ts` (+ `autoLive.ts` for the Automations run flows) exposes
+  `useLoad(fn)` → {data,loading,error,reload} and typed loaders over the touchpoint client:
+  Home snapshot/announcements/activity/inbox, Inbox list+delete, Records clients.by_agent,
+  Dashboard dashboard.agent_sales, Carriers sales.carriers_search, Tickets via the new /v1/desk
+  client. Same view-model shapes the mock arrays had, so tab JSX changed minimally; each tab gained
+  loading skeletons + error + empty states.
+- Data source per tab: Home/Inbox/Records/Dashboard/Carriers → Deluge/servercrm touchpoints;
+  Create → tickets.create_escalation; Automations → 11 real touchpoints (dwh.*, cards.*, efs.*,
+  fraud.hold_release, wex.application, dwh.money_code) via autoLive; Tickets → Zoho Desk
+  (list creator-scoped w/ recent-tickets fallback, conversation, reply). Pool → DEALPOOL (fixture).
+- Real-time: `redesign/useServerCrmSocket.ts` reconnecting hook (ports the self-service widget's
+  socket + ticket-dashboard subscribe protocol; default `wss://servercrm-wyhh.onrender.com`,
+  override VITE_SERVERCRM_WS_URL). Wired in Home (inbox notifications refresh snapshot/inbox),
+  Inbox (crm_inbox_notification → reload), Tickets (subscribe {userId,ticketIds};
+  ticket_comment_added/attachment → reload thread/list).
+- Backend added for Desk: `integrations/zohoDesk.ts` searchTicketsByCreator / getTicketComments /
+  postTicketComment; `routes/v1/desk.routes.ts` (GET /desk/tickets [session-authoritative creator
+  scope, admin ?zoho_user_id; SCOPE_MISMATCH/403 → listTickets fallback `scoped:false`],
+  GET .../comments, POST .../reply [audited desk.ticket.reply]); registered in app.ts.
+- Verified: web typecheck clean, backend typecheck clean, redesign lint 0 errors/0 warnings,
+  vite widget build succeeds, and all 22 touchpoint keys the UI calls exist in the backend catalog
+  (no runtime 404s). Live Desk smoke (listTickets + comments) confirmed earlier.
+- Rewiring fanned out one agent per tab via a workflow (8/8, 0 errors), then integrated by hand.
+
+### Live-verify hardening (same day) — killed the last mock/fake surfaces
+
+A headless Chrome walkthrough with a real minted worker session (act-as a real agent so the
+DWH agent lookups resolve) surfaced leftover fabricated content the tab rewire hadn't touched.
+All fixed:
+- **Identity was hardcoded.** salesData `USER = {name:'Marcus Reyes', role:'Senior Sales Agent'}`
+  drove the Home greeting ("Good morning, Marcus"), the user-card role, and the copilot opener.
+  New `redesign/sessionUser.ts` → `useSessionUser()` derives name/first/initials/role from the real
+  session + act-as. Shell + HomeTab now show the signed-in worker (verified: "Good morning, Adam" /
+  "Adam Johnson" when acting as that agent). USER remains only for the mock Pool filter.
+- **Client drilldown modal Cards/Activity were static reference rows** (card ••4471, J. Alvarez,
+  fake transactions). Wired to live `dwh.cards` (card_number + Active/Inactive status) and
+  `dwh.transactions` (recent line items → gallons/amount/card/date) via new `live.ts`
+  loadClientCards/loadClientActivity, with loading/empty/error states.
+- **The AI copilot returned canned `pickReply` strings** inventing carrier balances ("Coastal Haul
+  owes $4,280"). Replaced with the real department agent: `useChat(useUserContext(), 'sales',
+  agentKeyFor('sales'))` — the same /v1/agent streaming runtime the shared ChatPanel uses, in the
+  bespoke floating-copilot chrome. Verified a real grounded reply streamed back. Suggestion chips
+  degenericized (no fabricated carrier names).
+- Live walkthrough result: every /v1 call 200 (touchpoints, /desk/tickets, /agent,
+  /chat/conversations, dashboard.agent_sales), Dashboard renders real carrier transactions,
+  servercrm WS connects + subscribes (generic + ticket-scoped frames). NOTE: dashboard.agent_sales
+  502s for a worker who isn't in the DWH dim_company (expected — real agents resolve fine).
+
+### Admin "View as" + Sales-Agent direct routing
+
+Two access/UX features on top of the live redesign:
+- **Admin "View as" picker** (`redesign/ViewAsPicker.tsx`) — ports the self-service reference's
+  top-bar impersonation control into the bespoke shell's visual language. Admin-only (shell gates on
+  `isAdmin(useUserContext())`); reuses the existing `useImpersonation` store + `listAgents`
+  (/v1/admin/agents). Picking an agent shows an "ADMIN VIEW · <name> · EXIT" banner and the whole
+  shell runs as that rep (the impersonation store attaches x-act-as-* headers the backend already
+  honors). The tab panels are keyed on the acted-as zohoUserId, so switching remounts + refetches
+  every tab (and the copilot) under the new identity. Verified live: greeting/user-card switch,
+  panels reload, Exit restores admin.
+- **Sales agents land straight in Sales Mytrion.** Every rep's CRM profile is exactly "Sales Agent"
+  (region is in the ROLE). Added substring profile matching to the frontend access resolver:
+  `MytrionAccessRule.profileContainsAny` + a `containsAny` helper in resolveAccess.ts; sales now
+  grants `profileContainsAny: ['Sales Agent']` (mirrors the backend's sales-agent detection). A
+  profile containing "Sales Agent" resolves to ONLY sales, so the existing Landing (1 accessible →
+  auto-enter) navigates them straight to /m/sales — no picker, no View-as control. Admins still get
+  the multi-Mytrion picker. Covered by `src/access/resolveAccess.test.ts` (6 tests) + live-verified
+  (agent from `/` → /m/sales; admin from `/` → picker).
+
+### Home-tab data audit fixes
+
+Live audit of the Home tab (acting as a real agent) surfaced snapshot/inbox gaps — all fixed:
+- **Volume Trend showed "—".** `loadSnapshot` declared `volume_trend` but never populated it. Now it
+  computes the week-over-week gallons change from `gallons_this_week` vs `gallons_last_week` (new
+  `pctChange` helper) → e.g. "-47%", colored by direction (up=green/down=red/flat=accent). The
+  "This Week / Fuel Transactions" caption now shows the swipes trend ("↓ 29% vs last week") instead
+  of a static string. Added `gallons_last_week`/`swipes_last_week` to `SnapshotFields`.
+- **Today's Snapshot metrics** (swipes/gallons/new-cards today) were already correctly mapped from
+  `snapshot.*_today`; they read 0 only because the test agent genuinely had no activity *today* (the
+  This Week row shows real 12 tx / 807.97 gal / 1 card). No code change needed there — the wiring is
+  correct; Volume Trend was the real bug.
+- **Inbox detail modal had an empty grey pill.** The badges array always included `badge(i.tag, …)`
+  even when the inbox item's `tag` was "" (it usually is in real data). Made the tag badge/pill
+  conditional in HomeTab + InboxTab (modal + row) — now only the priority badge shows.
+- Verified live (act-as Adam Johnson): snapshot renders real week data + Volume Trend −47%; inbox
+  list + modal populated with a single clean MEDIUM/HIGH badge; activity 13 calls; servercrm WS
+  OPEN→subscribe→subscribed ("● LIVE").
+
+### Tickets audit + real nav badges
+
+- **Ticket cards showed Agent N/A / Company — / Contact —.** The Desk route falls back to
+  `listTickets` (search scope missing → `scoped:false`), and `toSummary()` strips
+  account/contact/assignee/department. Added `listTicketsDetailed` (raw objects,
+  `include=contacts,assignee,team,departments`) and pointed the fallback at it. `mapTicket` now
+  reads the real nesting the reference uses — company = `contact.account.accountName`, contact =
+  `contact.firstName+lastName`, department = `department.name` (object), owner = escalation `team.name`
+  else `assignee.firstName+lastName` (null = genuinely unassigned → "N/A"). Live: "AZAEL TRANSPORT
+  SERVICE", "BEKA STAR LLC / Bekzod Musinov", "Customer Service", etc.
+- **Ticket conversation was empty.** Auto-created Rejection Reports carry their body as a THREAD
+  (threadCount 1, commentCount 0), but `loadTicketMessages` only fetched comments. Added
+  `getTicketThreads` + the `/desk/tickets/:id/comments` endpoint now returns `{threads, comments}`;
+  the adapter merges them oldest→newest ('in' thread = requester, 'out' = us). Live: the
+  "Error Code: 787 … INACTIVE CARD … SAN ANTONIO … LOVES #242" thread renders.
+- **Nav badges were hardcoded (4/2/7).** Removed the literals from `salesData.NAV`; the Shell now
+  computes them from real data — Inbox = `loadInbox().length`, Tickets = open (non-closed) count —
+  keyed on the acted-as agent so they refetch on "View as". Open Pool has no badge until its data
+  flow is rebuilt (no fake number). Live: Inbox 24, Tickets 43.
+
+### Tickets layout (full-bleed) + collapsible sidebar + conversation correctness
+
+- **Full width/height Tickets.** `#ss-panels` centered every tab under `max-width:1180px`, cramping
+  the Tickets two-pane console. Added a `FULL_BLEED` set (currently `tickets`): those drop the
+  centering — `<main>` overflow hidden, `#ss-panels` `height:100%;padding` with no max-width, tab
+  root `height:100%` (border-box under `.ss-root`). Other tabs still center. Verified Tickets
+  1442×946 flush-left; Home/Dashboard stay centered; switching restores.
+- **Collapsible sidebar.** `navCollapsed` state (persisted `ss.nav.collapsed`) + a topbar toggle
+  (PANEL icon). Collapsed → 68px icons-only (logo, centered nav icons with badge OVERLAYS, theme +
+  avatar); expanded → 238px, width-transitioned. Verified 238↔68.
+- **Ticket scoping is org-wide until the Desk token gets the search scope.** The list is creator-
+  scoped via `/tickets/search?customField1=cf_crm_created_by_id:<crmUserId>` (correct, matches the
+  reference), but the Desk refresh token lacks `Desk.search.READ` → 403 SCOPE_MISMATCH → falls back
+  to recent org tickets (`scoped:false`). Neither the DWH table nor servercrm has a creator column,
+  so there is NO scope-free path. Added a visible amber banner in the tab when `scoped:false`.
+  FIX (user action): re-mint `ZOHO_DESK_REFRESH_TOKEN` with `Desk.search.READ` added — then
+  `searchTicketsByCreator` scopes per-user with zero code change.
+- **Conversation correctness** (adversarial code-review workflow → 7 confirmed findings, all fixed;
+  verified against live Desk data, which also caught a bad `include=commenter` I'd added that 422s
+  the whole comments request):
+  - Sidebar Tickets badge counted Resolved/Cancelled as open. Extracted canonical `isTicketClosed`
+    (Closed/Cancelled/Resolved) into live.ts; Shell badge + TicketsTab share it.
+  - `useLoad` didn't reset `data` on deps change → badges showed the PREVIOUS agent's count after a
+    View-as switch (stuck on error). Now clears data when the deps key changes.
+  - Comments rendered every writer as "Support": Desk exposes the writer as `commenter` (name/email),
+    NOT `author`, and `commenterId` (Desk agent id) ≠ CRM zohoUserId. Now reads `commenter.name` and
+    detects "me" by EMAIL match. Live: "Leo Isaac" / "You" render correctly.
+  - Empty (attachment-only) comments no longer render blank bubbles.
+  - Thread bodies were truncated (list returns only `summary`); the conversation route now fetches
+    each thread's full `content` via `getTicketThread` (recent 15, parallel, falls back to summary).
+
+### Inbox — real-time events matched to the user id (self-service parity)
+
+Made the Inbox tab behave exactly like the reference `self-service/js/components/inbox-panel.js`:
+- The fetch was already right — `inbox.list` = the reference's `mytrionfetchinbox` Deluge, with
+  `identityParam:'userId'`, so it's server-scoped to the effective (act-as) user.
+- **The gap was the WebSocket.** We reloaded on EVERY `crm_inbox_notification`. The reference's
+  `_handleWsMessage` only reacts when `data.ownerId === currentUser.id`. Now the InboxTab computes
+  `currentUserId = actingAs?.zohoUserId ?? worker.zohoUserId` and, on a `crm_inbox_notification`,
+  toasts the subject + refetches ONLY when `ownerId === currentUserId` — otherwise ignores it.
+  (The socket still sends the generic `{type:'subscribe'}`; matching is receive-side, as in the ref.)
+- Added the toast on a matching new message, and a real Live/OFFLINE indicator driven by the socket
+  open/close (`wsReady`) instead of a static "LIVE".
+- Aligned `mapInboxType` to `_mapType` exactly (only `assignment`→reminder; else→info). Real inbox
+  data (types Info/Task/Assignment/Update, priorities medium/high only) renders identically.
+- Verified by mocking the WebSocket in-browser and injecting notifications: a non-matching ownerId
+  is ignored (no reload, no toast); a matching ownerId (the acted-as agent's id) fires the toast +
+  a refetch. Live indicator shows LIVE when connected.
+
+### Tickets ARE now scoped to the current user — WITHOUT the Desk.search scope
+
+The reference dashboard filters `/tickets/search?customField1=cf_crm_created_by_id:<crmUserId>`, which
+needs `Desk.search` (our token lacks it → 403). Rather than showing org-wide tickets, discovered a
+scope-free path: **Desk's `fields` query param returns any named custom field inline in the list
+`cf` object** (verified: `?fields=…,cf_crm_created_by_id&include=contacts,assignee,team,departments`
+returns full display data + the creator id, HTTP 200, no search scope).
+- New `zohoDesk.listTicketsByCreator(crmUserId, {maxPages})` pages the recent tickets (parallel,
+  bounded to ~6×99 = a recency window), keeps only rows whose `cf.cf_crm_created_by_id === crmUserId`,
+  de-duped. `TICKET_FIELDS`/`TICKET_INCLUDE` constants define the exact projection mapTicket needs.
+- Desk route: still tries `searchTicketsByCreator` first (complete + fast when the scope exists);
+  on SCOPE_MISMATCH it now uses `listTicketsByCreator` and returns `scoped:true` (+ `windowed:true`).
+  So BOTH paths are creator-scoped — the org-wide banner never shows.
+- RBAC: the desk route requires `sales` dept, read from `x-department-access` (a worker session
+  carries no dept by default; only admins passed via allDepartmentAccess). Added a `headers` option
+  to the web `request()` transport and the desk client now asserts `x-department-access: sales` on
+  all three desk endpoints — so a signed-in Sales agent clears the gate.
+- Identity: the route resolves the caller from the SESSION (not act-as headers), so a real agent gets
+  their own tickets. For an admin using "View as", `loadTickets` now passes the acted-as id as
+  `?zoho_user_id` (admin-honored override) so it scopes to that agent too.
+- Verified live: real agent session (id 6227679000135957001) → 8 tickets, ALL theirs (0 not theirs),
+  no banner; `?zoho_user_id=<agent>` as admin → 7 tickets, all theirs. Limitation: the fallback only
+  covers a recency window (~600 recent org tickets); adding `Desk.search.READ` to the Desk token
+  removes the bound (search returns ALL of the caller's tickets) with zero code change.
+
+### Real-time UNREAD sidebar badges + collapse button + Open Pool "Coming soon"
+
+- **Sidebar collapse button.** Moved the collapse toggle INTO the sidebar (header, right of the
+  brand when expanded; a centered button when collapsed) and removed the topbar one. Verified 68↔238.
+- **Open Pool = "Coming soon".** Restored the nav entry with `comingSoon: true` (NavItem flag):
+  disabled/greyed with a "SOON" tag, not navigable. The PoolTab render stays wired.
+- **Both nav badges are now UNREAD counts that decrement when read** (the user's ask), driven by ONE
+  shell-level servercrm socket (`sidebarBadges.useSidebarBadges`) so they update from any tab:
+  - `inboxRead.ts` — shared persisted read-set; the InboxTab mark-read / mark-all-read / open write
+    to it, so the Inbox badge (= items not read) drops immediately. Verified 25 → none after "Mark
+    all read". A new `crm_inbox_notification` (ownerId match) refetches → +1 unread.
+  - `ticketUnread.ts` — shared persisted per-ticket unread counts. The shell socket bumps a ticket on
+    `ticket_comment_added`/`ticket_attachment_added` (subscribe `{type:'subscribe', userId,
+    ticketIds}` — the reference's exact frame; filtered to the caller's ticket ids). The TicketsTab
+    clears on select/open (and reactively for the open ticket) + shows a per-row unread badge.
+    Verified: WS comment → badge 2 → open the ticket → badge 0, store `{}`.
+- One shell socket handles both event types; tabs keep their own sockets for tab-specific needs.
+  Stores are `useSyncExternalStore` so shell + tabs stay in lock-step.
+
+---
+
+## 2026-07-14 — Data Center via Zoho CRM COQL + Tickets enhancements
+
+### Data Center (RecordsTab) — five sub-tabs, real data, updated-reference styling
+
+Ported the updated reference's `isRecords` slice (`~/Desktop/SalesMytrion/project/Sales
+Mytrion.dc.html`): **Clients / Leads / Deals / Rejection Reports / Money Codes**, each with a
+per-tab search and a board/list toggle for the pipeline tabs. Lead & deal cards open detail modals.
+
+**Data sources (per what actually owns the data):**
+- **Leads / Deals / Rejections → Zoho CRM COQL**, owner-scoped (`Owner = '<zohoUserId>'` — the org's
+  live COQL convention, verified against servercrm + probing `/coql`). New read-only path:
+  - `src/integrations/salesDataCenter.ts` — `fetchAgentLeads/Deals/Rejections` build validated COQL
+    (field API names + rejection-state values verified against live `/settings/fields` metadata; a
+    single unknown column 400s the whole query). Owner id is `^\d+$`-guarded (no COQL injection).
+  - `src/routes/v1/dataCenter.routes.ts` — `GET /v1/data-center/{leads,deals,rejections}`, modeled on
+    desk.routes: internal + sales-department gate, `resolveZohoUserId` (non-admin locked to self,
+    admin/act-as may target an agent via `?zoho_user_id`). Registered in `app.ts`.
+  - Frontend: `api/dataCenter.ts` (client) → `redesign/dataCenterLive.ts` (VMs + loaders + bucket
+    maps; Lead `Status`/Deal `Stage` picklists bucketed into a clean 5-col pipeline) →
+    `dataCenterViews.tsx` (kanban/list) + `dataCenterModals.tsx` (lead/deal drilldowns, wired through
+    `ctx`/`Shell`). RecordsTab is the shell (sub-tabs + toolbar + Clients grid + Money empty state).
+  - **Rejections** come from the Deals module (`Stage in ('Closed Lost',…)` OR `Application_Status in
+    ('Disqualified','Closed/Lost','Closed/Fraud')`) — the Applications module carries no Owner, so it
+    can't be agent-scoped; Deals mirror the application decision and do have Owner.
+- **Clients → servercrm `clients.by_agent`** (unchanged): the DWH is the only source with
+  balance/cards/gallons, so "every field populated" requires it — CRM Accounts lack those.
+- **Money Codes → styled empty state**: not a Zoho module (issued via EFS; only a Postgres
+  `money_code_requests` table, which isn't agent-scoped) — honest empty state, no COQL source.
+
+Live-verified (Playwright, as a productive CRM owner): leads=200, deals=200, rejections=106 rows
+flowing COQL→route→UI; kanban columns, stats, rejection breakdown, and lead/deal modals all render.
+
+### Tickets — more-visible loading, send-button fix, and reference enhancements
+
+- **Send button no longer hidden by the copilot FAB**: the full-bleed composer reserves right padding
+  (78px) so the send button clears the fixed FAB. Verified: send right=1583, FAB left=1598 (no
+  overlap).
+- **Skeleton loading** (`.ss-skel`): list shows 6 shimmer cards; the thread shows shimmer bubbles —
+  replaces the small "Loading…" text.
+- **Reference enhancements**: SLA badge (per-priority countdown; header + list), priority left-border
+  on rows, an **Overdue** filter, canned **quick-reply** chips (keyed on ticket type), and a
+  **Resolve/Reopen** action → new `POST /v1/desk/tickets/:id/status` (Desk `PATCH`, audited;
+  `updateTicketStatus` in `zohoDesk.ts`).
+
+Verified: `pnpm typecheck` + `pnpm test` (490) green (backend); web typecheck + build green.
+
+---
+
+## 2026-07-14 — zohoMetadataFetcher + Zoho API reference refresh
+
+### Research
+
+- Re-read CRM v8 [field-meta](https://www.zoho.com/crm/developer/docs/api/v8/field-meta.html), [COQL Overview](https://www.zoho.com/crm/developer/docs/api/v8/COQL-Overview.html), [COQL Get Records](https://www.zoho.com/crm/developer/docs/api/v8/Get-Records-through-COQL-Query.html), and Desk [OrganizationFields](https://desk.zoho.com/DeskAPIDocument#OrganizationFields).
+- COQL Overview (current): SELECT ≤**500** fields, WHERE ≤**25** criteria, LIMIT ≤**2000**/call (default 200), same-criteria pagination ≤**100k**. Older error-message copy still cites 50/200 — skill now prefers Overview numbers.
+
+### Script
+
+- Added `metadataScripts/zohoMetadataFetcher.ts` + `pnpm meta:fetch`.
+  - `pnpm meta:fetch -- crm <ModuleApiName>` → `GET /settings/fields?module=` (PROD `ZOHO_CRM_REFRESH_TOKEN`).
+  - `pnpm meta:fetch -- desk <module>` → `GET /organizationFields?module=` + `orgId` (PROD Desk token).
+  - Prints `api_name`/`apiName` + data type; `--json` / `--write` optional.
+- Verified live PROD: **Leads** 103 fields · **tickets** 45 fields → `metadataScripts/output/zoho-{crm-Leads,desk-tickets}.{json,md}` (git-ignored).
+
+### Cursor / Claude reference
+
+- Updated `.claude/skills/zoho-crm-api` (COQL limits + meta:fetch), `zoho-desk-api`, skills README.
+- Added `.cursor/rules/zoho-api-reference.mdc` (globs on integrations/tools/metadataScripts) so Cursor auto-applies the same conventions.
+
+### RingCentral Embeddable in Sales Mytrion (2026-07-14)
+
+- Env: `RINGCENTRAL_CLIENT_ID` / `CLIENT_SECRET` / `JWT` / `SERVER_URL` + `FF_RINGCENTRAL_ENABLED`.
+- Backend: `GET /v1/ringcentral/embed-config` (sales/admin) returns Embeddable `adapterUrl` (JWT auth, shared extension).
+- Sales UI: `RingCentralPhone` boots Embeddable on the Sales shell; Lead detail modal has **Call** → `rc-adapter-new-call` click-to-dial.
+- Status updates / recording / AI transcript deferred.
+
+---
+
+## 2026-07-14 — Create Ticket wizard + Escalation Request (live Desk/CRM writes + attachments)
+
+Rebuilt the Create tab from the updated reference (SalesMytrion222) as two modes (the legacy widget's
+two tabs): a 3-step **Create Ticket** wizard (Department → Deal → Details) and an **Escalate Request**
+form. Both file real work with an optional drag/drop attachment (≤20MB). Deluge/request reference:
+`~/Desktop/Octane-Project/zoho-octane/app/createtickettab.html` (+ `js/const.js`).
+
+- **Create Ticket** → `POST /v1/desk/tickets` (multipart). Server orchestrates the widget flow:
+  `createDeskTicket` (Desk `POST /tickets` with an **inline contact** so Desk finds-or-creates the
+  requester — the token lacks Desk contact-search scope, so we don't search) → `tickets.create_in_crm`
+  (mirror into the CRM Tickets module) → attachment. Stamped `cf_crm_created_by_id` = caller so it
+  shows in their ticket list. Depts resolve to this org's Desk dept ids (`DESK_DEPARTMENTS`, verified
+  live). Ticket types are the real C-/Q-/V-/M- lists per department.
+- **Escalate Request** → `POST /v1/desk/escalations` (multipart) → `tickets.create_escalation`
+  Deluge (Escalation_Request record + Desk ticket) → attachment. Reasons = the legacy list.
+- New backend: `zohoDesk.createDeskTicket` + `DESK_DEPARTMENTS`, `zohoCrm.attachFileToRecord` (CRM
+  Attachments API), two multipart routes in `desk.routes.ts` (audited). Frontend:
+  `transport.requestMultipart`, `api/desk.createDeskTicket/createEscalation`, `dataCenterLive` DealVM
+  gains `email`/`carrierId` (COQL `+Email`), `createTicketForms.tsx` (wizard + escalation + AttachZone),
+  thin `CreateTab.tsx` (mode toggle).
+
+**Attachments — where they land (important, verified live):** the file uploads + links to the CRM
+record (`attachFileToRecord` → Deals for tickets, Escalation_Request for escalations) — this WORKS
+(HTTP 200, `attached:true`). Transferring it onto the **Desk ticket itself** is currently blocked in
+this org: the Desk OAuth token 403s on every Desk attachment endpoint (`POST /tickets/{id}/attachments`,
+comment `attachmentIds`, `/uploads`+comment all FORBIDDEN), and the `uploadticketattachment` /
+`uploadescalationattachment` Deluge functions now require a `[FILE]`-typed argument (the widget's
+`attachmentId` call → `INVALID_DATA`; the Functions REST API won't take a multipart file → INVALID_REQUEST).
+So the ticket-transfer step is best-effort/silent — the file is safely on the linked CRM record. To also
+land it on the Desk ticket, the org must grant the Desk token attachment scope OR fix/redeploy the
+upload Deluge functions to the reference `attachmentId` signature; the wiring is already in place.
+
+Verified live (self-cleaning): create ticket + escalation both HTTP 200 with ids + `attached:true`;
+browser E2E — wizard step1 (dept cards) → step2 (real deals) → step3 (auto-filled contact/account/
+email/phone + type/card/subject/description/attachment), and the escalation form all render. Backend
+`pnpm test` (490) green; web typecheck + build green.
+
+> NOTE (concurrent work): a parallel RingCentral integration is in flight in shared files (Shell.tsx,
+> dataCenterModals.tsx, app.ts, config/env.ts, + `ringcentral*`). This commit is Create-ticket SOURCE
+> ONLY and does not touch those. The vendored `apps/mytrion-crm/app` widget bundle was NOT re-committed
+> (a local rebuild would bake in the in-flight RingCentral source) — rebuild + commit the bundle once
+> the RingCentral work lands so the deployed widget includes both.
+
+---
+
+## 2026-07-14 — Sales Automations fully wired (self-service widget parity)
+
+Ported the remaining Automations gaps in Sales Mytrion redesign so the Auto tab matches the
+reference self-service widget end-to-end against existing touchpoints / Desk creates.
+
+**Was missing / stubbed:** 6 catalog actions showed "not available"; money-code was preview-only;
+WEX name/MC search unused; invoice Download was a toast stub; limit types were display labels not
+EFS product codes (ULSD/DEF/RFR/DSL); unit/driver prompts not sent on activation; catalog missing
+payments, tracking, billing-form, card-last-used, wex-tasks, card-deactivation, efs-login.
+
+**Wired:**
+- Expanded `AUTO_LIST` to 22 reference-aligned actions; `RUNNABLE` = all of them.
+- New `autoRunners.ts` — dispatch for every action (keeps `AutoTab.tsx` under the 600-line cap).
+- Reads: invoices (+ per-row PDF/Excel via `sales_mytrion.invoice_signed_url`), transactions,
+  payments (`dwh.payment_info` → Deluge fallback), billing-form, balance, account-status, tracking,
+  card-last-used, wex-tasks, WEX search (`wex.application` + `wex.applications_search`).
+- Writes: card activate (`dwh.card_activate` + optional `efs.card_info`), deactivate, limits,
+  unit/driver, fraud release, override, money-code **draw** (preview on deal select → amount /
+  reason / unit → `dwh.money_code_draw`).
+- Ticket-style (widget used Zapier / browser-automation): card-replacement, reactivation, BOCA,
+  close-app → `createDeskTicket` with matching C-* types (Ops-native path).
+- EFS login → opens credentials PDF + logs usage.
+- Tiny catalog fix: `dwh.money_code_draw` accepts optional `unit_number` (ServerCRM already did).
+- Deal picker enriched with Zoho Deal ids from CRM (needed for Desk ticket creates) + app-only
+  deals for BOCA / close / wex-tasks.
+
+**Remaining gaps (blocked without new backends):** live Photon address autocomplete; direct Zapier
+email webhook / browser-automation BOCA+close (Desk ticket is the substitute); money-code unit is
+forwarded only after the catalog schema allow-list (done).
+
+## 2026-07-14 — Automations export parity (txn PDF/Excel + invoice downloads)
+
+Brought Sales Automations transaction reports and invoice downloads in line with
+`zoho-octane/app/self-service` (automation-modal.js + pdf/excel/download-utils).
+
+**Transactions Report (C-15):**
+- Client-side PDF/Excel/CSV/Text via vendored `public/vendor/mytrion/{pdf,excel,download}-utils.js`
+  (identical to reference) + jsPDF CDN.
+- Fetch `dwh.transactions` limit 5000, group by `transaction_id`; merge invoice refs via
+  `dwh.transaction_invoices` on first download.
+- Full report options: Display Features, Group/Sort/Format, Match By filters, chain chips,
+  live filtered totals; export uses `processTransactions` (same filter/sort rules as reference).
+- Range presets match reference (`day`…`all_time` + `custom`); `half_year` → custom from/to.
+
+**Invoices:**
+- Presets Last 7/30/90 + Custom Range; status ALL / PENDING / PAID.
+- Per-row + bulk PDF/Excel: signed-url → blob → `deliverBlob` (named file), sequential bulk with delay.
+
+**Files:** `txnReport.ts`, `txnReportExport.ts`, `txnExportLibs.ts`, `AutoResultPanels.tsx`,
+`autoRunners.ts`, `AutoTab.tsx`, vendor scripts under `apps/mytrion-crm/public/vendor/mytrion/`.
+
+## 2026-07-14 — Automations UI: dropdown clip, txn filters, DnD catalog, categories
+
+Follow-up after export parity commit (`792491e`):
+
+1. **Deal/Card dropdown clip** — modal `overflow:hidden` was clipping absolute lists.
+   Portaled floating dropdown (`AutoFloatingDrop.tsx`) with flip-up + Escape/outside close.
+2. **Txn report filters** — widened results modal (820px); split layout so Display/Output/
+   Match By stay in a dedicated scroll pane above the list (`splitLayout` on
+   `AutoTransactionsPanel`). Download still runs `processTransactions` → `downloadTxnReport`.
+3. **Catalog DnD** — HTML5 drag reorder; order in localStorage
+   `sales-auto-catalog-order:<zohoUserId>` (else `sales-auto-catalog-order`). Default =
+   `AUTO_LIST` order.
+4. **Categories** — section headers with icons: C→Customer Service, Q→Billing, V→Verification,
+   M→Management (`AutoCatalog.tsx` + `autoCatalogOrder.ts`).
+
+## 2026-07-14 — Automations UI Polish (Modal-level Results)
+
+- Replaced toasts with inline modal-level success/error banners in `AutoInvoicesPanel` and `AutoTransactionsPanel`.
+- Moved general automation run errors (`autoRunErr`) from the config form to a dedicated full-screen error view in the `done` step (matching the success screen).
+- Removed redundant toasts from `AutoTab.tsx` since results are now fully visible at the modal level.
+
+## 2026-07-14 — Data Center / Create / Carriers / Tickets batch (COQL 2000, NY EST, Create Lead, paste-to-attach)
+
+- **COQL bulk** — `salesDataCenter.ts` `clampLimit` + `fetchAgentLeads`/`fetchAgentDeals` raised
+  200→2000 (verified live: `rows=2000, more=true`), so the Data Center pulls the full owner-scoped
+  set instead of one page.
+- **Workday clock in NY** — `salesData.ts` `timeParts()` now computes the workday % + clock in
+  `America/New_York` via `Intl.DateTimeFormat`, regardless of the viewer's timezone (the floor runs
+  on NY hours).
+- **Carriers tab filters** — `CarriersTab.tsx` gained the self-service filter bar (status chips with
+  live counts, Min-units, Load-limit select, Clear); `live.ts` `searchCarriers(query, limit)` +
+  `CarrierSearchVM.unitsNum` back the filtering.
+- **Create Lead** — new `CreateLeadForm` (`createTicketForms.tsx`) wired as the Create tab's 3rd mode
+  (`CreateTab.tsx`); salutation/firstName/lastName*/companyName*/phone(10-digit) → `leads.create`
+  touchpoint (mytrioncreatelead). DUPLICATE_DATA links to the existing lead instead of erroring.
+- **Paste-to-attach** — `AttachZone` (Create/Escalation) grabs a clipboard file/image via a document
+  paste listener while empty; the Tickets composer input gained `onPaste`. Drag-drop + click already
+  existed; paste is the new path.
+- Transactions PDF/Excel export parity (self-service) landed earlier via the concurrent Automations
+  session (`792491e`/`62e4391`) — not re-done here.
+
+## 2026-07-14 — Automations icons + light-mode picklists
+
+- Mapped each automation to its reference Heroicon from zoho-octane `automations-catalog.js` (e.g. activate=check-circle, deactivate=ban, limits=arrows, fraud=lock, override=gear, txn=bar-chart).
+- Svg renderer now splits multi-subpath icons (`z M…`) into separate `<path>` nodes so gear/invoice icons draw correctly.
+- Light-mode picklist fix: form inputs/selects/textareas use `--surface` (white) instead of muddy `--alt`; custom chevron on selects; floating deal/card dropdown uses white surface + softer shadow; row hover uses `--surface-2` in light mode.

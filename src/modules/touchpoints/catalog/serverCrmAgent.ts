@@ -54,6 +54,8 @@ export const serverCrmAgentTouchpoints: Touchpoint[] = [
       amount: z.coerce.number().positive(),
       requestedBy: shortText(200).optional(),
       moneycode_reason: shortText(500),
+      // ServerCRM accepts unit_number (widget parity); optional so older callers still work.
+      unit_number: shortText(40).optional(),
     }),
   },
   {

@@ -16,6 +16,12 @@ import {
 
 const eq = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
 const inList = (value: string, list: string[]): boolean => Boolean(value) && list.some((x) => eq(x, value));
+/** True if `value` CONTAINS any term (case-insensitive) — for substring profile grants. */
+const containsAny = (value: string, list: string[] | undefined): boolean => {
+  if (!value || !list || list.length === 0) return false;
+  const v = value.trim().toLowerCase();
+  return list.some((t) => t.trim() !== '' && v.includes(t.trim().toLowerCase()));
+};
 
 /** True if the user's profile/role marks them as an admin. */
 export function isAdmin(ctx: UserContext): boolean {
@@ -25,7 +31,8 @@ export function isAdmin(ctx: UserContext): boolean {
 /** Does this single rule grant the user access? */
 export function ruleAllows(ctx: UserContext, rule: MytrionAccessRule, admin: boolean = isAdmin(ctx)): boolean {
   if (rule.adminBypass && admin) return true;
-  if (inList(ctx.profile, rule.allowedProfiles)) return true; // default: by profile
+  if (inList(ctx.profile, rule.allowedProfiles)) return true; // default: by profile (exact)
+  if (containsAny(ctx.profile, rule.profileContainsAny)) return true; // substring profile grant
   if (inList(ctx.role, rule.allowedRoles)) return true;
   if (inList(ctx.userName, rule.allowedUsernames)) return true; // additive: named-user override
   return false;

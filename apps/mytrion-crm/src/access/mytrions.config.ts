@@ -39,8 +39,14 @@ export interface MytrionAccessRule {
   department: string;
   /** Send allDepartments:true on knowledge queries (broad retrieval). */
   allDepartments: boolean;
-  /** DEFAULT access by CRM profile name (case-insensitive). */
+  /** DEFAULT access by CRM profile name (case-insensitive, EXACT match). */
   allowedProfiles: string[];
+  /**
+   * SUBSTRING access by CRM profile — a profile is granted if it CONTAINS any of these terms
+   * (case-insensitive). Mirrors the backend's sales-agent detection so "Sales Agent" also catches
+   * variants like "Senior Sales Agent". Optional; omit for exact-only rules.
+   */
+  profileContainsAny?: string[];
   /** Optional access by CRM role name (case-insensitive). */
   allowedRoles: string[];
   /** ADDITIVE named-user overrides (case-insensitive) — get access regardless of profile/role. */
@@ -83,7 +89,10 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     hue: 'success',
     department: 'sales',
     allDepartments: false,
-    allowedProfiles: ['Sales', 'Sales Agent'],
+    // Every rep's CRM profile is "Sales Agent" (region lives in the ROLE). Substring match so any
+    // "…Sales Agent…" profile lands here — and ONLY here — so they auto-enter /m/sales on login.
+    allowedProfiles: ['Sales'],
+    profileContainsAny: ['Sales Agent'],
     allowedRoles: [],
     allowedUsernames: [],
     adminBypass: true,

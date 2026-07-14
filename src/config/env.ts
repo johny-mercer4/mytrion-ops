@@ -216,6 +216,10 @@ const EnvSchema = z.object({
   ZOHO_DESK_REFRESH_TOKEN: z.string().default(''),
   ZOHO_DESK_BASE_URL: z.string().default('https://desk.zoho.com/api/v1'),
   ZOHO_DESK_ORG_ID: z.string().default(''),
+  // The Desk agent the app posts comments as (the shared "Sales Agent Rep" account tied to the
+  // Desk token). Ticket comments with this commenterId are the caller's own → rendered as "me"
+  // (right-aligned), matching the reference dashboard's zohoDeskAdminId.
+  ZOHO_DESK_AGENT_ID: z.string().default('1057080000010543217'),
 
   // --- Zoho People ---
   ZOHO_PEOPLE_REFRESH_TOKEN: z.string().default(''),
@@ -224,6 +228,14 @@ const EnvSchema = z.object({
   // --- Zoho Projects ---
   ZOHO_PROJECTS_REFRESH_TOKEN: z.string().default(''),
   ZOHO_PROJECTS_BASE_URL: z.string().default('https://projectsapi.zoho.com/api/v3'),
+
+  // --- RingCentral (Sales Mytrion Embeddable softphone; JWT = shared extension for now) ---
+  RINGCENTRAL_CLIENT_ID: z.string().default(''),
+  RINGCENTRAL_CLIENT_SECRET: z.string().default(''),
+  RINGCENTRAL_JWT: z.string().default(''),
+  RINGCENTRAL_SERVER_URL: z.string().default('https://platform.ringcentral.com'),
+  // Gates GET /v1/ringcentral/embed-config + the Sales softphone bootstrap.
+  FF_RINGCENTRAL_ENABLED: flag('0'),
 
   // --- Vendor: Octane internal API ---
   OCTANE_INTERNAL_API_URL: z.string().default(''),
