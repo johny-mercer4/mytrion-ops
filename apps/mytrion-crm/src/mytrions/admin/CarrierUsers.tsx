@@ -81,7 +81,7 @@ export function CarrierUsers() {
       <div className={s.head}>
         <div>
           <h2 className={s.h2}>Carrier User Management</h2>
-          <p className={s.sub}>Give carrier companies login access — fleet owners see every card, drivers see one.</p>
+          <p className={s.sub}>Generate Telegram registration links — company owners see every card, drivers see one.</p>
         </div>
         {showForm ? (
           <button type="button" className={s.ghostBtn} onClick={() => setShowForm(false)}>
@@ -90,7 +90,7 @@ export function CarrierUsers() {
         ) : (
           <button type="button" className={s.primaryBtn} onClick={() => setShowForm(true)}>
             <PlusIcon size={14} />
-            New carrier user
+            New registration link
           </button>
         )}
       </div>
@@ -147,7 +147,7 @@ export function CarrierUsers() {
                   {g.owner && (
                     <span className={`${s.pill} ${g.owner.companyType === 'fleet-manager' ? s.pillInfo : s.pillNeutral}`}>
                       {g.owner.companyType === 'fleet-manager' ? <BuildingIcon size={11} /> : <PersonIcon size={11} />}
-                      {g.owner.companyType === 'fleet-manager' ? 'Fleet manager' : 'Owner-operator'}
+                      {g.owner.companyType === 'fleet-manager' ? 'Company owner' : 'Owner-operator'}
                     </span>
                   )}
                 </span>

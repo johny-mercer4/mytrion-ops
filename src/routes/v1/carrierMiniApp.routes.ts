@@ -11,6 +11,7 @@ import { AppError, ConflictError, NotFoundError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { env, isProduction } from '../../config/env.js';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
+import { db } from '../../db/client.js';
 import { listDwhCards } from '../../integrations/dwhCards.js';
 import { searchDwhOperators } from '../../integrations/dwhOperators.js';
 import { carrierInvitationRepo } from '../../repos/carrierInvitationRepo.js';
@@ -55,11 +56,57 @@ function telegramCtx(profile: 'owner' | 'driver', telegramUserId: string): Tenan
   };
 }
 
+function sameRegistrationSubject(
+  existing: Pick<RegisteredMiniAppCompany, 'profile' | 'carrierId' | 'applicationId' | 'cardId'>,
+  invite: Pick<RegisteredMiniAppCompany, 'profile' | 'carrierId' | 'applicationId' | 'cardId'>,
+): boolean {
+  const same = (a: string | null, b: string | null) => a === b;
+  return (
+    existing.profile === invite.profile &&
+    same(existing.carrierId, invite.carrierId) &&
+    same(existing.applicationId, invite.applicationId) &&
+    same(existing.cardId, invite.cardId)
+  );
+}
+
+function zohoUserIdFromContext(ctx: TenantContext): string | undefined {
+  return ctx.userId.startsWith('zoho:') ? ctx.userId.slice('zoho:'.length) : undefined;
+}
+
+function inviteAgentFromContext(ctx: TenantContext): {
+  agentName?: string;
+  agentZohoUserId?: string;
+} {
+  const agentName = ctx.userName?.trim();
+  const agentZohoUserId = zohoUserIdFromContext(ctx)?.trim();
+  return {
+    ...(agentName ? { agentName } : {}),
+    ...(agentZohoUserId ? { agentZohoUserId } : {}),
+  };
+}
+
+async function resolveRegistrationAgent(
+  row: Pick<RegisteredMiniAppCompany, 'invitationId' | 'agentName' | 'agentZohoUserId'>,
+): Promise<{ agentName: string | null; agentZohoUserId: string | null }> {
+  if (row.agentName || row.agentZohoUserId) {
+    return {
+      agentName: row.agentName ?? null,
+      agentZohoUserId: row.agentZohoUserId ?? null,
+    };
+  }
+  const invite = await carrierInvitationRepo.findById(lookupCtx(), row.invitationId);
+  return {
+    agentName: invite?.agentName ?? null,
+    agentZohoUserId: invite?.agentZohoUserId ?? null,
+  };
+}
+
 const redeemSchema = z.object({
   // Raw Telegram WebApp.initData string — verified server-side, never trusted at face value.
   initData: z.string().min(1),
 });
 
+const miniAppSessionSchema = z.object({ initData: z.string().min(1) });
 const ownerFleetSchema = z.object({ initData: z.string().min(1) });
 const ownerDriverInviteSchema = z.object({
   initData: z.string().min(1),
@@ -67,14 +114,7 @@ const ownerDriverInviteSchema = z.object({
   driverName: z.string().min(1).max(200),
 });
 
-/**
- * Verify initData and resolve the caller to a REGISTERED OWNER (fleet manager) with a carrier —
- * the auth gate for the owner-only fleet endpoints. A driver, an unregistered user, or an owner
- * with no carrier id is rejected. The verified Telegram identity, not the request body, is trusted.
- */
-async function requireRegisteredOwner(
-  initData: string,
-): Promise<{ ctx: TenantContext; registration: RegisteredMiniAppCompany; carrierId: string; tgUser: TelegramWebAppUser }> {
+function verifyTelegramUser(initData: string): { tgUser: TelegramWebAppUser; telegramUserId: string } {
   if (!env.TELEGRAM_CARRIER_BOT_TOKEN) {
     throw new AppError('The carrier bot is not configured', {
       statusCode: 503,
@@ -98,17 +138,57 @@ async function requireRegisteredOwner(
       expose: true,
     });
   }
+  return { tgUser, telegramUserId: String(tgUser.id) };
+}
+
+/**
+ * Resolve the current Telegram user to an existing mini-app registration. This is the returning
+ * user's login path once onboarding is complete: Telegram proves identity; no password is involved.
+ */
+async function requireRegisteredMiniAppUser(
+  initData: string,
+): Promise<{ ctx: TenantContext; registration: RegisteredMiniAppCompany; tgUser: TelegramWebAppUser; telegramUserId: string }> {
+  const { tgUser, telegramUserId } = verifyTelegramUser(initData);
   const lookup = lookupCtx();
-  const registration = await registeredMiniAppCompanyRepo.findByTelegramUserId(lookup, String(tgUser.id));
-  if (!registration || registration.profile !== 'owner' || !registration.carrierId) {
-    throw new AppError('Only a registered company owner can manage drivers', {
+  const registration = await registeredMiniAppCompanyRepo.findByTelegramUserId(lookup, telegramUserId);
+  if (!registration) {
+    throw new AppError('This Telegram account is not registered yet. Open your Octane registration link to finish setup.', {
+      statusCode: 404,
+      code: 'MINI_APP_NOT_REGISTERED',
+      expose: true,
+    });
+  }
+  return {
+    ctx: telegramCtx(registration.profile, telegramUserId),
+    registration,
+    tgUser,
+    telegramUserId,
+  };
+}
+
+/**
+ * Verify initData and resolve the caller to a REGISTERED OWNER with a carrier — the auth gate for
+ * the owner-only fleet endpoints. A driver, an unregistered user, or an owner with no carrier id
+ * is rejected. The verified Telegram identity, not the request body, is trusted.
+ */
+async function requireRegisteredOwner(
+  initData: string,
+): Promise<{ ctx: TenantContext; registration: RegisteredMiniAppCompany; carrierId: string; tgUser: TelegramWebAppUser }> {
+  const { registration, tgUser, telegramUserId } = await requireRegisteredMiniAppUser(initData);
+  if (
+    !registration ||
+    registration.profile !== 'owner' ||
+    registration.companyType !== 'fleet-manager' ||
+    !registration.carrierId
+  ) {
+    throw new AppError('Only a fleet company owner can manage drivers', {
       statusCode: 403,
       code: 'NOT_A_REGISTERED_OWNER',
       expose: true,
     });
   }
   return {
-    ctx: telegramCtx('owner', String(tgUser.id)),
+    ctx: telegramCtx('owner', telegramUserId),
     registration,
     carrierId: registration.carrierId,
     tgUser,
@@ -145,6 +225,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       throw new RBACError('Generating carrier invites requires admin access');
     }
     const body = createInviteSchema.parse(request.body);
+    const fallbackAgent = inviteAgentFromContext(ctx);
     const { invite, inviteUrl } = await createCarrierInvite(ctx, {
       profile: body.profile,
       ...(body.carrier_id ? { carrierId: body.carrier_id } : {}),
@@ -152,8 +233,12 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       ...(body.company_name ? { companyName: body.company_name } : {}),
       ...(body.card_id ? { cardId: body.card_id } : {}),
       ...(body.driver_name ? { driverName: body.driver_name } : {}),
-      ...(body.agent_name ? { agentName: body.agent_name } : {}),
-      ...(body.agent_zoho_user_id ? { agentZohoUserId: body.agent_zoho_user_id } : {}),
+      ...(body.agent_name ? { agentName: body.agent_name } : fallbackAgent.agentName ? { agentName: fallbackAgent.agentName } : {}),
+      ...(body.agent_zoho_user_id
+        ? { agentZohoUserId: body.agent_zoho_user_id }
+        : fallbackAgent.agentZohoUserId
+          ? { agentZohoUserId: fallbackAgent.agentZohoUserId }
+          : {}),
     });
     await auditFromContext(ctx, {
       action: 'admin.carrier_invitation.create',
@@ -293,7 +378,12 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     const invite = await carrierInvitationRepo.findById(lookupCtx(), id);
     if (!invite) throw new NotFoundError('This invite link is not valid');
     if (invite.status === 'redeemed') {
-      return { invite: null, status: 'redeemed' as const, companyName: invite.companyName };
+      return {
+        invite: null,
+        status: 'redeemed' as const,
+        companyName: invite.companyName,
+        agentName: invite.agentName,
+      };
     }
     if (invite.status === 'expired' || invite.expiresAt.getTime() < Date.now()) {
       throw new AppError('This invite has expired', {
@@ -309,11 +399,24 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
         companyName: invite.companyName,
         companyType: invite.companyType,
         cardCount: invite.cardCount,
+        agentName: invite.agentName,
         // Drives the "This link expires in 23h 40m" pill on the confirm screen.
         expiresAt: invite.expiresAt.toISOString(),
       },
       status: 'pending' as const,
     };
+  });
+
+  /**
+   * Returning-user bootstrap: open the mini-app without an invite and restore the session from the
+   * verified Telegram identity alone. The invite is onboarding-only; after registration Telegram is
+   * the login.
+   */
+  app.post('/carrier/mini-app/session', async (request) => {
+    const body = miniAppSessionSchema.parse(request.body);
+    const { registration } = await requireRegisteredMiniAppUser(body.initData);
+    const support = await resolveRegistrationAgent(registration);
+    return { registration: toRegistrationView({ ...registration, ...support }) };
   });
 
   /**
@@ -323,72 +426,91 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    * link redeems it, so the response must not become a data-exfiltration channel for a leaked link.
    */
   app.post('/carrier-invitations/:id/redeem', async (request, reply) => {
-    if (!env.TELEGRAM_CARRIER_BOT_TOKEN) {
-      throw new AppError('The carrier bot is not configured', {
-        statusCode: 503,
-        code: 'BOT_UNCONFIGURED',
-        expose: true,
-      });
-    }
     const { id } = request.params as { id: string };
     const body = redeemSchema.parse(request.body);
-
-    const verified = verifyTelegramInitData(body.initData);
-    if (!verified.ok) throw new AppError('Could not verify your Telegram identity', {
-      statusCode: 401,
-      code: 'TELEGRAM_VERIFY_FAILED',
-      expose: true,
-    });
-    const tgUser = parseInitDataUser(verified.fields);
-    if (!tgUser) throw new AppError('Missing Telegram user in verified payload', {
-      statusCode: 400,
-      code: 'TELEGRAM_USER_MISSING',
-      expose: true,
-    });
-    const telegramUserId = String(tgUser.id);
+    const { tgUser, telegramUserId } = verifyTelegramUser(body.initData);
 
     const ctx = lookupCtx();
-    const invite = await carrierInvitationRepo.findById(ctx, id);
-    if (!invite) throw new NotFoundError('This invite link is not valid');
-    if (invite.expiresAt.getTime() < Date.now()) {
-      throw new AppError('This invite has expired', {
-        statusCode: 410,
-        code: 'INVITE_EXPIRED',
-        expose: true,
-      });
-    }
+    const txResult = await db.transaction(async (tx) => {
+      const invite = await carrierInvitationRepo.findById(ctx, id, tx);
+      if (!invite) throw new NotFoundError('This invite link is not valid');
 
-    // Burn FIRST — the atomic pending→redeemed flip (UPDATE ... WHERE status='pending') is the
-    // single-use serialization point. Only the caller that wins it may write a registration, so a
-    // race between two link-holders can't double-bind the same invite to two carriers.
-    const burned = await carrierInvitationRepo.markRedeemed(ctx, invite.id, `telegram:${telegramUserId}`);
-    if (!burned) {
-      // Lost the race, or the link was already used. Re-opening as the SAME Telegram user just
-      // reconfirms the existing registration (idempotent); a different user gets a conflict.
-      const existing = await registeredMiniAppCompanyRepo.findByTelegramUserId(ctx, telegramUserId);
-      if (existing) {
-        return reply.send({ alreadyRegistered: true, registration: toRegistrationView(existing) });
+      const existing = await registeredMiniAppCompanyRepo.findByTelegramUserId(ctx, telegramUserId, tx);
+      if (existing && !sameRegistrationSubject(existing, invite)) {
+        throw new ConflictError('This Telegram account is already registered to another carrier', {
+          code: 'TELEGRAM_ALREADY_REGISTERED',
+        });
+      }
+      const reopeningExisting = Boolean(existing);
+
+      // Once an invite has been redeemed, or once the same Telegram user is already registered to
+      // this exact subject, the invite is no longer the login credential. Returning access flows
+      // through Telegram identity, so link expiry must not lock that user out later.
+      if (invite.status === 'redeemed') {
+        return { invite, existing, registration: null as RegisteredMiniAppCompany | null, burnedFresh: false };
+      }
+      if (invite.expiresAt.getTime() < Date.now()) {
+        if (reopeningExisting) {
+          return { invite, existing, registration: null as RegisteredMiniAppCompany | null, burnedFresh: false };
+        }
+        throw new AppError('This invite has expired', {
+          statusCode: 410,
+          code: 'INVITE_EXPIRED',
+          expose: true,
+        });
+      }
+
+      // Burn + registration write live in the same transaction so a DB failure cannot consume the
+      // link without persisting the registration.
+      const burned = await carrierInvitationRepo.markRedeemed(
+        ctx,
+        invite.id,
+        `telegram:${telegramUserId}`,
+        tx,
+      );
+      if (!burned) {
+        return { invite, existing, registration: null as RegisteredMiniAppCompany | null, burnedFresh: false };
+      }
+
+      const registration = await registeredMiniAppCompanyRepo.upsert(
+        ctx,
+        {
+          invitationId: invite.id,
+          profile: invite.profile,
+          telegramUserId,
+          ...(request.headers['x-telegram-chat-id']
+            ? { telegramChatId: String(request.headers['x-telegram-chat-id']) }
+            : {}),
+          ...(tgUser.username ? { telegramUsername: tgUser.username } : {}),
+          ...(invite.carrierId ? { carrierId: invite.carrierId } : {}),
+          ...(invite.applicationId ? { applicationId: invite.applicationId } : {}),
+          ...(invite.companyName ? { companyName: invite.companyName } : {}),
+          ...(invite.agentName ? { agentName: invite.agentName } : {}),
+          ...(invite.agentZohoUserId ? { agentZohoUserId: invite.agentZohoUserId } : {}),
+          ...(invite.cardId ? { cardId: invite.cardId } : {}),
+          ...(invite.driverName ? { driverName: invite.driverName } : {}),
+          ...(invite.companyType ? { companyType: invite.companyType } : {}),
+          ...(invite.cardCount !== null ? { cardCount: invite.cardCount } : {}),
+        },
+        tx,
+      );
+      return { invite, existing, registration, burnedFresh: true };
+    });
+
+    const invite = txResult.invite;
+    const actor = telegramCtx(invite.profile, telegramUserId);
+    if (!txResult.burnedFresh) {
+      if (txResult.existing) {
+        return reply.send({
+          alreadyRegistered: true,
+          registration: toRegistrationView(txResult.existing),
+        });
       }
       throw new ConflictError('This invite was already used by someone else');
     }
 
-    const actorCtx = telegramCtx(invite.profile, telegramUserId);
-    const registration = await registeredMiniAppCompanyRepo.upsert(ctx, {
-      invitationId: invite.id,
-      profile: invite.profile,
-      telegramUserId,
-      ...(request.headers['x-telegram-chat-id']
-        ? { telegramChatId: String(request.headers['x-telegram-chat-id']) }
-        : {}),
-      ...(tgUser.username ? { telegramUsername: tgUser.username } : {}),
-      ...(invite.carrierId ? { carrierId: invite.carrierId } : {}),
-      ...(invite.applicationId ? { applicationId: invite.applicationId } : {}),
-      ...(invite.companyName ? { companyName: invite.companyName } : {}),
-      ...(invite.cardId ? { cardId: invite.cardId } : {}),
-      ...(invite.companyType ? { companyType: invite.companyType } : {}),
-      ...(invite.cardCount !== null ? { cardCount: invite.cardCount } : {}),
-    });
-    await auditFromContext(actorCtx, {
+    const registration = txResult.registration!;
+    await auditFromContext(actor, {
       action: 'mini_app.carrier_registration.redeem',
       status: 'ok',
       resourceType: 'registered_mini_app_company',
@@ -468,12 +590,15 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   app.post('/carrier/mini-app/driver-invites', async (request, reply) => {
     const body = ownerDriverInviteSchema.parse(request.body);
     const { ctx, carrierId, registration } = await requireRegisteredOwner(body.initData);
+    const support = await resolveRegistrationAgent(registration);
 
     const { invite, inviteUrl } = await createCarrierInvite(ctx, {
       profile: 'driver',
       carrierId,
       ...(registration.applicationId ? { applicationId: registration.applicationId } : {}),
       ...(registration.companyName ? { companyName: registration.companyName } : {}),
+      ...(support.agentName ? { agentName: support.agentName } : {}),
+      ...(support.agentZohoUserId ? { agentZohoUserId: support.agentZohoUserId } : {}),
       cardId: body.cardId,
       driverName: body.driverName,
       // Owner-issued links are short-lived by design: 24 hours, then "Link expired" -> regenerate.
@@ -502,6 +627,7 @@ function toRegistrationView(row: {
   companyType: 'owner-operator' | 'fleet-manager' | null;
   cardCount: number | null;
   cardId: string | null;
+  agentName: string | null;
 }) {
   return {
     id: row.id,
@@ -511,5 +637,6 @@ function toRegistrationView(row: {
     companyType: row.companyType,
     cardCount: row.cardCount,
     cardId: row.cardId,
+    agentName: row.agentName,
   };
 }

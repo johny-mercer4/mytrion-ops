@@ -1,6 +1,6 @@
 /**
  * Carrier User Management (/v1/carrier-users) — login/password accounts for carrier
- * companies (audience 'customer'; consumed by the future Telegram mini-app + /client).
+ * companies (audience 'customer'; legacy password-flow data, separate from Telegram invites).
  * Profiles: 'owner' (fleet — all the carrier's cards; tied to carrierId/applicationId) and
  * 'driver' (child of an owner; tied to one card). Accounts can be provisioned on the
  * application id alone; populate-carrier back-fills the carrier id later.

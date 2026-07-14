@@ -9,6 +9,8 @@ import {
   type DwhClient,
   type DwhOperator,
 } from '../../api/carrierUsers';
+import { getImpersonation } from '../../api/impersonation';
+import { getSession } from '../../api/session';
 import { BuildingIcon, PersonIcon, SearchIcon, SendArrowIcon } from '../../components/icons';
 import { copyToClipboard } from './carrierUserUtil';
 import s from './admin.module.css';
@@ -158,6 +160,10 @@ export function CarrierUserForm({
     if (busy || !valid) return;
     setBusy(true);
     try {
+      const actingAs = getImpersonation();
+      const worker = getSession()?.worker;
+      const agentName = actingAs?.name?.trim() || worker?.userName?.trim() || undefined;
+      const agentZohoUserId = actingAs?.zohoUserId?.trim() || worker?.zohoUserId?.trim() || undefined;
       const res = await createCarrierInvitation({
         profile,
         ...(carrierId.trim() ? { carrierId: carrierId.trim() } : {}),
@@ -165,6 +171,8 @@ export function CarrierUserForm({
         ...(companyName.trim() ? { companyName: companyName.trim() } : {}),
         ...(!isOwner && cardId.trim() ? { cardId: cardId.trim() } : {}),
         ...(!isOwner && driverName.trim() ? { driverName: driverName.trim() } : {}),
+        ...(agentName ? { agentName } : {}),
+        ...(agentZohoUserId ? { agentZohoUserId } : {}),
       });
       setInviteUrl(res.inviteUrl);
       copyToClipboard(res.inviteUrl);
@@ -193,7 +201,7 @@ export function CarrierUserForm({
         </div>
         <p className={s.fieldHint}>
           {isOwner
-            ? 'Owner-operator (one card, drives it themself) or fleet-manager (multiple drivers/cards) — auto-detected below.'
+            ? 'Owner-operator (one card, drives it themself) or company owner (multiple drivers/cards) — auto-detected below.'
             : 'One driver, tied to one specific card.'}
         </p>
       </div>
@@ -321,7 +329,7 @@ export function CarrierUserForm({
                   {companyType === 'fleet-manager' ? (
                     <>
                       <BuildingIcon size={11} />
-                      Fleet manager
+                      Company owner
                     </>
                   ) : (
                     <>

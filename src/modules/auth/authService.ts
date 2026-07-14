@@ -1,8 +1,7 @@
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import type { User } from '../../db/schema/index.js';
-import { AuthError } from '../../lib/errors.js';
+import { AppError, AuthError } from '../../lib/errors.js';
 import { normalizeDepartments } from '../../lib/department.js';
-import { carrierUserRepo } from '../../repos/carrierUserRepo.js';
 import { userRepo } from '../../repos/userRepo.js';
 import type { Audience, Role, TenantContext } from '../../types/tenantContext.js';
 import { signAccessToken, signRefreshToken, verifyToken, type TokenClaims } from './jwt.js';
@@ -11,8 +10,6 @@ import { scopesForRole } from './permissions.js';
 import { workerRoleFor } from './workerRole.js';
 // Type-only (erased at compile): no runtime import cycle — zohoAuthService value-imports nothing here.
 import type { PublicWorker, WorkerSession } from './zohoAuthService.js';
-// Safe value import: clientAuthService only type-imports from this module (AuthTokens).
-import { clientIdentityFor, type ClientSession } from './clientAuthService.js';
 
 export interface PublicUser {
   id: string;
@@ -178,7 +175,7 @@ export const authService = {
   },
 
   /** Exchange a valid refresh token for a fresh token pair (rotating). */
-  async refresh(refreshToken: string): Promise<LoginResult | WorkerSession | ClientSession> {
+  async refresh(refreshToken: string): Promise<LoginResult | WorkerSession> {
     const claims = await verifyToken(refreshToken, 'refresh');
     // Worker (Zoho) session: the identity is self-contained in the token, so re-issue directly.
     // There is no users-table row for a `zoho:<id>` principal — a findById would 404.
@@ -203,25 +200,12 @@ export const authService = {
       };
       return { accessToken, refreshToken: newRefresh, tokenType: 'Bearer', worker };
     }
-    // Carrier-client session: re-check the account is still active/present before rotating —
-    // disabling a carrier user in the admin kills their sessions within one access-token TTL.
-    // The identity is RE-DERIVED from the row (not copied from the old token) so a back-filled
-    // carrier id, a newly assigned card, or a disabled PARENT owner takes effect on rotation.
     if (claims.client) {
-      const row = await carrierUserRepo.findByIdAny(claims.tenantId, claims.client.carrierUserId);
-      if (!row || row.status !== 'active') {
-        throw new AuthError('Account is no longer active');
-      }
-      const client = await clientIdentityFor(claims.tenantId, row);
-      if (!client) {
-        throw new AuthError('Account is no longer active');
-      }
-      const rotated: TokenClaims = { ...claims, client };
-      const [accessToken, newRefresh] = await Promise.all([
-        signAccessToken(rotated),
-        signRefreshToken(rotated),
-      ]);
-      return { accessToken, refreshToken: newRefresh, tokenType: 'Bearer', client };
+      throw new AppError('Client login/password is retired. Use the Telegram registration flow.', {
+        statusCode: 410,
+        code: 'FEATURE_DISABLED',
+        expose: true,
+      });
     }
     const ctx = contextFromClaims(claims, 'refresh');
     const user = await userRepo.findById(ctx, claims.userId);
