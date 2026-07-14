@@ -46,7 +46,8 @@ export function s(css: string | undefined): CSSProperties {
   return frozen;
 }
 
-/** A stroked (outline) SVG icon from a path `d` — the reference's icon convention. */
+/** A stroked (outline) SVG icon from a path `d`. Supports multi-subpath icons
+ * (space-separated movetos after `z`) by splitting into separate <path> nodes. */
 export function Svg({
   d,
   size = 18,
@@ -62,6 +63,9 @@ export function Svg({
   fill?: string;
   style?: CSSProperties;
 }) {
+  const parts = d.includes('z M') || d.includes('zM')
+    ? d.split(/\s*(?=M)/).map((p) => p.trim()).filter(Boolean)
+    : [d];
   return (
     <svg
       width={size}
@@ -75,7 +79,9 @@ export function Svg({
       style={style}
       aria-hidden="true"
     >
-      <path d={d} />
+      {parts.map((pathD, i) => (
+        <path key={i} d={pathD} />
+      ))}
     </svg>
   );
 }

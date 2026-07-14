@@ -28,7 +28,7 @@ function CategoryHeader({ category, count }: { category: AutoCategory; count: nu
   return (
     <div style={s('display:flex;align-items:center;gap:12px;margin:8px 0 14px')}>
       <div style={s(iconBox(category.color, 38))}>
-        <Svg d={category.icon} size={20} strokeWidth={2} />
+        <Svg d={category.icon} size={18} strokeWidth={1.75} />
       </div>
       <div style={s('flex:1;min-width:0')}>
         <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:17px;letter-spacing:.04em;text-transform:uppercase;color:var(--text)')}>
@@ -126,7 +126,7 @@ export function AutoCatalog({
                 >
                   <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:8px')}>
                     <div style={s(iconBox(DEPT_COL[a.dept] ?? 'var(--accent)', 42))}>
-                      <Svg d={a.icon} size={21} strokeWidth={1.8} />
+                      <Svg d={a.icon} size={20} strokeWidth={1.75} />
                     </div>
                     <div style={s('display:flex;align-items:center;gap:6px')}>
                       {a.soon && (

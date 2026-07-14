@@ -1997,3 +1997,9 @@ Follow-up after export parity commit (`792491e`):
   existed; paste is the new path.
 - Transactions PDF/Excel export parity (self-service) landed earlier via the concurrent Automations
   session (`792491e`/`62e4391`) — not re-done here.
+
+## 2026-07-14 — Automations icons + light-mode picklists
+
+- Mapped each automation to its reference Heroicon from zoho-octane `automations-catalog.js` (e.g. activate=check-circle, deactivate=ban, limits=arrows, fraud=lock, override=gear, txn=bar-chart).
+- Svg renderer now splits multi-subpath icons (`z M…`) into separate `<path>` nodes so gear/invoice icons draw correctly.
+- Light-mode picklist fix: form inputs/selects/textareas use `--surface` (white) instead of muddy `--alt`; custom chevron on selects; floating deal/card dropdown uses white surface + softer shadow; row hover uses `--surface-2` in light mode.

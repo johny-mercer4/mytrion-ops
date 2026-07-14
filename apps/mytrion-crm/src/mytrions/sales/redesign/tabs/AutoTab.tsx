@@ -26,14 +26,15 @@ type LimitDir = 'increase' | 'decrease';
 const DEPT_COL: Record<string, string> = { C: 'var(--orange)', Q: 'var(--accent)', V: 'var(--ok)', M: 'var(--violet)' };
 const cardCol: Record<string, string> = { active: 'var(--ok)', fraud: 'var(--danger)', inactive: 'var(--muted)' };
 const grad = 'linear-gradient(120deg,var(--accent),var(--accent-2))';
-const inp40 = 'width:100%;height:40px;padding:0 12px;border-radius:10px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px';
-const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px';
-const inp44 = 'width:100%;height:44px;padding:0 14px;border-radius:12px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px';
+/** Surface (not alt) — light-mode picklists stay clean white, not grey wash. */
+const inp40 = 'width:100%;height:40px;padding:0 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
+const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:11px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
+const inp44 = 'width:100%;height:44px;padding:0 14px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
 const labelCss = 'font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
 const pickLabelCss = 'font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em';
 const dropMsg = 'padding:14px;font-size:12.5px;color:var(--muted);text-align:center';
 const dropErr = 'padding:14px;font-size:12.5px;color:var(--danger);text-align:center';
-const dropRow = 'padding:12px 15px;cursor:pointer;border-bottom:1px solid var(--border2)';
+const dropRow = 'padding:12px 15px;cursor:pointer;border-bottom:1px solid var(--border2);background:var(--surface)';
 const noteWarn = 'padding:14px 16px;border-radius:12px;background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);font-size:12.5px;color:var(--text2);line-height:1.5';
 const noteErr = 'padding:12px 14px;border-radius:11px;background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);font-size:12.5px;color:var(--danger);line-height:1.5';
 const mono = "font-family:'JetBrains Mono',monospace";
@@ -57,7 +58,7 @@ const daysAgoIso = (n: number) => {
 };
 const skel8 = [1, 2, 3, 4, 5, 6, 7, 8];
 const limitBtn = (on: boolean, col: string): string =>
-  `flex:1;padding:9px;border-radius:9px;border:1px solid ${on ? col : 'var(--border)'};background:${on ? `color-mix(in srgb,${col} 16%,transparent)` : 'var(--alt)'};color:${on ? col : 'var(--muted)'};font-size:12.5px;font-weight:700;cursor:pointer;transition:all .14s`;
+  `flex:1;padding:9px;border-radius:9px;border:1px solid ${on ? col : 'var(--border)'};background:${on ? `color-mix(in srgb,${col} 16%,transparent)` : 'var(--surface)'};color:${on ? col : 'var(--muted)'};font-size:12.5px;font-weight:700;cursor:pointer;transition:all .14s`;
 const btnP = (extra: string): string => `border:none;background:${grad};color:#fff;font-weight:700;cursor:pointer;${extra}`;
 function Lbl({ t }: { t: string }) { return <div style={s(labelCss)}>{t}</div>; }
 const closeX16 = (
@@ -288,7 +289,7 @@ export function AutoTab() {
           <div onClick={(e) => e.stopPropagation()} style={s(`width:100%;max-width:${modalMaxW};max-height:88vh;display:flex;flex-direction:column;border-radius:24px;background:var(--surface);border:1px solid var(--border);box-shadow:0 24px 48px rgba(0,0,0,0.2);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
             <div style={s('flex-shrink:0;padding:24px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:16px;background:linear-gradient(180deg,rgba(var(--accent-rgb),0.03),transparent)')}>
               <div style={s(iconBox(DEPT_COL[b.dept] ?? 'var(--accent)', 48))}>
-                <Svg d={b.icon} size={24} strokeWidth={2} />
+                <Svg d={b.icon} size={22} strokeWidth={1.75} />
               </div>
               <div style={s('flex:1;min-width:0')}>
                 <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;letter-spacing:.03em;text-transform:uppercase;color:var(--text)')}>{b.title}</div>
@@ -320,7 +321,7 @@ export function AutoTab() {
                       {wexShow && wexResultsVM.length > 0 && (
                         <div style={s('margin-top:16px;display:flex;flex-direction:column;gap:9px')}>
                           {wexResultsVM.map((r) => (
-                            <div key={r.appId} className="ss-card-h" style={s('padding:13px 15px;border-radius:12px;background:var(--alt);border:1px solid var(--border)')}>
+                            <div key={r.appId} className="ss-card-h" style={s('padding:13px 15px;border-radius:12px;background:var(--surface);border:1px solid var(--border)')}>
                               <div style={s('display:flex;align-items:center;justify-content:space-between;gap:8px')}><span style={s('font-size:13.5px;font-weight:700')}>{r.company}</span><Badge vm={r.statusBadge} /></div>
                               <div style={s(`font-size:11.5px;color:var(--muted);margin-top:5px;${mono}`)}>App #{r.appId} · {r.contact} · {r.status}</div>
                             </div>
@@ -376,7 +377,7 @@ export function AutoTab() {
                     <div>
                       <div style={s(pickLabelCss)}>Select Card</div>
                       {autoCard ? (
-                        <div style={s('display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:12px;background:var(--alt);border:1px solid var(--border)')}>
+                        <div style={s('display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:12px;background:var(--surface);border:1px solid var(--border)')}>
                           <span style={s(`${mono};font-size:14px;font-weight:600;letter-spacing:.06em`)}>{autoCardDisplay}</span>
                           <Badge vm={autoCardBadge} />
                           <div style={s('flex:1')}></div>
@@ -502,11 +503,11 @@ export function AutoTab() {
                       {kind === 'form' && (
                         <>
                           <div><div style={s(labelCss)}>Due Date <span style={s('font-weight:400;text-transform:none')}>(optional)</span></div><input value={autoDue} onChange={(e) => setAutoDue(e.target.value)} type="date" className="ss-in" style={s(inp42)} /></div>
-                          <div><Lbl t="Note" /><textarea value={autoNote} onChange={(e) => setAutoNote(e.target.value)} placeholder="Add a note for the team…" className="ss-in" style={s('width:100%;min-height:74px;padding:11px 12px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px;resize:vertical')}></textarea></div>
+                          <div><Lbl t="Note" /><textarea value={autoNote} onChange={(e) => setAutoNote(e.target.value)} placeholder="Add a note for the team…" className="ss-in" style={s('width:100%;min-height:74px;padding:11px 12px;border-radius:11px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;resize:vertical')}></textarea></div>
                         </>
                       )}
                       {kind === 'ticket' && b.id === 'reactivation' && (
-                        <div><Lbl t="Note" /><textarea value={autoNote} onChange={(e) => setAutoNote(e.target.value)} placeholder="Why reactivate?" className="ss-in" style={s('width:100%;min-height:74px;padding:11px 12px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px;resize:vertical')}></textarea></div>
+                        <div><Lbl t="Note" /><textarea value={autoNote} onChange={(e) => setAutoNote(e.target.value)} placeholder="Why reactivate?" className="ss-in" style={s('width:100%;min-height:74px;padding:11px 12px;border-radius:11px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;resize:vertical')}></textarea></div>
                       )}
                       <div style={s(noteWarn)}>This files a Customer Service ticket with the matching type code — same outcome as the Create tab, without leaving Automations.</div>
                     </div>
