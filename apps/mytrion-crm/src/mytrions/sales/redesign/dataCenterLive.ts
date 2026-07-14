@@ -35,6 +35,13 @@ function withinDays(v: unknown, days: number): boolean {
   const now = Date.now();
   return d >= now && d <= now + days * 86_400_000;
 }
+/** Epoch ms of a 'YYYY-MM-DD'/ISO date, or 0 when unset/invalid (for sorting). */
+function tsOf(v: unknown): number {
+  const raw = str(v);
+  if (!raw) return 0;
+  const d = new Date(raw.length <= 10 ? `${raw}T00:00:00` : raw).getTime();
+  return Number.isNaN(d) ? 0 : d;
+}
 // ---- shared pipeline metadata (matches the self-service reference records-panel exactly) ----
 //
 // Deal kanban = the FIXED 10-stage blueprint order (always shown, in this order). Lead kanban groups
@@ -170,6 +177,8 @@ export interface DealVM {
   utmSource: string;
   created: string;
   appDate: string;
+  /** Epoch ms of Application_Date (0 when unset) — sort key for the create-ticket "recent deals". */
+  appTs: number;
   value: number;
   valueFmt: string;
   cards: number;
@@ -198,6 +207,7 @@ function mapDeal(r: CrmRow): DealVM {
     utmSource: str(r.utm_source),
     created: relTime(str(r.Created_Time) || str(r.Modified_Time)) || '',
     appDate: fmtDate(r.Application_Date),
+    appTs: tsOf(r.Application_Date),
     value,
     valueFmt: value > 0 ? money(value) : '—',
     cards: n(r.Cards_Requested),

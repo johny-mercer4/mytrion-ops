@@ -10,6 +10,7 @@ import { s } from './dc';
 import { useSales } from './ctx';
 import { useLoad, loadClientCards, type ClientCardVM } from './live';
 import { loadDeals, type DealVM } from './dataCenterLive';
+import { AUTO_LIST, type Automation } from './autoLive';
 import { createDeskTicket, createEscalation, type CreateTicketInput } from '@/api/desk';
 import { callTouchpoint } from '@/api/touchpoints';
 
@@ -43,6 +44,19 @@ const ESCALATION_REASONS = ['Problem with the client', 'Question', 'Personal Req
 const MAX_BYTES = 20 * 1024 * 1024;
 const LABEL = 'font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em';
 const FIELD = 'width:100%;height:44px;padding:0 14px;border-radius:12px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13.5px';
+
+/**
+ * Ticket type → Mytrion automation lookup (self-service `getAutomatedTicketBlock`). Given a
+ * ticket-type label ("C-7 | Account Reactivation"), return the matching active (non-`soon`)
+ * automation whose `codes` include that ticket-type code — so the wizard can steer the agent to the
+ * instant action instead of filing a ticket for something they can already do themselves. null when
+ * the type isn't automatable.
+ */
+function getAutomatedTicketBlock(ticketTypeLabel: string): Automation | null {
+  const code = (ticketTypeLabel || '').split('|')[0]?.trim() ?? '';
+  if (!code) return null;
+  return AUTO_LIST.find((b) => b.soon !== true && b.codes.includes(code)) ?? null;
+}
 
 // ---------- shared attachment drop-zone ----------
 
@@ -140,19 +154,30 @@ interface CrState {
   subject: string;
   body: string;
   submitting: boolean;
+  /** The matched automation when the picked ticket type is self-serviceable (opens the prompt). */
+  autoPrompt: Automation | null;
 }
 
 const CR0: CrState = {
   step: 1, dept: '', dealQ: '', dealId: '', carrierId: '', app: '', company: '', dealName: '',
   contact: '', account: '', email: '', phone: '', ticketType: '', typeOpen: false,
-  cardQ: '', card: '', cardOpen: false, subject: '', body: '', submitting: false,
+  cardQ: '', card: '', cardOpen: false, subject: '', body: '', submitting: false, autoPrompt: null,
 };
 
 export function TicketWizard() {
-  const { pushToast, openTicket } = useSales();
+  const { pushToast, openTicket, go } = useSales();
   const [cr, setCr] = useState<CrState>(CR0);
   const [att, setAtt] = useState<File | null>(null);
   const patch = (p: Partial<CrState>): void => setCr((c) => ({ ...c, ...p }));
+
+  // Selecting a ticket type: if the type is already covered by an available automation, steer the
+  // agent to the instant action (self-service) instead of letting them file a ticket for it.
+  const pickType = (t: string): void => {
+    const block = getAutomatedTicketBlock(t);
+    // Automatable → clear any prior type and open the prompt (reference onTicketTypeChange wipes it).
+    if (block) { patch({ ticketType: '', typeOpen: false, autoPrompt: block }); return; }
+    patch({ ticketType: t, typeOpen: false });
+  };
 
   const dealsLoad = useLoad(loadDeals, []);
   const cardsLoad = useLoad(
@@ -208,7 +233,12 @@ export function TicketWizard() {
 
   const dept = cr.dept ? DEPT_MAP[cr.dept] : null;
   const dq = cr.dealQ.toLowerCase().trim();
-  const deals = (dealsLoad.data ?? []).filter((d) => !dq || `${d.name} ${d.company} ${d.carrier} ${d.phone}`.toLowerCase().includes(dq));
+  const allDeals = dealsLoad.data ?? [];
+  // Default view = the 5 most recent deals by application date (newest first). Searching widens to
+  // the full owner-scoped set so the agent can find any other deal by name/company/carrier/phone.
+  const deals = dq
+    ? allDeals.filter((d) => `${d.name} ${d.company} ${d.carrier} ${d.phone}`.toLowerCase().includes(dq))
+    : [...allDeals].sort((a, b) => b.appTs - a.appTs).slice(0, 5);
   const types = cr.dept ? CR_TYPES[cr.dept] : [];
   const cq = cr.cardQ.toLowerCase().trim();
   const cards = (cardsLoad.data ?? []).filter((c) => !cq || c.num.toLowerCase().includes(cq));
@@ -268,12 +298,19 @@ export function TicketWizard() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={s('position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--muted)')}><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
             <input value={cr.dealQ} onChange={(e) => patch({ dealQ: e.currentTarget.value })} placeholder="Search deals by name, company, carrier or phone…" className="ss-in" style={s('width:100%;height:46px;padding:0 16px 0 42px;border-radius:13px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;box-shadow:var(--shadow-sm)')} />
           </div>
+          {!dq && !dealsLoad.loading && !dealsLoad.error && deals.length > 0 && (
+            <div style={s('font-size:11.5px;color:var(--muted);margin:-6px 2px 12px')}>
+              {allDeals.length > deals.length
+                ? `Showing your ${deals.length} most recent deals by application date — search to find any other.`
+                : `Showing all your ${deals.length} ${deals.length === 1 ? 'deal' : 'deals'} by application date.`}
+            </div>
+          )}
           {dealsLoad.loading ? (
             <div style={s('display:flex;flex-direction:column;gap:9px')}>{[0, 1, 2].map((i) => <div key={i} className="ss-skel" style={s('height:66px;border-radius:14px')} />)}</div>
           ) : dealsLoad.error ? (
             <div style={s('text-align:center;padding:36px 20px;color:var(--danger);font-size:13px')}>{dealsLoad.error}</div>
           ) : deals.length === 0 ? (
-            <div style={s('text-align:center;padding:36px 20px;color:var(--muted);font-size:13px')}>{cr.dealQ ? `No deals match “${cr.dealQ}”.` : 'No deals found.'}</div>
+            <div style={s('text-align:center;padding:36px 20px;color:var(--muted);font-size:13px')}>{dq ? `No deals match “${cr.dealQ.trim()}”.` : 'No deals found.'}</div>
           ) : (
             <div className="ss-scroll" style={s('display:flex;flex-direction:column;gap:9px;max-height:372px;overflow-y:auto;padding-right:2px')}>
               {deals.map((d) => {
@@ -317,7 +354,7 @@ export function TicketWizard() {
                       <div className="ss-scroll" style={s('position:absolute;z-index:9;top:calc(100% + 6px);left:0;right:0;max-height:260px;overflow-y:auto;padding:6px;border-radius:12px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow)')}>
                         {types.map((t) => {
                           const on = cr.ticketType === t;
-                          return <button key={t} onClick={() => patch({ ticketType: t, typeOpen: false })} style={s(`display:block;width:100%;text-align:left;padding:9px 13px;border:none;background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--text2)'};font-size:12.5px;font-weight:${on ? '700' : '500'};cursor:pointer;border-radius:8px`)}>{t}</button>;
+                          return <button key={t} onClick={() => pickType(t)} style={s(`display:block;width:100%;text-align:left;padding:9px 13px;border:none;background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--text2)'};font-size:12.5px;font-weight:${on ? '700' : '500'};cursor:pointer;border-radius:8px`)}>{t}</button>;
                         })}
                       </div>
                     </>
@@ -351,6 +388,24 @@ export function TicketWizard() {
               <button onClick={() => void submit()} disabled={!canSubmit} className={canSubmit ? 'ss-btn-p' : undefined} style={s(canSubmit ? 'height:46px;padding:0 28px;border-radius:12px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:13.5px;cursor:pointer;box-shadow:0 6px 18px rgba(var(--accent-rgb),.35)' : cr.submitting ? 'height:46px;padding:0 28px;border-radius:12px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:9px;opacity:.85' : 'height:46px;padding:0 28px;border-radius:12px;border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:13.5px;cursor:not-allowed')}>
                 {cr.submitting ? (<><span style={s('width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;animation:ss-spin .8s linear infinite')} />Creating…</>) : 'Create Ticket'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* "You can do this yourself" — the picked ticket type is already an instant automation */}
+      {cr.autoPrompt && (
+        <div onClick={() => patch({ autoPrompt: null })} style={s('position:fixed;inset:0;z-index:130;background:rgba(3,7,14,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
+          <div onClick={(e) => e.stopPropagation()} style={s('width:100%;max-width:440px;border-radius:20px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);padding:26px;text-align:center;animation:ss-pop .22s cubic-bezier(.2,0,0,1) both')}>
+            <div style={s('width:48px;height:48px;margin:0 auto 16px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--orange) 15%,transparent);color:var(--orange)')}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+            </div>
+            <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:19px;letter-spacing:.02em;color:var(--text);margin-bottom:8px')}>You can do this yourself</div>
+            <div style={s('font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:6px')}><strong style={s('color:var(--text);font-weight:700')}>{cr.autoPrompt.title}</strong> is available as an instant action in the Automations tab — no need to file a ticket for it.</div>
+            {cr.autoPrompt.desc && <div style={s('font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:20px')}>{cr.autoPrompt.desc}</div>}
+            <div style={s('display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:14px')}>
+              <button onClick={() => patch({ autoPrompt: null })} style={s('height:42px;padding:0 20px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text2);font-weight:700;font-size:12.5px;cursor:pointer')}>Stay Here</button>
+              <button onClick={() => { patch({ autoPrompt: null }); go('auto'); }} className="ss-btn-p" style={s('height:42px;padding:0 20px;border-radius:11px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(var(--accent-rgb),.32)')}>Open Automations ↗</button>
             </div>
           </div>
         </div>
