@@ -59,6 +59,14 @@ export const FILE_TOOLS = [
 export const ANALYTICS_TOOLS = ['analytics.snapshot'] as const;
 
 /**
+ * Owner-scoped warehouse totals (gallons/swipes) via the dbt MCP, keyed by the caller's Zoho user
+ * id. Given to agents that report a rep's own performance (sales, manager, analyst). Non-admins are
+ * locked to their own rows server-side; only admins can target another agent or go company-wide.
+ * Registers only when FF_DBT_MCP_ENABLED, so listing it here is inert until the flag flips.
+ */
+export const WAREHOUSE_TOOLS = ['warehouse.my_gallons'] as const;
+
+/**
  * servercrm client/carrier self-service READ tools (owner-scoped per call). Given to agents that
  * serve clients by carrier (sales, customer-service) and cross-department read agents.
  * ui.request_choice is the generative-UI elicitation tool that pairs with crm.list_my_clients.

@@ -72,6 +72,7 @@ export function contextFromClaims(claims: TokenClaims, requestId: string): Tenan
       requestId,
     };
     if (w.userName) ctx.userName = w.userName;
+    if (w.email) ctx.email = w.email;
     if (w.profile) ctx.profiles = [w.profile];
     if (w.zohoRole) ctx.callerRole = w.zohoRole;
     return ctx;

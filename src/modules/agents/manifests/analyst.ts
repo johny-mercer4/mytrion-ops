@@ -1,6 +1,6 @@
 import { KNOWN_DEPARTMENTS } from '../../../lib/department.js';
 import type { AgentManifest } from '../types.js';
-import { FILE_TOOLS, READ_ONLY_RULE, ANALYTICS_TOOLS } from './shared.js';
+import { FILE_TOOLS, READ_ONLY_RULE, ANALYTICS_TOOLS, WAREHOUSE_TOOLS } from './shared.js';
 
 export const analystAgent: AgentManifest = {
   key: 'analyst',
@@ -22,7 +22,7 @@ export const analystAgent: AgentManifest = {
     'agent.activity',
     'zoho_crm.query',
     'zoho_desk.search_tickets',
-    ...FILE_TOOLS, ...ANALYTICS_TOOLS,
+    ...FILE_TOOLS, ...ANALYTICS_TOOLS, ...WAREHOUSE_TOOLS,
   ],
   composioToolkits: [],
   ragScope: { departments: [], allowAllDepartments: true },

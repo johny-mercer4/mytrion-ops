@@ -5,11 +5,15 @@
  * the client id/secret to the token endpoint, cache the Bearer until just before expiry, and send
  * it on every /mcp call. On a 401 we drop the cached token and retry once (covers early expiry).
  *
+ * IDENTITY: Claude.ai gets per-user email via OAuth JWT. Mytrion Ops mints no email on the
+ * service token — instead each tools/call forwards the Zoho worker's email as `X-User-Email`
+ * so the MCP's query-memory RAG scopes personally (same agentic recall Claude gets). That identity
+ * lives on TenantContext / this header — never in the LLM system prompt.
+ *
  * Credentials are secrets → env only (DBT_MCP_CLIENT_ID/SECRET), never in code.
  *
- * ISOLATION NOTE: the tools this server exposes include a raw free-SQL `query`. Those are NOT
- * registered for department agents directly — Mytrion wraps them in curated, department-scoped
- * tools that bind the caller's scope server-side (see modules/tools). This module is transport only.
+ * ISOLATION NOTE: free-SQL `query` is registered as admin-only (department policy) behind
+ * FF_DBT_MCP_ENABLED; `run`/`test` also need FF_DBT_MCP_WRITES. See modules/tools/dbtMcpTools.ts.
  */
 import { env } from '../config/env.js';
 import { AppError } from '../lib/errors.js';
@@ -23,6 +27,21 @@ export interface McpToolDef {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+}
+
+export interface DbtMcpCallOptions {
+  /** Zoho worker email → MCP `X-User-Email` (query-memory RAG identity). */
+  userEmail?: string;
+  /** Raw Zoho user id (no `zoho:` prefix) → `X-User-Id`. Warehouse row-scoping key. */
+  userId?: string;
+  /** Display name → `X-User-Name`. */
+  userName?: string;
+  /** Caller role (internal role or Zoho role string) → `X-User-Role`. */
+  role?: string;
+  /** Whether the caller sees everything (allDepartmentAccess) → `X-User-Admin`. Non-admins are
+   *  scoped to their own data by the CURATED tool that builds the SQL — this header is advisory
+   *  (audit + future server-side enforcement), never the sole gate. */
+  isAdmin?: boolean;
 }
 
 interface JsonRpcResponse {
@@ -85,13 +104,26 @@ async function bearer(): Promise<string> {
   return cachedToken.value;
 }
 
-function baseHeaders(token: string): Record<string, string> {
+/** Header value must be ASCII/latin1-safe; drop anything else so fetch never throws on a name. */
+function headerSafe(value: string): string {
+  // eslint-disable-next-line no-control-regex
+  return value.replace(/[^\x20-\x7E]/g, '').trim();
+}
+
+function baseHeaders(token: string, identity?: DbtMcpCallOptions): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'application/json, text/event-stream',
     Authorization: `Bearer ${token}`,
   };
   if (sessionId) headers['Mcp-Session-Id'] = sessionId;
+  if (!identity) return headers;
+  const email = identity.userEmail?.trim().toLowerCase();
+  if (email && email.includes('@')) headers['X-User-Email'] = email;
+  if (identity.userId?.trim()) headers['X-User-Id'] = headerSafe(identity.userId);
+  if (identity.userName?.trim()) headers['X-User-Name'] = headerSafe(identity.userName);
+  if (identity.role?.trim()) headers['X-User-Role'] = headerSafe(identity.role);
+  if (identity.isAdmin !== undefined) headers['X-User-Admin'] = identity.isAdmin ? 'true' : 'false';
   return headers;
 }
 
@@ -125,7 +157,11 @@ interface RpcOutcome {
 }
 
 /** Single POST to the MCP endpoint, always bounded by REQUEST_TIMEOUT_MS (so nothing can hang). */
-async function postRaw(payload: Record<string, unknown>, token: string): Promise<Response> {
+async function postRaw(
+  payload: Record<string, unknown>,
+  token: string,
+  identity?: DbtMcpCallOptions,
+): Promise<Response> {
   const url = env.DBT_MCP_URL;
   if (!url) throw new AppError('DBT_MCP_URL is not configured', { code: 'DBT_MCP_NOT_CONFIGURED' });
   const controller = new AbortController();
@@ -133,7 +169,7 @@ async function postRaw(payload: Record<string, unknown>, token: string): Promise
   try {
     return await fetch(url, {
       method: 'POST',
-      headers: baseHeaders(token),
+      headers: baseHeaders(token, identity),
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
@@ -142,9 +178,9 @@ async function postRaw(payload: Record<string, unknown>, token: string): Promise
   }
 }
 
-async function post(method: string, params: unknown): Promise<RpcOutcome> {
+async function post(method: string, params: unknown, identity?: DbtMcpCallOptions): Promise<RpcOutcome> {
   const token = await bearer();
-  const res = await postRaw({ jsonrpc: '2.0', id: nextId++, method, params }, token);
+  const res = await postRaw({ jsonrpc: '2.0', id: nextId++, method, params }, token, identity);
   const text = await res.text();
   return {
     httpStatus: res.status,
@@ -186,22 +222,22 @@ function isSessionError(o: RpcOutcome): boolean {
   return msg.includes('session');
 }
 
-async function call(method: string, params: unknown): Promise<unknown> {
+async function call(method: string, params: unknown, identity?: DbtMcpCallOptions): Promise<unknown> {
   await ensureSession();
-  let out = await post(method, params);
+  let out = await post(method, params, identity);
 
   // 401 → the Bearer likely expired early; drop it, re-auth + re-init, retry once.
   if (out.httpStatus === 401) {
     cachedToken = null;
     sessionId = null;
     await ensureSession();
-    out = await post(method, params);
+    out = await post(method, params, identity);
   }
 
   if (isSessionError(out) && sessionId !== null) {
     sessionId = null;
     await ensureSession();
-    out = await post(method, params);
+    out = await post(method, params, identity);
   }
 
   if (out.httpStatus !== 200 || !out.rpc) {
@@ -238,9 +274,14 @@ interface CallToolResult {
 /**
  * Invoke one dbt MCP tool. Throws (so the dispatcher records an error) when the tool reports
  * failure. Returns structuredContent when present, else parses text blocks as JSON (raw text if not).
+ * Pass `opts.userEmail` (Zoho worker) so server-side query memory RAG is personal, not shared.
  */
-export async function callDbtTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-  const result = (await call('tools/call', { name, arguments: args })) as CallToolResult;
+export async function callDbtTool(
+  name: string,
+  args: Record<string, unknown>,
+  opts: DbtMcpCallOptions = {},
+): Promise<unknown> {
+  const result = (await call('tools/call', { name, arguments: args }, opts)) as CallToolResult;
   const blocks = (result.content ?? [])
     .filter((c) => c.type === 'text' && typeof c.text === 'string')
     .map((c) => c.text as string);

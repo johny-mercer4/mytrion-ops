@@ -76,6 +76,12 @@ export interface TenantContext {
   /** Caller's display name (e.g. Zoho user_name). Available to tool handlers for data scoping. */
   userName?: string;
   /**
+   * Caller's work email (from Zoho OAuth / trusted frontend). Used as **context** for
+   * headless MCP identity (`X-User-Email` on dbt MCP) so query-memory RAG scopes per worker —
+   * never stuffed into the LLM system prompt.
+   */
+  email?: string;
+  /**
    * Set by authority.narrowContext when a child agent is acting on the caller's behalf
    * (e.g. 'billing'). Flows into tool_calls/audit_log attribution — never grants access.
    */

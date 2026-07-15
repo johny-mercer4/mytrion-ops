@@ -2037,3 +2037,58 @@ Follow-up after export parity commit (`792491e`):
   for app DB). `pnpm meta:pg-table -- <name>` — single-table lookup with column API names + activity.
 - `pnpm pg:inspect` — interactive CLI (schemas, table detail, samples). Refactored `meta:dwh` to use
   the shared lib (now includes activity/deprecation fields). typecheck green.
+
+## 2026-07-15 — OpenAI ↔ dbt MCP agentic bridge (Claude parity)
+
+### Goal
+Wire the hosted dbt MCP server into Mytrion Ops the same way Claude.ai already uses it: OpenAI
+function-calling → `toolDispatcher` → MCP `recall_similar_queries` / `query`, with Zoho worker
+identity driving per-user query-memory RAG via **context**, not prompt stuffing.
+
+### mcp-server
+- `/` and `/mcp` accept optional `X-User-Email` from trusted `client_credentials` callers
+  (mytrion-ops). Domain must match `ALLOWED_EMAIL_DOMAINS` (same gate as Claude OAuth login).
+- Identity precedence: header email → JWT email → `client_id`.
+
+### mytrion-ops
+- `TenantContext.email` from Zoho OAuth claims (`contextFromClaims`) and optional body `email`
+  (API_KEY path). Chat widget sends session worker email on stream body.
+- `dbtMcp.ts` forwards `X-User-Email` on tools/call.
+- New `dbtMcpTools.ts` + boot registration in `app.ts` behind `FF_DBT_MCP_ENABLED` (writes need
+  `FF_DBT_MCP_WRITES`). Tools named `dbt_mcp.*`, admin-only via `applyDepartmentPolicy`.
+- Agentic warehouse RAG is tool-driven (recall → live query), not schema stuffed into the system
+  prompt; prompt only steers internal users to use those tools when present.
+- Tests: `tests/unit/dbt-mcp-tools.test.ts` (identity header + read/write gating).
+
+### Enable
+```
+FF_DBT_MCP_ENABLED=1
+DBT_MCP_URL=https://…/mcp
+DBT_MCP_CLIENT_ID=mytrion-ops
+DBT_MCP_CLIENT_SECRET=…
+# Redeploy mcp-server with the X-User-Email change first.
+```
+
+## 2026-07-15 (pm) — Warehouse gallons: id+role scoping via MCP
+
+- Root cause of "agent name isn't found": agent.sales_snapshot resolves the caller by NAME
+  (servercrm). Replaced for gallons with `warehouse.my_gallons` (definitions/warehouse_gallons.ts),
+  keyed by the verified Zoho USER ID, executed through the dbt MCP `query` tool.
+- Identity now forwarded to the MCP as context headers (dbtMcp.ts): X-User-Email, X-User-Id,
+  X-User-Name, X-User-Role, X-User-Admin. mcp-server resolve_user_identifier falls back to
+  zoho:<X-User-Id> when no email. `dbtIdentityFromContext(ctx)` centralizes the mapping.
+- RBAC enforced server-side (SQL built by us): non-admin → LOCKED to own rows; admin → optional
+  agentName override or company-wide. Model cannot widen a non-admin's scope. Tool granted to
+  sales/manager/analyst manifests; registers only when FF_DBT_MCP_ENABLED.
+- **Zoho id prefix gotcha (verified live):** a Zoho id is `<org/zgid prefix><12-digit record id>`.
+  Warehouse zoho_users.id was loaded from a different org (prefix 6227679…) than the login session
+  mints (6096698…); only the trailing 12 digits match. A plain `id =` join returns nobody — and even
+  a suffix join to mart_transaction_line_items.agent yields 0 for most reps because that column
+  attributes fuel to closers ("Justin Williams"), not the account owner.
+- **DEFINITION (ratified w/ user):** "my gallons" = fuel pumped by the CARRIERS I OWN, not
+  agent-attributed rows. Tool now: fetchAgentRoster (servercrm /api/clients/by-agent/<zohoId>, the
+  live-CRM id → sidesteps the warehouse prefix mismatch) → sum
+  octane.mart_transaction_line_items over those carrier_ids for the period. Non-admin roster is
+  locked to self; admin may pass agentZohoUserId or omit for company-wide. Empty book → zeros, no
+  warehouse round-trip.
+- Tests: tests/unit/dbt-mcp-tools.test.ts (13). Full suite 515 green, typecheck clean.

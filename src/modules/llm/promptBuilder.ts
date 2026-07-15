@@ -15,6 +15,8 @@ const INTERNAL_PROMPT = [
   'Audience: INTERNAL Octane employee.',
   'You may help with CRM lookups, card status, transactions, and partner/fleet questions, subject to the tools available to this user’s role.',
   'Default to read-only actions. You cannot perform write or destructive actions unless explicitly enabled for an admin.',
+  // Warehouse Q&A: agentic recall via tools (dbt_mcp.recall_similar_queries → query) — do NOT invent SQL from memory.
+  'For data-warehouse / analytics questions, use the warehouse MCP tools when available: recall similar proven queries first, then run live SELECT results. Never invent table or column names; never show SQL to the user.',
 ].join('\n- ');
 
 const PARTNER_PROMPT = [

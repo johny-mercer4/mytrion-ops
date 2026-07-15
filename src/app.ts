@@ -22,6 +22,7 @@ import { registerWidgetStatic } from './plugins/widgetStatic.js';
 import { registerMiniAppStatic } from './plugins/miniAppStatic.js';
 import { applyDepartmentPolicy } from './modules/agents/departmentAgents.js';
 import { loadMcpTools } from './modules/tools/mcpTools.js';
+import { loadDbtMcpTools } from './modules/tools/dbtMcpTools.js';
 import { toolRegistry } from './modules/tools/index.js';
 import { adminRoutes } from './routes/v1/admin.routes.js';
 import { analyticsRoutes } from './routes/v1/analytics.routes.js';
@@ -189,6 +190,21 @@ export async function buildApp(): Promise<FastifyInstance> {
       toolRegistry.register(mcpTools);
     } catch (err) {
       logger.error({ err }, 'zoho mcp: tool discovery failed/timed out; continuing without MCP tools');
+    }
+  }
+
+  // Same pattern for the hosted dbt warehouse MCP (OpenAI tool loop ↔ Claude Custom Connector parity).
+  // Query-memory RAG identity is per-call via X-User-Email (Zoho worker email on TenantContext).
+  if (env.FF_DBT_MCP_ENABLED) {
+    const deadline = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('dbt mcp discovery timed out')), 20_000),
+    );
+    try {
+      const dbtTools = await Promise.race([loadDbtMcpTools(), deadline]);
+      applyDepartmentPolicy(dbtTools); // no agent lists dbt_mcp.* → admin-only
+      toolRegistry.register(dbtTools);
+    } catch (err) {
+      logger.error({ err }, 'dbt mcp: tool discovery failed/timed out; continuing without dbt MCP tools');
     }
   }
 

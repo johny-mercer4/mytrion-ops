@@ -17,6 +17,8 @@ export default defineConfig({
       FF_DEEP_AGENTS_ENABLED: '0',
       FF_JOBS_ENABLED: '0',
       FF_AGENTIC_RAG: '0',
+      FF_DBT_MCP_ENABLED: '0',
+      FF_DBT_MCP_WRITES: '0',
       FF_RAG_HYBRID: '0',
       FF_RAG_RERANK: '0',
       FF_WRITE_APPROVALS: '0',
