@@ -24,6 +24,8 @@ import { applyDepartmentPolicy } from './modules/agents/departmentAgents.js';
 import { loadMcpTools } from './modules/tools/mcpTools.js';
 import { toolRegistry } from './modules/tools/index.js';
 import { adminRoutes } from './routes/v1/admin.routes.js';
+import { analyticsRoutes } from './routes/v1/analytics.routes.js';
+import { startAnalyticsWarmer } from './modules/analytics/cache.js';
 import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
 import { deskRoutes } from './routes/v1/desk.routes.js';
 import { dataCenterRoutes } from './routes/v1/dataCenter.routes.js';
