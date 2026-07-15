@@ -1,26 +1,24 @@
 import { z } from 'zod';
+import { WILDCARD_SCOPE } from '../../../config/constants.js';
 import { callDbtTool } from '../../../integrations/dbtMcp.js';
+import { ToolError } from '../../../lib/errors.js';
 import { dbtIdentityFromContext } from '../dbtMcpTools.js';
-import { fetchAgentRoster } from '../serverCrmScope.js';
-import type { ToolManifest } from '../types.js';
+import type { ToolContext, ToolManifest } from '../types.js';
 
 /**
- * "My book" gallons/swipes from the warehouse, sourced through the dbt MCP `query` tool.
+ * "My gallons / swipes" from the data warehouse, sourced through the dbt MCP `query` tool.
  *
- * Definition (ratified 2026-07-15): an agent's gallons = fuel pumped by the CARRIERS THEY OWN, not
- * rows where the warehouse tags them as the closer (that `agent` column attributes to a different
- * person and left most reps at 0). So we:
- *   1. resolve the caller's carrier roster via servercrm `/api/clients/by-agent/<zohoId>`
- *      (fetchAgentRoster — the same owner-scoping crm.list_my_clients uses; keyed by the LIVE-CRM
- *      Zoho id, which avoids the warehouse org-prefix mismatch), then
- *   2. sum octane.mart_transaction_line_items over those carrier_ids for the period.
+ * Row-level access is enforced by SCOPING THE dbt QUERY to the caller's Zoho user id — the same
+ * identity we forward to the MCP as headers (X-User-Id / X-User-Role / X-User-Admin, see dbtMcp.ts).
+ * Ownership lives in the warehouse itself: `octane.dim_company.agent_zoho_user_id` is the owning
+ * agent for each `carrier_id`, so a rep's book = every transaction on a carrier they own. We resolve
+ * that entirely inside ONE dbt query (no servercrm round-trip), so the MCP is ALWAYS called and a rep
+ * can never see another rep's — or the company's — numbers:
+ *   - non-admin → filtered to THEIR OWN zoho id (locked; an agentZohoUserId override is ignored).
+ *   - admin     → may pass agentZohoUserId to target one rep's book, or omit it for company-wide.
  *
- * RBAC is enforced HERE, not by the model:
- *   - non-admin  → roster is their OWN (resolveZohoUserId locks it); they can never widen it.
- *   - admin      → may pass agentZohoUserId to target one agent's book, or omit it for company-wide.
- *
- * Identity (id + role + admin flag) is also forwarded to the MCP as headers (see dbtMcp.ts) for the
- * per-user query-memory RAG and audit — context, not prompt.
+ * The Zoho id is matched on its last 12 digits (`right(...,12)`) because the session id and the
+ * warehouse id can carry different org prefixes while sharing the same record suffix.
  */
 const PERIODS = ['today', 'this_week', 'this_month'] as const;
 
@@ -35,8 +33,7 @@ const inputSchema = z.object({
 const outputSchema = z.object({
   scope: z.enum(['self', 'agent', 'company']),
   period: z.enum(PERIODS),
-  agentName: z.string().nullable(),
-  carriersInBook: z.number(),
+  agentZohoUserId: z.string().nullable(),
   result: z.unknown(),
 });
 
@@ -54,13 +51,40 @@ const GALLONS_SELECT = [
   'from octane.mart_transaction_line_items t',
 ].join('\n');
 
-/** Keep only whole carrier ids (integers) so they inline safely into `in (...)`. */
-function carrierIdList(ids: Array<number | string>): string {
-  const clean = ids
-    .map((v) => Number(v))
-    .filter((n) => Number.isInteger(n) && n > 0)
-    .map((n) => String(n));
-  return clean.join(', ');
+/**
+ * Carrier → owning-agent map, deduped to ONE row per carrier (dim_company is SCD, so a carrier can
+ * have several rows; the newest wins). Joined on carrier_id, it lets us filter transactions by owner
+ * without fanning out the sum.
+ */
+const OWNER_JOIN = [
+  'join (',
+  '  select distinct on (carrier_id) carrier_id, agent_zoho_user_id',
+  '  from octane.dim_company',
+  '  where carrier_id is not null',
+  '  order by carrier_id, update_date desc nulls last',
+  ') c on c.carrier_id = t.carrier_id',
+].join('\n');
+
+/**
+ * Elevated (admin/manager-tier) authority. We CANNOT use `allDepartmentAccess` here: when this tool
+ * runs inside an agent, authority.narrowContext has already forced that flag to false. The wildcard
+ * scope survives narrowing, so it's the reliable admin signal for a tool executed by a child agent.
+ */
+function callerIsElevated(ctx: ToolContext): boolean {
+  return ctx.allDepartmentAccess === true || ctx.scopes.includes(WILDCARD_SCOPE);
+}
+
+/** The caller's raw Zoho user id (chat sets ctx.userId = `zoho:<id>`), or null. */
+function callerZohoId(ctx: ToolContext): string | null {
+  return /^zoho:(.+)$/.exec(ctx.userId)?.[1] ?? null;
+}
+
+/**
+ * Last 12 digits of a Zoho id — safe to inline (digits only) and matches across the DWH org-prefix
+ * mismatch (session id and warehouse id share the record suffix, not the org prefix).
+ */
+function zohoIdSuffix(id: string): string {
+  return id.replace(/\D+/g, '').slice(-12);
 }
 
 export const warehouseMyGallonsTool: ToolManifest<
@@ -69,8 +93,8 @@ export const warehouseMyGallonsTool: ToolManifest<
 > = {
   name: 'warehouse.my_gallons',
   description:
-    "Total fuel gallons and swipes for an agent's BOOK (the carriers/clients they own), from the " +
-    "data warehouse. Scoped to the CALLING agent automatically via their client roster — use for " +
+    "Total fuel gallons and swipes for the calling agent's BOOK (the carriers/clients they own), " +
+    'from the data warehouse. Scoped automatically to the CALLER via their Zoho session id — use for ' +
     "'my gallons', 'how many gallons did my clients pump', 'my swipes this week/month'. Admins may " +
     'pass agentZohoUserId to target one agent, or omit it for the company-wide total. Never ask the ' +
     'user for their name or id — identity comes from the session.',
@@ -81,11 +105,11 @@ export const warehouseMyGallonsTool: ToolManifest<
   requiredScopes: ['servercrm:read'],
   rateLimit: { perMinute: 20 },
   async handler(input, ctx) {
-    const isAdmin = ctx.allDepartmentAccess === true;
+    const isAdmin = callerIsElevated(ctx);
     const periodWhere = PERIOD_WHERE[input.period];
     const identity = dbtIdentityFromContext(ctx);
 
-    // Admin with no target → company-wide (no carrier filter). Roster not needed.
+    // Admin with no target → company-wide (no owner filter). Everyone else is scoped by Zoho id.
     if (isAdmin && !input.agentZohoUserId?.trim()) {
       const sql = `${GALLONS_SELECT}\nwhere ${periodWhere}`;
       const result = await callDbtTool(
@@ -93,36 +117,25 @@ export const warehouseMyGallonsTool: ToolManifest<
         { sql, question: `company gallons and swipes ${input.period}` },
         identity,
       );
-      return { scope: 'company', period: input.period, agentName: null, carriersInBook: 0, result };
+      return { scope: 'company', period: input.period, agentZohoUserId: null, result };
     }
 
-    // Otherwise resolve the roster. Non-admins are LOCKED to their own id (override ignored server-
-    // side by resolveZohoUserId); admins may pass a target id.
-    const override = isAdmin ? input.agentZohoUserId?.trim() : undefined;
-    const roster = await fetchAgentRoster(ctx, override ? { override } : {});
-    const scope: 'self' | 'agent' = isAdmin && override ? 'agent' : 'self';
-    const carrierIds = carrierIdList(roster.carriers.map((c) => c.carrierId));
-
-    // Empty book → no carriers to sum. Return zeros without hitting the warehouse.
-    if (!carrierIds) {
-      return {
-        scope,
-        period: input.period,
-        agentName: roster.agentName,
-        carriersInBook: 0,
-        result: { gallons: 0, swipes: 0, carriers: 0, note: 'No carriers in this agent’s book.' },
-      };
+    // Owner-scoped. Non-admins are LOCKED to their own id; admins may target another agent's book.
+    const targetId = isAdmin ? input.agentZohoUserId?.trim() ?? null : callerZohoId(ctx);
+    if (!targetId) {
+      throw new ToolError('No Zoho user id on the request to scope gallons to your book.');
     }
+    const suffix = zohoIdSuffix(targetId);
+    if (!suffix) {
+      throw new ToolError('Zoho user id has no digits to match a warehouse agent id.');
+    }
+    const scope: 'self' | 'agent' = isAdmin ? 'agent' : 'self';
 
-    const sql = `${GALLONS_SELECT}\nwhere ${periodWhere}\nand t.carrier_id in (${carrierIds})`;
-    const question = `gallons and swipes for ${roster.agentName ?? 'my book'} ${input.period}`;
+    const sql =
+      `${GALLONS_SELECT}\n${OWNER_JOIN}\n` +
+      `where ${periodWhere}\nand right(c.agent_zoho_user_id::text, 12) = '${suffix}'`;
+    const question = `gallons and swipes for zoho ${targetId} ${input.period}`;
     const result = await callDbtTool('query', { sql, question }, identity);
-    return {
-      scope,
-      period: input.period,
-      agentName: roster.agentName,
-      carriersInBook: roster.carriers.length,
-      result,
-    };
+    return { scope, period: input.period, agentZohoUserId: targetId, result };
   },
 };

@@ -10,7 +10,8 @@ vi.hoisted(() => {
 });
 vi.stubGlobal('fetch', fetchMock);
 
-// warehouse.my_gallons resolves the caller's carrier roster via servercrm before summing gallons.
+// warehouse.my_gallons scopes entirely in the dbt query now (no servercrm round-trip); this mock
+// stays only to assert servercrm is NOT called on the gallons path.
 vi.mock('../../src/integrations/serverCrm.js', () => ({
   serverCrmGet: getMock,
   serverCrmPost: vi.fn(),
@@ -187,14 +188,6 @@ const workerCtx = (over: Partial<TenantContext> = {}): TenantContext => ({
   ...over,
 });
 
-/** Stage one servercrm by-agent roster response (carrier ids the caller owns). */
-function mockRoster(carrierIds: number[], agentName = 'Shohruh Bekmurodov') {
-  getMock.mockResolvedValueOnce({
-    agent_name: agentName,
-    data: carrierIds.map((id) => ({ carrier_id: id, company_name: `Carrier ${id}` })),
-  });
-}
-
 /** Prime fetch for one full tools/call cycle (token → initialize → notify → call) and return the SQL. */
 async function runGallons(
   ctx: TenantContext,
@@ -229,69 +222,65 @@ describe('dbtIdentityFromContext', () => {
     expect(id.role).toBe('Sales Agent');
     expect(id.userName).toBe('Shohruh Bekmurodov');
   });
+
+  it('treats a NARROWED admin (allDepartmentAccess stripped, scopes:[*]) as admin', () => {
+    // authority.narrowContext forces allDepartmentAccess=false inside agent runs; wildcard survives.
+    const id = dbtIdentityFromContext(workerCtx({ scopes: ['*'], allDepartmentAccess: false }));
+    expect(id.isAdmin).toBe(true);
+  });
 });
 
 describe('warehouse.my_gallons scoping', () => {
-  it('sums a non-admin over their OWN carrier book (never company-wide)', async () => {
-    mockRoster([111, 222]);
+  it('scopes a non-admin to their OWN zoho id and ALWAYS calls the MCP (never company-wide)', async () => {
     const { out, sql, headers } = await runGallons(workerCtx(), { period: 'this_month' });
     expect(out.scope).toBe('self');
-    expect(out.carriersInBook).toBe(2);
-    // Roster fetched for the caller's OWN zoho id.
-    expect(getMock).toHaveBeenCalledWith(
-      '/api/clients/by-agent/6096698000139541886',
-      expect.objectContaining({ limit: 200 }),
-    );
-    // Warehouse sum is filtered to the carriers they own.
-    expect(sql).toContain('t.carrier_id in (111, 222)');
+    expect(out.agentZohoUserId).toBe('6096698000139541886');
+    // Ownership resolved in-warehouse (dim_company), filtered to the caller's zoho id suffix.
+    expect(sql).toContain('octane.dim_company');
+    expect(sql).toContain("right(c.agent_zoho_user_id::text, 12) = '000139541886'");
+    // No servercrm round-trip — the MCP is the single source, and it IS called.
+    expect(getMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalled();
     expect(headers['X-User-Id']).toBe('6096698000139541886');
+    expect(headers['X-User-Role']).toBe('Sales Agent');
     expect(headers['X-User-Admin']).toBe('false');
   });
 
-  it('ignores an agentZohoUserId override from a non-admin (roster stays self)', async () => {
-    mockRoster([111]);
-    const { out } = await runGallons(workerCtx(), { agentZohoUserId: '999999' });
+  it('ignores an agentZohoUserId override from a non-admin (stays locked to self id)', async () => {
+    const { out, sql } = await runGallons(workerCtx(), { agentZohoUserId: '6227679000999999999' });
     expect(out.scope).toBe('self');
-    expect(getMock).toHaveBeenCalledWith(
-      '/api/clients/by-agent/6096698000139541886',
-      expect.anything(),
-    );
+    expect(out.agentZohoUserId).toBe('6096698000139541886');
+    // The override id must NOT appear — the filter is the caller's own suffix.
+    expect(sql).toContain("right(c.agent_zoho_user_id::text, 12) = '000139541886'");
+    expect(sql).not.toContain('000999999999');
   });
 
-  it('returns zeros without querying the warehouse when the book is empty', async () => {
-    mockRoster([]);
-    const out = await warehouseMyGallonsTool.handler(
-      warehouseMyGallonsTool.inputSchema.parse({}),
-      workerCtx(),
-    );
-    expect(out.scope).toBe('self');
-    expect(out.carriersInBook).toBe(0);
-    // No MCP round-trip when there are no carriers to sum.
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('lets an admin go company-wide (no roster, no carrier filter)', async () => {
+  it('lets an admin go company-wide (no owner filter)', async () => {
     const { out, sql } = await runGallons(workerCtx({ role: 'admin', allDepartmentAccess: true }), {
       period: 'this_week',
     });
     expect(out.scope).toBe('company');
-    expect(getMock).not.toHaveBeenCalled();
-    expect(sql).not.toContain('t.carrier_id in');
+    expect(sql).not.toContain('agent_zoho_user_id');
     expect(sql).toContain("date_trunc('week'");
   });
 
+  it('a NARROWED admin (scopes:[*], allDeptAccess stripped) still goes company-wide and hits the MCP', async () => {
+    // Regression: inside the agent runtime allDepartmentAccess is false, so admin must be detected
+    // via the wildcard scope — otherwise the admin self-scopes and can't see company-wide.
+    const { out, sql } = await runGallons(workerCtx({ scopes: ['*'], allDepartmentAccess: false }), {
+      period: 'this_month',
+    });
+    expect(out.scope).toBe('company');
+    expect(sql).not.toContain('agent_zoho_user_id');
+  });
+
   it('lets an admin target one agent by zoho id (their book)', async () => {
-    mockRoster([333, 444], 'Bob Boss');
     const { out, sql } = await runGallons(workerCtx({ role: 'admin', allDepartmentAccess: true }), {
       agentZohoUserId: '6227679000111111111',
     });
     expect(out.scope).toBe('agent');
-    expect(out.agentName).toBe('Bob Boss');
-    expect(getMock).toHaveBeenCalledWith(
-      '/api/clients/by-agent/6227679000111111111',
-      expect.anything(),
-    );
-    expect(sql).toContain('t.carrier_id in (333, 444)');
+    expect(out.agentZohoUserId).toBe('6227679000111111111');
+    expect(sql).toContain("right(c.agent_zoho_user_id::text, 12) = '000111111111'");
   });
 
   it('is granted the servercrm:read scope and read risk', () => {

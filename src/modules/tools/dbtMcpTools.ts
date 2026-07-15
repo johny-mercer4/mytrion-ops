@@ -14,6 +14,7 @@
  */
 import { z } from 'zod';
 import { env } from '../../config/env.js';
+import { WILDCARD_SCOPE } from '../../config/constants.js';
 import { logger } from '../../lib/logger.js';
 import {
   callDbtTool,
@@ -30,7 +31,10 @@ import type { RegisteredTool, RiskClass, ToolContext } from './types.js';
  */
 export function dbtIdentityFromContext(ctx: ToolContext): DbtMcpCallOptions {
   const zohoId = /^zoho:(.+)$/.exec(ctx.userId)?.[1];
-  const identity: DbtMcpCallOptions = { isAdmin: ctx.allDepartmentAccess === true };
+  // allDepartmentAccess is stripped by authority.narrowContext inside agent runs; the wildcard scope
+  // survives narrowing, so it's the reliable admin signal for the X-User-Admin header + audit.
+  const isAdmin = ctx.allDepartmentAccess === true || ctx.scopes.includes(WILDCARD_SCOPE);
+  const identity: DbtMcpCallOptions = { isAdmin };
   if (ctx.email) identity.userEmail = ctx.email;
   if (zohoId) identity.userId = zohoId;
   if (ctx.userName) identity.userName = ctx.userName;

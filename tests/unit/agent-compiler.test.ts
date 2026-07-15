@@ -42,3 +42,19 @@ describe('orchestrator compiler', () => {
     expect(typeof agent.streamEvents).toBe('function');
   });
 });
+
+describe('company-wide analytics access', () => {
+  it('sales reps do NOT get analytics.snapshot (company-wide → would expose other reps)', () => {
+    expect(agentRegistry.get('sales')!.tools).not.toContain('analytics.snapshot');
+  });
+
+  it('sales reps keep only the self-scoped warehouse.my_gallons for gallons/swipes', () => {
+    const tools = agentRegistry.get('sales')!.tools;
+    expect(tools).toContain('warehouse.my_gallons');
+  });
+
+  it('leadership agents (manager/analyst) still have company-wide analytics', () => {
+    expect(agentRegistry.get('manager')!.tools).toContain('analytics.snapshot');
+    expect(agentRegistry.get('analyst')!.tools).toContain('analytics.snapshot');
+  });
+});
