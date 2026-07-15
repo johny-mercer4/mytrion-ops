@@ -1,9 +1,13 @@
-import { useState, type ReactElement } from 'react';
-import { Icon, SearchGlyph } from '../components/icons';
+import { useEffect, useState, type ReactElement } from 'react';
+import { Icon } from '../components/icons';
+import { SlideIn } from '../components/SlideIn';
 import { useI18n } from '../lib/i18n';
-import type { InboxItem } from '../lib/demo';
+import { useSlideDirection } from '../lib/useSlideDirection';
+import type { InboxCategory, InboxItem } from '../lib/demo';
 
-/** The "Inbox" tab (v2 design) — notification list, replaces v1's flat "Recent activity" card. */
+const TABS: InboxCategory[] = ['news', 'notifications'];
+
+/** The "Inbox" tab (v2 design) — split into News / Notifications sub-tabs; no search/filter. */
 export function InboxTab({
   items,
   onMarkAllRead,
@@ -14,46 +18,92 @@ export function InboxTab({
   onRead: (id: string) => void;
 }): ReactElement {
   const { t } = useI18n();
-  const [search, setSearch] = useState('');
-  const q = search.trim().toLowerCase();
+  const [subTab, setSubTab] = useState<InboxCategory>('notifications');
+  const [sortDesc, setSortDesc] = useState(true);
+  const [viewItem, setViewItem] = useState<InboxItem | null>(null);
+  const slideDir = useSlideDirection(subTab, TABS);
 
   const unreadCount = items.filter((n) => n.unread).length;
-  const shown = items.filter((n) => !q || (n.titleText ?? t(n.titleKey)).toLowerCase().includes(q) || (n.bodyText ?? t(n.bodyKey)).toLowerCase().includes(q));
+  const shown = items
+    .filter((n) => n.category === subTab)
+    .sort((a, b) => (sortDesc ? a.minutesAgo - b.minutesAgo : b.minutesAgo - a.minutesAgo));
+
+  function openFull(n: InboxItem) {
+    setViewItem(n);
+    if (n.unread) onRead(n.id);
+  }
+
+  useEffect(() => {
+    if (!viewItem) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [viewItem]);
 
   return (
     <div style={{ padding: '16px 16px 28px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ position: 'sticky', top: 0, zIndex: 4, margin: '0 -16px', padding: '8px 16px 12px', background: 'var(--background)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, height: 46, padding: '0 14px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 13 }}>
-          <SearchGlyph />
-          <input className="selectable" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('inbox.search')} style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontSize: 15 }} />
-        </div>
-      </div>
-
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, margin: '0 2px' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
           <span style={{ fontSize: 19, fontWeight: 700, color: 'var(--fg)' }}>{t('inbox.title')}</span>
-          {unreadCount > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--link-accent)' }}>{t('inbox.new', { n: unreadCount })}</span>}
+          {unreadCount > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--link-accent)', whiteSpace: 'nowrap', flexShrink: 0 }}>{t('inbox.new', { n: unreadCount })}</span>}
         </div>
-        {unreadCount > 0 && (
-          <button type="button" className="press" onClick={onMarkAllRead} style={{ background: 'var(--secondary)', border: 'none', borderRadius: 11, padding: '8px 13px', fontSize: 13, fontWeight: 700, color: 'var(--fg)', cursor: 'pointer' }}>
-            {t('inbox.markAllRead')}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 'none' }}>
+          <button
+            type="button"
+            className="press"
+            onClick={() => setSortDesc((v) => !v)}
+            aria-label={t('inbox.sortByDate')}
+            title={t('inbox.sortByDate')}
+            style={{ width: 40, height: 40, border: 'none', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+          >
+            <Icon name="sort" size={18} strokeWidth={2} className="" />
           </button>
-        )}
+          {unreadCount > 0 && (
+            <button
+              type="button"
+              className="press"
+              onClick={onMarkAllRead}
+              aria-label={t('inbox.markAllRead')}
+              title={t('inbox.markAllRead')}
+              style={{ width: 40, height: 40, border: 'none', borderRadius: 11, background: 'var(--secondary)', color: 'var(--link-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+            >
+              <Icon name="checkcheck" size={18} strokeWidth={2} className="" />
+            </button>
+          )}
+        </div>
       </div>
 
-      {items.length === 0 && (
+      <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--secondary)', borderRadius: 12 }}>
+        {TABS.map((tab) => {
+          const active = subTab === tab;
+          return (
+            <button
+              key={tab}
+              type="button"
+              className="press"
+              onClick={() => setSubTab(tab)}
+              style={{ flex: 1, height: 40, border: 'none', borderRadius: 9, fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: 'pointer', background: active ? 'var(--card)' : 'transparent', color: active ? 'var(--fg)' : 'var(--muted-fg)', boxShadow: active ? 'var(--card-shadow)' : 'none' }}
+            >
+              {t(`inbox.tab.${tab}`)}
+            </button>
+          );
+        })}
+      </div>
+
+      <SlideIn key={subTab} dir={slideDir}>
+      {shown.length === 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 14, padding: '46px 24px' }}>
           <div style={{ width: 64, height: 64, borderRadius: 20, background: 'var(--card)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted-fg)' }}>
             <Icon name="doc" size={28} strokeWidth={1.6} className="" />
           </div>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)' }}>{t('inbox.emptyTitle')}</div>
-            <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 4 }}>{t('inbox.emptyBody')}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)' }}>{t(subTab === 'news' ? 'inbox.newsEmptyTitle' : 'inbox.emptyTitle')}</div>
+            <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 4 }}>{t(subTab === 'news' ? 'inbox.newsEmptyBody' : 'inbox.emptyBody')}</div>
           </div>
         </div>
       )}
-
-      {items.length > 0 && shown.length === 0 && <div style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('inbox.noMatch')}</div>}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {shown.map((n) => (
@@ -81,13 +131,51 @@ export function InboxTab({
                   <span style={{ fontSize: 15, fontWeight: n.unread ? 700 : 600, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.titleText ?? t(n.titleKey)}</span>
                   {n.unread && <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--link-accent)', flex: 'none' }} />}
                 </span>
-                <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)', flex: 'none' }}>{t(n.atKey, n.atN !== undefined ? { n: n.atN } : undefined)}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none' }}>
+                  <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t(n.atKey, n.atN !== undefined ? { n: n.atN } : undefined)}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openFull(n);
+                    }}
+                    aria-label={t('inbox.viewFull')}
+                    title={t('inbox.viewFull')}
+                    style={{ width: 32, height: 32, margin: '-5px -5px -5px 0', border: 'none', background: 'transparent', color: 'var(--muted-fg)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: 'none' }}
+                  >
+                    <Icon name="maximize" size={14} strokeWidth={2} className="" />
+                  </button>
+                </span>
               </div>
-              <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3, lineHeight: 1.45 }}>{n.bodyText ?? t(n.bodyKey)}</div>
+              <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3, lineHeight: 1.45 }}>{n.bodyText ?? t(n.bodyKey, n.bodyParams)}</div>
             </div>
           </div>
         ))}
       </div>
+      </SlideIn>
+
+      {viewItem && (
+        <>
+          <div onClick={() => setViewItem(null)} style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,.42)', animation: 'octfade .2s ease' }} />
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 51, background: 'var(--card)', borderRadius: '24px 24px 0 0', padding: '10px 20px calc(28px + env(safe-area-inset-bottom))', boxShadow: '0 -8px 40px rgba(0,0,0,.28)', animation: 'octsheet .28s cubic-bezier(.32,.72,0,1)' }}
+          >
+            <div style={{ width: 38, height: 4, borderRadius: 2, background: 'var(--border)', margin: '0 auto 18px' }} />
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
+              <span style={{ width: 44, height: 44, borderRadius: 13, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--secondary)', color: viewItem.color ?? 'var(--link-accent)' }}>
+                <Icon name={viewItem.icon} size={20} strokeWidth={1.9} className="" />
+              </span>
+              <button type="button" onClick={() => setViewItem(null)} style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: 'var(--secondary)', color: 'var(--muted-fg)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: 'none' }}>
+                <Icon name="x" size={14} strokeWidth={1.8} className="" />
+              </button>
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--fg)', marginTop: 10 }}>{viewItem.titleText ?? t(viewItem.titleKey)}</div>
+            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)', marginTop: 4 }}>{t(viewItem.atKey, viewItem.atN !== undefined ? { n: viewItem.atN } : undefined)}</div>
+            <div style={{ fontSize: 14.5, color: 'var(--fg)', marginTop: 14, lineHeight: 1.55 }}>{viewItem.bodyText ?? t(viewItem.bodyKey, viewItem.bodyParams)}</div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

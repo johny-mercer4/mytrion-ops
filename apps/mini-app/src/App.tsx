@@ -1,40 +1,46 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { Check, CircleAlert, LayoutGrid } from 'lucide-react';
 import {
   ApiError,
   createDriverInvite,
+  fetchAccountStatus,
+  fetchBalance,
   fetchFleet,
+  fetchInvoiceSignedUrl,
+  fetchInvoices,
+  fetchLastUsed,
   fetchMiniAppSession,
+  fetchPaymentInfo,
   fetchRegistrationPreview,
+  fetchTracking,
+  fetchTransactions,
   redeemRegistration,
+  type CarrierBalance,
   type FleetCard,
+  type LastUsedResult,
+  type PaymentInfoResult,
   type RegistrationPreview,
   type RegistrationView,
+  type SalesInvoicesResult,
+  type StatusResult,
+  type TrackingResult,
+  type TransactionsResult,
 } from './lib/api';
 import { getRegistrationId, getTelegramWebApp, haptic, type TelegramWebAppUser } from './lib/telegram';
 import { getStoredTheme, initTheme, setTheme, type Theme } from './lib/theme';
 import { LANGUAGES, useI18n } from './lib/i18n';
 import { LogoLockup } from './components/logo';
 import { BackChevron, Chevron, EyeToggle, Icon, SearchGlyph, type IconName } from './components/icons';
-import {
-  BALANCE_TILES,
-  HERO,
-  INVOICE_DOCS,
-  PAYMENT_ROWS,
-  STATUS_TILES,
-  TRACKING,
-  TXN_ALL,
-  seedInbox,
-  statusCards,
-  type InboxItem,
-} from './lib/demo';
-import { downloadInvoicePdf } from './lib/pdf';
+import { seedInbox, type InboxItem } from './lib/demo';
 import type { OpenAction } from './lib/actionTarget';
 import { defaultPinned, findCatalogItem } from './lib/serviceCatalog';
 import { ConfirmDialog, type ConfirmConfig } from './components/ConfirmDialog';
 import { Toast, type ToastKind, type ToastState } from './components/Toast';
-import { TabBar, type HomeTab } from './screens/TabBar';
+import { TabBar, TABS as HOME_TABS, type HomeTab } from './screens/TabBar';
 import { ServicesTab } from './screens/ServicesTab';
 import { InboxTab } from './screens/InboxTab';
+import { SlideIn } from './components/SlideIn';
+import { useSlideDirection } from './lib/useSlideDirection';
 
 const CTA_SHADOW = '0 4px 14px color-mix(in srgb, var(--primary) 34%, transparent)';
 
@@ -78,6 +84,17 @@ function last4(cardNumber: string | null, cardId: string | null): string {
   const n = cardNumber?.trim();
   if (n && n.length >= 4) return n.slice(-4);
   return cardId ?? '——';
+}
+
+/** Same formatting rules as the sales admin's automation runners (apps/mytrion-crm/.../specs.ts) — servercrm figures are `number | string | null`, never pre-formatted. */
+function fmt(v: unknown): string {
+  if (v === null || v === undefined || v === '') return '—';
+  if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(2);
+  return String(v);
+}
+function money(v: unknown): string {
+  const n = typeof v === 'string' ? Number(v) : typeof v === 'number' ? v : NaN;
+  return Number.isFinite(n) ? `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : fmt(v);
 }
 
 /** Countdown from an ISO deadline: {expired, short:"17h"/"45m"}. */
@@ -264,10 +281,7 @@ function ErrorScreen({
             animation: 'octpop .35s ease',
           }}
         >
-          <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
-            <path d="M12 7.5v6" stroke="var(--destructive)" strokeWidth="2.6" strokeLinecap="round" />
-            <circle cx="12" cy="17" r="1.5" fill="var(--destructive)" />
-          </svg>
+          <CircleAlert size={30} strokeWidth={2.2} color="var(--destructive)" aria-hidden />
         </div>
         <div style={{ textAlign: 'center', maxWidth: 300 }}>
           <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--fg)', marginBottom: 8 }}>{title ?? t('error.title')}</div>
@@ -409,8 +423,25 @@ function fullCardNumber(ownCard: string): string {
   return '5412 7734 90' + last4.slice(0, 2) + ' ' + last4;
 }
 
-function OwnerHero({ onOpenDetails }: { onOpenDetails: () => void }) {
+function OwnerHero({ initData, onOpenDetails }: { initData: string; onOpenDetails: () => void }) {
   const { t } = useI18n();
+  const [balance, setBalance] = useState<CarrierBalance | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchBalance(initData)
+      .then((v) => {
+        if (!cancelled) setBalance(v);
+      })
+      .catch(() => {
+        /* the balance tile falls back to '—' below — not worth a dedicated error state on Home */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initData]);
+  const creditLimit = balance?.credit_limit != null ? Number(balance.credit_limit) : null;
+  const creditRemaining = balance?.credit_remaining != null ? Number(balance.credit_remaining) : null;
+  const pct = creditLimit && creditRemaining != null && creditLimit > 0 ? Math.max(0, Math.min(100, (creditRemaining / creditLimit) * 100)) : 100;
   return (
     <div style={{ position: 'relative', background: '#1E1F23', borderRadius: 24, overflow: 'hidden', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
       <svg aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.12, pointerEvents: 'none' }} viewBox="0 0 400 230" preserveAspectRatio="none" fill="none" stroke="#FFFFFF" strokeWidth={1}>
@@ -432,19 +463,23 @@ function OwnerHero({ onOpenDetails }: { onOpenDetails: () => void }) {
         <div style={{ width: 44, height: 44, background: 'rgba(255,255,255,.12)', borderRadius: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF' }}>
           <Icon name="wallet" size={23} strokeWidth={1.7} className="" />
         </div>
-        <button type="button" className="press" onClick={onOpenDetails} style={{ background: 'rgba(255,255,255,.14)', border: 'none', borderRadius: 12, padding: '9px 14px', fontSize: 13, fontWeight: 600, color: '#FFFFFF', cursor: 'pointer' }}>
+        <button type="button" className="press" onClick={onOpenDetails} style={{ height: 40, background: 'rgba(255,255,255,.14)', border: 'none', borderRadius: 12, padding: '0 16px', fontSize: 14, fontWeight: 600, color: '#FFFFFF', cursor: 'pointer' }}>
           {t('common.details')}
         </button>
       </div>
       <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 2 }}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.09em', textTransform: 'uppercase', color: 'rgba(255,255,255,.7)' }}>{t('home.efsBalance')}</div>
         <div style={{ fontSize: 14, color: '#A6ABB6' }}>{t('common.balance')}</div>
-        <div className="selectable" style={{ fontSize: 32, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>{HERO.balance}</div>
+        <div className="selectable" style={{ fontSize: 32, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>
+          {balance ? money(balance.efs_balance ?? balance.balance) : '—'}
+        </div>
       </div>
       <div style={{ position: 'relative', display: 'flex', height: 6, borderRadius: 3, overflow: 'hidden', background: 'rgba(255,255,255,.14)' }}>
-        <div style={{ width: `${HERO.pct}%`, background: 'var(--primary)', borderRadius: 3 }} />
+        <div style={{ width: `${pct}%`, background: 'var(--primary)', borderRadius: 3 }} />
       </div>
-      <div style={{ position: 'relative', fontSize: 13, fontWeight: 600, color: '#FFFFFF', paddingBottom: 6, textShadow: '0 1px 4px rgba(0,0,0,.85)' }}>{HERO.sub}</div>
+      <div style={{ position: 'relative', fontSize: 13, fontWeight: 600, color: '#FFFFFF', paddingBottom: 6, textShadow: '0 1px 4px rgba(0,0,0,.85)' }}>
+        {creditLimit != null && creditRemaining != null ? t('home.creditAvailable', { amt: money(creditRemaining) }) : (balance?.efs_error ?? t('home.balanceNote'))}
+      </div>
     </div>
   );
 }
@@ -485,20 +520,22 @@ function DriverHero({
           <path d="M0 61 C 50 24, 88 22, 127 49 C 166 75, 209 40, 252 35 C 298 30, 338 53, 400 42" stroke="#FF9E1B" strokeWidth={9} strokeLinecap="round" />
           <path d="M0 68 C 50 32, 90 30, 129 55 C 168 80, 211 48, 254 43 C 300 38, 340 60, 400 50" stroke="#F4581C" strokeWidth={8} strokeLinecap="round" />
         </svg>
-        <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#FFFFFF', ['--logo-ring' as string]: '#FFFFFF' }}>
-            <LogoLockup size={24} />
-          </div>
+        {/* scrim: the wave graphic runs bright/light right where the name, PAN and buttons sit —
+            without this, white text loses contrast against it (matches the tint OwnerHero uses). */}
+        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 74, background: 'linear-gradient(to top, rgba(15,16,20,.85), rgba(15,16,20,0))', pointerEvents: 'none' }} />
+        {/* no logo here — AppHeader above already carries the OCTANE lockup; repeating it inside
+            the card as well doubled the brand mark on one screen */}
+        <div style={{ position: 'relative', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
           <span style={{ fontSize: 13, color: '#C6CAD4' }}>{company}</span>
         </div>
         <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
           <span style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', textShadow: '0 1px 3px rgba(0,0,0,.5)' }}>{fullName}</span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span className="selectable" style={{ fontSize: 15.5, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', textShadow: '0 1px 3px rgba(0,0,0,.5)' }}>{display}</span>
-            <button type="button" className="press" onClick={onToggleReveal} style={{ width: 26, height: 26, border: 'none', borderRadius: 8, background: 'rgba(255,255,255,.16)', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: 'none' }}>
-              <EyeToggle revealed={revealed} />
+            <button type="button" className="press" onClick={onToggleReveal} style={{ width: 40, height: 40, border: 'none', borderRadius: 11, background: 'rgba(255,255,255,.16)', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: 'none' }}>
+              <EyeToggle revealed={revealed} size={18} />
             </button>
-            <button type="button" className="press" onClick={onCopy} style={{ height: 26, padding: '0 10px', border: 'none', borderRadius: 8, background: 'rgba(255,255,255,.16)', color: '#FFFFFF', fontSize: 12, fontWeight: 600, cursor: 'pointer', flex: 'none' }}>
+            <button type="button" className="press" onClick={onCopy} style={{ height: 40, padding: '0 14px', border: 'none', borderRadius: 11, background: 'rgba(255,255,255,.16)', color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer', flex: 'none' }}>
               {copied ? t('card.copied') : t('card.copy')}
             </button>
           </span>
@@ -514,6 +551,7 @@ interface HomeProps {
   tab: HomeTab;
   company: string;
   fullName: string;
+  initData: string;
   pinned: string[];
   inbox: InboxItem[];
   cardRevealed: boolean;
@@ -533,6 +571,7 @@ function Home({
   tab,
   company,
   fullName,
+  initData,
   pinned,
   inbox,
   cardRevealed,
@@ -547,33 +586,30 @@ function Home({
   onReadNotif,
 }: HomeProps) {
   const { t } = useI18n();
+  const slideDir = useSlideDirection(tab, HOME_TABS);
 
-  if (tab === 'services') return <ServicesTab isDriver={session.isDriver} pinned={pinned} onTogglePin={onTogglePin} onOpen={onOpenAction} />;
-  if (tab === 'inbox') return <InboxTab items={inbox} onMarkAllRead={onMarkAllRead} onRead={onReadNotif} />;
+  if (tab === 'services') return <SlideIn key={tab} dir={slideDir}><ServicesTab isDriver={session.isDriver} pinned={pinned} onTogglePin={onTogglePin} onOpen={onOpenAction} /></SlideIn>;
+  if (tab === 'inbox') return <SlideIn key={tab} dir={slideDir}><InboxTab items={inbox} onMarkAllRead={onMarkAllRead} onRead={onReadNotif} /></SlideIn>;
 
   const pinnedItems = pinned.map((key) => findCatalogItem(key, session.isDriver)).filter((x): x is NonNullable<typeof x> => !!x);
 
   return (
+    <SlideIn key={tab} dir={slideDir}>
     <div style={{ padding: '16px 16px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {session.isDriver ? (
         <DriverHero session={session} company={company} fullName={fullName} revealed={cardRevealed} copied={cardCopied} onToggleReveal={onToggleCardReveal} onCopy={onCopyCardNumber} />
       ) : (
-        <OwnerHero onOpenDetails={() => onOpenAction({ kind: 'service', key: 'status' })} />
+        <OwnerHero initData={initData} onOpenDetails={() => onOpenAction({ kind: 'service', key: 'status' })} />
       )}
 
       {/* quick actions */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 24, padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 40, height: 40, background: 'var(--secondary)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fg)' }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-              <rect x="4" y="4" width="6" height="6" rx="1.5" />
-              <rect x="14" y="4" width="6" height="6" rx="1.5" />
-              <rect x="4" y="14" width="6" height="6" rx="1.5" />
-              <rect x="14" y="14" width="6" height="6" rx="1.5" />
-            </svg>
+            <LayoutGrid size={20} strokeWidth={2} fill="currentColor" aria-hidden />
           </div>
           <div style={{ flex: 1, fontSize: 16, fontWeight: 700, color: 'var(--fg)' }}>{t('home.quickActions')}</div>
-          <button type="button" className="press" onClick={onGoToServices} style={{ background: 'var(--secondary)', border: 'none', borderRadius: 12, padding: '9px 14px', fontSize: 13, fontWeight: 600, color: 'var(--fg)', cursor: 'pointer' }}>
+          <button type="button" className="press" onClick={onGoToServices} style={{ height: 40, background: 'var(--secondary)', border: 'none', borderRadius: 12, padding: '0 16px', fontSize: 14, fontWeight: 600, color: 'var(--fg)', cursor: 'pointer' }}>
             {t('home.edit')}
           </button>
         </div>
@@ -619,6 +655,7 @@ function Home({
         </button>
       )}
     </div>
+    </SlideIn>
   );
 }
 
@@ -748,9 +785,9 @@ function FleetView({
           {FILTERS.map((f) => {
             const active = filter === f;
             return (
-              <button key={f} type="button" onClick={() => { haptic('tap'); setFilter(f); }} style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none', height: 34, padding: '0 13px', borderRadius: 10, fontFamily: "'Geist'", fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', border: 'none', background: active ? 'var(--primary)' : 'var(--secondary)', color: active ? '#FFFFFF' : 'var(--muted-fg)' }}>
+              <button key={f} type="button" onClick={() => { haptic('tap'); setFilter(f); }} style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none', height: 40, padding: '0 14px', borderRadius: 11, fontFamily: "'Geist'", fontSize: 14, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', border: 'none', background: active ? 'var(--primary)' : 'var(--secondary)', color: active ? '#FFFFFF' : 'var(--muted-fg)' }}>
                 <span>{t(FILTER_LABEL[f])}</span>
-                <span style={{ fontSize: 11, fontWeight: 700, opacity: active ? 1 : 0.65 }}>{counts[f]}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, opacity: active ? 1 : 0.65 }}>{counts[f]}</span>
               </button>
             );
           })}
@@ -766,7 +803,7 @@ function FleetView({
       {!loading && loadError && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 12, padding: '20px 4px' }}>
           <div style={{ color: 'var(--destructive)', fontSize: 14 }}>{loadError}</div>
-          <button type="button" className="press" onClick={onRetry} style={{ height: 38, border: 'none', borderRadius: 10, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: 'pointer', padding: '0 14px' }}>
+          <button type="button" className="press" onClick={onRetry} style={{ height: 42, border: 'none', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: 'pointer', padding: '0 16px' }}>
             {t('common.retry')}
           </button>
         </div>
@@ -829,7 +866,7 @@ function FleetView({
                         <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('card.linkFor', { name: c.driverName ?? '' })}</div>
                         <div style={{ display: 'flex', alignItems: 'stretch', gap: 8 }}>
                           <div className="selectable" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', padding: '0 12px', height: 46, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--background)', fontSize: 12.5, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.link}</div>
-                          <button type="button" className="press" onClick={() => copy(c.link!, id)} style={{ height: 46, border: 'none', borderRadius: 12, fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: 'pointer', padding: '0 16px', flex: 'none', background: copiedId === id ? 'var(--success)' : 'var(--primary)', color: '#FFFFFF' }}>
+                          <button type="button" className="press" onClick={() => copy(c.link!, id)} style={{ height: 46, border: 'none', borderRadius: 12, fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: 'pointer', padding: '0 16px', flex: 'none', background: copiedId === id ? 'var(--success)' : 'var(--primary)', color: '#FFFFFF' }}>
                             {copiedId === id ? t('card.copied') : t('card.copy')}
                           </button>
                         </div>
@@ -888,24 +925,19 @@ function ProfileSheet({
   user,
   company,
   roleLabel,
-  agentName,
   theme,
   onTheme,
   onClose,
-  onContactSupport,
 }: {
   user: TelegramWebAppUser | undefined;
   company: string;
   roleLabel: string;
-  agentName?: string | null | undefined;
   theme: Theme;
   onTheme: (t: Theme) => void;
   onClose: () => void;
-  onContactSupport: () => void;
 }) {
   const { t, lang, setLang } = useI18n();
   const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'Octane user';
-  const agent = cleanAgentName(agentName);
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -932,7 +964,7 @@ function ProfileSheet({
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 9 }}>{t('menu.theme')}</div>
         <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--secondary)', borderRadius: 12, marginBottom: 20 }}>
           {(['light', 'dark'] as Theme[]).map((opt) => (
-            <button key={opt} type="button" onClick={() => onTheme(opt)} style={{ flex: 1, height: 38, border: 'none', borderRadius: 8, fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: 'pointer', background: theme === opt ? 'var(--primary)' : 'transparent', color: theme === opt ? '#FFFFFF' : 'var(--muted-fg)' }}>
+            <button key={opt} type="button" onClick={() => onTheme(opt)} style={{ flex: 1, height: 42, border: 'none', borderRadius: 9, fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: 'pointer', background: theme === opt ? 'var(--primary)' : 'transparent', color: theme === opt ? '#FFFFFF' : 'var(--muted-fg)' }}>
               {t(opt === 'light' ? 'menu.light' : 'menu.dark')}
             </button>
           ))}
@@ -945,25 +977,11 @@ function ProfileSheet({
             return (
               <button key={l.code} type="button" onClick={() => { haptic('tap'); setLang(l.code); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, height: 46, padding: '0 14px', borderRadius: 10, fontFamily: "'Geist'", fontSize: 14, color: 'var(--fg)', cursor: 'pointer', fontWeight: active ? 600 : 500, background: active ? 'var(--secondary)' : 'transparent', border: active ? '1px solid var(--primary)' : '1px solid var(--border)' }}>
                 <span>{l.label}</span>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ opacity: active ? 1 : 0, flex: 'none' }}><path d="M20 6L9 17l-5-5" stroke="var(--link-accent)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                <Check size={14} strokeWidth={2.6} color="var(--link-accent)" style={{ opacity: active ? 1 : 0, flex: 'none' }} aria-hidden />
               </button>
             );
           })}
         </div>
-
-        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 9 }}>{t('svcgrp.support')}</div>
-        <button type="button" className="press" onClick={onContactSupport} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', padding: '12px 14px', background: 'var(--secondary)', border: 'none', borderRadius: 14, cursor: 'pointer', fontFamily: "'Geist'" }}>
-          <span style={{ width: 40, height: 40, borderRadius: 12, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card)', color: 'var(--link-accent)' }}>
-            <Icon name="headset" size={20} strokeWidth={1.8} className="" />
-          </span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--fg)' }}>{agent ?? t('support.rowFallbackName')}</div>
-            <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 1 }}>{agent ? t('support.rowMessageTelegram') : t('support.rowContactGeneric')}</div>
-          </div>
-          <span style={{ flex: 'none', color: 'var(--link-accent)', display: 'flex' }}>
-            <Icon name="plane" size={20} strokeWidth={1.8} className="" />
-          </span>
-        </button>
       </div>
     </>
   );
@@ -972,34 +990,92 @@ function ProfileSheet({
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // Service action sheet (self-service — demo data until EFS integrations land)
 
+/** True when a transaction/card row's card number ends with the driver's own last-4. Real fields
+ * aren't confirmed to be masked or full PANs, so this only ever compares the trailing digits. */
+function rowIsOwnCard(cardNumberField: unknown, ownCard: string): boolean {
+  const s = typeof cardNumberField === 'string' ? cardNumberField : typeof cardNumberField === 'number' ? String(cardNumberField) : '';
+  return s.slice(-4) === ownCard;
+}
+
+type SheetData =
+  | { kind: 'balance'; v: CarrierBalance }
+  | { kind: 'status'; v: StatusResult }
+  | { kind: 'txns'; v: TransactionsResult }
+  | { kind: 'lastused'; v: LastUsedResult }
+  | { kind: 'payment'; v: PaymentInfoResult }
+  | { kind: 'invoices'; v: SalesInvoicesResult }
+  | { kind: 'tracking'; v: TrackingResult };
+
 function ActionSheet({
   target,
   session,
-  company,
-  fullName,
+  initData,
   onClose,
   showToast,
   onSendGeneric,
 }: {
   target: OpenAction;
   session: Session;
-  company: string;
-  fullName: string;
+  initData: string;
   onClose: () => void;
   showToast: (msg: string, kind?: ToastKind) => void;
   onSendGeneric: (title: string) => void;
 }) {
   const { t } = useI18n();
   const [loading, setLoading] = useState(true);
-  const [viewInvoice, setViewInvoice] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [data, setData] = useState<SheetData | null>(null);
   const [range, setRange] = useState<'7d' | '30d' | 'custom'>('30d');
   const [from, setFrom] = useState('2026-06-01');
   const [to, setTo] = useState('2026-07-09');
   const [genericSent, setGenericSent] = useState(false);
+  const [invoiceBusyId, setInvoiceBusyId] = useState<string | null>(null);
+
+  const service = target.kind === 'service' ? target.key : null;
+  const sheetTitle = target.kind === 'generic' ? target.title : t(`svc.${service}`);
+  const dwhRange = range === '7d' ? 'week' : range === '30d' ? 'month' : 'custom';
+
   useEffect(() => {
-    const id = setTimeout(() => setLoading(false), 850);
-    return () => clearTimeout(id);
-  }, []);
+    if (!service) {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setLoadError('');
+    async function load() {
+      try {
+        let next: SheetData;
+        if (service === 'balance') next = { kind: 'balance', v: await fetchBalance(initData) };
+        else if (service === 'status') next = { kind: 'status', v: await fetchAccountStatus(initData) };
+        else if (service === 'txns') {
+          next = {
+            kind: 'txns',
+            v: await fetchTransactions(initData, dwhRange === 'custom' ? { range: 'custom', from, to } : { range: dwhRange }),
+          };
+        } else if (service === 'lastused') next = { kind: 'lastused', v: await fetchLastUsed(initData) };
+        else if (service === 'payment') next = { kind: 'payment', v: await fetchPaymentInfo(initData) };
+        else if (service === 'invoices') next = { kind: 'invoices', v: await fetchInvoices(initData, { range: 'last_30' }) };
+        else next = { kind: 'tracking', v: await fetchTracking(initData) };
+        if (!cancelled) setData(next);
+      } catch (e) {
+        // Backend errors here (crmGet's upstream passthrough, DB failures) are DTO/validation
+        // text meant for API integrators, not the end user — never surface e.message directly.
+        if (!cancelled) {
+          console.error('[ActionSheet] load failed', e);
+          setLoadError(t('sheet.loadError'));
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target, dwhRange, from, to]);
+
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -1007,14 +1083,6 @@ function ActionSheet({
       document.body.style.overflow = prev;
     };
   }, []);
-
-  const service = target.kind === 'service' ? target.key : null;
-  const sheetTitle = target.kind === 'generic' ? target.title : t(`svc.${service}`);
-  const roleForCards = session.isFleetManager ? 'fleet' : session.isOwnerOp ? 'ownerOp' : 'driver';
-  const cards = statusCards(roleForCards as 'fleet' | 'ownerOp' | 'driver', session.ownCard);
-  let txns = TXN_ALL.filter((r) => (range === '7d' ? r.iso >= '2026-07-02' : range === 'custom' ? r.iso >= from && r.iso <= to : true));
-  if (session.isDriver) txns = txns.map((r) => ({ ...r, card: session.ownCard }));
-  const invoiceIds = Object.keys(INVOICE_DOCS).reverse();
 
   function exportCsv() {
     haptic('tap');
@@ -1025,6 +1093,36 @@ function ActionSheet({
     haptic('success');
     setGenericSent(true);
     onSendGeneric(sheetTitle);
+  }
+
+  async function openInvoice(id: string) {
+    haptic('tap');
+    setInvoiceBusyId(id);
+    // Open the tab synchronously, inside the click's user-gesture — a tab opened after the
+    // `await` below is no longer gesture-triggered and gets popup-blocked (esp. in Telegram's WebView).
+    // Can't pass 'noopener' here: it makes window.open return null, so there'd be no handle to
+    // navigate once the signed URL comes back. Sever the opener link manually instead — same effect.
+    const tab = window.open('', '_blank');
+    if (tab) {
+      try {
+        tab.opener = null;
+      } catch {
+        /* best-effort; a same-origin about:blank child always allows this */
+      }
+    }
+    try {
+      const { url } = await fetchInvoiceSignedUrl(initData, id);
+      if (url && tab) tab.location.href = url;
+      else {
+        tab?.close();
+        showToast(t('toast.invoiceDownloadFailed'), 'error');
+      }
+    } catch {
+      tab?.close();
+      showToast(t('toast.invoiceDownloadFailed'), 'error');
+    } finally {
+      setInvoiceBusyId(null);
+    }
   }
 
   return (
@@ -1046,134 +1144,225 @@ function ActionSheet({
               <Spinner size={30} />
               <div style={{ fontSize: 13, color: 'var(--muted-fg)' }}>{t('sheet.fetching', { what: sheetTitle.toLowerCase() })}</div>
             </div>
-          ) : service === 'balance' ? (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                {BALANCE_TILES.map((tile) => (
-                  <div key={tile.label} style={{ background: tile.accent ? 'var(--primary)' : 'var(--secondary)', borderRadius: 14, padding: '13px 14px' }}>
-                    <div style={{ fontSize: 12, fontWeight: 500, color: tile.accent ? 'rgba(255,255,255,.75)' : 'var(--muted-fg)' }}>{tile.label}</div>
-                    <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: tile.accent ? '#FFFFFF' : 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tile.value}</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--muted-fg)', marginTop: 14, lineHeight: 1.5 }}>{t('balance.locNote')}</div>
-            </>
-          ) : service === 'status' ? (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: 'color-mix(in srgb, var(--success) 13%, transparent)', borderRadius: 14, marginBottom: 14 }}>
-                <span style={{ width: 30, height: 30, borderRadius: 10, background: 'color-mix(in srgb, var(--success) 20%, transparent)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><Icon name="check" size={17} strokeWidth={2.4} className="" /></span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{t('status.active')}</span>
-              </div>
-              <SectionLabel>{t('status.debt')}</SectionLabel>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
-                {STATUS_TILES.map((tile) => (
-                  <div key={tile.label} style={{ background: 'var(--secondary)', borderRadius: 14, padding: '12px 14px' }}>
-                    <div style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted-fg)' }}>{tile.label}</div>
-                    <div className="selectable" style={{ fontSize: 18, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tile.value}</div>
-                  </div>
-                ))}
-              </div>
-              <SectionLabel>{t('status.cards')}</SectionLabel>
-              <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
-                {cards.map((c) => (
-                  <div key={c.num} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
-                    <span className="selectable" style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {c.num}</span>
-                    <span style={{ fontSize: 12, color: 'var(--muted-fg)' }}>{c.last}</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: c.status === 'Active' ? 'var(--success)' : 'var(--destructive)' }}>{c.status}</span>
-                  </div>
-                ))}
-              </div>
-              {session.isFleetManager && <div style={{ fontSize: 12, color: 'var(--muted-fg)', marginTop: 9, textAlign: 'center' }}>+ 21 more cards</div>}
-            </>
-          ) : service === 'txns' ? (
-            <>
-              <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--secondary)', borderRadius: 12, marginBottom: 12 }}>
-                {(['7d', '30d', 'custom'] as const).map((r) => (
-                  <button key={r} type="button" onClick={() => setRange(r)} style={{ flex: 1, height: 34, border: 'none', borderRadius: 8, fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: 'pointer', background: range === r ? 'var(--primary)' : 'transparent', color: range === r ? '#FFFFFF' : 'var(--muted-fg)' }}>
-                    {r === '7d' ? t('txns.7d') : r === '30d' ? t('txns.30d') : t('txns.custom')}
-                  </button>
-                ))}
-              </div>
-              {range === 'custom' && (
-                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                  <label style={{ flex: 1 }}>
-                    <span style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.from')}</span>
-                    <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: '100%', height: 42, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 13, padding: '0 11px' }} />
-                  </label>
-                  <label style={{ flex: 1 }}>
-                    <span style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.to')}</span>
-                    <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ width: '100%', height: 42, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 13, padding: '0 11px' }} />
-                  </label>
-                </div>
-              )}
-              {txns.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('txns.empty')}</div>
-              ) : (
-                <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
-                  {txns.map((tx, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13.5, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tx.location}</div>
-                        <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2 }}>{tx.date} · •••• {tx.card}</div>
+          ) : loadError ? (
+            <div style={{ textAlign: 'center', padding: '34px 10px', color: 'var(--destructive)', fontSize: 14, lineHeight: 1.5 }}>{loadError}</div>
+          ) : data?.kind === 'balance' ? (
+            (() => {
+              const b = data.v;
+              const tiles: Array<{ label: string; value: string; accent?: boolean }> = [
+                { label: t('svc.balance'), value: money(b.efs_balance ?? b.balance) },
+              ];
+              if (b.credit_limit != null) tiles.push({ label: t('balance.creditLimit'), value: money(b.credit_limit) });
+              if (b.credit_used != null) tiles.push({ label: t('balance.creditUsed'), value: money(b.credit_used) });
+              if (b.credit_remaining != null) tiles.push({ label: t('balance.available'), value: money(b.credit_remaining), accent: true });
+              return (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    {tiles.map((tile) => (
+                      <div key={tile.label} style={{ background: tile.accent ? 'var(--primary)' : 'var(--secondary)', borderRadius: 14, padding: '13px 14px' }}>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: tile.accent ? 'rgba(255,255,255,.75)' : 'var(--muted-fg)' }}>{tile.label}</div>
+                        <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: tile.accent ? '#FFFFFF' : 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tile.value}</div>
                       </div>
-                      <span className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', flex: 'none' }}>{tx.amount}</span>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 12, color: b.efs_error ? 'var(--destructive)' : 'var(--muted-fg)', marginTop: 14, lineHeight: 1.5 }}>
+                    {b.efs_error ? `⚠ ${b.efs_error}` : [b.account_type ?? b.payment_terms, b.billing_cycle].filter(Boolean).join(' · ') || t('balance.locNote')}
+                  </div>
+                </>
+              );
+            })()
+          ) : data?.kind === 'status' ? (
+            (() => {
+              const { overview, cards } = data.v;
+              const rows = (cards.data ?? []).filter((c) => !session.isDriver || rowIsOwnCard(c['card_number'], session.ownCard));
+              const shown = rows.slice(0, 20);
+              const extra = (cards.count ?? rows.length) - shown.length;
+              return (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: `color-mix(in srgb, var(--${overview.is_active === false ? 'destructive' : 'success'}) 13%, transparent)`, borderRadius: 14, marginBottom: 14 }}>
+                    <span style={{ width: 30, height: 30, borderRadius: 10, background: `color-mix(in srgb, var(--${overview.is_active === false ? 'destructive' : 'success'}) 20%, transparent)`, color: `var(--${overview.is_active === false ? 'destructive' : 'success'})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                      <Icon name={overview.is_active === false ? 'x' : 'check'} size={17} strokeWidth={2.4} className="" />
+                    </span>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{overview.is_active === false ? t('status.inactive') : t('status.active')}</span>
+                  </div>
+                  <SectionLabel>{t('status.debt')}</SectionLabel>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
+                    {[
+                      { label: t('status.totalDebt'), value: money(overview.cmp_debt?.total_debt ?? 0) },
+                      { label: t('status.openInvoices'), value: fmt(overview.cmp_debt?.invoice_count ?? 0) },
+                      { label: t('status.maxDays'), value: fmt(overview.cmp_debt?.max_debt_days ?? 0) },
+                      { label: t('status.hardDebtor'), value: overview.cmp_debt?.is_hard_debtor ? t('status.yes') : t('status.no') },
+                    ].map((tile) => (
+                      <div key={tile.label} style={{ background: 'var(--secondary)', borderRadius: 14, padding: '12px 14px' }}>
+                        <div style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted-fg)' }}>{tile.label}</div>
+                        <div className="selectable" style={{ fontSize: 18, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tile.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <SectionLabel>{t('status.cards')}</SectionLabel>
+                  {shown.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '20px 4px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('status.noCards')}</div>
+                  ) : (
+                    <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                      {shown.map((c, i) => {
+                        const status = fmt(c['status']);
+                        return (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
+                            <span className="selectable" style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {last4(fmt(c['card_number']), null)}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: status.toLowerCase() === 'active' ? 'var(--success)' : 'var(--destructive)' }}>{status}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {/* Driver-scoped views only ever show the driver's own card — a leftover count here would
+                      just be the rest of the fleet's cards, which isn't this driver's to see. */}
+                  {!session.isDriver && extra > 0 && <div style={{ fontSize: 12, color: 'var(--muted-fg)', marginTop: 9, textAlign: 'center' }}>{t('status.moreCards', { n: extra })}</div>}
+                </>
+              );
+            })()
+          ) : data?.kind === 'txns' ? (
+            (() => {
+              const rowsAll = data.v.data ?? [];
+              const rows = session.isDriver ? rowsAll.filter((r) => rowIsOwnCard(r['card_number'], session.ownCard)) : rowsAll;
+              return (
+                <>
+                  <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--secondary)', borderRadius: 12, marginBottom: 12 }}>
+                    {(['7d', '30d', 'custom'] as const).map((r) => (
+                      <button key={r} type="button" onClick={() => setRange(r)} style={{ flex: 1, height: 40, border: 'none', borderRadius: 9, fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: 'pointer', background: range === r ? 'var(--primary)' : 'transparent', color: range === r ? '#FFFFFF' : 'var(--muted-fg)' }}>
+                        {r === '7d' ? t('txns.7d') : r === '30d' ? t('txns.30d') : t('txns.custom')}
+                      </button>
+                    ))}
+                  </div>
+                  {range === 'custom' && (
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                      <label style={{ flex: 1 }}>
+                        <span style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.from')}</span>
+                        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: '100%', height: 42, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 13, padding: '0 11px' }} />
+                      </label>
+                      <label style={{ flex: 1 }}>
+                        <span style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.to')}</span>
+                        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ width: '100%', height: 42, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 13, padding: '0 11px' }} />
+                      </label>
+                    </div>
+                  )}
+                  {rows.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('txns.empty')}</div>
+                  ) : (
+                    <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                      {rows.map((tx, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13.5, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fmt(tx['location_name'])}</div>
+                            <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2 }}>{fmt(tx['transaction_date']).slice(0, 10)} · •••• {last4(fmt(tx['card_number']), null)}</div>
+                          </div>
+                          <span className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', flex: 'none' }}>{money(tx['net_total'] ?? tx['line_item_amount'])}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button type="button" className="press" onClick={exportCsv} style={{ width: '100%', height: 46, marginTop: 14, border: 'none', borderRadius: 12, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>{t('common.export')}</button>
+                </>
+              );
+            })()
+          ) : data?.kind === 'invoices' ? (
+            (data.v.data ?? []).length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('invoice.empty')}</div>
+            ) : (
+              <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                {(data.v.data ?? []).map((inv, i) => {
+                  const id = String(inv['invoice_id'] ?? inv['id'] ?? '');
+                  const label = String(inv['invoice_ref'] ?? inv['invoice_number'] ?? id);
+                  const busy = invoiceBusyId === id;
+                  return (
+                    <div key={id || i} onClick={() => !busy && void openInvoice(id)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '12px 14px', borderBottom: '1px solid var(--border)', cursor: busy ? 'default' : 'pointer' }}>
+                      <span style={{ width: 34, height: 34, borderRadius: 10, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card)', color: 'var(--muted-fg)' }}><Icon name="doc" size={17} strokeWidth={2} className="" /></span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{t('invoice.num', { n: label })}</div>
+                        <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2 }}>{money(inv['total_amount'] ?? inv['amount'])} · {fmt(inv['status'])}</div>
+                      </div>
+                      {busy ? <Spinner size={16} /> : (
+                        <span style={{ borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, padding: '7px 12px', flex: 'none' }}>{t('common.view')}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          ) : data?.kind === 'payment' ? (
+            (() => {
+              const p = data.v;
+              const totals = p.invoices?.totals ?? {};
+              const rows = [
+                { label: t('payment.invoiceCount'), value: fmt(p.invoices?.count ?? 0) },
+                { label: t('payment.totalBilled'), value: money(totals['total_billed']) },
+                { label: t('payment.totalPaid'), value: money(totals['total_paid']) },
+                { label: t('payment.openBalance'), value: money(totals['open_balance']) },
+                { label: t('payment.paymentCount'), value: fmt(p.payments?.count ?? 0) },
+                { label: t('payment.paymentTotal'), value: money(p.payments?.total_amount) },
+              ];
+              return (
+                <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                  {rows.map((r) => (
+                    <div key={r.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '13px 14px', borderBottom: '1px solid var(--border)' }}>
+                      <span style={{ fontSize: 13, color: 'var(--muted-fg)' }}>{r.label}</span>
+                      <span className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{r.value}</span>
                     </div>
                   ))}
                 </div>
-              )}
-              <button type="button" className="press" onClick={exportCsv} style={{ width: '100%', height: 46, marginTop: 14, border: 'none', borderRadius: 12, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>{t('common.export')}</button>
-            </>
-          ) : service === 'invoices' ? (
-            <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
-              {invoiceIds.map((k) => {
-                const d = INVOICE_DOCS[k]!;
-                return (
-                  <div key={k} onClick={() => { haptic('tap'); setViewInvoice(k); }} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '12px 14px', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}>
-                    <span style={{ width: 34, height: 34, borderRadius: 10, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card)', color: 'var(--muted-fg)' }}><Icon name="doc" size={17} strokeWidth={2} className="" /></span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{t('invoice.num', { n: k })}</div>
-                      <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2 }}>{d.date} · {d.total} · {d.paid ? t('invoice.paid') : t('invoice.due')}</div>
-                    </div>
-                    <span style={{ borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, padding: '7px 12px', flex: 'none' }}>{t('common.view')}</span>
-                  </div>
-                );
-              })}
-            </div>
-          ) : service === 'payment' ? (
-            <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
-              {PAYMENT_ROWS.map((p) => (
-                <div key={p.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '13px 14px', borderBottom: '1px solid var(--border)' }}>
-                  <span style={{ fontSize: 13, color: 'var(--muted-fg)' }}>{p.label}</span>
-                  <span className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{p.value}</span>
-                </div>
-              ))}
-            </div>
-          ) : service === 'lastused' ? (
-            <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
-              {cards.map((c, i) => (
-                <div key={c.num} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-                  <span className="selectable" style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {c.num}</span>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 13, color: 'var(--fg)' }}>{c.last}, 2026</div>
-                    <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 1 }}>{t('time.dayN', { n: i === 0 ? 1 : i === 1 ? 2 : 9 })}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : service === 'tracking' ? (
+              );
+            })()
+          ) : data?.kind === 'lastused' ? (
             (() => {
-              const tr = TRACKING(session.ownCard, session.isDriver);
+              const rowsAll = data.v.data ?? [];
+              const rows = session.isDriver ? rowsAll.filter((r) => rowIsOwnCard(r['card_number'], session.ownCard)) : rowsAll;
+              return rows.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('status.noCards')}</div>
+              ) : (
+                <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                  {rows.map((c, i) => {
+                    const lastUsed = c['last_used_date'] ?? c['last_transaction_date'] ?? c['lastUsedDate'] ?? c['last_used'];
+                    return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
+                        <span className="selectable" style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {last4(fmt(c['card_number']), null)}</span>
+                        <span style={{ fontSize: 13, color: 'var(--fg)' }}>{fmt(lastUsed).slice(0, 10)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()
+          ) : data?.kind === 'tracking' ? (
+            (() => {
+              const tr = data.v;
+              const info = tr.trackingInfo ?? [];
+              if (info.length === 0 && !tr.fedexTracking) {
+                return <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('track.empty')}</div>;
+              }
               return (
                 <>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '6px 0 4px' }}>
                     <span style={{ width: 54, height: 54, borderRadius: 16, background: 'var(--secondary)', color: 'var(--link-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}><Icon name="pin" size={26} strokeWidth={2} className="" /></span>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)' }}>{tr.status}</div>
-                    <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3 }}>{t('track.cardLabel')} •••• {tr.card} · {tr.eta}</div>
+                    {tr.fedexTracking && (
+                      <>
+                        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('track.number')}</div>
+                        <div className="selectable" style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tr.fedexTracking}</div>
+                      </>
+                    )}
                   </div>
-                  <div style={{ background: 'var(--secondary)', borderRadius: 14, padding: '13px 14px', marginTop: 14 }}>
-                    <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('track.number')}</div>
-                    <div className="selectable" style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tr.number}</div>
-                  </div>
+                  {info.length > 0 && (
+                    <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden', marginTop: 14 }}>
+                      {info.map((r, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div className="selectable" style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--fg)' }}>{fmt(r.trackingNumber)}</div>
+                            <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2 }}>{fmt(r.startDate)}</div>
+                          </div>
+                          <span style={{ fontSize: 12, color: 'var(--muted-fg)', flex: 'none' }}>{t('track.cardsOrdered', { n: fmt(r.cardsOrdered) })}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
               );
             })()
@@ -1198,82 +1387,7 @@ function ActionSheet({
           )}
         </div>
       </div>
-
-      {viewInvoice && <InvoiceView id={viewInvoice} billToName={fullName} billToCompany={company} onClose={() => setViewInvoice(null)} showToast={showToast} />}
     </>
-  );
-}
-
-function InvoiceView({
-  id,
-  billToName,
-  billToCompany,
-  onClose,
-  showToast,
-}: {
-  id: string;
-  billToName: string;
-  billToCompany: string;
-  onClose: () => void;
-  showToast: (msg: string, kind?: ToastKind) => void;
-}) {
-  const { t } = useI18n();
-  const doc = INVOICE_DOCS[id]!;
-
-  function download() {
-    haptic('tap');
-    try {
-      downloadInvoicePdf(id, doc, billToName || billToCompany, billToCompany);
-      showToast(t('toast.invoiceDownloaded'));
-    } catch {
-      haptic('error');
-      showToast(t('toast.invoiceDownloadFailed'), 'error');
-    }
-  }
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 46, display: 'flex', flexDirection: 'column', background: '#33363c', animation: 'octfade .2s ease' }}>
-      <div style={{ flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '16px 12px 10px', background: '#212327' }}>
-        <button type="button" className="press" onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: 4, border: 'none', background: 'transparent', color: '#cdd2da', fontFamily: "'Geist'", fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: '6px 8px 6px 4px' }}><BackChevron />{t('common.back')}</button>
-        <span className="selectable" style={{ fontSize: 13, fontWeight: 600, color: '#eef1f5', fontVariantNumeric: 'tabular-nums' }}>{id}.pdf</span>
-        <button type="button" className="press" onClick={download} style={{ border: 'none', borderRadius: 10, background: '#2451FF', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, padding: '9px 14px', cursor: 'pointer' }}>{t('common.download')}</button>
-      </div>
-      <div style={{ flex: 1, overflow: 'auto', padding: '18px 16px 30px' }}>
-        <div style={{ position: 'relative', width: '100%', maxWidth: 342, margin: '0 auto', background: '#fff', borderRadius: 6, boxShadow: '0 12px 40px rgba(0,0,0,.45)', padding: '24px 22px', color: '#141414', fontFamily: "'Inter Tight'" }}>
-          <div style={{ position: 'absolute', top: 330, left: '50%', transform: 'translateX(-50%) rotate(-14deg)', border: '3px solid #FF6A00', color: '#FF6A00', borderRadius: 9, padding: '5px 16px', fontSize: 30, fontWeight: 800, letterSpacing: '.1em', opacity: 0.22, pointerEvents: 'none' }}>{doc.paid ? 'PAID' : 'DUE'}</div>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-            <div style={{ ['--logo-ring' as string]: '#0b0b0c', color: '#141414' }}><LogoLockup size={21} /></div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 19, fontWeight: 800, color: '#FF6A00', letterSpacing: '.02em' }}>INVOICE</div>
-              <div className="selectable" style={{ fontSize: 12, fontWeight: 700, color: '#141414', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>#{id}</div>
-            </div>
-          </div>
-          <div style={{ fontSize: 9.5, color: '#8a8f98', lineHeight: 1.55, marginTop: 8 }}>TSS Technology LLC · 7901 4th St N, Ste 300, St. Petersburg, FL 33702<br />Phone: 953867683 · billing@octanefuel.com</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 14px', background: 'color-mix(in srgb, #FFD200 13%, #fff)', border: '1px solid color-mix(in srgb, #FF8A00 24%, #fff)', borderRadius: 8, padding: '10px 12px', marginTop: 12, fontSize: 11.5 }}>
-            {([['START PERIOD', doc.start], ['END PERIOD', doc.end], ['DATE', doc.date], ['DUE DATE', doc.due], ['CUSTOMER ID', doc.customerId]] as const).map(([k, v]) => (
-              <div key={k}><span style={{ color: '#A35A00', fontWeight: 800, fontSize: 8.5, letterSpacing: '.07em' }}>{k}</span><div style={{ fontWeight: 600, marginTop: 1 }}>{v}</div></div>
-            ))}
-          </div>
-          <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.09em', color: '#FF6A00' }}>BILL TO</div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#141414', marginTop: 3 }}>{billToName || billToCompany}</div>
-            <div style={{ fontSize: 11, color: '#5c616b', marginTop: 1 }}>{billToCompany}</div>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', background: 'linear-gradient(135deg,#FFD200,#FFB000)', borderRadius: 6, padding: '7px 12px', marginTop: 14, fontSize: 9.5, fontWeight: 800, letterSpacing: '.08em', color: '#17130F' }}><span>DESCRIPTION</span><span>AMOUNT</span></div>
-          {doc.rows.map((r, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12.5, padding: '8px 12px 7px', borderBottom: '1px solid #f6edd6' }}>
-              <span style={{ color: '#3a3f47' }}>{r.d}</span>
-              <span className="selectable" style={{ color: '#141414', fontWeight: 600, fontVariantNumeric: 'tabular-nums', flex: 'none' }}>{r.a}</span>
-            </div>
-          ))}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg,#FFC93C,#FF7A16)', borderRadius: 6, padding: '10px 12px', marginTop: 10 }}>
-            <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.04em', color: '#17130F' }}>TOTAL DUE</span>
-            <span className="selectable" style={{ fontSize: 17, fontWeight: 800, color: '#17130F', fontVariantNumeric: 'tabular-nums' }}>{doc.total}</span>
-          </div>
-          <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid #f3e8cd', fontSize: 10, color: '#8a8f98', textAlign: 'center', lineHeight: 1.55 }}>Questions? TSS Technology LLC · 953867683 · billing@octanefuel.com<br /><span style={{ color: '#FF6A00', fontWeight: 800 }}>Thank You For Your Business!</span></div>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -1340,7 +1454,7 @@ export function App() {
   // and the "returning user, session restored straight to home" path.
   useEffect(() => {
     if (screen !== 'home') return;
-    setInbox((i) => (i.length ? i : seedInbox(session.isDriver)));
+    setInbox((i) => (i.length ? i : seedInbox(session.isDriver, session.ownCard, company)));
     if (!pinnedInit.current) {
       pinnedInit.current = true;
       setPinned(loadStoredPinned() ?? defaultPinned(session.isDriver));
@@ -1417,9 +1531,11 @@ export function App() {
   }, []);
 
   function chooseTheme(next: Theme) {
+    if (next === theme) return;
     haptic('tap');
     setTheme(next);
     setThemeState(next);
+    showToast(t(next === 'dark' ? 'toast.themeDark' : 'toast.themeLight'));
   }
 
   function confirm() {
@@ -1501,20 +1617,9 @@ export function App() {
 
   function sendGenericRequest(title: string) {
     setInbox((cur) => [
-      { id: 'gen-' + Date.now(), icon: 'plane', color: null, titleKey: '', titleText: t('inbox.genericReceived.title', { title }), bodyKey: '', bodyText: t('inbox.genericReceived.body'), atKey: 'time.justNow', unread: true },
+      { id: 'gen-' + Date.now(), category: 'notifications', icon: 'plane', color: null, titleKey: '', titleText: t('inbox.genericReceived.title', { title }), bodyKey: '', bodyText: t('inbox.genericReceived.body'), atKey: 'time.justNow', minutesAgo: 0, unread: true },
       ...cur,
     ]);
-  }
-
-  function contactSupport() {
-    haptic('tap');
-    const agent = cleanAgentName(supportAgentName);
-    try {
-      window.open('https://t.me/octane_support_ai_bot', '_blank', 'noopener');
-    } catch {
-      // ignore
-    }
-    showToast(agent ? t('toast.supportOpenNamed', { agent }) : t('toast.supportOpenGeneric'));
   }
 
   function loadFleet(force = false) {
@@ -1529,7 +1634,8 @@ export function App() {
       })
       .catch((e) => {
         fleetLoaded.current = false;
-        setFleetLoadError(e instanceof ApiError ? e.message : t('fleet.error'));
+        console.error('[FleetView] load failed', e);
+        setFleetLoadError(t('fleet.error'));
       })
       .finally(() => setFleetLoading(false));
   }
@@ -1553,7 +1659,8 @@ export function App() {
       showToast(t(successKey));
     } catch (e) {
       haptic('error');
-      setFleetActionError(e instanceof ApiError ? e.message : t('fleet.error'));
+      console.error('[FleetView] action failed', e);
+      setFleetActionError(t('fleet.error'));
     }
   }
   const createLink = (cardId: string, name: string) => submitDriverLink(cardId, name, 'toast.driverLinkCreated');
@@ -1577,6 +1684,7 @@ export function App() {
             tab={tab}
             company={company}
             fullName={fullName}
+            initData={wa?.initData ?? ''}
             pinned={pinned}
             inbox={inbox}
             cardRevealed={cardRevealed}
@@ -1614,19 +1722,16 @@ export function App() {
           user={user}
           company={company}
           roleLabel={roleLabel}
-          agentName={supportAgentName}
           theme={theme}
           onTheme={chooseTheme}
           onClose={() => setProfileOpen(false)}
-          onContactSupport={contactSupport}
         />
       )}
       {openAction && (
         <ActionSheet
           target={openAction}
           session={session}
-          company={company}
-          fullName={fullName}
+          initData={wa?.initData ?? ''}
           onClose={() => setOpenAction(null)}
           showToast={showToast}
           onSendGeneric={sendGenericRequest}

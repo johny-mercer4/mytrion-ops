@@ -125,6 +125,15 @@
   box-sizing: border-box;
 }
 
+/* --ring was themed (white on dark, black on light) and mapped to --color-ring below, but no rule
+   ever applied it — every input/button/tab fell back to the platform's default focus outline
+   (orange in Telegram's WebView), clashing with the theme. Inset, not outline: several containers
+   (fleet rows, sheets) clip with overflow:hidden, and an outer outline would get cut off there. */
+:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--ring);
+}
+
 /* Fixed to the viewport, not min-height: the app-root's internal flex column (sticky header +
    scrollable body + fixed bottom tab bar) only works if nothing outside it can grow taller than
    the screen and hand scrolling to the page instead of the inner scroll region. */
@@ -198,6 +207,18 @@ input,
   }
   to {
     transform: translateY(0);
+  }
+}
+/* Tab switches (bottom bar, inbox sub-tabs): a small nudge from the direction of travel, not a
+   full-width slide — see components/SlideIn.tsx. --slide-dir (+1/-1/0) picks the side. */
+@keyframes octslide {
+  from {
+    transform: translateX(calc(var(--slide-dir, 0) * 16px));
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
   }
 }
 @keyframes octpop {

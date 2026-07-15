@@ -4,7 +4,7 @@ import { useI18n } from '../lib/i18n';
 
 export type HomeTab = 'home' | 'services' | 'inbox';
 
-const TABS: HomeTab[] = ['home', 'services', 'inbox'];
+export const TABS: HomeTab[] = ['home', 'services', 'inbox'];
 
 /**
  * Bottom tab bar (v2 design) — only shown while the signed-in Home screen is active. A single
@@ -64,7 +64,7 @@ export function TabBar({ active, unreadCount, onSelect }: { active: HomeTab; unr
                 </span>
               )}
             </span>
-            <span style={{ fontSize: 11, fontWeight: isActive ? 700 : 500 }}>{t(`tab.${tab}`)}</span>
+            <span style={{ fontSize: 12, fontWeight: isActive ? 700 : 500 }}>{t(`tab.${tab}`)}</span>
           </button>
         );
       })}
