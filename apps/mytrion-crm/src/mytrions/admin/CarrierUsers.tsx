@@ -1,10 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { listRegisteredCompanies, type RegisteredCompany } from '../../api/carrierUsers';
+import {
+  cancelInvitation,
+  listInvitations,
+  listRegisteredCompanies,
+  revokeRegistration,
+  type CarrierInvitation,
+  type RegisteredCompany,
+} from '../../api/carrierUsers';
 import { BuildingIcon, PersonIcon, PlusIcon, SearchIcon, XIcon } from '../../components/icons';
 import { CarrierUserForm } from './CarrierUserForm';
+import { copyToClipboard } from './carrierUserUtil';
 import s from './admin.module.css';
 
-const COLS = { gridTemplateColumns: '2fr 1.1fr 1fr 1.2fr 1fr' } as const;
+const COLS = { gridTemplateColumns: '2fr 1.1fr 1fr 1.2fr 1fr .9fr' } as const;
+const INV_COLS = { gridTemplateColumns: '2fr 1fr 1fr 1fr 1.1fr .9fr' } as const;
+const PAGE_SIZE = 10;
 
 interface CarrierGroup {
   key: string;
@@ -12,6 +22,25 @@ interface CarrierGroup {
   companyName: string | null;
   owner: RegisteredCompany | null;
   drivers: RegisteredCompany[];
+}
+
+/** Prev/Next pager shared by both tables below — hides itself when everything fits on one page. */
+function Pager({ page, total, onChange }: { page: number; total: number; onChange: (page: number) => void }) {
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  if (totalPages <= 1) return null;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 'var(--space-3)', padding: 'var(--space-3) 0' }}>
+      <span className={s.chipMeta}>
+        Page {page} of {totalPages} · {total} total
+      </span>
+      <button type="button" className={s.ghostBtn} disabled={page <= 1} onClick={() => onChange(page - 1)}>
+        Prev
+      </button>
+      <button type="button" className={s.ghostBtn} disabled={page >= totalPages} onClick={() => onChange(page + 1)}>
+        Next
+      </button>
+    </div>
+  );
 }
 
 /**
@@ -27,6 +56,12 @@ export function CarrierUsers() {
   const [notice, setNotice] = useState('');
   const [query, setQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [invitations, setInvitations] = useState<CarrierInvitation[]>([]);
+  const [invLoading, setInvLoading] = useState(true);
+  const [invError, setInvError] = useState('');
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [regPage, setRegPage] = useState(1);
+  const [invPage, setInvPage] = useState(1);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -40,9 +75,49 @@ export function CarrierUsers() {
     }
   }, []);
 
+  const loadInvitations = useCallback(async () => {
+    setInvLoading(true);
+    setInvError('');
+    try {
+      setInvitations(await listInvitations());
+    } catch (e) {
+      setInvError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setInvLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadInvitations();
+  }, [load, loadInvitations]);
+
+  async function revoke(id: string, label: string) {
+    if (!window.confirm(`Revoke ${label}'s access? This can't be undone from here — they'd need a new invite to reconnect.`)) return;
+    setBusyId(id);
+    try {
+      await revokeRegistration(id);
+      setNotice(`${label}'s access was revoked.`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function cancel(id: string) {
+    setBusyId(id);
+    try {
+      await cancelInvitation(id);
+      setNotice('Invite cancelled.');
+      await loadInvitations();
+    } catch (e) {
+      setInvError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   // Group into a tree: one row per carrier (the owner/operator), drivers nested beneath it. A
   // driver whose owner hasn't registered yet still gets its own group (owner: null) rather than
@@ -64,6 +139,9 @@ export function CarrierUsers() {
         group.companyName ??= r.companyName;
       }
     }
+    for (const group of byKey.values()) {
+      group.drivers.sort((a, b) => Number(a.status === 'revoked') - Number(b.status === 'revoked'));
+    }
     return [...byKey.values()].sort((a, b) => (a.companyName ?? '').localeCompare(b.companyName ?? ''));
   }, [registrations]);
 
@@ -75,6 +153,15 @@ export function CarrierUsers() {
       .toLowerCase();
     return haystack.includes(q);
   });
+
+  // Reset to page 1 whenever the filter narrows/widens the result set — otherwise a search could
+  // land on a now-out-of-range page and render nothing.
+  useEffect(() => {
+    setRegPage(1);
+  }, [query]);
+
+  const pagedGroups = filtered.slice((regPage - 1) * PAGE_SIZE, regPage * PAGE_SIZE);
+  const pagedInvitations = invitations.slice((invPage - 1) * PAGE_SIZE, invPage * PAGE_SIZE);
 
   return (
     <div className={`${s.panel} ${s.panelWide}`}>
@@ -97,7 +184,10 @@ export function CarrierUsers() {
 
       {showForm && (
         <CarrierUserForm
-          onInviteCreated={() => setNotice('Registration link generated and copied to your clipboard.')}
+          onInviteCreated={() => {
+            setNotice('Registration link generated and copied to your clipboard.');
+            void loadInvitations();
+          }}
           onError={(msg) => setError(msg)}
         />
       )}
@@ -133,43 +223,70 @@ export function CarrierUsers() {
           <span>Carrier</span>
           <span>Telegram</span>
           <span>Registered</span>
+          <span>Actions</span>
         </div>
         {loading && <div className={s.none}>Loading registered companies…</div>}
         {!loading &&
-          filtered.map((g) => (
+          pagedGroups.map((g) => (
             <div key={g.key}>
               <div className={s.tRow} style={COLS}>
                 <span className={s.cellStack}>
                   <span className={s.docTitle}>{g.companyName ?? '(unnamed company)'}</span>
                   {!g.owner && <span className={s.cellSub}>Owner hasn't registered yet</span>}
                 </span>
-                <span>
+                <span style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
                   {g.owner && (
                     <span className={`${s.pill} ${g.owner.companyType === 'fleet-manager' ? s.pillInfo : s.pillNeutral}`}>
                       {g.owner.companyType === 'fleet-manager' ? <BuildingIcon size={11} /> : <PersonIcon size={11} />}
                       {g.owner.companyType === 'fleet-manager' ? 'Company owner' : 'Owner-operator'}
                     </span>
                   )}
+                  {g.owner?.status === 'revoked' && <span className={`${s.pill} ${s.pillBad}`}>Revoked</span>}
                 </span>
                 <span className={s.mono}>{g.carrierId ?? '—'}</span>
                 <span className={s.cellSub}>{g.owner ? `@${g.owner.telegramUsername ?? g.owner.telegramUserId}` : '—'}</span>
                 <span className={s.cellSub}>{g.owner ? new Date(g.owner.createdAt).toLocaleDateString() : '—'}</span>
+                <span>
+                  {g.owner && g.owner.status === 'active' && (
+                    <button
+                      type="button"
+                      className={`${s.miniBtn} ${s.miniDanger}`}
+                      disabled={busyId === g.owner.id}
+                      onClick={() => g.owner && void revoke(g.owner.id, g.companyName ?? 'This owner')}
+                    >
+                      Revoke
+                    </button>
+                  )}
+                </span>
               </div>
               {g.drivers.map((d) => (
-                <div key={d.id} className={s.tRow} style={COLS}>
+                <div key={d.id} className={s.tRow} style={{ ...COLS, opacity: d.status === 'revoked' ? 0.55 : 1 }}>
                   <span className={s.cellStack} style={{ paddingLeft: 'var(--space-4)' }}>
                     <span className={s.docTitle}>↳ {d.driverName ?? 'Driver'}</span>
                     <span className={s.cellSub}>card {d.cardId ?? '?'}</span>
                   </span>
-                  <span>
+                  <span style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
                     <span className={`${s.pill} ${s.pillNeutral}`}>
                       <PersonIcon size={11} />
                       Driver
                     </span>
+                    {d.status === 'revoked' && <span className={`${s.pill} ${s.pillBad}`}>Revoked</span>}
                   </span>
                   <span className={s.mono}>{d.carrierId ?? '—'}</span>
                   <span className={s.cellSub}>@{d.telegramUsername ?? d.telegramUserId}</span>
                   <span className={s.cellSub}>{new Date(d.createdAt).toLocaleDateString()}</span>
+                  <span>
+                    {d.status === 'active' && (
+                      <button
+                        type="button"
+                        className={`${s.miniBtn} ${s.miniDanger}`}
+                        disabled={busyId === d.id}
+                        onClick={() => void revoke(d.id, d.driverName ?? 'This driver')}
+                      >
+                        Revoke
+                      </button>
+                    )}
+                  </span>
                 </div>
               ))}
             </div>
@@ -180,6 +297,76 @@ export function CarrierUsers() {
           </div>
         )}
       </div>
+      {!loading && <Pager page={regPage} total={filtered.length} onChange={setRegPage} />}
+
+      <div className={s.head}>
+        <div>
+          <h2 className={s.h2}>Pending invitations</h2>
+          <p className={s.sub}>Links generated but not yet (or no longer) redeemed.</p>
+        </div>
+      </div>
+
+      {invError && (
+        <p className={s.errorNote} role="alert">
+          {invError}
+        </p>
+      )}
+
+      <div className={s.table}>
+        <div className={s.tHead} style={INV_COLS}>
+          <span>Company</span>
+          <span>Type</span>
+          <span>Carrier</span>
+          <span>Status</span>
+          <span>Expires</span>
+          <span>Actions</span>
+        </div>
+        {invLoading && <div className={s.none}>Loading invitations…</div>}
+        {!invLoading &&
+          pagedInvitations.map((inv) => {
+            const isExpired = inv.status === 'pending' && new Date(inv.expiresAt).getTime() < Date.now();
+            const displayStatus = isExpired ? 'expired' : inv.status;
+            const pillClass = displayStatus === 'redeemed' ? s.pillGood : displayStatus === 'pending' ? s.pillInfo : s.pillNeutral;
+            return (
+              <div key={inv.id} className={s.tRow} style={INV_COLS}>
+                <span className={s.cellStack}>
+                  <span className={s.docTitle}>{inv.companyName ?? '(unnamed company)'}</span>
+                  {inv.profile === 'driver' && <span className={s.cellSub}>driver · card {inv.cardId ?? '?'}</span>}
+                </span>
+                <span>
+                  <span className={`${s.pill} ${s.pillNeutral}`}>
+                    {inv.profile === 'owner' ? <BuildingIcon size={11} /> : <PersonIcon size={11} />}
+                    {inv.profile === 'owner' ? 'Owner' : 'Driver'}
+                  </span>
+                </span>
+                <span className={s.mono}>{inv.carrierId ?? inv.applicationId ?? '—'}</span>
+                <span>
+                  <span className={`${s.pill} ${pillClass}`}>{displayStatus}</span>
+                </span>
+                <span className={s.cellSub}>{new Date(inv.expiresAt).toLocaleString()}</span>
+                <span style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                  {inv.status === 'pending' && !isExpired && (
+                    <>
+                      <button type="button" className={s.miniBtn} onClick={() => copyToClipboard(inv.inviteUrl)}>
+                        Copy
+                      </button>
+                      <button
+                        type="button"
+                        className={`${s.miniBtn} ${s.miniDanger}`}
+                        disabled={busyId === inv.id}
+                        onClick={() => void cancel(inv.id)}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  )}
+                </span>
+              </div>
+            );
+          })}
+        {!invLoading && invitations.length === 0 && <div className={s.none}>No invitations yet.</div>}
+      </div>
+      {!invLoading && <Pager page={invPage} total={invitations.length} onChange={setInvPage} />}
     </div>
   );
 }

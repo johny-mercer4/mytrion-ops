@@ -25,6 +25,8 @@ export interface RegisteredMiniAppCompanyDto {
   cardCount: number | null;
   telegramUserId: string;
   telegramUsername: string | null;
+  status: 'active' | 'revoked';
+  revokedAt: string | null;
   createdAt: string;
 }
 
@@ -60,6 +62,8 @@ function toDto(row: RegisteredMiniAppCompany): RegisteredMiniAppCompanyDto {
     cardCount: row.cardCount,
     telegramUserId: row.telegramUserId,
     telegramUsername: row.telegramUsername,
+    status: row.status,
+    revokedAt: row.revokedAt ? row.revokedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -88,7 +92,11 @@ export const registeredMiniAppCompanyRepo = {
     return rows.map(toDto);
   },
 
-  /** Registered drivers of one carrier — the owner's fleet roster (who's actually signed in). */
+  /**
+   * ACTIVE registered drivers of one carrier — the owner's fleet roster, and the source of truth
+   * for "is this card already taken" (assertDriverCardAvailable). Revoked drivers are excluded on
+   * purpose: that's what frees their card up for reassignment.
+   */
   async listDriversByCarrier(
     ctx: TenantContext,
     carrierId: string,
@@ -101,9 +109,20 @@ export const registeredMiniAppCompanyRepo = {
           eq(registeredMiniAppCompanies.tenantId, ctx.tenantId),
           eq(registeredMiniAppCompanies.carrierId, carrierId),
           eq(registeredMiniAppCompanies.profile, 'driver'),
+          eq(registeredMiniAppCompanies.status, 'active'),
         ),
       );
     return rows.map(toDto);
+  },
+
+  /** Soft-disable: revokes access without deleting the row, preserving registration history. */
+  async revoke(ctx: TenantContext, id: string): Promise<RegisteredMiniAppCompanyDto | undefined> {
+    const rows = await db
+      .update(registeredMiniAppCompanies)
+      .set({ status: 'revoked', revokedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(registeredMiniAppCompanies.id, id), eq(registeredMiniAppCompanies.tenantId, ctx.tenantId)))
+      .returning();
+    return rows[0] ? toDto(rows[0]) : undefined;
   },
 
   /** Re-opening the same invite link just confirms the existing registration (upsert on telegram_user_id). */

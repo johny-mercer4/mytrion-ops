@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   carrierInvitations,
@@ -143,6 +143,33 @@ export const carrierInvitationRepo = {
         ),
       );
     return rows.map(toDto);
+  },
+
+  /** Every invitation for this tenant, newest first — the admin's "pending invitations" table. */
+  async list(ctx: TenantContext): Promise<CarrierInvitationDto[]> {
+    const rows = await db
+      .select()
+      .from(carrierInvitations)
+      .where(eq(carrierInvitations.tenantId, ctx.tenantId))
+      .orderBy(desc(carrierInvitations.createdAt));
+    return rows.map(toDto);
+  },
+
+  /** Cancel a still-pending invite (one-shot, mirrors markRedeemed's guarded update). A no-op
+   * (returns undefined) if it's already redeemed/cancelled — cancelling a used link makes no sense. */
+  async cancel(ctx: TenantContext, id: string, client: DbClient = db): Promise<CarrierInvitationDto | undefined> {
+    const rows = await client
+      .update(carrierInvitations)
+      .set({ status: 'cancelled', updatedAt: new Date() })
+      .where(
+        and(
+          eq(carrierInvitations.id, id),
+          eq(carrierInvitations.tenantId, ctx.tenantId),
+          eq(carrierInvitations.status, 'pending'),
+        ),
+      )
+      .returning();
+    return rows[0] ? toDto(rows[0]) : undefined;
   },
 
   async findById(

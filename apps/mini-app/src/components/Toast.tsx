@@ -10,8 +10,8 @@ export interface ToastState {
 
 /**
  * Top-right confirmation pill — clears the fixed app header rather than sitting over content or
- * the bottom tab bar. Fixed dark chip regardless of theme (a 2.3s-lived element doesn't need its
- * own light-mode variant).
+ * the bottom tab bar. Themed (var(--card)/var(--fg)) rather than a hardcoded dark chip, so it
+ * doesn't look like a foreign element dropped onto the light theme's page.
  */
 export function Toast({ toast }: { toast: ToastState | null }): ReactElement | null {
   if (!toast) return null;
@@ -26,9 +26,10 @@ export function Toast({ toast }: { toast: ToastState | null }): ReactElement | n
           maxWidth: 280,
           padding: '12px 15px',
           borderRadius: 14,
-          background: '#1E212B',
-          color: '#FFFFFF',
-          boxShadow: '0 12px 34px rgba(0,0,0,.45)',
+          background: 'var(--card)',
+          color: 'var(--fg)',
+          border: '1px solid var(--border)',
+          boxShadow: '0 12px 34px rgba(0,0,0,.28)',
           animation: 'octtoastright .24s cubic-bezier(.32,.72,0,1)',
           fontSize: 13.5,
           fontWeight: 600,

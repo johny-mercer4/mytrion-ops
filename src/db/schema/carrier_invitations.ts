@@ -1,7 +1,7 @@
 import { createId } from '@paralleldrive/cuid2';
 import { index, integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 
-export type CarrierInvitationStatus = 'pending' | 'redeemed' | 'expired';
+export type CarrierInvitationStatus = 'pending' | 'redeemed' | 'expired' | 'cancelled';
 
 /**
  * Auto-detected from active fuel card count at invite time (octane.stg_cmp_card via DWH — no

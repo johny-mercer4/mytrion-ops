@@ -37,6 +37,7 @@ export function CarrierUserForm({
   const [companyName, setCompanyName] = useState('');
   const [cardId, setCardId] = useState('');
   const [driverName, setDriverName] = useState('');
+  const [ttlHours, setTtlHours] = useState(168); // 7 days — matches the backend's own default
   const [busy, setBusy] = useState(false);
   const [inviteUrl, setInviteUrl] = useState('');
 
@@ -173,6 +174,7 @@ export function CarrierUserForm({
         ...(!isOwner && driverName.trim() ? { driverName: driverName.trim() } : {}),
         ...(agentName ? { agentName } : {}),
         ...(agentZohoUserId ? { agentZohoUserId } : {}),
+        ttlHours,
       });
       setInviteUrl(res.inviteUrl);
       copyToClipboard(res.inviteUrl);
@@ -204,6 +206,29 @@ export function CarrierUserForm({
             ? 'Owner-operator (one card, drives it themself) or company owner (multiple drivers/cards) — auto-detected below.'
             : 'One driver, tied to one specific card.'}
         </p>
+      </div>
+
+      {/* Step 1b — link expiry */}
+      <div className={s.formStep}>
+        <div className={s.eyebrow}>Link expires in</div>
+        <div className={s.toggleRow} role="radiogroup" aria-label="Link expiry">
+          {([
+            [24, '24 hours'],
+            [72, '3 days'],
+            [168, '7 days'],
+          ] as const).map(([hours, label]) => (
+            <button
+              key={hours}
+              type="button"
+              role="radio"
+              aria-checked={ttlHours === hours}
+              className={`${s.toggle} ${ttlHours === hours ? s.toggleOn : ''}`}
+              onClick={() => setTtlHours(hours)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Step 2 — which client */}

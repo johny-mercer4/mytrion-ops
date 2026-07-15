@@ -113,6 +113,8 @@ function registrationRow(overrides: Record<string, unknown> = {}) {
     driverName: null,
     companyType: 'fleet-manager' as const,
     cardCount: 3,
+    status: 'active' as const,
+    revokedAt: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
