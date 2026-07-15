@@ -13,7 +13,10 @@ import { env, isProduction } from '../../config/env.js';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { db } from '../../db/client.js';
 import { listDwhCards } from '../../integrations/dwhCards.js';
+import { searchDwhClients } from '../../integrations/dwhClients.js';
 import { searchDwhOperators } from '../../integrations/dwhOperators.js';
+import { serverCrmGet, ServerCrmHttpError } from '../../integrations/serverCrm.js';
+import { executeZohoFunctionWithFallback } from '../../integrations/zohoFunctions.js';
 import { carrierInvitationRepo } from '../../repos/carrierInvitationRepo.js';
 import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompanyRepo.js';
 import { buildInviteUrl, createCarrierInvite } from '../../modules/carrier/inviteService.js';
@@ -114,6 +117,26 @@ const ownerDriverInviteSchema = z.object({
   driverName: z.string().min(1).max(200),
 });
 
+// ── Self-service reads (any registered user — owner or driver; carrier-level data both may see) ─
+const selfServiceSchema = z.object({ initData: z.string().min(1) });
+const rangeSchema = z.object({
+  initData: z.string().min(1),
+  range: z.string().max(20).optional(),
+  from: z.string().max(10).optional(),
+  to: z.string().max(10).optional(),
+});
+const invoicesSchema = z.object({
+  initData: z.string().min(1),
+  range: z.string().max(20).optional(),
+  status: z.string().max(40).optional(),
+  from: z.string().max(10).optional(),
+  to: z.string().max(10).optional(),
+});
+const invoiceSignedUrlSchema = z.object({
+  initData: z.string().min(1),
+  invoiceId: z.string().min(1).max(120),
+});
+
 function verifyTelegramUser(initData: string): { tgUser: TelegramWebAppUser; telegramUserId: string } {
   if (!env.TELEGRAM_CARRIER_BOT_TOKEN) {
     throw new AppError('The carrier bot is not configured', {
@@ -158,6 +181,13 @@ async function requireRegisteredMiniAppUser(
       expose: true,
     });
   }
+  if (registration.status === 'revoked') {
+    throw new AppError('Your access has been revoked. Contact your Octane rep to reconnect.', {
+      statusCode: 403,
+      code: 'MINI_APP_REVOKED',
+      expose: true,
+    });
+  }
   return {
     ctx: telegramCtx(registration.profile, telegramUserId),
     registration,
@@ -195,6 +225,66 @@ async function requireRegisteredOwner(
   };
 }
 
+/**
+ * Verify initData and resolve the caller to ANY registered carrier user (owner or driver) with a
+ * carrier id — the auth gate for the self-service reads (balance, status, transactions, invoices,
+ * payment info, last-used, tracking). Unlike requireRegisteredOwner, a driver is allowed: these are
+ * carrier-level views the driver catalog also lists (e.g. "Check available balance").
+ */
+async function requireRegisteredCarrierUser(
+  initData: string,
+): Promise<{ registration: RegisteredMiniAppCompany; carrierId: string }> {
+  const { registration } = await requireRegisteredMiniAppUser(initData);
+  if (!registration.carrierId) {
+    throw new AppError('This registration has no linked carrier yet', {
+      statusCode: 404,
+      code: 'NO_CARRIER_ID',
+      expose: true,
+    });
+  }
+  return { registration, carrierId: registration.carrierId };
+}
+
+/**
+ * Thin servercrm GET proxy for the self-service reads below — mirrors dispatchTouchpoint's error
+ * mapping (src/modules/touchpoints/dispatcher.ts) since that function itself enforces sales-agent
+ * ownership scoping (assertCarrierOwned), which doesn't apply here: the mini-app's carrierId is
+ * already trust-verified via requireRegisteredCarrierUser, not a sales agent's client roster.
+ */
+/** servercrm error bodies are JSON ({success:false, message:'...'}) — surface the message, not the raw blob. */
+function extractUpstreamMessage(bodyText: string): string {
+  try {
+    const parsed = JSON.parse(bodyText) as { message?: string; error?: string };
+    return parsed.message ?? parsed.error ?? bodyText;
+  } catch {
+    return bodyText;
+  }
+}
+
+async function crmGet<T>(path: string, query?: Record<string, string | number | undefined>): Promise<T> {
+  try {
+    return await serverCrmGet<T>(path, query);
+  } catch (err) {
+    if (err instanceof ServerCrmHttpError && [400, 404, 409, 422].includes(err.status)) {
+      throw new AppError(
+        err.bodyText ? extractUpstreamMessage(err.bodyText) : `servercrm rejected the request (${err.status})`,
+        {
+          statusCode: err.status,
+          code: 'SERVER_CRM_REJECTED',
+          expose: true,
+          cause: err,
+        },
+      );
+    }
+    throw new AppError('servercrm request failed', {
+      statusCode: 502,
+      code: 'SERVER_CRM_ERROR',
+      expose: true,
+      cause: err,
+    });
+  }
+}
+
 const createInviteSchema = z.object({
   profile: z.enum(['owner', 'driver']).default('owner'),
   carrier_id: z.union([z.string().max(120), z.number()]).transform(String).optional(),
@@ -208,6 +298,8 @@ const createInviteSchema = z.object({
   // anticipates does.
   agent_name: z.string().max(200).optional(),
   agent_zoho_user_id: z.string().max(120).optional(),
+  /** Admin-picked invite lifetime — falls through to createCarrierInvite's own 7-day default when unset. */
+  ttl_hours: z.coerce.number().int().positive().max(24 * 30).optional(),
 });
 
 export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> {
@@ -216,8 +308,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   /**
    * Admin-gated: generate a carrier registration link (owner or driver). This is the seed for the
    * mini-app — an admin sends an owner the link; the owner then hands out per-card driver links
-   * from inside the app. Kept here (not in carrierUsers.routes) so the whole carrier-onboarding
-   * feature is self-contained.
+   * from inside the app.
    */
   app.post('/carrier-invitations', guard, async (request, reply) => {
     const ctx = requireContext(request);
@@ -239,6 +330,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
         : fallbackAgent.agentZohoUserId
           ? { agentZohoUserId: fallbackAgent.agentZohoUserId }
           : {}),
+      ...(body.ttl_hours !== undefined ? { ttlHours: body.ttl_hours } : {}),
     });
     await auditFromContext(ctx, {
       action: 'admin.carrier_invitation.create',
@@ -328,6 +420,81 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     const ctx = requireAdmin(request);
     const registrations = await registeredMiniAppCompanyRepo.list(ctx);
     return { registrations };
+  });
+
+  /** Soft-disable a registered owner/driver — the row (and its history) stays, access doesn't. A
+   * revoked driver's card frees up for reassignment (registeredMiniAppCompanyRepo.listDriversByCarrier
+   * excludes revoked rows). */
+  app.post('/carrier-registrations/:id/revoke', guard, async (request) => {
+    const ctx = requireAdmin(request);
+    const { id } = request.params as { id: string };
+    const registration = await registeredMiniAppCompanyRepo.revoke(ctx, id);
+    if (!registration) throw new NotFoundError('Registration not found');
+    await auditFromContext(ctx, {
+      action: 'admin.carrier_registration.revoke',
+      status: 'ok',
+      resourceType: 'registered_mini_app_company',
+      resourceId: id,
+      detail: { profile: registration.profile, ...(registration.carrierId ? { carrierId: registration.carrierId } : {}) },
+    });
+    return { registration };
+  });
+
+  /**
+   * Every invite (pending/redeemed/cancelled) for this tenant — the admin's "pending invitations"
+   * table, distinct from /carrier-registrations (who actually finished signing in).
+   */
+  app.get('/carrier-invitations', guard, async (request) => {
+    const ctx = requireAdmin(request);
+    const invitations = await carrierInvitationRepo.list(ctx);
+    return { invitations: invitations.map((inv) => ({ ...inv, inviteUrl: buildInviteUrl(inv.id) })) };
+  });
+
+  /** Cancel a still-pending invite — a no-op 404 if it's already redeemed/cancelled. */
+  app.post('/carrier-invitations/:id/cancel', guard, async (request) => {
+    const ctx = requireAdmin(request);
+    const { id } = request.params as { id: string };
+    const invite = await carrierInvitationRepo.cancel(ctx, id);
+    if (!invite) throw new NotFoundError('Invite not found or no longer pending');
+    await auditFromContext(ctx, {
+      action: 'admin.carrier_invitation.cancel',
+      status: 'ok',
+      resourceType: 'carrier_invitation',
+      resourceId: id,
+      detail: { ...(invite.carrierId ? { carrierId: invite.carrierId } : {}) },
+    });
+    return { invite };
+  });
+
+  /**
+   * The DWH client directory (octane.intm_zoho_deals) — what the admin provisions an invite FROM.
+   * Searchable by company name, carrier id, or application id. (Lives here, not in the legacy
+   * carrierUsers.routes.ts, since that file's login/password CRUD was retired — this is the one
+   * route from it still in use, by CarrierUserForm.tsx and the sales CarrierPicker.)
+   */
+  app.get('/carrier-clients', guard, async (request) => {
+    requireAdmin(request);
+    if (!env.DWH_DATABASE_URL) {
+      throw new AppError('The data warehouse is not configured (DWH_DATABASE_URL)', {
+        statusCode: 503,
+        code: 'DWH_UNCONFIGURED',
+        expose: true,
+      });
+    }
+    const q = z
+      .object({ q: z.string().max(200).optional(), limit: z.coerce.number().int().min(1).max(100).optional() })
+      .parse(request.query);
+    try {
+      const clients = await searchDwhClients({ q: q.q, limit: q.limit });
+      return { clients };
+    } catch (err) {
+      throw new AppError('Data warehouse query failed', {
+        statusCode: 502,
+        code: 'DWH_ERROR',
+        cause: err,
+        expose: true,
+      });
+    }
   });
 
   /**
@@ -616,6 +783,92 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       inviteUrl,
       expiresAt: invite.expiresAt,
     });
+  });
+
+  // ── Self-service reads — real servercrm/DWH data behind the mini-app's demo action sheets ────
+
+  app.post('/carrier/mini-app/balance', async (request) => {
+    const body = selfServiceSchema.parse(request.body);
+    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+    return crmGet(`/api/agent/dwh/carrier-balance/${encodeURIComponent(carrierId)}`);
+  });
+
+  app.post('/carrier/mini-app/status', async (request) => {
+    const body = selfServiceSchema.parse(request.body);
+    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const [overview, cards] = await Promise.all([
+      crmGet(`/api/agent/dwh/carrier-overview/${encodeURIComponent(carrierId)}`),
+      crmGet(`/api/agent/dwh/cards/${encodeURIComponent(carrierId)}`),
+    ]);
+    return { overview, cards };
+  });
+
+  app.post('/carrier/mini-app/transactions', async (request) => {
+    const body = rangeSchema.parse(request.body);
+    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+    return crmGet(`/api/agent/dwh/transactions/${encodeURIComponent(carrierId)}`, {
+      range: body.from && body.to ? 'custom' : (body.range ?? 'month'),
+      ...(body.from ? { from: body.from } : {}),
+      ...(body.to ? { to: body.to } : {}),
+      limit: 100,
+    });
+  });
+
+  app.post('/carrier/mini-app/last-used', async (request) => {
+    const body = rangeSchema.parse(request.body);
+    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+    return crmGet(`/api/agent/dwh/cards/${encodeURIComponent(carrierId)}/last-used`, {
+      range: body.range ?? 'all_time',
+    });
+  });
+
+  app.post('/carrier/mini-app/payment-info', async (request) => {
+    const body = selfServiceSchema.parse(request.body);
+    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+    return crmGet(`/api/agent/dwh/payment-info/${encodeURIComponent(carrierId)}`, { days: 90 });
+  });
+
+  app.post('/carrier/mini-app/invoices', async (request) => {
+    const body = invoicesSchema.parse(request.body);
+    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+    return crmGet('/api/salesMytrion/fetchInvoices', {
+      carrierId,
+      range: body.from && body.to ? 'custom' : (body.range ?? 'last_30'),
+      ...(body.status ? { status: body.status } : {}),
+      ...(body.from ? { from: body.from } : {}),
+      ...(body.to ? { to: body.to } : {}),
+    });
+  });
+
+  // A signed URL isn't itself carrier-scoped upstream, so re-check the invoice belongs to THIS
+  // caller's carrier before minting one — otherwise any registered user could probe arbitrary
+  // invoiceIds.
+  app.post('/carrier/mini-app/invoices/signed-url', async (request) => {
+    const body = invoiceSignedUrlSchema.parse(request.body);
+    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const list = await crmGet<{ data?: Array<Record<string, unknown>> }>('/api/salesMytrion/fetchInvoices', {
+      carrierId,
+      range: 'all_time',
+    });
+    const owned = (list.data ?? []).some((inv) => String(inv['invoice_id'] ?? inv['id'] ?? '') === body.invoiceId);
+    if (!owned) {
+      throw new AppError('That invoice does not belong to this carrier', {
+        statusCode: 403,
+        code: 'INVOICE_NOT_OWNED',
+        expose: true,
+      });
+    }
+    return crmGet(`/api/salesMytrion/invoices/${encodeURIComponent(body.invoiceId)}/signed-url`, { type: 'pdf' });
+  });
+
+  app.post('/carrier/mini-app/tracking', async (request) => {
+    const body = selfServiceSchema.parse(request.body);
+    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+    try {
+      return await executeZohoFunctionWithFallback(['mytriontruckingnumberrequest'], { carrierId }, { unwrap: 'status' });
+    } catch (err) {
+      throw new AppError('Tracking lookup failed', { statusCode: 502, code: 'TRACKING_ERROR', expose: true, cause: err });
+    }
   });
 }
 
