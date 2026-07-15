@@ -24,6 +24,9 @@ export default defineConfig({
       FF_WRITE_APPROVALS: '0',
       FF_AGENT_MEMORY: '0',
       FF_AGENT_CHECKPOINTS: '0',
+      // Off in tests so flag-toggling suites (e.g. Composio on/off) always compile fresh graphs;
+      // the dedicated graphCache suite enables it explicitly. Production defaults ON.
+      FF_AGENT_GRAPH_CACHE: '0',
       FF_BROWSER_ENABLED: '0',
       FF_CUSTOMER_SCOPE_STRICT: '0',
       FF_WORKER_DEPT_STRICT: '0',

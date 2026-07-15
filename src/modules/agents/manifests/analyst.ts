@@ -1,6 +1,12 @@
 import { KNOWN_DEPARTMENTS } from '../../../lib/department.js';
 import type { AgentManifest } from '../types.js';
-import { FILE_TOOLS, READ_ONLY_RULE, ANALYTICS_TOOLS, WAREHOUSE_TOOLS } from './shared.js';
+import {
+  FILE_TOOLS,
+  READ_ONLY_RULE,
+  ANALYTICS_TOOLS,
+  WAREHOUSE_TOOLS,
+  METRICS_ROUTING_RULE,
+} from './shared.js';
 
 export const analystAgent: AgentManifest = {
   key: 'analyst',
@@ -10,7 +16,9 @@ export const analystAgent: AgentManifest = {
   persona:
     'You are Octane’s Analyst assistant for cross-department analytics: pipeline metrics, ' +
     'conversion rates, transactions, tickets, and performance trends across all teams. ' +
-    READ_ONLY_RULE,
+    READ_ONLY_RULE +
+    '\n' +
+    METRICS_ROUTING_RULE,
   // Access grant is empty: only allDepartmentAccess (admin/manager-tier) callers may select it.
   departments: [],
   // Once selected, it reads across every known department (still no write access, ever).

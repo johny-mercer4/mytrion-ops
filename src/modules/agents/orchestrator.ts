@@ -13,6 +13,7 @@ import { agentRegistry } from './agentRegistry.js';
 import { narrowContext } from './authority.js';
 import { getAgentContext } from './context.js';
 import { getCheckpointer } from './checkpointer.js';
+import { getCachedAgent, identitySignature } from './graphCache.js';
 import { resolveAgentModel, resolveOrchestratorModel } from './models.js';
 import { childSystemPrompt, ORCHESTRATOR_PROMPT } from './prompts.js';
 import { agentResultSchema } from './resultSchema.js';
@@ -76,16 +77,20 @@ export async function buildOrchestrator(callerCtx: TenantContext): Promise<{
   agent: ReturnType<typeof createDeepAgent>;
   agentKeys: string[];
 }> {
-  const manifests = agentRegistry.listForContext(callerCtx);
-  const subagents = await Promise.all(manifests.map((m) => compileSubAgent(m, callerCtx)));
-  const checkpointer = getCheckpointer();
-  const agent = createDeepAgent({
-    model: resolveOrchestratorModel(),
-    systemPrompt: ORCHESTRATOR_PROMPT,
-    subagents,
-    ...(checkpointer ? { checkpointer } : {}),
+  // Cache keyed by the caller's full identity/scope: two callers never share a graph, and the same
+  // caller (same department view) reuses it across turns. See graphCache.ts for the safety contract.
+  return getCachedAgent(`orch:${identitySignature(callerCtx)}`, async () => {
+    const manifests = agentRegistry.listForContext(callerCtx);
+    const subagents = await Promise.all(manifests.map((m) => compileSubAgent(m, callerCtx)));
+    const checkpointer = getCheckpointer();
+    const agent = createDeepAgent({
+      model: resolveOrchestratorModel(),
+      systemPrompt: ORCHESTRATOR_PROMPT,
+      subagents,
+      ...(checkpointer ? { checkpointer } : {}),
+    });
+    return { agent, agentKeys: manifests.map((m) => m.key) };
   });
-  return { agent, agentKeys: manifests.map((m) => m.key) };
 }
 
 /**
@@ -97,11 +102,13 @@ export async function buildSingleAgent(
   manifest: AgentManifest,
   callerCtx: TenantContext,
 ): Promise<ReturnType<typeof createDeepAgent>> {
-  const checkpointer = getCheckpointer();
-  return createDeepAgent({
-    model: resolveAgentModel(manifest),
-    systemPrompt: childSystemPrompt(manifest),
-    tools: await childTools(manifest, callerCtx),
-    ...(checkpointer ? { checkpointer } : {}),
+  return getCachedAgent(`single:${manifest.key}:${identitySignature(callerCtx)}`, async () => {
+    const checkpointer = getCheckpointer();
+    return createDeepAgent({
+      model: resolveAgentModel(manifest),
+      systemPrompt: childSystemPrompt(manifest),
+      tools: await childTools(manifest, callerCtx),
+      ...(checkpointer ? { checkpointer } : {}),
+    });
   });
 }

@@ -402,6 +402,11 @@ const EnvSchema = z.object({
   FF_ORCHESTRATOR_ENABLED: flag('0'),
   // Durable LangGraph threads (PostgresSaver in the 'langgraph' schema). Off = stateless runs.
   FF_AGENT_CHECKPOINTS: flag('0'),
+  // Reuse the compiled LangGraph agent across turns, keyed by (agent + full caller identity/scope).
+  // Skips re-compiling the graph + re-fetching Composio tools every turn (big win for admin/
+  // orchestrator turns). Safe because the key includes every identity/authority/view field, so no
+  // two callers ever share a graph; requestId is sourced from the run context at dispatch, not baked.
+  FF_AGENT_GRAPH_CACHE: flag('1'),
   // File generation/analysis tools + /v1/files routes (MinIO/S3 storage).
   FF_FILES_ENABLED: flag('0'),
   // Browser automation via Composio toolkits (admin-gated; domain-allowlisted; fail closed).

@@ -2092,3 +2092,31 @@ DBT_MCP_CLIENT_SECRET=…
   locked to self; admin may pass agentZohoUserId or omit for company-wide. Empty book → zeros, no
   warehouse round-trip.
 - Tests: tests/unit/dbt-mcp-tools.test.ts (13). Full suite 515 green, typecheck clean.
+
+## 2026-07-15 (pm) — Chat latency: tool routing + compiled-graph cache
+
+Reported: analyst chat "very slow". Measured the flow — data layer is FAST (servercrm ~0.5s,
+dbt MCP gallons query ~1s cold/0.5s warm, recall ~1.2s). The time is the LLM agent loop.
+
+- **Root cause of the visible stall:** analyst/manager carry 3 overlapping metric tools
+  (analytics.snapshot = cached org-wide, warehouse.my_gallons = per-rep, agent.sales_snapshot =
+  name-scoped health) with NO routing in their bare personas → the model fished (called
+  agent.sales_snapshot first, failed "agent name isn't found", then retried). Each wrong guess is a
+  full LLM round-trip.
+  - Fix: added byte-stable METRICS_ROUTING_RULE (shared.ts) to analyst + manager personas — company
+    totals → analytics.snapshot (cached, fast); "my"/one-rep → warehouse.my_gallons; portfolio
+    health → agent.*; never double-check a number. Byte-stable so it stays in the cached prompt prefix.
+
+- **Compiled-graph cache (FF_AGENT_GRAPH_CACHE, default ON):** buildSingleAgent/buildOrchestrator
+  recompiled every turn (admin orchestrator = all 10 subagents + Composio HTTP fetches, ~2.7s in the
+  compiler test). Now cached (graphCache.ts) keyed by agent + full caller identity signature.
+  - SAFETY: key encodes every identity/authority/VIEW field (tenant, user, role, scopes, departments,
+    allDeptAccess, bypass, profiles, callerRole, userName, email, sessionVerified, impersonator,
+    client) so no two callers ever share a graph — RBAC leakage suites still green. requestId is the
+    only ephemeral field: EXCLUDED from the key and re-sourced from the run context (ALS) at dispatch
+    (agentTools.ts) so a reused graph never stamps a stale requestId on audit rows. Promise-cached
+    (concurrent callers share one build; failed builds evicted), 10-min TTL, 256-entry LRU bound.
+  - Off in tests (vitest.config) so flag-toggling suites compile fresh; dedicated
+    tests/unit/agent-graph-cache.test.ts (12) covers signature + cache behavior.
+
+Tests: full suite 527 green, typecheck + lint clean.

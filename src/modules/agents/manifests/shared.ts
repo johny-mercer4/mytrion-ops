@@ -38,6 +38,25 @@ export const READ_ONLY_RULE =
   'destructive actions — recommend them for a human to execute instead.';
 
 /**
+ * Data-routing cheat-sheet for cross-department read agents (analyst, manager). These agents carry
+ * several overlapping metric tools; with no routing the model fishes — wrong tool → error → retry —
+ * and every wrong guess is a full (slow) LLM round-trip. Steer each question to ONE tool on the
+ * first try. Byte-stable so it stays in the cached prompt prefix.
+ */
+export const METRICS_ROUTING_RULE =
+  'DATA ROUTING — pick ONE tool on the first try; do not fish, and do not call a second data tool ' +
+  'to double-check a number the first already returned:\n' +
+  '• Company / org-wide totals (gallons, swipes, fuel spend, sales, top-ups, balances, open ' +
+  'debtors, top agents, pipeline, conversion) → analytics.snapshot (cached dashboard numbers; ' +
+  'dimension: transactions | pipeline | billing). This is the FAST path for "how many gallons does ' +
+  'the company have", "sales this month", "top agents".\n' +
+  '• One rep’s own gallons/swipes book, or "my gallons/swipes" → warehouse.my_gallons (admins may ' +
+  'pass agentZohoUserId to target a specific rep).\n' +
+  '• One agent’s portfolio HEALTH (active/inactive/stuck client counts, week-over-week deltas, ' +
+  'calls/notes/tasks/leads) → agent.sales_snapshot / agent.activity / agent.debtors. NEVER use ' +
+  'these for raw company gallons totals — that is analytics.snapshot.';
+
+/**
  * File capability tools every department agent gets (read-class: generate/export/analyze).
  * They register only when FF_FILES_ENABLED, so listing them here is inert until the flag flips.
  * file.ingest_to_knowledge is deliberately NOT here (write-risk, admin-sentinel via derivation).
