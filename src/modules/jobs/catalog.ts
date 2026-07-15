@@ -39,6 +39,7 @@ export const tenantContextSchema = z.object({
   profiles: z.array(z.string()).optional(),
   callerRole: z.string().optional(),
   userName: z.string().optional(),
+  email: z.string().email().optional(),
   actingAgent: z.string().optional(),
   requestId: z.string().min(1),
 });
@@ -59,6 +60,7 @@ export function payloadToContext(parsed: z.infer<typeof tenantContextSchema>): T
   if (parsed.profiles !== undefined) ctx.profiles = parsed.profiles;
   if (parsed.callerRole !== undefined) ctx.callerRole = parsed.callerRole;
   if (parsed.userName !== undefined) ctx.userName = parsed.userName;
+  if (parsed.email !== undefined) ctx.email = parsed.email;
   if (parsed.actingAgent !== undefined) ctx.actingAgent = parsed.actingAgent;
   return ctx;
 }

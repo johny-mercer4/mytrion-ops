@@ -359,10 +359,12 @@ const EnvSchema = z.object({
   FF_ZOHO_MCP_ENABLED: flag('0'),
   // Additionally expose Zoho MCP WRITE tools (create/update/upsert). Off by default (read-only posture).
   FF_ZOHO_MCP_WRITES: flag('0'),
-  // Connect the hosted dbt MCP (warehouse analytics). Off by default. When on, agents get ONLY
-  // curated, department-scoped read tools — never the raw free-SQL `query` tool (isolation). See
-  // integrations/dbtMcp.ts.
+  // Connect the hosted dbt MCP (warehouse analytics + query-memory RAG). Off by default. When on,
+  // OpenAI chat/agents get the same agentic tools Claude uses on that MCP (`recall_similar_queries`,
+  // `query`); admin-only via department policy. See integrations/dbtMcp.ts + dbtMcpTools.ts.
   FF_DBT_MCP_ENABLED: flag('0'),
+  // Expose dbt MCP WRITE tools (`run` / `test`). Off by default (read-only posture).
+  FF_DBT_MCP_WRITES: flag('0'),
   FF_AUDIT_LOG_ENABLED: flag('1'),
   // Dev-only route that mints a validly-signed Telegram initData for a fake user (local mini-app
   // testing without a real Telegram client). Off by default — gating solely on NODE_ENV!=='production'
@@ -400,6 +402,11 @@ const EnvSchema = z.object({
   FF_ORCHESTRATOR_ENABLED: flag('0'),
   // Durable LangGraph threads (PostgresSaver in the 'langgraph' schema). Off = stateless runs.
   FF_AGENT_CHECKPOINTS: flag('0'),
+  // Reuse the compiled LangGraph agent across turns, keyed by (agent + full caller identity/scope).
+  // Skips re-compiling the graph + re-fetching Composio tools every turn (big win for admin/
+  // orchestrator turns). Safe because the key includes every identity/authority/view field, so no
+  // two callers ever share a graph; requestId is sourced from the run context at dispatch, not baked.
+  FF_AGENT_GRAPH_CACHE: flag('1'),
   // File generation/analysis tools + /v1/files routes (MinIO/S3 storage).
   FF_FILES_ENABLED: flag('0'),
   // Browser automation via Composio toolkits (admin-gated; domain-allowlisted; fail closed).

@@ -25,13 +25,13 @@ const CLIENT_TOOLS = [
   'crm.transactions',
 ];
 
-// analytics.snapshot (read-class, cached org-wide dashboard aggregates) is deliberately bound to
-// EVERY agent — ratified 2026-07: chat answers "sales/gallons/top-ups this month" from the same
-// snapshot the live dashboard shows all internal workers, so it widens no per-carrier access.
+// analytics.snapshot (read-class, cached org-wide dashboard aggregates) is bound to every agent
+// EXCEPT sales — ratified 2026-07: it exposes company-wide totals AND a top-agents-by-gallons
+// ranking (other reps' numbers), so a sales rep must not have it; they only see their own book.
 const GOLDEN: Record<string, { caller: string[]; tools: string[]; rag: string[] }> = {
   sales: {
     caller: ['sales'],
-    tools: ['agent.activity', 'agent.sales_snapshot', 'analytics.snapshot', ...CLIENT_TOOLS, 'zoho_crm.query'].sort(),
+    tools: ['agent.activity', 'agent.sales_snapshot', ...CLIENT_TOOLS, 'zoho_crm.query'].sort(),
     rag: ['sales'],
   },
   marketing: { caller: ['marketing'], tools: ['analytics.snapshot', 'zoho_crm.query'], rag: ['marketing'] },

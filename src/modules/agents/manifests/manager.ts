@@ -1,6 +1,12 @@
 import { KNOWN_DEPARTMENTS } from '../../../lib/department.js';
 import { AGENT_KEYS, type AgentManifest } from '../types.js';
-import { FILE_TOOLS, READ_ONLY_RULE, ANALYTICS_TOOLS } from './shared.js';
+import {
+  FILE_TOOLS,
+  READ_ONLY_RULE,
+  ANALYTICS_TOOLS,
+  WAREHOUSE_TOOLS,
+  METRICS_ROUTING_RULE,
+} from './shared.js';
 
 export const managerAgent: AgentManifest = {
   key: 'manager',
@@ -10,7 +16,9 @@ export const managerAgent: AgentManifest = {
   persona:
     'You are Octane’s Manager assistant for Management and C-level: cross-department oversight, ' +
     'KPIs, staffing lookups, escalations, and coordination between teams. ' +
-    READ_ONLY_RULE,
+    READ_ONLY_RULE +
+    '\n' +
+    METRICS_ROUTING_RULE,
   departments: ['management', 'c-level'],
   operatingDepartments: [...KNOWN_DEPARTMENTS],
   allowedAudiences: ['internal'],
@@ -21,7 +29,7 @@ export const managerAgent: AgentManifest = {
     'zoho_crm.query',
     'zoho_desk.search_tickets',
     'zoho_people.search_employees',
-    ...FILE_TOOLS, ...ANALYTICS_TOOLS,
+    ...FILE_TOOLS, ...ANALYTICS_TOOLS, ...WAREHOUSE_TOOLS,
   ],
   composioToolkits: ['ZOHO', 'ZOHO_DESK'],
   ragScope: { departments: [], allowAllDepartments: true },

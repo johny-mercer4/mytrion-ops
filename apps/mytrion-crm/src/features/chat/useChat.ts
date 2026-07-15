@@ -12,6 +12,7 @@ import {
   type Elicitation,
 } from '../../api/stream';
 import { ApiError } from '../../api/transport';
+import { getSession } from '../../api/session';
 import { AGENT_LABELS, type AgentKey } from '../../access/mytrions.config';
 import type { UserContext } from '../../context/userContext';
 import { getLastConversationId, setLastConversationId } from './chatStorage';
@@ -222,6 +223,8 @@ export function useChat(
       if (state.conversationId) body.conversationId = state.conversationId;
       if (ctx.userId) body.zoho_user_id = ctx.userId;
       if (ctx.userName) body.user_name = ctx.userName;
+      const sessionEmail = getSession()?.worker.email?.trim();
+      if (sessionEmail) body.email = sessionEmail;
       if (ctx.profile) body.profile = ctx.profile;
       if (ctx.role) body.role = ctx.role;
       if (department) body.department_scope = department;

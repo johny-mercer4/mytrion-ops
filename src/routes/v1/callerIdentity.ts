@@ -41,6 +41,8 @@ export const callerIdentitySchema = z.object({
   // --- Worker (Octane) identity — from the Zoho widget / Mytrion app ---
   zoho_user_id: z.string().min(1).max(120).optional(),
   user_name: z.string().min(1).max(200).optional(),
+  // Work email from the Zoho CurrentUser payload — forwarded as MCP context (X-User-Email), not prompt.
+  email: z.string().email().max(254).optional(),
   // Caller's Zoho role + profile. An "Administrator" profile bypasses ALL RBAC (RAG + tools).
   role: stringOrList.optional(),
   profile: stringOrList.optional(),
@@ -99,6 +101,7 @@ function ignoredCustomerFields(body: CallerIdentityBody): string[] {
     ['profile', body.profile],
     ['role', body.role],
     ['user_name', body.user_name],
+    ['email', body.email],
     ['zoho_user_id', body.zoho_user_id],
   ];
   return fields.filter(([, v]) => v !== undefined).map(([k]) => k);
@@ -159,6 +162,8 @@ function workerContext(request: FastifyRequest, body: CallerIdentityBody): Tenan
   if (callerRole) merged.callerRole = callerRole;
   const displayName = workerName ?? body.company_name?.trim();
   if (displayName) merged.userName = displayName;
+  const email = body.email?.trim().toLowerCase();
+  if (email) merged.email = email;
   // Hard RBAC bypass — only for the trusted BYPASS_USERS allowlist (by worker user_name).
   if (isBypassUser(workerName)) merged.bypassRbac = true;
   return merged;
