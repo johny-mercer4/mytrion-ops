@@ -40,31 +40,13 @@ export function TabBar({ active, unreadCount, onSelect }: { active: HomeTab; unr
           >
             <span style={{ position: 'relative', height: 26, display: 'flex', alignItems: 'center' }}>
               <TabBarIcon kind={tab} active={isActive} />
+            </span>
+            <span style={{ display: 'flex', alignItems: 'baseline', gap: 4, whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: 12, fontWeight: isActive ? 700 : 500 }}>{t(`tab.${tab}`)}</span>
               {tab === 'inbox' && unreadCount > 0 && (
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: -2,
-                    right: -10,
-                    minWidth: 16,
-                    height: 16,
-                    padding: '0 4px',
-                    borderRadius: 8,
-                    background: 'var(--destructive)',
-                    color: '#FFFFFF',
-                    fontSize: 10,
-                    fontWeight: 700,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    boxShadow: '0 0 0 2px var(--card)',
-                  }}
-                >
-                  {unreadCount}
-                </span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--link-accent)' }}>{t('inbox.new', { n: unreadCount })}</span>
               )}
             </span>
-            <span style={{ fontSize: 12, fontWeight: isActive ? 700 : 500 }}>{t(`tab.${tab}`)}</span>
           </button>
         );
       })}
