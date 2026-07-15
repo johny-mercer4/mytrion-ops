@@ -23,8 +23,9 @@ export type MytrionId =
   | 'finance'
   | 'retention'
   | 'verification'
-  | 'customer-service'
-  | 'manager';
+  | 'manager'
+  | 'analyst'
+  | 'customer-service';
 
 export interface MytrionAccessRule {
   id: MytrionId;
@@ -216,6 +217,24 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     adminBypass: true,
     status: 'new',
   },
+  analyst: {
+    id: 'analyst',
+    title: 'Analytics Mytrion',
+    tag: 'Analytics',
+    icon: 'analyst',
+    blurb:
+      'Cross-department analytics — pipeline metrics, conversions, transactions, tickets and performance trends.',
+    hue: 'accent',
+    department: 'analytics',
+    // Cross-department read-only analytics: the backend `analyst` agent reads across every
+    // department (allowAllDepartments), so retrieval is broad and the dept slug is display-only.
+    allDepartments: true,
+    allowedProfiles: [],
+    allowedRoles: ['Analytics Specialist'],
+    allowedUsernames: [],
+    adminBypass: true,
+    status: 'new',
+  },
 };
 
 /** Display order for the picker. */
@@ -229,6 +248,7 @@ export const MYTRION_ORDER: MytrionId[] = [
   'retention',
   'verification',
   'manager',
+  'analyst',
 ];
 
 /** Type guard for a path param. */
@@ -239,8 +259,8 @@ export function isMytrionId(value: string): value is MytrionId {
 /**
  * Backend department agent keys (mirror of src/modules/agents/types.ts AGENT_KEYS). The chat UI sends
  * `agent:<key>` to POST /v1/agent for direct-to-child. Every non-admin MytrionId equals its agent key;
- * `admin` has no agent (→ orchestrator mode). `marketing`/`analyst` have no Mytrion but appear in an
- * admin's orchestrator run, so their labels are still needed.
+ * `admin` has no agent (→ orchestrator mode). `marketing` has no Mytrion but appears in an admin's
+ * orchestrator run, so its label is still needed.
  */
 export type AgentKey =
   | 'customer-service'

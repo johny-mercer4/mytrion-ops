@@ -114,6 +114,7 @@ export const MytrionGlyph = ({ name, size = 22, className, style }: IconProps & 
     retention: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z',
     verification: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
     manager: 'M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-2.5-1.34M5 11a3 3 0 102.5-1.34',
+    analyst: 'M4 4v16h16M9 16v-4M14 16V8M19 16v-6',
   };
   return stroke(size, paths[name] ?? paths.admin!, 1.8, className, style);
 };

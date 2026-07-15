@@ -9,6 +9,17 @@ import { closeDb } from './db/client.js';
 import { logger } from './lib/logger.js';
 import { startJobs, stopJobs } from './modules/jobs/boss.js';
 
+// Same last-resort guards as server.ts: a DB blip mid-job must not kill the worker process
+// (pg-boss retries failed jobs); a synchronous uncaught exception still exits for a clean restart.
+process.on('unhandledRejection', (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  logger.error({ err }, 'unhandled promise rejection (survived — check the offending call site)');
+});
+process.on('uncaughtException', (err) => {
+  logger.fatal({ err }, 'uncaught exception — exiting for a clean restart');
+  process.exit(1);
+});
+
 async function main(): Promise<void> {
   assertRuntimeSecrets();
   if (!env.FF_JOBS_ENABLED) {

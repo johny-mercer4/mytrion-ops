@@ -165,6 +165,19 @@ const EnvSchema = z.object({
   // --- Zoho MCP (hosted; "Authorize via Connection" → headless, URL embeds the credential). ---
   ZOHO_MCP_URL: z.string().default(''),
 
+  // --- dbt MCP (hosted Streamable-HTTP MCP → dbt warehouse). Server-to-server via OAuth
+  // `client_credentials` (no browser). DBT_MCP_URL is the JSON-RPC endpoint (e.g. …/mcp);
+  // DBT_MCP_TOKEN_URL defaults to `${origin}/token` when blank. Creds are secrets → env only. ---
+  DBT_MCP_URL: z.string().default(''),
+  DBT_MCP_TOKEN_URL: z.string().default(''),
+  DBT_MCP_CLIENT_ID: z.string().default(''),
+  DBT_MCP_CLIENT_SECRET: z.string().default(''),
+
+  // --- Live analytics (DWH-backed dashboard + analytics.snapshot tool) ---
+  // Snapshot cache TTL. Snapshots self-expire after this long and the warmer recomputes them,
+  // so the dashboard always serves from cache (fast) while data refreshes automatically.
+  ANALYTICS_CACHE_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(120),
+
   // --- Department RBAC: profile/role substrings that grant UNLIMITED access (all depts + all tools). ---
   // 'ceo' matches the Zoho ROLE the frontend also treats as admin (ADMIN_ROLES in
   // mytrions.config.ts) — the two admin predicates must stay aligned or CEO sessions
@@ -346,6 +359,10 @@ const EnvSchema = z.object({
   FF_ZOHO_MCP_ENABLED: flag('0'),
   // Additionally expose Zoho MCP WRITE tools (create/update/upsert). Off by default (read-only posture).
   FF_ZOHO_MCP_WRITES: flag('0'),
+  // Connect the hosted dbt MCP (warehouse analytics). Off by default. When on, agents get ONLY
+  // curated, department-scoped read tools — never the raw free-SQL `query` tool (isolation). See
+  // integrations/dbtMcp.ts.
+  FF_DBT_MCP_ENABLED: flag('0'),
   FF_AUDIT_LOG_ENABLED: flag('1'),
   // Dev-only route that mints a validly-signed Telegram initData for a fake user (local mini-app
   // testing without a real Telegram client). Off by default — gating solely on NODE_ENV!=='production'
@@ -454,6 +471,11 @@ export function assertRuntimeSecrets(): void {
   if (!env.OPENAI_API_KEY) missing.push('OPENAI_API_KEY');
   if (env.FF_GROQ_ENABLED && !env.GROQ_API_KEY) missing.push('GROQ_API_KEY');
   if (env.FF_ZOHO_MCP_ENABLED && !env.ZOHO_MCP_URL) missing.push('ZOHO_MCP_URL');
+  if (env.FF_DBT_MCP_ENABLED) {
+    if (!env.DBT_MCP_URL) missing.push('DBT_MCP_URL');
+    if (!env.DBT_MCP_CLIENT_ID) missing.push('DBT_MCP_CLIENT_ID');
+    if (!env.DBT_MCP_CLIENT_SECRET) missing.push('DBT_MCP_CLIENT_SECRET');
+  }
   if (env.FF_COMPOSIO_ENABLED && !env.COMPOSIO_API_KEY) missing.push('COMPOSIO_API_KEY');
   if (env.FF_TELEGRAM_ENABLED && !env.TELEGRAM_BOT_TOKEN) missing.push('TELEGRAM_BOT_TOKEN');
   if (env.FF_ZOHO_OAUTH_ENABLED) {

@@ -1,5 +1,5 @@
 import type { AgentManifest } from '../types.js';
-import { FILE_TOOLS, STAY_IN_LANE } from './shared.js';
+import { FILE_TOOLS, STAY_IN_LANE, ANALYTICS_TOOLS } from './shared.js';
 
 export const financeAgent: AgentManifest = {
   key: 'finance',
@@ -11,7 +11,7 @@ export const financeAgent: AgentManifest = {
     `reconciliation, debt overview, credit exposure, and financial reporting. ${STAY_IN_LANE}`,
   departments: ['finance'],
   allowedAudiences: ['internal'],
-  tools: ['agent.debtors', 'zoho_crm.query', ...FILE_TOOLS],
+  tools: ['agent.debtors', 'zoho_crm.query', ...FILE_TOOLS, ...ANALYTICS_TOOLS],
   composioToolkits: [],
   ragScope: { departments: ['finance', 'billing'], allowAllDepartments: false },
   readOnly: false,

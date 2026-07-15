@@ -51,6 +51,14 @@ export const FILE_TOOLS = [
 ] as const;
 
 /**
+ * Company analytics snapshot (read-class, served from the ~2h snapshot cache) — the same
+ * org-wide aggregates every internal worker sees on the live Analytics dashboard. Given to
+ * EVERY department agent so chat answers "how are sales / gallons / top-ups this month"
+ * with live numbers instead of guessing.
+ */
+export const ANALYTICS_TOOLS = ['analytics.snapshot'] as const;
+
+/**
  * servercrm client/carrier self-service READ tools (owner-scoped per call). Given to agents that
  * serve clients by carrier (sales, customer-service) and cross-department read agents.
  * ui.request_choice is the generative-UI elicitation tool that pairs with crm.list_my_clients.
