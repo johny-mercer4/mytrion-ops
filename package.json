@@ -31,6 +31,7 @@
     "mysql:inspect": "tsx scripts/mysqlInspect.ts",
     "zoho:smoke": "tsx scripts/zoho-smoke.ts",
     "zoho:mcp-probe": "tsx scripts/zoho-mcp-probe.ts",
+    "dbt:smoke": "tsx scripts/dbt-mcp-smoke.ts",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
@@ -39,7 +40,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "eval:retrieval": "tsx scripts/evalRetrieval.ts",
-    "eval:live": "tsx scripts/evalLive.ts"
+    "eval:live": "tsx scripts/evalLive.ts",
+    "analytics:smoke": "tsx scripts/analytics-smoke.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1078.0",

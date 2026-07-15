@@ -212,9 +212,14 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(approvalsRoutes);
       await v1.register(integrationsRoutes);
       await v1.register(ringcentralRoutes);
+      await v1.register(analyticsRoutes);
     },
     { prefix: API_PREFIX },
   );
+
+  // Live-analytics snapshot warmer: warm now, then recompute on the TTL cadence (default 2h) so
+  // dashboard GETs always hit a warm cache. No-op without a DWH; never runs in tests.
+  if (!isTest) startAnalyticsWarmer();
 
   return app;
 }

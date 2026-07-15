@@ -5,6 +5,20 @@ import { runMigrationsOnBoot } from './db/migrate.js';
 import { logger } from './lib/logger.js';
 import { jobsEnabled, startJobs, stopJobs } from './modules/jobs/boss.js';
 
+// Last-resort guards (incident 2026-07-13: Render Postgres went into recovery and a background
+// promise rejection killed the process). A rejection outside a request handler — background
+// writes, lazy pool reconnects, job internals — must NOT take the API down: log it and keep
+// serving; request-path errors are already handled by errorHandlerPlugin. A synchronous uncaught
+// exception still exits (state is undefined) so the supervisor restarts us cleanly.
+process.on('unhandledRejection', (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  logger.error({ err }, 'unhandled promise rejection (survived — check the offending call site)');
+});
+process.on('uncaughtException', (err) => {
+  logger.fatal({ err }, 'uncaught exception — exiting for a clean restart');
+  process.exit(1);
+});
+
 async function main(): Promise<void> {
   assertRuntimeSecrets();
   // Bring the schema forward before serving (no-op unless DB_MIGRATE_ON_BOOT=1).

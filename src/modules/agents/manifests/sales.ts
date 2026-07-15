@@ -1,14 +1,12 @@
 import { env } from '../../../config/env.js';
 import type { AgentManifest } from '../types.js';
-import {
-  CLIENT_SERVICE_RULE,
+import { CLIENT_SERVICE_RULE,
   CLIENT_SERVICE_TOOLS,
   FILE_TOOLS,
   OCTANE_CONTEXT,
   OWNER_SCOPE_RULE,
   RAG_USAGE_RULE,
-  STAY_IN_LANE,
-} from './shared.js';
+  STAY_IN_LANE, ANALYTICS_TOOLS } from './shared.js';
 
 /**
  * What the Sales agent can actually DO today (all read-only, owner-scoped). Kept honest so the model
@@ -59,7 +57,7 @@ export const salesAgent: AgentManifest = {
     STAY_IN_LANE,
   departments: ['sales'],
   allowedAudiences: ['internal'],
-  tools: ['agent.sales_snapshot', 'agent.activity', 'zoho_crm.query', ...CLIENT_SERVICE_TOOLS, ...FILE_TOOLS],
+  tools: ['agent.sales_snapshot', 'agent.activity', 'zoho_crm.query', ...CLIENT_SERVICE_TOOLS, ...FILE_TOOLS, ...ANALYTICS_TOOLS],
   composioToolkits: [],
   ragScope: { departments: ['sales'], allowAllDepartments: false },
   readOnly: false,

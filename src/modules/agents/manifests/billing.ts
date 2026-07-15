@@ -1,5 +1,5 @@
 import type { AgentManifest } from '../types.js';
-import { FILE_TOOLS, STAY_IN_LANE } from './shared.js';
+import { FILE_TOOLS, STAY_IN_LANE, ANALYTICS_TOOLS } from './shared.js';
 
 export const billingAgent: AgentManifest = {
   key: 'billing',
@@ -11,7 +11,7 @@ export const billingAgent: AgentManifest = {
     `outstanding balances, debtors, and billing policy. ${STAY_IN_LANE}`,
   departments: ['billing'],
   allowedAudiences: ['internal'],
-  tools: ['agent.debtors', 'zoho_crm.query', ...FILE_TOOLS],
+  tools: ['agent.debtors', 'zoho_crm.query', ...FILE_TOOLS, ...ANALYTICS_TOOLS],
   composioToolkits: [],
   ragScope: { departments: ['billing', 'finance'], allowAllDepartments: false },
   readOnly: false,
