@@ -109,9 +109,40 @@ export function CsShell() {
   const [mounted, setMounted] = useState<Partial<Record<SectionId, boolean>>>({ home: true });
   const [theme, setTheme] = useState<'light' | 'dark'>(initialTheme);
 
+  // Branded boot loader (Sales/Finance parity) — a short splash while the workspace opens.
+  const [booting, setBooting] = useState(true);
+  const [bootPct, setBootPct] = useState(10);
+
   useEffect(() => {
     localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
+
+  useEffect(() => {
+    const tick = setInterval(() => {
+      setBootPct((p) => Math.min(100, p + 11 + Math.random() * 16));
+    }, 150);
+    const done = setTimeout(() => {
+      clearInterval(tick);
+      setBootPct(100);
+      setBooting(false);
+    }, 1500);
+    return () => {
+      clearInterval(tick);
+      clearTimeout(done);
+    };
+  }, []);
+
+  // Sidebar user card (Finance-style): initials + name + role from the session identity.
+  const workerName = user.userName || 'Agent';
+  const workerRole = user.role || user.profile || 'Customer Service';
+  const workerInitials =
+    workerName
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => w[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase() || 'CS';
 
   function navigate(id: SectionId) {
     setActive(id);
@@ -125,6 +156,34 @@ export function CsShell() {
 
   return (
     <div className={`cs-root${theme === 'dark' ? ' dark-mode' : ''}`}>
+      {/* ── Branded boot loader (Sales/Finance parity) ── */}
+      {booting ? (
+        <div className="cs-boot">
+          <div className="cs-boot-sweep">
+            <span />
+          </div>
+          <div className="cs-boot-ring">
+            <span className="cs-boot-ring-track" />
+            <span className="cs-boot-ring-spin" />
+            <span className="cs-boot-ring-spin2" />
+            <div className="cs-boot-brand">
+              My<span>trion</span>
+              <br />
+              <span className="cs-boot-brand-sub">Customer Service</span>
+            </div>
+          </div>
+          <div className="cs-boot-copy">
+            <div className="cs-boot-title">Connecting to Customer Service</div>
+            <div className="cs-boot-sub">
+              Securing your workspace<span className="cs-boot-dots">…</span>
+            </div>
+          </div>
+          <div className="cs-boot-bar">
+            <div className="cs-boot-bar-fill" style={{ width: `${bootPct}%` }} />
+          </div>
+        </div>
+      ) : null}
+
       <div className="cs-body">
         {/* ── SIDEBAR NAV (desktop) ── */}
         <aside className="cs-sidebar">
@@ -189,6 +248,14 @@ export function CsShell() {
               )}
               <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
             </button>
+            {/* Finance-style user card */}
+            <div className="cs-user-card">
+              <span className="cs-user-avatar">{workerInitials}</span>
+              <div className="cs-user-meta">
+                <div className="cs-user-name">{workerName}</div>
+                <div className="cs-user-role">{workerRole}</div>
+              </div>
+            </div>
             <div className="cs-sidebar-footer-meta">
               <Link to="/" className="cs-switch-link" title="Switch Mytrion">
                 ⇄ Switch
