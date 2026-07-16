@@ -10,26 +10,15 @@
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
-import { NotFoundError, RBACError } from '../../lib/errors.js';
+import { NotFoundError } from '../../lib/errors.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { requireContext, withDepartmentAccess } from './helpers.js';
+import { requireDepartment } from './helpers.js';
 
 const ADAPTER_BASE =
   'https://apps.ringcentral.com/integration/ringcentral-embeddable/latest/adapter.js';
 
 function requireSalesAccess(request: FastifyRequest): TenantContext {
-  const base = requireContext(request);
-  if (base.audience !== 'internal') {
-    throw new RBACError('RingCentral phone is internal-only');
-  }
-  const ctx = withDepartmentAccess(base, request);
-  const ok =
-    ctx.role === 'admin' ||
-    ctx.bypassRbac === true ||
-    ctx.allDepartmentAccess ||
-    ctx.departments.includes('sales');
-  if (!ok) throw new RBACError('RingCentral phone requires sales department access');
-  return ctx;
+  return requireDepartment(request, 'sales', 'RingCentral phone');
 }
 
 function configured(): boolean {

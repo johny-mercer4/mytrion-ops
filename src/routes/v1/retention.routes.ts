@@ -1,10 +1,11 @@
 /**
  * Retention setup (/v1/retention) — CRUD over the single retention_cases entity plus the
  * on-demand auto-generation trigger. Reads and case-work writes require the 'retention'
- * department (or admin / all-department access; the caller may pass departments per
- * request via x-department-access, matching the platform's RBAC model). Destructive ops
- * (delete) and the DWH sync trigger are admin-only. Every write is audited. Mutations
- * ship POST aliases only (Zoho-proxy-safe), matching the carrier-users convention.
+ * department (or admin / all-department access). Verified sessions derive departments from
+ * the Zoho profile/role server-side; only unverified API-key callers may pass departments
+ * via x-department-access. Destructive ops (delete) and the DWH sync trigger are admin-only.
+ * Every write is audited. Mutations ship POST aliases only (Zoho-proxy-safe), matching the
+ * carrier-users convention.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -14,7 +15,7 @@ import { syncRetentionCases } from '../../modules/retention/retentionSync.js';
 import { env } from '../../config/env.js';
 import { retentionCaseRepo, toRetentionCaseDto } from '../../repos/retentionCaseRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { requireContext, withDepartmentAccess } from './helpers.js';
+import { requireContext, requireDepartment } from './helpers.js';
 
 const idString = z.union([z.string().max(120), z.number()]).transform(String);
 
@@ -81,23 +82,12 @@ const syncSchema = z.object({
 });
 
 /**
- * Case-work gate: retention department, all-department access, or admin. The
- * x-department-access header is only trusted for INTERNAL callers — a customer session
- * must never be able to claim a department and read internal case data.
+ * Case-work gate: retention department, all-department access, or admin. Verified sessions
+ * are session-authoritative (departments derived from the Zoho profile/role); the
+ * x-department-access header is only trusted for unverified API-key callers.
  */
 function requireRetentionAccess(request: FastifyRequest): TenantContext {
-  const base = requireContext(request);
-  if (base.audience !== 'internal') {
-    throw new RBACError('Retention cases are internal-only');
-  }
-  const ctx = withDepartmentAccess(base, request);
-  const allowed =
-    ctx.role === 'admin' ||
-    ctx.bypassRbac === true ||
-    ctx.allDepartmentAccess ||
-    ctx.departments.includes('retention');
-  if (!allowed) throw new RBACError('Retention cases require retention department access');
-  return ctx;
+  return requireDepartment(request, 'retention', 'Retention cases');
 }
 
 /** Destructive/system gate: admin or the static API key only. */

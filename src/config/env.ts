@@ -395,6 +395,13 @@ const EnvSchema = z.object({
   // profile→department mapping is validated against the live Zoho roster — an unmapped profile
   // would silently drop the worker to Global-only knowledge.
   FF_WORKER_DEPT_STRICT: flag('0'),
+  // Session-authoritative department access on the direct routes (Desk / Data Center /
+  // RingCentral / Retention / Knowledge): verified sessions IGNORE the x-department-access /
+  // x-all-departments headers; a non-admin worker's departments are derived from their Zoho
+  // profile/role. ON by default (security fix 2026-07: header trust let any authenticated user
+  // self-elevate). Set to 0 ONLY as an emergency rollback if live Zoho profiles don't map onto
+  // KNOWN_DEPARTMENTS (watch the "department claims ignored" warn log).
+  FF_SESSION_DEPT_AUTHORITATIVE: flag('1'),
   // Zoho OAuth worker sign-in (/v1/auth/zoho/*) + Bearer-session identity on caller routes.
   FF_ZOHO_OAUTH_ENABLED: flag('0'),
   // Multi-agent orchestrator endpoint (POST /v1/agent). FF_DEEP_AGENTS_ENABLED is kept as a

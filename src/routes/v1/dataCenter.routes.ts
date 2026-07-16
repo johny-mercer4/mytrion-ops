@@ -9,25 +9,16 @@
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { AppError, RBACError } from '../../lib/errors.js';
+import { AppError } from '../../lib/errors.js';
 import { fetchAgentDeals, fetchAgentLeads } from '../../integrations/salesDataCenter.js';
 import { listRejectionReportTickets } from '../../integrations/zohoDesk.js';
 import { resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { requireContext, withDepartmentAccess } from './helpers.js';
+import { requireDepartment } from './helpers.js';
 
-/** Sales/admin gate (internal audience only) — mirrors the Desk routes' gate. */
+/** Sales/admin gate (internal audience only, session-authoritative departments). */
 function requireSalesAccess(request: FastifyRequest): TenantContext {
-  const base = requireContext(request);
-  if (base.audience !== 'internal') throw new RBACError('Data Center is internal-only');
-  const ctx = withDepartmentAccess(base, request);
-  const ok =
-    ctx.role === 'admin' ||
-    ctx.bypassRbac === true ||
-    ctx.allDepartmentAccess ||
-    ctx.departments.includes('sales');
-  if (!ok) throw new RBACError('Data Center requires sales department access');
-  return ctx;
+  return requireDepartment(request, 'sales', 'Data Center');
 }
 
 const scopeQuery = z.object({ zoho_user_id: z.string().max(120).optional() });

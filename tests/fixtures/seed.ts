@@ -23,6 +23,7 @@ export function makeContext(overrides: Partial<TenantContext> & { role?: Role } 
   if (overrides.callerRole !== undefined) ctx.callerRole = overrides.callerRole;
   if (overrides.bypassRbac !== undefined) ctx.bypassRbac = overrides.bypassRbac;
   if (overrides.actingAgent !== undefined) ctx.actingAgent = overrides.actingAgent;
+  if (overrides.sessionVerified !== undefined) ctx.sessionVerified = overrides.sessionVerified;
   return ctx;
 }
 

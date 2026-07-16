@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import type { FastifyRequest } from 'fastify';
+import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
+import { env } from '../../src/config/env.js';
 import {
   isAdministratorProfile,
   normalizeDepartment,
@@ -9,6 +11,7 @@ import {
 import { knowledgeRepo } from '../../src/repos/knowledgeRepo.js';
 import { registerTool, ToolRegistry } from '../../src/modules/tools/registry.js';
 import type { ToolManifest } from '../../src/modules/tools/types.js';
+import { withDepartmentAccess } from '../../src/routes/v1/helpers.js';
 import { makeContext } from '../fixtures/seed.js';
 
 /** A minimal read tool with no scope/audience constraints, gated only by department. */
@@ -98,6 +101,94 @@ describe('department RBAC — tool gating', () => {
     const r = deptTool(['sales']);
     // admin -> allDepartmentAccess true by default
     expect(r.checkAccess(tool(r), makeContext({ role: 'admin', departments: [] })).ok).toBe(true);
+  });
+});
+
+describe('withDepartmentAccess — session-authoritative vs legacy header trust', () => {
+  /** Fake just what withDepartmentAccess touches: headers + log.warn. */
+  function fakeRequest(headers: Record<string, string> = {}) {
+    const warn = vi.fn();
+    return { req: { headers, log: { warn } } as unknown as FastifyRequest, warn };
+  }
+
+  it('verified worker: elevation headers are ignored; departments derive from the profile', () => {
+    const ctx = makeContext({
+      role: 'worker',
+      departments: [],
+      allDepartmentAccess: false,
+      sessionVerified: true,
+      profiles: ['Sales Rep'],
+    });
+    const { req, warn } = fakeRequest({
+      'x-department-access': 'retention,finance',
+      'x-all-departments': 'true',
+    });
+    const out = withDepartmentAccess(ctx, req);
+    expect(out.allDepartmentAccess).toBe(false);
+    expect(out.departments).toEqual(['sales']);
+    expect(warn).toHaveBeenCalledOnce(); // ungranted claims logged (roster signal)
+  });
+
+  it('verified worker: body departmentAccess cannot widen either', () => {
+    const ctx = makeContext({
+      role: 'worker',
+      departments: [],
+      allDepartmentAccess: false,
+      sessionVerified: true,
+      profiles: ['Retention Specialist'],
+    });
+    const { req } = fakeRequest();
+    const out = withDepartmentAccess(ctx, req, { departmentAccess: ['finance'], allDepartments: true });
+    expect(out.allDepartmentAccess).toBe(false);
+    expect(out.departments).toEqual(['retention']);
+  });
+
+  it('verified admin: returned unchanged (allDepartmentAccess already token-derived)', () => {
+    const ctx = makeContext({
+      role: 'admin',
+      departments: [],
+      allDepartmentAccess: true,
+      sessionVerified: true,
+    });
+    const { req } = fakeRequest({ 'x-department-access': 'sales' });
+    expect(withDepartmentAccess(ctx, req)).toBe(ctx);
+  });
+
+  it('verified customer: returned unchanged, headers never consulted', () => {
+    const ctx = makeContext({
+      role: 'viewer',
+      audience: 'customer',
+      departments: ['company:acme'],
+      allDepartmentAccess: false,
+      sessionVerified: true,
+    });
+    const { req } = fakeRequest({ 'x-all-departments': 'true' });
+    expect(withDepartmentAccess(ctx, req)).toBe(ctx);
+  });
+
+  it('unverified (API-key/server-to-server): legacy header trust preserved', () => {
+    const ctx = makeContext({ role: 'ops', departments: ['billing'], allDepartmentAccess: false });
+    const { req } = fakeRequest({ 'x-department-access': 'sales', 'x-all-departments': 'true' });
+    const out = withDepartmentAccess(ctx, req);
+    expect(out.departments).toEqual(expect.arrayContaining(['billing', 'sales']));
+    expect(out.allDepartmentAccess).toBe(true);
+  });
+
+  it('FF_SESSION_DEPT_AUTHORITATIVE=0 rolls a verified session back to header trust', () => {
+    const saved = env.FF_SESSION_DEPT_AUTHORITATIVE;
+    env.FF_SESSION_DEPT_AUTHORITATIVE = false;
+    try {
+      const ctx = makeContext({
+        role: 'worker',
+        departments: [],
+        allDepartmentAccess: false,
+        sessionVerified: true,
+      });
+      const { req } = fakeRequest({ 'x-all-departments': 'true' });
+      expect(withDepartmentAccess(ctx, req).allDepartmentAccess).toBe(true);
+    } finally {
+      env.FF_SESSION_DEPT_AUTHORITATIVE = saved;
+    }
   });
 });
 

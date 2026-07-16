@@ -10,7 +10,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { env } from '../../config/env.js';
-import { AppError, RBACError } from '../../lib/errors.js';
+import { AppError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
   createDeskTicket,
@@ -27,7 +27,7 @@ import {
 import { dispatchTouchpoint } from '../../modules/touchpoints/dispatcher.js';
 import { resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { requireContext, withDepartmentAccess } from './helpers.js';
+import { requireDepartment } from './helpers.js';
 
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20 MB (matches the widget)
 
@@ -52,18 +52,9 @@ async function readMultipart(
   return { fields, file };
 }
 
-/** Sales/admin gate (internal audience only) — mirrors the touchpoints department gate. */
+/** Sales/admin gate (internal audience only, session-authoritative departments). */
 function requireSalesAccess(request: FastifyRequest): TenantContext {
-  const base = requireContext(request);
-  if (base.audience !== 'internal') throw new RBACError('Desk tickets are internal-only');
-  const ctx = withDepartmentAccess(base, request);
-  const ok =
-    ctx.role === 'admin' ||
-    ctx.bypassRbac === true ||
-    ctx.allDepartmentAccess ||
-    ctx.departments.includes('sales');
-  if (!ok) throw new RBACError('Desk tickets require sales department access');
-  return ctx;
+  return requireDepartment(request, 'sales', 'Desk tickets');
 }
 
 const listQuery = z.object({

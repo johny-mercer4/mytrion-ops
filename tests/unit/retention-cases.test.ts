@@ -45,6 +45,7 @@ vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
 
 import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
+import { env } from '../../src/config/env.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
 import { auditFromContext } from '../../src/modules/audit/auditLogger.js';
 import {
@@ -213,14 +214,50 @@ describe('retention routes — department/admin gates', () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it('allows a worker session that carries the retention department', async () => {
+  it('IGNORES a verified session asserting retention via x-department-access (elevation regression)', async () => {
     const token = await workerToken('Sales Rep');
     const res = await app.inject({
       method: 'GET',
       url: '/v1/retention/cases',
       headers: { authorization: `Bearer ${token}`, 'x-department-access': 'retention' },
     });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('IGNORES a verified session asserting x-all-departments (elevation regression)', async () => {
+    const token = await workerToken('Sales Rep');
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/retention/cases',
+      headers: { authorization: `Bearer ${token}`, 'x-all-departments': 'true' },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('allows a retention-profile worker with NO headers (profile-derived access)', async () => {
+    const token = await workerToken('Retention Specialist');
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/retention/cases',
+      headers: { authorization: `Bearer ${token}` },
+    });
     expect(res.statusCode).toBe(200);
+  });
+
+  it('FF_SESSION_DEPT_AUTHORITATIVE=0 restores the legacy header trust (rollback)', async () => {
+    const saved = env.FF_SESSION_DEPT_AUTHORITATIVE;
+    env.FF_SESSION_DEPT_AUTHORITATIVE = false;
+    try {
+      const token = await workerToken('Sales Rep');
+      const res = await app.inject({
+        method: 'GET',
+        url: '/v1/retention/cases',
+        headers: { authorization: `Bearer ${token}`, 'x-department-access': 'retention' },
+      });
+      expect(res.statusCode).toBe(200);
+    } finally {
+      env.FF_SESSION_DEPT_AUTHORITATIVE = saved;
+    }
   });
 
   it('denies a carrier-client (customer) session even with the header', async () => {
