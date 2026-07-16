@@ -145,7 +145,7 @@
 .cs-root .cs-form-input,
 .cs-root .cs-user-card,
 .cs-root .cs-theme-toggle {
-    transition: background-color 0.32s ease, border-color 0.32s ease, color 0.24s ease;
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 @media (prefers-reduced-motion: reduce) {
     .cs-root .cs-boot { animation: none; }
