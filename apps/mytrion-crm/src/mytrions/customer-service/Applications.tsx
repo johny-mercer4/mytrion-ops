@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 
 import { toggleOnboarding, type OnboardingField } from '@/api/cs';
 import { ApplicationModal } from './ApplicationModal';
+import { copyWithToast } from './copyToast';
 import {
   AppCell,
   CHECK_PROP,
@@ -30,56 +31,6 @@ const TABS: { id: SubTab; label: string }[] = [
 
 const REFRESH_PATH =
   'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-14.357-2m14.357 2H15';
-
-/* ─── Copy-to-clipboard with the widget's floating cs-copy-toast ─────────── */
-
-function showCopyToast(msg: string, ok: boolean, ev: MouseEvent | null) {
-  const x = ev ? ev.clientX : window.innerWidth / 2;
-  const y = ev ? ev.clientY : window.innerHeight / 2;
-  const t = document.createElement('div');
-  t.className = `cs-copy-toast${ok ? '' : ' cs-copy-toast-err'}`;
-  t.textContent = msg;
-  t.style.left = `${x}px`;
-  t.style.top = `${y - 14}px`;
-  document.body.appendChild(t);
-  // trigger CSS transition
-  requestAnimationFrame(() => t.classList.add('cs-copy-toast-show'));
-  setTimeout(() => {
-    t.classList.remove('cs-copy-toast-show');
-    setTimeout(() => t.parentNode && t.parentNode.removeChild(t), 250);
-  }, 900);
-}
-
-function fallbackCopy(text: string, ev: MouseEvent | null) {
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-    showCopyToast(`✓ Copied ${text}`, true, ev);
-  } catch {
-    showCopyToast('Copy failed', false, ev);
-  }
-}
-
-function copyId(text: string, ev: MouseEvent) {
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(
-        () => showCopyToast(`✓ Copied ${text}`, true, ev),
-        () => fallbackCopy(text, ev),
-      );
-    } else {
-      fallbackCopy(text, ev);
-    }
-  } catch {
-    fallbackCopy(text, ev);
-  }
-}
 
 /* ─── Panel ──────────────────────────────────────────────────────────────── */
 
@@ -164,13 +115,13 @@ export function Applications() {
     }
     if (col.key === 'app_id' || (col.key === 'id' && subTab !== 'clients')) {
       if (app.appId) {
-        copyId(app.appId, ev);
+        copyWithToast(app.appId, ev);
         return;
       }
     }
     if (col.key === 'id' && subTab === 'clients') {
       if (app.carrierId) {
-        copyId(app.carrierId, ev);
+        copyWithToast(app.carrierId, ev);
         return;
       }
     }

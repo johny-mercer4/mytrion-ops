@@ -47,8 +47,8 @@
 }
 .cs-root .cs-boot-ring {
     position: relative;
-    width: 96px;
-    height: 96px;
+    width: 118px;
+    height: 118px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -78,7 +78,7 @@
 }
 .cs-root .cs-boot-brand {
     font-weight: 700;
-    font-size: 9px;
+    font-size: 12px;
     letter-spacing: 0.11em;
     text-transform: uppercase;
     text-align: center;
@@ -87,20 +87,20 @@
 }
 .cs-root .cs-boot-brand > span { color: var(--cs-accent); }
 .cs-root .cs-boot-brand-sub {
-    font-size: 5.5px !important;
+    font-size: 7px !important;
     letter-spacing: 0.2em;
     color: var(--text-muted) !important;
 }
 .cs-root .cs-boot-title {
     font-weight: 700;
-    font-size: 10px;
+    font-size: 13px;
     letter-spacing: 0.05em;
     text-transform: uppercase;
     text-align: center;
     color: var(--text-primary);
 }
 .cs-root .cs-boot-sub {
-    font-size: 9px;
+    font-size: 11px;
     color: var(--text-muted);
     margin-top: 4px;
     text-align: center;
@@ -573,6 +573,30 @@
 }
 .cs-root .cs-modal-wide .cs-citi-section-title {
     margin-top: 0.75rem;
+}
+
+/* Click-to-copy ID badge in the record modal header (App ID / Carrier ID). */
+.cs-root .cs-modal-id-copy {
+    margin-left: 0.5rem;
+    padding: 0.125rem 0.5rem;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: var(--cs-accent-soft);
+    color: var(--cs-accent);
+    font-family: var(--font-mono, 'JetBrains Mono', monospace);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    vertical-align: middle;
+}
+.cs-root .cs-modal-id-copy:hover {
+    border-color: var(--cs-accent-glow);
+    background: var(--cs-accent-glow);
+}
+.cs-root .cs-modal-id-copy:active {
+    transform: translateY(1px);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

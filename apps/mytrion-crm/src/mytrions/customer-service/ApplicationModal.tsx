@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { saveApplication } from '@/api/cs';
+import { copyWithToast } from './copyToast';
 import type { Application } from './data';
 import { useScrollLock } from './useScrollLock';
 
@@ -238,9 +239,21 @@ export function ApplicationModal({
         <div className="cs-modal-header">
           <h3 className="cs-modal-title">
             {app.company || 'Record'}
-            <span style={{ opacity: 0.5, fontWeight: 500, marginLeft: '0.5rem', fontSize: '0.75rem' }}>
-              {subTab === 'clients' ? app.carrierId : app.appId}
-            </span>
+            {(() => {
+              const idValue = subTab === 'clients' ? app.carrierId : app.appId;
+              const idLabel = subTab === 'clients' ? 'Carrier ID' : 'Application ID';
+              if (!idValue) return null;
+              return (
+                <button
+                  type="button"
+                  className="cs-modal-id-copy"
+                  title={`Click to copy ${idLabel}`}
+                  onClick={(e) => copyWithToast(idValue, e)}
+                >
+                  {idValue}
+                </button>
+              );
+            })()}
           </h3>
           <button className="cs-modal-close" onClick={requestClose}>
             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
