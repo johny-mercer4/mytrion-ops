@@ -47,8 +47,8 @@ CREATE TABLE IF NOT EXISTS "inbox_events" (
 --> statement-breakpoint
 ALTER TABLE "registered_mini_app_companies" ADD COLUMN IF NOT EXISTS "agent_name" text;--> statement-breakpoint
 ALTER TABLE "registered_mini_app_companies" ADD COLUMN IF NOT EXISTS "agent_zoho_user_id" text;--> statement-breakpoint
-ALTER TABLE "registered_mini_app_companies" ADD COLUMN "status" text DEFAULT 'active' NOT NULL;--> statement-breakpoint
-ALTER TABLE "registered_mini_app_companies" ADD COLUMN "revoked_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "registered_mini_app_companies" ADD COLUMN IF NOT EXISTS "status" text DEFAULT 'active' NOT NULL;--> statement-breakpoint
+ALTER TABLE "registered_mini_app_companies" ADD COLUMN IF NOT EXISTS "revoked_at" timestamp with time zone;--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "retention_cases_tenant_carrier_open_uk" ON "retention_cases" USING btree ("tenant_id","carrier_id") WHERE "retention_cases"."status" = 'open';--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "retention_cases_tenant_phase_idx" ON "retention_cases" USING btree ("tenant_id","phase");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "retention_cases_tenant_status_idx" ON "retention_cases" USING btree ("tenant_id","status");--> statement-breakpoint
