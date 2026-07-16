@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { PARENT_SNAPSHOT, fmtCurrency } from '../../data';
 import { useFinanceCtx } from '../ctx';
@@ -11,15 +11,15 @@ import {
   collectedToday,
   healthScore,
   homeKpis,
-  liveFeedItems,
   moneyC,
   topDebtors,
 } from '../financeData';
-import { ICONS, RowChev } from '../financeUi';
+import { ICONS, RowChev, SkelBlock } from '../financeUi';
 
 export function HomeTab() {
-  const { go, setDashSub, openClient, refreshSync, pushToast } = useFinanceCtx();
-  const [balLoading, setBalLoading] = useState(false);
+  const { go, setDashSub, openClient, refreshSync, pushToast, homeLoading, liveFeed, liveNew, resetLiveNew } = useFinanceCtx();
+  const [balLoading, setBalLoading] = useState(true);
+  const [balSpin, setBalSpin] = useState(false);
   const [balance, setBalance] = useState(PARENT_SNAPSHOT.balance);
   const health = healthScore();
   const ringOffset = 326.7 * (1 - health.score / 100);
@@ -30,14 +30,22 @@ export function HomeTab() {
     goalPct >= 100 ? 'Goal smashed — streak secured' : `${moneyC(goalTarget - goalCur)} to hit today's target`;
   const capturedAt = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
+  useEffect(() => {
+    const t = setTimeout(() => setBalLoading(false), 2100);
+    return () => clearTimeout(t);
+  }, []);
+
   const refreshBalance = () => {
+    setBalSpin(true);
     setBalLoading(true);
+    resetLiveNew();
     refreshSync();
     setTimeout(() => {
-      setBalance(PARENT_SNAPSHOT.balance + Math.random() * 200 - 100);
+      setBalance(PARENT_SNAPSHOT.balance + Math.random() * 1600 - 400);
       setBalLoading(false);
-      pushToast('Balance refreshed', 'Latest EFS snapshot loaded.');
-    }, 700);
+      setBalSpin(false);
+      pushToast('Balance refreshed', 'Latest EFS snapshot loaded.', 'success');
+    }, 1200);
   };
 
   return (
@@ -50,7 +58,7 @@ export function HomeTab() {
             <div style={s('display:flex;align-items:center;gap:8px')}>
               <span style={s(balanceModeStyle(balance))}>{balanceModeLabel(balance)}</span>
               <button type="button" onClick={refreshBalance} aria-label="Refresh balance" className="mf-ico" style={s('width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
-                <Svg d={ICONS.refresh} size={14} {...(balLoading ? { style: { animation: 'mf-spin .8s linear infinite' } } : {})} />
+                <Svg d={ICONS.refresh} size={14} {...(balSpin ? { style: { animation: 'mf-spin .8s linear infinite' } } : {})} />
               </button>
             </div>
           </div>
@@ -148,39 +156,43 @@ export function HomeTab() {
             <span style={s('font-size:10px;font-weight:800;letter-spacing:.04em;padding:3px 9px;border-radius:99px;background:var(--danger-s);color:var(--danger)')}>{topDebtors().length}</span>
           </div>
           <div style={s('padding:7px')}>
-            {topDebtors(4).map((d) => {
-              const client = CLIENTS.find((c) => c.carrier === d.carrier);
-              const tag = d.suspended ? 'SUSPENDED' : `${d.days}d`;
-              const tagColor = d.suspended ? 'var(--danger)' : 'var(--muted)';
-              return (
-                <button
-                  key={d.carrier}
-                  type="button"
-                  className="mf-row"
-                  onClick={() => {
-                    go('dashboard');
-                    setDashSub('debtors');
-                    if (client) openClient(client);
-                  }}
-                  style={s('display:flex;align-items:center;gap:12px;padding:11px 11px;border-radius:11px;cursor:pointer;width:100%;border:none;background:transparent;text-align:left')}
-                >
-                  <div style={s('width:34px;height:34px;border-radius:9px;background:var(--danger-s);color:var(--danger);display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
-                    <Svg d={ICONS.alert} size={16} />
-                  </div>
-                  <div style={s('flex:1;min-width:0')}>
-                    <div style={s('font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{d.company}</div>
-                    <div style={s('font-size:10.5px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
-                      {d.inv} overdue invoice{d.inv === 1 ? '' : 's'} · {d.days}d past due
+            {homeLoading ? (
+              <SkelBlock heights={[56, 56, 56]} />
+            ) : (
+              topDebtors(4).map((d) => {
+                const client = CLIENTS.find((c) => c.carrier === d.carrier);
+                const tag = d.suspended ? 'SUSPENDED' : `${d.days}d`;
+                const tagColor = d.suspended ? 'var(--danger)' : 'var(--muted)';
+                return (
+                  <button
+                    key={d.carrier}
+                    type="button"
+                    className="mf-row"
+                    onClick={() => {
+                      go('dashboard');
+                      setDashSub('debtors');
+                      if (client) openClient(client);
+                    }}
+                    style={s('display:flex;align-items:center;gap:12px;padding:11px 11px;border-radius:11px;cursor:pointer;width:100%;border:none;background:transparent;text-align:left')}
+                  >
+                    <div style={s('width:34px;height:34px;border-radius:9px;background:var(--danger-s);color:var(--danger);display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
+                      <Svg d={ICONS.alert} size={16} />
                     </div>
-                  </div>
-                  <div style={s('text-align:right;flex-shrink:0')}>
-                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:600;color:var(--danger)")}>{fmtCurrency(d.debt)}</div>
-                    <div style={s(`font-size:9px;font-weight:800;letter-spacing:.03em;margin-top:3px;color:${tagColor}`)}>{tag}</div>
-                  </div>
-                  <RowChev />
-                </button>
-              );
-            })}
+                    <div style={s('flex:1;min-width:0')}>
+                      <div style={s('font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{d.company}</div>
+                      <div style={s('font-size:10.5px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
+                        {d.inv} overdue invoice{d.inv === 1 ? '' : 's'} · {d.days}d past due
+                      </div>
+                    </div>
+                    <div style={s('text-align:right;flex-shrink:0')}>
+                      <div style={s("font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:600;color:var(--danger)")}>{fmtCurrency(d.debt)}</div>
+                      <div style={s(`font-size:9px;font-weight:800;letter-spacing:.03em;margin-top:3px;color:${tagColor}`)}>{tag}</div>
+                    </div>
+                    <RowChev />
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -190,23 +202,30 @@ export function HomeTab() {
               <span style={s('width:7px;height:7px;border-radius:50%;background:var(--accent);animation:mf-dot 1.6s ease-in-out infinite')} />
               Live Fuel Activity
             </div>
+            {liveNew > 0 ? (
+              <span style={s('font-size:10px;font-weight:800;letter-spacing:.04em;padding:3px 9px;border-radius:99px;background:var(--accent-s);color:var(--accent)')}>+{liveNew} new</span>
+            ) : null}
           </div>
           <div style={s('padding:7px')}>
-            {liveFeedItems().map((f) => (
-              <div key={f.key} className={f.flash ? 'mf-flash' : undefined} style={s('display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px')}>
-                <div style={s('width:32px;height:32px;border-radius:9px;background:var(--accent-s);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
-                  <Svg d={ICONS.fuel} size={15} />
+            {homeLoading ? (
+              <SkelBlock heights={[50, 50, 50]} />
+            ) : (
+              liveFeed.map((f) => (
+                <div key={f.key} className={f.flash ? 'mf-flash' : undefined} style={s('display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px')}>
+                  <div style={s('width:32px;height:32px;border-radius:9px;background:var(--accent-s);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
+                    <Svg d={ICONS.fuel} size={15} />
+                  </div>
+                  <div style={s('flex:1;min-width:0')}>
+                    <div style={s('font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{f.company}</div>
+                    <div style={s('font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{f.meta}</div>
+                  </div>
+                  <div style={s('text-align:right;flex-shrink:0')}>
+                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:var(--accent)")}>{f.amount}</div>
+                    <div style={s("font-size:9.5px;color:var(--muted);font-family:'JetBrains Mono',monospace")}>{f.grade} · {f.time}</div>
+                  </div>
                 </div>
-                <div style={s('flex:1;min-width:0')}>
-                  <div style={s('font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{f.company}</div>
-                  <div style={s('font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{f.meta}</div>
-                </div>
-                <div style={s('text-align:right;flex-shrink:0')}>
-                  <div style={s("font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:var(--accent)")}>{f.amount}</div>
-                  <div style={s("font-size:9.5px;color:var(--muted);font-family:'JetBrains Mono',monospace")}>{f.grade} · {f.time}</div>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>

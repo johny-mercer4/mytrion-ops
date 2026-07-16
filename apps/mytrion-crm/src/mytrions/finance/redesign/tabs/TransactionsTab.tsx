@@ -32,12 +32,14 @@ const TX_PRESETS = [
 ] as const;
 
 export function TransactionsTab() {
-  const { openTx, refreshSync, pushToast } = useFinanceCtx();
+  const { openTx, refreshSync, pushToast, txLoading, startAnim } = useFinanceCtx();
   const [search, setSearch] = useState('');
   const [preset, setPreset] = useState('month');
   const [visible, setVisible] = useState(8);
-  const [loading, setLoading] = useState(false);
+  const [localLoading, setLocalLoading] = useState(false);
   const [spin, setSpin] = useState(false);
+
+  const loading = txLoading || localLoading;
 
   const all = useMemo(() => filterTransactions(search, preset), [search, preset]);
   const shown = all.slice(0, visible);
@@ -49,12 +51,13 @@ export function TransactionsTab() {
 
   const refresh = () => {
     setSpin(true);
-    setLoading(true);
+    setLocalLoading(true);
     refreshSync();
     setTimeout(() => {
       setSpin(false);
-      setLoading(false);
-      pushToast('Transactions refreshed', 'Latest line items loaded.');
+      setLocalLoading(false);
+      pushToast('Transactions refreshed', 'Latest line items loaded.', 'success');
+      startAnim();
     }, 800);
   };
 
@@ -81,7 +84,20 @@ export function TransactionsTab() {
       <div style={s('display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:12px')}>
         <span style={s('font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-right:2px')}>Period</span>
         {TX_PRESETS.map(([id, label]) => (
-          <button key={id} type="button" className="mf-chip" onClick={() => { setPreset(id); setVisible(8); }} style={s(chipStyle(preset === id))}>
+          <button
+            key={id}
+            type="button"
+            className="mf-chip"
+            data-active={preset === id ? 'true' : 'false'}
+            onClick={() => {
+              setPreset(id);
+              setVisible(8);
+              setLocalLoading(true);
+              setTimeout(() => setLocalLoading(false), 450);
+              startAnim();
+            }}
+            style={s(chipStyle(preset === id))}
+          >
             {label}
           </button>
         ))}

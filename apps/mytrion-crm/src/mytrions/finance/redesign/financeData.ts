@@ -317,7 +317,6 @@ export function filterTransactions(search: string, preset: string): TransactionL
   const q = search.trim().toLowerCase();
   if (q) rows = rows.filter((t) => `${t.company} ${t.carrier} ${t.txId} ${t.loc}`.toLowerCase().includes(q));
   if (preset === 'week') rows = rows.slice(0, 6);
-  else if (preset === 'month') rows = rows;
   else if (preset === 'quarter') rows = rows.slice(0, 4);
   return rows;
 }

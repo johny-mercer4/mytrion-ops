@@ -29,25 +29,28 @@ import {
 } from '../financeUi';
 
 export function ClientsTab() {
-  const { openClient, refreshSync, pushToast } = useFinanceCtx();
+  const { openClient, refreshSync, pushToast, clLoading, startAnim } = useFinanceCtx();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
   const [flag, setFlag] = useState('');
   const [visible, setVisible] = useState(8);
-  const [loading, setLoading] = useState(false);
+  const [localLoading, setLocalLoading] = useState(false);
   const [spin, setSpin] = useState(false);
+
+  const loading = clLoading || localLoading;
 
   const all = useMemo(() => filterClients(search, status, flag), [search, status, flag]);
   const shown = all.slice(0, visible);
 
   const refresh = () => {
     setSpin(true);
-    setLoading(true);
+    setLocalLoading(true);
     refreshSync();
     setTimeout(() => {
       setSpin(false);
-      setLoading(false);
-      pushToast('Clients refreshed', 'Latest portfolio loaded.');
+      setLocalLoading(false);
+      pushToast('Clients refreshed', 'Latest portfolio loaded.', 'success');
+      startAnim();
     }, 800);
   };
 
@@ -81,14 +84,14 @@ export function ClientsTab() {
       <div style={s('display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:14px')}>
         <span style={s('font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-right:2px')}>Status</span>
         {([['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive']] as const).map(([id, label]) => (
-          <button key={id} type="button" className="mf-chip" onClick={() => { setStatus(id); setVisible(8); }} style={s(chipStyle(status === id))}>
+          <button key={id} type="button" className="mf-chip" data-active={status === id ? 'true' : 'false'} onClick={() => { setStatus(id); setVisible(8); }} style={s(chipStyle(status === id))}>
             {label}
           </button>
         ))}
         <span style={s('width:1px;height:20px;background:var(--border);margin:0 4px')} />
         <span style={s('font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-right:2px')}>Flags</span>
         {([['suspended', 'Suspended'], ['debtor', 'Debtor']] as const).map(([id, label]) => (
-          <button key={id} type="button" className="mf-chip" onClick={() => { setFlag(flag === id ? '' : id); setVisible(8); }} style={s(chipStyle(flag === id))}>
+          <button key={id} type="button" className="mf-chip" data-active={flag === id ? 'true' : 'false'} onClick={() => { setFlag(flag === id ? '' : id); setVisible(8); }} style={s(chipStyle(flag === id))}>
             {label}
           </button>
         ))}

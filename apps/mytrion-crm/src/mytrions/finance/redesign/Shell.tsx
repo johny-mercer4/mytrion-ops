@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useSessionUser } from '../../sales/redesign/sessionUser';
-import { FinanceContext } from './ctx';
+import { FinanceContext, type ToastType } from './ctx';
 import { s, Svg } from './dc';
 import { NAV, NAV_LABEL, navBtnStyle, relTime, suspendedCount, topDebtors, type DashSub, type FinanceSection } from './financeData';
+import { buildLiveItem, pickRandomTx, seedLiveFeed, type LiveFeedItem } from './financeLive';
 import { ICONS } from './financeUi';
 import { ClientModal, TxModal } from './modals';
 import { DashboardTab } from './tabs/DashboardTab';
@@ -18,20 +19,86 @@ const SUN = 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.
 const MOON = 'M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z';
 const DOLLAR = 'M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6';
 
+const TOAST_ICON: Record<ToastType, string> = {
+  success: ICONS.check,
+  error: ICONS.alert,
+  warning: ICONS.alert,
+  info: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+};
+
+const TOAST_KIND: Record<ToastType, 'ok' | 'danger' | 'warn' | 'accent'> = {
+  success: 'ok',
+  error: 'danger',
+  warning: 'warn',
+  info: 'accent',
+};
+
+function toastIconStyle(type: ToastType): string {
+  const k = TOAST_KIND[type];
+  const m = {
+    ok: ['var(--ok-s)', 'var(--ok)'],
+    danger: ['var(--danger-s)', 'var(--danger)'],
+    warn: ['var(--warn-s)', 'var(--warn)'],
+    accent: ['var(--accent-s)', 'var(--accent)'],
+  }[k];
+  return `width:34px;height:34px;border-radius:10px;background:${m[0]};color:${m[1]};display:flex;align-items:center;justify-content:center;flex-shrink:0`;
+}
+
 export function FinanceRedesign() {
   const user = useSessionUser();
+  const mainRef = useRef<HTMLElement>(null);
+  const sectionTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const liveIntervalRef = useRef<ReturnType<typeof setInterval>>();
+
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [section, setSection] = useState<FinanceSection>('home');
-  const [dashSub, setDashSub] = useState<DashSub>('debtors');
+  const [dashSub, setDashSubState] = useState<DashSub>('debtors');
   const [booting, setBooting] = useState(true);
   const [bootPct, setBootPct] = useState(8);
   const [, tick] = useState(0);
   const [lastSync, setLastSync] = useState(() => new Date());
-  const [toast, setToast] = useState<{ title: string; msg: string } | null>(null);
+  const [toast, setToast] = useState<{ title: string; msg: string; type: ToastType } | null>(null);
   const [txSel, setTxSel] = useState<TransactionLine | null>(null);
   const [clientSel, setClientSel] = useState<Client | null>(null);
   const [clientTab, setClientTab] = useState<ClientDrillTab>('invoices');
   const [drillLoading, setDrillLoading] = useState(false);
+
+  const [panelKey, setPanelKey] = useState(0);
+  const [homeLoading, setHomeLoading] = useState(true);
+  const [txLoading, setTxLoading] = useState(true);
+  const [clLoading, setClLoading] = useState(true);
+  const [dashLoading, setDashLoading] = useState(true);
+  const [liveFeed, setLiveFeed] = useState<LiveFeedItem[]>(() => seedLiveFeed());
+  const [liveNew, setLiveNew] = useState(0);
+
+  const startAnim = useCallback(() => setPanelKey((k) => k + 1), []);
+
+  const settleSection = useCallback((id: FinanceSection) => {
+    clearTimeout(sectionTimerRef.current);
+    const ms = id === 'dashboard' ? 750 : 700;
+    if (id === 'home') {
+      setHomeLoading(true);
+      sectionTimerRef.current = setTimeout(() => setHomeLoading(false), ms);
+    } else if (id === 'transactions') {
+      setTxLoading(true);
+      sectionTimerRef.current = setTimeout(() => setTxLoading(false), ms);
+    } else if (id === 'clients') {
+      setClLoading(true);
+      sectionTimerRef.current = setTimeout(() => setClLoading(false), ms);
+    } else if (id === 'dashboard') {
+      setDashLoading(true);
+      sectionTimerRef.current = setTimeout(() => setDashLoading(false), ms);
+    }
+  }, []);
+
+  const tickLive = useCallback(() => {
+    const t = pickRandomTx();
+    const item = buildLiveItem({ ...t, date: new Date().toISOString().slice(0, 10) }, true);
+    setLiveFeed((prev) => [item, ...prev].slice(0, 6));
+    setLiveNew((n) => n + 1);
+    setLastSync(new Date());
+  }, []);
 
   useEffect(() => {
     const bootInterval = setInterval(() => {
@@ -41,24 +108,50 @@ export function FinanceRedesign() {
       clearInterval(bootInterval);
       setBooting(false);
       setBootPct(100);
+      startAnim();
+      settleSection('home');
+      liveIntervalRef.current = setInterval(tickLive, 5600);
     }, 1650);
     const clock = setInterval(() => tick((n) => n + 1), 20_000);
     return () => {
       clearInterval(bootInterval);
       clearTimeout(bootDone);
       clearInterval(clock);
+      clearInterval(liveIntervalRef.current);
+      clearTimeout(sectionTimerRef.current);
+      clearTimeout(toastTimerRef.current);
     };
+  }, [settleSection, startAnim, tickLive]);
+
+  const pushToast = useCallback((title: string, msg: string, type: ToastType = 'success') => {
+    setToast({ title, msg, type });
+    clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 3400);
   }, []);
 
-  const pushToast = useCallback((title: string, msg: string) => {
-    setToast({ title, msg });
-    setTimeout(() => setToast(null), 3400);
-  }, []);
+  const resetLiveNew = useCallback(() => setLiveNew(0), []);
 
-  const go = useCallback((next: FinanceSection) => {
-    setSection(next);
-    setTxSel(null);
-  }, []);
+  const go = useCallback(
+    (next: FinanceSection) => {
+      setSection(next);
+      setTxSel(null);
+      mainRef.current?.scrollTo({ top: 0 });
+      startAnim();
+      settleSection(next);
+    },
+    [settleSection, startAnim],
+  );
+
+  const setDashSub = useCallback(
+    (sub: DashSub) => {
+      setDashSubState(sub);
+      setDashLoading(true);
+      clearTimeout(sectionTimerRef.current);
+      sectionTimerRef.current = setTimeout(() => setDashLoading(false), 650);
+      startAnim();
+    },
+    [startAnim],
+  );
 
   const openTx = useCallback((tx: TransactionLine) => setTxSel(tx), []);
   const openClient = useCallback((client: Client, tab: ClientDrillTab = 'invoices') => {
@@ -77,13 +170,42 @@ export function FinanceRedesign() {
       go,
       dashSub,
       setDashSub,
+      panelKey,
+      startAnim,
+      homeLoading,
+      txLoading,
+      clLoading,
+      dashLoading,
+      liveFeed,
+      liveNew,
+      resetLiveNew,
       pushToast,
       openTx,
       openClient,
       lastSync,
       refreshSync,
     }),
-    [theme, section, go, dashSub, pushToast, openTx, openClient, lastSync, refreshSync],
+    [
+      theme,
+      section,
+      go,
+      dashSub,
+      setDashSub,
+      panelKey,
+      startAnim,
+      homeLoading,
+      txLoading,
+      clLoading,
+      dashLoading,
+      liveFeed,
+      liveNew,
+      resetLiveNew,
+      pushToast,
+      openTx,
+      openClient,
+      lastSync,
+      refreshSync,
+    ],
   );
 
   const timeFmt = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
@@ -197,12 +319,12 @@ export function FinanceRedesign() {
               <div style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text2)")}>{timeFmt}</div>
             </div>
           </div>
-          <main className="mf-scroll" style={s('flex:1;min-height:0;position:relative')}>
+          <main ref={mainRef} className="mf-scroll" style={s('flex:1;min-height:0;position:relative')}>
             <div style={s('max-width:1200px;margin:0 auto;padding:22px 24px 96px')}>
-              {section === 'home' && <HomeTab />}
-              {section === 'transactions' && <TransactionsTab />}
-              {section === 'clients' && <ClientsTab />}
-              {section === 'dashboard' && <DashboardTab />}
+              {section === 'home' && <HomeTab key={panelKey} />}
+              {section === 'transactions' && <TransactionsTab key={panelKey} />}
+              {section === 'clients' && <ClientsTab key={panelKey} />}
+              {section === 'dashboard' && <DashboardTab key={panelKey} />}
             </div>
           </main>
         </div>
@@ -224,8 +346,8 @@ export function FinanceRedesign() {
 
         {toast ? (
           <div style={s('position:fixed;right:22px;bottom:22px;z-index:400;display:flex;align-items:flex-start;gap:12px;min-width:280px;max-width:380px;padding:14px 15px;border-radius:13px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);animation:mf-slidein .3s cubic-bezier(.2,0,0,1) both')}>
-            <div style={s('width:34px;height:34px;border-radius:10px;background:var(--ok-s);color:var(--ok);display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
-              <Svg d={ICONS.check} size={17} strokeWidth={2.4} />
+            <div style={s(toastIconStyle(toast.type))}>
+              <Svg d={TOAST_ICON[toast.type]} size={17} strokeWidth={2.4} />
             </div>
             <div style={s('flex:1;min-width:0')}>
               <div style={s('font-size:13px;font-weight:700;color:var(--text)')}>{toast.title}</div>

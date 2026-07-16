@@ -64,9 +64,10 @@ html,body{height:100%;margin:0}
 .mf-ico{transition:background .14s,color .14s,border-color .14s,transform .14s}
 .mf-ico:hover{background:rgba(var(--accent-rgb),.13)!important;color:var(--accent)!important;border-color:rgba(var(--accent-rgb),.4)!important}
 .mf-chip{transition:background .13s,color .13s,border-color .13s}
-.mf-chip:hover{color:var(--text)!important;border-color:var(--border)!important;background:var(--raised)!important}
-.mf-in{transition:border-color .15s,box-shadow .15s;background-color:var(--surface)}
+.mf-chip:hover:not([data-active="true"]){color:var(--text)!important;border-color:var(--border)!important;background:var(--raised)!important}
+.mf-in{transition:border-color .15s,box-shadow .15s}
 .mf-in:focus{outline:none;border-color:rgba(var(--accent-rgb),.7)!important;box-shadow:0 0 0 3px rgba(var(--accent-rgb),.16)!important}
+.mf-flash{animation:mf-flash 2.4s ease-out both}
 .mf-scroll{overflow-y:auto}
 .mf-root input,.mf-root textarea,.mf-root button,.mf-root select{font-family:inherit}
 .mf-bar{transition:height .6s cubic-bezier(.2,0,0,1)}

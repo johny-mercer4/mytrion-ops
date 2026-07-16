@@ -26,7 +26,7 @@ import {
   topLocationsList,
   totalFuelGal,
 } from '../financeData';
-import { HorizontalKpi, ICONS, PageTitle, Panel } from '../financeUi';
+import { HorizontalKpi, ICONS, PageTitle, Panel, SkelRows } from '../financeUi';
 
 export function DashboardTab() {
   const { dashSub, setDashSub } = useFinanceCtx();
@@ -52,7 +52,7 @@ export function DashboardTab() {
 
       <div style={s('display:flex;gap:4px;padding:4px;border-radius:12px;background:var(--surface);border:1px solid var(--border);margin-bottom:18px;width:fit-content')}>
         {subs.map((sub) => (
-          <button key={sub.id} type="button" className="mf-chip" onClick={() => setDashSub(sub.id)} style={s(subTabStyle(dashSub === sub.id))}>
+          <button key={sub.id} type="button" className="mf-chip" data-active={dashSub === sub.id ? 'true' : 'false'} onClick={() => setDashSub(sub.id)} style={s(subTabStyle(dashSub === sub.id))}>
             <Svg d={sub.icon} size={15} />
             {sub.label}
           </button>
@@ -73,7 +73,7 @@ function DebtorsView({
   agingMetric: 'debt' | 'invoices';
   setAgingMetric: (m: 'debt' | 'invoices') => void;
 }) {
-  const { openClient } = useFinanceCtx();
+  const { openClient, dashLoading } = useFinanceCtx();
   const kpis = [
     { label: 'Debtors', kind: 'danger' as const, icon: ICONS.users, color: 'var(--danger)', value: String(DASHBOARD_DEBTORS.length) },
     { label: 'Total Debt', kind: 'danger' as const, icon: ICONS.dollar, color: 'var(--danger)', value: moneyC(debtTotal()) },
@@ -115,7 +115,10 @@ function DebtorsView({
       </div>
 
       <Panel>
-        {DASHBOARD_DEBTORS.map((d) => {
+        {dashLoading ? (
+          <SkelRows n={4} h={58} />
+        ) : (
+          DASHBOARD_DEBTORS.map((d) => {
           const client = CLIENTS.find((c) => c.carrier === d.carrier);
           const metaClient = client ? `${client.city}, ${client.state}` : d.terms;
           const daysBadge = badge(`${d.days}d`, d.days > 60 ? 'danger' : d.days > 30 ? 'orange' : 'warn');
@@ -141,13 +144,15 @@ function DebtorsView({
               </div>
             </button>
           );
-        })}
+        })
+        )}
       </Panel>
     </div>
   );
 }
 
 function PaymentsView() {
+  const { dashLoading } = useFinanceCtx();
   const payTotal = DASHBOARD_PAYMENTS.reduce((s, p) => s + p.amt, 0);
   const approved = DASHBOARD_PAYMENTS.filter((p) => p.st !== 'DECLINED').length;
   const declined = DASHBOARD_PAYMENTS.filter((p) => p.st === 'DECLINED').length;
@@ -183,7 +188,10 @@ function PaymentsView() {
       </div>
 
       <Panel>
-        {DASHBOARD_PAYMENTS.slice(0, 10).map((p, i) => {
+        {dashLoading ? (
+          <SkelRows n={4} h={52} />
+        ) : (
+          DASHBOARD_PAYMENTS.slice(0, 10).map((p, i) => {
           const srcShort = p.src.split(' ')[0] ?? p.src;
           const srcKind = p.src === 'Zelle' ? 'violet' : p.src === 'Chase' ? 'blue' : p.src === 'Stripe' ? 'orange' : 'accent';
           const stKind = p.st === 'DECLINED' ? 'danger' : 'ok';
@@ -199,7 +207,8 @@ function PaymentsView() {
               <div style={s("font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:var(--ok);min-width:76px;text-align:right")}>{fmtCurrency(p.amt).replace('.00', '')}</div>
             </div>
           );
-        })}
+        })
+        )}
       </Panel>
     </div>
   );

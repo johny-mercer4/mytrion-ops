@@ -234,7 +234,7 @@ function efsDetailRows(list: TxnGrouped[], o: TxnExportOptions): unknown[][] {
 }
 
 function safeFilePart(s: string): string {
-  return String(s ?? '').replace(/[^\w.\-]+/g, '_').replace(/^_+|_+$/g, '');
+  return String(s ?? '').replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '');
 }
 
 function buildGroupedAoa(list: TxnGrouped[], opts: TxnExportOptions): unknown[][] {

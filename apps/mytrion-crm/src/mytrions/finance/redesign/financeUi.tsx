@@ -163,7 +163,7 @@ export function ChipRow({
     <div style={s('display:flex;align-items:center;gap:7px;flex-wrap:wrap')}>
       <span style={s('font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-right:2px')}>{label}</span>
       {options.map((o) => (
-        <button key={o.id} type="button" className="mf-chip" onClick={() => onSelect(o.id)} style={s(chipStyle(active === o.id))}>
+        <button key={o.id} type="button" className="mf-chip" data-active={active === o.id ? 'true' : 'false'} onClick={() => onSelect(o.id)} style={s(chipStyle(active === o.id))}>
           {o.label}
         </button>
       ))}
@@ -182,6 +182,16 @@ export function SkelRows({ n = 5, h = 58 }: { n?: number; h?: number }) {
     <div style={s('padding:11px')}>
       {Array.from({ length: n }, (_, i) => (
         <div key={i} className="mf-skel" style={s(`height:${h}px;margin-bottom:${i < n - 1 ? 9 : 0}px`)} />
+      ))}
+    </div>
+  );
+}
+
+export function SkelBlock({ heights, pad = 8 }: { heights: number[]; pad?: number }) {
+  return (
+    <div style={s(`padding:${pad}px`)}>
+      {heights.map((h, i) => (
+        <div key={i} className="mf-skel" style={s(`height:${h}px;margin-bottom:${i < heights.length - 1 ? 8 : 0}px`)} />
       ))}
     </div>
   );
