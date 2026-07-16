@@ -161,18 +161,25 @@ export async function csCitifuelRoutes(app: FastifyInstance): Promise<void> {
   /** Live picklist metadata (status tabs + modal picklists come from here). */
   app.get('/cs/citifuel/meta', guard, async (request) => {
     requireCsAccess(request);
+    const noNone = (values: string[]): string[] => values.filter((v) => v !== '-None-');
     const [statusOptions, requestOptions, actionOptions] = await Promise.all([
       getPicklistValues(CITI_MODULE, 'Status_of_App'),
       getPicklistValues(CITI_MODULE, 'Request'),
       getPicklistValues(CITI_MODULE, 'Actions_taken'),
     ]);
-    return { statusOptions, requestOptions, actionOptions };
+    return {
+      statusOptions: noNone(statusOptions),
+      requestOptions: noNone(requestOptions),
+      actionOptions: noNone(actionOptions),
+    };
   });
 
   /** Per-status counts + total (server-built COQL — parity with citigetstats). */
   app.get('/cs/citifuel/stats', guard, async (request) => {
     requireCsAccess(request);
-    const statuses = await getPicklistValues(CITI_MODULE, 'Status_of_App');
+    const statuses = (await getPicklistValues(CITI_MODULE, 'Status_of_App')).filter(
+      (v) => v !== '-None-',
+    );
     const count = async (where: string): Promise<number> => {
       const res = await zohoCrm.runCoql(`select COUNT(id) from ${CITI_MODULE} where ${where}`);
       const row = res.rows[0] ?? {};

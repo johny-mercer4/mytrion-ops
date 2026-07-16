@@ -13,7 +13,7 @@
  */
 import { z } from 'zod';
 import type { Touchpoint } from '../types.js';
-import { idString, limit, shortText, ymdDate } from './common.js';
+import { idString, limit, ymdDate } from './common.js';
 
 const CS_DEPARTMENTS = ['customer-service'] as const;
 
@@ -69,6 +69,6 @@ export const csDelugeTouchpoints: Touchpoint[] = [
     functionNames: ['mytrionbillingdatacenterdeals'],
     unwrap: 'status',
     // lastSyncTime '' = full load; a COQL timestamp = delta since then (widget parity).
-    paramsSchema: z.object({ lastSyncTime: shortText(40).optional().default('') }),
+    paramsSchema: z.object({ lastSyncTime: z.string().max(40).default('') }),
   },
 ];

@@ -164,8 +164,12 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     hue: 'accent',
     department: 'customer-service',
     allDepartments: false,
+    // The org has NO "Customer Service"/"Support" PROFILES (verified against the live user
+    // roster, 2026-07-16) — CS staff carry "Standard"/"Standard Plus" profiles and are
+    // identified by their Zoho ROLE. Roles below match all 22 CS users (20 agents + 2
+    // managers); the profile entries stay as a harmless forward-compat grant.
     allowedProfiles: ['Customer Service', 'Support'],
-    allowedRoles: [],
+    allowedRoles: ['Customer Service Agent', 'Customer Service Manager'],
     allowedUsernames: [],
     adminBypass: true,
     status: 'ported',

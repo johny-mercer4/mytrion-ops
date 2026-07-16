@@ -25,6 +25,19 @@ vi.mock('../../src/integrations/zohoFunctions.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/integrations/zohoFunctions.js')>();
   return { ...mod, executeZohoFunctionWithFallback: vi.fn(async () => ({})) };
 });
+// Roster primary source (Desk REST) rejects here so the tests drive the Deluge fallback,
+// which the zohoFunctions mock above controls per-test.
+vi.mock('../../src/integrations/zohoDesk.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/integrations/zohoDesk.js')>();
+  return {
+    ...mod,
+    zohoDesk: Object.assign(Object.create(Object.getPrototypeOf(mod.zohoDesk)), mod.zohoDesk, {
+      listAgents: vi.fn(async () => {
+        throw new Error('desk unavailable in tests');
+      }),
+    }),
+  };
+});
 vi.mock('../../src/integrations/serverCrm.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/integrations/serverCrm.js')>();
   return { ...mod, serverCrm: { ...mod.serverCrm, get: vi.fn(async () => ({ ok: true })) } };

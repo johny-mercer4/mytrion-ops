@@ -9,6 +9,7 @@
  * name allowlist) may scope freely or see org-wide aggregates.
  */
 import { env } from '../../config/env.js';
+import { zohoDesk } from '../../integrations/zohoDesk.js';
 import { executeZohoFunctionWithFallback } from '../../integrations/zohoFunctions.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
@@ -59,26 +60,39 @@ interface RosterAgentRaw {
   emailId?: string;
 }
 
-/** Desk agent roster via the hosted Deluge fn, cached ~10 min (widget parity). */
-export async function fetchDeskAgentRoster(): Promise<DeskAgent[]> {
-  if (rosterCache && Date.now() - rosterCache.fetchedAt < ROSTER_TTL_MS) {
-    return rosterCache.agents;
-  }
+/** Deluge roster (legacy source) — the hosted fn is NOT_ACTIVE in the org right now. */
+async function fetchRosterViaDeluge(): Promise<DeskAgent[]> {
   const payload = (await executeZohoFunctionWithFallback(
     ['mytrionGetDeskAgents'],
     { orgId: env.ZOHO_DESK_ORG_ID },
     { unwrap: 'successFlag' },
   )) as { data?: RosterAgentRaw[] };
-  const agents: DeskAgent[] = [];
-  const byEmail = new Map<string, DeskAgent>();
-  for (const raw of payload.data ?? []) {
-    if (raw.id === undefined || raw.id === null || raw.id === '') continue;
-    const agent: DeskAgent = {
+  return (payload.data ?? [])
+    .filter((raw) => raw.id !== undefined && raw.id !== null && raw.id !== '')
+    .map((raw) => ({
       id: String(raw.id),
       name: raw.name ?? raw.fullName ?? null,
       email: (raw.email ?? raw.emailId ?? null)?.toLowerCase() ?? null,
-    };
-    agents.push(agent);
+    }));
+}
+
+/**
+ * Desk agent roster, cached ~10 min. Primary source is the first-class Desk REST
+ * integration (`GET /agents` — same auth as the ticket console); the widget's hosted
+ * Deluge fn is kept as a fallback (it is currently NOT_ACTIVE in the org, verified live).
+ */
+export async function fetchDeskAgentRoster(): Promise<DeskAgent[]> {
+  if (rosterCache && Date.now() - rosterCache.fetchedAt < ROSTER_TTL_MS) {
+    return rosterCache.agents;
+  }
+  let agents: DeskAgent[];
+  try {
+    agents = await zohoDesk.listAgents();
+  } catch {
+    agents = await fetchRosterViaDeluge();
+  }
+  const byEmail = new Map<string, DeskAgent>();
+  for (const agent of agents) {
     if (agent.email) byEmail.set(agent.email, agent);
   }
   rosterCache = { fetchedAt: Date.now(), agents, byEmail };
