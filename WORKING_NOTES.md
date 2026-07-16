@@ -2313,3 +2313,100 @@ can never view-as an all-access (admin) target (fail-closed + audited). /auth/me
 viewAsUserIds + resolved viewAsTargets; TopBar shows the (renamed) "View as" picker for granted
 non-admins with a scoped target list; UserAccessForm gains a "Can view as" multi-select (admin-only
 targets excluded). Verify: 567 backend tests + FE typecheck/build green; migrations 0024+0025 on prod.
+## 2026-07-16 (pm) — Customer Service Mytrion: full live port (branch feature/customer-service-mytrion)
+
+Migrated the zoho-octane `app/mytrion-customer-service` widget onto the app, Sales-playbook style
+(backend surface first, then a live-data pass over the existing CS scaffold UI — design unchanged).
+Scope: Home, Applications, Citifuel, Analytics + Data Center (fully coded in the widget but
+nav-disabled there); Inbox/Service Center stay "Soon" stubs; dept AI chat via MytrionShell.
+
+Backend:
+- `zohoCrmRecords.ts` — CRM v8 record CRUD/search/fields wrapper; every mutation checks the
+  PER-ROW response code (Zoho 200s row-level failures and silently drops wrong-cased fields).
+- `modules/customerService/fieldResolver.ts` — live `/settings/fields` metadata (15-min cache)
+  resolves the org's ambiguous field casings (Limits_added/Limits_Added, Chain_policy/…); an
+  unknown key is a 400, never Zoho's silent no-op. Verified live: the module's real casings are
+  Limits_Added / Chain_Policy / Mobile_Driver_App.
+- Touchpoints `cs.*` (csDeluge.ts): home.metrics / applications.list / analytics.maintenance /
+  datacenter.deals — all `departments: ['customer-service']`; unwrap modes matched to each
+  function's real envelope. Gotcha: the datacenter full-load sentinel is `lastSyncTime: ''` —
+  shortText's min(1) 400'd it (found in browser verify).
+- Routes: `/cs/applications/:id` + `/onboarding` (edit-modal save + tick-boxes with Edit_History
+  APPEND, session-authoritative Who_Edited, DEAL_FIELD_MAP mirror best-effort with warning);
+  `/cs/citifuel` list/meta/stats/lookups + CRUD (stats are server-built COQL — the widget's
+  client-supplied-COQL `citigetstats` is deliberately NOT reproduced); `/cs/analytics/{tickets,
+  calls}` DWH proxy with server-side scope forcing (non-managers locked to their own Desk
+  assignee/owner email via the roster email join; unmatched ⇒ explicit flag, never org-wide),
+  `/cs/analytics/roster` (manager-only), `/cs/analytics/tickets/team-open` (narrow team aggregate
+  for Home — parity: every agent sees team totals, never per-agent detail), `/cs/context`
+  (backend manager verdict), `/cs/data-center/deals/:id` (billing allowlist).
+- Manager tier: CS_MANAGER_ROLE_MARKERS env (substring vs profile+role) replaces the widget's
+  hardcoded name allowlist. RBAC facts verified against the live roster: there are NO
+  'Customer Service'/'Support' profiles — CS staff are Zoho ROLES 'Customer Service Agent' (20)
+  / 'Customer Service Manager' (2); dept derivation via deriveWorkerDepartments matches on role.
+- `mytrionGetDeskAgents` Deluge is NOT_ACTIVE in the org (verified live) — roster now sources
+  from Desk REST `GET /agents` (new zohoDesk.listAgents, 133 agents) with Deluge as fallback.
+
+Frontend (apps/mytrion-crm):
+- `api/cs.ts` (dept pinned to customer-service — `callTouchpoint` defaults to sales, footgun),
+  cs.* touchpointTypes, `useLoad` extracted to `mytrions/_shared/useLoad.ts` (sales re-exports).
+- `customer-service/live.ts` maps real payloads onto the scaffold's view-model shapes:
+  applications rows (alias-tolerant casing reads), citifuel rows (+raw record for the edit
+  round-trip), analytics blocks (daily/byPriority/byStatus + email-join leaderboard),
+  data-center deals with sessionStorage cache + COQL-timestamp delta sync (widget parity).
+- Panels wired live with loading/error/empty states; Applications gets server-driven
+  search/pagination + optimistic onboarding toggles + a full edit form; Citifuel gets live
+  status tabs/stats + Accounts/user typeaheads + create/edit/delete; Analytics renders the
+  leaderboard only on the `/cs/context` verdict; NEW DataCenter tab + billing edit modal.
+- Improvement over the widget: "My Tickets (Month)" works (the widget couldn't — no Desk↔CRM
+  id mapping; our backend joins by email).
+
+Verified live in the browser (dev mock-auth, admin): all five panels render REAL data —
+1203 team open tickets + priority histogram, 200+ applications from mytrionGetApplications,
+515 Citifuel clients with live COQL stats, analytics KPIs/volume/leaderboard with real agent
+names, 7,915 Data Center deals. Writes (Applications save/tick, Citifuel CRUD, Deal billing)
+are wired but deliberately NOT exercised against prod CRM — verify with a real CS login on a
+scratch record. 571 backend + 49 app tests green.
+
+Left for follow-up: Applications Zip_Code/Address edit fields (not in the condensed view-model),
+merged tickets+calls leaderboard (widget merged by email; we render per-tab boards), Inbox /
+Service Center panels (mock-only in the widget too), Deluge home-metrics identity for admin
+API-key callers (no zoho id → team cards only).
+
+## 2026-07-17 — Customer Service Mytrion: re-skin to the zoho-octane widget design
+
+The CS module (Home/Applications/Citifuel/Analytics + shell) was re-skinned from the app's
+Tailwind chrome to the ORIGINAL widget's "Paper White / Royal Blue" design system — the whole
+live backend + live.ts data layer is unchanged; this is presentation only.
+
+- `styles/`: the widget's CSS (`zoho-octane/app/mytrion-customer-service/css/`) ported and
+  machine-scoped under `.cs-root` (scripted; brace-aware, maps :root/body/#app-shell → .cs-root)
+  so its globals can't leak into the other Mytrions. `overrides.css` (hand-written) holds the
+  floating-copilot styles + SPA-hosting tweaks. Instrument Sans added to index.html fonts.
+- `Shell.tsx`: 1:1 port of the widget shell (cs-sidebar/cs-body/cs-content + mobile bottom nav +
+  light/dark toggle w/ the widget's localStorage key). Panels lazy-mount and stay mounted.
+- Home / Applications (+ ApplicationsTable) / ApplicationModal: widget cs-* markup; single
+  view+edit application modal with inline onboarding tick-boxes + copy-id toasts + colors.ts
+  (widget picklist-color system).
+- Citifuel: cs-citi-* summary cards + live status tabs + sortable cs-table + cs-badge cells +
+  pagination. **CitiModal + CitiEdit merged into ONE** widget-style sectioned form (Client/
+  Request/Contact/Notes/Audit) doing view+edit+create+delete with Accounts/user lookups
+  (`CitiEdit.tsx` deleted).
+- Analytics: cs-an-* KPI grid + SVG spark trend (areaPath/sparkPoints, sparkH=60) + donut
+  breakdown (conic-gradient) + agent leaderboard (manager-tier only, backend also enforces);
+  data sub-tabs + range select.
+
+Product changes this session (per user):
+- **Data Center is now a "Soon" stub** (disabled nav item like Inbox/Service Center);
+  `DataCenter.tsx` kept on disk, unimported, for when it's re-enabled.
+- **AI Chat is a floating launcher** (`CsCopilot.tsx`), not a nav tab — mirrors the Sales
+  Mytrion copilot, CS-themed; streams from /v1/agent via useChat (customer-service dept).
+- Local `.env` now points MYTRION_OPS_DATABASE_URL at the **Render production DB** (was local
+  Docker); `FF_ORCHESTRATOR_ENABLED=1` so the copilot's agent endpoint works. Both are in the
+  gitignored `.env` (not committed).
+
+Verified live in-browser (Render DB, dev mock-auth admin, 1440px): widget shell + all panels
+render in the Paper White design with real data — 1225 team open tickets, 515 Citifuel clients
+(edit modal round-trips), analytics KPI/donut/leaderboard with real agent names, floating
+copilot streams a tool-grounded answer. 571 backend + 49 app tests green; vendored bundle
+rebuilt. Still unpushed on feature/customer-service-mytrion.

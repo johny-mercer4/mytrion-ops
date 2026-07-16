@@ -1,0 +1,132 @@
+/* =====================================================
+   Customer Service — Data Center Panel
+   ===================================================== */
+
+/* ── Deal table row ── */
+.cs-root .cs-dc-deal-row {
+    cursor: pointer;
+    transition: background 100ms;
+}
+
+.cs-root .cs-dc-deal-row:hover,
+
+
+.cs-root .cs-dc-deal-row:focus-visible {
+    background: var(--surface-raised) !important;
+    outline: none;
+}
+
+.cs-root .cs-dc-table-wrap {
+    margin-top: 0.75rem;
+}
+
+/* ── Loader ring ── */
+.cs-root .cs-dc-loader-ring {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 2px solid rgba(37, 99, 235, 0.10);
+    border-top-color: var(--cs-accent);
+    animation: spin 1s linear infinite;
+}
+
+/* ── Filter tabs ── */
+.cs-root .cs-dc-filter-tabs {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    flex-wrap: wrap;
+}
+
+.cs-root .cs-dc-filter-tab {
+    padding: 0.3rem 0.75rem;
+    border-radius: 2px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 100ms;
+    font-family: inherit;
+}
+
+.cs-root .cs-dc-filter-tab:hover {
+    border-color: rgba(37, 99, 235, 0.30);
+    color: var(--cs-accent);
+}
+
+.cs-root .cs-dc-filter-tab.active {
+    background: rgba(37, 99, 235, 0.08);
+    border-color: rgba(37, 99, 235, 0.30);
+    color: var(--cs-accent);
+}
+
+/* ── Payment type badges ── */
+.cs-root .cs-dc-badge-prepay {
+    background: rgba(245, 158, 11, 0.15);
+    color: #F59E0B;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.cs-root .cs-dc-badge-loc {
+    background: rgba(46, 204, 113, 0.15);
+    color: #2ECC71;
+    border: 1px solid rgba(46, 204, 113, 0.3);
+}
+
+.cs-root .cs-dc-badge-deposit {
+    background: rgba(139, 92, 246, 0.15);
+    color: #8B5CF6;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+/* ── Edit modal fields ── */
+.cs-root .cs-dc-edit-field {
+    margin-bottom: 0.75rem;
+}
+
+.cs-root .cs-dc-edit-field:last-child {
+    margin-bottom: 0;
+}
+
+.cs-root .cs-dc-edit-label {
+    display: block;
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 0.35rem;
+}
+
+.cs-root .cs-dc-edit-select {
+    width: 100%;
+    padding: 0.45rem 0.625rem;
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color 100ms;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23888' viewBox='0 0 24 24'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    padding-right: 2rem;
+}
+
+.cs-root .cs-dc-edit-select:focus {
+    outline: none;
+    border-color: rgba(37, 99, 235, 0.45);
+}
+
+.cs-root .cs-dc-edit-select option {
+    background: var(--surface);
+    color: var(--text-primary);
+}

@@ -1,0 +1,262 @@
+/* =====================================================
+   Customer Service — Home Panel
+   Paper White: quiet cards, hairline borders, no glow
+   ===================================================== */
+
+.cs-root .cs-home-panel {
+    /* inherits .cs-panel */
+}
+
+/* ── Welcome banner ── */
+.cs-root .cs-home-welcome {
+    padding: 1.375rem 1.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.cs-root .cs-home-welcome-left {
+    display: flex;
+    align-items: center;
+    gap: 0.9375rem;
+}
+
+.cs-root .cs-home-welcome-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--cs-accent-soft);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--cs-accent);
+    flex-shrink: 0;
+}
+
+.cs-root .cs-home-welcome-greeting {
+    font-size: 1.125rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+    margin: 0 0 0.15rem;
+}
+
+.cs-root .cs-home-welcome-sub {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+}
+
+/* ── Section labels ── */
+.cs-root .cs-home-section-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--th-color);
+    margin: 1.25rem 0 0.625rem;
+}
+
+/* ── Quick stats grid ── */
+.cs-root .cs-home-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.875rem;
+}
+
+.cs-root .cs-home-stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.125rem 1.125rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    transition: border-color 150ms, box-shadow 150ms;
+}
+
+.cs-root .cs-home-stat-card:hover {
+    border-color: var(--border-hover);
+    box-shadow: var(--shadow-md);
+}
+
+.cs-root .cs-home-stat-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 0.25rem;
+    flex-shrink: 0;
+}
+
+/* Icon tint per variant (color comes from inline styles in template) */
+.cs-root .cs-home-stat-blue   .cs-home-stat-icon { background: rgba(37, 99, 235, 0.08); }
+.cs-root .cs-home-stat-amber  .cs-home-stat-icon { background: rgba(217, 119, 6, 0.09); }
+.cs-root .cs-home-stat-green  .cs-home-stat-icon { background: rgba(22, 163, 74, 0.08); }
+.cs-root .cs-home-stat-orange .cs-home-stat-icon { background: rgba(234, 88, 12, 0.09); }
+
+.cs-root .cs-home-stat-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    min-height: 1.75rem;
+    display: flex;
+    align-items: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.cs-root .cs-home-stat-skeleton {
+    display: inline-block;
+    width: 52px;
+    height: 26px;
+    border-radius: var(--radius-sm);
+    background: var(--track-bg);
+    animation: cs-home-shimmer 1.4s ease infinite;
+}
+
+@keyframes cs-home-shimmer {
+    0%, 100% { opacity: 0.5; }
+    50%       { opacity: 1; }
+}
+
+.cs-root .cs-home-stat-label {
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.cs-root .cs-home-stat-hint {
+    font-size: 0.6875rem;
+    color: var(--hint-color);
+    margin-top: 0.1rem;
+}
+
+/* ── My Performance strip ── */
+.cs-root .cs-home-perf-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.875rem;
+}
+
+@media (max-width: 560px) {
+    .cs-root .cs-home-perf-strip { grid-template-columns: repeat(2, 1fr); }
+}
+
+.cs-root .cs-home-perf-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 0.875rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    transition: border-color 150ms, box-shadow 150ms;
+}
+
+.cs-root .cs-home-perf-item:hover {
+    border-color: var(--border-hover);
+    box-shadow: var(--shadow-md);
+}
+
+.cs-root .cs-home-perf-value {
+    font-size: 1.375rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    line-height: 1;
+    min-height: 1.375rem;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.cs-root .cs-home-perf-label {
+    font-size: 0.6563rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+/* ── Recent activity list ── */
+.cs-root .cs-home-activity {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.cs-root .cs-home-activity-header {
+    padding: 0.875rem 1.125rem;
+    border-bottom: 1px solid var(--border-light);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--th-color);
+}
+
+.cs-root .cs-home-activity-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1.125rem;
+    border-bottom: 1px solid var(--table-row-divider);
+    transition: background 120ms;
+}
+
+.cs-root .cs-home-activity-item:last-child { border-bottom: none; }
+
+.cs-root .cs-home-activity-item:hover {
+    background: var(--table-hover);
+}
+
+.cs-root .cs-home-activity-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.cs-root .cs-home-activity-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.cs-root .cs-home-activity-text {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cs-root .cs-home-activity-sub {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 0.1rem;
+}
+
+.cs-root .cs-home-activity-time {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+}

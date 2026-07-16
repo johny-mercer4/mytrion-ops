@@ -463,6 +463,93 @@ export interface TouchpointMap {
     params: { escalationReason: string; questionSubject: string; description: string; attachmentUrl?: string };
     result: CreateEscalationResult;
   };
+  // ---- Customer Service (departmentAccess: ['customer-service'] — use api/cs.ts csTouchpoint) ----
+  'cs.home.metrics': { params: Record<string, never>; result: CsHomeMetrics };
+  'cs.applications.list': {
+    params: { tab: 'apps' | 'clients'; search?: string; page?: number; perPage?: number };
+    result: CsApplicationsList;
+  };
+  'cs.analytics.maintenance': {
+    params: { fromDate: string; toDate: string; prevFromDate: string; prevToDate: string };
+    result: CsMaintenanceAnalytics;
+  };
+  'cs.datacenter.deals': {
+    params: { lastSyncTime?: string };
+    result: CsDataCenterDeals;
+  };
+}
+
+// ---- Customer Service result shapes (widget-observed; legitimately-sparse fields optional) ----
+
+export interface CsRecentApp {
+  id?: string;
+  Name?: string;
+  Application_IDD?: string;
+  Stage?: string;
+  Status?: string;
+  Modified_Time?: string;
+  Last_Modified_Date?: string;
+}
+
+export interface CsHomeMetrics {
+  status?: string;
+  pendingApps?: number | string;
+  activeClients?: number | string;
+  maintenanceCases?: number | string;
+  myPendingApps?: number | string;
+  myClients?: number | string;
+  recentApps?: CsRecentApp[];
+}
+
+/** One enriched Applications row (mytrionGetApplications select list + Deal enrichment). */
+export type CsApplicationRow = Record<string, unknown>;
+
+export interface CsApplicationsList {
+  status?: string;
+  data?: CsApplicationRow[];
+  more_records?: boolean;
+  page?: number | string;
+  per_page?: number | string;
+}
+
+export interface CsMaintenanceAnalytics {
+  success?: boolean;
+  data?: {
+    totals?: {
+      current?: number;
+      previous?: number;
+      closed?: number;
+      halfComplete?: number;
+      fullComplete?: number;
+      open?: number;
+    };
+    daily?: Array<{ day?: string; count?: number }>;
+    byStatus?: Array<{ status?: string; count?: number }>;
+    byOwner?: Array<{ id?: string; name?: string; count?: number }>;
+  };
+}
+
+export interface CsDataCenterDeal {
+  id?: string;
+  Deal_Name?: string;
+  Stage?: string;
+  Amount?: number | string;
+  Carrier_ID?: string;
+  Payment_Type_Billing?: string;
+  Billing_Cycle?: string;
+  Billing_Verification?: string | boolean;
+  Closing_Date?: string;
+  Created_Time?: string;
+  Application_Date?: string;
+  Modified_Time?: string;
+  [key: string]: unknown;
+}
+
+export interface CsDataCenterDeals {
+  status?: string;
+  total_deals?: number;
+  deals?: CsDataCenterDeal[];
+  is_delta?: boolean;
 }
 
 export type TouchpointKey = keyof TouchpointMap;

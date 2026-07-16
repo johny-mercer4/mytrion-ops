@@ -408,6 +408,32 @@ export class ZohoDeskWrapper extends ZohoWrapper {
       return dept;
     });
   }
+
+  /**
+   * List Desk agents (`GET /agents`, paginated) — the CS analytics roster source. Ids are
+   * Desk agent ids (the DWH tickets' `assignee_id` space); the email is the join key to
+   * CRM identities.
+   */
+  async listAgents(): Promise<Array<{ id: string; name: string | null; email: string | null }>> {
+    const out: Array<{ id: string; name: string | null; email: string | null }> = [];
+    const LIMIT = 99; // Desk agents page cap
+    for (let from = 1; from <= 1 + LIMIT * 9; from += LIMIT) {
+      const rows = await this.listGet<Record<string, unknown>>('/agents', { from, limit: LIMIT });
+      for (const a of rows) {
+        if (a.id === undefined || a.id === null) continue;
+        const first = typeof a.firstName === 'string' ? a.firstName : '';
+        const last = typeof a.lastName === 'string' ? a.lastName : '';
+        const name = `${first} ${last}`.trim() || (typeof a.name === 'string' ? a.name : '');
+        out.push({
+          id: String(a.id),
+          name: name || null,
+          email: typeof a.emailId === 'string' ? a.emailId.toLowerCase() : null,
+        });
+      }
+      if (rows.length < LIMIT) break;
+    }
+    return out;
+  }
 }
 
 export const zohoDesk = new ZohoDeskWrapper();

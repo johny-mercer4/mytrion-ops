@@ -5,6 +5,7 @@
  */
 import type { Touchpoint } from '../types.js';
 import { carrierDelugeTouchpoints } from './carrierDeluge.js';
+import { csDelugeTouchpoints } from './csDeluge.js';
 import { financeDelugeTouchpoints } from './financeDeluge.js';
 import { salesDelugeTouchpoints } from './salesDeluge.js';
 import { serverCrmAgentTouchpoints } from './serverCrmAgent.js';
@@ -17,6 +18,7 @@ const ALL: Touchpoint[] = [
   ...salesDelugeTouchpoints,
   ...ticketsDelugeTouchpoints,
   ...financeDelugeTouchpoints,
+  ...csDelugeTouchpoints,
   ...serverCrmAgentTouchpoints,
   ...serverCrmMiscTouchpoints,
   ...serverCrmFinanceTouchpoints,
