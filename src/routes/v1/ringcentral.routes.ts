@@ -11,26 +11,14 @@
  * Embeddable). Switch to per-agent OAuth/PKCE before multi-extension prod.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { env } from '../../config/env.js';
+import { ringcentral } from '../../integrations/ringcentral.js';
 import { NotFoundError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment } from './helpers.js';
 
-const ADAPTER_BASE =
-  'https://apps.ringcentral.com/integration/ringcentral-embeddable/latest/adapter.js';
-
 function requireSalesAccess(request: FastifyRequest): TenantContext {
   return requireDepartment(request, 'sales', 'RingCentral phone');
-}
-
-function configured(): boolean {
-  return Boolean(
-    env.FF_RINGCENTRAL_ENABLED &&
-      env.RINGCENTRAL_CLIENT_ID &&
-      env.RINGCENTRAL_CLIENT_SECRET &&
-      env.RINGCENTRAL_JWT,
-  );
 }
 
 export async function ringcentralRoutes(app: FastifyInstance): Promise<void> {
@@ -38,24 +26,14 @@ export async function ringcentralRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/ringcentral/embed-config', guard, async (request) => {
     const ctx = requireSalesAccess(request);
-    if (!configured()) {
+    if (!ringcentral.isConfigured()) {
       throw new NotFoundError(
         'RingCentral is not configured (set FF_RINGCENTRAL_ENABLED=1 and RINGCENTRAL_CLIENT_ID/SECRET/JWT).',
       );
     }
 
-    const serverUrl = env.RINGCENTRAL_SERVER_URL.replace(/\/+$/, '');
-    const shipCreds = env.RINGCENTRAL_BROWSER_CREDS_ACK;
-    const qs = new URLSearchParams({
-      clientId: env.RINGCENTRAL_CLIENT_ID,
-      ...(shipCreds
-        ? { clientSecret: env.RINGCENTRAL_CLIENT_SECRET, jwt: env.RINGCENTRAL_JWT }
-        : {}),
-      appServer: serverUrl,
-      defaultCallWith: 'browser',
-      enableErrorReport: 'false',
-    });
-    if (shipCreds) {
+    const { browserCreds, ...config } = ringcentral.embedConfig();
+    if (browserCreds) {
       // Shared org credentials leave the server — keep an audit trail of who fetched them.
       await auditFromContext(ctx, {
         action: 'ringcentral.embed_config',
@@ -69,12 +47,6 @@ export async function ringcentralRoutes(app: FastifyInstance): Promise<void> {
           'set RINGCENTRAL_BROWSER_CREDS_ACK=1 to knowingly restore the Phase-1 behavior',
       );
     }
-
-    return {
-      enabled: true,
-      clientId: env.RINGCENTRAL_CLIENT_ID,
-      serverUrl,
-      adapterUrl: `${ADAPTER_BASE}?${qs.toString()}`,
-    };
+    return config;
   });
 }

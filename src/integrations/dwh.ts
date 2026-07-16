@@ -1,12 +1,14 @@
 /**
  * DWH wrapper — read-only access to the Data Warehouse Postgres (a separate, third-party
  * analytics DB; never migrated/written by us). A pooled connection, enforced read-only at the
- * session level. Tools that read the DWH go through `dwhQuery`.
+ * session level. Tools that read the DWH go through `dwh.query` (or the `dwhQuery` facade).
+ * Postgres dialect: `$1` placeholders — NOT portable to the CMP MySQL wrapper (`?`).
  */
 import pg from 'pg';
 import type { Pool, QueryResultRow } from 'pg';
 import { env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
+import { SqlWrapper } from './core/sqlBase.js';
 
 let pool: Pool | null = null;
 
@@ -29,19 +31,48 @@ export function getDwhPool(): Pool {
   return pool;
 }
 
-/** Run a read-only query against the DWH and return its rows. */
+export class DwhWrapper extends SqlWrapper {
+  readonly name = 'dwh';
+  readonly placeholderStyle = '$n' as const;
+  readonly readOnly = true;
+
+  isConfigured(): boolean {
+    return Boolean(env.DWH_DATABASE_URL);
+  }
+
+  protected override async probe(): Promise<void> {
+    await this.query('select 1');
+  }
+
+  /** Run a read-only query against the DWH and return its rows. */
+  async query<T extends object = Record<string, unknown>>(
+    text: string,
+    params: readonly unknown[] = [],
+  ): Promise<T[]> {
+    const result = await getDwhPool().query<T & QueryResultRow>(text, params as unknown[]);
+    return result.rows;
+  }
+
+  /** Close the pool (graceful shutdown / tests). */
+  async close(): Promise<void> {
+    if (pool) {
+      await pool.end();
+      pool = null;
+    }
+  }
+}
+
+export const dwh = new DwhWrapper();
+
+/** @deprecated Import { dwh } and call dwh.query — kept as a facade during migration. */
 export async function dwhQuery<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params: readonly unknown[] = [],
 ): Promise<T[]> {
-  const result = await getDwhPool().query<T>(text, params as unknown[]);
-  return result.rows;
+  return dwh.query<T>(text, params);
 }
 
-/** Close the pool (graceful shutdown / tests). */
-export async function closeDwhPool(): Promise<void> {
-  if (pool) {
-    await pool.end();
-    pool = null;
-  }
+/** @deprecated Import { dwh } and call dwh.close — kept as a facade during migration. */
+export function closeDwhPool(): Promise<void> {
+  return dwh.close();
 }
