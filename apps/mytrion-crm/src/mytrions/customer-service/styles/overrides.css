@@ -78,7 +78,7 @@
 }
 .cs-root .cs-boot-brand {
     font-weight: 700;
-    font-size: 11px;
+    font-size: 9px;
     letter-spacing: 0.11em;
     text-transform: uppercase;
     text-align: center;
@@ -87,20 +87,20 @@
 }
 .cs-root .cs-boot-brand > span { color: var(--cs-accent); }
 .cs-root .cs-boot-brand-sub {
-    font-size: 6.5px !important;
+    font-size: 5.5px !important;
     letter-spacing: 0.2em;
     color: var(--text-muted) !important;
 }
 .cs-root .cs-boot-title {
     font-weight: 700;
-    font-size: 12.5px;
+    font-size: 10px;
     letter-spacing: 0.05em;
     text-transform: uppercase;
     text-align: center;
     color: var(--text-primary);
 }
 .cs-root .cs-boot-sub {
-    font-size: 11px;
+    font-size: 9px;
     color: var(--text-muted);
     margin-top: 4px;
     text-align: center;
@@ -589,9 +589,14 @@
     to { opacity: 1; transform: none; }
 }
 
-/* Each panel fades up when it first mounts (widget lazy-mounts on first visit). */
+/* Each panel fades up when it first mounts (widget lazy-mounts on first visit).
+   NOTE: fill-mode is `backwards`, not `both`, on purpose — a lingering `both`
+   fill leaves an identity-matrix transform on the panel, which establishes a
+   containing block and traps position:fixed descendants (the modal backdrop
+   would anchor to the panel instead of the viewport → off-centre modals).
+   `backwards` reverts transform to a real `none` once the entrance finishes. */
 .cs-root .cs-content .cs-panel {
-    animation: csFadeUp 0.42s cubic-bezier(0.2, 0, 0, 1) both;
+    animation: csFadeUp 0.42s cubic-bezier(0.2, 0, 0, 1) backwards;
 }
 
 /* Cards enter with a short stagger so a dashboard "assembles" instead of popping. */
