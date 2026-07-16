@@ -2164,3 +2164,63 @@ Wrapper Systems (integrations/, facades kept — consumer migration is a follow-
 - New GET /v1/health/integrations (admin-gated; ?live=1 runs cheap probes). /v1/health untouched.
 
 Tests: full suite 551 green (was 511), typecheck + lint clean. All commits on feature/MytrionSetup.
+
+## 2026-07-16 (pm) — Customer Service Mytrion: full live port (branch feature/customer-service-mytrion)
+
+Migrated the zoho-octane `app/mytrion-customer-service` widget onto the app, Sales-playbook style
+(backend surface first, then a live-data pass over the existing CS scaffold UI — design unchanged).
+Scope: Home, Applications, Citifuel, Analytics + Data Center (fully coded in the widget but
+nav-disabled there); Inbox/Service Center stay "Soon" stubs; dept AI chat via MytrionShell.
+
+Backend:
+- `zohoCrmRecords.ts` — CRM v8 record CRUD/search/fields wrapper; every mutation checks the
+  PER-ROW response code (Zoho 200s row-level failures and silently drops wrong-cased fields).
+- `modules/customerService/fieldResolver.ts` — live `/settings/fields` metadata (15-min cache)
+  resolves the org's ambiguous field casings (Limits_added/Limits_Added, Chain_policy/…); an
+  unknown key is a 400, never Zoho's silent no-op. Verified live: the module's real casings are
+  Limits_Added / Chain_Policy / Mobile_Driver_App.
+- Touchpoints `cs.*` (csDeluge.ts): home.metrics / applications.list / analytics.maintenance /
+  datacenter.deals — all `departments: ['customer-service']`; unwrap modes matched to each
+  function's real envelope. Gotcha: the datacenter full-load sentinel is `lastSyncTime: ''` —
+  shortText's min(1) 400'd it (found in browser verify).
+- Routes: `/cs/applications/:id` + `/onboarding` (edit-modal save + tick-boxes with Edit_History
+  APPEND, session-authoritative Who_Edited, DEAL_FIELD_MAP mirror best-effort with warning);
+  `/cs/citifuel` list/meta/stats/lookups + CRUD (stats are server-built COQL — the widget's
+  client-supplied-COQL `citigetstats` is deliberately NOT reproduced); `/cs/analytics/{tickets,
+  calls}` DWH proxy with server-side scope forcing (non-managers locked to their own Desk
+  assignee/owner email via the roster email join; unmatched ⇒ explicit flag, never org-wide),
+  `/cs/analytics/roster` (manager-only), `/cs/analytics/tickets/team-open` (narrow team aggregate
+  for Home — parity: every agent sees team totals, never per-agent detail), `/cs/context`
+  (backend manager verdict), `/cs/data-center/deals/:id` (billing allowlist).
+- Manager tier: CS_MANAGER_ROLE_MARKERS env (substring vs profile+role) replaces the widget's
+  hardcoded name allowlist. RBAC facts verified against the live roster: there are NO
+  'Customer Service'/'Support' profiles — CS staff are Zoho ROLES 'Customer Service Agent' (20)
+  / 'Customer Service Manager' (2); dept derivation via deriveWorkerDepartments matches on role.
+- `mytrionGetDeskAgents` Deluge is NOT_ACTIVE in the org (verified live) — roster now sources
+  from Desk REST `GET /agents` (new zohoDesk.listAgents, 133 agents) with Deluge as fallback.
+
+Frontend (apps/mytrion-crm):
+- `api/cs.ts` (dept pinned to customer-service — `callTouchpoint` defaults to sales, footgun),
+  cs.* touchpointTypes, `useLoad` extracted to `mytrions/_shared/useLoad.ts` (sales re-exports).
+- `customer-service/live.ts` maps real payloads onto the scaffold's view-model shapes:
+  applications rows (alias-tolerant casing reads), citifuel rows (+raw record for the edit
+  round-trip), analytics blocks (daily/byPriority/byStatus + email-join leaderboard),
+  data-center deals with sessionStorage cache + COQL-timestamp delta sync (widget parity).
+- Panels wired live with loading/error/empty states; Applications gets server-driven
+  search/pagination + optimistic onboarding toggles + a full edit form; Citifuel gets live
+  status tabs/stats + Accounts/user typeaheads + create/edit/delete; Analytics renders the
+  leaderboard only on the `/cs/context` verdict; NEW DataCenter tab + billing edit modal.
+- Improvement over the widget: "My Tickets (Month)" works (the widget couldn't — no Desk↔CRM
+  id mapping; our backend joins by email).
+
+Verified live in the browser (dev mock-auth, admin): all five panels render REAL data —
+1203 team open tickets + priority histogram, 200+ applications from mytrionGetApplications,
+515 Citifuel clients with live COQL stats, analytics KPIs/volume/leaderboard with real agent
+names, 7,915 Data Center deals. Writes (Applications save/tick, Citifuel CRUD, Deal billing)
+are wired but deliberately NOT exercised against prod CRM — verify with a real CS login on a
+scratch record. 571 backend + 49 app tests green.
+
+Left for follow-up: Applications Zip_Code/Address edit fields (not in the condensed view-model),
+merged tickets+calls leaderboard (widget merged by email; we render per-tab boards), Inbox /
+Service Center panels (mock-only in the widget too), Deluge home-metrics identity for admin
+API-key callers (no zoho id → team cards only).
