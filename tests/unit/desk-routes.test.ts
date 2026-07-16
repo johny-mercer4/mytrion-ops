@@ -31,6 +31,10 @@ vi.mock('../../src/integrations/zohoDesk.js', async (importOriginal) => {
     createDeskTicket: vi.fn(async () => 'tk_new'),
   };
 });
+vi.mock('../../src/integrations/salesDataCenter.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/integrations/salesDataCenter.js')>();
+  return { ...mod, fetchDealOwnerId: vi.fn(async () => null) };
+});
 vi.mock('../../src/modules/touchpoints/dispatcher.js', () => ({
   dispatchTouchpoint: vi.fn(async () => ({ ok: true, data: {} })),
 }));
@@ -41,7 +45,9 @@ vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
 
 import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
+import { fetchDealOwnerId } from '../../src/integrations/salesDataCenter.js';
 import {
+  createDeskTicket,
   getTicket,
   getTicketAttachmentContent,
   postTicketComment,
@@ -54,6 +60,8 @@ const searchMock = vi.mocked(searchTicketsByCreator);
 const getTicketMock = vi.mocked(getTicket);
 const postCommentMock = vi.mocked(postTicketComment);
 const attachmentMock = vi.mocked(getTicketAttachmentContent);
+const createTicketMock = vi.mocked(createDeskTicket);
+const dealOwnerMock = vi.mocked(fetchDealOwnerId);
 
 let app: FastifyInstance;
 beforeAll(async () => {
@@ -234,5 +242,80 @@ describe('per-ticket routes — IDOR regression', () => {
     await app.inject({ method: 'GET', url: '/v1/desk/tickets/tk_777/comments', headers: bearer(token) });
     await app.inject({ method: 'GET', url: '/v1/desk/tickets/tk_777/comments', headers: bearer(token) });
     expect(getTicketMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ticket create — deal ownership', () => {
+  /** Minimal multipart body for the create-ticket wizard fields. */
+  function multipart(fields: Record<string, string>) {
+    const boundary = '----vitestboundary';
+    const body =
+      Object.entries(fields)
+        .map(([k, v]) => `--${boundary}\r\ncontent-disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`)
+        .join('') + `--${boundary}--\r\n`;
+    return { payload: body, contentType: `multipart/form-data; boundary=${boundary}` };
+  }
+
+  const FIELDS = {
+    department: 'cs',
+    ticketType: 'Card Issue',
+    dealId: '5550001',
+    subject: 'Card not working',
+    description: 'Pump declines the card.',
+  };
+
+  it("filing on someone else's deal → 403 and no ticket is created", async () => {
+    dealOwnerMock.mockResolvedValue('999');
+    const token = await workerToken('Sales Rep');
+    const { payload, contentType } = multipart(FIELDS);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/desk/tickets',
+      headers: { ...bearer(token), 'content-type': contentType },
+      payload,
+    });
+    expect(res.statusCode).toBe(403);
+    expect(createTicketMock).not.toHaveBeenCalled();
+  });
+
+  it('filing on your own deal → ticket created', async () => {
+    dealOwnerMock.mockResolvedValue('42');
+    const token = await workerToken('Sales Rep');
+    const { payload, contentType } = multipart(FIELDS);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/desk/tickets',
+      headers: { ...bearer(token), 'content-type': contentType },
+      payload,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(createTicketMock).toHaveBeenCalled();
+  });
+
+  it('admin skips the deal ownership lookup', async () => {
+    const token = await workerToken('Administrator');
+    const { payload, contentType } = multipart(FIELDS);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/desk/tickets',
+      headers: { ...bearer(token), 'content-type': contentType },
+      payload,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(dealOwnerMock).not.toHaveBeenCalled();
+  });
+
+  it('a non-numeric dealId is rejected before any CRM call', async () => {
+    const token = await workerToken('Sales Rep');
+    const { payload, contentType } = multipart({ ...FIELDS, dealId: "5' or '1'='1" });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/desk/tickets',
+      headers: { ...bearer(token), 'content-type': contentType },
+      payload,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(dealOwnerMock).not.toHaveBeenCalled();
+    expect(createTicketMock).not.toHaveBeenCalled();
   });
 });

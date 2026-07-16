@@ -10,7 +10,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { env } from '../../config/env.js';
-import { AppError } from '../../lib/errors.js';
+import { AppError, RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
   createDeskTicket,
@@ -24,6 +24,7 @@ import {
   searchTicketsByCreator,
   uploadDeskFile,
 } from '../../integrations/zohoDesk.js';
+import { fetchDealOwnerId } from '../../integrations/salesDataCenter.js';
 import { dispatchTouchpoint } from '../../modules/touchpoints/dispatcher.js';
 import { assertTicketOwned } from '../../modules/tools/deskScope.js';
 import { resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
@@ -72,7 +73,8 @@ const replyBody = z.object({
 const createTicketFields = z.object({
   department: z.enum(['cs', 'billing', 'verification', 'maintenance']),
   ticketType: z.string().min(1).max(120),
-  dealId: z.string().min(1).max(60),
+  // CRM record ids are numeric strings — enforced here AND in fetchDealOwnerId (COQL safety).
+  dealId: z.string().regex(/^\d+$/, 'dealId must be a CRM record id').max(60),
   subject: z.string().min(1).max(300),
   description: z.string().min(1).max(8000),
   carrierId: z.string().max(60).optional(),
@@ -245,6 +247,22 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
     const { fields, file } = await readMultipart(request);
     const f = createTicketFields.parse(fields);
     const crmUserId = resolveZohoUserId(ctx);
+    // dealId is caller-supplied — a non-admin may only file tickets on their OWN deals.
+    if (!ctx.allDepartmentAccess && !ctx.bypassRbac) {
+      const dealOwnerId = await fetchDealOwnerId(f.dealId).catch(() => {
+        throw deskError(new Error('Deal ownership check failed'));
+      });
+      if (dealOwnerId !== crmUserId) {
+        await auditFromContext(ctx, {
+          action: 'desk.ticket.create',
+          status: 'denied',
+          resourceType: 'crm_deal',
+          resourceId: f.dealId,
+          detail: { reason: 'deal not owned by caller', dealOwnerId },
+        });
+        throw new RBACError('This deal is not yours — you can only file tickets on your own deals.');
+      }
+    }
     try {
       const deskTicketId = await createDeskTicket({
         subject: `CRM Ticket: ${f.subject}`,

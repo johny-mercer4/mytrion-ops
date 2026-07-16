@@ -49,3 +49,19 @@ export async function fetchAgentDeals(ownerId: string, limit = 2000): Promise<Cr
   const q = `select ${DEAL_FIELDS} from Deals where Owner = '${uid}' order by Modified_Time desc limit 0, ${clampLimit(limit)}`;
   return (await runCoql(q)).rows;
 }
+
+/**
+ * A Deal's Owner id (lookup `Owner` comes back as `{name,id}`), or null when the deal doesn't
+ * exist. Backs the ticket-create ownership check: a non-admin may only file tickets on their
+ * own deals. Record ids are numeric strings — reuse the owner-id assertion so a caller-supplied
+ * dealId can't be smuggled into COQL.
+ */
+export async function fetchDealOwnerId(dealId: string): Promise<string | null> {
+  const id = assertOwnerId(dealId);
+  const { rows } = await runCoql(`select Owner from Deals where id = '${id}' limit 0, 1`);
+  const owner = rows[0]?.Owner;
+  if (owner && typeof owner === 'object' && 'id' in owner) {
+    return String((owner as { id: unknown }).id ?? '') || null;
+  }
+  return null;
+}
