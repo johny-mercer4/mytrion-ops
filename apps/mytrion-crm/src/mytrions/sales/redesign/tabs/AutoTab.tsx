@@ -3,23 +3,23 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import type { MoneyCodePreview } from '@/api/touchpointTypes';
-import { callTouchpoint, logAutomation } from '@/api/touchpoints';
+import { logAutomation } from '@/api/touchpoints';
 import { s, Svg, Badge } from '../dc';
-import { badge, deptStyle, iconBox, type BadgeVM } from '../salesData';
+import { badge, deptStyle, iconBox, nyDaysAgo, nyToday, type BadgeVM } from '../salesData';
 import { useLoad, money } from '../live';
 import {
   AUTO_LIST, LIMITTYPES, MONEY_CODE_REASONS, RUNNABLE, PHASE_MAP,
-  loadDeals, loadCards, loadMoneyCodePreview, mapWex, mapWexSearchRow,
-  type Automation, type Deal, type Card, type WexResult, type InvRow,
+  loadDeals, loadCards, loadMoneyCodePreview,
+  type Automation, type Deal, type Card, type InvRow,
   type DonePayload, type Addr, type UnitDriverForm, type MoneyCodeForm,
 } from '../autoLive';
 import { runAutomation } from '../autoRunners';
 import { AutoInvoicesPanel, AutoTransactionsPanel } from '../AutoResultPanels';
 import { AutoCatalog } from '../AutoCatalog';
 import { AutoFloatingDrop } from '../AutoFloatingDrop';
+import { AutoWexPanel } from '../AutoWexPanel';
 import { TXN_RANGE_PRESETS, type TxnReportState } from '../txnReport';
 
-interface WexQ { appId: string; last: string; mc: string; }
 type Step = 'config' | 'running' | 'done';
 type LimitDir = 'increase' | 'decrease';
 
@@ -27,7 +27,6 @@ const DEPT_COL: Record<string, string> = { C: 'var(--orange)', Q: 'var(--accent)
 const cardCol: Record<string, string> = { active: 'var(--ok)', fraud: 'var(--danger)', inactive: 'var(--muted)' };
 const grad = 'linear-gradient(120deg,var(--accent),var(--accent-2))';
 /** Surface (not alt) — light-mode picklists stay clean white, not grey wash. */
-const inp40 = 'width:100%;height:40px;padding:0 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
 const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:11px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
 const inp44 = 'width:100%;height:44px;padding:0 14px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
 const labelCss = 'font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
@@ -50,13 +49,10 @@ const invStatuses = [
   { value: 'PAID', label: 'Paid' },
 ];
 const txnRanges = TXN_RANGE_PRESETS.map((p) => ({ value: p.value, label: p.label }));
-const todayIso = () => new Date().toISOString().slice(0, 10);
-const daysAgoIso = (n: number) => {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
-};
-const skel8 = [1, 2, 3, 4, 5, 6, 7, 8];
+// Date defaults/bounds follow the NY calendar (the sales floor's day), not the viewer's/UTC —
+// toISOString() here used to show "tomorrow" for late-evening ET users.
+const todayIso = () => nyToday();
+const daysAgoIso = (n: number) => nyDaysAgo(n);
 const limitBtn = (on: boolean, col: string): string =>
   `flex:1;padding:9px;border-radius:9px;border:1px solid ${on ? col : 'var(--border)'};background:${on ? `color-mix(in srgb,${col} 16%,transparent)` : 'var(--surface)'};color:${on ? col : 'var(--muted)'};font-size:12.5px;font-weight:700;cursor:pointer;transition:all .14s`;
 const btnP = (extra: string): string => `border:none;background:${grad};color:#fff;font-weight:700;cursor:pointer;${extra}`;
@@ -101,10 +97,6 @@ export function AutoTab() {
   const [autoRunErr, setAutoRunErr] = useState<string | null>(null);
   const [invRows, setInvRows] = useState<InvRow[]>([]);
   const [txnReport, setTxnReport] = useState<TxnReportState | null>(null);
-  const [wexQ, setWexQ] = useState<WexQ>({ appId: '', last: '', mc: '' });
-  const [wexSearching, setWexSearching] = useState(false);
-  const [wexResults, setWexResults] = useState<readonly WexResult[] | null>(null);
-  const [wexErr, setWexErr] = useState<string | null>(null);
 
   const progTimer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const fetchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -140,7 +132,7 @@ export function AutoTab() {
     setAutoProgress(0); setAutoPhase(''); setAutoResult(null); setAutoRunErr(null);
     setInvRows([]); setTxnReport(null); setUnitDriver(UD0); setMoneyForm(MC0);
     setAutoAddr({ address: '', city: '', state: '', zip: '' }); setAutoNote(''); setAutoDue('');
-    setWexQ({ appId: '', last: '', mc: '' }); setWexSearching(false); setWexResults(null); setWexErr(null);
+    // WEX search state lives in <AutoWexPanel/>, which remounts per modal open.
   };
   const closeAuto = (): void => { if (autoStep === 'running') return; clearInterval(progTimer.current); setAutoModal(null); };
   const setDealQuery = (v: string): void => { setAutoDealQuery(v); setAutoShowDrop(true); };
@@ -153,35 +145,8 @@ export function AutoTab() {
   };
   const clearCard = (): void => setAutoCard(null);
   const setAddr = (k: keyof Addr, v: string): void => setAutoAddr((a) => ({ ...a, [k]: v }));
-  const setWexField = (k: keyof WexQ, v: string): void => setWexQ((q) => ({ ...q, [k]: v }));
   const setUd = (k: keyof UnitDriverForm, v: string): void => setUnitDriver((f) => ({ ...f, [k]: v }));
   const setMc = (k: keyof MoneyCodeForm, v: string): void => setMoneyForm((f) => ({ ...f, [k]: v }));
-
-  const runWex = (): void => {
-    const appId = wexQ.appId.trim();
-    const lastName = wexQ.last.trim();
-    const mc = wexQ.mc.trim();
-    setWexResults(null); setWexErr(null);
-    if (!appId && !lastName && !mc) { setWexErr('Enter an Application ID, last name, or MC number.'); return; }
-    setWexSearching(true);
-    const search = appId && !lastName && !mc
-      ? callTouchpoint('wex.application', { appId }).then((res) => {
-          if (!res || res.found === false) return [] as WexResult[];
-          return [mapWex(res, appId)];
-        })
-      : callTouchpoint('wex.applications_search', {
-          ...(appId ? { appId } : {}),
-          ...(lastName ? { lastName } : {}),
-          ...(mc ? { mc } : {}),
-        }).then((res) => {
-          const rows = (res.data ?? res.applications ?? []) as Array<Record<string, unknown>>;
-          return rows.map((r, i) => mapWexSearchRow(r, i));
-        });
-    search
-      .then((rows) => setWexResults(rows))
-      .catch((e: unknown) => { setWexErr(e instanceof Error ? e.message : 'Search failed.'); setWexResults([]); })
-      .finally(() => setWexSearching(false));
-  };
 
   const resetAuto = (): void => {
     setAutoStep('config'); setAutoProgress(0); setAutoResult(null); setAutoCard(null);
@@ -260,8 +225,6 @@ export function AutoTab() {
       : `${runVerb} completed for ${autoDeal?.name ?? 'the selected client'}.`;
   const autoCardDisplay = autoCard ? `•••• ${autoCard.number.slice(-4)}` : '';
   const autoCardBadge: BadgeVM = autoCard ? badge(autoCard.status.toUpperCase(), cardCol[autoCard.status] ?? 'var(--muted)') : { text: '', style: '' };
-  const wexResultsVM = (wexResults ?? []).map((r) => ({ ...r, statusBadge: badge(r.group, r.group === 'Complete' ? 'var(--ok)' : 'var(--warn)') }));
-  const wexShow = wexResults !== null && !wexSearching;
   const autoResultInvoices = autoResult?.kind === 'invoices';
   const autoResultTxn = autoResult?.kind === 'transactions';
   const autoResultTable = autoResult?.kind === 'table' ? autoResult : null;
@@ -306,30 +269,7 @@ export function AutoTab() {
             >
               {autoStep === 'config' && (
                 <div style={s('display:flex;flex-direction:column;gap:18px')}>
-                  {kind === 'search' && (
-                    <div>
-                      <div style={s('font-size:12.5px;color:var(--text2);margin-bottom:12px')}>Search WEX applications by Application ID, last name, or MC.</div>
-                      <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-                        <div><Lbl t="Application ID" /><input value={wexQ.appId} onChange={(e) => setWexField('appId', e.target.value)} placeholder="e.g. 872228" className="ss-in" style={s(inp40)} /></div>
-                        <div><Lbl t="Last Name" /><input value={wexQ.last} onChange={(e) => setWexField('last', e.target.value)} placeholder="e.g. Crossan" className="ss-in" style={s(inp40)} /></div>
-                        <div><Lbl t="MC Number" /><input value={wexQ.mc} onChange={(e) => setWexField('mc', e.target.value)} placeholder="e.g. 285921" className="ss-in" style={s(inp40)} /></div>
-                        <div style={s('display:flex;align-items:flex-end')}><button onClick={runWex} className="ss-btn-p" style={s(btnP('width:100%;height:40px;border-radius:10px;font-size:13px'))}>Search</button></div>
-                      </div>
-                      {wexSearching && <div style={s('margin-top:16px;display:flex;flex-direction:column;gap:9px')}>{skel8.map((sk) => <div key={sk} style={s('display:flex;gap:10px;padding:13px;border-radius:11px;background:var(--alt);border:1px solid var(--border2)')}><div className="ss-skel" style={s('flex:1;height:14px')}></div><div className="ss-skel" style={s('width:60px;height:14px')}></div></div>)}</div>}
-                      {wexErr && <div style={s(`margin-top:16px;${dropErr}`)}>{wexErr}</div>}
-                      {wexShow && wexResultsVM.length === 0 && !wexErr && <div style={s(`margin-top:16px;${dropMsg}`)}>No applications found.</div>}
-                      {wexShow && wexResultsVM.length > 0 && (
-                        <div style={s('margin-top:16px;display:flex;flex-direction:column;gap:9px')}>
-                          {wexResultsVM.map((r) => (
-                            <div key={r.appId} className="ss-card-h" style={s('padding:13px 15px;border-radius:12px;background:var(--surface);border:1px solid var(--border)')}>
-                              <div style={s('display:flex;align-items:center;justify-content:space-between;gap:8px')}><span style={s('font-size:13.5px;font-weight:700')}>{r.company}</span><Badge vm={r.statusBadge} /></div>
-                              <div style={s(`font-size:11.5px;color:var(--muted);margin-top:5px;${mono}`)}>App #{r.appId} · {r.contact} · {r.status}</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  {kind === 'search' && <AutoWexPanel />}
 
                   {kind === 'link' && (
                     <div style={s('padding:14px 16px;border-radius:12px;background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:12.5px;color:var(--text2);line-height:1.5')}>Opens the WEX EFS eManager credentials guide PDF in a new tab.</div>

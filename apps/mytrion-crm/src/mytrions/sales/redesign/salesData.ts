@@ -100,6 +100,22 @@ export const NAVLABEL: Record<string, string> = {
 
 const NY_TZ = 'America/New_York';
 
+/**
+ * yyyy-MM-dd for `n` days before "today" on the NY calendar — the sales floor's day, not the
+ * viewer's or UTC (toISOString-based dates showed "tomorrow" for late-evening ET users).
+ * en-CA formats as yyyy-MM-dd directly.
+ */
+export function nyDaysAgo(n: number): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: NY_TZ }).format(
+    new Date(Date.now() - n * 86_400_000),
+  );
+}
+
+/** Today's yyyy-MM-dd on the NY calendar. */
+export function nyToday(): string {
+  return nyDaysAgo(0);
+}
+
 export function timeParts(now: Date = new Date()) {
   // The workday progress + clock are always in New York (EST/EDT), regardless of the viewer's
   // own timezone — the sales floor runs on NY hours.
