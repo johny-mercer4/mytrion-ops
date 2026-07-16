@@ -21,8 +21,6 @@ declare global {
   }
 }
 
-const JSPDF_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-
 let loadPromise: Promise<void> | null = null;
 
 function injectScript(src: string, id: string): Promise<void> {
@@ -43,10 +41,12 @@ export async function ensureTxnExportLibs(): Promise<void> {
   if (window.MytrionPdfUtils && window.MytrionExcelUtils && window.MytrionDownload) return;
   if (!loadPromise) {
     loadPromise = (async () => {
-      if (!window.jspdf?.jsPDF && !window.jsPDF) {
-        await injectScript(JSPDF_CDN, 'mytrion-jspdf');
-      }
       const base = `${import.meta.env.BASE_URL || '/'}vendor/mytrion`;
+      if (!window.jspdf?.jsPDF && !window.jsPDF) {
+        // Vendored (public/vendor/mytrion, sourced from the jspdf@2.5.1 devDependency) like
+        // the other helpers — no runtime CDN dependency, works offline/behind CSP.
+        await injectScript(`${base}/jspdf.umd.min.js`, 'mytrion-jspdf');
+      }
       await injectScript(`${base}/download-utils.js`, 'mytrion-download-utils');
       await injectScript(`${base}/pdf-utils.js`, 'mytrion-pdf-utils');
       await injectScript(`${base}/excel-utils.js`, 'mytrion-excel-utils');
