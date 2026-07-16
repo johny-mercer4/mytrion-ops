@@ -271,6 +271,11 @@ const EnvSchema = z.object({
   RINGCENTRAL_SERVER_URL: z.string().default('https://platform.ringcentral.com'),
   // Gates GET /v1/ringcentral/embed-config + the Sales softphone bootstrap.
   FF_RINGCENTRAL_ENABLED: flag('0'),
+  // Explicit ops acknowledgment that the shared client secret + org JWT are handed to every
+  // sales browser via the adapter URL (the Phase-1 shared-extension shortcut). OFF by default:
+  // the adapter loads without credentials (agents see RingCentral's own login instead of JWT
+  // auto-login). Set to 1 only as a deliberate decision; every fetch is then audited.
+  RINGCENTRAL_BROWSER_CREDS_ACK: flag('0'),
 
   // --- Vendor: Octane internal API ---
   OCTANE_INTERNAL_API_URL: z.string().default(''),
