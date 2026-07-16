@@ -38,7 +38,7 @@ describe('catalog shape', () => {
   it('has unique keys and the expected size', () => {
     const keys = all.map((t) => t.key);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(25);
+    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(29);
     expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(44);
   });
 
