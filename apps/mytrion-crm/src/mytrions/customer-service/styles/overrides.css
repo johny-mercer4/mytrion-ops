@@ -1,0 +1,236 @@
+/* SPA-hosting overrides on top of the ported widget CSS (the only hand-written file in
+   styles/ — everything else is machine-scoped from zoho-octane). */
+
+/* The module renders inside the app router's full page — pin the shell to the viewport. */
+.cs-root {
+    height: 100vh;
+    width: 100%;
+}
+
+/* ── Floating AI copilot (CsCopilot) — launcher + pop-over, CS Paper White tokens.
+      Same UX as the Sales Mytrion copilot; replaces the old full AI Chat tab. ── */
+.cs-root .cs-copilot-fab {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 90;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    background: linear-gradient(140deg, var(--cs-accent), var(--cs-accent-hover));
+    box-shadow: 0 8px 26px var(--cs-accent-glow);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cs-root .cs-copilot-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2px solid var(--cs-accent);
+    animation: cs-copilot-ring 2.2s ease-out infinite;
+    pointer-events: none;
+}
+
+@keyframes cs-copilot-ring {
+    0% { transform: scale(1); opacity: 0.6; }
+    100% { transform: scale(1.5); opacity: 0; }
+}
+
+.cs-root .cs-copilot-panel {
+    position: fixed;
+    right: 24px;
+    bottom: 92px;
+    z-index: 95;
+    width: 380px;
+    max-width: calc(100vw - 40px);
+    height: 560px;
+    max-height: calc(100vh - 130px);
+    display: flex;
+    flex-direction: column;
+    border-radius: 18px;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: 0 24px 60px rgba(16, 24, 40, 0.22);
+    animation: cs-copilot-pop 0.24s cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@keyframes cs-copilot-pop {
+    from { transform: translateY(10px) scale(0.98); opacity: 0; }
+    to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.cs-root .cs-copilot-head {
+    flex-shrink: 0;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    background: linear-gradient(120deg, var(--cs-accent-soft), transparent), var(--surface);
+    border-bottom: 1px solid var(--border);
+}
+
+.cs-root .cs-copilot-mark {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: linear-gradient(140deg, var(--cs-accent), var(--cs-accent-hover));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.cs-root .cs-copilot-dot {
+    position: absolute;
+    right: -1px;
+    bottom: -1px;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--cs-success);
+    border: 2px solid var(--surface);
+}
+
+.cs-root .cs-copilot-head-txt { flex: 1; line-height: 1.2; min-width: 0; }
+.cs-root .cs-copilot-title { font-weight: 700; font-size: 0.9375rem; color: var(--text-primary); }
+.cs-root .cs-copilot-status { font-size: 0.65rem; color: var(--cs-success); font-weight: 600; }
+
+.cs-root .cs-copilot-close {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.cs-root .cs-copilot-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: var(--color-bg-primary);
+}
+
+.cs-root .cs-copilot-msg { display: flex; gap: 8px; align-items: flex-end; }
+.cs-root .cs-copilot-msg-user { flex-direction: row-reverse; }
+
+.cs-root .cs-copilot-avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    background: linear-gradient(140deg, var(--cs-accent), var(--cs-accent-hover));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.cs-root .cs-copilot-bubble {
+    max-width: 80%;
+    padding: 11px 13px;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.cs-root .cs-copilot-bubble-ai {
+    border-radius: 14px 14px 14px 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+}
+
+.cs-root .cs-copilot-bubble-user {
+    border-radius: 14px 14px 4px 14px;
+    background: linear-gradient(140deg, var(--cs-accent), var(--cs-accent-hover));
+    color: #fff;
+}
+
+.cs-root .cs-copilot-err { color: var(--cs-danger); }
+
+.cs-root .cs-copilot-typing { display: flex; gap: 4px; align-items: center; }
+.cs-root .cs-copilot-typing span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    animation: cs-copilot-dot 1.2s infinite;
+}
+.cs-root .cs-copilot-typing span:nth-child(2) { animation-delay: 0.2s; }
+.cs-root .cs-copilot-typing span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes cs-copilot-dot {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+    30% { transform: translateY(-4px); opacity: 1; }
+}
+
+.cs-root .cs-copilot-foot { flex-shrink: 0; border-top: 1px solid var(--border); background: var(--surface); }
+.cs-root .cs-copilot-chips { display: flex; gap: 7px; padding: 11px 13px 0; overflow-x: auto; }
+.cs-root .cs-copilot-chip {
+    flex-shrink: 0;
+    padding: 6px 11px;
+    border-radius: 99px;
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    color: var(--text-secondary);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.cs-root .cs-copilot-chip:disabled { opacity: 0.5; cursor: default; }
+
+.cs-root .cs-copilot-compose { display: flex; gap: 9px; align-items: flex-end; padding: 11px 13px 13px; }
+.cs-root .cs-copilot-input {
+    flex: 1;
+    height: 40px;
+    padding: 0 13px;
+    border-radius: 11px;
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+}
+.cs-root .cs-copilot-input:focus { outline: none; border-color: var(--cs-accent); }
+.cs-root .cs-copilot-send {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border-radius: 11px;
+    border: none;
+    background: linear-gradient(140deg, var(--cs-accent), var(--cs-accent-hover));
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.cs-root .cs-copilot-send:disabled { opacity: 0.5; cursor: default; }
+
+/* Sidebar footer gains a "Switch Mytrion" affordance (the widget had no app switcher). */
+.cs-root .cs-switch-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.6875rem;
+    transition: color 0.15s ease;
+}
+
+.cs-root .cs-switch-link:hover {
+    color: var(--cs-accent);
+}

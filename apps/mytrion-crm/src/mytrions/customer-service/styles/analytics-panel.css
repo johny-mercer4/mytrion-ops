@@ -1,0 +1,504 @@
+/* =====================================================
+   Customer Service — Analytics Panel
+   Paper White: quiet cards, hairline chrome, blue accent
+   ===================================================== */
+
+/* ── Panel header controls ── */
+.cs-root .cs-an-header-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    flex-wrap: wrap;
+}
+
+.cs-root .cs-an-range-chip {
+    display: inline-block;
+    margin-left: 0.4rem;
+    padding: 0.15rem 0.5625rem;
+    border-radius: var(--radius-full);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    background: var(--cs-accent-soft);
+    color: var(--cs-accent);
+    vertical-align: middle;
+}
+
+.cs-root .cs-an-range-select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    font-family: inherit;
+    padding: 0.4375rem 0.625rem;
+    cursor: pointer;
+    transition: border-color 150ms, box-shadow 150ms;
+}
+.cs-root .cs-an-range-select:focus {
+    outline: none;
+    border-color: var(--cs-accent);
+    box-shadow: 0 0 0 3px var(--cs-accent-glow);
+}
+
+.cs-root .cs-an-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.4375rem 0.8125rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    font-family: inherit;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: border-color 150ms, color 150ms;
+}
+.cs-root .cs-an-back-btn:hover {
+    border-color: var(--cs-accent);
+    color: var(--cs-accent);
+}
+
+/* ── Error card ── */
+.cs-root .cs-an-error-card {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.85rem 1rem;
+    background: rgba(220, 38, 38, 0.05);
+    border: 1px solid rgba(220, 38, 38, 0.18);
+    border-radius: var(--radius-md);
+    color: var(--cs-danger);
+    font-size: 0.8125rem;
+    margin-top: 0.5rem;
+}
+
+/* ── Data tab toggle (Tickets | Calls | Maintenance) ── */
+.cs-root .cs-an-datatabs {
+    display: flex;
+    gap: 0.25rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--border-light);
+    padding-bottom: 0;
+}
+.cs-root .cs-an-datatab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4375rem;
+    padding: 0.5625rem 0.9375rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    font-family: inherit;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 150ms, border-color 150ms;
+}
+.cs-root .cs-an-datatab:hover { color: var(--text-primary); }
+.cs-root .cs-an-datatab.active { color: var(--text-primary); border-bottom-color: var(--text-primary); font-weight: 600; }
+.cs-root .cs-an-datatab-count {
+    background: var(--surface-alt);
+    border-radius: var(--radius-full);
+    padding: 0.05rem 0.4688rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+.cs-root .cs-an-datatab.active .cs-an-datatab-count {
+    background: var(--cs-accent-soft);
+    color: var(--cs-accent);
+}
+
+/* ── KPI cards ── */
+.cs-root .cs-an-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.875rem;
+    margin-bottom: 1rem;
+}
+
+.cs-root .cs-an-kpi-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.125rem 1.125rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    transition: border-color 150ms, box-shadow 150ms;
+}
+.cs-root .cs-an-kpi-card:hover {
+    border-color: var(--border-hover);
+    box-shadow: var(--shadow-md);
+}
+
+/* ── Icon wraps — 34px, tinted per variant ── */
+.cs-root .cs-an-kpi-icon-wrap {
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--cs-accent-soft);
+    color: var(--cs-accent);
+    margin-bottom: 0.25rem;
+    flex-shrink: 0;
+}
+.cs-root .cs-an-icon-warn { background: rgba(217, 119, 6, 0.09);  color: var(--cs-warning); }
+.cs-root .cs-an-icon-success { background: rgba(22, 163, 74, 0.08);  color: var(--cs-success); }
+.cs-root .cs-an-icon-purple { background: rgba(147, 51, 234, 0.08); color: var(--cs-purple); }
+.cs-root .cs-an-icon-red { background: rgba(220, 38, 38, 0.07);  color: var(--cs-danger); }
+.cs-root .cs-an-icon-orange { background: rgba(234, 88, 12, 0.09);  color: var(--cs-orange); }
+
+.cs-root .cs-an-kpi-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+}
+
+.cs-root .cs-an-kpi-footer {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+.cs-root .cs-an-kpi-label {
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+/* ── Delta chip ── */
+.cs-root .cs-an-delta-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0.125rem 0.5rem;
+    border-radius: var(--radius-full);
+    font-size: 0.6563rem;
+    font-weight: 600;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+.cs-root .cs-an-up { background: rgba(22, 163, 74, 0.08);  color: #15803D; }
+.cs-root .cs-an-down { background: rgba(220, 38, 38, 0.07);  color: #B91C1C; }
+.cs-root .cs-an-flat { background: var(--surface-alt);       color: var(--text-muted); }
+
+/* 700-level chip text is unreadable on ink — brighten in dark mode */
+.cs-root.dark-mode .cs-an-up { background: rgba(34, 197, 94, 0.12); color: #4ADE80; }
+.cs-root.dark-mode .cs-an-down { background: rgba(239, 68, 68, 0.12); color: #F87171; }
+
+/* ── Charts grid ── */
+.cs-root .cs-an-charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.875rem;
+    margin-bottom: 1.25rem;
+}
+.cs-root .cs-an-chart-wide { grid-column: span 1; }
+
+@media (max-width: 760px) {
+    .cs-root .cs-an-charts-grid { grid-template-columns: 1fr 1fr; }
+    .cs-root .cs-an-chart-wide { grid-column: span 2; }
+}
+@media (max-width: 520px) {
+    .cs-root .cs-an-charts-grid { grid-template-columns: 1fr; }
+    .cs-root .cs-an-chart-wide { grid-column: span 1; }
+    .cs-root .cs-an-kpi-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── Chart cards ── */
+.cs-root .cs-an-chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.125rem;
+    min-height: 140px;
+    display: flex;
+    flex-direction: column;
+    transition: box-shadow 150ms, border-color 150ms;
+}
+.cs-root .cs-an-chart-card:hover {
+    border-color: var(--border-hover);
+    box-shadow: var(--shadow-md);
+}
+
+.cs-root .cs-an-chart-head {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--th-color);
+    margin-bottom: 0.875rem;
+    padding-bottom: 0.625rem;
+    border-bottom: 1px solid var(--border-light);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.cs-root .cs-an-nodata {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* ── Sparkline ── */
+.cs-root .cs-an-spark-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+.cs-root .cs-an-spark-svg {
+    width: 100%;
+    display: block;
+    flex: 1;
+}
+.cs-root .cs-an-spark-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.625rem;
+    color: var(--text-muted);
+}
+
+/* ── Donut chart ── */
+.cs-root .cs-an-donut-wrap {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex: 1;
+}
+.cs-root .cs-an-donut {
+    width: 84px;
+    height: 84px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.cs-root .cs-an-donut-hole {
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+.cs-root .cs-an-donut-total {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+.cs-root .cs-an-donut-sublabel {
+    font-size: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-top: 1px;
+}
+
+/* ── Legend ── */
+.cs-root .cs-an-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: 0;
+    flex: 1;
+}
+.cs-root .cs-an-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    padding: 0.2rem 0.35rem;
+    border-radius: var(--radius-sm);
+    transition: background 0.12s;
+}
+.cs-root .cs-an-legend-row:hover { background: var(--surface-alt); }
+.cs-root .cs-an-legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.cs-root .cs-an-legend-name {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cs-root .cs-an-legend-val {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Horizontal bars ── */
+.cs-root .cs-an-bars-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    flex: 1;
+    justify-content: center;
+}
+.cs-root .cs-an-bar-item { display: flex; flex-direction: column; gap: 0.25rem; }
+.cs-root .cs-an-bar-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+}
+.cs-root .cs-an-bar-name { color: var(--text-secondary); }
+.cs-root .cs-an-bar-count { font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.cs-root .cs-an-bar-track {
+    height: 6px;
+    background: var(--track-bg);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+}
+.cs-root .cs-an-bar-fill {
+    height: 100%;
+    border-radius: var(--radius-full);
+    transition: width 0.55s cubic-bezier(.4,0,.2,1);
+    min-width: 3px;
+    background: var(--cs-accent);
+}
+
+/* ── Section divider ── */
+.cs-root .cs-an-section-divider {
+    height: 1px;
+    background: var(--border-light);
+    margin: 1.25rem 0 1rem;
+}
+
+/* ── Leaderboard section ── */
+.cs-root .cs-an-lb-section { margin-top: 0.5rem; }
+
+.cs-root .cs-an-section-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--th-color);
+    margin-bottom: 0.75rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border-light);
+}
+.cs-root .cs-an-section-hint {
+    font-size: 0.6875rem;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-left: auto;
+}
+
+/* ── Leaderboard table ── */
+.cs-root .cs-an-lb-table { font-size: 0.8125rem; }
+.cs-root .cs-an-lb-row {
+    cursor: pointer;
+    transition: background 0.12s;
+}
+.cs-root .cs-an-lb-row:hover {
+    background: var(--table-hover) !important;
+}
+
+/* Gamification row accents — thin left rail */
+.cs-root .cs-an-row-up {
+    box-shadow: inset 3px 0 0 var(--cs-success);
+}
+.cs-root .cs-an-row-down {
+    box-shadow: inset 3px 0 0 var(--cs-danger);
+}
+
+.cs-root .cs-an-rank {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+}
+.cs-root .cs-an-rank-top { color: var(--cs-accent); font-weight: 700; }
+
+.cs-root .cs-an-agent-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    min-width: 0;
+}
+
+/* Initials avatar — border color driven by gamification delta */
+.cs-root .cs-an-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--surface-alt);
+    border: 1.5px solid;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    flex-shrink: 0;
+}
+
+.cs-root .cs-an-agent-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-width: 0;
+    flex: 1;
+}
+.cs-root .cs-an-agent-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.8125rem;
+}
+
+/* Relative volume bar inside agent cell */
+.cs-root .cs-an-agent-bar-wrap {
+    height: 3px;
+    background: var(--track-bg);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+    width: 100%;
+}
+.cs-root .cs-an-agent-bar {
+    height: 100%;
+    background: var(--cs-accent);
+    border-radius: var(--radius-full);
+    opacity: 0.65;
+}
+
+.cs-root .cs-an-lb-num {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}

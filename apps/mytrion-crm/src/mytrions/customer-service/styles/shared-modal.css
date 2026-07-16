@@ -1,0 +1,217 @@
+/* =====================================================
+   Customer Service — Shared Modal Primitives
+   Aesthetic: Paper White
+     • Plain white sheet, soft shadow, no glow chrome
+     • Panels can still override --cs-modal-accent for the
+       small colored touches (focus rings, primary button)
+   ===================================================== */
+
+.cs-root {
+    --cs-modal-accent: var(--cs-accent);
+    --cs-modal-accent-glow: var(--cs-accent-glow);
+}
+
+.cs-root .cs-citi-fuel-panel .cs-modal-backdrop,
+
+
+.cs-root .cs-citi-fuel-panel .cs-modal-box {
+    --cs-modal-accent: #EA580C;
+    --cs-modal-accent-glow: rgba(234, 88, 12, 0.14);
+}
+
+/* ─── Backdrop ─────────────────────────────────────────────── */
+.cs-root .cs-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 9990;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--modal-backdrop-bg);
+    padding: 1rem;
+    animation: csBackdropIn 200ms ease;
+}
+
+@keyframes csBackdropIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* ─── Box ─────────────────────────────────────────────────── */
+.cs-root .cs-modal-box {
+    position: relative;
+    background: var(--modal-box-bg);
+    border: 1px solid var(--border-light);
+    border-radius: 14px;
+    box-shadow: var(--shadow-lg);
+    width: 100%;
+    max-width: 640px;
+    max-height: 92vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: csModalIn 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes csModalIn {
+    from {
+        opacity: 0;
+        transform: scale(0.97) translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+/* ─── Header ──────────────────────────────────────────────── */
+.cs-root .cs-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.25rem 1.5rem 1.125rem;
+    border-bottom: 1px solid var(--border-light);
+    flex-shrink: 0;
+}
+
+.cs-root .cs-modal-title {
+    font-size: 1.0625rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Optional ID chip after the title (already in the markup as a styled span) */
+.cs-root .cs-modal-title > span {
+    font-size: 0.75rem !important;
+    font-weight: 500 !important;
+    color: var(--cs-modal-accent) !important;
+    background: color-mix(in srgb, var(--cs-modal-accent) 7%, transparent);
+    padding: 0.1875rem 0.5625rem;
+    border-radius: var(--radius-full);
+    margin-left: 0.375rem !important;
+    opacity: 1 !important;
+    text-transform: none;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.cs-root .cs-modal-close {
+    background: none;
+    border: none;
+    padding: 0.4375rem;
+    cursor: pointer;
+    color: var(--text-muted);
+    border-radius: var(--radius-md);
+    display: flex;
+    transition: color 140ms, background 140ms;
+    outline: none;
+}
+
+.cs-root .cs-modal-close:hover {
+    color: var(--text-primary);
+    background: var(--surface-alt);
+}
+
+.cs-root .cs-modal-close:focus-visible {
+    box-shadow: 0 0 0 3px var(--cs-modal-accent-glow);
+}
+
+/* ─── Body ────────────────────────────────────────────────── */
+.cs-root .cs-modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+}
+
+/* ─── Footer ──────────────────────────────────────────────── */
+.cs-root .cs-modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.625rem;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--border-light);
+    flex-shrink: 0;
+    background: var(--surface-alt);
+}
+
+/* ── Field rows inside modal ── */
+.cs-root .cs-field-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.5625rem 0;
+    border-bottom: 1px solid var(--table-row-divider);
+}
+
+.cs-root .cs-field-row:last-child {
+    border-bottom: none;
+}
+
+.cs-root .cs-field-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--th-color);
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.cs-root .cs-field-value {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    text-align: right;
+}
+
+/* ── Buttons ── */
+.cs-root .cs-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4375rem;
+    padding: 0.5625rem 1.125rem;
+    font-family: inherit;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: background 140ms ease, border-color 140ms ease,
+                color 140ms ease, box-shadow 140ms ease;
+    outline: none;
+}
+
+.cs-root .cs-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.cs-root .cs-btn:focus-visible {
+    box-shadow: 0 0 0 3px var(--cs-modal-accent-glow);
+}
+
+.cs-root .cs-btn-primary {
+    background: var(--cs-modal-accent);
+    color: #fff;
+    border-color: var(--cs-modal-accent);
+}
+
+.cs-root .cs-btn-primary:hover:not(:disabled) {
+    filter: brightness(0.92);
+}
+
+.cs-root .cs-btn-ghost {
+    background: var(--surface);
+    color: var(--text-secondary);
+    border-color: var(--border);
+}
+
+.cs-root .cs-btn-ghost:hover:not(:disabled) {
+    color: var(--text-primary);
+    border-color: var(--ghost-color);
+}

@@ -1,0 +1,119 @@
+/* =====================================================
+   Customer Service — Service Center Panel
+   ===================================================== */
+
+.cs-root .cs-service-center-panel {
+    /* inherits .cs-panel */
+}
+
+/* ── Category cards ── */
+.cs-root .cs-sc-categories {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.75rem;
+}
+
+.cs-root .cs-sc-category-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.25rem 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.625rem;
+    cursor: pointer;
+    transition: border-color 150ms, background 150ms;
+}
+
+.cs-root .cs-sc-category-card:hover {
+    border-color: var(--cs-accent);
+    background: rgba(37, 99, 235, 0.05);
+}
+
+.cs-root .cs-sc-category-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cs-root .cs-sc-category-name {
+    font-size: 0.875rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-primary);
+}
+
+.cs-root .cs-sc-category-count {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+}
+
+/* ── Ticket queue ── */
+.cs-root .cs-sc-queue {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.cs-root .cs-sc-queue-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.cs-root .cs-sc-queue-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.cs-root .cs-sc-ticket-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 1rem;
+    border-bottom: 1px solid var(--border-dark);
+    font-size: 0.8125rem;
+    cursor: pointer;
+    transition: background 100ms;
+}
+
+.cs-root .cs-sc-ticket-row:last-child {
+    border-bottom: none;
+}
+
+.cs-root .cs-sc-ticket-row:hover {
+    background: var(--surface-raised);
+}
+
+.cs-root .cs-sc-ticket-id {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    width: 72px;
+    flex-shrink: 0;
+}
+
+.cs-root .cs-sc-ticket-subject {
+    flex: 1;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cs-root .cs-sc-ticket-assignee {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}

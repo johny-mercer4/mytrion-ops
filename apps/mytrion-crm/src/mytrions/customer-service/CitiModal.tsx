@@ -1,103 +1,412 @@
-import { Button } from '@/components/ui/button';
-import { StatusBadge } from '@/components/mytrion/status-badge';
-import { DetailDialog } from '@/components/mytrion/detail-dialog';
-import { cn } from '@/lib/utils';
-import { type CitiClient, citiDecisionMeta, citiRequestMeta, citiStatusMeta } from './data';
+/**
+ * Citifuel client modal — 1:1 port of the widget's single view+edit modal
+ * (cs-modal-backdrop / cs-modal-box cs-modal-wide / cs-citi-section-title / cs-form-grid /
+ * cs-lookup-wrap). One always-editable sectioned form (Client / Request / Contact / Notes /
+ * Audit) for both create and edit, over POST/PATCH/DELETE /cs/citifuel. Picklists merge the
+ * widget's canonical options with live CRM metadata; Company is an Accounts typeahead,
+ * Agent/Owner are user lookups. Lookup values write as {id} objects (Zoho REST contract).
+ */
+import { useEffect, useRef, useState } from 'react';
+
+import {
+  createCitifuel,
+  deleteCitifuel,
+  getCitifuelMeta,
+  lookupAccounts,
+  lookupUsers,
+  updateCitifuel,
+  type CitiWriteValue,
+} from '@/api/cs';
+import type { CitiRow } from './live';
+
+const CANONICAL = {
+  Request: ['Outbound', 'Incoming'],
+  Status_of_App: ['In process', 'Cards sent', 'Closed'],
+  Actions_taken: ['Request Citi to check', 'Agent Call'],
+  // lockOptions in the widget — keep these exact lists; live meta must not overwrite.
+  Final_Decision: ['Octane', 'Citifuel', 'None'],
+  Billing_Notes: ['Payment Issues', 'Debtor', 'Collection', 'Good Standing'],
+} as const;
+
+const REFRESH_PATH =
+  'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-14.357-2m14.357 2H15';
+const TRASH_PATH =
+  'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16';
+
+interface UserOpt {
+  id: string;
+  name: string | null;
+}
+interface AccountOpt {
+  id: string;
+  name: string;
+}
+
+const lookupId = (v: unknown): string =>
+  v && typeof v === 'object' ? String((v as { id?: unknown }).id ?? '') : '';
+const lookupName = (v: unknown): string =>
+  v && typeof v === 'object' ? String((v as { name?: unknown }).name ?? '') : '';
 
 export function CitiModal({
   client,
   onClose,
-  onEdit,
-  onDelete,
+  onSaved,
+  onDeleted,
+  notify,
 }: {
-  client: CitiClient;
+  /** null = create */
+  client: CitiRow | null;
   onClose: () => void;
-  onEdit: () => void;
-  onDelete?: () => void;
+  onSaved: () => void;
+  onDeleted: () => void;
+  notify: (kind: 'success' | 'error', message: string) => void;
 }) {
-  const status = citiStatusMeta(client.status);
-  const request = citiRequestMeta(client.request);
-  const decision = citiDecisionMeta(client.decision);
+  const isCreating = client === null;
+  const raw = client?.raw ?? {};
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  const [values, setValues] = useState<Record<string, string>>(() => ({
+    Name: String(raw.Name ?? ''),
+    App_ID: raw.App_ID == null ? '' : String(raw.App_ID),
+    Request: String(raw.Request ?? ''),
+    Status_of_App: String(raw.Status_of_App ?? ''),
+    Actions_taken: String(raw.Actions_taken ?? ''),
+    Final_Decision: String(raw.Final_Decision ?? ''),
+    Billing_Notes: String(raw.Billing_Notes ?? ''),
+    Date_of_Request: String(raw.Date_of_Request ?? '').slice(0, 10),
+    Feedback_date: String(raw.Feedback_date ?? '').slice(0, 10),
+    Email: String(raw.Email ?? ''),
+    Phone_Number: String(raw.Phone_Number ?? ''),
+    Notes_1: String(raw.Notes_1 ?? ''),
+    Company_Name: lookupId(raw.Company_Name),
+    Agent_Name: lookupId(raw.Agent_Name),
+    Owner: lookupId(raw.Owner),
+  }));
+  // Display labels for the lookups (so an existing selection shows its name, not the id).
+  const [labels, setLabels] = useState<Record<string, string>>({
+    Company_Name: lookupName(raw.Company_Name),
+    Agent_Name: lookupName(raw.Agent_Name),
+    Owner: lookupName(raw.Owner),
+  });
+
+  const [statusOptions, setStatusOptions] = useState<string[]>([...CANONICAL.Status_of_App]);
+  const [users, setUsers] = useState<UserOpt[]>([]);
+  const [accountQuery, setAccountQuery] = useState('');
+  const [accounts, setAccounts] = useState<AccountOpt[]>([]);
+  const [companyOpen, setCompanyOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    boxRef.current?.focus();
+    getCitifuelMeta()
+      .then((m) => m.statusOptions.length && setStatusOptions(m.statusOptions))
+      .catch(() => undefined);
+    lookupUsers()
+      .then((u) => setUsers(u.users))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !saving && !deleting) onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [saving, deleting, onClose]);
+
+  useEffect(() => {
+    if (accountQuery.trim().length < 2) {
+      setAccounts([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      lookupAccounts(accountQuery.trim())
+        .then((r) => setAccounts(r.accounts.map((a) => ({ id: a.id, name: a.Account_Name ?? a.id }))))
+        .catch(() => setAccounts([]));
+    }, 350);
+    return () => clearTimeout(t);
+  }, [accountQuery]);
+
+  function set(field: string, value: string) {
+    setValues((prev) => ({ ...prev, [field]: value }));
+  }
+
+  async function save() {
+    if (!values.Name?.trim()) {
+      setError('Client Name is required');
+      return;
+    }
+    const data: Record<string, CitiWriteValue> = {};
+    const scalar = (field: string, kind: 'text' | 'number' = 'text') => {
+      const v = values[field] ?? '';
+      if (v === '') {
+        if (!isCreating) data[field] = null; // clearing on edit; skip empties on create
+        return;
+      }
+      data[field] = kind === 'number' ? Number(v) : v;
+    };
+    scalar('Name');
+    scalar('App_ID', 'number');
+    scalar('Request');
+    scalar('Status_of_App');
+    scalar('Actions_taken');
+    scalar('Final_Decision');
+    scalar('Billing_Notes');
+    scalar('Date_of_Request');
+    scalar('Feedback_date');
+    scalar('Email');
+    scalar('Phone_Number');
+    scalar('Notes_1');
+    for (const lk of ['Company_Name', 'Agent_Name', 'Owner'] as const) {
+      const id = values[lk] ?? '';
+      if (id) data[lk] = { id };
+      else if (!isCreating) data[lk] = null;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      if (client) await updateCitifuel(client.id, data);
+      else await createCitifuel(data);
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Save failed');
+      setSaving(false);
+    }
+  }
+
+  async function remove() {
+    if (!client) return;
+    if (!window.confirm(`Delete "${client.name}" from Citifuel Clients? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await deleteCitifuel(client.id);
+      notify('success', `Deleted ${client.name}`);
+      onDeleted();
+    } catch (e) {
+      notify('error', `Delete failed: ${e instanceof Error ? e.message : e}`);
+      setDeleting(false);
+    }
+  }
+
+  const dirtyCount = client
+    ? Object.keys(values).filter((k) => {
+        const orig =
+          k === 'Company_Name' || k === 'Agent_Name' || k === 'Owner'
+            ? lookupId((raw as Record<string, unknown>)[k])
+            : k === 'Date_of_Request' || k === 'Feedback_date'
+              ? String((raw as Record<string, unknown>)[k] ?? '').slice(0, 10)
+              : (raw as Record<string, unknown>)[k] == null
+                ? ''
+                : String((raw as Record<string, unknown>)[k]);
+        return (values[k] ?? '') !== orig;
+      }).length
+    : 0;
+
+  const picklist = (field: keyof typeof CANONICAL, options: readonly string[]) => (
+    <select className="cs-form-input" value={values[field] ?? ''} onChange={(e) => set(field, e.target.value)}>
+      <option value="">— Select —</option>
+      {options.map((o) => (
+        <option key={o} value={o}>
+          {o}
+        </option>
+      ))}
+    </select>
+  );
+
+  const userLookup = (field: 'Agent_Name' | 'Owner') => (
+    <select className="cs-form-input" value={values[field] ?? ''} onChange={(e) => set(field, e.target.value)}>
+      <option value="">—</option>
+      {/* keep an out-of-page current value selectable */}
+      {values[field] && !users.some((u) => u.id === values[field]) ? (
+        <option value={values[field]}>{labels[field] || values[field]}</option>
+      ) : null}
+      {users.map((u) => (
+        <option key={u.id} value={u.id}>
+          {u.name ?? u.id}
+        </option>
+      ))}
+    </select>
+  );
 
   return (
-    <DetailDialog
-      open
-      onOpenChange={(o) => !o && onClose()}
-      title={client.name}
-      badges={
-        <>
-          <StatusBadge tone={status.tone}>{client.status}</StatusBadge>
-          <StatusBadge tone={request.tone}>{client.request}</StatusBadge>
-        </>
-      }
-      footer={
-        <>
-          {onDelete ? (
-            <Button variant="outline" className="mr-auto text-bad" onClick={onDelete}>
-              Delete
-            </Button>
-          ) : null}
-          <Button variant="outline" onClick={onClose}>
-            Close
-          </Button>
-          <Button onClick={onEdit}>Edit Client</Button>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-5">
-        <section>
-          <div className="font-heading mb-2.5 text-xs font-bold tracking-wide text-primary uppercase">
-            Request
-          </div>
-          <dl className="flex flex-col gap-1.5 text-sm">
-            <Row k="App ID" v={<span className="font-mono">{client.appId}</span>} />
-            <Row k="Status" v={<StatusBadge tone={status.tone}>{client.status}</StatusBadge>} />
-            <Row k="Request" v={<StatusBadge tone={request.tone}>{client.request}</StatusBadge>} />
-            <Row
-              k="Final Decision"
-              v={
-                client.decision ? (
-                  <span className={cn('font-semibold', client.decision === 'Debtor' ? 'text-bad' : undefined)}>
-                    <StatusBadge tone={decision.tone}>{client.decision}</StatusBadge>
-                  </span>
-                ) : (
-                  '—'
-                )
-              }
-            />
-            <Row k="Date of Request" v={client.date} />
-          </dl>
-        </section>
+    <div className="cs-modal-backdrop" onClick={(e) => e.target === e.currentTarget && !saving && !deleting && onClose()}>
+      <div className="cs-modal-box cs-modal-wide" ref={boxRef} tabIndex={-1}>
+        <div className="cs-modal-header">
+          <h3 className="cs-modal-title">{isCreating ? 'New Citifuel Client' : client?.name || 'Client'}</h3>
+          <button className="cs-modal-close" onClick={onClose} aria-label="Close">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
 
-        <section>
-          <div className="font-heading mb-2.5 text-xs font-bold tracking-wide text-primary uppercase">
+        <div className="cs-modal-body">
+          {error ? <div className="cs-form-error">{error}</div> : null}
+
+          <div className="cs-citi-section-title">Client Info</div>
+          <div className="cs-form-grid">
+            <div className="cs-form-field">
+              <label className="cs-form-label">
+                Client Name<span style={{ color: '#ef4444' }}>*</span>
+              </label>
+              <input className="cs-form-input" value={values.Name} onChange={(e) => set('Name', e.target.value)} />
+            </div>
+            <div className="cs-form-field">
+              <label className="cs-form-label">App ID</label>
+              <input className="cs-form-input" type="number" value={values.App_ID} onChange={(e) => set('App_ID', e.target.value)} />
+            </div>
+            <div className="cs-form-field cs-form-field-wide">
+              <label className="cs-form-label">Company (Accounts)</label>
+              <div className="cs-lookup-wrap">
+                <input
+                  className="cs-form-input"
+                  autoComplete="off"
+                  placeholder="Search company…"
+                  value={companyOpen ? accountQuery : labels.Company_Name || accountQuery}
+                  onFocus={() => setCompanyOpen(true)}
+                  onBlur={() => setTimeout(() => setCompanyOpen(false), 150)}
+                  onChange={(e) => {
+                    setAccountQuery(e.target.value);
+                    setCompanyOpen(true);
+                  }}
+                />
+                {values.Company_Name ? (
+                  <button
+                    type="button"
+                    className="cs-lookup-clear"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      set('Company_Name', '');
+                      setLabels((l) => ({ ...l, Company_Name: '' }));
+                      setAccountQuery('');
+                    }}
+                  >
+                    ×
+                  </button>
+                ) : null}
+                {companyOpen && accounts.length > 0 ? (
+                  <div className="cs-lookup-dropdown">
+                    {accounts.map((a) => (
+                      <div
+                        key={a.id}
+                        className="cs-lookup-item"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          set('Company_Name', a.id);
+                          setLabels((l) => ({ ...l, Company_Name: a.name }));
+                          setAccountQuery('');
+                          setCompanyOpen(false);
+                        }}
+                      >
+                        {a.name}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <div className="cs-citi-section-title" style={{ marginTop: '1rem' }}>
+            Request Details
+          </div>
+          <div className="cs-form-grid">
+            <FormField label="Request">{picklist('Request', CANONICAL.Request)}</FormField>
+            <FormField label="Status of App">{picklist('Status_of_App', statusOptions)}</FormField>
+            <FormField label="Actions Taken">{picklist('Actions_taken', CANONICAL.Actions_taken)}</FormField>
+            <FormField label="Final Decision">{picklist('Final_Decision', CANONICAL.Final_Decision)}</FormField>
+            <FormField label="Billing Notes">{picklist('Billing_Notes', CANONICAL.Billing_Notes)}</FormField>
+            <FormField label="Date of Request">
+              <input className="cs-form-input" type="date" value={values.Date_of_Request} onChange={(e) => set('Date_of_Request', e.target.value)} />
+            </FormField>
+            <FormField label="Feedback Date">
+              <input className="cs-form-input" type="date" value={values.Feedback_date} onChange={(e) => set('Feedback_date', e.target.value)} />
+            </FormField>
+          </div>
+
+          <div className="cs-citi-section-title" style={{ marginTop: '1rem' }}>
             Contact
           </div>
-          <dl className="flex flex-col gap-1.5 text-sm">
-            <Row k="Email" v={client.email} />
-            <Row k="Phone" v={client.phone} />
-            <Row k="Agent" v={client.agent} />
-          </dl>
-        </section>
+          <div className="cs-form-grid">
+            <FormField label="Email">
+              <input className="cs-form-input" type="email" value={values.Email} onChange={(e) => set('Email', e.target.value)} />
+            </FormField>
+            <FormField label="Phone">
+              <input className="cs-form-input" type="tel" value={values.Phone_Number} onChange={(e) => set('Phone_Number', e.target.value)} />
+            </FormField>
+            <FormField label="Agent">{userLookup('Agent_Name')}</FormField>
+            <FormField label="Owner">{userLookup('Owner')}</FormField>
+          </div>
 
-        <section>
-          <div className="font-heading mb-2 text-xs font-bold tracking-wide text-primary uppercase">
+          <div className="cs-citi-section-title" style={{ marginTop: '1rem' }}>
             Notes
           </div>
-          <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
-            {client.notes || 'No notes on record.'}
+          <div className="cs-form-grid">
+            <div className="cs-form-field cs-form-field-wide">
+              <label className="cs-form-label">Notes</label>
+              <textarea className="cs-form-input" rows={4} value={values.Notes_1} onChange={(e) => set('Notes_1', e.target.value)} />
+            </div>
           </div>
-        </section>
+
+          {!isCreating ? (
+            <>
+              <div className="cs-citi-section-title" style={{ marginTop: '1rem' }}>
+                Audit
+              </div>
+              <div className="cs-form-grid">
+                <FormField label="Created By">
+                  <div className="cs-form-readonly">{lookupName(raw.Created_By) || '—'}</div>
+                </FormField>
+                <FormField label="Modified By">
+                  <div className="cs-form-readonly">{lookupName(raw.Modified_By) || '—'}</div>
+                </FormField>
+              </div>
+            </>
+          ) : null}
+        </div>
+
+        <div className="cs-modal-footer">
+          {!isCreating && dirtyCount > 0 ? (
+            <span className="cs-dirty-indicator">
+              {dirtyCount} unsaved change{dirtyCount > 1 ? 's' : ''}
+            </span>
+          ) : null}
+          {!isCreating ? (
+            <button className="cs-btn cs-citi-delete-modal-btn" onClick={remove} disabled={saving || deleting}>
+              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={TRASH_PATH} />
+              </svg>
+              {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+          ) : null}
+          <button className="cs-btn cs-btn-ghost" onClick={onClose} disabled={saving || deleting}>
+            Cancel
+          </button>
+          <button
+            className="cs-btn cs-btn-primary"
+            onClick={save}
+            disabled={saving || deleting || (!isCreating && dirtyCount === 0)}
+          >
+            {saving ? (
+              <svg className="spin-icon" width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={REFRESH_PATH} />
+              </svg>
+            ) : null}
+            {saving ? 'Saving…' : isCreating ? 'Create' : 'Save'}
+          </button>
+        </div>
       </div>
-    </DetailDialog>
+    </div>
   );
 }
 
-function Row({ k, v }: { k: string; v: React.ReactNode }) {
+function FormField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between border-b py-1.5 last:border-b-0">
-      <span className="text-xs text-muted-foreground">{k}</span>
-      <span className="text-right text-[13px] font-semibold">{v}</span>
+    <div className="cs-form-field">
+      <label className="cs-form-label">{label}</label>
+      {children}
     </div>
   );
 }
