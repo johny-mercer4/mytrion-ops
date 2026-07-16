@@ -34,6 +34,26 @@ Borrows architecture patterns from Mytrion but is a clean, standalone codebase.
   build config.
 - **pnpm via Corepack.** If `pnpm` isn't on PATH, use `corepack pnpm ...`.
 
+## Database migrations (Drizzle)
+
+- **Schema change → always generate a migration file. Never `drizzle-kit push`.** When you add or
+  alter a table/column, edit the schema in `src/db/schema/*.ts`, then run `pnpm db:generate`. That
+  writes a new `src/db/migrations/00XX_*.sql` and updates `meta/_journal.json` automatically — commit
+  the schema `.ts`, the generated `.sql`, and the journal together in the same commit.
+- **`drizzle-kit push` is banned for shared work.** It mutates the connected DB directly and produces
+  no migration file, so the change never reaches teammates or prod — a fresh `pnpm db:migrate` then
+  fails on the missing table. `push` is only acceptable for a throwaway local experiment that is never
+  committed. (This is exactly how `carrier_invitations` / `registered_mini_app_companies` ended up with
+  schema files but no CREATE migration; the `0022` baseline fix exists to repair that.)
+- **Apply with `pnpm db:migrate`.** It runs only not-yet-applied migrations (tracked in
+  `drizzle.__drizzle_migrations` by journal timestamp), so editing an already-applied migration does
+  **not** re-run it — safe on local and prod. Prefer `CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT
+  EXISTS` so a hand-edited baseline is idempotent across fresh and existing DBs.
+- **Migrations only touch the local/prod app Postgres** (`MYTRION_OPS_DATABASE_URL`). The DWH
+  (`DWH_DATABASE_URL`) and AWS MySQL sources are read-only replicas — never a migration target.
+- **Verify before shipping a migration:** run it against a fresh throwaway DB and confirm
+  `pnpm db:migrate` reaches the full table count green.
+
 ## Git branching & workflow
 
 - **`main`** — production/deployment branch. Anything merged into `main` deploys to prod. Never push
