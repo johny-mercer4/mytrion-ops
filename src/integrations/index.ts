@@ -15,7 +15,7 @@
  *         await serverCrm.serverCrmPost('/api/agent/dwh/snapshot', { agentName });
  *         await zohoFunctions.executeZohoFunction('mytrionhomesnapshot', { userId });
  */
-export * as zoho from './wrapper.js';
+export * as zoho from './zohoAuth.js';
 export * as dwh from './dwh.js';
 export * as awsMysql from './awsMysql.js';
 export * as cmp from './cmp.js';

@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }));
 
-vi.mock('../../src/integrations/wrapper.js', () => ({
+vi.mock('../../src/integrations/zohoAuth.js', () => ({
   authHeaders: async () => ({ Authorization: 'Zoho-oauthtoken test', orgId: '123' }),
   baseUrl: () => 'https://desk.zoho.com/api/v1',
+  invalidateZohoToken: () => {},
 }));
 vi.stubGlobal('fetch', fetchMock);
 

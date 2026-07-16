@@ -15,8 +15,8 @@ const { fetchMock } = vi.hoisted(() => {
 vi.stubGlobal('fetch', fetchMock);
 
 const { getZohoTokenMock } = vi.hoisted(() => ({ getZohoTokenMock: vi.fn() }));
-vi.mock('../../src/integrations/wrapper.js', async (importOriginal) => {
-  const mod = await importOriginal<typeof import('../../src/integrations/wrapper.js')>();
+vi.mock('../../src/integrations/zohoAuth.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/integrations/zohoAuth.js')>();
   return { ...mod, getZohoToken: getZohoTokenMock, invalidateZohoToken: vi.fn() };
 });
 

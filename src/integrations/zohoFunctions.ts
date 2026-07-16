@@ -19,7 +19,7 @@
 import { env } from '../config/env.js';
 import { AppError } from '../lib/errors.js';
 import { fetchWithTimeout } from '../lib/http.js';
-import { getZohoToken, invalidateZohoToken } from './wrapper.js';
+import { getZohoToken, invalidateZohoToken } from './zohoAuth.js';
 
 /** 502-mapped error — the errorHandler plugin normalizes AppError for the HTTP layer. */
 export class ZohoFunctionError extends AppError {

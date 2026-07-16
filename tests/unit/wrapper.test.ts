@@ -17,7 +17,7 @@ vi.mock('../../src/integrations/zoho.js', () => ({
   }),
 }));
 
-import { authHeaders, getZohoToken, resetAuthCache } from '../../src/integrations/wrapper.js';
+import { authHeaders, getZohoToken, resetAuthCache } from '../../src/integrations/zohoAuth.js';
 
 describe('wrapper auth', () => {
   beforeEach(() => {
