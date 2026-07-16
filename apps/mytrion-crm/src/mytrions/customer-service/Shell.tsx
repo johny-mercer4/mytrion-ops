@@ -159,10 +159,7 @@ export function CsShell() {
           </nav>
 
           <div className="cs-sidebar-footer">
-            <Link to="/" className="cs-switch-link" title="Switch Mytrion">
-              ⇄ Switch
-            </Link>
-            <span>Mytrion CS · v1.0</span>
+            {/* Sales-Mytrion-style labeled theme switch (icon + "Dark/Light mode"). */}
             <button
               className="cs-theme-toggle"
               onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
@@ -170,8 +167,8 @@ export function CsShell() {
               aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             >
               {theme !== 'dark' ? (
-                /* Moon — shown in light mode */
-                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                /* Moon — shown in light mode (click → dark) */
+                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -180,8 +177,8 @@ export function CsShell() {
                   />
                 </svg>
               ) : (
-                /* Sun — shown in dark mode */
-                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                /* Sun — shown in dark mode (click → light) */
+                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -190,7 +187,14 @@ export function CsShell() {
                   />
                 </svg>
               )}
+              <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
             </button>
+            <div className="cs-sidebar-footer-meta">
+              <Link to="/" className="cs-switch-link" title="Switch Mytrion">
+                ⇄ Switch
+              </Link>
+              <span>Mytrion CS · v1.0</span>
+            </div>
           </div>
         </aside>
 

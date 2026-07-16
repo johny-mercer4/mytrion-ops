@@ -7,6 +7,133 @@
     width: 100%;
 }
 
+/* ── Sidebar footer: labeled theme switch (Sales-Mytrion style) + meta row ── */
+.cs-root .cs-sidebar-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.625rem;
+}
+.cs-root .cs-theme-toggle {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 8px);
+    background: var(--surface);
+    color: var(--text-secondary);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 160ms, background 160ms, border-color 160ms;
+}
+.cs-root .cs-theme-toggle:hover {
+    color: var(--text-primary);
+    background: var(--surface-alt);
+    border-color: var(--border-hover);
+}
+.cs-root .cs-theme-toggle svg {
+    flex-shrink: 0;
+}
+.cs-root .cs-theme-toggle span {
+    flex: 1;
+    text-align: left;
+}
+.cs-root .cs-sidebar-footer-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+/* ── Analytics polish ──────────────────────────────────────────────────────
+   The panel renders 2 chart cards (Trend + Breakdown), so give the 3-col grid a
+   2:1 split instead of leaving an empty third column. Richer trend chart + KPI
+   accents stay within the widget's design language. */
+.cs-root .cs-an-charts-grid {
+    grid-template-columns: 2fr 1fr;
+}
+@media (max-width: 900px) {
+    .cs-root .cs-an-charts-grid {
+        grid-template-columns: 1fr;
+    }
+}
+.cs-root .cs-an-chart-card {
+    transition: border-color 160ms, box-shadow 160ms, transform 160ms;
+}
+.cs-root .cs-an-chart-card:hover {
+    transform: translateY(-1px);
+}
+
+/* KPI cards: a hairline accent bar on the primary card + smoother lift. */
+.cs-root .cs-an-kpi-card {
+    position: relative;
+    transition: border-color 160ms, box-shadow 160ms, transform 160ms;
+}
+.cs-root .cs-an-kpi-card:hover {
+    transform: translateY(-1px);
+}
+.cs-root .cs-an-kpi-primary::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 3px;
+    border-radius: var(--radius-lg, 12px) var(--radius-lg, 12px) 0 0;
+    background: linear-gradient(90deg, var(--cs-accent), var(--cs-accent-hover));
+}
+.cs-root .cs-an-kpi-hint {
+    font-size: 0.625rem;
+    color: var(--text-muted);
+    margin-top: 0.15rem;
+}
+
+/* Taller trend chart with a soft baseline + animated draw + hover point. */
+.cs-root .cs-an-spark-wrap {
+    min-height: 132px;
+}
+.cs-root .cs-an-spark-svg {
+    min-height: 108px;
+    overflow: visible;
+}
+.cs-root .cs-an-spark-baseline {
+    stroke: var(--border);
+    stroke-width: 1;
+    stroke-dasharray: 3 4;
+    vector-effect: non-scaling-stroke;
+}
+.cs-root .cs-an-spark-line {
+    stroke: var(--cs-accent);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+}
+.cs-root .cs-an-spark-dot {
+    fill: var(--cs-accent);
+    stroke: var(--surface);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+}
+.cs-root .cs-an-trend-peak {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    margin-bottom: 0.35rem;
+}
+.cs-root .cs-an-trend-peak-val {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+}
+.cs-root .cs-an-trend-peak-lbl {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+}
+
 /* ── Floating AI copilot (CsCopilot) — launcher + pop-over, CS Paper White tokens.
       Same UX as the Sales Mytrion copilot; replaces the old full AI Chat tab. ── */
 .cs-root .cs-copilot-fab {

@@ -100,6 +100,14 @@ export function Analytics() {
   const loading = analytics.loading || ctx.loading;
   const donutTotal = useMemo(() => block.breakdown.reduce((s, b) => s + b.value, 0), [block]);
   const maxLead = useMemo(() => Math.max(1, ...block.leaderboard.map((r) => r.col1)), [block]);
+  const peak = useMemo(
+    () =>
+      block.volume.reduce(
+        (best, d) => (d.value > best.value ? { value: d.value, label: d.label } : best),
+        { value: 0, label: '' },
+      ),
+    [block],
+  );
 
   const tabCount = (id: SubTab): string => {
     const b = analytics.data?.[id];
@@ -182,6 +190,7 @@ export function Analytics() {
                     <span className="cs-an-kpi-label">{k.label}</span>
                     {chip ? <span className={`cs-an-delta-chip ${chip.cls}`}>{chip.text}</span> : null}
                   </div>
+                  {k.hint ? <div className="cs-an-kpi-hint">{k.hint}</div> : null}
                 </div>
               );
             })}
@@ -194,21 +203,20 @@ export function Analytics() {
           <div className="cs-an-chart-head">Daily Trend</div>
           {block.volume.length ? (
             <div className="cs-an-spark-wrap">
+              <div className="cs-an-trend-peak">
+                <span className="cs-an-trend-peak-val">{peak.value.toLocaleString()}</span>
+                <span className="cs-an-trend-peak-lbl">peak{peak.label ? ` · ${peak.label}` : ''}</span>
+              </div>
               <svg className="cs-an-spark-svg" viewBox={`0 0 400 ${SPARK_H}`} preserveAspectRatio="none">
                 <defs>
                   <linearGradient id="csAnGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--cs-accent)" stopOpacity="0.25" />
+                    <stop offset="0%" stopColor="var(--cs-accent)" stopOpacity="0.22" />
                     <stop offset="100%" stopColor="var(--cs-accent)" stopOpacity="0" />
                   </linearGradient>
                 </defs>
+                <line className="cs-an-spark-baseline" x1="0" y1={SPARK_H - 1} x2="400" y2={SPARK_H - 1} />
                 <path d={areaPath(block.volume)} fill="url(#csAnGrad)" />
-                <polyline
-                  points={sparkPoints(block.volume)}
-                  fill="none"
-                  style={{ stroke: 'var(--cs-accent)' }}
-                  strokeWidth="1.5"
-                  strokeLinejoin="round"
-                />
+                <polyline className="cs-an-spark-line" points={sparkPoints(block.volume)} fill="none" />
               </svg>
               <div className="cs-an-spark-labels">
                 <span>{block.volume[0]?.label}</span>
