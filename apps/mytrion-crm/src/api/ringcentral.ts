@@ -4,6 +4,8 @@
  */
 import { request } from './transport';
 
+// LEGACY assertion — ignored server-side for signed-in users (session-authoritative access);
+// kept only for the FF_SESSION_DEPT_AUTHORITATIVE=0 rollback. Remove together with the flag.
 const SALES_HEADERS = { 'x-department-access': 'sales' } as const;
 
 export interface RingCentralEmbedConfig {

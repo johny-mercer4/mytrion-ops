@@ -9,8 +9,10 @@
  */
 import { request } from './transport';
 
-// The Data Center endpoints are Sales-Mytrion-scoped; assert the department so a signed-in Sales
-// agent (whose session carries no department by default) clears the route's sales-access gate.
+// LEGACY assertion — the server now derives department access from the verified session (Zoho
+// profile/role), so this header is IGNORED for signed-in users. Kept only so the
+// FF_SESSION_DEPT_AUTHORITATIVE=0 rollback (and unverified API-key dev calls) stay functional;
+// remove together with the flag.
 const DC_HEADERS = { 'x-department-access': 'sales' } as const;
 
 export type CrmRow = Record<string, unknown>;

@@ -2120,3 +2120,47 @@ dbt MCP gallons query ~1s cold/0.5s warm, recall ~1.2s). The time is the LLM age
     tests/unit/agent-graph-cache.test.ts (12) covers signature + cache behavior.
 
 Tests: full suite 527 green, typecheck + lint clean.
+
+## 2026-07-16 — Pre-merge security fixes, Sales-Mytrion cleanup, Wrapper Systems
+
+Security (merge-blocking, all test-pinned):
+- **Session-authoritative department access** (FF_SESSION_DEPT_AUTHORITATIVE, default ON):
+  withDepartmentAccess no longer trusts x-department-access / x-all-departments for verified
+  sessions — any authenticated user could self-elevate and read other agents' pipelines via
+  ?zoho_user_id on desk/data-center (+ same gate on ringcentral/retention/knowledge, 5 call
+  sites total). Non-admin workers now derive departments from their Zoho profile/role
+  (deriveWorkerDepartments); ignored claims warn-logged for roster validation. ROSTER CHECK
+  BEFORE PROD: confirm live sales reps' profile/role names substring-match 'sales'; flag=0 is
+  the rollback.
+- **Desk per-ticket IDOR closed**: comments/reply/attachment now assertTicketOwned
+  (cf_crm_created_by_id vs verified CRM user id; 5-min creator cache; admin/act-as exempt).
+- **Deal ownership on ticket create**: non-admins may only file tickets on their own deals
+  (fetchDealOwnerId COQL check, denials audited); dealId schema tightened to numeric.
+- **RingCentral**: embed-config no longer ships clientSecret/JWT to the browser by default;
+  RINGCENTRAL_BROWSER_CREDS_ACK=1 knowingly restores Phase-1 JWT auto-login (audited).
+- Known/left: servercrm public WS inbox subscription is a servercrm-side fix.
+
+Sales Mytrion (apps/mytrion-crm):
+- Deleted 22 dead MytrionShell-era sales/*.tsx files (~4k lines); data.ts/index.tsx/redesign kept.
+- USER stub removed (PoolTab uses useSessionUser); HomeTab uses the shared inboxRead store;
+  inboxRead/ticketUnread localStorage keys now user-scoped (act-as aware).
+- Ticket list pages to ~495 tickets (limit 99 × ≤5 pages, dedup, stops on short/windowed page) so
+  WS badges see the full open set; reply composer clears only on success; inbox delete rolls back.
+- AutoTab split (616→556 lines; WEX panel → AutoWexPanel.tsx with a request-seq race guard);
+  NY-calendar date helpers (nyToday/nyDaysAgo) replace UTC toISOString; export timeOnly is
+  literal-first so date+time agree; jsPDF vendored (public/vendor/mytrion, pinned jspdf@2.5.1
+  devDep) — no CDN at runtime. README rewritten (was the deleted SDK-widget model);
+  ARCHITECTURE.md §2/§3/§6/§8/§9 updated to the OAuth-session reality.
+
+Wrapper Systems (integrations/, facades kept — consumer migration is a follow-up):
+- core/: BaseWrapper (health never throws) + HttpWrapper (fetchWithTimeout, 401-retry-once hook,
+  overridable error factory) + SqlWrapper ('$n' vs '?' dialect + readOnly contract) + registry
+  with lazy handles (Composio SDK never loads at boot via the registry).
+- wrapper.ts → zohoAuth.ts (ZohoAuthService; adds in-flight dedup); zohoBase.ts ZohoWrapper;
+  ZohoCrm/ZohoDesk/ZohoPeople wrappers (Desk+People gain timeouts — were bare fetch);
+  ServerCrm/Dwh/CmpDatabase(awsMysql)/Cmp/Composio/InternalDb(health-only; repos stay the sole
+  query path)/RingCentral (the Custom Wrapper exemplar; env left the route). Every old free
+  function remains as a @deprecated 1-line facade — all pre-existing tests pass.
+- New GET /v1/health/integrations (admin-gated; ?live=1 runs cheap probes). /v1/health untouched.
+
+Tests: full suite 551 green (was 511), typecheck + lint clean. All commits on feature/MytrionSetup.
