@@ -107,11 +107,15 @@ export function InboxTab() {
   };
   const deleteInbox = (i: InboxItem, e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
+    // Optimistic remove with rollback — a failed delete puts the row back where it was.
+    const prev = items;
     setItems((xs) => xs.filter((x) => x.id !== i.id));
-    pushToast('Message removed', '');
-    void deleteInboxMessage(i.id).catch((err: unknown) => {
-      pushToast('Delete failed', err instanceof Error ? err.message : 'Could not remove the message');
-    });
+    void deleteInboxMessage(i.id)
+      .then(() => pushToast('Message removed', ''))
+      .catch((err: unknown) => {
+        setItems(prev);
+        pushToast('Delete failed', err instanceof Error ? err.message : 'Could not remove the message');
+      });
   };
   const openInbox = (i: InboxItem) => {
     markInboxRead(i.id);

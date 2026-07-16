@@ -128,14 +128,19 @@ export interface DeskThread {
   [k: string]: unknown;
 }
 
-export async function listDeskTickets(opts: { limit?: number; zohoUserId?: string } = {}): Promise<{
+export async function listDeskTickets(
+  opts: { from?: number; limit?: number; zohoUserId?: string } = {},
+): Promise<{
   tickets: DeskTicket[];
   scoped: boolean;
+  /** True when the server fell back to the recency-window scan — that response is already the
+   *  full (bounded) set, so callers must not request further pages. */
+  windowed?: boolean;
 }> {
   return (await request('GET', '/desk/tickets', {
-    query: { limit: opts.limit ?? 50, zoho_user_id: opts.zohoUserId },
+    query: { from: opts.from, limit: opts.limit ?? 50, zoho_user_id: opts.zohoUserId },
     headers: DESK_HEADERS,
-  })) as { tickets: DeskTicket[]; scoped: boolean };
+  })) as { tickets: DeskTicket[]; scoped: boolean; windowed?: boolean };
 }
 
 export async function listDeskComments(

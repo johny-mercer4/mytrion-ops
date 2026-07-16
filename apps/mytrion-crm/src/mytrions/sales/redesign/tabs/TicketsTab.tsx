@@ -180,11 +180,12 @@ export function TicketsTab() {
     const file = attachFile;
     if ((!text && !file) || !selectedTicket || sending) return;
     setSending(true);
-    setTicketReply('');
-    setAttachFile(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
     try {
       await replyDeskTicket(selectedTicket, text, file); // empty text + file → server captions it
+      // Clear the composer only AFTER the send succeeds — a failed send keeps the draft.
+      setTicketReply('');
+      setAttachFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       msgsLoad.reload();
       ticketsLoad.reload();
     } catch (e) {

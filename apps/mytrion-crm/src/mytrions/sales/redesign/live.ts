@@ -445,8 +445,28 @@ export async function loadTickets(): Promise<{ tickets: TicketVM[]; scoped: bool
   // (act-as), pass that agent's id so the (admin-honored) ?zoho_user_id override scopes to THEM —
   // the desk route resolves identity from the session, not the act-as headers.
   const actAsId = getImpersonation()?.zohoUserId;
-  const res = await listDeskTickets({ limit: 50, ...(actAsId ? { zohoUserId: actAsId } : {}) });
-  return { tickets: res.tickets.map(mapTicket), scoped: res.scoped };
+  const scope = actAsId ? { zohoUserId: actAsId } : {};
+  // Page the full open-ticket set (Desk caps a page at 99): the WS unread badge only counts
+  // events for ticket ids the client knows, so a busy agent's older tickets must load too.
+  // Capped to bound render + Desk API cost; a short page (or the server's windowed fallback,
+  // which already returns its full bounded set) ends the loop.
+  const PAGE = 99;
+  const MAX_PAGES = 5; // ≈495 tickets
+  const seen = new Set<string>();
+  const rows: Parameters<typeof mapTicket>[0][] = [];
+  let scoped = true;
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const res = await listDeskTickets({ from: 1 + page * PAGE, limit: PAGE, ...scope });
+    scoped = res.scoped;
+    for (const t of res.tickets) {
+      const id = String((t as { id?: unknown }).id ?? '');
+      if (id && seen.has(id)) continue;
+      if (id) seen.add(id);
+      rows.push(t);
+    }
+    if (res.windowed || res.tickets.length < PAGE) break;
+  }
+  return { tickets: rows.map(mapTicket), scoped };
 }
 
 export interface TicketMsgVM {
