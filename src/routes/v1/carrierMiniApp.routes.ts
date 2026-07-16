@@ -12,10 +12,10 @@ import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { env, isProduction } from '../../config/env.js';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { db } from '../../db/client.js';
-import { listDwhCards } from '../../integrations/dwhCards.js';
+import { listDwhCards, findDwhCardByNumber } from '../../integrations/dwhCards.js';
 import { searchDwhClients } from '../../integrations/dwhClients.js';
 import { searchDwhOperators } from '../../integrations/dwhOperators.js';
-import { serverCrmGet, ServerCrmHttpError } from '../../integrations/serverCrm.js';
+import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
 import { executeZohoFunctionWithFallback } from '../../integrations/zohoFunctions.js';
 import { carrierInvitationRepo } from '../../repos/carrierInvitationRepo.js';
 import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompanyRepo.js';
@@ -136,6 +136,10 @@ const invoiceSignedUrlSchema = z.object({
   initData: z.string().min(1),
   invoiceId: z.string().min(1).max(120),
 });
+const driverSelfRegisterSchema = z.object({
+  initData: z.string().min(1),
+  cardNumber: z.string().trim().min(4).max(40),
+});
 
 function verifyTelegramUser(initData: string): { tgUser: TelegramWebAppUser; telegramUserId: string } {
   if (!env.TELEGRAM_CARRIER_BOT_TOKEN) {
@@ -243,46 +247,6 @@ async function requireRegisteredCarrierUser(
     });
   }
   return { registration, carrierId: registration.carrierId };
-}
-
-/**
- * Thin servercrm GET proxy for the self-service reads below — mirrors dispatchTouchpoint's error
- * mapping (src/modules/touchpoints/dispatcher.ts) since that function itself enforces sales-agent
- * ownership scoping (assertCarrierOwned), which doesn't apply here: the mini-app's carrierId is
- * already trust-verified via requireRegisteredCarrierUser, not a sales agent's client roster.
- */
-/** servercrm error bodies are JSON ({success:false, message:'...'}) — surface the message, not the raw blob. */
-function extractUpstreamMessage(bodyText: string): string {
-  try {
-    const parsed = JSON.parse(bodyText) as { message?: string; error?: string };
-    return parsed.message ?? parsed.error ?? bodyText;
-  } catch {
-    return bodyText;
-  }
-}
-
-async function crmGet<T>(path: string, query?: Record<string, string | number | undefined>): Promise<T> {
-  try {
-    return await serverCrmGet<T>(path, query);
-  } catch (err) {
-    if (err instanceof ServerCrmHttpError && [400, 404, 409, 422].includes(err.status)) {
-      throw new AppError(
-        err.bodyText ? extractUpstreamMessage(err.bodyText) : `servercrm rejected the request (${err.status})`,
-        {
-          statusCode: err.status,
-          code: 'SERVER_CRM_REJECTED',
-          expose: true,
-          cause: err,
-        },
-      );
-    }
-    throw new AppError('servercrm request failed', {
-      statusCode: 502,
-      code: 'SERVER_CRM_ERROR',
-      expose: true,
-      cause: err,
-    });
-  }
 }
 
 const createInviteSchema = z.object({
@@ -583,7 +547,8 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     const body = miniAppSessionSchema.parse(request.body);
     const { registration } = await requireRegisteredMiniAppUser(body.initData);
     const support = await resolveRegistrationAgent(registration);
-    return { registration: toRegistrationView({ ...registration, ...support }) };
+    const extras = await resolveDriverExtras(registration);
+    return { registration: toRegistrationView({ ...registration, ...support, ...extras }) };
   });
 
   /**
@@ -668,9 +633,11 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     const actor = telegramCtx(invite.profile, telegramUserId);
     if (!txResult.burnedFresh) {
       if (txResult.existing) {
+        const existing = txResult.existing;
+        const extras = await resolveDriverExtras(existing);
         return reply.send({
           alreadyRegistered: true,
-          registration: toRegistrationView(txResult.existing),
+          registration: toRegistrationView({ ...existing, ...extras }),
         });
       }
       throw new ConflictError('This invite was already used by someone else');
@@ -700,8 +667,9 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       fleet = { cardCount: invite.cardCount, registeredDrivers };
     }
 
+    const extras = await resolveDriverExtras(registration);
     return reply.code(201).send({
-      registration: toRegistrationView(registration),
+      registration: toRegistrationView({ ...registration, ...extras }),
       ...(fleet ? { fleet } : {}),
     });
   });
@@ -790,15 +758,15 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   app.post('/carrier/mini-app/balance', async (request) => {
     const body = selfServiceSchema.parse(request.body);
     const { carrierId } = await requireRegisteredCarrierUser(body.initData);
-    return crmGet(`/api/agent/dwh/carrier-balance/${encodeURIComponent(carrierId)}`);
+    return serverCrmWrapper.getCarrierBalance(carrierId);
   });
 
   app.post('/carrier/mini-app/status', async (request) => {
     const body = selfServiceSchema.parse(request.body);
     const { carrierId } = await requireRegisteredCarrierUser(body.initData);
     const [overview, cards] = await Promise.all([
-      crmGet(`/api/agent/dwh/carrier-overview/${encodeURIComponent(carrierId)}`),
-      crmGet(`/api/agent/dwh/cards/${encodeURIComponent(carrierId)}`),
+      serverCrmWrapper.getCarrierOverview(carrierId),
+      serverCrmWrapper.getCards(carrierId),
     ]);
     return { overview, cards };
   });
@@ -806,38 +774,25 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   app.post('/carrier/mini-app/transactions', async (request) => {
     const body = rangeSchema.parse(request.body);
     const { carrierId } = await requireRegisteredCarrierUser(body.initData);
-    return crmGet(`/api/agent/dwh/transactions/${encodeURIComponent(carrierId)}`, {
-      range: body.from && body.to ? 'custom' : (body.range ?? 'month'),
-      ...(body.from ? { from: body.from } : {}),
-      ...(body.to ? { to: body.to } : {}),
-      limit: 100,
-    });
+    return serverCrmWrapper.getTransactions(carrierId, { range: body.range, from: body.from, to: body.to });
   });
 
   app.post('/carrier/mini-app/last-used', async (request) => {
     const body = rangeSchema.parse(request.body);
     const { carrierId } = await requireRegisteredCarrierUser(body.initData);
-    return crmGet(`/api/agent/dwh/cards/${encodeURIComponent(carrierId)}/last-used`, {
-      range: body.range ?? 'all_time',
-    });
+    return serverCrmWrapper.getLastUsed(carrierId, body.range);
   });
 
   app.post('/carrier/mini-app/payment-info', async (request) => {
     const body = selfServiceSchema.parse(request.body);
     const { carrierId } = await requireRegisteredCarrierUser(body.initData);
-    return crmGet(`/api/agent/dwh/payment-info/${encodeURIComponent(carrierId)}`, { days: 90 });
+    return serverCrmWrapper.getPaymentInfo(carrierId);
   });
 
   app.post('/carrier/mini-app/invoices', async (request) => {
     const body = invoicesSchema.parse(request.body);
     const { carrierId } = await requireRegisteredCarrierUser(body.initData);
-    return crmGet('/api/salesMytrion/fetchInvoices', {
-      carrierId,
-      range: body.from && body.to ? 'custom' : (body.range ?? 'last_30'),
-      ...(body.status ? { status: body.status } : {}),
-      ...(body.from ? { from: body.from } : {}),
-      ...(body.to ? { to: body.to } : {}),
-    });
+    return serverCrmWrapper.getInvoices(carrierId, { range: body.range, status: body.status, from: body.from, to: body.to });
   });
 
   // A signed URL isn't itself carrier-scoped upstream, so re-check the invoice belongs to THIS
@@ -846,10 +801,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   app.post('/carrier/mini-app/invoices/signed-url', async (request) => {
     const body = invoiceSignedUrlSchema.parse(request.body);
     const { carrierId } = await requireRegisteredCarrierUser(body.initData);
-    const list = await crmGet<{ data?: Array<Record<string, unknown>> }>('/api/salesMytrion/fetchInvoices', {
-      carrierId,
-      range: 'all_time',
-    });
+    const list = await serverCrmWrapper.getInvoices(carrierId, { range: 'all_time' });
     const owned = (list.data ?? []).some((inv) => String(inv['invoice_id'] ?? inv['id'] ?? '') === body.invoiceId);
     if (!owned) {
       throw new AppError('That invoice does not belong to this carrier', {
@@ -858,7 +810,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
         expose: true,
       });
     }
-    return crmGet(`/api/salesMytrion/invoices/${encodeURIComponent(body.invoiceId)}/signed-url`, { type: 'pdf' });
+    return serverCrmWrapper.getInvoiceSignedUrl(body.invoiceId);
   });
 
   app.post('/carrier/mini-app/tracking', async (request) => {
@@ -869,6 +821,75 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     } catch (err) {
       throw new AppError('Tracking lookup failed', { statusCode: 502, code: 'TRACKING_ERROR', expose: true, cause: err });
     }
+  });
+
+  /**
+   * Driver self-registration by fuel-card NUMBER (no invite link). The number is printed on the
+   * physical card, so possession identifies the carrier + card; the Telegram initData HMAC proves
+   * identity. Only DRIVERS may self-register — company/owner accounts stay invite-only.
+   * Reuses createCarrierInvite's validation (card active + one-driver-per-card) by minting a real
+   * invite for the resolved card, then redeeming it for this Telegram user.
+   */
+  app.post('/carrier/mini-app/driver-self-register', async (request, reply) => {
+    const body = driverSelfRegisterSchema.parse(request.body);
+    const { tgUser, telegramUserId } = verifyTelegramUser(body.initData);
+    const card = await findDwhCardByNumber(body.cardNumber.trim());
+    if (!card) {
+      throw new AppError('No active fuel card matches that number', {
+        statusCode: 404,
+        code: 'CARD_NOT_FOUND',
+        expose: true,
+      });
+    }
+    const ctx = lookupCtx();
+    const driverName = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(' ').trim() || tgUser.username || 'Driver';
+
+    // Idempotency + cross-carrier guard before minting any invite (avoids orphan pending invites).
+    const existing = await registeredMiniAppCompanyRepo.findByTelegramUserId(ctx, telegramUserId);
+    if (existing) {
+      const sameCard = existing.profile === 'driver' && existing.carrierId === card.carrierId && existing.cardId === card.cardId;
+      if (!sameCard) {
+        throw new ConflictError('This Telegram account is already registered to another carrier', {
+          code: 'TELEGRAM_ALREADY_REGISTERED',
+        });
+      }
+      const extras = await resolveDriverExtras(existing);
+      return reply.send({ registration: toRegistrationView({ ...existing, ...extras }) });
+    }
+
+    // Mint the invite (validates the card is active + not already taken by another driver), then
+    // redeem it for this Telegram user in one transaction.
+    const { invite } = await createCarrierInvite(ctx, {
+      profile: 'driver',
+      carrierId: card.carrierId,
+      cardId: card.cardId,
+      driverName,
+    });
+    const registration = await db.transaction(async (tx) => {
+      await carrierInvitationRepo.markRedeemed(ctx, invite.id, `telegram:${telegramUserId}`, tx);
+      return registeredMiniAppCompanyRepo.upsert(
+        ctx,
+        {
+          invitationId: invite.id,
+          profile: 'driver',
+          telegramUserId,
+          ...(tgUser.username ? { telegramUsername: tgUser.username } : {}),
+          carrierId: card.carrierId,
+          cardId: card.cardId,
+          driverName,
+        },
+        tx,
+      );
+    });
+    await auditFromContext(telegramCtx('driver', telegramUserId), {
+      action: 'mini_app.driver_self_register',
+      status: 'ok',
+      resourceType: 'registered_mini_app_company',
+      resourceId: registration.id,
+      detail: { carrierId: card.carrierId, cardId: card.cardId },
+    });
+    const extras = await resolveDriverExtras(registration);
+    return reply.code(201).send({ registration: toRegistrationView({ ...registration, ...extras }) });
   });
 }
 
@@ -881,6 +902,7 @@ function toRegistrationView(row: {
   cardCount: number | null;
   cardId: string | null;
   agentName: string | null;
+  cardNumber?: string | null;
 }) {
   return {
     id: row.id,
@@ -891,5 +913,48 @@ function toRegistrationView(row: {
     cardCount: row.cardCount,
     cardId: row.cardId,
     agentName: row.agentName,
+    cardNumber: row.cardNumber ?? null,
   };
+}
+
+/**
+ * The driver's real fuel-card number (octane.stg_cmp_card.card_number), looked up by cardId from the
+ * DWH replica — the mini-app session only carries cardId, so this is what lets the driver hero show
+ * the real PAN instead of a fabricated one. Best-effort: null (not an error) if the DWH is
+ * unconfigured, the lookup fails, or no card matches — the UI falls back to the masked cardId.
+ */
+async function resolveDriverCardNumber(carrierId: string | null, cardId: string | null): Promise<string | null> {
+  if (!carrierId || !cardId || !env.DWH_DATABASE_URL) return null;
+  try {
+    const cards = await listDwhCards(carrierId);
+    return cards.find((c) => c.cardId === cardId)?.cardNumber ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The carrier's company name from the DWH — used to fill a driver registration's card label when the
+ * invite didn't capture a companyName (older invites). Best-effort, never blocks.
+ */
+async function resolveCarrierCompanyName(carrierId: string | null): Promise<string | null> {
+  if (!carrierId || !env.DWH_DATABASE_URL) return null;
+  try {
+    const operators = await searchDwhOperators({ q: carrierId, limit: 10 });
+    return operators.find((o) => o.carrierId === carrierId)?.companyName ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** DWH-resolved extras for a DRIVER registration (real card number + company name fallback). */
+async function resolveDriverExtras(
+  reg: Pick<RegisteredMiniAppCompany, 'profile' | 'carrierId' | 'cardId' | 'companyName'>,
+): Promise<{ cardNumber: string | null; companyName?: string }> {
+  if (reg.profile !== 'driver') return { cardNumber: null };
+  const [cardNumber, resolvedCompany] = await Promise.all([
+    resolveDriverCardNumber(reg.carrierId, reg.cardId),
+    reg.companyName ? Promise.resolve(reg.companyName) : resolveCarrierCompanyName(reg.carrierId),
+  ]);
+  return { cardNumber, ...(resolvedCompany ? { companyName: resolvedCompany } : {}) };
 }
