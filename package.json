@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "dev:all": "bash scripts/dev-local.sh",
+    "tunnel": "bash scripts/db-tunnel.sh",
     "build": "tsc -p tsconfig.build.json",
     "build:widget": "corepack pnpm -C apps/mytrion-crm install --frozen-lockfile && corepack pnpm -C apps/mytrion-crm build",
     "start": "node dist/server.js",

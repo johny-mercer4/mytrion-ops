@@ -219,6 +219,8 @@ RBAC-enforced RAG; tool calling comes after confirmation.
   BUCKET/ENDPOINT/PUBLIC_BASE_URL/REGION`), Browserbase (`BROWSERBASE_API_KEY/PROJECT_ID/BASE_URL`).
 - 37 tests pass (new: chat RAG grounding). typecheck/lint/build clean.
 
+---
+
 ### DB live + new platform env (later, 2026-06-04)
 
 - Switched `DATABASE_URL` to the **external** Mytrion OPS Render host (off-Render reachable).
@@ -2164,3 +2166,87 @@ Wrapper Systems (integrations/, facades kept — consumer migration is a follow-
 - New GET /v1/health/integrations (admin-gated; ?live=1 runs cheap probes). /v1/health untouched.
 
 Tests: full suite 551 green (was 511), typecheck + lint clean. All commits on feature/MytrionSetup.
+
+## 2026-07-16 — Mytrion Admin "CMP Database" schema tab
+
+Live, read-only schema browser for the CMP MySQL (`cmpDb`/tss_db, via SSH tunnel) so developers
+can see structure at a glance. Backend + frontend, gated to real admins.
+
+- **Backend** `src/modules/cmpSchema/service.ts` — `getCmpSchema()` reads `information_schema`
+  only (tables + columns), stitched into a nested `CmpSchemaSnapshot` (tables → columns). Surfaces
+  data types, PK/UQ/FK keys, nullability, defaults/extra, engine-approx `table_rows`, and each
+  table's `UPDATE_TIME`/`CREATE_TIME` (the "actively updated?" signal — verified live: 79/92 tables
+  carry a real update time; views null as expected). Raw SQL lives in the module, NOT routes/
+  (repo rule 2); runs through the read-only `cmpDb` session. DB name resolves from
+  AWS_MYSQL_DATABASE else `SELECT DATABASE()`.
+- **Route** `GET /v1/admin/cmp-schema` (`cmpSchema.routes.ts`, registered in app.ts) — internal
+  audience + `allDepartmentAccess` (the same "true admin" bar as /admin/agents, since it reveals
+  the full internal schema incl. sensitive table/column names). Audit-logged (ok/denied/error).
+  503 when unconfigured, 502 when the DB/tunnel is unreachable. Never returns row data.
+- **Frontend** new Admin tab "CMP Database" (DatabaseIcon): `api/cmpSchema.ts` client +
+  `admin/CmpDatabase.tsx` + scoped `CmpDatabase.module.css` (admin.module.css already 919 lines,
+  over the 600 cap — didn't grow it). Search over table AND column names (column-only matches
+  auto-expand the table + show an "N col match" hint); All/Tables/Views + "Active (<24h)" filters;
+  per-table Live/Recent/Idle activity pill from update_time; expand/collapse (+ expand-all); stat
+  tiles (tables, columns, updated<24h, views); Refresh.
+- Verify: backend typecheck+lint+build clean; frontend typecheck + vite build clean; live probe
+  through the real service OK (92 tables / 948 columns). Test suite 550 green; the 1 red
+  (approvals.test.ts telegram send) is pre-existing + env-driven (real TELEGRAM_* in local .env) —
+  fails identically on a clean stash, unrelated to this change. On feature/AdminSetup.
+
+## 2026-07-16 — Onboarding / context refresh
+
+- Reviewed the project entrypoints and guardrails: `src/server.ts` boots migrations, jobs, and graceful shutdown; `src/app.ts` builds the Fastify app with shared plugins, static widget/mini-app serving, optional MCP discovery, and all versioned routes under `API_PREFIX`.
+- Confirmed the core invariants that shape the codebase: strict TypeScript ESM with explicit `.js` imports, DB access only through `src/repos/*`, and every tool flowing through `ToolManifest` + `toolDispatcher` for input validation, RBAC, audit logging, and tool-call persistence.
+- Re-read the runtime config and tests that matter most for safety: env parsing lives in `src/config/env.ts`, and `tests/unit/agent-rbac-leakage.test.ts` protects the department-scoped retrieval/tool binding rules that prevent cross-tenant or cross-department leakage.
+- Current mental model: Octane is a typed internal AI backend for employees and partners, centered on chat/RAG plus a curated tool catalog for Zoho, analytics, files, Telegram, and related integrations.
+
+## 2026-07-17 — Mytrion Admin "Data Warehouse" schema tab (+ shared SchemaBrowser)
+
+Added a DWH tab mirroring the CMP Database tab, covering ALL schemas. Refactored the CMP tab's guts
+into a shared component so the two are literally the same UI.
+
+- **Backend** `src/modules/dwhSchema/service.ts` — `getDwhSchema()` reads pg_catalog only (not
+  information_schema, which is privilege-filtered AND omits matviews). 4 parallel queries: relations
+  (pg_class+pg_namespace+pg_stat_all_tables), columns (pg_attribute+format_type+pg_attrdef +
+  col_description), PK/UNIQUE (pg_index), FK (pg_constraint). Postgres has no UPDATE_TIME, so
+  `updateTime` = greatest(last_vacuum, last_autovacuum, last_analyze, last_autoanalyze) — a real
+  "recently active" signal (autoanalyze fires on dbt rebuilds). Row estimate = reltuples/n_live_tup.
+  Column key role emitted as PRI/UNI/MUL to reuse the FE keyTag as-is. Returns the SAME snapshot
+  shape as cmpSchema + `schema` per table and a `schemas` list. Raw SQL in the module, not routes/
+  (rule 2); runs through the enforced read-only `dwh` pool.
+- **Route** `GET /v1/admin/dwh-schema` (`dwhSchema.routes.ts`, registered in app.ts) — identical
+  gate to cmp-schema (internal + allDepartmentAccess), audit-logged, 503/502.
+- **Frontend** refactored `CmpDatabase.tsx` → shared `SchemaBrowser.tsx` (+ `SchemaBrowser.module.css`,
+  renamed from CmpDatabase.module.css). `CmpDatabase`/`DwhDatabase` are now thin wrappers passing
+  title/subtitle/fetcher/icon. Shared types in `api/schema.ts` (`DbSchemaSnapshot`); `api/cmpSchema.ts`
+  + new `api/dwhSchema.ts` both return it. The schema dimension (a `<select>` filter, a per-row
+  schema badge, a "Schemas" stat tile, schema-qualified expand keys) appears only when the source
+  reports multiple schemas — so CMP is unchanged, DWH gains it. New `WarehouseIcon`; DWH tab wired
+  into admin/index.tsx after CMP.
+- Live probe (real DWH): **16 schemas, 1321 tables, 20,515 columns in 1.3s** — 366 tables with a
+  freshness time, 76 with a PK, views null as expected. Note: pg_catalog surfaces 16 schemas vs
+  information_schema's privilege-filtered 12 (bahodir/shohruh/octane_hr/… now visible) — the "all
+  schemas" ask. Verify: backend+frontend typecheck, backend+frontend build, backend lint all clean;
+  tests 550 green (same 1 pre-existing telegram-env failure as the CMP session). On feature/AdminSetup.
+
+## 2026-07-17 — CMP tunnel automation (always-present, no manual ssh)
+
+The CMP MySQL is AWS RDS in a private VPC (not publicly reachable like the DWH's public-IP
+Postgres), so it needs an SSH tunnel through the bastion EC2. Made that automatic so the Admin →
+CMP Database tab works without anyone running ssh by hand.
+
+- `scripts/db-tunnel.sh` — auto-reconnecting tunnel (local 3307 → bastion → RDS 3306). Reads
+  MYSQL_SSH_*/MYSQL_DB_* from env→.env; keepalive (ServerAliveInterval); self-heals on drop;
+  no-ops cleanly (exit 0) if unconfigured or the key is missing (DWH-only/CI unaffected); reuses
+  an already-open port instead of double-binding. `pnpm tunnel` runs it standalone.
+- `scripts/dev-local.sh` — `pnpm dev:all` now starts the tunnel alongside API+web and stops it on
+  exit (added TUNNEL_PID to the cleanup trap).
+- `.env` MYSQL_SSH_KEYFILE repointed to `~/.config/octane/dbtunnel_key` (was a stale path from
+  another machine). NOTE: the key must be placed there once — I could not relocate the credential
+  myself (blocked), so it's a manual one-time step for the dev.
+- CMP remains metadata-only + read-only: the tab only queries information_schema (never records),
+  session is AWS_MYSQL_READONLY. Verified live: CMP fetch OK (93 tables, 949 cols, 1.5s).
+- PROD ("direct like DWH", no tunnel) still needs a one-time AWS change (make RDS reachable: public
+  + SG allowlist, or same-VPC). Code is already direct-ready — then it's config only
+  (AWS_MYSQL_HOST=<rds endpoint>, PORT 3306, AWS_MYSQL_SSL=1). On feature/AdminSetup.

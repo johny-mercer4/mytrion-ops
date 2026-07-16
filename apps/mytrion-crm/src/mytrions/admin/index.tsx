@@ -1,14 +1,16 @@
 import { useState } from 'react';
-import { HistoryIcon, KnowledgeIcon, ScopeIcon, SearchIcon, TrainIcon, UsersIcon } from '../../components/icons';
+import { DatabaseIcon, HistoryIcon, KnowledgeIcon, ScopeIcon, SearchIcon, TrainIcon, UsersIcon, WarehouseIcon } from '../../components/icons';
 import { MytrionShell, type NavItem } from '../_shared/MytrionShell';
 import { AuditLog } from './AuditLog';
 import { CarrierUsers } from './CarrierUsers';
+import { CmpDatabase } from './CmpDatabase';
+import { DwhDatabase } from './DwhDatabase';
 import { KnowledgeBase } from './KnowledgeBase';
 import { KnowledgeBrowser } from './KnowledgeBrowser';
 import { OctaneScope } from './scope/OctaneScope';
 import { Train } from './Train';
 
-type Tab = 'kb' | 'train' | 'browser' | 'scope' | 'carriers' | 'audit';
+type Tab = 'kb' | 'train' | 'browser' | 'scope' | 'carriers' | 'audit' | 'cmp' | 'dwh';
 
 /** Mytrion Admin — live RnD knowledge base, carrier access, and lifecycle scope, with the scoped AI chat docked right. */
 export default function AdminMytrion() {
@@ -22,6 +24,8 @@ export default function AdminMytrion() {
     { key: 'browser', label: 'Knowledge Browser', icon: <SearchIcon />, active: tab === 'browser', onClick: () => setTab('browser') },
     { key: 'carriers', label: 'Carrier User Management', icon: <UsersIcon />, active: tab === 'carriers', onClick: () => setTab('carriers') },
     { key: 'audit', label: 'Audit Log', icon: <HistoryIcon size={18} />, active: tab === 'audit', onClick: () => setTab('audit') },
+    { key: 'cmp', label: 'CMP Database', icon: <DatabaseIcon />, active: tab === 'cmp', onClick: () => setTab('cmp') },
+    { key: 'dwh', label: 'Data Warehouse', icon: <WarehouseIcon />, active: tab === 'dwh', onClick: () => setTab('dwh') },
     { key: 'scope', label: 'Octane-Scope', icon: <ScopeIcon />, active: tab === 'scope', onClick: () => setTab('scope') },
   ];
 
@@ -32,6 +36,8 @@ export default function AdminMytrion() {
       {tab === 'browser' && <KnowledgeBrowser />}
       {tab === 'carriers' && <CarrierUsers />}
       {tab === 'audit' && <AuditLog />}
+      {tab === 'cmp' && <CmpDatabase />}
+      {tab === 'dwh' && <DwhDatabase />}
       {tab === 'scope' && <OctaneScope />}
     </MytrionShell>
   );
