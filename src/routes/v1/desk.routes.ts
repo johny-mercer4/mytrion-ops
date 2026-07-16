@@ -25,6 +25,7 @@ import {
   uploadDeskFile,
 } from '../../integrations/zohoDesk.js';
 import { dispatchTouchpoint } from '../../modules/touchpoints/dispatcher.js';
+import { assertTicketOwned } from '../../modules/tools/deskScope.js';
 import { resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment } from './helpers.js';
@@ -138,10 +139,11 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
    * threads alone are what make the pane non-empty. The UI merges + sorts the two by time.
    */
   app.get('/desk/tickets/:id/comments', guard, async (request) => {
-    requireSalesAccess(request);
+    const ctx = requireSalesAccess(request);
     const { id } = request.params as { id: string };
     const q = commentsQuery.parse(request.query);
     try {
+      await assertTicketOwned(ctx, id);
       const [threadList, comments] = await Promise.all([
         getTicketThreads(id, q.limit).catch(() => [] as Record<string, unknown>[]),
         getTicketComments(id, q.limit).catch(() => [] as Record<string, unknown>[]),
@@ -167,6 +169,7 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
       const flagged = comments.map((c) => ({ ...c, mine: String(c.commenterId ?? '') === agentId }));
       return { threads: enriched, comments: flagged };
     } catch (err) {
+      if (err instanceof AppError) throw err;
       throw deskError(err);
     }
   });
@@ -197,6 +200,7 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
       throw new AppError('Reply needs text or a file', { statusCode: 400, code: 'VALIDATION_ERROR', expose: true });
     }
     try {
+      await assertTicketOwned(ctx, id);
       const attachmentIds: string[] = [];
       if (file) attachmentIds.push(await uploadDeskFile(file.buffer, file.name, file.mime));
       // A Desk comment must carry content — caption a file-only reply.
@@ -218,12 +222,14 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
 
   /** Download a ticket attachment's bytes (proxies Desk with the org token; auth + sales-gated). */
   app.get('/desk/tickets/:id/attachments/:attId/content', guard, async (request, reply) => {
-    requireSalesAccess(request);
+    const ctx = requireSalesAccess(request);
     const { id, attId } = request.params as { id: string; attId: string };
     try {
+      await assertTicketOwned(ctx, id);
       const { buffer, contentType } = await getTicketAttachmentContent(id, attId);
       return await reply.header('Content-Type', contentType).header('Content-Disposition', 'attachment').send(buffer);
     } catch (err) {
+      if (err instanceof AppError) throw err;
       throw deskError(err);
     }
   });

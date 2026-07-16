@@ -247,6 +247,21 @@ export async function searchTicketsByCreator(
   return deskGet<Record<string, unknown>>(url);
 }
 
+/**
+ * One ticket's full record (`GET /tickets/{id}`). The `cf` object (incl. cf_crm_created_by_id)
+ * comes back inline without the Desk.search scope — this is what the per-ticket ownership check
+ * reads. Throws with `HTTP <status>` in the message (404 = unknown ticket id).
+ */
+export async function getTicket(ticketId: string): Promise<Record<string, unknown>> {
+  const url = deskUrl(`/tickets/${encodeURIComponent(ticketId)}`);
+  const res = await fetch(url, { headers: await authHeaders('zoho_desk') });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`[zoho-desk] GET /tickets/${ticketId} HTTP ${res.status}: ${text.slice(0, 200)}`);
+  }
+  return text ? (JSON.parse(text) as Record<string, unknown>) : {};
+}
+
 /** A ticket's conversation (comments + agent replies), oldest→newest as the UI renders them. */
 export async function getTicketComments(ticketId: string, limit = 50): Promise<Record<string, unknown>[]> {
   const url = new URL(deskUrl(`/tickets/${encodeURIComponent(ticketId)}/comments`));
