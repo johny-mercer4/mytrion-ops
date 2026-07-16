@@ -8,9 +8,10 @@
 import { useRef, useState } from 'react';
 import type { ChangeEvent, MouseEvent, ReactElement } from 'react';
 import { s } from '../dc';
-import { badge, USER, type BadgeVM } from '../salesData';
+import { badge, type BadgeVM } from '../salesData';
 import { DEALPOOL } from '../mock';
 import { useSales } from '../ctx';
+import { useSessionUser } from '../sessionUser';
 
 // ---------- types ----------
 
@@ -137,6 +138,7 @@ const assignPath =
 
 export function PoolTab() {
   const { pushToast } = useSales();
+  const user = useSessionUser();
 
   const [deals, setDeals] = useState<Deal[]>(() => DEALPOOL.map((d) => ({ ...d })));
   const [poolSearch, setPoolSearchState] = useState('');
@@ -209,7 +211,7 @@ export function PoolTab() {
   const pf = poolFilters;
   const pq = poolSearch.toLowerCase();
   let pool = deals.slice();
-  if (poolMyDeals) pool = pool.filter((d) => d.owner === USER.name);
+  if (poolMyDeals) pool = pool.filter((d) => d.owner === user.name);
   if (pf.assignmentStatus.length) pool = pool.filter((d) => pf.assignmentStatus.includes(d.approvalStatus));
   if (pf.status.length) pool = pool.filter((d) => pf.status.includes(d.status));
   if (pf.takenBy.length)

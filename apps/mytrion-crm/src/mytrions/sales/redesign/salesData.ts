@@ -96,8 +96,6 @@ export const NAVLABEL: Record<string, string> = {
   create: 'Create Ticket', auto: 'Automations', dash: 'Dashboard', carriers: 'Carriers',
 };
 
-export const USER = { name: 'Marcus Reyes', first: 'Marcus', initials: 'MR', role: 'Senior Sales Agent' };
-
 // ---------- time / workday ----------
 
 const NY_TZ = 'America/New_York';

@@ -8,26 +8,45 @@
  * never a server flag — exactly like the reference.
  */
 import { useSyncExternalStore } from 'react';
+import { getImpersonation } from '@/api/impersonation';
+import { getSession } from '@/api/session';
 
-const KEY = 'octane.sales.redesign.ticketUnread.v1';
+// User-scoped key: unread counts must not bleed across accounts on a shared machine, nor
+// between an admin's own view and a View-as target (the old un-suffixed key is abandoned).
+const KEY_BASE = 'octane.sales.redesign.ticketUnread.v1';
 type Counts = Record<string, number>;
 
-function load(): Counts {
+function storageKey(): string {
+  const uid = getImpersonation()?.zohoUserId ?? getSession()?.worker.zohoUserId ?? 'anon';
+  return `${KEY_BASE}:${uid}`;
+}
+
+function load(key: string): Counts {
   try {
-    const v = JSON.parse(localStorage.getItem(KEY) ?? '{}') as unknown;
+    const v = JSON.parse(localStorage.getItem(key) ?? '{}') as unknown;
     return v && typeof v === 'object' ? (v as Counts) : {};
   } catch {
     return {};
   }
 }
 
-let counts: Counts = load();
+let activeKey = storageKey();
+let counts: Counts = load(activeKey);
 const listeners = new Set<() => void>();
+
+// Sign-in / View-as switches change the storage key mid-session — swap to that user's counts.
+function ensureKey(): void {
+  const key = storageKey();
+  if (key !== activeKey) {
+    activeKey = key;
+    counts = load(key);
+  }
+}
 
 function commit(next: Counts): void {
   counts = next;
   try {
-    localStorage.setItem(KEY, JSON.stringify(next));
+    localStorage.setItem(activeKey, JSON.stringify(next));
   } catch {
     /* storage disabled — the in-memory store still drives this tab */
   }
@@ -37,11 +56,13 @@ function commit(next: Counts): void {
 /** A new message arrived for `ticketId` → bump its unread count. */
 export function bumpTicketUnread(ticketId: string): void {
   if (!ticketId) return;
+  ensureKey();
   commit({ ...counts, [ticketId]: (counts[ticketId] ?? 0) + 1 });
 }
 
 /** The ticket was opened/read → clear its unread count. */
 export function clearTicketUnread(ticketId: string): void {
+  ensureKey();
   if (!ticketId || !counts[ticketId]) return;
   const next = { ...counts };
   delete next[ticketId];
@@ -55,6 +76,7 @@ function subscribe(l: () => void): () => void {
   };
 }
 function snapshot(): Counts {
+  ensureKey();
   return counts;
 }
 

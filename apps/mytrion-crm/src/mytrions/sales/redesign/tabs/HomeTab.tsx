@@ -12,6 +12,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { s, Svg } from '../dc';
 import { ICO, iconBox, badge, deptStyle, timeParts } from '../salesData';
 import { useSessionUser } from '../sessionUser';
+import { useInboxRead, markInboxRead, countUnread } from '../inboxRead';
 import { CALL_TO_ACTIONS } from '../../data';
 import {
   useLoad,
@@ -116,7 +117,9 @@ export function HomeTab() {
 
   // ---- local per-tab state ----
   const [activityRange, setActivityRange] = useState<string>('week');
-  const [inboxRead, setInboxRead] = useState<Record<string, boolean>>({});
+  // Shared persisted read set — the same store the Inbox tab and sidebar badge use, so
+  // opening a preview here marks it read everywhere (and survives remounts).
+  const inboxRead = useInboxRead();
   const [, setTick] = useState<number>(0); // drives the 30s clock re-render
 
   const act = useLoad(
@@ -144,7 +147,7 @@ export function HomeTab() {
   };
 
   const openInbox = (i: InboxItem): void => {
-    setInboxRead((r) => ({ ...r, [i.id]: true }));
+    markInboxRead(i.id);
     openDetail({
       title: i.title,
       body: i.desc,
@@ -181,7 +184,7 @@ export function HomeTab() {
   const workdayKnob = `${Math.min(T.pct, 96)}%`;
   const annData = ann.data ?? [];
   const inboxData = inbox.data ?? [];
-  const inboxUnread = inboxData.filter((i) => !inboxRead[i.id]).length;
+  const inboxUnread = countUnread(inboxData, inboxRead);
   const snapLoading = snap.loading;
   const snapReady = !snap.loading && !snap.error && !!snap.data;
   const snapSpinCss = snap.loading ? 'animation:ss-spin .9s linear infinite' : '';
