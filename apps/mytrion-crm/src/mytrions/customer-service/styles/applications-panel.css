@@ -88,33 +88,75 @@
 }
 
 /* ─────────────────────────────────────────────────────────────
-   3. Search — bare underline field
+   3. Search — rounded field with leading icon + clear button
    ───────────────────────────────────────────────────────────── */
 .cs-root .cs-app-search {
     display: flex;
     align-items: center;
+    gap: 0.5rem;
     min-width: 340px;
-    border-bottom: 1px solid var(--border);
-    transition: border-color 160ms ease;
+    padding: 0.4375rem 0.75rem;
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.cs-root .cs-app-search:hover {
+    border-color: var(--border-strong, var(--th-color));
 }
 
 .cs-root .cs-app-search:focus-within {
-    border-bottom-color: var(--cs-accent);
+    background: var(--surface);
+    border-color: var(--cs-accent);
+    box-shadow: 0 0 0 3px var(--cs-accent-soft);
+}
+
+.cs-root .cs-app-search-icon {
+    flex-shrink: 0;
+    color: var(--th-color);
+    transition: color 160ms ease;
+}
+
+.cs-root .cs-app-search:focus-within .cs-app-search-icon {
+    color: var(--cs-accent);
 }
 
 .cs-root .cs-app-search input {
     flex: 1;
+    min-width: 0;
     border: none;
     background: transparent;
     font-size: 0.875rem;
     font-family: inherit;
     color: var(--text-primary);
     outline: none;
-    padding: 0.375rem 0;
+    padding: 0;
 }
 
 .cs-root .cs-app-search input::placeholder {
     color: var(--th-color);
+}
+
+.cs-root .cs-app-search-clear {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease;
+}
+
+.cs-root .cs-app-search-clear:hover {
+    background: var(--surface-alt);
+    color: var(--text-primary);
 }
 
 /* ─────────────────────────────────────────────────────────────
