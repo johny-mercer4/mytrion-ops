@@ -40,13 +40,33 @@ export function TabBar({ active, unreadCount, onSelect }: { active: HomeTab; unr
           >
             <span style={{ position: 'relative', height: 26, display: 'flex', alignItems: 'center' }}>
               <TabBarIcon kind={tab} active={isActive} />
-            </span>
-            <span style={{ display: 'flex', alignItems: 'baseline', gap: 4, whiteSpace: 'nowrap' }}>
-              <span style={{ fontSize: 12, fontWeight: isActive ? 700 : 500 }}>{t(`tab.${tab}`)}</span>
               {tab === 'inbox' && unreadCount > 0 && (
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--link-accent)' }}>{t('inbox.new', { n: unreadCount })}</span>
+                <span
+                  aria-label={t('inbox.new', { n: unreadCount })}
+                  style={{
+                    position: 'absolute',
+                    top: -5,
+                    left: '50%',
+                    marginLeft: 4,
+                    minWidth: 17,
+                    height: 17,
+                    padding: '0 5px',
+                    borderRadius: 9,
+                    background: 'var(--primary)',
+                    color: '#FFFFFF',
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    lineHeight: '17px',
+                    textAlign: 'center',
+                    fontVariantNumeric: 'tabular-nums',
+                    boxShadow: '0 0 0 2px var(--card)',
+                  }}
+                >
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
               )}
             </span>
+            <span style={{ fontSize: 12, fontWeight: isActive ? 700 : 500, whiteSpace: 'nowrap' }}>{t(`tab.${tab}`)}</span>
           </button>
         );
       })}

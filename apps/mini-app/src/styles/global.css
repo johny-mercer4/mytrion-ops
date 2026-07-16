@@ -209,12 +209,17 @@ input,
     transform: translateY(0);
   }
 }
-/* Tab switches (bottom bar, inbox sub-tabs): a small nudge from the direction of travel, not a
-   full-width slide — see components/SlideIn.tsx. --slide-dir (+1/-1/0) picks the side. */
+/* Tab switches (bottom bar, inbox sub-tabs): the entering panel slides in from the direction of
+   travel — see components/SlideIn.tsx. --slide-dir (+1/-1/0) picks the side. Opacity ramps in over
+   the first stretch then holds, so the tail reads as a moving panel (a slide) rather than a fade.
+   The scroll container clips the x-axis, so the offset never spawns a horizontal scrollbar. */
 @keyframes octslide {
   from {
-    transform: translateX(calc(var(--slide-dir, 0) * 16px));
+    transform: translateX(calc(var(--slide-dir, 0) * 34px));
     opacity: 0;
+  }
+  45% {
+    opacity: 1;
   }
   to {
     transform: translateX(0);

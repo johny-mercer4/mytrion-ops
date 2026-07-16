@@ -76,6 +76,8 @@ export interface RegistrationView {
   cardCount: number | null;
   cardId: string | null;
   agentName: string | null;
+  /** Driver only: the real fuel-card number (from the DWH replica), null when unresolved. */
+  cardNumber: string | null;
 }
 
 /** Aggregate fleet summary — counts only, deliberately no card numbers or driver identities. */
@@ -96,6 +98,18 @@ export async function redeemRegistration(id: string, initData: string): Promise<
 
 export async function fetchMiniAppSession(initData: string): Promise<{ registration: RegistrationView }> {
   return (await request('POST', '/carrier/mini-app/session', { initData })) as { registration: RegistrationView };
+}
+
+/** Driver self-registration by fuel-card number — no invite link (the number identifies the carrier
+ * + card; Telegram initData proves identity). Owners/companies still register via invite links. */
+export async function driverSelfRegister(
+  initData: string,
+  cardNumber: string,
+): Promise<{ registration: RegistrationView }> {
+  return (await request('POST', '/carrier/mini-app/driver-self-register', {
+    initData,
+    cardNumber,
+  })) as { registration: RegistrationView };
 }
 
 // ── Owner fleet management (owner-authenticated via initData) ────────────────────────────────
