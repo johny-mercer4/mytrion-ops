@@ -38,6 +38,18 @@ export const KnowledgeIcon = ({ size = 19, className, style }: IconProps) =>
 export const ScopeIcon = ({ size = 19, className, style }: IconProps) =>
   stroke(size, 'M9 3v18m6-18v18M3 9h18M3 15h18', 2, className, style);
 
+export const DatabaseIcon = ({ size = 19, className, style }: IconProps) =>
+  stroke(
+    size,
+    'M12 3c-4.4 0-8 1.3-8 3s3.6 3 8 3 8-1.3 8-3-3.6-3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
+    2,
+    className,
+    style,
+  );
+
+export const WarehouseIcon = ({ size = 19, className, style }: IconProps) =>
+  stroke(size, 'M12 2l9 5-9 5-9-5 9-5zM3 12l9 5 9-5M3 17l9 5 9-5', 2, className, style);
+
 export const SearchIcon = ({ size = 15, className, style }: IconProps) =>
   stroke(size, 'M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z', 2, className, style);
 

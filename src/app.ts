@@ -26,6 +26,8 @@ import { loadDbtMcpTools } from './modules/tools/dbtMcpTools.js';
 import { toolRegistry } from './modules/tools/index.js';
 import { adminRoutes } from './routes/v1/admin.routes.js';
 import { analyticsRoutes } from './routes/v1/analytics.routes.js';
+import { cmpSchemaRoutes } from './routes/v1/cmpSchema.routes.js';
+import { dwhSchemaRoutes } from './routes/v1/dwhSchema.routes.js';
 import { startAnalyticsWarmer } from './modules/analytics/cache.js';
 import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
 import { deskRoutes } from './routes/v1/desk.routes.js';
@@ -218,6 +220,8 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(automationRoutes);
       await v1.register(moneyCodeRoutes);
       await v1.register(adminRoutes);
+      await v1.register(cmpSchemaRoutes);
+      await v1.register(dwhSchemaRoutes);
       await v1.register(carrierMiniAppRoutes);
       await v1.register(retentionRoutes);
       await v1.register(realtimeRoutes);
