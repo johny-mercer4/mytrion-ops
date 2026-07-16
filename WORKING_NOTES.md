@@ -2224,3 +2224,41 @@ Left for follow-up: Applications Zip_Code/Address edit fields (not in the conden
 merged tickets+calls leaderboard (widget merged by email; we render per-tab boards), Inbox /
 Service Center panels (mock-only in the widget too), Deluge home-metrics identity for admin
 API-key callers (no zoho id → team cards only).
+
+## 2026-07-17 — Customer Service Mytrion: re-skin to the zoho-octane widget design
+
+The CS module (Home/Applications/Citifuel/Analytics + shell) was re-skinned from the app's
+Tailwind chrome to the ORIGINAL widget's "Paper White / Royal Blue" design system — the whole
+live backend + live.ts data layer is unchanged; this is presentation only.
+
+- `styles/`: the widget's CSS (`zoho-octane/app/mytrion-customer-service/css/`) ported and
+  machine-scoped under `.cs-root` (scripted; brace-aware, maps :root/body/#app-shell → .cs-root)
+  so its globals can't leak into the other Mytrions. `overrides.css` (hand-written) holds the
+  floating-copilot styles + SPA-hosting tweaks. Instrument Sans added to index.html fonts.
+- `Shell.tsx`: 1:1 port of the widget shell (cs-sidebar/cs-body/cs-content + mobile bottom nav +
+  light/dark toggle w/ the widget's localStorage key). Panels lazy-mount and stay mounted.
+- Home / Applications (+ ApplicationsTable) / ApplicationModal: widget cs-* markup; single
+  view+edit application modal with inline onboarding tick-boxes + copy-id toasts + colors.ts
+  (widget picklist-color system).
+- Citifuel: cs-citi-* summary cards + live status tabs + sortable cs-table + cs-badge cells +
+  pagination. **CitiModal + CitiEdit merged into ONE** widget-style sectioned form (Client/
+  Request/Contact/Notes/Audit) doing view+edit+create+delete with Accounts/user lookups
+  (`CitiEdit.tsx` deleted).
+- Analytics: cs-an-* KPI grid + SVG spark trend (areaPath/sparkPoints, sparkH=60) + donut
+  breakdown (conic-gradient) + agent leaderboard (manager-tier only, backend also enforces);
+  data sub-tabs + range select.
+
+Product changes this session (per user):
+- **Data Center is now a "Soon" stub** (disabled nav item like Inbox/Service Center);
+  `DataCenter.tsx` kept on disk, unimported, for when it's re-enabled.
+- **AI Chat is a floating launcher** (`CsCopilot.tsx`), not a nav tab — mirrors the Sales
+  Mytrion copilot, CS-themed; streams from /v1/agent via useChat (customer-service dept).
+- Local `.env` now points MYTRION_OPS_DATABASE_URL at the **Render production DB** (was local
+  Docker); `FF_ORCHESTRATOR_ENABLED=1` so the copilot's agent endpoint works. Both are in the
+  gitignored `.env` (not committed).
+
+Verified live in-browser (Render DB, dev mock-auth admin, 1440px): widget shell + all panels
+render in the Paper White design with real data — 1225 team open tickets, 515 Citifuel clients
+(edit modal round-trips), analytics KPI/donut/leaderboard with real agent names, floating
+copilot streams a tool-grounded answer. 571 backend + 49 app tests green; vendored bundle
+rebuilt. Still unpushed on feature/customer-service-mytrion.
