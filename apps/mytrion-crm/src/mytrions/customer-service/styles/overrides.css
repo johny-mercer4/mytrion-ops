@@ -362,6 +362,29 @@
     color: var(--cs-accent);
 }
 
+/* ── Wide modals (Applications / Citifuel edit forms): 3-column grid on roomy
+      viewports so the tall sectioned forms fit without scrolling; the modal box
+      uses the available height and only its BODY scrolls as a safety net. ── */
+.cs-root .cs-modal-box.cs-modal-wide {
+    max-height: min(88vh, 780px);
+}
+@media (min-width: 780px) {
+    .cs-root .cs-modal-wide .cs-form-grid {
+        grid-template-columns: 1fr 1fr 1fr;
+    }
+}
+/* Textareas + explicitly-wide fields still span the full row. */
+.cs-root .cs-modal-wide .cs-form-field-wide {
+    grid-column: 1 / -1;
+}
+/* Tighter vertical rhythm inside modal forms trims height further. */
+.cs-root .cs-modal-wide .cs-form-grid {
+    gap: 0.85rem 1.1rem;
+}
+.cs-root .cs-modal-wide .cs-citi-section-title {
+    margin-top: 0.75rem;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    Motion & interaction polish — same feel as Finance Mytrion (pure CSS, no
    libraries): fade-up entrances, staggered cards, hover-lift, press + focus

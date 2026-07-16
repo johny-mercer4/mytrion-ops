@@ -78,18 +78,11 @@ const MODAL_FIELDS: ModalField[] = [
   { field: 'Cards_Requested', label: 'Cards Requested', type: 'number', get: (a) => a.cards },
   { field: 'Verified', label: 'Verified', type: 'boolean', get: (a) => a.verified },
   { field: 'Customer_Service_Notes', label: 'Customer Service Notes', type: 'textarea', get: (a) => a.notes },
-  /* ── Widget-parity display fields — read-only in the widget or not carried by the
-        live view-model (uncarried values render '—'; no new API calls invented) ── */
+  /* ── Read-only display fields the live view-model actually carries. Fields the
+        adapter doesn't provide were dropped rather than shown as permanent "—" rows
+        (they only padded the modal height). ── */
   { field: 'Date_Filled', label: 'Date Filled', type: 'readonly', get: (a) => a.date },
   { field: '_dealAgent', label: 'Agent (Deal)', type: 'readonly', get: (a) => a.agent },
-  { field: 'Address', label: 'Address', type: 'readonly', get: () => null },
-  { field: 'Zip_Code', label: 'Zip Code', type: 'readonly', get: () => null },
-  { field: 'Oldest_Open_Date', label: 'Oldest Open Date', type: 'readonly', get: () => null },
-  { field: 'Loves_Verification', label: "Love's Verification", type: 'readonly', get: () => null },
-  { field: 'Tracking_Number', label: 'Tracking Number', type: 'readonly', get: () => null },
-  { field: 'Verification_Notes', label: 'Verification Notes', type: 'readonly', get: () => null },
-  { field: 'Cards_Ordered', label: 'Cards Ordered', type: 'readonly', get: () => null },
-  { field: 'Modified_By', label: 'Modified By', type: 'readonly', get: () => null },
 ];
 
 const SPINNER_PATH =
