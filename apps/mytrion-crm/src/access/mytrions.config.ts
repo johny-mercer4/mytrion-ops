@@ -5,6 +5,7 @@
  *   - allowedProfiles  → DEFAULT access: a CRM profile maps to a Mytrion.
  *   - allowedRoles     → optional access by CRM role.
  *   - allowedUsernames → ADDITIVE override: "these named users ALSO get in", regardless of profile.
+ *   - usernameContainsAny → SUBSTRING match on Zoho user_name (case-insensitive contains).
  *   - adminBypass      → anyone matching ADMIN_PROFILES / ADMIN_ROLES also gets in.
  *
  * `department` is the canonical backend slug (department_access) forwarded on chat/knowledge calls.
@@ -22,8 +23,9 @@ export type MytrionId =
   | 'finance'
   | 'retention'
   | 'verification'
-  | 'customer-service'
-  | 'manager';
+  | 'manager'
+  | 'analyst'
+  | 'customer-service';
 
 export interface MytrionAccessRule {
   id: MytrionId;
@@ -39,12 +41,23 @@ export interface MytrionAccessRule {
   department: string;
   /** Send allDepartments:true on knowledge queries (broad retrieval). */
   allDepartments: boolean;
-  /** DEFAULT access by CRM profile name (case-insensitive). */
+  /** DEFAULT access by CRM profile name (case-insensitive, EXACT match). */
   allowedProfiles: string[];
+  /**
+   * SUBSTRING access by CRM profile — a profile is granted if it CONTAINS any of these terms
+   * (case-insensitive). Mirrors the backend's sales-agent detection so "Sales Agent" also catches
+   * variants like "Senior Sales Agent". Optional; omit for exact-only rules.
+   */
+  profileContainsAny?: string[];
   /** Optional access by CRM role name (case-insensitive). */
   allowedRoles: string[];
   /** ADDITIVE named-user overrides (case-insensitive) — get access regardless of profile/role. */
   allowedUsernames: string[];
+  /**
+   * SUBSTRING access by Zoho user_name — granted if userName CONTAINS any term (case-insensitive).
+   * Optional; omit for exact-only rules.
+   */
+  usernameContainsAny?: string[];
   /** Admins (ADMIN_PROFILES/ADMIN_ROLES) also get this Mytrion. */
   adminBypass: boolean;
   /** 'ported' = has an existing Zoho/Vue origin to port; 'new' = stub for the design agent. */
@@ -83,7 +96,10 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     hue: 'success',
     department: 'sales',
     allDepartments: false,
-    allowedProfiles: ['Sales', 'Sales Agent'],
+    // Every rep's CRM profile is "Sales Agent" (region lives in the ROLE). Substring match so any
+    // "…Sales Agent…" profile lands here — and ONLY here — so they auto-enter /m/sales on login.
+    allowedProfiles: ['Sales'],
+    profileContainsAny: ['Sales Agent'],
     allowedRoles: [],
     allowedUsernames: [],
     adminBypass: true,
@@ -130,10 +146,12 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     hue: 'orange',
     department: 'finance',
     allDepartments: false,
-    allowedProfiles: ['Finance'],
+    // Restricted workspace: Administrator profile OR named finance operators (substring match).
+    allowedProfiles: ['Administrator'],
     allowedRoles: [],
     allowedUsernames: [],
-    adminBypass: true,
+    usernameContainsAny: ['Azimov', 'Mirjalol'],
+    adminBypass: false,
     status: 'ported',
     portedFrom: 'zoho-octane/app/mytrion-finance',
   },
@@ -146,8 +164,12 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     hue: 'accent',
     department: 'customer-service',
     allDepartments: false,
+    // The org has NO "Customer Service"/"Support" PROFILES (verified against the live user
+    // roster, 2026-07-16) — CS staff carry "Standard"/"Standard Plus" profiles and are
+    // identified by their Zoho ROLE. Roles below match all 22 CS users (20 agents + 2
+    // managers); the profile entries stay as a harmless forward-compat grant.
     allowedProfiles: ['Customer Service', 'Support'],
-    allowedRoles: [],
+    allowedRoles: ['Customer Service Agent', 'Customer Service Manager'],
     allowedUsernames: [],
     adminBypass: true,
     status: 'ported',
@@ -199,6 +221,24 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     adminBypass: true,
     status: 'new',
   },
+  analyst: {
+    id: 'analyst',
+    title: 'Analytics Mytrion',
+    tag: 'Analytics',
+    icon: 'analyst',
+    blurb:
+      'Cross-department analytics — pipeline metrics, conversions, transactions, tickets and performance trends.',
+    hue: 'accent',
+    department: 'analytics',
+    // Cross-department read-only analytics: the backend `analyst` agent reads across every
+    // department (allowAllDepartments), so retrieval is broad and the dept slug is display-only.
+    allDepartments: true,
+    allowedProfiles: [],
+    allowedRoles: ['Analytics Specialist'],
+    allowedUsernames: [],
+    adminBypass: true,
+    status: 'new',
+  },
 };
 
 /** Display order for the picker. */
@@ -212,6 +252,7 @@ export const MYTRION_ORDER: MytrionId[] = [
   'retention',
   'verification',
   'manager',
+  'analyst',
 ];
 
 /** Type guard for a path param. */
@@ -222,8 +263,8 @@ export function isMytrionId(value: string): value is MytrionId {
 /**
  * Backend department agent keys (mirror of src/modules/agents/types.ts AGENT_KEYS). The chat UI sends
  * `agent:<key>` to POST /v1/agent for direct-to-child. Every non-admin MytrionId equals its agent key;
- * `admin` has no agent (→ orchestrator mode). `marketing`/`analyst` have no Mytrion but appear in an
- * admin's orchestrator run, so their labels are still needed.
+ * `admin` has no agent (→ orchestrator mode). `marketing` has no Mytrion but appears in an admin's
+ * orchestrator run, so its label is still needed.
  */
 export type AgentKey =
   | 'customer-service'

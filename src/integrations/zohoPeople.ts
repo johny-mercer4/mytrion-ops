@@ -1,10 +1,10 @@
 /**
- * Zoho People — employee reads (auth via the Zoho wrapper). Uses the legacy forms API
- * `getRecords` on the `employee` form (success sentinel `response.status === 0`; results are
- * `{ "<recordId>": [ {fields…} ] }`). Filtering uses `searchParams` (Contains, pipe = AND).
- * See .claude/skills/zoho-people-api/SKILL.md §3–§4.
+ * Zoho People wrapper — employee reads (auth via ZohoWrapper/ZohoAuthService). Uses the legacy
+ * forms API `getRecords` on the `employee` form (success sentinel `response.status === 0`;
+ * results are `{ "<recordId>": [ {fields…} ] }`). Filtering uses `searchParams` (Contains,
+ * pipe = AND). See .claude/skills/zoho-people-api/SKILL.md §3–§4.
  */
-import { authHeaders, baseUrl } from './wrapper.js';
+import { ZohoWrapper } from './zohoBase.js';
 
 // Zoho People system field/label names. These are the standard ones; if this org renamed
 // them, adjust here (the metadata catalog `pnpm meta:zoho-people` lists the form's fields).
@@ -101,34 +101,49 @@ function parseGetRecords(json: PeopleResponse): EmployeeRecord[] {
   return out;
 }
 
-async function fetchEmployeePage(criteria: Criterion[], limit: number): Promise<EmployeeRecord[]> {
-  const url = new URL(`${baseUrl('zoho_people').replace(/\/+$/, '')}/forms/${EMPLOYEE_FORM}/getRecords`);
-  url.searchParams.set('sIndex', '1');
-  url.searchParams.set('limit', String(limit));
-  if (criteria.length > 0) {
-    url.searchParams.set('searchParams', criteria.map(criterion).join('|'));
+export class ZohoPeopleWrapper extends ZohoWrapper {
+  readonly name = 'zoho_people';
+
+  constructor() {
+    super('zoho_people');
   }
-  const res = await fetch(url, { headers: await authHeaders('zoho_people') });
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`[zoho-people] getRecords HTTP ${res.status}: ${text.slice(0, 300)}`);
+
+  private async fetchEmployeePage(criteria: Criterion[], limit: number): Promise<EmployeeRecord[]> {
+    const path = `/forms/${EMPLOYEE_FORM}/getRecords`;
+    const res = await this.requestRaw('GET', path, {
+      query: {
+        sIndex: 1,
+        limit,
+        ...(criteria.length > 0 ? { searchParams: criteria.map(criterion).join('|') } : {}),
+      },
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(`[zoho-people] getRecords HTTP ${res.status}: ${text.slice(0, 300)}`);
+    }
+    return parseGetRecords(text ? (JSON.parse(text) as PeopleResponse) : {});
   }
-  return parseGetRecords(text ? (JSON.parse(text) as PeopleResponse) : {});
+
+  /**
+   * Search employees. No filters → first page of all employees; `name` and/or `department`
+   * filter server-side. Results are deduped by recordId and capped at `limit`.
+   */
+  async searchEmployees(input: SearchEmployeesInput = {}): Promise<EmployeeRecord[]> {
+    const limit = Math.min(Math.max(Math.trunc(input.limit ?? DEFAULT_LIMIT), 1), MAX_LIMIT);
+    const byId = new Map<string, EmployeeRecord>();
+    for (const criteria of buildCriteriaSets(input.name, input.department)) {
+      const page = await this.fetchEmployeePage(criteria, limit);
+      for (const record of page) {
+        if (!byId.has(record.recordId)) byId.set(record.recordId, record);
+      }
+      if (byId.size >= limit) break;
+    }
+    return [...byId.values()].slice(0, limit);
+  }
 }
 
-/**
- * Search employees. No filters → first page of all employees; `name` and/or `department`
- * filter server-side. Results are deduped by recordId and capped at `limit`.
- */
-export async function searchEmployees(input: SearchEmployeesInput = {}): Promise<EmployeeRecord[]> {
-  const limit = Math.min(Math.max(Math.trunc(input.limit ?? DEFAULT_LIMIT), 1), MAX_LIMIT);
-  const byId = new Map<string, EmployeeRecord>();
-  for (const criteria of buildCriteriaSets(input.name, input.department)) {
-    const page = await fetchEmployeePage(criteria, limit);
-    for (const record of page) {
-      if (!byId.has(record.recordId)) byId.set(record.recordId, record);
-    }
-    if (byId.size >= limit) break;
-  }
-  return [...byId.values()].slice(0, limit);
-}
+export const zohoPeople = new ZohoPeopleWrapper();
+
+/** @deprecated Import { zohoPeople } and call the method — kept as a facade during migration. */
+export const searchEmployees = (input?: SearchEmployeesInput): Promise<EmployeeRecord[]> =>
+  zohoPeople.searchEmployees(input);

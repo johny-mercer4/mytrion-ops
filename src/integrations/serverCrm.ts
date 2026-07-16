@@ -3,11 +3,10 @@
  * exposes an agent API under `/api/agent/*` (auth = static `x-api-key`). This is the "proxy" path:
  * some tools call servercrm rather than re-implementing a vendor here.
  *
- * Auth is a single header (no token flow), so this wrapper also provides thin request helpers
- * (get/post) that tools build on.
+ * Auth is a single header (no token flow); requests go through HttpWrapper (fetchWithTimeout).
  */
 import { env } from '../config/env.js';
-import { fetchWithTimeout } from '../lib/http.js';
+import { HttpWrapper, type HttpMethod } from './core/base.js';
 
 export function serverCrmBaseUrl(): string {
   if (!env.SERVER_CRM_URL) throw new Error('[server-crm] SERVER_CRM_URL is not configured');
@@ -18,8 +17,6 @@ export function serverCrmAuthHeaders(): Record<string, string> {
   if (!env.SERVER_CRM_KEY) throw new Error('[server-crm] SERVER_CRM_KEY is not configured');
   return { 'x-api-key': env.SERVER_CRM_KEY, 'Content-Type': 'application/json' };
 }
-
-type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 /**
  * Typed non-2xx failure so proxy layers can map the upstream status (4xx passthrough vs
@@ -45,36 +42,51 @@ export interface ServerCrmRequestOptions {
   body?: unknown;
 }
 
-/** Call a servercrm endpoint with auth. Throws with a truncated body on non-2xx. */
-export async function serverCrmRequest<T = unknown>(
+export class ServerCrmWrapper extends HttpWrapper {
+  readonly name = 'server_crm';
+
+  isConfigured(): boolean {
+    return Boolean(env.SERVER_CRM_URL && env.SERVER_CRM_KEY);
+  }
+
+  protected baseUrl(): string {
+    return serverCrmBaseUrl();
+  }
+
+  protected authHeaders(): Promise<Record<string, string>> {
+    return Promise.resolve(serverCrmAuthHeaders());
+  }
+
+  /** Preserve the historical `ServerCrmHttpError` shape (string-matched catch sites). */
+  protected override httpError(method: HttpMethod, path: string, status: number, bodyText: string): Error {
+    return new ServerCrmHttpError(method, path, status, bodyText);
+  }
+
+  /** Call a servercrm endpoint with auth. Throws ServerCrmHttpError on non-2xx. */
+  call<T = unknown>(method: HttpMethod, path: string, opts: ServerCrmRequestOptions = {}): Promise<T> {
+    return this.request<T>(method, path, opts);
+  }
+
+  get<T = unknown>(path: string, query?: ServerCrmRequestOptions['query']): Promise<T> {
+    return this.call<T>('GET', path, query ? { query } : {});
+  }
+
+  post<T = unknown>(path: string, body?: unknown): Promise<T> {
+    return this.call<T>('POST', path, body !== undefined ? { body } : {});
+  }
+}
+
+export const serverCrm = new ServerCrmWrapper();
+
+/** @deprecated Import { serverCrm } and call the method — kept as facades during migration. */
+export const serverCrmRequest = <T = unknown>(
   method: HttpMethod,
   path: string,
   opts: ServerCrmRequestOptions = {},
-): Promise<T> {
-  const url = new URL(`${serverCrmBaseUrl()}${path.startsWith('/') ? path : `/${path}`}`);
-  if (opts.query) {
-    for (const [key, value] of Object.entries(opts.query)) {
-      if (value !== undefined) url.searchParams.set(key, String(value));
-    }
-  }
-  const init: RequestInit = { method, headers: serverCrmAuthHeaders() };
-  if (opts.body !== undefined) init.body = JSON.stringify(opts.body);
-
-  const res = await fetchWithTimeout(url, init);
-  const text = await res.text();
-  if (!res.ok) {
-    throw new ServerCrmHttpError(method, path, res.status, text);
-  }
-  return (text ? JSON.parse(text) : {}) as T;
-}
-
-export function serverCrmGet<T = unknown>(
+): Promise<T> => serverCrm.call<T>(method, path, opts);
+export const serverCrmGet = <T = unknown>(
   path: string,
   query?: ServerCrmRequestOptions['query'],
-): Promise<T> {
-  return serverCrmRequest<T>('GET', path, query ? { query } : {});
-}
-
-export function serverCrmPost<T = unknown>(path: string, body?: unknown): Promise<T> {
-  return serverCrmRequest<T>('POST', path, body !== undefined ? { body } : {});
-}
+): Promise<T> => serverCrm.get<T>(path, query);
+export const serverCrmPost = <T = unknown>(path: string, body?: unknown): Promise<T> =>
+  serverCrm.post<T>(path, body);

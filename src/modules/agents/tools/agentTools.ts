@@ -38,8 +38,15 @@ function toLangChainTool(
       const runCtx = requireAgentContext();
       const { conversationId, budget, agentRunId } = runCtx;
       budget?.countToolCall(); // throws BudgetExceededError → aborts the run
+      // requestId is the one ephemeral field: take it from THIS turn's run context so a cached/reused
+      // graph never stamps a stale requestId on audit rows. Identity/authority stays the narrowed ctx.
+      const freshRequestId = runCtx.ctx?.requestId;
+      const dispatchCtx: TenantContext =
+        freshRequestId && freshRequestId !== narrowedCtx.requestId
+          ? { ...narrowedCtx, requestId: freshRequestId }
+          : narrowedCtx;
       try {
-        const out = await dispatchTool(rt.name, input, narrowedCtx, {
+        const out = await dispatchTool(rt.name, input, dispatchCtx, {
           ...(conversationId ? { conversationId } : {}),
           ...(agentRunId ? { agentRunId } : {}),
           ...(manifest.readOnly ? { readOnly: true } : {}),

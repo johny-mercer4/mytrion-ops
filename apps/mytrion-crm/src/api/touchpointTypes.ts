@@ -332,6 +332,11 @@ export interface TransactionsResult {
   totals?: Record<string, number | string | null>;
   data?: Array<Record<string, unknown>>;
   pagination?: Record<string, unknown>;
+  range?: { from?: string; to?: string };
+}
+
+export interface TransactionInvoicesResult {
+  data?: Array<{ transaction_id?: string | number; invoice_ref?: string | number }>;
 }
 
 // ---- the key map ----
@@ -344,12 +349,26 @@ export interface TouchpointMap {
     params: { carrierId: string; range?: string; from?: string; to?: string; limit?: number };
     result: TransactionsResult;
   };
+  'dwh.transaction_invoices': {
+    params: { carrierId: string; range?: string; from?: string; to?: string };
+    result: TransactionInvoicesResult;
+  };
   'dwh.cards': { params: { carrierId: string }; result: EfsCardsResult };
   'dwh.card_activate': { params: { carrierId: string; cardNumber: string }; result: Record<string, unknown> };
   'dwh.money_code': { params: { carrierId: string }; result: MoneyCodePreview };
   'dwh.money_code_draw': {
-    params: { carrierId: string; amount: number; moneycode_reason: string };
+    params: {
+      carrierId: string;
+      amount: number;
+      moneycode_reason: string;
+      /** Forwarded to ServerCRM when present (unit the code is for). */
+      unit_number?: string;
+    };
     result: MoneyCodeDrawResult;
+  };
+  'dwh.cards_last_used': {
+    params: { carrierId: string; range?: string };
+    result: { data?: Array<Record<string, unknown>>; count?: number; [k: string]: unknown };
   };
   'carrier.trucking_number_request': { params: { carrierId: string }; result: TrackingResult };
   'carrier.check_payment': { params: { carrierId: string }; result: CmpInvoiceList };
@@ -392,6 +411,19 @@ export interface TouchpointMap {
   };
   'application.update': { params: { appId: string }; result: WexTasksResult };
   'wex.application': { params: { appId: string }; result: WexApplicationResult };
+  'wex.applications_search': {
+    params: {
+      appId?: string;
+      firstName?: string;
+      lastName?: string;
+      company?: string;
+      email?: string;
+      phone?: string;
+      mc?: string;
+      dot?: string;
+    };
+    result: { data?: Array<Record<string, unknown>>; applications?: Array<Record<string, unknown>>; count?: number };
+  };
   'sales_mytrion.fetch_invoices': {
     params: { carrierId: string; range?: string; status?: string; from?: string; to?: string };
     result: SalesInvoicesResult;
@@ -431,6 +463,93 @@ export interface TouchpointMap {
     params: { escalationReason: string; questionSubject: string; description: string; attachmentUrl?: string };
     result: CreateEscalationResult;
   };
+  // ---- Customer Service (departmentAccess: ['customer-service'] — use api/cs.ts csTouchpoint) ----
+  'cs.home.metrics': { params: Record<string, never>; result: CsHomeMetrics };
+  'cs.applications.list': {
+    params: { tab: 'apps' | 'clients'; search?: string; page?: number; perPage?: number };
+    result: CsApplicationsList;
+  };
+  'cs.analytics.maintenance': {
+    params: { fromDate: string; toDate: string; prevFromDate: string; prevToDate: string };
+    result: CsMaintenanceAnalytics;
+  };
+  'cs.datacenter.deals': {
+    params: { lastSyncTime?: string };
+    result: CsDataCenterDeals;
+  };
+}
+
+// ---- Customer Service result shapes (widget-observed; legitimately-sparse fields optional) ----
+
+export interface CsRecentApp {
+  id?: string;
+  Name?: string;
+  Application_IDD?: string;
+  Stage?: string;
+  Status?: string;
+  Modified_Time?: string;
+  Last_Modified_Date?: string;
+}
+
+export interface CsHomeMetrics {
+  status?: string;
+  pendingApps?: number | string;
+  activeClients?: number | string;
+  maintenanceCases?: number | string;
+  myPendingApps?: number | string;
+  myClients?: number | string;
+  recentApps?: CsRecentApp[];
+}
+
+/** One enriched Applications row (mytrionGetApplications select list + Deal enrichment). */
+export type CsApplicationRow = Record<string, unknown>;
+
+export interface CsApplicationsList {
+  status?: string;
+  data?: CsApplicationRow[];
+  more_records?: boolean;
+  page?: number | string;
+  per_page?: number | string;
+}
+
+export interface CsMaintenanceAnalytics {
+  success?: boolean;
+  data?: {
+    totals?: {
+      current?: number;
+      previous?: number;
+      closed?: number;
+      halfComplete?: number;
+      fullComplete?: number;
+      open?: number;
+    };
+    daily?: Array<{ day?: string; count?: number }>;
+    byStatus?: Array<{ status?: string; count?: number }>;
+    byOwner?: Array<{ id?: string; name?: string; count?: number }>;
+  };
+}
+
+export interface CsDataCenterDeal {
+  id?: string;
+  Deal_Name?: string;
+  Stage?: string;
+  Amount?: number | string;
+  Carrier_ID?: string;
+  Payment_Type_Billing?: string;
+  Billing_Cycle?: string;
+  Billing_Verification?: string | boolean;
+  Closing_Date?: string;
+  Created_Time?: string;
+  Application_Date?: string;
+  Modified_Time?: string;
+  [key: string]: unknown;
+}
+
+export interface CsDataCenterDeals {
+  status?: string;
+  total_deals?: number;
+  deals?: CsDataCenterDeal[];
+  is_delta?: boolean;
 }
 
 export type TouchpointKey = keyof TouchpointMap;

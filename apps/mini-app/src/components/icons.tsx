@@ -1,8 +1,38 @@
 /**
- * Line icons — the exact Lucide path geometry the design prototype ships (24-box, round caps).
- * currentColor throughout; size via props. Kept as a tiny local set instead of the lucide-react
- * package: the app uses eleven icons and Telegram Mini Apps are weight-sensitive.
+ * Thin wrappers around lucide-react so call sites keep using `<Icon name="..."/>` /
+ * `<TabBarIcon kind="..."/>` — swap the underlying import here, not at every call site.
  */
+import {
+  ArrowUpDown,
+  Check,
+  CheckCheck,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  CreditCard,
+  DollarSign,
+  Eye,
+  EyeOff,
+  FileText,
+  Headset,
+  KeyRound,
+  LayoutGrid,
+  Lock,
+  MapPin,
+  Maximize2,
+  RefreshCw,
+  Search,
+  Send,
+  Shield,
+  List as ListIcon,
+  TriangleAlert,
+  Truck,
+  UserPlus,
+  Users,
+  Wallet,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import type { ReactElement } from 'react';
 
 export type IconName =
@@ -16,21 +46,42 @@ export type IconName =
   | 'check'
   | 'plane'
   | 'x'
-  | 'userplus';
+  | 'userplus'
+  | 'dollar'
+  | 'key'
+  | 'alert'
+  | 'headset'
+  | 'users'
+  | 'lock'
+  | 'refresh'
+  | 'truck'
+  | 'sort'
+  | 'checkcheck'
+  | 'maximize';
 
-const PATHS: Record<IconName, string> = {
-  wallet: 'M21 12V7H5a2 2 0 0 1 0-4h14v4M3 5v14a2 2 0 0 0 2 2h16v-5M18 12a2 2 0 0 0 0 4h4v-4Z',
-  shield:
-    'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1zM9 12l2 2 4-4',
-  list: 'M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1ZM14 8H8M16 12H8M13 16H8',
-  doc: 'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7ZM14 2v4a2 2 0 0 0 2 2h4M16 13H8M16 17H8M10 9H8',
-  card: 'M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2ZM2 10h20',
-  clock: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20ZM12 6v6l4 2',
-  pin: 'M20 10c0 4.99-5.54 10.19-7.4 11.8a1 1 0 0 1-1.2 0C9.54 20.19 4 14.99 4 10a8 8 0 0 1 16 0ZM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
-  check: 'M20 6 9 17l-5-5',
-  plane: 'm22 2-7 20-4-9-9-4ZM22 2 11 13',
-  x: 'M18 6 6 18M6 6l12 12',
-  userplus: 'M2 21a8 8 0 0 1 13.29-6M10 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM19 16v6M22 19h-6',
+const ICONS: Record<IconName, LucideIcon> = {
+  wallet: Wallet,
+  shield: Shield,
+  list: ListIcon,
+  doc: FileText,
+  card: CreditCard,
+  clock: Clock,
+  pin: MapPin,
+  check: Check,
+  plane: Send,
+  x: X,
+  userplus: UserPlus,
+  dollar: DollarSign,
+  key: KeyRound,
+  alert: TriangleAlert,
+  headset: Headset,
+  users: Users,
+  lock: Lock,
+  refresh: RefreshCw,
+  truck: Truck,
+  sort: ArrowUpDown,
+  checkcheck: CheckCheck,
+  maximize: Maximize2,
 };
 
 export function Icon({
@@ -44,51 +95,83 @@ export function Icon({
   strokeWidth?: number;
   className?: string;
 }): ReactElement {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden
-      {...(className ? { className } : {})}
-    >
-      <path
-        d={PATHS[name]}
-        stroke="currentColor"
-        strokeWidth={strokeWidth}
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+  const LucideCmp = ICONS[name];
+  return <LucideCmp size={size} strokeWidth={strokeWidth} aria-hidden {...(className ? { className } : {})} />;
 }
 
-/** The small right-facing chevron (8x13 box) used on rows; rotates when a row expands. */
+/** The small right-facing chevron used on rows; rotates when a row expands. */
 export function Chevron({ style }: { style?: React.CSSProperties }): ReactElement {
-  return (
-    <svg width="8" height="13" viewBox="0 0 8 13" style={{ flex: 'none', ...style }} aria-hidden>
-      <path d="M1.5 1.5L6 6.5l-4.5 5" stroke="var(--muted-foreground)" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+  return <ChevronRight size={16} strokeWidth={1.8} color="var(--muted-foreground)" aria-hidden style={{ flex: 'none', ...style }} />;
 }
 
 /** Back chevron for "‹ Home" / "‹ Back" buttons. */
 export function BackChevron(): ReactElement {
-  return (
-    <svg width="9" height="15" viewBox="0 0 9 15" fill="none" aria-hidden>
-      <path d="M7.5 1.5L1.5 7.5l6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+  return <ChevronLeft size={16} strokeWidth={2} aria-hidden />;
 }
 
-/** Search magnifier (17px, matches the fleet search field). */
+/** Search magnifier (matches the fleet search field). */
 export function SearchGlyph(): ReactElement {
+  return <Search size={17} strokeWidth={2} aria-hidden style={{ flex: 'none', color: 'var(--muted-foreground)' }} />;
+}
+
+/** Eye / eye-off toggle for the driver hero card's PAN reveal button. */
+export function EyeToggle({ revealed, size = 14 }: { revealed: boolean; size?: number }): ReactElement {
+  const LucideCmp = revealed ? EyeOff : Eye;
+  return <LucideCmp size={size} strokeWidth={2} aria-hidden />;
+}
+
+/** Bottom tab-bar glyph: home / services / inbox, each with a distinct active (filled) state. */
+export function TabBarIcon({ kind, active, size = 22 }: { kind: 'home' | 'services' | 'inbox'; active: boolean; size?: number }): ReactElement {
+  const strokeWidth = active ? 2.2 : 1.8;
+
+  if (kind === 'services') {
+    // LayoutGrid's 4 squares have real gaps between them — a solid currentColor fill reads fine.
+    return <LayoutGrid size={size} strokeWidth={strokeWidth} fill={active ? 'currentColor' : 'none'} aria-hidden />;
+  }
+
+  // House and Inbox are each an outer shape PLUS an inner detail line (door / tray-slot) meant to
+  // be a stroke, not a fill — Lucide's own component fills both the same solid color when active,
+  // which erases that inner line (identical color as the fill sitting behind it). Redraw the
+  // detail line in the tab bar's own background color instead, so it still reads once filled.
+  if (kind === 'home') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>
+        <path
+          d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+          fill={active ? 'currentColor' : 'none'}
+          stroke="currentColor"
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"
+          stroke={active ? 'var(--card)' : 'currentColor'}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
   return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" style={{ flex: 'none', color: 'var(--muted-foreground)' }} aria-hidden>
-      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-      <path d="M20 20l-3.2-3.2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"
+        fill={active ? 'currentColor' : 'none'}
+        stroke="currentColor"
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <polyline
+        points="22 12 16 12 14 15 10 15 8 12 2 12"
+        fill="none"
+        stroke={active ? 'var(--card)' : 'currentColor'}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

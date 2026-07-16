@@ -24,6 +24,9 @@ export const registeredMiniAppCompanies = pgTable(
     carrierId: text('carrier_id'),
     applicationId: text('application_id'),
     companyName: text('company_name'),
+    /** The Octane sales agent carried over from the invite — used for support copy later. */
+    agentName: text('agent_name'),
+    agentZohoUserId: text('agent_zoho_user_id'),
     /** Driver only. */
     cardId: text('card_id'),
     /** Driver only: the driver's name captured on the invite. */
@@ -32,6 +35,10 @@ export const registeredMiniAppCompanies = pgTable(
      * one card (owner-operator) or the full fleet (trucks/drivers/cards, fleet-manager). */
     companyType: text('company_type').$type<CarrierCompanyType>(),
     cardCount: integer('card_count'),
+    /** Soft-disable: an admin can revoke access without losing the registration's audit history.
+     * A revoked driver's card frees up for reassignment (see listDriversByCarrier). */
+    status: text('status').$type<'active' | 'revoked'>().notNull().default('active'),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

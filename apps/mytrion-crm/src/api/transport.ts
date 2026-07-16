@@ -27,6 +27,8 @@ export interface RequestOptions {
   body?: unknown;
   /** Set false to send AS the real admin (no act-as headers) — e.g. listing agents to impersonate. */
   impersonate?: boolean;
+  /** Extra request headers (e.g. `x-department-access` to assert the caller's department scope). */
+  headers?: Record<string, string> | undefined;
 }
 
 /** Session Bearer (else dev API key). No impersonation headers — the base principal. */
@@ -113,15 +115,72 @@ function buildUrl(path: string, query?: RequestOptions['query']): string {
   return url;
 }
 
+/**
+ * POST a multipart/form-data body (fields + optional file). Same auth + 401-refresh + ApiError
+ * handling as `request`, but the browser sets the multipart Content-Type (with boundary) itself —
+ * so we must NOT set it. Used for ticket / escalation creation with an attachment.
+ */
+export async function requestMultipart(
+  path: string,
+  form: FormData,
+  opts: { headers?: Record<string, string>; impersonate?: boolean } = {},
+): Promise<unknown> {
+  const url = buildUrl(path);
+  const doFetch = (): Promise<Response> =>
+    fetch(url, {
+      method: 'POST',
+      headers: { ...authHeaders(opts.impersonate !== false), ...(opts.headers ?? {}) },
+      credentials: 'same-origin',
+      body: form,
+    });
+  let res: Response;
+  try {
+    res = await doFetch();
+    if (res.status === 401 && getSession() && (await refreshBearer())) res = await doFetch();
+  } catch (e) {
+    throw new ApiError(`Could not reach the backend. ${(e as Error)?.message ?? ''}`, 'NETWORK', 0);
+  }
+  const raw = await res.text();
+  let json: unknown = null;
+  if (raw.trim()) {
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      json = raw;
+    }
+  }
+  if (!res.ok) {
+    const err = json && typeof json === 'object' ? (json as { error?: { message?: string; code?: string } }).error : null;
+    throw new ApiError(err?.message ?? `Backend returned HTTP ${res.status}.`, err?.code ?? `HTTP_${res.status}`, res.status);
+  }
+  return json;
+}
+
+/** GET a binary response (attachment download) as a Blob, with the same auth + 401-refresh. */
+export async function requestBlob(path: string, opts: { headers?: Record<string, string> } = {}): Promise<Blob> {
+  const url = buildUrl(path);
+  const doFetch = (): Promise<Response> =>
+    fetch(url, { headers: { ...authHeaders(true), ...(opts.headers ?? {}) }, credentials: 'same-origin' });
+  let res: Response;
+  try {
+    res = await doFetch();
+    if (res.status === 401 && getSession() && (await refreshBearer())) res = await doFetch();
+  } catch (e) {
+    throw new ApiError(`Could not reach the backend. ${(e as Error)?.message ?? ''}`, 'NETWORK', 0);
+  }
+  if (!res.ok) throw new ApiError(`Download failed (HTTP ${res.status}).`, `HTTP_${res.status}`, res.status);
+  return res.blob();
+}
+
 export async function request(
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   path: string,
   opts: RequestOptions = {},
 ): Promise<unknown> {
   const url = buildUrl(path, opts.query);
 
   const doFetch = async (): Promise<Response> => {
-    const headers: Record<string, string> = { ...authHeaders(opts.impersonate !== false) };
+    const headers: Record<string, string> = { ...authHeaders(opts.impersonate !== false), ...(opts.headers ?? {}) };
     if (method !== 'GET') headers['Content-Type'] = 'application/json';
     return fetch(url, {
       method,

@@ -1,29 +1,30 @@
-import { RefreshCw, Ticket, Clock3, Users, Wrench } from 'lucide-react';
+/**
+ * Home panel — 1:1 re-skin onto the zoho-octane widget's home-panel template
+ * (cs-home-* classes, Paper White / Royal Blue). Data stays on the live loadHome()
+ * adapter; the greeting/initials stay getSession()-based. The "Open Tickets by
+ * Priority" block (live data the widget didn't have) is kept, rendered with the
+ * widget's activity-list idiom.
+ */
+import type { CSSProperties, ReactNode } from 'react';
 
-import { StatCard } from '@/components/mytrion/stat-card';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-import {
-  MY_PERFORMANCE,
-  OPEN_TICKETS_BY_PRIORITY,
-  RECENT_ACTIVITY,
-  TEAM_OVERVIEW,
-  greeting,
-} from './data';
+import { getSession } from '@/api/session';
+import { greeting, type ActivityRow, type PriorityRow } from './data';
+import { loadHome, useLoad } from './live';
 
-const DOT_CLASS: Record<string, string> = {
-  purple: 'bg-brand-purple',
-  sky: 'bg-primary',
-  good: 'bg-good',
-  bad: 'bg-bad',
-  orange: 'bg-warn',
+/** Widget stageColors (hex dots), keyed by our ActivityRow tone. */
+const DOT_COLORS: Record<ActivityRow['dot'], string> = {
+  good: '#16A34A',
+  bad: '#DC2626',
+  orange: '#EA580C',
+  sky: '#2563EB',
+  purple: '#8B5CF6',
 };
 
-const PRIORITY_BAR_CLASS: Record<string, string> = {
-  bad: 'bg-bad',
-  warn: 'bg-warn',
-  info: 'bg-primary',
-  neutral: 'bg-muted-foreground',
+const PRIORITY_COLORS: Record<PriorityRow['tone'], string> = {
+  bad: '#DC2626',
+  warn: '#D97706',
+  info: '#2563EB',
+  neutral: '#9CA3AF',
 };
 
 const TODAY_LABEL = new Date().toLocaleDateString('en-US', {
@@ -34,124 +35,294 @@ const TODAY_LABEL = new Date().toLocaleDateString('en-US', {
 });
 
 export function Home() {
-  const totalOpen = OPEN_TICKETS_BY_PRIORITY.reduce((s, p) => s + p.count, 0);
-  const maxPriority = Math.max(...OPEN_TICKETS_BY_PRIORITY.map((p) => p.count));
+  const home = useLoad(loadHome, []);
+  const worker = getSession()?.worker;
+  const name = worker?.userName ?? 'Agent';
+  const firstName = name.split(/\s+/)[0] ?? name;
+  const initials =
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => w[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase() || 'CS';
+  const role = worker?.role ?? worker?.profile ?? 'Customer Service';
+
+  const loading = home.loading;
+  const activity: ActivityRow[] = home.data?.activity ?? [];
+  const priorities: PriorityRow[] = home.data?.byPriority ?? [];
+  const totalOpen = priorities.reduce((sum, p) => sum + p.count, 0);
 
   return (
-    <div className="flex flex-col gap-4 p-6">
-      <div className="flex items-start justify-between gap-3">
+    <div className="cs-panel cs-home-panel">
+      {/* ── Header ── */}
+      <div className="cs-header-row">
         <div>
-          <h2 className="font-heading text-2xl font-bold">Home</h2>
-          <p className="text-sm text-muted-foreground">{TODAY_LABEL} — Customer Service</p>
+          <h2 className="cs-title">Home</h2>
+          <div className="cs-subtitle">{TODAY_LABEL} — Customer Service Dashboard</div>
         </div>
-        <Button variant="outline" size="sm">
-          <RefreshCw className="size-3.5" />
+        <button className="cs-refresh-btn" onClick={home.reload} disabled={loading} title="Refresh">
+          <svg
+            width="13"
+            height="13"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            className={loading ? 'spin-icon' : undefined}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-14.357-2m14.357 2H15"
+            />
+          </svg>
           Refresh
-        </Button>
+        </button>
       </div>
 
-      <div className="flex items-center justify-between gap-3 rounded-lg border bg-card p-4 shadow-sm">
-        <div className="flex items-center gap-3.5">
-          <span className="flex size-11 flex-none items-center justify-center rounded-full bg-primary font-heading text-sm font-bold text-primary-foreground">
-            DW
-          </span>
+      {/* ── Welcome banner ── */}
+      <div className="cs-home-welcome">
+        <div className="cs-home-welcome-left">
+          <div className="cs-home-welcome-avatar">{initials}</div>
           <div>
-            <div className="font-heading text-lg font-bold">{greeting()}, Dana</div>
-            <div className="text-xs text-muted-foreground">Customer Service Lead</div>
+            <div className="cs-home-welcome-greeting">
+              {greeting()}, {firstName}
+            </div>
+            <div className="cs-home-welcome-sub">{role} · Ready to help</div>
           </div>
         </div>
-        <span className="flex items-center gap-1.5 rounded-full border border-good/30 bg-good/10 px-3 py-1 text-[11px] font-bold tracking-wide text-good uppercase">
-          <span className="size-1.5 animate-pulse rounded-full bg-good" />
-          Live
+        <span className="cs-badge cs-badge-info" style={{ fontSize: '0.625rem', letterSpacing: '0.12em' }}>
+          ● LIVE
         </span>
       </div>
 
-      <div>
-        <h3 className="font-heading mb-2.5 text-xs font-bold tracking-wide text-muted-foreground uppercase">
-          Team Overview
-        </h3>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatCard icon={Ticket} value={String(TEAM_OVERVIEW.openTickets)} label="Open Tickets" tint="primary" />
-          <StatCard icon={Clock3} value={String(TEAM_OVERVIEW.pendingApps)} label="Pending Apps" tint="warn" />
-          <StatCard icon={Users} value={String(TEAM_OVERVIEW.activeClients)} label="Active Clients" tint="good" />
-          <StatCard icon={Wrench} value={String(TEAM_OVERVIEW.maintenance)} label="Maintenance" tint="purple" />
-        </div>
-        <div className="mt-1.5 grid grid-cols-2 gap-3 text-[10.5px] text-muted-foreground sm:grid-cols-4">
-          <span>Active support cases</span>
-          <span>Awaiting carrier ID</span>
-          <span>With carrier ID</span>
-          <span>Open this month</span>
-        </div>
+      {/* ── Quick stats ── */}
+      <div className="cs-home-section-label">Team Overview</div>
+      <div className="cs-home-stats">
+        <StatCard
+          variant="cs-home-stat-blue"
+          iconBg="rgba(37,99,235,0.08)"
+          icon={
+            <svg width="16" height="16" fill="none" stroke="currentColor" style={{ color: 'var(--cs-accent)' }} viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"
+              />
+            </svg>
+          }
+          loading={loading}
+          value={home.data?.team.openTickets ?? '—'}
+          label="Open Tickets"
+          hint="Active support cases"
+        />
+        <StatCard
+          variant="cs-home-stat-amber"
+          iconBg="rgba(245,158,11,0.12)"
+          icon={
+            <svg width="16" height="16" fill="none" stroke="currentColor" style={{ color: 'var(--cs-warning)' }} viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+          }
+          loading={loading}
+          value={home.data?.team.pendingApps ?? '—'}
+          label="Pending Apps"
+          hint="Awaiting carrier ID"
+        />
+        <StatCard
+          variant="cs-home-stat-green"
+          iconBg="rgba(46,204,113,0.12)"
+          icon={
+            <svg width="16" height="16" fill="none" stroke="currentColor" style={{ color: 'var(--cs-success)' }} viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+            </svg>
+          }
+          loading={loading}
+          value={home.data?.team.activeClients ?? '—'}
+          label="Active Clients"
+          hint="With carrier ID"
+        />
+        <StatCard
+          variant="cs-home-stat-orange"
+          iconBg="rgba(251,146,60,0.12)"
+          icon={
+            <svg width="16" height="16" fill="none" stroke="currentColor" style={{ color: 'var(--cs-orange)' }} viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+              />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          }
+          loading={loading}
+          value={home.data?.team.maintenance ?? '—'}
+          label="Maintenance"
+          hint="This month"
+        />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="flex flex-col gap-4">
-          <div className="rounded-lg border bg-card p-4 shadow-sm">
-            <h3 className="font-heading mb-3 text-xs font-bold tracking-wide text-muted-foreground uppercase">
-              My Performance
-            </h3>
-            <div className="grid grid-cols-2 gap-3">
-              <MiniStat value={String(MY_PERFORMANCE.myPendingApps)} label="My Pending Apps" />
-              <MiniStat value={String(MY_PERFORMANCE.myActiveClients)} label="My Active Clients" />
-              <MiniStat value={String(MY_PERFORMANCE.myTicketsMonth)} label="My Tickets (Month)" />
-              <MiniStat value={String(MY_PERFORMANCE.myTicketsLastMonth)} label="Last Month" />
-            </div>
-          </div>
+      {/* ── My Performance ── */}
+      <div className="cs-home-section-label" style={{ marginTop: '1.25rem' }}>
+        My Performance
+      </div>
+      <div className="cs-home-perf-strip">
+        <PerfItem loading={loading} value={home.data?.my.pendingApps ?? '—'} label="My Pending Apps" />
+        <PerfItem loading={loading} value={home.data?.my.activeClients ?? '—'} label="My Active Clients" />
+        <PerfItem loading={loading} value={home.data?.my.ticketsMonth ?? '—'} label="My Tickets (Month)" />
+        <PerfItem loading={loading} value={home.data?.my.ticketsLastMonth ?? '—'} label="Last Month" />
+      </div>
 
-          <div className="rounded-lg border bg-card p-4 shadow-sm">
-            <h3 className="font-heading mb-3 text-xs font-bold tracking-wide text-muted-foreground uppercase">
-              Recent Activity
-            </h3>
-            <div className="flex flex-col">
-              {RECENT_ACTIVITY.map((a) => (
-                <div key={a.id} className="flex items-start gap-2.5 border-b py-2.5 last:border-b-0">
-                  <span className={cn('mt-1.5 size-2 flex-none rounded-full', DOT_CLASS[a.dot])} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold">{a.text}</div>
-                    <div className="truncate text-[11px] text-muted-foreground">{a.sub}</div>
-                  </div>
-                  <span className="flex-none text-[11px] text-muted-foreground">{a.time}</span>
-                </div>
-              ))}
-            </div>
+      {/* ── Recent Activity ── */}
+      <div className="cs-home-section-label" style={{ marginTop: '1.25rem' }}>
+        Recent Activity
+      </div>
+      <div className="cs-home-activity">
+        {loading ? (
+          [1, 2, 3, 4].map((i) => <SkeletonActivityItem key={i} />)
+        ) : activity.length === 0 ? (
+          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            No recent activity
           </div>
-        </div>
+        ) : (
+          activity.map((item) => (
+            <div key={item.id} className="cs-home-activity-item">
+              <div
+                className="cs-home-activity-dot"
+                style={{ background: DOT_COLORS[item.dot], color: DOT_COLORS[item.dot] }}
+              />
+              <div className="cs-home-activity-body">
+                <div className="cs-home-activity-text">{item.text}</div>
+                <div className="cs-home-activity-sub">{item.sub}</div>
+              </div>
+              <div className="cs-home-activity-time">{item.time}</div>
+            </div>
+          ))
+        )}
+      </div>
 
-        <div className="rounded-lg border bg-card p-4 shadow-sm">
-          <h3 className="font-heading mb-3 text-xs font-bold tracking-wide text-muted-foreground uppercase">
-            Open Tickets by Priority
-          </h3>
-          <div className="flex flex-col gap-3">
-            {OPEN_TICKETS_BY_PRIORITY.map((p) => (
-              <div key={p.label}>
-                <div className="mb-1 flex items-center justify-between text-xs">
-                  <span className="font-semibold">{p.label}</span>
-                  <span className="font-mono text-muted-foreground">{p.count}</span>
+      {/* ── Open Tickets by Priority (live extra; widget activity-list idiom) ── */}
+      <div className="cs-home-section-label" style={{ marginTop: '1.25rem' }}>
+        Open Tickets by Priority
+      </div>
+      <div className="cs-home-activity">
+        {loading ? (
+          [1, 2].map((i) => <SkeletonActivityItem key={i} />)
+        ) : priorities.length === 0 ? (
+          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            No priority breakdown available
+          </div>
+        ) : (
+          <>
+            {priorities.map((p) => (
+              <div key={p.label} className="cs-home-activity-item">
+                <div
+                  className="cs-home-activity-dot"
+                  style={{ background: PRIORITY_COLORS[p.tone], color: PRIORITY_COLORS[p.tone] }}
+                />
+                <div className="cs-home-activity-body">
+                  <div className="cs-home-activity-text">{p.label}</div>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className={cn('h-full rounded-full', PRIORITY_BAR_CLASS[p.tone])}
-                    style={{ width: `${(p.count / maxPriority) * 100}%` }}
-                  />
-                </div>
+                <div className="cs-home-activity-time" style={{ fontVariantNumeric: 'tabular-nums' }}>{p.count}</div>
               </div>
             ))}
-          </div>
-          <div className="mt-4 flex items-center justify-between border-t pt-3 text-xs">
-            <span className="text-muted-foreground">Total open</span>
-            <span className="font-mono font-bold">{totalOpen}</span>
-          </div>
-        </div>
+            <div className="cs-home-activity-item">
+              <div className="cs-home-activity-body">
+                <div className="cs-home-activity-text">Total open</div>
+              </div>
+              <div
+                className="cs-home-activity-time"
+                style={{ color: 'var(--text-primary)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}
+              >
+                {totalOpen}
+              </div>
+            </div>
+          </>
+        )}
       </div>
+
+      {/* error notice */}
+      {home.error ? (
+        <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--cs-warning)', textAlign: 'center' }}>
+          ⚠ Some metrics unavailable — {home.error}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function MiniStat({ value, label }: { value: string; label: string }) {
+function StatCard({
+  variant,
+  iconBg,
+  icon,
+  loading,
+  value,
+  label,
+  hint,
+}: {
+  variant: string;
+  iconBg: string;
+  icon: ReactNode;
+  loading: boolean;
+  value: string;
+  label: string;
+  hint: string;
+}) {
   return (
-    <div className="rounded-md border bg-muted/30 p-3">
-      <div className="font-heading text-xl font-bold">{value}</div>
-      <div className="mt-0.5 text-[10px] tracking-wide text-muted-foreground uppercase">{label}</div>
+    <div className={`cs-home-stat-card ${variant}`}>
+      <div className="cs-home-stat-icon" style={{ background: iconBg }}>
+        {icon}
+      </div>
+      <div className="cs-home-stat-value">
+        {loading ? <span className="cs-home-stat-skeleton" /> : <span>{value}</span>}
+      </div>
+      <div className="cs-home-stat-label">{label}</div>
+      <div className="cs-home-stat-hint">{hint}</div>
+    </div>
+  );
+}
+
+function PerfItem({ loading, value, label }: { loading: boolean; value: string; label: string }) {
+  let body: ReactNode;
+  if (loading) {
+    body = <span className="cs-home-stat-skeleton" style={{ width: '36px', height: '22px' }} />;
+  } else if (value === '—') {
+    // Widget renders unavailable perf values muted and smaller.
+    body = <span style={{ color: 'var(--text-muted)', fontSize: '1rem' }}>—</span>;
+  } else {
+    body = <span>{value}</span>;
+  }
+  return (
+    <div className="cs-home-perf-item">
+      <div className="cs-home-perf-value">{body}</div>
+      <div className="cs-home-perf-label">{label}</div>
+    </div>
+  );
+}
+
+function SkeletonActivityItem() {
+  const skeleton: CSSProperties = { height: '12px', width: '70%', marginBottom: '4px' };
+  return (
+    <div className="cs-home-activity-item">
+      <div className="cs-home-activity-dot" style={{ background: 'var(--check-border)' }} />
+      <div className="cs-home-activity-body">
+        <div className="cs-home-stat-skeleton" style={skeleton} />
+        <div className="cs-home-stat-skeleton" style={{ height: '10px', width: '40%' }} />
+      </div>
     </div>
   );
 }

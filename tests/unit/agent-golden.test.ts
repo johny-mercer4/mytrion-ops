@@ -25,27 +25,45 @@ const CLIENT_TOOLS = [
   'crm.transactions',
 ];
 
+// analytics.snapshot (read-class, cached org-wide dashboard aggregates) is bound to every agent
+// EXCEPT sales — ratified 2026-07: it exposes company-wide totals AND a top-agents-by-gallons
+// ranking (other reps' numbers), so a sales rep must not have it; they only see their own book.
 const GOLDEN: Record<string, { caller: string[]; tools: string[]; rag: string[] }> = {
   sales: {
     caller: ['sales'],
     tools: ['agent.activity', 'agent.sales_snapshot', ...CLIENT_TOOLS, 'zoho_crm.query'].sort(),
     rag: ['sales'],
   },
-  marketing: { caller: ['marketing'], tools: ['zoho_crm.query'], rag: ['marketing'] },
-  billing: { caller: ['billing'], tools: ['agent.debtors', 'zoho_crm.query'], rag: ['billing'] },
+  marketing: { caller: ['marketing'], tools: ['analytics.snapshot', 'zoho_crm.query'], rag: ['marketing'] },
+  billing: { caller: ['billing'], tools: ['agent.debtors', 'analytics.snapshot', 'zoho_crm.query'], rag: ['billing'] },
   'customer-service': {
     caller: ['customer-service'],
-    tools: [...CLIENT_TOOLS, 'zoho_crm.query', 'zoho_desk.search_tickets'].sort(),
+    tools: ['analytics.snapshot', ...CLIENT_TOOLS, 'zoho_crm.query', 'zoho_desk.search_tickets'].sort(),
     rag: ['customer-service'],
   },
-  verification: { caller: ['verification'], tools: ['zoho_crm.query'], rag: ['verification'] },
-  retention: { caller: ['retention'], tools: ['zoho_crm.query'], rag: ['retention'] },
-  collection: { caller: ['collection'], tools: ['agent.debtors', 'zoho_crm.query'], rag: ['collection'] },
-  finance: { caller: ['finance'], tools: ['agent.debtors', 'zoho_crm.query'], rag: ['finance'] },
+  verification: { caller: ['verification'], tools: ['analytics.snapshot', 'zoho_crm.query'], rag: ['verification'] },
+  retention: { caller: ['retention'], tools: ['analytics.snapshot', 'zoho_crm.query'], rag: ['retention'] },
+  collection: {
+    caller: ['collection'],
+    tools: ['agent.debtors', 'analytics.snapshot', 'zoho_crm.query'],
+    rag: ['collection'],
+  },
+  finance: {
+    caller: ['finance'],
+    tools: ['agent.debtors', 'analytics.snapshot', 'zoho_crm.query'],
+    rag: ['finance'],
+  },
   // analyst/manager goldens use an admin caller (their tier); rag [] = unfiltered-by-scope.
   analyst: {
     caller: [],
-    tools: ['agent.activity', 'agent.debtors', 'agent.sales_snapshot', 'zoho_crm.query', 'zoho_desk.search_tickets'],
+    tools: [
+      'agent.activity',
+      'agent.debtors',
+      'agent.sales_snapshot',
+      'analytics.snapshot',
+      'zoho_crm.query',
+      'zoho_desk.search_tickets',
+    ],
     rag: [],
   },
   manager: {
@@ -54,6 +72,7 @@ const GOLDEN: Record<string, { caller: string[]; tools: string[]; rag: string[] 
       'agent.activity',
       'agent.debtors',
       'agent.sales_snapshot',
+      'analytics.snapshot',
       'zoho_crm.query',
       'zoho_desk.search_tickets',
       'zoho_people.search_employees',

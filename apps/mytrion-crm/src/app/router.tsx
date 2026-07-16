@@ -1,5 +1,4 @@
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
-import { ClientLogin } from './ClientLogin';
 import { Landing } from './Landing';
 import { MytrionGuard } from './MytrionGuard';
 import { NotFound } from './NotFound';
@@ -12,8 +11,8 @@ import { WorkerLayout } from './WorkerLayout';
  *     /            → Landing: resolve access → Forbidden (0) | auto-enter (1) | picker (2+)
  *     /m/:mytrion  → MytrionGuard: validate slug + canAccess, then lazy-load the Mytrion module
  *
- *   CLIENT sign-in (public, NOT worker-gated — a client is not a Zoho worker):
- *     /client      → ClientLogin (username/password; Type 2, placeholder for now)
+ *   RETIRED public client-login surface:
+ *     /client      → NotFound (password sign-in is no longer a supported prod entry point)
  *
  *   *              → NotFound
  *
@@ -30,7 +29,7 @@ const router = createBrowserRouter(
         { path: '/m/:mytrion', element: <MytrionGuard /> },
       ],
     },
-    { path: '/client', element: <ClientLogin /> },
+    { path: '/client', element: <NotFound /> },
     { path: '*', element: <NotFound /> },
   ],
   {

@@ -1,0 +1,49 @@
+---
+description: Zoho CRM v8 / Desk v1 API conventions, metadata fetch, and COQL — use when building or debugging Zoho integrations
+globs: src/integrations/**/*.ts,src/modules/tools/**/*.ts,metadataScripts/**/*.ts,src/routes/**/*zoho*,src/routes/**/*desk*,src/routes/**/*crm*
+alwaysApply: false
+---
+
+# Zoho API reference (this repo)
+
+## Skills (full docs)
+
+- Claude/Cursor skill: `.claude/skills/zoho-crm-api/SKILL.md` — CRM REST **v8**, metadata, COQL, bulk, credits
+- Claude/Cursor skill: `.claude/skills/zoho-desk-api/SKILL.md` — Desk **v1**, `orgId` header, tickets, fields
+- Official: [CRM v8](https://www.zoho.com/crm/developer/docs/api/v8/) · [COQL Overview](https://www.zoho.com/crm/developer/docs/api/v8/COQL-Overview.html) · [Desk API](https://desk.zoho.com/DeskAPIDocument)
+
+## Live field metadata (PROD `.env` tokens)
+
+Prefer real API names over guessing:
+
+```bash
+pnpm meta:fetch -- crm <ModuleApiName>     # GET /settings/fields?module=
+pnpm meta:fetch -- desk <module>           # GET /organizationFields?module=
+pnpm meta:zoho-crm                         # full org catalog
+pnpm meta:zoho-desk
+```
+
+CRM returns `api_name` + `data_type` (+ `json_type`). Desk returns `apiName` + `type`.
+
+## Auth wiring
+
+- `wrapper.authHeaders('zoho_crm'|'zoho_desk')` + `zoho.baseUrl(...)` in `src/integrations/`
+- CRM: `ZOHO_CRM_API_DOMAIN` (default `…/crm/v8`), prod `ZOHO_CRM_REFRESH_TOKEN`
+- Desk: `ZOHO_DESK_BASE_URL` + mandatory `orgId` (`ZOHO_DESK_ORG_ID`)
+
+## COQL (priority for CRM reads)
+
+`POST /coql` with `{ "select_query": "…" }`. Scope `ZohoCRM.coql.READ` + module READ.
+
+| Limit | Max (v8 Overview) |
+| --- | --- |
+| SELECT fields | 500 |
+| WHERE criteria | 25 |
+| LIMIT per call | 2000 (default 200) |
+| Same-criteria pagination | 100,000 |
+
+Use Field Metadata / `meta:fetch` for SELECT/WHERE column API names. Max 2 lookup joins (dot notation). Beyond 100k → Bulk Read.
+
+## Desk gotchas
+
+Update = **PATCH**; delete = **POST …/moveToTrash**; empty list = **HTTP 204**; IDs are **strings**; `departmentId` required on ticket/task/call/event lists.

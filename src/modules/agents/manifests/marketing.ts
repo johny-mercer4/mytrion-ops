@@ -1,5 +1,5 @@
 import type { AgentManifest } from '../types.js';
-import { FILE_TOOLS, STAY_IN_LANE } from './shared.js';
+import { FILE_TOOLS, STAY_IN_LANE, ANALYTICS_TOOLS } from './shared.js';
 
 export const marketingAgent: AgentManifest = {
   key: 'marketing',
@@ -12,7 +12,7 @@ export const marketingAgent: AgentManifest = {
     `performance. ${STAY_IN_LANE}`,
   departments: ['marketing', 'sales'],
   allowedAudiences: ['internal'],
-  tools: ['zoho_crm.query', ...FILE_TOOLS],
+  tools: ['zoho_crm.query', ...FILE_TOOLS, ...ANALYTICS_TOOLS],
   composioToolkits: [],
   ragScope: { departments: ['marketing', 'sales'], allowAllDepartments: false },
   readOnly: false,

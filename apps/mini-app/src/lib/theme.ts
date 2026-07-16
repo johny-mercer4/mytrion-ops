@@ -14,7 +14,7 @@ const STORAGE_KEY = 'octane.theme';
 // chrome and the app's surfaces are the same color.
 const CHROME: Record<Theme, { header: string; bg: string }> = {
   light: { header: '#ffffff', bg: '#f4f5f7' },
-  dark: { header: '#1e2128', bg: '#16181d' },
+  dark: { header: '#161922', bg: '#0b0c10' },
 };
 
 export function getStoredTheme(): Theme {
@@ -24,7 +24,7 @@ export function getStoredTheme(): Theme {
   } catch {
     // private mode / storage disabled — fall through to the default
   }
-  return 'light';
+  return 'dark';
 }
 
 export function applyTheme(theme: Theme): void {

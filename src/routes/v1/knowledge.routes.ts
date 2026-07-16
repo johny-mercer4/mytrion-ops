@@ -237,14 +237,17 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     // An EXPLICIT departmentAccess filter (without allDepartments) is a NARROWING request —
     // the admin retrieval-test UI scopes "what would a sales agent see". withDepartmentAccess
     // can only widen (admin sessions already carry allDepartmentAccess), so apply the narrow
-    // here. Safe under this route's trust model: admins already see everything, and unverified
-    // API-key callers are already trusted to assert departmentAccess.
+    // here. For a VERIFIED non-admin worker the request is bounded by what the session already
+    // grants (profile-derived departments) so the body can't widen access; admins and unverified
+    // API-key callers are trusted to assert any scope.
     if (body.departmentAccess !== undefined && body.allDepartments !== true) {
-      ctx = {
-        ...ctx,
-        allDepartmentAccess: false,
-        departments: normalizeDepartments(body.departmentAccess),
-      };
+      const requested = normalizeDepartments(body.departmentAccess);
+      const granted = ctx.departments;
+      const bounded =
+        ctx.sessionVerified && !ctx.allDepartmentAccess
+          ? requested.filter((d) => granted.includes(d))
+          : requested;
+      ctx = { ...ctx, allDepartmentAccess: false, departments: bounded };
     }
     const passages = await retrieve(ctx, body.query, body.limit ?? DEFAULT_RETRIEVAL_K);
     return { passages };

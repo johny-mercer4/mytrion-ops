@@ -1,0 +1,173 @@
+/* =====================================================
+   Customer Service — Shared Animations & Effects
+   ===================================================== */
+
+/* ── Keyframes ── */
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes loaderPulse {
+
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.7;
+        transform: scale(0.96);
+    }
+}
+
+@keyframes loaderBar {
+    0% {
+        width: 0%;
+        margin-left: 0%;
+    }
+
+    50% {
+        width: 60%;
+        margin-left: 20%;
+    }
+
+    100% {
+        width: 0%;
+        margin-left: 100%;
+    }
+}
+
+@keyframes scanSweep {
+    0% {
+        left: -60%;
+    }
+
+    100% {
+        left: 120%;
+    }
+}
+
+/* ── Loader typing dots (width-expansion approach — works on regular elements) ── */
+.cs-root .cs-loader-dots {
+    display: inline-block;
+    overflow: hidden;
+    width: 0;
+    vertical-align: bottom;
+    animation: cs-dots-expand 1.4s steps(4, end) infinite;
+}
+
+.cs-root .cs-loader-dots::after {
+    content: '...';
+    display: inline-block;
+}
+
+@keyframes cs-dots-expand {
+    from {
+        width: 0;
+    }
+
+    to {
+        width: 1.25em;
+    }
+}
+
+@keyframes ai-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -200% 0;
+    }
+
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+/* ── Skeleton loader ── */
+.cs-root .cs-skeleton {
+    background: linear-gradient(90deg,
+            var(--surface-alt) 25%,
+            var(--surface-raised) 50%,
+            var(--surface-alt) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.6s ease-in-out infinite;
+    border-radius: var(--radius-sm);
+}
+
+/* ── Pulse dot (status indicator) ── */
+.cs-root .cs-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.cs-root .cs-status-dot.online {
+    background: var(--cs-success);
+    box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2);
+    animation: pulse-online 2s ease-in-out infinite;
+}
+
+@keyframes pulse-online {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2);
+    }
+
+    50% {
+        box-shadow: 0 0 0 4px rgba(46, 204, 113, 0.08);
+    }
+}
+
+/* ── Fade transitions ── */
+.cs-root .cs-fade-enter-active,
+
+.cs-root .cs-fade-leave-active {
+    transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.cs-root .cs-fade-enter-from,
+
+
+.cs-root .cs-fade-leave-to {
+    opacity: 0;
+    transform: translateY(4px);
+}
+
+/* ── Accent glow line (top of cards) ── */
+.cs-root .cs-glow-top {
+    position: relative;
+    overflow: hidden;
+}
+
+.cs-root .cs-glow-top::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cs-accent), transparent);
+    opacity: 0.5;
+}

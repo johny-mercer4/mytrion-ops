@@ -31,6 +31,28 @@ const EnvSchema = z.object({
   // --- Data Warehouse (separate read Postgres; tool + metadata target) ---
   DWH_DATABASE_URL: z.string().default(''),
 
+  // --- AWS MySQL (external RDS/Aurora MySQL; tool target, mirrors the DWH wrapper) ---
+  // Two ways to point at it (discrete fields win when AWS_MYSQL_HOST is set):
+  //  1. Discrete (preferred — password passed RAW, no URL-encoding footgun):
+  //     AWS_MYSQL_HOST / _PORT / _USER / _PASSWORD / _DATABASE. Through an SSH tunnel, HOST is
+  //     127.0.0.1 and PORT is the local forward (e.g. 3307).
+  //  2. URI: mysql://user:pass@host:3306/db — but special chars in the password MUST be
+  //     percent-encoded or mysql2 throws "URI malformed".
+  // For IAM database auth, mint a short-lived token with @aws-sdk/rds-signer and use it as the
+  // password (not wired — add when needed).
+  AWS_MYSQL_DATABASE_URL: z.string().default(''),
+  AWS_MYSQL_HOST: z.string().default(''),
+  AWS_MYSQL_PORT: z.coerce.number().int().positive().default(3306),
+  AWS_MYSQL_USER: z.string().default(''),
+  AWS_MYSQL_PASSWORD: z.string().default(''),
+  AWS_MYSQL_DATABASE: z.string().default(''),
+  // AWS RDS/Aurora terminate TLS with publicly-trusted certs (in Node's store) — verify by default.
+  // Set to '0' for a plaintext / non-RDS target (matches the DWH's ssl:false).
+  AWS_MYSQL_SSL: flag('1'),
+  // Read-only is the default (repo rule 7). Enforced per-connection via SET SESSION TRANSACTION
+  // READ ONLY; set to '0' to allow writes. A read-only DB user is the real guarantee — this is defence in depth.
+  AWS_MYSQL_READONLY: flag('1'),
+
   // --- OpenAI ---
   OPENAI_API_KEY: z.string().default(''),
   // Model IDs by role: FOUR_O_MINI = default chat, FIVE_O_MINI = reasoning/hard tasks,
@@ -143,6 +165,19 @@ const EnvSchema = z.object({
   // --- Zoho MCP (hosted; "Authorize via Connection" → headless, URL embeds the credential). ---
   ZOHO_MCP_URL: z.string().default(''),
 
+  // --- dbt MCP (hosted Streamable-HTTP MCP → dbt warehouse). Server-to-server via OAuth
+  // `client_credentials` (no browser). DBT_MCP_URL is the JSON-RPC endpoint (e.g. …/mcp);
+  // DBT_MCP_TOKEN_URL defaults to `${origin}/token` when blank. Creds are secrets → env only. ---
+  DBT_MCP_URL: z.string().default(''),
+  DBT_MCP_TOKEN_URL: z.string().default(''),
+  DBT_MCP_CLIENT_ID: z.string().default(''),
+  DBT_MCP_CLIENT_SECRET: z.string().default(''),
+
+  // --- Live analytics (DWH-backed dashboard + analytics.snapshot tool) ---
+  // Snapshot cache TTL. Snapshots self-expire after this long and the warmer recomputes them,
+  // so the dashboard always serves from cache (fast) while data refreshes automatically.
+  ANALYTICS_CACHE_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(120),
+
   // --- Department RBAC: profile/role substrings that grant UNLIMITED access (all depts + all tools). ---
   // 'ceo' matches the Zoho ROLE the frontend also treats as admin (ADMIN_ROLES in
   // mytrions.config.ts) — the two admin predicates must stay aligned or CEO sessions
@@ -158,6 +193,10 @@ const EnvSchema = z.object({
   // case-insensitive SUBSTRING match, so "Sales Agent" also matches region roles like
   // "Uzbekistan Sales Agent"). GET /v1/admin/agents?all=1 bypasses this filter (admin-only).
   SALES_AGENT_PROFILE_NAMES: z.string().default('Sales Agent'),
+  // CS Mytrion manager tier (leaderboard, org-wide analytics, roster). Case-insensitive
+  // SUBSTRING match against the caller's Zoho profile AND role — replaces the old widget's
+  // hardcoded name allowlist ("Customer Service Manager" roles match via 'manager').
+  CS_MANAGER_ROLE_MARKERS: z.string().default('manager,director,administrator'),
   SALES_AGENT_ROLE_NAMES: z.string().default('Sales Agent'),
   // TTL for the cached CRM users directory that VERIFIES act-as targets server-side
   // (x-act-as-* identity headers are never trusted; see actAsDirectory.ts).
@@ -204,11 +243,22 @@ const EnvSchema = z.object({
   // Zoho custom-function (Deluge) execution root. Blank = derived from the ORIGIN of
   // ZOHO_CRM_API_DOMAIN + '/crm/v2/functions' — the functions API is v2, not v8.
   ZOHO_FUNCTIONS_BASE_URL: z.string().default(''),
+  // Which org the Deluge executor targets. PRODUCTION by default; flip to 'sandbox' (plus
+  // the two vars below) to point every executeZohoFunction call at the CRM sandbox with
+  // zero code change.
+  ZOHO_FUNCTIONS_ENV: z.enum(['production', 'sandbox']).default('production'),
+  ZOHO_FUNCTIONS_SANDBOX_BASE_URL: z.string().default('https://sandbox.zohoapis.com/crm/v2/functions'),
+  // Refresh token minted against the SANDBOX org (falls back to the prod CRM token).
+  ZOHO_CRM_SANDBOX_REFRESH_TOKEN: z.string().default(''),
 
   // --- Zoho Desk ---
   ZOHO_DESK_REFRESH_TOKEN: z.string().default(''),
   ZOHO_DESK_BASE_URL: z.string().default('https://desk.zoho.com/api/v1'),
   ZOHO_DESK_ORG_ID: z.string().default(''),
+  // The Desk agent the app posts comments as (the shared "Sales Agent Rep" account tied to the
+  // Desk token). Ticket comments with this commenterId are the caller's own → rendered as "me"
+  // (right-aligned), matching the reference dashboard's zohoDeskAdminId.
+  ZOHO_DESK_AGENT_ID: z.string().default('1057080000010543217'),
 
   // --- Zoho People ---
   ZOHO_PEOPLE_REFRESH_TOKEN: z.string().default(''),
@@ -217,6 +267,19 @@ const EnvSchema = z.object({
   // --- Zoho Projects ---
   ZOHO_PROJECTS_REFRESH_TOKEN: z.string().default(''),
   ZOHO_PROJECTS_BASE_URL: z.string().default('https://projectsapi.zoho.com/api/v3'),
+
+  // --- RingCentral (Sales Mytrion Embeddable softphone; JWT = shared extension for now) ---
+  RINGCENTRAL_CLIENT_ID: z.string().default(''),
+  RINGCENTRAL_CLIENT_SECRET: z.string().default(''),
+  RINGCENTRAL_JWT: z.string().default(''),
+  RINGCENTRAL_SERVER_URL: z.string().default('https://platform.ringcentral.com'),
+  // Gates GET /v1/ringcentral/embed-config + the Sales softphone bootstrap.
+  FF_RINGCENTRAL_ENABLED: flag('0'),
+  // Explicit ops acknowledgment that the shared client secret + org JWT are handed to every
+  // sales browser via the adapter URL (the Phase-1 shared-extension shortcut). OFF by default:
+  // the adapter loads without credentials (agents see RingCentral's own login instead of JWT
+  // auto-login). Set to 1 only as a deliberate decision; every fetch is then audited.
+  RINGCENTRAL_BROWSER_CREDS_ACK: flag('0'),
 
   // --- Vendor: Octane internal API ---
   OCTANE_INTERNAL_API_URL: z.string().default(''),
@@ -305,7 +368,18 @@ const EnvSchema = z.object({
   FF_ZOHO_MCP_ENABLED: flag('0'),
   // Additionally expose Zoho MCP WRITE tools (create/update/upsert). Off by default (read-only posture).
   FF_ZOHO_MCP_WRITES: flag('0'),
+  // Connect the hosted dbt MCP (warehouse analytics + query-memory RAG). Off by default. When on,
+  // OpenAI chat/agents get the same agentic tools Claude uses on that MCP (`recall_similar_queries`,
+  // `query`); admin-only via department policy. See integrations/dbtMcp.ts + dbtMcpTools.ts.
+  FF_DBT_MCP_ENABLED: flag('0'),
+  // Expose dbt MCP WRITE tools (`run` / `test`). Off by default (read-only posture).
+  FF_DBT_MCP_WRITES: flag('0'),
   FF_AUDIT_LOG_ENABLED: flag('1'),
+  // Dev-only route that mints a validly-signed Telegram initData for a fake user (local mini-app
+  // testing without a real Telegram client). Off by default — gating solely on NODE_ENV!=='production'
+  // is not enough, since NODE_ENV defaults to 'development' when unset (a misconfigured staging/
+  // preview env sharing the prod bot token would otherwise expose it). Explicit opt-in required.
+  FF_DEV_MOCK_TELEGRAM_ENABLED: flag('0'),
   // Sales workers may run DESTRUCTIVE touchpoints (card deactivate/limits, money-code draw,
   // fraud release, EFS override) — widget parity, ON by default. 0 = admin-only, no code change.
   FF_TOUCHPOINT_DESTRUCTIVE_SALES: flag('1'),
@@ -330,17 +404,25 @@ const EnvSchema = z.object({
   // profile→department mapping is validated against the live Zoho roster — an unmapped profile
   // would silently drop the worker to Global-only knowledge.
   FF_WORKER_DEPT_STRICT: flag('0'),
+  // Session-authoritative department access on the direct routes (Desk / Data Center /
+  // RingCentral / Retention / Knowledge): verified sessions IGNORE the x-department-access /
+  // x-all-departments headers; a non-admin worker's departments are derived from their Zoho
+  // profile/role. ON by default (security fix 2026-07: header trust let any authenticated user
+  // self-elevate). Set to 0 ONLY as an emergency rollback if live Zoho profiles don't map onto
+  // KNOWN_DEPARTMENTS (watch the "department claims ignored" warn log).
+  FF_SESSION_DEPT_AUTHORITATIVE: flag('1'),
   // Zoho OAuth worker sign-in (/v1/auth/zoho/*) + Bearer-session identity on caller routes.
   FF_ZOHO_OAUTH_ENABLED: flag('0'),
-  // Carrier-client login/password sign-in (/v1/auth/client/login — carrier_users accounts,
-  // consumed by the future Telegram mini-app + the /client page). Sessions are locked to
-  // audience 'customer'. On by default; set 0 to kill the endpoint instantly.
-  FF_CLIENT_LOGIN_ENABLED: flag('1'),
   // Multi-agent orchestrator endpoint (POST /v1/agent). FF_DEEP_AGENTS_ENABLED is kept as a
   // deprecated alias — either flag enables the endpoint.
   FF_ORCHESTRATOR_ENABLED: flag('0'),
   // Durable LangGraph threads (PostgresSaver in the 'langgraph' schema). Off = stateless runs.
   FF_AGENT_CHECKPOINTS: flag('0'),
+  // Reuse the compiled LangGraph agent across turns, keyed by (agent + full caller identity/scope).
+  // Skips re-compiling the graph + re-fetching Composio tools every turn (big win for admin/
+  // orchestrator turns). Safe because the key includes every identity/authority/view field, so no
+  // two callers ever share a graph; requestId is sourced from the run context at dispatch, not baked.
+  FF_AGENT_GRAPH_CACHE: flag('1'),
   // File generation/analysis tools + /v1/files routes (MinIO/S3 storage).
   FF_FILES_ENABLED: flag('0'),
   // Browser automation via Composio toolkits (admin-gated; domain-allowlisted; fail closed).
@@ -412,6 +494,11 @@ export function assertRuntimeSecrets(): void {
   if (!env.OPENAI_API_KEY) missing.push('OPENAI_API_KEY');
   if (env.FF_GROQ_ENABLED && !env.GROQ_API_KEY) missing.push('GROQ_API_KEY');
   if (env.FF_ZOHO_MCP_ENABLED && !env.ZOHO_MCP_URL) missing.push('ZOHO_MCP_URL');
+  if (env.FF_DBT_MCP_ENABLED) {
+    if (!env.DBT_MCP_URL) missing.push('DBT_MCP_URL');
+    if (!env.DBT_MCP_CLIENT_ID) missing.push('DBT_MCP_CLIENT_ID');
+    if (!env.DBT_MCP_CLIENT_SECRET) missing.push('DBT_MCP_CLIENT_SECRET');
+  }
   if (env.FF_COMPOSIO_ENABLED && !env.COMPOSIO_API_KEY) missing.push('COMPOSIO_API_KEY');
   if (env.FF_TELEGRAM_ENABLED && !env.TELEGRAM_BOT_TOKEN) missing.push('TELEGRAM_BOT_TOKEN');
   if (env.FF_ZOHO_OAUTH_ENABLED) {

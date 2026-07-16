@@ -18,6 +18,40 @@ vi.mock('../../src/repos/auditRepo.js', () => ({
   },
 }));
 
+// contextFromClaims resolves a worker's grant from the DB — mock with the DB-free legacy derivation
+// so audit tests stay offline/deterministic (resolver logic is covered in mytrion-access.test.ts).
+vi.mock('../../src/modules/access/mytrionAccessService.js', async () => {
+  const dept = await import('../../src/lib/department.js');
+  const { MYTRION_IDS, MYTRION_DEPARTMENT } = await import('../../src/lib/mytrions.js');
+  return {
+    mytrionAccessService: {
+      resolveWorkerAccess: vi.fn(
+        async (input: { profileName?: string | null; zohoRole?: string | null; userName?: string | null }) => {
+          const envAdmin = dept.resolveAllDepartmentAccess({
+            profile: input.profileName ?? null,
+            role: input.zohoRole ?? null,
+            userName: input.userName ?? null,
+          });
+          if (envAdmin) {
+            return { accessibleMytrions: [...MYTRION_IDS], homeMytrion: null, allDepartmentAccess: true, departments: [] };
+          }
+          const departments = dept.deriveWorkerDepartments(input.profileName ?? null, input.zohoRole ?? null);
+          const set = new Set(departments);
+          const accessible = MYTRION_IDS.filter((id) => set.has(MYTRION_DEPARTMENT[id]));
+          return {
+            accessibleMytrions: accessible,
+            homeMytrion: accessible.length === 1 ? (accessible[0] ?? null) : null,
+            allDepartmentAccess: false,
+            departments,
+          };
+        },
+      ),
+      invalidateUser: vi.fn(),
+      invalidateAll: vi.fn(),
+    },
+  };
+});
+
 import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import type { NewAuditEntry } from '../../src/db/schema/index.js';
@@ -52,7 +86,7 @@ function lastInserted(): NewAuditEntry {
 
 describe('auditFromContext — full actor identity on every row', () => {
   it('stamps a WORKER identity: name, profile, Zoho role, internal role', async () => {
-    const ctx = contextFromClaims(
+    const ctx = await contextFromClaims(
       {
         userId: 'zoho:42',
         tenantId: DEFAULT_TENANT_ID,
@@ -77,7 +111,7 @@ describe('auditFromContext — full actor identity on every row', () => {
   });
 
   it('stamps a CARRIER-CLIENT identity: login, access profile, viewer role, company tags', async () => {
-    const ctx = contextFromClaims(
+    const ctx = await contextFromClaims(
       {
         userId: 'client:cu_1',
         tenantId: DEFAULT_TENANT_ID,

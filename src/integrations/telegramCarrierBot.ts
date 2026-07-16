@@ -106,6 +106,26 @@ export function verifyTelegramInitData(
   return { ok: true, fields };
 }
 
+/**
+ * The inverse of verifyTelegramInitData: sign a set of fields into a valid Telegram WebApp
+ * `initData` string, using the SAME secret-derivation as the verifier above. Exists so a signer
+ * (the dev-only mock-init-data route) never re-implements the HMAC algorithm independently and
+ * drifts from what the verifier actually checks. NOT for production identity issuance — Telegram
+ * itself is the only legitimate signer of a real user's initData; this is for locally testing the
+ * verify path with a fake user.
+ */
+export function signTelegramInitData(fields: Record<string, string>): string {
+  const params = new URLSearchParams(fields);
+  const dataCheckString = [...params.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}=${v}`)
+    .join('\n');
+  const secretKey = createHmac('sha256', 'WebAppData').update(env.TELEGRAM_CARRIER_BOT_TOKEN).digest();
+  const hash = createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+  params.set('hash', hash);
+  return params.toString();
+}
+
 export interface TelegramWebAppUser {
   id: number;
   username?: string;

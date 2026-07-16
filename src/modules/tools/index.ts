@@ -9,6 +9,8 @@ import { zohoDeskSearchTicketsTool } from './definitions/zoho_desk_search_ticket
 import { agentSalesSnapshotTool } from './definitions/agent_sales_snapshot.js';
 import { agentDebtorsTool } from './definitions/agent_debtors.js';
 import { agentActivityTool } from './definitions/agent_activity.js';
+import { analyticsSnapshotTool } from './definitions/analytics_snapshot.js';
+import { warehouseMyGallonsTool } from './definitions/warehouse_gallons.js';
 import {
   crmCarrierBalanceTool,
   crmCarrierOverviewTool,
@@ -50,6 +52,11 @@ export const allTools: RegisteredTool[] = [
   registerTool(agentSalesSnapshotTool),
   registerTool(agentDebtorsTool),
   registerTool(agentActivityTool),
+  // Company analytics snapshot (cached, curated DWH aggregates — same data as the dashboard):
+  registerTool(analyticsSnapshotTool),
+  // Owner-scoped warehouse gallons/swipes via the dbt MCP (keyed by Zoho user id; non-admins
+  // locked to their own rows). Gated on the dbt MCP being configured.
+  ...(env.FF_DBT_MCP_ENABLED ? [registerTool(warehouseMyGallonsTool)] : []),
   // servercrm client/carrier self-service READ tools (owner-guarded per-call; map to the
   // self-service widget automation blocks). ui.request_choice = generative-UI elicitation.
   registerTool(crmListMyClientsTool),

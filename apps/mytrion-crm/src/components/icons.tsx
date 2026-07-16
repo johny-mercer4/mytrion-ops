@@ -38,6 +38,21 @@ export const KnowledgeIcon = ({ size = 19, className, style }: IconProps) =>
 export const ScopeIcon = ({ size = 19, className, style }: IconProps) =>
   stroke(size, 'M9 3v18m6-18v18M3 9h18M3 15h18', 2, className, style);
 
+export const DatabaseIcon = ({ size = 19, className, style }: IconProps) =>
+  stroke(
+    size,
+    'M12 3c-4.4 0-8 1.3-8 3s3.6 3 8 3 8-1.3 8-3-3.6-3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
+    2,
+    className,
+    style,
+  );
+
+export const WarehouseIcon = ({ size = 19, className, style }: IconProps) =>
+  stroke(size, 'M12 2l9 5-9 5-9-5 9-5zM3 12l9 5 9-5M3 17l9 5 9-5', 2, className, style);
+
+export const AccessIcon = ({ size = 19, className, style }: IconProps) =>
+  stroke(size, 'M12 21s7-3.5 7-9V6l-7-3-7 3v6c0 5.5 7 9 7 9zM9 12l2 2 4-4', 2, className, style);
+
 export const SearchIcon = ({ size = 15, className, style }: IconProps) =>
   stroke(size, 'M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z', 2, className, style);
 
@@ -88,6 +103,12 @@ export const HistoryIcon = ({ size = 13, className, style }: IconProps) =>
 export const UsersIcon = ({ size = 19, className, style }: IconProps) =>
   stroke(size, 'M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-2.5-1.34M5 11a3 3 0 102.5-1.34', 2, className, style);
 
+export const BuildingIcon = ({ size = 14, className, style }: IconProps) =>
+  stroke(size, 'M3 21h18M5 21V5a2 2 0 012-2h10a2 2 0 012 2v16M9 7h.01M9 11h.01M9 15h.01M15 7h.01M15 11h.01M15 15h.01', 2, className, style);
+
+export const PersonIcon = ({ size = 14, className, style }: IconProps) =>
+  stroke(size, 'M16 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z', 2, className, style);
+
 /** The four-point fuel "spark" used in the brand mark and assistant gem (filled). */
 export const Sparkle = ({ size = 16, className, style }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className} style={style} aria-hidden="true">
@@ -108,6 +129,7 @@ export const MytrionGlyph = ({ name, size = 22, className, style }: IconProps & 
     retention: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z',
     verification: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
     manager: 'M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-2.5-1.34M5 11a3 3 0 102.5-1.34',
+    analyst: 'M4 4v16h16M9 16v-4M14 16V8M19 16v-6',
   };
   return stroke(size, paths[name] ?? paths.admin!, 1.8, className, style);
 };

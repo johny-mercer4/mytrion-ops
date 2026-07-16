@@ -3,9 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }));
 
 // Auth + base URL are the wrapper's job; mock them so we exercise zohoPeople's request/parse logic.
-vi.mock('../../src/integrations/wrapper.js', () => ({
+vi.mock('../../src/integrations/zohoAuth.js', () => ({
   authHeaders: async () => ({ Authorization: 'Zoho-oauthtoken test' }),
   baseUrl: () => 'https://people.zoho.com/api',
+  invalidateZohoToken: () => {},
 }));
 vi.stubGlobal('fetch', fetchMock);
 

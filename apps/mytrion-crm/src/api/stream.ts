@@ -15,6 +15,8 @@ export interface ChatRequestBody {
   conversationId?: string;
   zoho_user_id?: string;
   user_name?: string;
+  /** Zoho worker email → MCP query-memory identity (API_KEY path; ignored when session-verified). */
+  email?: string;
   profile?: string;
   role?: string;
   department_scope?: string | string[];

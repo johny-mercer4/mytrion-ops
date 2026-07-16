@@ -5,14 +5,16 @@ import { SearchIcon, SwitchIcon, XIcon } from './icons';
 import styles from './ActAsPicker.module.css';
 
 /**
- * Admin "act as agent" control (TopBar, admin-only). Picks an active Sales-profile CRM user so the
- * whole app runs as that rep (backend owner-scoped data + the AI agent). When acting, shows a banner
- * with an Exit. The picker fetch runs as the real admin (listAgents → impersonate:false).
+ * "View as" control (TopBar). Admins (no `targets` prop) pick any active Sales-profile CRM user via
+ * listAgents → the whole app runs as that rep. A granted NON-admin is passed an explicit, scoped
+ * `targets` list (their DB view-as grant) and picks only from it — no admin-only fetch. When acting,
+ * shows a banner with an Exit.
  */
-export function ActAsPicker() {
+export function ActAsPicker({ targets }: { targets?: AgentUser[] }) {
   const { actingAs, setActingAs } = useImpersonation();
+  const scoped = targets !== undefined; // non-admin: a fixed, granted target list
   const [open, setOpen] = useState(false);
-  const [agents, setAgents] = useState<AgentUser[]>([]);
+  const [agents, setAgents] = useState<AgentUser[]>(targets ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState('');
@@ -32,11 +34,12 @@ export function ActAsPicker() {
   }, []);
 
   useEffect(() => {
+    if (scoped) return; // targets supplied (non-admin) — nothing to fetch
     if (open && !loadedRef.current) {
       loadedRef.current = true;
       void load(false);
     }
-  }, [open, load]);
+  }, [open, load, scoped]);
 
   if (actingAs) {
     return (
@@ -60,7 +63,7 @@ export function ActAsPicker() {
     <div className={styles.wrap}>
       <button type="button" className={styles.trigger} onClick={() => setOpen((o) => !o)}>
         <SwitchIcon size={13} />
-        Act as agent
+        View as
       </button>
       {open && (
         <div className={styles.menu} role="listbox">
@@ -78,8 +81,8 @@ export function ActAsPicker() {
           {error && <div className={styles.stateErr}>{error}</div>}
           {!loading && !error && filtered.length === 0 && (
             <div className={styles.state}>
-              No {showAll ? '' : 'sales '}agents found.
-              {!showAll && (
+              {scoped ? 'No users available to view as.' : `No ${showAll ? '' : 'sales '}agents found.`}
+              {!showAll && !scoped && (
                 <button
                   type="button"
                   className={styles.link}

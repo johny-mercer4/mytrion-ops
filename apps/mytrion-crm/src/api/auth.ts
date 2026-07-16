@@ -10,7 +10,7 @@
  * the one we stashed to catch cross-tab confusion early.
  */
 import { request, ApiError } from './transport';
-import { clearSession, setSession, type StoredSession } from './session';
+import { clearSession, getSession, setSession, type SessionWorker, type StoredSession } from './session';
 
 const STATE_KEY = 'octane.oauth.state';
 
@@ -82,6 +82,27 @@ export async function completeZohoCallbackIfPresent(): Promise<boolean> {
   const session = (await request('POST', '/auth/zoho/callback', { body: { code, state } })) as StoredSession;
   setSession(session);
   return true;
+}
+
+/**
+ * Best-effort refresh of the stored worker identity from /auth/me. Returns true when the resolved
+ * access actually changed (so the caller can re-render). Lets an admin's access edit take effect on
+ * the next page load — not only after a full re-login. Never throws; a failure keeps the session.
+ */
+export async function refreshWorkerFromMe(): Promise<boolean> {
+  const s = getSession();
+  if (!s) return false;
+  try {
+    const res = (await request('GET', '/auth/me', { impersonate: false })) as { worker?: SessionWorker };
+    const w = res?.worker;
+    if (!w?.zohoUserId) return false;
+    const before = JSON.stringify([s.worker.accessibleMytrions, s.worker.homeMytrion, s.worker.allDepartmentAccess]);
+    const after = JSON.stringify([w.accessibleMytrions, w.homeMytrion, w.allDepartmentAccess]);
+    setSession({ ...s, worker: { ...s.worker, ...w } });
+    return before !== after;
+  } catch {
+    return false; // offline / transient — keep the stored session
+  }
 }
 
 /** Drop the session and bounce back through Zoho sign-in. */

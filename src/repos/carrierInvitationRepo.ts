@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   carrierInvitations,
@@ -8,6 +8,9 @@ import {
 } from '../db/schema/index.js';
 import type { TenantContext } from '../types/tenantContext.js';
 import { firstOrThrow } from './util.js';
+
+type TransactionClient = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type DbClient = typeof db | TransactionClient;
 
 export interface CarrierInvitationDto {
   id: string;
@@ -71,6 +74,7 @@ export const carrierInvitationRepo = {
   async create(
     ctx: TenantContext,
     input: CreateCarrierInvitationInput,
+    client: DbClient = db,
   ): Promise<CarrierInvitationDto> {
     const ttlMs =
       input.ttlHours !== undefined
@@ -90,7 +94,7 @@ export const carrierInvitationRepo = {
       agentZohoUserId: trimOrNull(input.agentZohoUserId),
       expiresAt: new Date(Date.now() + ttlMs),
     };
-    const rows = await db.insert(carrierInvitations).values(values).returning();
+    const rows = await client.insert(carrierInvitations).values(values).returning();
     return toDto(firstOrThrow(rows, 'Failed to insert carrier invitation'));
   },
 
@@ -141,8 +145,39 @@ export const carrierInvitationRepo = {
     return rows.map(toDto);
   },
 
-  async findById(ctx: TenantContext, id: string): Promise<CarrierInvitation | undefined> {
+  /** Every invitation for this tenant, newest first — the admin's "pending invitations" table. */
+  async list(ctx: TenantContext): Promise<CarrierInvitationDto[]> {
     const rows = await db
+      .select()
+      .from(carrierInvitations)
+      .where(eq(carrierInvitations.tenantId, ctx.tenantId))
+      .orderBy(desc(carrierInvitations.createdAt));
+    return rows.map(toDto);
+  },
+
+  /** Cancel a still-pending invite (one-shot, mirrors markRedeemed's guarded update). A no-op
+   * (returns undefined) if it's already redeemed/cancelled — cancelling a used link makes no sense. */
+  async cancel(ctx: TenantContext, id: string, client: DbClient = db): Promise<CarrierInvitationDto | undefined> {
+    const rows = await client
+      .update(carrierInvitations)
+      .set({ status: 'cancelled', updatedAt: new Date() })
+      .where(
+        and(
+          eq(carrierInvitations.id, id),
+          eq(carrierInvitations.tenantId, ctx.tenantId),
+          eq(carrierInvitations.status, 'pending'),
+        ),
+      )
+      .returning();
+    return rows[0] ? toDto(rows[0]) : undefined;
+  },
+
+  async findById(
+    ctx: TenantContext,
+    id: string,
+    client: DbClient = db,
+  ): Promise<CarrierInvitation | undefined> {
+    const rows = await client
       .select()
       .from(carrierInvitations)
       .where(and(eq(carrierInvitations.id, id), eq(carrierInvitations.tenantId, ctx.tenantId)))
@@ -155,8 +190,9 @@ export const carrierInvitationRepo = {
     ctx: TenantContext,
     id: string,
     redeemedCarrierUserId: string,
+    client: DbClient = db,
   ): Promise<CarrierInvitation | undefined> {
-    const rows = await db
+    const rows = await client
       .update(carrierInvitations)
       .set({ status: 'redeemed', redeemedCarrierUserId, updatedAt: new Date() })
       .where(

@@ -28,6 +28,8 @@ export default defineConfig({
     './src/db/schema/agent_memories.ts',
     './src/db/schema/retention_cases.ts',
     './src/db/schema/inbox_events.ts',
+    './src/db/schema/mytrion_profile_defaults.ts',
+    './src/db/schema/worker_mytrion_access.ts',
   ],
   out: './src/db/migrations',
   dialect: 'postgresql',

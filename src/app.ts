@@ -22,16 +22,27 @@ import { registerWidgetStatic } from './plugins/widgetStatic.js';
 import { registerMiniAppStatic } from './plugins/miniAppStatic.js';
 import { applyDepartmentPolicy } from './modules/agents/departmentAgents.js';
 import { loadMcpTools } from './modules/tools/mcpTools.js';
+import { loadDbtMcpTools } from './modules/tools/dbtMcpTools.js';
 import { toolRegistry } from './modules/tools/index.js';
 import { adminRoutes } from './routes/v1/admin.routes.js';
-import { carrierUsersRoutes } from './routes/v1/carrierUsers.routes.js';
+import { analyticsRoutes } from './routes/v1/analytics.routes.js';
+import { cmpSchemaRoutes } from './routes/v1/cmpSchema.routes.js';
+import { dwhSchemaRoutes } from './routes/v1/dwhSchema.routes.js';
+import { mytrionAccessRoutes } from './routes/v1/mytrionAccess.routes.js';
+import { startAnalyticsWarmer } from './modules/analytics/cache.js';
 import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
+import { deskRoutes } from './routes/v1/desk.routes.js';
+import { dataCenterRoutes } from './routes/v1/dataCenter.routes.js';
+import { csApplicationsRoutes } from './routes/v1/csApplications.routes.js';
+import { csCitifuelRoutes } from './routes/v1/csCitifuel.routes.js';
+import { csAnalyticsRoutes } from './routes/v1/csAnalytics.routes.js';
 import { agentRoutes } from './routes/v1/agent.routes.js';
 import { authRoutes } from './routes/v1/auth.routes.js';
 import { automationRoutes } from './routes/v1/automation.routes.js';
 import { chatRoutes } from './routes/v1/chat.routes.js';
 import { healthRoutes } from './routes/v1/health.routes.js';
 import { integrationsRoutes } from './routes/v1/integrations.routes.js';
+import { ringcentralRoutes } from './routes/v1/ringcentral.routes.js';
 import { knowledgeRoutes } from './routes/v1/knowledge.routes.js';
 import { moneyCodeRoutes } from './routes/v1/moneyCode.routes.js';
 import { realtimeRoutes } from './routes/v1/realtime.routes.js';
@@ -187,6 +198,21 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
   }
 
+  // Same pattern for the hosted dbt warehouse MCP (OpenAI tool loop ↔ Claude Custom Connector parity).
+  // Query-memory RAG identity is per-call via X-User-Email (Zoho worker email on TenantContext).
+  if (env.FF_DBT_MCP_ENABLED) {
+    const deadline = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('dbt mcp discovery timed out')), 20_000),
+    );
+    try {
+      const dbtTools = await Promise.race([loadDbtMcpTools(), deadline]);
+      applyDepartmentPolicy(dbtTools); // no agent lists dbt_mcp.* → admin-only
+      toolRegistry.register(dbtTools);
+    } catch (err) {
+      logger.error({ err }, 'dbt mcp: tool discovery failed/timed out; continuing without dbt MCP tools');
+    }
+  }
+
   await app.register(
     async (v1) => {
       await v1.register(healthRoutes);
@@ -198,19 +224,32 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(automationRoutes);
       await v1.register(moneyCodeRoutes);
       await v1.register(adminRoutes);
-      await v1.register(carrierUsersRoutes);
+      await v1.register(cmpSchemaRoutes);
+      await v1.register(dwhSchemaRoutes);
+      await v1.register(mytrionAccessRoutes);
       await v1.register(carrierMiniAppRoutes);
       await v1.register(retentionRoutes);
       await v1.register(realtimeRoutes);
       await v1.register(touchpointsRoutes);
+      await v1.register(deskRoutes);
+      await v1.register(dataCenterRoutes);
+      await v1.register(csApplicationsRoutes);
+      await v1.register(csCitifuelRoutes);
+      await v1.register(csAnalyticsRoutes);
       await v1.register(agentRoutes);
       await v1.register(tasksRoutes);
       await v1.register(filesRoutes);
       await v1.register(approvalsRoutes);
       await v1.register(integrationsRoutes);
+      await v1.register(ringcentralRoutes);
+      await v1.register(analyticsRoutes);
     },
     { prefix: API_PREFIX },
   );
+
+  // Live-analytics snapshot warmer: warm now, then recompute on the TTL cadence (default 2h) so
+  // dashboard GETs always hit a warm cache. No-op without a DWH; never runs in tests.
+  if (!isTest) startAnalyticsWarmer();
 
   return app;
 }

@@ -13,45 +13,69 @@
   min-height: 0;
 }
 
-/* left icon nav rail */
-.rail {
-  width: 64px;
+/* left labeled sidebar: module items on top, Chat pinned to the bottom */
+.sidebar {
+  width: 240px;
   flex: none;
   background: var(--sidebar-bg);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--space-1_5);
-  padding: var(--space-3_5) 0;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-2);
+  overflow-y: auto;
 }
 
-.railBtn {
+.navGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0_5);
+}
+
+.navBtn {
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 42px;
-  height: 42px;
+  gap: var(--space-2_5);
+  width: 100%;
+  height: 38px;
+  padding: 0 var(--space-3);
   border-radius: var(--radius-md);
   border: none;
   background: none;
   color: var(--text-muted);
   cursor: pointer;
+  text-align: left;
   transition:
     color var(--dur-fast) var(--ease-standard),
     background var(--dur-fast) var(--ease-standard);
 }
-.railBtn:hover {
+.navBtn:hover {
   color: var(--text-secondary);
   background: var(--surface-raised);
 }
-/* selected: soft accent-tinted square with a 2px accent bar on the left edge (inset shadow) */
-.railActive,
-.railActive:hover {
+/* selected: soft accent-tinted row with a 2px accent bar on the left edge */
+.navActive,
+.navActive:hover {
   background: var(--accent-soft);
   color: var(--accent);
   box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.navIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  flex: none;
+}
+.navLabel {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* center content (scrolls) */
@@ -61,11 +85,23 @@
   min-width: 0;
 }
 
-@media (max-width: 1024px) {
+/* Chat-as-view: fill the center and neutralize the ChatPanel dock's fixed width + left border. */
+.chatView {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+}
+.chatView > div {
+  width: 100%;
+  border-left: none;
+}
+
+@media (max-width: 768px) {
   .body {
     flex-direction: column;
   }
-  .rail {
+  .sidebar {
     width: 100%;
     flex-direction: row;
     justify-content: flex-start;
@@ -73,9 +109,17 @@
     padding: var(--space-2) var(--space-3);
     border-right: none;
     border-bottom: 1px solid var(--border);
+    overflow-x: auto;
   }
-  .railActive,
-  .railActive:hover {
+  .navGroup {
+    flex-direction: row;
+    gap: var(--space-1);
+  }
+  .navBtn {
+    width: auto;
+  }
+  .navActive,
+  .navActive:hover {
     box-shadow: inset 0 -2px 0 var(--accent);
   }
   .center {

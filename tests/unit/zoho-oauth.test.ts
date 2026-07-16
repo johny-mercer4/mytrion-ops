@@ -1,7 +1,42 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { env } from '../../src/config/env.js';
 import { authService, contextFromClaims } from '../../src/modules/auth/authService.js';
+
+// contextFromClaims now resolves a worker's departments/all-access from the DB (mytrionAccessService).
+// Mock it with the DB-free legacy derivation so these auth tests stay deterministic and offline —
+// the resolver's own logic is covered by tests/unit/mytrion-access.test.ts.
+vi.mock('../../src/modules/access/mytrionAccessService.js', async () => {
+  const dept = await import('../../src/lib/department.js');
+  const { MYTRION_IDS, MYTRION_DEPARTMENT } = await import('../../src/lib/mytrions.js');
+  return {
+    mytrionAccessService: {
+      resolveWorkerAccess: vi.fn(
+        async (input: { profileName?: string | null; zohoRole?: string | null; userName?: string | null }) => {
+          const envAdmin = dept.resolveAllDepartmentAccess({
+            profile: input.profileName ?? null,
+            role: input.zohoRole ?? null,
+            userName: input.userName ?? null,
+          });
+          if (envAdmin) {
+            return { accessibleMytrions: [...MYTRION_IDS], homeMytrion: null, allDepartmentAccess: true, departments: [] };
+          }
+          const departments = dept.deriveWorkerDepartments(input.profileName ?? null, input.zohoRole ?? null);
+          const set = new Set(departments);
+          const accessible = MYTRION_IDS.filter((id) => set.has(MYTRION_DEPARTMENT[id]));
+          return {
+            accessibleMytrions: accessible,
+            homeMytrion: accessible.length === 1 ? (accessible[0] ?? null) : null,
+            allDepartmentAccess: false,
+            departments,
+          };
+        },
+      ),
+      invalidateUser: vi.fn(),
+      invalidateAll: vi.fn(),
+    },
+  };
+});
 import {
   signAccessToken,
   signOauthState,
@@ -60,8 +95,8 @@ describe('jwt — signed OAuth state (CSRF for the Zoho redirect)', () => {
 });
 
 describe('contextFromClaims — worker branch (session-authoritative RBAC)', () => {
-  it('derives all-department access from an admin Zoho profile and marks the session verified', () => {
-    const ctx = contextFromClaims(
+  it('derives all-department access from an admin Zoho profile and marks the session verified', async () => {
+    const ctx = await contextFromClaims(
       { ...baseClaims, worker: { zohoUserId: '555', userName: 'Alice', profile: 'Administrator', zohoRole: 'CEO' } },
       'rq',
     );
@@ -74,8 +109,8 @@ describe('contextFromClaims — worker branch (session-authoritative RBAC)', () 
     expect(ctx.departments).toEqual([]);
   });
 
-  it('a non-admin Zoho profile does NOT grant all-department access', () => {
-    const ctx = contextFromClaims(
+  it('a non-admin Zoho profile does NOT grant all-department access', async () => {
+    const ctx = await contextFromClaims(
       { ...baseClaims, userId: 'zoho:6', worker: { zohoUserId: '6', profile: 'Sales Rep', zohoRole: 'Agent' } },
       'rq',
     );
@@ -84,9 +119,9 @@ describe('contextFromClaims — worker branch (session-authoritative RBAC)', () 
     expect(ctx.profiles).toEqual(['Sales Rep']);
   });
 
-  it('re-derives the role from the verified profile — a stale admin claim yields a worker', () => {
+  it('re-derives the role from the verified profile — a stale admin claim yields a worker', async () => {
     // baseClaims carries role:'admin' (a pre-fix token); the Sales Rep profile must win.
-    const ctx = contextFromClaims(
+    const ctx = await contextFromClaims(
       { ...baseClaims, userId: 'zoho:6', worker: { zohoUserId: '6', profile: 'Sales Rep', zohoRole: 'Agent' } },
       'rq',
     );
@@ -97,8 +132,8 @@ describe('contextFromClaims — worker branch (session-authoritative RBAC)', () 
     );
   });
 
-  it('an admin-marker profile derives the admin role (full scopes)', () => {
-    const ctx = contextFromClaims(
+  it('an admin-marker profile derives the admin role (full scopes)', async () => {
+    const ctx = await contextFromClaims(
       { ...baseClaims, worker: { zohoUserId: '555', profile: 'Administrator' } },
       'rq',
     );

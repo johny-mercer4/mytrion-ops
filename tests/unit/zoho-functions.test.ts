@@ -17,8 +17,8 @@ const { getZohoTokenMock, invalidateMock } = vi.hoisted(() => ({
   getZohoTokenMock: vi.fn(),
   invalidateMock: vi.fn(),
 }));
-vi.mock('../../src/integrations/wrapper.js', async (importOriginal) => {
-  const mod = await importOriginal<typeof import('../../src/integrations/wrapper.js')>();
+vi.mock('../../src/integrations/zohoAuth.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/integrations/zohoAuth.js')>();
   return { ...mod, getZohoToken: getZohoTokenMock, invalidateZohoToken: invalidateMock };
 });
 

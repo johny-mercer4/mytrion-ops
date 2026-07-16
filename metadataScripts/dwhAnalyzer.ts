@@ -1,217 +1,44 @@
 /**
  * Data Warehouse (DWH) metadata analyzer.
  *
- * Introspects a separate read Postgres (DWH_DATABASE_URL) via information_schema / pg_catalog so
- * DWH tools target real schemas/tables/columns. Emits schemas → tables → columns plus primary
- * keys, foreign keys (relationship graph), and indexes. Read-only: only SELECTs against catalog
- * views. Run: `pnpm meta:dwh`.
+ * Introspects DWH_DATABASE_URL (read Postgres) and emits schemas → tables → columns,
+ * primary keys, foreign keys, indexes, and activity/deprecation status.
+ *
+ * Run: `pnpm meta:dwh` (alias for full DWH catalog export to output/dwh.{json,md})
  */
 import 'dotenv/config';
-import pg from 'pg';
-import { env } from '../src/config/env.js';
-import { nowIso, runAnalyzer, writeMetadata, type WrittenPaths } from './lib/output.js';
+import { connectPg, fetchPgCatalog, renderCatalogMarkdown } from './lib/pgCatalog.js';
+import { nowIso, runAnalyzer, writeMetadata } from './lib/output.js';
 
-interface ColumnRow {
-  table_schema: string;
-  table_name: string;
-  column_name: string;
-  data_type: string;
-  is_nullable: 'YES' | 'NO';
-  column_default: string | null;
-  ordinal_position: number;
-}
-
-interface TableRow {
-  table_schema: string;
-  table_name: string;
-  table_type: string;
-}
-
-interface PkRow {
-  table_schema: string;
-  table_name: string;
-  column_name: string;
-}
-
-interface FkRow {
-  table_schema: string;
-  table_name: string;
-  column_name: string;
-  foreign_table_schema: string;
-  foreign_table_name: string;
-  foreign_column_name: string;
-}
-
-interface IndexRow {
-  schemaname: string;
-  tablename: string;
-  indexname: string;
-  indexdef: string;
-}
-
-interface ColumnMeta {
-  name: string;
-  dataType: string;
-  nullable: boolean;
-  default: string | null;
-  primaryKey: boolean;
-}
-
-interface ForeignKeyMeta {
-  column: string;
-  references: string;
-}
-
-interface IndexMeta {
-  name: string;
-  definition: string;
-}
-
-interface TableMeta {
-  schema: string;
-  name: string;
-  type: string;
-  columns: ColumnMeta[];
-  foreignKeys: ForeignKeyMeta[];
-  indexes: IndexMeta[];
-}
-
-const EXCLUDED_SCHEMAS = ['pg_catalog', 'information_schema', 'pg_toast'];
-
-async function main(): Promise<WrittenPaths> {
-  if (!env.DWH_DATABASE_URL) {
-    throw new Error('[dwh] DWH_DATABASE_URL is not set — add it to .env and retry');
-  }
-  const client = new pg.Client({ connectionString: env.DWH_DATABASE_URL });
-  await client.connect();
-  console.log('[dwh] connected; introspecting information_schema');
+async function main() {
+  const generatedAt = nowIso();
+  const { client } = await connectPg({ target: 'dwh' });
+  console.log('[dwh] connected; introspecting information_schema + pg_stat');
 
   try {
-    const schemaList = `(${EXCLUDED_SCHEMAS.map((_, i) => `$${i + 1}`).join(', ')})`;
-    const { rows: tables } = await client.query<TableRow>(
-      `SELECT table_schema, table_name, table_type
-         FROM information_schema.tables
-        WHERE table_schema NOT IN ${schemaList}
-        ORDER BY table_schema, table_name`,
-      EXCLUDED_SCHEMAS,
-    );
-    const { rows: columns } = await client.query<ColumnRow>(
-      `SELECT table_schema, table_name, column_name, data_type, is_nullable, column_default, ordinal_position
-         FROM information_schema.columns
-        WHERE table_schema NOT IN ${schemaList}
-        ORDER BY table_schema, table_name, ordinal_position`,
-      EXCLUDED_SCHEMAS,
-    );
-    const { rows: pks } = await client.query<PkRow>(
-      `SELECT tc.table_schema, tc.table_name, kcu.column_name
-         FROM information_schema.table_constraints tc
-         JOIN information_schema.key_column_usage kcu
-           ON tc.constraint_name = kcu.constraint_name
-          AND tc.table_schema = kcu.table_schema
-        WHERE tc.constraint_type = 'PRIMARY KEY'
-          AND tc.table_schema NOT IN ${schemaList}`,
-      EXCLUDED_SCHEMAS,
-    );
-    const { rows: fks } = await client.query<FkRow>(
-      `SELECT tc.table_schema, tc.table_name, kcu.column_name,
-              ccu.table_schema AS foreign_table_schema,
-              ccu.table_name   AS foreign_table_name,
-              ccu.column_name  AS foreign_column_name
-         FROM information_schema.table_constraints tc
-         JOIN information_schema.key_column_usage kcu
-           ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
-         JOIN information_schema.constraint_column_usage ccu
-           ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
-        WHERE tc.constraint_type = 'FOREIGN KEY'
-          AND tc.table_schema NOT IN ${schemaList}`,
-      EXCLUDED_SCHEMAS,
-    );
-    const { rows: indexes } = await client.query<IndexRow>(
-      `SELECT schemaname, tablename, indexname, indexdef
-         FROM pg_indexes
-        WHERE schemaname NOT IN ${schemaList}
-        ORDER BY schemaname, tablename, indexname`,
-      EXCLUDED_SCHEMAS,
-    );
-
-    const pkSet = new Set(pks.map((p) => `${p.table_schema}.${p.table_name}.${p.column_name}`));
-    const byTable = new Map<string, TableMeta>();
-    for (const t of tables) {
-      byTable.set(`${t.table_schema}.${t.table_name}`, {
-        schema: t.table_schema,
-        name: t.table_name,
-        type: t.table_type,
-        columns: [],
-        foreignKeys: [],
-        indexes: [],
-      });
-    }
-    for (const c of columns) {
-      const meta = byTable.get(`${c.table_schema}.${c.table_name}`);
-      if (!meta) continue;
-      meta.columns.push({
-        name: c.column_name,
-        dataType: c.data_type,
-        nullable: c.is_nullable === 'YES',
-        default: c.column_default,
-        primaryKey: pkSet.has(`${c.table_schema}.${c.table_name}.${c.column_name}`),
-      });
-    }
-    for (const fk of fks) {
-      const meta = byTable.get(`${fk.table_schema}.${fk.table_name}`);
-      if (!meta) continue;
-      meta.foreignKeys.push({
-        column: fk.column_name,
-        references: `${fk.foreign_table_schema}.${fk.foreign_table_name}.${fk.foreign_column_name}`,
-      });
-    }
-    for (const idx of indexes) {
-      const meta = byTable.get(`${idx.schemaname}.${idx.tablename}`);
-      if (!meta) continue;
-      meta.indexes.push({ name: idx.indexname, definition: idx.indexdef });
-    }
-
-    const allTables = [...byTable.values()];
-    const schemas = [...new Set(allTables.map((t) => t.schema))].sort();
+    const catalog = await fetchPgCatalog(client, 'dwh', generatedAt);
     const json = {
       service: 'dwh',
-      generatedAt: nowIso(),
-      schemaCount: schemas.length,
-      tableCount: allTables.length,
-      foreignKeyCount: fks.length,
-      indexCount: indexes.length,
-      schemas,
-      tables: allTables,
+      ...catalog,
+      summary: {
+        activeTables: catalog.tables.filter((t) => t.activityStatus === 'active').length,
+        inactiveTables: catalog.tables.filter((t) => t.activityStatus === 'inactive').length,
+        unknownTables: catalog.tables.filter((t) => t.activityStatus === 'unknown').length,
+        deprecatedTables: catalog.tables.filter((t) => t.deprecated).length,
+      },
     };
 
-    const lines: string[] = [
-      '# Data Warehouse metadata',
-      '',
-      `Generated: ${json.generatedAt}`,
-      `Schemas: ${schemas.length} · Tables/views: ${allTables.length} · FKs: ${fks.length} · Indexes: ${indexes.length}`,
-      '',
-    ];
-    for (const schema of schemas) {
-      lines.push(`## Schema: \`${schema}\``, '');
-      for (const t of allTables.filter((x) => x.schema === schema)) {
-        lines.push(`### \`${t.name}\` (${t.type})`, '');
-        lines.push('| Column | Type | Nullable | PK | FK→ |', '| --- | --- | --- | --- | --- |');
-        const fkByCol = new Map(t.foreignKeys.map((fk) => [fk.column, fk.references]));
-        for (const col of t.columns) {
-          const ref = fkByCol.get(col.name);
-          lines.push(
-            `| \`${col.name}\` | ${col.dataType} | ${col.nullable ? 'yes' : 'no'} | ${col.primaryKey ? 'yes' : ''} | ${ref ? `\`${ref}\`` : ''} |`,
-          );
-        }
-        if (t.indexes.length > 0) {
-          lines.push('', `Indexes: ${t.indexes.map((i) => `\`${i.name}\``).join(', ')}`);
-        }
-        lines.push('');
-      }
-    }
-    console.log(`[dwh] ${schemas.length} schemas, ${allTables.length} tables/views, ${fks.length} FKs, ${indexes.length} indexes`);
+    console.log(
+      `[dwh] ${catalog.schemaCount} schemas, ${catalog.tableCount} tables/views, ${catalog.foreignKeyCount} FKs, ${catalog.indexCount} indexes — ` +
+        `${json.summary.activeTables} active, ${json.summary.deprecatedTables} deprecated`,
+    );
 
-    return await writeMetadata('dwh', json, lines.join('\n'));
+    const md = renderCatalogMarkdown(catalog).replace(
+      '# Postgres metadata (dwh)',
+      '# Data Warehouse metadata',
+    );
+
+    return await writeMetadata('dwh', json, md);
   } finally {
     await client.end();
   }

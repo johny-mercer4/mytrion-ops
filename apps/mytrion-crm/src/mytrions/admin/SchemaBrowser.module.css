@@ -1,0 +1,160 @@
+/* Database schema browser (CMP MySQL + DWH Postgres). Shared surfaces (panel, table, pills, chips,
+   search, stat tiles) come from admin.module.css; this file adds what's unique: the header meta,
+   the expandable table rows, the nested column grid, and the multi-schema controls. */
+
+.schemaMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.dbBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  padding: var(--space-1) var(--space-2_5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface-alt);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.schemaTools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+/* Schema <select> for multi-schema sources (DWH). */
+.schemaSelect {
+  height: 34px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.schemaItem {
+  border-bottom: 1px solid var(--border-light);
+}
+
+.schemaItem:last-child {
+  border-bottom: none;
+}
+
+/* Per-row schema qualifier badge, shown before the table name for multi-schema sources. */
+.schemaBadge {
+  padding: 1px var(--space-1_5);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+/* Disclosure caret; rotates when the table is expanded. */
+.chevron {
+  display: inline-block;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  transition: transform var(--dur-fast, 120ms) var(--ease-standard, ease);
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+.matchHint {
+  margin-left: var(--space-2);
+  padding: 0 var(--space-1_5);
+  border-radius: var(--radius-full);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+/* Nested column grid, inset under an expanded table row. */
+.colWrap {
+  background: var(--surface-alt);
+  border-top: 1px solid var(--border-light);
+  padding: var(--space-1) 0 var(--space-2);
+}
+
+.colHead {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-8);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.colRow {
+  display: grid;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-1_5) var(--space-4) var(--space-1_5) var(--space-8);
+  font-size: var(--text-xs);
+  border-top: 1px solid var(--border-light);
+}
+
+.colName {
+  font-family: var(--font-mono);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.typeMono {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nullYes {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Key badges: PK / UQ / FK. */
+.keyTag {
+  display: inline-block;
+  padding: 0 var(--space-1_5);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.04em;
+}
+
+.keyPri {
+  background: var(--tint-warn-bg);
+  color: var(--warning);
+}
+
+.keyUni {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.keyMul {
+  background: var(--tint-good-bg);
+  color: var(--success);
+}

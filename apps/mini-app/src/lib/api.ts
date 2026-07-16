@@ -54,13 +54,14 @@ export interface RegistrationPreview {
   companyName: string | null;
   companyType: CompanyType | null;
   cardCount: number | null;
+  agentName: string | null;
   /** ISO deadline — drives the "This link expires in …" pill on the confirm screen. */
   expiresAt?: string;
 }
 
 export type PreviewResult =
   | { invite: RegistrationPreview; status: 'pending' }
-  | { invite: null; status: 'redeemed'; companyName: string | null };
+  | { invite: null; status: 'redeemed'; companyName: string | null; agentName: string | null };
 
 export async function fetchRegistrationPreview(id: string): Promise<PreviewResult> {
   return (await request('GET', `/carrier-invitations/${encodeURIComponent(id)}/public`)) as PreviewResult;
@@ -74,6 +75,9 @@ export interface RegistrationView {
   companyType: CompanyType | null;
   cardCount: number | null;
   cardId: string | null;
+  agentName: string | null;
+  /** Driver only: the real fuel-card number (from the DWH replica), null when unresolved. */
+  cardNumber: string | null;
 }
 
 /** Aggregate fleet summary — counts only, deliberately no card numbers or driver identities. */
@@ -90,6 +94,22 @@ export async function redeemRegistration(id: string, initData: string): Promise<
   return (await request('POST', `/carrier-invitations/${encodeURIComponent(id)}/redeem`, {
     initData,
   })) as RedeemResult;
+}
+
+export async function fetchMiniAppSession(initData: string): Promise<{ registration: RegistrationView }> {
+  return (await request('POST', '/carrier/mini-app/session', { initData })) as { registration: RegistrationView };
+}
+
+/** Driver self-registration by fuel-card number — no invite link (the number identifies the carrier
+ * + card; Telegram initData proves identity). Owners/companies still register via invite links. */
+export async function driverSelfRegister(
+  initData: string,
+  cardNumber: string,
+): Promise<{ registration: RegistrationView }> {
+  return (await request('POST', '/carrier/mini-app/driver-self-register', {
+    initData,
+    cardNumber,
+  })) as { registration: RegistrationView };
 }
 
 // ── Owner fleet management (owner-authenticated via initData) ────────────────────────────────
@@ -131,4 +151,125 @@ export async function createDriverInvite(
     cardId,
     driverName,
   })) as DriverInviteResult;
+}
+
+// ── Self-service reads (any registered user — owner or driver) ──────────────────────────────
+// Result shapes copied verbatim from apps/mytrion-crm/src/api/touchpointTypes.ts — same servercrm
+// endpoints, already production-verified there ("widget-observed; fields the UI actually renders").
+
+export interface CarrierBalance {
+  account_type?: string;
+  payment_terms?: string;
+  company_name?: string;
+  credit_limit?: number | string | null;
+  credit_remaining?: number | string | null;
+  credit_used?: number | string | null;
+  balance?: number | string | null;
+  efs_balance?: number | string | null;
+  billing_cycle?: string | null;
+  efs_error?: string | null;
+}
+
+export interface CarrierOverview {
+  company_name?: string;
+  payment_terms?: string;
+  account_type?: string;
+  is_active?: boolean;
+  credit_limit?: number | string | null;
+  efs_balance?: number | string | null;
+  efs_error?: string | null;
+  cmp_debt?: {
+    total_debt?: number;
+    invoice_count?: number;
+    max_debt_days?: number;
+    is_hard_debtor?: boolean;
+    worst_status?: string;
+    error?: string;
+  };
+  cards?: { count?: number; active_count?: number; error?: string };
+}
+
+export interface EfsCardsResult {
+  count?: number;
+  data?: Array<{ card_number?: string; status?: string; [k: string]: unknown }>;
+}
+
+export interface StatusResult {
+  overview: CarrierOverview;
+  cards: EfsCardsResult;
+}
+
+export interface TransactionsResult {
+  totals?: Record<string, number | string | null>;
+  data?: Array<Record<string, unknown>>;
+  pagination?: Record<string, unknown>;
+  range?: { from?: string; to?: string };
+}
+
+/** Shape unconfirmed by any existing caller — render defensively, don't assume exact field names. */
+export interface LastUsedResult {
+  data?: Array<Record<string, unknown>>;
+  count?: number;
+  [k: string]: unknown;
+}
+
+export interface PaymentInfoResult {
+  window?: unknown;
+  invoices?: { count?: number; totals?: Record<string, number | string | null>; data?: unknown[] };
+  payments?: { count?: number; total_amount?: number | string; by_source?: Record<string, unknown>; data?: unknown[] };
+}
+
+export interface SalesInvoicesResult {
+  data?: Array<Record<string, unknown>>;
+  count?: number;
+  summary?: Record<string, unknown>;
+}
+
+export interface SignedUrlResult {
+  url?: string;
+  expiresIn?: number;
+}
+
+export interface TrackingResult {
+  dealName?: string;
+  fedexTracking?: string | null;
+  trackingInfo?: Array<{ trackingNumber?: string; startDate?: string; cardsOrdered?: number | string }>;
+}
+
+export async function fetchBalance(initData: string): Promise<CarrierBalance> {
+  return (await request('POST', '/carrier/mini-app/balance', { initData })) as CarrierBalance;
+}
+
+export async function fetchAccountStatus(initData: string): Promise<StatusResult> {
+  return (await request('POST', '/carrier/mini-app/status', { initData })) as StatusResult;
+}
+
+export async function fetchTransactions(
+  initData: string,
+  range?: { range?: string; from?: string; to?: string },
+): Promise<TransactionsResult> {
+  return (await request('POST', '/carrier/mini-app/transactions', { initData, ...range })) as TransactionsResult;
+}
+
+export async function fetchLastUsed(initData: string, range?: string): Promise<LastUsedResult> {
+  return (await request('POST', '/carrier/mini-app/last-used', { initData, ...(range ? { range } : {}) })) as LastUsedResult;
+}
+
+export async function fetchPaymentInfo(initData: string): Promise<PaymentInfoResult> {
+  return (await request('POST', '/carrier/mini-app/payment-info', { initData })) as PaymentInfoResult;
+}
+
+export async function fetchInvoices(
+  initData: string,
+  range?: { range?: string; status?: string; from?: string; to?: string },
+): Promise<SalesInvoicesResult> {
+  return (await request('POST', '/carrier/mini-app/invoices', { initData, ...range })) as SalesInvoicesResult;
+}
+
+export async function fetchInvoiceSignedUrl(initData: string, invoiceId: string): Promise<SignedUrlResult> {
+  return (await request('POST', '/carrier/mini-app/invoices/signed-url', { initData, invoiceId })) as SignedUrlResult;
+}
+
+export async function fetchTracking(initData: string): Promise<TrackingResult> {
+  return (await request('POST', '/carrier/mini-app/tracking', { initData })) as TrackingResult;
 }

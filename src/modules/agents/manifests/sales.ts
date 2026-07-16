@@ -1,14 +1,12 @@
 import { env } from '../../../config/env.js';
 import type { AgentManifest } from '../types.js';
-import {
-  CLIENT_SERVICE_RULE,
+import { CLIENT_SERVICE_RULE,
   CLIENT_SERVICE_TOOLS,
   FILE_TOOLS,
   OCTANE_CONTEXT,
   OWNER_SCOPE_RULE,
   RAG_USAGE_RULE,
-  STAY_IN_LANE,
-} from './shared.js';
+  STAY_IN_LANE, WAREHOUSE_TOOLS } from './shared.js';
 
 /**
  * What the Sales agent can actually DO today (all read-only, owner-scoped). Kept honest so the model
@@ -19,6 +17,10 @@ const SALES_CAPABILITIES =
   '• Your performance — agent.sales_snapshot (portfolio health: active/inactive/stuck client counts, ' +
   'this-week-vs-last-week transactions, gallons, new cards) and agent.activity (calls, notes, leads, ' +
   'applications, tasks, meetings, deal value, conversion funnel).\n' +
+  '• Your gallons / swipes totals — warehouse.my_gallons (today / this_week / this_month): fuel ' +
+  'pumped by the carriers in YOUR book, resolved from your Zoho session id straight from the data ' +
+  'warehouse. Use it for "my gallons", "how many gallons/swipes did my clients do"; never ask for ' +
+  'your name or id, and never report another agent’s totals.\n' +
   '• Pipeline / CRM — zoho_crm.query, a read-only COQL query over leads, deals, and contacts (get the ' +
   'exact module and field API names from knowledge_search first; a WHERE clause is required).\n' +
   '• Your clients by carrier — crm.carrier_balance (balance / LOC credit, C-8), crm.carrier_overview ' +
@@ -59,7 +61,10 @@ export const salesAgent: AgentManifest = {
     STAY_IN_LANE,
   departments: ['sales'],
   allowedAudiences: ['internal'],
-  tools: ['agent.sales_snapshot', 'agent.activity', 'zoho_crm.query', ...CLIENT_SERVICE_TOOLS, ...FILE_TOOLS],
+  // NO analytics.snapshot: it is COMPANY-WIDE (incl. a top-agents-by-gallons ranking that exposes
+  // other reps' numbers). A sales rep may only see their OWN data — warehouse.my_gallons is
+  // self-locked for non-admins; agent.sales_snapshot/activity and crm.* are owner-scoped.
+  tools: ['agent.sales_snapshot', 'agent.activity', 'zoho_crm.query', ...CLIENT_SERVICE_TOOLS, ...FILE_TOOLS, ...WAREHOUSE_TOOLS],
   composioToolkits: [],
   ragScope: { departments: ['sales'], allowAllDepartments: false },
   readOnly: false,

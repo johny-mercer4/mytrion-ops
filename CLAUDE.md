@@ -34,6 +34,15 @@ Borrows architecture patterns from Mytrion but is a clean, standalone codebase.
   build config.
 - **pnpm via Corepack.** If `pnpm` isn't on PATH, use `corepack pnpm ...`.
 
+## Git branching & workflow
+
+- **`main`** — production/deployment branch. Anything merged into `main` deploys to prod. Never push
+  directly into `main`.
+- **`build`** — the collection branch where updates get gathered. Never push or merge into `build`
+  directly. Fetch the latest `build`, branch off it, set up locally, and work there — merging back
+  into `build` goes through review, not a direct push.
+- **Branch naming:** `feature/***`, `fix/***`, `hotfix/***`.
+
 ## When in doubt
 
 - Look at how Mytrion's `mytrion-engine` handles it (in another repo) — for pattern reference only.

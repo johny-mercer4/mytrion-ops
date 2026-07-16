@@ -38,6 +38,25 @@ export const READ_ONLY_RULE =
   'destructive actions — recommend them for a human to execute instead.';
 
 /**
+ * Data-routing cheat-sheet for cross-department read agents (analyst, manager). These agents carry
+ * several overlapping metric tools; with no routing the model fishes — wrong tool → error → retry —
+ * and every wrong guess is a full (slow) LLM round-trip. Steer each question to ONE tool on the
+ * first try. Byte-stable so it stays in the cached prompt prefix.
+ */
+export const METRICS_ROUTING_RULE =
+  'DATA ROUTING — pick ONE tool on the first try; do not fish, and do not call a second data tool ' +
+  'to double-check a number the first already returned:\n' +
+  '• Company / org-wide totals (gallons, swipes, fuel spend, sales, top-ups, balances, open ' +
+  'debtors, top agents, pipeline, conversion) → analytics.snapshot (cached dashboard numbers; ' +
+  'dimension: transactions | pipeline | billing). This is the FAST path for "how many gallons does ' +
+  'the company have", "sales this month", "top agents".\n' +
+  '• One rep’s own gallons/swipes book, or "my gallons/swipes" → warehouse.my_gallons (admins may ' +
+  'pass agentZohoUserId to target a specific rep).\n' +
+  '• One agent’s portfolio HEALTH (active/inactive/stuck client counts, week-over-week deltas, ' +
+  'calls/notes/tasks/leads) → agent.sales_snapshot / agent.activity / agent.debtors. NEVER use ' +
+  'these for raw company gallons totals — that is analytics.snapshot.';
+
+/**
  * File capability tools every department agent gets (read-class: generate/export/analyze).
  * They register only when FF_FILES_ENABLED, so listing them here is inert until the flag flips.
  * file.ingest_to_knowledge is deliberately NOT here (write-risk, admin-sentinel via derivation).
@@ -49,6 +68,22 @@ export const FILE_TOOLS = [
   'file.get_link',
   'file.analyze',
 ] as const;
+
+/**
+ * Company analytics snapshot (read-class, served from the ~2h snapshot cache) — the same
+ * org-wide aggregates every internal worker sees on the live Analytics dashboard. Given to
+ * EVERY department agent so chat answers "how are sales / gallons / top-ups this month"
+ * with live numbers instead of guessing.
+ */
+export const ANALYTICS_TOOLS = ['analytics.snapshot'] as const;
+
+/**
+ * Owner-scoped warehouse totals (gallons/swipes) via the dbt MCP, keyed by the caller's Zoho user
+ * id. Given to agents that report a rep's own performance (sales, manager, analyst). Non-admins are
+ * locked to their own rows server-side; only admins can target another agent or go company-wide.
+ * Registers only when FF_DBT_MCP_ENABLED, so listing it here is inert until the flag flips.
+ */
+export const WAREHOUSE_TOOLS = ['warehouse.my_gallons'] as const;
 
 /**
  * servercrm client/carrier self-service READ tools (owner-scoped per call). Given to agents that
