@@ -8,10 +8,12 @@ export function CitiModal({
   client,
   onClose,
   onEdit,
+  onDelete,
 }: {
   client: CitiClient;
   onClose: () => void;
   onEdit: () => void;
+  onDelete?: () => void;
 }) {
   const status = citiStatusMeta(client.status);
   const request = citiRequestMeta(client.request);
@@ -30,6 +32,11 @@ export function CitiModal({
       }
       footer={
         <>
+          {onDelete ? (
+            <Button variant="outline" className="mr-auto text-bad" onClick={onDelete}>
+              Delete
+            </Button>
+          ) : null}
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>

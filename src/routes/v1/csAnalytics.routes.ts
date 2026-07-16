@@ -66,6 +66,23 @@ export async function csAnalyticsRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
+  /**
+   * Team-wide open-ticket aggregate for the Home panel (widget parity: every CS agent sees
+   * the TEAM overview). Deliberately narrow — a summed count + priority histogram, never
+   * the per-agent breakdown (that stays manager-only via /cs/analytics/tickets).
+   */
+  app.get('/cs/analytics/tickets/team-open', guard, async (request) => {
+    requireCsAccess(request);
+    const q = z.object({ from: isoStamp, to: isoStamp }).parse(request.query);
+    const raw = (await serverCrm.get('/api/desk/dwh/tickets/analytics', {
+      from: q.from,
+      to: q.to,
+    })) as { data?: { agents?: Array<{ open_count?: number }>; byPriority?: unknown } };
+    const agents = raw.data?.agents ?? [];
+    const openTickets = agents.reduce((sum, a) => sum + (Number(a.open_count) || 0), 0);
+    return { openTickets, byPriority: raw.data?.byPriority ?? [] };
+  });
+
   /** Tickets analytics (DWH; scoped by Desk assignee_id). */
   app.get('/cs/analytics/tickets', guard, async (request) => {
     const ctx = requireCsAccess(request);

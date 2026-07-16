@@ -3,7 +3,14 @@ import { ArrowDown, ArrowUp, Headset, RefreshCw, Ticket, Wrench } from 'lucide-r
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { ANALYTICS, type BreakdownItem } from './data';
+import type { AnalyticsBlock, BreakdownItem } from './data';
+import {
+  RANGE_LABELS,
+  getCsContext,
+  loadAnalytics,
+  useLoad,
+  type RangeId,
+} from './live';
 
 type SubTab = 'tickets' | 'calls' | 'maintenance';
 
@@ -12,8 +19,6 @@ const SUB_TABS: { id: SubTab; label: string; icon: typeof Ticket }[] = [
   { id: 'calls', label: 'Calls', icon: Headset },
   { id: 'maintenance', label: 'Maintenance', icon: Wrench },
 ];
-
-const RANGE_OPTIONS = ['This Month', 'Last Month', 'Last 30 Days', 'This Quarter'];
 
 const BREAKDOWN_BAR_CLASS: Record<BreakdownItem['tone'], string> = {
   good: 'bg-good',
@@ -39,39 +44,70 @@ const BREAKDOWN_TEXT_CLASS: Record<BreakdownItem['tone'], string> = {
   amber: 'text-warn',
 };
 
+const EMPTY_BLOCK: AnalyticsBlock = {
+  kpis: [],
+  volume: [],
+  breakdown: [],
+  leaderboardCols: ['', '', ''],
+  leaderboard: [],
+};
+
 export function Analytics() {
   const [subTab, setSubTab] = useState<SubTab>('tickets');
-  const [range, setRange] = useState('This Month');
-  const block = ANALYTICS[subTab];
-  const maxVolume = useMemo(() => Math.max(...block.volume.map((v) => v.value)), [block]);
-  const maxBreakdown = useMemo(() => Math.max(...block.breakdown.map((b) => b.value)), [block]);
-  const maxLead = useMemo(() => Math.max(...block.leaderboard.map((r) => r.col1)), [block]);
+  const [range, setRange] = useState<RangeId>('this_month');
+
+  const ctx = useLoad(getCsContext, []);
+  const analytics = useLoad(
+    () => loadAnalytics(range, ctx.data),
+    [range, ctx.data?.isManager ?? null],
+  );
+
+  const isManager = ctx.data?.isManager === true;
+  const block = analytics.data?.[subTab] ?? EMPTY_BLOCK;
+  const maxVolume = useMemo(() => Math.max(1, ...block.volume.map((v) => v.value)), [block]);
+  const maxBreakdown = useMemo(() => Math.max(1, ...block.breakdown.map((b) => b.value)), [block]);
+  const maxLead = useMemo(() => Math.max(1, ...block.leaderboard.map((r) => r.col1)), [block]);
+  const loading = analytics.loading || ctx.loading;
 
   return (
     <div className="flex flex-col gap-4 p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-heading text-2xl font-bold">Analytics</h2>
-          <p className="text-sm text-muted-foreground">All agents · {range}</p>
+          <p className="text-sm text-muted-foreground">
+            {isManager ? 'All agents' : 'My activity'} · {RANGE_LABELS[range]}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <select
             value={range}
-            onChange={(e) => setRange(e.target.value)}
+            onChange={(e) => setRange(e.target.value as RangeId)}
             className="rounded-md border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground outline-none focus:border-primary/55"
           >
-            {RANGE_OPTIONS.map((r) => (
+            {(Object.keys(RANGE_LABELS) as RangeId[]).map((r) => (
               <option key={r} value={r}>
-                {r}
+                {RANGE_LABELS[r]}
               </option>
             ))}
           </select>
-          <Button variant="outline" size="sm">
-            <RefreshCw className="size-3.5" />
+          <Button variant="outline" size="sm" onClick={analytics.reload} disabled={loading}>
+            <RefreshCw className={cn('size-3.5', loading ? 'animate-spin' : undefined)} />
             Refresh
           </Button>
         </div>
       </div>
+
+      {analytics.error ? (
+        <div className="rounded-lg border border-bad/30 bg-bad/10 p-3 text-sm text-bad">
+          Failed to load analytics: {analytics.error}
+        </div>
+      ) : null}
+
+      {analytics.data?.unmatched ? (
+        <div className="rounded-lg border border-warn/30 bg-warn/10 p-3 text-sm text-warn">
+          Your account could not be matched to a Desk agent — ticket/call analytics are unavailable.
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-1.5">
         {SUB_TABS.map((t) => {
@@ -91,23 +127,28 @@ export function Analytics() {
             >
               <Icon className="size-3.5" />
               {t.label}
-              <span className="ml-1 opacity-70">{ANALYTICS[t.id].leaderboard.reduce((s, r) => s + r.col1, 0)}</span>
             </button>
           );
         })}
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {block.kpis.map((k) => (
-          <div key={k.label} className="rounded-lg border bg-card p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="font-heading text-2xl leading-none font-bold">{k.value}</div>
-              {k.delta ? <DeltaPill prev={k.delta.prev} current={k.delta.current} higherIsBetter={k.delta.higherIsBetter} /> : null}
-            </div>
-            <div className="mt-1.5 text-[10.5px] tracking-wide text-muted-foreground uppercase">{k.label}</div>
-            {k.hint ? <div className="mt-0.5 text-[10.5px] text-muted-foreground">{k.hint}</div> : null}
+        {loading && block.kpis.length === 0 ? (
+          <div className="col-span-full rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground">
+            Loading analytics…
           </div>
-        ))}
+        ) : (
+          block.kpis.map((k) => (
+            <div key={k.label} className="rounded-lg border bg-card p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="font-heading text-2xl leading-none font-bold">{k.value}</div>
+                {k.delta ? <DeltaPill prev={k.delta.prev} current={k.delta.current} higherIsBetter={k.delta.higherIsBetter} /> : null}
+              </div>
+              <div className="mt-1.5 text-[10.5px] tracking-wide text-muted-foreground uppercase">{k.label}</div>
+              {k.hint ? <div className="mt-0.5 text-[10.5px] text-muted-foreground">{k.hint}</div> : null}
+            </div>
+          ))
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -115,93 +156,113 @@ export function Analytics() {
           <h3 className="font-heading mb-3 text-xs font-bold tracking-wide text-muted-foreground uppercase">
             Volume
           </h3>
-          <div className="flex h-40 items-end gap-1.5">
-            {block.volume.map((v) => (
-              <div key={v.label} className="flex flex-1 flex-col items-center gap-1.5" title={`${v.label}: ${v.value}`}>
-                <div className="flex h-32 w-full items-end">
-                  <div
-                    className={cn('w-full rounded-t-sm', v.partial ? 'bg-primary/35' : 'bg-primary')}
-                    style={{ height: `${(v.value / maxVolume) * 100}%` }}
-                  />
+          {block.volume.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              {loading ? 'Loading…' : 'No daily series available.'}
+            </div>
+          ) : (
+            <div className="flex h-40 items-end gap-1.5">
+              {block.volume.map((v) => (
+                <div key={v.label} className="flex flex-1 flex-col items-center gap-1.5" title={`${v.label}: ${v.value}`}>
+                  <div className="flex h-32 w-full items-end">
+                    <div
+                      className={cn('w-full rounded-t-sm', v.partial ? 'bg-primary/35' : 'bg-primary')}
+                      style={{ height: `${(v.value / maxVolume) * 100}%` }}
+                    />
+                  </div>
+                  <span className="text-[8.5px] text-muted-foreground">{v.label.slice(-2)}</span>
                 </div>
-                <span className="text-[8.5px] text-muted-foreground">{v.label.slice(-2)}</span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="rounded-lg border bg-card p-4 shadow-sm">
           <h3 className="font-heading mb-3 text-xs font-bold tracking-wide text-muted-foreground uppercase">
             Breakdown
           </h3>
-          <div className="flex flex-col gap-3">
-            {block.breakdown.map((b) => (
-              <div key={b.label}>
-                <div className="mb-1 flex items-center justify-between text-xs">
-                  <span className="font-semibold">{b.label}</span>
-                  <span className={cn('font-mono', BREAKDOWN_TEXT_CLASS[b.tone])}>{b.value}</span>
+          {block.breakdown.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              {loading ? 'Loading…' : 'No breakdown available.'}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {block.breakdown.map((b) => (
+                <div key={b.label}>
+                  <div className="mb-1 flex items-center justify-between text-xs">
+                    <span className="font-semibold">{b.label}</span>
+                    <span className={cn('font-mono', BREAKDOWN_TEXT_CLASS[b.tone])}>{b.value}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={cn('h-full rounded-full', BREAKDOWN_BAR_CLASS[b.tone])}
+                      style={{ width: `${(b.value / maxBreakdown) * 100}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className={cn('h-full rounded-full', BREAKDOWN_BAR_CLASS[b.tone])}
-                    style={{ width: `${(b.value / maxBreakdown) * 100}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border bg-card">
-        <div className="flex items-center justify-between border-b px-4 py-3">
-          <div className="font-heading text-sm font-bold">Agent Leaderboard</div>
-        </div>
-        {/* min-w keeps the 5-column grid from squishing on phones; overflow-x-auto on the
-            wrapper above makes it swipeable instead of clipping the trailing columns. */}
-        <div className="min-w-140">
-          <div className="grid grid-cols-[40px_1.6fr_1fr_1fr_1fr] gap-3 border-b bg-muted/40 px-4 py-2.5 text-[10px] font-bold tracking-wide text-muted-foreground uppercase">
-            <span>#</span>
-            <span>Agent</span>
-            <span>{block.leaderboardCols[0]}</span>
-            <span>{block.leaderboardCols[1]}</span>
-            <span>{block.leaderboardCols[2]}</span>
+      {/* Leaderboard is manager-tier only — the backend enforces it (roster 403 + own-scope
+          forcing); this render gate is UX, not security. */}
+      {isManager ? (
+        <div className="overflow-x-auto rounded-lg border bg-card">
+          <div className="flex items-center justify-between border-b px-4 py-3">
+            <div className="font-heading text-sm font-bold">Agent Leaderboard</div>
           </div>
-          {block.leaderboard.map((row, i) => {
-            const rank = i + 1;
-            const initials = row.agent
-              .split(' ')
-              .map((n) => n[0])
-              .join('')
-              .slice(0, 2)
-              .toUpperCase();
-            return (
-              <div
-                key={row.agent}
-                className={cn(
-                  'grid grid-cols-[40px_1.6fr_1fr_1fr_1fr] items-center gap-3 border-b px-4 py-3 text-sm last:border-b-0',
-                  rank === 1 ? 'bg-primary/8' : undefined,
-                )}
-              >
-                <span className={cn('font-mono font-bold', rank === 1 ? 'text-primary' : 'text-muted-foreground')}>
-                  {rank}
-                </span>
-                <span className="flex items-center gap-2">
-                  <span className="flex size-6 flex-none items-center justify-center rounded-full bg-secondary text-[10px] font-bold text-secondary-foreground">
-                    {initials}
-                  </span>
-                  <span className="truncate font-semibold">{row.agent}</span>
-                </span>
-                <span className="font-mono text-xs" style={{ opacity: 0.4 + 0.6 * (row.col1 / maxLead) }}>
-                  {row.col1}
-                </span>
-                <span className="font-mono text-xs text-muted-foreground">{row.col2}</span>
-                <span className="font-mono text-xs text-muted-foreground">{row.col3}</span>
+          <div className="min-w-140">
+            <div className="grid grid-cols-[40px_1.6fr_1fr_1fr_1fr] gap-3 border-b bg-muted/40 px-4 py-2.5 text-[10px] font-bold tracking-wide text-muted-foreground uppercase">
+              <span>#</span>
+              <span>Agent</span>
+              <span>{block.leaderboardCols[0]}</span>
+              <span>{block.leaderboardCols[1]}</span>
+              <span>{block.leaderboardCols[2]}</span>
+            </div>
+            {block.leaderboard.length === 0 ? (
+              <div className="p-6 text-center text-sm text-muted-foreground">
+                {loading ? 'Loading…' : 'No agent activity in this range.'}
               </div>
-            );
-          })}
+            ) : (
+              block.leaderboard.map((row, i) => {
+                const rank = i + 1;
+                const initials = row.agent
+                  .split(' ')
+                  .map((n) => n[0])
+                  .join('')
+                  .slice(0, 2)
+                  .toUpperCase();
+                return (
+                  <div
+                    key={`${row.agent}-${i}`}
+                    className={cn(
+                      'grid grid-cols-[40px_1.6fr_1fr_1fr_1fr] items-center gap-3 border-b px-4 py-3 text-sm last:border-b-0',
+                      rank === 1 ? 'bg-primary/8' : undefined,
+                    )}
+                  >
+                    <span className={cn('font-mono font-bold', rank === 1 ? 'text-primary' : 'text-muted-foreground')}>
+                      {rank}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <span className="flex size-6 flex-none items-center justify-center rounded-full bg-secondary text-[10px] font-bold text-secondary-foreground">
+                        {initials}
+                      </span>
+                      <span className="truncate font-semibold">{row.agent}</span>
+                    </span>
+                    <span className="font-mono text-xs" style={{ opacity: 0.4 + 0.6 * (row.col1 / maxLead) }}>
+                      {row.col1}
+                    </span>
+                    <span className="font-mono text-xs text-muted-foreground">{row.col2}</span>
+                    <span className="font-mono text-xs text-muted-foreground">{row.col3 || '—'}</span>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }

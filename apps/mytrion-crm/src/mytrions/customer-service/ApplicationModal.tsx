@@ -2,24 +2,34 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/mytrion/status-badge';
 import { DetailDialog } from '@/components/mytrion/detail-dialog';
 import { cn } from '@/lib/utils';
+import type { OnboardingField } from '@/api/cs';
 import { type Application, creditTone, fullName, isClient, onboardingCount, stageMeta } from './data';
 
-const SEGMENTS: { key: keyof Pick<Application, 'ta' | 'efs' | 'lmt' | 'mob' | 'chn'>; label: string }[] = [
-  { key: 'ta', label: 'TA' },
-  { key: 'efs', label: 'EFS' },
-  { key: 'lmt', label: 'LMT' },
-  { key: 'mob', label: 'MOB' },
-  { key: 'chn', label: 'CHN' },
+const SEGMENTS: {
+  key: keyof Pick<Application, 'ta' | 'efs' | 'lmt' | 'mob' | 'chn'>;
+  label: string;
+  crmField: OnboardingField;
+}[] = [
+  { key: 'ta', label: 'TA', crmField: 'Email_to_TA' },
+  { key: 'efs', label: 'EFS', crmField: 'TA_EFS_Added' },
+  { key: 'lmt', label: 'LMT', crmField: 'Limits_added' },
+  { key: 'mob', label: 'MOB', crmField: 'Mobile_Driver_App' },
+  { key: 'chn', label: 'CHN', crmField: 'Chain_policy' },
 ];
 
 export function ApplicationModal({
   app,
   onClose,
   onEdit,
+  onToggle,
+  pendingToggle,
 }: {
   app: Application;
   onClose: () => void;
   onEdit: () => void;
+  /** Optimistic onboarding tick-box toggle (widget parity). Absent = read-only preview. */
+  onToggle?: (app: Application, field: OnboardingField, next: boolean) => void;
+  pendingToggle?: string | null;
 }) {
   const st = stageMeta(app.stage);
   const client = isClient(app);
@@ -56,17 +66,29 @@ export function ApplicationModal({
             <span className="font-mono text-xs font-bold text-muted-foreground">{count}/5</span>
           </div>
           <div className="flex items-center gap-1.5">
-            {SEGMENTS.map((seg) => (
-              <div key={seg.key} className="flex flex-1 flex-col items-center gap-1">
-                <div
-                  className={cn(
-                    'h-1.5 w-full rounded-full',
-                    app[seg.key] ? 'bg-primary' : 'bg-muted',
-                  )}
-                />
-                <span className="text-[9.5px] font-semibold text-muted-foreground">{seg.label}</span>
-              </div>
-            ))}
+            {SEGMENTS.map((seg) => {
+              const on = Boolean(app[seg.key]);
+              const busy = pendingToggle === seg.crmField;
+              return (
+                <button
+                  key={seg.key}
+                  type="button"
+                  disabled={!onToggle || busy}
+                  onClick={() => onToggle?.(app, seg.crmField, !on)}
+                  title={onToggle ? `Toggle ${seg.label}` : seg.label}
+                  className={cn('flex flex-1 flex-col items-center gap-1', onToggle ? 'cursor-pointer' : 'cursor-default')}
+                >
+                  <div
+                    className={cn(
+                      'h-1.5 w-full rounded-full transition-colors',
+                      on ? 'bg-primary' : 'bg-muted',
+                      busy ? 'animate-pulse' : undefined,
+                    )}
+                  />
+                  <span className="text-[9.5px] font-semibold text-muted-foreground">{seg.label}</span>
+                </button>
+              );
+            })}
           </div>
         </section>
 

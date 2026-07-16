@@ -173,7 +173,7 @@ export async function requestBlob(path: string, opts: { headers?: Record<string,
 }
 
 export async function request(
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   path: string,
   opts: RequestOptions = {},
 ): Promise<unknown> {

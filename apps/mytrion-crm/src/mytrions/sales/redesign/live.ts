@@ -4,51 +4,14 @@
  * tab swaps `import … from '../mock'` for a `useLoad(loadX)` with loading/error/empty. NO mock/
  * fake data — every array here comes from a real backend call.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
-
 import { listDeskComments, listDeskTickets, type DeskTicket } from '@/api/desk';
 import { getImpersonation } from '@/api/impersonation';
 import { callTouchpoint } from '@/api/touchpoints';
 import { ICO } from './salesData';
 
-// ---- tiny load hook (loading/error/data + reload) ----
+// ---- tiny load hook (extracted to _shared/useLoad; re-exported for existing importers) ----
 
-export interface Loaded<T> {
-  data: T | null;
-  loading: boolean;
-  error: string | null;
-  reload: () => void;
-}
-
-export function useLoad<T>(fn: () => Promise<T>, deps: unknown[]): Loaded<T> {
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [tick, setTick] = useState(0);
-  const reload = useCallback(() => setTick((t) => t + 1), []);
-  const depsKey = JSON.stringify(deps);
-  const prevKey = useRef(depsKey);
-  useEffect(() => {
-    let off = false;
-    // Drop stale data when the INPUTS change (e.g. a View-as switch) so the previous subject's
-    // result can't outlive the switch or survive an error. A plain reload() keeps the old value.
-    if (prevKey.current !== depsKey) {
-      prevKey.current = depsKey;
-      setData(null);
-    }
-    setLoading(true);
-    setError(null);
-    fn()
-      .then((d) => !off && setData(d))
-      .catch((e: unknown) => !off && setError(e instanceof Error ? e.message : 'Failed to load'))
-      .finally(() => !off && setLoading(false));
-    return () => {
-      off = true;
-    };
-    // eslint-disable-next-line
-  }, [tick, depsKey]);
-  return { data, loading, error, reload };
-}
+export { useLoad, type Loaded } from '../../_shared/useLoad';
 
 /** Canonical "is this ticket closed" test — Closed / Cancelled / Resolved all count as not-open. */
 export function isTicketClosed(status: string | undefined): boolean {

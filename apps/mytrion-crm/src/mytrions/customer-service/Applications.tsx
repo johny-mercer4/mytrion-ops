@@ -1,47 +1,79 @@
-import { useMemo, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 
+import { toggleOnboarding, type OnboardingField } from '@/api/cs';
 import { SearchBar } from '@/components/mytrion/search-bar';
 import { SegmentedFilter } from '@/components/mytrion/segmented-filter';
 import { StatusBadge } from '@/components/mytrion/status-badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { ApplicationEdit } from './ApplicationEdit';
 import { ApplicationModal } from './ApplicationModal';
 import { Toast, type ToastState } from './Toast';
-import {
-  APPLICATIONS,
-  type Application,
-  bizMeta,
-  creditTone,
-  fullName,
-  isClient,
-  stageMeta,
-} from './data';
+import { type Application, bizMeta, creditTone, fullName, stageMeta } from './data';
+import { loadApplications, useLoad } from './live';
 
 type SubTab = 'apps' | 'clients';
 
 const SEGMENTS: (keyof Pick<Application, 'ta' | 'efs' | 'lmt' | 'mob' | 'chn'>)[] = ['ta', 'efs', 'lmt', 'mob', 'chn'];
 
+/** Widget parity: search fires debounced (App ID / Carrier ID / name / phone, server-side). */
+const SEARCH_DEBOUNCE_MS = 400;
+
 export function Applications() {
   const [subTab, setSubTab] = useState<SubTab>('apps');
   const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
   const [openApp, setOpenApp] = useState<Application | null>(null);
+  const [editApp, setEditApp] = useState<Application | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [pendingToggle, setPendingToggle] = useState<string | null>(null);
+  // Optimistic per-row overrides layered over the loaded page (tick-boxes update in place).
+  const [overrides, setOverrides] = useState<Record<string, Partial<Application>>>({});
 
-  const apps = useMemo(() => APPLICATIONS.filter((a) => !isClient(a)), []);
-  const clients = useMemo(() => APPLICATIONS.filter((a) => isClient(a)), []);
-  const source = subTab === 'apps' ? apps : clients;
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setQuery(search);
+      setPage(1);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [search]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return source;
-    return source.filter((a) =>
-      `${a.appId} ${a.carrierId} ${a.company} ${a.agent}`.toLowerCase().includes(q),
-    );
-  }, [source, search]);
+  const pageData = useLoad(() => loadApplications(subTab, query, page), [subTab, query, page]);
 
-  function editToast() {
-    setToast({ id: Date.now(), kind: 'info', message: 'Read-only preview — Editing is available in the live Zoho workspace.' });
+  const rows = useMemo(() => {
+    const base = pageData.data?.rows ?? [];
+    return base.map((a) => (overrides[a.id] ? { ...a, ...overrides[a.id] } : a));
+  }, [pageData.data, overrides]);
+
+  const openRow = openApp ? (rows.find((r) => r.id === openApp.id) ?? openApp) : null;
+
+  function notify(kind: ToastState['kind'], message: string) {
+    setToast({ id: Date.now(), kind, message });
+  }
+
+  const SEG_TO_FIELD: Record<string, keyof Application> = {
+    Email_to_TA: 'ta',
+    TA_EFS_Added: 'efs',
+    Limits_added: 'lmt',
+    Mobile_Driver_App: 'mob',
+    Chain_policy: 'chn',
+  };
+
+  async function onToggle(app: Application, field: OnboardingField, next: boolean) {
+    const prop = SEG_TO_FIELD[field] as 'ta' | 'efs' | 'lmt' | 'mob' | 'chn';
+    setPendingToggle(field);
+    setOverrides((o) => ({ ...o, [app.id]: { ...o[app.id], [prop]: next ? 1 : 0 } }));
+    try {
+      const res = await toggleOnboarding(app.id, field, next);
+      notify(res.warning ? 'info' : 'success', res.warning ?? `${field.replace(/_/g, ' ')}: ${next ? 'Yes' : 'No'}`);
+    } catch (e) {
+      setOverrides((o) => ({ ...o, [app.id]: { ...o[app.id], [prop]: next ? 0 : 1 } }));
+      notify('error', `Failed to save: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setPendingToggle(null);
+    }
   }
 
   return (
@@ -50,30 +82,39 @@ export function Applications() {
         <div>
           <h2 className="font-heading text-2xl font-bold">Applications</h2>
           <p className="text-sm text-muted-foreground">
-            {source.length} {subTab === 'clients' ? 'clients' : 'applications in process'}
+            {pageData.loading ? 'Loading…' : `${rows.length}${pageData.data?.moreRecords ? '+' : ''} ${subTab === 'clients' ? 'clients' : 'applications in process'}`}
           </p>
         </div>
-        <Button variant="outline" size="sm">
-          <RefreshCw className="size-3.5" />
+        <Button variant="outline" size="sm" onClick={pageData.reload} disabled={pageData.loading}>
+          <RefreshCw className={cn('size-3.5', pageData.loading ? 'animate-spin' : undefined)} />
           Refresh
         </Button>
       </div>
 
       <SegmentedFilter
         options={[
-          { id: 'apps', label: 'Apps in Process', count: apps.length },
-          { id: 'clients', label: 'Clients', count: clients.length },
+          { id: 'apps', label: 'Apps in Process' },
+          { id: 'clients', label: 'Clients' },
         ]}
         value={subTab}
-        onChange={(id) => setSubTab(id as SubTab)}
+        onChange={(id) => {
+          setSubTab(id as SubTab);
+          setPage(1);
+        }}
       />
 
       <SearchBar
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search App ID, Carrier ID, company, agent…"
+        placeholder="Search App ID, Carrier ID, company, phone…"
         className="max-w-sm"
       />
+
+      {pageData.error ? (
+        <div className="rounded-lg border border-bad/30 bg-bad/10 p-3 text-sm text-bad">
+          Failed to load applications: {pageData.error}
+        </div>
+      ) : null}
 
       <div className="overflow-x-auto rounded-lg border bg-card">
         {/* min-w keeps the 8-column grid from squishing on phones; overflow-x-auto on the
@@ -89,12 +130,14 @@ export function Applications() {
             <span>Agent</span>
             <span className="text-right">Date Filled</span>
           </div>
-          {filtered.length === 0 ? (
+          {pageData.loading && rows.length === 0 ? (
+            <div className="p-10 text-center text-sm text-muted-foreground">Loading applications…</div>
+          ) : rows.length === 0 ? (
             <div className="p-10 text-center text-sm text-muted-foreground">
               No {subTab === 'clients' ? 'clients' : 'applications'} found. Try adjusting your search.
             </div>
           ) : (
-            filtered.map((a) => {
+            rows.map((a) => {
               const st = stageMeta(a.stage);
               const bz = bizMeta(a.biz);
               const credit = creditTone(a.credit);
@@ -111,12 +154,8 @@ export function Applications() {
                     <div className="truncate font-semibold">{a.company}</div>
                     <div className="truncate text-[11px] text-muted-foreground">{fullName(a)}</div>
                   </span>
-                  <span>
-                    <StatusBadge tone={bz.tone}>{a.biz}</StatusBadge>
-                  </span>
-                  <span>
-                    <StatusBadge tone={st.tone}>{a.stage}</StatusBadge>
-                  </span>
+                  <span>{a.biz ? <StatusBadge tone={bz.tone}>{a.biz}</StatusBadge> : <span className="text-muted-foreground">—</span>}</span>
+                  <span>{a.stage ? <StatusBadge tone={st.tone}>{a.stage}</StatusBadge> : <span className="text-muted-foreground">—</span>}</span>
                   <span className="flex items-center gap-1">
                     {SEGMENTS.map((seg) => (
                       <span
@@ -138,13 +177,40 @@ export function Applications() {
         </div>
       </div>
 
-      {openApp ? (
+      <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
+        <span>Page {page}</span>
+        <Button variant="outline" size="sm" disabled={page <= 1 || pageData.loading} onClick={() => setPage((p) => p - 1)}>
+          <ChevronLeft className="size-3.5" />
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!pageData.data?.moreRecords || pageData.loading}
+          onClick={() => setPage((p) => p + 1)}
+        >
+          <ChevronRight className="size-3.5" />
+        </Button>
+      </div>
+
+      {openRow && !editApp ? (
         <ApplicationModal
-          app={openApp}
+          app={openRow}
           onClose={() => setOpenApp(null)}
-          onEdit={() => {
-            editToast();
+          onEdit={() => setEditApp(openRow)}
+          onToggle={onToggle}
+          pendingToggle={pendingToggle}
+        />
+      ) : null}
+
+      {editApp ? (
+        <ApplicationEdit
+          app={editApp}
+          onClose={() => setEditApp(null)}
+          onSaved={(warning) => {
+            setEditApp(null);
             setOpenApp(null);
+            notify(warning ? 'info' : 'success', warning ?? 'Application saved');
+            pageData.reload();
           }}
         />
       ) : null}
