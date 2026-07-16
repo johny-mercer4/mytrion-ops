@@ -6,7 +6,6 @@
  * carries a Switch-Mytrion link. Data Center / Inbox / Service Center are "Soon" stubs.
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
 
 import { useUserContext } from '../../context/UserContextProvider';
 import { Analytics } from './Analytics';
@@ -255,12 +254,6 @@ export function CsShell() {
                 <div className="cs-user-name">{workerName}</div>
                 <div className="cs-user-role">{workerRole}</div>
               </div>
-            </div>
-            <div className="cs-sidebar-footer-meta">
-              <Link to="/" className="cs-switch-link" title="Switch Mytrion">
-                ⇄ Switch
-              </Link>
-              <span>Mytrion CS · v1.0</span>
             </div>
           </div>
         </aside>

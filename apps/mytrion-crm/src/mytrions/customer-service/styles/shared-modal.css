@@ -30,6 +30,10 @@
     background: var(--modal-backdrop-bg);
     padding: 1rem;
     animation: csBackdropIn 200ms ease;
+    /* The backdrop itself must not scroll or pass wheel/touch through to the
+       page behind it. */
+    overscroll-behavior: contain;
+    overflow: hidden;
 }
 
 @keyframes csBackdropIn {
@@ -126,6 +130,9 @@
     flex: 1;
     overflow-y: auto;
     padding: 1.5rem;
+    /* Keep the modal's scroll from chaining into the page behind it once it
+       reaches the top/bottom (no background scroll-bleed). */
+    overscroll-behavior: contain;
 }
 
 /* ─── Footer ──────────────────────────────────────────────── */

@@ -12,6 +12,7 @@ import type { CsDataCenterDeal } from '@/api/touchpointTypes';
 import { Toast, type ToastState } from './Toast';
 import { stageMeta } from './data';
 import { invalidateDealsCache, loadDeals, useLoad } from './live';
+import { useScrollLock } from './useScrollLock';
 
 const PAY_OPTIONS = ['Prepay', 'Deposit', 'LOC'];
 const CYCLE_OPTIONS = ['1 Billing Cycle', '2 Billing Cycle', 'Thursday - Wednesday'];
@@ -418,6 +419,7 @@ function DealBillingModal({
   onSaved: () => void;
   onError: (message: string) => void;
 }) {
+  useScrollLock();
   const [pay, setPay] = useState(s(deal.Payment_Type_Billing));
   const [cycle, setCycle] = useState(s(deal.Billing_Cycle));
   const [verification, setVerification] = useState(s(deal.Billing_Verification));

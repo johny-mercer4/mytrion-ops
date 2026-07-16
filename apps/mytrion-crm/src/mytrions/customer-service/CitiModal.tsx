@@ -18,6 +18,7 @@ import {
   type CitiWriteValue,
 } from '@/api/cs';
 import type { CitiRow } from './live';
+import { useScrollLock } from './useScrollLock';
 
 const CANONICAL = {
   Request: ['Outbound', 'Incoming'],
@@ -63,6 +64,7 @@ export function CitiModal({
 }) {
   const isCreating = client === null;
   const raw = client?.raw ?? {};
+  useScrollLock();
   const boxRef = useRef<HTMLDivElement>(null);
 
   const [values, setValues] = useState<Record<string, string>>(() => ({

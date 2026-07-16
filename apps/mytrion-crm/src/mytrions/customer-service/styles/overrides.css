@@ -47,8 +47,8 @@
 }
 .cs-root .cs-boot-ring {
     position: relative;
-    width: 118px;
-    height: 118px;
+    width: 96px;
+    height: 96px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -78,31 +78,31 @@
 }
 .cs-root .cs-boot-brand {
     font-weight: 700;
-    font-size: 14px;
-    letter-spacing: 0.13em;
+    font-size: 11px;
+    letter-spacing: 0.11em;
     text-transform: uppercase;
     text-align: center;
-    line-height: 1.05;
+    line-height: 1.1;
     color: var(--text-primary);
 }
 .cs-root .cs-boot-brand > span { color: var(--cs-accent); }
 .cs-root .cs-boot-brand-sub {
-    font-size: 8px !important;
-    letter-spacing: 0.24em;
+    font-size: 6.5px !important;
+    letter-spacing: 0.2em;
     color: var(--text-muted) !important;
 }
 .cs-root .cs-boot-title {
     font-weight: 700;
-    font-size: 17px;
-    letter-spacing: 0.06em;
+    font-size: 12.5px;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
     text-align: center;
     color: var(--text-primary);
 }
 .cs-root .cs-boot-sub {
-    font-size: 12.5px;
+    font-size: 11px;
     color: var(--text-muted);
-    margin-top: 5px;
+    margin-top: 4px;
     text-align: center;
 }
 .cs-root .cs-boot-dots { animation: csBootPulse 1.2s infinite; }
