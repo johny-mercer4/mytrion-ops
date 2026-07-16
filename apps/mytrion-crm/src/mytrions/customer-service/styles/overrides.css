@@ -361,3 +361,133 @@
 .cs-root .cs-switch-link:hover {
     color: var(--cs-accent);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Motion & interaction polish — same feel as Finance Mytrion (pure CSS, no
+   libraries): fade-up entrances, staggered cards, hover-lift, press + focus
+   feedback, row affordance. Style-only; the widget skeleton is untouched.
+   ══════════════════════════════════════════════════════════════════════════ */
+@keyframes csFadeUp {
+    from { opacity: 0; transform: translateY(11px); }
+    to { opacity: 1; transform: none; }
+}
+@keyframes csFadeUpSm {
+    from { opacity: 0; transform: translateY(7px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* Each panel fades up when it first mounts (widget lazy-mounts on first visit). */
+.cs-root .cs-content .cs-panel {
+    animation: csFadeUp 0.42s cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+/* Cards enter with a short stagger so a dashboard "assembles" instead of popping. */
+.cs-root .cs-home-stats > *,
+.cs-root .cs-home-perf-strip > *,
+.cs-root .cs-citi-summary > *,
+.cs-root .cs-an-kpi-grid > *,
+.cs-root .cs-an-charts-grid > * {
+    animation: csFadeUpSm 0.4s cubic-bezier(0.2, 0, 0, 1) both;
+}
+.cs-root .cs-home-stats > *:nth-child(2),
+.cs-root .cs-citi-summary > *:nth-child(2),
+.cs-root .cs-an-kpi-grid > *:nth-child(2) { animation-delay: 0.05s; }
+.cs-root .cs-home-stats > *:nth-child(3),
+.cs-root .cs-citi-summary > *:nth-child(3),
+.cs-root .cs-an-kpi-grid > *:nth-child(3) { animation-delay: 0.1s; }
+.cs-root .cs-home-stats > *:nth-child(4),
+.cs-root .cs-citi-summary > *:nth-child(4),
+.cs-root .cs-an-kpi-grid > *:nth-child(4) { animation-delay: 0.15s; }
+.cs-root .cs-an-charts-grid > *:nth-child(2) { animation-delay: 0.08s; }
+
+/* Hover-lift on all card surfaces (Finance .mf-card feel). */
+.cs-root .cs-home-stat-card,
+.cs-root .cs-citi-stat-card,
+.cs-root .cs-home-perf-item {
+    transition: transform 0.17s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.17s, border-color 0.17s;
+}
+.cs-root .cs-home-stat-card:hover,
+.cs-root .cs-citi-stat-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--cs-accent-glow);
+    box-shadow: 0 8px 24px rgba(37, 99, 235, 0.1);
+}
+
+/* Table rows: smooth hover tint + a nudge affordance (Finance .mf-row). */
+.cs-root .cs-table tbody tr {
+    transition: background 0.13s ease, box-shadow 0.13s ease;
+    cursor: pointer;
+}
+.cs-root .cs-table tbody tr:hover {
+    background: var(--surface-alt);
+}
+.cs-root .cs-app-row {
+    transition: background 0.13s ease;
+}
+
+/* Buttons: brightness + press feedback (Finance .mf-btn). */
+.cs-root .cs-refresh-btn,
+.cs-root .cs-btn,
+.cs-root .cs-an-datatab,
+.cs-root .cs-app-tab {
+    transition: filter 0.15s, transform 0.08s, background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.cs-root .cs-refresh-btn:active,
+.cs-root .cs-btn:active {
+    transform: translateY(1px);
+}
+.cs-root .cs-btn-primary:hover {
+    filter: brightness(1.06);
+    box-shadow: 0 6px 16px var(--cs-accent-glow);
+}
+
+/* Inputs: accent focus ring (Finance .mf-in). */
+.cs-root .cs-form-input:focus,
+.cs-root .cs-citi-search-bar input:focus,
+.cs-root .cs-app-search input:focus {
+    outline: none;
+    border-color: var(--cs-accent);
+    box-shadow: 0 0 0 3px var(--cs-accent-glow);
+}
+
+/* Flash a row/card that just updated (optional utility, Finance .mf-flash). */
+@keyframes csFlash {
+    0% { background: var(--cs-accent-soft); }
+    100% { background: transparent; }
+}
+.cs-root .cs-flash {
+    animation: csFlash 2.2s ease-out both;
+}
+
+/* Donut/spark draw-in so charts feel alive on load. */
+@keyframes csDonutIn {
+    from { transform: scale(0.92); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+.cs-root .cs-an-donut {
+    animation: csDonutIn 0.5s cubic-bezier(0.2, 0, 0, 1) both;
+}
+@keyframes csDrawLine {
+    from { stroke-dashoffset: 480; }
+    to { stroke-dashoffset: 0; }
+}
+.cs-root .cs-an-spark-line {
+    stroke-dasharray: 480;
+    animation: csDrawLine 0.9s cubic-bezier(0.3, 0, 0.2, 1) both;
+}
+
+/* Accessibility: honor reduced-motion — kill entrance/draw animations, keep
+   instant states (skill rule #1/#7). */
+@media (prefers-reduced-motion: reduce) {
+    .cs-root .cs-content .cs-panel,
+    .cs-root .cs-home-stats > *,
+    .cs-root .cs-home-perf-strip > *,
+    .cs-root .cs-citi-summary > *,
+    .cs-root .cs-an-kpi-grid > *,
+    .cs-root .cs-an-charts-grid > *,
+    .cs-root .cs-an-donut,
+    .cs-root .cs-an-spark-line {
+        animation: none !important;
+        stroke-dasharray: none !important;
+    }
+}
