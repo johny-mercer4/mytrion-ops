@@ -31,6 +31,12 @@ export function TopBar({
   const user = useUserContext();
   const { theme, toggle } = useTheme();
 
+  // Admins can view-as anyone (ActAsPicker fetches the roster). A granted non-admin is handed their
+  // scoped target list so the SAME picker only offers the users they're permitted to view as.
+  const admin = isAdmin(user);
+  const viewAsTargets = user.viewAsTargets ?? [];
+  const canViewAs = admin || viewAsTargets.length > 0;
+
   return (
     <header className={styles.bar}>
       <div className={styles.left}>
@@ -39,7 +45,20 @@ export function TopBar({
       </div>
 
       <div className={styles.right}>
-        {isAdmin(user) && <ActAsPicker />}
+        {canViewAs &&
+          (admin ? (
+            <ActAsPicker />
+          ) : (
+            <ActAsPicker
+              targets={viewAsTargets.map((t) => ({
+                zohoUserId: t.zohoUserId,
+                name: t.name,
+                email: null,
+                profile: null,
+                role: null,
+              }))}
+            />
+          ))}
         {showSwitch && (
           <Link to="/" className={styles.switch}>
             <SwitchIcon size={13} />

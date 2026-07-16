@@ -58,3 +58,24 @@ describe('resolveAccessibleMytrions', () => {
     expect(canAccess(ctx({ role: 'CEO', profile: 'Sales Agent' }), 'finance')).toBe(false);
   });
 });
+
+describe('server-resolved access is authoritative (verified session)', () => {
+  it('uses accessibleMytrions verbatim (in display order), overriding the static table', () => {
+    const { accessible, homeMytrion } = resolveAccessibleMytrions(
+      ctx({ profile: 'Sales Agent', accessibleMytrions: ['retention', 'sales'], homeMytrion: 'sales', allDepartmentAccess: false }),
+    );
+    expect(accessible).toEqual(['sales', 'retention']); // reordered to MYTRION_ORDER
+    expect(homeMytrion).toBe('sales');
+  });
+
+  it('canAccess honors the server list, not the static profile rules', () => {
+    const granted = ctx({ profile: 'Sales Agent', accessibleMytrions: ['billing'] });
+    expect(canAccess(granted, 'billing')).toBe(true); // granted server-side despite the profile
+    expect(canAccess(granted, 'sales')).toBe(false); // NOT in the server list, though the profile would
+  });
+
+  it('isAdmin follows the server-resolved allDepartmentAccess when present', () => {
+    expect(isAdmin(ctx({ profile: 'Sales Agent', allDepartmentAccess: true }))).toBe(true);
+    expect(isAdmin(ctx({ profile: 'Administrator', allDepartmentAccess: false }))).toBe(false);
+  });
+});

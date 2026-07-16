@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { completeZohoCallbackIfPresent } from '../api/auth';
+import { completeZohoCallbackIfPresent, refreshWorkerFromMe } from '../api/auth';
 import { getSession } from '../api/session';
 import { LoginGate } from '../app/LoginGate';
 import { FuelMark } from '../components/BrandMark';
@@ -60,6 +60,20 @@ export function UserContextProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         setState({ phase: 'anon', error: e instanceof Error ? e.message : 'Sign-in failed.' });
       });
+    return () => {
+      cancelled = true;
+    };
+  }, [state.phase]);
+
+  // Once resumed from a stored session, refresh access from /auth/me in the background so an admin's
+  // access edit takes effect on this load (not only after a full re-login). Non-blocking; the UI is
+  // already rendered with the stored context and only re-renders if the resolved access changed.
+  useEffect(() => {
+    if (state.phase !== 'authed' || !getSession()) return;
+    let cancelled = false;
+    void refreshWorkerFromMe().then((changed) => {
+      if (!cancelled && changed) setState(syncBootState());
+    });
     return () => {
       cancelled = true;
     };

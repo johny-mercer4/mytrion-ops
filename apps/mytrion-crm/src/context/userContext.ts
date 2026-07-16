@@ -7,6 +7,7 @@
  * remaining non-session path is an explicit dev bypass (VITE_DEV_MOCK_AUTH=1) so the UI can be run
  * standalone without a backend.
  */
+import type { MytrionId } from '../access/mytrions.config';
 import type { SessionWorker } from '../api/session';
 
 export interface UserContext {
@@ -16,6 +17,16 @@ export interface UserContext {
   userName: string;
   /** True when the identity came from a verified Zoho session (false only for the dev mock). */
   trusted: boolean;
+  /**
+   * Server-resolved (DB-backed) access, present for verified sessions. When set, this is the
+   * AUTHORITATIVE list the UI routes on; the static mytrions.config table is only a fallback for
+   * the dev mock / legacy sessions that predate the access API.
+   */
+  accessibleMytrions?: MytrionId[];
+  homeMytrion?: MytrionId | null;
+  allDepartmentAccess?: boolean;
+  /** Users this worker may "View as" (targeted impersonation grant) — drives the picker for non-admins. */
+  viewAsTargets?: Array<{ zohoUserId: string; name: string | null }>;
 }
 
 /** Mirrors the old MOCK_USER so `vite dev` works standalone (admin, sees everything). */
@@ -25,17 +36,23 @@ const DEV_MOCK: UserContext = {
   role: 'CEO',
   userName: 'Dev User',
   trusted: false,
+  allDepartmentAccess: true,
 };
 
 /** Map the verified session worker onto the UI's user context. */
 export function contextFromWorker(worker: SessionWorker): UserContext {
-  return {
+  const ctx: UserContext = {
     userId: worker.zohoUserId,
     profile: worker.profile ?? '',
     role: worker.role ?? '',
     userName: worker.userName ?? '',
     trusted: true,
   };
+  if (worker.accessibleMytrions) ctx.accessibleMytrions = worker.accessibleMytrions;
+  if (worker.homeMytrion !== undefined) ctx.homeMytrion = worker.homeMytrion;
+  if (worker.allDepartmentAccess !== undefined) ctx.allDepartmentAccess = worker.allDepartmentAccess;
+  if (worker.viewAsTargets) ctx.viewAsTargets = worker.viewAsTargets;
+  return ctx;
 }
 
 /**

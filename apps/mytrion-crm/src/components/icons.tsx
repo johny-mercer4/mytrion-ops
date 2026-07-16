@@ -50,6 +50,9 @@ export const DatabaseIcon = ({ size = 19, className, style }: IconProps) =>
 export const WarehouseIcon = ({ size = 19, className, style }: IconProps) =>
   stroke(size, 'M12 2l9 5-9 5-9-5 9-5zM3 12l9 5 9-5M3 17l9 5 9-5', 2, className, style);
 
+export const AccessIcon = ({ size = 19, className, style }: IconProps) =>
+  stroke(size, 'M12 21s7-3.5 7-9V6l-7-3-7 3v6c0 5.5 7 9 7 9zM9 12l2 2 4-4', 2, className, style);
+
 export const SearchIcon = ({ size = 15, className, style }: IconProps) =>
   stroke(size, 'M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z', 2, className, style);
 

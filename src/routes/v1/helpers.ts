@@ -1,10 +1,6 @@
 import type { FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
-import {
-  deriveWorkerDepartments,
-  normalizeDepartments,
-  type KnownDepartment,
-} from '../../lib/department.js';
+import { normalizeDepartments, type KnownDepartment } from '../../lib/department.js';
 import { AuthError, RBACError } from '../../lib/errors.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
@@ -42,10 +38,9 @@ function claimedAccess(
  *
  * VERIFIED sessions (Zoho OAuth worker tokens) are session-authoritative: the caller's
  * `x-department-access` / `x-all-departments` headers and body fields are IGNORED —
- * `allDepartmentAccess` stays token-derived (admin ⇒ true) and a non-admin worker's
- * departments are derived server-side from their Zoho profile/role
- * (deriveWorkerDepartments). This closes the header self-elevation path that previously
- * let any authenticated user claim all-department access.
+ * `allDepartmentAccess` and the department grant are DB-resolved in contextFromClaims
+ * (mytrionAccessService) and already sit on `ctx`. This closes the header self-elevation path
+ * that previously let any authenticated user claim all-department access.
  * FF_SESSION_DEPT_AUTHORITATIVE=0 is the emergency rollback to the legacy header trust.
  *
  * UNVERIFIED callers (static API key / server-to-server) keep the legacy behavior: the
@@ -59,19 +54,17 @@ export function withDepartmentAccess(
 ): TenantContext {
   if (env.FF_SESSION_DEPT_AUTHORITATIVE && ctx.sessionVerified) {
     if (ctx.audience === 'customer' || ctx.allDepartmentAccess) return ctx;
-    const derived = deriveWorkerDepartments(ctx.profiles, ctx.callerRole ?? null);
-    const departments = normalizeDepartments([...ctx.departments, ...derived]);
+    // ctx.departments is the DB-resolved grant (authoritative). Ignore any claimed header/body
+    // access; log if a verified session tried to assert access it wasn't granted.
     const claimed = claimedAccess(request, body);
-    const ungranted = claimed.departments.filter((d) => !departments.includes(d));
+    const ungranted = claimed.departments.filter((d) => !ctx.departments.includes(d));
     if (claimed.allDepartments || ungranted.length > 0) {
-      // Roster-validation signal: a verified session asserted access the profile-derived
-      // set doesn't grant. Either an elevation attempt or a profile→department mapping gap.
       request.log.warn(
-        { userId: ctx.userId, claimed, derived: departments },
-        'verified session department claims ignored (session-authoritative access)',
+        { userId: ctx.userId, claimed, granted: ctx.departments },
+        'verified session department claims ignored (DB-authoritative access)',
       );
     }
-    return { ...ctx, departments };
+    return ctx;
   }
   const claimed = claimedAccess(request, body);
   const departments = normalizeDepartments([...ctx.departments, ...claimed.departments]);

@@ -11,7 +11,7 @@ import {
 import { contextFromClaims, systemContext } from '../../src/modules/auth/authService.js';
 import { resolveActAsTarget } from '../../src/modules/auth/actAsDirectory.js';
 import type { WorkerIdentity } from '../../src/modules/auth/jwt.js';
-import type { Role } from '../../src/types/tenantContext.js';
+import type { Role, TenantContext } from '../../src/types/tenantContext.js';
 import { agentRegistry } from '../../src/modules/agents/agentRegistry.js';
 import { toolRegistry } from '../../src/modules/tools/index.js';
 
@@ -24,6 +24,40 @@ vi.mock('../../src/modules/auth/actAsDirectory.js', () => ({
 vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/modules/audit/auditLogger.js')>();
   return { ...mod, auditFromContext: vi.fn().mockResolvedValue(undefined) };
+});
+// contextFromClaims resolves a worker's grant from the DB (mytrionAccessService). Mock it with the
+// DB-free legacy derivation so the caller-identity path is deterministic offline; the resolver's
+// own logic is covered by tests/unit/mytrion-access.test.ts.
+vi.mock('../../src/modules/access/mytrionAccessService.js', async () => {
+  const dept = await import('../../src/lib/department.js');
+  const { MYTRION_IDS, MYTRION_DEPARTMENT } = await import('../../src/lib/mytrions.js');
+  return {
+    mytrionAccessService: {
+      resolveWorkerAccess: vi.fn(
+        async (input: { profileName?: string | null; zohoRole?: string | null; userName?: string | null }) => {
+          const envAdmin = dept.resolveAllDepartmentAccess({
+            profile: input.profileName ?? null,
+            role: input.zohoRole ?? null,
+            userName: input.userName ?? null,
+          });
+          if (envAdmin) {
+            return { accessibleMytrions: [...MYTRION_IDS], homeMytrion: null, allDepartmentAccess: true, departments: [] };
+          }
+          const departments = dept.deriveWorkerDepartments(input.profileName ?? null, input.zohoRole ?? null);
+          const set = new Set(departments);
+          const accessible = MYTRION_IDS.filter((id) => set.has(MYTRION_DEPARTMENT[id]));
+          return {
+            accessibleMytrions: accessible,
+            homeMytrion: accessible.length === 1 ? (accessible[0] ?? null) : null,
+            allDepartmentAccess: false,
+            departments,
+          };
+        },
+      ),
+      invalidateUser: vi.fn(),
+      invalidateAll: vi.fn(),
+    },
+  };
 });
 
 const actAsTarget = vi.mocked(resolveActAsTarget);
@@ -41,8 +75,8 @@ function fakeRequest(): FastifyRequest {
 }
 
 /** Request whose ctx is a VERIFIED Zoho-worker session (as authenticate → contextFromClaims sets). */
-function sessionRequest(worker: WorkerIdentity, role: Role = 'admin'): FastifyRequest {
-  const ctx = contextFromClaims(
+async function sessionRequest(worker: WorkerIdentity, role: Role = 'admin'): Promise<FastifyRequest> {
+  const ctx = await contextFromClaims(
     { userId: `zoho:${worker.zohoUserId}`, tenantId: DEFAULT_TENANT_ID, audience: 'internal', role, worker },
     'req-test',
   );
@@ -95,7 +129,7 @@ describe('worker context (unchanged trusted-frontend behavior)', () => {
 
 describe('verified worker session is authoritative (Zoho OAuth) — body identity is ignored', () => {
   it('all-access worker: hostile body identity cannot change the verified identity or scope', async () => {
-    const req = sessionRequest({ zohoUserId: '555', userName: 'Alice', profile: 'Administrator', zohoRole: 'CEO' });
+    const req = await sessionRequest({ zohoUserId: '555', userName: 'Alice', profile: 'Administrator', zohoRole: 'CEO' });
     const ctx = await buildCallerContext(req, {
       // every spoof vector: a different id, a different name, a downgraded profile, a narrow scope
       zoho_user_id: '999',
@@ -112,7 +146,7 @@ describe('verified worker session is authoritative (Zoho OAuth) — body identit
   });
 
   it('non-admin worker: body cannot self-escalate, but the department VIEW is honored', async () => {
-    const req = sessionRequest({ zohoUserId: '42', userName: 'Bob', profile: 'Sales Rep', zohoRole: 'Agent' });
+    const req = await sessionRequest({ zohoUserId: '42', userName: 'Bob', profile: 'Sales Rep', zohoRole: 'Agent' });
     const ctx = await buildCallerContext(req, {
       zoho_user_id: '1',
       user_name: 'Mallory',
@@ -124,17 +158,21 @@ describe('verified worker session is authoritative (Zoho OAuth) — body identit
     expect(ctx.userName).toBe('Bob');
     expect(ctx.profiles).toEqual(['Sales Rep']); // NOT the body's 'Administrator'
     expect(ctx.allDepartmentAccess).toBe(false); // spoofed allDepartments/profile ignored
-    expect(ctx.departments).toEqual(['sales', 'billing']); // view honored + normalized
+    // View is intersected with the DB-resolved grant (Sales Rep ⇒ ['sales']); 'billing' is NOT
+    // granted, so the attempt to view it is dropped — a worker can narrow but never widen.
+    expect(ctx.departments).toEqual(['sales']);
   });
 
-  it('non-admin worker with no department view falls back to the base (no departments)', async () => {
-    const ctx = await buildCallerContext(sessionRequest({ zohoUserId: '42', profile: 'Sales Rep' }), {});
+  it('non-admin worker with no department view gets their full DB-resolved grant', async () => {
+    const req = await sessionRequest({ zohoUserId: '42', profile: 'Sales Rep' });
+    const ctx = await buildCallerContext(req, {});
     expect(ctx.sessionVerified).toBe(true);
-    expect(ctx.departments).toEqual([]);
+    expect(ctx.departments).toEqual(['sales']); // the grant (no view ⇒ full grant)
   });
 
   it('session wins over customer markers: carrier_id in the body does NOT downgrade to customer', async () => {
-    const ctx = await buildCallerContext(sessionRequest({ zohoUserId: '42', profile: 'Sales Rep' }), {
+    const req = await sessionRequest({ zohoUserId: '42', profile: 'Sales Rep' });
+    const ctx = await buildCallerContext(req, {
       carrier_id: 999,
       department_scope: ['sales'],
     });
@@ -153,15 +191,15 @@ describe('worker role derivation (contextFromClaims re-derives; claims.role neve
     worker,
   });
 
-  it('admin-marker profile ⇒ admin with full scopes', () => {
-    const ctx = contextFromClaims(claims({ zohoUserId: '1', profile: 'Administrator' }, 'worker'), 'r');
+  it('admin-marker profile ⇒ admin with full scopes', async () => {
+    const ctx = await contextFromClaims(claims({ zohoUserId: '1', profile: 'Administrator' }, 'worker'), 'r');
     expect(ctx.role).toBe('admin');
     expect(ctx.scopes).toEqual(['*']);
     expect(ctx.allDepartmentAccess).toBe(true);
   });
 
-  it('non-admin profile ⇒ worker with read scopes, even from a STALE pre-fix admin token', () => {
-    const ctx = contextFromClaims(claims({ zohoUserId: '42', profile: 'Sales Rep', zohoRole: 'Sales Agent' }, 'admin'), 'r');
+  it('non-admin profile ⇒ worker with read scopes, even from a STALE pre-fix admin token', async () => {
+    const ctx = await contextFromClaims(claims({ zohoUserId: '42', profile: 'Sales Rep', zohoRole: 'Sales Agent' }, 'admin'), 'r');
     expect(ctx.role).toBe('worker'); // stale role:'admin' claim ignored — re-derived from profile
     expect(ctx.scopes).toContain('servercrm:read');
     expect(ctx.scopes).toContain('zoho_crm:read');
@@ -169,14 +207,57 @@ describe('worker role derivation (contextFromClaims re-derives; claims.role neve
     expect(ctx.allDepartmentAccess).toBe(false);
   });
 
-  it('worker role is denied non-read tools by the registry write gate', () => {
-    const ctx = contextFromClaims(claims({ zohoUserId: '42', profile: 'Sales Rep' }, 'admin'), 'r');
+  it('worker role is denied non-read tools by the registry write gate', async () => {
+    const ctx = await contextFromClaims(claims({ zohoUserId: '42', profile: 'Sales Rep' }, 'admin'), 'r');
     const workerCtx = { ...ctx, departments: ['sales'] };
     const writeTools = toolRegistry.all().filter((t) => t.riskClass !== 'read');
     expect(writeTools.length).toBeGreaterThan(0);
     for (const tool of writeTools) {
       expect(toolRegistry.checkAccess(tool, workerCtx).ok).toBe(false);
     }
+  });
+});
+
+describe('view-as for NON-admins (targeted, DB-granted impersonation)', () => {
+  /** A verified non-admin worker session carrying an explicit view-as grant + an act-as header. */
+  function viewAsReq(viewAsUserIds: string[], actAsId: string): FastifyRequest {
+    const ctx: TenantContext = {
+      tenantId: DEFAULT_TENANT_ID,
+      userId: 'zoho:42',
+      audience: 'internal',
+      role: 'worker',
+      scopes: [],
+      departments: ['sales'],
+      allDepartmentAccess: false,
+      sessionVerified: true,
+      profiles: ['Sales Rep'],
+      viewAsUserIds,
+      requestId: 'r',
+    };
+    return {
+      ctx,
+      headers: { 'x-act-as-zoho-user-id': actAsId },
+      log: { warn: vi.fn(), info: vi.fn() },
+    } as unknown as FastifyRequest;
+  }
+
+  it('a granted non-admin may view-as the specific target (runs AS them, audited impersonator)', async () => {
+    actAsTarget.mockResolvedValue({ zohoUserId: '777', name: 'Rep Riley', email: null, profile: 'Sales Rep', role: 'Sales Agent' });
+    const ctx = await buildCallerContext(viewAsReq(['777'], '777'), {});
+    expect(ctx.userId).toBe('zoho:777');
+    expect(ctx.impersonatorUserId).toBe('zoho:42');
+    expect(ctx.role).toBe('worker');
+  });
+
+  it('a non-admin WITHOUT the grant cannot view-as (the header is ignored — runs as self)', async () => {
+    const ctx = await buildCallerContext(viewAsReq([], '777'), {});
+    expect(ctx.userId).toBe('zoho:42'); // stayed themselves
+    expect(ctx.impersonatorUserId).toBeUndefined();
+  });
+
+  it('a non-admin can NEVER view-as an all-access (admin) target — escalation blocked', async () => {
+    actAsTarget.mockResolvedValue({ zohoUserId: '999', name: 'Boss', email: null, profile: 'Administrator', role: 'CEO' });
+    await expect(buildCallerContext(viewAsReq(['999'], '999'), {})).rejects.toThrow();
   });
 });
 
@@ -191,7 +272,7 @@ describe('act-as impersonation is verified server-side (CRM directory, not heade
       profile: 'Sales Agent',
       role: 'Sales Agent',
     });
-    const req = sessionRequest(admin);
+    const req = await sessionRequest(admin);
     req.headers = {
       'x-act-as-zoho-user-id': '777',
       'x-act-as-profile': 'Administrator', // spoof — must be ignored
@@ -218,7 +299,7 @@ describe('act-as impersonation is verified server-side (CRM directory, not heade
       profile: 'Administrator',
       role: 'Manager',
     });
-    const req = sessionRequest(admin);
+    const req = await sessionRequest(admin);
     req.headers = { 'x-act-as-zoho-user-id': '888' };
     const ctx = await buildCallerContext(req, {});
     expect(ctx.allDepartmentAccess).toBe(true);
@@ -227,13 +308,13 @@ describe('act-as impersonation is verified server-side (CRM directory, not heade
 
   it('rejects an unknown/inactive target (fail closed)', async () => {
     actAsTarget.mockResolvedValue(null);
-    const req = sessionRequest(admin);
+    const req = await sessionRequest(admin);
     req.headers = { 'x-act-as-zoho-user-id': 'ghost' };
     await expect(buildCallerContext(req, {})).rejects.toThrow(RBACError);
   });
 
   it('non-admin sessions cannot act-as: the header is ignored entirely', async () => {
-    const req = sessionRequest({ zohoUserId: '42', userName: 'Bob', profile: 'Sales Rep' });
+    const req = await sessionRequest({ zohoUserId: '42', userName: 'Bob', profile: 'Sales Rep' });
     req.headers = { 'x-act-as-zoho-user-id': '777' };
     const ctx = await buildCallerContext(req, {});
     expect(actAsTarget).not.toHaveBeenCalled();
@@ -242,26 +323,25 @@ describe('act-as impersonation is verified server-side (CRM directory, not heade
   });
 });
 
-describe('FF_WORKER_DEPT_STRICT bounds the verified worker department view', () => {
-  it('intersects the body view with profile-derived departments', async () => {
-    env.FF_WORKER_DEPT_STRICT = true;
-    const req = sessionRequest({ zohoUserId: '42', profile: 'Sales Agent', zohoRole: 'Sales Agent' });
+describe('verified worker department view is bounded by the DB-resolved grant', () => {
+  it('intersects the body view with the grant — ungranted departments are dropped', async () => {
+    const req = await sessionRequest({ zohoUserId: '42', profile: 'Sales Agent', zohoRole: 'Sales Agent' });
     const ctx = await buildCallerContext(req, { department_scope: ['sales', 'finance'] });
-    expect(ctx.departments).toEqual(['sales']); // 'finance' is outside the derived set
+    expect(ctx.departments).toEqual(['sales']); // 'finance' is not in the grant
   });
 
-  it('derives departments when the body sends none', async () => {
-    env.FF_WORKER_DEPT_STRICT = true;
-    const req = sessionRequest({ zohoUserId: '42', profile: 'Customer Service Agent' });
+  it('no body view ⇒ the full grant', async () => {
+    const req = await sessionRequest({ zohoUserId: '42', profile: 'Customer Service Agent' });
     const ctx = await buildCallerContext(req, {});
     expect(ctx.departments).toEqual(['customer-service']);
   });
 
-  it('flag off preserves today\'s behavior (view honored as-is)', async () => {
-    env.FF_WORKER_DEPT_STRICT = false;
-    const req = sessionRequest({ zohoUserId: '42', profile: 'Sales Agent' });
+  it('a view of only an ungranted department yields nothing (narrow, never widen)', async () => {
+    const req = await sessionRequest({ zohoUserId: '42', profile: 'Sales Agent' });
     const ctx = await buildCallerContext(req, { department_scope: ['finance'] });
-    expect(ctx.departments).toEqual(['finance']);
+    // Sales Agent is granted ['sales']; a view of only 'finance' intersects to [] — they get no
+    // department access for this request (they cannot widen to finance).
+    expect(ctx.departments).toEqual([]);
   });
 });
 

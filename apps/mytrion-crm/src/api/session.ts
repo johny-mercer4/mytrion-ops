@@ -5,15 +5,25 @@
  * backend is the real authority (it re-derives RBAC from the signed token on every request).
  */
 
-/** Verified worker identity, as returned by the backend's Zoho callback/refresh. */
+import type { MytrionId } from '../access/mytrions.config';
+
+/** Verified worker identity, as returned by the backend's Zoho callback / /auth/me. */
 export interface SessionWorker {
   zohoUserId: string;
   userName: string | null;
   email: string | null;
   profile: string | null;
   role: string | null;
-  /** Present on /auth/me; whether the Zoho profile grants see-everything access. */
+  /** Whether the worker has see-everything access (DB-resolved by the backend). */
   allDepartmentAccess?: boolean;
+  /** The Mytrions this worker may enter — DB-resolved server-side (authoritative). */
+  accessibleMytrions?: MytrionId[];
+  /** Auto-route landing target (e.g. Sales Agent → 'sales'); null → the picker. */
+  homeMytrion?: MytrionId | null;
+  /** Zoho user ids this worker may "View as" (targeted impersonation grant). */
+  viewAsUserIds?: string[];
+  /** Resolved identities for the view-as targets, for the picker (non-admins get a scoped list). */
+  viewAsTargets?: Array<{ zohoUserId: string; name: string | null }>;
 }
 
 export interface StoredSession {

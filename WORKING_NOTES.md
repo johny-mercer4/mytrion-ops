@@ -2250,3 +2250,66 @@ CMP Database tab works without anyone running ssh by hand.
 - PROD ("direct like DWH", no tunnel) still needs a one-time AWS change (make RDS reachable: public
   + SG allowlist, or same-VPC). Code is already direct-ready — then it's config only
   (AWS_MYSQL_HOST=<rds endpoint>, PORT 3306, AWS_MYSQL_SSL=1). On feature/AdminSetup.
+
+## 2026-07-17 — Internal User Management (DB-backed Mytrion access control)
+
+Admins control which Zoho worker accesses which Mytrion, server-authoritative. Sales Agent
+auto-routes to Sales; Administrator lands on the picker; per-user + per-profile overrides.
+
+- **Data model**: two tenant-isolated tables — `mytrion_profile_defaults` (per Zoho profile:
+  allowed Mytrions + home + all-access) and `worker_mytrion_access` (per-user override: allow
+  replace/inherit, deny subtract, home, all-access). Hand-written migration `0024_mytrion_access.sql`
+  + journal entry (drizzle `db:generate` is BLOCKED by a pre-existing snapshot fork on origin/build —
+  0022/0023 both prevId f827055a + orphan 0024 snapshot; NOT ours, and runtime `migrate` ignores
+  snapshots so the hand-written SQL deploys fine). Taxonomy in `src/lib/mytrions.ts` (MYTRION_IDS,
+  MYTRION_DEPARTMENT, DEFAULT_PROFILE_SEED for the 8 profiles).
+- **Resolver** `src/modules/access/mytrionAccessService.ts` — the single authority. profile default →
+  per-user override → env-admin FLOOR (resolveAllDepartmentAccess; DB can never lower a real admin) →
+  accessible set/departments/home. UNMANAGED workers (no profile default AND no override) fall back to
+  legacy `deriveWorkerDepartments` → non-breaking rollout. Fails OPEN to legacy on DB error. TTL-cached
+  (60s) keyed on the full identity (tenant+user+profile+role+name) so a profile change refreshes and
+  tests don't collide; invalidateUser (prefix) / invalidateAll (profile edits).
+- **Injection**: `authService.contextFromClaims` is now async → resolves departments +
+  allDepartmentAccess from the DB (the ONE authoritative point; ToolRegistry/agentRegistry/knowledge
+  all become DB-driven). `callerIdentity.verifiedWorkerDepartments` = body VIEW ∩ grant (narrow only,
+  never widen; empty view-intersection = no access, NOT fallback-to-grant). `helpers.withDepartmentAccess`
+  sources ctx.departments (DB grant). Retired FF_WORKER_DEPT_STRICT reliance. `/auth/me` + Zoho callback
+  surface accessibleMytrions/homeMytrion/allDepartmentAccess.
+- **Admin CRUD** `mytrionAccess.routes.ts` (allDepartmentAccess gate, Zod-validated vs MYTRION_IDS,
+  audited): GET/POST users + profiles; profiles auto-seed on first read.
+- **Frontend**: session/userContext/resolveAccess consume the server list (static mytrions.config is
+  now dev-mock/legacy fallback only); Landing auto-routes to homeMytrion; UserContextProvider refreshes
+  /auth/me on boot so admin edits apply on reload (not just re-login). New Admin tab "User Management"
+  (UserManagement + UserAccessForm + ProfileDefaults + api/mytrionAccess + AccessIcon).
+- **OAuth enforced now**: FF_ZOHO_OAUTH_ENABLED=1 (per decision). PROD: set it in the Render env group.
+- Verify: backend typecheck+lint(0 err)+build + 562 tests green (incl. RBAC-leakage/header-elevation/
+  IDOR/deal-ownership); frontend typecheck+52 tests+build green. Fixed a pre-existing BOM lint error in
+  the merged apps/mini-app/src/lib/txnExport.ts. On feature/AdminSetup.
+
+## 2026-07-17 (pm) — Access-control: RBAC review fixes + multi-Mytrion + non-admin "View as"
+
+Adversarial RBAC review (4 lenses → verify): NO escalation/leakage found; all findings were
+fail-safe (denial/lockout). Fixes applied to the resolver + auth path:
+- deny-list exempt for env-admins (no-lockout end-to-end); non-admin all-access+denies DOWNGRADES to
+  an explicit department grant so the deny actually enforces (allDept=true is a full bypass);
+  "inherit" override with no seeded profile default falls back to the legacy floor (not empty);
+  DB-error fail-open now serves LAST-KNOWN-GOOD (new lastGood map) + caches degraded results only
+  5s (not 60s) so recovery self-corrects; act-as resolves the TARGET's DB grant (not the raw body
+  view); seed invalidates the resolver cache; departmentsForMytrions drops the 'admin' placeholder.
+- #4 (pre-existing HIGH): email/password JWT sessions were not sessionVerified → self-elevate via
+  headers. Marked sessionVerified (they ARE signed sessions) → claims ignored; /auth/me guards the
+  worker payload to `zoho:` sessions. FLAGGED (still open, pre-existing): #7 admin-marker SUBSTRING
+  match in department.ts can over-grant ('manager' ⊂ 'Account Manager') — tighten ADMIN_PROFILE_MARKERS
+  to exact names; doesn't bite the current profile set.
+
+Multi-Mytrion: already supported (allowedMytrions is a set) — custom-list mode grants many; Landing
+auto-routes to homeMytrion when set+accessible, else the picker shows all accessible.
+
+"View as" for NON-admins (targeted impersonation): new `worker_mytrion_access.view_as_user_ids`
+(migration 0025, applied to prod). Resolver → ResolvedAccess.viewAsUserIds → ctx.viewAsUserIds.
+buildCallerContext act-as gate now allows admin (anyone) OR a non-admin whose grant includes the
+target; actAsContext runs as the target's OWN resolved grant, with an ESCALATION GUARD — a non-admin
+can never view-as an all-access (admin) target (fail-closed + audited). /auth/me + callback surface
+viewAsUserIds + resolved viewAsTargets; TopBar shows the (renamed) "View as" picker for granted
+non-admins with a scoped target list; UserAccessForm gains a "Can view as" multi-select (admin-only
+targets excluded). Verify: 567 backend tests + FE typecheck/build green; migrations 0024+0025 on prod.

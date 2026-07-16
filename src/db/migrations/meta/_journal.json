@@ -169,6 +169,20 @@
       "when": 1784127024730,
       "tag": "0023_nebulous_famine",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1784236756333,
+      "tag": "0024_mytrion_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1784239574094,
+      "tag": "0025_view_as",
+      "breakpoints": true
     }
   ]
 }

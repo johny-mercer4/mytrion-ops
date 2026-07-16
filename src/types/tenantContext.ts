@@ -69,6 +69,11 @@ export interface TenantContext {
    * allowlist of user_names; never set from untrusted (customer) input.
    */
   bypassRbac?: boolean;
+  /**
+   * Zoho user ids this caller may "View as" (targeted impersonation grant, DB-resolved). Lets a
+   * NON-admin impersonate specific users; admins (allDepartmentAccess) may act-as anyone regardless.
+   */
+  viewAsUserIds?: string[];
   /** Caller's external (e.g. Zoho) profile name(s). An "Administrator" profile grants allDepartmentAccess. */
   profiles?: string[];
   /** Caller's external (e.g. Zoho) role name — informational (audit / future per-role policy). */

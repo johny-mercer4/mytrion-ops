@@ -20,13 +20,13 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { env } from '../../config/env.js';
 import {
-  deriveWorkerDepartments,
   isBypassUser,
   normalizeDepartments,
   resolveAllDepartmentAccess,
 } from '../../lib/department.js';
 import { RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import { mytrionAccessService } from '../../modules/access/mytrionAccessService.js';
 import { resolveActAsTarget } from '../../modules/auth/actAsDirectory.js';
 import { workerRoleFor } from '../../modules/auth/workerRole.js';
 import { scopesForRole } from '../../modules/auth/permissions.js';
@@ -225,14 +225,39 @@ async function actAsContext(
     profile: target.profile,
     zohoRole: target.role,
   });
-  const targetAllAccess = role === 'admin';
+  // The impersonated request runs with the TARGET's own DB-resolved grant (same resolver as a real
+  // login), narrowed by the body VIEW — never the raw client-supplied departments. role/scopes stay
+  // env-derived (workerRoleFor); the grant widens departments, never scopes.
+  const access = await mytrionAccessService.resolveWorkerAccess({
+    tenantId: base.tenantId,
+    zohoUserId: target.zohoUserId,
+    profileName: target.profile ?? null,
+    zohoRole: target.role ?? null,
+    userName: target.name ?? null,
+  });
+  // Escalation guard: a NON-admin impersonator can never gain all-department access by viewing as
+  // an admin target. (Admins can view-as anyone.) Fail closed + audited.
+  if (!base.allDepartmentAccess && access.allDepartmentAccess) {
+    await auditFromContext(base, {
+      action: 'auth.act_as',
+      status: 'denied',
+      detail: { target: target.zohoUserId, reason: 'non-admin may not view-as an all-access user' },
+    });
+    throw new RBACError('You are not permitted to view as this user.');
+  }
+  const view = departmentView(body);
+  const departments = access.allDepartmentAccess
+    ? []
+    : view.length > 0
+      ? view.filter((d) => access.departments.includes(d))
+      : access.departments;
   const ctx: TenantContext = {
     ...base,
     userId: `zoho:${target.zohoUserId}`,
     role,
     scopes: scopesForRole(role),
-    allDepartmentAccess: targetAllAccess,
-    departments: targetAllAccess ? [] : departmentView(body),
+    allDepartmentAccess: access.allDepartmentAccess,
+    departments,
     profiles: target.profile ? [target.profile] : [],
     impersonatorUserId: base.userId,
   };
@@ -249,12 +274,14 @@ async function actAsContext(
   return ctx;
 }
 
-/** Verified non-admin worker departments: the body view, bounded by the profile-derived set. */
+/**
+ * Verified non-admin worker departments: the request's Mytrion VIEW intersected with the
+ * DB-resolved grant (base.departments, set authoritatively in contextFromClaims). A worker can
+ * only ever narrow to a department they're already granted — never widen. No view ⇒ the full grant.
+ */
 function verifiedWorkerDepartments(base: TenantContext, body: CallerIdentityBody): string[] {
   const view = departmentView(body);
-  if (!env.FF_WORKER_DEPT_STRICT) return view;
-  const derived = deriveWorkerDepartments(base.profiles, base.callerRole ?? null);
-  return view.length > 0 ? view.filter((d) => derived.includes(d)) : derived;
+  return view.length > 0 ? view.filter((d) => base.departments.includes(d)) : base.departments;
 }
 
 export async function buildCallerContext(
@@ -270,13 +297,20 @@ export async function buildCallerContext(
     // already locked to the carrier's own company tags — body identity/scope fields are fully
     // ignored (no department view, no act-as, no worker merge).
     if (base.audience === 'customer') return base;
-    // Admin "act as agent": an admin may impersonate a target agent (from CRM) so the whole request
-    // runs AS that agent — owner-scoped data becomes the target's. Gated to admins; audited.
-    const actAsId = base.allDepartmentAccess ? readActAsId(request) : null;
-    if (actAsId) return actAsContext(request, base, body, actAsId);
+    // "View as" impersonation: an admin (allDepartmentAccess) may act-as anyone; a NON-admin may
+    // act-as ONLY the specific targets granted in their DB view-as list (ctx.viewAsUserIds). The
+    // whole request then runs AS the target. Gated + audited; escalation is blocked in actAsContext
+    // (a non-admin can never view-as an admin).
+    const actAsId = readActAsId(request);
+    const mayActAs =
+      actAsId != null && (base.allDepartmentAccess || (base.viewAsUserIds?.includes(actAsId) ?? false));
+    if (actAsId && mayActAs) return actAsContext(request, base, body, actAsId);
     if (base.allDepartmentAccess) return base;
+    // verifiedWorkerDepartments already handles both cases: a body VIEW → view ∩ grant (possibly
+    // empty, which correctly denies), no view → the full grant. Do NOT fall back to `base` on an
+    // empty result — that would restore access the caller explicitly narrowed away from.
     const departments = verifiedWorkerDepartments(base, body);
-    return departments.length > 0 ? { ...base, departments } : base;
+    return { ...base, departments };
   }
   if (!hasCustomerMarkers(body)) return workerContext(request, body);
   const ignored = ignoredCustomerFields(body);

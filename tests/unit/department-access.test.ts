@@ -111,10 +111,12 @@ describe('withDepartmentAccess — session-authoritative vs legacy header trust'
     return { req: { headers, log: { warn } } as unknown as FastifyRequest, warn };
   }
 
-  it('verified worker: elevation headers are ignored; departments derive from the profile', () => {
+  it('verified worker: elevation headers are ignored; the DB-resolved grant on ctx wins', () => {
+    // ctx.departments is set upstream by contextFromClaims (the DB resolver); withDepartmentAccess
+    // no longer derives — it returns the grant and ignores any claimed elevation.
     const ctx = makeContext({
       role: 'worker',
-      departments: [],
+      departments: ['sales'],
       allDepartmentAccess: false,
       sessionVerified: true,
       profiles: ['Sales Rep'],
@@ -129,10 +131,10 @@ describe('withDepartmentAccess — session-authoritative vs legacy header trust'
     expect(warn).toHaveBeenCalledOnce(); // ungranted claims logged (roster signal)
   });
 
-  it('verified worker: body departmentAccess cannot widen either', () => {
+  it('verified worker: body departmentAccess cannot widen the grant either', () => {
     const ctx = makeContext({
       role: 'worker',
-      departments: [],
+      departments: ['retention'],
       allDepartmentAccess: false,
       sessionVerified: true,
       profiles: ['Retention Specialist'],

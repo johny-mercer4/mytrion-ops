@@ -5,6 +5,8 @@ import { env } from '../../config/env.js';
 import { AppError, NotFoundError } from '../../lib/errors.js';
 import { audit } from '../../modules/audit/auditLogger.js';
 import { authService, toPublicUser } from '../../modules/auth/authService.js';
+import { mytrionAccessService } from '../../modules/access/mytrionAccessService.js';
+import { resolveActAsTarget } from '../../modules/auth/actAsDirectory.js';
 import { zohoAuthService } from '../../modules/auth/zohoAuthService.js';
 import { userRepo } from '../../repos/userRepo.js';
 import { requireContext } from './helpers.js';
@@ -23,6 +25,16 @@ const zohoCallbackSchema = z.object({
   code: z.string().min(1).max(2000),
   state: z.string().min(1).max(4000),
 });
+
+/** Resolve the display identity of a worker's "view as" targets (for the SPA picker; CRM-cached). */
+async function viewAsTargets(ids: string[]): Promise<Array<{ zohoUserId: string; name: string | null }>> {
+  const out: Array<{ zohoUserId: string; name: string | null }> = [];
+  for (const id of ids) {
+    const t = await resolveActAsTarget(id);
+    if (t) out.push({ zohoUserId: t.zohoUserId, name: t.name });
+  }
+  return out;
+}
 
 function requireZohoOauth(): void {
   if (!env.FF_ZOHO_OAUTH_ENABLED) {
@@ -92,6 +104,15 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const body = zohoCallbackSchema.parse(request.body);
     try {
       const session = await zohoAuthService.completeLogin(body.code, body.state);
+      // Resolve the worker's DB-backed Mytrion access so the SPA can route immediately (home)
+      // and render only the granted Mytrions — the same resolution backend RBAC uses.
+      const access = await mytrionAccessService.resolveWorkerAccess({
+        tenantId: DEFAULT_TENANT_ID,
+        zohoUserId: session.worker.zohoUserId,
+        profileName: session.worker.profile,
+        zohoRole: session.worker.role,
+        userName: session.worker.userName,
+      });
       await audit({
         tenantId: DEFAULT_TENANT_ID,
         audience: 'internal',
@@ -105,7 +126,17 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         ip: request.ip,
         detail: { profile: session.worker.profile, role: session.worker.role },
       });
-      return session;
+      return {
+        ...session,
+        worker: {
+          ...session.worker,
+          accessibleMytrions: access.accessibleMytrions,
+          homeMytrion: access.homeMytrion,
+          allDepartmentAccess: access.allDepartmentAccess,
+          viewAsUserIds: access.viewAsUserIds,
+          viewAsTargets: await viewAsTargets(access.viewAsUserIds),
+        },
+      };
     } catch (err) {
       await audit({
         tenantId: DEFAULT_TENANT_ID,
@@ -122,14 +153,28 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   // the context; the dormant email/password path returns the users-table record.
   app.get('/auth/me', { onRequest: [app.authenticate] }, async (request) => {
     const ctx = requireContext(request);
-    if (ctx.sessionVerified) {
+    // Zoho-worker session (userId `zoho:<id>`). The email/password path is also sessionVerified now,
+    // but it's a users-table principal — it falls through to the userRepo lookup below.
+    if (ctx.sessionVerified && ctx.userId.startsWith('zoho:')) {
+      const zohoUserId = ctx.userId.replace(/^zoho:/, '');
+      const access = await mytrionAccessService.resolveWorkerAccess({
+        tenantId: ctx.tenantId,
+        zohoUserId,
+        profileName: ctx.profiles?.[0] ?? null,
+        zohoRole: ctx.callerRole ?? null,
+        userName: ctx.userName ?? null,
+      });
       return {
         worker: {
-          zohoUserId: ctx.userId.replace(/^zoho:/, ''),
+          zohoUserId,
           userName: ctx.userName ?? null,
           profile: ctx.profiles?.[0] ?? null,
           role: ctx.callerRole ?? null,
-          allDepartmentAccess: ctx.allDepartmentAccess,
+          allDepartmentAccess: access.allDepartmentAccess,
+          accessibleMytrions: access.accessibleMytrions,
+          homeMytrion: access.homeMytrion,
+          viewAsUserIds: access.viewAsUserIds,
+          viewAsTargets: await viewAsTargets(access.viewAsUserIds),
         },
       };
     }

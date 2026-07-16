@@ -118,7 +118,7 @@ export function exportTransactions(
   const grid = toGrid(txns);
   const base = `transactions_${safe(meta.cardLast4)}_${safe(meta.range)}`;
   if (format === 'csv') {
-    deliverBlob(new Blob([`﻿${toCsv(grid)}`], { type: 'text/csv;charset=utf-8;' }), `${base}.csv`);
+    deliverBlob(new Blob([`\uFEFF${toCsv(grid)}`], { type: 'text/csv;charset=utf-8;' }), `${base}.csv`);
   } else if (format === 'excel') {
     deliverBlob(new Blob([toXlsHtml(grid, meta)], { type: 'application/vnd.ms-excel' }), `${base}.xls`);
   } else {
