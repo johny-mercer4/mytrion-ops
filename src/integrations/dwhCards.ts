@@ -32,9 +32,32 @@ function toDto(row: CardRow): DwhCard {
   };
 }
 
+/**
+ * Enough to hold any real carrier's whole fleet in one read.
+ *
+ * Measured against the live DWH across 7967 carriers: p99 is 46 active cards, 16 carriers exceed
+ * 100, exactly one exceeds 500, and the largest is 510 — 53 KB of JSON. So the fleet screen does not
+ * need pagination; it needs a bound that isn't below the data. Paging it would also break the
+ * screen's own filter counts and search, which run over the whole list client-side.
+ *
+ * Still a bound, not "unlimited": it caps the blast radius of a data anomaly, and a carrier that
+ * ever approaches it is the signal that this decision needs revisiting.
+ */
+export const FLEET_CARD_LIMIT = 1000;
+
+/** Exact count of a carrier's active cards. A count, not a list to measure — the list is capped and
+ *  `cards.length` against it silently reports the cap instead of the truth. */
+export async function countDwhCards(carrierId: string): Promise<number> {
+  const rows = await dwhQuery<{ n: number }>(
+    `select count(*)::int as n from octane.stg_cmp_card where is_active = true and carrier_id = $1`,
+    [carrierId],
+  );
+  return rows[0]?.n ?? 0;
+}
+
 /** Active fuel cards for one carrier — current rows only, newest first. */
 export async function listDwhCards(carrierId: string, limit = 100): Promise<DwhCard[]> {
-  const capped = Math.min(Math.max(limit, 1), 200);
+  const capped = Math.min(Math.max(limit, 1), FLEET_CARD_LIMIT);
   const rows = await dwhQuery<CardRow>(
     `select card_id, card_number, card_type, status, balance
        from octane.stg_cmp_card
@@ -44,6 +67,32 @@ export async function listDwhCards(carrierId: string, limit = 100): Promise<DwhC
     [carrierId],
   );
   return rows.map(toDto);
+}
+
+/**
+ * Is this card an active card of this carrier? An exact lookup, not a scan.
+ *
+ * The membership check used to run `listDwhCards(carrierId).some(c => c.cardId === cardId)` — over a
+ * list capped at 100 (200 hard max). Real carriers are far bigger: measured live, 5809710 has 510
+ * active cards, 5794015 has 230. So a driver whose card sorted past the first 100 was told "That
+ * card is not an active card of this carrier" and could not register AT ALL — the check answered
+ * "does your card appear in the newest 100" while claiming to answer "is your card active".
+ *
+ * Asking the database about the one card removes the cap from the question entirely.
+ */
+export async function findDwhCardById(carrierId: string, cardId: string): Promise<DwhCard | null> {
+  const rows = await dwhQuery<CardRow>(
+    `select card_id, card_number, card_type, status, balance
+       from octane.stg_cmp_card
+      where is_active = true and carrier_id = $1 and card_id = $2
+      limit 1`,
+    [carrierId, cardId],
+  );
+  return rows[0] ? toDto(rows[0]) : null;
+}
+
+export async function isActiveCardOfCarrier(carrierId: string, cardId: string): Promise<boolean> {
+  return (await findDwhCardById(carrierId, cardId)) !== null;
 }
 
 /** The carrier + card a fuel-card NUMBER resolves to — drives driver self-registration (the number

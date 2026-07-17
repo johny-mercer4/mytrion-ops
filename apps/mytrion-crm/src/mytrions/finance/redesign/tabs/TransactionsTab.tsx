@@ -123,7 +123,7 @@ export function TransactionsTab() {
                 onClick={() => openTx(t)}
                 style={s('display:flex;align-items:center;gap:13px;padding:13px 16px;border-bottom:1px solid var(--border2);cursor:pointer;width:100%;border-left:none;border-right:none;border-top:none;background:transparent;text-align:left')}
               >
-                <div style={s('width:38px;height:38px;border-radius:10px;background:var(--accent-s);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
+                <div style={s('width:38px;height:38px;border-radius:var(--radius-md);background:var(--accent-s);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
                   <Svg d={ICONS.card} size={16} />
                 </div>
                 <div style={s('flex:1;min-width:0')}>
@@ -133,8 +133,8 @@ export function TransactionsTab() {
                   </div>
                 </div>
                 <div style={s('display:flex;align-items:center;gap:8px;flex-shrink:0')}>
-                  <span style={s('font-size:9.5px;font-weight:700;padding:3px 7px;border-radius:6px;background:var(--muted-s);color:var(--text2)')}>{t.grade}</span>
-                  <span style={s("font-size:9.5px;font-weight:700;padding:3px 7px;border-radius:6px;background:var(--orange-s);color:var(--orange);font-family:'JetBrains Mono',monospace")}>{galC(t.gal)} gal</span>
+                  <span style={s('font-size:9.5px;font-weight:700;padding:3px 7px;border-radius:var(--radius-md);background:var(--muted-s);color:var(--text2)')}>{t.grade}</span>
+                  <span style={s("font-size:9.5px;font-weight:700;padding:3px 7px;border-radius:var(--radius-md);background:var(--orange-s);color:var(--orange);font-family:'JetBrains Mono',monospace")}>{galC(t.gal)} gal</span>
                   <div style={s("font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;color:var(--accent);min-width:74px;text-align:right")}>{fmtCurrency(t.amount).replace('.00', '')}</div>
                 </div>
               </button>

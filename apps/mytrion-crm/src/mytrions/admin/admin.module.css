@@ -177,21 +177,103 @@
   font-size: var(--text-sm);
   transition: background var(--dur-fast) var(--ease-standard);
 }
-.tRow:nth-child(even) {
+/* Zebra only where rows are direct children. In the carrier tree the rows sit inside a rowgroup
+   per company, which restarts nth-child — striping there marked "2nd row of its group" rather than
+   alternating, so two sibling drivers came out shaded differently. The group boundary below is the
+   device that actually carries structure. */
+.table > .tRow:nth-child(even) {
   background: color-mix(in srgb, var(--surface-alt) 45%, transparent);
 }
-.tRow:hover {
+.tRow:hover,
+.table > .tRow:nth-child(even):hover {
   background: var(--surface-raised);
 }
 .tRow:last-child {
   border-bottom: none;
 }
+
+/* one company + its drivers */
+.tGroup + .tGroup {
+  border-top: 1px solid var(--border);
+}
+.tGroup:last-child .tRow:last-child {
+  border-bottom: none;
+}
+/* Column ratios belong here, not in a JSX style prop: an inline grid-template-columns outranks every
+   media query, so the carrier tables had no way to adapt and simply squashed. */
+.tCarrier {
+  grid-template-columns: 2fr 1.1fr 1fr 1.2fr 1fr 0.9fr;
+}
+.tInvite {
+  grid-template-columns: 2fr 1fr 1fr 1fr 1.1fr 1.1fr;
+}
+
+/* The carrier tables scroll inside this box rather than with the page, which is what lets the
+   column header stay put (sticky anchors to its nearest scrollport, so that scrollport has to be
+   the thing with a height bound — not the table, whose box is exactly as tall as its rows).
+   Vertically it only kicks in once the rows outgrow the space; a short table just sits there. */
+.tableScroll {
+  overflow: auto;
+  max-height: max(240px, calc(100vh - 300px));
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+/* Horizontally: below ~1040px the six columns stop fitting and the row degrades — pills wrap,
+   carrier ids break across lines. These are power-user tables, so the density stays and the table
+   scrolls sideways instead. Measured against the widest real content: a `DEMO-OWNEROP-1` carrier
+   id beside an `Owner-operator` pill. */
+.tableScroll > .table {
+  min-width: 1040px;
+  /* The chrome moves to .tableScroll: .table's own `overflow: hidden` would otherwise make it the
+     nearest scrollport and swallow the sticky header. */
+  overflow: visible;
+  border: none;
+  border-radius: 0;
+  background: none;
+}
+.tableScroll .tHead {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+}
+
+/* Announcement for the table's loading state — the shimmer itself is aria-hidden, so this is
+   what a screen reader actually gets. See <TableSkeleton>. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .right {
   text-align: right;
 }
+/* A cell whose value is the warning — a live invite inside its last day. Amber matches the
+   "Expired" pill it's about to become, so the countdown and the outcome are one scale. */
+.cellWarn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--warning);
+}
+
 .mono {
   font-family: var(--font-mono);
   color: var(--text-muted);
+}
+/* An id is a single token to scan and compare — wrapping `DEMO-OWNEROP-1` across two lines makes
+   the column unscannable. Scoped to rows so `.mono` inputs elsewhere keep their own behaviour. */
+.tRow .mono {
+  white-space: nowrap;
 }
 .docCell {
   display: flex;
@@ -220,6 +302,9 @@
   border-radius: var(--radius-full);
   font-size: var(--text-2xs);
   font-weight: var(--fw-semibold);
+  /* A status label is one token — "Owner-operator" breaking across two lines turns a pill into a
+     blob and pushes the row taller than its neighbours. */
+  white-space: nowrap;
 }
 .pillGood {
   background: var(--tint-good-bg);
@@ -612,6 +697,11 @@
   gap: var(--space-3);
 }
 
+/* confirm dialogs — prose, not a data panel, so the 760px reading measure is far too wide */
+.modalNarrow {
+  width: min(440px, 100%);
+}
+
 .modalActions {
   display: flex;
   gap: var(--space-2);
@@ -719,6 +809,10 @@
 }
 
 .miniBtn {
+  /* inline-flex so the row actions can carry a leading icon and keep their label on the baseline */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   padding: 3px var(--space-2);
   font-size: var(--text-2xs);
   font-weight: var(--fw-semibold);
@@ -847,8 +941,16 @@
 .clientPickRow:last-child {
   border-bottom: none;
 }
-.clientPickRow:hover {
+.clientPickRow:hover,
+.clientPickRowActive {
   background: var(--accent-soft);
+}
+
+/* Revoked rows: dimming the whole row to 55% opacity dragged its text under the contrast floor.
+   A tint carries the same "inactive" read without touching legibility — the Revoked pill is what
+   actually states the status. */
+.tRowRevoked {
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
 }
 
 /* ── Guided create-form (Carrier Users) ─────────────────────────────────────── */

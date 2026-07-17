@@ -48,10 +48,15 @@
   --tint-neutral-bd: var(--border);
 
   /* ── Radii ───────────────────────────────────────────────────────────────── */
-  --radius-xs: 3px;
-  --radius-sm: 5px;
-  --radius-md: 9px;
-  --radius-lg: 13px;
+  /* One corner across the app: a button, an input, a card, a table and a modal all round at 6px.
+     The four steps are kept as names rather than collapsed into one token so call sites don't all
+     have to change, and so the ramp can be reintroduced by editing this block alone. */
+  --radius-xs: 6px;
+  --radius-sm: 6px;
+  --radius-md: 6px;
+  --radius-lg: 6px;
+  /* Not part of the flattening — this is what makes pills, avatars and status dots round rather
+     than 6px rectangles. */
   --radius-full: 999px;
 
   /* ── Type scale (size + line-height + weight) ──────────────────────────────── */

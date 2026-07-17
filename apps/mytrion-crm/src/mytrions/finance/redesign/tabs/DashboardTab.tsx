@@ -50,7 +50,7 @@ export function DashboardTab() {
         <PageTitle title="Dashboard" sub={subtitles[dashSub]} />
       </div>
 
-      <div style={s('display:flex;gap:4px;padding:4px;border-radius:12px;background:var(--surface);border:1px solid var(--border);margin-bottom:18px;width:fit-content')}>
+      <div style={s('display:flex;gap:4px;padding:4px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);margin-bottom:18px;width:fit-content')}>
         {subs.map((sub) => (
           <button key={sub.id} type="button" className="mf-chip" data-active={dashSub === sub.id ? 'true' : 'false'} onClick={() => setDashSub(sub.id)} style={s(subTabStyle(dashSub === sub.id))}>
             <Svg d={sub.icon} size={15} />
@@ -91,10 +91,10 @@ function DebtorsView({
         ))}
       </div>
 
-      <div style={s('border-radius:16px;background:var(--surface);border:1px solid var(--border);padding:18px 20px;margin-bottom:16px;box-shadow:var(--shadow-sm)')}>
+      <div style={s('border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);padding:18px 20px;margin-bottom:16px;box-shadow:var(--shadow-sm)')}>
         <div style={s('display:flex;align-items:center;justify-content:space-between;margin-bottom:6px')}>
           <span style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:14px;letter-spacing:.05em;text-transform:uppercase')}>Aging — {agingLabel}</span>
-          <div style={s('display:flex;gap:3px;padding:3px;border-radius:9px;background:var(--alt);border:1px solid var(--border2)')}>
+          <div style={s('display:flex;gap:3px;padding:3px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
             {([['debt', '$ Debt'], ['invoices', 'Invoices']] as const).map(([id, label]) => (
               <button key={id} type="button" onClick={() => setAgingMetric(id)} style={s(segStyle(agingMetric === id))}>
                 {label}
@@ -130,7 +130,7 @@ function DebtorsView({
               onClick={() => client && openClient(client)}
               style={s('display:flex;align-items:center;gap:13px;padding:13px 16px;border-bottom:1px solid var(--border2);cursor:pointer;width:100%;border-left:none;border-right:none;border-top:none;background:transparent;text-align:left')}
             >
-              <div style={s('width:36px;height:36px;border-radius:9px;background:var(--danger-s);color:var(--danger);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0')}>
+              <div style={s('width:36px;height:36px;border-radius:var(--radius-md);background:var(--danger-s);color:var(--danger);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0')}>
                 {initials(d.company)}
               </div>
               <div style={s('flex:1;min-width:0')}>
@@ -139,7 +139,7 @@ function DebtorsView({
               </div>
               <div style={s('display:flex;align-items:center;gap:7px;flex-shrink:0')}>
                 <Badge vm={daysBadge} />
-                <span style={s('font-size:9.5px;font-weight:700;padding:3px 7px;border-radius:6px;background:var(--muted-s);color:var(--text2)')}>{d.inv} inv</span>
+                <span style={s('font-size:9.5px;font-weight:700;padding:3px 7px;border-radius:var(--radius-md);background:var(--muted-s);color:var(--text2)')}>{d.inv} inv</span>
                 <div style={s("font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:var(--danger);min-width:64px;text-align:right")}>{moneyC(d.debt)}</div>
               </div>
             </button>
@@ -172,7 +172,7 @@ function PaymentsView() {
         ))}
       </div>
 
-      <div style={s('border-radius:16px;background:var(--surface);border:1px solid var(--border);padding:18px 20px;margin-bottom:16px;box-shadow:var(--shadow-sm)')}>
+      <div style={s('border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);padding:18px 20px;margin-bottom:16px;box-shadow:var(--shadow-sm)')}>
         <div style={s('display:flex;align-items:center;justify-content:space-between;margin-bottom:16px')}>
           <span style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:14px;letter-spacing:.05em;text-transform:uppercase')}>Payments — Last 14 Days</span>
           <span style={s('font-size:11px;color:var(--muted)')}>by source</span>
@@ -231,7 +231,7 @@ function FuelingView() {
       </div>
 
       <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px')}>
-        <div style={s('border-radius:16px;background:var(--surface);border:1px solid var(--border);padding:18px 20px;box-shadow:var(--shadow-sm)')}>
+        <div style={s('border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);padding:18px 20px;box-shadow:var(--shadow-sm)')}>
           <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:14px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:16px')}>Fuel Volume by Day</div>
           <div style={s('display:flex;gap:8px;align-items:flex-end;height:150px')}>
             {dowBars().map((b) => (
@@ -242,7 +242,7 @@ function FuelingView() {
             ))}
           </div>
         </div>
-        <div style={s('border-radius:16px;background:var(--surface);border:1px solid var(--border);padding:18px 20px;box-shadow:var(--shadow-sm)')}>
+        <div style={s('border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);padding:18px 20px;box-shadow:var(--shadow-sm)')}>
           <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:14px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:16px')}>Peak Fueling Hours</div>
           <div style={s('display:flex;gap:4px;align-items:flex-end;height:150px')}>
             {hodBars().map((b) => (
@@ -255,7 +255,7 @@ function FuelingView() {
         </div>
       </div>
 
-      <div style={s('border-radius:16px;background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
+      <div style={s('border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
         <div style={s('padding:15px 18px;border-bottom:1px solid var(--border);font-family:Rajdhani,sans-serif;font-weight:700;font-size:14px;letter-spacing:.05em;text-transform:uppercase')}>Top Fueling Locations</div>
         {topLocationsList().map((l) => (
           <div key={l.rank} style={s('display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--border2)')}>

@@ -27,7 +27,7 @@ export function deptStyle(code: string): string {
     M: 'var(--violet)',
   };
   const col = map[c] ?? 'var(--muted)';
-  return `font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;padding:2px 7px;border-radius:6px;color:${col};background:color-mix(in srgb, ${col} 15%, transparent)`;
+  return `font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;padding:2px 7px;border-radius:var(--radius-md);color:${col};background:color-mix(in srgb, ${col} 15%, transparent)`;
 }
 
 /** A rounded status pill. */
@@ -40,7 +40,7 @@ export function badge(text: string, col: string): BadgeVM {
 
 /** A tinted square icon box. */
 export function iconBox(col: string, size = 40): string {
-  return `width:${size}px;height:${size}px;border-radius:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb, ${col} 15%, transparent);color:${col}`;
+  return `width:${size}px;height:${size}px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb, ${col} 15%, transparent);color:${col}`;
 }
 
 void RGB;

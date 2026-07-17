@@ -30,7 +30,7 @@ html,body{height:100%;margin:0}
     color-scheme:light;
   }
   .ss-root ::-webkit-scrollbar{width:8px;height:8px}
-  .ss-root ::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px}
+  .ss-root ::-webkit-scrollbar-thumb{background:var(--border);border-radius:var(--radius-md)}
   .ss-root ::-webkit-scrollbar-thumb:hover{background:var(--muted)}
   .ss-root *{scrollbar-width:thin;scrollbar-color:var(--border) transparent}
   @keyframes ss-spin{to{transform:rotate(360deg)}}
@@ -44,7 +44,7 @@ html,body{height:100%;margin:0}
   @keyframes ss-ring{0%{transform:scale(.75);opacity:.6}100%{transform:scale(1.7);opacity:0}}
   @keyframes ss-slidein{from{transform:translateX(100%)}to{transform:translateX(0)}}
   .ss-fu{animation:ss-up .4s cubic-bezier(.2,0,0,1) both}
-  .ss-skel{background:linear-gradient(90deg,var(--raised) 25%,rgba(255,255,255,.06) 37%,var(--raised) 63%);background-size:900px 100%;animation:ss-shimmer 1.4s infinite linear;border-radius:8px}
+  .ss-skel{background:linear-gradient(90deg,var(--raised) 25%,rgba(255,255,255,.06) 37%,var(--raised) 63%);background-size:900px 100%;animation:ss-shimmer 1.4s infinite linear;border-radius:var(--radius-md)}
   .light .ss-skel{background:linear-gradient(90deg,rgba(15,23,42,.05) 25%,rgba(15,23,42,.1) 37%,rgba(15,23,42,.05) 63%);background-size:900px 100%;animation:ss-shimmer 1.4s infinite linear}
   .ss-tab-x:hover{color:var(--text)!important;background:var(--raised)!important}
   .ss-vw-opt{transition:background .12s}

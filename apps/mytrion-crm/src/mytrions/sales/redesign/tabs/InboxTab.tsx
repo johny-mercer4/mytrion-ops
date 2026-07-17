@@ -142,7 +142,7 @@ export function InboxTab() {
             <span style={s(`width:7px;height:7px;border-radius:50%;background:${wsReady ? 'var(--ok)' : 'var(--muted)'};box-shadow:0 0 0 3px color-mix(in srgb,${wsReady ? 'var(--ok)' : 'var(--muted)'} 22%,transparent)`)}></span>{wsReady ? 'LIVE' : 'OFFLINE'}
           </span>
           {inboxUnreadHas && (
-            <button onClick={markAllRead} className="ss-ico-btn" style={s('height:34px;padding:0 13px;border-radius:9px;border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:12px;font-weight:700;cursor:pointer')}>Mark all read</button>
+            <button onClick={markAllRead} className="ss-ico-btn" style={s('height:34px;padding:0 13px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:12px;font-weight:700;cursor:pointer')}>Mark all read</button>
           )}
         </div>
       </div>
@@ -169,7 +169,7 @@ export function InboxTab() {
           {filtered.map((i) => {
             const unread = !read[i.id];
             const barColor = colOf[i.type];
-            const rowStyle = `display:flex;gap:13px;padding:15px 16px;border-radius:14px;background:var(--surface);border:1px solid ${unread ? 'rgba(var(--accent-rgb),.25)' : 'var(--border)'};cursor:pointer;box-shadow:var(--shadow-sm);position:relative;overflow:hidden`;
+            const rowStyle = `display:flex;gap:13px;padding:15px 16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${unread ? 'rgba(var(--accent-rgb),.25)' : 'var(--border)'};cursor:pointer;box-shadow:var(--shadow-sm);position:relative;overflow:hidden`;
             const prioBadge = badge(i.prio.toUpperCase(), prioCol[i.prio] || 'var(--muted)');
             return (
               <div key={i.id} onClick={() => openInbox(i)} className="ss-card-h" style={s(rowStyle)}>
@@ -187,11 +187,11 @@ export function InboxTab() {
                 </div>
                 <div style={s('display:flex;flex-direction:column;gap:6px;flex-shrink:0')}>
                   {unread && (
-                    <button onClick={(e) => markReadOnly(i, e)} aria-label="Mark read" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
+                    <button onClick={(e) => markReadOnly(i, e)} aria-label="Mark read" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
                       <Svg d="M5 13l4 4L19 7" size={14} strokeWidth={2.4} />
                     </button>
                   )}
-                  <button onClick={(e) => deleteInbox(i, e)} aria-label="Delete" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
+                  <button onClick={(e) => deleteInbox(i, e)} aria-label="Delete" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                   </button>
                 </div>

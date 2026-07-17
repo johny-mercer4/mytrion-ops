@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 import { s } from './dc';
 
 const panelBase =
-  'position:fixed;z-index:200;border-radius:12px;background:var(--surface);border:1px solid var(--border);box-shadow:0 8px 28px rgba(15,23,42,.12),0 2px 8px rgba(15,23,42,.06);overflow:hidden;max-height:min(230px,42vh)';
+  'position:fixed;z-index:200;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:0 8px 28px rgba(15,23,42,.12),0 2px 8px rgba(15,23,42,.06);overflow:hidden;max-height:min(230px,42vh)';
 
 export function AutoFloatingDrop({
   open,

@@ -20,11 +20,11 @@ export function CreateTab() {
   const [mode, setMode] = useState<Mode>('ticket');
   return (
     <div className="ss-fu" style={s('max-width:640px;margin:0 auto;padding-bottom:24px')}>
-      <div style={s('display:flex;gap:6px;margin-bottom:22px;padding:4px;border-radius:13px;background:var(--surface);border:1px solid var(--border);width:fit-content;max-width:100%')}>
+      <div style={s('display:flex;gap:6px;margin-bottom:22px;padding:4px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);width:fit-content;max-width:100%')}>
         {TABS.map((t) => {
           const on = mode === t.id;
           return (
-            <button key={t.id} onClick={() => setMode(t.id)} style={s(`display:flex;align-items:center;gap:8px;padding:10px 18px;border-radius:10px;border:1px solid ${on ? 'rgba(var(--accent-rgb),.4)' : 'transparent'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .14s`)}>
+            <button key={t.id} onClick={() => setMode(t.id)} style={s(`display:flex;align-items:center;gap:8px;padding:10px 18px;border-radius:var(--radius-md);border:1px solid ${on ? 'rgba(var(--accent-rgb),.4)' : 'transparent'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .14s`)}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d={t.icon} /></svg>
               {t.label}
             </button>

@@ -63,6 +63,52 @@
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
+/* The section holding the current view. Deliberately quieter than .navActive: a parent with
+   children is not a destination, and giving it the same accent row as its selected child left two
+   identical-looking "selected" rows with nothing to say which one you were actually on. */
+.navOpen,
+.navOpen:hover {
+  background: none;
+  color: var(--text-primary);
+}
+
+/* nested items — a rail under the parent carries the grouping, so the child rows don't each need
+   an icon to line up against */
+.navSub {
+  display: flex;
+  flex-direction: column;
+  margin: var(--space-0_5) 0 var(--space-1) var(--space-5);
+  padding-left: var(--space-2_5);
+  border-left: 1px solid var(--border);
+}
+.navSubBtn {
+  height: 32px;
+}
+.navSubBtn .navLabel {
+  font-size: var(--text-xs);
+}
+
+/* the selected sub-item — the one row in the sidebar that reads as current */
+.navSubActive,
+.navSubActive:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.navSubActive .navLabel {
+  font-weight: var(--fw-semibold);
+}
+/* Light the rail beside it rather than drawing a second bar inside the button, which would sit a
+   padding-width away from the rail and read as two parallel lines. */
+.navSubActive::before {
+  content: '';
+  position: absolute;
+  left: calc((var(--space-2_5) + 1px) * -1);
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+}
+
 .navIcon {
   display: flex;
   align-items: center;

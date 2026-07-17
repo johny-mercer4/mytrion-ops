@@ -41,7 +41,7 @@ function toastIconStyle(type: ToastType): string {
     warn: ['var(--warn-s)', 'var(--warn)'],
     accent: ['var(--accent-s)', 'var(--accent)'],
   }[k];
-  return `width:34px;height:34px;border-radius:10px;background:${m[0]};color:${m[1]};display:flex;align-items:center;justify-content:center;flex-shrink:0`;
+  return `width:34px;height:34px;border-radius:var(--radius-md);background:${m[0]};color:${m[1]};display:flex;align-items:center;justify-content:center;flex-shrink:0`;
 }
 
 export function FinanceRedesign() {
@@ -247,7 +247,7 @@ export function FinanceRedesign() {
 
         <aside style={s('flex-shrink:0;width:236px;display:flex;flex-direction:column;background:color-mix(in srgb, var(--bg) 82%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-right:1px solid var(--border);position:relative;z-index:30')}>
           <div style={s('display:flex;align-items:center;gap:11px;padding:18px 18px 15px')}>
-            <div style={s('width:37px;height:37px;border-radius:11px;background:linear-gradient(140deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;box-shadow:0 5px 16px rgba(var(--accent-rgb),.42);flex-shrink:0')}>
+            <div style={s('width:37px;height:37px;border-radius:var(--radius-md);background:linear-gradient(140deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;box-shadow:0 5px 16px rgba(var(--accent-rgb),.42);flex-shrink:0')}>
               <Svg d={DOLLAR} size={20} stroke="#04150F" strokeWidth={2.4} />
             </div>
             <div style={s('line-height:1.12;min-width:0')}>
@@ -287,11 +287,11 @@ export function FinanceRedesign() {
             })}
           </nav>
           <div style={s('padding:12px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px')}>
-            <button type="button" onClick={ctx.toggleTheme} className="mf-ico" style={s('height:38px;padding:0 12px;display:flex;align-items:center;gap:9px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase')}>
+            <button type="button" onClick={ctx.toggleTheme} className="mf-ico" style={s('height:38px;padding:0 12px;display:flex;align-items:center;gap:9px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase')}>
               <Svg d={theme === 'light' ? MOON : SUN} size={16} />
               <span style={s('flex:1;text-align:left')}>{theme === 'light' ? 'Dark' : 'Light'} mode</span>
             </button>
-            <div style={s('display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:12px;background:var(--surface);border:1px solid var(--border)')}>
+            <div style={s('display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
               <div style={s('width:33px;height:33px;border-radius:50%;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#04150F;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0')}>
                 {user.initials}
               </div>
@@ -345,7 +345,7 @@ export function FinanceRedesign() {
         ) : null}
 
         {toast ? (
-          <div style={s('position:fixed;right:22px;bottom:22px;z-index:400;display:flex;align-items:flex-start;gap:12px;min-width:280px;max-width:380px;padding:14px 15px;border-radius:13px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);animation:mf-slidein .3s cubic-bezier(.2,0,0,1) both')}>
+          <div style={s('position:fixed;right:22px;bottom:22px;z-index:400;display:flex;align-items:flex-start;gap:12px;min-width:280px;max-width:380px;padding:14px 15px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);animation:mf-slidein .3s cubic-bezier(.2,0,0,1) both')}>
             <div style={s(toastIconStyle(toast.type))}>
               <Svg d={TOAST_ICON[toast.type]} size={17} strokeWidth={2.4} />
             </div>
@@ -358,7 +358,7 @@ export function FinanceRedesign() {
               onClick={() => setToast(null)}
               aria-label="Dismiss"
               className="mf-ico"
-              style={s('width:24px;height:24px;border-radius:7px;border:none;background:transparent;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0')}
+              style={s('width:24px;height:24px;border-radius:var(--radius-md);border:none;background:transparent;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0')}
             >
               <Svg d={ICONS.close} size={13} strokeWidth={2.2} />
             </button>

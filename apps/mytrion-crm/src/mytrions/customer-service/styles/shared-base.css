@@ -64,7 +64,7 @@
 
 .cs-root ::-webkit-scrollbar-thumb {
     background: var(--scrollbar-thumb);
-    border-radius: 3px;
+    border-radius: var(--radius-md);
 }
 
 .cs-root ::-webkit-scrollbar-corner {

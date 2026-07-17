@@ -27,15 +27,15 @@ const DEPT_COL: Record<string, string> = { C: 'var(--orange)', Q: 'var(--accent)
 const cardCol: Record<string, string> = { active: 'var(--ok)', fraud: 'var(--danger)', inactive: 'var(--muted)' };
 const grad = 'linear-gradient(120deg,var(--accent),var(--accent-2))';
 /** Surface (not alt) — light-mode picklists stay clean white, not grey wash. */
-const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:11px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
-const inp44 = 'width:100%;height:44px;padding:0 14px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
+const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
+const inp44 = 'width:100%;height:44px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
 const labelCss = 'font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
 const pickLabelCss = 'font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em';
 const dropMsg = 'padding:14px;font-size:12.5px;color:var(--muted);text-align:center';
 const dropErr = 'padding:14px;font-size:12.5px;color:var(--danger);text-align:center';
 const dropRow = 'padding:12px 15px;cursor:pointer;border-bottom:1px solid var(--border2);background:var(--surface)';
-const noteWarn = 'padding:14px 16px;border-radius:12px;background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);font-size:12.5px;color:var(--text2);line-height:1.5';
-const noteErr = 'padding:12px 14px;border-radius:11px;background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);font-size:12.5px;color:var(--danger);line-height:1.5';
+const noteWarn = 'padding:14px 16px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);font-size:12.5px;color:var(--text2);line-height:1.5';
+const noteErr = 'padding:12px 14px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);font-size:12.5px;color:var(--danger);line-height:1.5';
 const mono = "font-family:'JetBrains Mono',monospace";
 const invRanges = [
   { label: 'Last 7 Days', range: 'last_7' },
@@ -54,7 +54,7 @@ const txnRanges = TXN_RANGE_PRESETS.map((p) => ({ value: p.value, label: p.label
 const todayIso = () => nyToday();
 const daysAgoIso = (n: number) => nyDaysAgo(n);
 const limitBtn = (on: boolean, col: string): string =>
-  `flex:1;padding:9px;border-radius:9px;border:1px solid ${on ? col : 'var(--border)'};background:${on ? `color-mix(in srgb,${col} 16%,transparent)` : 'var(--surface)'};color:${on ? col : 'var(--muted)'};font-size:12.5px;font-weight:700;cursor:pointer;transition:all .14s`;
+  `flex:1;padding:9px;border-radius:var(--radius-md);border:1px solid ${on ? col : 'var(--border)'};background:${on ? `color-mix(in srgb,${col} 16%,transparent)` : 'var(--surface)'};color:${on ? col : 'var(--muted)'};font-size:12.5px;font-weight:700;cursor:pointer;transition:all .14s`;
 const btnP = (extra: string): string => `border:none;background:${grad};color:#fff;font-weight:700;cursor:pointer;${extra}`;
 function Lbl({ t }: { t: string }) { return <div style={s(labelCss)}>{t}</div>; }
 const closeX16 = (
@@ -241,15 +241,15 @@ export function AutoTab() {
         </div>
         <div style={s('position:relative;margin-bottom:18px')}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s('position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--muted)')}><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-          <input value={autoSearch} onChange={(e) => setAutoSearch(e.target.value)} placeholder="Search by name, code (e.g. C-16), or keyword…" className="ss-in" style={s('width:100%;height:46px;padding:0 44px;border-radius:13px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;box-shadow:var(--shadow-sm)')} />
-          {autoSearch && <button onClick={() => setAutoSearch('')} aria-label="Clear" className="ss-ico-btn" style={s('position:absolute;right:11px;top:50%;transform:translateY(-50%);width:26px;height:26px;border-radius:7px;border:none;background:var(--alt);color:var(--muted);cursor:pointer')}>✕</button>}
+          <input value={autoSearch} onChange={(e) => setAutoSearch(e.target.value)} placeholder="Search by name, code (e.g. C-16), or keyword…" className="ss-in" style={s('width:100%;height:46px;padding:0 44px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;box-shadow:var(--shadow-sm)')} />
+          {autoSearch && <button onClick={() => setAutoSearch('')} aria-label="Clear" className="ss-ico-btn" style={s('position:absolute;right:11px;top:50%;transform:translateY(-50%);width:26px;height:26px;border-radius:var(--radius-md);border:none;background:var(--alt);color:var(--muted);cursor:pointer')}>✕</button>}
         </div>
         <AutoCatalog items={autoCatalog} onOpen={openAuto} />
       </div>
 
       {b && (
         <div onClick={closeAuto} style={s('position:fixed;inset:0;z-index:115;background:rgba(3,7,14,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
-          <div onClick={(e) => e.stopPropagation()} style={s(`width:100%;max-width:${modalMaxW};max-height:88vh;display:flex;flex-direction:column;border-radius:24px;background:var(--surface);border:1px solid var(--border);box-shadow:0 24px 48px rgba(0,0,0,0.2);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
+          <div onClick={(e) => e.stopPropagation()} style={s(`width:100%;max-width:${modalMaxW};max-height:88vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:0 24px 48px rgba(0,0,0,0.2);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
             <div style={s('flex-shrink:0;padding:24px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:16px;background:linear-gradient(180deg,rgba(var(--accent-rgb),0.03),transparent)')}>
               <div style={s(iconBox(DEPT_COL[b.dept] ?? 'var(--accent)', 48))}>
                 <Svg d={b.icon} size={22} strokeWidth={1.75} />
@@ -259,7 +259,7 @@ export function AutoTab() {
                 <div style={s('display:flex;gap:6px;margin-top:6px;flex-wrap:wrap')}>{b.codes.map((c) => <span key={c} style={s(deptStyle(c))}>{c}</span>)}</div>
                 <div style={s('font-size:13px;color:var(--muted);margin-top:8px;line-height:1.5')}>{b.desc}</div>
               </div>
-              <button onClick={closeAuto} aria-label="Close" className="ss-ico-btn" style={s('width:36px;height:36px;border-radius:10px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:background .15s')}>{closeX16}</button>
+              <button onClick={closeAuto} aria-label="Close" className="ss-ico-btn" style={s('width:36px;height:36px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:background .15s')}>{closeX16}</button>
             </div>
             <div
               className={bodyTxnSplit ? undefined : 'ss-scroll'}
@@ -272,19 +272,19 @@ export function AutoTab() {
                   {kind === 'search' && <AutoWexPanel />}
 
                   {kind === 'link' && (
-                    <div style={s('padding:14px 16px;border-radius:12px;background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:12.5px;color:var(--text2);line-height:1.5')}>Opens the WEX EFS eManager credentials guide PDF in a new tab.</div>
+                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:12.5px;color:var(--text2);line-height:1.5')}>Opens the WEX EFS eManager credentials guide PDF in a new tab.</div>
                   )}
 
                   {needsDeal && (
                     <div>
                       <div style={s(pickLabelCss)}>Select Deal</div>
                       {autoDeal ? (
-                        <div style={s('display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:12px;background:linear-gradient(120deg,rgba(var(--accent-rgb),.08),transparent);border:1px solid var(--border)')}>
+                        <div style={s('display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:var(--radius-md);background:linear-gradient(120deg,rgba(var(--accent-rgb),.08),transparent);border:1px solid var(--border)')}>
                           <div style={s('flex:1;min-width:0')}>
                             <div style={s('font-size:13.5px;font-weight:700')}>{autoDeal.name}</div>
                             <div style={s(`font-size:11.5px;color:var(--muted);margin-top:4px;${mono}`)}>{autoDeal.company} · App {autoDeal.app} · {autoDeal.carrier || 'no carrier'}</div>
                           </div>
-                          <button onClick={clearDeal} aria-label="Clear deal" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer')}>✕</button>
+                          <button onClick={clearDeal} aria-label="Clear deal" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer')}>✕</button>
                         </div>
                       ) : (
                         <div>
@@ -317,11 +317,11 @@ export function AutoTab() {
                     <div>
                       <div style={s(pickLabelCss)}>Select Card</div>
                       {autoCard ? (
-                        <div style={s('display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:12px;background:var(--surface);border:1px solid var(--border)')}>
+                        <div style={s('display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
                           <span style={s(`${mono};font-size:14px;font-weight:600;letter-spacing:.06em`)}>{autoCardDisplay}</span>
                           <Badge vm={autoCardBadge} />
                           <div style={s('flex:1')}></div>
-                          <button onClick={clearCard} aria-label="Clear card" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer')}>✕</button>
+                          <button onClick={clearCard} aria-label="Clear card" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer')}>✕</button>
                         </div>
                       ) : (
                         <div>
@@ -422,7 +422,7 @@ export function AutoTab() {
                       {mcPreviewLoading && <div style={s(dropMsg)}>Checking eligibility…</div>}
                       {mcPreviewErr && <div style={s(noteErr)}>{mcPreviewErr}</div>}
                       {mcPreview && (
-                        <div style={s(`padding:14px 16px;border-radius:12px;background:${mcPreview.eligible ? 'rgba(var(--accent-rgb),.08)' : 'color-mix(in srgb,var(--warn) 12%,transparent)'};border:1px solid ${mcPreview.eligible ? 'rgba(var(--accent-rgb),.2)' : 'color-mix(in srgb,var(--warn) 30%,transparent)'};font-size:12.5px;color:var(--text2);line-height:1.5`)}>
+                        <div style={s(`padding:14px 16px;border-radius:var(--radius-md);background:${mcPreview.eligible ? 'rgba(var(--accent-rgb),.08)' : 'color-mix(in srgb,var(--warn) 12%,transparent)'};border:1px solid ${mcPreview.eligible ? 'rgba(var(--accent-rgb),.2)' : 'color-mix(in srgb,var(--warn) 30%,transparent)'};font-size:12.5px;color:var(--text2);line-height:1.5`)}>
                           {mcPreview.eligible
                             ? <>Eligible — <strong style={s('color:var(--text)')}>{money(mcPreview.available)}</strong> available of a {money(mcPreview.credit_limit)} line{mcPreview.billing_cycle_label ? ` (${mcPreview.billing_cycle_label})` : ''}.</>
                             : <>Not eligible right now{mcPreview.available != null ? ` — ${money(mcPreview.available)} available` : ''}.</>}
@@ -443,11 +443,11 @@ export function AutoTab() {
                       {kind === 'form' && (
                         <>
                           <div><div style={s(labelCss)}>Due Date <span style={s('font-weight:400;text-transform:none')}>(optional)</span></div><input value={autoDue} onChange={(e) => setAutoDue(e.target.value)} type="date" className="ss-in" style={s(inp42)} /></div>
-                          <div><Lbl t="Note" /><textarea value={autoNote} onChange={(e) => setAutoNote(e.target.value)} placeholder="Add a note for the team…" className="ss-in" style={s('width:100%;min-height:74px;padding:11px 12px;border-radius:11px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;resize:vertical')}></textarea></div>
+                          <div><Lbl t="Note" /><textarea value={autoNote} onChange={(e) => setAutoNote(e.target.value)} placeholder="Add a note for the team…" className="ss-in" style={s('width:100%;min-height:74px;padding:11px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;resize:vertical')}></textarea></div>
                         </>
                       )}
                       {kind === 'ticket' && b.id === 'reactivation' && (
-                        <div><Lbl t="Note" /><textarea value={autoNote} onChange={(e) => setAutoNote(e.target.value)} placeholder="Why reactivate?" className="ss-in" style={s('width:100%;min-height:74px;padding:11px 12px;border-radius:11px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;resize:vertical')}></textarea></div>
+                        <div><Lbl t="Note" /><textarea value={autoNote} onChange={(e) => setAutoNote(e.target.value)} placeholder="Why reactivate?" className="ss-in" style={s('width:100%;min-height:74px;padding:11px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;resize:vertical')}></textarea></div>
                       )}
                       <div style={s(noteWarn)}>This files a Customer Service ticket with the matching type code — same outcome as the Create tab, without leaving Automations.</div>
                     </div>
@@ -468,7 +468,7 @@ export function AutoTab() {
                   )}
 
                   {(kind === 'simple' || kind === 'wex-tasks') && hasDeal && (
-                    <div style={s('padding:14px 16px;border-radius:12px;background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:12.5px;color:var(--text2);line-height:1.5')}><strong style={s('color:var(--text)')}>Ready.</strong> This will run against <strong style={s('color:var(--text)')}>{autoDeal?.name}</strong> and return an instant result.</div>
+                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:12.5px;color:var(--text2);line-height:1.5')}><strong style={s('color:var(--text)')}>Ready.</strong> This will run against <strong style={s('color:var(--text)')}>{autoDeal?.name}</strong> and return an instant result.</div>
                   )}
 
                   {kind !== 'search' && (
@@ -476,8 +476,8 @@ export function AutoTab() {
                       {unavailable && <div style={s(noteWarn)}>This action isn&apos;t available for self-service yet — file a ticket and the team will handle it.</div>}
                       <div style={s('display:flex;justify-content:flex-end')}>
                         {canRun
-                          ? <button onClick={runAuto} className="ss-btn-p" style={s(btnP('height:44px;padding:0 24px;border-radius:12px;font-size:13.5px;box-shadow:0 6px 18px rgba(var(--accent-rgb),.35)'))}>{runVerb}</button>
-                          : <button disabled style={s('height:44px;padding:0 24px;border-radius:12px;border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:13.5px;cursor:not-allowed')}>{runVerb}</button>}
+                          ? <button onClick={runAuto} className="ss-btn-p" style={s(btnP('height:44px;padding:0 24px;border-radius:var(--radius-md);font-size:13.5px;box-shadow:0 6px 18px rgba(var(--accent-rgb),.35)'))}>{runVerb}</button>
+                          : <button disabled style={s('height:44px;padding:0 24px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:13.5px;cursor:not-allowed')}>{runVerb}</button>}
                       </div>
                     </div>
                   )}
@@ -507,7 +507,7 @@ export function AutoTab() {
                   <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;text-transform:uppercase;letter-spacing:.03em;color:var(--text)')}>{`${runVerb} Failed`}</div>
                   <div style={s('font-size:14px;color:var(--text2);margin-top:10px;max-width:360px;margin-left:auto;margin-right:auto;line-height:1.6')}>{autoRunErr}</div>
                   <div style={s('display:flex;justify-content:center;gap:12px;margin-top:28px')}>
-                    <button onClick={resetAuto} className="ss-btn-p" style={s(btnP('height:44px;padding:0 24px;border-radius:12px;font-size:13.5px;box-shadow:0 4px 12px rgba(var(--accent-rgb),.2)'))}>Try again</button>
+                    <button onClick={resetAuto} className="ss-btn-p" style={s(btnP('height:44px;padding:0 24px;border-radius:var(--radius-md);font-size:13.5px;box-shadow:0 4px 12px rgba(var(--accent-rgb),.2)'))}>Try again</button>
                   </div>
                 </div>
               ) : autoIsResultTable ? (
@@ -517,7 +517,7 @@ export function AutoTab() {
                     <AutoTransactionsPanel report={txnReport} splitLayout />
                   )}
                   {autoResultTable && (
-                    <div style={s('border-radius:13px;border:1px solid var(--border);overflow:hidden')}>
+                    <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);overflow:hidden')}>
                       <div style={s('padding:11px 15px;background:var(--alt);font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)')}>{autoResultTable.title}</div>
                       <div style={s(`display:grid;grid-template-columns:repeat(${autoResultTable.columns.length},1fr);gap:8px;padding:10px 15px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--border2)`)}>
                         {autoResultTable.columns.map((c) => <span key={c}>{c}</span>)}
@@ -530,8 +530,8 @@ export function AutoTab() {
                     </div>
                   )}
                   <div style={s(`display:flex;justify-content:flex-end;gap:10px;${bodyTxnSplit ? 'flex-shrink:0;padding-top:4px' : 'margin-top:18px'}`)}>
-                    <button onClick={resetAuto} className="ss-ico-btn" style={s('height:42px;padding:0 18px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>↩ Run another</button>
-                    <button onClick={closeAuto} className="ss-btn-p" style={s(btnP('height:42px;padding:0 22px;border-radius:11px;font-size:12.5px'))}>Done</button>
+                    <button onClick={resetAuto} className="ss-ico-btn" style={s('height:42px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>↩ Run another</button>
+                    <button onClick={closeAuto} className="ss-btn-p" style={s(btnP('height:42px;padding:0 22px;border-radius:var(--radius-md);font-size:12.5px'))}>Done</button>
                   </div>
                 </div>
               ) : (
@@ -542,8 +542,8 @@ export function AutoTab() {
                   <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;text-transform:uppercase;letter-spacing:.03em;color:var(--text)')}>{`${runVerb} complete`}</div>
                   <div style={s('font-size:14px;color:var(--text2);margin-top:10px;max-width:360px;margin-left:auto;margin-right:auto;line-height:1.6')}>{successMsg}</div>
                   <div style={s('display:flex;justify-content:center;gap:12px;margin-top:28px')}>
-                    <button onClick={resetAuto} className="ss-ico-btn" style={s('height:44px;padding:0 20px;border-radius:12px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:13.5px;cursor:pointer;transition:background .15s')}>Run another</button>
-                    <button onClick={closeAuto} className="ss-btn-p" style={s(btnP('height:44px;padding:0 28px;border-radius:12px;font-size:13.5px;box-shadow:0 4px 12px rgba(var(--accent-rgb),.2)'))}>Done</button>
+                    <button onClick={resetAuto} className="ss-ico-btn" style={s('height:44px;padding:0 20px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:13.5px;cursor:pointer;transition:background .15s')}>Run another</button>
+                    <button onClick={closeAuto} className="ss-btn-p" style={s(btnP('height:44px;padding:0 28px;border-radius:var(--radius-md);font-size:13.5px;box-shadow:0 4px 12px rgba(var(--accent-rgb),.2)'))}>Done</button>
                   </div>
                 </div>
               ))}

@@ -161,7 +161,7 @@
     align-items: center;
     gap: 0.625rem;
     padding: 0.55rem 0.625rem;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     background: var(--surface);
     border: 1px solid var(--border);
 }
@@ -368,7 +368,7 @@
     max-height: calc(100vh - 130px);
     display: flex;
     flex-direction: column;
-    border-radius: 18px;
+    border-radius: var(--radius-md);
     overflow: hidden;
     background: var(--surface);
     border: 1px solid var(--border);
@@ -395,7 +395,7 @@
     position: relative;
     width: 36px;
     height: 36px;
-    border-radius: 10px;
+    border-radius: var(--radius-md);
     background: linear-gradient(140deg, var(--cs-accent), var(--cs-accent-hover));
     display: flex;
     align-items: center;
@@ -421,7 +421,7 @@
 .cs-root .cs-copilot-close {
     width: 30px;
     height: 30px;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--surface-alt);
     color: var(--text-muted);
@@ -449,7 +449,7 @@
 .cs-root .cs-copilot-avatar {
     width: 26px;
     height: 26px;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     background: linear-gradient(140deg, var(--cs-accent), var(--cs-accent-hover));
     display: flex;
     align-items: center;
@@ -518,7 +518,7 @@
     flex: 1;
     height: 40px;
     padding: 0 13px;
-    border-radius: 11px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--surface-alt);
     color: var(--text-primary);
@@ -529,7 +529,7 @@
     width: 40px;
     height: 40px;
     flex-shrink: 0;
-    border-radius: 11px;
+    border-radius: var(--radius-md);
     border: none;
     background: linear-gradient(140deg, var(--cs-accent), var(--cs-accent-hover));
     color: #fff;

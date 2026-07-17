@@ -134,23 +134,23 @@ export function CarriersTab() {
           placeholder="e.g. RICS, CR-10428, MC 285921, DOT 602070…"
           className="ss-in"
           style={s(
-            'width:100%;height:48px;padding:0 120px 0 44px;border-radius:13px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;box-shadow:var(--shadow-sm)',
+            'width:100%;height:48px;padding:0 120px 0 44px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;box-shadow:var(--shadow-sm)',
           )}
         />
         <button
           onClick={() => void runCarrierSearch()}
           className="ss-btn-p"
           style={s(
-            'position:absolute;right:8px;top:8px;height:32px;padding:0 18px;border-radius:9px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer',
+            'position:absolute;right:8px;top:8px;height:32px;padding:0 18px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer',
           )}
         >
           Search
         </button>
       </div>
       {carrierSearching && (
-        <div style={s('padding:22px;border-radius:16px;background:var(--surface);border:1px solid var(--border)')}>
+        <div style={s('padding:22px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
           <div style={s('display:flex;gap:14px;align-items:center')}>
-            <div className="ss-skel" style={s('width:52px;height:52px;border-radius:14px')}></div>
+            <div className="ss-skel" style={s('width:52px;height:52px;border-radius:var(--radius-md)')}></div>
             <div style={s('flex:1')}>
               <div className="ss-skel" style={s('width:44%;height:16px')}></div>
               <div className="ss-skel" style={s('width:28%;height:12px;margin-top:8px')}></div>
@@ -171,7 +171,7 @@ export function CarriersTab() {
         <div style={s('text-align:center;padding:56px 20px;color:var(--muted)')}>
           <div
             style={s(
-              'width:64px;height:64px;border-radius:16px;background:var(--raised);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;color:var(--accent)',
+              'width:64px;height:64px;border-radius:var(--radius-md);background:var(--raised);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;color:var(--accent)',
             )}
           >
             <svg
@@ -209,16 +209,16 @@ export function CarriersTab() {
           })}
           <div style={s('display:flex;align-items:center;gap:7px;margin-left:4px')}>
             <span style={s('font-size:11px;color:var(--muted);font-weight:600')}>Min units</span>
-            <input type="number" min={0} value={minUnits} onChange={(e) => setMinUnits(e.currentTarget.value)} placeholder="0" className="ss-in" style={s('width:72px;height:32px;padding:0 10px;border-radius:9px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:12.5px')} />
+            <input type="number" min={0} value={minUnits} onChange={(e) => setMinUnits(e.currentTarget.value)} placeholder="0" className="ss-in" style={s('width:72px;height:32px;padding:0 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:12.5px')} />
           </div>
           <div style={s('display:flex;align-items:center;gap:7px')}>
             <span style={s('font-size:11px;color:var(--muted);font-weight:600')}>Load</span>
-            <select value={fetchLimit} onChange={(e) => setFetchLimit(Number(e.currentTarget.value))} className="ss-in" style={s('height:32px;padding:0 8px;border-radius:9px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:12.5px;cursor:pointer')}>
+            <select value={fetchLimit} onChange={(e) => setFetchLimit(Number(e.currentTarget.value))} className="ss-in" style={s('height:32px;padding:0 8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:12.5px;cursor:pointer')}>
               {FETCH_LIMITS.map((l) => (<option key={l} value={l}>{l}</option>))}
             </select>
           </div>
           {hasActiveFilters && (
-            <button onClick={clearFilters} style={s('padding:6px 12px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:11.5px;font-weight:700;cursor:pointer')}>Clear</button>
+            <button onClick={clearFilters} style={s('padding:6px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:transparent;color:var(--muted);font-size:11.5px;font-weight:700;cursor:pointer')}>Clear</button>
           )}
           <span style={s('margin-left:auto;font-size:11px;color:var(--faint)')}>
             {filtered.length}{filtered.length !== all.length ? ` of ${all.length}` : ''} carrier{filtered.length === 1 ? '' : 's'}
@@ -238,13 +238,13 @@ export function CarriersTab() {
               key={`${carrierCard.dot}-${i}`}
               className="ss-fu"
               style={s(
-                'padding:22px;border-radius:16px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-sm)',
+                'padding:22px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-sm)',
               )}
             >
               <div style={s('display:flex;align-items:center;gap:14px')}>
                 <div
                   style={s(
-                    'width:52px;height:52px;border-radius:14px;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;display:flex;align-items:center;justify-content:center',
+                    'width:52px;height:52px;border-radius:var(--radius-md);background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;display:flex;align-items:center;justify-content:center',
                   )}
                 >
                   <Svg d={TRUCK_D} size={24} strokeWidth={1.8} />
@@ -262,13 +262,13 @@ export function CarriersTab() {
                 <Badge vm={carrierCard.statusBadge} />
               </div>
               <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:20px')}>
-                <div style={s('padding:14px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
+                <div style={s('padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
                   <div style={s("font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600")}>
                     {carrierCard.dot}
                   </div>
                   <div style={s('font-size:10.5px;color:var(--muted);margin-top:3px')}>DOT #</div>
                 </div>
-                <div style={s('padding:14px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
+                <div style={s('padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
                   <div
                     style={s("font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:var(--ok)")}
                   >
@@ -276,7 +276,7 @@ export function CarriersTab() {
                   </div>
                   <div style={s('font-size:10.5px;color:var(--muted);margin-top:3px')}>Power Units</div>
                 </div>
-                <div style={s('padding:14px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
+                <div style={s('padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
                   <div
                     style={s(
                       "font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:var(--violet)",
@@ -286,7 +286,7 @@ export function CarriersTab() {
                   </div>
                   <div style={s('font-size:10.5px;color:var(--muted);margin-top:3px')}>Phone</div>
                 </div>
-                <div style={s('padding:14px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
+                <div style={s('padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
                   <div
                     style={s(
                       `font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:${carrierCard.statusColor}`,

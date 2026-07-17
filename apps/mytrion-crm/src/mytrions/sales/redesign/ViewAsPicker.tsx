@@ -112,7 +112,7 @@ export function ViewAsPicker() {
       <div style={s('position:relative')}>
         <div
           style={s(
-            'display:flex;align-items:center;gap:7px;height:32px;padding:0 11px;border-radius:10px;border:1px solid var(--border);background:var(--alt);min-width:210px',
+            'display:flex;align-items:center;gap:7px;height:32px;padding:0 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);min-width:210px',
           )}
         >
           <Svg d={loading ? ICON_SPIN : ICON_SEARCH} size={13} stroke="var(--muted)" {...(loading ? { style: s('animation:ss-spin 1s linear infinite') } : {})} />
@@ -136,7 +136,7 @@ export function ViewAsPicker() {
           <div
             role="listbox"
             style={s(
-              'position:absolute;top:calc(100% + 6px);left:0;right:0;min-width:240px;max-height:320px;overflow-y:auto;z-index:60;border-radius:12px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);padding:5px',
+              'position:absolute;top:calc(100% + 6px);left:0;right:0;min-width:240px;max-height:320px;overflow-y:auto;z-index:60;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);padding:5px',
             )}
             className="ss-scroll"
           >
@@ -163,13 +163,13 @@ export function ViewAsPicker() {
                   setQ('');
                 }}
                 style={s(
-                  'display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:none;background:none;border-radius:9px;cursor:pointer;text-align:left',
+                  'display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:none;background:none;border-radius:var(--radius-md);cursor:pointer;text-align:left',
                 )}
                 className="ss-vw-opt"
               >
                 <span
                   style={s(
-                    'flex-shrink:0;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);font-size:10.5px;font-weight:700',
+                    'flex-shrink:0;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);font-size:10.5px;font-weight:700',
                   )}
                 >
                   {initials(a.name ?? a.zohoUserId)}

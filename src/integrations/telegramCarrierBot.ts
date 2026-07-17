@@ -62,6 +62,63 @@ export async function sendPlainReply(chatId: number | string, text: string): Pro
   await callCarrierBot('sendMessage', { chat_id: chatId, text });
 }
 
+/** Thrown when Telegram refuses the send because the user has never opened a chat with the bot.
+ *  A bot cannot message first — the user must tap Start, so this is the caller's cue to say so. */
+export class TelegramChatUnreachableError extends Error {
+  constructor(description: string) {
+    super(description);
+    this.name = 'TelegramChatUnreachableError';
+  }
+}
+
+/** Telegram's own wording for "this user hasn't started me / has blocked me". Matching on the text
+ *  is unfortunate but the Bot API returns 403 for several distinct cases and no machine code. */
+function isChatUnreachable(description: string): boolean {
+  return /bot can't initiate conversation|bot was blocked|user is deactivated|chat not found/i.test(description);
+}
+
+/**
+ * Upload a file to a chat as a Telegram document.
+ *
+ * Separate from `callCarrierBot` because sendDocument needs multipart/form-data — a JSON body only
+ * works for re-sending an already-uploaded file_id, not for new bytes.
+ */
+/** Escape the five characters Telegram's HTML parse mode treats as markup. A company name is data —
+ *  an unescaped `&` or `<` in one would make Telegram reject the whole send with a parse error. */
+export function escapeTelegramHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+export async function sendDocument(opts: {
+  chatId: number | string;
+  fileName: string;
+  contentType: string;
+  bytes: Uint8Array | string;
+  caption?: string;
+  /** Set 'HTML' when the caption carries markup — it must already be escaped (see above). */
+  parseMode?: 'HTML' | 'MarkdownV2';
+}): Promise<void> {
+  const token = env.TELEGRAM_CARRIER_BOT_TOKEN;
+  if (!token) throw new Error('Carrier bot is not configured (TELEGRAM_CARRIER_BOT_TOKEN is empty).');
+
+  const form = new FormData();
+  form.append('chat_id', String(opts.chatId));
+  if (opts.caption) form.append('caption', opts.caption);
+  if (opts.parseMode) form.append('parse_mode', opts.parseMode);
+  const body = typeof opts.bytes === 'string' ? new TextEncoder().encode(opts.bytes) : opts.bytes;
+  // Copy into a fresh ArrayBuffer-backed view: a Uint8Array over a SharedArrayBuffer (or a pooled
+  // Node Buffer) is not accepted by the Blob constructor's type contract.
+  form.append('document', new Blob([new Uint8Array(body)], { type: opts.contentType }), opts.fileName);
+
+  const res = await fetch(`${API_ROOT}/bot${token}/sendDocument`, { method: 'POST', body: form });
+  const json = (await res.json()) as { ok: boolean; description?: string };
+  if (!json.ok) {
+    const description = json.description ?? String(res.status);
+    if (isChatUnreachable(description)) throw new TelegramChatUnreachableError(description);
+    throw new Error(`[telegram-carrier-bot] sendDocument failed: ${description}`);
+  }
+}
+
 /**
  * Verify a Telegram WebApp `initData` string per Telegram's documented algorithm: HMAC-SHA256
  * of the sorted "key=value\n"-joined fields (minus `hash`), keyed by HMAC-SHA256("WebAppData",

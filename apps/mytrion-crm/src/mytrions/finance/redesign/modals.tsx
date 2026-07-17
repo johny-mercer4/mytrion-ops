@@ -41,7 +41,7 @@ export function TxModal({ tx, onClose }: { tx: TransactionLine; onClose: () => v
 
   return (
     <div onClick={onClose} style={s('position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.62);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px;animation:mf-up .2s ease both')}>
-      <div onClick={(e) => e.stopPropagation()} style={s('width:100%;max-width:560px;max-height:88vh;overflow-y:auto;border-radius:16px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);animation:mf-pop .26s cubic-bezier(.2,0,0,1) both')}>
+      <div onClick={(e) => e.stopPropagation()} style={s('width:100%;max-width:560px;max-height:88vh;overflow-y:auto;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);animation:mf-pop .26s cubic-bezier(.2,0,0,1) both')}>
         <div style={s('display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:2')}>
           <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:17px;letter-spacing:.02em')}>{tx.company}</div>
           <CloseBtn onClose={onClose} />
@@ -49,7 +49,7 @@ export function TxModal({ tx, onClose }: { tx: TransactionLine; onClose: () => v
         <div style={s('padding:18px 20px')}>
           <div style={s('display:flex;align-items:baseline;gap:10px;margin-bottom:18px')}>
             <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:30px;color:var(--accent)")}>{fmtCurrency(tx.amount)}</div>
-            <span style={s("font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;background:var(--orange-s);color:var(--orange);font-family:'JetBrains Mono',monospace")}>{galC(tx.gal)} gal</span>
+            <span style={s("font-size:10px;font-weight:700;padding:3px 8px;border-radius:var(--radius-md);background:var(--orange-s);color:var(--orange);font-family:'JetBrains Mono',monospace")}>{galC(tx.gal)} gal</span>
           </div>
           <KvGroup title="Transaction" rows={rows1} />
           <div style={s('height:16px')} />
@@ -102,11 +102,11 @@ export function ClientModal({
 
   return (
     <div onClick={onClose} style={s('position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.62);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px;animation:mf-up .2s ease both')}>
-      <div onClick={(e) => e.stopPropagation()} style={s('width:100%;max-width:760px;max-height:90vh;display:flex;flex-direction:column;border-radius:16px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);animation:mf-pop .26s cubic-bezier(.2,0,0,1) both;overflow:hidden')}>
+      <div onClick={(e) => e.stopPropagation()} style={s('width:100%;max-width:760px;max-height:90vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);animation:mf-pop .26s cubic-bezier(.2,0,0,1) both;overflow:hidden')}>
         <div style={s('padding:18px 20px 14px;border-bottom:1px solid var(--border)')}>
           <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:12px')}>
             <div style={s('display:flex;align-items:center;gap:13px;min-width:0')}>
-              <div style={s(`width:46px;height:46px;border-radius:12px;background:${avBg};color:${avFg};display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0`)}>
+              <div style={s(`width:46px;height:46px;border-radius:var(--radius-md);background:${avBg};color:${avFg};display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0`)}>
                 {initials(client.company)}
               </div>
               <div style={s('min-width:0')}>
@@ -280,7 +280,7 @@ function DrillRows({
   return (
     <div style={s('display:flex;flex-direction:column;gap:7px')}>
       {rows.map((r, i) => (
-        <div key={i} style={s('display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:10px;background:var(--alt);border:1px solid var(--border2)')}>
+        <div key={i} style={s('display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
           {r.badge ? <span style={s(r.badgeStyle ?? '')}>{r.badge}</span> : null}
           <div style={s('flex:1;min-width:0')}>
             <div style={s('font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{r.title}</div>
@@ -296,7 +296,7 @@ function DrillRows({
 
 function CloseBtn({ onClose }: { onClose: () => void }) {
   return (
-    <button type="button" onClick={onClose} aria-label="Close" className="mf-ico" style={s('width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
+    <button type="button" onClick={onClose} aria-label="Close" className="mf-ico" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
       <Svg d={ICONS.close} size={15} strokeWidth={2.2} />
     </button>
   );
