@@ -11,7 +11,7 @@
  */
 import { env } from '../../config/env.js';
 import { AppError, ConflictError } from '../../lib/errors.js';
-import { isActiveCardOfCarrier, listDwhCards } from '../../integrations/dwhCards.js';
+import { countDwhCards, isActiveCardOfCarrier } from '../../integrations/dwhCards.js';
 import { carrierInvitationRepo, type CarrierInvitationDto } from '../../repos/carrierInvitationRepo.js';
 import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompanyRepo.js';
 import type { CarrierCompanyType } from '../../db/schema/index.js';
@@ -128,8 +128,10 @@ export async function createCarrierInvite(
   } else if (carrierId && env.DWH_DATABASE_URL) {
     // Owner: auto-detect company type from active card count (see carrier_invitations schema).
     try {
-      const cards = await listDwhCards(carrierId);
-      cardCount = cards.length;
+      // A count, not the length of a capped list: listDwhCards defaults to 100, so an owner of the
+      // 510-card carrier was recorded as having exactly 100. companyType survived that (100 > 1
+      // still reads fleet-manager) but the number itself is shown to the owner, and it was wrong.
+      cardCount = await countDwhCards(carrierId);
       // 0 cards is undetermined (not "owner-operator") — matches the catch branch below, which
       // also leaves companyType unset when the DWH lookup itself fails.
       companyType = cardCount === 0 ? undefined : cardCount === 1 ? 'owner-operator' : 'fleet-manager';

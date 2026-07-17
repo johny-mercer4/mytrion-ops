@@ -32,9 +32,32 @@ function toDto(row: CardRow): DwhCard {
   };
 }
 
+/**
+ * Enough to hold any real carrier's whole fleet in one read.
+ *
+ * Measured against the live DWH across 7967 carriers: p99 is 46 active cards, 16 carriers exceed
+ * 100, exactly one exceeds 500, and the largest is 510 — 53 KB of JSON. So the fleet screen does not
+ * need pagination; it needs a bound that isn't below the data. Paging it would also break the
+ * screen's own filter counts and search, which run over the whole list client-side.
+ *
+ * Still a bound, not "unlimited": it caps the blast radius of a data anomaly, and a carrier that
+ * ever approaches it is the signal that this decision needs revisiting.
+ */
+export const FLEET_CARD_LIMIT = 1000;
+
+/** Exact count of a carrier's active cards. A count, not a list to measure — the list is capped and
+ *  `cards.length` against it silently reports the cap instead of the truth. */
+export async function countDwhCards(carrierId: string): Promise<number> {
+  const rows = await dwhQuery<{ n: number }>(
+    `select count(*)::int as n from octane.stg_cmp_card where is_active = true and carrier_id = $1`,
+    [carrierId],
+  );
+  return rows[0]?.n ?? 0;
+}
+
 /** Active fuel cards for one carrier — current rows only, newest first. */
 export async function listDwhCards(carrierId: string, limit = 100): Promise<DwhCard[]> {
-  const capped = Math.min(Math.max(limit, 1), 200);
+  const capped = Math.min(Math.max(limit, 1), FLEET_CARD_LIMIT);
   const rows = await dwhQuery<CardRow>(
     `select card_id, card_number, card_type, status, balance
        from octane.stg_cmp_card

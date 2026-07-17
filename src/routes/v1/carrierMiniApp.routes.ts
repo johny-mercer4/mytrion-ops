@@ -12,7 +12,7 @@ import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { env, isProduction } from '../../config/env.js';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { db } from '../../db/client.js';
-import { listDwhCards, findDwhCardById, findDwhCardByNumber } from '../../integrations/dwhCards.js';
+import { FLEET_CARD_LIMIT, listDwhCards, findDwhCardById, findDwhCardByNumber } from '../../integrations/dwhCards.js';
 import { listDwhTransactions, resolveDwhTxnRange } from '../../integrations/dwhTransactions.js';
 import { searchDwhClients } from '../../integrations/dwhClients.js';
 import { searchDwhOperators } from '../../integrations/dwhOperators.js';
@@ -786,7 +786,11 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     const { ctx, carrierId, registration } = await requireRegisteredOwner(body.initData);
 
     const [cards, drivers, pending] = await Promise.all([
-      env.DWH_DATABASE_URL ? listDwhCards(carrierId).catch(() => []) : Promise.resolve([]),
+      // The owner's whole fleet, not the default 100. The screen's filter counts and search run over
+      // this array client-side, so a short list doesn't just hide cards — it misreports the totals
+      // beside the chips. Measured: the largest real carrier has 510 active cards, so an owner of it
+      // was seeing 100 and being told that was all of them.
+      env.DWH_DATABASE_URL ? listDwhCards(carrierId, FLEET_CARD_LIMIT).catch(() => []) : Promise.resolve([]),
       registeredMiniAppCompanyRepo.listDriversByCarrier(ctx, carrierId),
       carrierInvitationRepo.listPendingDriverInvitesByCarrier(ctx, carrierId),
     ]);
