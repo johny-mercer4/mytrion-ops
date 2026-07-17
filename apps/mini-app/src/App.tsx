@@ -825,7 +825,7 @@ function OwnerHero({ initData, company, carrierId, onOpenDetails }: { initData: 
                 type="button"
                 className="press"
                 onClick={retryBalance}
-                style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'rgba(255,255,255,.14)', color: '#FFFFFF', borderRadius: 9, padding: '7px 12px', fontFamily: "'Geist'", fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                style={{ alignSelf: 'flex-start', marginTop: 7, display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'rgba(255,255,255,.14)', color: '#FFFFFF', borderRadius: 9, padding: '7px 12px', fontFamily: "'Geist'", fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
               >
                 <Icon name="refresh" size={14} strokeWidth={2.2} className="" />
                 {t('home.balanceRetry')}
@@ -917,7 +917,7 @@ function DriverHero({
                 type="button"
                 className="press"
                 onClick={retryBalance}
-                style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'rgba(255,255,255,.14)', color: '#FFFFFF', borderRadius: 9, padding: '6px 11px', fontFamily: "'Geist'", fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
+                style={{ alignSelf: 'flex-start', marginTop: 6, display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'rgba(255,255,255,.14)', color: '#FFFFFF', borderRadius: 9, padding: '6px 11px', fontFamily: "'Geist'", fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
               >
                 <Icon name="refresh" size={13} strokeWidth={2.2} className="" />
                 {t('home.balanceRetry')}
