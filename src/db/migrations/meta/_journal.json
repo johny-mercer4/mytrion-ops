@@ -183,6 +183,13 @@
       "when": 1784239574094,
       "tag": "0025_view_as",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1784319237000,
+      "tag": "0026_payments_tables",
+      "breakpoints": true
     }
   ]
 }
