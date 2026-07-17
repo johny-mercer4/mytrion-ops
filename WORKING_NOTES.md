@@ -2969,3 +2969,112 @@ was never live-verified either, and isn't checkable from any repo I have access 
 
 Verified: `apps/mytrion-crm` typecheck clean, 17/17 test files green (116 tests), root lint clean on
 the touched `.ts` file.
+
+## 2026-07-17 — Create tab: ticket/escalation attachments + lead Deluge
+
+- **Create ticket + escalation:** Desk attach first; on Desk 403/failure, fall back to CRM
+  `attachFileToRecord` on Deals / Escalation_Request so the file still lands. Routes return
+  `warnings`. Ticket create stamps `cf_submitted_by` from form `submitterName` (session/act-as)
+  with server fallback to `ctx.userName`.
+- **Create lead:** still `leads.create` → Deluge `mytrioncreatelead`. UI now parses
+  `DUPLICATE_DATA` nested under `response.details.id` (widget parity) via
+  `resolveCreateLeadOutcome`.
+- Tests: desk-routes create/escalation + file (+ CRM fallback); CRM unit tests for lead outcome.
+
+### Follow-up — Carriers tab filters + create-lead links (widget parity)
+
+- Carriers Lookup now matches self-service `CarrierSearchPanel`: status chips, **Has phone / email**,
+  min units, fetch 200/500, client pagination 50/100, per-row **Create Lead** via `leads.create`
+  (`mytrioncreatelead`) with full carrier payload (dot/email/address/units/dates/status).
+- DUPLICATE_DATA → **Already exists ↗** deep link; success → **Lead #xxxxxx ↗**
+  (`crm.zoho.com/crm/octanefuel/tab/Leads/{id}`).
+- Create tab Create Lead shows the same post-create / duplicate **Go to Lead** banner.
+
+### Follow-up — Sales + Debtors dashboards (self-service parity)
+
+- Dashboard sub-tabs: **Sales** | **Debtors** | Cards (replaced stub Invoices/Transactions).
+- Sales: full `dashboard.agent_sales` payload (no top-8 truncation); hero gallons from TX volume;
+  Card Swipes = `new_cards_cycle` (widget); Inactive/Stuck → bar filter; All/Active/New/Unique bars;
+  company + TX search; activity Cycle/History + day click (shift-range); discount column + totals;
+  refresh. Day drilldown uses `dailyTransactionsByCarrier` when present.
+- Debtors: `dashboard.debtors` with 2+ day rule, Hard only, summary strip, expandable invoices,
+  footer Active/Largest — matches Client Invoices block.
+
+### Follow-up — Dashboard UX: cache, skeletons, Company tab, Debtors soon
+
+- **5-min localStorage cache** for Sales (`mytrion_msd_*`) and Company (`mytrion_cdb_*`), keyed by
+  act-as / session Zoho user id — tab switches and revisit are instant; Refresh bypasses cache.
+- Skeleton loaders for Sales/Company/Cards; Debtors tab is **Coming soon** (no live fetch).
+- New **Company** tab: Applications + Gallon Volume gauges (`dashboard.company`) with widget targets.
+- Sub-tabs restyled with icons (Sales / Company / Debtors / Cards).
+
+## 2026-07-17 (pm 2) — Data Center: Clients balance/debt/gallons + Rejection Reports disabled
+
+Admin feedback on Data Center, six items — three fixed, two deferred pending a design the admin is
+sending, one blocked on the first two (now unblocked):
+
+### Fixed
+
+- **Clients showed $0 balance/debt on every card.** Traced `clients.by_agent` (servercrm
+  `GET /api/clients/by-agent/:zohoUserId` → `services/dwhClients.js` + `services/cmpClients.js`) end
+  to end: `balance`/`efs_balance`/`prepay_balance` — the three fields `mapRecord()` read — **never
+  appear in this endpoint's response at all** (exhaustive grep of the servercrm repo, zero hits;
+  those names only exist on a separate, per-carrier live-EFS endpoint in `agentDwh.js`), so the
+  figure was always 0 regardless of the client. `computed_debt` IS real and live (`dwhClients.js`'s
+  `COALESCE(d.debt, 0)`, reconciled against a live CMP overlay) and matches the reference widget's
+  own debtor detection (`records-panel.js`) field-for-field. Fix: `bal = debt > 0 ? -debt : 0` —
+  shows the real debt as a negative (red) balance; a clean account now reads $0 for the honest
+  reason (no debt), not because of a dead field reference.
+- **"Gallons (cycle)" was wrong on every card.** `total_volume`/`gallons_90d` — the fields
+  `mapRecord()` read — don't exist anywhere in servercrm either; no cycle-gallons aggregation is
+  joined into `clients.by_agent` at all. Rather than inventing a new backend query (a separate
+  repo/deploy), sourced it from data already flowing through this app: `dashboard.agent_sales`'s
+  `transactions` array is documented by the reference `dashboard-panel.js` itself as "full-cycle
+  per-carrier totals" by default, keyed by `carrier_id` per row (`byId[String(r.carrier_id)] = r`,
+  same file). Added `loadCycleGallonsByCarrier()` (parallel fetch alongside `clients.by_agent`,
+  builds a `carrier_id → volume` map) and pointed `mapRecord()`'s gallons at it. Best-effort — a
+  failed fetch just means $0 gallons, not a broken tab.
+  - **Disclosed residual risk** (an adversarial review agent flagged this independently, same
+    conclusion I'd already reached): this joins a Postgres-DWH carrier_id (`clients.by_agent`)
+    against a Zoho Deluge-function carrier_id (`dashboard.agent_sales`) — a pairing with no prior
+    precedent anywhere in this codebase, and no test or smoke check confirms the two actually share
+    the same id format/values live. `scripts/salesPanelSmoke.ts` already calls both touchpoints but
+    never cross-checks their carrier_ids. Neither repo I have access to contains the Deluge
+    function's source, so this could not be verified further than "well-evidenced, not yet
+    live-tested." **Please open the Clients tab and confirm gallons actually populate for a client
+    you know has cycle activity** before treating this as fully closed — if it's still 0 across the
+    board, the join is the first thing to re-check.
+- **Rejection Reports disabled**, per instruction ("current version is not usable, will send
+  redesigned version"). Added `disabled?: boolean` to `DcTabDef`, set on the `rejections` entry only;
+  mirrors the exact "Coming Soon" pattern already used for Open Pool in `Shell.tsx`'s NAV (real
+  `disabled` attribute, `opacity:.5`, `cursor:default`, a warn-colored "SOON" pill, a title tooltip).
+  Confirmed via a research agent that no other page deep-links into this sub-tab, so gating the one
+  button fully closes it off. Underlying code (`RejectionsView`, `loadRejections`, the backing route)
+  is untouched — it's still real Zoho Desk data (confirmed: `dataCenter.routes.ts`'s rejections route
+  calls `zohoDesk.listRejectionReportTickets()`, the SAME function the Desk ticket-dashboard's own
+  rejection listing uses — not CRM Deals, contradicting an older, now-corrected assumption).
+
+### Deferred (no code change — waiting on the admin)
+
+- **Leads**: full rework requested, design incoming. Left as-is.
+- **Deals**: list/kanban confirmed fine; detail-view field spec incoming.
+- **Money Codes**: blocked on Clients fetching per the admin's own note — unblocked now that balance/
+  debt/gallons are fixed; ready for the admin to test.
+
+### Process note
+
+Used a background research workflow (2 parallel agents: trace the balance/debt/gallons data path
+across mytrion-ops + servercrm + the reference widget; confirm the Coming-Soon disable pattern +
+resolve a stale "rejections = CRM Deals" note against current code) before writing any fix, then an
+adversarial code-review agent against the diff afterward — it independently surfaced the same
+DWH↔Deluge carrier_id join risk noted above and ruled out several other hypotheses (comma-formatted
+volume strings, RBAC-based silent zeroing, multi-row-per-carrier double counting) with concrete
+evidence rather than assumption.
+
+**Known pre-existing issue, not touched**: `apps/mytrion-crm/.../live.ts` is now 611 lines against the
+600-line cap (partly this change, partly unrelated concurrent work in the same file this session).
+Flagging, not splitting it here — a structural refactor isn't part of this bug-fix task and this file
+is currently being edited by another process in parallel.
+
+Verified: `apps/mytrion-crm` typecheck clean, 21/21 test files green (128 tests, up from 116 — other
+concurrent work added its own tests, none of which regressed).

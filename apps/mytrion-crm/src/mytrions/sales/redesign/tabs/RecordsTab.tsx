@@ -27,13 +27,17 @@ interface DcTabDef {
   id: DcSub;
   label: string;
   icon: string;
+  /** Rendered disabled with a "Coming soon" tag; not navigable (mirrors NAV's comingSoon). */
+  disabled?: boolean;
 }
 
 const DC_TABS: DcTabDef[] = [
   { id: 'clients', label: 'Clients', icon: 'M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4 0M17 8a3 3 0 11-2 0' },
   { id: 'leads', label: 'Leads', icon: 'M16 21v-1a4 4 0 00-4-4H7a4 4 0 00-4 4v1M12.5 7a3.5 3.5 0 11-7 0 3.5 3.5 0 017 0M19 8v6M22 11h-6' },
   { id: 'deals', label: 'Deals', icon: 'M3 12h18M20 7H4a1 1 0 00-1 1v9a2 2 0 002 2h14a2 2 0 002-2V8a1 1 0 00-1-1zM15 7V5a2 2 0 00-2-2h-2a2 2 0 00-2 2v2' },
-  { id: 'rejections', label: 'Rejection Reports', icon: 'M4.93 4.93l14.14 14.14M12 21a9 9 0 100-18 9 9 0 000 18z' },
+  // Awaiting a redesign — the current view isn't usable. Drop `disabled` to re-enable; the
+  // RejectionsView component + loadRejections() stay wired for when the redesign ships.
+  { id: 'rejections', label: 'Rejection Reports', icon: 'M4.93 4.93l14.14 14.14M12 21a9 9 0 100-18 9 9 0 000 18z', disabled: true },
   { id: 'money', label: 'Money Codes', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V7m0 10v1M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
 ];
 
@@ -144,10 +148,20 @@ export function RecordsTab() {
       <div style={s('display:flex;gap:6px;margin-bottom:16px;padding:4px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);width:fit-content;max-width:100%;overflow-x:auto')}>
         {DC_TABS.map((t) => {
           const on = dcSub === t.id;
+          const soon = t.disabled === true;
           return (
-            <button key={t.id} onClick={() => setDcSub(t.id)} style={s(`display:flex;align-items:center;gap:8px;padding:9px 15px;border-radius:var(--radius-md);border:1px solid ${on ? 'rgba(var(--accent-rgb),.4)' : 'transparent'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .14s`)}>
+            <button
+              key={t.id}
+              onClick={soon ? undefined : () => setDcSub(t.id)}
+              disabled={soon}
+              title={soon ? `${t.label} — coming soon` : undefined}
+              style={s(`display:flex;align-items:center;gap:8px;padding:9px 15px;border-radius:var(--radius-md);border:1px solid ${on ? 'rgba(var(--accent-rgb),.4)' : 'transparent'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:12.5px;font-weight:700;cursor:${soon ? 'default' : 'pointer'};opacity:${soon ? '.5' : '1'};white-space:nowrap;transition:all .14s`)}
+            >
               <Svg d={t.icon} size={16} style={{ flexShrink: 0 }} />
               {t.label}
+              {soon && (
+                <span style={s('font-size:8.5px;font-weight:800;letter-spacing:.05em;padding:2px 7px;border-radius:99px;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)')}>SOON</span>
+              )}
             </button>
           );
         })}
