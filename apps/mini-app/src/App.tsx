@@ -769,9 +769,11 @@ function OwnerHero({ initData, company, carrierId, onOpenDetails }: { initData: 
   const pct = creditLimit && creditRemaining != null && creditLimit > 0 ? Math.max(0, Math.min(100, (creditRemaining / creditLimit) * 100)) : 100;
   const eyebrow = { fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' } as const;
   return (
-    /* Same fuel-card shell as DriverHero — owners/fleet see a card that matches the driver's, but
-       carrying the account balance instead of a card number. */
-    <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', aspectRatio: CARD_RATIO, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+    /* Deliberately NOT the fuel-card shell DriverHero uses. That card shows a PAN and depicts the
+       plastic, so the plastic's proportion belongs on it. This one shows a company name and a
+       balance — an account panel, not a card. Constraining it to the card ratio invented 52px of
+       void between the only two things it displays, so its height comes from its content. */
+    <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', display: 'flex', flexDirection: 'column' }}>
       {/* Contours only. The amber ribbon is out for now, and the scrims went with it: they existed
           solely to keep text legible on top of it, and the shell is already near-black. */}
       <CardContours />
@@ -785,7 +787,10 @@ function OwnerHero({ initData, company, carrierId, onOpenDetails }: { initData: 
       </div>
 
       {/* Bottom block: balance amount + credit bar + credit-available (compact) */}
-      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 9, paddingTop: 10 }}>
+      {/* The separation from the header is this padding now, not surplus the aspect ratio had to
+          dump somewhere. 10px was what the ratio left behind and reads cramped under a 30px
+          header row; 22 is the breathing room the old 64px void was accidentally providing. */}
+      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 9, paddingTop: 22 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={eyebrow}>{t('home.efsBalance')}</span>
           {balance ? (
