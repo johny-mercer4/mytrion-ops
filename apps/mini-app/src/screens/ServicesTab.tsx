@@ -91,22 +91,43 @@ export function ServicesTab({
                        * row's label got 123px against 147px for the others, taking it from two lines
                        * to three. A constant-width control cannot reflow the row it sits in, and the
                        * fill + colour already carry the state that the word was repeating.
+                       *
+                       * Hit area and visual size are set independently. The box is 44×44 — Apple's
+                       * HIG and WCAG 2.5.5 both put the minimum tap target there, and the previous
+                       * 40 was under it. The chip inside is 32 and only filled once pinned, so the
+                       * control reads LIGHTER than the 40px filled square it replaces while being
+                       * easier to hit. Negative margins let the extra 6px overhang the row instead
+                       * of growing it: at a natural 44 the row would gain 6px of height and take
+                       * another 4px from a label that already wraps.
                        */
                       style={{
                         flex: 'none',
-                        width: 40,
-                        height: 40,
+                        width: 44,
+                        height: 44,
+                        margin: '-3px -4px -3px 0',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         border: 'none',
-                        borderRadius: 10,
+                        background: 'none',
+                        padding: 0,
                         cursor: 'pointer',
-                        background: isPinned ? 'var(--primary)' : 'var(--secondary)',
                         color: isPinned ? '#FFFFFF' : 'var(--muted-fg)',
                       }}
                     >
-                      <Pin size={16} strokeWidth={2.2} fill={isPinned ? 'currentColor' : 'none'} aria-hidden />
+                      <span
+                        style={{
+                          width: 32,
+                          height: 32,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: 9,
+                          background: isPinned ? 'var(--primary)' : 'transparent',
+                        }}
+                      >
+                        <Pin size={16} strokeWidth={2.2} fill={isPinned ? 'currentColor' : 'none'} aria-hidden />
+                      </span>
                     </button>
                   )}
                 </div>
