@@ -634,6 +634,40 @@ describe('driver row scoping (own card only)', () => {
       expect(csv).not.toContain('Thu Jul 16');
     });
 
+    it('footers and headers every page of a multi-page PDF, and keeps the totals on it', async () => {
+      withResolvableCard();
+      // Enough rows to force a second page — a one-page report cannot catch a missing footer on
+      // page 1, because there the last page IS the first.
+      const many = Array.from({ length: 60 }, (_, i) => ({
+        ...reportRows[0]!,
+        transaction_id: `t${i}`,
+        line_item_amount: 10,
+        line_item_fuel_quantity: 1,
+        line_item_discount_amount: 0,
+      }));
+      dwhTxns.mockResolvedValueOnce(dwhResult(many));
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/transactions/export',
+        headers: { 'content-type': 'application/json' },
+        payload: { initData: 'signed', range: 'month', format: 'pdf' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const bytes = botSendDocument.mock.calls[0]![0].bytes as Buffer;
+      const { getDocumentProxy, extractText } = await import('unpdf');
+      const pdf = await getDocumentProxy(new Uint8Array(bytes));
+      const { totalPages, text } = await extractText(pdf, { mergePages: false });
+      expect(totalPages).toBeGreaterThan(1);
+      const pages = (text as string[]).map((t) => t.replace(/\s+/g, ' '));
+      pages.forEach((page, i) => {
+        expect(page, `page ${i + 1} footer`).toMatch(/Page \d+ of \d+/);
+        expect(page, `page ${i + 1} table header`).toMatch(/Date.*Location.*City/);
+      });
+      expect(pages.join(' ')).toMatch(/TOTAL/);
+    });
+
     it('404s an empty window instead of sending an empty file', async () => {
       withResolvableCard();
       dwhTxns.mockResolvedValueOnce(dwhResult([]));
