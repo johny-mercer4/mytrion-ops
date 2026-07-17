@@ -59,6 +59,9 @@ html,body{height:100%;margin:0}
   .ss-btn-p:active{transform:translateY(1px)}
   .ss-ico-btn{transition:background .14s,color .14s,border-color .14s}
   .ss-ico-btn:hover{background:rgba(var(--accent-rgb),.12)!important;color:var(--accent)!important;border-color:rgba(var(--accent-rgb),.4)!important}
+  /* Icons: never baseline-align; keep crisp inside flex rows / icon boxes */
+  .ss-root svg.ss-icon{display:block;flex-shrink:0;overflow:visible;vertical-align:middle}
+  .ss-root .ss-ico-btn svg,.ss-root button > svg.ss-icon{display:block}
   .ss-scroll{overflow-y:auto}
   .ss-root input,.ss-root textarea,.ss-root button,.ss-root select{font-family:inherit}
   .ss-in{appearance:none;-webkit-appearance:none;background-color:var(--surface)}

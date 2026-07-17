@@ -8,11 +8,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { listAgents, type AgentUser } from '@/api/agents';
 import { useImpersonation } from '@/context/ImpersonationProvider';
-import { s, Svg } from './dc';
+import { s } from './dc';
+import { Icon } from './icons';
 
-const ICON_SEARCH = 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z';
-const ICON_SPIN = 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-14.357-2m14.357 2H15';
-const ICON_X = 'M18 6L6 18M6 6l12 12';
 
 function initials(name: string): string {
   return (
@@ -77,7 +75,7 @@ export function ViewAsPicker() {
             'display:flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--accent);color:#fff',
           )}
         >
-          <Svg d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" size={10} strokeWidth={2.5} />
+          <Icon name="user" size={10} strokeWidth={2.5} />
         </span>
         <span style={s('font-size:9.5px;font-weight:800;letter-spacing:.08em;color:var(--accent)')}>ADMIN VIEW</span>
         <span style={s('font-size:12.5px;font-weight:700;color:var(--text);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
@@ -93,7 +91,7 @@ export function ViewAsPicker() {
             'display:flex;align-items:center;gap:4px;height:24px;padding:0 9px;border-radius:99px;border:none;background:var(--surface);color:var(--text2);font-size:9.5px;font-weight:800;letter-spacing:.06em;cursor:pointer',
           )}
         >
-          <Svg d={ICON_X} size={9} strokeWidth={3} />
+          <Icon name="close" size={9} strokeWidth={3} />
           EXIT
         </button>
       </div>
@@ -115,7 +113,7 @@ export function ViewAsPicker() {
             'display:flex;align-items:center;gap:7px;height:32px;padding:0 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);min-width:210px',
           )}
         >
-          <Svg d={loading ? ICON_SPIN : ICON_SEARCH} size={13} stroke="var(--muted)" {...(loading ? { style: s('animation:ss-spin 1s linear infinite') } : {})} />
+          <Icon name={loading ? 'spinner' : 'search'} size={13} color="var(--muted)" {...(loading ? { style: s('animation:ss-spin 1s linear infinite') } : {})} />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}

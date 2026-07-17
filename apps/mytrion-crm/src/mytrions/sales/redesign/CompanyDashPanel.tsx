@@ -4,6 +4,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { getImpersonation } from '@/api/impersonation';
 import { s } from './dc';
+import { Icon } from './icons';
+import { ICO } from './salesData';
 import { formatCachedAt } from './dashCache';
 import {
   COMPANY_TARGETS,
@@ -135,7 +137,7 @@ export function CompanyDashPanel() {
       <div style={s('padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-sm)')}>
         <div style={s('display:flex;align-items:center;gap:8px;margin-bottom:14px')}>
           <span style={s('width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--orange) 14%,transparent);color:var(--orange)')}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <Icon name={ICO.doc} size={14} />
           </span>
           <span style={s('font-size:13.5px;font-weight:800')}>Applications</span>
         </div>
@@ -149,7 +151,7 @@ export function CompanyDashPanel() {
       <div style={s('padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-sm)')}>
         <div style={s('display:flex;align-items:center;gap:8px;margin-bottom:14px')}>
           <span style={s('width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)')}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 10V3L4 14h7v7l9-11h-7z" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <Icon name={ICO.bolt} size={14} />
           </span>
           <span style={s('font-size:13.5px;font-weight:800')}>Gallon Volume</span>
         </div>

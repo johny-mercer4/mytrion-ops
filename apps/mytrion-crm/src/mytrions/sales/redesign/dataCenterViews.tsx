@@ -1,16 +1,19 @@
 /**
- * Data Center views — Leads & Deals (kanban / list) and the Rejection report. The Leads & Deals
- * cards render the EXACT fields from the zoho-octane self-service records-panel reference; the deal
- * kanban uses its fixed 10-stage blueprint order + colors (Card Swiped=green, Closed Lost=red).
- * Clicking a card opens the shell's lead/deal modal.
+ * Data Center views — Leads & Deals (kanban / list) and the Rejection report.
+ * Leads list/kanban match the Sales Mytrion Leads redesign (real Zoho CRM fields).
+ * Deal kanban uses the fixed 10-stage blueprint. Clicking a card opens the shell modal.
  */
+import { useState, type MouseEvent, type ReactNode } from 'react';
 import { s } from './dc';
 import { badge } from './salesData';
 import { useSales } from './ctx';
+import { Icon } from './icons';
+import { clickToDial } from '@/components/ringcentral/ringcentralDial';
 import {
   dealColumns,
   dealStageColor,
   leadColumns,
+  leadSourceColor,
   leadStatusColor,
   utmColor,
   type DealVM,
@@ -24,6 +27,10 @@ const COUNT_CHIP =
   "min-width:22px;height:20px;padding:0 7px;border-radius:99px;background:var(--raised);color:var(--muted);font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace";
 const SUB = 'font-size:11px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
 const FOOT = 'display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;font-size:10.5px;color:var(--faint)';
+const LEAD_LIST_COLS =
+  'display:grid;grid-template-columns:170px 170px 130px 120px 210px 140px 140px 100px;gap:10px;padding:12px 16px;min-width:fit-content';
+const HOVER_ACTION =
+  'width:96px;height:26px;border-radius:var(--radius-md);border:none;cursor:pointer;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center;gap:6px;flex-shrink:0';
 
 function utmPill(source: string) {
   const c = utmColor(source);
@@ -36,7 +43,7 @@ function EmptyRow({ msg }: { msg: string }) {
   return <div style={s('padding:44px;text-align:center;color:var(--muted);font-size:13px')}>{msg}</div>;
 }
 
-function KanbanCol({ col, count, children }: { col: { label: string; col: string }; count: number; children: React.ReactNode }) {
+function KanbanCol({ col, count, children }: { col: { label: string; col: string }; count: number; children: ReactNode }) {
   return (
     <div style={s('flex:0 0 264px;width:264px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2);display:flex;flex-direction:column;max-height:640px')}>
       <div style={s('display:flex;align-items:center;gap:9px;padding:13px 15px;border-bottom:1px solid var(--border2)')}>
@@ -49,37 +56,128 @@ function KanbanCol({ col, count, children }: { col: { label: string; col: string
   );
 }
 
+function sourceBadge(source: string) {
+  const label = source || 'No source';
+  const c = leadSourceColor(label);
+  return badge(label, c);
+}
+
+function stop(e: MouseEvent): void {
+  e.stopPropagation();
+}
+
 // ---------- Leads ----------
 
 export function LeadsView({ leads, search, view }: { leads: LeadVM[]; search: string; view: 'kanban' | 'list' }) {
-  const { openLead } = useSales();
+  const { openLead, pushToast } = useSales();
+  const [hoverField, setHoverField] = useState<string | null>(null);
   const q = search.toLowerCase();
   const rows = q
-    ? leads.filter((l) => `${l.contact} ${l.company} ${l.source} ${l.status} ${l.phone}`.toLowerCase().includes(q))
+    ? leads.filter((l) =>
+        `${l.contact} ${l.company} ${l.source} ${l.status} ${l.phone} ${l.cell} ${l.email}`.toLowerCase().includes(q),
+      )
     : leads;
 
   if (rows.length === 0) {
     return <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)')}><EmptyRow msg="No leads found." /></div>;
   }
 
-  const statusBadge = (l: LeadVM) =>
-    l.converted ? badge('Converted', 'var(--ok)') : badge(l.status || '—', leadStatusColor(l.status));
+  const copyVal = (e: MouseEvent, value: string, label: string): void => {
+    stop(e);
+    if (!value || value === '—') return;
+    void navigator.clipboard?.writeText(value).then(
+      () => pushToast('Copied', label),
+      () => pushToast('Copy failed', label),
+    );
+  };
+
+  const dial = (e: MouseEvent, phone: string): void => {
+    stop(e);
+    if (!phone.trim()) return;
+    const ok = clickToDial(phone);
+    pushToast(
+      ok ? 'Calling' : 'Phone',
+      ok ? phone : 'RingCentral is still loading — try again in a moment.',
+    );
+  };
 
   if (view === 'list') {
     return (
-      <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);overflow:hidden;background:var(--surface)')}>
-        <div style={s('display:grid;grid-template-columns:1.4fr 1fr 1.2fr 0.8fr 1fr;gap:10px;padding:12px 16px;background:var(--alt);font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>
-          <span>Name</span><span>Status</span><span>Source</span><span>Created</span><span style={s('text-align:right')}>Phone</span>
+      <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);overflow-x:auto;background:var(--surface)')}>
+        <div style={s(`${LEAD_LIST_COLS};background:var(--alt);font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)`)}>
+          <span>Name</span><span>Company</span><span>Status</span><span>Source</span><span>Email</span><span>Phone</span><span>Cell</span><span>Created</span>
         </div>
         {rows.map((ld) => {
-          const b = statusBadge(ld);
+          const stCol = leadStatusColor(ld.status);
+          const emailKey = `${ld.id}:email`;
+          const phoneKey = `${ld.id}:phone`;
+          const cellKey = `${ld.id}:cell`;
           return (
-            <div key={ld.id} onClick={() => openLead(ld)} className="ss-tab-x" style={s('display:grid;grid-template-columns:1.4fr 1fr 1.2fr 0.8fr 1fr;gap:10px;padding:13px 16px;border-top:1px solid var(--border2);align-items:center;cursor:pointer;font-size:12.5px')}>
-              <div style={s('display:flex;align-items:center;gap:10px;min-width:0')}><div style={s(AV())}>{ld.initials}</div><span style={s('font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.contact}</span></div>
-              <span style={s(b.style)}>{b.text}</span>
+            <div
+              key={ld.id}
+              onClick={() => openLead(ld)}
+              className="ss-tab-x"
+              style={s(`${LEAD_LIST_COLS.replace('padding:12px 16px', 'padding:13px 16px')};border-top:1px solid var(--border2);align-items:center;cursor:pointer;font-size:12.5px`)}
+            >
+              <span style={s('font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.contact}</span>
+              <span style={s('color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.company}</span>
+              <span style={s('display:flex;align-items:center;gap:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
+                <span style={s(`width:7px;height:7px;border-radius:50%;background:${stCol};flex-shrink:0`)} />
+                <span style={s('overflow:hidden;text-overflow:ellipsis')}>{ld.converted ? 'Converted' : ld.status}</span>
+              </span>
               <span style={s('color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.source || 'No source'}</span>
-              <span style={s('color:var(--muted)')}>{ld.created}</span>
-              <span style={s("text-align:right;color:var(--text2);font-family:'JetBrains Mono',monospace")}>{ld.phone || '—'}</span>
+              <div
+                onMouseEnter={() => setHoverField(emailKey)}
+                onMouseLeave={() => setHoverField((h) => (h === emailKey ? null : h))}
+                style={s('height:26px;display:flex;align-items:center;gap:6px;min-width:0')}
+              >
+                {hoverField === emailKey && ld.email && ld.email !== '—' ? (
+                  <button type="button" aria-label="Copy email" onClick={(e) => copyVal(e, ld.email, ld.email)} style={s(HOVER_ACTION)}>
+                    <Icon name="copy" size={12} color="#fff" /> Copy
+                  </button>
+                ) : (
+                  <span style={s('color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.email}</span>
+                )}
+              </div>
+              <div
+                onMouseEnter={() => setHoverField(phoneKey)}
+                onMouseLeave={() => setHoverField((h) => (h === phoneKey ? null : h))}
+                style={s('height:26px;display:flex;align-items:center;justify-content:center;min-width:0')}
+              >
+                {hoverField === phoneKey && ld.phone ? (
+                  <div style={s('width:96px;height:26px;border-radius:var(--radius-md);overflow:hidden;display:flex;background:linear-gradient(140deg,var(--accent),var(--accent-2))')}>
+                    <button type="button" aria-label="Call phone" onClick={(e) => dial(e, ld.phone)} style={s('flex:1;height:100%;border:none;cursor:pointer;background:transparent;color:#fff;display:flex;align-items:center;justify-content:center')}>
+                      <Icon name="calls" size={12} color="#fff" />
+                    </button>
+                    <span style={s('width:1px;background:rgba(255,255,255,.3);flex-shrink:0')} />
+                    <button type="button" aria-label="Copy phone" onClick={(e) => copyVal(e, ld.phone, ld.phone)} style={s('flex:1;height:100%;border:none;cursor:pointer;background:transparent;color:#fff;display:flex;align-items:center;justify-content:center')}>
+                      <Icon name="copy" size={12} color="#fff" />
+                    </button>
+                  </div>
+                ) : (
+                  <span style={s("color:var(--text2);font-family:'JetBrains Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis")}>{ld.phone || '—'}</span>
+                )}
+              </div>
+              <div
+                onMouseEnter={() => setHoverField(cellKey)}
+                onMouseLeave={() => setHoverField((h) => (h === cellKey ? null : h))}
+                style={s('height:26px;display:flex;align-items:center;justify-content:center;min-width:0')}
+              >
+                {hoverField === cellKey && ld.cell ? (
+                  <div style={s('width:96px;height:26px;border-radius:var(--radius-md);overflow:hidden;display:flex;background:linear-gradient(140deg,var(--accent),var(--accent-2))')}>
+                    <button type="button" aria-label="Call cell" onClick={(e) => dial(e, ld.cell)} style={s('flex:1;height:100%;border:none;cursor:pointer;background:transparent;color:#fff;display:flex;align-items:center;justify-content:center')}>
+                      <Icon name="calls" size={12} color="#fff" />
+                    </button>
+                    <span style={s('width:1px;background:rgba(255,255,255,.3);flex-shrink:0')} />
+                    <button type="button" aria-label="Copy cell" onClick={(e) => copyVal(e, ld.cell, ld.cell)} style={s('flex:1;height:100%;border:none;cursor:pointer;background:transparent;color:#fff;display:flex;align-items:center;justify-content:center')}>
+                      <Icon name="copy" size={12} color="#fff" />
+                    </button>
+                  </div>
+                ) : (
+                  <span style={s("color:var(--text2);font-family:'JetBrains Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis")}>{ld.cell || '—'}</span>
+                )}
+              </div>
+              <span style={s('color:var(--muted);white-space:nowrap')}>{ld.created}</span>
             </div>
           );
         })}
@@ -94,18 +192,18 @@ export function LeadsView({ leads, search, view }: { leads: LeadVM[]; search: st
         return (
           <KanbanCol key={col.key} col={col} count={cards.length}>
             {cards.map((ld) => {
-              const b = statusBadge(ld);
+              const src = sourceBadge(ld.source);
               return (
                 <div key={ld.id} onClick={() => openLead(ld)} className="ss-card-h" style={s(`padding:13px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-left:3px solid ${col.col};cursor:pointer;box-shadow:var(--shadow-sm)`)}>
                   <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:8px')}>
                     <div style={s('font-size:13px;font-weight:700;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.contact}</div>
-                    <span style={s(`${b.style};flex-shrink:0;white-space:nowrap`)}>{b.text}</span>
+                    <span style={s(`${src.style};flex-shrink:0;white-space:nowrap`)}>{src.text}</span>
                   </div>
-                  <div style={s(SUB)}>{ld.source || 'No source'}</div>
-                  {ld.utmSource && utmPill(ld.utmSource)}
-                  <div style={s(FOOT)}>
-                    <span>{ld.created}</span>
-                    {ld.phone && <span style={s("font-family:'JetBrains Mono',monospace")}>{ld.phone}</span>}
+                  <div style={s('font-size:11.5px;color:var(--text2);font-weight:500;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.company}</div>
+                  <div style={s('font-size:11px;color:var(--muted);margin-top:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.email}</div>
+                  <div style={s('margin-top:9px;display:flex;align-items:baseline;justify-content:space-between;gap:8px')}>
+                    <span style={s("font-size:11.5px;color:var(--text2);font-weight:600;font-family:'JetBrains Mono',monospace;white-space:nowrap")}>{ld.phone || '—'}</span>
+                    <span style={s('font-size:10.5px;color:var(--faint);white-space:nowrap')}>{ld.created}</span>
                   </div>
                 </div>
               );

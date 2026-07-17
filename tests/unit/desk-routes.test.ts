@@ -18,6 +18,7 @@ vi.mock('../../src/integrations/zohoDesk.js', async (importOriginal) => {
     ...mod,
     searchTicketsByCreator: vi.fn(async () => []),
     listTicketsByCreator: vi.fn(async () => []),
+    pageTicketsByCreator: vi.fn(async () => ({ tickets: [], hasMore: false })),
     getTicket: vi.fn(async () => ({})),
     getTicketThreads: vi.fn(async () => []),
     getTicketThread: vi.fn(async () => ({})),

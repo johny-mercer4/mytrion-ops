@@ -51,10 +51,7 @@ export function UserManagement() {
       <div className={s.head}>
         <div>
           <h2 className={s.h2}>User Management</h2>
-          <p className={s.sub}>
-            Control which Zoho worker can access which Mytrion. Access is enforced server-side; a
-            Sales Agent auto-routes to Sales, an Administrator lands on the picker.
-          </p>
+
         </div>
       </div>
 

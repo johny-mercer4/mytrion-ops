@@ -79,7 +79,8 @@ function resolveStatus(row: Record<string, unknown>): CompanyStatus {
   return 'stuck';
 }
 
-function mapSalesDash(d: {
+/** Exported for unit tests — maps Deluge payload → SalesDashRaw. */
+export function mapSalesDash(d: {
   cycle?: { start?: string; end?: string };
   kpi?: Record<string, unknown>;
   cardsByCompany?: Array<Record<string, unknown>>;

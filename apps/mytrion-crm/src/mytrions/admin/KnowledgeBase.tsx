@@ -103,7 +103,7 @@ export function KnowledgeBase({ onAddSource }: { onAddSource?: () => void }) {
       <div className={s.head}>
         <div>
           <h2 className={s.h2}>Knowledge Base</h2>
-          <p className={s.sub}>Source documents grounding every Mytrion's answers.</p>
+
         </div>
         <button type="button" className={s.primaryBtn} onClick={onAddSource}>
           <PlusIcon size={14} />

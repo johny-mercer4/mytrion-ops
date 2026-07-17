@@ -106,10 +106,7 @@ export function AuditLog() {
       <div className={s.head}>
         <div>
           <h2 className={s.h2}>Audit Log</h2>
-          <p className={s.sub}>
-            Who did what, when — logins, buttons, automations, and agent actions for workers and
-            carrier companies alike.
-          </p>
+
         </div>
       </div>
 

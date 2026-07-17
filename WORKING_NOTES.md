@@ -3078,3 +3078,182 @@ is currently being edited by another process in parallel.
 
 Verified: `apps/mytrion-crm` typecheck clean, 21/21 test files green (128 tests, up from 116 — other
 concurrent work added its own tests, none of which regressed).
+
+### 2026-07-18 — Sales Mytrion icon pass
+
+Fixed misrendered / misaligned outline icons across Sales redesign:
+- Hardened shared `Svg` (block + flex-shrink) and added `SvgPaths` for multi-stroke glyphs
+- Replaced broken KPI / nav / automations path strings with Heroicons 24 outline `d`s
+- Routed Create + Dashboard tab icons and Company dash section icons through `Svg`
+- Cleaned Shell chrome icons (sun/moon/sparkles/bolt) and department picker icons
+
+Verified: `apps/mytrion-crm` tsc clean.
+
+### 2026-07-18 — Sales dashboard reference parity
+
+Aligned Sales Mytrion Dashboard → Sales with zoho-octane self-service MSD:
+- Hero KPIs: fuel-can + card icons, gold/blue strip styling
+- Donuts: crimson active arcs + amber inactive track; Inactive/Stuck alert chips with icons
+- New Cards card: stacked teal stats with plus/calendar icons
+- Cards by Company: status dots, days-since-tx, All/Active/New/Unique bars + chips
+- Card Activity: Tx/Active/New multi-line chart, Cycle/History, day value rows
+- Tabs: Debtors disabled (Soon), Cards removed, Power BI iframe added (same embed URL)
+
+Verified: apps/mytrion-crm tsc clean.
+
+### 2026-07-18 — TX Volume column + dash e2e hardening
+
+- Replaced broken Volume (Gallons) grid cell (wrapped SVG + pill chips) with a real `msd-tx-table` matching self-service: sticky header, gold full-cell wash, no icon
+- Day-filter chip on Transaction Details; empty-state copy matches widget
+- Expanded `dashSalesData` tests (map payload, All-mode bars, day-drill TX aggregate) — 8/8 green
+
+Verified: CRM tsc + dashSalesData vitest.
+
+### 2026-07-18 — Tickets UI / UX polish
+
+Reworked Sales Mytrion Tickets two-pane console for clearer hierarchy and less chrome noise:
+- Extracted `tickets.css` (`ss-tk-*`); `TicketsTab` markup uses classes instead of mega inline styles
+- Quieter New Ticket (tool button next to refresh, not a full-width gradient CTA)
+- Cards: subject + meta + status chip; SLA only when overdue / nearly due (not on every card)
+- Canned replies behind a toggle; composer keeps FAB clearance
+- Details drawer uses shared `ss-scrim`; dropped redundant Is Escalated / Is Overdue rows
+
+Verified: TicketsTab under 600 lines; CRM tsc — TicketsTab clean (pre-existing `IconName` error in salesData.ts unrelated).
+
+### 2026-07-18 — Tickets pagination, status picklist, full comments
+
+Aligned Sales Tickets with zoho-octane `ticketdashboard.html`:
+- Infinite-scroll creator-scoped paging (`loadTicketsPage` / `useTicketsFeed`, page size 50); sidebar `loadTickets` pages up to ~2k
+- Desk search now `include`s contacts/assignee/team/departments; windowed fallback `maxPages` 6→20
+- Status segmented control → picklist; status chip colors match reference (incl. Closed / review states)
+- Comments/threads: limit 99, expand last 40 thread bodies, bubble `pre-wrap` so realtime replies show fully
+
+Verified: TicketsTab + feed hook typecheck clean.
+
+### 2026-07-18 — Hotfix: Desk tickets 502
+
+Cause: `searchTicketsByCreator` briefly passed `include` + `sortBy` — Desk `/tickets/search` rejects those (422) and `deskError` maps to HTTP 502.
+Fix: reverted search query to `customField1` + `from` + `limit` only; widened search→windowed fallback to also catch 422/UNPROCESSABLE.
+
+Note: `/v1/ringcentral/embed-config` 404 is unrelated (route missing / RC not wired here).
+
+### 2026-07-18 — Realtime inbox toast + ticket comments
+
+Hardened Sales realtime to match ticketdashboard / self-service:
+- Shell `useSidebarBadges` owns one WS subscribe (`userId` + ticketIds): inbox toast+reload, ticket comment/attachment toast+unread (skip when that ticket is open)
+- `ticketLiveBus` bridges shell → Tickets tab (reload open thread + soft list refresh)
+- Tickets tab no longer opens a second toasting socket; uses act-as-aware open-ticket focus
+- Inbox/Home reload keyed on currentUserId + ownerId match
+
+Verified: CRM tsc clean for touched files.
+
+### 2026-07-18 — Tickets unread, scroll page, promote-to-top
+
+- Unread badge clears immediately on select (card + sidebar); open-ticket WS frames stay read
+- Scroll/sentinel loads next Desk page (page size 20); removed “N tickets loaded” footer
+- New comment/attachment promotes that ticket to the top of the list
+
+### 2026-07-18 — Sales Mytrion icons → lucide-react (ready-made)
+
+Replaced every hand-authored SVG path-string icon in the Sales redesign with ready-made
+`lucide-react` glyphs (the dep was installed but unused). New single source of truth:
+`redesign/icons.tsx` — a typed `ICON_REGISTRY` (semantic name → lucide component) + an `<Icon
+name=… size strokeWidth color style className />` wrapper mirroring the old `Svg` API (same
+`.ss-icon` class, 24×24 grid, block/flex-shrink) so layout/weight is unchanged.
+
+- Data maps now carry `IconName` keys, not path `d`s: `salesData.ICO` + `NAV`, `autoLive.ICO`,
+  `autoCatalogOrder`, `live.ANN_META`, `RecordsTab` DC tabs/views, `HomeTab` ICON_OF + VMs,
+  `ctx.DetailVM`, `createTicketForms` dept glyphs, `DashTab` TAB_ICONS, `CreateTab`, `InboxTab`.
+- All `<Svg d=…>`, `<SvgPaths>`, and inline `<svg>` icon markup → `<Icon name=…>` across Shell
+  (nav/detail/chrome/toast/send), AutoTab/AutoCatalog, Tickets/Pool, createTicket*, dashboard
+  panels, dataCenterModals, ViewAsPicker, Carriers. `Svg`/`SvgPaths` removed from `dc.tsx`.
+- Data-viz SVGs left untouched (SalesDashPanel donuts, CompanyDashPanel sparkline) — only icon
+  glyphs were swapped.
+
+Verified: `sales/redesign` typechecks clean (0 errors; remaining tsc errors are pre-existing
+TS6133 unused-var warnings in other teammates' in-flight files — MytrionPicker, components/icons,
+SchemaBrowser, UserAccessForm — not touched here), 17/17 redesign vitest tests green, and
+`vite build` succeeds (lucide icon chunks emitted).
+
+### 2026-07-18 — Tickets chat sides + scroll paging fix
+
+- Chat: you/mine on the left, agent on the right; removed Canned toggle + “Click to download”
+- Pagination aligned with ticketdashboard.html: `from=0`, page 20, `from += limit`
+- List cards `flex-shrink:0` + explicit overflow so scroll actually pages
+- Restart API required for Desk `from=0` zod/search change
+
+### 2026-07-18 — Ticket attachment Download hover + toast
+
+- Attachment cards show a Download button on hover (always visible on touch)
+- Toast “Downloading” + filename when download starts; failure toast unchanged
+- Added `download` lucide icon to redesign registry
+
+### 2026-07-18 — Load more sticky + promote old tickets
+
+- “Load more tickets” pinned in a sticky list footer (not buried under scroll)
+- Live comment on an old / not-yet-paged ticket: pull from shell ticket directory, pin to top,
+  scroll list to top; softReload keeps pinned rows above page-0 so they don’t drop again
+
+### 2026-07-18 — Faster ticket send / render
+
+- Optimistic chat bubbles (clear composer + show “Just now”) before Desk POST returns
+- Background thread reconcile only — dropped per-send ticket-list softReload
+- useLoad soft-reload no longer flips loading when data already present
+- Desk reply: parallelize comment + attachment upload when both present
+- Restart API for the parallel reply path
+
+### 2026-07-18 — WS promote old tickets via realtime fetch
+
+- On `ticket_comment_added` / attachment for a ticket not in loaded pages: pin from shell
+  directory instantly, then `GET /desk/tickets/:id` and put the fresh card on top
+- New Desk route + `getDeskTicket` / `loadTicketById`; softReload keeps pinned rows above page 0
+- Restart API required for the new GET-by-id route
+
+### 2026-07-18 — Load more always visible
+
+- Footer button was gated on `hasMore`; short-list auto-paging flipped that off → button vanished
+- Load more is always pinned under the list (solid accent button + “N loaded” meta)
+- Removed silent short-list auto-fetch; manual click can retry past a false “done”
+
+### 2026-07-18 — Load more = next 20 (reference paging)
+
+- Match ticketdashboard.html: from=0, limit=20, from += 20 after each non-empty page
+- Windowed Desk dump is sliced client-side in pages of 20 so Load more still appends +20
+- Removed IntersectionObserver auto-chain; scroll-near-bottom + button only
+- Ensure client query keeps `from=0` (numeric zero) on /desk/tickets
+
+### 2026-07-18 — Why only ~16 tickets (“All loaded”)
+
+Root cause (live probe): `ZOHO_DESK_REFRESH_TOKEN` lacks `Desk.search.READ` →
+`/tickets/search` 403 SCOPE_MISMATCH → old fallback dumped one shallow creator scan and set
+`hasMore:false` (UI: “All tickets loaded” at 16). Widget works because CRM CONNECTION has search.
+
+Fix: `pageTicketsByCreator` progressive scan (up to ~10k org tickets) returns real hasMore + next
+20; `scoped:false` warning; client trusts server paging. Re-mint Desk token with Desk.search.READ
+for true ticketdashboard search parity.
+
+### 2026-07-18 — Hide Sales AI chat (not ready)
+
+- Removed floating Mytrion AI launcher + panel from Sales redesign Shell
+- Removed Home “Ask Mytrion AI” CTA; Automations “Run an action” stays
+
+### 2026-07-18 — Tickets Coming soon; Data Center Leads redesign
+
+- Nav: Tickets marked `comingSoon` (same SOON chip as Open Pool); openTicket / TicketsTab gated
+- Leads COQL now selects Cell, MC, DOT, Referral_Source, Referred_By, Registration_Time,
+  Web_Registration_Date (probed live against `/coql`)
+- LeadVM + list/kanban/modal aligned to Desktop “Sales Mytrion Leads redesign”:
+  - Kanban: contact + Lead_Source badge, company, email, phone, created
+  - List: Name | Company | Status | Source | Email | Phone | Cell | Created (+ hover copy/call)
+  - Modal: contact hero, fleet/source/MC/DOT/referral, Phone+Cell dial, dates, Description notes
+- Status order includes Unaccounted / No Status from real Lead Status picklist
+
+
+### 2026-07-18 — Leads utm_source + Clients balance/gallons/activity
+
+- Leads Source (kanban badge, list, modal) = Zoho `utm_source` with redesign sourceColor palette
+- Status `-None-` normalized to No Status
+- Clients: removed Balance from card + modal overview tiles
+- Cycle gallons via dashboard.agent_sales volume, formatted with up to 2 decimals (galFmt)
+- Client Activity: all_time feed + Load more (growing limit); helpers in clientDrilldown.ts
+

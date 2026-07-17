@@ -4,8 +4,7 @@ import { updateUserAccess, type AccessUserRow, type UserAccessPatch } from '../.
 import { XIcon } from '../../components/icons';
 import s from './admin.module.css';
 
-/** inherit = use the profile default; custom = an explicit allow-list; all = see everything. */
-type Mode = 'inherit' | 'custom' | 'all';
+type Mode = 'custom' | 'all';
 
 const label = (id: MytrionId): string => MYTRIONS[id]?.title ?? id;
 
@@ -23,26 +22,18 @@ export function UserAccessForm({
   onSaved: () => void;
 }) {
   const ov = row.override;
-  const initialMode: Mode = ov?.allDepartmentAccess ? 'all' : ov?.allowedMytrions != null ? 'custom' : 'inherit';
+  const initialMode: Mode = ov?.allDepartmentAccess ? 'all' : 'custom';
   const [mode, setMode] = useState<Mode>(initialMode);
   const [allowed, setAllowed] = useState<Set<MytrionId>>(
     new Set(ov?.allowedMytrions ?? row.effective.accessibleMytrions),
   );
   const [home, setHome] = useState<MytrionId | ''>(ov?.homeMytrion ?? row.effective.homeMytrion ?? '');
   const [active, setActive] = useState<boolean>(ov?.active ?? true);
-  const [viewAs, setViewAs] = useState<Set<string>>(new Set(ov?.viewAsUserIds ?? []));
-  const [viewAsQuery, setViewAsQuery] = useState('');
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  // Candidate view-as targets: everyone except this user. Admin targets are excluded — a granted
-  // view-as of an admin would be refused server-side (no privilege escalation), so don't offer it.
-  const viewAsCandidates = useMemo(() => {
-    const q = viewAsQuery.trim().toLowerCase();
-    return roster
-      .filter((r) => r.zohoUserId !== row.zohoUserId && !r.effective.allDepartmentAccess)
-      .filter((r) => !q || [r.name, r.profile].filter(Boolean).join(' ').toLowerCase().includes(q));
-  }, [roster, row.zohoUserId, viewAsQuery]);
+
 
   const toggle = (id: MytrionId) =>
     setAllowed((prev) => {
@@ -71,7 +62,7 @@ export function UserAccessForm({
         allowedMytrions: mode === 'custom' ? MYTRION_ORDER.filter((id) => allowed.has(id)) : null,
         allDepartmentAccess: mode === 'all' ? true : mode === 'custom' ? false : null,
         homeMytrion: home || null,
-        viewAsUserIds: [...viewAs],
+
       };
       await updateUserAccess(row.zohoUserId, patch);
       onSaved();
@@ -97,19 +88,17 @@ export function UserAccessForm({
         </div>
 
         <div className={s.accessFormBody}>
-          <p className={s.sub}>
-            Profile <strong>{row.profile ?? '—'}</strong> — the profile default applies unless you override it here.
-          </p>
+
 
           <div className={s.profileModeRow}>
-            {(['inherit', 'custom', 'all'] as const).map((m) => (
+            {(['custom', 'all'] as const).map((m) => (
               <button
                 key={m}
                 type="button"
                 className={`${s.filterChip} ${mode === m ? s.filterChipOn : ''}`}
                 onClick={() => setMode(m)}
               >
-                {m === 'inherit' ? 'Inherit profile' : m === 'custom' ? 'Custom list' : 'All Mytrions'}
+                {m === 'custom' ? 'Custom list' : 'All Mytrions'}
               </button>
             ))}
           </div>
@@ -131,14 +120,7 @@ export function UserAccessForm({
           {mode === 'all' && (
             <p className={s.noticeNote}>This worker will see EVERY Mytrion (all-department access).</p>
           )}
-          {mode === 'inherit' && (
-            <p className={s.sub}>
-              Effective now:{' '}
-              {row.effective.allDepartmentAccess
-                ? 'All Mytrions'
-                : row.effective.accessibleMytrions.map(label).join(', ') || 'none'}
-            </p>
-          )}
+
 
           <label className={s.field}>
             <span className={s.fieldLabel}>Home Mytrion (auto-route on sign-in)</span>
@@ -156,40 +138,7 @@ export function UserAccessForm({
             </select>
           </label>
 
-          <div className={s.accessFormSection}>
-            <span className={s.fieldLabel}>Can “View as” these users (targeted impersonation)</span>
-            <input
-              className={s.input}
-              value={viewAsQuery}
-              onChange={(e) => setViewAsQuery(e.target.value)}
-              placeholder="Search users to grant view-as…"
-            />
-            {viewAs.size > 0 && (
-              <p className={s.fieldHint}>
-                {viewAs.size} user{viewAs.size === 1 ? '' : 's'} selected — this worker will get a “View as” picker.
-              </p>
-            )}
-            <div className={s.profileChipGrid}>
-              {viewAsCandidates.slice(0, 40).map((r) => (
-                <button
-                  key={r.zohoUserId}
-                  type="button"
-                  className={`${s.filterChip} ${viewAs.has(r.zohoUserId) ? s.filterChipOn : ''}`}
-                  onClick={() =>
-                    setViewAs((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(r.zohoUserId)) next.delete(r.zohoUserId);
-                      else next.add(r.zohoUserId);
-                      return next;
-                    })
-                  }
-                >
-                  {r.name ?? r.zohoUserId}
-                </button>
-              ))}
-              {viewAsCandidates.length === 0 && <span className={s.deptText}>No matching users.</span>}
-            </div>
-          </div>
+
 
           <label className={s.accessCheckRow}>
             <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />

@@ -7,12 +7,13 @@
 import { createContext, useContext } from 'react';
 import type { BadgeVM } from './salesData';
 import type { DealVM, LeadVM } from './dataCenterLive';
+import type { IconName } from './icons';
 
 /** A detail-modal payload (announcements, inbox items). */
 export interface DetailVM {
   title: string;
   body: string;
-  icon: string;
+  icon: IconName;
   iconStyle: string;
   metaLabel: string;
   meta: string;
@@ -29,7 +30,6 @@ export interface ClientRecord {
   cards: number;
   active: number;
   gallons: string;
-  balance: string;
   status: 'active' | 'attention' | 'debtor';
   mc: string;
   dot: string;

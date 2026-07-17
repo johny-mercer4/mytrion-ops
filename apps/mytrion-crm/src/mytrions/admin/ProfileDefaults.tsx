@@ -29,10 +29,7 @@ export function ProfileDefaults() {
 
   return (
     <>
-      <p className={s.sub}>
-        Default Mytrion access per Zoho profile — a worker with this profile gets this access unless a
-        per-user override changes it. Seeded on first load; edit and save any profile.
-      </p>
+
       {error && (
         <p className={s.errorNote} role="alert">
           {error}

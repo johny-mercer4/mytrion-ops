@@ -15,12 +15,13 @@ import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
   createDeskTicket,
   DESK_DEPARTMENTS,
+  getTicket,
   getTicketAttachmentContent,
   getTicketAttachments,
   getTicketComments,
   getTicketThread,
   getTicketThreads,
-  listTicketsByCreator,
+  pageTicketsByCreator,
   postTicketComment,
   searchTicketsByCreator,
   uploadTicketAttachment,
@@ -108,7 +109,8 @@ function requireSalesAccess(request: FastifyRequest): TenantContext {
 
 const listQuery = z.object({
   zoho_user_id: z.string().max(120).optional(),
-  from: z.coerce.number().int().min(1).optional(),
+  // Desk search accepts from=0 (zoho-octane ticketdashboard.html); list endpoints use 1-based.
+  from: z.coerce.number().int().min(0).optional(),
   limit: z.coerce.number().int().min(1).max(99).optional(),
 });
 const commentsQuery = z.object({ limit: z.coerce.number().int().min(1).max(99).optional() });
@@ -157,27 +159,55 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
     const ctx = requireSalesAccess(request);
     const q = listQuery.parse(request.query);
     const crmUserId = resolveZohoUserId(ctx, q.zoho_user_id);
-    const paging = {
-      ...(q.from !== undefined ? { from: q.from } : {}),
-      ...(q.limit !== undefined ? { limit: q.limit } : {}),
-    };
+    const from = q.from ?? 0;
+    const limit = q.limit ?? 20;
+    const paging = { from, limit };
     try {
-      // Creator-scoped search is the intended filter (returns ALL of the caller's tickets in one
-      // query), but it needs the Desk.search scope. When that scope is missing (SCOPE_MISMATCH), we
-      // STILL scope to the caller — `listTicketsByCreator` pages the recent tickets with the
-      // cf_crm_created_by_id custom field inline (Desk `fields` param) and keeps only theirs. Both
-      // paths are creator-scoped, so `scoped:true`; the fallback is just bounded to a recency window.
+      // Reference ticketdashboard.html: /tickets/search?customField1=cf_crm_created_by_id:&from&limit
+      // Needs Desk.search.READ. Without it we progressively scan /tickets and filter by creator so
+      // Load more still returns the next 20 (scoped:false warns the UI).
       try {
         const tickets = await searchTicketsByCreator(crmUserId, paging);
-        return { tickets: await enrichTicketOwners(tickets), scoped: true };
+        return {
+          tickets: await enrichTicketOwners(tickets),
+          scoped: true,
+          windowed: false,
+          hasMore: tickets.length >= limit,
+          nextFrom: from + limit,
+        };
       } catch (err) {
-        if (err instanceof Error && /SCOPE_MISMATCH|403/.test(err.message)) {
-          const tickets = await listTicketsByCreator(crmUserId, { maxPages: 6 });
-          return { tickets: await enrichTicketOwners(tickets), scoped: true, windowed: true };
+        const msg = err instanceof Error ? err.message : '';
+        if (/SCOPE_MISMATCH|403|422|UNPROCESSABLE|INVALID_/.test(msg)) {
+          const page = await pageTicketsByCreator(crmUserId, paging);
+          return {
+            tickets: await enrichTicketOwners(page.tickets),
+            scoped: false,
+            windowed: true,
+            hasMore: page.hasMore,
+            nextFrom: from + page.tickets.length,
+          };
         }
         throw err;
       }
     } catch (err) {
+      throw deskError(err);
+    }
+  });
+
+  /**
+   * One ticket by id — used when a live WS comment lands on an older ticket that isn't in the
+   * progressive list pages yet. Ownership-gated the same as comments/reply.
+   */
+  app.get('/desk/tickets/:id', guard, async (request) => {
+    const ctx = requireSalesAccess(request);
+    const { id } = request.params as { id: string };
+    try {
+      await assertTicketOwned(ctx, id);
+      const raw = await getTicket(id);
+      const [ticket] = await enrichTicketOwners([raw]);
+      return { ticket };
+    } catch (err) {
+      if (err instanceof AppError) throw err;
       throw deskError(err);
     }
   });
@@ -202,9 +232,9 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
         getTicketAttachments(id, q.limit).catch(() => [] as Record<string, unknown>[]),
       ]);
       // The thread LIST only carries a truncated `summary`; fetch each thread's full `content` in
-      // parallel (bounded to the most recent 15) so long messages aren't cut off. Falls back to the
-      // summary if the per-thread GET fails.
-      const recent = threadList.slice(-15);
+      // parallel so long customer emails / replies aren't cut off (reference loads comments with
+      // limit 100 — match that window). Falls back to the summary if the per-thread GET fails.
+      const recent = threadList.slice(-40);
       const enriched = await Promise.all(
         recent.map(async (t) => {
           if (typeof t.content === 'string' && t.content) return t;
@@ -216,13 +246,17 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
           }
         }),
       );
+      // Preserve older threads that weren't expanded (still show their summary).
+      const enrichedIds = new Set(enriched.map((t) => String(t.id ?? '')));
+      const older = threadList.filter((t) => !enrichedIds.has(String(t.id ?? '')));
+      const threadsOut = [...older, ...enriched];
       // Flag the caller's OWN comments/attachments — those posted via the app's shared Desk agent —
       // so the UI right-aligns them as "me" (the reference matches commenter/creator to a fixed
       // zohoDeskAdminId).
       const agentId = env.ZOHO_DESK_AGENT_ID;
       const flagged = comments.map((c) => ({ ...c, mine: String(c.commenterId ?? '') === agentId }));
       const flaggedAttachments = attachments.map((a) => ({ ...a, mine: String(a.creatorId ?? '') === agentId }));
-      return { threads: enriched, comments: flagged, attachments: flaggedAttachments };
+      return { threads: threadsOut, comments: flagged, attachments: flaggedAttachments };
     } catch (err) {
       if (err instanceof AppError) throw err;
       throw deskError(err);
@@ -258,8 +292,13 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
     }
     try {
       await assertTicketOwned(ctx, id);
-      const comment = content ? await postTicketComment(id, content, isPublic) : undefined;
-      if (file) await uploadTicketAttachment(id, file.buffer, file.name, file.mime, isPublic);
+      // Text + file are independent Desk calls — run together when both are present.
+      const [comment] = await Promise.all([
+        content ? postTicketComment(id, content, isPublic) : Promise.resolve(undefined),
+        file
+          ? uploadTicketAttachment(id, file.buffer, file.name, file.mime, isPublic)
+          : Promise.resolve(undefined),
+      ]);
       await auditFromContext(ctx, {
         action: 'desk.ticket.reply',
         status: 'ok',

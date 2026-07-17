@@ -139,14 +139,34 @@ export async function listDeskTickets(
 ): Promise<{
   tickets: DeskTicket[];
   scoped: boolean;
-  /** True when the server fell back to the recency-window scan — that response is already the
-   *  full (bounded) set, so callers must not request further pages. */
+  /** True when Desk.search is unavailable — server still pages creator matches via /tickets scan. */
   windowed?: boolean;
+  hasMore?: boolean;
+  nextFrom?: number;
 }> {
   return (await request('GET', '/desk/tickets', {
-    query: { from: opts.from, limit: opts.limit ?? 50, zoho_user_id: opts.zohoUserId },
+    // Always pass `from` (incl. 0) — Desk search pages 0,20,40… like ticketdashboard.html.
+    query: {
+      from: opts.from ?? 0,
+      limit: opts.limit ?? 20,
+      zoho_user_id: opts.zohoUserId,
+    },
     headers: DESK_HEADERS,
-  })) as { tickets: DeskTicket[]; scoped: boolean; windowed?: boolean };
+  })) as {
+    tickets: DeskTicket[];
+    scoped: boolean;
+    windowed?: boolean;
+    hasMore?: boolean;
+    nextFrom?: number;
+  };
+}
+
+/** One owned ticket by id (live promote when an old ticket isn't in the paged list yet). */
+export async function getDeskTicket(ticketId: string): Promise<DeskTicket> {
+  const res = (await request('GET', `/desk/tickets/${encodeURIComponent(ticketId)}`, {
+    headers: DESK_HEADERS,
+  })) as { ticket: DeskTicket };
+  return res.ticket;
 }
 
 export async function listDeskComments(

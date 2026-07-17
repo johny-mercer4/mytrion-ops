@@ -5,8 +5,8 @@
 .panel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
-  padding: var(--space-6) var(--space-8);
+  gap: var(--space-6);
+  padding: var(--space-8) var(--space-10);
   max-width: 1120px;
   animation: panelIn var(--dur-base) var(--ease-out);
 }
@@ -42,11 +42,11 @@
 .h2 {
   margin: 0;
   font-family: var(--font-head);
-  font-size: var(--text-2xl);
+  font-size: var(--text-3xl, 28px);
   line-height: 1.05;
-  letter-spacing: 0.02em;
+  letter-spacing: -0.01em;
   text-transform: uppercase;
-  font-weight: var(--fw-bold);
+  font-weight: 800;
   color: var(--text-primary);
 }
 .sub {
@@ -166,7 +166,7 @@
 .statGrid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
 .statTile {
   border: 1px solid var(--border);
@@ -207,10 +207,11 @@
 
 /* ── table ──────────────────────────────────────────────────────────────────── */
 .table {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-light, var(--border));
+  border-radius: var(--radius-xl, 12px);
   background: var(--surface);
   overflow: hidden;
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--text-primary) 3%, transparent);
 }
 .tHead {
   display: grid;
@@ -487,13 +488,14 @@
 
 /* ── generic card ───────────────────────────────────────────────────────────── */
 .card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-light, var(--border));
+  border-radius: var(--radius-xl, 12px);
   background: var(--surface);
   overflow: hidden;
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--text-primary) 3%, transparent);
 }
 .cardPad {
-  padding: var(--space-5);
+  padding: var(--space-6);
 }
 
 /* ── profile defaults cards ─────────────────────────────────────────────────── */
@@ -591,7 +593,7 @@
 .grid2 {
   display: grid;
   grid-template-columns: 1.4fr 1fr;
-  gap: var(--space-4);
+  gap: var(--space-6);
   align-items: start;
 }
 .checkRow {

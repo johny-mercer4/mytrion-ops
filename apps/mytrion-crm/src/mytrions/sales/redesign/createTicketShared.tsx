@@ -3,6 +3,7 @@
  */
 import { useEffect, useState } from 'react';
 import { s } from './dc';
+import { Icon } from './icons';
 import { useSales } from './ctx';
 
 export const LABEL =
@@ -58,7 +59,7 @@ export function AttachZone({ id, file, onFile }: { id: string; file: File | null
     return (
       <div style={s('display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-radius:var(--radius-md);background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.3)')}>
         <div style={s('display:flex;align-items:center;gap:9px;min-width:0')}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="9" /><path d="M9 12l2 2 4-4" /></svg>
+          <Icon name="check" size={18} color="var(--ok)" style={{ flexShrink: 0 }} />
           <span style={s('font-size:12.5px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{file.name}</span>
         </div>
         <button type="button" onClick={() => onFile(null)} style={s('flex-shrink:0;border:none;background:transparent;color:var(--danger);font-size:11.5px;font-weight:700;cursor:pointer')}>Remove</button>
@@ -74,7 +75,7 @@ export function AttachZone({ id, file, onFile }: { id: string; file: File | null
         onDragLeave={(e) => { e.preventDefault(); setDragging(false); }}
         onDrop={(e) => { e.preventDefault(); setDragging(false); take(e.dataTransfer.files?.[0]); }}
       >
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 16a4 4 0 0 1-.88-7.9A5 5 0 0 1 16 6a5 5 0 0 1 1 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+        <Icon name="upload" size={26} color="var(--accent)" strokeWidth={1.8} />
         <div style={s('font-size:12.5px;color:var(--text2)')}><span style={s('color:var(--accent);font-weight:700')}>Click to upload</span>, drag &amp; drop, or paste</div>
         <div style={s('font-size:10.5px;color:var(--faint)')}>PNG, JPG, PDF, DOC, XLS, CSV · max 20MB</div>
       </label>
@@ -86,7 +87,7 @@ export function AttachZone({ id, file, onFile }: { id: string; file: File | null
 export function BackBtn({ onClick }: { onClick: () => void }) {
   return (
     <button type="button" onClick={onClick} className="ss-ico-btn" style={s('height:46px;padding:0 16px;display:inline-flex;align-items:center;gap:8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:12.5px;font-weight:700')}>
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>Back
+      <Icon name="chevronLeft" size={15} strokeWidth={2.2} />Back
     </button>
   );
 }

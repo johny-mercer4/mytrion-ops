@@ -72,7 +72,7 @@ export function KnowledgeBrowser() {
       <div className={s.head}>
         <div>
           <h2 className={s.h2}>Knowledge Browser</h2>
-          <p className={s.sub}>Semantic retrieval test — exactly what the agents' knowledge_search sees.</p>
+
         </div>
       </div>
 

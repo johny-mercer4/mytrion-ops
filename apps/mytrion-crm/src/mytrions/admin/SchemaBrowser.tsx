@@ -157,7 +157,7 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
       <div className={s.head}>
         <div>
           <h2 className={s.h2}>{title}</h2>
-          <p className={s.sub}>{subtitle}</p>
+
         </div>
         <div className={x.schemaMeta}>
           {snap && (

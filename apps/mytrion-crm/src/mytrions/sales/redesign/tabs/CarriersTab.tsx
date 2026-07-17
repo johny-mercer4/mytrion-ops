@@ -4,14 +4,13 @@
  * with DUPLICATE_DATA → "Already exists ↗" / success → Lead #xxxxxx deep link.
  */
 import { useState, type ReactNode } from 'react';
-import { s, Svg, Badge } from '../dc';
+import { s, Badge } from '../dc';
+import { Icon } from '../icons';
 import { badge } from '../salesData';
 import { searchCarriers, type CarrierSearchVM } from '../live';
 import { createLeadFromCarrier } from '../carrierLead';
 import { leadShortId, zohoLeadUrl } from '../crmUrls';
 
-const TRUCK_D =
-  'M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1M9 17a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0z';
 
 function statusColor(status: string): string {
   const x = status.toLowerCase();
@@ -291,10 +290,7 @@ export function CarriersTab() {
               'width:64px;height:64px;border-radius:var(--radius-md);background:var(--raised);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;color:var(--accent)',
             )}
           >
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="7" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
+            <Icon name="carriers" size={30} strokeWidth={1.6} />
           </div>
           <div style={s('font-size:13px')}>Search for a carrier to see their account at a glance.</div>
         </div>
@@ -432,7 +428,7 @@ export function CarriersTab() {
                       'width:52px;height:52px;border-radius:var(--radius-md);background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0',
                     )}
                   >
-                    <Svg d={TRUCK_D} size={24} strokeWidth={1.8} />
+                    <Icon name="carriers" size={24} strokeWidth={1.8} />
                   </div>
                   <div style={s('flex:1;min-width:0')}>
                     <div style={s('font-size:16px;font-weight:700')}>{c.owner}</div>

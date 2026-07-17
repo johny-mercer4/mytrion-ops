@@ -4,6 +4,8 @@
  */
 import { useState } from 'react';
 import { s } from './dc';
+import { Icon, type IconName } from './icons';
+import { ICO } from './salesData';
 import { useSales } from './ctx';
 import { useSessionUser } from './sessionUser';
 import { useLoad, loadClientCards, type ClientCardVM } from './live';
@@ -31,14 +33,14 @@ interface DeptDef {
   name: string;
   desc: string;
   color: string;
-  icon: string[];
+  icon: IconName;
 }
 
 const DEPTS: DeptDef[] = [
-  { id: 'cs', name: 'Customer Service', desc: 'Cards, activations, limits, money codes', color: 'var(--accent)', icon: ['M4 14v-2a8 8 0 0 1 16 0v2', 'M4 14h2a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z', 'M20 14h-2a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1z', 'M20 17v1a3 3 0 0 1-3 3h-3'] },
-  { id: 'billing', name: 'Billing & Accounting', desc: 'Invoices, payments, billing forms', color: 'var(--violet)', icon: ['M6 3h12a1 1 0 0 1 1 1v17l-2.5-1.7L14 21l-2-1.7L10 21l-2.5-1.7L5 21V4a1 1 0 0 1 1-1z', 'M9 8h6', 'M9 12h6', 'M9 16h4'] },
-  { id: 'verification', name: 'Verification', desc: 'Plaid links, limit & billing review', color: 'var(--ok)', icon: ['M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6z', 'M9 12l2 2 4-4'] },
-  { id: 'maintenance', name: 'Maintenance', desc: 'Tire, oil, mechanical, roadside', color: 'var(--orange)', icon: ['M14.6 6.3a1 1 0 0 0 0 1.4l1.7 1.7a1 1 0 0 0 1.4 0l3.3-3.3a6 6 0 0 1-7.9 7.9l-6.3 6.3a2.1 2.1 0 0 1-3-3l6.3-6.3a6 6 0 0 1 7.9-7.9z'] },
+  { id: 'cs', name: 'Customer Service', desc: 'Cards, activations, limits, money codes', color: 'var(--accent)', icon: 'cs' },
+  { id: 'billing', name: 'Billing & Accounting', desc: 'Invoices, payments, billing forms', color: 'var(--violet)', icon: 'billing' },
+  { id: 'verification', name: 'Verification', desc: 'Plaid links, limit & billing review', color: 'var(--ok)', icon: 'verification' },
+  { id: 'maintenance', name: 'Maintenance', desc: 'Tire, oil, mechanical, roadside', color: 'var(--orange)', icon: 'maintenance' },
 ];
 const DEPT_MAP: Record<DeptSlug, DeptDef> = Object.fromEntries(DEPTS.map((d) => [d.id, d])) as Record<DeptSlug, DeptDef>;
 
@@ -235,7 +237,7 @@ export function TicketWizard() {
         {([[1, 'Department'], [2, 'Deal'], [3, 'Details']] as const).map(([n, label], i) => (
           <div key={n} style={s('display:flex;align-items:center;gap:10px;flex:1')}>
             <div onClick={() => cr.step > n && patch({ step: n as CrState['step'], typeOpen: false, cardOpen: false })} style={s(`display:flex;align-items:center;gap:9px;cursor:${cr.step > n ? 'pointer' : 'default'}`)}>
-              <div style={s(circle(n))}>{cr.step > n ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg> : n}</div>
+              <div style={s(circle(n))}>{cr.step > n ? <Icon name="check" size={15} strokeWidth={3} /> : n}</div>
               <span style={s(stepLabel(n))}>{label}</span>
             </div>
             {i < 2 && <div style={s(`flex:1;height:2px;border-radius:var(--radius-md);min-width:14px;background:${cr.step > n ? 'var(--accent)' : 'var(--border)'};transition:background .25s`)} />}
@@ -251,13 +253,13 @@ export function TicketWizard() {
             return (
               <button key={d.id} onClick={() => pickDept(d.id)} style={s(`display:flex;align-items:center;gap:14px;padding:15px 16px;border-radius:var(--radius-md);border:1.5px solid ${on ? d.color : 'var(--border)'};background:${on ? `color-mix(in srgb, ${d.color} 9%, var(--surface))` : 'var(--surface)'};box-shadow:var(--shadow-sm);cursor:pointer;width:100%;text-align:left;transition:border-color .16s`)}>
                 <div style={s(`width:46px;height:46px;flex-shrink:0;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;background:color-mix(in srgb, ${d.color} 15%, transparent);color:${d.color}`)}>
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">{d.icon.map((p) => <path key={p} d={p} />)}</svg>
+                  <Icon name={d.icon} size={22} strokeWidth={1.9} />
                 </div>
                 <div style={s('flex:1;min-width:0')}>
                   <div style={s('font-weight:700;font-size:13.5px;color:var(--text)')}>{d.name}</div>
                   <div style={s('font-size:11px;color:var(--muted);margin-top:3px;line-height:1.35')}>{d.desc}</div>
                 </div>
-                <div style={s(`width:24px;height:24px;flex-shrink:0;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${d.color};color:#fff;opacity:${on ? '1' : '0'};transition:opacity .16s`)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg></div>
+                <div style={s(`width:24px;height:24px;flex-shrink:0;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${d.color};color:#fff;opacity:${on ? '1' : '0'};transition:opacity .16s`)}><Icon name="check" size={14} strokeWidth={3.2} /></div>
               </button>
             );
           })}
@@ -268,7 +270,7 @@ export function TicketWizard() {
       {cr.step === 2 && (
         <div>
           <div style={s('position:relative;margin-bottom:16px')}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={s('position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--muted)')}><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+            <Icon name="search" size={16} style={s('position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--muted)')} />
             <input
               value={cr.dealQ}
               onChange={(e) => patch({ dealQ: e.currentTarget.value })}
@@ -359,7 +361,7 @@ export function TicketWizard() {
                       <span style={s(chipCss)}>{chip.text}</span>
                       {hasPhone ? (
                         <span style={s("display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:700;letter-spacing:.02em;color:var(--text);background:var(--alt);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--border)")}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.13.96.37 1.9.72 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.91.35 1.85.59 2.81.72A2 2 0 0122 16.92z" /></svg>
+                          <Icon name="calls" size={12} strokeWidth={2.2} />
                           {displayPhone(d.phone)}
                         </span>
                       ) : (
@@ -373,7 +375,7 @@ export function TicketWizard() {
           )}
           <div style={s('margin-top:18px')}>
             <button type="button" onClick={back} className="ss-ico-btn" style={s('height:40px;padding:0 16px;display:inline-flex;align-items:center;gap:8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:12.5px;font-weight:700')}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+              <Icon name="chevronLeft" size={15} strokeWidth={2.2} />
               Back
             </button>
           </div>
@@ -415,7 +417,7 @@ export function TicketWizard() {
                     style={s(`${SELECT_BTN};color:${cr.ticketType ? 'var(--text)' : 'var(--muted)'};font-weight:${cr.ticketType ? '600' : '400'}`)}
                   >
                     <span style={s('overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{cr.ticketType || 'Select a ticket type'}</span>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: 'var(--muted)' }}><path d="M6 9l6 6 6-6" /></svg>
+                    <Icon name="chevronDown" size={16} color="var(--muted)" style={{ flexShrink: 0 }} />
                   </button>
                   {cr.typeOpen && (
                     <>
@@ -446,7 +448,7 @@ export function TicketWizard() {
               <div><div style={s(LABEL)}>Card</div>
                 <div style={s('position:relative')}>
                   <input value={cr.cardQ} onChange={(e) => patch({ cardQ: e.currentTarget.value, cardOpen: true })} onFocus={() => patch({ cardOpen: true, typeOpen: false })} placeholder="Search or select a card…" className="ss-in" style={s('width:100%;height:44px;padding:0 40px 0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px')} />
-                  <button type="button" onClick={() => patch({ cardOpen: !cr.cardOpen })} style={s('position:absolute;right:5px;top:6px;height:32px;width:32px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;cursor:pointer;color:var(--muted)')}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg></button>
+                  <button type="button" onClick={() => patch({ cardOpen: !cr.cardOpen })} style={s('position:absolute;right:5px;top:6px;height:32px;width:32px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;cursor:pointer;color:var(--muted)')}><Icon name="chevronDown" size={16} /></button>
                   {cr.cardOpen && (
                     <>
                       <div onClick={() => patch({ cardOpen: false })} style={s('position:fixed;inset:0;z-index:8')} />
@@ -515,7 +517,7 @@ export function TicketWizard() {
             style={s('width:100%;max-width:440px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--orange);box-shadow:var(--shadow);padding:26px;text-align:center;animation:ss-pop .22s cubic-bezier(.2,0,0,1) both')}
           >
             <div style={s('width:52px;height:52px;margin:0 auto 16px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--orange) 16%,var(--surface));color:var(--orange);border:1px solid color-mix(in srgb,var(--orange) 28%,transparent)')}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+              <Icon name={ICO.bolt} size={24} />
             </div>
             <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:19px;letter-spacing:.02em;color:var(--text);margin-bottom:8px')}>You can do this yourself</div>
             <div style={s('font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:6px')}><strong style={s('color:var(--text);font-weight:700')}>{cr.autoPrompt.title}</strong> is available as an instant action in the Automations tab — no need to file a ticket for it.</div>

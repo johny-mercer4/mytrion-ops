@@ -1,5 +1,6 @@
 /** Shared skeleton / empty chrome for dashboard panels. */
 import { s } from './dc';
+import { Icon } from './icons';
 
 export function DashSkeleton({ rows = 3 }: { rows?: number }) {
   return (
@@ -56,10 +57,7 @@ export function ComingSoonPanel({
           'width:56px;height:56px;border-radius:16px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent)',
         )}
       >
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="9" />
-          <path d="M12 7v5l3 2" />
-        </svg>
+        <Icon name="clock" size={26} strokeWidth={1.8} />
       </div>
       <div style={s('font-size:16px;font-weight:800')}>{title}</div>
       <div style={s('font-size:13px;color:var(--muted);margin-top:6px;max-width:360px;margin-left:auto;margin-right:auto;line-height:1.45')}>

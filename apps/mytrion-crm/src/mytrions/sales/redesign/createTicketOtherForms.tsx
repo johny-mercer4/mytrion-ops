@@ -3,6 +3,7 @@
  */
 import { useState } from 'react';
 import { s } from './dc';
+import { Icon } from './icons';
 import { useSales } from './ctx';
 import { createEscalation } from '@/api/desk';
 import { callTouchpoint } from '@/api/touchpoints';
@@ -75,7 +76,7 @@ export function EscalationForm() {
               style={s(`${SELECT_BTN};color:${reason ? 'var(--text)' : 'var(--muted)'};font-weight:${reason ? '600' : '400'}`)}
             >
               <span style={s('overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{reason || 'Select a reason'}</span>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: 'var(--muted)' }}><path d="M6 9l6 6 6-6" /></svg>
+              <Icon name="chevronDown" size={16} color="var(--muted)" style={{ flexShrink: 0 }} />
             </button>
             {reasonOpen && (
               <>

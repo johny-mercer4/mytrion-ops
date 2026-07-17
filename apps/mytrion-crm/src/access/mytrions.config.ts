@@ -35,7 +35,7 @@ export interface MytrionAccessRule {
   icon: string;
   blurb: string;
   /** Accent hue for the Mytrion's icon chip: maps to a token (accent|success|purple|orange|danger). */
-  hue: 'accent' | 'success' | 'purple' | 'orange' | 'danger';
+  hue: 'accent' | 'success' | 'purple' | 'orange' | 'danger' | 'warning';
   /** Canonical department_access slug forwarded to the backend. */
   department: string;
   /** Send allDepartments:true on knowledge queries (broad retrieval). */
@@ -76,7 +76,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     tag: 'RnD',
     icon: 'admin',
     blurb: 'RnD knowledge base — train agents, browse embeddings, map agent scope.',
-    hue: 'accent',
+    hue: 'orange',
     department: 'admin',
     allDepartments: true,
     allowedProfiles: ['Administrator'],
@@ -92,7 +92,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     tag: 'Sales',
     icon: 'sales',
     blurb: 'Self-service ops — carrier balances, cards, invoices, EFS/WEX, automations.',
-    hue: 'success',
+    hue: 'danger',
     department: 'sales',
     allDepartments: false,
     // Every rep's CRM profile is "Sales Agent" (region lives in the ROLE). Substring match so any
@@ -111,7 +111,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     tag: 'Billing',
     icon: 'billing',
     blurb: 'Invoices, transactions, debtors and split-payment reconciliation.',
-    hue: 'purple',
+    hue: 'accent',
     department: 'billing',
     allDepartments: false,
     allowedProfiles: ['Billing'],
@@ -142,7 +142,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     tag: 'Finance',
     icon: 'finance',
     blurb: 'Fueling transactions, invoicing, balance audits and pattern checks.',
-    hue: 'orange',
+    hue: 'success',
     department: 'finance',
     allDepartments: false,
     // Restricted workspace: Administrator profile OR named finance operators (substring match).
@@ -160,7 +160,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     tag: 'CS',
     icon: 'customer-service',
     blurb: 'Tickets, calls, contacts and Desk + DWH analytics in one place.',
-    hue: 'accent',
+    hue: 'warning',
     department: 'customer-service',
     allDepartments: false,
     // The org has NO "Customer Service"/"Support" PROFILES (verified against the live user
@@ -180,7 +180,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     tag: 'Verification',
     icon: 'verification',
     blurb: 'Verification queue, document checklist and audit trail.',
-    hue: 'success',
+    hue: 'orange',
     department: 'verification',
     allDepartments: false,
     allowedProfiles: ['Verification'],
@@ -243,7 +243,7 @@ export interface ComingSoonPickerTile {
   id: string;
   title: string;
   icon: string;
-  hue: 'accent' | 'success' | 'purple' | 'orange' | 'danger';
+  hue: 'accent' | 'success' | 'purple' | 'orange' | 'danger' | 'warning';
 }
 
 export const COMING_SOON_PICKER_TILES: ComingSoonPickerTile[] = [
@@ -251,7 +251,7 @@ export const COMING_SOON_PICKER_TILES: ComingSoonPickerTile[] = [
     id: 'hr',
     title: 'HR Mytrion',
     icon: 'hr',
-    hue: 'purple',
+    hue: 'danger',
   },
 ];
 

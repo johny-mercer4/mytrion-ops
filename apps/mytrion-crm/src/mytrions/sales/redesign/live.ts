@@ -4,10 +4,11 @@
  * tab swaps `import … from '../mock'` for a `useLoad(loadX)` with loading/error/empty. NO mock/
  * fake data — every array here comes from a real backend call.
  */
-import { listDeskComments, listDeskTickets, type DeskTicket } from '@/api/desk';
+import { getDeskTicket, listDeskComments, listDeskTickets, type DeskTicket } from '@/api/desk';
 import { getImpersonation } from '@/api/impersonation';
 import { callTouchpoint } from '@/api/touchpoints';
 import { ICO } from './salesData';
+import type { IconName } from './icons';
 
 // ---- tiny load hook (extracted to _shared/useLoad; re-exported for existing importers) ----
 
@@ -23,6 +24,9 @@ export function isTicketClosed(status: string | undefined): boolean {
 
 const n = (v: unknown): number => (typeof v === 'number' ? v : Number(v ?? 0) || 0);
 export const numFmt = (v: unknown): string => n(v).toLocaleString('en-US');
+/** Gallons — keep up to 2 decimals (matches Sales Dashboard volume cells). */
+export const galFmt = (v: unknown): string =>
+  n(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
 export const money = (v: unknown): string => {
   const x = n(v);
   return x < 0 ? `-$${Math.abs(x).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : `$${x.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
@@ -132,13 +136,13 @@ export interface AnnVM {
   title: string;
   body: string;
   time: string;
-  icon: string;
+  icon: IconName;
   prio: string;
 }
-const ANN_DEFAULT = { color: 'var(--accent)', icon: 'M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z' };
-const ANN_META: Record<string, { color: string; icon: string }> = {
+const ANN_DEFAULT = { color: 'var(--accent)', icon: 'sparkles' } satisfies { color: string; icon: IconName };
+const ANN_META: Record<string, { color: string; icon: IconName }> = {
   ai: ANN_DEFAULT,
-  system: { color: 'var(--warn)', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z' },
+  system: { color: 'var(--warn)', icon: 'gear' },
   policy: { color: 'var(--violet)', icon: ICO.doc },
   analytics: { color: 'var(--accent)', icon: ICO.trend },
   security: { color: 'var(--danger)', icon: ICO.warn },
@@ -244,8 +248,8 @@ export interface RecordVM {
   phone: string;
   cards: number;
   active: number;
+  /** This billing-cycle gallons (from dashboard.agent_sales transactions.volume). */
   gallons: string;
-  balance: string;
   status: 'active' | 'attention' | 'debtor';
   mc: string;
   dot: string;
@@ -259,12 +263,6 @@ function mapRecord(c: Record<string, unknown>, cycleGallonsByCarrier: Map<string
   const suspended = truthy(c.is_loc_suspended);
   const active = truthy(c.computed_is_active);
   const status: RecordVM['status'] = (debt >= 1 && days >= 2) || suspended ? 'debtor' : active ? 'active' : 'attention';
-  // clients.by_agent (servercrm) carries no live LOC/prepay balance field at all — `balance` /
-  // `efs_balance` / `prepay_balance` never appear in its response (that lives only on the separate,
-  // per-carrier live-EFS endpoint), so reading them here was always $0. `computed_debt` IS real and
-  // live (matches the reference widget's own debtor detection exactly) — show it as a negative
-  // balance when owed; a clean account has no other balance figure to show, so it's honestly $0.
-  const bal = debt > 0 ? -debt : 0;
   const carrierId = String(c.carrier_id ?? '');
   return {
     id: carrierId,
@@ -274,12 +272,8 @@ function mapRecord(c: Record<string, unknown>, cycleGallonsByCarrier: Map<string
     phone: String(c.deal_phone ?? c.contact_phone ?? '—'),
     cards: n(c.total_produced_cards ?? c.total_active_cards),
     active: n(c.total_active_cards),
-    // clients.by_agent itself carries no gallons figure at all (total_volume/gallons_90d were
-    // placeholder field names never implemented server-side) — sourced instead from the same
-    // per-carrier breakdown the Dashboard tab renders (dashboard.agent_sales's `transactions` rows
-    // are full-cycle totals by default; see loadCycleGallonsByCarrier).
-    gallons: numFmt(cycleGallonsByCarrier.get(carrierId) ?? 0),
-    balance: money(bal),
+    // Cycle gallons from dashboard.agent_sales `transactions` (full-cycle per-carrier volume).
+    gallons: galFmt(cycleGallonsByCarrier.get(carrierId) ?? 0),
     status,
     mc: String(c.deal_money_code ?? c.comdata_id ?? '—'),
     dot: String(c.dot ?? '—'),
@@ -288,10 +282,8 @@ function mapRecord(c: Record<string, unknown>, cycleGallonsByCarrier: Map<string
 
 /**
  * carrier_id → this-cycle gallons. `dashboard.agent_sales`'s `transactions` rows are full-cycle
- * per-carrier totals by default (confirmed against the reference dashboard-panel.js, which
- * documents this exact array as "full-cycle per-carrier totals" and keys it by carrier_id) — the
- * only place in the touchpoint catalog this figure actually exists. Best-effort: a failed fetch
- * just means Clients cards show 0 gallons, not a broken tab.
+ * per-carrier totals by default (same source as the Sales Dashboard TX table). Best-effort: a
+ * failed fetch just means Clients cards show 0 gallons, not a broken tab.
  */
 async function loadCycleGallonsByCarrier(): Promise<Map<string, number>> {
   const map = new Map<string, number>();
@@ -300,7 +292,10 @@ async function loadCycleGallonsByCarrier(): Promise<Map<string, number>> {
     if (res.success === false) return map;
     for (const row of res.data?.transactions ?? []) {
       const id = row.carrier_id != null ? String(row.carrier_id) : '';
-      if (id) map.set(id, n(row.volume));
+      if (!id) continue;
+      // Prefer `volume`; fall back to alternate keys some dashboard payloads use.
+      const vol = n(row.volume ?? row.gallons ?? row.total_volume);
+      map.set(id, vol);
     }
   } catch {
     /* best-effort */
@@ -461,41 +456,73 @@ function mapTicket(t: DeskTicket): TicketVM {
     overdue: Boolean(t.isOverDue),
   };
 }
-export async function loadTickets(): Promise<{ tickets: TicketVM[]; scoped: boolean }> {
-  // A real agent's own session scopes the list server-side. When an admin is "viewing as" an agent
-  // (act-as), pass that agent's id so the (admin-honored) ?zoho_user_id override scopes to THEM —
-  // the desk route resolves identity from the session, not the act-as headers.
+/** One page of creator-scoped Desk tickets (search `from` is 0-based offset; max `limit` 99). */
+export interface TicketsPageResult {
+  tickets: TicketVM[];
+  scoped: boolean;
+  /** True when Desk.search is unavailable — server still pages via /tickets creator scan. */
+  windowed: boolean;
+  hasMore: boolean;
+  /** Next `from` for infinite-scroll load-more (ticketdashboard.html: from += limit). */
+  nextFrom: number;
+}
+
+const TICKET_PAGE = 20;
+/** Desk search is capped around ~2,000 rows; 99×20 covers that window. */
+const MAX_TICKET_PAGES = 20;
+
+function ticketScope(): { zohoUserId?: string } {
+  // When an admin is "viewing as" an agent, pass that agent's id so ?zoho_user_id scopes to them.
   const actAsId = getImpersonation()?.zohoUserId;
-  const scope = actAsId ? { zohoUserId: actAsId } : {};
-  // Page the full open-ticket set (Desk caps a page at 99): the WS unread badge only counts
-  // events for ticket ids the client knows, so a busy agent's older tickets must load too.
-  // Capped to bound render + Desk API cost; a short page (or the server's windowed fallback,
-  // which already returns its full bounded set) ends the loop.
-  const PAGE = 99;
-  const MAX_PAGES = 5; // ≈495 tickets
+  return actAsId ? { zohoUserId: actAsId } : {};
+}
+
+/** Fetch one owned ticket (WS promote for tickets outside the loaded pages). */
+export async function loadTicketById(ticketId: string): Promise<TicketVM> {
+  return mapTicket(await getDeskTicket(ticketId));
+}
+
+/** One page — matches zoho-octane ticketdashboard.html (`from=0`, `limit=20`, from += limit). */
+export async function loadTicketsPage(opts: {
+  from?: number;
+  limit?: number;
+} = {}): Promise<TicketsPageResult> {
+  const limit = Math.min(99, Math.max(1, opts.limit ?? TICKET_PAGE));
+  const from = Math.max(0, opts.from ?? 0);
+  const res = await listDeskTickets({ from, limit, ...ticketScope() });
+  const raw = res.tickets;
+  const hasMore = typeof res.hasMore === 'boolean' ? res.hasMore : raw.length >= limit;
+  const nextFrom = typeof res.nextFrom === 'number' ? res.nextFrom : from + limit;
+  return {
+    tickets: raw.map(mapTicket),
+    scoped: res.scoped,
+    windowed: Boolean(res.windowed),
+    hasMore,
+    nextFrom,
+  };
+}
+
+/**
+ * Full creator-scoped set (for sidebar WS subscribe + badge). Pages until exhausted or the Desk
+ * search window (~2k). Prefer `loadTicketsPage` in the Tickets tab for progressive loading.
+ */
+export async function loadTickets(): Promise<{ tickets: TicketVM[]; scoped: boolean }> {
   const seen = new Set<string>();
-  const rows: Parameters<typeof mapTicket>[0][] = [];
+  const rows: TicketVM[] = [];
   let scoped = true;
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const res = await listDeskTickets({ from: 1 + page * PAGE, limit: PAGE, ...scope });
+  let from = 0;
+  for (let page = 0; page < MAX_TICKET_PAGES; page++) {
+    const res = await loadTicketsPage({ from, limit: 99 });
     scoped = res.scoped;
     for (const t of res.tickets) {
-      const id = String((t as { id?: unknown }).id ?? '');
-      if (id && seen.has(id)) continue;
-      if (id) seen.add(id);
+      if (t.id && seen.has(t.id)) continue;
+      if (t.id) seen.add(t.id);
       rows.push(t);
     }
-    if (res.windowed || res.tickets.length < PAGE) break;
+    if (!res.hasMore) break;
+    from = res.nextFrom;
   }
-  // Most-recently-active first (a new comment/attachment bumps modifiedTime), so a ticket that
-  // just got a reply jumps back to the top of the list instead of sitting wherever it was created.
-  const activityMs = (t: Parameters<typeof mapTicket>[0]): number => {
-    const iso = (t.modifiedTime as string | undefined) ?? t.createdTime;
-    const ms = iso ? new Date(iso).getTime() : 0;
-    return Number.isNaN(ms) ? 0 : ms;
-  };
-  rows.sort((a, b) => activityMs(b) - activityMs(a));
-  return { tickets: rows.map(mapTicket), scoped };
+  return { tickets: rows, scoped };
 }
 
 export interface TicketMsgVM {
@@ -521,7 +548,8 @@ interface TicketMsgRow extends TicketMsgVM {
 }
 
 export async function loadTicketMessages(ticketId: string): Promise<TicketMsgVM[]> {
-  const { threads, comments, attachments } = await listDeskComments(ticketId, 50);
+  // Reference ticketdashboard loads comments with limit 100; Desk caps lists at 99.
+  const { threads, comments, attachments } = await listDeskComments(ticketId, 99);
   const ms = (v: string | undefined): number => {
     const t = v ? new Date(v).getTime() : 0;
     return Number.isNaN(t) ? 0 : t;
@@ -563,49 +591,7 @@ export async function loadTicketMessages(ticketId: string): Promise<TicketMsgVM[
   return rows.sort((a, b) => a._ts - b._ts).map(({ _ts, ...m }) => m);
 }
 
-// ---- Client drilldown modal: cards (dwh.cards) + activity (dwh.transactions) ----
-
-function maskCard(raw: unknown): string {
-  const digits = String(raw ?? '').replace(/\D/g, '');
-  return digits ? `•••• ${digits.slice(-4)}` : '—';
-}
-
-export interface ClientCardVM {
-  num: string;
-  status: string;
-  tone: string;
-}
-/** A carrier's cards from the DWH (card_number + Active/Inactive/Unknown status only). */
-export async function loadClientCards(carrierId: string): Promise<ClientCardVM[]> {
-  if (!carrierId) return [];
-  const res = await callTouchpoint('dwh.cards', { carrierId });
-  return (res.data ?? []).map((c) => {
-    const up = String(c.status ?? '').trim().toUpperCase();
-    const tone = up === 'ACTIVE' ? 'var(--ok)' : up === 'INACTIVE' ? 'var(--muted)' : 'var(--warn)';
-    return { num: maskCard(c.card_number), status: up || 'UNKNOWN', tone };
-  });
-}
-
-export interface ClientActivityVM {
-  title: string;
-  sub: string;
-  tone: string;
-}
-/** A carrier's recent fuel-card transactions (DWH line items) as an activity feed. */
-export async function loadClientActivity(carrierId: string): Promise<ClientActivityVM[]> {
-  if (!carrierId) return [];
-  const res = await callTouchpoint('dwh.transactions', { carrierId, limit: 15 });
-  const rows = (res.data ?? []).slice(0, 15);
-  return rows.map((r) => {
-    const gal = n(r.line_item_fuel_quantity ?? r.fuel_quantity);
-    const amt = r.line_item_amount ?? r.amount;
-    const card = maskCard(r.card_number);
-    const loc = String(r.location_name ?? r.merchant_name ?? r.location ?? '').trim();
-    const date = r.transaction_date ? relTime(String(r.transaction_date)) : '';
-    const title = gal > 0 ? `${gal.toLocaleString('en-US', { maximumFractionDigits: 1 })} gal fueled` : 'Fuel transaction';
-    const sub = [date, amt != null ? money(amt) : '', card !== '—' ? `Card ${card}` : '', loc]
-      .filter(Boolean)
-      .join(' · ');
-    return { title, sub, tone: 'var(--violet)' };
-  });
-}
+export {
+  loadClientCards, loadClientActivity, CLIENT_ACTIVITY_PAGE,
+  type ClientCardVM, type ClientActivityVM, type ClientActivityPage,
+} from './clientDrilldown';

@@ -1,27 +1,30 @@
 /**
  * Agent Sales Dashboard — self-service Main Sales Dashboard parity:
- * hero KPIs, donuts + Inactive/Stuck filters, bar modes, activity Cycle/History
- * with day selection, searchable transaction table + totals.
+ * hero KPIs with icons, crimson donuts + Inactive/Stuck filters,
+ * teal new-cards card, Cards by Company / Card Activity charts, TX table.
  */
 import { useEffect, useState, type MouseEvent } from 'react';
 import { getImpersonation } from '@/api/impersonation';
 import { s } from './dc';
+import { Icon } from './icons';
 import { formatCachedAt } from './dashCache';
-import { currentBillingCycle, msdFmtNum, n } from './dashFormat';
+import { currentBillingCycle, msdFmtNum } from './dashFormat';
 import { DashSkeleton } from './DashSkeleton';
+import { SalesDashCharts } from './SalesDashCharts';
+import { ICO } from './salesData';
 import {
   cycleTotals,
   filterActivity,
   filterCompanies,
   filterTransactions,
   loadSalesDashRaw,
-  statusColor,
   txTotals,
   type ActivityRange,
   type BarFilter,
   type CompanyStatus,
   type SalesDashRaw,
 } from './dashSalesData';
+import './msd.css';
 
 const NO_CARRIERS = /dim_company/i;
 const CIRC = 2 * Math.PI * 42;
@@ -31,8 +34,9 @@ function donutDash(pct: number): string {
   return `${((p / 100) * CIRC).toFixed(1)} ${CIRC.toFixed(1)}`;
 }
 
-function money(v: number): string {
-  return `$${n(v).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+/** Volume cells — keep decimals when present (widget shows full gallons). */
+function fmtVol(v: number): string {
+  return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
 export function SalesDashPanel() {
@@ -42,7 +46,7 @@ export function SalesDashPanel() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<CompanyStatus | null>(null);
-  const [barFilter, setBarFilter] = useState<BarFilter>('active');
+  const [barFilter, setBarFilter] = useState<BarFilter>('all');
   const [companyQ, setCompanyQ] = useState('');
   const [txQ, setTxQ] = useState('');
   const [activityRange, setActivityRange] = useState<ActivityRange>('recent');
@@ -112,6 +116,13 @@ export function SalesDashPanel() {
     return set.size ? set : null;
   })();
 
+  const selectionLabel =
+    selectedDates && selStart != null && selEnd != null
+      ? selStart === selEnd
+        ? actPoints[selStart]?.label ?? null
+        : `${actPoints[Math.min(selStart, selEnd)]?.label ?? ''} → ${actPoints[Math.max(selStart, selEnd)]?.label ?? ''}`
+      : null;
+
   const bars = filterCompanies({
     companies: data.companies,
     statusFilter,
@@ -132,8 +143,6 @@ export function SalesDashPanel() {
     dailyByCarrier: data.dailyByCarrier,
   });
   const totals = txTotals(txRows);
-  const maxTx = Math.max(1, ...actPoints.map((p) => p.transactions));
-  const chartW = Math.max(actPoints.length * 46, 480);
 
   const onActivityClick = (i: number, e: MouseEvent): void => {
     const shift = e.shiftKey || e.metaKey;
@@ -164,6 +173,8 @@ export function SalesDashPanel() {
   };
 
   const utilPct = kn('total_cards_pct');
+  const inactiveShare =
+    (kn('inactive_companies') + kn('stuck_companies')) / Math.max(kn('total_companies'), 1) * 100;
 
   return (
     <div style={s('display:flex;flex-direction:column;gap:16px')}>
@@ -199,397 +210,298 @@ export function SalesDashPanel() {
         </button>
       </div>
 
-      {/* Hero — gallons from TX volume; Card Swipes = new_cards_cycle (widget parity) */}
-      <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-        <div style={s('padding:20px;border-radius:var(--radius-md);background:linear-gradient(120deg,color-mix(in srgb,var(--orange) 14%,transparent),var(--surface));border:1px solid var(--border)')}>
-          <div style={s("font-family:'JetBrains Mono',monospace;font-weight:700;font-size:28px")}>{msdFmtNum(hero.volume)}</div>
-          <div style={s('font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-top:4px')}>
-            Total Gallons · This Cycle
+      <div className="msd-hero-kpi-strip">
+        <div className="msd-hero-kpi msd-hero-kpi--gold">
+          <div className="msd-hero-kpi-icon">
+            <Icon name="fuel" size={20} />
+          </div>
+          <div className="msd-hero-kpi-body">
+            <div className="msd-hero-kpi-value">{msdFmtNum(hero.volume)}</div>
+            <div className="msd-hero-kpi-label">Total Gallons · This Cycle</div>
           </div>
         </div>
-        <div style={s('padding:20px;border-radius:var(--radius-md);background:linear-gradient(120deg,color-mix(in srgb,var(--accent) 14%,transparent),var(--surface));border:1px solid var(--border)')}>
-          <div style={s("font-family:'JetBrains Mono',monospace;font-weight:700;font-size:28px")}>{msdFmtNum(kn('new_cards_cycle'))}</div>
-          <div style={s('font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-top:4px')}>
-            Card Swipes · This Cycle
+        <div className="msd-hero-kpi-sep" />
+        <div className="msd-hero-kpi msd-hero-kpi--blue">
+          <div className="msd-hero-kpi-icon">
+            <Icon name="card" size={20} />
+          </div>
+          <div className="msd-hero-kpi-body">
+            <div className="msd-hero-kpi-value">{msdFmtNum(kn('new_cards_cycle'))}</div>
+            <div className="msd-hero-kpi-label">Card Swipes · This Cycle</div>
           </div>
         </div>
       </div>
 
-      {/* Top KPI row */}
-      <div style={s('display:grid;grid-template-columns:1.25fr 1fr .85fr;gap:12px')}>
-        <div style={s('padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
-          <div style={s('display:flex;justify-content:space-around;gap:12px')}>
-            {[
-              {
-                label: 'Active Companies',
-                num: kn('active_companies'),
-                pct: kn('active_companies_pct'),
-                detail: `${kn('active_companies')} / ${kn('total_companies')}`,
-                color: 'var(--ok)',
-              },
-              {
-                label: 'Active Cards',
-                num: kn('active_cards'),
-                pct: kn('active_cards_pct'),
-                detail: `${kn('active_cards')} / ${kn('total_cards')}`,
-                color: 'var(--accent)',
-              },
-            ].map((d) => (
-              <div key={d.label} style={s('text-align:center')}>
-                <div style={s('position:relative;width:88px;height:88px;margin:0 auto')}>
-                  <svg viewBox="0 0 100 100" style={s('width:88px;height:88px')}>
-                    <circle cx="50" cy="50" r="42" fill="none" stroke="var(--raised)" strokeWidth="9" />
-                    <circle
-                      cx="50"
-                      cy="50"
-                      r="42"
-                      fill="none"
-                      stroke={d.color}
-                      strokeWidth="9"
-                      strokeLinecap="round"
-                      strokeDasharray={donutDash(d.pct)}
-                      transform="rotate(-90 50 50)"
-                    />
-                  </svg>
-                  <div style={s('position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center')}>
-                    <div style={s("font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px")}>{msdFmtNum(d.num)}</div>
-                    <div style={s(`font-size:11px;font-weight:800;color:${d.color}`)}>{kt(d.label.includes('Companies') ? 'active_companies_pct' : 'active_cards_pct')}%</div>
-                  </div>
+      <div className="msd-top-row">
+        <div className="msd-kpi-card msd-kpi-card--donuts">
+          <div className="msd-donut-pair">
+            <div className="msd-donut-group">
+              <div className="msd-donut-wrap">
+                <svg viewBox="0 0 100 100" className="msd-donut-svg">
+                  <circle cx="50" cy="50" r="42" fill="none" strokeWidth="9" className="msd-donut-track" />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="42"
+                    fill="none"
+                    strokeWidth="9"
+                    stroke="#f59e0b"
+                    strokeDasharray={donutDash(inactiveShare)}
+                    strokeLinecap="butt"
+                    transform="rotate(-90,50,50)"
+                    opacity={0.35}
+                  />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="42"
+                    fill="none"
+                    strokeWidth="9"
+                    stroke="#9f1239"
+                    strokeDasharray={donutDash(kn('active_companies_pct'))}
+                    strokeLinecap="round"
+                    transform="rotate(-90,50,50)"
+                  />
+                </svg>
+                <div className="msd-donut-inner">
+                  <div className="msd-donut-num">{msdFmtNum(kn('active_companies'))}</div>
+                  <div className="msd-donut-pct">{kt('active_companies_pct')}%</div>
                 </div>
-                <div style={s('font-size:11px;font-weight:700;margin-top:6px')}>{d.label}</div>
-                <div style={s('font-size:10.5px;color:var(--muted)')}>{d.detail}</div>
               </div>
-            ))}
+              <div className="msd-donut-meta">
+                <div className="msd-donut-title">
+                  <Icon name={ICO.users} size={10} strokeWidth={2.5} />
+                  Active Companies
+                </div>
+                <div className="msd-donut-detail">
+                  {kn('active_companies')} / {kn('total_companies')}
+                </div>
+              </div>
+            </div>
+
+            <div className="msd-donut-divider" />
+
+            <div className="msd-donut-group">
+              <div className="msd-donut-wrap">
+                <svg viewBox="0 0 100 100" className="msd-donut-svg">
+                  <circle cx="50" cy="50" r="42" fill="none" strokeWidth="9" className="msd-donut-track" />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="42"
+                    fill="none"
+                    strokeWidth="9"
+                    stroke="#9f1239"
+                    strokeDasharray={donutDash(kn('active_cards_pct'))}
+                    strokeLinecap="round"
+                    transform="rotate(-90,50,50)"
+                  />
+                </svg>
+                <div className="msd-donut-inner">
+                  <div className="msd-donut-num">{msdFmtNum(kn('active_cards'))}</div>
+                  <div className="msd-donut-pct">{kt('active_cards_pct')}%</div>
+                </div>
+              </div>
+              <div className="msd-donut-meta">
+                <div className="msd-donut-title">
+                  <Icon name={ICO.card} size={10} strokeWidth={2.5} />
+                  Active Cards
+                </div>
+                <div className="msd-donut-detail">
+                  {kn('active_cards')} / {kn('total_cards')}
+                </div>
+              </div>
+            </div>
           </div>
-          <div style={s('display:flex;align-items:center;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border2)')}>
+
+          <div className="msd-alert-strip">
             <button
               type="button"
+              className={`msd-alert-btn msd-alert-btn--inactive${statusFilter === 'inactive' ? ' msd-alert-btn--on' : ''}`}
               onClick={() => toggleStatus('inactive')}
-              style={s(
-                `display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:99px;border:1px solid ${statusFilter === 'inactive' ? 'var(--orange)' : 'var(--border)'};background:${statusFilter === 'inactive' ? 'color-mix(in srgb,var(--orange) 14%,transparent)' : 'transparent'};color:var(--orange);font-size:11.5px;font-weight:800;cursor:pointer`,
-              )}
-              title="Filter bar chart to inactive companies"
+              title="Click to see inactive companies in the bar chart"
             >
-              {kn('inactive_companies')} Inactive
+              <Icon name="pause" size={13} />
+              <span className="msd-alert-count">{kn('inactive_companies')}</span>
+              <span className="msd-alert-lbl">Inactive</span>
+              {statusFilter === 'inactive' ? <Icon name="close" size={10} strokeWidth={2.5} /> : null}
             </button>
+            <div className="msd-alert-sep" />
             <button
               type="button"
+              className={`msd-alert-btn msd-alert-btn--stuck${statusFilter === 'stuck' ? ' msd-alert-btn--on' : ''}`}
               onClick={() => toggleStatus('stuck')}
-              style={s(
-                `display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:99px;border:1px solid ${statusFilter === 'stuck' ? 'var(--danger)' : 'var(--border)'};background:${statusFilter === 'stuck' ? 'color-mix(in srgb,var(--danger) 14%,transparent)' : 'transparent'};color:var(--danger);font-size:11.5px;font-weight:800;cursor:pointer`,
-              )}
-              title="Filter bar chart to stuck companies"
+              title="Click to see stuck companies in the bar chart"
             >
-              {kn('stuck_companies')} Stuck
+              <Icon name={ICO.warn} size={13} />
+              <span className="msd-alert-count">{kn('stuck_companies')}</span>
+              <span className="msd-alert-lbl">Stuck</span>
+              {statusFilter === 'stuck' ? <Icon name="close" size={10} strokeWidth={2.5} /> : null}
             </button>
-            <span style={s('margin-left:auto;font-size:10.5px;color:var(--faint)')}>↓ Click to filter bar chart</span>
+            <div className="msd-alert-hint">↓ Click to filter bar chart</div>
           </div>
         </div>
 
-        <div style={s('padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;gap:14px')}>
-          <div>
-            <div style={s('font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)')}>
-              Cards Used This Cycle
+        <div className="msd-kpi-card msd-kpi-card--metrics">
+          <div className="msd-kpi-primary">
+            <div className="msd-kpi-icon-row">
+              <Icon name={ICO.card} size={15} color="#9f1239" strokeWidth={2} />
+              <span className="msd-kpi-lbl">Cards Used This Cycle</span>
             </div>
-            <div style={s("font-family:'JetBrains Mono',monospace;font-weight:700;font-size:26px;margin-top:4px")}>
-              {msdFmtNum(kn('unique_cards_used'))}
+            <div className="msd-kpi-big">{msdFmtNum(kn('unique_cards_used'))}</div>
+            <div className="msd-kpi-util-bar">
+              <div className="msd-kpi-util-fill" style={{ width: `${Math.min(utilPct, 100)}%` }} />
             </div>
-            <div style={s('height:7px;border-radius:99px;background:var(--raised);margin-top:8px;overflow:hidden')}>
-              <div style={s(`height:100%;width:${Math.min(utilPct, 100)}%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-2))`)} />
-            </div>
-            <div style={s('font-size:11px;color:var(--muted);margin-top:5px')}>
-              <strong style={s('color:var(--accent)')}>{kt('total_cards_pct')}%</strong> of active cards utilized
+            <div className="msd-kpi-util-label">
+              <span className="msd-kpi-pct">{kt('total_cards_pct')}%</span>
+              <span className="msd-kpi-sub">of active cards utilized</span>
             </div>
           </div>
-          <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:10px')}>
-            <div>
-              <div style={s("font-family:'JetBrains Mono',monospace;font-weight:700;font-size:20px;color:var(--accent)")}>
-                {kt('cards_per_company') || '0'}
+          <div className="msd-kpi-pair">
+            <div className="msd-kpi-item">
+              <div className="msd-kpi-icon-row">
+                <Icon name={ICO.lead} size={12} color="#0ea5e9" strokeWidth={2.5} />
               </div>
-              <div style={s('font-size:10.5px;color:var(--muted);font-weight:700')}>Cards / Company</div>
+              <div className="msd-kpi-big msd-kpi-big--teal">{kt('cards_per_company') || '0'}</div>
+              <div className="msd-kpi-lbl">Cards / Company</div>
             </div>
-            <div>
-              <div style={s("font-family:'JetBrains Mono',monospace;font-weight:700;font-size:20px;color:var(--accent)")}>
-                {kt('transactions_per_card') || '0'}
+            <div className="msd-kpi-item">
+              <div className="msd-kpi-icon-row">
+                <Icon name="dollar" size={12} color="#0ea5e9" strokeWidth={2.5} />
               </div>
-              <div style={s('font-size:10.5px;color:var(--muted);font-weight:700')}>Tx / Card</div>
+              <div className="msd-kpi-big msd-kpi-big--teal">{kt('transactions_per_card') || '0'}</div>
+              <div className="msd-kpi-lbl">Tx / Card</div>
             </div>
           </div>
         </div>
 
-        <div style={s('padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;gap:14px')}>
-          <div>
-            <div style={s('font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)')}>
-              New Cards This Cycle
+        <div className="msd-kpi-card msd-kpi-card--newcards">
+          <div className="msd-kpi-item">
+            <div className="msd-kpi-icon-row">
+              <Icon name="plus" size={14} color="#0ea5e9" strokeWidth={2.5} />
+              <span className="msd-kpi-lbl">New Cards This Cycle</span>
             </div>
-            <div style={s("font-family:'JetBrains Mono',monospace;font-weight:700;font-size:24px;color:var(--ok);margin-top:3px")}>
-              {msdFmtNum(kn('new_cards_cycle'))}
+            <div className="msd-kpi-big msd-kpi-big--teal">{msdFmtNum(kn('new_cards_cycle'))}</div>
+            <div className="msd-kpi-sub" style={{ marginTop: 2 }}>
+              {cycleLabel}
             </div>
-            <div style={s('font-size:11px;color:var(--faint);margin-top:2px')}>{cycleLabel}</div>
           </div>
-          <div style={s('height:1px;background:var(--border)')} />
-          <div>
-            <div style={s('font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)')}>
-              Last 7 Days
+          <div className="msd-kpi-item">
+            <div className="msd-kpi-icon-row">
+              <Icon name="calendar" size={14} color="#0ea5e9" strokeWidth={2.5} />
+              <span className="msd-kpi-lbl">Last 7 Days</span>
             </div>
-            <div style={s("font-family:'JetBrains Mono',monospace;font-weight:700;font-size:24px;color:var(--ok);margin-top:3px")}>
-              {msdFmtNum(kn('new_cards_7d'))}
-            </div>
+            <div className="msd-kpi-big msd-kpi-big--teal">{msdFmtNum(kn('new_cards_7d'))}</div>
           </div>
         </div>
       </div>
 
-      {/* Charts row */}
-      <div style={s('display:grid;grid-template-columns:1fr 1.1fr;gap:12px')}>
-        <div style={s('padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
-          <div style={s('display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:12px')}>
-            <div>
-              <div style={s('font-size:13px;font-weight:800')}>Cards by Company</div>
-              <div style={s('font-size:11px;color:var(--muted)')}>
-                {statusFilter ? (
-                  <>
-                    Showing {statusFilter}{' '}
-                    <button type="button" onClick={() => setStatusFilter(null)} style={s('border:none;background:transparent;color:var(--accent);font-weight:800;cursor:pointer')}>
-                      ✕
-                    </button>
-                  </>
-                ) : (
-                  `${bars.length} companies`
-                )}
-              </div>
-            </div>
-            <div style={s('display:flex;gap:4px;flex-wrap:wrap')}>
-              {([
-                ['all', 'All'],
-                ['active', 'Active'],
-                ['new', 'New'],
-                ['unique', 'Unique'],
-              ] as const).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setBarFilter(id)}
-                  style={s(
-                    `padding:5px 9px;border-radius:99px;border:1px solid ${barFilter === id ? 'var(--accent)' : 'var(--border)'};background:${barFilter === id ? 'color-mix(in srgb,var(--accent) 12%,transparent)' : 'transparent'};color:${barFilter === id ? 'var(--accent)' : 'var(--muted)'};font-size:10.5px;font-weight:800;cursor:pointer`,
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+      <SalesDashCharts
+        bars={bars}
+        maxBar={maxBar}
+        barFilter={barFilter}
+        setBarFilter={setBarFilter}
+        companyQ={companyQ}
+        setCompanyQ={setCompanyQ}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+        selectedDates={selectedDates}
+        dailyByCarrier={data.dailyByCarrier}
+        actPoints={actPoints}
+        activityRange={activityRange}
+        setActivityRange={setActivityRange}
+        selStart={selStart}
+        selEnd={selEnd}
+        hoverIdx={hoverIdx}
+        setHoverIdx={setHoverIdx}
+        onActivityClick={onActivityClick}
+        clearSelection={clearSelection}
+        selectionLabel={selectionLabel}
+      >
+        <div className="msd-chart-block">
+          <div className="msd-chart-header">
+            <span className="msd-chart-title">Transaction Details</span>
+            <input
+              value={txQ}
+              onChange={(e) => setTxQ(e.currentTarget.value)}
+              placeholder="Filter by carrier…"
+              className="msd-tx-filter"
+            />
           </div>
-          <input
-            value={companyQ}
-            onChange={(e) => setCompanyQ(e.currentTarget.value)}
-            placeholder="Search company or carrier id…"
-            className="ss-in"
-            style={s(
-              'width:100%;height:34px;padding:0 12px;margin-bottom:12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);font-size:12.5px',
-            )}
-          />
-          <div style={s('display:flex;flex-direction:column;gap:10px;max-height:340px;overflow:auto')}>
-            {bars.length === 0 ? (
-              <div style={s('padding:24px;text-align:center;color:var(--muted);font-size:12.5px')}>
-                {selectedDates && !data.dailyByCarrier.length
-                  ? 'Day drilldown needs daily carrier data — open Automations → Transactions Report for a date range.'
-                  : 'No companies match the current filters.'}
-              </div>
-            ) : (
-              bars.map((b) => (
-                <div key={b.carrierId || b.name} style={s('display:flex;align-items:center;gap:8px')}>
-                  <span style={s(`width:8px;height:8px;border-radius:50%;background:${statusColor(b.status)};flex-shrink:0`)} />
-                  <span style={s('width:120px;font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0')} title={b.name}>
-                    {b.name}
-                  </span>
-                  {barFilter === 'all' ? (
-                    <div style={s('flex:1;display:flex;flex-direction:column;gap:3px')}>
-                      {[
-                        { v: b.activeCards, c: 'var(--ok)' },
-                        { v: b.newCards, c: 'var(--accent)' },
-                        { v: b.uniqueCards, c: 'var(--violet)' },
-                      ].map((row, i) => (
-                        <div key={i} style={s('display:flex;align-items:center;gap:6px')}>
-                          <div style={s('flex:1;height:5px;border-radius:99px;background:var(--raised);overflow:hidden')}>
-                            <div style={s(`height:100%;width:${Math.round((row.v / maxBar) * 100)}%;background:${row.c}`)} />
-                          </div>
-                          <span style={s("width:28px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:10px")}>{row.v}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <>
-                      <div style={s('flex:1;height:9px;border-radius:99px;background:var(--raised);overflow:hidden')}>
-                        <div
-                          style={s(
-                            `height:100%;width:${Math.round((b.displayValue / maxBar) * 100)}%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-2))`,
-                          )}
-                        />
-                      </div>
-                      <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;width:32px;text-align:right")}>
-                        {b.displayValue.toLocaleString()}
-                      </span>
-                    </>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        <div style={s('padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
-          <div style={s('display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-wrap:wrap')}>
-            <div>
-              <div style={s('font-size:13px;font-weight:800')}>Card Activity</div>
-              <div style={s('font-size:11px;color:var(--muted)')}>
-                {activityRange === 'recent' ? currentBillingCycle().label : 'Full history'} · click a day to filter
-              </div>
-            </div>
-            <div style={s('display:flex;gap:4px')}>
-              {([
-                ['recent', 'Cycle'],
-                ['all', 'History'],
-              ] as const).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => {
-                    setActivityRange(id);
-                    clearSelection();
-                  }}
-                  style={s(
-                    `padding:5px 10px;border-radius:99px;border:1px solid ${activityRange === id ? 'var(--accent)' : 'var(--border)'};background:${activityRange === id ? 'color-mix(in srgb,var(--accent) 12%,transparent)' : 'transparent'};color:${activityRange === id ? 'var(--accent)' : 'var(--muted)'};font-size:11px;font-weight:800;cursor:pointer`,
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          {selectedDates && (
-            <div style={s('margin-bottom:8px')}>
-              <button type="button" onClick={clearSelection} style={s('padding:4px 10px;border-radius:99px;border:1px solid var(--border);background:var(--alt);font-size:11px;font-weight:700;cursor:pointer;color:var(--muted)')}>
-                Clear day filter ({[...selectedDates].join(' → ')})
+          {selectedDates ? (
+            <div className="msd-status-ctx msd-status-ctx--selrange">
+              Showing <strong>{selectionLabel ?? 'selected days'}</strong>
+              <button type="button" className="msd-selrange-clear" onClick={clearSelection}>
+                Clear filter
               </button>
             </div>
-          )}
-          {actPoints.length === 0 ? (
-            <div style={s('padding:40px 12px;text-align:center;color:var(--muted);font-size:12.5px')}>
-              No activity in this cycle yet. Switch to History to see prior periods.
-            </div>
-          ) : (
-            <div style={s('overflow-x:auto')}>
-              <svg
-                viewBox={`0 0 ${chartW} 110`}
-                style={s(`width:${chartW}px;height:140px;display:block`)}
-                onMouseLeave={() => setHoverIdx(null)}
-              >
-                {actPoints.map((p, i) => {
-                  const x = (i / Math.max(actPoints.length - 1, 1)) * (chartW - 24) + 12;
-                  const y = 100 - (p.transactions / maxTx) * 85;
-                  const lo = selStart != null && selEnd != null ? Math.min(selStart, selEnd) : -1;
-                  const hi = selStart != null && selEnd != null ? Math.max(selStart, selEnd) : -1;
-                  const on = i >= lo && i <= hi;
-                  return (
-                    <g key={`${p.date}-${i}`} style={{ cursor: 'pointer' }} onClick={(e) => onActivityClick(i, e)} onMouseEnter={() => setHoverIdx(i)}>
-                      {on && <rect x={x - 10} y={8} width={20} height={92} fill="color-mix(in srgb, var(--accent) 14%, transparent)" rx={4} />}
-                      <circle cx={x} cy={y} r={hoverIdx === i || on ? 4.5 : 3} fill="var(--accent)" />
-                      <line x1={x} y1={8} x2={x} y2={100} stroke="transparent" strokeWidth={18} />
-                    </g>
-                  );
-                })}
-                <polyline
-                  fill="none"
-                  stroke="var(--accent)"
-                  strokeWidth="2"
-                  points={actPoints
-                    .map((p, i) => {
-                      const x = (i / Math.max(actPoints.length - 1, 1)) * (chartW - 24) + 12;
-                      const y = 100 - (p.transactions / maxTx) * 85;
-                      return `${x},${y}`;
-                    })
-                    .join(' ')}
-                />
-              </svg>
-              {hoverIdx != null && actPoints[hoverIdx] && (
-                <div style={s('font-size:11.5px;color:var(--muted);margin-top:4px')}>
-                  <strong style={s('color:var(--text)')}>{actPoints[hoverIdx].label}</strong>
-                  {' · '}
-                  {actPoints[hoverIdx].transactions.toLocaleString()} tx ·{' '}
-                  {actPoints[hoverIdx].activeCards.toLocaleString()} active ·{' '}
-                  {actPoints[hoverIdx].newCards.toLocaleString()} new
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Transaction table */}
-      <div style={s('padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
-        <div style={s('display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap')}>
-          <div style={s('font-size:13px;font-weight:800')}>Transaction Details</div>
-          <input
-            value={txQ}
-            onChange={(e) => setTxQ(e.currentTarget.value)}
-            placeholder="Filter by carrier…"
-            className="ss-in"
-            style={s(
-              'width:220px;height:34px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);font-size:12.5px',
-            )}
-          />
-        </div>
-        <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);overflow:auto')}>
-          <div
-            style={s(
-              'display:grid;grid-template-columns:1.5fr .7fr .7fr .9fr .8fr .9fr;gap:8px;padding:11px 14px;background:var(--alt);font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);min-width:640px',
-            )}
-          >
-            <span>Carrier</span>
-            <span style={s('text-align:right')}>New Cards</span>
-            <span style={s('text-align:right')}>Txns</span>
-            <span style={s('text-align:right')}>Gallons</span>
-            <span style={s('text-align:right')}>Discount</span>
-            <span style={s('text-align:right')}>Total</span>
-          </div>
-          {txRows.length === 0 ? (
-            <div style={s('padding:26px 14px;text-align:center;color:var(--muted);font-size:12.5px')}>
-              {selectedDates && !data.dailyByCarrier.length
-                ? 'No daily carrier breakdown for the selected day — try Automations → Transactions Report.'
-                : 'No transactions match.'}
-            </div>
-          ) : (
-            txRows.map((r) => (
-              <div
-                key={`${r.carrierId}-${r.name}`}
-                style={s(
-                  'display:grid;grid-template-columns:1.5fr .7fr .7fr .9fr .8fr .9fr;gap:8px;padding:11px 14px;border-top:1px solid var(--border2);font-size:12.5px;min-width:640px',
+          ) : null}
+          <div className="msd-tx-wrap">
+            <table className="msd-tx-table">
+              <thead>
+                <tr>
+                  <th>Carrier</th>
+                  <th className="msd-tx-r msd-tx-th--gold">New Cards</th>
+                  <th className="msd-tx-r">Transactions</th>
+                  <th className="msd-tx-r msd-tx-th--gold msd-tx-th--vol">Volume (Gallons)</th>
+                  <th className="msd-tx-r">Discount</th>
+                  <th className="msd-tx-r">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {txRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="msd-tx-empty">
+                      {selectedDates && !data.dailyByCarrier.length
+                        ? 'Per-company data for the selected day(s) isn’t available yet — use Automations → Transactions Report for the daily breakdown.'
+                        : selectedDates
+                          ? 'No data for the selected day(s).'
+                          : 'No data for this cycle'}
+                    </td>
+                  </tr>
+                ) : (
+                  txRows.map((r) => (
+                    <tr key={`${r.carrierId}-${r.name}`}>
+                      <td className="msd-tx-carrier" title={r.name}>
+                        {r.name}
+                      </td>
+                      <td className="msd-tx-r msd-tx-gold">{r.newCards.toLocaleString()}</td>
+                      <td className="msd-tx-r">{r.transactions.toLocaleString()}</td>
+                      <td className="msd-tx-r msd-tx-vol">{fmtVol(r.volume)}</td>
+                      <td className="msd-tx-r">{msdFmtNum(r.discount)}</td>
+                      <td className="msd-tx-r">{msdFmtNum(r.total)}</td>
+                    </tr>
+                  ))
                 )}
-              >
-                <span style={s('font-weight:600')}>{r.name}</span>
-                <span style={s("text-align:right;font-family:'JetBrains Mono',monospace;color:var(--ok)")}>{r.newCards.toLocaleString()}</span>
-                <span style={s("text-align:right;font-family:'JetBrains Mono',monospace")}>{r.transactions.toLocaleString()}</span>
-                <span style={s("text-align:right;font-family:'JetBrains Mono',monospace;color:var(--violet)")}>{r.volume.toLocaleString()}</span>
-                <span style={s("text-align:right;font-family:'JetBrains Mono',monospace")}>{money(r.discount)}</span>
-                <span style={s("text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700")}>{money(r.total)}</span>
-              </div>
-            ))
-          )}
-          {totals && (
-            <div
-              style={s(
-                'display:grid;grid-template-columns:1.5fr .7fr .7fr .9fr .8fr .9fr;gap:8px;padding:11px 14px;border-top:2px solid var(--border);background:var(--alt);font-size:12.5px;font-weight:700;min-width:640px',
-              )}
-            >
-              <span>Total</span>
-              <span style={s("text-align:right;font-family:'JetBrains Mono',monospace")}>{totals.newCards.toLocaleString()}</span>
-              <span style={s("text-align:right;font-family:'JetBrains Mono',monospace")}>{totals.transactions.toLocaleString()}</span>
-              <span style={s("text-align:right;font-family:'JetBrains Mono',monospace")}>{totals.volume.toLocaleString()}</span>
-              <span style={s("text-align:right;font-family:'JetBrains Mono',monospace")}>{money(totals.discount)}</span>
-              <span style={s("text-align:right;font-family:'JetBrains Mono',monospace")}>{money(totals.total)}</span>
-            </div>
-          )}
+              </tbody>
+              {totals && txRows.length > 0 ? (
+                <tfoot>
+                  <tr className="msd-tx-totals">
+                    <td>
+                      <strong>Total</strong>
+                    </td>
+                    <td className="msd-tx-r msd-tx-gold msd-tx-gold--total">
+                      <strong>{totals.newCards.toLocaleString()}</strong>
+                    </td>
+                    <td className="msd-tx-r">
+                      <strong>{totals.transactions.toLocaleString()}</strong>
+                    </td>
+                    <td className="msd-tx-r msd-tx-vol msd-tx-vol--total">
+                      <strong>{fmtVol(totals.volume)}</strong>
+                    </td>
+                    <td className="msd-tx-r">
+                      <strong>{msdFmtNum(totals.discount)}</strong>
+                    </td>
+                    <td className="msd-tx-r">
+                      <strong>{msdFmtNum(totals.total)}</strong>
+                    </td>
+                  </tr>
+                </tfoot>
+              ) : null}
+            </table>
+          </div>
         </div>
-      </div>
+      </SalesDashCharts>
     </div>
   );
 }

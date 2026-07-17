@@ -41,6 +41,11 @@ import {
   User,
   Users,
   X,
+  Rocket,
+  Wallet,
+  Activity,
+  LineChart,
+  LayoutGrid,
 } from 'lucide-react';
 
 /**
@@ -82,7 +87,7 @@ export const ChatIcon = icon(MessageCircleMore, 16);
 
 // ── actions + controls ──────────────────────────────────────────────────────
 export const SearchIcon = icon(Search, 15);
-export const SwitchIcon = icon(ArrowLeftRight, 13);
+export const SwitchIcon = icon(LayoutGrid, 13);
 /** Impersonation / "View as" — distinct from SwitchIcon (module picker). */
 export const ViewAsIcon = icon(Eye, 13);
 export const PlusIcon = icon(Plus, 12);
@@ -124,15 +129,15 @@ export const Sparkle = ({ size = 16, className, style }: IconProps) => (
 /** Lucide glyphs for each Mytrion module — picker tiles and anywhere a department icon is needed. */
 const MYTRION_GLYPHS: Record<string, LucideIcon> = {
   admin: Shield,
-  sales: Handshake,
-  billing: Receipt,
-  collection: CircleDollarSign,
+  sales: Rocket,
+  billing: Wallet,
+  collection: Receipt,
   finance: Landmark,
   'customer-service': Headset,
   retention: Heart,
   verification: BadgeCheck,
   manager: Users,
-  analyst: BarChart3,
+  analyst: LineChart,
   hr: Briefcase,
 };
 

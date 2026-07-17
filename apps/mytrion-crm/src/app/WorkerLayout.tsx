@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import { UserContextProvider } from '../context/UserContextProvider';
 import { ImpersonationProvider } from '../context/ImpersonationProvider';
+import { RingCentralPhone } from '@/components/ringcentral/RingCentralPhone';
 
 /**
  * Layout for the WORKER portal: everything under it runs behind the Zoho OAuth gate
@@ -13,6 +14,7 @@ export function WorkerLayout() {
     <UserContextProvider>
       <ImpersonationProvider>
         <Outlet />
+        <RingCentralPhone />
       </ImpersonationProvider>
     </UserContextProvider>
   );

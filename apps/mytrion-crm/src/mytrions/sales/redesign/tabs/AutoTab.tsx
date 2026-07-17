@@ -4,7 +4,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MoneyCodePreview } from '@/api/touchpointTypes';
 import { logAutomation } from '@/api/touchpoints';
-import { s, Svg, Badge } from '../dc';
+import { s, Badge } from '../dc';
+import { Icon } from '../icons';
 import { useSales } from '../ctx';
 import { badge, deptStyle, iconBox, nyDaysAgo, nyToday, type BadgeVM } from '../salesData';
 import { useLoad, money } from '../live';
@@ -59,7 +60,7 @@ const limitBtn = (on: boolean, col: string): string =>
 const btnP = (extra: string): string => `border:none;background:${grad};color:#fff;font-weight:700;cursor:pointer;${extra}`;
 function Lbl({ t }: { t: string }) { return <div style={s(labelCss)}>{t}</div>; }
 const closeX16 = (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+  <Icon name="close" size={16} strokeWidth={2.4} />
 );
 const UD0: UnitDriverForm = { unitNumber: '', driverName: '', driverId: '' };
 const MC0: MoneyCodeForm = { amount: '', reason: MONEY_CODE_REASONS[0], unitNumber: '' };
@@ -250,7 +251,7 @@ export function AutoTab() {
           <div style={s('font-size:12.5px;color:var(--muted);margin-top:2px')}>Handle Customer Service, Billing &amp; Verification yourself — no ticket needed. <strong style={s('color:var(--text2)')}>{String(autoCatalog.length)}</strong> actions available.</div>
         </div>
         <div style={s('position:relative;margin-bottom:18px')}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s('position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--muted)')}><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+          <Icon name="search" size={16} style={s('position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--muted)')} />
           <input value={autoSearch} onChange={(e) => setAutoSearch(e.target.value)} placeholder="Search by name, code (e.g. C-16), or keyword…" className="ss-in" style={s('width:100%;height:46px;padding:0 44px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;box-shadow:var(--shadow-sm)')} />
           {autoSearch && <button onClick={() => setAutoSearch('')} aria-label="Clear" className="ss-ico-btn" style={s('position:absolute;right:11px;top:50%;transform:translateY(-50%);width:26px;height:26px;border-radius:var(--radius-md);border:none;background:var(--alt);color:var(--muted);cursor:pointer')}>✕</button>}
         </div>
@@ -262,7 +263,7 @@ export function AutoTab() {
           <div onClick={(e) => e.stopPropagation()} style={s(`width:100%;max-width:${modalMaxW};max-height:88vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:0 24px 48px rgba(0,0,0,0.2);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
             <div style={s('flex-shrink:0;padding:24px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:16px;background:linear-gradient(180deg,rgba(var(--accent-rgb),0.03),transparent)')}>
               <div style={s(iconBox(DEPT_COL[b.dept] ?? 'var(--accent)', 48))}>
-                <Svg d={b.icon} size={22} strokeWidth={1.75} />
+                <Icon name={b.icon} size={22} strokeWidth={1.75} />
               </div>
               <div style={s('flex:1;min-width:0')}>
                 <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;letter-spacing:.03em;text-transform:uppercase;color:var(--text)')}>{b.title}</div>
@@ -512,7 +513,7 @@ export function AutoTab() {
               {autoStep === 'done' && (autoRunErr ? (
                 <div style={s('text-align:center;padding:32px 10px')}>
                   <div style={s('width:64px;height:64px;border-radius:50%;background:color-mix(in srgb,var(--danger) 12%,transparent);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;color:var(--danger);box-shadow:0 0 0 8px color-mix(in srgb,var(--danger) 4%,transparent)')}>
-                    <Svg d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" size={32} strokeWidth={2.2} />
+                    <Icon name="alert" size={32} strokeWidth={2.2} />
                   </div>
                   <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;text-transform:uppercase;letter-spacing:.03em;color:var(--text)')}>{`${runVerb} Failed`}</div>
                   <div style={s('font-size:14px;color:var(--text2);margin-top:10px;max-width:360px;margin-left:auto;margin-right:auto;line-height:1.6')}>{autoRunErr}</div>
@@ -547,7 +548,7 @@ export function AutoTab() {
               ) : (
                 <div style={s('text-align:center;padding:32px 10px')}>
                   <div style={s('width:64px;height:64px;border-radius:50%;background:color-mix(in srgb,var(--ok) 12%,transparent);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;color:var(--ok);box-shadow:0 0 0 8px color-mix(in srgb,var(--ok) 4%,transparent)')}>
-                    <Svg d="M20 6L9 17l-5-5" size={32} strokeWidth={2.5} />
+                    <Icon name="check" size={32} strokeWidth={2.5} />
                   </div>
                   <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;text-transform:uppercase;letter-spacing:.03em;color:var(--text)')}>{`${runVerb} complete`}</div>
                   <div style={s('font-size:14px;color:var(--text2);margin-top:10px;max-width:360px;margin-left:auto;margin-right:auto;line-height:1.6')}>{successMsg}</div>
