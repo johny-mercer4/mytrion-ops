@@ -681,6 +681,17 @@ function CardContours() {
   );
 }
 
+/**
+ * The proportion of a real fuel card: ISO/IEC 7810 ID-1, 85.60 x 53.98 mm.
+ *
+ * Both heroes imitate the plastic, so the plastic decides the shape — this is not a taste number.
+ * They were 1.5 (owner) and 1.55 (driver), i.e. both TALLER than the thing they depict, and the
+ * owner — which carries the least content — was the tallest of the two. Because the card's height
+ * is derived from the ratio and its content is laid out space-between, the surplus showed up as a
+ * 64px void between the company name and the balance.
+ */
+const CARD_RATIO = '1.586 / 1';
+
 const BALANCE_KEY = 'octane.lastBalance';
 
 /**
@@ -760,7 +771,7 @@ function OwnerHero({ initData, company, carrierId, onOpenDetails }: { initData: 
   return (
     /* Same fuel-card shell as DriverHero — owners/fleet see a card that matches the driver's, but
        carrying the account balance instead of a card number. */
-    <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', aspectRatio: '1.5 / 1', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+    <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', aspectRatio: CARD_RATIO, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
       {/* Contours only. The amber ribbon is out for now, and the scrims went with it: they existed
           solely to keep text legible on top of it, and the shell is already near-black. */}
       <CardContours />
@@ -829,7 +840,7 @@ function DriverHero({
   const display = realFull ? (revealed ? groupCardNumber(realFull) : maskedCardNumber(realFull)) : null;
   return (
     <>
-      <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', aspectRatio: '1.55 / 1', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+      <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', aspectRatio: CARD_RATIO, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
         <CardContours />
 
         {/* Top band: driver name left, company + reveal right — the toggle rides at the card's top
