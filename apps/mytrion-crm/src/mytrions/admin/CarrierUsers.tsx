@@ -347,8 +347,12 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
                   {!g.owner && <span className={s.cellSub}>Owner hasn't registered yet</span>}
                 </span>
                 <span style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }} role="cell">
+                  {/* Company type is a category, not a state — it stays neutral. Accent blue here
+                      implied "active" about a company that might be revoked, and left the column
+                      with two competing colours. The icon and label already tell the types apart,
+                      so Revoked is the only thing in this cell that earns a colour. */}
                   {g.owner && (
-                    <span className={`${s.pill} ${g.owner.companyType === 'fleet-manager' ? s.pillInfo : s.pillNeutral}`}>
+                    <span className={`${s.pill} ${s.pillNeutral}`}>
                       {g.owner.companyType === 'fleet-manager' ? <BuildingIcon size={11} /> : <PersonIcon size={11} />}
                       {g.owner.companyType === 'fleet-manager' ? 'Company owner' : 'Owner-operator'}
                     </span>

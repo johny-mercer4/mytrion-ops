@@ -73,6 +73,24 @@ describe('CarrierInvitations', () => {
     expect(within(rowFor('Live Co')).getByText('Pending')).toBeInTheDocument();
   });
 
+  // Colour is the fastest read in the table, so it has to track meaning. Cancelled used to be
+  // neutral grey — a deliberate termination styled as if it were a category — while expired, which
+  // just lapsed on its own, took the red.
+  it('colours each status by what it means', () => {
+    setup();
+    const pill = (row: string, label: string) => within(rowFor(row)).getByText(label).className;
+
+    expect(pill('Cancelled Co', 'Cancelled')).toContain('pillBad'); // killed by hand
+    expect(pill('Expired Co', 'Expired')).toContain('pillWarn'); // lapsed on its own
+    expect(pill('Redeemed Co', 'Redeemed')).toContain('pillGood');
+    expect(pill('Live Co', 'Pending')).toContain('pillInfo');
+  });
+
+  it('keeps the profile pill neutral — a type is not a status', () => {
+    setup();
+    expect(within(rowFor('Live Co')).getByText('Owner').className).toContain('pillNeutral');
+  });
+
   it('filters by status, counting what survived', async () => {
     const { user } = setup();
     expect(screen.getByText('4 total')).toBeInTheDocument();
