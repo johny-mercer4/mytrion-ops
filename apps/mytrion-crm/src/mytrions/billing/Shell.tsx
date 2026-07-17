@@ -244,39 +244,42 @@ export function BillingShell() {
   );
 }
 
-/** Opening loader — Finance-style .bm-app-loader (sweep · glow · triple spinner ring with a
- *  centred billing glyph · Rajdhani title + animated dots · progress bar). Styled in overrides.css. */
+/** Opening loader — branded splash: conic-gradient dual-arc orb with a pulsing glyph core, faint
+ *  grid backdrop, MYTRION·BILLING wordmark lockup, sweeping progress bar. Styled in overrides.css. */
 function BootLoader() {
   return (
     <div className="bm-app-loader" role="status" aria-live="polite" aria-label="Loading workspace">
       <div className="bm-app-loader-sweep" />
-      <div className="bm-app-loader-glow" />
-      <div className="bm-app-loader-ring">
-        <div className="ring-bg" />
-        <div className="ring-spin" />
-        <div className="ring-inner" />
-        <div className="ring-mark">
-          <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
-            />
-          </svg>
+      <div className="bm-boot-stage">
+        <div className="bm-boot-orb">
+          <span className="bm-boot-orb-glow" />
+          <span className="bm-boot-orb-track" />
+          <span className="bm-boot-orb-arc" />
+          <span className="bm-boot-orb-arc2" />
+          <span className="bm-boot-orb-core">
+            <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
+              />
+            </svg>
+          </span>
         </div>
-      </div>
-      <div className="bm-app-loader-text">
-        <div className="bm-app-loader-title">Connecting to Billing</div>
-        <div className="bm-app-loader-sub">
+        <div className="bm-boot-brand">
+          MY<span>TRION</span>
+          <em>BILLING</em>
+        </div>
+        <div className="bm-boot-tag">
           Securing your workspace
           <span className="dot">.</span>
           <span className="dot">.</span>
           <span className="dot">.</span>
         </div>
-      </div>
-      <div className="bm-app-loader-bar">
-        <div />
+        <div className="bm-boot-bar">
+          <div />
+        </div>
       </div>
     </div>
   );
