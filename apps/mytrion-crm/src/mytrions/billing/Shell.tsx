@@ -11,6 +11,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { useUserContext } from '../../context/UserContextProvider';
+import { BillingCopilot } from './BillingCopilot';
 import { DataCenter } from './DataCenter';
 import { Debtors } from './Debtors';
 import { Prepay } from './Prepay';
@@ -195,8 +196,8 @@ export function BillingShell() {
         ))}
       </nav>
 
-      {/* user context is available for the Phase-3 floating copilot */}
-      <span data-billing-user={user.userName} hidden />
+      {/* Floating AI copilot (replaces the widget's disabled AI Chat nav tab) */}
+      <BillingCopilot user={user} />
     </div>
   );
 }
