@@ -5,19 +5,14 @@
  * tab is a self-contained component under ./tabs. (AI chat launcher is disabled for now.)
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { RingCentralPhone } from '@/components/ringcentral/RingCentralPhone';
 
 import { s } from './dc';
 import { Icon } from './icons';
 import { SalesContext, type ClientRecord, type DetailVM, type SalesCtx } from './ctx';
-import { badge, NAV, NAVLABEL, timeParts } from './salesData';
+import { ClientModal, type ClientModalTab } from './ClientModal';
+import { NAV, NAV_GROUPS, NAVLABEL, timeParts } from './salesData';
 import { useSessionUser } from './sessionUser';
-import { useLoad } from './live';
-import {
-  loadClientCards,
-  loadClientActivity,
-  CLIENT_ACTIVITY_PAGE,
-  type ClientActivityVM,
-} from './clientDrilldown';
 import { useSidebarBadges } from './sidebarBadges';
 import { getSession } from '@/api/session';
 import { useUserContext } from '@/context/UserContextProvider';
@@ -32,7 +27,7 @@ import './theme.css';
 import { HomeTab } from './tabs/HomeTab';
 import { InboxTab } from './tabs/InboxTab';
 import { TicketsTab } from './tabs/TicketsTab';
-import { PoolTab } from './tabs/PoolTab';
+import { RetentionTab } from './tabs/RetentionTab';
 import { RecordsTab } from './tabs/RecordsTab';
 import { CreateTab } from './tabs/CreateTab';
 import { AutoTab } from './tabs/AutoTab';
@@ -77,11 +72,12 @@ export function SalesRedesign() {
   const [toast, setToast] = useState<{ title: string; msg: string; tone: 'ok' | 'warn' | 'err' } | null>(null);
   const [detail, setDetail] = useState<DetailVM | null>(null);
   const [client, setClient] = useState<ClientRecord | null>(null);
-  const [clientTab, setClientTab] = useState<'overview' | 'cards' | 'activity'>('overview');
+  const [clientTab, setClientTab] = useState<ClientModalTab>('overview');
   const [lead, setLead] = useState<LeadVM | null>(null);
   const [deal, setDeal] = useState<DealVM | null>(null);
   const [focusTicket, setFocusTicket] = useState<string | null>(null);
   const [focusAutomation, setFocusAutomation] = useState<string | null>(null);
+  const [navQuery, setNavQuery] = useState('');
 
   useEffect(() => {
     const t = setTimeout(() => setBooting(false), 1750);
@@ -109,6 +105,7 @@ export function SalesRedesign() {
   // level (not tab-scoped) so the toast on a new inbox message fires no matter which tab is open.
   const liveBadges = useSidebarBadges(currentUserId, pushToast);
   const ticketsComingSoon = NAV.some((n) => n.id === 'tickets' && n.comingSoon === true);
+  const retentionComingSoon = NAV.some((n) => n.id === 'retention' && n.comingSoon === true);
   const badgeCounts: Record<string, number | undefined> = {
     inbox: liveBadges.inbox || undefined,
     // Hide the unread badge while Tickets is parked as Coming soon.
@@ -166,12 +163,22 @@ export function SalesRedesign() {
   const displayName = user.name;
   const initials = user.initials;
 
+  const navFiltered = useMemo(() => {
+    const q = navQuery.trim().toLowerCase();
+    if (!q) return NAV_GROUPS;
+    return NAV_GROUPS.map((g) => ({
+      ...g,
+      items: g.items.filter((n) => n.label.toLowerCase().includes(q)),
+    })).filter((g) => g.items.length > 0);
+  }, [navQuery]);
+
   return (
     <SalesContext.Provider value={ctx}>
       <div
         className={`ss-root ${theme === 'light' ? 'light' : ''}`}
         style={s('height:100vh;display:flex;flex-direction:row;background:radial-gradient(1200px 500px at 78% -8%, rgba(var(--accent-rgb),.10), transparent 60%), radial-gradient(900px 480px at 0% 108%, rgba(var(--violet-rgb),.08), transparent 55%), var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;font-size:14px;overflow:hidden;position:relative')}
       >
+        <RingCentralPhone />
         {booting && (
           <div style={s('position:absolute;inset:0;z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;background:radial-gradient(700px 400px at 50% 40%, rgba(var(--accent-rgb),.10), transparent 70%), var(--bg)')}>
             <div style={s('position:absolute;top:0;left:0;right:0;height:2px;overflow:hidden')}>
@@ -221,35 +228,70 @@ export function SalesRedesign() {
               </button>
             </div>
           )}
-          <nav className="ss-scroll" style={s('flex:1;min-height:0;padding:6px 12px;display:flex;flex-direction:column;gap:3px')}>
-            {NAV.map((n) => {
-              const active = section === n.id;
-              const soon = n.comingSoon === true;
-              const style = `display:flex;align-items:center;gap:11px;padding:10px ${navCollapsed ? '0' : '12px'};${navCollapsed ? 'justify-content:center' : ''};border:none;width:100%;background:${active ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${active ? 'var(--accent)' : 'var(--muted)'};font-size:13px;font-weight:${active ? 700 : 600};cursor:${soon ? 'default' : 'pointer'};opacity:${soon ? '.5' : '1'};border-radius:var(--radius-md);box-shadow:${active ? 'inset 2.5px 0 0 var(--accent)' : 'none'};transition:background .14s,color .14s`;
-              return (
-                <button
-                  key={n.id}
-                  onClick={soon ? undefined : () => go(n.id)}
-                  disabled={soon}
-                  title={soon ? `${n.label} — coming soon` : navCollapsed ? n.label : undefined}
-                  className={soon ? undefined : 'ss-tab-x'}
-                  style={s(style)}
-                >
-                  <span style={s('position:relative;flex-shrink:0;display:inline-flex')}>
-                    <Icon name={n.icon} size={18} style={{ flexShrink: 0 }} />
-                    {navCollapsed && badgeCounts[n.id] ? (
-                      <span style={s('position:absolute;top:-6px;right:-7px;background:var(--accent);color:#fff;font-size:8px;font-weight:800;min-width:14px;height:14px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 3px;border:1.5px solid var(--bg)')}>{badgeCounts[n.id]}</span>
-                    ) : null}
-                  </span>
-                  {!navCollapsed && <span style={s('flex:1;text-align:left')}>{n.label}</span>}
-                  {!navCollapsed && soon ? (
-                    <span style={s('font-size:8.5px;font-weight:800;letter-spacing:.05em;padding:2px 7px;border-radius:99px;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)')}>SOON</span>
-                  ) : !navCollapsed && badgeCounts[n.id] ? (
-                    <span style={s('background:var(--accent);color:#fff;font-size:9.5px;font-weight:800;min-width:18px;height:18px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px')}>{badgeCounts[n.id]}</span>
-                  ) : null}
-                </button>
-              );
-            })}
+          {!navCollapsed && (
+            <div style={s('padding:0 12px 8px')}>
+              <div style={s('display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)')}>
+                <Icon name="search" size={14} color="var(--muted)" />
+                <input
+                  value={navQuery}
+                  onChange={(e) => setNavQuery(e.target.value)}
+                  placeholder="Search tabs…"
+                  aria-label="Search tabs"
+                  style={s('flex:1;min-width:0;border:none;outline:none;background:transparent;color:var(--text);font-size:12.5px;font-weight:600')}
+                />
+                {navQuery ? (
+                  <button
+                    type="button"
+                    onClick={() => setNavQuery('')}
+                    aria-label="Clear search"
+                    className="ss-ico-btn"
+                    style={s('width:22px;height:22px;border:none;background:transparent;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0')}
+                  >
+                    <Icon name="close" size={12} strokeWidth={2.4} />
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          )}
+          <nav className="ss-scroll" style={s('flex:1;min-height:0;padding:6px 12px;display:flex;flex-direction:column;gap:2px')}>
+            {navFiltered.length === 0 && !navCollapsed && (
+              <div style={s('padding:10px 12px;font-size:12px;color:var(--muted)')}>No tabs match.</div>
+            )}
+            {navFiltered.map((group, gi) => (
+              <div key={group.id} style={s('display:flex;flex-direction:column;gap:2px')}>
+                {gi > 0 && (
+                  <div style={s(`height:1px;margin:${navCollapsed ? '6px 10px' : '8px 12px'};background:var(--border)`)} aria-hidden="true" />
+                )}
+                {group.items.map((n) => {
+                  const active = section === n.id;
+                  const soon = n.comingSoon === true;
+                  const style = `display:flex;align-items:center;gap:11px;padding:10px ${navCollapsed ? '0' : '12px'};${navCollapsed ? 'justify-content:center' : ''};border:none;width:100%;background:${active ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${active ? 'var(--accent)' : 'var(--muted)'};font-size:13px;font-weight:${active ? 700 : 600};cursor:${soon ? 'default' : 'pointer'};opacity:${soon ? '.5' : '1'};border-radius:var(--radius-md);box-shadow:${active ? 'inset 2.5px 0 0 var(--accent)' : 'none'};transition:background .14s,color .14s`;
+                  return (
+                    <button
+                      key={n.id}
+                      onClick={soon ? undefined : () => go(n.id)}
+                      disabled={soon}
+                      title={soon ? `${n.label} — coming soon` : navCollapsed ? n.label : undefined}
+                      className={soon ? undefined : 'ss-tab-x'}
+                      style={s(style)}
+                    >
+                      <span style={s('position:relative;flex-shrink:0;display:inline-flex')}>
+                        <Icon name={n.icon} size={18} style={{ flexShrink: 0 }} />
+                        {navCollapsed && badgeCounts[n.id] ? (
+                          <span style={s('position:absolute;top:-6px;right:-7px;background:var(--accent);color:#fff;font-size:8px;font-weight:800;min-width:14px;height:14px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 3px;border:1.5px solid var(--bg)')}>{badgeCounts[n.id]}</span>
+                        ) : null}
+                      </span>
+                      {!navCollapsed && <span style={s('flex:1;text-align:left')}>{n.label}</span>}
+                      {!navCollapsed && soon ? (
+                        <span style={s('font-size:8.5px;font-weight:800;letter-spacing:.05em;padding:2px 7px;border-radius:99px;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)')}>SOON</span>
+                      ) : !navCollapsed && badgeCounts[n.id] ? (
+                        <span style={s('background:var(--accent);color:#fff;font-size:9.5px;font-weight:800;min-width:18px;height:18px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px')}>{badgeCounts[n.id]}</span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
           <div style={s('padding:12px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px')}>
             <button onClick={ctx.toggleTheme} title={navCollapsed ? 'Toggle theme' : undefined} aria-label="Toggle theme" className="ss-ico-btn" style={s(`height:38px;padding:0 ${navCollapsed ? '0' : '12px'};display:flex;align-items:center;${navCollapsed ? 'justify-content:center' : 'gap:9px'};border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase`)}>
@@ -283,7 +325,7 @@ export function SalesRedesign() {
               {section === 'home' && <HomeTab />}
               {section === 'inbox' && <InboxTab />}
               {section === 'tickets' && !ticketsComingSoon && <TicketsTab />}
-              {section === 'pool' && <PoolTab />}
+              {section === 'retention' && !retentionComingSoon && <RetentionTab />}
               {section === 'records' && <RecordsTab />}
               {section === 'create' && <CreateTab />}
               {section === 'auto' && <AutoTab />}
@@ -368,178 +410,5 @@ export function SalesRedesign() {
         )}
       </div>
     </SalesContext.Provider>
-  );
-}
-
-// ---- client drilldown modal (reference CLIENT DETAIL MODAL) ----
-
-const REC_STATUS: Record<ClientRecord['status'], [string, string]> = {
-  active: ['Active', 'var(--ok)'],
-  attention: ['Needs attention', 'var(--orange)'],
-  debtor: ['Debtor', 'var(--danger)'],
-};
-
-function ClientModal({
-  client,
-  clientTab,
-  setClientTab,
-  onClose,
-  onRun,
-}: {
-  client: ClientRecord;
-  clientTab: 'overview' | 'cards' | 'activity';
-  setClientTab: (t: 'overview' | 'cards' | 'activity') => void;
-  onClose: () => void;
-  onRun: () => void;
-}) {
-  const [lbl, col] = REC_STATUS[client.status];
-  const statusBadge = badge(lbl, col);
-  const initials = client.name.split(' ').map((w) => w[0]).slice(0, 2).join('');
-  const cardsL = useLoad(() => loadClientCards(client.id), [client.id]);
-  const [actRows, setActRows] = useState<ClientActivityVM[]>([]);
-  const [actLimit, setActLimit] = useState(CLIENT_ACTIVITY_PAGE);
-  const [actHasMore, setActHasMore] = useState(false);
-  const [actLoading, setActLoading] = useState(false);
-  const [actLoadingMore, setActLoadingMore] = useState(false);
-  const [actError, setActError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let off = false;
-    setActRows([]);
-    setActLimit(CLIENT_ACTIVITY_PAGE);
-    setActHasMore(false);
-    setActError(null);
-    setActLoading(true);
-    void loadClientActivity(client.id, CLIENT_ACTIVITY_PAGE)
-      .then((page) => {
-        if (off) return;
-        setActRows(page.rows);
-        setActHasMore(page.hasMore);
-        setActLimit(page.limit);
-      })
-      .catch((e: unknown) => {
-        if (!off) setActError(e instanceof Error ? e.message : 'Failed to load');
-      })
-      .finally(() => {
-        if (!off) setActLoading(false);
-      });
-    return () => {
-      off = true;
-    };
-  }, [client.id]);
-
-  const loadMoreActivity = (): void => {
-    if (actLoadingMore || !actHasMore) return;
-    const next = actLimit + CLIENT_ACTIVITY_PAGE;
-    setActLoadingMore(true);
-    void loadClientActivity(client.id, next)
-      .then((page) => {
-        setActRows(page.rows);
-        setActHasMore(page.hasMore && page.rows.length > actRows.length);
-        setActLimit(page.limit);
-      })
-      .catch((e: unknown) => setActError(e instanceof Error ? e.message : 'Failed to load more'))
-      .finally(() => setActLoadingMore(false));
-  };
-
-  const avStyle = `width:52px;height:52px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:19px;background:color-mix(in srgb,${col} 16%,transparent);color:${col}`;
-  const tabs: Array<['overview' | 'cards' | 'activity', string]> = [['overview', 'Overview'], ['cards', 'Cards'], ['activity', 'Activity']];
-  const tile = 'padding:15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)';
-  return (
-    <div onClick={onClose} style={s('position:fixed;inset:0;z-index:118;background:rgba(3,7,14,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
-      <div onClick={(e) => e.stopPropagation()} style={s('width:100%;max-width:560px;max-height:86vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}>
-        <div style={s('padding:22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px')}>
-          <div style={s(avStyle)}>{initials}</div>
-          <div style={s('flex:1;min-width:0')}>
-            <div style={s('font-size:17px;font-weight:700')}>{client.name}</div>
-            <div style={s("font-size:11.5px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:3px")}>{client.carrier} · MC {client.mc} · DOT {client.dot}</div>
-          </div>
-          <span style={s(statusBadge.style)}>{statusBadge.text}</span>
-          <button onClick={onClose} aria-label="Close" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
-            <Icon name="close" size={15} strokeWidth={2.4} />
-          </button>
-        </div>
-        <div style={s('display:flex;gap:4px;padding:0 22px;border-bottom:1px solid var(--border)')}>
-          {tabs.map(([id, label]) => {
-            const on = clientTab === id;
-            return (
-              <button key={id} onClick={() => setClientTab(id)} style={s(`padding:8px 15px;border:none;background:none;border-bottom:2px solid ${on ? 'var(--accent)' : 'transparent'};color:${on ? 'var(--text)' : 'var(--muted)'};font-size:12.5px;font-weight:700;cursor:pointer`)}>{label}</button>
-            );
-          })}
-        </div>
-        <div className="ss-scroll" style={s('flex:1;min-height:0;padding:22px')}>
-          {clientTab === 'overview' && (
-            <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-              <div style={s(`grid-column:1 / span 2;${tile}`)}>
-                <div style={s('font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Primary Contact</div>
-                <div style={s('font-size:14px;font-weight:700;margin-top:5px')}>{client.contact}</div>
-                <div style={s("font-size:12px;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:3px")}>{client.phone}</div>
-              </div>
-              <div style={s(tile)}>
-                <div style={s('font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Cards</div>
-                <div style={s("font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:600;margin-top:5px")}>{client.active}<span style={s('color:var(--muted);font-size:14px')}>/{client.cards}</span> active</div>
-              </div>
-              <div style={s(tile)}>
-                <div style={s('font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Gallons · Cycle</div>
-                <div style={s("font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:600;margin-top:5px;color:var(--violet)")}>{client.gallons}</div>
-              </div>
-            </div>
-          )}
-          {clientTab === 'cards' && (
-            <div style={s('display:flex;flex-direction:column;gap:10px')}>
-              {cardsL.loading && <div style={s('font-size:12.5px;color:var(--muted);padding:8px 2px')}>Loading cards…</div>}
-              {cardsL.error && <div style={s('font-size:12.5px;color:var(--danger);padding:8px 2px')}>Couldn't load cards — {cardsL.error}</div>}
-              {!cardsL.loading && !cardsL.error && (cardsL.data?.length ?? 0) === 0 && (
-                <div style={s('font-size:12.5px;color:var(--muted);padding:8px 2px')}>No cards on file for this carrier.</div>
-              )}
-              {(cardsL.data ?? []).map((card, i) => (
-                <div key={`${card.num}-${i}`} style={s('display:flex;align-items:center;gap:12px;padding:13px 15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
-                  <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600")}>{card.num}</span>
-                  <span style={s(`font-size:10px;font-weight:700;padding:3px 8px;border-radius:99px;background:color-mix(in srgb,${card.tone} 16%,transparent);color:${card.tone}`)}>{card.status}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          {clientTab === 'activity' && (
-            <div style={s('display:flex;flex-direction:column;gap:0')}>
-              {actLoading && <div style={s('font-size:12.5px;color:var(--muted);padding:8px 2px')}>Loading activity…</div>}
-              {actError && <div style={s('font-size:12.5px;color:var(--danger);padding:8px 2px')}>Couldn't load activity — {actError}</div>}
-              {!actLoading && !actError && actRows.length === 0 && (
-                <div style={s('font-size:12.5px;color:var(--muted);padding:8px 2px')}>No transactions for this carrier.</div>
-              )}
-              {actRows.map((ev, i, arr) => {
-                const line = i < arr.length - 1;
-                return (
-                  <div key={`${ev.title}-${i}`} style={s('display:flex;gap:12px')}>
-                    <div style={s('display:flex;flex-direction:column;align-items:center')}>
-                      <div style={s(`width:9px;height:9px;border-radius:50%;background:${ev.tone}`)} />
-                      {line ? <div style={s('width:2px;flex:1;background:var(--border)')} /> : null}
-                    </div>
-                    <div style={s(line ? 'padding-bottom:18px' : '')}>
-                      <div style={s('font-size:12.5px;font-weight:700')}>{ev.title}</div>
-                      <div style={s('font-size:11px;color:var(--muted);margin-top:2px')}>{ev.sub}</div>
-                    </div>
-                  </div>
-                );
-              })}
-              {actHasMore && (
-                <button
-                  type="button"
-                  disabled={actLoadingMore}
-                  onClick={loadMoreActivity}
-                  style={s('margin-top:16px;height:36px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12px;cursor:pointer;opacity:' + (actLoadingMore ? '.6' : '1'))}
-                >
-                  {actLoadingMore ? 'Loading…' : 'Load more'}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-        <div style={s('padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px')}>
-          <button onClick={onClose} style={s('height:38px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>Close</button>
-          <button onClick={onRun} className="ss-btn-p" style={s('height:38px;padding:0 18px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer')}>Run an action</button>
-        </div>
-      </div>
-    </div>
   );
 }

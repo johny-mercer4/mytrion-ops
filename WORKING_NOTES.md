@@ -3257,3 +3257,28 @@ for true ticketdashboard search parity.
 - Cycle gallons via dashboard.agent_sales volume, formatted with up to 2 decimals (galFmt)
 - Client Activity: all_time feed + Load more (growing limit); helpers in clientDrilldown.ts
 
+
+### 2026-07-18 — Sales nav search, Call Hub/Cases SOON, client Manage links
+
+- Sidebar: "Search tabs…" filters NAV (+ Cases children); Call Hub + Cases (Billing/Retention) SOON at end
+- Data Center client modal: Manage tab — owner/driver Telegram registration links (Admin CarrierUserForm flow)
+- Backend: `POST /carrier-invitations` + `GET /carrier-users/dwh-cards` auth-gated for workers (not admin-only)
+
+
+### 2026-07-18 — Cases removed; sidebar nav groups
+
+- Removed Cases + Billing/Retention sub-tabs
+- NAV_GROUPS: Workspace / Pipeline / Tools with section labels (+ dividers when collapsed)
+
+
+### 2026-07-18 — Retention nav (Cases + Open Pool in-page)
+
+- Removed standalone Open Pool from sidebar
+- Added Retention (SOON); RetentionTab scaffolds Cases + Open Pool (PoolTab) sub-tabs
+
+
+### 2026-07-18 — Client Manage: driver under owner + card
+
+- Driver invite requires active owner registration (inviteService + UI gate)
+- Sales: GET /carrier-registrations/for-carrier; Driver picks available card number
+

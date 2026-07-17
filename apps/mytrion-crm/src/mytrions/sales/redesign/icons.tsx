@@ -50,6 +50,7 @@ import {
   KeyRound,
   Layers,
   LayoutDashboard,
+  LayoutGrid,
   Link,
   List,
   LoaderCircle,
@@ -99,7 +100,10 @@ export const ICON_REGISTRY = {
   records: Database,
   create: CirclePlus,
   dash: LayoutDashboard,
+  grid: LayoutGrid,
   carriers: Truck,
+  callHub: Headset,
+  retention: Handshake,
   // shared KPI / activity glyphs (was salesData `ICO`)
   calls: Phone,
   notes: FileText,

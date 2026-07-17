@@ -80,25 +80,60 @@ export interface NavItem {
   comingSoon?: boolean;
 }
 
-export const NAV: NavItem[] = [
-  { id: 'home', label: 'Home', icon: 'home' },
-  // Badges are filled in at runtime from real counts (see Shell.badgeCounts); no hardcoded numbers.
-  { id: 'inbox', label: 'Inbox', icon: 'inbox' },
-  // Tickets parked — current Desk feed isn't shippable. Drop `comingSoon` to re-enable; TicketsTab stays wired.
-  { id: 'tickets', label: 'Tickets', icon: 'tickets', comingSoon: true },
-  // Open Pool is shown but disabled ("Coming soon") — its live data flow is being rebuilt. Drop
-  // `comingSoon` to re-enable; the PoolTab component + its `section === 'pool'` render stay wired.
-  { id: 'pool', label: 'Open Pool', icon: 'pool', comingSoon: true },
-  { id: 'records', label: 'Data Center', icon: 'records' },
-  { id: 'create', label: 'Create', icon: 'create' },
-  { id: 'auto', label: 'Automations', icon: ICO.bolt },
-  { id: 'dash', label: 'Dashboard', icon: 'dash' },
-  { id: 'carriers', label: 'Carriers', icon: 'carriers' },
+/**
+ * Sidebar clusters (no visible labels — only a hairline between groups).
+ * Order: daily → sell → parked soon → measure.
+ */
+export interface NavGroup {
+  id: string;
+  items: NavItem[];
+}
+
+export const NAV_GROUPS: NavGroup[] = [
+  {
+    id: 'daily',
+    items: [
+      { id: 'home', label: 'Home', icon: 'home' },
+      // Badges filled at runtime (see Shell.badgeCounts).
+      { id: 'inbox', label: 'Inbox', icon: 'inbox' },
+    ],
+  },
+  {
+    id: 'sell',
+    items: [
+      { id: 'records', label: 'Data Center', icon: 'records' },
+      { id: 'create', label: 'Create', icon: 'create' },
+      { id: 'carriers', label: 'Carriers', icon: 'carriers' },
+    ],
+  },
+  {
+    id: 'soon',
+    items: [
+      // Retention owns Cases + Open Pool as in-page tabs. Drop `comingSoon` to re-enable.
+      { id: 'retention', label: 'Retention', icon: 'retention', comingSoon: true },
+      { id: 'verification', label: 'Verification Pipeline', icon: 'verification', comingSoon: true },
+      // Tickets parked — drop `comingSoon` to re-enable; TicketsTab stays wired.
+      { id: 'tickets', label: 'Tickets', icon: 'tickets', comingSoon: true },
+      { id: 'callHub', label: 'Call Hub', icon: 'callHub', comingSoon: true },
+    ],
+  },
+  {
+    id: 'measure',
+    items: [
+      { id: 'auto', label: 'Automations', icon: ICO.bolt },
+      { id: 'dash', label: 'Dashboard', icon: 'dash' },
+    ],
+  },
 ];
 
+/** Flat list for lookups (comingSoon checks, labels, etc.). */
+export const NAV: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
+
 export const NAVLABEL: Record<string, string> = {
-  home: 'Home', inbox: 'Inbox', tickets: 'Tickets', pool: 'Open Pool', records: 'Data Center',
+  home: 'Home', inbox: 'Inbox', tickets: 'Tickets', retention: 'Retention',
+  verification: 'Verification Pipeline', records: 'Data Center',
   create: 'Create Ticket', auto: 'Automations', dash: 'Dashboard', carriers: 'Carriers',
+  callHub: 'Call Hub',
 };
 
 // ---------- time / workday ----------

@@ -34,7 +34,7 @@ export interface MytrionAccessRule {
   /** Glyph key for the picker/nav (see MytrionGlyph) + one-line blurb. */
   icon: string;
   blurb: string;
-  /** Accent hue for the Mytrion's icon chip: maps to a token (accent|success|purple|orange|danger). */
+  /** Accent hue for the Mytrion's icon chip: maps to a token (accent|success|purple|orange|danger|warning). */
   hue: 'accent' | 'success' | 'purple' | 'orange' | 'danger' | 'warning';
   /** Canonical department_access slug forwarded to the backend. */
   department: string;
@@ -92,7 +92,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     tag: 'Sales',
     icon: 'sales',
     blurb: 'Self-service ops — carrier balances, cards, invoices, EFS/WEX, automations.',
-    hue: 'danger',
+    hue: 'purple',
     department: 'sales',
     allDepartments: false,
     // Every rep's CRM profile is "Sales Agent" (region lives in the ROLE). Substring match so any
