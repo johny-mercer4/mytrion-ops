@@ -1285,7 +1285,14 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       'Driver';
 
     // Idempotency + cross-carrier guard before minting any invite (avoids orphan pending invites).
-    const existing = await registeredMiniAppCompanyRepo.findByTelegramUserId(ctx, telegramUserId);
+    //
+    // A REVOKED registration no longer owns this Telegram account, so it must not veto a new one —
+    // the same rule the redeem path already applies. findByTelegramUserId returns revoked rows too,
+    // so without this filter revoke was a dead end for card-number sign-in specifically: redeeming
+    // an invite worked, signing in with the card 409'd TELEGRAM_ALREADY_REGISTERED forever. The
+    // upsert below clears status/revokedAt, so proceeding is what actually restores access.
+    const found = await registeredMiniAppCompanyRepo.findByTelegramUserId(ctx, telegramUserId);
+    const existing = found && found.status !== 'revoked' ? found : undefined;
     if (existing) {
       const sameCard = existing.profile === 'driver' && existing.carrierId === card.carrierId && existing.cardId === card.cardId;
       if (!sameCard) {

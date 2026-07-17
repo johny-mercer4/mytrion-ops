@@ -1223,6 +1223,30 @@ describe('driver self-registration by card number', () => {
     expect(registrationRepo.upsert).not.toHaveBeenCalled();
   });
 
+  it('lets a REVOKED account sign in again on another carrier — revoke is not a dead end', async () => {
+    driverTg();
+    // Revoked = this registration no longer owns the Telegram account, the same rule the redeem path
+    // applies. Without it, revoke stranded the user: redeeming an invite worked, card-number sign-in
+    // 409'd forever. The upsert clears status/revokedAt, so proceeding is what restores access.
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(
+      registrationRow({ profile: 'driver', telegramUserId: '987654', carrierId: '5836348', cardId: 'card_9', companyType: null, status: 'revoked' }),
+    );
+    cardAvailable();
+    registrationRepo.upsert.mockResolvedValueOnce(
+      registrationRow({ id: 'rma_self', profile: 'driver', telegramUserId: '987654', carrierId: CARRIER, cardId: 'card_1', companyType: null }),
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-self-register',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', cardNumber: CARD },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ registration: { carrierId: CARRIER } });
+  });
+
   it("refuses to move a Telegram account to another carrier's card", async () => {
     driverTg();
     registrationRepo.findByTelegramUserId.mockResolvedValueOnce(
