@@ -474,6 +474,22 @@ describe('driver row scoping (own card only)', () => {
       expect(res.json()).toMatchObject({ scope_truncated: true });
     });
 
+    it('asks for the same window as the fast phase so an owner list cannot shrink on refresh', async () => {
+      registrationRepo.findByTelegramUserId.mockResolvedValueOnce(registrationRow());
+      crm.getTransactions.mockResolvedValueOnce({ data: [], totals: {}, pagination: {} });
+
+      await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/transactions',
+        headers: { 'content-type': 'application/json' },
+        payload: { initData: 'signed', range: 'year', live: true },
+      });
+
+      // Letting this default to servercrm's 100 made a measured owner year view drop from 318 rows
+      // to 100 the moment phase 2 landed — the exact row-jump the two phases exist to avoid.
+      expect(crm.getTransactions).toHaveBeenCalledWith('5758544', expect.objectContaining({ limit: 5000 }));
+    });
+
     it('leaves an owner carrier-wide — scoping is driver-only', async () => {
       registrationRepo.findByTelegramUserId.mockResolvedValueOnce(registrationRow());
       crm.getTransactions.mockResolvedValueOnce({

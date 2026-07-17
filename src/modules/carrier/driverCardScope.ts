@@ -10,10 +10,17 @@
  */
 import type { CarrierTransactions } from '../../wrappers/serverCrmWrapper.js';
 
-/** servercrm caps `limit` at 5000. Driver reads request the ceiling so the own-card filter runs over
- *  the whole requested window — with the default 100, page 1 of a busy fleet can contain none of the
- *  driver's rows and the filter would render an empty list that looks like "no transactions". */
-export const DRIVER_TXN_FETCH_LIMIT = 5000;
+/**
+ * servercrm caps `limit` at 5000; every mini-app transactions read asks for the ceiling.
+ *
+ * Two reasons, and BOTH phases must use it:
+ *  - Driver: the own-card filter has to run over the whole window. With the default 100, page 1 of a
+ *    busy fleet can hold none of the driver's rows, rendering an empty "no transactions" list.
+ *  - Owner: the fast phase and the live phase must return the SAME window. Letting the live phase
+ *    fall back to 100 makes an owner's year view visibly shrink from 318 rows to 100 the moment the
+ *    refresh lands (measured, carrier 5765985).
+ */
+export const TXN_FETCH_LIMIT = 5000;
 
 /** Digits-only view of a card number — both DWH sources store bare 19-digit strings, but callers
  *  (and any future formatted source) may carry spaces/dashes. Normalizing keeps `===` honest. */

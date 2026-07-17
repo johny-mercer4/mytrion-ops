@@ -18,7 +18,7 @@ import { searchDwhClients } from '../../integrations/dwhClients.js';
 import { searchDwhOperators } from '../../integrations/dwhOperators.js';
 import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
 import {
-  DRIVER_TXN_FETCH_LIMIT,
+  TXN_FETCH_LIMIT,
   scopeRowsToCard,
   scopeTransactionsToCard,
 } from '../../modules/carrier/driverCardScope.js';
@@ -836,15 +836,14 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
         carrierId,
         ...(cardNumber ? { cardNumber } : {}),
         ...opts,
-        limit: DRIVER_TXN_FETCH_LIMIT,
+        limit: TXN_FETCH_LIMIT,
       });
       // Tell the client the EFS tail is still missing, so it knows to fire the live phase.
       return { ...result, live: { merged: 0, pending: true } };
     }
 
-    if (!cardNumber) return serverCrmWrapper.getTransactions(carrierId, opts);
-    const merged = await serverCrmWrapper.getTransactions(carrierId, { ...opts, limit: DRIVER_TXN_FETCH_LIMIT });
-    return scopeTransactionsToCard(merged, cardNumber);
+    const merged = await serverCrmWrapper.getTransactions(carrierId, { ...opts, limit: TXN_FETCH_LIMIT });
+    return cardNumber ? scopeTransactionsToCard(merged, cardNumber) : merged;
   });
 
   /**
@@ -869,7 +868,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       range: body.range,
       from: body.from,
       to: body.to,
-      limit: DRIVER_TXN_FETCH_LIMIT,
+      limit: TXN_FETCH_LIMIT,
     });
     if (result.data.length === 0) {
       throw new AppError('There are no transactions in that period to export.', {
