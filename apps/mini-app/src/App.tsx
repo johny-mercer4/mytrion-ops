@@ -368,7 +368,6 @@ function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: Regis
   const isOwner = preview.profile === 'owner';
   const ownerLabel = preview.companyType === 'fleet-manager' ? t('role.fleet') : t('role.owner');
   const cd = countdown(preview.expiresAt);
-  const agent = cleanAgentName(preview.agentName);
   return (
     <Screen center>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22, width: '100%', maxWidth: 342, animation: 'octfade .3s ease' }}>
@@ -389,15 +388,6 @@ function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: Regis
               {isOwner ? ownerLabel : t('role.driver')}
             </span>
           </div>
-          {agent && (
-            <>
-              <div style={{ height: 1, background: 'var(--border)', margin: '0 16px' }} />
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '15px 16px' }}>
-                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('confirm.agentLabel')}</span>
-                <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', textAlign: 'right' }}>{agent}</span>
-              </div>
-            </>
-          )}
         </DetailCard>
         <CtaButton onClick={onConfirm} disabled={busy}>
           {busy ? <Spinner size={20} /> : t('confirm.cta')}
@@ -409,7 +399,9 @@ function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: Regis
           </div>
         )}
         <div style={{ fontSize: 12, color: 'var(--muted-fg)', textAlign: 'center', lineHeight: 1.5 }}>{t('confirm.footnote')}</div>
-        <SupportCard agentName={preview.agentName} />
+        {/* Generic support only during registration — the sales agent's name (who generated the link)
+            was on the confirm screen and its own row above; both are removed. */}
+        <SupportCard />
       </div>
     </Screen>
   );
@@ -1175,6 +1167,18 @@ function FleetView({
     setTimeout(() => setCopiedId((x) => (x === id ? null : x)), 1600);
   }
 
+  /** Copy arbitrary text (card number, carrier id) with a caller-chosen toast — the copy() above is
+   *  bound to the invite-link row's copied-state highlight, which these don't have. */
+  function copyText(text: string, toast: string) {
+    try {
+      navigator.clipboard?.writeText(text);
+    } catch {
+      /* ignore */
+    }
+    haptic('tap');
+    showToast(toast);
+  }
+
   /** `nameOverride` covers regenerate: that flow has no name input, so it must reuse the card's existing driver name instead of an (empty) draft. */
   async function run(cardId: string, fn: (id: string, name: string) => Promise<void>, nameOverride?: string) {
     const name = nameOverride ?? (drafts[cardId] ?? '').trim();
@@ -1215,8 +1219,8 @@ function FleetView({
       </div>
 
       {loading && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 4px', color: 'var(--muted-fg)' }}>
-          <Spinner size={22} />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '64px 16px', color: 'var(--muted-fg)' }}>
+          <Spinner size={26} />
           <span style={{ fontSize: 14 }}>{t('fleet.loading')}</span>
         </div>
       )}
@@ -1272,6 +1276,19 @@ function FleetView({
 
                 {expanded && (
                   <div style={{ padding: '0 15px 16px', animation: 'octfade .2s ease' }}>
+                    {/* Full card number, copyable — the collapsed row only shows the last 4. Owner-only
+                        screen, so the full PAN is theirs to see and hand to a driver. */}
+                    {c.cardNumber && (
+                      <button
+                        type="button"
+                        className="press"
+                        onClick={() => copyText(groupCardNumber(c.cardNumber ?? ''), t('toast.cardCopied'))}
+                        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, padding: '11px 13px', border: '1px solid var(--border)', borderRadius: 12, background: 'var(--background)', cursor: 'pointer', fontFamily: "'Geist'" }}
+                      >
+                        <span className="selectable" style={{ flex: 1, textAlign: 'left', fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em' }}>{groupCardNumber(c.cardNumber)}</span>
+                        <Icon name="copy" size={16} strokeWidth={2} className="" />
+                      </button>
+                    )}
                     {c.status === 'open' && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
                         <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('card.name')}</label>

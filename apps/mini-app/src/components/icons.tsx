@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Copy,
   CreditCard,
   DollarSign,
   Eye,
@@ -57,7 +58,8 @@ export type IconName =
   | 'truck'
   | 'sort'
   | 'checkcheck'
-  | 'maximize';
+  | 'maximize'
+  | 'copy';
 
 const ICONS: Record<IconName, LucideIcon> = {
   wallet: Wallet,
@@ -82,6 +84,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   sort: ArrowUpDown,
   checkcheck: CheckCheck,
   maximize: Maximize2,
+  copy: Copy,
 };
 
 export function Icon({
