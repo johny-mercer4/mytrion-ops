@@ -35,3 +35,30 @@ export function updateDealBilling(
     body: changes,
   }) as Promise<{ id: string; updatedFields: string[] }>;
 }
+
+// ---- Real-time mapping relay (Phase 3b) ----
+
+export type MappingAction = 'map' | 'unmap' | 'returned';
+
+export interface MappingBroadcast {
+  action: MappingAction;
+  transactionRecordId: string;
+  source?: string;
+  carrierId?: string;
+  mappingType?: string;
+  mappedAt?: string;
+  /** This client's stable session id — the server echoes it so we ignore our own event. */
+  originId: string;
+}
+
+/**
+ * Relay a local mapping change to peers via the backend proxy (which forwards to servercrm's
+ * WebSocket hub with the server-side key). Best-effort and fire-and-forget — a relay failure
+ * must never surface as a mapping failure.
+ */
+export function broadcastMapping(payload: MappingBroadcast): void {
+  void request('POST', '/billing/mapping-event', {
+    headers: BILLING_HEADERS,
+    body: payload,
+  }).catch(() => undefined);
+}

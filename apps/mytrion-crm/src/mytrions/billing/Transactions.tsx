@@ -8,14 +8,20 @@
  * debounced server search, per-row optimistic mapping patches, and the modal are managed with
  * useState. Mapping/unmapping WRITES are wired through TransactionModal and mutate the in-memory
  * list optimistically (the authoritative values return on the next reload).
+ *
+ * Phase 3b — real-time mapping sync: a reconnecting WebSocket (useMappingSocket) applies remote
+ * map/unmap/returned events to the in-memory rows (list + stat banner react in place); because
+ * `openTx` is derived from those rows, a remote map flips the open modal to read-only for free.
+ * Local writes relay to peers via broadcastMapping (backend proxy keeps the servercrm key safe).
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { billingTouchpoint } from '@/api/billing';
+import { billingTouchpoint, broadcastMapping } from '@/api/billing';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useLoad } from '../_shared/useLoad';
 import { type TxSource, dateLabel, fmtCurrency } from './data';
 import { TransactionModal } from './TransactionModal';
+import { useMappingSocket, type RemoteMappingEvent } from './useMappingSocket';
 import {
   BM_SEARCH_DEBOUNCE_MS,
   BM_TOAST_MS,
@@ -239,6 +245,84 @@ export function Transactions() {
   const patchRow = useCallback((recordId: string, patch: Partial<TxRow>) => {
     setPatches((prev) => ({ ...prev, [recordId]: { ...prev[recordId], ...patch } }));
   }, []);
+
+  // ── Real-time mapping sync (Phase 3b) ──
+  // Stable per-session id so the relay can echo-filter our own broadcasts.
+  const originId = useRef<string>(
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `bm-${Date.now()}-${Math.floor(Math.random() * 1e9)}`,
+  );
+
+  const onRemote = useCallback(
+    (e: RemoteMappingEvent) => {
+      const id = String(e.transactionRecordId || '');
+      if (!id) return;
+      if (e.action === 'returned') {
+        // A return reverses the CMP payment but keeps the CRM mapping — only flag it.
+        patchRow(id, { isReturned: true, returnedAt: e.mappedAt ?? '' });
+      } else if (e.action === 'unmap') {
+        patchRow(id, {
+          carrierId: null,
+          isInvoiceMapped: false,
+          mappedBy: '',
+          mappedAt: '',
+          mappingType: '',
+          cmpRef: '',
+        });
+      } else {
+        patchRow(id, {
+          carrierId: e.carrierId ?? '',
+          isInvoiceMapped: true,
+          mappedBy: e.mappedBy ?? '',
+          mappedAt: e.mappedAt ?? '',
+          mappingType: e.mappingType ?? '',
+          // UI-only placeholder so the unmap affordance shows immediately; the real CMP_Ref
+          // lives in the CRM record and comes back on the next fetch.
+          cmpRef: 'remote',
+        });
+      }
+      // Toast only when the affected tx is the one open in the modal (which is now read-only
+      // via the derived openTx state).
+      if (openId === id) {
+        const who = e.mappedBy || 'another user';
+        if (e.action === 'returned') {
+          notify('error', 'This transaction was returned / charged back (payment reversed in CMP)');
+        } else if (e.action === 'unmap') {
+          notify('success', `Updated — ${who} just unmapped this transaction`);
+        } else {
+          notify('success', `Updated — ${who} just mapped this transaction`);
+        }
+      }
+    },
+    [patchRow, openId, notify],
+  );
+  useMappingSocket(originId.current, onRemote);
+
+  // Relay a local mapping write to peers (inferred from the modal's isInvoiceMapped patch).
+  const patchAndBroadcast = useCallback(
+    (row: TxRow, patch: Partial<TxRow>) => {
+      patchRow(row.recordId, patch);
+      if (patch.isInvoiceMapped === true) {
+        broadcastMapping({
+          action: 'map',
+          transactionRecordId: row.recordId,
+          source: row.source,
+          carrierId: (patch.carrierId ?? row.carrierId) ?? '',
+          mappingType: patch.mappingType ?? '',
+          originId: originId.current,
+        });
+      } else if (patch.isInvoiceMapped === false) {
+        broadcastMapping({
+          action: 'unmap',
+          transactionRecordId: row.recordId,
+          source: row.source,
+          originId: originId.current,
+        });
+      }
+    },
+    [patchRow],
+  );
 
   const initialLoading = firstPage.loading && rows.length === 0;
 
@@ -495,7 +579,7 @@ export function Transactions() {
           tx={openTx}
           currentUserName={user.userName}
           onClose={() => setOpenId(null)}
-          onPatch={(patch) => patchRow(openTx.recordId, patch)}
+          onPatch={(patch) => patchAndBroadcast(openTx, patch)}
           onToast={notify}
         />
       ) : null}

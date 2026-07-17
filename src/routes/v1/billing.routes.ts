@@ -12,6 +12,7 @@
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { serverCrmPost } from '../../integrations/serverCrm.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { resolveWritePayload } from '../../modules/customerService/fieldResolver.js';
@@ -55,5 +56,36 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
       detail: { fields: Object.keys(resolved) },
     });
     return { id, updatedFields: Object.keys(resolved) };
+  });
+
+  /**
+   * Real-time mapping relay (Phase 3b). The Transactions panel POSTs a mapping/unmap/returned
+   * event here after a successful write; we forward it to servercrm's mapping-event hub (which
+   * rebroadcasts over the WebSocket to other open clients). This proxy keeps the servercrm
+   * x-api-key server-side — the browser never holds it. `mappedBy` is overwritten with the
+   * verified session name so peers see the real actor, never a client-supplied label.
+   * Best-effort: a relay failure must not fail the user's mapping, so we swallow upstream errors.
+   */
+  const mappingEventBody = z.object({
+    action: z.enum(['map', 'unmap', 'returned']),
+    transactionRecordId: z.string().min(1).max(120),
+    source: z.string().max(40).optional(),
+    carrierId: z.string().max(120).optional(),
+    mappingType: z.string().max(60).optional(),
+    mappedAt: z.string().max(40).optional(),
+    originId: z.string().max(80),
+  });
+
+  app.post('/billing/mapping-event', guard, async (request, reply) => {
+    const ctx = requireBillingAccess(request);
+    const body = mappingEventBody.parse(request.body);
+    const payload = { ...body, mappedBy: ctx.userName ?? 'A billing agent' };
+    try {
+      await serverCrmPost('/api/billing/mapping-event', payload);
+    } catch {
+      // Relay is best-effort — the authoritative write already succeeded client-side.
+      return reply.code(202).send({ relayed: false });
+    }
+    return { relayed: true };
   });
 }
