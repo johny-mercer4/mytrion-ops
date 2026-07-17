@@ -11,6 +11,7 @@ import type {
   BillingReturnCandidates,
   BillingReturnsPage,
   BillingTransactionsPage,
+  BillingWriteResult,
   TouchpointKey,
   TouchpointMap,
 } from './touchpointTypes';
@@ -76,6 +77,59 @@ export function fuzzyCarrier(p: {
   email?: string;
 }): Promise<BillingFuzzyResult> {
   return request('POST', '/billing/carrier/fuzzy', { headers: BILLING_HEADERS, body: p }) as Promise<BillingFuzzyResult>;
+}
+
+// ---- Postgres-backed writes (replace the Zoho billing.* write touchpoints; CMP via servercrm) ----
+
+function billingWrite(path: string, body: unknown): Promise<BillingWriteResult> {
+  return request('POST', path, { headers: BILLING_HEADERS, body }) as Promise<BillingWriteResult>;
+}
+
+const txPath = (id: string, action: string): string =>
+  `/billing/transactions/${encodeURIComponent(id)}/${action}`;
+
+/** Map a payment to a CMP invoice. */
+export function mapTransaction(
+  id: string,
+  body: { invoiceId: string; invoiceNumber: string; paymentAmount: number; paymentDate: string; note?: string; carrierId: string },
+): Promise<BillingWriteResult> {
+  return billingWrite(txPath(id, 'map'), body);
+}
+
+/** Prepay top-up. */
+export function topUpTransaction(
+  id: string,
+  body: { carrierId: string; paymentAmount: number; paymentDate: string; note?: string },
+): Promise<BillingWriteResult> {
+  return billingWrite(txPath(id, 'top-up'), body);
+}
+
+/** CRM-only sync (CMP payment pre-existed). */
+export function syncCrmOnly(
+  id: string,
+  body: { carrierId: string; invoiceNumber?: string },
+): Promise<BillingWriteResult> {
+  return billingWrite(txPath(id, 'sync-crm-only'), body);
+}
+
+/** Split a payment across invoices/prepay. */
+export function applySplits(id: string, splitsJson: string): Promise<BillingWriteResult> {
+  return billingWrite(txPath(id, 'split'), { splitsJson });
+}
+
+/** Unmap: reverse CMP + clear the mapping (clearCrm='false' reverses CMP but keeps the mapping). */
+export function unmapTransaction(id: string, clearCrm: 'true' | 'false' = 'true'): Promise<BillingWriteResult> {
+  return billingWrite(txPath(id, 'unmap'), { clearCrm });
+}
+
+/** Match a return to its original payment (reverses CMP, keeps mapping, flags returned). */
+export function matchReturn(returnId: string, transactionRecordId: string): Promise<BillingWriteResult> {
+  return billingWrite(`/billing/returns/${encodeURIComponent(returnId)}/match`, { transactionRecordId });
+}
+
+/** Learn a company → carrier pair (auto-map memory). */
+export function saveCarrierMemory(companyName: string, carrierId: string): Promise<BillingWriteResult> {
+  return billingWrite('/billing/carrier/memory', { companyName, carrierId });
 }
 
 // ---- Data Center deal-billing edit (direct Deals update via REST) ----

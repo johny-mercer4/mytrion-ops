@@ -10,7 +10,7 @@
  */
 import { type CSSProperties, useEffect, useState } from 'react';
 
-import { billingTouchpoint, searchReturnCandidates } from '@/api/billing';
+import { matchReturn, searchReturnCandidates } from '@/api/billing';
 import { readStr } from './transactionModel';
 import {
   type Candidate,
@@ -93,10 +93,7 @@ export function ReturnMatchModal({ ret, onClose, onMatched, onToast }: ReturnMat
     setError('');
     try {
       // Reverses a REAL CMP payment (when the transaction is mapped) — do not fire in verification.
-      const res = await billingTouchpoint('billing.returns.match', {
-        returnRecordId: ret.recordId,
-        transactionRecordId: selectedId,
-      });
+      const res = await matchReturn(ret.recordId, selectedId);
       const status = readStr(res.status);
       if (status === 'partial') {
         const msg = readStr(res.message) || 'Partial reversal — reconcile the CMP payment manually.';

@@ -10,8 +10,17 @@
  */
 import { useEffect, useRef, useState } from 'react';
 
-import { billingTouchpoint, fuzzyCarrier } from '@/api/billing';
-import { dateFull, fmtCurrency, srcLabel, txTypeFor } from './data';
+import {
+  applySplits as applySplitsApi,
+  billingTouchpoint,
+  fuzzyCarrier,
+  mapTransaction,
+  saveCarrierMemory,
+  syncCrmOnly as syncCrmOnlyApi,
+  topUpTransaction,
+  unmapTransaction,
+} from '@/api/billing';
+import { dateFull, fmtCurrency, srcLabel } from './data';
 import {
   BM_SAVE_MSG_MS,
   type CarrierInvoiceSearch,
@@ -199,10 +208,7 @@ export function TransactionModal({ tx, currentUserName, onClose, onPatch, onToas
 
   function saveMemory(carrierId: string): void {
     if (!companyName || isJunkCompanyName(companyName)) return;
-    void billingTouchpoint('billing.carrier.saveMemory', {
-      companyName,
-      carrierId: carrierId.trim(),
-    }).catch(() => undefined);
+    void saveCarrierMemory(companyName, carrierId.trim()).catch(() => undefined);
   }
 
   /* ── Carrier search (invoices + prepay type) ── */
@@ -243,14 +249,12 @@ export function TransactionModal({ tx, currentUserName, onClose, onPatch, onToas
     setSaveMsg(null);
     try {
       const cid = results?.carrierId || carrierInput.trim();
-      const res = await billingTouchpoint('billing.transactions.mapInvoice', {
+      const res = await mapTransaction(tx.recordId, {
         invoiceId: invoice.id,
         invoiceNumber: invoice.invoiceNumber,
         paymentAmount: tx.amount,
         paymentDate: tx.postingDateRaw,
         note: note.trim(),
-        transactionRecordId: tx.recordId,
-        type: txTypeFor(tx.source),
         carrierId: cid,
       });
       if (readStr(res.status) !== 'success') throw new Error(readStr(res.message) || 'Update failed');
@@ -272,13 +276,11 @@ export function TransactionModal({ tx, currentUserName, onClose, onPatch, onToas
     setSaveMsg(null);
     try {
       const cid = results?.carrierId || carrierInput.trim();
-      const res = await billingTouchpoint('billing.transactions.topUp', {
+      const res = await topUpTransaction(tx.recordId, {
         carrierId: cid,
         paymentAmount: topUpAmount,
         paymentDate: tx.postingDateRaw,
         note: note.trim(),
-        transactionRecordId: tx.recordId,
-        type: txTypeFor(tx.source),
       });
       if (readStr(res.status) !== 'success') throw new Error(readStr(res.message) || 'Top-up failed');
       applyMapping(cid, 'Prepay Top-Up');
@@ -302,9 +304,7 @@ export function TransactionModal({ tx, currentUserName, onClose, onPatch, onToas
     setSaveMsg(null);
     try {
       const cid = results?.carrierId || carrierInput.trim();
-      const res = await billingTouchpoint('billing.transactions.syncCrmOnly', {
-        transactionRecordId: tx.recordId,
-        type: txTypeFor(tx.source),
+      const res = await syncCrmOnlyApi(tx.recordId, {
         carrierId: cid,
         invoiceNumber: invoice ? invoice.invoiceNumber : '',
       });
@@ -328,11 +328,7 @@ export function TransactionModal({ tx, currentUserName, onClose, onPatch, onToas
     setUnmapping(true);
     setSaveMsg(null);
     try {
-      const res = await billingTouchpoint('billing.transactions.unmap', {
-        transactionRecordId: tx.recordId,
-        type: txTypeFor(tx.source),
-        clearCrm: 'true',
-      });
+      const res = await unmapTransaction(tx.recordId, 'true');
       if (readStr(res.status) === 'partial') {
         setSaveMsg({ type: 'error', text: readStr(res.message) || 'Partial reversal — reconcile CMP manually.' });
         onToast('error', 'Unmap incomplete — manual CMP reconciliation needed');
@@ -452,11 +448,7 @@ export function TransactionModal({ tx, currentUserName, onClose, onPatch, onToas
         }
         return entry;
       });
-      const res = await billingTouchpoint('billing.transactions.applySplits', {
-        transactionRecordId: tx.recordId,
-        type: txTypeFor(tx.source),
-        splitsJson: JSON.stringify(payload),
-      });
+      const res = await applySplitsApi(tx.recordId, JSON.stringify(payload));
       const status = readStr(res.status);
       const parsed: SplitResult = { status };
       if (readStr(res.message)) parsed.message = readStr(res.message);

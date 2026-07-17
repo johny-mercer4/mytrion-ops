@@ -478,56 +478,10 @@ export interface TouchpointMap {
     result: CsDataCenterDeals;
   };
   // ---- Billing (departmentAccess: ['billing'] — use api/billing.ts billingTouchpoint) ----
-  // mappedBy/unmappedBy are injected server-side from the session; the UI never sends them.
-  // billing.transactions.list/.search, billing.carrier.fuzzy/.memory, billing.returns.list/.candidates
-  // moved to Postgres-backed REST routes (see api/billing.ts fetchTransactions / searchTransactions /
-  // fetchReturns / searchReturnCandidates / fetchCarrierMemory / fuzzyCarrier).
+  // The transaction/return WRITES (map/top-up/sync/split/unmap, carrier.saveMemory, returns.match) and
+  // the list/search/fuzzy/memory READS moved to Postgres-backed REST routes (see api/billing.ts). Only
+  // billing.invoices.search (CMP) + billing.carrier.type (Zoho) + the DWH/prepay reads remain here.
   'billing.invoices.search': { params: { carrierId: string }; result: BillingInvoicesResult };
-  'billing.transactions.mapInvoice': {
-    params: {
-      invoiceId: string;
-      invoiceNumber: string;
-      paymentAmount: number;
-      paymentDate: string;
-      note?: string;
-      transactionRecordId: string;
-      type: BillingTxType;
-      carrierId: string;
-    };
-    result: BillingWriteResult;
-  };
-  'billing.transactions.topUp': {
-    params: {
-      carrierId: string;
-      paymentAmount: number;
-      paymentDate: string;
-      note?: string;
-      transactionRecordId: string;
-      type: BillingTxType;
-    };
-    result: BillingWriteResult;
-  };
-  'billing.transactions.syncCrmOnly': {
-    params: {
-      transactionRecordId: string;
-      type: BillingTxType;
-      carrierId: string;
-      invoiceNumber?: string;
-    };
-    result: BillingWriteResult;
-  };
-  'billing.transactions.applySplits': {
-    params: { transactionRecordId: string; type: BillingTxType; splitsJson: string };
-    result: BillingWriteResult;
-  };
-  'billing.transactions.unmap': {
-    params: { transactionRecordId: string; type: BillingTxType; clearCrm?: 'true' | 'false' };
-    result: BillingWriteResult;
-  };
-  'billing.carrier.saveMemory': {
-    params: { companyName: string; carrierId: string };
-    result: BillingWriteResult;
-  };
   'billing.datacenter.deals': { params: { fresh?: '0' | '1' }; result: BillingDealsResult };
   'billing.debtors.list': { params: { fresh?: '0' | '1' }; result: BillingDebtorsResult };
   'billing.datacenter.avgDays': { params: { carrierId: string }; result: Record<string, unknown> };
@@ -544,11 +498,6 @@ export interface TouchpointMap {
   'billing.prepay.ledger': {
     params: { carrierId: string; startDate: string; endDate: string };
     result: BillingPrepayLedger;
-  };
-  // Returns — matchedBy injected server-side; UI never sends it. (list/candidates moved to REST.)
-  'billing.returns.match': {
-    params: { returnRecordId: string; transactionRecordId: string };
-    result: BillingWriteResult;
   };
 }
 
