@@ -1,0 +1,5 @@
+/* Billing Mytrion — React-shell overrides.
+   Machine-scoped port lives in the sibling files; anything that needs to differ from the
+   zoho-octane source of truth (React-shell adjustments, `.bm-root` integration tweaks) goes
+   here so the ported files stay a clean mirror. Loaded last by index.css. Source of truth for
+   the base files: zoho-octane/app/billing-mytrion/css/. */

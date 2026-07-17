@@ -1,0 +1,210 @@
+/* =====================================================
+   Billing Mytrion — Theme Variables
+   Brand: Mytrion AI — Midnight Blue / Razor-Sharp Fintech
+   ===================================================== */
+
+.bm-root {
+    /* ── Dark Mode (default) — soft blue-gray, easy on eyes ── */
+    --color-bg-primary:    #22232e;
+    --color-bg-secondary:  #1c1d26;
+    --color-brand:         #c8ccda;
+    --color-brand-hover:   #e2e5ef;
+    --color-on-brand:      #22232e;
+    --color-accent:        #38bdf8;
+
+    /* ── Billing accent ── */
+    --billing-accent:      #38bdf8;
+    --billing-accent-glow: rgba(56, 189, 248, 0.20);
+    --billing-success:     #2ECC71;
+    --billing-warning:     #F59E0B;
+    --billing-danger:      #EF4444;
+    --billing-purple:      #8B5CF6;
+
+    /* ── Accent tint scale (sky-blue #38bdf8) ── */
+    --accent-bg-subtle:    rgba(56, 189, 248, 0.08);
+    --accent-bg:           rgba(56, 189, 248, 0.12);
+    --accent-bg-strong:    rgba(56, 189, 248, 0.16);
+    --accent-border:       rgba(56, 189, 248, 0.26);
+    --accent-border-strong: rgba(56, 189, 248, 0.45);
+    --accent-ring:         0 0 0 2px rgba(56, 189, 248, 0.18);
+    --accent-glow:         0 0 12px rgba(56, 189, 248, 0.30);
+    --accent-on:           #38bdf8;
+    --accent-hover:        #7dd3fc;
+    --on-accent-solid:     #06283b;
+
+    /* ── Status — text / bg / border (dark: bright text on translucent fill) ── */
+    --success-text:   #34d399;
+    --success-bg:     rgba(46, 204, 113, 0.14);
+    --success-border: rgba(46, 204, 113, 0.30);
+    --danger-text:    #f87171;
+    --danger-bg:      rgba(239, 68, 68, 0.14);
+    --danger-border:  rgba(239, 68, 68, 0.30);
+    --warning-text:   #fbbf24;
+    --warning-bg:     rgba(245, 158, 11, 0.14);
+    --warning-border: rgba(245, 158, 11, 0.30);
+    --purple-text:    #a78bfa;
+    --purple-bg:      rgba(139, 92, 246, 0.16);
+    --purple-border:  rgba(139, 92, 246, 0.30);
+
+    /* ── Money ── */
+    --money-positive: var(--success-text);
+    --money-negative: var(--danger-text);
+
+    /* ── Scrollbar ── */
+    --scrollbar-thumb: #3a3c4a;
+
+    /* ── Chat ── */
+    --chat-user-bg:   #1e3a8a;
+    --chat-user-text: #ffffff;
+
+    /* ── Text ── */
+    --color-text-primary: #c8ccda;
+    --color-text-muted:   #5e6680;
+    --text-primary:       #c8ccda;
+    --text-secondary:     #9399b4;
+    --text-muted:         #5e6680;
+    --text-on-dark:       #c8ccda;
+
+    /* ── Backward-compat aliases ── */
+    --brand-blue:         #c8ccda;
+    --brand-cyan:         #38bdf8;
+    --brand-blue-hover:   #e2e5ef;
+    --brand-navy:         #1c1d26;
+    --brand-navy-mid:     #22232e;
+    --brand-dark:         #1c1d26;
+    --accent:             #38bdf8;
+
+    /* ── Layout ── */
+    --sidebar-width:      220px;
+    --sidebar-collapsed:  64px;
+    --header-height:      56px;
+    --bottom-nav-height:  62px;
+
+    /* ── Surfaces ── */
+    --surface:        #2a2b38;
+    --surface-alt:    #252632;
+    --surface-raised: rgba(200, 204, 218, 0.05);
+    --sidebar-bg:     #1e1f2a;
+    --header-bg:      #1e1f2a;
+
+    /* ── Borders ── */
+    --border:       rgba(200, 204, 218, 0.11);
+    --border-light: rgba(200, 204, 218, 0.06);
+    --border-dark:  rgba(200, 204, 218, 0.04);
+    --color-border: rgba(200, 204, 218, 0.11);
+
+    /* ── Status ── */
+    --success: #2ECC71;
+    --error:   #EF4444;
+
+    /* ── Shadows ── */
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.40), 0 1px 2px rgba(0,0,0,0.30);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.35), 0 2px 6px rgba(0,0,0,0.25);
+    --shadow-lg: 0 10px 30px rgba(0,0,0,0.50), 0 4px 12px rgba(0,0,0,0.35);
+
+    /* ── Modal ── */
+    --modal-backdrop-bg: rgba(10, 11, 18, 0.78);
+    --modal-box-bg:      #2a2b38;
+
+    /* ── Radii — Razor-Sharp: max 4px ── */
+    --radius-xs:   1px;
+    --radius-sm:   2px;
+    --radius-md:   4px;
+    --radius-lg:   4px;
+    --radius-full: 4px;
+}
+
+/* ── Light Mode ── */
+.bm-root.light-mode {
+    /* Backgrounds — warm blue-white, no harsh pure white or flat gray */
+    --color-bg-primary:    #f5f7ff;
+    --color-bg-secondary:  #eceffe;
+    --color-brand:         #1a1d38;
+    --color-brand-hover:   #2d3260;
+    --color-on-brand:      #ffffff;
+    --color-accent:        #2563eb;
+
+    /* Billing accent — vivid blue pops cleanly on white surfaces */
+    --billing-accent:      #2563eb;
+    --billing-accent-glow: rgba(37, 99, 235, 0.12);
+    --billing-success:     #16a34a;
+    --billing-warning:     #d97706;
+    --billing-danger:      #dc2626;
+    --billing-purple:      #7c3aed;
+
+    /* Accent tint scale (royal blue #2563eb) — lower alphas read on white */
+    --accent-bg-subtle:    rgba(37, 99, 235, 0.06);
+    --accent-bg:           rgba(37, 99, 235, 0.09);
+    --accent-bg-strong:    rgba(37, 99, 235, 0.13);
+    --accent-border:       rgba(37, 99, 235, 0.22);
+    --accent-border-strong: rgba(37, 99, 235, 0.40);
+    --accent-ring:         0 0 0 2px rgba(37, 99, 235, 0.15);
+    --accent-glow:         0 0 0 3px rgba(37, 99, 235, 0.12);
+    --accent-on:           #2563eb;
+    --accent-hover:        #1d4ed8;
+    --on-accent-solid:     #ffffff;
+
+    /* Status — text / bg / border (light: rich text on faint tint) */
+    --success-text:   #16a34a;
+    --success-bg:     rgba(22, 163, 74, 0.10);
+    --success-border: rgba(22, 163, 74, 0.28);
+    --danger-text:    #dc2626;
+    --danger-bg:      rgba(220, 38, 38, 0.09);
+    --danger-border:  rgba(220, 38, 38, 0.26);
+    --warning-text:   #b45309;
+    --warning-bg:     rgba(217, 119, 6, 0.11);
+    --warning-border: rgba(217, 119, 6, 0.30);
+    --purple-text:    #7c3aed;
+    --purple-bg:      rgba(124, 58, 237, 0.10);
+    --purple-border:  rgba(124, 58, 237, 0.26);
+
+    /* Money */
+    --money-positive: var(--success-text);
+    --money-negative: var(--danger-text);
+
+    /* Scrollbar */
+    --scrollbar-thumb: #bbc0cc;
+
+    /* Text — deep navy, not harsh black */
+    --color-text-primary:  #1a1d38;
+    --color-text-muted:    #8890b0;
+    --text-primary:        #1a1d38;
+    --text-secondary:      #4f5578;
+    --text-muted:          #8890b0;
+    --text-on-dark:        #1a1d38;
+
+    /* Aliases */
+    --brand-blue:         #1a1d38;
+    --brand-cyan:         #2563eb;
+    --brand-blue-hover:   #2d3260;
+    --brand-navy:         #eceffe;
+    --brand-navy-mid:     #f5f7ff;
+    --brand-dark:         #eceffe;
+    --accent:             #2563eb;
+
+    /* Surfaces — clean white cards on a tinted page */
+    --surface:        #ffffff;
+    --surface-alt:    #f1f3fd;
+    --surface-raised: rgba(37, 99, 235, 0.03);
+    --sidebar-bg:     #ffffff;
+    --header-bg:      #ffffff;
+
+    /* Borders — subtle navy tint, not flat black alpha */
+    --border:       rgba(88, 95, 150, 0.13);
+    --border-light: rgba(88, 95, 150, 0.07);
+    --border-dark:  rgba(88, 95, 150, 0.04);
+    --color-border: rgba(88, 95, 150, 0.13);
+
+    /* Shadows — soft blue-tinted, avoid flat gray */
+    --shadow-sm: 0 1px 4px rgba(37, 99, 235, 0.07), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-md: 0 4px 16px rgba(37, 99, 235, 0.09), 0 2px 6px rgba(0,0,0,0.05);
+    --shadow-lg: 0 10px 32px rgba(37, 99, 235, 0.11), 0 4px 12px rgba(0,0,0,0.06);
+
+    /* Modal */
+    --modal-backdrop-bg: rgba(15, 17, 42, 0.48);
+    --modal-box-bg:      #ffffff;
+
+    /* Status — richer on white backgrounds */
+    --success: #16a34a;
+    --error:   #dc2626;
+}

@@ -71,7 +71,7 @@ describe('GET /v1/touchpoints (discovery)', () => {
     const res = await app.inject({ method: 'GET', url: '/v1/touchpoints', headers: API_KEY_HEADERS });
     expect(res.statusCode).toBe(200);
     const { touchpoints } = res.json() as { touchpoints: Array<{ key: string }> };
-    expect(touchpoints.length).toBe(73);
+    expect(touchpoints.length).toBe(88);
     expect(touchpoints.map((t) => t.key)).toContain('dwh.carrier_balance');
   });
 
