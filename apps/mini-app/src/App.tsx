@@ -12,6 +12,7 @@ import {
   fetchMiniAppSession,
   fetchPaymentInfo,
   fetchRegistrationPreview,
+  fetchCompany,
   fetchTracking,
   renameDriver,
   sendServiceRequest,
@@ -37,6 +38,7 @@ import { LANGUAGES, useI18n } from './lib/i18n';
 import { LogoLockup } from './components/logo';
 import { BackChevron, Chevron, EyeToggle, Icon, SearchGlyph, type IconName } from './components/icons';
 import { seedInbox, type InboxItem } from './lib/demo';
+import type { CompanyDetails } from './lib/api';
 import type { OpenAction } from './lib/actionTarget';
 import { defaultPinned, findCatalogItem } from './lib/serviceCatalog';
 import { ConfirmDialog, type ConfirmConfig } from './components/ConfirmDialog';
@@ -1454,18 +1456,25 @@ function RenameDriver({
 function ProfileSheet({
   user,
   company,
+  initData,
+  isOwner,
+  onCopy,
   theme,
   onTheme,
   onClose,
 }: {
   user: TelegramWebAppUser | undefined;
   company: string;
+  initData: string;
+  isOwner: boolean;
+  onCopy: (text: string, toast: string) => void;
   theme: Theme;
   onTheme: (t: Theme) => void;
   onClose: () => void;
 }) {
   const { t, lang, setLang } = useI18n();
   const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'Octane user';
+  const [details, setDetails] = useState<CompanyDetails | null>(null);
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -1473,6 +1482,16 @@ function ProfileSheet({
       document.body.style.overflow = prev;
     };
   }, []);
+  // Company details are owner-only upstream — a driver's profile has no carrier profile to show.
+  useEffect(() => {
+    if (!isOwner || !initData) return;
+    let cancelled = false;
+    fetchCompany(initData)
+      .then((d) => { if (!cancelled) setDetails(d); })
+      .catch(() => { /* the section just stays hidden — not worth an error state in a profile sheet */ });
+    return () => { cancelled = true; };
+  }, [isOwner, initData]);
+  const cityLine = details ? [details.city, details.state, details.zip].filter(Boolean).join(', ') : '';
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'rgba(0,0,0,.42)', animation: 'octfade .2s ease' }} />
@@ -1487,6 +1506,40 @@ function ProfileSheet({
             <div style={{ fontSize: 13, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company}</div>
           </div>
         </div>
+
+        {isOwner && details && (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 9 }}>{t('menu.company')}</div>
+            <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden', marginBottom: 20 }}>
+              {/* Carrier ID — copyable, the one field an owner most often needs to quote to support. */}
+              <button type="button" className="press" onClick={() => onCopy(details.carrierId, t('toast.carrierIdCopied'))} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontFamily: "'Geist'", textAlign: 'left' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.carrierId')}</div>
+                  <div className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{details.carrierId}</div>
+                </div>
+                <Icon name="copy" size={15} strokeWidth={2} className="" />
+              </button>
+              {details.email && (
+                <div style={{ padding: '12px 14px', borderBottom: cityLine || details.address || details.phone ? '1px solid var(--border)' : 'none' }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.email')}</div>
+                  <div className="selectable" style={{ fontSize: 14, fontWeight: 500, color: 'var(--fg)', marginTop: 2, wordBreak: 'break-all' }}>{details.email}</div>
+                </div>
+              )}
+              {details.phone && (
+                <div style={{ padding: '12px 14px', borderBottom: cityLine || details.address ? '1px solid var(--border)' : 'none' }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.phone')}</div>
+                  <div className="selectable" style={{ fontSize: 14, fontWeight: 500, color: 'var(--fg)', marginTop: 2 }}>{details.phone}</div>
+                </div>
+              )}
+              {(details.address || cityLine) && (
+                <div style={{ padding: '12px 14px' }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.address')}</div>
+                  <div className="selectable" style={{ fontSize: 14, fontWeight: 500, color: 'var(--fg)', marginTop: 2, lineHeight: 1.4 }}>{[details.address, cityLine].filter(Boolean).join('\n')}</div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 9 }}>{t('menu.theme')}</div>
         <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--secondary)', borderRadius: 12, marginBottom: 20 }}>
@@ -2603,6 +2656,9 @@ export function App() {
         <ProfileSheet
           user={user}
           company={company}
+          initData={wa?.initData ?? ''}
+          isOwner={session.isOwner}
+          onCopy={(text, toast) => { try { navigator.clipboard?.writeText(text); } catch { /* ignore */ } haptic('tap'); showToast(toast); }}
           theme={theme}
           onTheme={chooseTheme}
           onClose={() => setProfileOpen(false)}

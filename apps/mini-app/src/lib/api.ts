@@ -114,6 +114,22 @@ export async function driverSelfRegister(
   })) as { registration: RegistrationView };
 }
 
+export interface CompanyDetails {
+  carrierId: string;
+  companyName: string | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+}
+
+/** The carrier's company profile for the owner's profile sheet (owner-only upstream). */
+export async function fetchCompany(initData: string): Promise<CompanyDetails> {
+  return (await request('POST', '/carrier/mini-app/company', { initData })) as CompanyDetails;
+}
+
 // ── Owner fleet management (owner-authenticated via initData) ────────────────────────────────
 export type CardStatus = 'registered' | 'pending' | 'open';
 
