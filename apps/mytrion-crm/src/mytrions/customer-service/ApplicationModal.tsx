@@ -189,9 +189,10 @@ export function ApplicationModal({
         }
       }
       if (f.field === 'Credit_Score' && current !== '') {
-        const n = Number(current);
-        if (Number.isNaN(n) || n < 1 || n > 100) {
-          errors[f.field] = 'CreditSafe Score must be between 1 and 100';
+        // No range cap — the field stores varied score scales. Only
+        // require that it's a number.
+        if (Number.isNaN(Number(current))) {
+          errors[f.field] = 'Credit Score must be a number';
           continue;
         }
       }
