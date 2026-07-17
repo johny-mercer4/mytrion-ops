@@ -120,7 +120,7 @@
   justify-content: center;
   width: 44px;
   height: 44px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
 }
 
 .badge {

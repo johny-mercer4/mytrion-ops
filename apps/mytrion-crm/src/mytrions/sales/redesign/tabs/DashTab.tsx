@@ -71,7 +71,7 @@ function State({ children, tone }: { children: ReactNode; tone?: 'error' }) {
 
 function PlaceholderCard({ children }: { children: ReactNode }) {
   return (
-    <div style={s('padding:40px 20px;border-radius:16px;background:var(--surface);border:1px solid var(--border);text-align:center;color:var(--muted);font-size:13px')}>
+    <div style={s('padding:40px 20px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);text-align:center;color:var(--muted);font-size:13px')}>
       {children}
     </div>
   );
@@ -145,9 +145,9 @@ function SalesPanel() {
   return (
     <div style={s('display:flex;flex-direction:column;gap:16px')}>
       <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:16px')}>
-        <div style={s('position:relative;overflow:hidden;padding:22px;border-radius:16px;background:linear-gradient(120deg,rgba(124,92,255,.16),transparent),var(--surface);border:1px solid var(--border)')}>
+        <div style={s('position:relative;overflow:hidden;padding:22px;border-radius:var(--radius-md);background:linear-gradient(120deg,rgba(124,92,255,.16),transparent),var(--surface);border:1px solid var(--border)')}>
           <div style={s('display:flex;align-items:center;gap:12px')}>
-            <div style={s('width:46px;height:46px;border-radius:13px;background:color-mix(in srgb,var(--violet) 16%,transparent);color:var(--violet);display:flex;align-items:center;justify-content:center')}>
+            <div style={s('width:46px;height:46px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--violet) 16%,transparent);color:var(--violet);display:flex;align-items:center;justify-content:center')}>
               <Svg d={ICO.fuel} size={22} />
             </div>
             <div>
@@ -156,9 +156,9 @@ function SalesPanel() {
             </div>
           </div>
         </div>
-        <div style={s('position:relative;overflow:hidden;padding:22px;border-radius:16px;background:linear-gradient(120deg,rgba(var(--accent-rgb),.16),transparent),var(--surface);border:1px solid var(--border)')}>
+        <div style={s('position:relative;overflow:hidden;padding:22px;border-radius:var(--radius-md);background:linear-gradient(120deg,rgba(var(--accent-rgb),.16),transparent),var(--surface);border:1px solid var(--border)')}>
           <div style={s('display:flex;align-items:center;gap:12px')}>
-            <div style={s('width:46px;height:46px;border-radius:13px;background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);display:flex;align-items:center;justify-content:center')}>
+            <div style={s('width:46px;height:46px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);display:flex;align-items:center;justify-content:center')}>
               <Svg d={ICO.card} size={22} />
             </div>
             <div>
@@ -170,7 +170,7 @@ function SalesPanel() {
       </div>
 
       <div style={s('display:grid;grid-template-columns:1.2fr 1fr 0.8fr;gap:16px')}>
-        <div style={s('padding:20px;border-radius:16px;background:var(--surface);border:1px solid var(--border)')}>
+        <div style={s('padding:20px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
           <div style={s('display:flex;gap:20px;justify-content:space-around')}>
             <div style={s('text-align:center')}>
               <div style={s('position:relative;width:96px;height:96px;margin:0 auto')}>
@@ -200,7 +200,7 @@ function SalesPanel() {
             </div>
           </div>
         </div>
-        <div style={s('padding:20px;border-radius:16px;background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;gap:14px')}>
+        <div style={s('padding:20px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;gap:14px')}>
           <div>
             <div style={s('font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em')}>Cards Used This Cycle</div>
             <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:26px;margin-top:3px")}>{numFmt(kn('unique_cards_used'))}</div>
@@ -210,7 +210,7 @@ function SalesPanel() {
             <div style={s('font-size:11px;color:var(--muted);margin-top:5px')}><strong style={s('color:var(--accent)')}>{Math.round(utilPct)}%</strong> of active cards utilized</div>
           </div>
         </div>
-        <div style={s('padding:20px;border-radius:16px;background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;gap:16px')}>
+        <div style={s('padding:20px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;gap:16px')}>
           <div>
             <div style={s('font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em')}>New Cards · Cycle</div>
             <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:24px;color:var(--ok)")}>{numFmt(kn('new_cards_cycle'))}</div>
@@ -224,7 +224,7 @@ function SalesPanel() {
       </div>
 
       <div style={s('display:grid;grid-template-columns:1fr 1.15fr;gap:16px')}>
-        <div style={s('padding:20px;border-radius:16px;background:var(--surface);border:1px solid var(--border)')}>
+        <div style={s('padding:20px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
           <div style={s('font-size:13px;font-weight:700;margin-bottom:16px')}>Cards by Company</div>
           <div style={s('display:flex;flex-direction:column;gap:13px')}>
             {dashBars.map((b) => (
@@ -239,7 +239,7 @@ function SalesPanel() {
             ))}
           </div>
         </div>
-        <div style={s('padding:20px;border-radius:16px;background:var(--surface);border:1px solid var(--border)')}>
+        <div style={s('padding:20px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
           <div style={s('display:flex;align-items:center;justify-content:space-between;margin-bottom:14px')}>
             <span style={s('font-size:13px;font-weight:700')}>Card Activity · Transactions</span>
             <span style={s('font-size:11px;color:var(--muted)')}>Last 10 days</span>
@@ -267,9 +267,9 @@ function SalesPanel() {
         </div>
       </div>
 
-      <div style={s('padding:20px;border-radius:16px;background:var(--surface);border:1px solid var(--border)')}>
+      <div style={s('padding:20px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
         <div style={s('font-size:13px;font-weight:700;margin-bottom:14px')}>Transaction Details</div>
-        <div style={s('border-radius:12px;border:1px solid var(--border);overflow:hidden')}>
+        <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);overflow:hidden')}>
           <div style={s('display:grid;grid-template-columns:1.6fr 1fr 1fr 1.1fr 1fr;gap:8px;padding:11px 15px;background:var(--alt);font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)')}>
             <span>Carrier</span>
             <span style={s('text-align:right')}>New Cards</span>
@@ -352,7 +352,7 @@ function CardsPanel() {
   return (
     <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:16px')}>
       {cardBreak.map((c) => (
-        <div key={c.label} style={s('padding:22px;border-radius:16px;background:var(--surface);border:1px solid var(--border)')}>
+        <div key={c.label} style={s('padding:22px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
           <div style={s('display:flex;align-items:center;justify-content:space-between')}>
             <span style={s('font-size:12px;font-weight:700;color:var(--text2)')}>{c.label}</span>
             <span style={s(`width:10px;height:10px;border-radius:50%;background:${c.col}`)} />
@@ -380,12 +380,12 @@ export function DashTab() {
         <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.04em;text-transform:uppercase")}>Dashboard</div>
         <div style={s('font-size:12.5px;color:var(--muted);margin-top:2px')}>{todayDate}</div>
       </div>
-      <div style={s('display:flex;gap:6px;margin-bottom:18px;overflow-x:auto;padding:4px;border-radius:13px;background:var(--surface);border:1px solid var(--border)')}>
+      <div style={s('display:flex;gap:6px;margin-bottom:18px;overflow-x:auto;padding:4px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
         {DASH_SUBTABS.map((t) => {
           const on = dashSub === t.id;
           const badgeVal = 'badge' in t ? t.badge : undefined;
           const hasBadge = !!badgeVal;
-          const style = `display:flex;align-items:center;gap:7px;padding:9px 15px;border-radius:10px;border:1px solid ${on ? 'rgba(var(--accent-rgb),.4)' : 'transparent'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .14s`;
+          const style = `display:flex;align-items:center;gap:7px;padding:9px 15px;border-radius:var(--radius-md);border:1px solid ${on ? 'rgba(var(--accent-rgb),.4)' : 'transparent'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .14s`;
           return (
             <button key={t.id} onClick={() => setDashSub(t.id)} style={s(style)}>
               {t.label}

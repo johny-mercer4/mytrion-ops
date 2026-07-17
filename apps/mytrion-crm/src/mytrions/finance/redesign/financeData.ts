@@ -73,31 +73,31 @@ export function badge(text: string, kind: BadgeKind = 'muted'): { text: string; 
   const [bg, fg] = map[kind] ?? map.muted;
   return {
     text,
-    style: `font-size:9.5px;font-weight:700;letter-spacing:.02em;padding:3px 8px;border-radius:6px;background:${bg};color:${fg};white-space:nowrap`,
+    style: `font-size:9.5px;font-weight:700;letter-spacing:.02em;padding:3px 8px;border-radius:var(--radius-md);background:${bg};color:${fg};white-space:nowrap`,
   };
 }
 
 export function chipStyle(active: boolean): string {
   return active
-    ? 'display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 13px;border-radius:8px;border:1px solid transparent;background:var(--accent);color:#04150F;font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap'
-    : 'display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap';
+    ? 'display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 13px;border-radius:var(--radius-md);border:1px solid transparent;background:var(--accent);color:#04150F;font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap'
+    : 'display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 13px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap';
 }
 
 export function subTabStyle(active: boolean): string {
   return active
-    ? 'display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 15px;border-radius:9px;border:none;background:var(--accent);color:#04150F;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap'
-    : 'display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 15px;border-radius:9px;border:none;background:transparent;color:var(--text2);font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap';
+    ? 'display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 15px;border-radius:var(--radius-md);border:none;background:var(--accent);color:#04150F;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap'
+    : 'display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 15px;border-radius:var(--radius-md);border:none;background:transparent;color:var(--text2);font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap';
 }
 
 export function segStyle(active: boolean): string {
   return active
-    ? 'padding:5px 12px;border-radius:7px;border:none;background:var(--accent);color:#04150F;font-size:11px;font-weight:700;cursor:pointer'
-    : 'padding:5px 12px;border-radius:7px;border:none;background:transparent;color:var(--muted);font-size:11px;font-weight:600;cursor:pointer';
+    ? 'padding:5px 12px;border-radius:var(--radius-md);border:none;background:var(--accent);color:#04150F;font-size:11px;font-weight:700;cursor:pointer'
+    : 'padding:5px 12px;border-radius:var(--radius-md);border:none;background:transparent;color:var(--muted);font-size:11px;font-weight:600;cursor:pointer';
 }
 
 export function navBtnStyle(active: boolean): string {
   return (
-    `display:flex;align-items:center;gap:11px;height:40px;padding:0 12px;border-radius:10px;border:none;cursor:pointer;font-size:13px;font-weight:${active ? 700 : 600};text-align:left;width:100%;` +
+    `display:flex;align-items:center;gap:11px;height:40px;padding:0 12px;border-radius:var(--radius-md);border:none;cursor:pointer;font-size:13px;font-weight:${active ? 700 : 600};text-align:left;width:100%;` +
     (active ? 'background:var(--accent-s);color:var(--accent)' : 'background:transparent;color:var(--text2)')
   );
 }
@@ -129,7 +129,7 @@ export function balanceModeLabel(balance = PARENT_SNAPSHOT.balance): string {
 export function kpiIcon(kind: BadgeKind | 'accent'): string {
   const bg = kind === 'accent' ? 'var(--accent-s)' : BADGE_BG[kind as BadgeKind] ?? 'var(--accent-s)';
   const fg = kind === 'accent' ? 'var(--accent)' : BADGE_FG[kind as BadgeKind] ?? 'var(--accent)';
-  return `width:36px;height:36px;border-radius:10px;background:${bg};color:${fg};display:flex;align-items:center;justify-content:center;flex-shrink:0`;
+  return `width:36px;height:36px;border-radius:var(--radius-md);background:${bg};color:${fg};display:flex;align-items:center;justify-content:center;flex-shrink:0`;
 }
 
 export function initials(name: string): string {
@@ -208,7 +208,7 @@ export function liveFeedItems(): LiveFeedItem[] {
 
 export function homeKpis() {
   const deltaStyle = (up: boolean) =>
-    `font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:6px;background:${up ? 'var(--ok-s)' : 'var(--danger-s)'};color:${up ? 'var(--ok)' : 'var(--danger)'}`;
+    `font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:var(--radius-md);background:${up ? 'var(--ok-s)' : 'var(--danger-s)'};color:${up ? 'var(--ok)' : 'var(--danger)'}`;
   return [
     { label: 'Funded Today', help: 'across all carriers', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z', kind: 'accent' as const, color: 'var(--accent)', value: moneyC(fundedToday()), delta: '+12%', up: true },
     { label: 'Collected Today', help: 'payments received', icon: 'M5 13l4 4L19 7', kind: 'ok' as const, color: 'var(--ok)', value: moneyC(collectedToday()), delta: '+8%', up: true },

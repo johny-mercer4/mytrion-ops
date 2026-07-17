@@ -7,14 +7,14 @@ import {
   type CarrierInvitation,
   type RegisteredCompany,
 } from '../../api/carrierUsers';
-import { BuildingIcon, PersonIcon, PlusIcon, SearchIcon, XIcon } from '../../components/icons';
+import { BuildingIcon, PersonIcon, PlusIcon, RefreshIcon, RevokeIcon, SearchIcon, XIcon } from '../../components/icons';
 import { CarrierInvitations } from './CarrierInvitations';
 import { CarrierUserForm, type InviteDraft } from './CarrierUserForm';
 import { copyToClipboard } from './carrierUserUtil';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Pager, PAGE_SIZE } from './Pager';
-import { TableSkeleton } from './TableSkeleton';
 import { adminToast } from './toast';
+import { TableSkeleton } from '@/components/mytrion/table-skeleton';
 import s from './admin.module.css';
 
 /** Title and blurb for each sub-item — the sidebar names the section, the header names the view. */
@@ -256,6 +256,7 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
         </div>
         <div className={s.inlineRow}>
           <button type="button" className={s.ghostBtn} disabled={refreshing} onClick={refresh}>
+            <RefreshIcon />
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
           {showForm ? (
@@ -333,7 +334,7 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
               <span className={s.srOnly} role="status">
                 Loading registered companies…
               </span>
-              <TableSkeleton cols={s.tCarrier} widths={REG_SKELETON} />
+              <TableSkeleton widths={REG_SKELETON} rowClassName={s.tRow} colsClassName={s.tCarrier} />
             </>
           )}
         {!loading &&
@@ -371,6 +372,7 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
                       disabled={busyId === g.owner.id}
                       onClick={() => g.owner && askRevoke(g.owner.id, g.companyName ?? 'This owner')}
                     >
+                      <RevokeIcon />
                       Revoke
                     </button>
                   )}
@@ -410,6 +412,7 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
                         disabled={busyId === d.id}
                         onClick={() => askRevoke(d.id, d.driverName ?? 'This driver')}
                       >
+                        <RevokeIcon />
                         Revoke
                       </button>
                     )}

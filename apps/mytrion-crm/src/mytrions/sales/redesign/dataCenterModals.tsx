@@ -10,9 +10,9 @@ import { dealStageColor, leadStatusColor, type DealVM, type LeadVM } from './dat
 const CLOSE = 'M18 6L6 18M6 6l12 12';
 
 function avStyle(col: string): string {
-  return `width:52px;height:52px;border-radius:14px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:19px;background:color-mix(in srgb,${col} 16%,transparent);color:${col}`;
+  return `width:52px;height:52px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:19px;background:color-mix(in srgb,${col} 16%,transparent);color:${col}`;
 }
-const CARD = 'padding:15px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)';
+const CARD = 'padding:15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)';
 const CARD_LABEL = 'font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em';
 
 function StatCard({ label, value, mono, color }: { label: string; value: string; mono?: boolean; color?: string }) {
@@ -42,7 +42,7 @@ export function LeadModal({
   const canCall = Boolean(onCall && lead.phone.trim());
   return (
     <div onClick={onClose} style={s('position:fixed;inset:0;z-index:120;background:rgba(3,7,14,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
-      <div onClick={(e) => e.stopPropagation()} style={s(`width:100%;max-width:540px;max-height:86vh;display:flex;flex-direction:column;border-radius:20px;background:var(--surface);border:1px solid var(--border);border-top:3px solid ${meta.col};box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
+      <div onClick={(e) => e.stopPropagation()} style={s(`width:100%;max-width:540px;max-height:86vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid ${meta.col};box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
         <div style={s('padding:22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px')}>
           <div style={s(avStyle(meta.col))}>{lead.initials}</div>
           <div style={s('flex:1;min-width:0')}>
@@ -50,7 +50,7 @@ export function LeadModal({
             <div style={s('font-size:11.5px;color:var(--muted);margin-top:3px')}>{lead.contact} · {lead.title}</div>
           </div>
           <span style={s(flagBadge.style)}>{flagBadge.text}</span>
-          <button onClick={onClose} aria-label="Close" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
+          <button onClick={onClose} aria-label="Close" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
             <Svg d={CLOSE} size={15} strokeWidth={2.4} />
           </button>
         </div>
@@ -76,7 +76,7 @@ export function LeadModal({
                   type="button"
                   onClick={() => onCall?.(lead.phone)}
                   aria-label={`Call ${lead.phone}`}
-                  style={s(`height:34px;padding:0 14px;border-radius:9px;border:none;cursor:pointer;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12px;display:inline-flex;align-items:center;gap:7px;box-shadow:0 4px 14px rgba(var(--accent-rgb),.35)`)}
+                  style={s(`height:34px;padding:0 14px;border-radius:var(--radius-md);border:none;cursor:pointer;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12px;display:inline-flex;align-items:center;gap:7px;box-shadow:0 4px 14px rgba(var(--accent-rgb),.35)`)}
                 >
                   <Svg d="M3 5a2 2 0 012-2h3.28a1 1 0 01.95.68l1.5 4.5a1 1 0 01-.5 1.21l-2.26 1.13a11 11 0 005.52 5.52l1.13-2.26a1 1 0 011.21-.5l4.5 1.5a1 1 0 01.68.95V19a2 2 0 01-2 2h-1C9.72 21 3 14.28 3 6V5z" size={14} stroke="#fff" strokeWidth={2} />
                   Call
@@ -95,12 +95,12 @@ export function LeadModal({
             <button
               type="button"
               onClick={() => onCall?.(lead.phone)}
-              style={s('height:38px;padding:0 18px;border-radius:10px;border:none;cursor:pointer;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px')}
+              style={s('height:38px;padding:0 18px;border-radius:var(--radius-md);border:none;cursor:pointer;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px')}
             >
               Call {lead.phone}
             </button>
           )}
-          <button onClick={onClose} style={s('height:38px;padding:0 18px;border-radius:10px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>Close</button>
+          <button onClick={onClose} style={s('height:38px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>Close</button>
         </div>
       </div>
     </div>
@@ -112,7 +112,7 @@ export function DealModal({ deal, onClose }: { deal: DealVM; onClose: () => void
   const stageBadge = badge(meta.label, meta.col);
   return (
     <div onClick={onClose} style={s('position:fixed;inset:0;z-index:120;background:rgba(3,7,14,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
-      <div onClick={(e) => e.stopPropagation()} style={s(`width:100%;max-width:560px;max-height:86vh;display:flex;flex-direction:column;border-radius:20px;background:var(--surface);border:1px solid var(--border);border-top:3px solid ${meta.col};box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
+      <div onClick={(e) => e.stopPropagation()} style={s(`width:100%;max-width:560px;max-height:86vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid ${meta.col};box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
         <div style={s('padding:22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px')}>
           <div style={s(avStyle(meta.col))}>{deal.initials}</div>
           <div style={s('flex:1;min-width:0')}>
@@ -120,7 +120,7 @@ export function DealModal({ deal, onClose }: { deal: DealVM; onClose: () => void
             <div style={s('font-size:11.5px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{deal.name}</div>
           </div>
           <span style={s(stageBadge.style)}>{stageBadge.text}</span>
-          <button onClick={onClose} aria-label="Close" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
+          <button onClick={onClose} aria-label="Close" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
             <Svg d={CLOSE} size={15} strokeWidth={2.4} />
           </button>
         </div>
@@ -152,7 +152,7 @@ export function DealModal({ deal, onClose }: { deal: DealVM; onClose: () => void
           </div>
         </div>
         <div style={s('padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px')}>
-          <button onClick={onClose} style={s('height:38px;padding:0 18px;border-radius:10px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>Close</button>
+          <button onClick={onClose} style={s('height:38px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>Close</button>
         </div>
       </div>
     </div>

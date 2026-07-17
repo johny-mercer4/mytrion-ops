@@ -50,6 +50,8 @@
   --font-sans: var(--font-body);
   --font-heading: var(--font-head);
   --font-mono: var(--font-mono);
+  /* skeleton sheen (see @keyframes shimmer) */
+  --animate-shimmer: shimmer 1.4s ease-in-out infinite;
 }
 
 /* Per-Mytrion accent — set data-mytrion="<id>" on a module root to swap --accent* to that
@@ -136,6 +138,16 @@ button {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+/* Skeleton sheen — the bar is a 200%-wide gradient and this slides it across. Paired with
+   `--animate-shimmer` in the theme block so it's `animate-shimmer`, not an arbitrary value. */
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
   }
 }
 @keyframes thinkBounce {

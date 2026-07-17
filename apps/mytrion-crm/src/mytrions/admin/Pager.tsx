@@ -1,4 +1,5 @@
 /** Prev/Next pager shared by the carrier tables — hides itself when everything fits on one page. */
+import { ChevronLeftIcon, ChevronRightIcon } from '../../components/icons';
 import s from './admin.module.css';
 
 export const PAGE_SIZE = 10;
@@ -20,10 +21,12 @@ export function Pager({ page, total, onChange }: { page: number; total: number; 
         Page {page} of {totalPages} · {total} total
       </span>
       <button type="button" className={s.ghostBtn} disabled={page <= 1} onClick={() => onChange(page - 1)}>
+        <ChevronLeftIcon />
         Prev
       </button>
       <button type="button" className={s.ghostBtn} disabled={page >= totalPages} onClick={() => onChange(page + 1)}>
         Next
+        <ChevronRightIcon />
       </button>
     </div>
   );

@@ -40,7 +40,7 @@
 
 .cs-root .cs-dc-filter-tab {
     padding: 0.3rem 0.75rem;
-    border-radius: 2px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: transparent;
     color: var(--text-muted);

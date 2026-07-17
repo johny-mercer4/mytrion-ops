@@ -123,7 +123,7 @@ const fmtTx = (v: string): string => {
 const poolGrid =
   'display:grid;grid-template-columns:44px 40px 118px 1.5fr 1.15fr 1.1fr 1.05fr 1.5fr 60px 1.05fr 1.2fr;gap:10px;align-items:center';
 const optRow = (active: boolean): string =>
-  `display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;cursor:pointer;background:${active ? 'rgba(var(--accent-rgb),.10)' : 'transparent'}`;
+  `display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--radius-md);cursor:pointer;background:${active ? 'rgba(var(--accent-rgb),.10)' : 'transparent'}`;
 
 const closeX = (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
@@ -260,7 +260,7 @@ export function PoolTab() {
       inactivity: d.inactivityReason,
       inactivityHas: iHas,
       cards: d.numberOfCards,
-      cardStyle: `justify-self:center;display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:26px;padding:0 8px;border-radius:8px;font-size:11px;font-weight:700;${parseInt(d.numberOfCards) > 0 ? 'background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)' : 'background:var(--raised);color:var(--muted)'}`,
+      cardStyle: `justify-self:center;display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:26px;padding:0 8px;border-radius:var(--radius-md);font-size:11px;font-weight:700;${parseInt(d.numberOfCards) > 0 ? 'background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)' : 'background:var(--raised);color:var(--muted)'}`,
       statusBadge: badge(d.status, poolStatusCol[d.status] || 'var(--muted)'),
       owner: d.owner,
       ownerHas: oHas,
@@ -356,7 +356,7 @@ export function PoolTab() {
 
   const poolAllChecked = selectableIds.length > 0 && selectableIds.every((id) => poolSel.includes(id));
   const poolSelCount = String(poolSel.length);
-  const poolMyDealsTrack = `width:40px;height:22px;border-radius:11px;padding:2px;border:none;cursor:pointer;transition:background .2s;display:flex;background:${poolMyDeals ? 'var(--accent)' : 'var(--border)'};justify-content:${poolMyDeals ? 'flex-end' : 'flex-start'}`;
+  const poolMyDealsTrack = `width:40px;height:22px;border-radius:var(--radius-md);padding:2px;border:none;cursor:pointer;transition:background .2s;display:flex;background:${poolMyDeals ? 'var(--accent)' : 'var(--border)'};justify-content:${poolMyDeals ? 'flex-end' : 'flex-start'}`;
   const poolMyDealsThumb = 'width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);display:block';
   const poolCanSubmit = poolConfirm && !poolSubmitting;
   const poolCannotSubmit = !poolConfirm && !poolSubmitting;
@@ -386,17 +386,17 @@ export function PoolTab() {
           </div>
           <div style={s('display:flex;align-items:center;gap:8px')}>
             {poolSel.length > 0 ? (
-              <button onClick={openPoolAssign} className="ss-btn-p" style={s('height:38px;padding:0 16px;border-radius:10px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer;display:flex;align-items:center;gap:7px')}>
+              <button onClick={openPoolAssign} className="ss-btn-p" style={s('height:38px;padding:0 16px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer;display:flex;align-items:center;gap:7px')}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d={assignPath} /></svg>
                 Assign to Me ({poolSelCount})
               </button>
             ) : (
-              <button disabled style={s('height:38px;padding:0 16px;border-radius:10px;border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:12.5px;cursor:not-allowed;display:flex;align-items:center;gap:7px')}>
+              <button disabled style={s('height:38px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:12.5px;cursor:not-allowed;display:flex;align-items:center;gap:7px')}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d={assignPath} /></svg>
                 Assign to Me
               </button>
             )}
-            <button onClick={refreshPool} aria-label="Refresh" className="ss-ico-btn" style={s('width:38px;height:38px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
+            <button onClick={refreshPool} aria-label="Refresh" className="ss-ico-btn" style={s('width:38px;height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s(poolSpin ? 'animation:ss-spin .9s linear infinite' : '')}><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
             </button>
           </div>
@@ -412,9 +412,9 @@ export function PoolTab() {
               <circle cx="11" cy="11" r="7" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
-            <input value={poolSearch} onChange={(e) => setPoolSearchState(e.target.value)} placeholder="Search company, carrier ID, or name…" className="ss-in" style={s('width:100%;height:38px;padding:0 14px 0 35px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px')} />
+            <input value={poolSearch} onChange={(e) => setPoolSearchState(e.target.value)} placeholder="Search company, carrier ID, or name…" className="ss-in" style={s('width:100%;height:38px;padding:0 14px 0 35px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px')} />
           </div>
-          <button onClick={() => setPoolShowFilter(true)} className="ss-ico-btn" style={s('height:38px;padding:0 15px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700')}>
+          <button onClick={() => setPoolShowFilter(true)} className="ss-ico-btn" style={s('height:38px;padding:0 15px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700')}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={funnelPath} /></svg>
             Filters
             {poolActiveCount > 0 && (
@@ -431,7 +431,7 @@ export function PoolTab() {
             <button onClick={clearPoolFilters} style={s('background:none;border:none;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer')}>Clear all</button>
           </div>
         )}
-        <div style={s('flex:1;min-height:0;border-radius:14px;border:1px solid var(--border);background:var(--surface);overflow:hidden;display:flex;flex-direction:column;box-shadow:var(--shadow-sm)')}>
+        <div style={s('flex:1;min-height:0;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);overflow:hidden;display:flex;flex-direction:column;box-shadow:var(--shadow-sm)')}>
           <div className="ss-scroll" style={s('flex:1;overflow:auto')}>
             <div style={s('min-width:1140px')}>
               <div style={s('display:grid;grid-template-columns:44px 40px 118px 1.5fr 1.15fr 1.1fr 1.05fr 1.5fr 60px 1.05fr 1.2fr;gap:10px;align-items:center;position:sticky;top:0;z-index:5;padding:11px 15px;background:var(--alt);border-bottom:1px solid var(--border);font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)')}>
@@ -497,7 +497,7 @@ export function PoolTab() {
                 </span>
                 <span style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.04em;text-transform:uppercase')}>Filters</span>
               </div>
-              <button onClick={() => setPoolShowFilter(false)} className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>{closeX}</button>
+              <button onClick={() => setPoolShowFilter(false)} className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>{closeX}</button>
             </div>
             <div className="ss-scroll" style={s('flex:1;min-height:0;padding:16px 18px;display:flex;flex-direction:column;gap:16px')}>
               <div style={s('display:flex;align-items:center;justify-content:space-between')}>
@@ -523,8 +523,8 @@ export function PoolTab() {
               ))}
             </div>
             <div style={s('padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:10px')}>
-              <button onClick={clearPoolFilters} style={s('flex:1;height:38px;border-radius:10px;border:1px solid var(--border);background:var(--alt);color:var(--danger);font-weight:700;font-size:12.5px;cursor:pointer')}>Clear All</button>
-              <button onClick={() => setPoolShowFilter(false)} className="ss-btn-p" style={s('flex:1;height:38px;border-radius:10px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer')}>Done</button>
+              <button onClick={clearPoolFilters} style={s('flex:1;height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--danger);font-weight:700;font-size:12.5px;cursor:pointer')}>Clear All</button>
+              <button onClick={() => setPoolShowFilter(false)} className="ss-btn-p" style={s('flex:1;height:38px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer')}>Done</button>
             </div>
           </div>
         </>
@@ -532,45 +532,45 @@ export function PoolTab() {
 
       {poolModalOpen && (
         <div onClick={closePoolAssign} style={s('position:fixed;inset:0;z-index:140;background:rgba(3,7,14,.6);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
-          <div onClick={stop} style={s('width:100%;max-width:460px;border-radius:18px;background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}>
+          <div onClick={stop} style={s('width:100%;max-width:460px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}>
             <div style={s('padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:11px')}>
-              <div style={s('width:38px;height:38px;border-radius:11px;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
+              <div style={s('width:38px;height:38px;border-radius:var(--radius-md);background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
                 <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={assignPath} /></svg>
               </div>
               <div style={s('flex:1')}>
                 <div style={s('font-size:16px;font-weight:700')}>Assign {poolSelCount} deal(s)</div>
                 <div style={s('font-size:12px;color:var(--muted);margin-top:2px')}>Request selected deals to yourself</div>
               </div>
-              <button onClick={closePoolAssign} className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>{closeX}</button>
+              <button onClick={closePoolAssign} className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>{closeX}</button>
             </div>
             <div style={s('padding:18px 22px')}>
               <div style={s('font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:8px')}>Selected deals</div>
               <div style={s('display:flex;flex-wrap:wrap;gap:6px;max-height:110px;overflow-y:auto;margin-bottom:16px')}>
                 {poolSelLabels.map((l, i) => (
-                  <span key={i} style={s('padding:3px 10px;border-radius:8px;background:rgba(var(--accent-rgb),.12);border:1px solid rgba(var(--accent-rgb),.25);color:var(--accent);font-size:11px;font-weight:600')}>{l.text}</span>
+                  <span key={i} style={s('padding:3px 10px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.12);border:1px solid rgba(var(--accent-rgb),.25);color:var(--accent);font-size:11px;font-weight:600')}>{l.text}</span>
                 ))}
                 {poolSel.length > 8 && (
-                  <span style={s('padding:3px 10px;border-radius:8px;background:var(--raised);color:var(--muted);font-size:11px;font-weight:600')}>{poolSelMore}</span>
+                  <span style={s('padding:3px 10px;border-radius:var(--radius-md);background:var(--raised);color:var(--muted);font-size:11px;font-weight:600')}>{poolSelMore}</span>
                 )}
               </div>
-              <label style={s('display:flex;align-items:flex-start;gap:11px;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--alt);cursor:pointer')}>
+              <label style={s('display:flex;align-items:flex-start;gap:11px;padding:14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);cursor:pointer')}>
                 <input type="checkbox" checked={poolConfirm} onChange={(e: ChangeEvent<HTMLInputElement>) => setPoolConfirm(e.target.checked)} style={s('width:16px;height:16px;margin-top:1px;accent-color:var(--accent);cursor:pointer')} />
                 <span style={s('font-size:12.5px;color:var(--text2);line-height:1.5')}>I confirm requesting <strong style={s('color:var(--accent)')}>{poolSelCount}</strong> deal(s) to myself. A stream manager will review and approve the assignment.</span>
               </label>
             </div>
             <div style={s('padding:14px 22px;border-top:1px solid var(--border);display:flex;gap:10px')}>
-              <button onClick={closePoolAssign} style={s('flex:1;height:42px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text2);font-weight:700;font-size:13px;cursor:pointer')}>Cancel</button>
+              <button onClick={closePoolAssign} style={s('flex:1;height:42px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-weight:700;font-size:13px;cursor:pointer')}>Cancel</button>
               {poolCanSubmit && (
-                <button onClick={submitPoolAssign} className="ss-btn-p" style={s('flex:1;height:42px;border-radius:11px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:13px;cursor:pointer')}>Submit Request</button>
+                <button onClick={submitPoolAssign} className="ss-btn-p" style={s('flex:1;height:42px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:13px;cursor:pointer')}>Submit Request</button>
               )}
               {poolSubmitting && (
-                <button disabled style={s('flex:1;height:42px;border-radius:11px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;gap:8px;opacity:.85')}>
+                <button disabled style={s('flex:1;height:42px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;gap:8px;opacity:.85')}>
                   <span style={s('width:15px;height:15px;border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;animation:ss-spin .8s linear infinite')}></span>
                   Submitting…
                 </button>
               )}
               {poolCannotSubmit && (
-                <button disabled style={s('flex:1;height:42px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:13px;cursor:not-allowed')}>Submit Request</button>
+                <button disabled style={s('flex:1;height:42px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:13px;cursor:not-allowed')}>Submit Request</button>
               )}
             </div>
           </div>

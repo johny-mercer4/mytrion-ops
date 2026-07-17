@@ -18,7 +18,7 @@
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     border: 1px solid var(--gb);
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     box-shadow: none;
     overflow: hidden;
 }
@@ -35,7 +35,7 @@
 .oct-bp-flow .react-flow__minimap {
     background: var(--bg1);
     border: 1px solid var(--gb);
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     overflow: hidden;
 }
 .oct-bp-flow .react-flow__minimap svg { background: var(--bg1); }
@@ -70,7 +70,7 @@
     background: linear-gradient(var(--glass), var(--glass)) var(--bg1);
     border: 1px solid var(--gb);
     border-left: 3px solid var(--c);
-    border-radius: 7px;
+    border-radius: var(--radius-md);
     box-shadow: 0 6px 16px rgba(0, 0, 0, .4);
     font-size: 12.5px;
     font-weight: 600;
@@ -117,7 +117,7 @@
     align-items: center;
     justify-content: center;
     background: #fff;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
 }
 .oct-bpnode__abbr {
     display: flex;
@@ -127,7 +127,7 @@
     align-items: center;
     justify-content: center;
     background: color-mix(in srgb, var(--c) 16%, transparent);
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     font-family: 'JetBrains Mono', monospace;
     font-size: 8px;
     font-weight: 600;
@@ -142,7 +142,7 @@
     background: color-mix(in srgb, var(--ink) 5%, transparent);
     border: 1px dashed var(--gb);
     border-left: 2px solid color-mix(in srgb, var(--ink) 22%, transparent);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 11px;
     line-height: 1.4;
     font-style: italic;
@@ -173,7 +173,7 @@
     font-weight: 600;
     font-size: 12px;
     padding: 7px 14px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     transition: color .15s, border-color .15s, background .15s;
 }
 .oct-bp-switch__btn:hover { color: var(--ink); }
@@ -193,7 +193,7 @@
 .oct-dept-block {
     border: 1px solid var(--gb);
     border-left: 3px solid var(--d);
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     padding: 18px 20px;
     background: var(--glass);
     cursor: pointer;
@@ -253,7 +253,7 @@
     white-space: nowrap;
     color: var(--ink);
     border: 1px solid var(--gb);
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     padding: 7px 13px 7px 7px;
     background: var(--glass);
 }
@@ -265,7 +265,7 @@
     align-items: center;
     justify-content: center;
     background: #fff;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
 }
 .oct-dept-block__empty { font-size: 12.5px; color: var(--sub); font-style: italic; }
 
@@ -286,7 +286,7 @@
 .oct-rule {
     border: 1px solid var(--gb);
     border-left: 3px solid var(--c);
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     background: var(--glass);
     overflow: hidden;
 }
@@ -306,7 +306,7 @@
     justify-content: center;
     color: var(--c);
     border: 1px solid color-mix(in srgb, var(--c) 40%, var(--gb));
-    border-radius: 7px;
+    border-radius: var(--radius-md);
     background: color-mix(in srgb, var(--c) 10%, transparent);
 }
 .oct-rule__title { font-size: 14px; font-weight: 700; color: var(--ink); line-height: 1.3; }
@@ -318,7 +318,7 @@
     letter-spacing: .12em;
     color: var(--c);
     border: 1px solid color-mix(in srgb, var(--c) 45%, var(--gb));
-    border-radius: 3px;
+    border-radius: var(--radius-md);
     padding: 2px 6px;
 }
 .oct-rule__desc { padding: 11px 16px 14px; font-size: 12.5px; line-height: 1.45; color: var(--sub); }
@@ -331,7 +331,7 @@
     font-weight: 600;
     letter-spacing: .08em;
     padding: 3px 7px;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     margin-top: 1px;
 }
 .oct-rule__tag--when { color: #F59E0B; background: rgba(245, 158, 11, .14); }
@@ -352,7 +352,7 @@
 .oct-risk-sec {
     border: 1px solid color-mix(in srgb, var(--rc) 30%, var(--gb));
     border-left: 3px solid var(--rc);
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     background: color-mix(in srgb, var(--rc) 7%, transparent);
     padding: 14px 16px;
 }
@@ -402,7 +402,7 @@
     background: color-mix(in srgb, var(--rc) 9%, transparent);
     color: var(--rc);
     cursor: pointer;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     transition: background .15s, color .15s;
 }
 .oct-risk-add:hover { background: color-mix(in srgb, var(--rc) 20%, transparent); }
@@ -426,14 +426,14 @@
     cursor: pointer;
     color: var(--sub);
     padding: 2px;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     transition: color .15s, background .15s;
 }
 .oct-risk-row__act button:hover { color: var(--rc); background: color-mix(in srgb, var(--rc) 12%, transparent); }
 .oct-risk-form {
     border: 1px solid color-mix(in srgb, var(--rc) 30%, transparent);
     background: color-mix(in srgb, var(--rc) 5%, transparent);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: 10px;
     display: flex;
     flex-direction: column;
@@ -444,7 +444,7 @@
     box-sizing: border-box;
     background: var(--bg0);
     border: 1px solid var(--gb);
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     padding: 8px 10px;
     font-size: 12.5px;
     color: var(--ink);
@@ -469,7 +469,7 @@
     border: 1px solid var(--gb);
     background: var(--glass);
     color: var(--sub);
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     transition: all .12s;
 }

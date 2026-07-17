@@ -5,7 +5,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import type { CarrierInvitation } from '../../api/carrierUsers';
-import { BuildingIcon, PersonIcon, SearchIcon } from '../../components/icons';
+import { BanIcon, BuildingIcon, CopyIcon, PersonIcon, PlusIcon, SearchIcon } from '../../components/icons';
 import {
   INVITE_STATUS_LABEL,
   expiresSoon,
@@ -16,7 +16,7 @@ import {
 } from './carrierUserUtil';
 import { Pager, PAGE_SIZE } from './Pager';
 import { RadioToggleGroup } from './RadioToggleGroup';
-import { TableSkeleton } from './TableSkeleton';
+import { TableSkeleton } from '@/components/mytrion/table-skeleton';
 import s from './admin.module.css';
 
 type StatusFilter = InviteStatus | 'all';
@@ -124,7 +124,7 @@ export function CarrierInvitations({
               <span className={s.srOnly} role="status">
                 Loading invitations…
               </span>
-              <TableSkeleton cols={s.tInvite} widths={INV_SKELETON} />
+              <TableSkeleton widths={INV_SKELETON} rowClassName={s.tRow} colsClassName={s.tInvite} />
             </>
           )}
         {!loading &&
@@ -161,6 +161,7 @@ export function CarrierInvitations({
                   {live ? (
                     <>
                       <button type="button" className={s.miniBtn} onClick={() => onCopy(inv.inviteUrl)}>
+                        <CopyIcon />
                         Copy
                       </button>
                       <button
@@ -169,6 +170,7 @@ export function CarrierInvitations({
                         disabled={busyId === inv.id}
                         onClick={() => onCancel(inv)}
                       >
+                        <BanIcon />
                         Cancel
                       </button>
                     </>
@@ -178,6 +180,7 @@ export function CarrierInvitations({
                       // resend/extend endpoint, so the honest action is to seed a fresh one — and
                       // it's named for the control it opens, not invented as a second synonym.
                       <button type="button" className={s.miniBtn} onClick={() => onReissue(inv)}>
+                        <PlusIcon size={10} />
                         New registration link
                       </button>
                     )

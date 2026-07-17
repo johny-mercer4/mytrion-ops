@@ -240,38 +240,8 @@
   z-index: var(--z-sticky);
 }
 
-/* ── table loading skeleton ──────────────────────────────────────────────────
-   A shimmer sweep, matching the convention the customer-service panels already use — theirs is
-   scoped under `.cs-root` and can't be reached from here, so the token values are re-stated rather
-   than shared. The bars sit in a real .tRow, so the placeholder has the row geometry it's standing
-   in for and the table doesn't jump when data lands. */
-.skelBar {
-  height: 9px;
-  border-radius: var(--radius-full);
-  background: linear-gradient(
-    90deg,
-    var(--surface-alt) 25%,
-    var(--surface-raised) 50%,
-    var(--surface-alt) 75%
-  );
-  background-size: 200% 100%;
-  animation: skelShimmer 1.4s ease-in-out infinite;
-}
-/* Stagger the sweep down the rows — a table whose every bar pulses in lockstep reads as one big
-   blinking block rather than a list settling in. */
-.skelRow:nth-child(even) .skelBar {
-  animation-delay: 0.2s;
-}
-
-@keyframes skelShimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
-
+/* Announcement for the table's loading state — the shimmer itself is aria-hidden, so this is
+   what a screen reader actually gets. See <TableSkeleton>. */
 .srOnly {
   position: absolute;
   width: 1px;
@@ -830,6 +800,10 @@
 }
 
 .miniBtn {
+  /* inline-flex so the row actions can carry a leading icon and keep their label on the baseline */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   padding: 3px var(--space-2);
   font-size: var(--text-2xs);
   font-weight: var(--fw-semibold);

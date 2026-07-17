@@ -2642,3 +2642,91 @@ band to sit on.
   Wants splitting into admin / registration / self-service modules.
 - **servercrm local checkout is 98 commits behind `origin/build`** — money-code routes exist there, not
   locally.
+
+---
+
+## 2026-07-17 — Carrier User Management UI/UX audit + CRM-wide design pass
+
+Started as "carrier management has no toasts", became a full audit of the surface and then three
+CRM-wide consolidations. Everything below is verified in the running app (dev server on :5181
+against the local backend), not just typechecked.
+
+### Carrier User Management — the fixes that mattered
+
+- **Toasts.** New `admin/toast.tsx` + host at the Admin root. The old inline `notice`/`error`
+  banners had no clearing call anywhere — "Invite cancelled." sat on the page forever. Ported
+  rather than reused from `scope/toast.tsx`: that stack is `position: absolute` inside the scope's
+  own positioned root and styled with scope-local vars, so neither placement nor colour survives
+  outside it. Split by lifetime: action outcomes → toast, load failures → inline banner + Retry.
+- **`copyToClipboard` was lying.** `void navigator.clipboard?.writeText(text)` inside a `try/catch`
+  cannot catch anything — `writeText` rejects *asynchronously*, so a blocked clipboard produced an
+  unhandled rejection while the UI claimed "copied to your clipboard". Now returns whether the text
+  landed, with an `execCommand` fallback; a failed copy hands the URL back in the toast, since that
+  row is the only place the link exists.
+- **Pagination dead-end.** Cancelling the only invite on page 2 dropped the list to one page →
+  `Pager` returned null → `slice(10,20)` = `[]` → empty table, no pager left to escape. Both tables
+  clamp to the last page that exists.
+- **Errors rendered as data.** `listCards(...).catch(() => setCards([]))` made a network failure
+  read as "this carrier has no cards" — and that drove both the company-type badge and the driver's
+  card picker. Failures now stay `null` with their own error + Retry, so cardCount is undetermined
+  rather than wrong. Same for the operator lookup.
+- **Debounce + abort.** The cards effect fired one request *per keystroke* of a manually-typed
+  carrier id. All three lookups now debounce at 300ms and abort on cleanup. Trap worth remembering:
+  transport wraps an aborted fetch as `ApiError('NETWORK')`, so without an `aborted` guard every
+  abort renders as "Couldn't read the card list" — the exact lying-error class above.
+- **Symmetric confirms.** Cancel-invite had no confirmation at all while revoke double-confirmed —
+  backwards, since revoke is a soft status flip (`registeredMiniAppCompanyRepo.revoke`) and cancel
+  has no path back. New `ConfirmDialog` (built on AuditLog's modal pattern) focuses the *dismiss*
+  button, not confirm.
+- **Reissue.** A spent invite left a row with no action. No resend/extend endpoint exists, so
+  "New registration link" seeds a fresh draft from the dead invite. The form's reset effects now
+  guard on the *previous* value, otherwise a prefilled mount wipes its own draft.
+- **Caught live, not by tests:** redeemed invites kept counting down ("in 7 days") next to their
+  Redeemed pill, reading as still-live. Settled invites show `—`.
+
+### CRM-wide
+
+- **Icons → lucide.** `components/icons.tsx` keeps its 25 named exports and per-icon default sizes
+  but each now renders lucide. The hand-drawn SVGs were tracing lucide's own paths (`HomeIcon` =
+  `Home`, `DocIcon` = `FileText`, `ScopeIcon` = `Hash`) — the app was maintaining a near-duplicate
+  of a library 33 files already import directly. `Sparkle` (FuelMark/Gem) and `MytrionGlyph` stay
+  hand-drawn: brand, not UI furniture. Kept `aria-hidden`, which lucide doesn't set by default.
+- **Radius → flat 6px.** `--radius-xs/sm/md/lg` all 6px; `--radius-full` deliberately untouched so
+  pills/avatars/dots stay round. Swept 349 hardcoded px radii across 38 files to `var(--radius-md)`,
+  leaving 56 pill values, 78 `50%` circles, and 6 asymmetric chat-bubble radii (speech-bubble tails).
+  **`customer-service/styles/shared-theme.css` was shadowing the whole scale** with its own 8/10px —
+  that module would have silently ignored the change, and is presumably how it drifted in the first
+  place.
+- **Skeleton primitive.** `components/ui/skeleton.tsx` (sheen only) + `components/mytrion/
+  table-skeleton.tsx` (composed). Gradient is `from-muted via-accent to-muted`, which already map to
+  `--surface-alt`/`--surface-raised` — no arbitrary colours. Animation registered as
+  `--animate-shimmer` in the theme block, the first `--animate-*` in the codebase.
+- **Nav nesting.** `NavItem.children` is opt-in, so the other nine Mytrions are untouched. A parent
+  with children is a *section*, not a destination — it gets a quiet state and the selected child
+  keeps the accent, because both wearing `navActive` left two identical "selected" rows.
+
+### Gotchas worth keeping
+
+- **`grid-template-columns` in a JSX `style` prop cannot be overridden by a media query.** That's
+  why the carrier tables squashed instead of adapting; column ratios now live in CSS classes.
+- **`position: sticky` anchors to the nearest scrollport.** `.table`'s `overflow: hidden` and the
+  `overflow-x` wrapper both qualified, and both are exactly as tall as their content — a sticky
+  header would silently do nothing. `.tableScroll` owns both axes with a height bound; `.table` is
+  `overflow: visible`.
+- **`.tRow:nth-child(even)` broke when rows moved inside a `role="rowgroup"`** — striping marked
+  "2nd row of its group", so sibling drivers shaded differently. Zebra is scoped to direct children
+  now; the tree separates *companies* instead.
+- **`userEvent` deadlocks against fake timers** (its async wrapper awaits a real macrotask). Tests
+  for debounced effects use `fireEvent`.
+- CSS-module class lookups are `string | undefined` under `noUncheckedIndexedAccess` — annotating a
+  prop as `string` rejects them.
+
+### Still open
+
+- **Two icons collide:** Knowledge Base and CMP Database both map to `Database` — their hand-drawn
+  paths were both cylinders, so this is pre-existing. `Library`/`BookOpen` for Knowledge Base is a
+  design call.
+- **`.cs-root` still has its own shimmer** — consolidating means touching customer-service's styling.
+- **The carrier tree now scrolls inside its own box** (Linear/Stripe pattern the brief cites). Drop
+  `max-height` on `.tableScroll` to revert to page scroll.
+- **`admin.module.css` is ~1000 lines** against CLAUDE.md's 600 cap.
