@@ -83,7 +83,7 @@ import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { carrierInvitationRepo } from '../../src/repos/carrierInvitationRepo.js';
 import { registeredMiniAppCompanyRepo } from '../../src/repos/registeredMiniAppCompanyRepo.js';
 import { listDwhCards } from '../../src/integrations/dwhCards.js';
-import { listDwhTransactions } from '../../src/integrations/dwhTransactions.js';
+import { listDwhTransactions, resolveDwhTxnRange } from '../../src/integrations/dwhTransactions.js';
 import { sendDocument, TelegramChatUnreachableError } from '../../src/integrations/telegramCarrierBot.js';
 import { serverCrmWrapper } from '../../src/wrappers/serverCrmWrapper.js';
 
@@ -91,6 +91,7 @@ const inviteRepo = vi.mocked(carrierInvitationRepo);
 const registrationRepo = vi.mocked(registeredMiniAppCompanyRepo);
 const dwhCards = vi.mocked(listDwhCards);
 const dwhTxns = vi.mocked(listDwhTransactions);
+const dwhRange = vi.mocked(resolveDwhTxnRange);
 const botSendDocument = vi.mocked(sendDocument);
 const crm = vi.mocked(serverCrmWrapper);
 
@@ -488,6 +489,58 @@ describe('driver row scoping (own card only)', () => {
       // Letting this default to servercrm's 100 made a measured owner year view drop from 318 rows
       // to 100 the moment phase 2 landed — the exact row-jump the two phases exist to avoid.
       expect(crm.getTransactions).toHaveBeenCalledWith('5758544', expect.objectContaining({ limit: 5000 }));
+    });
+
+    it('drops merged rows that fall outside the asked-for period, and re-totals from what is left', async () => {
+      registrationRepo.findByTelegramUserId.mockResolvedValueOnce(registrationRow());
+      // servercrm's EFS gap-fill reaches past the window: asked for "today" it returned two rows
+      // dated the 16th — already in the mart, and only un-deduped because an empty window meant an
+      // empty id set. Its totals are DWH-only, so the sheet showed $0.00 above two live rows.
+      // Note the shapes differ: EFS carries an offset, the mart is naive.
+      crm.getTransactions.mockResolvedValueOnce({
+        data: [
+          { transaction_id: 'efs1', card_number: OWN_CARD, transaction_date: '2026-07-16T22:59:00.000-05:00', line_item_amount: 327.37 },
+          { transaction_id: 'efs2', card_number: OWN_CARD, transaction_date: '2026-07-16T22:59:00.000-05:00', line_item_amount: 20.96 },
+        ],
+        totals: { funded_total: 0, line_items: 0, transactions: 0 },
+        pagination: { more_records: false },
+      });
+      const today = '2026-07-17';
+      dwhRange.mockReturnValueOnce({ preset: 'day', from: today, to: today });
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/transactions',
+        headers: { 'content-type': 'application/json' },
+        payload: { initData: 'signed', range: 'day', live: true },
+      });
+
+      const body = res.json();
+      expect(body.data, `rows dated 2026-07-16 must not appear under ${today}`).toHaveLength(0);
+      expect(body.totals).toMatchObject({ funded_total: 0, line_items: 0 });
+    });
+
+    it('keeps an in-window merged row and counts it toward the totals', async () => {
+      registrationRepo.findByTelegramUserId.mockResolvedValueOnce(registrationRow());
+      const today = '2026-07-17';
+      dwhRange.mockReturnValueOnce({ preset: 'day', from: today, to: today });
+      crm.getTransactions.mockResolvedValueOnce({
+        data: [{ transaction_id: 'efs1', card_number: OWN_CARD, transaction_date: `${today}T08:00:00.000-05:00`, line_item_amount: 100 }],
+        // DWH-only totals do not know about a row EFS has and the mart has not caught up on yet.
+        totals: { funded_total: 0, line_items: 0, transactions: 0 },
+        pagination: { more_records: false },
+      });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/transactions',
+        headers: { 'content-type': 'application/json' },
+        payload: { initData: 'signed', range: 'day', live: true },
+      });
+
+      const body = res.json();
+      expect(body.data).toHaveLength(1);
+      // The summary must never contradict the list it sits above.
+      expect(body.totals).toMatchObject({ funded_total: 100, line_items: 1 });
     });
 
     it('leaves an owner carrier-wide — scoping is driver-only', async () => {

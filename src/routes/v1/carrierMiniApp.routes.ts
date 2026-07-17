@@ -13,12 +13,13 @@ import { env, isProduction } from '../../config/env.js';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { db } from '../../db/client.js';
 import { listDwhCards, findDwhCardByNumber } from '../../integrations/dwhCards.js';
-import { listDwhTransactions } from '../../integrations/dwhTransactions.js';
+import { listDwhTransactions, resolveDwhTxnRange } from '../../integrations/dwhTransactions.js';
 import { searchDwhClients } from '../../integrations/dwhClients.js';
 import { searchDwhOperators } from '../../integrations/dwhOperators.js';
 import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
 import {
   TXN_FETCH_LIMIT,
+  clampToWindow,
   scopeRowsToCard,
   scopeTransactionsToCard,
 } from '../../modules/carrier/driverCardScope.js';
@@ -844,7 +845,8 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     }
 
     const merged = await serverCrmWrapper.getTransactions(carrierId, { ...opts, limit: TXN_FETCH_LIMIT });
-    return cardNumber ? scopeTransactionsToCard(merged, cardNumber) : merged;
+    const scoped = cardNumber ? scopeTransactionsToCard(merged, cardNumber) : merged;
+    return clampToWindow(scoped, resolveDwhTxnRange(body.range, body.from, body.to));
   });
 
   /**

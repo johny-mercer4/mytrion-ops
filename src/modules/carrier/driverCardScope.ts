@@ -70,6 +70,39 @@ export function totalsFromRows(rows: readonly Record<string, unknown>[]): Record
 }
 
 /**
+ * Drop rows outside the period the caller actually asked for, and re-total from what survives.
+ *
+ * servercrm's EFS gap-fill over-reaches: it asks EFS from the newest DWH row (or the window start)
+ * to the window end, and EFS answers with rows either side of that. Its `totals` come from a
+ * DWH-only count over the window, so the two disagree — measured on "Today", which returned
+ * $0.00/0 gal alongside two rows dated 2026-07-16, transactions that were ALREADY in the mart and
+ * only escaped de-duplication because an empty window meant an empty id set to de-dupe against.
+ *
+ * Compared on the date prefix because the two sources disagree on shape: the mart's rows are naive
+ * ('2026-07-16 21:59:00'), EFS's carry an offset ('2026-07-16T22:59:00.000-05:00'). The calendar day
+ * is the only part both agree on, and it is what the SQL window filters on anyway.
+ *
+ * Totals are recomputed from the surviving rows so the summary can never contradict the list — but
+ * only when the page holds the whole window. If servercrm truncated at its row ceiling, its
+ * window-wide totals are the more honest number and are kept.
+ */
+export function clampToWindow(result: CarrierTransactions, window: { from: string | null; to: string | null }): CarrierTransactions {
+  const day = (row: Record<string, unknown>) => String(row['transaction_date'] ?? '').slice(0, 10);
+  const rows = (result.data ?? []).filter((r) => {
+    const d = day(r);
+    if (!d) return true; // no date to judge by — keep it rather than silently drop a real row
+    return (!window.from || d >= window.from) && (!window.to || d <= window.to);
+  });
+  const truncated = result.pagination?.['more_records'] === true;
+  return {
+    ...result,
+    data: rows,
+    totals: truncated ? (result.totals ?? {}) : totalsFromRows(rows),
+    ...(truncated ? { scope_truncated: true } : {}),
+  };
+}
+
+/**
  * Reduce a carrier-wide transactions payload to one card's rows.
  *
  * The totals servercrm sends are accumulated over the CARRIER's whole filter set, so passing them
