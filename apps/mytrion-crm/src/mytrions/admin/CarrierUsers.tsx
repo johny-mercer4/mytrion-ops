@@ -13,6 +13,7 @@ import { CarrierUserForm, type InviteDraft } from './CarrierUserForm';
 import { copyToClipboard } from './carrierUserUtil';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Pager, PAGE_SIZE } from './Pager';
+import { TableSkeleton } from './TableSkeleton';
 import { adminToast } from './toast';
 import s from './admin.module.css';
 
@@ -27,6 +28,10 @@ const VIEWS = {
     sub: 'Every registration link generated — live, redeemed, or spent.',
   },
 } as const;
+
+/** Bar width per column — uneven, tracking the shape of real rows: a company name, a pill, an id,
+ * a @handle, a date, a button. */
+const REG_SKELETON = ['62%', '76px', '54%', '68%', '58%', '52px'] as const;
 
 /** A destructive action held until the admin confirms it. */
 interface PendingConfirm {
@@ -314,7 +319,7 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
       </label>
 
       <div className={s.tableScroll}>
-        <div className={s.table} role="table" aria-label="Registered carrier companies">
+        <div className={s.table} role="table" aria-label="Registered carrier companies" aria-busy={loading}>
         <div className={`${s.tHead} ${s.tCarrier}`} role="row">
           <span role="columnheader">Company</span>
           <span role="columnheader">Type</span>
@@ -323,11 +328,14 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
           <span role="columnheader">Registered</span>
           <span role="columnheader">Actions</span>
         </div>
-        {loading && (
-          <div className={s.none} role="row">
-            <span role="cell">Loading registered companies…</span>
-          </div>
-        )}
+          {loading && (
+            <>
+              <span className={s.srOnly} role="status">
+                Loading registered companies…
+              </span>
+              <TableSkeleton cols={s.tCarrier} widths={REG_SKELETON} />
+            </>
+          )}
         {!loading &&
           pagedGroups.map((g) => (
             // rowgroup keeps the owner and its drivers a valid subtree of the table.

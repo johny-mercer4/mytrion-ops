@@ -81,26 +81,33 @@ export function ServicesTab({
                         e.stopPropagation();
                         onTogglePin(it.key);
                       }}
+                      aria-label={t(isPinned ? 'pin.pinned' : 'pin.pin')}
+                      aria-pressed={isPinned}
+                      title={t(isPinned ? 'pin.pinned' : 'pin.pin')}
+                      /**
+                       * Icon-only, and a FIXED square. The label used to carry "Pin"/"Pinned" text,
+                       * which cost the row ~50px and — because "Pinned" is 24px wider than "Pin" —
+                       * meant pinning a service made its OWN label wrap harder: measured, the pinned
+                       * row's label got 123px against 147px for the others, taking it from two lines
+                       * to three. A constant-width control cannot reflow the row it sits in, and the
+                       * fill + colour already carry the state that the word was repeating.
+                       */
                       style={{
                         flex: 'none',
                         alignSelf: 'center',
+                        width: 40,
                         height: 40,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: 6,
                         border: 'none',
                         borderRadius: 10,
-                        padding: '0 14px',
-                        fontSize: 13,
-                        fontWeight: 700,
                         cursor: 'pointer',
                         background: isPinned ? 'var(--primary)' : 'var(--secondary)',
-                        color: isPinned ? '#FFFFFF' : 'var(--fg)',
+                        color: isPinned ? '#FFFFFF' : 'var(--muted-fg)',
                       }}
                     >
-                      <Pin size={14} strokeWidth={2.2} fill={isPinned ? 'currentColor' : 'none'} aria-hidden />
-                      {t(isPinned ? 'pin.pinned' : 'pin.pin')}
+                      <Pin size={16} strokeWidth={2.2} fill={isPinned ? 'currentColor' : 'none'} aria-hidden />
                     </button>
                   )}
                   {!soon && <Chevron style={{ alignSelf: 'center' }} />}

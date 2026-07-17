@@ -16,6 +16,7 @@ import {
 } from './carrierUserUtil';
 import { Pager, PAGE_SIZE } from './Pager';
 import { RadioToggleGroup } from './RadioToggleGroup';
+import { TableSkeleton } from './TableSkeleton';
 import s from './admin.module.css';
 
 type StatusFilter = InviteStatus | 'all';
@@ -27,6 +28,9 @@ const FILTERS: ReadonlyArray<{ value: StatusFilter; label: string }> = [
   { value: 'expired', label: 'Expired' },
   { value: 'cancelled', label: 'Cancelled' },
 ];
+
+/** Bar width per column, tracking real rows: company, pill, id, status pill, expiry, actions. */
+const INV_SKELETON = ['58%', '64px', '52%', '70px', '46%', '96px'] as const;
 
 const PILL_CLASS: Record<InviteStatus, string> = {
   redeemed: 'pillGood',
@@ -106,7 +110,7 @@ export function CarrierInvitations({
       </label>
 
       <div className={s.tableScroll}>
-        <div className={s.table} role="table" aria-label="Carrier invitations">
+        <div className={s.table} role="table" aria-label="Carrier invitations" aria-busy={loading}>
         <div className={`${s.tHead} ${s.tInvite}`} role="row">
           <span role="columnheader">Company</span>
           <span role="columnheader">Type</span>
@@ -115,11 +119,14 @@ export function CarrierInvitations({
           <span role="columnheader">Expires</span>
           <span role="columnheader">Actions</span>
         </div>
-        {loading && (
-          <div className={s.none} role="row">
-            <span role="cell">Loading invitations…</span>
-          </div>
-        )}
+          {loading && (
+            <>
+              <span className={s.srOnly} role="status">
+                Loading invitations…
+              </span>
+              <TableSkeleton cols={s.tInvite} widths={INV_SKELETON} />
+            </>
+          )}
         {!loading &&
           paged.map((inv) => {
             const st = inviteStatus(inv);

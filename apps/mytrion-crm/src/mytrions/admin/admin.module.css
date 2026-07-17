@@ -208,15 +208,80 @@
   grid-template-columns: 2fr 1fr 1fr 1fr 1.1fr 1.1fr;
 }
 
-/* Below this the six columns stop fitting and the row degrades — pills wrap, carrier ids break
-   across lines. These are power-user tables, so the density stays and the table scrolls sideways
-   rather than crushing the data. Measured against the widest real content: a `DEMO-OWNEROP-1`
-   carrier id next to an `Owner-operator` pill. */
+/* The carrier tables scroll inside this box rather than with the page, which is what lets the
+   column header stay put (sticky anchors to its nearest scrollport, so that scrollport has to be
+   the thing with a height bound — not the table, whose box is exactly as tall as its rows).
+   Vertically it only kicks in once the rows outgrow the space; a short table just sits there. */
 .tableScroll {
-  overflow-x: auto;
+  overflow: auto;
+  max-height: max(240px, calc(100vh - 300px));
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
 }
+
+/* Horizontally: below ~1040px the six columns stop fitting and the row degrades — pills wrap,
+   carrier ids break across lines. These are power-user tables, so the density stays and the table
+   scrolls sideways instead. Measured against the widest real content: a `DEMO-OWNEROP-1` carrier
+   id beside an `Owner-operator` pill. */
 .tableScroll > .table {
   min-width: 1040px;
+  /* The chrome moves to .tableScroll: .table's own `overflow: hidden` would otherwise make it the
+     nearest scrollport and swallow the sticky header. */
+  overflow: visible;
+  border: none;
+  border-radius: 0;
+  background: none;
+}
+.tableScroll .tHead {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+}
+
+/* ── table loading skeleton ──────────────────────────────────────────────────
+   A shimmer sweep, matching the convention the customer-service panels already use — theirs is
+   scoped under `.cs-root` and can't be reached from here, so the token values are re-stated rather
+   than shared. The bars sit in a real .tRow, so the placeholder has the row geometry it's standing
+   in for and the table doesn't jump when data lands. */
+.skelBar {
+  height: 9px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(
+    90deg,
+    var(--surface-alt) 25%,
+    var(--surface-raised) 50%,
+    var(--surface-alt) 75%
+  );
+  background-size: 200% 100%;
+  animation: skelShimmer 1.4s ease-in-out infinite;
+}
+/* Stagger the sweep down the rows — a table whose every bar pulses in lockstep reads as one big
+   blinking block rather than a list settling in. */
+.skelRow:nth-child(even) .skelBar {
+  animation-delay: 0.2s;
+}
+
+@keyframes skelShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .right {
