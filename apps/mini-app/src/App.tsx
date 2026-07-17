@@ -700,16 +700,6 @@ function CardContours() {
   );
 }
 
-/**
- * The proportion of a real fuel card: ISO/IEC 7810 ID-1, 85.60 x 53.98 mm.
- *
- * Both heroes imitate the plastic, so the plastic decides the shape — this is not a taste number.
- * They were 1.5 (owner) and 1.55 (driver), i.e. both TALLER than the thing they depict, and the
- * owner — which carries the least content — was the tallest of the two. Because the card's height
- * is derived from the ratio and its content is laid out space-between, the surplus showed up as a
- * 64px void between the company name and the balance.
- */
-const CARD_RATIO = '1.586 / 1';
 
 const BALANCE_KEY = 'octane.lastBalance';
 
@@ -891,7 +881,13 @@ function DriverHero({
   const display = realFull ? (revealed ? groupCardNumber(realFull) : maskedCardNumber(realFull)) : null;
   return (
     <>
-      <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', aspectRatio: CARD_RATIO, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+      {/* No balance, and no fixed card ratio. The only balance available is the CARRIER's EFS pool
+          (getCarrierBalance is carrier-scoped; stg_cmp_card.balance is 0.00 for every card), so
+          showing it here put company money on a driver's screen. With it gone the card has just two
+          rows — a 1.586 ratio spread them apart with space-between and left a large void down the
+          middle. Height comes from the content now, with one comfortable gap, so it reads as a tidy
+          card. Styling (contours, dark fill, radius) is unchanged. */}
+      <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '17px 17px 18px', display: 'flex', flexDirection: 'column', gap: 40 }}>
         <CardContours />
 
         {/* Top band: driver name left, company + reveal right — the toggle rides at the card's top
@@ -908,22 +904,21 @@ function DriverHero({
           </div>
         </div>
 
-        {/* No balance on the driver card. The only balance available is the CARRIER's EFS pool —
-            getCarrierBalance is carrier-scoped, and stg_cmp_card.balance is 0.00 for every card, so
-            there is no per-card figure. Showing the company's balance to a driver is company data on
-            a driver's screen, so the card carries the number and standing only. */}
-
-        {/* Card number last. The number stays `selectable`, so it can still be picked up by hand. */}
+        {/* Card number + standing at the bottom, the way a real card sets its number in the lower
+            third. The number stays `selectable` so it can still be picked up by hand. */}
         <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' }}>{t('card.numberLabel')}</span>
           {display ? (
-            <span className={revealed ? 'selectable' : ''} style={{ fontSize: 18, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em', whiteSpace: 'nowrap' }}>{display}</span>
+            <span className={revealed ? 'selectable' : ''} style={{ fontSize: 20, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.03em', whiteSpace: 'nowrap' }}>{display}</span>
           ) : (
-            <span aria-label={t('card.numberLabel')} style={{ display: 'block', width: 196, height: 19, borderRadius: 6, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
+            <span aria-label={t('card.numberLabel')} style={{ display: 'block', width: 196, height: 21, borderRadius: 6, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
           )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--success)', flex: 'none' }} />
+            <span style={{ fontSize: 12.5, fontWeight: 500, color: 'rgba(255,255,255,.72)' }}>{t('home.cardStanding')}</span>
+          </div>
         </div>
       </div>
-      <div style={{ fontSize: 13, color: 'var(--muted-fg)', margin: '-6px 4px 0' }}>{t('home.cardStanding')}</div>
     </>
   );
 }

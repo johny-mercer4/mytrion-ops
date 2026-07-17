@@ -430,6 +430,10 @@ describe('owner-only money views', () => {
     ['/v1/carrier/mini-app/payment-info', {}],
     ['/v1/carrier/mini-app/invoices/signed-url', { invoiceId: '71800' }],
     ['/v1/carrier/mini-app/tracking', {}],
+    // The only balance is the carrier's EFS pool — company money. No per-card figure exists
+    // (stg_cmp_card.balance is 0.00 for every card), so a driver here could only ever read the
+    // company's finances. The card and catalog no longer offer it; this gate makes that real.
+    ['/v1/carrier/mini-app/balance', {}],
   ] as const) {
     it(`refuses a driver at ${url}`, async () => {
       registrationRepo.findByTelegramUserId.mockResolvedValueOnce(driverReg());
@@ -469,14 +473,17 @@ describe('owner-only money views', () => {
     expect(res.json()).toMatchObject({ count: 1 });
   });
 
-  it('still lets a driver read the views the docx does give them', async () => {
-    // balance and status are in the driver's own catalog — this gate must not spill onto them.
+  it('still lets a driver read the views the catalog does give them', async () => {
+    // Status stays driver-readable (scoped to their card). Balance used to be here too, until it
+    // turned out the only balance is the carrier's EFS pool — company money — so it moved into the
+    // owner-only list above along with its catalog entry.
     registrationRepo.findByTelegramUserId.mockResolvedValueOnce(driverReg());
-    crm.getCarrierBalance.mockResolvedValueOnce({ efs_balance: 1000 });
+    vi.mocked(findDwhCardById).mockResolvedValueOnce({ cardId: 'card_1', cardNumber: '7083050030880417593', cardType: 'FUEL', status: 'Active', balance: '0' });
+    crm.getCards.mockResolvedValueOnce({ data: [{ card_number: '7083050030880417593', status: 'Active' }], count: 1 });
 
     const res = await app.inject({
       method: 'POST',
-      url: '/v1/carrier/mini-app/balance',
+      url: '/v1/carrier/mini-app/status',
       headers: { 'content-type': 'application/json' },
       payload: { initData: 'signed' },
     });

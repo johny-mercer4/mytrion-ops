@@ -890,9 +890,14 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
 
   // ── Self-service reads — real servercrm/DWH data behind the mini-app's demo action sheets ────
 
+  // Owner-only. The only balance that exists is the CARRIER's EFS pool — there is no per-card
+  // figure (stg_cmp_card.balance is 0.00 across the board), so for a driver this endpoint could
+  // only ever return company money. The driver card and catalog no longer offer it, and the gate
+  // here is what makes that real: a missing button must never be the only thing standing between a
+  // driver's initData and the company's finances (the same lesson as /invoices and /tracking).
   app.post('/carrier/mini-app/balance', async (request) => {
     const body = selfServiceSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
     return serverCrmWrapper.getCarrierBalance(carrierId);
   });
 
