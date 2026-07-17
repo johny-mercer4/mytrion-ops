@@ -1,8 +1,16 @@
 /**
- * DWH client directory — the ALREADY-DEFINED clients from `octane.intm_zoho_deals`
- * (one active row per deal via is_active), ordered by application date. This is the
- * source the admin provisions carrier accounts FROM: searchable by company name
- * (deal_name), carrier id, or application id. Read-only (dwhQuery pool enforces it).
+ * DWH client directory — the clients the admin provisions carrier accounts FROM, ordered by
+ * application date. Searchable by company name (deal_name), carrier id, or application id.
+ * Read-only (dwhQuery pool enforces it).
+ *
+ * SOURCE: `octane.stg_zoho_deals` (SCD2 history view), NOT the `octane.intm_zoho_deals` view we
+ * used to read. intm_zoho_deals hard-codes `where is_active = true`, but the upstream dbt/Airflow
+ * load that flags the current version of each deal is broken — every one of the ~253k history rows
+ * has `is_active = false` AND a non-null `valid_to`, so intm_zoho_deals returns ZERO rows for every
+ * carrier and the picker was empty for everyone. Until that pipeline is fixed we derive the current
+ * version ourselves: DISTINCT ON (zoho_deal_id) ordered by `valid_from DESC` picks the newest
+ * snapshot per deal (collapses ~253k rows → ~21.7k deals). When the upstream flag is repaired this
+ * still works; revert to intm_zoho_deals only once `is_active` is trustworthy again.
  */
 import { dwhQuery } from './dwh.js';
 
@@ -47,6 +55,12 @@ function toDto(row: DealRow): DwhClient {
  * Search the client directory. A numeric `q` matches carrier/application ids by prefix
  * AND company names; a text `q` matches company names (ILIKE). No `q` = newest
  * applications first (browse mode).
+ *
+ * The search + stage filter run on the OUTER query (over the already-collapsed current version per
+ * deal), never inside the DISTINCT ON — filtering the history first could pick a stale version whose
+ * older snapshot happens to match. `Closed Lost` deals are excluded: this is a provisioning picker,
+ * not a full deal browser. `is_active` is deliberately NOT filtered (it is false on every row — see
+ * the file header); recency comes from `valid_from` instead.
  */
 export async function searchDwhClients(opts: {
   q?: string | undefined;
@@ -55,7 +69,7 @@ export async function searchDwhClients(opts: {
   const limit = Math.min(Math.max(opts.limit ?? 25, 1), 100);
   const q = opts.q?.trim() ?? '';
 
-  const where: string[] = ['is_active = true'];
+  const where: string[] = [`stage is distinct from 'Closed Lost'`];
   const params: unknown[] = [];
   if (q.length > 0) {
     params.push(`%${q}%`);
@@ -70,9 +84,15 @@ export async function searchDwhClients(opts: {
     }
   }
 
+  // Inner: newest snapshot per deal (valid_from DESC). Outer: search + stage filter + display order.
   const rows = await dwhQuery<DealRow>(
     `select deal_name, stage, carrier_id, application_id, application_date, owner_id
-       from octane.intm_zoho_deals
+       from (
+         select distinct on (zoho_deal_id)
+                zoho_deal_id, deal_name, stage, carrier_id, application_id, application_date, owner_id
+           from octane.stg_zoho_deals
+          order by zoho_deal_id, valid_from desc nulls last
+       ) latest
       where ${where.join(' and ')}
       order by application_date desc nulls last, zoho_deal_id desc
       limit ${limit}`,

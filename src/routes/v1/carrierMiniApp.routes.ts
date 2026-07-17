@@ -12,7 +12,7 @@ import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { env, isProduction } from '../../config/env.js';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { db } from '../../db/client.js';
-import { FLEET_CARD_LIMIT, listDwhCards, findDwhCardById, findDwhCardByNumber } from '../../integrations/dwhCards.js';
+import { FLEET_CARD_LIMIT, getDwhCompanyDetails, listDwhCards, findDwhCardById, findDwhCardByNumber } from '../../integrations/dwhCards.js';
 import { listDwhTransactions, resolveDwhTxnRange } from '../../integrations/dwhTransactions.js';
 import { searchDwhClients } from '../../integrations/dwhClients.js';
 import { searchDwhOperators } from '../../integrations/dwhOperators.js';
@@ -894,6 +894,20 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     const body = selfServiceSchema.parse(request.body);
     const { carrierId } = await requireRegisteredCarrierUser(body.initData);
     return serverCrmWrapper.getCarrierBalance(carrierId);
+  });
+
+  /**
+   * The carrier's company profile (id, contact, address) for the owner's profile sheet.
+   *
+   * Owner-only: this is company-level contact and address data, an account holder's view — a driver
+   * asking about their card has no need for the company's email and mailing address. carrierId is
+   * always returned (it is the caller's own), even when the DWH has no dim_company row.
+   */
+  app.post('/carrier/mini-app/company', async (request) => {
+    const body = selfServiceSchema.parse(request.body);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
+    const details = env.DWH_DATABASE_URL ? await getDwhCompanyDetails(carrierId).catch(() => null) : null;
+    return details ?? { carrierId, companyName: null, email: null, phone: null, address: null, city: null, state: null, zip: null };
   });
 
   // The card list is carrier-wide upstream; a driver only ever sees their own card in it. `overview`
