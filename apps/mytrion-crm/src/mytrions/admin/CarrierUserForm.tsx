@@ -62,19 +62,28 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
     if (q.length < 2) {
       setClientResults(null);
       setClientError('');
+      setClientBusy(false);
       return;
     }
     setClientBusy(true);
+    const ac = new AbortController();
     const timer = setTimeout(() => {
-      searchClients(q, 15)
+      searchClients(q, 15, ac.signal)
         .then((clients) => {
           setClientResults(clients);
           setClientError('');
         })
-        .catch((e: unknown) => setClientError(e instanceof Error ? e.message : String(e)))
-        .finally(() => setClientBusy(false));
+        .catch((e: unknown) => {
+          if (!ac.signal.aborted) setClientError(e instanceof Error ? e.message : String(e));
+        })
+        .finally(() => {
+          if (!ac.signal.aborted) setClientBusy(false);
+        });
     }, 300);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      ac.abort();
+    };
   }, [clientQuery, picked, manual]);
 
   function pickClient(c: DwhClient) {
@@ -104,17 +113,27 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
   useEffect(() => {
     setOperator(undefined);
     setOperatorError('');
-    if (!isOwner) return;
     const cid = carrierId.trim();
-    if (!cid) return;
+    if (!isOwner || !cid) {
+      setOperatorBusy(false);
+      return;
+    }
     setOperatorBusy(true);
+    const ac = new AbortController();
     const timer = setTimeout(() => {
-      searchOperators(cid, 5)
+      searchOperators(cid, 5, ac.signal)
         .then((ops) => setOperator(ops.find((o) => o.carrierId === cid) ?? null))
-        .catch((e: unknown) => setOperatorError(e instanceof Error ? e.message : String(e)))
-        .finally(() => setOperatorBusy(false));
+        .catch((e: unknown) => {
+          if (!ac.signal.aborted) setOperatorError(e instanceof Error ? e.message : String(e));
+        })
+        .finally(() => {
+          if (!ac.signal.aborted) setOperatorBusy(false);
+        });
     }, 300);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      ac.abort();
+    };
   }, [carrierId, isOwner]);
 
   // ── active fuel cards for the picked carrier — owners just need the COUNT (company-type
@@ -134,12 +153,28 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
     setCardManual(false);
     setCardId('');
     const cid = carrierId.trim();
-    if (!cid) return;
+    if (!cid) {
+      setCardsBusy(false);
+      return;
+    }
     setCardsBusy(true);
-    listCards(cid)
-      .then(setCards)
-      .catch((e: unknown) => setCardsError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setCardsBusy(false));
+    const ac = new AbortController();
+    // Debounced like the lookups above: in manual entry this reruns on every keystroke of the
+    // carrier id, and an unaborted list could still land after the id had moved on.
+    const timer = setTimeout(() => {
+      listCards(cid, 100, ac.signal)
+        .then(setCards)
+        .catch((e: unknown) => {
+          if (!ac.signal.aborted) setCardsError(e instanceof Error ? e.message : String(e));
+        })
+        .finally(() => {
+          if (!ac.signal.aborted) setCardsBusy(false);
+        });
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      ac.abort();
+    };
   }, [carrierId, cardsReload]);
   const cardCount = cards?.length ?? null;
   // 0 cards is undetermined, not "owner-operator" — mirrors the backend's own detection rule

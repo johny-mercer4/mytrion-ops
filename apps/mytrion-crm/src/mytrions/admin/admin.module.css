@@ -612,6 +612,11 @@
   gap: var(--space-3);
 }
 
+/* confirm dialogs — prose, not a data panel, so the 760px reading measure is far too wide */
+.modalNarrow {
+  width: min(440px, 100%);
+}
+
 .modalActions {
   display: flex;
   gap: var(--space-2);

@@ -190,6 +190,7 @@ export async function request(
       method,
       headers,
       credentials: 'same-origin',
+      ...(opts.signal ? { signal: opts.signal } : {}),
       ...(method !== 'GET' ? { body: JSON.stringify(opts.body ?? {}) } : {}),
     });
   };

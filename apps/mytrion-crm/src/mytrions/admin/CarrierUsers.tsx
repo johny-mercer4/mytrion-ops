@@ -10,12 +10,22 @@ import {
 import { BuildingIcon, PersonIcon, PlusIcon, SearchIcon, XIcon } from '../../components/icons';
 import { CarrierUserForm } from './CarrierUserForm';
 import { copyToClipboard } from './carrierUserUtil';
+import { ConfirmDialog } from './ConfirmDialog';
 import { adminToast } from './toast';
 import s from './admin.module.css';
 
 const COLS = { gridTemplateColumns: '2fr 1.1fr 1fr 1.2fr 1fr .9fr' } as const;
 const INV_COLS = { gridTemplateColumns: '2fr 1fr 1fr 1fr 1.1fr .9fr' } as const;
 const PAGE_SIZE = 10;
+
+/** A destructive action held until the admin confirms it. */
+interface PendingConfirm {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  run: () => Promise<void>;
+}
 
 interface CarrierGroup {
   key: string;
@@ -64,6 +74,8 @@ export function CarrierUsers() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [regPage, setRegPage] = useState(1);
   const [invPage, setInvPage] = useState(1);
+  const [pending, setPending] = useState<PendingConfirm | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -95,7 +107,6 @@ export function CarrierUsers() {
   }, [load, loadInvitations]);
 
   async function revoke(id: string, label: string) {
-    if (!window.confirm(`Revoke ${label}'s access? This can't be undone from here — they'd need a new invite to reconnect.`)) return;
     setBusyId(id);
     try {
       await revokeRegistration(id);
@@ -119,6 +130,39 @@ export function CarrierUsers() {
     } finally {
       setBusyId(null);
     }
+  }
+
+  async function runPending() {
+    if (!pending || confirmBusy) return;
+    try {
+      setConfirmBusy(true);
+      await pending.run();
+    } finally {
+      setConfirmBusy(false);
+      setPending(null);
+    }
+  }
+
+  function askRevoke(id: string, label: string) {
+    setPending({
+      title: `Revoke ${label}'s access?`,
+      body: `They lose the mini-app immediately. There's no un-revoke here — reconnecting them means generating a fresh invite.`,
+      confirmLabel: 'Revoke access',
+      cancelLabel: 'Keep access',
+      run: () => revoke(id, label),
+    });
+  }
+
+  function askCancel(inv: CarrierInvitation) {
+    setPending({
+      title: 'Cancel this invite?',
+      body: `The link stops working the moment you confirm, and it can't be brought back — ${
+        inv.companyName ?? 'this company'
+      } would need a new one.`,
+      confirmLabel: 'Cancel invite',
+      cancelLabel: 'Keep invite',
+      run: () => cancel(inv.id),
+    });
   }
 
   /** The link is only reachable from this row, so a failed copy has to hand it back somehow —
@@ -255,7 +299,7 @@ export function CarrierUsers() {
                       type="button"
                       className={`${s.miniBtn} ${s.miniDanger}`}
                       disabled={busyId === g.owner.id}
-                      onClick={() => g.owner && void revoke(g.owner.id, g.companyName ?? 'This owner')}
+                      onClick={() => g.owner && askRevoke(g.owner.id, g.companyName ?? 'This owner')}
                     >
                       Revoke
                     </button>
@@ -284,7 +328,7 @@ export function CarrierUsers() {
                         type="button"
                         className={`${s.miniBtn} ${s.miniDanger}`}
                         disabled={busyId === d.id}
-                        onClick={() => void revoke(d.id, d.driverName ?? 'This driver')}
+                        onClick={() => askRevoke(d.id, d.driverName ?? 'This driver')}
                       >
                         Revoke
                       </button>
@@ -360,7 +404,7 @@ export function CarrierUsers() {
                         type="button"
                         className={`${s.miniBtn} ${s.miniDanger}`}
                         disabled={busyId === inv.id}
-                        onClick={() => void cancel(inv.id)}
+                        onClick={() => askCancel(inv)}
                       >
                         Cancel
                       </button>
@@ -373,6 +417,18 @@ export function CarrierUsers() {
         {!invLoading && invitations.length === 0 && <div className={s.none}>No invitations yet.</div>}
       </div>
       {!invLoading && <Pager page={invPageSafe} total={invitations.length} onChange={setInvPage} />}
+
+      {pending && (
+        <ConfirmDialog
+          title={pending.title}
+          body={pending.body}
+          confirmLabel={pending.confirmLabel}
+          cancelLabel={pending.cancelLabel}
+          busy={confirmBusy}
+          onConfirm={() => void runPending()}
+          onCancel={() => setPending(null)}
+        />
+      )}
     </div>
   );
 }

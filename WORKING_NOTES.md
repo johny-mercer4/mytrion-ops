@@ -2561,3 +2561,84 @@ Measured earlier the same session (real routes, carrier 5765985): FAST 287–102
 earning its keep. Also note carrier **5836348 (MMB TRANSPORT INC) has zero transactions** and
 inactive cards, so it cannot demo; **1825 carriers** have 30-day data, and the fast path holds at
 242–810ms across a largest/median/small sample.
+
+## 2026-07-17 — Mini-app session wrap: what shipped, and the two follow-ups
+
+Branch `feature/mini-app-transactions`, 23 commits on top of `origin/build`. Not pushed.
+Gate at every commit: 619 tests green, lint clean (2 pre-existing warnings), backend + mini-app
+typecheck and build clean.
+
+### Shipped
+
+**Security** (all found by measuring, not by reading):
+- Driver rows were filtered in the BROWSER — the device received the whole fleet's fuel history, and
+  the match was on last-4, which is not unique within a carrier (live probe: carrier 5805408 has 11
+  active cards ending 7593, so those drivers saw each other's rows as their own). Now scoped
+  server-side on the full 19-digit number, fail-closed.
+- `invoices` / `invoices/signed-url` / `payment-info` accepted any driver's initData (verified: 200,
+  4 invoices). New `requireRegisteredOwnerUser` — NOT `requireRegisteredOwner`, which also demands
+  fleet-manager because it guards driver management; an owner-operator still owns the account.
+- Revoke bricked the Telegram account: the rebind guard fired on revoked rows AND the upsert never
+  cleared `status`/`revokedAt`, so redeem returned 201 while every later request 403'd.
+- The card number was FABRICATED when the DWH had not resolved it ('5412 7734 90' + a hardcoded
+  '7549' fallback) and Copy put that fiction on the clipboard. Now skeletons.
+
+**Correctness**
+- pg returns `timestamp without time zone` as a local Date; JSON then emits UTC — the fast phase
+  showed 16:59 for a 21:59 transaction while servercrm's phase showed 21:59, and the PDF showed a
+  third answer. Normalised in `dwhTransactions.naiveTimestamp`.
+- servercrm's EFS gap-fill reaches outside the asked-for window and its totals are DWH-only, so
+  "Today" listed two of YESTERDAY's transactions above "$0.00 spent". `clampToWindow` fixes both.
+- Owner `year` went 318 rows -> 100 when the live phase landed (the owner path let servercrm's
+  default limit of 100 apply). One `TXN_FETCH_LIMIT` now.
+
+**Performance** — transactions paint in ~600ms instead of 3.4–24.5s. The cost is the live EFS SOAP
+leg, not the DWH: one carrier merged ZERO rows and still took 9.3s, and limit=100 vs 5000 differed by
+~200ms. `live=false` reads the mart directly; `live=true` delegates to servercrm so the EFS
+merge/de-dup stays in one place. Balance is cached (endpoint is 1.9–3.3s; Home unmounts on every trip
+to Services/Inbox).
+
+**Client reports** — CSV / real XLSX (exceljs) / branded PDF (pdfkit), delivered as a Telegram
+document because a WebApp cannot reliably save a file. `apps/mini-app/src/lib/txnExport.ts` is gone;
+`src/modules/carrier/txnReport.ts` owns it.
+
+### Follow-up 1 — the invoice service (do this in a fresh session)
+
+Give invoices the treatment transactions just got. The endpoint ALREADY accepts range/status/from/to.
+
+- **The range is hardcoded**: `fetchInvoices(initData, { range: 'last_30' })` in App.tsx — the period
+  chips are not wired to it at all, so a client cannot change the window.
+- **`summary` is thrown away**, exactly as `totals` was: the backend sends
+  `{total_invoices: 25, paid_count: 22, open_count: 2, cancelled_count: 0, sum_total_amount: 38453.43,
+  sum_total_paid: …}`. Rows also carry `open_balance`, `days_overdue`, `total_paid`, `due_date`,
+  `status` — plenty for the stat tiles (reuse the balance sheet's tile pattern, as the txns sheet does).
+- **No Telegram export.** Mirror `modules/carrier/txnReport.ts`: same BRAND block, same ColumnSpec
+  shape (`weight` for the PDF's proportional layout, `xlsxWidth` for Excel's character grid — they are
+  different units), same `pdfSafe` (pdfkit's Helvetica is WinAnsi; `→` renders as `!'`), same
+  `bufferPages: true` (or only the LAST page gets a footer), and a page-break check before the totals.
+- **No progressive phase needed**: invoices are 462–1804ms with no EFS leg.
+- Small bug: the sheet reads `invoice_ref ?? invoice_number ?? id`, but the response has NEITHER of the
+  first two — it always falls back to `id`.
+- Money: use `minimumFractionDigits: 2`, and do NOT put a currency symbol in an Excel numFmt — a
+  locale-bound `$` renders as the VIEWER's currency ("US$327,37").
+
+### Follow-up 2 — the card ribbon (separate session)
+
+`CardWave` was removed (`git show 070d15f^:apps/mini-app/src/App.tsx` has it). It never matched the
+physical card because of one ratio: 34 lines across a ~30-unit band = ~0.9 spacing, against a 1.15
+stroke — every line overlapped its neighbour, so the band rendered as a solid blob instead of the real
+card's separated line-art. Fewer lines with the stroke well under the spacing, and a band roughly twice
+as thick (~30% of the card, not ~15%). It must stay in the upper-middle so the card's text keeps a dark
+band to sit on.
+
+### Still open
+
+- **Push / PR** — branch is ready, rebased on `origin/build`.
+- **Period filter redesign** ("B"): the chips still scroll horizontally; the code's own comment admits
+  "too many presets to fit a fixed row on mobile". Proposal was a trigger pill + an in-sheet list.
+- **The eye now masks the balance too**, and `revealed` starts false — so the balance opens masked. One
+  boolean cannot both mask the PAN and show the balance on open; separate toggles if that matters.
+- **`carrierMiniApp.routes.ts` is ~1030 lines** against CLAUDE.md's 600 cap (960 before this branch).
+  Wants splitting into admin / registration / self-service modules.
+- **servercrm local checkout is 98 commits behind `origin/build`** — money-code routes exist there, not
+  locally.
