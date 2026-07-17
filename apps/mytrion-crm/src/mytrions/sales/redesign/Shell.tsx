@@ -78,13 +78,14 @@ export function SalesRedesign() {
   const fullBleed = FULL_BLEED.has(section);
   const [booting, setBooting] = useState(true);
   const [, tick] = useState(0);
-  const [toast, setToast] = useState<{ title: string; msg: string } | null>(null);
+  const [toast, setToast] = useState<{ title: string; msg: string; tone: 'ok' | 'warn' | 'err' } | null>(null);
   const [detail, setDetail] = useState<DetailVM | null>(null);
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [clientTab, setClientTab] = useState<'overview' | 'cards' | 'activity'>('overview');
   const [lead, setLead] = useState<LeadVM | null>(null);
   const [deal, setDeal] = useState<DealVM | null>(null);
   const [focusTicket, setFocusTicket] = useState<string | null>(null);
+  const [focusAutomation, setFocusAutomation] = useState<string | null>(null);
 
   // chat
   const [chatOpen, setChatOpen] = useState(false);
@@ -102,9 +103,14 @@ export function SalesRedesign() {
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pushToast = useCallback((title: string, msg: string) => {
-    setToast({ title, msg });
+    const t = title.toLowerCase();
+    const tone: 'ok' | 'warn' | 'err' =
+      /couldn|can.t|fail|error|too large/.test(t) ? 'err'
+        : /already exists|couldn.t be attached|partial/.test(t) ? 'warn'
+          : 'ok';
+    setToast({ title, msg, tone });
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 3200);
+    toastTimer.current = setTimeout(() => setToast(null), tone === 'err' ? 4200 : 3200);
   }, []);
 
   // Live, UNREAD sidebar counts over one servercrm socket: Inbox = messages not yet read (drops as
@@ -131,6 +137,13 @@ export function SalesRedesign() {
     setDetail(null);
   }, []);
   const clearFocusTicket = useCallback(() => setFocusTicket(null), []);
+  // Jump to Automations and open the matching catalog action (Create Ticket Instant redirect).
+  const openAutomation = useCallback((automationId: string) => {
+    setFocusAutomation(automationId);
+    setSection('auto');
+    setDetail(null);
+  }, []);
+  const clearFocusAutomation = useCallback(() => setFocusAutomation(null), []);
 
   const scrollChat = useCallback(() => {
     requestAnimationFrame(() => {
@@ -166,8 +179,11 @@ export function SalesRedesign() {
       openTicket,
       focusTicketId: focusTicket,
       clearFocusTicket,
+      openAutomation,
+      focusAutomationId: focusAutomation,
+      clearFocusAutomation,
     }),
-    [theme, pushToast, openClient, go, openTicket, focusTicket, clearFocusTicket],
+    [theme, pushToast, openClient, go, openTicket, focusTicket, clearFocusTicket, openAutomation, focusAutomation, clearFocusAutomation],
   );
 
   const T = timeParts();
@@ -444,11 +460,20 @@ export function SalesRedesign() {
 
         {/* TOAST */}
         {toast && (
-          <div style={s('position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:130;display:flex;align-items:center;gap:11px;padding:13px 18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);animation:ss-pop .2s both')}>
-            <span style={s('width:28px;height:28px;border-radius:var(--radius-md);background:rgba(52,211,153,.16);color:var(--ok);display:flex;align-items:center;justify-content:center')}><Svg d="M20 6L9 17l-5-5" size={16} strokeWidth={2.4} /></span>
-            <div>
-              <div style={s('font-size:12.5px;font-weight:700')}>{toast.title}</div>
-              <div style={s('font-size:11.5px;color:var(--muted)')}>{toast.msg}</div>
+          <div
+            role="status"
+            style={s(`position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:140;display:flex;align-items:center;gap:11px;padding:13px 18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${toast.tone === 'err' ? 'color-mix(in srgb,var(--danger) 35%,var(--border))' : toast.tone === 'warn' ? 'color-mix(in srgb,var(--warn) 35%,var(--border))' : 'var(--border)'};box-shadow:var(--shadow);animation:ss-pop .2s both;max-width:min(420px,92vw)`)}
+          >
+            <span style={s(`width:28px;height:28px;border-radius:var(--radius-md);flex:none;display:flex;align-items:center;justify-content:center;background:${toast.tone === 'err' ? 'color-mix(in srgb,var(--danger) 16%,transparent)' : toast.tone === 'warn' ? 'color-mix(in srgb,var(--warn) 16%,transparent)' : 'color-mix(in srgb,var(--ok) 16%,transparent)'};color:${toast.tone === 'err' ? 'var(--danger)' : toast.tone === 'warn' ? 'var(--warn)' : 'var(--ok)'}`)}>
+              <Svg
+                d={toast.tone === 'err' ? 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' : toast.tone === 'warn' ? 'M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z' : 'M20 6L9 17l-5-5'}
+                size={16}
+                strokeWidth={2.4}
+              />
+            </span>
+            <div style={s('min-width:0')}>
+              <div style={s('font-size:12.5px;font-weight:700;color:var(--text)')}>{toast.title}</div>
+              <div style={s('font-size:11.5px;color:var(--muted);line-height:1.4')}>{toast.msg}</div>
             </div>
           </div>
         )}

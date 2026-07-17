@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom';
 import { useUserContext } from '../context/UserContextProvider';
-import { MYTRIONS, MYTRION_URL_SLUG, type MytrionId } from '../access/mytrions.config';
+import { MYTRIONS, MYTRION_URL_SLUG, COMING_SOON_PICKER_TILES, type MytrionId } from '../access/mytrions.config';
 import { TopBar } from '../components/TopBar';
-import { ArrowRightIcon, CheckIcon, MytrionGlyph } from '../components/icons';
+import { CheckIcon, MytrionGlyph } from '../components/icons';
 import styles from './MytrionPicker.module.css';
 
 const HUE_VAR: Record<string, string> = {
@@ -48,28 +48,33 @@ export function MytrionPicker({ ids }: { ids: MytrionId[] }) {
               return (
                 <li key={id}>
                   <Link className={styles.card} to={`/main/${MYTRION_URL_SLUG[id]}`}>
-                    <div className={styles.cardTop}>
+                    <span
+                      className={styles.glyph}
+                      style={{ background: `color-mix(in srgb, var(${hue}) 14%, transparent)`, color: `var(${hue})` }}
+                    >
+                      <MytrionGlyph name={m.icon} size={22} />
+                    </span>
+                    <div className={styles.cardTitle}>{m.title.replace(/ Mytrion$/, '')}</div>
+                  </Link>
+                </li>
+              );
+            })}
+            {COMING_SOON_PICKER_TILES.map((tile) => {
+              const hue = HUE_VAR[tile.hue] ?? '--accent';
+              return (
+                <li key={tile.id}>
+                  <div className={`${styles.card} ${styles.cardSoon}`} aria-disabled="true">
+                    <div className={styles.cardHead}>
                       <span
                         className={styles.glyph}
                         style={{ background: `color-mix(in srgb, var(${hue}) 14%, transparent)`, color: `var(${hue})` }}
                       >
-                        <MytrionGlyph name={m.icon} size={22} />
+                        <MytrionGlyph name={tile.icon} size={22} />
                       </span>
-                      <span className={`${styles.badge} ${m.status === 'ported' ? styles.ported : styles.new}`}>
-                        {m.status === 'ported' ? 'Ported' : 'New'}
-                      </span>
+                      <span className={styles.soonBadge}>Coming soon</span>
                     </div>
-                    <div>
-                      <div className={styles.cardTitle}>{m.title.replace(/ Mytrion$/, '')}</div>
-                      <div className={styles.cardDept}>
-                        {m.allDepartments ? `${m.department} · all departments` : m.department}
-                      </div>
-                    </div>
-                    <p className={styles.blurb}>{m.blurb}</p>
-                    <span className={styles.enter}>
-                      Enter <ArrowRightIcon size={12} />
-                    </span>
-                  </Link>
+                    <div className={styles.cardTitle}>{tile.title.replace(/ Mytrion$/, '')}</div>
+                  </div>
                 </li>
               );
             })}

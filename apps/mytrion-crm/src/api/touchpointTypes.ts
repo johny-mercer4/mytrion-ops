@@ -254,6 +254,8 @@ export interface SalesDashboardResult {
     dailyActivity?: Array<Record<string, unknown>>;
     cardActivity?: Array<Record<string, unknown>>;
     transactions?: Array<Record<string, unknown>>;
+    /** Optional day-grain per-carrier feed — enables activity day drilldown. */
+    dailyTransactionsByCarrier?: Array<Record<string, unknown>>;
   };
   error?: string;
 }

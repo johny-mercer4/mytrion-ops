@@ -25,6 +25,7 @@ import {
   searchTicketsByCreator,
   uploadTicketAttachment,
 } from '../../integrations/zohoDesk.js';
+import { attachFileToRecord } from '../../integrations/zohoCrm.js';
 import { fetchDealOwnerId } from '../../integrations/salesDataCenter.js';
 import { dispatchTouchpoint } from '../../modules/touchpoints/dispatcher.js';
 import { assertTicketOwned } from '../../modules/tools/deskScope.js';
@@ -35,12 +36,14 @@ import { requireDepartment } from './helpers.js';
 
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20 MB (matches the widget)
 
+type UploadFile = { name: string; mime: string; buffer: Buffer };
+
 /** Collect a mixed multipart body (form fields + one optional file) into a plain shape. */
 async function readMultipart(
   request: FastifyRequest,
-): Promise<{ fields: Record<string, string>; file: { name: string; mime: string; buffer: Buffer } | null }> {
+): Promise<{ fields: Record<string, string>; file: UploadFile | null }> {
   const fields: Record<string, string> = {};
-  let file: { name: string; mime: string; buffer: Buffer } | null = null;
+  let file: UploadFile | null = null;
   for await (const part of request.parts({ limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 1 } })) {
     if (part.type === 'file') {
       const buffer = await part.toBuffer();
@@ -54,6 +57,48 @@ async function readMultipart(
     }
   }
   return { fields, file };
+}
+
+/**
+ * Prefer Desk's Attachments tab; if the Desk token lacks attachment scope (403), land the file on
+ * the linked CRM record so the agent still has it (widget-parity fallback).
+ */
+async function attachCreateFile(opts: {
+  deskTicketId: string;
+  file: UploadFile;
+  crmModule: 'Deals' | 'Escalation_Request';
+  crmRecordId: string;
+  warnings: string[];
+}): Promise<boolean> {
+  try {
+    await uploadTicketAttachment(
+      opts.deskTicketId,
+      opts.file.buffer,
+      opts.file.name,
+      opts.file.mime,
+      true,
+    );
+    return true;
+  } catch (deskErr) {
+    opts.warnings.push(
+      `desk-attachment: ${deskErr instanceof Error ? deskErr.message : 'failed'}`,
+    );
+    if (!opts.crmRecordId) return false;
+    try {
+      await attachFileToRecord(
+        opts.crmModule,
+        opts.crmRecordId,
+        opts.file.name,
+        opts.file.buffer,
+        opts.file.mime,
+      );
+      opts.warnings.push(`attachment: saved on CRM ${opts.crmModule} (Desk upload unavailable)`);
+      return true;
+    } catch (crmErr) {
+      opts.warnings.push(`crm-attachment: ${crmErr instanceof Error ? crmErr.message : 'failed'}`);
+      return false;
+    }
+  }
 }
 
 /** Sales/admin gate (internal audience only, session-authoritative departments). */
@@ -246,7 +291,7 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
   /**
    * Create a support ticket (multipart: form fields + optional attachment). Orchestrates the widget
    * flow server-side: create the Desk ticket (inline contact — no search scope needed) → mirror into
-   * the CRM Tickets module → if a file is attached, upload it to the Deal and hand it to the ticket.
+   * the CRM Tickets module → attach file to Desk (CRM Deal fallback if Desk attachment scope fails).
    * The ticket is stamped with the caller's CRM user id so it appears in their own ticket list.
    */
   app.post('/desk/tickets', guard, async (request) => {
@@ -285,29 +330,27 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
           cf_ticket_type: f.ticketType,
           cf_crm_created_by_id: crmUserId,
           cf_deal_id: f.dealId,
-          cf_submitted_by: f.submitterName,
+          cf_submitted_by: f.submitterName ?? ctx.userName,
           cf_carrier_id_application_id: f.carrierId || f.applicationId,
           cf_card_number: f.cardNumber,
         },
       });
       const warnings: string[] = [];
-      let attached = false;
       // Mirror into the CRM Tickets module (best-effort — the Desk ticket already exists).
       await dispatchTouchpoint(ctx, 'tickets.create_in_crm', {
         subject: f.subject,
         dealId: f.dealId,
         deskTicketId,
       }).catch((e: unknown) => warnings.push(`crm-link: ${e instanceof Error ? e.message : 'failed'}`));
-      // Attachment: land it straight on the new ticket's Attachments tab. Best-effort: the ticket
-      // already exists, so we never fail the create over an attachment hiccup.
-      if (file) {
-        try {
-          await uploadTicketAttachment(deskTicketId, file.buffer, file.name, file.mime, true);
-          attached = true;
-        } catch (e) {
-          warnings.push(`attachment: ${e instanceof Error ? e.message : 'failed'}`);
-        }
-      }
+      const attached = file
+        ? await attachCreateFile({
+            deskTicketId,
+            file,
+            crmModule: 'Deals',
+            crmRecordId: f.dealId,
+            warnings,
+          })
+        : false;
       await auditFromContext(ctx, {
         action: 'desk.ticket.create',
         status: 'ok',
@@ -315,7 +358,7 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
         resourceId: deskTicketId,
         detail: { department: f.department, ticketType: f.ticketType, dealId: f.dealId, attached, warnings },
       });
-      return { ticketId: deskTicketId, attached };
+      return { ticketId: deskTicketId, attached, warnings };
     } catch (err) {
       if (err instanceof AppError) throw err;
       throw deskError(err);
@@ -324,8 +367,8 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
 
   /**
    * Create an escalation request (multipart: fields + optional attachment). Runs the
-   * `createescalationticket` Deluge (which builds the Escalation_Request record + Desk ticket), then
-   * uploads any attachment to the escalation record and hands it to the ticket.
+   * `createescalationticket` Deluge (Escalation_Request + Desk ticket), then attaches any file
+   * to Desk (CRM Escalation_Request fallback if Desk attachment scope fails).
    */
   app.post('/desk/escalations', guard, async (request) => {
     const ctx = requireSalesAccess(request);
@@ -349,17 +392,15 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
         });
       }
       const warnings: string[] = [];
-      let attached = false;
-      // Attach the file onto the escalation's Desk ticket's Attachments tab (the returned
-      // ticketId). Best-effort: the escalation already exists.
-      if (file) {
-        try {
-          await uploadTicketAttachment(ticketId, file.buffer, file.name, file.mime, true);
-          attached = true;
-        } catch (e) {
-          warnings.push(`attachment: ${e instanceof Error ? e.message : 'failed'}`);
-        }
-      }
+      const attached = file
+        ? await attachCreateFile({
+            deskTicketId: ticketId,
+            file,
+            crmModule: 'Escalation_Request',
+            crmRecordId: escalationId,
+            warnings,
+          })
+        : false;
       await auditFromContext(ctx, {
         action: 'desk.escalation.create',
         status: 'ok',
@@ -367,7 +408,7 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
         resourceId: ticketId,
         detail: { reason: f.reason, escalationId, attached, warnings },
       });
-      return { ticketId, escalationId, attached };
+      return { ticketId, escalationId, attached, warnings };
     } catch (err) {
       if (err instanceof AppError) throw err;
       throw deskError(err);

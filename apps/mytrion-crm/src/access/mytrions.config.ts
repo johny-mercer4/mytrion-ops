@@ -21,7 +21,6 @@ export type MytrionId =
   | 'billing'
   | 'collection'
   | 'finance'
-  | 'retention'
   | 'verification'
   | 'manager'
   | 'analyst'
@@ -175,21 +174,6 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     status: 'ported',
     portedFrom: 'zoho-octane/app/mytrion-customer-service',
   },
-  retention: {
-    id: 'retention',
-    title: 'Retention Mytrion',
-    tag: 'Retention',
-    icon: 'retention',
-    blurb: 'Churn signals, win-back playbooks and retention metrics.',
-    hue: 'danger',
-    department: 'retention',
-    allDepartments: false,
-    allowedProfiles: ['Retention'],
-    allowedRoles: [],
-    allowedUsernames: [],
-    adminBypass: true,
-    status: 'ported',
-  },
   verification: {
     id: 'verification',
     title: 'Verification Mytrion',
@@ -249,10 +233,26 @@ export const MYTRION_ORDER: MytrionId[] = [
   'collection',
   'finance',
   'customer-service',
-  'retention',
   'verification',
   'manager',
   'analyst',
+];
+
+/** Picker-only tiles — visible on the wizard grid but not routable yet. */
+export interface ComingSoonPickerTile {
+  id: string;
+  title: string;
+  icon: string;
+  hue: 'accent' | 'success' | 'purple' | 'orange' | 'danger';
+}
+
+export const COMING_SOON_PICKER_TILES: ComingSoonPickerTile[] = [
+  {
+    id: 'hr',
+    title: 'HR Mytrion',
+    icon: 'hr',
+    hue: 'purple',
+  },
 ];
 
 /** Type guard for a path param. */
@@ -272,7 +272,6 @@ export const MYTRION_URL_SLUG: Record<MytrionId, string> = {
   billing: 'billingmytrion',
   collection: 'collectionmytrion',
   finance: 'financemytrion',
-  retention: 'retentionmytrion',
   verification: 'verificationmytrion',
   manager: 'managermytrion',
   analyst: 'analystmytrion',

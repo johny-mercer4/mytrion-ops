@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { listAgents, type AgentUser } from '../api/agents';
 import { useImpersonation } from '../context/ImpersonationProvider';
-import { SearchIcon, SwitchIcon, XIcon } from './icons';
+import { RefreshIcon, SearchIcon, ViewAsIcon, XIcon } from './icons';
 import styles from './ActAsPicker.module.css';
 
 /**
@@ -62,22 +62,34 @@ export function ActAsPicker({ targets }: { targets?: AgentUser[] }) {
   return (
     <div className={styles.wrap}>
       <button type="button" className={styles.trigger} onClick={() => setOpen((o) => !o)}>
-        <SwitchIcon size={13} />
+        <ViewAsIcon size={13} />
         View as
       </button>
       {open && (
-        <div className={styles.menu} role="listbox">
+        <div className={styles.menu} role="listbox" aria-busy={loading}>
           <div className={styles.searchRow}>
-            <SearchIcon size={13} />
+            {loading ? (
+              <span className={styles.searchSpin} aria-hidden="true">
+                <RefreshIcon size={13} />
+              </span>
+            ) : (
+              <SearchIcon size={13} />
+            )}
             <input
               className={styles.search}
-              placeholder="Search sales agents…"
+              placeholder={loading ? 'Loading agents…' : 'Search sales agents…'}
               value={q}
               onChange={(e) => setQ(e.target.value)}
+              disabled={loading}
               autoFocus
             />
           </div>
-          {loading && <div className={styles.state}>Loading agents…</div>}
+          {loading && (
+            <div className={styles.loadingRow} role="status">
+              <span className={styles.spinner} aria-hidden="true" />
+              Loading agents…
+            </div>
+          )}
           {error && <div className={styles.stateErr}>{error}</div>}
           {!loading && !error && filtered.length === 0 && (
             <div className={styles.state}>
@@ -96,8 +108,9 @@ export function ActAsPicker({ targets }: { targets?: AgentUser[] }) {
               )}
             </div>
           )}
-          <div className={styles.options}>
-            {filtered.map((a) => (
+          {!loading && (
+            <div className={styles.options}>
+              {filtered.map((a) => (
               <button
                 key={a.zohoUserId}
                 type="button"
@@ -120,7 +133,8 @@ export function ActAsPicker({ targets }: { targets?: AgentUser[] }) {
                 </span>
               </button>
             ))}
-          </div>
+            </div>
+          )}
         </div>
       )}
     </div>

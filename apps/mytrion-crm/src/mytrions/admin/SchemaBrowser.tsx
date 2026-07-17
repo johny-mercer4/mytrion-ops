@@ -24,6 +24,8 @@ export interface SchemaBrowserProps {
   subtitle: string;
   /** Fetches the snapshot; identity should be stable (defined at module scope or memoized). */
   load: () => Promise<DbSchemaSnapshot>;
+  /** Shown while the initial snapshot is loading. */
+  loadingMessage?: string;
   /** Icon shown in the header database badge, e.g. the engine's glyph. */
   headerIcon?: ReactNode;
 }
@@ -76,7 +78,7 @@ function tableKey(t: DbTable): string {
  * DWH Postgres snapshot; the schema dimension (filter, per-row badge, stat tile) appears only when
  * the source reports multiple schemas.
  */
-export function SchemaBrowser({ title, subtitle, load, headerIcon }: SchemaBrowserProps) {
+export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading schema…', headerIcon }: SchemaBrowserProps) {
   const [snap, setSnap] = useState<DbSchemaSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -347,7 +349,12 @@ export function SchemaBrowser({ title, subtitle, load, headerIcon }: SchemaBrows
           );
         })}
 
-        {loading && !snap && <div className={s.none}>Loading schema…</div>}
+        {loading && !snap && (
+          <div className={s.loadingBlock} role="status">
+            <span className={s.loadingSpin} aria-hidden="true" />
+            {loadingMessage}
+          </div>
+        )}
         {!loading && snap && visible.length === 0 && (
           <div className={s.none}>No tables match the current filters.</div>
         )}

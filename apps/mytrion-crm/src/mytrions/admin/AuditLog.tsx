@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { TableSkeleton } from '@/components/mytrion/table-skeleton';
 import {
   listAudit,
   type AuditAudience,
@@ -9,7 +10,7 @@ import { SearchIcon, XIcon } from '../../components/icons';
 import s from './admin.module.css';
 
 const PAGE = 50;
-const COLS = { gridTemplateColumns: '0.9fr 1.4fr 1.1fr 0.9fr 1.4fr 0.7fr' } as const;
+const AUDIT_SKELETON = ['48%', '56%', '62%', '40%', '70%', '56px'] as const;
 
 const AUDIENCE_FILTERS = ['All', 'internal', 'customer', 'partner'] as const;
 const STATUS_FILTERS = ['All', 'ok', 'denied', 'error'] as const;
@@ -168,8 +169,8 @@ export function AuditLog() {
         </p>
       )}
 
-      <div className={s.table}>
-        <div className={s.tHead} style={COLS}>
+      <div className={s.table} aria-busy={loading && entries.length === 0}>
+        <div className={`${s.tHead} ${s.tAudit}`}>
           <span>When</span>
           <span>User</span>
           <span>Profile · Role</span>
@@ -177,12 +178,20 @@ export function AuditLog() {
           <span>Action</span>
           <span className={s.right}>Status</span>
         </div>
-        {visible.map((e) => (
+        {loading && entries.length === 0 && (
+          <>
+            <span className={s.srOnly} role="status">
+              Loading audit events…
+            </span>
+            <TableSkeleton widths={AUDIT_SKELETON} rowClassName={s.tRow} colsClassName={s.tAudit} />
+          </>
+        )}
+        {!(loading && entries.length === 0) &&
+          visible.map((e) => (
           <button
             key={e.id}
             type="button"
-            className={`${s.tRow} ${s.tRowClick}`}
-            style={COLS}
+            className={`${s.tRow} ${s.tRowClick} ${s.tAudit}`}
             onClick={() => setOpen(e)}
           >
             <span className={s.deptText} title={new Date(e.createdAt).toLocaleString()}>
@@ -207,7 +216,6 @@ export function AuditLog() {
             </span>
           </button>
         ))}
-        {loading && entries.length === 0 && <div className={s.none}>Loading audit events…</div>}
         {!loading && visible.length === 0 && (
           <div className={s.none}>No audit events match the current filters.</div>
         )}
@@ -221,7 +229,14 @@ export function AuditLog() {
           disabled={loading}
           onClick={() => void load(entries.length)}
         >
-          {loading ? 'Loading…' : `Load more (${entries.length} of ${total})`}
+          {loading ? (
+            <>
+              <span className={s.loadingSpin} aria-hidden="true" />
+              Loading…
+            </>
+          ) : (
+            `Load more (${entries.length} of ${total})`
+          )}
         </button>
       )}
 

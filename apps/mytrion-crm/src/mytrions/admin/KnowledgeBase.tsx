@@ -10,6 +10,7 @@ import {
   type KnowledgeDoc,
   type KnowledgeStats,
 } from '../../api/knowledge';
+import { TableSkeleton } from '@/components/mytrion/table-skeleton';
 import { DocIcon, PlusIcon, SearchIcon, XIcon } from '../../components/icons';
 import s from './admin.module.css';
 
@@ -19,7 +20,7 @@ const STATUS_LABEL: Record<DocStatus, string> = {
   pending: 'Queued',
   failed: 'Failed',
 };
-const COLS = { gridTemplateColumns: '2.6fr 1fr 0.7fr 0.9fr 1fr' } as const;
+const DOC_SKELETON = ['58%', '72px', '36%', '48%', '68px'] as const;
 
 function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();
@@ -145,22 +146,28 @@ export function KnowledgeBase({ onAddSource }: { onAddSource?: () => void }) {
         </p>
       )}
 
-      <div className={s.table}>
-        <div className={s.tHead} style={COLS}>
+      <div className={s.table} aria-busy={loading}>
+        <div className={`${s.tHead} ${s.tDocs}`}>
           <span>Document</span>
           <span>Scope</span>
           <span className={s.right}>Chunks</span>
           <span className={s.right}>Updated</span>
           <span className={s.right}>Status</span>
         </div>
-        {loading && <div className={s.none}>Loading documents…</div>}
+        {loading && (
+          <>
+            <span className={s.srOnly} role="status">
+              Loading documents…
+            </span>
+            <TableSkeleton widths={DOC_SKELETON} rowClassName={s.tRow} colsClassName={s.tDocs} />
+          </>
+        )}
         {!loading &&
           filtered.map((d) => (
             <button
               key={d.id}
               type="button"
-              className={`${s.tRow} ${s.tRowClick}`}
-              style={COLS}
+              className={`${s.tRow} ${s.tRowClick} ${s.tDocs}`}
               onClick={() => setOpen(d)}
             >
               <span className={s.docCell}>
@@ -282,7 +289,12 @@ function DocDetailModal({
         </div>
 
         <div className={s.chunkList}>
-          {chunks === null && !error && <div className={s.none}>Loading chunks…</div>}
+          {chunks === null && !error && (
+            <div className={s.loadingBlock} role="status">
+              <span className={s.loadingSpin} aria-hidden="true" />
+              Loading chunks…
+            </div>
+          )}
           {error && <div className={s.errorNote}>{error}</div>}
           {chunks?.map((c) => (
             <div key={c.id} className={s.chunkCard}>

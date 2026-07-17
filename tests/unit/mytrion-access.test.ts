@@ -110,9 +110,9 @@ describe('resolveWorkerAccess — per-user overrides', () => {
   });
 
   it('home falls back to the sole accessible Mytrion when the configured home is not granted', async () => {
-    pd.findByKey.mockResolvedValue(profileDefault({ allowedMytrions: ['retention'], homeMytrion: 'sales' }));
-    const r = await mytrionAccessService.resolveWorkerAccess(principal({ profileName: 'Customer Retention' }));
-    expect(r.homeMytrion).toBe('retention'); // 'sales' not granted → sole accessible wins
+    pd.findByKey.mockResolvedValue(profileDefault({ allowedMytrions: ['billing'], homeMytrion: 'sales' }));
+    const r = await mytrionAccessService.resolveWorkerAccess(principal({ profileName: 'Billing' }));
+    expect(r.homeMytrion).toBe('billing'); // 'sales' not granted → sole accessible wins
   });
 });
 

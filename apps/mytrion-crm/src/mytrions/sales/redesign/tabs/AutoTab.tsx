@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { MoneyCodePreview } from '@/api/touchpointTypes';
 import { logAutomation } from '@/api/touchpoints';
 import { s, Svg, Badge } from '../dc';
+import { useSales } from '../ctx';
 import { badge, deptStyle, iconBox, nyDaysAgo, nyToday, type BadgeVM } from '../salesData';
 import { useLoad, money } from '../live';
 import {
@@ -64,6 +65,7 @@ const UD0: UnitDriverForm = { unitNumber: '', driverName: '', driverId: '' };
 const MC0: MoneyCodeForm = { amount: '', reason: MONEY_CODE_REASONS[0], unitNumber: '' };
 
 export function AutoTab() {
+  const { focusAutomationId, clearFocusAutomation } = useSales();
   const [autoSearch, setAutoSearch] = useState('');
   const [autoModal, setAutoModal] = useState<Automation | null>(null);
   const [autoStep, setAutoStep] = useState<Step>('config');
@@ -134,6 +136,14 @@ export function AutoTab() {
     setAutoAddr({ address: '', city: '', state: '', zip: '' }); setAutoNote(''); setAutoDue('');
     // WEX search state lives in <AutoWexPanel/>, which remounts per modal open.
   };
+
+  // Create Ticket Instant redirect (and similar) lands here with a catalog id to open.
+  useEffect(() => {
+    if (!focusAutomationId) return;
+    const target = AUTO_LIST.find((a) => a.id === focusAutomationId && a.soon !== true) ?? null;
+    clearFocusAutomation();
+    if (target) openAuto(target);
+  }, [focusAutomationId, clearFocusAutomation]);
   const closeAuto = (): void => { if (autoStep === 'running') return; clearInterval(progTimer.current); setAutoModal(null); };
   const setDealQuery = (v: string): void => { setAutoDealQuery(v); setAutoShowDrop(true); };
   const selectDeal = (d: Deal): void => { setAutoDeal(d); setAutoShowDrop(false); setAutoDealQuery(''); setAutoCard(null); };

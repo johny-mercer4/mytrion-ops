@@ -38,12 +38,23 @@ export function ProfileDefaults() {
           {error}
         </p>
       )}
-      <div className={s.grid2}>
-        {profiles.map((p) => (
-          <ProfileCard key={p.profileKey} profile={p} onSaved={load} />
-        ))}
-      </div>
-      {loading && profiles.length === 0 && <div className={s.none}>Loading profile defaults…</div>}
+      {loading && profiles.length === 0 ? (
+        <div className={s.profileGrid} aria-busy="true">
+          <span className={s.srOnly} role="status">
+            Loading profile defaults…
+          </span>
+          <div className={s.skelCard} />
+          <div className={s.skelCard} />
+          <div className={s.skelCard} />
+          <div className={s.skelCard} />
+        </div>
+      ) : (
+        <div className={s.profileGrid}>
+          {profiles.map((p) => (
+            <ProfileCard key={p.profileKey} profile={p} onSaved={load} />
+          ))}
+        </div>
+      )}
     </>
   );
 }
@@ -89,8 +100,8 @@ function ProfileCard({ profile, onSaved }: { profile: ProfileDefault; onSaved: (
       <div className={s.cardHead}>
         <span className={s.cardTitle}>{profile.profileName}</span>
       </div>
-      <div className={s.cardPad}>
-        <div className={s.chipRow}>
+      <div className={s.profileCardBody}>
+        <div className={s.profileModeRow}>
           {(['custom', 'all'] as const).map((m) => (
             <button
               key={m}
@@ -103,7 +114,7 @@ function ProfileCard({ profile, onSaved }: { profile: ProfileDefault; onSaved: (
           ))}
         </div>
         {mode === 'custom' && (
-          <div className={s.chipRow}>
+          <div className={s.profileChipGrid}>
             {MYTRION_ORDER.map((id) => (
               <button
                 key={id}
@@ -132,9 +143,11 @@ function ProfileCard({ profile, onSaved }: { profile: ProfileDefault; onSaved: (
             {err}
           </p>
         )}
-        <button type="button" className={s.primaryBtn} onClick={() => void save()} disabled={busy}>
-          {busy ? 'Saving…' : 'Save'}
-        </button>
+        <div className={s.profileActions}>
+          <button type="button" className={s.primaryBtn} onClick={() => void save()} disabled={busy}>
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+        </div>
       </div>
     </div>
   );

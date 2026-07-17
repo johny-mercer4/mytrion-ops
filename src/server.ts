@@ -1,6 +1,7 @@
 import { buildApp } from './app.js';
 import { assertRuntimeSecrets, env } from './config/env.js';
 import { closeDb } from './db/client.js';
+import { closeCmpTunnel } from './integrations/cmpTunnel.js';
 import { runMigrationsOnBoot } from './db/migrate.js';
 import { logger } from './lib/logger.js';
 import { jobsEnabled, startJobs, stopJobs } from './modules/jobs/boss.js';
@@ -44,6 +45,7 @@ async function main(): Promise<void> {
       // then stop accepting HTTP, then release the DB pool.
       await stopJobs();
       await app.close();
+      closeCmpTunnel();
       await closeDb();
     } catch (err) {
       logger.error({ err }, 'error during shutdown');

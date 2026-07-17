@@ -19,7 +19,7 @@ const TABS: { id: Mode; label: string; icon: string }[] = [
 export function CreateTab() {
   const [mode, setMode] = useState<Mode>('ticket');
   return (
-    <div className="ss-fu" style={s('max-width:640px;margin:0 auto;padding-bottom:24px')}>
+    <div className="ss-fu" style={s('max-width:1080px;width:100%;margin:0 auto;padding-bottom:24px')}>
       <div style={s('display:flex;gap:6px;margin-bottom:22px;padding:4px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);width:fit-content;max-width:100%')}>
         {TABS.map((t) => {
           const on = mode === t.id;

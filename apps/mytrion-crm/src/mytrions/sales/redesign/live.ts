@@ -253,31 +253,66 @@ export interface RecordVM {
 const truthy = (v: unknown): boolean =>
   v === true || v === 1 || ['1', 'true', 't', 'yes'].includes(String(v ?? '').toLowerCase());
 
-function mapRecord(c: Record<string, unknown>): RecordVM {
+function mapRecord(c: Record<string, unknown>, cycleGallonsByCarrier: Map<string, number>): RecordVM {
   const debt = n(c.computed_debt);
   const days = n(c.computed_debt_days);
   const suspended = truthy(c.is_loc_suspended);
   const active = truthy(c.computed_is_active);
   const status: RecordVM['status'] = (debt >= 1 && days >= 2) || suspended ? 'debtor' : active ? 'active' : 'attention';
-  const bal = n(c.balance ?? c.efs_balance ?? c.prepay_balance ?? 0);
+  // clients.by_agent (servercrm) carries no live LOC/prepay balance field at all — `balance` /
+  // `efs_balance` / `prepay_balance` never appear in its response (that lives only on the separate,
+  // per-carrier live-EFS endpoint), so reading them here was always $0. `computed_debt` IS real and
+  // live (matches the reference widget's own debtor detection exactly) — show it as a negative
+  // balance when owed; a clean account has no other balance figure to show, so it's honestly $0.
+  const bal = debt > 0 ? -debt : 0;
+  const carrierId = String(c.carrier_id ?? '');
   return {
-    id: String(c.carrier_id ?? ''),
+    id: carrierId,
     name: String(c.company_name ?? '(unnamed)'),
     carrier: `CR-${c.carrier_id ?? ''}`,
     contact: String(c.deal_full_name ?? c.contact_name ?? c.agent ?? '—'),
     phone: String(c.deal_phone ?? c.contact_phone ?? '—'),
     cards: n(c.total_produced_cards ?? c.total_active_cards),
     active: n(c.total_active_cards),
-    gallons: numFmt(n(c.total_volume ?? c.gallons_90d ?? 0)),
+    // clients.by_agent itself carries no gallons figure at all (total_volume/gallons_90d were
+    // placeholder field names never implemented server-side) — sourced instead from the same
+    // per-carrier breakdown the Dashboard tab renders (dashboard.agent_sales's `transactions` rows
+    // are full-cycle totals by default; see loadCycleGallonsByCarrier).
+    gallons: numFmt(cycleGallonsByCarrier.get(carrierId) ?? 0),
     balance: money(bal),
     status,
     mc: String(c.deal_money_code ?? c.comdata_id ?? '—'),
     dot: String(c.dot ?? '—'),
   };
 }
+
+/**
+ * carrier_id → this-cycle gallons. `dashboard.agent_sales`'s `transactions` rows are full-cycle
+ * per-carrier totals by default (confirmed against the reference dashboard-panel.js, which
+ * documents this exact array as "full-cycle per-carrier totals" and keys it by carrier_id) — the
+ * only place in the touchpoint catalog this figure actually exists. Best-effort: a failed fetch
+ * just means Clients cards show 0 gallons, not a broken tab.
+ */
+async function loadCycleGallonsByCarrier(): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  try {
+    const res = await callTouchpoint('dashboard.agent_sales', {});
+    if (res.success === false) return map;
+    for (const row of res.data?.transactions ?? []) {
+      const id = row.carrier_id != null ? String(row.carrier_id) : '';
+      if (id) map.set(id, n(row.volume));
+    }
+  } catch {
+    /* best-effort */
+  }
+  return map;
+}
 export async function loadRecords(): Promise<RecordVM[]> {
-  const res = await callTouchpoint('clients.by_agent', {});
-  return (res.data ?? []).map((c) => mapRecord(c as Record<string, unknown>));
+  const [res, cycleGallonsByCarrier] = await Promise.all([
+    callTouchpoint('clients.by_agent', {}),
+    loadCycleGallonsByCarrier(),
+  ]);
+  return (res.data ?? []).map((c) => mapRecord(c as Record<string, unknown>, cycleGallonsByCarrier));
 }
 
 // ---- Dashboard (dashboard.agent_sales) ----
@@ -296,17 +331,27 @@ export async function loadDashboard(): Promise<DashboardVM> {
   const kpiRaw = (d.kpi ?? {}) as Record<string, unknown>;
   const kpi: Record<string, number> = {};
   for (const [k, v] of Object.entries(kpiRaw)) kpi[k] = n(v);
-  const bars = (d.cardsByCompany ?? []).slice(0, 8).map((r) => {
+  const bars = (d.cardsByCompany ?? []).map((r) => {
     const row = r as Record<string, unknown>;
-    return { name: String(row.carrier_name ?? row.carrier_id ?? '—'), active: n(row.active_cards), status: String(row.company_status ?? 'active').toLowerCase() };
+    return {
+      name: String(row.carrier_name ?? row.carrier_id ?? '—'),
+      active: n(row.active_cards),
+      status: String(row.company_status ?? 'active').toLowerCase(),
+    };
   });
   const activity = ((d.cardActivity ?? d.dailyActivity ?? []) as Record<string, unknown>[]).map((b) => ({
     m: String(b.month_label ?? b.activity_month ?? '').slice(0, 6),
     tx: n(b.transactions),
   }));
-  const txTable = (d.transactions ?? []).slice(0, 8).map((r) => {
+  const txTable = (d.transactions ?? []).map((r) => {
     const row = r as Record<string, unknown>;
-    return { name: String(row.carrier_name ?? '—'), newCards: n(row.new_cards), tx: n(row.transactions), gallons: numFmt(n(row.volume)), total: money(n(row.total)) };
+    return {
+      name: String(row.carrier_name ?? '—'),
+      newCards: n(row.new_cards),
+      tx: n(row.transactions),
+      gallons: numFmt(n(row.volume)),
+      total: money(n(row.total)),
+    };
   });
   return { kpi, bars, activity, txTable, cycle: (d.cycle ?? {}) as { start?: string; end?: string } };
 }
@@ -314,6 +359,8 @@ export async function loadDashboard(): Promise<DashboardVM> {
 // ---- Carriers (sales.carriers_search) ----
 
 export interface CarrierSearchVM {
+  /** Stable row key for lead-create state (snapshot id, else DOT). */
+  id: string;
   dot: string;
   owner: string;
   phone: string;
@@ -322,19 +369,30 @@ export interface CarrierSearchVM {
   units: string;
   unitsNum: number;
   address: string;
+  truckSize: string;
+  addDate: string;
+  changeDate: string;
 }
 export async function searchCarriers(query: string, limit = 200): Promise<CarrierSearchVM[]> {
   const res = await callTouchpoint('sales.carriers_search', { query, limit });
-  return (res.carriers ?? []).map((c) => ({
-    dot: String(c.dot_number ?? '—'),
-    owner: String(c.owner_full_name ?? '—'),
-    phone: String(c.phone_number ?? '—'),
-    email: String(c.email ?? '—'),
-    status: String(c.operating_status ?? 'unknown'),
-    units: String(c.power_units ?? '—'),
-    unitsNum: typeof c.power_units === 'number' ? c.power_units : Number(c.power_units) || 0,
-    address: String(c.physical_address ?? ''),
-  }));
+  return (res.carriers ?? []).map((c) => {
+    const dot = c.dot_number != null && String(c.dot_number) !== '' ? String(c.dot_number) : '—';
+    const id = c.id != null && String(c.id) !== '' ? String(c.id) : `dot:${dot}`;
+    return {
+      id,
+      dot,
+      owner: String(c.owner_full_name ?? '—'),
+      phone: String(c.phone_number ?? '—'),
+      email: String(c.email ?? '—'),
+      status: String(c.operating_status ?? 'unknown'),
+      units: String(c.power_units ?? '—'),
+      unitsNum: typeof c.power_units === 'number' ? c.power_units : Number(c.power_units) || 0,
+      address: String(c.physical_address ?? ''),
+      truckSize: c.truck_size != null ? String(c.truck_size) : '',
+      addDate: c.add_date ? String(c.add_date).slice(0, 10) : '',
+      changeDate: c.change_date ? String(c.change_date).slice(0, 10) : '',
+    };
+  });
 }
 
 // ---- Tickets (Zoho Desk) → TICKETS / TICKET_MSGS shape ----

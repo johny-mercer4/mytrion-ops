@@ -88,125 +88,128 @@ export function UserAccessForm({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className={s.modal} role="dialog" aria-modal="true" aria-label={`Access for ${row.name ?? row.zohoUserId}`}>
+      <div className={`${s.modal} ${s.accessModal}`} role="dialog" aria-modal="true" aria-label={`Access for ${row.name ?? row.zohoUserId}`}>
         <div className={s.modalHead}>
           <span className={s.cardTitle}>{row.name ?? row.zohoUserId}</span>
           <button type="button" className={s.iconBtn} onClick={onClose} aria-label="Close">
             <XIcon size={12} />
           </button>
         </div>
-        <p className={s.sub}>
-          Profile <strong>{row.profile ?? '—'}</strong> — the profile default applies unless you override it here.
-        </p>
 
-        <div className={s.chipRow}>
-          {(['inherit', 'custom', 'all'] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              className={`${s.filterChip} ${mode === m ? s.filterChipOn : ''}`}
-              onClick={() => setMode(m)}
-            >
-              {m === 'inherit' ? 'Inherit profile' : m === 'custom' ? 'Custom list' : 'All Mytrions'}
-            </button>
-          ))}
-        </div>
+        <div className={s.accessFormBody}>
+          <p className={s.sub}>
+            Profile <strong>{row.profile ?? '—'}</strong> — the profile default applies unless you override it here.
+          </p>
 
-        {mode === 'custom' && (
-          <div className={s.chipRow}>
-            {MYTRION_ORDER.map((id) => (
+          <div className={s.profileModeRow}>
+            {(['inherit', 'custom', 'all'] as const).map((m) => (
               <button
-                key={id}
+                key={m}
                 type="button"
-                className={`${s.filterChip} ${allowed.has(id) ? s.filterChipOn : ''}`}
-                onClick={() => toggle(id)}
+                className={`${s.filterChip} ${mode === m ? s.filterChipOn : ''}`}
+                onClick={() => setMode(m)}
               >
-                {label(id)}
+                {m === 'inherit' ? 'Inherit profile' : m === 'custom' ? 'Custom list' : 'All Mytrions'}
               </button>
             ))}
           </div>
-        )}
-        {mode === 'all' && (
-          <p className={s.noticeNote}>This worker will see EVERY Mytrion (all-department access).</p>
-        )}
-        {mode === 'inherit' && (
-          <p className={s.sub}>
-            Effective now:{' '}
-            {row.effective.allDepartmentAccess
-              ? 'All Mytrions'
-              : row.effective.accessibleMytrions.map(label).join(', ') || 'none'}
-          </p>
-        )}
 
-        <label className={s.field}>
-          <span className={s.fieldLabel}>Home Mytrion (auto-route on sign-in)</span>
-          <select
-            className={s.select}
-            value={home}
-            onChange={(e) => setHome(e.target.value as MytrionId | '')}
-          >
-            <option value="">Default (picker, or the single accessible one)</option>
-            {homeOptions.map((id) => (
-              <option key={id} value={id}>
-                {label(id)}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <div className={s.field}>
-          <span className={s.fieldLabel}>Can “View as” these users (targeted impersonation)</span>
-          <input
-            className={s.input}
-            value={viewAsQuery}
-            onChange={(e) => setViewAsQuery(e.target.value)}
-            placeholder="Search users to grant view-as…"
-          />
-          {viewAs.size > 0 && (
-            <p className={s.fieldHint}>
-              {viewAs.size} user{viewAs.size === 1 ? '' : 's'} selected — this worker will get a “View as” picker.
+          {mode === 'custom' && (
+            <div className={s.profileChipGrid}>
+              {MYTRION_ORDER.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`${s.filterChip} ${allowed.has(id) ? s.filterChipOn : ''}`}
+                  onClick={() => toggle(id)}
+                >
+                  {label(id)}
+                </button>
+              ))}
+            </div>
+          )}
+          {mode === 'all' && (
+            <p className={s.noticeNote}>This worker will see EVERY Mytrion (all-department access).</p>
+          )}
+          {mode === 'inherit' && (
+            <p className={s.sub}>
+              Effective now:{' '}
+              {row.effective.allDepartmentAccess
+                ? 'All Mytrions'
+                : row.effective.accessibleMytrions.map(label).join(', ') || 'none'}
             </p>
           )}
-          <div className={s.chipRow}>
-            {viewAsCandidates.slice(0, 40).map((r) => (
-              <button
-                key={r.zohoUserId}
-                type="button"
-                className={`${s.filterChip} ${viewAs.has(r.zohoUserId) ? s.filterChipOn : ''}`}
-                onClick={() =>
-                  setViewAs((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(r.zohoUserId)) next.delete(r.zohoUserId);
-                    else next.add(r.zohoUserId);
-                    return next;
-                  })
-                }
-              >
-                {r.name ?? r.zohoUserId}
-              </button>
-            ))}
-            {viewAsCandidates.length === 0 && <span className={s.deptText}>No matching users.</span>}
+
+          <label className={s.field}>
+            <span className={s.fieldLabel}>Home Mytrion (auto-route on sign-in)</span>
+            <select
+              className={s.select}
+              value={home}
+              onChange={(e) => setHome(e.target.value as MytrionId | '')}
+            >
+              <option value="">Default (picker, or the single accessible one)</option>
+              {homeOptions.map((id) => (
+                <option key={id} value={id}>
+                  {label(id)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className={s.accessFormSection}>
+            <span className={s.fieldLabel}>Can “View as” these users (targeted impersonation)</span>
+            <input
+              className={s.input}
+              value={viewAsQuery}
+              onChange={(e) => setViewAsQuery(e.target.value)}
+              placeholder="Search users to grant view-as…"
+            />
+            {viewAs.size > 0 && (
+              <p className={s.fieldHint}>
+                {viewAs.size} user{viewAs.size === 1 ? '' : 's'} selected — this worker will get a “View as” picker.
+              </p>
+            )}
+            <div className={s.profileChipGrid}>
+              {viewAsCandidates.slice(0, 40).map((r) => (
+                <button
+                  key={r.zohoUserId}
+                  type="button"
+                  className={`${s.filterChip} ${viewAs.has(r.zohoUserId) ? s.filterChipOn : ''}`}
+                  onClick={() =>
+                    setViewAs((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(r.zohoUserId)) next.delete(r.zohoUserId);
+                      else next.add(r.zohoUserId);
+                      return next;
+                    })
+                  }
+                >
+                  {r.name ?? r.zohoUserId}
+                </button>
+              ))}
+              {viewAsCandidates.length === 0 && <span className={s.deptText}>No matching users.</span>}
+            </div>
           </div>
-        </div>
 
-        <label className={s.toggleRow}>
-          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
-          <span>Override active</span>
-        </label>
+          <label className={s.accessCheckRow}>
+            <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
+            <span>Override active</span>
+          </label>
 
-        {error && (
-          <p className={s.errorNote} role="alert">
-            {error}
-          </p>
-        )}
+          {error && (
+            <p className={s.errorNote} role="alert">
+              {error}
+            </p>
+          )}
 
-        <div className={s.modalActions}>
-          <button type="button" className={s.ghostBtn} onClick={onClose} disabled={busy}>
-            Cancel
-          </button>
-          <button type="button" className={s.primaryBtn} onClick={() => void save()} disabled={busy}>
-            {busy ? 'Saving…' : 'Save access'}
-          </button>
+          <div className={s.accessModalActions}>
+            <button type="button" className={s.ghostBtn} onClick={onClose} disabled={busy}>
+              Cancel
+            </button>
+            <button type="button" className={s.primaryBtn} onClick={() => void save()} disabled={busy}>
+              {busy ? 'Saving…' : 'Save access'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

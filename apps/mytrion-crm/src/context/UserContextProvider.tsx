@@ -1,9 +1,8 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { completeZohoCallbackIfPresent, refreshWorkerFromMe } from '../api/auth';
 import { getSession } from '../api/session';
+import { AuthScreen } from '../app/AuthScreen';
 import { LoginGate } from '../app/LoginGate';
-import { FuelMark } from '../components/BrandMark';
-import screen from '../app/Screen.module.css';
 import { contextFromWorker, devMockContext, type UserContext } from './userContext';
 
 const Ctx = createContext<UserContext | null>(null);
@@ -81,12 +80,11 @@ export function UserContextProvider({ children }: { children: ReactNode }) {
 
   if (state.phase === 'loading') {
     return (
-      <div className={screen.screen}>
-        <div className={screen.card}>
-          <FuelMark size={42} />
-          <p className={screen.body}>Signing you in…</p>
-        </div>
-      </div>
+      <AuthScreen
+        phase="exchanging"
+        title="Signing you in"
+        body="Zoho confirmed your account — finishing the session and loading your workspace."
+      />
     );
   }
   if (state.phase === 'anon') return <LoginGate initialError={state.error} />;

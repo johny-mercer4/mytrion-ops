@@ -36,6 +36,10 @@ vi.mock('../../src/integrations/salesDataCenter.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/integrations/salesDataCenter.js')>();
   return { ...mod, fetchDealOwnerId: vi.fn(async () => null) };
 });
+vi.mock('../../src/integrations/zohoCrm.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/integrations/zohoCrm.js')>();
+  return { ...mod, attachFileToRecord: vi.fn(async () => 'crm_att_1') };
+});
 vi.mock('../../src/modules/touchpoints/dispatcher.js', () => ({
   dispatchTouchpoint: vi.fn(async () => ({ ok: true, data: {} })),
 }));
@@ -47,6 +51,7 @@ vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
 import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { fetchDealOwnerId } from '../../src/integrations/salesDataCenter.js';
+import { attachFileToRecord } from '../../src/integrations/zohoCrm.js';
 import {
   createDeskTicket,
   getTicket,
@@ -57,6 +62,7 @@ import {
   uploadTicketAttachment,
 } from '../../src/integrations/zohoDesk.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
+import { dispatchTouchpoint } from '../../src/modules/touchpoints/dispatcher.js';
 import { clearTicketOwnerCache } from '../../src/modules/tools/deskScope.js';
 
 const searchMock = vi.mocked(searchTicketsByCreator);
@@ -67,6 +73,8 @@ const uploadAttachmentMock = vi.mocked(uploadTicketAttachment);
 const getAttachmentsMock = vi.mocked(getTicketAttachments);
 const createTicketMock = vi.mocked(createDeskTicket);
 const dealOwnerMock = vi.mocked(fetchDealOwnerId);
+const crmAttachMock = vi.mocked(attachFileToRecord);
+const dispatchMock = vi.mocked(dispatchTouchpoint);
 
 let app: FastifyInstance;
 beforeAll(async () => {
@@ -379,5 +387,138 @@ describe('ticket create — deal ownership', () => {
     expect(res.statusCode).toBe(400);
     expect(dealOwnerMock).not.toHaveBeenCalled();
     expect(createTicketMock).not.toHaveBeenCalled();
+  });
+
+  it('create with file attaches on Desk', async () => {
+    dealOwnerMock.mockResolvedValue('42');
+    uploadAttachmentMock.mockResolvedValue({ id: 'att_desk' });
+    const token = await workerToken('Sales Rep');
+    const { payload, contentType } = multipart(FIELDS, {
+      name: 'photo.png',
+      content: 'png-bytes',
+      mime: 'image/png',
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/desk/tickets',
+      headers: { ...bearer(token), 'content-type': contentType },
+      payload,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ ticketId: 'tk_new', attached: true });
+    expect(uploadAttachmentMock).toHaveBeenCalledWith(
+      'tk_new',
+      expect.anything(),
+      'photo.png',
+      'image/png',
+      true,
+    );
+    expect(crmAttachMock).not.toHaveBeenCalled();
+  });
+
+  it('create with file falls back to CRM Deal when Desk attach fails', async () => {
+    dealOwnerMock.mockResolvedValue('42');
+    uploadAttachmentMock.mockRejectedValue(new Error('[zoho-desk] HTTP 403'));
+    const token = await workerToken('Sales Rep');
+    const { payload, contentType } = multipart(FIELDS, {
+      name: 'photo.png',
+      content: 'png-bytes',
+      mime: 'image/png',
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/desk/tickets',
+      headers: { ...bearer(token), 'content-type': contentType },
+      payload,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ ticketId: 'tk_new', attached: true });
+    expect(crmAttachMock).toHaveBeenCalledWith(
+      'Deals',
+      '5550001',
+      'photo.png',
+      expect.anything(),
+      'image/png',
+    );
+  });
+});
+
+describe('escalation create — attachment', () => {
+  const FIELDS = {
+    subject: 'Need manager',
+    description: 'Client is blocked on limit increase.',
+    reason: 'Problem with the client',
+  };
+
+  it('creates via Deluge then attaches on Desk', async () => {
+    dispatchMock.mockResolvedValue({
+      key: 'tickets.create_escalation',
+      kind: 'deluge',
+      data: { ticketId: 'tk_esc', escalationId: 'esc_1' },
+    });
+    uploadAttachmentMock.mockResolvedValue({ id: 'att_esc' });
+    const token = await workerToken('Sales Rep');
+    const { payload, contentType } = multipart(FIELDS, {
+      name: 'proof.pdf',
+      content: 'pdf-bytes',
+      mime: 'application/pdf',
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/desk/escalations',
+      headers: { ...bearer(token), 'content-type': contentType },
+      payload,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      ticketId: 'tk_esc',
+      escalationId: 'esc_1',
+      attached: true,
+    });
+    expect(dispatchMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'tickets.create_escalation',
+      expect.objectContaining({
+        escalationReason: FIELDS.reason,
+        questionSubject: FIELDS.subject,
+      }),
+    );
+    expect(uploadAttachmentMock).toHaveBeenCalledWith(
+      'tk_esc',
+      expect.anything(),
+      'proof.pdf',
+      'application/pdf',
+      true,
+    );
+  });
+
+  it('falls back to CRM Escalation_Request when Desk attach fails', async () => {
+    dispatchMock.mockResolvedValue({
+      key: 'tickets.create_escalation',
+      kind: 'deluge',
+      data: { ticketId: 'tk_esc', escalationId: 'esc_1' },
+    });
+    uploadAttachmentMock.mockRejectedValue(new Error('[zoho-desk] HTTP 403'));
+    const token = await workerToken('Sales Rep');
+    const { payload, contentType } = multipart(FIELDS, {
+      name: 'proof.pdf',
+      content: 'pdf-bytes',
+      mime: 'application/pdf',
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/desk/escalations',
+      headers: { ...bearer(token), 'content-type': contentType },
+      payload,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ attached: true });
+    expect(crmAttachMock).toHaveBeenCalledWith(
+      'Escalation_Request',
+      'esc_1',
+      'proof.pdf',
+      expect.anything(),
+      'application/pdf',
+    );
   });
 });

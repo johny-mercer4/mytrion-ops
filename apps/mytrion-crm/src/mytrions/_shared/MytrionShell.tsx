@@ -41,10 +41,10 @@ export function MytrionShell({
   const items: NavItem[] = nav ?? [{ key: 'home', label: 'Home', icon: <HomeIcon />, active: true }];
 
   return (
-    <div className={styles.shell}>
+    <div className={styles.shell} data-mytrion={id}>
       <TopBar contextBadge={m.tag} showSwitch />
       <div className={styles.body}>
-        <nav className={styles.sidebar}>
+        <nav className={styles.sidebar} aria-label={`${m.title} navigation`}>
           <div className={styles.navGroup}>
             {items.map((item) => {
               const select = (i: NavItem) => () => {
