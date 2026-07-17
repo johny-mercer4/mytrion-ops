@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Check, CircleAlert, LayoutGrid } from 'lucide-react';
 import {
   ApiError,
@@ -637,39 +637,6 @@ function CardContours() {
   );
 }
 
-function CardWave() {
-  const gid = useId();
-  const LINES = 34;
-  // Two y-profiles (upper + lower edge) tracing the physical card: small LEFT crest, central valley,
-  // a taller ROUNDED RIGHT crest — vivid yellow→orange→red. The ribbon sits in the UPPER-MIDDLE so
-  // all card text lives below it on the dark band (that's how the real card keeps text legible while
-  // the wave stays vivid). Edges differ so lines fan/converge, not rigid stripes.
-  const xs = [-20, 60, 132, 205, 285, 350, 420];
-  const topY = [88, 60, 94, 64, 40, 70, 66];
-  const botY = [116, 90, 122, 94, 72, 102, 98];
-  return (
-    <svg aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.95 }} viewBox="0 0 400 200" preserveAspectRatio="none" fill="none">
-      <defs>
-        {/* Vivid yellow → orange → red, matching the branded app card. */}
-        <linearGradient id={gid} x1="0" y1="0" x2="400" y2="0" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#FFCE00" />
-          <stop offset="0.4" stopColor="#FF9500" />
-          <stop offset="0.72" stopColor="#FA6015" />
-          <stop offset="1" stopColor="#F03C16" />
-        </linearGradient>
-      </defs>
-      {Array.from({ length: LINES }, (_, i) => {
-        const f = i / (LINES - 1); // 0 = top edge, 1 = bottom edge
-        const pts = xs.map((x, k) => ({ x, y: topY[k]! + (botY[k]! - topY[k]!) * f }));
-        return <path key={i} d={smoothWavePath(pts)} stroke={`url(#${gid})`} strokeWidth={1.15} strokeLinecap="round" />;
-      })}
-    </svg>
-  );
-}
-
-/** EFS® | WEX co-brand marks (bottom-right of the physical card), approximated with styled text —
- * EFS wordmark, a thin divider, and WEX in its red rounded badge. */
-
 const BALANCE_KEY = 'octane.lastBalance';
 
 /**
@@ -725,21 +692,16 @@ function OwnerHero({ initData, company, onOpenDetails }: { initData: string; com
   const pct = creditLimit && creditRemaining != null && creditLimit > 0 ? Math.max(0, Math.min(100, (creditRemaining / creditLimit) * 100)) : 100;
   const eyebrow = { fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' } as const;
   return (
-    /* Same fuel-card shell as DriverHero (wave ribbon, dark, EFS·WEX) — owners/fleet see a card that
-       matches the driver's, but carrying the account balance instead of a card number. */
+    /* Same fuel-card shell as DriverHero — owners/fleet see a card that matches the driver's, but
+       carrying the account balance instead of a card number. */
     <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', aspectRatio: '1.5 / 1', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+      {/* Contours only. The amber ribbon is out for now, and the scrims went with it: they existed
+          solely to keep text legible on top of it, and the shell is already near-black. */}
       <CardContours />
-      <CardWave />
-      {/* The scrim is what makes the numbers legible: it lands the text band on near-solid ink while
-          the ribbon stays vivid above it. White on amber fails AA — DESIGN_SPEC §8 says so outright
-          — so this reaches 66% of the card and is fully opaque across the lower half rather than
-          still fading where the figures start. */}
-      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '66%', background: 'linear-gradient(to top, rgb(18,19,21) 58%, rgba(18,19,21,.92) 78%, rgba(18,19,21,0))', pointerEvents: 'none' }} />
-      <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 46, background: 'linear-gradient(to bottom, rgba(18,19,21,.72), rgba(18,19,21,0))', pointerEvents: 'none' }} />
 
       {/* Top row: company left, Details button right */}
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-        <span style={{ minWidth: 0, flex: 1, fontSize: 15, fontWeight: 700, color: '#FFFFFF', textShadow: '0 1px 3px rgba(0,0,0,.6)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company || ''}</span>
+        <span style={{ minWidth: 0, flex: 1, fontSize: 15, fontWeight: 700, color: '#FFFFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company || ''}</span>
         <button type="button" className="press" onClick={onOpenDetails} style={{ height: 30, flex: 'none', background: 'rgba(255,255,255,.16)', border: 'none', borderRadius: 9, padding: '0 12px', fontSize: 12.5, fontWeight: 600, color: '#FFFFFF', cursor: 'pointer' }}>
           {t('common.details')}
         </button>
@@ -798,14 +760,12 @@ function DriverHero({
     <>
       <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', aspectRatio: '1.55 / 1', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
         <CardContours />
-        <CardWave />
-        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '54%', background: 'linear-gradient(to top, rgba(18,19,21,.97) 60%, rgba(18,19,21,0))', pointerEvents: 'none' }} />
 
         {/* Top band: driver name (Telegram) left — in the logo's place — company/service right. */}
         <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', textShadow: '0 1px 3px rgba(0,0,0,.6)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '52%' }}>{fullName}</span>
+          <span style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '52%' }}>{fullName}</span>
           {company && (
-            <span style={{ fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,.9)', textShadow: '0 1px 3px rgba(0,0,0,.6)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '46%', textAlign: 'right' }}>{company}</span>
+            <span style={{ fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,.9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '46%', textAlign: 'right' }}>{company}</span>
           )}
         </div>
 
