@@ -51,13 +51,6 @@ export function SalesRedesign() {
   const actAsKey = actingAs?.zohoUserId ?? 'self';
   // The effective CRM user (acted-as agent for an admin, else the signed-in worker).
   const currentUserId = String(actingAs?.zohoUserId ?? getSession()?.worker.zohoUserId ?? '');
-  // Live, UNREAD sidebar counts over one servercrm socket: Inbox = messages not yet read (drops as
-  // the tab marks them read); Tickets = unread ticket messages (bumped by WS, cleared on open).
-  const liveBadges = useSidebarBadges(currentUserId);
-  const badgeCounts: Record<string, number | undefined> = {
-    inbox: liveBadges.inbox || undefined,
-    tickets: liveBadges.tickets || undefined,
-  };
   // Collapsible sidebar (icons-only), persisted. Full-bleed tabs (Tickets) fill the whole panel.
   const [navCollapsed, setNavCollapsed] = useState(() => {
     try {
@@ -113,6 +106,15 @@ export function SalesRedesign() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 3200);
   }, []);
+
+  // Live, UNREAD sidebar counts over one servercrm socket: Inbox = messages not yet read (drops as
+  // the tab marks them read); Tickets = unread ticket messages (bumped by WS, cleared on open). Shell-
+  // level (not tab-scoped) so the toast on a new inbox message fires no matter which tab is open.
+  const liveBadges = useSidebarBadges(currentUserId, pushToast);
+  const badgeCounts: Record<string, number | undefined> = {
+    inbox: liveBadges.inbox || undefined,
+    tickets: liveBadges.tickets || undefined,
+  };
 
   const go = useCallback((next: string) => {
     setSection(next);

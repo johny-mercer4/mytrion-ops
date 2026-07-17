@@ -57,18 +57,16 @@ export function InboxTab() {
   }, [data]);
 
   // ---- real-time: only react to a notification addressed to THIS user (ownerId === currentUserId),
-  //      exactly like the reference self-service InboxPanel._handleWsMessage — toast + refetch. ----
+  //      refetching this tab's own list. The toast itself lives in the shell-level sidebarBadges
+  //      socket (useSidebarBadges), so it fires no matter which tab is open, not just this one. ----
   useServerCrmSocket({
     subscribe: { type: 'subscribe' },
     onOpen: () => setWsReady(true),
     onClose: () => setWsReady(false),
     onMessage: (msg) => {
       if (msg.type !== 'crm_inbox_notification') return;
-      const ownerId = String(msg.ownerId ?? '');
-      if (ownerId && currentUserId && ownerId === currentUserId) {
-        pushToast('New message', String(msg.subject ?? msg.name ?? 'New notification'));
-        reload();
-      }
+      const ownerId = String(msg.ownerId ?? '').trim();
+      if (ownerId && currentUserId && ownerId === currentUserId.trim()) reload();
     },
   });
 

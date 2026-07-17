@@ -2945,3 +2945,27 @@ Root: lint 0 errors (7 pre-existing warnings, none in touched files), typecheck 
 found mid-session, not made here) that the CS-analytics RBAC tests haven't caught up with yet. Ran
 this change's own files in isolation to confirm: clean before and after. `apps/mytrion-crm`:
 typecheck clean, 17/17 test files green (116 tests).
+
+### Follow-up same day — Inbox toast never fired outside the Inbox tab
+
+Reported after the above shipped: "connected to the WS, no toast on a new inbox message." The
+gate logic itself (`ownerId === currentUserId`) was correct and already reference-matched — per this
+file's 2026-07-11 entry it was verified by **mocking the WebSocket and injecting a notification**,
+never against a real live event. Re-reading the actual wiring found the real bug: the toast only
+existed inside `InboxTab.tsx`'s OWN `useServerCrmSocket` call, which unmounts (tears down its socket)
+whenever you navigate to any other tab. The sidebar badge count, by contrast, is driven by
+`sidebarBadges.useSidebarBadges` — a **shell-level** socket that's always mounted — which is why the
+badge can look "live" while the toast never appears unless you happen to be sitting on the Inbox tab
+when the event lands.
+
+Fix: moved the toast into `useSidebarBadges` (now takes an optional `pushToast`), called from
+`Shell.tsx` (had to reorder `useSidebarBadges()` to after `pushToast`'s own `useCallback` — it didn't
+exist yet at the call site). Removed the now-duplicate toast from `InboxTab.tsx` (kept its reload —
+it still needs to refresh its own separately-fetched list while mounted). Also hardened the id
+comparison to trim whitespace, and added a `console.debug` on a non-matching ownerId so a live event
+that still doesn't toast is diagnosable from devtools instead of silently vanishing — the deeper open
+question (whether Zoho's real `Owner_Id` payload shape/value even matches `zohoUserId` in production)
+was never live-verified either, and isn't checkable from any repo I have access to.
+
+Verified: `apps/mytrion-crm` typecheck clean, 17/17 test files green (116 tests), root lint clean on
+the touched `.ts` file.
