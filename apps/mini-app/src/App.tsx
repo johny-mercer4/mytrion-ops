@@ -1365,14 +1365,12 @@ function RenameDriver({
 function ProfileSheet({
   user,
   company,
-  roleLabel,
   theme,
   onTheme,
   onClose,
 }: {
   user: TelegramWebAppUser | undefined;
   company: string;
-  roleLabel: string;
   theme: Theme;
   onTheme: (t: Theme) => void;
   onClose: () => void;
@@ -1399,7 +1397,6 @@ function ProfileSheet({
             <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fullName}</div>
             <div style={{ fontSize: 13, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company}</div>
           </div>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--owner-badge-fg)', padding: '5px 10px', borderRadius: 8, background: 'var(--owner-badge-bg)', flex: 'none', maxWidth: 110, textAlign: 'center', lineHeight: 1.3 }}>{roleLabel}</span>
         </div>
 
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 9 }}>{t('menu.theme')}</div>
@@ -2164,7 +2161,6 @@ export function App() {
   const session = sessionFrom(registration);
   const company = registration?.companyName ?? preview?.companyName ?? '';
   const supportAgentName = registration?.agentName ?? preview?.agentName ?? null;
-  const roleLabel = t(session.isFleetManager ? 'role.fleet' : session.isOwner ? 'role.owner' : 'role.driver');
 
   function showError(reason: string, title = t('error.title')) {
     setErrorTitle(title);
@@ -2469,7 +2465,6 @@ export function App() {
         <ProfileSheet
           user={user}
           company={company}
-          roleLabel={roleLabel}
           theme={theme}
           onTheme={chooseTheme}
           onClose={() => setProfileOpen(false)}

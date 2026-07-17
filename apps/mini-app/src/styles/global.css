@@ -40,8 +40,6 @@
   --success: #2bd866;
 
   /* Role badge (profile sheet "Owner"/"Fleet manager" pill). */
-  --owner-badge-bg: #17255e;
-  --owner-badge-fg: #4d79ff;
 
   /* Card elevation. Dark cards already read as their own surface against the near-black page
      (#161922 on #0B0C10), so borderless is fine there; on light, white-on-off-white has almost no
@@ -78,8 +76,6 @@
   --destructive: #d92b2e;
   --success: #1dab53;
 
-  --owner-badge-bg: #dce4ff;
-  --owner-badge-fg: #2451ff;
 
   /* Soft elevation to lift white cards off the off-white page — dark mode gets none (see above). */
   --card-shadow: 0 1px 3px rgba(17, 19, 24, 0.07);
@@ -105,8 +101,6 @@
   --color-brand-amber: var(--brand-amber);
   --color-brand-orange: var(--brand-orange);
   --color-link-accent: var(--link-accent);
-  --color-owner-badge-bg: var(--owner-badge-bg);
-  --color-owner-badge-fg: var(--owner-badge-fg);
 
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
