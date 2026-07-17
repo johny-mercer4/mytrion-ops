@@ -3282,3 +3282,16 @@ for true ticketdashboard search parity.
 - Driver invite requires active owner registration (inviteService + UI gate)
 - Sales: GET /carrier-registrations/for-carrier; Driver picks available card number
 
+
+## 2026-07-18 — UI/UX Redesign
+- Seeded the skills for modern web guidance. Any future agent must consult the `modern-web-guidance` skill before modifying UI/UX.
+- Emphasized glassmorphism, dynamic thematics, and removal of double loading indicators.
+
+### UI Polish & Theming (2026-07-18)
+
+- Standardized themes across all Mytrion apps using a global ThemeProvider and React Context.
+- Updated MytrionLoader to match Sales' 'Rocket' loader style but without generic text.
+- Fixed dark mode visibility for Admin logo.
+- Upgraded sign-in and sign-out UI components.
+- Replaced favicon.ico with a beautiful unique 'M' vector logo in SVG format.
+- Resolved TypeScript compilation errors caused by legacy unused loader code.

@@ -8,11 +8,13 @@
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { useUserContext } from '../../context/UserContextProvider';
+import { useTheme } from '../../hooks/useTheme';
 import { Analytics } from './Analytics';
 import { Applications } from './Applications';
 import { CitiFuel } from './CitiFuel';
 import { CsCopilot } from './CsCopilot';
 import { Home } from './Home';
+import { MytrionLoader } from '../../components/MytrionLoader';
 
 type SectionId =
   | 'home'
@@ -91,42 +93,22 @@ const NAV_ITEMS: NavDef[] = [
   },
 ];
 
-const THEME_KEY = 'mytrion-cs-theme';
-
-function initialTheme(): 'light' | 'dark' {
-  const stored = localStorage.getItem(THEME_KEY);
-  if (stored === 'dark' || stored === 'light') return stored;
-  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-    ? 'dark'
-    : 'light';
-}
 
 export function CsShell() {
   const user = useUserContext();
   const [active, setActive] = useState<SectionId>('home');
   // Widget parity: panels lazy-mount on first visit and stay mounted (state survives tab hops).
   const [mounted, setMounted] = useState<Partial<Record<SectionId, boolean>>>({ home: true });
-  const [theme, setTheme] = useState<'light' | 'dark'>(initialTheme);
+  const { theme, toggle: toggleTheme } = useTheme();
 
   // Branded boot loader (Sales/Finance parity) — a short splash while the workspace opens.
   const [booting, setBooting] = useState(true);
-  const [bootPct, setBootPct] = useState(10);
 
   useEffect(() => {
-    localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
-
-  useEffect(() => {
-    const tick = setInterval(() => {
-      setBootPct((p) => Math.min(100, p + 11 + Math.random() * 16));
-    }, 150);
     const done = setTimeout(() => {
-      clearInterval(tick);
-      setBootPct(100);
       setBooting(false);
     }, 1500);
     return () => {
-      clearInterval(tick);
       clearTimeout(done);
     };
   }, []);
@@ -156,32 +138,7 @@ export function CsShell() {
   return (
     <div className={`cs-root${theme === 'dark' ? ' dark-mode' : ''}`}>
       {/* ── Branded boot loader (Sales/Finance parity) ── */}
-      {booting ? (
-        <div className="cs-boot">
-          <div className="cs-boot-sweep">
-            <span />
-          </div>
-          <div className="cs-boot-ring">
-            <span className="cs-boot-ring-track" />
-            <span className="cs-boot-ring-spin" />
-            <span className="cs-boot-ring-spin2" />
-            <div className="cs-boot-brand">
-              My<span>trion</span>
-              <br />
-              <span className="cs-boot-brand-sub">Customer Service</span>
-            </div>
-          </div>
-          <div className="cs-boot-copy">
-            <div className="cs-boot-title">Connecting to Customer Service</div>
-            <div className="cs-boot-sub">
-              Securing your workspace<span className="cs-boot-dots">…</span>
-            </div>
-          </div>
-          <div className="cs-boot-bar">
-            <div className="cs-boot-bar-fill" style={{ width: `${bootPct}%` }} />
-          </div>
-        </div>
-      ) : null}
+      {booting ? <MytrionLoader appName="Customer Service" /> : null}
 
       <div className="cs-body">
         {/* ── SIDEBAR NAV (desktop) ── */}
@@ -220,7 +177,7 @@ export function CsShell() {
             {/* Sales-Mytrion-style labeled theme switch (icon + "Dark/Light mode"). */}
             <button
               className="cs-theme-toggle"
-              onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+              onClick={toggleTheme}
               title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             >

@@ -34,8 +34,8 @@ export interface MytrionAccessRule {
   /** Glyph key for the picker/nav (see MytrionGlyph) + one-line blurb. */
   icon: string;
   blurb: string;
-  /** Accent hue for the Mytrion's icon chip: maps to a token (accent|success|purple|orange|danger|warning). */
-  hue: 'accent' | 'success' | 'purple' | 'orange' | 'danger' | 'warning';
+  /** Accent hue for the Mytrion's icon chip: maps to a token. */
+  hue: 'accent' | 'success' | 'purple' | 'orange' | 'danger' | 'warning' | 'black' | 'blue' | 'red' | 'green' | 'yellow' | 'dark-purple' | 'light-blue' | 'rocket';
   /** Canonical department_access slug forwarded to the backend. */
   department: string;
   /** Send allDepartments:true on knowledge queries (broad retrieval). */
@@ -76,7 +76,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     tag: 'RnD',
     icon: 'admin',
     blurb: 'RnD knowledge base — train agents, browse embeddings, map agent scope.',
-    hue: 'orange',
+    hue: 'black',
     department: 'admin',
     allDepartments: true,
     allowedProfiles: ['Administrator'],
@@ -92,7 +92,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     tag: 'Sales',
     icon: 'sales',
     blurb: 'Self-service ops — carrier balances, cards, invoices, EFS/WEX, automations.',
-    hue: 'purple',
+    hue: 'rocket',
     department: 'sales',
     allDepartments: false,
     // Every rep's CRM profile is "Sales Agent" (region lives in the ROLE). Substring match so any
@@ -111,7 +111,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     tag: 'Billing',
     icon: 'billing',
     blurb: 'Invoices, transactions, debtors and split-payment reconciliation.',
-    hue: 'accent',
+    hue: 'blue',
     department: 'billing',
     allDepartments: false,
     allowedProfiles: ['Billing'],
@@ -127,7 +127,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     tag: 'Collection',
     icon: 'collection',
     blurb: 'Bad-debt escalation timeline, Array agency filing, recovery cases.',
-    hue: 'danger',
+    hue: 'red',
     department: 'collection',
     allDepartments: false,
     allowedProfiles: ['Collection'],
@@ -142,7 +142,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     tag: 'Finance',
     icon: 'finance',
     blurb: 'Fueling transactions, invoicing, balance audits and pattern checks.',
-    hue: 'success',
+    hue: 'green',
     department: 'finance',
     allDepartments: false,
     // Restricted workspace: Administrator profile OR named finance operators (substring match).
@@ -160,7 +160,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     tag: 'CS',
     icon: 'customer-service',
     blurb: 'Tickets, calls, contacts and Desk + DWH analytics in one place.',
-    hue: 'warning',
+    hue: 'yellow',
     department: 'customer-service',
     allDepartments: false,
     // The org has NO "Customer Service"/"Support" PROFILES (verified against the live user
@@ -180,7 +180,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     tag: 'Verification',
     icon: 'verification',
     blurb: 'Verification queue, document checklist and audit trail.',
-    hue: 'orange',
+    hue: 'dark-purple',
     department: 'verification',
     allDepartments: false,
     allowedProfiles: ['Verification'],
@@ -195,7 +195,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     tag: 'Manager',
     icon: 'manager',
     blurb: 'Team metrics roll-up and cross-department KPIs.',
-    hue: 'purple',
+    hue: 'light-blue',
     department: 'management',
     // OPEN DECISION: are managers hierarchical (see across departments)? If yes, set true.
     allDepartments: false,
@@ -212,7 +212,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     icon: 'analyst',
     blurb:
       'Cross-department analytics — pipeline metrics, conversions, transactions, tickets and performance trends.',
-    hue: 'accent',
+    hue: 'light-blue',
     department: 'analytics',
     // Cross-department read-only analytics: the backend `analyst` agent reads across every
     // department (allowAllDepartments), so retrieval is broad and the dept slug is display-only.
@@ -243,7 +243,7 @@ export interface ComingSoonPickerTile {
   id: string;
   title: string;
   icon: string;
-  hue: 'accent' | 'success' | 'purple' | 'orange' | 'danger' | 'warning';
+  hue: 'accent' | 'success' | 'purple' | 'orange' | 'danger' | 'warning' | 'black' | 'blue' | 'red' | 'green' | 'yellow' | 'dark-purple' | 'light-blue' | 'rocket';
 }
 
 export const COMING_SOON_PICKER_TILES: ComingSoonPickerTile[] = [
@@ -251,7 +251,7 @@ export const COMING_SOON_PICKER_TILES: ComingSoonPickerTile[] = [
     id: 'hr',
     title: 'HR Mytrion',
     icon: 'hr',
-    hue: 'danger',
+    hue: 'red',
   },
 ];
 

@@ -37,6 +37,12 @@
   width: min(420px, 100%);
   gap: 14px;
   padding: 40px 36px 32px;
+  background: rgba(30, 41, 59, 0.6); /* Translucent background */
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   animation: authIn 220ms var(--ease-out, ease-out);
 }
 
@@ -51,22 +57,7 @@
   }
 }
 
-.authMark {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 4px;
-}
 
-.authRing {
-  position: absolute;
-  inset: -10px;
-  border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
-  border-top-color: var(--accent);
-  animation: authSpin 0.9s linear infinite;
-}
 
 .authEyebrow {
   margin: 0;
@@ -289,7 +280,6 @@
   .authCard {
     animation: none;
   }
-  .authRing,
   .authSpinner,
   .buttonSpin {
     animation: none;

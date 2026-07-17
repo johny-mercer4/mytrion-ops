@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RingCentralPhone } from '@/components/ringcentral/RingCentralPhone';
+import { MytrionLoader } from '@/components/MytrionLoader';
 
 import { s } from './dc';
 import { Icon } from './icons';
@@ -21,6 +22,7 @@ import { isAdmin } from '@/access/resolveAccess';
 import { ViewAsPicker } from './ViewAsPicker';
 import { LeadModal, DealModal } from './dataCenterModals';
 import { clickToDial } from '@/components/ringcentral/ringcentralDial';
+import { useTheme } from '@/hooks/useTheme';
 import type { DealVM, LeadVM } from './dataCenterLive';
 import './theme.css';
 
@@ -64,7 +66,7 @@ export function SalesRedesign() {
       return next;
     });
   }, []);
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const { theme, toggle: toggleTheme } = useTheme();
   const [section, setSection] = useState('home');
   const fullBleed = FULL_BLEED.has(section);
   const [booting, setBooting] = useState(true);
@@ -142,7 +144,7 @@ export function SalesRedesign() {
   const ctx: SalesCtx = useMemo(
     () => ({
       theme,
-      toggleTheme: () => setTheme((t) => (t === 'light' ? 'dark' : 'light')),
+      toggleTheme,
       pushToast,
       openDetail: setDetail,
       openClient,
@@ -179,28 +181,7 @@ export function SalesRedesign() {
         style={s('height:100vh;display:flex;flex-direction:row;background:radial-gradient(1200px 500px at 78% -8%, rgba(var(--accent-rgb),.10), transparent 60%), radial-gradient(900px 480px at 0% 108%, rgba(var(--violet-rgb),.08), transparent 55%), var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;font-size:14px;overflow:hidden;position:relative')}
       >
         <RingCentralPhone />
-        {booting && (
-          <div style={s('position:absolute;inset:0;z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;background:radial-gradient(700px 400px at 50% 40%, rgba(var(--accent-rgb),.10), transparent 70%), var(--bg)')}>
-            <div style={s('position:absolute;top:0;left:0;right:0;height:2px;overflow:hidden')}>
-              <div style={s('position:absolute;top:0;left:0;height:2px;width:34%;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:ss-sweep 1.5s linear infinite')} />
-            </div>
-            <div style={s('position:relative;width:120px;height:120px;display:flex;align-items:center;justify-content:center')}>
-              <div style={s('position:absolute;inset:0;border-radius:50%;border:2px solid var(--border)')} />
-              <div style={s('position:absolute;inset:0;border-radius:50%;border:2px solid transparent;border-top-color:var(--accent);border-right-color:rgba(var(--accent-rgb),.5);animation:ss-spin 1s linear infinite')} />
-              <div style={s('position:absolute;inset:16px;border-radius:50%;border:1.5px solid transparent;border-bottom-color:var(--accent-2);animation:ss-spin 1.4s linear infinite reverse')} />
-              <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.12em;text-transform:uppercase;text-align:center;line-height:1")}>
-                Sales<br />
-                <span style={s('color:var(--accent)')}>Mytrion</span>
-              </div>
-            </div>
-            <div style={s('text-align:center')}>
-              <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:17px;letter-spacing:.08em;text-transform:uppercase;color:var(--text)')}>Connecting to Mytrion</div>
-              <div style={s('font-size:12.5px;color:var(--muted);margin-top:5px')}>
-                Loading your pipeline<span style={s('animation:ss-pulse 1.2s infinite')}>…</span>
-              </div>
-            </div>
-          </div>
-        )}
+        {booting && <MytrionLoader appName="Sales" />}
 
         {/* SIDEBAR */}
         <aside style={s(`flex-shrink:0;width:${navCollapsed ? '68px' : '238px'};transition:width .18s cubic-bezier(.2,0,0,1);display:flex;flex-direction:column;background:color-mix(in srgb, var(--bg) 84%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-right:1px solid var(--border);position:relative;z-index:30`)}>

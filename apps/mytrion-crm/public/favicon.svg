@@ -1,4 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <rect width="32" height="32" rx="8" fill="#0B1220"/>
-  <path d="M8 22V10h3.2l4.8 8.4L20.8 10H24v12h-2.8v-7.2L16.8 22h-1.6l-4.4-7.2V22H8z" fill="#4cc2f5"/>
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="mGrad" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0ea5e9"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <path d="M4 26V8C4 6.895 4.895 6 6 6H10.5C11.33 6 12.05 6.54 12.33 7.33L16 17.5L19.67 7.33C19.95 6.54 20.67 6 21.5 6H26C27.105 6 28 6.895 28 8V26H23.5V13.8L18.7 24.33C18.4 25.1 17.65 25.6 16.8 25.6H15.2C14.35 25.6 13.6 25.1 13.3 24.33L8.5 13.8V26H4Z" fill="url(#mGrad)"/>
 </svg>

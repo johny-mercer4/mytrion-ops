@@ -12,6 +12,14 @@ const HUE_VAR: Record<string, string> = {
   orange: '--orange',
   danger: '--danger',
   warning: '--warning',
+  black: '--black',
+  blue: '--blue',
+  red: '--red',
+  green: '--green',
+  yellow: '--yellow',
+  'dark-purple': '--dark-purple',
+  'light-blue': '--light-blue',
+  rocket: '--rocket',
 };
 
 /** Landing picker (design 1a): hero + a grid of the Mytrions the user may enter. */

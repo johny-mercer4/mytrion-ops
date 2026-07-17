@@ -11,12 +11,14 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { useUserContext } from '../../context/UserContextProvider';
+import { useTheme } from '../../hooks/useTheme';
 import { BillingCopilot } from './BillingCopilot';
 import { DataCenter } from './DataCenter';
 import { Debtors } from './Debtors';
 import { Prepay } from './Prepay';
 import { Returns } from './Returns';
 import { Transactions } from './Transactions';
+import { MytrionLoader } from '../../components/MytrionLoader';
 
 type SectionId = 'datacenter' | 'transactions' | 'debtors' | 'prepay' | 'returns';
 
@@ -71,25 +73,15 @@ const NAV_ITEMS: NavDef[] = [
   },
 ];
 
-const THEME_KEY = 'mytrion-billing-theme';
 
-function initialTheme(): 'light' | 'dark' {
-  const stored = localStorage.getItem(THEME_KEY);
-  if (stored === 'light' || stored === 'dark') return stored;
-  return 'dark'; // billing defaults to dark (widget parity)
-}
 
 export function BillingShell() {
   const user = useUserContext();
   const [active, setActive] = useState<SectionId>('datacenter');
   // Widget parity: panels lazy-mount on first visit and stay mounted (state survives tab hops).
   const [mounted, setMounted] = useState<Partial<Record<SectionId, boolean>>>({ datacenter: true });
-  const [theme, setTheme] = useState<'light' | 'dark'>(initialTheme);
+  const { theme, toggle: toggleTheme } = useTheme();
   const [booting, setBooting] = useState(true);
-
-  useEffect(() => {
-    localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
 
   useEffect(() => {
     const done = setTimeout(() => setBooting(false), 1400);
@@ -135,7 +127,7 @@ export function BillingShell() {
 
   return (
     <div className={`bm-root${theme === 'light' ? ' light-mode' : ''}`}>
-      {booting ? <BootLoader /> : null}
+      {booting ? <MytrionLoader appName="Billing" /> : null}
 
       {/* ═══ HEADER ═══ */}
       <header className="bm-header">
@@ -177,7 +169,7 @@ export function BillingShell() {
           <div className="bm-sidebar-footer">
             <button
               className="bm-theme-toggle"
-              onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+              onClick={toggleTheme}
               title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             >
@@ -244,43 +236,3 @@ export function BillingShell() {
   );
 }
 
-/** Opening loader — branded splash: conic-gradient dual-arc orb with a pulsing glyph core, faint
- *  grid backdrop, MYTRION·BILLING wordmark lockup, sweeping progress bar. Styled in overrides.css. */
-function BootLoader() {
-  return (
-    <div className="bm-app-loader" role="status" aria-live="polite" aria-label="Loading workspace">
-      <div className="bm-app-loader-sweep" />
-      <div className="bm-boot-stage">
-        <div className="bm-boot-orb">
-          <span className="bm-boot-orb-glow" />
-          <span className="bm-boot-orb-track" />
-          <span className="bm-boot-orb-arc" />
-          <span className="bm-boot-orb-arc2" />
-          <span className="bm-boot-orb-core">
-            <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
-              />
-            </svg>
-          </span>
-        </div>
-        <div className="bm-boot-brand">
-          MY<span>TRION</span>
-          <em>BILLING</em>
-        </div>
-        <div className="bm-boot-tag">
-          Securing your workspace
-          <span className="dot">.</span>
-          <span className="dot">.</span>
-          <span className="dot">.</span>
-        </div>
-        <div className="bm-boot-bar">
-          <div />
-        </div>
-      </div>
-    </div>
-  );
-}
