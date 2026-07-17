@@ -784,7 +784,7 @@ function DriverHero({
             {company && (
               <span style={{ fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,.9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company}</span>
             )}
-            <button type="button" className="press" aria-label={revealed ? 'Hide card number' : 'Show card number'} onClick={onToggleReveal} style={{ width: 30, height: 30, flex: 'none', border: 'none', borderRadius: 9, background: 'rgba(255,255,255,.15)', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <button type="button" className="press" aria-label={revealed ? 'Hide card details' : 'Show card details'} onClick={onToggleReveal} style={{ width: 30, height: 30, flex: 'none', border: 'none', borderRadius: 9, background: 'rgba(255,255,255,.15)', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
               <EyeToggle revealed={revealed} size={15} />
             </button>
           </div>
@@ -795,8 +795,14 @@ function DriverHero({
         <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' }}>{t('home.efsBalance')}</span>
           {balance ? (
-            <span className="selectable" style={{ fontSize: 28, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02, letterSpacing: '-.01em' }}>
-              {money(balance.efs_balance ?? balance.balance)}
+            /* The eye is the card's privacy toggle, not just the number's — it covers every figure
+               on the card, the way a payment app's does. `selectable` only while revealed, so a
+               drag can't lift the mask characters as if they were the amount. */
+            <span
+              className={revealed ? 'selectable' : ''}
+              style={{ fontSize: 28, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02, letterSpacing: '-.01em' }}
+            >
+              {revealed ? money(balance.efs_balance ?? balance.balance) : '$ • • • •'}
             </span>
           ) : (
             <span aria-label={t('home.efsBalance')} style={{ display: 'block', width: 148, height: 29, borderRadius: 8, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
@@ -807,7 +813,7 @@ function DriverHero({
         <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' }}>{t('card.numberLabel')}</span>
           {display ? (
-            <span className="selectable" style={{ fontSize: 18, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em', whiteSpace: 'nowrap' }}>{display}</span>
+            <span className={revealed ? 'selectable' : ''} style={{ fontSize: 18, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em', whiteSpace: 'nowrap' }}>{display}</span>
           ) : (
             <span aria-label={t('card.numberLabel')} style={{ display: 'block', width: 196, height: 19, borderRadius: 6, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
           )}
