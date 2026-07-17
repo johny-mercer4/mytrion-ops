@@ -296,3 +296,23 @@ input,
   0%, 100% { opacity: 1; }
   50% { opacity: 0.45; }
 }
+
+/**
+ * A horizontally-scrolling strip with no visible scrollbar — the period/filter chip rows.
+ *
+ * A class, not an inline style: `scrollbar-width` alone leaves the bar visible on WebKit versions
+ * without it, and the ::-webkit-scrollbar pseudo-element cannot be expressed inline at all. Two of
+ * the three strips set the inline property and the Fleet one set nothing, so a scrollbar sat under
+ * the chips there. `overscroll-behavior-x: contain` stops a swipe past the last chip from
+ * back-navigating the Telegram WebView.
+ */
+.hscroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.hscroll::-webkit-scrollbar {
+  display: none;
+}

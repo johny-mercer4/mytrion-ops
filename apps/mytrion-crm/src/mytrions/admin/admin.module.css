@@ -177,15 +177,46 @@
   font-size: var(--text-sm);
   transition: background var(--dur-fast) var(--ease-standard);
 }
-.tRow:nth-child(even) {
+/* Zebra only where rows are direct children. In the carrier tree the rows sit inside a rowgroup
+   per company, which restarts nth-child — striping there marked "2nd row of its group" rather than
+   alternating, so two sibling drivers came out shaded differently. The group boundary below is the
+   device that actually carries structure. */
+.table > .tRow:nth-child(even) {
   background: color-mix(in srgb, var(--surface-alt) 45%, transparent);
 }
-.tRow:hover {
+.tRow:hover,
+.table > .tRow:nth-child(even):hover {
   background: var(--surface-raised);
 }
 .tRow:last-child {
   border-bottom: none;
 }
+
+/* one company + its drivers */
+.tGroup + .tGroup {
+  border-top: 1px solid var(--border);
+}
+.tGroup:last-child .tRow:last-child {
+  border-bottom: none;
+}
+/* Column ratios belong here, not in a JSX style prop: an inline grid-template-columns outranks every
+   media query, so the carrier tables had no way to adapt and simply squashed. */
+.tCarrier {
+  grid-template-columns: 2fr 1.1fr 1fr 1.2fr 1fr 0.9fr;
+}
+.tInvite {
+  grid-template-columns: 2fr 1fr 1fr 1fr 1.1fr 1.1fr;
+}
+
+/* Under ~820px the six columns stop fitting — pills wrap and carrier ids break across three lines.
+   These are power-user tables, so the density stays and the table scrolls sideways instead. */
+.tableScroll {
+  overflow-x: auto;
+}
+.tableScroll > .table {
+  min-width: 820px;
+}
+
 .right {
   text-align: right;
 }

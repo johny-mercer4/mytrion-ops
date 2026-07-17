@@ -1055,7 +1055,7 @@ function FleetView({
           <SearchGlyph />
           <input className="selectable" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('fleet.search')} style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14 }} />
         </div>
-        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', marginBottom: 14, paddingBottom: 2 }}>
+        <div className="hscroll" style={{ display: 'flex', gap: 8, marginBottom: 14, paddingBottom: 2 }}>
           {FILTERS.map((f) => {
             const active = filter === f;
             return (
@@ -1574,7 +1574,7 @@ function ActionSheet({
               return (
                 <>
                   {/* Horizontal-scroll period chips — too many presets to fit a fixed row on mobile. */}
-                  <div style={{ display: 'flex', gap: 7, marginBottom: 12, overflowX: 'auto', paddingBottom: 2, scrollbarWidth: 'none' }}>
+                  <div className="hscroll" style={{ display: 'flex', gap: 7, marginBottom: 12, paddingBottom: 2 }}>
                     {TXN_RANGES.map((r) => (
                       <button
                         key={r.value}
@@ -1675,7 +1675,7 @@ function ActionSheet({
               const openBalance = Number(sum['sum_open_balance'] ?? 0);
               return (
                 <>
-                  <div style={{ display: 'flex', gap: 7, marginBottom: 12, overflowX: 'auto', paddingBottom: 2, scrollbarWidth: 'none' }}>
+                  <div className="hscroll" style={{ display: 'flex', gap: 7, marginBottom: 12, paddingBottom: 2 }}>
                     {INVOICE_RANGES.map((r) => (
                       <button
                         key={r.value}
