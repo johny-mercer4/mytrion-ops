@@ -29,6 +29,10 @@ export interface RequestOptions {
   impersonate?: boolean;
   /** Extra request headers (e.g. `x-department-access` to assert the caller's department scope). */
   headers?: Record<string, string> | undefined;
+  /** Abort an in-flight request — for search-as-you-type, where a stale reply must not win. An
+   * aborted fetch surfaces as an ApiError('NETWORK'), so callers check `signal.aborted` before
+   * treating the rejection as a real failure. */
+  signal?: AbortSignal | undefined;
 }
 
 /** Session Bearer (else dev API key). No impersonation headers — the base principal. */

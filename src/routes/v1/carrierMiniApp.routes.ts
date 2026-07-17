@@ -271,6 +271,35 @@ async function requireRegisteredCarrierUser(
 }
 
 /**
+ * Verify initData and resolve the caller to ANY registered OWNER with a carrier — the gate for the
+ * money views a driver must never see: invoices and payment info.
+ *
+ * Distinct from `requireRegisteredOwner`, which additionally demands `fleet-manager` because it
+ * guards driver management; an owner-operator has no fleet to manage but is still the owner of the
+ * account, and the docx's "For Fleet Owners" category covers both. The only thing excluded here is
+ * a driver.
+ *
+ * These reads were open to any registered carrier user, so a driver's initData could fetch the
+ * whole carrier's invoices directly — the UI simply never offered them the button. Both the docx
+ * (invoices/payment sit under Fleet Owners; the driver list has neither) and
+ * OCTANE_MINIAPP_SERVICES_SPEC §2 ("no carrier balance, invoices, payment info, account status")
+ * agree, so this is the code catching up with them.
+ */
+async function requireRegisteredOwnerUser(
+  initData: string,
+): Promise<{ registration: RegisteredMiniAppCompany; carrierId: string }> {
+  const { registration } = await requireRegisteredMiniAppUser(initData);
+  if (registration.profile !== 'owner' || !registration.carrierId) {
+    throw new AppError('This view is only available to the company owner', {
+      statusCode: 403,
+      code: 'NOT_A_REGISTERED_OWNER_USER',
+      expose: true,
+    });
+  }
+  return { registration, carrierId: registration.carrierId };
+}
+
+/**
  * The driver's own card number — the scope key for every row-level driver filter below.
  *
  * FAIL-CLOSED BY DESIGN: resolveDriverCardNumber is best-effort and returns null when the DWH is
@@ -965,13 +994,13 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
 
   app.post('/carrier/mini-app/payment-info', async (request) => {
     const body = selfServiceSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
     return serverCrmWrapper.getPaymentInfo(carrierId);
   });
 
   app.post('/carrier/mini-app/invoices', async (request) => {
     const body = invoicesSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
     return serverCrmWrapper.getInvoices(carrierId, { range: body.range, status: body.status, from: body.from, to: body.to });
   });
 
@@ -980,7 +1009,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   // invoiceIds.
   app.post('/carrier/mini-app/invoices/signed-url', async (request) => {
     const body = invoiceSignedUrlSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
     const list = await serverCrmWrapper.getInvoices(carrierId, { range: 'all_time' });
     const owned = (list.data ?? []).some((inv) => String(inv['invoice_id'] ?? inv['id'] ?? '') === body.invoiceId);
     if (!owned) {

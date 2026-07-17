@@ -370,6 +370,72 @@ describe('carrier mini-app redeem flow', () => {
   });
 });
 
+describe('owner-only money views', () => {
+  function driverReg() {
+    return registrationRow({ profile: 'driver', companyType: null, cardId: 'card_1', driverName: 'James Reyes' });
+  }
+
+  // Both the docx (invoices/payment sit under Fleet Owners; the driver list has neither) and
+  // OCTANE_MINIAPP_SERVICES_SPEC §2 ("no carrier balance, invoices, payment info, account status")
+  // put these out of a driver's reach. The catalog never offers them the button — but the button was
+  // the only thing stopping them: their own initData fetched the whole carrier's invoices.
+  for (const [url, payload] of [
+    ['/v1/carrier/mini-app/invoices', { range: 'last_30' }],
+    ['/v1/carrier/mini-app/payment-info', {}],
+    ['/v1/carrier/mini-app/invoices/signed-url', { invoiceId: '71800' }],
+  ] as const) {
+    it(`refuses a driver at ${url}`, async () => {
+      registrationRepo.findByTelegramUserId.mockResolvedValueOnce(driverReg());
+
+      const res = await app.inject({
+        method: 'POST',
+        url,
+        headers: { 'content-type': 'application/json' },
+        payload: { initData: 'signed', ...payload },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: { code: 'NOT_A_REGISTERED_OWNER_USER' } });
+      expect(crm.getInvoices).not.toHaveBeenCalled();
+      expect(crm.getPaymentInfo).not.toHaveBeenCalled();
+    });
+  }
+
+  it('allows an owner-operator — "Fleet Owners" in the docx covers a one-truck owner', async () => {
+    // Not requireRegisteredOwner: that demands fleet-manager because it guards driver management.
+    // An owner-operator has no fleet to manage but is still the owner of the account.
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(
+      registrationRow({ companyType: 'owner-operator', cardCount: 1 }),
+    );
+    crm.getInvoices.mockResolvedValueOnce({ data: [{ id: '71800' }], count: 1 });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/invoices',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', range: 'last_30' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ count: 1 });
+  });
+
+  it('still lets a driver read the views the docx does give them', async () => {
+    // balance and status are in the driver's own catalog — this gate must not spill onto them.
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(driverReg());
+    crm.getCarrierBalance.mockResolvedValueOnce({ efs_balance: 1000 });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/balance',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed' },
+    });
+
+    expect(res.statusCode).toBe(200);
+  });
+});
+
 describe('driver row scoping (own card only)', () => {
   // Same carrier, same last-4 (7593), different cards. A live DWH probe found one real carrier with
   // 11 active cards sharing a last-4, so this is the shape the old client-side last-4 filter got
