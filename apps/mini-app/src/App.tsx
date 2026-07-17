@@ -136,6 +136,31 @@ function money(v: unknown): string {
     : fmt(v);
 }
 
+/**
+ * Translate a raw invoice status into a localized label + a tone.
+ *
+ * servercrm returns PAID / PENDING / PARTIALLY_PAID / CANCELLED (uppercase, English). The list used
+ * to print those verbatim in every locale. Normalized to the underscore-and-case-insensitive forms
+ * the upstream actually sends; an unrecognized value falls back to its raw text rather than a blank.
+ */
+function invoiceStatus(raw: unknown, t: (k: string) => string): { label: string; tone: string } {
+  const key = String(raw ?? '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+  switch (key) {
+    case 'PAID':
+      return { label: t('invoice.paid'), tone: 'success' };
+    case 'PENDING':
+    case 'UNPAID':
+      return { label: t('invoice.pending'), tone: 'muted-fg' };
+    case 'PARTIALLY_PAID':
+      return { label: t('invoice.partiallyPaid'), tone: 'muted-fg' };
+    case 'CANCELLED':
+    case 'CANCELED':
+      return { label: t('invoice.cancelled'), tone: 'destructive' };
+    default:
+      return { label: fmt(raw), tone: 'muted-fg' };
+  }
+}
+
 /** Countdown from an ISO deadline: {expired, short:"17h"/"45m"}. */
 function countdown(expiresAt: string | null | undefined): { expired: boolean; short: string } {
   if (!expiresAt) return { expired: false, short: '' };
@@ -1555,7 +1580,14 @@ function ActionSheet({
   const [exportBusy, setExportBusy] = useState<TxnExportFormat | null>(null);
 
   const service = target.kind === 'service' ? target.key : null;
-  const sheetTitle = target.kind === 'generic' ? target.title : t(`svc.${service}`);
+  // A driver's status sheet is about their CARD, not the account — the generic svc.status title says
+  // "Account status", which is the owner's framing.
+  const sheetTitle =
+    target.kind === 'generic'
+      ? target.title
+      : service === 'status' && session.isDriver
+        ? t('svc.statusDriver')
+        : t(`svc.${service}`);
   const dwhRange = range;
 
   useEffect(() => {
@@ -1779,29 +1811,64 @@ function ActionSheet({
               const rows = cards.data ?? [];
               const shown = rows.slice(0, 20);
               const extra = (cards.count ?? rows.length) - shown.length;
+              /**
+               * The banner answers "is this active?" — and for a DRIVER that must be their own CARD,
+               * not the carrier account. `overview.is_active` is the company's status; a driver's card
+               * can be Inactive while the company is fine, and the reverse. It also read as a false
+               * green "Active" whenever the card list came back empty, because `undefined !== false`
+               * fell through to the success branch — the exact "status not right" being reported.
+               *
+               * For a driver: derive from their own card's status, and show a neutral "unknown" when no
+               * card resolved rather than claiming Active. For an owner: keep the account-level flag.
+               */
+              const state: 'active' | 'inactive' | 'unknown' = session.isDriver
+                ? rows.length === 0
+                  ? 'unknown'
+                  : fmt(rows[0]?.['status']).toLowerCase() === 'active'
+                    ? 'active'
+                    : 'inactive'
+                : overview.is_active === false
+                  ? 'inactive'
+                  : 'active';
+              const tone = state === 'inactive' ? 'destructive' : state === 'unknown' ? 'muted-fg' : 'success';
+              // Card-specific wording for a driver — the account labels say "Account active", which is
+              // not what a driver is asking about.
+              const bannerLabel =
+                state === 'unknown'
+                  ? t('status.unknown')
+                  : session.isDriver
+                    ? t(state === 'inactive' ? 'status.cardInactive' : 'status.cardActive')
+                    : t(state === 'inactive' ? 'status.inactive' : 'status.active');
               return (
                 <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: `color-mix(in srgb, var(--${overview.is_active === false ? 'destructive' : 'success'}) 13%, transparent)`, borderRadius: 14, marginBottom: 14 }}>
-                    <span style={{ width: 30, height: 30, borderRadius: 10, background: `color-mix(in srgb, var(--${overview.is_active === false ? 'destructive' : 'success'}) 20%, transparent)`, color: `var(--${overview.is_active === false ? 'destructive' : 'success'})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
-                      <Icon name={overview.is_active === false ? 'x' : 'check'} size={17} strokeWidth={2.4} className="" />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: `color-mix(in srgb, var(--${tone}) 13%, transparent)`, borderRadius: 14, marginBottom: 14 }}>
+                    <span style={{ width: 30, height: 30, borderRadius: 10, background: `color-mix(in srgb, var(--${tone}) 20%, transparent)`, color: `var(--${tone})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                      <Icon name={state === 'inactive' ? 'x' : state === 'unknown' ? 'alert' : 'check'} size={17} strokeWidth={2.4} className="" />
                     </span>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{overview.is_active === false ? t('status.inactive') : t('status.active')}</span>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{bannerLabel}</span>
                   </div>
-                  <SectionLabel>{t('status.debt')}</SectionLabel>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
-                    {[
-                      { label: t('status.totalDebt'), value: money(overview.cmp_debt?.total_debt ?? 0) },
-                      { label: t('status.openInvoices'), value: fmt(overview.cmp_debt?.invoice_count ?? 0) },
-                      { label: t('status.maxDays'), value: fmt(overview.cmp_debt?.max_debt_days ?? 0) },
-                      { label: t('status.hardDebtor'), value: overview.cmp_debt?.is_hard_debtor ? t('status.yes') : t('status.no') },
-                    ].map((tile) => (
-                      <div key={tile.label} style={{ background: 'var(--secondary)', borderRadius: 14, padding: '12px 14px' }}>
-                        <div style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted-fg)' }}>{tile.label}</div>
-                        <div className="selectable" style={{ fontSize: 18, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tile.value}</div>
+                  {/* Carrier debt is the COMPANY's financial standing — an owner's view, never a driver's.
+                      A driver asking "is my card active" must not be shown the fleet's total debt or
+                      hard-debtor flag. */}
+                  {!session.isDriver && (
+                    <>
+                      <SectionLabel>{t('status.debt')}</SectionLabel>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
+                        {[
+                          { label: t('status.totalDebt'), value: money(overview.cmp_debt?.total_debt ?? 0) },
+                          { label: t('status.openInvoices'), value: fmt(overview.cmp_debt?.invoice_count ?? 0) },
+                          { label: t('status.maxDays'), value: fmt(overview.cmp_debt?.max_debt_days ?? 0) },
+                          { label: t('status.hardDebtor'), value: overview.cmp_debt?.is_hard_debtor ? t('status.yes') : t('status.no') },
+                        ].map((tile) => (
+                          <div key={tile.label} style={{ background: 'var(--secondary)', borderRadius: 14, padding: '12px 14px' }}>
+                            <div style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted-fg)' }}>{tile.label}</div>
+                            <div className="selectable" style={{ fontSize: 18, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tile.value}</div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                  <SectionLabel>{t('status.cards')}</SectionLabel>
+                    </>
+                  )}
+                  <SectionLabel>{session.isDriver ? t('status.yourCard') : t('status.cards')}</SectionLabel>
                   {shown.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '20px 4px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('status.noCards')}</div>
                   ) : (
@@ -1972,12 +2039,19 @@ function ActionSheet({
                   const id = String(inv['invoice_id'] ?? inv['id'] ?? '');
                   const label = String(inv['invoice_ref'] ?? inv['invoice_number'] ?? id);
                   const busy = invoiceBusyId === id;
+                  const st = invoiceStatus(inv['status'], t);
                   return (
                     <div key={id || i} onClick={() => !busy && void openInvoice(id)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '12px 14px', borderBottom: '1px solid var(--border)', cursor: busy ? 'default' : 'pointer' }}>
                       <span style={{ width: 34, height: 34, borderRadius: 10, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card)', color: 'var(--muted-fg)' }}><Icon name="doc" size={17} strokeWidth={2} className="" /></span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{t('invoice.num', { n: label })}</div>
-                        <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2 }}>{money(inv['total_amount'] ?? inv['amount'])} · {fmt(inv['status'])}</div>
+                        {/* The status used to render raw — PAID / PENDING / PARTIALLY_PAID / CANCELLED, in
+                            English uppercase, in every locale. invoiceStatus() maps it to a translated
+                            label and a tone. */}
+                        <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span>{money(inv['total_amount'] ?? inv['amount'])}</span>
+                          <span style={{ color: `var(--${st.tone})`, fontWeight: 600 }}>· {st.label}</span>
+                        </div>
                       </div>
                       {busy ? <Spinner size={16} /> : (
                         <span style={{ borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, padding: '7px 12px', flex: 'none' }}>{t('invoice.download')}</span>
