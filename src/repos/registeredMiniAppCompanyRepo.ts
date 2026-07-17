@@ -167,6 +167,12 @@ export const registeredMiniAppCompanyRepo = {
           driverName: input.driverName ?? null,
           companyType: input.companyType ?? null,
           cardCount: input.cardCount ?? null,
+          // Redeeming a valid invite IS the grant of access, so it must clear a previous revoke.
+          // Without these the row kept status='revoked' through a successful redeem: the call
+          // returned 201 with a registration, and every subsequent request 403'd MINI_APP_REVOKED
+          // — a re-registration that silently reported success and granted nothing.
+          status: 'active',
+          revokedAt: null,
           updatedAt: new Date(),
         },
       })

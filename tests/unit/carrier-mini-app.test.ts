@@ -223,6 +223,47 @@ describe('carrier mini-app redeem flow', () => {
     });
   });
 
+  it('lets a REVOKED account register somewhere else — revoke frees the Telegram binding', async () => {
+    // findByTelegramUserId returns revoked rows too, so this guard used to fire on them: a revoked
+    // user could neither use their access (403 MINI_APP_REVOKED) nor be re-registered anywhere.
+    // Revoke was a dead end that bricked the account.
+    inviteRepo.findById.mockResolvedValueOnce(inviteRow({ id: 'inv_new', carrierId: '5765985' }));
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(
+      registrationRow({ carrierId: '5758544', status: 'revoked', revokedAt: new Date() }),
+    );
+    // The invite has to actually burn, or the route reports alreadyRegistered against the OLD row.
+    inviteRepo.markRedeemed.mockResolvedValueOnce(inviteRow({ id: 'inv_new', carrierId: '5765985', status: 'redeemed' }));
+    registrationRepo.upsert.mockResolvedValueOnce(registrationRow({ carrierId: '5765985' }));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier-invitations/inv_new/redeem',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed' },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(registrationRepo.upsert).toHaveBeenCalled();
+  });
+
+  it('still blocks an ACTIVE account from being rebound — that guard is the point', async () => {
+    inviteRepo.findById.mockResolvedValueOnce(inviteRow({ id: 'inv_new', carrierId: '5765985' }));
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(
+      registrationRow({ carrierId: '5758544', status: 'active' }),
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier-invitations/inv_new/redeem',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed' },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ error: { code: 'TELEGRAM_ALREADY_REGISTERED' } });
+    expect(registrationRepo.upsert).not.toHaveBeenCalled();
+  });
+
   it('rejects rebinding an already-registered Telegram account to another carrier', async () => {
     inviteRepo.findById.mockResolvedValueOnce(inviteRow({ id: 'inv_conflict', carrierId: '999000' }));
     registrationRepo.findByTelegramUserId.mockResolvedValueOnce(

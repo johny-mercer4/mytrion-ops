@@ -609,7 +609,13 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       if (!invite) throw new NotFoundError('This invite link is not valid');
 
       const existing = await registeredMiniAppCompanyRepo.findByTelegramUserId(ctx, telegramUserId, tx);
-      if (existing && !sameRegistrationSubject(existing, invite)) {
+      // A REVOKED registration no longer owns this Telegram account, so it must not veto a new one.
+      // findByTelegramUserId returns revoked rows too, so without this check revoke was a dead end:
+      // the user could neither use their access (403 MINI_APP_REVOKED) nor be re-registered anywhere
+      // — the account was bricked. This does not weaken the guard: an ACTIVE registration still
+      // blocks a rebind, which is what stops a leaked link from moving someone's account.
+      const bindingExists = Boolean(existing) && existing?.status !== 'revoked';
+      if (bindingExists && existing && !sameRegistrationSubject(existing, invite)) {
         throw new ConflictError('This Telegram account is already registered to another carrier', {
           code: 'TELEGRAM_ALREADY_REGISTERED',
         });
