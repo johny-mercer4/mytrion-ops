@@ -36,6 +36,7 @@ import { dataCenterRoutes } from './routes/v1/dataCenter.routes.js';
 import { csApplicationsRoutes } from './routes/v1/csApplications.routes.js';
 import { csCitifuelRoutes } from './routes/v1/csCitifuel.routes.js';
 import { csAnalyticsRoutes } from './routes/v1/csAnalytics.routes.js';
+import { billingRoutes } from './routes/v1/billing.routes.js';
 import { agentRoutes } from './routes/v1/agent.routes.js';
 import { authRoutes } from './routes/v1/auth.routes.js';
 import { automationRoutes } from './routes/v1/automation.routes.js';
@@ -236,6 +237,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(csApplicationsRoutes);
       await v1.register(csCitifuelRoutes);
       await v1.register(csAnalyticsRoutes);
+      await v1.register(billingRoutes);
       await v1.register(agentRoutes);
       await v1.register(tasksRoutes);
       await v1.register(filesRoutes);

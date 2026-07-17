@@ -2,16 +2,15 @@
  * Citifuel client modal — 1:1 port of the widget's single view+edit modal
  * (cs-modal-backdrop / cs-modal-box cs-modal-wide / cs-citi-section-title / cs-form-grid /
  * cs-lookup-wrap). One always-editable sectioned form (Client / Request / Contact / Notes /
- * Audit) for both create and edit, over POST/PATCH/DELETE /cs/citifuel. Picklists merge the
- * widget's canonical options with live CRM metadata; Company is an Accounts typeahead,
- * Agent/Owner are user lookups. Lookup values write as {id} objects (Zoho REST contract).
+ * Audit) for both create and edit, over POST/PATCH/DELETE /cs/citifuel. Picklists use locked
+ * canonical option lists (live CRM metadata must not overwrite them); Company is an Accounts
+ * typeahead, Agent/Owner are user lookups. Lookup values write as {id} objects (Zoho REST contract).
  */
 import { useEffect, useRef, useState } from 'react';
 
 import {
   createCitifuel,
   deleteCitifuel,
-  getCitifuelMeta,
   lookupAccounts,
   lookupUsers,
   updateCitifuel,
@@ -22,12 +21,19 @@ import { useScrollLock } from './useScrollLock';
 
 const CANONICAL = {
   Request: ['Outbound', 'Incoming'],
-  Status_of_App: ['In process', 'Cards sent', 'Closed'],
-  Actions_taken: ['Request Citi to check', 'Agent Call'],
   // lockOptions in the widget — keep these exact lists; live meta must not overwrite.
+  Status_of_App: ['In process', 'Cards sent', 'Closed', 'Active', 'Using company card', 'Refilled'],
+  Actions_taken: ['Request Citi to check', 'Agent Call'],
   Final_Decision: ['Octane', 'Citifuel', 'None'],
   Billing_Notes: ['Payment Issues', 'Debtor', 'Collection', 'Good Standing'],
 } as const;
+
+/** Zoho's synthetic '-None-' was selectable in an earlier widget build and got
+ *  stored as literal text on some records. Load it as empty — saving clears it. */
+const pick = (v: unknown): string => {
+  const s = String(v ?? '');
+  return s === '-None-' ? '' : s;
+};
 
 const REFRESH_PATH =
   'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-14.357-2m14.357 2H15';
@@ -70,11 +76,11 @@ export function CitiModal({
   const [values, setValues] = useState<Record<string, string>>(() => ({
     Name: String(raw.Name ?? ''),
     App_ID: raw.App_ID == null ? '' : String(raw.App_ID),
-    Request: String(raw.Request ?? ''),
-    Status_of_App: String(raw.Status_of_App ?? ''),
-    Actions_taken: String(raw.Actions_taken ?? ''),
-    Final_Decision: String(raw.Final_Decision ?? ''),
-    Billing_Notes: String(raw.Billing_Notes ?? ''),
+    Request: pick(raw.Request),
+    Status_of_App: pick(raw.Status_of_App),
+    Actions_taken: pick(raw.Actions_taken),
+    Final_Decision: pick(raw.Final_Decision),
+    Billing_Notes: pick(raw.Billing_Notes),
     Date_of_Request: String(raw.Date_of_Request ?? '').slice(0, 10),
     Feedback_date: String(raw.Feedback_date ?? '').slice(0, 10),
     Email: String(raw.Email ?? ''),
@@ -91,7 +97,14 @@ export function CitiModal({
     Owner: lookupName(raw.Owner),
   });
 
-  const [statusOptions, setStatusOptions] = useState<string[]>([...CANONICAL.Status_of_App]);
+  /* Locked list (mirrors the widget) — live meta must not overwrite it. A
+     legacy value on the open record stays selectable; '-None-' junk does not. */
+  const statusOptions = (() => {
+    const opts: string[] = [...CANONICAL.Status_of_App];
+    const cur = pick(raw.Status_of_App);
+    if (cur && !opts.includes(cur)) opts.push(cur);
+    return opts;
+  })();
   const [users, setUsers] = useState<UserOpt[]>([]);
   const [accountQuery, setAccountQuery] = useState('');
   const [accounts, setAccounts] = useState<AccountOpt[]>([]);
@@ -102,9 +115,6 @@ export function CitiModal({
 
   useEffect(() => {
     boxRef.current?.focus();
-    getCitifuelMeta()
-      .then((m) => m.statusOptions.length && setStatusOptions(m.statusOptions))
-      .catch(() => undefined);
     lookupUsers()
       .then((u) => setUsers(u.users))
       .catch(() => undefined);

@@ -22,7 +22,10 @@ const TRASH_PATH =
 const BADGE_CLASS: Record<string, string> = {
   'In process': 'cs-badge-warning',
   'Cards sent': 'cs-badge-info',
-  Closed: 'cs-badge-success',
+  Closed: 'cs-badge-muted',
+  Active: 'cs-badge-success',
+  'Using company card': 'cs-badge-purple',
+  Refilled: 'cs-badge-orange',
   Outbound: 'cs-badge-orange',
   Incoming: 'cs-badge-info',
   'Agent Call': 'cs-badge-purple',
@@ -62,7 +65,10 @@ const STAT_COLOR: Record<string, string> = {
   Total: 'var(--cs-accent)',
   'In process': 'var(--cs-warning)',
   'Cards sent': 'var(--cs-accent)',
-  Closed: 'var(--cs-success)',
+  Closed: 'var(--text-muted)',
+  Active: 'var(--cs-success)',
+  'Using company card': 'var(--cs-purple)',
+  Refilled: 'var(--cs-orange)',
 };
 
 export function CitiFuel() {

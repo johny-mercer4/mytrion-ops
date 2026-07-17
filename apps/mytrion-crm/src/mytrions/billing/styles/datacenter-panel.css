@@ -1,0 +1,530 @@
+/* =====================================================
+   Billing Mytrion — Data Center Panel
+   ===================================================== */
+
+/* ── Quick Stats ── */
+.bm-root .dc-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.875rem;
+}
+
+/* ── Deal row ── */
+.bm-root .dc-deal-row {
+    cursor: pointer;
+    transition: background 100ms;
+}
+
+.bm-root .dc-deal-row:hover {
+    background: var(--surface-raised) !important;
+}
+
+/* ── Client list card (mobile) ── */
+.bm-root .dc-client-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 0.875rem;
+    border-bottom: 1px solid var(--border-dark);
+    transition: background 100ms;
+    cursor: pointer;
+}
+
+.bm-root .dc-client-row:last-child {
+    border-bottom: none;
+}
+
+.bm-root .dc-client-row:hover {
+    background: var(--surface-raised);
+}
+
+.bm-root .dc-client-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.bm-root .dc-client-name {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bm-root .dc-client-meta {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    margin-top: 0.125rem;
+}
+
+.bm-root .dc-client-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    flex-shrink: 0;
+}
+
+/* ── Filter tabs ── */
+.bm-root .dc-filter-tabs {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    flex-wrap: wrap;
+}
+
+.bm-root .dc-filter-tab {
+    padding: 0.3rem 0.75rem;
+    border-radius: 2px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 100ms;
+    font-family: inherit;
+}
+
+.bm-root .dc-filter-tab:hover {
+    border-color: var(--accent-border-strong);
+    color: var(--billing-accent);
+}
+
+.bm-root .dc-filter-tab.active {
+    background: var(--accent-bg);
+    border-color: var(--accent-border-strong);
+    color: var(--billing-accent);
+}
+
+/* ── Toolbar divider (separates toggle tabs from the stage dropdown) ── */
+.bm-root .dc-toolbar-divider {
+    width: 1px;
+    align-self: stretch;
+    min-height: 22px;
+    background: var(--border);
+    margin: 0 0.125rem;
+}
+
+/* ── Stage multiselect trigger ── */
+.bm-root .dc-stage-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.625rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    color: var(--text-primary);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: border-color 120ms, background 120ms, color 120ms;
+    font-family: inherit;
+}
+
+.bm-root .dc-stage-trigger:hover {
+    border-color: var(--accent-border-strong);
+    color: var(--text-primary);
+}
+
+.bm-root .dc-stage-trigger.active,
+.bm-root .dc-stage-trigger.open {
+    border-color: var(--accent-border-strong);
+    color: var(--billing-accent);
+}
+
+.bm-root .dc-stage-trigger-label {
+    white-space: nowrap;
+}
+
+.bm-root .dc-stage-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 0.25rem;
+    border-radius: 8px;
+    background: var(--billing-accent);
+    color: var(--on-accent-solid);
+    font-size: 0.625rem;
+    font-weight: 800;
+}
+
+.bm-root .dc-stage-chevron {
+    transition: transform 150ms;
+}
+
+.bm-root .dc-stage-trigger.open .dc-stage-chevron {
+    transform: rotate(180deg);
+}
+
+/* ── Stage multiselect dropdown ── */
+.bm-root .dc-stage-menu {
+    position: absolute;
+    top: calc(100% + 0.375rem);
+    right: 0;
+    z-index: 50;
+    min-width: 230px;
+    max-height: 340px;
+    overflow-y: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    padding: 0.375rem;
+}
+
+.bm-root .dc-stage-menu-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.25rem 0.5rem 0.5rem;
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-dark);
+    margin-bottom: 0.25rem;
+}
+
+.bm-root .dc-stage-clear {
+    background: none;
+    border: none;
+    color: var(--billing-accent);
+    font-size: 0.625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    padding: 0;
+    font-family: inherit;
+}
+
+.bm-root .dc-stage-clear:hover {
+    text-decoration: underline;
+}
+
+.bm-root .dc-stage-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.5rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 100ms;
+}
+
+.bm-root .dc-stage-option:hover {
+    background: var(--surface-raised);
+}
+
+.bm-root .dc-stage-option.checked {
+    color: var(--billing-accent);
+    font-weight: 600;
+}
+
+.bm-root .dc-stage-option input[type="checkbox"] {
+    accent-color: var(--billing-accent);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+/* ── Payment type badges ── */
+.bm-root .dc-badge-prepay {
+    background: var(--warning-bg);
+    color: var(--warning-text);
+    border: 1px solid var(--warning-border);
+}
+
+.bm-root .dc-badge-loc {
+    background: var(--success-bg);
+    color: var(--success-text);
+    border: 1px solid var(--success-border);
+}
+
+.bm-root .dc-badge-deposit {
+    background: var(--purple-bg);
+    color: var(--purple-text);
+    border: 1px solid var(--purple-border);
+}
+
+/* =================================================
+   EDIT MODAL FORM
+   ================================================= */
+.bm-root .dc-edit-section {
+    margin-bottom: 0.25rem;
+}
+
+.bm-root .dc-edit-section-title {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--billing-accent);
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.bm-root .dc-edit-field {
+    margin-bottom: 0.75rem;
+}
+
+.bm-root .dc-edit-label {
+    display: block;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.3rem;
+}
+
+.bm-root .dc-edit-input {
+    width: 100%;
+    padding: 0.5rem 0.625rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-card);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 140ms;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.bm-root .dc-edit-input:focus {
+    border-color: var(--accent-border-strong);
+    box-shadow: var(--accent-ring);
+}
+
+.bm-root select.dc-edit-input {
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%2399a1b3' viewBox='0 0 24 24'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.625rem center;
+    padding-right: 2rem;
+}
+
+/* Fix Windows native dropdown — options inherit white text on white bg */
+.bm-root select.dc-edit-input option {
+    background-color: var(--surface-alt);
+    color: var(--text-primary);
+}
+
+
+
+/* ── Avg Days to Pay — inline refresh button ── */
+.bm-root .dc-avg-refresh {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.15rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 120ms, border-color 120ms;
+}
+
+.bm-root .dc-avg-refresh:hover:not(:disabled) {
+    color: var(--billing-accent);
+    border-color: var(--accent-border-strong);
+}
+
+.bm-root .dc-avg-refresh:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+/* ==============================================
+   DEAL DETAIL MODAL
+   ============================================== */
+
+.bm-root .dc-detail-modal {
+    max-width: 640px;
+}
+
+/* ── Shimmer skeleton ── */
+.bm-root .dc-detail-skeleton-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.5rem 0;
+}
+
+.bm-root .dc-skeleton {
+    height: 14px;
+    border-radius: 2px;
+    background: linear-gradient(
+        90deg,
+        var(--surface-alt) 25%,
+        var(--surface-raised) 50%,
+        var(--surface-alt) 75%
+    );
+    background-size: 200% 100%;
+    animation: dc-shimmer 1.4s ease-in-out infinite;
+}
+
+.bm-root .dc-skeleton-wide   { width: 85%; }
+.bm-root .dc-skeleton-narrow { width: 55%; }
+
+@keyframes dc-shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* ── Debtor alert box ── */
+.bm-root .dc-debtor-alert {
+    background: var(--danger-bg);
+    border: 1px solid var(--danger-border);
+    border-left: 3px solid var(--danger-text);
+    border-radius: var(--radius-md);
+    padding: 0.75rem;
+}
+
+.bm-root .dc-debtor-alert-header {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.6875rem;
+    font-weight: 800;
+    color: var(--danger-text);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+}
+
+/* ── Debtor clear state ── */
+.bm-root .dc-debtor-clear {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--success-text);
+    font-weight: 600;
+    padding: 0.5rem 0;
+}
+
+/* ── Pulsing debtor badge in header ── */
+.bm-root .dc-debtor-badge {
+    animation: dc-pulse-danger 2s ease-in-out infinite;
+}
+
+@keyframes dc-pulse-danger {
+    0%, 100% { box-shadow: 0 0 0 0 var(--danger-bg); }
+    50%       { box-shadow: 0 0 0 3px var(--danger-border); }
+}
+
+/* ── Prepay summary box ── */
+.bm-root .dc-prepay-summary {
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius-md);
+    padding: 0.75rem;
+}
+
+.bm-root .dc-prepay-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.5625rem;
+    font-weight: 800;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--warning-text);
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius-sm);
+    padding: 0.2rem 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+/* ── Invoice meta bar + read-only list ── */
+.bm-root .dc-invoice-meta-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4375rem 0.625rem;
+    background: var(--surface-alt);
+    border: 1px solid var(--border-dark);
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.bm-root .dc-invoice-list {
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+    overflow: hidden;
+}
+
+.bm-root .dc-detail-invoice-card {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-dark);
+}
+
+.bm-root .dc-detail-invoice-card:last-child {
+    border-bottom: none;
+}
+
+/* ── Transaction mini-list ── */
+.bm-root .dc-tx-mini-list {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.bm-root .dc-tx-mini-row {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.5625rem 0.75rem;
+    border-bottom: 1px solid var(--border-dark);
+}
+
+.bm-root .dc-tx-mini-row:last-child {
+    border-bottom: none;
+}
+
+.bm-root .dc-tx-mini-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.bm-root .dc-tx-mini-sender {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bm-root .dc-tx-mini-date {
+    font-size: 0.5875rem;
+    color: var(--text-muted);
+    margin-top: 0.125rem;
+}
+
+.bm-root .dc-tx-mini-amount {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--success-text);
+    flex-shrink: 0;
+}

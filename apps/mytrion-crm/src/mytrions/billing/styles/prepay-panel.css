@@ -1,0 +1,238 @@
+/* =====================================================
+   Billing Mytrion — Prepay Panel Styles
+   Daily reconciliation ledger. Token-based (light + dark safe).
+   ===================================================== */
+
+/* ── Filter bar: its own full-width row under the title so every filter
+   fits on ONE line (mirrors the Returns rt-toolbar); wraps only when
+   space truly runs out. ── */
+.bm-root .bm-prepay-panel .pp-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    margin: 0.75rem 0 1rem;
+}
+
+@media (min-width: 1150px) {
+    .bm-root .bm-prepay-panel .pp-toolbar { flex-wrap: nowrap; }
+    /* Search absorbs the leftover width instead of forcing a wrap */
+    .bm-root .bm-prepay-panel .pp-toolbar .db-search-wrap {
+        flex: 1 1 180px;
+        min-width: 140px;
+        margin-left: auto;
+    }
+    .bm-root .bm-prepay-panel .pp-toolbar .db-search-input { width: 100%; }
+}
+
+/* Narrow screens: segments scroll sideways instead of stacking */
+@media (max-width: 700px) {
+    .bm-root .bm-prepay-panel .pp-seg {
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    .bm-root .bm-prepay-panel .pp-seg::-webkit-scrollbar { display: none; }
+}
+
+.bm-root .bm-prepay-panel .pp-seg {
+    display: inline-flex;
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 0.2rem;
+    gap: 0.15rem;
+}
+
+.bm-root .bm-prepay-panel .pp-seg button {
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    font-weight: 600;
+    padding: 0.4rem 0.85rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+    font-family: inherit;
+    white-space: nowrap;
+}
+
+.bm-root .bm-prepay-panel .pp-seg button:hover {
+    color: var(--text-primary);
+}
+
+.bm-root .bm-prepay-panel .pp-seg .pp-seg-active {
+    background: var(--billing-accent);
+    color: var(--on-accent-solid);
+    box-shadow: var(--shadow-sm);
+}
+
+.bm-root .bm-prepay-panel .pp-daterange {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0.6rem 0 0.85rem;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+}
+
+.bm-root .bm-prepay-panel .pp-daterange label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 600;
+}
+
+.bm-root .bm-prepay-panel .pp-daterange input[type="date"] {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    padding: 0.35rem 0.55rem;
+    font-size: 0.72rem;
+    font-family: inherit;
+}
+
+.bm-root .bm-prepay-panel .pp-daterange input[type="date"]:focus {
+    outline: none;
+    border-color: var(--accent-border-strong);
+    box-shadow: var(--accent-ring);
+}
+
+.bm-root .bm-prepay-panel .pp-apply {
+    background: var(--billing-accent);
+    color: var(--on-accent-solid);
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 0.4rem 0.9rem;
+    font-weight: 700;
+    font-size: 0.72rem;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.12s;
+}
+
+.bm-root .bm-prepay-panel .pp-apply:hover:not(:disabled) {
+    background: var(--accent-hover);
+}
+
+.bm-root .bm-prepay-panel .pp-apply:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* ── Modal: daily reconciliation ledger ── */
+.bm-root .bm-prepay-panel .pl-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.6rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.bm-root .bm-prepay-panel .pl-range {
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.bm-root .bm-prepay-panel .pl-net b {
+    font-family: 'JetBrains Mono', monospace;
+    margin-left: 0.3rem;
+}
+
+.bm-root .bm-prepay-panel .pl-warn {
+    font-size: 0.68rem;
+    color: var(--warning-text);
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius-sm);
+    padding: 0.35rem 0.6rem;
+    margin-bottom: 0.6rem;
+    cursor: help;
+}
+
+.bm-root .bm-prepay-panel .pl-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+}
+
+.bm-root .bm-prepay-panel .pl-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.72rem;
+    white-space: nowrap;
+    color: var(--text-primary);
+}
+
+.bm-root .bm-prepay-panel .pl-table th,
+.bm-root .bm-prepay-panel .pl-table td {
+    padding: 0.4rem 0.7rem;
+    text-align: right;
+    font-family: 'JetBrains Mono', monospace;
+    border-bottom: 1px solid var(--border-dark);
+}
+
+.bm-root .bm-prepay-panel .pl-table th {
+    position: sticky;
+    top: 0;
+    background: var(--surface-alt);
+    color: var(--text-muted);
+    font-weight: 700;
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-family: 'Inter', sans-serif;
+    z-index: 1;
+}
+
+.bm-root .bm-prepay-panel .pl-table .pl-l {
+    text-align: left;
+}
+
+.bm-root .bm-prepay-panel .pl-date {
+    color: var(--text-secondary);
+}
+
+.bm-root .bm-prepay-panel .pl-table tbody tr:nth-child(even) {
+    background: var(--surface-raised);
+}
+
+.bm-root .bm-prepay-panel .pl-table tbody tr:hover {
+    background: var(--accent-bg-subtle);
+}
+
+/* Difference column — the running balance. Color comes from the sign classes. */
+.bm-root .bm-prepay-panel .pl-diff,
+.bm-root .bm-prepay-panel .pl-diff-h {
+    font-weight: 700;
+    border-left: 1px solid var(--border);
+}
+
+.bm-root .bm-prepay-panel .pl-table tfoot td {
+    border-top: 2px solid var(--border);
+    font-weight: 700;
+    background: var(--surface-alt);
+    position: sticky;
+    bottom: 0;
+}
+
+.bm-root .bm-prepay-panel .pl-empty {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 1.5rem;
+    font-family: 'Inter', sans-serif;
+}
+
+/* ── Sign colors (diffClass output) — panel-scoped so they win over the
+   base cell color; no color set on .pl-diff / .pl-net b so these apply. ── */
+.bm-root .bm-prepay-panel .text-danger  { color: var(--danger-text); }
+.bm-root .bm-prepay-panel .text-info    { color: var(--billing-accent); }
+.bm-root .bm-prepay-panel .text-success { color: var(--success-text); }
+.bm-root .bm-prepay-panel .text-bold    { font-weight: 700; }

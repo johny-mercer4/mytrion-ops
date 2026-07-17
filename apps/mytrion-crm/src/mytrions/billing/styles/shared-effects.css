@@ -1,0 +1,107 @@
+/* =====================================================
+   Billing Mytrion — Shared Animations & Effects
+   ===================================================== */
+
+/* ── Keyframes ── */
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes loaderPulse {
+    0%, 100% { opacity: 1;    transform: scale(1);    }
+    50%       { opacity: 0.7; transform: scale(0.96); }
+}
+
+@keyframes loaderBar {
+    0%   { width: 0%;    margin-left: 0%;    }
+    50%  { width: 60%;   margin-left: 20%;   }
+    100% { width: 0%;    margin-left: 100%;  }
+}
+
+@keyframes scanSweep {
+    0%   { left: -60%; }
+    100% { left: 120%; }
+}
+
+@keyframes dots {
+    0%   { content: ''; }
+    25%  { content: '.'; }
+    50%  { content: '..'; }
+    75%  { content: '...'; }
+    100% { content: ''; }
+}
+
+@keyframes ai-spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0);   }
+}
+
+@keyframes shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200%  0; }
+}
+
+/* ── Skeleton loader ── */
+.bm-root .bm-skeleton {
+    background: linear-gradient(90deg,
+        var(--surface-alt) 25%,
+        var(--surface-raised) 50%,
+        var(--surface-alt) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.6s ease-in-out infinite;
+    border-radius: var(--radius-sm);
+}
+
+/* ── Pulse dot (status indicator) ── */
+.bm-root .bm-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.bm-root .bm-status-dot.online {
+    background: var(--billing-success);
+    box-shadow: 0 0 0 2px var(--success-border);
+    animation: pulse-online 2s ease-in-out infinite;
+}
+
+@keyframes pulse-online {
+    0%, 100% { box-shadow: 0 0 0 2px var(--success-border); }
+    50%       { box-shadow: 0 0 0 4px var(--success-bg); }
+}
+
+/* ── Fade transitions ── */
+.bm-root .bm-fade-enter-active,
+.bm-root .bm-fade-leave-active {
+    transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.bm-root .bm-fade-enter-from,
+.bm-root .bm-fade-leave-to {
+    opacity: 0;
+    transform: translateY(4px);
+}
+
+/* ── Accent glow line (top of cards) ── */
+.bm-root .bm-glow-top {
+    position: relative;
+    overflow: hidden;
+}
+
+.bm-root .bm-glow-top::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, var(--billing-accent) 50%, transparent 100%);
+    opacity: 0.5;
+}
