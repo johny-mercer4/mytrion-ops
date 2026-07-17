@@ -21,7 +21,15 @@
  */
 import { createDeskTicket, DESK_DEPARTMENTS, type DeskDeptSlug } from '../../integrations/zohoDesk.js';
 
-export type ServiceRequestKey = 'override-card';
+export type ServiceRequestKey =
+  | 'override-card'
+  | 'money-code'
+  | 'card-activate'
+  | 'card-limit'
+  | 'card-replace'
+  | 'card-fraud'
+  | 'billing-form'
+  | 'ref-guides';
 
 interface ServiceRequestSpec {
   /** Desk ticket subject. Prefixed with the channel so CS can see where it came from. */
@@ -37,13 +45,19 @@ interface ServiceRequestSpec {
 /**
  * The requests a mini-app user may file, and who may file them.
  *
- * Only `override-card` is here, and only because the product owner authorised it for drivers.
- * Money code, hold/unhold and the owner-side stubs are still fake in the UI; each needs the same
- * explicit call before it is added, since a key in this map is what makes the request real.
+ * Departments mirror servercrm's own routing for the same prompts (routes/mobileAppRoutes.js:
+ * "override card" / "card management" / "request increasing daily limit" / "efs code request" →
+ * Customer Service; "billing" → Billing and Accounting), so a mini-app ticket lands in the queue
+ * that already handles that request from the mobile app.
  *
- * Mapped to Customer Service to match servercrm's own department routing for the same prompt
- * ("override card" → 1057080000000323033 in routes/mobileAppRoutes.js), so tickets from the
- * mini-app land in the same queue as the ones the mobile app already files.
+ * A driver may file only what concerns the card in their hand. The owner-side entries are card and
+ * account administration — the driver catalog does not offer them, and this map is what enforces
+ * that rather than the absence of a button.
+ *
+ * Note what a key here does NOT grant: 'money-code' for a driver is not "a driver may issue money
+ * codes". It files a request; a human at CS decides and issues. Same for the card writes — the
+ * authority never moves to the mini-app, which is why none of this needs CLAUDE.md rule 7's admin
+ * role.
  */
 const SERVICE_REQUESTS: Record<ServiceRequestKey, ServiceRequestSpec> = {
   'override-card': {
@@ -52,7 +66,52 @@ const SERVICE_REQUESTS: Record<ServiceRequestKey, ServiceRequestSpec> = {
     roles: ['owner', 'driver'],
     ticketType: 'Card Management',
   },
+  'money-code': {
+    subject: 'Request an EFS Money Code',
+    dept: 'cs',
+    roles: ['owner', 'driver'],
+    ticketType: 'EFS Code Request',
+  },
+  'card-activate': {
+    subject: 'Activate / deactivate a card',
+    dept: 'cs',
+    roles: ['owner'],
+    ticketType: 'Card Management',
+  },
+  'card-limit': {
+    subject: "Adjust a card's limit (gal/day)",
+    dept: 'cs',
+    roles: ['owner'],
+    ticketType: 'Card Management',
+  },
+  'card-replace': {
+    subject: 'Replace a lost or stolen card',
+    dept: 'cs',
+    roles: ['owner'],
+    ticketType: 'Card Management',
+  },
+  'card-fraud': {
+    subject: 'Report fraud / suspicious charge',
+    dept: 'cs',
+    roles: ['owner'],
+    ticketType: 'Card Management',
+  },
+  'billing-form': {
+    subject: 'Billing Form',
+    dept: 'billing',
+    roles: ['owner'],
+    ticketType: 'Billing',
+  },
+  'ref-guides': {
+    subject: 'Reference guides',
+    dept: 'cs',
+    roles: ['owner'],
+    ticketType: 'Reports Center',
+  },
 };
+
+/** Every key, for the route's Zod enum — so adding one above cannot be forgotten at the schema. */
+export const SERVICE_REQUEST_KEYS = Object.keys(SERVICE_REQUESTS) as [ServiceRequestKey, ...ServiceRequestKey[]];
 
 export function serviceRequestSpec(key: ServiceRequestKey): ServiceRequestSpec {
   return SERVICE_REQUESTS[key];

@@ -294,7 +294,15 @@ export async function fetchTracking(initData: string): Promise<TrackingResult> {
   return (await request('POST', '/carrier/mini-app/tracking', { initData })) as TrackingResult;
 }
 
-export type ServiceRequestKey = 'override-card';
+export type ServiceRequestKey =
+  | 'override-card'
+  | 'money-code'
+  | 'card-activate'
+  | 'card-limit'
+  | 'card-replace'
+  | 'card-fraud'
+  | 'billing-form'
+  | 'ref-guides';
 
 /**
  * File a real Zoho Desk ticket. The card is NOT sent — the backend resolves a driver's card from

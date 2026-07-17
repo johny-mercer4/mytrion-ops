@@ -93,7 +93,7 @@ import { carrierInvitationRepo } from '../../src/repos/carrierInvitationRepo.js'
 import { registeredMiniAppCompanyRepo } from '../../src/repos/registeredMiniAppCompanyRepo.js';
 import { listDwhCards, findDwhCardByNumber } from '../../src/integrations/dwhCards.js';
 import { listDwhTransactions, resolveDwhTxnRange } from '../../src/integrations/dwhTransactions.js';
-import { sendDocument, TelegramChatUnreachableError, parseInitDataUser, verifyTelegramInitData } from '../../src/integrations/telegramCarrierBot.js';
+import { sendDocument, TelegramChatUnreachableError, parseInitDataUser, signTelegramInitData, verifyTelegramInitData } from '../../src/integrations/telegramCarrierBot.js';
 import { executeZohoFunctionWithFallback } from '../../src/integrations/zohoFunctions.js';
 import { createDeskTicket } from '../../src/integrations/zohoDesk.js';
 import { serverCrmWrapper } from '../../src/wrappers/serverCrmWrapper.js';
@@ -118,7 +118,28 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  /**
+   * resetAllMocks, not clearAllMocks — clearAllMocks wipes call history but does NOT drain the
+   * mockResolvedValueOnce queue. A test that queues a value its path never reaches (a schema or
+   * role check rejecting first) leaves it there, and the next test calling that mock consumes the
+   * stale value instead of its own. That silently swapped a 201 for a 409 twice while this suite
+   * was being written, each time pointing the blame at production code that was fine.
+   *
+   * The cost is that resetAllMocks also wipes the vi.mock factories' default implementations, so
+   * every default a test may rely on is re-applied here.
+   */
+  vi.resetAllMocks();
+  dwhCards.mockResolvedValue([]);
+  vi.mocked(findDwhCardByNumber).mockResolvedValue(null);
+  crm.getCarrierOverview.mockResolvedValue({ company_name: 'Acme Transport LLC', is_active: true });
+  registrationRepo.list.mockResolvedValue([]);
+  registrationRepo.listDriversByCarrier.mockResolvedValue([]);
+  inviteRepo.listPendingDriverInvitesByCarrier.mockResolvedValue([]);
+  vi.mocked(verifyTelegramInitData).mockReturnValue({ ok: true, fields: {} });
+  vi.mocked(parseInitDataUser).mockReturnValue({ id: 123456, username: 'fleet_owner' });
+  vi.mocked(signTelegramInitData).mockReturnValue('signed-init-data');
+  vi.mocked(sendDocument).mockResolvedValue(undefined);
+  vi.mocked(createDeskTicket).mockResolvedValue('1057080000099887766');
 });
 
 function inviteRow(overrides: Record<string, unknown> = {}) {
@@ -986,6 +1007,84 @@ describe('service requests file real Desk tickets', () => {
 
     expect(res.statusCode).toBe(400);
     expect(createDeskTicket).not.toHaveBeenCalled();
+  });
+
+  // The driver catalog offers only the two card-in-hand requests. The map is what enforces that —
+  // not the absence of a button — so a driver's own initData must be refused at every owner-side key.
+  for (const key of ['card-activate', 'card-limit', 'card-replace', 'card-fraud', 'billing-form', 'ref-guides'] as const) {
+    it(`refuses a driver at the owner-only request "${key}"`, async () => {
+      // No card mock: the role check refuses before requireDriverCardNumber runs, so a queued
+      // dwhCards value would go unconsumed and leak into the next test that resolves a card.
+      registrationRepo.findByTelegramUserId.mockResolvedValueOnce(driverReg());
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/service-request',
+        headers: { 'content-type': 'application/json' },
+        payload: { initData: 'signed', service: key },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(createDeskTicket).not.toHaveBeenCalled();
+    });
+  }
+
+  for (const key of ['override-card', 'money-code'] as const) {
+    it(`allows a driver at "${key}" — the card in their hand`, async () => {
+      withResolvableCard();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/service-request',
+        headers: { 'content-type': 'application/json' },
+        payload: { initData: 'signed', service: key },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(vi.mocked(createDeskTicket).mock.calls[0]?.[0]?.cf?.cf_card_number).toBe(OWN_CARD);
+    });
+  }
+
+  it('routes the billing form to Billing, not Customer Service', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(registrationRow());
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/service-request',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', service: 'billing-form' },
+    });
+
+    expect(vi.mocked(createDeskTicket).mock.calls[0]?.[0]?.departmentId).toBe('1057080000000329409');
+  });
+
+  it("carries the requester's comment into the ticket body", async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(registrationRow());
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/service-request',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', service: 'card-replace', comment: 'Card ending 7593, driver James, stolen at a truck stop' },
+    });
+
+    expect(vi.mocked(createDeskTicket).mock.calls[0]?.[0]?.description).toContain('stolen at a truck stop');
+  });
+
+  it('files an owner request with no card — an owner has a fleet, not one card', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(registrationRow());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/service-request',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', service: 'card-fraud' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // No card resolution is attempted for an owner, so the field is simply absent rather than a
+    // wrong card picked from the fleet.
+    expect(vi.mocked(createDeskTicket).mock.calls[0]?.[0]?.cf?.cf_card_number).toBeUndefined();
   });
 
   it('fails loudly when Desk rejects the ticket — never reports a send that did not happen', async () => {

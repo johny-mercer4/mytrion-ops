@@ -29,7 +29,7 @@ import {
   fileServiceRequest,
   serviceRequestAllows,
   serviceRequestSpec,
-  type ServiceRequestKey,
+  SERVICE_REQUEST_KEYS,
 } from '../../modules/carrier/serviceRequest.js';
 import { carrierInvitationRepo } from '../../repos/carrierInvitationRepo.js';
 import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompanyRepo.js';
@@ -169,7 +169,7 @@ const invoiceSignedUrlSchema = z.object({
  *  queue. `comment` is the only free text and lands in the ticket body as content. */
 const serviceRequestSchema = z.object({
   initData: z.string().min(1),
-  service: z.enum(['override-card'] as const satisfies readonly ServiceRequestKey[]),
+  service: z.enum(SERVICE_REQUEST_KEYS),
   comment: z.string().max(2000).optional(),
 });
 const driverSelfRegisterSchema = z.object({

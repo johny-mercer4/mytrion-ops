@@ -1351,6 +1351,7 @@ function ActionSheet({
   const [genericBusy, setGenericBusy] = useState(false);
   const [genericError, setGenericError] = useState('');
   const [genericTicketId, setGenericTicketId] = useState('');
+  const [genericComment, setGenericComment] = useState('');
   const [invoiceBusyId, setInvoiceBusyId] = useState<string | null>(null);
   /** Phase 2 of the transactions read is in flight — rows are already shown, freshest are pending. */
   const [liveRefreshing, setLiveRefreshing] = useState(false);
@@ -1480,7 +1481,7 @@ function ActionSheet({
     setGenericBusy(true);
     setGenericError('');
     try {
-      const res = await sendServiceRequest(initData, requestKey);
+      const res = await sendServiceRequest(initData, requestKey, genericComment.trim() || undefined);
       haptic('success');
       setGenericTicketId(res.ticketId);
       setGenericSent(true);
@@ -1902,6 +1903,18 @@ function ActionSheet({
             <>
               <div style={{ fontSize: 14, color: 'var(--fg)', lineHeight: 1.5, marginBottom: 6 }}>{t('generic.notSentBody1')}</div>
               <div style={{ fontSize: 13, color: 'var(--muted-fg)', lineHeight: 1.5, marginBottom: 16 }}>{t('generic.notSentBody2')}</div>
+              {/* Only for requests that actually reach a human. A driver's card is resolved
+                  server-side, but an owner has a fleet — the ticket would otherwise say "replace a
+                  lost card" and name no card, leaving support to ask before they can start. */}
+              {target.kind === 'generic' && target.request && (
+                <textarea
+                  value={genericComment}
+                  onChange={(e) => setGenericComment(e.target.value.slice(0, 2000))}
+                  placeholder={t('generic.commentPlaceholder')}
+                  rows={3}
+                  style={{ width: '100%', boxSizing: 'border-box', resize: 'none', border: '1px solid var(--border)', borderRadius: 14, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 15, lineHeight: 1.5, padding: '12px 14px', marginBottom: 12 }}
+                />
+              )}
               {genericError && (
                 <div style={{ fontSize: 13, color: 'var(--danger)', lineHeight: 1.5, marginBottom: 12 }}>{genericError}</div>
               )}
