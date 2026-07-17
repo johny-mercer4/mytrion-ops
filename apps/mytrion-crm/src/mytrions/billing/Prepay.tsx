@@ -16,10 +16,9 @@
  * with the widget's _ymd / computeRange / _shiftYmd helpers ported verbatim. The ledger API
  * treats endDate as INCLUSIVE, so the modal shifts the (exclusive) list end back one day.
  *
- * Export: the zoho widget produced a styled .xlsx via ExcelJS loaded from a CDN. This app has a
- * strict setup (no CDN scripts) and `exceljs` is NOT a dependency, so the ledger exports as CSV
- * (same columns) via a Blob download instead. If exceljs is ever added, swap downloadCsv for a
- * dynamic import('exceljs') build.
+ * Export: the ledger exports as a styled .xlsx (exportLedgerXlsx) — a faithful port of the zoho
+ * widget's ExcelJS workbook (title / summary with live formulas / banded table / totals). ExcelJS
+ * is code-split via dynamic import so it only loads when someone actually exports.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -644,8 +643,203 @@ export function Prepay() {
 
 /* ═══════════════════════ Ledger modal ═══════════════════════ */
 
-function csvEscape(v: string): string {
-  return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+/**
+ * Styled .xlsx export — a faithful port of the widget's _buildLedgerWorkbook (prepay-panel.js):
+ * title block, summary with live formulas, dark banded table, totals row with SUM formulas +
+ * cached results, frozen header, autofilter. ExcelJS is code-split (dynamic import) so it only
+ * loads when someone actually exports.
+ */
+async function exportLedgerXlsx(
+  company: PrepayCompany,
+  detailRange: { start: string; end: string },
+  ledger: Ledger,
+): Promise<void> {
+  const ExcelJS = (await import('exceljs')).default;
+
+  const F = 'Arial';
+  const C = {
+    ink: 'FF0F172A', body: 'FF334155', muted: 'FF64748B', faint: 'FF94A3B8',
+    headFill: 'FF1E293B', band: 'FFF8FAFC', totalFill: 'FFF1F5F9',
+    red: 'FFDC2626', blue: 'FF2563EB', line: 'FFE2E8F0', white: 'FFFFFFFF',
+  };
+  const MONEY = '$#,##0.00;[Red]($#,##0.00);"–"';
+  const num = (v: number) => Math.round((Number(v) || 0) * 100) / 100;
+  // UTC-anchored: ExcelJS serialises Dates via their UTC value, so a local-midnight Date west/
+  // east of UTC would shift ±1 day.
+  const ymdToDate = (ymd: string) => {
+    const [y, m, d] = String(ymd).split('-').map(Number);
+    return new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, d ?? 1));
+  };
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const fmtDay = (ymd: string) => {
+    const [y, m, d] = String(ymd).split('-');
+    return (MONTHS[Number(m) - 1] ?? m ?? '') + ' ' + Number(d) + ', ' + (y ?? '');
+  };
+
+  const rows = ledger.rows;
+  const t = ledger.totals;
+  const warnings = ledger.warnings;
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Ledger', {
+    pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  });
+  ws.columns = [
+    { width: 12 }, { width: 12.5 }, { width: 12.5 }, { width: 12.5 }, { width: 12.5 },
+    { width: 12.5 }, { width: 12.5 }, { width: 12.5 }, { width: 12.5 }, { width: 14 },
+  ];
+
+  let r = 1;
+  const merge = (row: number) => ws.mergeCells('A' + row + ':J' + row);
+
+  // Title block
+  merge(r);
+  ws.getCell('A' + r).value = 'PREPAY RECONCILIATION LEDGER';
+  ws.getCell('A' + r).font = { name: F, size: 9, bold: true, color: { argb: C.muted } };
+  r++;
+
+  merge(r);
+  ws.getCell('A' + r).value = {
+    richText: [
+      { text: company.companyName, font: { name: F, size: 16, bold: true, color: { argb: C.ink } } },
+      { text: '   #' + company.carrierId, font: { name: F, size: 11, color: { argb: C.faint } } },
+    ],
+  };
+  ws.getRow(r).height = 22;
+  r++;
+
+  merge(r);
+  const metaBits = ['Period: ' + fmtDay(detailRange.start) + ' – ' + fmtDay(detailRange.end)];
+  if (company.billingCycle) metaBits.push('Billing Cycle: ' + company.billingCycle);
+  metaBits.push('Generated: ' + new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }));
+  ws.getCell('A' + r).value = metaBits.join('   ·   ');
+  ws.getCell('A' + r).font = { name: F, size: 9, color: { argb: C.muted } };
+  r++;
+
+  if (warnings.length) {
+    merge(r);
+    ws.getCell('A' + r).value = '⚠ Some sources were unavailable and count as 0: ' + warnings.join('; ');
+    ws.getCell('A' + r).font = { name: F, size: 9, italic: true, color: { argb: 'FFB45309' } };
+    r++;
+  }
+
+  ws.getRow(r).height = 6;
+  r++; // spacer
+
+  // Summary block (values become formulas referencing the totals row)
+  const summaryStart = r;
+  const summary: [string, string][] = [
+    ['Total Loaded', '= Top Up − RMVE + Money Code + Maintenance'],
+    ['Total Payments', '= Stripe + Zelle + Chase + Merchant'],
+    ['Net Difference', '= Loaded − Payments   (positive: paid less than loaded · negative: paid more)'],
+  ];
+  for (const [label, note] of summary) {
+    ws.getCell('A' + r).value = label;
+    ws.getCell('A' + r).font = { name: F, size: 10, bold: true, color: { argb: C.body } };
+    ws.getCell('B' + r).numFmt = MONEY;
+    ws.getCell('B' + r).font = { name: F, size: 11, bold: true, color: { argb: C.ink } };
+    ws.mergeCells('C' + r + ':J' + r);
+    ws.getCell('C' + r).value = note;
+    ws.getCell('C' + r).font = { name: F, size: 9, italic: true, color: { argb: C.faint } };
+    r++;
+  }
+
+  ws.getRow(r).height = 6;
+  r++; // spacer
+
+  // Table header
+  const headerRow = r;
+  const header = ['Date', 'Top Up', 'RMVE', 'Money Code', 'Maintenance', 'Stripe', 'Zelle', 'Chase', 'Merchant', 'Difference'];
+  header.forEach((h, i) => {
+    const cell = ws.getCell(headerRow, i + 1);
+    cell.value = h;
+    cell.font = { name: F, size: 10, bold: true, color: { argb: C.white } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.headFill } };
+    cell.alignment = { horizontal: i === 0 ? 'left' : 'right', vertical: 'middle' };
+  });
+  ws.getRow(headerRow).height = 20;
+  ws.autoFilter = { from: { row: headerRow, column: 1 }, to: { row: headerRow, column: 10 } };
+  r++;
+
+  // Data rows
+  const dataStart = r;
+  for (let i = 0; i < rows.length; i++) {
+    const d = rows[i];
+    if (!d) continue;
+    const row = ws.getRow(r);
+    row.getCell(1).value = ymdToDate(d.date);
+    row.getCell(1).numFmt = 'mmm d';
+    const vals = [d.topUp, d.rmve, d.moneyCode, d.maintenance, d.stripe, d.zelle, d.chase, d.merchant, d.difference];
+    vals.forEach((v, j) => {
+      const cell = row.getCell(j + 2);
+      cell.value = num(v);
+      cell.numFmt = MONEY;
+    });
+    for (let cIdx = 1; cIdx <= 10; cIdx++) {
+      const cell = row.getCell(cIdx);
+      cell.font = { name: F, size: 10, color: { argb: C.body } };
+      if (i % 2 === 1) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.band } };
+      cell.border = { bottom: { style: 'hair', color: { argb: C.line } } };
+    }
+    const diff = num(d.difference);
+    row.getCell(10).font = {
+      name: F, size: 10, bold: true,
+      color: { argb: diff > 0 ? C.red : diff < 0 ? C.blue : C.faint },
+    };
+    r++;
+  }
+  const dataEnd = r - 1;
+
+  // Totals row — SUM formulas WITH cached results (viewers that never recalc still show totals).
+  const totalRow = ws.getRow(r);
+  totalRow.getCell(1).value = 'Total';
+  const totalKeys: (keyof LedgerTotals)[] = ['topUp', 'rmve', 'moneyCode', 'maintenance', 'stripe', 'zelle', 'chase', 'merchant'];
+  for (let cIdx = 2; cIdx <= 9; cIdx++) {
+    const col = String.fromCharCode(64 + cIdx);
+    const key = totalKeys[cIdx - 2] as keyof LedgerTotals;
+    totalRow.getCell(cIdx).value =
+      dataEnd >= dataStart
+        ? { formula: 'SUM(' + col + dataStart + ':' + col + dataEnd + ')', result: num(t[key]) }
+        : 0;
+    totalRow.getCell(cIdx).numFmt = MONEY;
+  }
+  totalRow.getCell(10).value = dataEnd >= dataStart ? { formula: 'J' + dataEnd, result: num(t.net) } : 0;
+  totalRow.getCell(10).numFmt = MONEY;
+  const netVal = num(t.net);
+  const netColor = netVal > 0 ? C.red : netVal < 0 ? C.blue : C.ink;
+  for (let cIdx = 1; cIdx <= 10; cIdx++) {
+    const cell = totalRow.getCell(cIdx);
+    cell.font = { name: F, size: 10, bold: true, color: { argb: C.ink } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.totalFill } };
+    cell.border = { top: { style: 'medium', color: { argb: C.headFill } } };
+  }
+  totalRow.getCell(10).font = { name: F, size: 10, bold: true, color: { argb: netColor } };
+
+  // Summary values reference the totals row (cached results, same reason)
+  const loadedVal = num(num(t.topUp) - num(t.rmve) + num(t.moneyCode) + num(t.maintenance));
+  const paymentsVal = num(num(t.stripe) + num(t.zelle) + num(t.chase) + num(t.merchant));
+  ws.getCell('B' + summaryStart).value = { formula: 'B' + r + '-C' + r + '+D' + r + '+E' + r, result: loadedVal };
+  ws.getCell('B' + (summaryStart + 1)).value = { formula: 'F' + r + '+G' + r + '+H' + r + '+I' + r, result: paymentsVal };
+  ws.getCell('B' + (summaryStart + 2)).value = { formula: 'B' + summaryStart + '-B' + (summaryStart + 1), result: num(loadedVal - paymentsVal) };
+  ws.getCell('B' + (summaryStart + 2)).font = { name: F, size: 11, bold: true, color: { argb: netColor } };
+
+  wb.calcProperties.fullCalcOnLoad = true;
+  ws.views = [{ state: 'frozen', ySplit: headerRow }];
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const safe = company.companyName.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'company';
+  const fname = `Prepay_Ledger_${company.carrierId}_${safe}_${detailRange.start}_${detailRange.end}.xlsx`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fname;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
 function PrepayLedgerModal({
@@ -688,75 +882,17 @@ function PrepayLedgerModal({
 
   const ledger = useMemo(() => (load.data ? extractLedger(load.data) : null), [load.data]);
 
-  // CSV export (the zoho widget produced a styled .xlsx via an ExcelJS CDN script; this app
-  // forbids CDN scripts and has no exceljs dependency, so we emit the same columns as CSV).
-  function downloadCsv() {
+  // Styled .xlsx export (matches the zoho widget's ExcelJS ledger workbook).
+  function downloadExcel() {
     if (!ledger || exporting) return;
     setExporting(true);
-    try {
-      const money = (n: number) => round2(n).toFixed(2);
-      const header = [
-        'Date',
-        'Top Up',
-        'RMVE',
-        'Money Code',
-        'Maintenance',
-        'Stripe',
-        'Zelle',
-        'Chase',
-        'Merchant',
-        'Difference',
-      ];
-      const lines: string[] = [header.map(csvEscape).join(',')];
-      for (const r of ledger.rows) {
-        lines.push(
-          [
-            r.date,
-            money(r.topUp),
-            money(r.rmve),
-            money(r.moneyCode),
-            money(r.maintenance),
-            money(r.stripe),
-            money(r.zelle),
-            money(r.chase),
-            money(r.merchant),
-            money(r.difference),
-          ]
-            .map(csvEscape)
-            .join(','),
-        );
-      }
-      const t = ledger.totals;
-      lines.push(
-        [
-          'Total',
-          money(t.topUp),
-          money(t.rmve),
-          money(t.moneyCode),
-          money(t.maintenance),
-          money(t.stripe),
-          money(t.zelle),
-          money(t.chase),
-          money(t.merchant),
-          money(t.net),
-        ]
-          .map(csvEscape)
-          .join(','),
-      );
-      const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
-      const safe = company.companyName.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'company';
-      const fname = `Prepay_Ledger_${company.carrierId}_${safe}_${detailRange.start}_${detailRange.end}.csv`;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fname;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
-    } finally {
-      setExporting(false);
-    }
+    exportLedgerXlsx(company, detailRange, ledger)
+      .catch((e: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error('Prepay Excel export failed:', e);
+        alert('Excel export failed: ' + (e instanceof Error ? e.message : String(e)));
+      })
+      .finally(() => setExporting(false));
   }
 
   return (
@@ -773,12 +909,12 @@ function PrepayLedgerModal({
             className="bm-refresh-btn"
             style={{ marginLeft: 'auto', marginRight: '0.75rem' }}
             disabled={load.loading || !ledger || exporting}
-            onClick={downloadCsv}
+            onClick={downloadExcel}
           >
             <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={P_DOWNLOAD} />
             </svg>
-            {exporting ? 'Exporting…' : 'CSV'}
+            {exporting ? 'Exporting…' : 'Excel'}
           </button>
           <button className="bm-modal-close" onClick={onClose}>
             <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
