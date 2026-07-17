@@ -1609,25 +1609,6 @@ function ActionSheet({
                       ))}
                     </div>
                   )}
-                  {rows.length > 0 && (
-                    <div style={{ marginTop: 14 }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-fg)', marginBottom: 7 }}>{t('txns.exportToTelegram')}</div>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        {(['xlsx', 'pdf', 'csv'] as const).map((fmt) => (
-                          <button
-                            key={fmt}
-                            type="button"
-                            className="press"
-                            disabled={exportBusy !== null}
-                            onClick={() => void doExport(rows, fmt)}
-                            style={{ flex: 1, height: 42, border: 'none', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: exportBusy ? 'default' : 'pointer', opacity: exportBusy && exportBusy !== fmt ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                          >
-                            {exportBusy === fmt ? <Spinner size={16} /> : fmt === 'xlsx' ? 'Excel' : fmt === 'pdf' ? 'PDF' : 'CSV'}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </>
               );
             })()
@@ -1751,6 +1732,36 @@ function ActionSheet({
             </>
           )}
         </div>
+        {/* Export bar — pinned, not the tail of the list. It used to live at the bottom of the
+            scroll area, so reaching it meant scrolling past every transaction; a client pulling a
+            year would never find it. As a sibling of the scroll container it stays put. */}
+        {data?.kind === 'txns' && (data.v.data ?? []).length > 0 && (
+          <div style={{ flex: 'none', borderTop: '1px solid var(--border)', background: 'var(--card)', padding: '12px 20px calc(14px + env(safe-area-inset-bottom))' }}>
+            {/* Indeterminate by necessity: the work is a server-side build plus a Telegram upload
+                behind our own API, so there are no progress events to report. The bar says
+                "working"; it does not claim a percentage it cannot know. */}
+            <div style={{ height: 2, borderRadius: 2, overflow: 'hidden', background: exportBusy ? 'var(--secondary)' : 'transparent', marginBottom: 9 }}>
+              {exportBusy && <div style={{ width: '40%', height: '100%', borderRadius: 2, background: 'var(--primary)', animation: 'octbar 1.1s ease-in-out infinite' }} />}
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-fg)', marginBottom: 7 }}>
+              {exportBusy ? t('txns.sendingReport') : t('txns.exportToTelegram')}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {(['xlsx', 'pdf', 'csv'] as const).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  className="press"
+                  disabled={exportBusy !== null}
+                  onClick={() => void doExport(data.v.data ?? [], f)}
+                  style={{ flex: 1, height: 42, border: 'none', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: exportBusy ? 'default' : 'pointer', opacity: exportBusy && exportBusy !== f ? 0.45 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  {exportBusy === f ? <Spinner size={16} /> : f === 'xlsx' ? 'Excel' : f === 'pdf' ? 'PDF' : 'CSV'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

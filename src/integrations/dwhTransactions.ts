@@ -94,6 +94,24 @@ export function resolveDwhTxnRange(range?: string, fromArg?: string, toArg?: str
   return { preset, from, to };
 }
 
+/**
+ * Re-flatten a `timestamp without time zone` back to the naive string the DB actually holds.
+ *
+ * `pg` parses that type into a JS Date using the SERVER's timezone, so the DB's "2026-07-16
+ * 21:59:00" becomes a Date whose UTC instant is 16:59Z. JSON.stringify then emits
+ * "2026-07-16T16:59:00.000Z" and the client renders 16:59 — a five-hour lie, and one that made the
+ * fast phase disagree with servercrm's merged phase (which reports 21:59), so the list visibly
+ * jumped when the refresh landed.
+ *
+ * Reading the LOCAL parts undoes the parse exactly: the timestamp has no zone to convert to, so the
+ * value the DB wrote is the value we send. (toISOString would re-apply the shift.)
+ */
+function naiveTimestamp(v: unknown): unknown {
+  if (!(v instanceof Date)) return v;
+  const p = (x: number) => String(x).padStart(2, '0');
+  return `${v.getFullYear()}-${p(v.getMonth() + 1)}-${p(v.getDate())} ${p(v.getHours())}:${p(v.getMinutes())}:${p(v.getSeconds())}`;
+}
+
 export interface ListDwhTxnOpts {
   carrierId: string;
   /** Driver scoping — filters at the SQL level, so other cards' rows never leave Postgres. */
@@ -156,7 +174,9 @@ export async function listDwhTransactions(opts: ListDwhTxnOpts): Promise<DwhTxnR
   ]);
 
   const moreRecords = rows.length > limit;
-  const data = moreRecords ? rows.slice(0, limit) : rows;
+  const page = moreRecords ? rows.slice(0, limit) : rows;
+  // Normalise the one timestamp that is read by a human (the sheet, the CSV/XLSX/PDF).
+  const data = page.map((r) => ({ ...r, transaction_date: naiveTimestamp(r['transaction_date']) }));
   const t = totalsRows[0] ?? {};
   const int = (v: unknown) => parseInt(String(v ?? '0'), 10) || 0;
   const flt = (v: unknown) => parseFloat(String(v ?? '0')) || 0;

@@ -282,3 +282,11 @@ input,
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Indeterminate progress sliver — used by the transactions sheet's export bar while a report is
+   being built and pushed to Telegram. No real progress events exist for that work, so the bar
+   reports activity, not completion. */
+@keyframes octbar {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
