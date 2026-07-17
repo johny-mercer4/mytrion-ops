@@ -26,7 +26,11 @@ export const paymentReturns = pgTable(
     id: bigserial('id', { mode: 'number' }).primaryKey(),
     source: text('source').notNull(), // 'mx-ach' | 'mx-dispute'
     sourceRecordId: text('source_record_id').notNull(), // rail-native id (idempotency key)
+    returnType: text('return_type'), // 'ACH' | 'Wire' | 'Card-Chargeback' (display label)
     carrierId: text('carrier_id'),
+    customerName: text('customer_name'),
+    referenceNumber: text('reference_number'),
+    last4: text('last4'),
     amount: numeric('amount', { precision: 14, scale: 2 }),
     returnDate: timestamp('return_date', { withTimezone: true }),
     reason: text('reason'),

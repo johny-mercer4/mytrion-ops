@@ -78,7 +78,11 @@ export const paymentReturnRepo = {
       .onConflictDoUpdate({
         target: [paymentReturns.source, paymentReturns.sourceRecordId],
         set: {
+          returnType: sql`excluded.return_type`,
           carrierId: sql`excluded.carrier_id`,
+          customerName: sql`excluded.customer_name`,
+          referenceNumber: sql`excluded.reference_number`,
+          last4: sql`excluded.last4`,
           amount: sql`excluded.amount`,
           returnDate: sql`excluded.return_date`,
           reason: sql`excluded.reason`,
