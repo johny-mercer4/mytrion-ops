@@ -13,6 +13,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useUserContext } from '../../context/UserContextProvider';
 import { DataCenter } from './DataCenter';
 import { Debtors } from './Debtors';
+import { Prepay } from './Prepay';
+import { Returns } from './Returns';
 import { Transactions } from './Transactions';
 
 type SectionId = 'datacenter' | 'transactions' | 'debtors' | 'prepay' | 'returns';
@@ -57,14 +59,14 @@ const NAV_ITEMS: NavDef[] = [
     shortLabel: 'Prepay',
     iconPath:
       'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z',
-    disabled: true,
+    disabled: false,
   },
   {
     id: 'returns',
     label: 'Returns',
     shortLabel: 'Returns',
     iconPath: 'M3 10h10a5 5 0 015 5v1M3 10l4-4M3 10l4 4',
-    disabled: true,
+    disabled: false,
   },
 ];
 
@@ -171,6 +173,8 @@ export function BillingShell() {
           {panel('datacenter', <DataCenter />)}
           {panel('transactions', <Transactions />)}
           {panel('debtors', <Debtors />)}
+          {panel('prepay', <Prepay />)}
+          {panel('returns', <Returns />)}
         </main>
       </div>
 
