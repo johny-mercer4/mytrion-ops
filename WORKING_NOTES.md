@@ -2860,3 +2860,24 @@ pattern `SERVICE_REQUEST_KEYS` uses for the Desk request enum).
 `ownerKind: 'client'` rows today, so the mapping only makes the feed addressable — the events
 themselves (invoice issued, payment received, card shipped, ticket replied) each need a real upstream
 trigger. Until one exists, an honest empty Inbox beats the current invented one.
+
+### Carrier client picker empty — is_active broken upstream (2026-07-17)
+
+Driver/owner registration picker ("WHICH CLIENT") returned "No clients match" for everyone,
+including registered carriers like ONZMOVE INC (carrier 5762018). Root cause is NOT app code:
+`octane.intm_zoho_deals` is a view hard-filtered `where is_active = true`, but the upstream
+dbt/Airflow SCD2 load is broken — all ~253k rows of `octane.stg_zoho_deals` carry
+`is_active = false` AND a non-null `valid_to`, so the view yields zero rows for every carrier.
+(Fuel cards are fine: `octane.stg_cmp_card` healthy, 20 cards for 5762018.)
+
+Fix (`src/integrations/dwhClients.ts`): stop reading intm_zoho_deals; derive the current version
+ourselves from `stg_zoho_deals` via `DISTINCT ON (zoho_deal_id) ... ORDER BY valid_from DESC`
+(collapses 253k → ~21.7k deals), drop the `is_active` filter, exclude `Closed Lost`. DTO unchanged
+→ no frontend change. Verified live: ONZMOVE found via text + numeric search, browse mode returns
+rows. Tests updated (tests/unit/dwh-clients.test.ts). typecheck + lint + the suite green.
+
+REVERT to intm_zoho_deals once the data team repairs the SCD2 current-flag load. Known quirk:
+ONZMOVE surfaces as 2 rows (two distinct zoho_deal_id, same carrier) — left un-deduped; both
+resolve to the same carrier so provisioning is unaffected. Separate prod-config issues found the
+same session (not code): FF_ZOHO_OAUTH_ENABLED unset, ZOHO_OAUTH_REDIRECT_URI defaulting to
+localhost:5173, and the stale /widget base URL (SPA now serves at root /).
