@@ -32,6 +32,18 @@ export function errorHandlerPlugin(app: FastifyInstance): void {
     const urlPath = request.url.split('?')[0] ?? '/';
     const isApi = API_PREFIXES.some((p) => urlPath === p || urlPath.startsWith(`${p}/`));
     const wantsHtml = (request.headers.accept ?? '').includes('text/html');
+
+    // The portal SPA is built with relative asset paths (vite base './'), which the Zoho widget
+    // bundle requires. At a nested route like /main/<slug>, the browser resolves `./assets/x.css`
+    // against /main/ — i.e. /main/assets/x.css — which is not where the assets live (/assets/x.css),
+    // so it lands here. A CSS/JS request's Accept isn't text/html, so it used to fall through to the
+    // JSON 404 below, and X-Content-Type-Options: nosniff then blocked the stylesheet/module. Redirect
+    // any depth's /assets/ request to the root-absolute path the static host actually serves.
+    const assetIdx = urlPath.indexOf('/assets/');
+    if (request.method === 'GET' && !isApi && assetIdx > 0) {
+      void reply.redirect(urlPath.slice(assetIdx), 308);
+      return;
+    }
     if (spaIndex && request.method === 'GET' && !isApi && wantsHtml) {
       void reply.header('Cache-Control', 'no-cache').type('text/html').send(createReadStream(spaIndex));
       return;
