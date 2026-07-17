@@ -49,13 +49,6 @@ const TOAST_ICON: Record<ToastType, string> = {
   info: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
 };
 
-const TOAST_CLASS: Record<ToastType, string> = {
-  success: s.success,
-  error: s.error,
-  warning: s.warning,
-  info: s.info,
-};
-
 /** Oldest toasts fall off, so a burst of failures can't wall off the corner of the screen. */
 const MAX_VISIBLE = 4;
 
@@ -88,7 +81,8 @@ export function AdminToastHost() {
   return (
     <div className={s.stack} role="status" aria-live="polite">
       {toasts.map((t) => (
-        <div key={t.id} className={`${s.toast} ${TOAST_CLASS[t.type]}`}>
+        // toast.module.css carries one accent class per ToastType, named to match.
+        <div key={t.id} className={`${s.toast} ${s[t.type]}`}>
           <span className={s.icon}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
               <path strokeLinecap="round" strokeLinejoin="round" d={TOAST_ICON[t.type]} />

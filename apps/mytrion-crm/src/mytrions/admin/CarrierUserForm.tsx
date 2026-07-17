@@ -98,8 +98,12 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
   // invite's mini-app handles auth) ──
   const [operator, setOperator] = useState<DwhOperator | null | undefined>(undefined); // undefined = not searched
   const [operatorBusy, setOperatorBusy] = useState(false);
+  // A failed lookup must not collapse into `null`: "no login on file" is a fact about the carrier
+  // that changes what the agent does next, and a network error is not that fact.
+  const [operatorError, setOperatorError] = useState('');
   useEffect(() => {
     setOperator(undefined);
+    setOperatorError('');
     if (!isOwner) return;
     const cid = carrierId.trim();
     if (!cid) return;
@@ -107,7 +111,7 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
     const timer = setTimeout(() => {
       searchOperators(cid, 5)
         .then((ops) => setOperator(ops.find((o) => o.carrierId === cid) ?? null))
-        .catch(() => setOperator(null))
+        .catch((e: unknown) => setOperatorError(e instanceof Error ? e.message : String(e)))
         .finally(() => setOperatorBusy(false));
     }, 300);
     return () => clearTimeout(timer);
@@ -119,8 +123,14 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
   const [cards, setCards] = useState<DwhCard[] | null>(null);
   const [cardsBusy, setCardsBusy] = useState(false);
   const [cardManual, setCardManual] = useState(false);
+  // Same reason as operatorError: a failed card list used to land as `[]`, which reads as "this
+  // carrier has no cards" — and that drives both the company-type badge and the driver's card
+  // picker. Left null on failure, so cardCount/companyType stay undetermined rather than wrong.
+  const [cardsError, setCardsError] = useState('');
+  const [cardsReload, setCardsReload] = useState(0);
   useEffect(() => {
     setCards(null);
+    setCardsError('');
     setCardManual(false);
     setCardId('');
     const cid = carrierId.trim();
@@ -128,9 +138,9 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
     setCardsBusy(true);
     listCards(cid)
       .then(setCards)
-      .catch(() => setCards([]))
+      .catch((e: unknown) => setCardsError(e instanceof Error ? e.message : String(e)))
       .finally(() => setCardsBusy(false));
-  }, [carrierId]);
+  }, [carrierId, cardsReload]);
   const cardCount = cards?.length ?? null;
   // 0 cards is undetermined, not "owner-operator" — mirrors the backend's own detection rule
   // (src/modules/carrier/inviteService.ts) so the preview never shows the picked-a-type message
@@ -329,7 +339,10 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
         {isOwner && carrierId.trim() && (
           <div className={s.pickedCard}>
             {operatorBusy && <span className={s.chipMeta}>checking servercrm for an existing login…</span>}
-            {!operatorBusy && operator && (
+            {!operatorBusy && operatorError && (
+              <span className={s.cellSub}>Couldn't check servercrm for an existing login — {operatorError}</span>
+            )}
+            {!operatorBusy && !operatorError && operator && (
               <div className={s.cellStack}>
                 <span className={s.docTitle}>Existing servercrm login on file</span>
                 <span className={s.cellSub}>
@@ -340,7 +353,7 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
                 </span>
               </div>
             )}
-            {!operatorBusy && operator === null && (
+            {!operatorBusy && !operatorError && operator === null && (
               <span className={s.cellSub}>No existing servercrm login for this carrier.</span>
             )}
           </div>
@@ -349,7 +362,15 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
         {isOwner && carrierId.trim() && (
           <div className={s.pickedCard}>
             {cardsBusy && <span className={s.chipMeta}>checking active cards…</span>}
-            {!cardsBusy && companyType && (
+            {!cardsBusy && cardsError && (
+              <span className={s.cellSub}>
+                Couldn't read the card list — {cardsError}{' '}
+                <button type="button" className={s.linkBtn} onClick={() => setCardsReload((n) => n + 1)}>
+                  Retry
+                </button>
+              </span>
+            )}
+            {!cardsBusy && !cardsError && companyType && (
               <div className={s.cellStack}>
                 <span className={`${s.pill} ${companyType === 'fleet-manager' ? s.pillInfo : s.pillNeutral}`}>
                   {companyType === 'fleet-manager' ? (
@@ -372,7 +393,7 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
                 </span>
               </div>
             )}
-            {!cardsBusy && cardCount === 0 && (
+            {!cardsBusy && !cardsError && cardCount === 0 && (
               <span className={s.cellSub}>No active cards found for this carrier yet.</span>
             )}
           </div>
@@ -390,7 +411,13 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
                   disabled={cardsBusy}
                 >
                   <option value="">
-                    {cardsBusy ? 'Loading cards…' : cards && cards.length > 0 ? 'Choose a card…' : 'No active cards found'}
+                    {cardsBusy
+                      ? 'Loading cards…'
+                      : cardsError
+                        ? 'Card list unavailable'
+                        : cards && cards.length > 0
+                          ? 'Choose a card…'
+                          : 'No active cards found'}
                   </option>
                   {cards?.map((c) => (
                     <option key={c.cardId} value={c.cardId ?? ''}>
@@ -400,7 +427,16 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
                   ))}
                 </select>
                 <span className={s.fieldHint}>
-                  From servercrm — no driver name lives on the card, so pick by number.{' '}
+                  {cardsError ? (
+                    <>
+                      Couldn't read the card list — {cardsError}{' '}
+                      <button type="button" className={s.linkBtn} onClick={() => setCardsReload((n) => n + 1)}>
+                        Retry
+                      </button>{' '}
+                    </>
+                  ) : (
+                    'From servercrm — no driver name lives on the card, so pick by number. '
+                  )}
                   <button type="button" className={s.linkBtn} onClick={() => setCardManual(true)}>
                     Enter a card id manually
                   </button>

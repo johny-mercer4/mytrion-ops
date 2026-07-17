@@ -648,6 +648,35 @@ const BALANCE_KEY = 'octane.lastBalance';
  * Scoped by company: a Telegram account can be re-registered to another carrier, and one carrier's
  * money must never flash up under another's name.
  */
+/**
+ * The carrier balance, painted from cache first and refreshed in the background.
+ *
+ * Shared by both heroes on purpose: the endpoint takes 1.9–3.3s (it reaches live EFS through
+ * servercrm) and Home unmounts on every trip to Services or Inbox, so both cards need the same
+ * cache-then-refresh behaviour. Two copies of it would drift.
+ *
+ * Returns null only until the FIRST ever response — that is the one state worth a skeleton.
+ */
+function useCarrierBalance(initData: string, company: string): CarrierBalance | null {
+  const [balance, setBalance] = useState<CarrierBalance | null>(() => readCachedBalance(company));
+  useEffect(() => {
+    let cancelled = false;
+    fetchBalance(initData)
+      .then((v) => {
+        if (cancelled) return;
+        setBalance(v);
+        writeCachedBalance(company, v);
+      })
+      .catch(() => {
+        /* the card falls back to the cached figure, or the skeleton — not worth an error state */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initData, company]);
+  return balance;
+}
+
 function readCachedBalance(company: string): CarrierBalance | null {
   try {
     const raw = localStorage.getItem(BALANCE_KEY);
@@ -669,22 +698,7 @@ function writeCachedBalance(company: string, balance: CarrierBalance): void {
 
 function OwnerHero({ initData, company, onOpenDetails }: { initData: string; company: string; onOpenDetails: () => void }) {
   const { t } = useI18n();
-  const [balance, setBalance] = useState<CarrierBalance | null>(() => readCachedBalance(company));
-  useEffect(() => {
-    let cancelled = false;
-    fetchBalance(initData)
-      .then((v) => {
-        if (cancelled) return;
-        setBalance(v);
-        writeCachedBalance(company, v);
-      })
-      .catch(() => {
-        /* the balance tile falls back to '—' below — not worth a dedicated error state on Home */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [initData, company]);
+  const balance = useCarrierBalance(initData, company);
   const creditLimit = balance?.credit_limit != null ? Number(balance.credit_limit) : null;
   const creditRemaining = balance?.credit_remaining != null ? Number(balance.credit_remaining) : null;
   const pct = creditLimit && creditRemaining != null && creditLimit > 0 ? Math.max(0, Math.min(100, (creditRemaining / creditLimit) * 100)) : 100;
@@ -738,6 +752,7 @@ function DriverHero({
   session,
   company,
   fullName,
+  initData,
   revealed,
   copied,
   onToggleReveal,
@@ -746,12 +761,16 @@ function DriverHero({
   session: Session;
   company: string;
   fullName: string;
+  initData: string;
   revealed: boolean;
   copied: boolean;
   onToggleReveal: () => void;
   onCopy: () => void;
 }) {
   const { t } = useI18n();
+  // A driver's catalog lists "Check available balance" (docx), and that service already reads this
+  // same carrier balance — so the card leads with it rather than making them open a sheet for it.
+  const balance = useCarrierBalance(initData, company);
   // No invented fallback: if the DWH has not resolved the real PAN there is nothing truthful to
   // show, so the number skeletons rather than displaying a fiction the Copy button would hand out.
   const realFull = session.ownCardNumber;
@@ -769,24 +788,38 @@ function DriverHero({
           )}
         </div>
 
-        {/* Bottom block: eye/copy (right), then masked number (left) — holder name sits up top. */}
-        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <button type="button" className="press" aria-label={revealed ? 'Hide card number' : 'Show card number'} onClick={onToggleReveal} style={{ width: 34, height: 34, border: 'none', borderRadius: 10, background: 'rgba(255,255,255,.15)', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-              <EyeToggle revealed={revealed} size={17} />
-            </button>
-            <button type="button" className="press" onClick={onCopy} style={{ height: 34, padding: '0 13px', border: 'none', borderRadius: 10, background: 'rgba(255,255,255,.15)', color: '#FFFFFF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              {copied ? t('card.copied') : t('card.copy')}
-            </button>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {/* Balance mid-card: the figure a driver opens the app for, and the same value their
+            catalog's "Check available balance" reads. */}
+        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' }}>{t('home.efsBalance')}</span>
+          {balance ? (
+            <span className="selectable" style={{ fontSize: 28, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02, letterSpacing: '-.01em' }}>
+              {money(balance.efs_balance ?? balance.balance)}
+            </span>
+          ) : (
+            <span aria-label={t('home.efsBalance')} style={{ display: 'block', width: 148, height: 29, borderRadius: 8, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
+          )}
+        </div>
+
+        {/* Card number last, with reveal/copy on ITS label row — the controls act on this number, so
+            they sit with it. Beside the balance they read as if they revealed the money. */}
+        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' }}>{t('card.numberLabel')}</span>
-            {display ? (
-              <span className="selectable" style={{ fontSize: 19, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.04em', whiteSpace: 'nowrap' }}>{display}</span>
-            ) : (
-              <span aria-label={t('card.numberLabel')} style={{ display: 'block', width: 196, height: 20, borderRadius: 6, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
-            )}
+            <div style={{ display: 'flex', gap: 7, flex: 'none' }}>
+              <button type="button" className="press" aria-label={revealed ? 'Hide card number' : 'Show card number'} onClick={onToggleReveal} style={{ width: 30, height: 30, border: 'none', borderRadius: 9, background: 'rgba(255,255,255,.13)', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                <EyeToggle revealed={revealed} size={15} />
+              </button>
+              <button type="button" className="press" onClick={onCopy} style={{ height: 30, padding: '0 11px', border: 'none', borderRadius: 9, background: 'rgba(255,255,255,.13)', color: '#FFFFFF', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                {copied ? t('card.copied') : t('card.copy')}
+              </button>
+            </div>
           </div>
+          {display ? (
+            <span className="selectable" style={{ fontSize: 18, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em', whiteSpace: 'nowrap' }}>{display}</span>
+          ) : (
+            <span aria-label={t('card.numberLabel')} style={{ display: 'block', width: 196, height: 19, borderRadius: 6, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
+          )}
         </div>
       </div>
       <div style={{ fontSize: 13, color: 'var(--muted-fg)', margin: '-6px 4px 0' }}>{t('home.cardStanding')}</div>
@@ -845,7 +878,7 @@ function Home({
     <SlideIn key={tab} dir={slideDir}>
     <div style={{ padding: '16px 16px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {session.isDriver ? (
-        <DriverHero session={session} company={company} fullName={fullName} revealed={cardRevealed} copied={cardCopied} onToggleReveal={onToggleCardReveal} onCopy={onCopyCardNumber} />
+        <DriverHero session={session} company={company} fullName={fullName} initData={initData} revealed={cardRevealed} copied={cardCopied} onToggleReveal={onToggleCardReveal} onCopy={onCopyCardNumber} />
       ) : (
         <OwnerHero initData={initData} company={company} onOpenDetails={() => onOpenAction({ kind: 'service', key: 'status' })} />
       )}
