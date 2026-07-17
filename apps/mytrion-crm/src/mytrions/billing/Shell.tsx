@@ -8,7 +8,7 @@
  * (Phase 2), and the AI copilot lands as a floating launcher in Phase 3 (no nav tab, matching
  * how CS/Sales expose it).
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { useUserContext } from '../../context/UserContextProvider';
 import { BillingCopilot } from './BillingCopilot';
@@ -114,6 +114,20 @@ export function BillingShell() {
     setMounted((m) => (m[id] ? m : { ...m, [id]: true }));
   }
 
+  // Stable element instances — panels are kept mounted (keep-alive) and take no props, so
+  // memoizing the elements lets React skip re-rendering them when the shell re-renders on a tab
+  // switch. Without this, every tab change re-ran the ~1.6k-row Transactions render (~200ms stall).
+  const els = useMemo(
+    () => ({
+      datacenter: <DataCenter />,
+      transactions: <Transactions />,
+      debtors: <Debtors />,
+      prepay: <Prepay />,
+      returns: <Returns />,
+    }),
+    [],
+  );
+
   const panel = (id: SectionId, node: ReactNode): ReactNode =>
     mounted[id] ? (
       <div style={{ display: active === id ? 'contents' : 'none' }}>{node}</div>
@@ -121,6 +135,8 @@ export function BillingShell() {
 
   return (
     <div className={`bm-root${theme === 'light' ? ' light-mode' : ''}`}>
+      {booting ? <BootLoader /> : null}
+
       {/* ═══ HEADER ═══ */}
       <header className="bm-header">
         <div className="bm-header-title">
@@ -197,12 +213,11 @@ export function BillingShell() {
         </aside>
 
         <main className="bm-content">
-          {booting ? <BootLoader /> : null}
-          {panel('datacenter', <DataCenter />)}
-          {panel('transactions', <Transactions />)}
-          {panel('debtors', <Debtors />)}
-          {panel('prepay', <Prepay />)}
-          {panel('returns', <Returns />)}
+          {panel('datacenter', els.datacenter)}
+          {panel('transactions', els.transactions)}
+          {panel('debtors', els.debtors)}
+          {panel('prepay', els.prepay)}
+          {panel('returns', els.returns)}
         </main>
       </div>
 
@@ -229,117 +244,39 @@ export function BillingShell() {
   );
 }
 
-/** Branded boot splash — the widget's own loader markup (uses the ported scanSweep/spin/
- *  dots/loaderBar keyframes), so it reads identically to the zoho widget. */
+/** Opening loader — Finance-style .bm-app-loader (sweep · glow · triple spinner ring with a
+ *  centred billing glyph · Rajdhani title + animated dots · progress bar). Styled in overrides.css. */
 function BootLoader() {
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 9999,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'var(--color-bg-primary)',
-        gap: 0,
-        overflow: 'hidden',
-      }}
-    >
-      <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 2, overflow: 'hidden' }}>
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: '-60%',
-            width: '60%',
-            height: '100%',
-            background: 'var(--billing-accent)',
-            animation: 'scanSweep 4s linear infinite',
-          }}
-        />
-      </div>
-      <div
-        style={{
-          position: 'absolute',
-          width: 320,
-          height: 320,
-          borderRadius: '50%',
-          background: 'radial-gradient(circle,var(--accent-bg-subtle) 0%,transparent 70%)',
-          pointerEvents: 'none',
-        }}
-      />
-      <div style={{ position: 'relative', width: 80, height: 80 }}>
-        <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '2px solid var(--accent-bg)' }} />
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            borderRadius: '50%',
-            border: '2px solid transparent',
-            borderTopColor: 'var(--billing-accent)',
-            borderRightColor: 'var(--accent-border-strong)',
-            animation: 'spin 1.1s linear infinite',
-          }}
-        />
-        <div
-          style={{
-            position: 'absolute',
-            inset: 8,
-            borderRadius: '50%',
-            border: '1px solid var(--accent-bg-strong)',
-            borderTopColor: 'var(--accent-border-strong)',
-            animation: 'spin 0.7s linear infinite reverse',
-          }}
-        />
-        <div
-          style={{
-            position: 'absolute',
-            inset: 16,
-            borderRadius: '50%',
-            background: 'var(--accent-bg-subtle)',
-            border: '1px solid var(--accent-bg)',
-          }}
-        />
-      </div>
-      <div style={{ marginTop: '1.5rem', textAlign: 'center' }}>
-        <div
-          style={{
-            fontSize: '0.875rem',
-            fontWeight: 700,
-            color: 'var(--text-primary)',
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
-            marginBottom: '0.3rem',
-            fontFamily: "'Rajdhani',Inter,sans-serif",
-          }}
-        >
-          Connecting to Billing
-        </div>
-        <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-          Loading your billing data
-          <span style={{ animation: 'dots 1.4s steps(4,end) infinite' }}>...</span>
+    <div className="bm-app-loader" role="status" aria-live="polite" aria-label="Loading workspace">
+      <div className="bm-app-loader-sweep" />
+      <div className="bm-app-loader-glow" />
+      <div className="bm-app-loader-ring">
+        <div className="ring-bg" />
+        <div className="ring-spin" />
+        <div className="ring-inner" />
+        <div className="ring-mark">
+          <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
+            />
+          </svg>
         </div>
       </div>
-      <div
-        style={{
-          marginTop: '1.25rem',
-          width: 120,
-          height: 1,
-          background: 'var(--accent-bg)',
-          borderRadius: 999,
-          overflow: 'hidden',
-        }}
-      >
-        <div
-          style={{
-            height: '100%',
-            background: 'var(--billing-accent)',
-            borderRadius: 999,
-            animation: 'loaderBar 2s ease-in-out infinite',
-          }}
-        />
+      <div className="bm-app-loader-text">
+        <div className="bm-app-loader-title">Connecting to Billing</div>
+        <div className="bm-app-loader-sub">
+          Securing your workspace
+          <span className="dot">.</span>
+          <span className="dot">.</span>
+          <span className="dot">.</span>
+        </div>
+      </div>
+      <div className="bm-app-loader-bar">
+        <div />
       </div>
     </div>
   );
