@@ -1533,9 +1533,22 @@ function ActionSheet({
       } catch (e) {
         // Backend errors here (crmGet's upstream passthrough, DB failures) are DTO/validation
         // text meant for API integrators, not the end user — never surface e.message directly.
+        //
+        // But the STATUS is reliable, and it decides the only thing the user cares about: will
+        // pulling down help? Every failure used to say "Pull down to try again", including 4xx —
+        // which fail identically forever. A driver whose account data the upstream rejects (seen
+        // live: HTTP 400 "carrierId must be a positive integer") was told to retry a call that
+        // could never succeed, and would pull until they gave up.
         if (!cancelled) {
           console.error('[ActionSheet] load failed', e);
-          setLoadError(t('sheet.loadError'));
+          const status = e instanceof ApiError ? e.status : -1;
+          setLoadError(
+            status === 0
+              ? t('sheet.loadErrorOffline')
+              : status >= 400 && status < 500
+                ? t('sheet.loadErrorAccount')
+                : t('sheet.loadError'),
+          );
           setLoading(false);
         }
       }
