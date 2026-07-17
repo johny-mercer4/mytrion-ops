@@ -3,3 +3,11 @@
    zoho-octane source of truth (React-shell adjustments, `.bm-root` integration tweaks) goes
    here so the ported files stay a clean mirror. Loaded last by index.css. Source of truth for
    the base files: zoho-octane/app/billing-mytrion/css/. */
+
+/* Status text utilities — the widget only defined these scoped under .bm-prepay-panel, but the
+   Debtors/Transactions modals use bare `text-danger`/`text-success`/`text-warning`. Promote them
+   to the whole widget so amounts colour correctly outside the prepay panel. */
+.bm-root .text-danger { color: var(--danger-text); }
+.bm-root .text-success { color: var(--success-text); }
+.bm-root .text-warning { color: var(--warning-text); }
+.bm-root .text-muted { color: var(--text-muted); }

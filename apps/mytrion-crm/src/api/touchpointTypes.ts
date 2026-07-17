@@ -477,6 +477,68 @@ export interface TouchpointMap {
     params: { lastSyncTime?: string };
     result: CsDataCenterDeals;
   };
+  // ---- Billing (departmentAccess: ['billing'] — use api/billing.ts billingTouchpoint) ----
+  // mappedBy/unmappedBy are injected server-side from the session; the UI never sends them.
+  'billing.transactions.list': {
+    params: { page: number; limit?: number };
+    result: BillingTransactionsPage;
+  };
+  'billing.transactions.search': { params: { query: string }; result: BillingTransactionsPage };
+  'billing.invoices.search': { params: { carrierId: string }; result: BillingInvoicesResult };
+  'billing.carrier.fuzzy': {
+    params: { senderName?: string; description?: string; email?: string };
+    result: BillingFuzzyResult;
+  };
+  'billing.carrier.memory': { params: Record<string, never>; result: BillingMemoryResult };
+  'billing.transactions.mapInvoice': {
+    params: {
+      invoiceId: string;
+      invoiceNumber: string;
+      paymentAmount: number;
+      paymentDate: string;
+      note?: string;
+      transactionRecordId: string;
+      type: BillingTxType;
+      carrierId: string;
+    };
+    result: BillingWriteResult;
+  };
+  'billing.transactions.topUp': {
+    params: {
+      carrierId: string;
+      paymentAmount: number;
+      paymentDate: string;
+      note?: string;
+      transactionRecordId: string;
+      type: BillingTxType;
+    };
+    result: BillingWriteResult;
+  };
+  'billing.transactions.syncCrmOnly': {
+    params: {
+      transactionRecordId: string;
+      type: BillingTxType;
+      carrierId: string;
+      invoiceNumber?: string;
+    };
+    result: BillingWriteResult;
+  };
+  'billing.transactions.applySplits': {
+    params: { transactionRecordId: string; type: BillingTxType; splitsJson: string };
+    result: BillingWriteResult;
+  };
+  'billing.transactions.unmap': {
+    params: { transactionRecordId: string; type: BillingTxType; clearCrm?: 'true' | 'false' };
+    result: BillingWriteResult;
+  };
+  'billing.carrier.saveMemory': {
+    params: { companyName: string; carrierId: string };
+    result: BillingWriteResult;
+  };
+  'billing.datacenter.deals': { params: { fresh?: '0' | '1' }; result: BillingDealsResult };
+  'billing.debtors.list': { params: { fresh?: '0' | '1' }; result: BillingDebtorsResult };
+  'billing.datacenter.avgDays': { params: { carrierId: string }; result: Record<string, unknown> };
+  'billing.carrier.type': { params: { carrierId: string }; result: Record<string, unknown> };
 }
 
 // ---- Customer Service result shapes (widget-observed; legitimately-sparse fields optional) ----
@@ -550,6 +612,63 @@ export interface CsDataCenterDeals {
   total_deals?: number;
   deals?: CsDataCenterDeal[];
   is_delta?: boolean;
+}
+
+// ---- Billing result shapes (loose — the panels map the raw widget payloads) ----
+
+/** Transaction source `type` as the Deluge functions expect it (BM_TX_SOURCES). */
+export type BillingTxType = 'Zelle' | 'Chase' | 'Mx_Merchant' | 'Stripe' | 'ACH' | 'Wire' | 'Check' | 'Card';
+
+/** Paged transaction fetch — the widget reads `transactions` + `hasMore`/`totals`. */
+export interface BillingTransactionsPage {
+  transactions?: Array<Record<string, unknown>>;
+  records?: Array<Record<string, unknown>>;
+  hasMore?: boolean;
+  more_records?: boolean;
+  page?: number;
+  totals?: Record<string, number | string | null>;
+  [k: string]: unknown;
+}
+
+export interface BillingInvoicesResult {
+  invoices?: Array<Record<string, unknown>>;
+  prepay?: Record<string, unknown> | null;
+  [k: string]: unknown;
+}
+
+export interface BillingFuzzyResult {
+  matches?: Array<Record<string, unknown>>;
+  carrierId?: string | number | null;
+  [k: string]: unknown;
+}
+
+export interface BillingMemoryResult {
+  data?: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+}
+
+/** Every mapping write returns {status:'success'|'partial'|'error', message?, …} (widget parity). */
+export interface BillingWriteResult {
+  status?: 'success' | 'partial' | 'error' | string;
+  message?: string;
+  paymentId?: string | number;
+  topUpId?: string | number;
+  appliedCount?: number;
+  reversed?: unknown[];
+  [k: string]: unknown;
+}
+
+/** DWH deals feed — array under `deals`/`data`, or a bare array. */
+export interface BillingDealsResult {
+  deals?: Array<Record<string, unknown>>;
+  data?: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+}
+
+export interface BillingDebtorsResult {
+  debtors?: Array<Record<string, unknown>>;
+  data?: Array<Record<string, unknown>>;
+  [k: string]: unknown;
 }
 
 export type TouchpointKey = keyof TouchpointMap;
