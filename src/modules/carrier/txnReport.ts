@@ -66,8 +66,8 @@ const COLUMNS: ColumnSpec[] = [
   { header: 'Card', weight: 9, align: 'left' },
   { header: 'Category', weight: 8, align: 'left' },
   { header: 'Qty', weight: 7, align: 'right', numFmt: '#,##0.00' },
-  { header: 'Amount', weight: 9, align: 'right', numFmt: '"$"#,##0.00' },
-  { header: 'Discount', weight: 9, align: 'right', numFmt: '"$"#,##0.00' },
+  { header: 'Amount', weight: 9, align: 'right', numFmt: '#,##0.00' },
+  { header: 'Discount', weight: 9, align: 'right', numFmt: '#,##0.00' },
 ];
 
 const MAX_PDF_ROWS = 2_000;
@@ -267,12 +267,47 @@ function pdfSafe(text: string): string {
     .replace(/[^\x20-\xFF\u2013\u2014\u2018\u2019\u201C\u201D\u2022\u2026\u20AC]/g, '');
 }
 
+/**
+ * The Octane mark, as vector paths.
+ *
+ * Geometry is lifted verbatim from apps/mini-app/src/components/logo.tsx — itself the official
+ * `octane_logo_v_black.svg`, cropped to the icon's bounding box. Vector, not a raster: it stays
+ * crisp at print resolution and needs neither an image asset nor a rasterizer dependency (the repo
+ * has none). The gradients keep the source's userSpaceOnUse coordinates, which still line up
+ * because we draw inside the same transformed space.
+ */
+const LOGO = {
+  /** viewBox="57.16 1.71 99.36 99.36" */
+  originX: 57.16,
+  originY: 1.71,
+  span: 99.36,
+  ring: 'M106.84,101.07c-27.37,0-49.56-22.24-49.56-49.68S79.47,1.71,106.84,1.71s49.56,22.24,49.56,49.68-22.19,49.68-49.56,49.68h0ZM106.84,18.47c-18.13,0-32.84,14.74-32.84,32.92s14.7,32.92,32.84,32.92,32.84-14.74,32.84-32.92-14.7-32.92-32.84-32.92h0Z',
+  accent: 'M102.74,36.71s6.89,3.54,11.26,2.41c4.37-1.13,6.89-3.83,12.07-4.02,5.44-.2,6.78,2.63,6.84,4.83.07,2.8-.59,8.85-10.06,6.84-9.46-2.01-20.11-10.06-20.11-10.06h0Z',
+  drop: 'M92.56,31.08c7.76-.46,11.93,6.89,21.72,10.86,15.64,6.34,18.07-.56,18.44-3.13,1.83,3.77,2.86,8.01,2.86,12.49,0,15.82-12.82,28.64-28.64,28.64s-28.64-12.82-28.64-28.64c0-5.57,1.6-10.77,4.35-15.16,1.44-1.8,4.58-4.73,9.91-5.05h0Z',
+} as const;
+
+/** `ringColor` mirrors the mini-app's `--logo-ring`: white on a dark surface, near-black on light. */
+function drawLogo(doc: PDFKit.PDFDocument, x: number, y: number, size: number, ringColor: string): void {
+  doc.save();
+  doc.translate(x, y).scale(size / LOGO.span).translate(-LOGO.originX, -LOGO.originY);
+  // The ring is a filled donut (even-odd), not a stroke — that is what keeps its gap transparent.
+  doc.path(LOGO.ring).fill(ringColor, 'even-odd');
+  const accent = doc.linearGradient(130.79, 34.5, 107.26, 45.97);
+  accent.stop(0, '#ffba18').stop(1, '#ffdd1e');
+  doc.path(LOGO.accent).fill(accent, 'even-odd');
+  const drop = doc.linearGradient(117.67, 77.85, 97.62, 28.21);
+  drop.stop(0, '#ff520a').stop(1, '#ffdd1e');
+  doc.path(LOGO.drop).fill(drop, 'even-odd');
+  doc.restore();
+}
+
 function pdfHeader(doc: PDFKit.PDFDocument, meta: TxnReportMeta): void {
   const { left, right } = doc.page.margins;
   const w = doc.page.width - left - right;
 
   doc.rect(left, PDF_MARGIN, w, 34).fill(hex(BRAND.ink));
-  doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(15).text('OCTANE', left + 12, PDF_MARGIN + 10);
+  drawLogo(doc, left + 12, PDF_MARGIN + 5, 24, '#FFFFFF'); // white ring — the band is ink
+  doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(15).text('OCTANE', left + 44, PDF_MARGIN + 10);
   doc.font('Helvetica').fontSize(10).fillColor('#C9CDD6')
     .text('Transaction Report', left + 12, PDF_MARGIN + 13, { width: w - 24, align: 'right' });
 
@@ -340,7 +375,7 @@ async function toPdf(grid: Grid, meta: TxnReportMeta): Promise<Buffer> {
         const spec = COLUMNS[i];
         if (!spec) return;
         const w = widths[i] ?? 0;
-        const text = typeof v === 'number' ? (spec.numFmt?.includes('$') ? `$${v.toFixed(2)}` : v.toFixed(2)) : v;
+        const text = typeof v === 'number' ? v.toFixed(2) : v;
         doc.text(pdfSafe(text), x + 4, y + 4, { width: w - 8, align: spec.align, lineBreak: false, ellipsis: true });
         x += w;
       });
@@ -351,7 +386,7 @@ async function toPdf(grid: Grid, meta: TxnReportMeta): Promise<Buffer> {
     const ty = doc.y;
     doc.rect(PDF_MARGIN, ty, usable, 1.5).fill(hex(BRAND.orange));
     doc.font('Helvetica-Bold').fontSize(8.5).fillColor(hex(BRAND.ink));
-    const cells = ['TOTAL', '', '', '', '', '', grid.totals.qty.toFixed(2), `$${grid.totals.amount.toFixed(2)}`, `$${grid.totals.discount.toFixed(2)}`];
+    const cells = ['TOTAL', '', '', '', '', '', grid.totals.qty.toFixed(2), grid.totals.amount.toFixed(2), grid.totals.discount.toFixed(2)];
     let tx = PDF_MARGIN;
     cells.forEach((v, i) => {
       const w = widths[i] ?? 0;
