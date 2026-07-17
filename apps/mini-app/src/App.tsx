@@ -59,6 +59,9 @@ interface Session {
   ownCard: string;
   /** Driver's real full fuel-card number (from the backend session), null when unresolved. */
   ownCardNumber: string | null;
+  /** The carrier this session belongs to — identity, unlike companyName which is display text and
+   *  is routinely null. Anything cached per account must key on this. */
+  carrierId: string | null;
 }
 
 function cleanAgentName(agentName: string | null | undefined): string | null {
@@ -82,6 +85,7 @@ function sessionFrom(reg: RegistrationView | null): Session {
     isFleetManager,
     ownCard,
     ownCardNumber,
+    carrierId: reg?.carrierId ?? null,
   };
 }
 
@@ -687,8 +691,13 @@ const BALANCE_KEY = 'octane.lastBalance';
  * value is only ever the FIRST paint: the fetch below still runs and overwrites it, so a stale
  * figure is on screen for one request, not for a session.
  *
- * Scoped by company: a Telegram account can be re-registered to another carrier, and one carrier's
- * money must never flash up under another's name.
+ * Scoped by CARRIER ID, not company name. The name is display text and is routinely null — an
+ * invite created without one, or any registration whose companyName never got filled. Two empty
+ * names compared equal, so the scope collapsed and the cache hit across accounts: measured, after
+ * re-registering from carrier 5794015 to 5791860 the hero showed KBUFF TRUCKING's $2,000 balance and
+ * $70,547 credit line under EL PROSSIAH LLC for ~2s before the fetch landed. A name is also not
+ * identity — it can repeat and it can change. The carrier id is both always present and the thing
+ * that actually distinguishes one carrier's money from another's.
  */
 /**
  * The carrier balance, painted from cache first and refreshed in the background.
@@ -699,15 +708,15 @@ const BALANCE_KEY = 'octane.lastBalance';
  *
  * Returns null only until the FIRST ever response — that is the one state worth a skeleton.
  */
-function useCarrierBalance(initData: string, company: string): CarrierBalance | null {
-  const [balance, setBalance] = useState<CarrierBalance | null>(() => readCachedBalance(company));
+function useCarrierBalance(initData: string, carrierId: string | null): CarrierBalance | null {
+  const [balance, setBalance] = useState<CarrierBalance | null>(() => readCachedBalance(carrierId));
   useEffect(() => {
     let cancelled = false;
     fetchBalance(initData)
       .then((v) => {
         if (cancelled) return;
         setBalance(v);
-        writeCachedBalance(company, v);
+        writeCachedBalance(carrierId, v);
       })
       .catch(() => {
         /* the card falls back to the cached figure, or the skeleton — not worth an error state */
@@ -715,32 +724,35 @@ function useCarrierBalance(initData: string, company: string): CarrierBalance | 
     return () => {
       cancelled = true;
     };
-  }, [initData, company]);
+  }, [initData, carrierId]);
   return balance;
 }
 
-function readCachedBalance(company: string): CarrierBalance | null {
+function readCachedBalance(carrierId: string | null): CarrierBalance | null {
+  // No carrier resolved yet — there is nothing to key on, so a hit would be a guess.
+  if (!carrierId) return null;
   try {
     const raw = localStorage.getItem(BALANCE_KEY);
     if (!raw) return null;
-    const v = JSON.parse(raw) as { company?: string; balance?: CarrierBalance };
-    return v.company === company && v.balance ? v.balance : null;
+    const v = JSON.parse(raw) as { carrierId?: string; balance?: CarrierBalance };
+    return v.carrierId === carrierId && v.balance ? v.balance : null;
   } catch {
     return null; // unparseable or storage blocked — just fetch
   }
 }
 
-function writeCachedBalance(company: string, balance: CarrierBalance): void {
+function writeCachedBalance(carrierId: string | null, balance: CarrierBalance): void {
+  if (!carrierId) return;
   try {
-    localStorage.setItem(BALANCE_KEY, JSON.stringify({ company, balance }));
+    localStorage.setItem(BALANCE_KEY, JSON.stringify({ carrierId, balance }));
   } catch {
     /* storage can be unavailable (private mode / quota) — the cache is an optimisation, not state */
   }
 }
 
-function OwnerHero({ initData, company, onOpenDetails }: { initData: string; company: string; onOpenDetails: () => void }) {
+function OwnerHero({ initData, company, carrierId, onOpenDetails }: { initData: string; company: string; carrierId: string | null; onOpenDetails: () => void }) {
   const { t } = useI18n();
-  const balance = useCarrierBalance(initData, company);
+  const balance = useCarrierBalance(initData, carrierId);
   const creditLimit = balance?.credit_limit != null ? Number(balance.credit_limit) : null;
   const creditRemaining = balance?.credit_remaining != null ? Number(balance.credit_remaining) : null;
   const pct = creditLimit && creditRemaining != null && creditLimit > 0 ? Math.max(0, Math.min(100, (creditRemaining / creditLimit) * 100)) : 100;
@@ -793,6 +805,7 @@ function OwnerHero({ initData, company, onOpenDetails }: { initData: string; com
 function DriverHero({
   session,
   company,
+  carrierId,
   fullName,
   initData,
   revealed,
@@ -800,6 +813,7 @@ function DriverHero({
 }: {
   session: Session;
   company: string;
+  carrierId: string | null;
   fullName: string;
   initData: string;
   revealed: boolean;
@@ -808,7 +822,7 @@ function DriverHero({
   const { t } = useI18n();
   // A driver's catalog lists "Check available balance" (docx), and that service already reads this
   // same carrier balance — so the card leads with it rather than making them open a sheet for it.
-  const balance = useCarrierBalance(initData, company);
+  const balance = useCarrierBalance(initData, carrierId);
   // No invented fallback: if the DWH has not resolved the real PAN there is nothing truthful to
   // show, so the number skeletons rather than displaying a fiction the Copy button would hand out.
   const realFull = session.ownCardNumber;
@@ -913,9 +927,9 @@ function Home({
     <SlideIn key={tab} dir={slideDir}>
     <div style={{ padding: '16px 16px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {session.isDriver ? (
-        <DriverHero session={session} company={company} fullName={fullName} initData={initData} revealed={cardRevealed} onToggleReveal={onToggleCardReveal} />
+        <DriverHero session={session} company={company} carrierId={session.carrierId} fullName={fullName} initData={initData} revealed={cardRevealed} onToggleReveal={onToggleCardReveal} />
       ) : (
-        <OwnerHero initData={initData} company={company} onOpenDetails={() => onOpenAction({ kind: 'service', key: 'status' })} />
+        <OwnerHero initData={initData} company={company} carrierId={session.carrierId} onOpenDetails={() => onOpenAction({ kind: 'service', key: 'status' })} />
       )}
 
       {/* quick actions */}
