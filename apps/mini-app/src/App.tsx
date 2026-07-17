@@ -1151,7 +1151,7 @@ function FleetView({
   const shown = rows.filter((r) => {
     if (filter !== 'all' && r.status !== filter) return false;
     if (q) {
-      const hay = `${last4(r.cardNumber, r.cardId)} ${(r.driverName ?? 'unassigned')} ${r.cardType ?? ''}`.toLowerCase();
+      const hay = `${last4(r.cardNumber, r.cardId)} ${(r.driverName ?? 'unassigned')}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -1268,7 +1268,6 @@ function FleetView({
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span className="selectable" style={{ fontWeight: 700, fontSize: 15, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em' }}>•••• {last4(c.cardNumber, c.cardId)}</span>
-                      {c.cardType && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.05em', color: 'var(--muted-fg)', background: 'var(--secondary)', padding: '2px 6px', borderRadius: 6 }}>{c.cardType}</span>}
                     </div>
                     <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.driverName ?? t('card.unassigned')}</div>
                   </div>

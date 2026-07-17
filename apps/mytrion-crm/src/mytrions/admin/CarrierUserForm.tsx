@@ -406,7 +406,6 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
                   {cards?.map((c) => (
                     <option key={c.cardId} value={c.cardId ?? ''}>
                       {c.cardNumber ? `•••• ${c.cardNumber.slice(-4)}` : c.cardId} — {c.status ?? '?'}
-                      {c.cardType ? ` · ${c.cardType}` : ''}
                     </option>
                   ))}
                 </select>
