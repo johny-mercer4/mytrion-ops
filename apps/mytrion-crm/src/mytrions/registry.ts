@@ -12,7 +12,6 @@ export const MYTRION_MODULES: Record<MytrionId, LazyExoticComponent<ComponentTyp
   billing: lazy(() => import('./billing')),
   collection: lazy(() => import('./collection')),
   finance: lazy(() => import('./finance')),
-  retention: lazy(() => import('./retention')),
   verification: lazy(() => import('./verification')),
   'customer-service': lazy(() => import('./customer-service')),
   manager: lazy(() => import('./manager')),

@@ -21,7 +21,7 @@ const TICKET_INCLUDE = 'contacts,assignee,team,departments';
 // creator-scope the list. Everything mapTicket renders must be listed here (fields restricts output).
 const TICKET_FIELDS = [
   'id', 'ticketNumber', 'subject', 'status', 'statusType', 'priority', 'channel',
-  'createdTime', 'dueDate', 'isOverDue',
+  'createdTime', 'modifiedTime', 'dueDate', 'isOverDue', 'description',
   'cf_crm_created_by_id', 'cf_target_department', 'cf_carrier_id_application_id',
   'cf_ticket_type', 'cf_original_stream_manager',
 ].join(',');
@@ -218,6 +218,52 @@ export class ZohoDeskWrapper extends ZohoWrapper {
   }
 
   /**
+   * Progressive creator page WITHOUT Desk.search (SCOPE_MISMATCH fallback).
+   * Scans `/tickets` newest-first until it can return `limit` matches after skipping `from`
+   * matches — same offset contract as ticketdashboard.html (`from=0,20,40…`, limit=20).
+   * Unlike the one-shot `listTicketsByCreator` dump, Load more keeps scanning deeper org history.
+   */
+  async pageTicketsByCreator(
+    crmUserId: string,
+    opts: { from?: number; limit?: number; maxOrgPages?: number } = {},
+  ): Promise<{ tickets: Record<string, unknown>[]; hasMore: boolean }> {
+    if (!crmUserId) return { tickets: [], hasMore: false };
+    const skip = Math.max(0, Math.trunc(opts.from ?? 0));
+    const take = clampLimit(opts.limit, MAX_TICKET_LIMIT);
+    // ~10k most-recent org tickets (100×99). Desk.search.READ removes this ceiling entirely.
+    const maxOrgPages = Math.min(100, Math.max(1, opts.maxOrgPages ?? 100));
+    const target = String(crmUserId);
+    const need = skip + take;
+    const matched: Record<string, unknown>[] = [];
+    const seen = new Set<string>();
+    let orgFrom = 1;
+    let exhausted = false;
+
+    for (let p = 0; p < maxOrgPages && matched.length < need; p++) {
+      const page = await this.ticketsPage(orgFrom, MAX_TICKET_LIMIT).catch(
+        () => [] as Record<string, unknown>[],
+      );
+      if (page.length < MAX_TICKET_LIMIT) exhausted = true;
+      for (const row of page) {
+        const cf = (row.cf ?? {}) as Record<string, unknown>;
+        if (String(cf.cf_crm_created_by_id ?? '') !== target) continue;
+        const id = String(row.id ?? '');
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        matched.push(row);
+        if (matched.length >= need) break;
+      }
+      orgFrom += MAX_TICKET_LIMIT;
+      if (exhausted) break;
+    }
+
+    const tickets = matched.slice(skip, skip + take);
+    // Keep Load more when this page is full and either we already saw more matches or org history continues.
+    const hasMore = tickets.length >= take && (matched.length > skip + take || !exhausted);
+    return { tickets, hasMore };
+  }
+
+  /**
    * Rejection reports — the auto-created Desk tickets whose subject is
    * "Rejection Report: <Company> - Error <code>". No Desk custom module exists for these; they are
    * ordinary tickets distinguished by subject. Scans the recent-tickets window (Desk.search scope is
@@ -250,7 +296,7 @@ export class ZohoDeskWrapper extends ZohoWrapper {
    * Rejection Reports) carry their body here as the description thread, NOT as a comment — the
    * conversation view merges these with agent comments.
    */
-  async getTicketThreads(ticketId: string, limit = 30): Promise<Record<string, unknown>[]> {
+  async getTicketThreads(ticketId: string, limit = 99): Promise<Record<string, unknown>[]> {
     return this.listGet<Record<string, unknown>>(`/tickets/${encodeURIComponent(ticketId)}/threads`, {
       from: 1,
       limit: clampLimit(limit, MAX_TICKET_LIMIT),
@@ -292,16 +338,21 @@ export class ZohoDeskWrapper extends ZohoWrapper {
    * Search the tickets a given CRM user created — the Sales ticket dashboard's list. Filters on
    * the custom field `cf_crm_created_by_id` (set when a ticket is created from the widget), newest
    * first. Returns the RAW Desk ticket objects (the dashboard needs custom fields + names), so the
-   * route/UI maps them. `from` is 1-based; Desk caps `limit` at 99.
+   * route/UI maps them. `from` is 0-based offset (ticketdashboard.html); Desk caps `limit` at 99.
    */
   async searchTicketsByCreator(
     crmUserId: string,
     opts: { from?: number; limit?: number } = {},
   ): Promise<Record<string, unknown>[]> {
     // /tickets/search wraps rows in `{ data: [...] }` on 200 and 204s when empty (listGet handles both).
+    // Do NOT pass `include` / `sortBy` here — Desk search rejects them (422) and the route maps
+    // that to HTTP 502. Nested contact/assignee come back on search by default (same as the
+    // reference ticketdashboard.html CONNECTION.invoke call).
+    // ticketdashboard.html pages with from=0,20,40… (offset-style). Keep that contract so
+    // infinite scroll doesn't skip/duplicate pages vs a 1-based list index.
     return this.listGet<Record<string, unknown>>('/tickets/search', {
       customField1: `cf_crm_created_by_id:${crmUserId}`,
-      from: Math.max(1, Math.trunc(opts.from ?? 1)),
+      from: Math.max(0, Math.trunc(opts.from ?? 0)),
       limit: clampLimit(opts.limit, MAX_TICKET_LIMIT),
     });
   }
@@ -319,8 +370,9 @@ export class ZohoDeskWrapper extends ZohoWrapper {
 
   /**
    * Post an agent reply/comment on a ticket. `isPublic` true = customer-visible reply. Optional
-   * `attachmentIds` are ids from `uploadDeskFile` (Desk requires them in the comment body, NOT the
-   * `/uploads` id passed any other way).
+   * `attachmentIds` attach an already-uploaded file (an id from Desk's `/uploads`) to this one
+   * comment bubble — for a file the user should find on the ticket's Attachments tab instead, use
+   * `uploadTicketAttachment`.
    */
   async postTicketComment(
     ticketId: string,
@@ -339,18 +391,40 @@ export class ZohoDeskWrapper extends ZohoWrapper {
     return text ? (JSON.parse(text) as Record<string, unknown>) : {};
   }
 
-  /** Upload a file to Desk (`POST /uploads`, multipart field `file`) → reusable attachment id. */
-  async uploadDeskFile(buffer: Buffer, fileName: string, mime: string): Promise<string> {
+  /**
+   * Upload a file straight onto a ticket's Attachments tab (`POST /tickets/{id}/attachments`,
+   * multipart field `file`) — this is the endpoint Desk's own Attachments tab reads from, as
+   * opposed to a comment's `attachmentIds` (which attaches a file to one comment bubble instead).
+   */
+  async uploadTicketAttachment(
+    ticketId: string,
+    buffer: Buffer,
+    fileName: string,
+    mime: string,
+    isPublic = true,
+  ): Promise<Record<string, unknown>> {
     const form = new FormData();
     form.append('file', new Blob([new Uint8Array(buffer)], { type: mime || 'application/octet-stream' }), fileName);
-    const res = await this.requestRaw('POST', '/uploads', { body: form });
+    const path = `/tickets/${encodeURIComponent(ticketId)}/attachments`;
+    const res = await this.requestRaw('POST', path, { body: form, query: { isPublic } });
     const text = await res.text();
     if (!res.ok) {
-      throw new Error(`[zoho-desk] POST /uploads HTTP ${res.status}: ${text.slice(0, 300)}`);
+      throw new Error(`[zoho-desk] POST ${path} HTTP ${res.status}: ${text.slice(0, 300)}`);
     }
-    const id = text ? (JSON.parse(text) as { id?: string }).id : undefined;
-    if (!id) throw new Error(`[zoho-desk] POST /uploads returned no id: ${text.slice(0, 200)}`);
-    return id;
+    return text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  }
+
+  /**
+   * A ticket's Attachments-tab entries (`GET /tickets/{id}/attachments`) — files that live on the
+   * ticket itself rather than any one comment/thread. The conversation view merges these in so an
+   * attachment added straight to Desk's Attachments tab (bypassing comments) still reaches Mytrion.
+   */
+  async getTicketAttachments(ticketId: string, limit = 99): Promise<Record<string, unknown>[]> {
+    return this.listGet<Record<string, unknown>>(`/tickets/${encodeURIComponent(ticketId)}/attachments`, {
+      from: 1,
+      limit: clampLimit(limit, MAX_TICKET_LIMIT),
+      sortBy: 'createdTime',
+    });
   }
 
   /** Download a ticket attachment's bytes (`GET /tickets/{id}/attachments/{attId}/content`). */
@@ -446,6 +520,11 @@ export const listTicketsByCreator = (
   crmUserId: string,
   opts?: { maxPages?: number },
 ): Promise<Record<string, unknown>[]> => zohoDesk.listTicketsByCreator(crmUserId, opts);
+export const pageTicketsByCreator = (
+  crmUserId: string,
+  opts?: { from?: number; limit?: number; maxOrgPages?: number },
+): Promise<{ tickets: Record<string, unknown>[]; hasMore: boolean }> =>
+  zohoDesk.pageTicketsByCreator(crmUserId, opts);
 export const listRejectionReportTickets = (
   opts?: { maxPages?: number },
 ): Promise<Record<string, unknown>[]> => zohoDesk.listRejectionReportTickets(opts);
@@ -466,8 +545,15 @@ export const postTicketComment = (
   isPublic?: boolean,
   attachmentIds?: string[],
 ): Promise<Record<string, unknown>> => zohoDesk.postTicketComment(ticketId, content, isPublic, attachmentIds);
-export const uploadDeskFile = (buffer: Buffer, fileName: string, mime: string): Promise<string> =>
-  zohoDesk.uploadDeskFile(buffer, fileName, mime);
+export const uploadTicketAttachment = (
+  ticketId: string,
+  buffer: Buffer,
+  fileName: string,
+  mime: string,
+  isPublic?: boolean,
+): Promise<Record<string, unknown>> => zohoDesk.uploadTicketAttachment(ticketId, buffer, fileName, mime, isPublic);
+export const getTicketAttachments = (ticketId: string, limit?: number): Promise<Record<string, unknown>[]> =>
+  zohoDesk.getTicketAttachments(ticketId, limit);
 export const getTicketAttachmentContent = (
   ticketId: string,
   attachmentId: string,

@@ -111,7 +111,10 @@ function buildUrl(path: string, query?: RequestOptions['query']): string {
   if (query) {
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(query)) {
-      if (v !== undefined && v !== null && v !== '') qs.append(k, String(v));
+      // Keep numeric 0 (Desk search pages with from=0). Only skip null/undefined/''.
+      if (v === undefined || v === null) continue;
+      if (typeof v === 'string' && v === '') continue;
+      qs.append(k, String(v));
     }
     const s = qs.toString();
     if (s) url += `?${s}`;

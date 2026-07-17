@@ -22,6 +22,8 @@ export default defineConfig({
       // boot — raced against a 20s deadline inside a 10s vitest hook. Measured: buildApp() took
       // 17.7s, so 8 files timed out. Green only while the MCP endpoint happened to answer fast.
       FF_ZOHO_MCP_ENABLED: '0',
+      // Match production default (OAuth on). Suites that need the flag off toggle it explicitly.
+      FF_ZOHO_OAUTH_ENABLED: '1',
       FF_DBT_MCP_ENABLED: '0',
       FF_DBT_MCP_WRITES: '0',
       FF_RAG_HYBRID: '0',

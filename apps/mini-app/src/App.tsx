@@ -12,6 +12,7 @@ import {
   fetchMiniAppSession,
   fetchPaymentInfo,
   fetchRegistrationPreview,
+  fetchCompany,
   fetchTracking,
   renameDriver,
   sendServiceRequest,
@@ -37,6 +38,7 @@ import { LANGUAGES, useI18n } from './lib/i18n';
 import { LogoLockup } from './components/logo';
 import { BackChevron, Chevron, EyeToggle, Icon, SearchGlyph, type IconName } from './components/icons';
 import { seedInbox, type InboxItem } from './lib/demo';
+import type { CompanyDetails } from './lib/api';
 import type { OpenAction } from './lib/actionTarget';
 import { defaultPinned, findCatalogItem } from './lib/serviceCatalog';
 import { ConfirmDialog, type ConfirmConfig } from './components/ConfirmDialog';
@@ -134,6 +136,31 @@ function money(v: unknown): string {
   return Number.isFinite(n)
     ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : fmt(v);
+}
+
+/**
+ * Translate a raw invoice status into a localized label + a tone.
+ *
+ * servercrm returns PAID / PENDING / PARTIALLY_PAID / CANCELLED (uppercase, English). The list used
+ * to print those verbatim in every locale. Normalized to the underscore-and-case-insensitive forms
+ * the upstream actually sends; an unrecognized value falls back to its raw text rather than a blank.
+ */
+function invoiceStatus(raw: unknown, t: (k: string) => string): { label: string; tone: string } {
+  const key = String(raw ?? '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+  switch (key) {
+    case 'PAID':
+      return { label: t('invoice.paid'), tone: 'success' };
+    case 'PENDING':
+    case 'UNPAID':
+      return { label: t('invoice.pending'), tone: 'muted-fg' };
+    case 'PARTIALLY_PAID':
+      return { label: t('invoice.partiallyPaid'), tone: 'muted-fg' };
+    case 'CANCELLED':
+    case 'CANCELED':
+      return { label: t('invoice.cancelled'), tone: 'destructive' };
+    default:
+      return { label: fmt(raw), tone: 'muted-fg' };
+  }
 }
 
 /** Countdown from an ISO deadline: {expired, short:"17h"/"45m"}. */
@@ -343,7 +370,6 @@ function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: Regis
   const isOwner = preview.profile === 'owner';
   const ownerLabel = preview.companyType === 'fleet-manager' ? t('role.fleet') : t('role.owner');
   const cd = countdown(preview.expiresAt);
-  const agent = cleanAgentName(preview.agentName);
   return (
     <Screen center>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22, width: '100%', maxWidth: 342, animation: 'octfade .3s ease' }}>
@@ -364,15 +390,6 @@ function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: Regis
               {isOwner ? ownerLabel : t('role.driver')}
             </span>
           </div>
-          {agent && (
-            <>
-              <div style={{ height: 1, background: 'var(--border)', margin: '0 16px' }} />
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '15px 16px' }}>
-                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('confirm.agentLabel')}</span>
-                <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', textAlign: 'right' }}>{agent}</span>
-              </div>
-            </>
-          )}
         </DetailCard>
         <CtaButton onClick={onConfirm} disabled={busy}>
           {busy ? <Spinner size={20} /> : t('confirm.cta')}
@@ -384,7 +401,9 @@ function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: Regis
           </div>
         )}
         <div style={{ fontSize: 12, color: 'var(--muted-fg)', textAlign: 'center', lineHeight: 1.5 }}>{t('confirm.footnote')}</div>
-        <SupportCard agentName={preview.agentName} />
+        {/* Generic support only during registration — the sales agent's name (who generated the link)
+            was on the confirm screen and its own row above; both are removed. */}
+        <SupportCard />
       </div>
     </Screen>
   );
@@ -681,16 +700,6 @@ function CardContours() {
   );
 }
 
-/**
- * The proportion of a real fuel card: ISO/IEC 7810 ID-1, 85.60 x 53.98 mm.
- *
- * Both heroes imitate the plastic, so the plastic decides the shape — this is not a taste number.
- * They were 1.5 (owner) and 1.55 (driver), i.e. both TALLER than the thing they depict, and the
- * owner — which carries the least content — was the tallest of the two. Because the card's height
- * is derived from the ratio and its content is laid out space-between, the surplus showed up as a
- * 64px void between the company name and the balance.
- */
-const CARD_RATIO = '1.586 / 1';
 
 const BALANCE_KEY = 'octane.lastBalance';
 
@@ -855,31 +864,30 @@ function OwnerHero({ initData, company, carrierId, onOpenDetails }: { initData: 
 function DriverHero({
   session,
   company,
-  carrierId,
   fullName,
-  initData,
   revealed,
   onToggleReveal,
 }: {
   session: Session;
   company: string;
-  carrierId: string | null;
   fullName: string;
-  initData: string;
   revealed: boolean;
   onToggleReveal: () => void;
 }) {
   const { t } = useI18n();
-  // A driver's catalog lists "Check available balance" (docx), and that service already reads this
-  // same carrier balance — so the card leads with it rather than making them open a sheet for it.
-  const { balance, failed: balanceFailed, retry: retryBalance } = useCarrierBalance(initData, carrierId);
   // No invented fallback: if the DWH has not resolved the real PAN there is nothing truthful to
   // show, so the number skeletons rather than displaying a fiction the Copy button would hand out.
   const realFull = session.ownCardNumber;
   const display = realFull ? (revealed ? groupCardNumber(realFull) : maskedCardNumber(realFull)) : null;
   return (
     <>
-      <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', aspectRatio: CARD_RATIO, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+      {/* No balance, and no fixed card ratio. The only balance available is the CARRIER's EFS pool
+          (getCarrierBalance is carrier-scoped; stg_cmp_card.balance is 0.00 for every card), so
+          showing it here put company money on a driver's screen. With it gone the card has just two
+          rows — a 1.586 ratio spread them apart with space-between and left a large void down the
+          middle. Height comes from the content now, with one comfortable gap, so it reads as a tidy
+          card. Styling (contours, dark fill, radius) is unchanged. */}
+      <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '17px 17px 18px', display: 'flex', flexDirection: 'column', gap: 40 }}>
         <CardContours />
 
         {/* Top band: driver name left, company + reveal right — the toggle rides at the card's top
@@ -896,49 +904,21 @@ function DriverHero({
           </div>
         </div>
 
-        {/* Balance mid-card: the figure a driver opens the app for, and the same value their
-            catalog's "Check available balance" reads. */}
-        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' }}>{t('home.efsBalance')}</span>
-          {balance ? (
-            /* The eye is the card's privacy toggle, not just the number's — it covers every figure
-               on the card, the way a payment app's does. `selectable` only while revealed, so a
-               drag can't lift the mask characters as if they were the amount. */
-            <span
-              className={revealed ? 'selectable' : ''}
-              style={{ fontSize: 28, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02, letterSpacing: '-.01em' }}
-            >
-              {revealed ? money(balance.efs_balance ?? balance.balance) : '• • • •'}
-            </span>
-          ) : (
-            balanceFailed ? (
-              /* A skeleton here would claim the number is still coming. It isn't. */
-              <button
-                type="button"
-                className="press"
-                onClick={retryBalance}
-                style={{ alignSelf: 'flex-start', marginTop: 6, display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'rgba(255,255,255,.14)', color: '#FFFFFF', borderRadius: 9, padding: '6px 11px', fontFamily: "'Geist'", fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
-              >
-                <Icon name="refresh" size={13} strokeWidth={2.2} className="" />
-                {t('home.balanceRetry')}
-              </button>
-            ) : (
-            <span aria-label={t('home.efsBalance')} style={{ display: 'block', width: 148, height: 29, borderRadius: 8, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
-            )
-          )}
-        </div>
-
-        {/* Card number last. The number stays `selectable`, so it can still be picked up by hand. */}
+        {/* Card number + standing at the bottom, the way a real card sets its number in the lower
+            third. The number stays `selectable` so it can still be picked up by hand. */}
         <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' }}>{t('card.numberLabel')}</span>
           {display ? (
-            <span className={revealed ? 'selectable' : ''} style={{ fontSize: 18, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em', whiteSpace: 'nowrap' }}>{display}</span>
+            <span className={revealed ? 'selectable' : ''} style={{ fontSize: 20, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.03em', whiteSpace: 'nowrap' }}>{display}</span>
           ) : (
-            <span aria-label={t('card.numberLabel')} style={{ display: 'block', width: 196, height: 19, borderRadius: 6, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
+            <span aria-label={t('card.numberLabel')} style={{ display: 'block', width: 196, height: 21, borderRadius: 6, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
           )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--success)', flex: 'none' }} />
+            <span style={{ fontSize: 12.5, fontWeight: 500, color: 'rgba(255,255,255,.72)' }}>{t('home.cardStanding')}</span>
+          </div>
         </div>
       </div>
-      <div style={{ fontSize: 13, color: 'var(--muted-fg)', margin: '-6px 4px 0' }}>{t('home.cardStanding')}</div>
     </>
   );
 }
@@ -990,7 +970,7 @@ function Home({
     <SlideIn key={tab} dir={slideDir}>
     <div style={{ padding: '16px 16px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {session.isDriver ? (
-        <DriverHero session={session} company={company} carrierId={session.carrierId} fullName={fullName} initData={initData} revealed={cardRevealed} onToggleReveal={onToggleCardReveal} />
+        <DriverHero session={session} company={company} fullName={fullName} revealed={cardRevealed} onToggleReveal={onToggleCardReveal} />
       ) : (
         <OwnerHero initData={initData} company={company} carrierId={session.carrierId} onOpenDetails={() => onOpenAction({ kind: 'service', key: 'status' })} />
       )}
@@ -1132,7 +1112,7 @@ function FleetView({
   const shown = rows.filter((r) => {
     if (filter !== 'all' && r.status !== filter) return false;
     if (q) {
-      const hay = `${last4(r.cardNumber, r.cardId)} ${(r.driverName ?? 'unassigned')} ${r.cardType ?? ''}`.toLowerCase();
+      const hay = `${last4(r.cardNumber, r.cardId)} ${(r.driverName ?? 'unassigned')}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -1148,6 +1128,18 @@ function FleetView({
     setCopiedId(id);
     showToast(t('toast.linkCopied'));
     setTimeout(() => setCopiedId((x) => (x === id ? null : x)), 1600);
+  }
+
+  /** Copy arbitrary text (card number, carrier id) with a caller-chosen toast — the copy() above is
+   *  bound to the invite-link row's copied-state highlight, which these don't have. */
+  function copyText(text: string, toast: string) {
+    try {
+      navigator.clipboard?.writeText(text);
+    } catch {
+      /* ignore */
+    }
+    haptic('tap');
+    showToast(toast);
   }
 
   /** `nameOverride` covers regenerate: that flow has no name input, so it must reuse the card's existing driver name instead of an (empty) draft. */
@@ -1190,8 +1182,8 @@ function FleetView({
       </div>
 
       {loading && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 4px', color: 'var(--muted-fg)' }}>
-          <Spinner size={22} />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '64px 16px', color: 'var(--muted-fg)' }}>
+          <Spinner size={26} />
           <span style={{ fontSize: 14 }}>{t('fleet.loading')}</span>
         </div>
       )}
@@ -1237,7 +1229,6 @@ function FleetView({
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span className="selectable" style={{ fontWeight: 700, fontSize: 15, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em' }}>•••• {last4(c.cardNumber, c.cardId)}</span>
-                      {c.cardType && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.05em', color: 'var(--muted-fg)', background: 'var(--secondary)', padding: '2px 6px', borderRadius: 6 }}>{c.cardType}</span>}
                     </div>
                     <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.driverName ?? t('card.unassigned')}</div>
                   </div>
@@ -1247,6 +1238,19 @@ function FleetView({
 
                 {expanded && (
                   <div style={{ padding: '0 15px 16px', animation: 'octfade .2s ease' }}>
+                    {/* Full card number, copyable — the collapsed row only shows the last 4. Owner-only
+                        screen, so the full PAN is theirs to see and hand to a driver. */}
+                    {c.cardNumber && (
+                      <button
+                        type="button"
+                        className="press"
+                        onClick={() => copyText(groupCardNumber(c.cardNumber ?? ''), t('toast.cardCopied'))}
+                        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, padding: '11px 13px', border: '1px solid var(--border)', borderRadius: 12, background: 'var(--background)', cursor: 'pointer', fontFamily: "'Geist'" }}
+                      >
+                        <span className="selectable" style={{ flex: 1, textAlign: 'left', fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em' }}>{groupCardNumber(c.cardNumber)}</span>
+                        <Icon name="copy" size={16} strokeWidth={2} className="" />
+                      </button>
+                    )}
                     {c.status === 'open' && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
                         <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('card.name')}</label>
@@ -1412,18 +1416,25 @@ function RenameDriver({
 function ProfileSheet({
   user,
   company,
+  initData,
+  isOwner,
+  onCopy,
   theme,
   onTheme,
   onClose,
 }: {
   user: TelegramWebAppUser | undefined;
   company: string;
+  initData: string;
+  isOwner: boolean;
+  onCopy: (text: string, toast: string) => void;
   theme: Theme;
   onTheme: (t: Theme) => void;
   onClose: () => void;
 }) {
   const { t, lang, setLang } = useI18n();
   const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'Octane user';
+  const [details, setDetails] = useState<CompanyDetails | null>(null);
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -1431,6 +1442,16 @@ function ProfileSheet({
       document.body.style.overflow = prev;
     };
   }, []);
+  // Company details are owner-only upstream — a driver's profile has no carrier profile to show.
+  useEffect(() => {
+    if (!isOwner || !initData) return;
+    let cancelled = false;
+    fetchCompany(initData)
+      .then((d) => { if (!cancelled) setDetails(d); })
+      .catch(() => { /* the section just stays hidden — not worth an error state in a profile sheet */ });
+    return () => { cancelled = true; };
+  }, [isOwner, initData]);
+  const cityLine = details ? [details.city, details.state, details.zip].filter(Boolean).join(', ') : '';
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'rgba(0,0,0,.42)', animation: 'octfade .2s ease' }} />
@@ -1445,6 +1466,40 @@ function ProfileSheet({
             <div style={{ fontSize: 13, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company}</div>
           </div>
         </div>
+
+        {isOwner && details && (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 9 }}>{t('menu.company')}</div>
+            <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden', marginBottom: 20 }}>
+              {/* Carrier ID — copyable, the one field an owner most often needs to quote to support. */}
+              <button type="button" className="press" onClick={() => onCopy(details.carrierId, t('toast.carrierIdCopied'))} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontFamily: "'Geist'", textAlign: 'left' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.carrierId')}</div>
+                  <div className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{details.carrierId}</div>
+                </div>
+                <Icon name="copy" size={15} strokeWidth={2} className="" />
+              </button>
+              {details.email && (
+                <div style={{ padding: '12px 14px', borderBottom: cityLine || details.address || details.phone ? '1px solid var(--border)' : 'none' }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.email')}</div>
+                  <div className="selectable" style={{ fontSize: 14, fontWeight: 500, color: 'var(--fg)', marginTop: 2, wordBreak: 'break-all' }}>{details.email}</div>
+                </div>
+              )}
+              {details.phone && (
+                <div style={{ padding: '12px 14px', borderBottom: cityLine || details.address ? '1px solid var(--border)' : 'none' }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.phone')}</div>
+                  <div className="selectable" style={{ fontSize: 14, fontWeight: 500, color: 'var(--fg)', marginTop: 2 }}>{details.phone}</div>
+                </div>
+              )}
+              {(details.address || cityLine) && (
+                <div style={{ padding: '12px 14px' }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.address')}</div>
+                  <div className="selectable" style={{ fontSize: 14, fontWeight: 500, color: 'var(--fg)', marginTop: 2, lineHeight: 1.4 }}>{[details.address, cityLine].filter(Boolean).join('\n')}</div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 9 }}>{t('menu.theme')}</div>
         <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--secondary)', borderRadius: 12, marginBottom: 20 }}>
@@ -1555,7 +1610,14 @@ function ActionSheet({
   const [exportBusy, setExportBusy] = useState<TxnExportFormat | null>(null);
 
   const service = target.kind === 'service' ? target.key : null;
-  const sheetTitle = target.kind === 'generic' ? target.title : t(`svc.${service}`);
+  // A driver's status sheet is about their CARD, not the account — the generic svc.status title says
+  // "Account status", which is the owner's framing.
+  const sheetTitle =
+    target.kind === 'generic'
+      ? target.title
+      : service === 'status' && session.isDriver
+        ? t('svc.statusDriver')
+        : t(`svc.${service}`);
   const dwhRange = range;
 
   useEffect(() => {
@@ -1779,29 +1841,64 @@ function ActionSheet({
               const rows = cards.data ?? [];
               const shown = rows.slice(0, 20);
               const extra = (cards.count ?? rows.length) - shown.length;
+              /**
+               * The banner answers "is this active?" — and for a DRIVER that must be their own CARD,
+               * not the carrier account. `overview.is_active` is the company's status; a driver's card
+               * can be Inactive while the company is fine, and the reverse. It also read as a false
+               * green "Active" whenever the card list came back empty, because `undefined !== false`
+               * fell through to the success branch — the exact "status not right" being reported.
+               *
+               * For a driver: derive from their own card's status, and show a neutral "unknown" when no
+               * card resolved rather than claiming Active. For an owner: keep the account-level flag.
+               */
+              const state: 'active' | 'inactive' | 'unknown' = session.isDriver
+                ? rows.length === 0
+                  ? 'unknown'
+                  : fmt(rows[0]?.['status']).toLowerCase() === 'active'
+                    ? 'active'
+                    : 'inactive'
+                : overview.is_active === false
+                  ? 'inactive'
+                  : 'active';
+              const tone = state === 'inactive' ? 'destructive' : state === 'unknown' ? 'muted-fg' : 'success';
+              // Card-specific wording for a driver — the account labels say "Account active", which is
+              // not what a driver is asking about.
+              const bannerLabel =
+                state === 'unknown'
+                  ? t('status.unknown')
+                  : session.isDriver
+                    ? t(state === 'inactive' ? 'status.cardInactive' : 'status.cardActive')
+                    : t(state === 'inactive' ? 'status.inactive' : 'status.active');
               return (
                 <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: `color-mix(in srgb, var(--${overview.is_active === false ? 'destructive' : 'success'}) 13%, transparent)`, borderRadius: 14, marginBottom: 14 }}>
-                    <span style={{ width: 30, height: 30, borderRadius: 10, background: `color-mix(in srgb, var(--${overview.is_active === false ? 'destructive' : 'success'}) 20%, transparent)`, color: `var(--${overview.is_active === false ? 'destructive' : 'success'})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
-                      <Icon name={overview.is_active === false ? 'x' : 'check'} size={17} strokeWidth={2.4} className="" />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: `color-mix(in srgb, var(--${tone}) 13%, transparent)`, borderRadius: 14, marginBottom: 14 }}>
+                    <span style={{ width: 30, height: 30, borderRadius: 10, background: `color-mix(in srgb, var(--${tone}) 20%, transparent)`, color: `var(--${tone})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                      <Icon name={state === 'inactive' ? 'x' : state === 'unknown' ? 'alert' : 'check'} size={17} strokeWidth={2.4} className="" />
                     </span>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{overview.is_active === false ? t('status.inactive') : t('status.active')}</span>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{bannerLabel}</span>
                   </div>
-                  <SectionLabel>{t('status.debt')}</SectionLabel>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
-                    {[
-                      { label: t('status.totalDebt'), value: money(overview.cmp_debt?.total_debt ?? 0) },
-                      { label: t('status.openInvoices'), value: fmt(overview.cmp_debt?.invoice_count ?? 0) },
-                      { label: t('status.maxDays'), value: fmt(overview.cmp_debt?.max_debt_days ?? 0) },
-                      { label: t('status.hardDebtor'), value: overview.cmp_debt?.is_hard_debtor ? t('status.yes') : t('status.no') },
-                    ].map((tile) => (
-                      <div key={tile.label} style={{ background: 'var(--secondary)', borderRadius: 14, padding: '12px 14px' }}>
-                        <div style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted-fg)' }}>{tile.label}</div>
-                        <div className="selectable" style={{ fontSize: 18, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tile.value}</div>
+                  {/* Carrier debt is the COMPANY's financial standing — an owner's view, never a driver's.
+                      A driver asking "is my card active" must not be shown the fleet's total debt or
+                      hard-debtor flag. */}
+                  {!session.isDriver && (
+                    <>
+                      <SectionLabel>{t('status.debt')}</SectionLabel>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
+                        {[
+                          { label: t('status.totalDebt'), value: money(overview.cmp_debt?.total_debt ?? 0) },
+                          { label: t('status.openInvoices'), value: fmt(overview.cmp_debt?.invoice_count ?? 0) },
+                          { label: t('status.maxDays'), value: fmt(overview.cmp_debt?.max_debt_days ?? 0) },
+                          { label: t('status.hardDebtor'), value: overview.cmp_debt?.is_hard_debtor ? t('status.yes') : t('status.no') },
+                        ].map((tile) => (
+                          <div key={tile.label} style={{ background: 'var(--secondary)', borderRadius: 14, padding: '12px 14px' }}>
+                            <div style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted-fg)' }}>{tile.label}</div>
+                            <div className="selectable" style={{ fontSize: 18, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tile.value}</div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                  <SectionLabel>{t('status.cards')}</SectionLabel>
+                    </>
+                  )}
+                  <SectionLabel>{session.isDriver ? t('status.yourCard') : t('status.cards')}</SectionLabel>
                   {shown.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '20px 4px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('status.noCards')}</div>
                   ) : (
@@ -1972,12 +2069,19 @@ function ActionSheet({
                   const id = String(inv['invoice_id'] ?? inv['id'] ?? '');
                   const label = String(inv['invoice_ref'] ?? inv['invoice_number'] ?? id);
                   const busy = invoiceBusyId === id;
+                  const st = invoiceStatus(inv['status'], t);
                   return (
                     <div key={id || i} onClick={() => !busy && void openInvoice(id)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '12px 14px', borderBottom: '1px solid var(--border)', cursor: busy ? 'default' : 'pointer' }}>
                       <span style={{ width: 34, height: 34, borderRadius: 10, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card)', color: 'var(--muted-fg)' }}><Icon name="doc" size={17} strokeWidth={2} className="" /></span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{t('invoice.num', { n: label })}</div>
-                        <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2 }}>{money(inv['total_amount'] ?? inv['amount'])} · {fmt(inv['status'])}</div>
+                        {/* The status used to render raw — PAID / PENDING / PARTIALLY_PAID / CANCELLED, in
+                            English uppercase, in every locale. invoiceStatus() maps it to a translated
+                            label and a tone. */}
+                        <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span>{money(inv['total_amount'] ?? inv['amount'])}</span>
+                          <span style={{ color: `var(--${st.tone})`, fontWeight: 600 }}>· {st.label}</span>
+                        </div>
                       </div>
                       {busy ? <Spinner size={16} /> : (
                         <span style={{ borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, padding: '7px 12px', flex: 'none' }}>{t('invoice.download')}</span>
@@ -2512,6 +2616,9 @@ export function App() {
         <ProfileSheet
           user={user}
           company={company}
+          initData={wa?.initData ?? ''}
+          isOwner={session.isOwner}
+          onCopy={(text, toast) => { try { navigator.clipboard?.writeText(text); } catch { /* ignore */ } haptic('tap'); showToast(toast); }}
           theme={theme}
           onTheme={chooseTheme}
           onClose={() => setProfileOpen(false)}

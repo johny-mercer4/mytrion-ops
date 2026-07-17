@@ -115,3 +115,52 @@ export async function findDwhCardByNumber(cardNumber: string): Promise<DwhCardOw
   if (!row || row.card_id == null || row.carrier_id == null) return null;
   return { cardId: String(row.card_id), carrierId: String(row.carrier_id), cardNumber: String(row.card_number ?? cardNumber) };
 }
+
+/** A carrier's company profile — the fields the mini-app's owner profile sheet surfaces. */
+export interface DwhCompanyDetails {
+  carrierId: string;
+  companyName: string | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+}
+
+/**
+ * Company contact + address for one carrier, from octane.dim_company (read-only replica).
+ * Null when the carrier has no dim_company row. All fields are optional in the source, so any may
+ * come back null.
+ */
+export async function getDwhCompanyDetails(carrierId: string): Promise<DwhCompanyDetails | null> {
+  const rows = await dwhQuery<{
+    carrier_id: string | number | null;
+    company_name: string | null;
+    contact_email: string | null;
+    contact_phone: string | null;
+    address: string | null;
+    city: string | null;
+    state: string | null;
+    zip_code: string | null;
+  }>(
+    `select carrier_id, company_name, contact_email, contact_phone, address, city, state, zip_code
+       from octane.dim_company
+      where carrier_id = $1
+      limit 1`,
+    [carrierId],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  const s = (v: string | null) => (v && v.trim() ? v.trim() : null);
+  return {
+    carrierId: String(r.carrier_id ?? carrierId),
+    companyName: s(r.company_name),
+    email: s(r.contact_email),
+    phone: s(r.contact_phone),
+    address: s(r.address),
+    city: s(r.city),
+    state: s(r.state),
+    zip: s(r.zip_code),
+  };
+}

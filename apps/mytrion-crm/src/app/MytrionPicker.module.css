@@ -1,22 +1,75 @@
 .screen {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
   background: var(--bg-primary);
   color: var(--text-primary);
+  z-index: 1;
+}
+
+/* Animated Ambient Background */
+.bgAmbient {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.bgOrb1, .bgOrb2 {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.4;
+  animation: floatOrb 20s infinite ease-in-out alternate;
+}
+
+.bgOrb1 {
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 45%, transparent), transparent 70%);
+  top: -150px;
+  left: -150px;
+}
+
+.bgOrb2 {
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--purple, #8b5cf6) 40%, transparent), transparent 70%);
+  bottom: -100px;
+  right: -100px;
+  animation-delay: -10s;
+}
+
+@keyframes floatOrb {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(50px, 30px) scale(1.1); }
+  100% { transform: translate(-30px, -50px) scale(0.9); }
 }
 
 .scroll {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .content {
   max-width: 1180px;
   margin: 0 auto;
   padding: 36px 40px 56px;
+  animation: fadeUpContent 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeUpContent {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .hero {
@@ -35,16 +88,20 @@
 
 .title {
   font-family: var(--font-head);
-  font-size: 30px;
-  font-weight: 700;
-  margin: 0 0 10px;
-  letter-spacing: 0.01em;
+  font-size: 36px;
+  font-weight: 800;
+  margin: 0 0 12px;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, var(--text-primary) 30%, color-mix(in srgb, var(--text-secondary) 80%, var(--text-primary)));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1.2;
 }
 
 .lede {
-  font-size: 14px;
+  font-size: 15px;
   color: var(--text-secondary);
-  margin: 0 0 16px;
+  margin: 0 0 20px;
   max-width: 640px;
   line-height: 1.6;
 }
@@ -52,7 +109,7 @@
 .tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
 }
 
 .accessTag {
@@ -61,22 +118,24 @@
   gap: 6px;
   font-size: 11px;
   font-weight: 600;
-  padding: 5px 11px;
+  padding: 6px 12px;
   border-radius: var(--radius-full);
-  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
   text-transform: capitalize;
+  backdrop-filter: blur(8px);
 }
 
 .mono {
   font-family: var(--font-mono);
   font-size: 11px;
-  padding: 5px 11px;
+  padding: 6px 12px;
   border-radius: var(--radius-full);
-  background: var(--surface-alt);
+  background: color-mix(in srgb, var(--surface-alt) 60%, transparent);
   color: var(--text-muted);
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  backdrop-filter: blur(8px);
 }
 
 .grid {
@@ -84,93 +143,134 @@
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 16px;
 }
 
 .card {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  height: 100%;
-  padding: 20px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  align-items: flex-start;
+  gap: 16px;
+  padding: 24px;
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 4px 20px -2px color-mix(in srgb, var(--bg-primary) 50%, transparent);
   text-decoration: none;
   color: inherit;
-  transition: transform 160ms, border-color 160ms, box-shadow 160ms;
-}
-.card:hover {
-  transform: translateY(-3px);
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-  box-shadow: var(--shadow-md);
+  transition: all 300ms cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+  
+  opacity: 0;
+  transform: translateY(15px);
+  animation: cardFadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.cardTop {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+@keyframes cardFadeUp {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, transparent 100%);
+  z-index: 0;
+}
+
+.card:hover,
+.card:focus-visible {
+  transform: translateY(-4px) scale(1.02);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  box-shadow: 0 12px 30px -4px color-mix(in srgb, var(--accent) 25%, transparent),
+              0 4px 10px -2px color-mix(in srgb, var(--bg-primary) 40%, transparent);
+  text-decoration: none;
+  color: inherit;
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+}
+
+/* Specific dynamic hover border override injected via inline style in TSX */
+.card:hover.dynamicHover {
+  border-color: var(--card-hue);
+  box-shadow: 0 12px 30px -4px color-mix(in srgb, var(--card-hue) 30%, transparent),
+              0 4px 10px -2px color-mix(in srgb, var(--bg-primary) 40%, transparent);
 }
 
 .glyph {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   border-radius: var(--radius-md);
+  flex: none;
+  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.badge {
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 3px 8px;
-  border-radius: var(--radius-sm);
+.card:hover .glyph,
+.card:focus-visible .glyph {
+  transform: scale(1.08);
 }
-.ported {
-  background: color-mix(in srgb, var(--success) 14%, transparent);
-  color: var(--success);
-  border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
-}
-.new {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+
+.cardHead {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
 }
 
 .cardTitle {
+  position: relative;
+  z-index: 1;
   font-family: var(--font-head);
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: 0.01em;
+  line-height: 1.2;
+  text-decoration: none;
+  transition: color 200ms;
 }
 
-.cardDept {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--text-muted);
-  margin-top: 2px;
+.card:hover .cardTitle,
+.card:focus-visible .cardTitle {
+  text-decoration: none;
+  color: var(--text-primary);
 }
 
-.blurb {
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: var(--text-muted);
-  margin: 0;
-  flex: 1;
+.cardSoon {
+  cursor: default;
+  opacity: 0.85;
 }
 
-.enter {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
+.cardSoon:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--border) 60%, transparent);
+  box-shadow: 0 6px 15px -2px color-mix(in srgb, var(--bg-primary) 30%, transparent);
+}
+
+.soonBadge {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
   letter-spacing: 0.06em;
-  color: var(--accent);
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  color: var(--text-muted);
+  border: 1px solid color-mix(in srgb, var(--text-muted) 22%, transparent);
+  white-space: nowrap;
 }

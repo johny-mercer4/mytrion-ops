@@ -18,12 +18,14 @@ vi.mock('../../src/integrations/zohoDesk.js', async (importOriginal) => {
     ...mod,
     searchTicketsByCreator: vi.fn(async () => []),
     listTicketsByCreator: vi.fn(async () => []),
+    pageTicketsByCreator: vi.fn(async () => ({ tickets: [], hasMore: false })),
     getTicket: vi.fn(async () => ({})),
     getTicketThreads: vi.fn(async () => []),
     getTicketThread: vi.fn(async () => ({})),
     getTicketComments: vi.fn(async () => []),
+    getTicketAttachments: vi.fn(async () => []),
     postTicketComment: vi.fn(async () => ({ id: 'c_1' })),
-    uploadDeskFile: vi.fn(async () => 'up_1'),
+    uploadTicketAttachment: vi.fn(async () => ({ id: 'att_1' })),
     getTicketAttachmentContent: vi.fn(async () => ({
       buffer: Buffer.from('x'),
       contentType: 'text/plain',
@@ -34,6 +36,10 @@ vi.mock('../../src/integrations/zohoDesk.js', async (importOriginal) => {
 vi.mock('../../src/integrations/salesDataCenter.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/integrations/salesDataCenter.js')>();
   return { ...mod, fetchDealOwnerId: vi.fn(async () => null) };
+});
+vi.mock('../../src/integrations/zohoCrm.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/integrations/zohoCrm.js')>();
+  return { ...mod, attachFileToRecord: vi.fn(async () => 'crm_att_1') };
 });
 vi.mock('../../src/modules/touchpoints/dispatcher.js', () => ({
   dispatchTouchpoint: vi.fn(async () => ({ ok: true, data: {} })),
@@ -46,22 +52,30 @@ vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
 import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { fetchDealOwnerId } from '../../src/integrations/salesDataCenter.js';
+import { attachFileToRecord } from '../../src/integrations/zohoCrm.js';
 import {
   createDeskTicket,
   getTicket,
   getTicketAttachmentContent,
+  getTicketAttachments,
   postTicketComment,
   searchTicketsByCreator,
+  uploadTicketAttachment,
 } from '../../src/integrations/zohoDesk.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
+import { dispatchTouchpoint } from '../../src/modules/touchpoints/dispatcher.js';
 import { clearTicketOwnerCache } from '../../src/modules/tools/deskScope.js';
 
 const searchMock = vi.mocked(searchTicketsByCreator);
 const getTicketMock = vi.mocked(getTicket);
 const postCommentMock = vi.mocked(postTicketComment);
 const attachmentMock = vi.mocked(getTicketAttachmentContent);
+const uploadAttachmentMock = vi.mocked(uploadTicketAttachment);
+const getAttachmentsMock = vi.mocked(getTicketAttachments);
 const createTicketMock = vi.mocked(createDeskTicket);
 const dealOwnerMock = vi.mocked(fetchDealOwnerId);
+const crmAttachMock = vi.mocked(attachFileToRecord);
+const dispatchMock = vi.mocked(dispatchTouchpoint);
 
 let app: FastifyInstance;
 beforeAll(async () => {
@@ -91,6 +105,24 @@ async function workerToken(profile: string, zohoUserId = '42'): Promise<string> 
 
 function bearer(token: string): Record<string, string> {
   return { authorization: `Bearer ${token}` };
+}
+
+/** Minimal multipart body for form fields (+ an optional file part), matching the wizard's shape. */
+function multipart(
+  fields: Record<string, string>,
+  file?: { name: string; content: string; mime?: string },
+): { payload: string; contentType: string } {
+  const boundary = '----vitestboundary';
+  let body = Object.entries(fields)
+    .map(([k, v]) => `--${boundary}\r\ncontent-disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`)
+    .join('');
+  if (file) {
+    body +=
+      `--${boundary}\r\ncontent-disposition: form-data; name="file"; filename="${file.name}"\r\n` +
+      `content-type: ${file.mime ?? 'text/plain'}\r\n\r\n${file.content}\r\n`;
+  }
+  body += `--${boundary}--\r\n`;
+  return { payload: body, contentType: `multipart/form-data; boundary=${boundary}` };
 }
 
 describe('ticket list — header elevation regression', () => {
@@ -162,7 +194,30 @@ describe('per-ticket routes — IDOR regression', () => {
       headers: bearer(token),
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ threads: [], comments: [] });
+    expect(res.json()).toEqual({ threads: [], comments: [], attachments: [] });
+  });
+
+  it("comments: merges in the ticket's Attachments-tab entries, flagged `mine` by creator", async () => {
+    getTicketMock.mockResolvedValue(mine);
+    getAttachmentsMock.mockResolvedValueOnce([
+      { id: 'att_1', name: 'from-agent.pdf', creatorId: '1057080000010543217' }, // the shared Desk agent id
+      { id: 'att_2', name: 'from-desk.pdf', creatorId: '999' },
+    ]);
+    const token = await workerToken('Sales Rep');
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/desk/tickets/tk_777/comments',
+      headers: bearer(token),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      threads: [],
+      comments: [],
+      attachments: [
+        { id: 'att_1', name: 'from-agent.pdf', creatorId: '1057080000010543217', mine: true },
+        { id: 'att_2', name: 'from-desk.pdf', creatorId: '999', mine: false },
+      ],
+    });
   });
 
   it("reply: someone else's ticket → 403 and NO comment is posted", async () => {
@@ -188,7 +243,33 @@ describe('per-ticket routes — IDOR regression', () => {
       payload: { content: 'legit reply' },
     });
     expect(res.statusCode).toBe(200);
-    expect(postCommentMock).toHaveBeenCalledWith('tk_777', 'legit reply', true, []);
+    expect(postCommentMock).toHaveBeenCalledWith('tk_777', 'legit reply', true);
+    expect(uploadAttachmentMock).not.toHaveBeenCalled();
+  });
+
+  it('reply: a file with no text uploads to the ticket, NOT as a comment attachment', async () => {
+    getTicketMock.mockResolvedValue(mine);
+    const token = await workerToken('Sales Rep');
+    const { payload, contentType } = multipart(
+      { is_public: 'true' },
+      { name: 'invoice.pdf', content: 'pdf-bytes', mime: 'application/pdf' },
+    );
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/desk/tickets/tk_777/reply',
+      headers: { ...bearer(token), 'content-type': contentType },
+      payload,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ attached: true });
+    expect(postCommentMock).not.toHaveBeenCalled();
+    expect(uploadAttachmentMock).toHaveBeenCalledWith(
+      'tk_777',
+      expect.anything(),
+      'invoice.pdf',
+      'application/pdf',
+      true,
+    );
   });
 
   it("attachment download: someone else's ticket → 403, no Desk fetch", async () => {
@@ -246,16 +327,6 @@ describe('per-ticket routes — IDOR regression', () => {
 });
 
 describe('ticket create — deal ownership', () => {
-  /** Minimal multipart body for the create-ticket wizard fields. */
-  function multipart(fields: Record<string, string>) {
-    const boundary = '----vitestboundary';
-    const body =
-      Object.entries(fields)
-        .map(([k, v]) => `--${boundary}\r\ncontent-disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`)
-        .join('') + `--${boundary}--\r\n`;
-    return { payload: body, contentType: `multipart/form-data; boundary=${boundary}` };
-  }
-
   const FIELDS = {
     department: 'cs',
     ticketType: 'Card Issue',
@@ -317,5 +388,138 @@ describe('ticket create — deal ownership', () => {
     expect(res.statusCode).toBe(400);
     expect(dealOwnerMock).not.toHaveBeenCalled();
     expect(createTicketMock).not.toHaveBeenCalled();
+  });
+
+  it('create with file attaches on Desk', async () => {
+    dealOwnerMock.mockResolvedValue('42');
+    uploadAttachmentMock.mockResolvedValue({ id: 'att_desk' });
+    const token = await workerToken('Sales Rep');
+    const { payload, contentType } = multipart(FIELDS, {
+      name: 'photo.png',
+      content: 'png-bytes',
+      mime: 'image/png',
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/desk/tickets',
+      headers: { ...bearer(token), 'content-type': contentType },
+      payload,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ ticketId: 'tk_new', attached: true });
+    expect(uploadAttachmentMock).toHaveBeenCalledWith(
+      'tk_new',
+      expect.anything(),
+      'photo.png',
+      'image/png',
+      true,
+    );
+    expect(crmAttachMock).not.toHaveBeenCalled();
+  });
+
+  it('create with file falls back to CRM Deal when Desk attach fails', async () => {
+    dealOwnerMock.mockResolvedValue('42');
+    uploadAttachmentMock.mockRejectedValue(new Error('[zoho-desk] HTTP 403'));
+    const token = await workerToken('Sales Rep');
+    const { payload, contentType } = multipart(FIELDS, {
+      name: 'photo.png',
+      content: 'png-bytes',
+      mime: 'image/png',
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/desk/tickets',
+      headers: { ...bearer(token), 'content-type': contentType },
+      payload,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ ticketId: 'tk_new', attached: true });
+    expect(crmAttachMock).toHaveBeenCalledWith(
+      'Deals',
+      '5550001',
+      'photo.png',
+      expect.anything(),
+      'image/png',
+    );
+  });
+});
+
+describe('escalation create — attachment', () => {
+  const FIELDS = {
+    subject: 'Need manager',
+    description: 'Client is blocked on limit increase.',
+    reason: 'Problem with the client',
+  };
+
+  it('creates via Deluge then attaches on Desk', async () => {
+    dispatchMock.mockResolvedValue({
+      key: 'tickets.create_escalation',
+      kind: 'deluge',
+      data: { ticketId: 'tk_esc', escalationId: 'esc_1' },
+    });
+    uploadAttachmentMock.mockResolvedValue({ id: 'att_esc' });
+    const token = await workerToken('Sales Rep');
+    const { payload, contentType } = multipart(FIELDS, {
+      name: 'proof.pdf',
+      content: 'pdf-bytes',
+      mime: 'application/pdf',
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/desk/escalations',
+      headers: { ...bearer(token), 'content-type': contentType },
+      payload,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      ticketId: 'tk_esc',
+      escalationId: 'esc_1',
+      attached: true,
+    });
+    expect(dispatchMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'tickets.create_escalation',
+      expect.objectContaining({
+        escalationReason: FIELDS.reason,
+        questionSubject: FIELDS.subject,
+      }),
+    );
+    expect(uploadAttachmentMock).toHaveBeenCalledWith(
+      'tk_esc',
+      expect.anything(),
+      'proof.pdf',
+      'application/pdf',
+      true,
+    );
+  });
+
+  it('falls back to CRM Escalation_Request when Desk attach fails', async () => {
+    dispatchMock.mockResolvedValue({
+      key: 'tickets.create_escalation',
+      kind: 'deluge',
+      data: { ticketId: 'tk_esc', escalationId: 'esc_1' },
+    });
+    uploadAttachmentMock.mockRejectedValue(new Error('[zoho-desk] HTTP 403'));
+    const token = await workerToken('Sales Rep');
+    const { payload, contentType } = multipart(FIELDS, {
+      name: 'proof.pdf',
+      content: 'pdf-bytes',
+      mime: 'application/pdf',
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/desk/escalations',
+      headers: { ...bearer(token), 'content-type': contentType },
+      payload,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ attached: true });
+    expect(crmAttachMock).toHaveBeenCalledWith(
+      'Escalation_Request',
+      'esc_1',
+      'proof.pdf',
+      expect.anything(),
+      'application/pdf',
+    );
   });
 });

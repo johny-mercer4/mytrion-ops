@@ -8,6 +8,7 @@
 import { useRef, useState } from 'react';
 import type { ChangeEvent, MouseEvent, ReactElement } from 'react';
 import { s } from '../dc';
+import { Icon } from '../icons';
 import { badge, type BadgeVM } from '../salesData';
 import { DEALPOOL } from '../mock';
 import { useSales } from '../ctx';
@@ -125,16 +126,7 @@ const poolGrid =
 const optRow = (active: boolean): string =>
   `display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--radius-md);cursor:pointer;background:${active ? 'rgba(var(--accent-rgb),.10)' : 'transparent'}`;
 
-const closeX = (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-    <line x1="18" y1="6" x2="6" y2="18" />
-    <line x1="6" y1="6" x2="18" y2="18" />
-  </svg>
-);
-const funnelPath =
-  'M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z';
-const assignPath =
-  'M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 7a4 4 0 100 8 4 4 0 000-8zM19 8v6M22 11h-6';
+const closeX = <Icon name="close" size={15} strokeWidth={2.4} />;
 
 export function PoolTab() {
   const { pushToast } = useSales();
@@ -387,17 +379,17 @@ export function PoolTab() {
           <div style={s('display:flex;align-items:center;gap:8px')}>
             {poolSel.length > 0 ? (
               <button onClick={openPoolAssign} className="ss-btn-p" style={s('height:38px;padding:0 16px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer;display:flex;align-items:center;gap:7px')}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d={assignPath} /></svg>
+                <Icon name="assign" size={15} strokeWidth={2.2} />
                 Assign to Me ({poolSelCount})
               </button>
             ) : (
               <button disabled style={s('height:38px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:12.5px;cursor:not-allowed;display:flex;align-items:center;gap:7px')}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d={assignPath} /></svg>
+                <Icon name="assign" size={15} strokeWidth={2.2} />
                 Assign to Me
               </button>
             )}
             <button onClick={refreshPool} aria-label="Refresh" className="ss-ico-btn" style={s('width:38px;height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s(poolSpin ? 'animation:ss-spin .9s linear infinite' : '')}><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+              <Icon name="refresh" size={16} style={s(poolSpin ? 'animation:ss-spin .9s linear infinite' : '')} />
             </button>
           </div>
         </div>
@@ -408,14 +400,11 @@ export function PoolTab() {
         </div>
         <div style={s('display:flex;gap:10px;margin-bottom:10px')}>
           <div style={s('flex:1;position:relative')}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s('position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted)')}>
-              <circle cx="11" cy="11" r="7" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
+            <Icon name="search" size={15} style={s('position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted)')} />
             <input value={poolSearch} onChange={(e) => setPoolSearchState(e.target.value)} placeholder="Search company, carrier ID, or name…" className="ss-in" style={s('width:100%;height:38px;padding:0 14px 0 35px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px')} />
           </div>
           <button onClick={() => setPoolShowFilter(true)} className="ss-ico-btn" style={s('height:38px;padding:0 15px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700')}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={funnelPath} /></svg>
+            <Icon name="filter" size={15} />
             Filters
             {poolActiveCount > 0 && (
               <span style={s('min-width:18px;height:18px;padding:0 5px;border-radius:99px;background:var(--accent);color:#fff;font-size:10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center')}>{String(poolActiveCount)}</span>
@@ -426,7 +415,7 @@ export function PoolTab() {
           <div style={s('display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:10px')}>
             <span style={s('font-size:10px;color:var(--muted);font-weight:800;letter-spacing:.06em;text-transform:uppercase')}>Active</span>
             {poolChips.map((c, i) => (
-              <button key={`${c.label}-${i}`} onClick={c.onClick} style={s('display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:99px;border:1px solid rgba(var(--accent-rgb),.3);background:rgba(var(--accent-rgb),.10);color:var(--accent);font-size:11px;font-weight:700;cursor:pointer')}>{c.label}<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+              <button key={`${c.label}-${i}`} onClick={c.onClick} style={s('display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:99px;border:1px solid rgba(var(--accent-rgb),.3);background:rgba(var(--accent-rgb),.10);color:var(--accent);font-size:11px;font-weight:700;cursor:pointer')}>{c.label}<Icon name="close" size={11} strokeWidth={3} /></button>
             ))}
             <button onClick={clearPoolFilters} style={s('background:none;border:none;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer')}>Clear all</button>
           </div>
@@ -458,7 +447,7 @@ export function PoolTab() {
                   <span style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px;display:inline-flex;align-items:center;gap:5px")}>
                     {r.carrierId}
                     <button onClick={r.onCopy} aria-label="Copy carrier ID" style={s('background:none;border:none;padding:2px;cursor:pointer;color:var(--muted);display:inline-flex')}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" /></svg>
+                      <Icon name="copy" size={12} />
                     </button>
                   </span>
                   <span style={s('font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{r.company}</span>
@@ -471,7 +460,7 @@ export function PoolTab() {
                   <span style={s('min-width:0')}>
                     {r.ownerHas ? (
                       <span style={s('display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:99px;background:color-mix(in srgb,var(--ok) 14%,transparent);color:var(--ok);font-size:11px;font-weight:700;max-width:100%;overflow:hidden')}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s('flex-shrink:0')}><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                        <Icon name="user" size={12} style={s('flex-shrink:0')} />
                         <span style={s('overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{r.owner}</span>
                       </span>
                     ) : dash}
@@ -493,7 +482,7 @@ export function PoolTab() {
             <div style={s('display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--border)')}>
               <div style={s('display:flex;align-items:center;gap:9px')}>
                 <span style={s('color:var(--accent);display:flex')}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={funnelPath} /></svg>
+                  <Icon name="filter" size={18} />
                 </span>
                 <span style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.04em;text-transform:uppercase')}>Filters</span>
               </div>
@@ -535,7 +524,7 @@ export function PoolTab() {
           <div onClick={stop} style={s('width:100%;max-width:460px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}>
             <div style={s('padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:11px')}>
               <div style={s('width:38px;height:38px;border-radius:var(--radius-md);background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
-                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={assignPath} /></svg>
+                <Icon name="assign" size={19} />
               </div>
               <div style={s('flex:1')}>
                 <div style={s('font-size:16px;font-weight:700')}>Assign {poolSelCount} deal(s)</div>

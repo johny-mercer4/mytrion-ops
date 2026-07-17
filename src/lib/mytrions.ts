@@ -15,7 +15,6 @@ export const MYTRION_IDS = [
   'billing',
   'collection',
   'finance',
-  'retention',
   'verification',
   'manager',
   'analyst',
@@ -31,7 +30,6 @@ export const MYTRION_DEPARTMENT: Record<MytrionId, string> = {
   billing: 'billing',
   collection: 'collection',
   finance: 'finance',
-  retention: 'retention',
   verification: 'verification',
   manager: 'management',
   analyst: 'analytics',
@@ -80,11 +78,11 @@ export interface ProfileDefaultSeed {
 export const DEFAULT_PROFILE_SEED: ProfileDefaultSeed[] = [
   { profileName: 'Administrator', allowedMytrions: [...MYTRION_IDS], homeMytrion: null, allDepartmentAccess: true },
   { profileName: 'Sales Agent', allowedMytrions: ['sales'], homeMytrion: 'sales', allDepartmentAccess: false },
-  { profileName: 'Sales Plus', allowedMytrions: ['sales', 'retention'], homeMytrion: 'sales', allDepartmentAccess: false },
+  { profileName: 'Sales Plus', allowedMytrions: ['sales'], homeMytrion: 'sales', allDepartmentAccess: false },
   { profileName: 'Sales Assistant', allowedMytrions: ['sales'], homeMytrion: 'sales', allDepartmentAccess: false },
   { profileName: 'Referral Standard Plus', allowedMytrions: ['sales'], homeMytrion: 'sales', allDepartmentAccess: false },
   { profileName: 'Standard Plus', allowedMytrions: ['sales', 'billing'], homeMytrion: 'sales', allDepartmentAccess: false },
-  { profileName: 'Customer Retention', allowedMytrions: ['retention'], homeMytrion: 'retention', allDepartmentAccess: false },
+  { profileName: 'Customer Retention', allowedMytrions: [], homeMytrion: null, allDepartmentAccess: false },
   { profileName: 'Standard', allowedMytrions: ['customer-service'], homeMytrion: 'customer-service', allDepartmentAccess: false },
 ];
 

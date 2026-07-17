@@ -72,7 +72,7 @@ export function KnowledgeBrowser() {
       <div className={s.head}>
         <div>
           <h2 className={s.h2}>Knowledge Browser</h2>
-          <p className={s.sub}>Semantic retrieval test — exactly what the agents' knowledge_search sees.</p>
+
         </div>
       </div>
 
@@ -115,10 +115,17 @@ export function KnowledgeBrowser() {
       )}
 
       <div className={s.results}>
-        {passages === null && !error && (
+        {busy && (
+          <div className={s.loadingBlock} role="status">
+            <span className={s.loadingSpin} aria-hidden="true" />
+            Searching knowledge base…
+          </div>
+        )}
+        {!busy && passages === null && !error && (
           <div className={s.none}>Run a search to test retrieval (scoped by the selected filter).</div>
         )}
-        {passages?.map((p) => (
+        {!busy &&
+          passages?.map((p) => (
           <div key={`${p.docId}:${p.chunkIndex}`} className={s.resultCard}>
             <div className={s.resultTop}>
               <span className={`${s.scoreBadge} ${p.score >= 0.85 ? s.high : ''}`}>
@@ -131,7 +138,9 @@ export function KnowledgeBrowser() {
             <p className={s.passage}>{p.content}</p>
           </div>
         ))}
-        {passages?.length === 0 && <div className={s.none}>No passages found for that query in this scope.</div>}
+        {!busy && passages?.length === 0 && (
+          <div className={s.none}>No passages found for that query in this scope.</div>
+        )}
       </div>
     </div>
   );

@@ -4,6 +4,7 @@
  */
 import { getSession } from '@/api/session';
 import { AUTO_LIST, type Automation } from './autoLive';
+import type { IconName } from './icons';
 
 const BASE_KEY = 'sales-auto-catalog-order';
 
@@ -13,42 +14,17 @@ export interface AutoCategory {
   code: AutoDeptCode;
   label: string;
   color: string;
-  /** Stroked SVG path `d` for the category header icon. */
-  icon: string;
+  /** Semantic icon name resolved to a lucide glyph by <Icon> (see ./icons). */
+  icon: IconName;
 }
 
 /** Section order + labels (C=Customer Service, Q=Billing, V/M when present). */
 export const AUTO_CATEGORIES: readonly AutoCategory[] = [
-  {
-    code: 'C',
-    label: 'Customer Service',
-    color: 'var(--orange)',
-    icon: 'M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4 0M17 8a3 3 0 11-2 0',
-  },
-  {
-    code: 'Q',
-    label: 'Billing',
-    color: 'var(--accent)',
-    icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
-  },
-  {
-    code: 'V',
-    label: 'Verification',
-    color: 'var(--ok)',
-    icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
-  },
-  {
-    code: 'M',
-    label: 'Management',
-    color: 'var(--violet)',
-    icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z',
-  },
-  {
-    code: 'other',
-    label: 'Other',
-    color: 'var(--muted)',
-    icon: 'M4 6h16M4 12h16M4 18h16',
-  },
+  { code: 'C', label: 'Customer Service', color: 'var(--orange)', icon: 'users' },
+  { code: 'Q', label: 'Billing', color: 'var(--accent)', icon: 'money' },
+  { code: 'V', label: 'Verification', color: 'var(--ok)', icon: 'verification' },
+  { code: 'M', label: 'Management', color: 'var(--violet)', icon: 'gear' },
+  { code: 'other', label: 'Other', color: 'var(--muted)', icon: 'list' },
 ];
 
 export function catalogOrderKey(): string {

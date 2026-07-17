@@ -53,9 +53,13 @@ export const DEAL_STAGE_ORDER: string[] = [
   'Cards Delivered', 'Billing Form Sent', 'Billing Form Filled', 'Card Funded',
   'Card Swiped', 'Closed Lost',
 ];
+/**
+ * Pipeline order for Lead Status. New Lead leads the board (yellow); No Status is always last.
+ * Other picklist values sit in between; unknown statuses land just before No Status.
+ */
 export const LEAD_STATUS_ORDER: string[] = [
-  'First Call', 'Second Call', 'Third Call', 'Follow-up', 'Email Follow-Up',
-  'Interested', 'Application Filled', 'Not Interested', 'Unqualified',
+  'New Lead', 'First Call', 'Second Call', 'Third Call', 'Follow-up', 'Email Follow-Up',
+  'Interested', 'Application Filled', 'Not Interested', 'Unqualified', 'Unaccounted', 'No Status',
 ];
 
 // Reference color NAME → this theme's CSS var.
@@ -64,9 +68,9 @@ const COLOR_VAR: Record<string, string> = {
   yellow: 'var(--warn)', green: 'var(--ok)', red: 'var(--danger)', gray: 'var(--muted)',
 };
 const LEAD_STATUS_COLORNAME: Record<string, string> = {
-  'First Call': 'blue', 'Second Call': 'indigo', 'Third Call': 'purple', Interested: 'green',
-  'Application Filled': 'orange', 'Not Interested': 'red', 'Follow-up': 'yellow',
-  Unqualified: 'gray', 'Email Follow-Up': 'blue',
+  'New Lead': 'yellow', 'First Call': 'blue', 'Second Call': 'indigo', 'Third Call': 'purple',
+  Interested: 'green', 'Application Filled': 'orange', 'Not Interested': 'red', 'Follow-up': 'orange',
+  Unqualified: 'gray', 'Email Follow-Up': 'blue', Unaccounted: 'gray', 'No Status': 'gray',
 };
 const DEAL_STAGE_COLORNAME: Record<string, string> = {
   'Application Filled': 'blue', 'Application Processing': 'indigo', 'Application Approved': 'purple',
@@ -87,70 +91,110 @@ export interface StageColumn {
   col: string;
 }
 
-/** Lead columns = the statuses PRESENT in the data, ordered by LEAD_STATUS_ORDER (unknown → end). */
+/** Lead columns = statuses PRESENT in the data; known order, extras before No Status, No Status last. */
 export function leadColumns(present: string[]): StageColumn[] {
   const seen = new Set(present.filter(Boolean));
-  const known = LEAD_STATUS_ORDER.filter((s) => seen.has(s));
+  const known = LEAD_STATUS_ORDER.filter((s) => s !== 'No Status' && seen.has(s));
   const extra = [...seen].filter((s) => !LEAD_STATUS_ORDER.includes(s));
-  return [...known, ...extra].map((v) => ({ key: v, label: v, col: leadStatusColor(v) }));
+  const ordered = [...known, ...extra, ...(seen.has('No Status') ? (['No Status'] as const) : [])];
+  return ordered.map((v) => ({ key: v, label: v, col: leadStatusColor(v) }));
 }
 /** Deal columns = the fixed 10-stage blueprint, always shown in order (matches the reference). */
 export function dealColumns(): StageColumn[] {
   return DEAL_STAGE_ORDER.map((v) => ({ key: v, label: v, col: dealStageColor(v) }));
 }
 
-/** utm_source → pill color (reference utmPillClass). */
-export function utmColor(source: string): string {
+/** utm_source / source badge color — Leads redesign `sourceColor` (CSS vars). */
+export function leadSourceColor(source: string): string {
   const s = source.toLowerCase();
-  if (s.includes('meta') || s.includes('facebook') || s.includes('instagram')) return 'var(--accent)';
-  if (s.includes('website') || s.includes('organic') || s.includes('google')) return 'var(--ok)';
+  if (s.includes('facebook') || s.includes('meta') || s.includes('instagram') || /\bfb\b/.test(s)) {
+    return 'var(--accent)';
+  }
+  if (s.includes('website') || s.includes('organic') || s.includes('google') || s.includes('web')) {
+    return 'var(--ok)';
+  }
+  if (s.includes('referral') || s.includes('employee') || s.includes('partner')) return 'var(--violet)';
+  if (s.includes('cold')) return 'var(--orange)';
+  if (s.includes('trade') || s.includes('seminar') || s.includes('chat') || s.includes('event')) {
+    return 'var(--accent-2)';
+  }
+  if (s.includes('carrier411') || s.includes('carrier_411')) return 'var(--accent-2)';
   return 'var(--muted)';
+}
+
+/** @deprecated alias — same palette as leadSourceColor (utm_source is the display source). */
+export function utmColor(source: string): string {
+  return leadSourceColor(source);
+}
+
+/** Absolute datetime for lead modal date rows ("Jul 18, 2026 · 12:41 PM"). */
+function fmtDateTime(v: unknown): string {
+  const raw = str(v);
+  if (!raw) return '—';
+  const d = new Date(raw.length <= 10 ? `${raw}T00:00:00` : raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `${date} · ${time}`;
 }
 
 // ---- Leads ----
 
 export interface LeadVM {
   id: string;
-  /** Card title = the person's full name (reference `fullName`). */
+  /** Person's Full_Name — kanban/list primary label + modal hero. */
   contact: string;
   company: string;
   initials: string;
-  title: string;
   phone: string;
+  cell: string;
   email: string;
+  /** Display source = Zoho `utm_source` (kanban badge, list Source col, modal Source tile). */
   source: string;
-  /** The real Zoho Lead `Status` value — the kanban column key + badge. */
+  /** The real Zoho Lead `Status` value — the kanban column key. */
   status: string;
   converted: boolean;
-  utmSource: string;
-  /** Relative created time (reference `relDate(created_time)`). */
+  /** Relative created time for list/card footers. */
   created: string;
-  value: number;
-  valueFmt: string;
+  createdAt: string;
+  fbRegisteredAt: string;
+  webRegisteredAt: string;
+  lastActivityAt: string;
+  modifiedAt: string;
+  mc: string;
+  dot: string;
+  referral: string;
   trucks: number;
   note: string;
 }
 
 function mapLead(r: CrmRow): LeadVM {
   const contact = str(r.Full_Name) || '—';
-  const company = str(r.Company) || str(r.Full_Name) || '(unnamed lead)';
-  const status = str(r.Status) || 'No Status';
-  const value = n(r.Annual_Revenue);
+  const company = str(r.Company) || '(unnamed company)';
+  const rawStatus = str(r.Status);
+  const status = !rawStatus || rawStatus === '-None-' ? 'No Status' : rawStatus;
+  const referral = str(r.Referral_Source) || lookupName(r.Referred_By) || '—';
+  const dotRaw = r.DOT;
   return {
     id: str(r.id),
     contact,
     company,
     initials: initialsOf(contact === '—' ? company : contact),
-    title: str(r.Designation) || '—',
     phone: str(r.Phone),
+    cell: str(r.Cell),
     email: str(r.Email) || '—',
-    source: str(r.Lead_Source),
+    source: str(r.utm_source),
     status,
     converted: r.Converted__s === true,
-    utmSource: str(r.utm_source),
     created: relTime(str(r.Created_Time) || str(r.Modified_Time)) || '',
-    value,
-    valueFmt: value > 0 ? money(value) : '—',
+    createdAt: fmtDateTime(r.Created_Time),
+    fbRegisteredAt: fmtDateTime(r.Registration_Time),
+    webRegisteredAt: fmtDateTime(r.Web_Registration_Date),
+    lastActivityAt: fmtDateTime(r.Last_Activity_Time),
+    modifiedAt: fmtDateTime(r.Modified_Time),
+    mc: str(r.MC) || '—',
+    dot: dotRaw == null || str(dotRaw) === '' ? '—' : str(dotRaw),
+    referral,
     trucks: n(r.Trucks),
     note: str(r.Description) || 'No notes on this lead yet.',
   };

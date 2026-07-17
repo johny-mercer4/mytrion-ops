@@ -20,8 +20,8 @@ import {
   profileKeyOf,
   type MytrionId,
 } from '../../lib/mytrions.js';
-import { mytrionProfileDefaultsRepo } from '../../repos/mytrionProfileDefaultsRepo.js';
-import { workerMytrionAccessRepo } from '../../repos/workerMytrionAccessRepo.js';
+import { mytrionProfileDefaultsRepo, type MytrionProfileDefaultDto } from '../../repos/mytrionProfileDefaultsRepo.js';
+import { workerMytrionAccessRepo, type WorkerMytrionAccessDto } from '../../repos/workerMytrionAccessRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
 export interface ResolvedAccess {
@@ -106,6 +106,74 @@ function pickHome(home: MytrionId | null, accessible: MytrionId[]): MytrionId | 
   return null;
 }
 
+/**
+ * Pure (no I/O) combine of a worker's profile default + per-user override rows into their final
+ * access. Factored out so a bulk caller (the admin listing endpoint) can fetch both tables ONCE
+ * and combine in-memory for every user, instead of the per-user resolver's 2 DB round trips each —
+ * see resolveBatch below.
+ */
+function combineAccess(
+  input: ResolveWorkerAccessInput,
+  pd: MytrionProfileDefaultDto | undefined,
+  ov: WorkerMytrionAccessDto | undefined,
+): ComputeResult {
+  const envAdmin = resolveAllDepartmentAccess({
+    profile: input.profileName ?? null,
+    role: input.zohoRole ?? null,
+    userName: input.userName ?? null,
+  });
+  const havePd = Boolean(pd && pd.active);
+  const haveOv = Boolean(ov && ov.active);
+
+  // UNMANAGED non-admin (no profile default AND no override configured) → preserve the legacy
+  // profile-derived access. This makes the rollout non-breaking: nothing changes for a worker
+  // until an admin explicitly configures their profile default or a per-user override. Admins
+  // are still handled by the env floor in the compute path below.
+  if (!envAdmin && !havePd && !haveOv) return { value: legacyAccess(input, false), degraded: false };
+
+  // Step 1 — base. The active profile default, OR (when none) the legacy-derived FLOOR — so an
+  // "inherit" override never resolves BELOW the un-configured baseline just because the profile
+  // default row hasn't been seeded yet.
+  const floor = havePd ? undefined : legacyAccess(input, false);
+  let allowed: MytrionId[] = havePd && pd ? pd.allowedMytrions : (floor?.accessibleMytrions ?? []);
+  let home: MytrionId | null = havePd && pd ? pd.homeMytrion : (floor?.homeMytrion ?? null);
+  let allDept = havePd && pd ? pd.allDepartmentAccess : (floor?.allDepartmentAccess ?? false);
+
+  // Step 2 — per-user override (replace allowed / subtract denied / override home + all-access).
+  let denied: MytrionId[] = [];
+  let viewAsUserIds: string[] = [];
+  if (haveOv && ov) {
+    if (ov.allowedMytrions != null) allowed = ov.allowedMytrions;
+    denied = ov.deniedMytrions;
+    if (ov.allDepartmentAccess != null) allDept = ov.allDepartmentAccess;
+    if (ov.homeMytrion != null) home = ov.homeMytrion;
+    viewAsUserIds = ov.viewAsUserIds;
+  }
+
+  // Step 3 — ADMIN FLOOR: an env-marker admin's all-access can never be lowered by the DB.
+  if (envAdmin) allDept = true;
+
+  // Step 4 — accessible set. env-marker admins are EXEMPT from the deny-list (the no-lockout
+  // invariant must hold end-to-end: a stray deny can't empty a real admin's Mytrion list).
+  const fullSet = allDept ? [...MYTRION_IDS] : allowed;
+  const accessible = envAdmin ? fullSet : subtract(fullSet, denied);
+
+  // `allDepartmentAccess: true` is a FULL bypass in every backend gate, so it can't express
+  // "everything except X". A non-env-admin all-access grant WITH denies is downgraded to an
+  // explicit department grant so the deny actually enforces (not just hidden in the UI list).
+  const enforceableAllDept = allDept && (envAdmin || denied.length === 0);
+  return {
+    value: {
+      accessibleMytrions: accessible,
+      homeMytrion: pickHome(home, accessible),
+      allDepartmentAccess: enforceableAllDept,
+      departments: enforceableAllDept ? [] : departmentsForMytrions(accessible),
+      viewAsUserIds,
+    },
+    degraded: false,
+  };
+}
+
 async function computeAccess(input: ResolveWorkerAccessInput): Promise<ComputeResult> {
   const envAdmin = resolveAllDepartmentAccess({
     profile: input.profileName ?? null,
@@ -122,56 +190,7 @@ async function computeAccess(input: ResolveWorkerAccessInput): Promise<ComputeRe
     const ov = input.zohoUserId
       ? await workerMytrionAccessRepo.findByZohoUserId(ctx, input.zohoUserId)
       : undefined;
-    const havePd = Boolean(pd && pd.active);
-    const haveOv = Boolean(ov && ov.active);
-
-    // UNMANAGED non-admin (no profile default AND no override configured) → preserve the legacy
-    // profile-derived access. This makes the rollout non-breaking: nothing changes for a worker
-    // until an admin explicitly configures their profile default or a per-user override. Admins
-    // are still handled by the env floor in the compute path below.
-    if (!envAdmin && !havePd && !haveOv) return { value: legacyAccess(input, false), degraded: false };
-
-    // Step 1 — base. The active profile default, OR (when none) the legacy-derived FLOOR — so an
-    // "inherit" override never resolves BELOW the un-configured baseline just because the profile
-    // default row hasn't been seeded yet.
-    const floor = havePd ? undefined : legacyAccess(input, false);
-    let allowed: MytrionId[] = havePd && pd ? pd.allowedMytrions : (floor?.accessibleMytrions ?? []);
-    let home: MytrionId | null = havePd && pd ? pd.homeMytrion : (floor?.homeMytrion ?? null);
-    let allDept = havePd && pd ? pd.allDepartmentAccess : (floor?.allDepartmentAccess ?? false);
-
-    // Step 2 — per-user override (replace allowed / subtract denied / override home + all-access).
-    let denied: MytrionId[] = [];
-    let viewAsUserIds: string[] = [];
-    if (haveOv && ov) {
-      if (ov.allowedMytrions != null) allowed = ov.allowedMytrions;
-      denied = ov.deniedMytrions;
-      if (ov.allDepartmentAccess != null) allDept = ov.allDepartmentAccess;
-      if (ov.homeMytrion != null) home = ov.homeMytrion;
-      viewAsUserIds = ov.viewAsUserIds;
-    }
-
-    // Step 3 — ADMIN FLOOR: an env-marker admin's all-access can never be lowered by the DB.
-    if (envAdmin) allDept = true;
-
-    // Step 4 — accessible set. env-marker admins are EXEMPT from the deny-list (the no-lockout
-    // invariant must hold end-to-end: a stray deny can't empty a real admin's Mytrion list).
-    const fullSet = allDept ? [...MYTRION_IDS] : allowed;
-    const accessible = envAdmin ? fullSet : subtract(fullSet, denied);
-
-    // `allDepartmentAccess: true` is a FULL bypass in every backend gate, so it can't express
-    // "everything except X". A non-env-admin all-access grant WITH denies is downgraded to an
-    // explicit department grant so the deny actually enforces (not just hidden in the UI list).
-    const enforceableAllDept = allDept && (envAdmin || denied.length === 0);
-    return {
-      value: {
-        accessibleMytrions: accessible,
-        homeMytrion: pickHome(home, accessible),
-        allDepartmentAccess: enforceableAllDept,
-        departments: enforceableAllDept ? [] : departmentsForMytrions(accessible),
-        viewAsUserIds,
-      },
-      degraded: false,
-    };
+    return combineAccess(input, pd, ov);
   } catch (err) {
     logger.error(
       { err: err instanceof Error ? err.message : String(err), zohoUserId: input.zohoUserId },
@@ -225,6 +244,42 @@ export const mytrionAccessService = {
       });
     inflight.set(key, p);
     return p;
+  },
+
+  /**
+   * Resolve MANY workers' access at once from two bulk queries (profile defaults + overrides) —
+   * used by the admin listing endpoint so listing N users costs O(1) DB round trips instead of the
+   * per-user resolver's 2N (one profile-default + one override lookup per row). Also warms the
+   * per-user TTL cache so a subsequent resolveWorkerAccess() for the same identity hits it.
+   * Pass `prefetchedOverrides` when the caller already loaded the overrides list (e.g. to build its
+   * own override-by-user map) to avoid fetching it twice.
+   */
+  async resolveBatch(
+    tenantId: string,
+    users: ResolveWorkerAccessInput[],
+    prefetchedOverrides?: WorkerMytrionAccessDto[],
+  ): Promise<Map<string, ResolvedAccess>> {
+    const ctx = internalCtx(tenantId);
+    const [profileDefaults, overrides] = await Promise.all([
+      mytrionProfileDefaultsRepo.list(ctx),
+      prefetchedOverrides ?? workerMytrionAccessRepo.list(ctx),
+    ]);
+    const pdByKey = new Map(profileDefaults.map((p) => [p.profileKey, p]));
+    const ovById = new Map(overrides.map((o) => [o.zohoUserId, o]));
+
+    const result = new Map<string, ResolvedAccess>();
+    for (const input of users) {
+      const pd = input.profileName != null ? pdByKey.get(profileKeyOf(input.profileName)) : undefined;
+      const ov = ovById.get(input.zohoUserId);
+      const { value, degraded } = combineAccess(input, pd, ov);
+      if (!degraded) {
+        const key = cacheKey(input);
+        lastGood.set(key, value);
+        cache.set(key, { value, expires: Date.now() + TTL_MS });
+      }
+      result.set(input.zohoUserId, value);
+    }
+    return result;
   },
 
   /** Drop a user's cached access across all identity variants (call after an override upsert). */

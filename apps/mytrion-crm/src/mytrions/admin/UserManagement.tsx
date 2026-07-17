@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { TableSkeleton } from '@/components/mytrion/table-skeleton';
 import { MYTRIONS, type MytrionId } from '../../access/mytrions.config';
 import { listAccessUsers, type AccessUserRow } from '../../api/mytrionAccess';
 import { SearchIcon } from '../../components/icons';
@@ -6,7 +7,7 @@ import s from './admin.module.css';
 import { ProfileDefaults } from './ProfileDefaults';
 import { UserAccessForm } from './UserAccessForm';
 
-const COLS = { gridTemplateColumns: '1.5fr 1fr 2.2fr 0.9fr 0.6fr' } as const;
+const USER_SKELETON = ['52%', '70px', '64%', '48%', '44px'] as const;
 
 export function mytrionLabel(id: MytrionId): string {
   return MYTRIONS[id]?.title ?? id;
@@ -50,10 +51,7 @@ export function UserManagement() {
       <div className={s.head}>
         <div>
           <h2 className={s.h2}>User Management</h2>
-          <p className={s.sub}>
-            Control which Zoho worker can access which Mytrion. Access is enforced server-side; a
-            Sales Agent auto-routes to Sales, an Administrator lands on the picker.
-          </p>
+
         </div>
       </div>
 
@@ -94,16 +92,25 @@ export function UserManagement() {
             </p>
           )}
 
-          <div className={s.table}>
-            <div className={s.tHead} style={COLS}>
+          <div className={s.table} aria-busy={loading && rows.length === 0}>
+            <div className={`${s.tHead} ${s.tUsers}`}>
               <span>User</span>
               <span>Profile</span>
               <span>Accessible Mytrions</span>
               <span>Home</span>
               <span className={s.right}>Edit</span>
             </div>
-            {visible.map((r) => (
-              <div key={r.zohoUserId} className={s.tRow} style={COLS}>
+            {loading && rows.length === 0 && (
+              <>
+                <span className={s.srOnly} role="status">
+                  Loading users…
+                </span>
+                <TableSkeleton widths={USER_SKELETON} rowClassName={s.tRow} colsClassName={s.tUsers} />
+              </>
+            )}
+            {!loading &&
+              visible.map((r) => (
+              <div key={r.zohoUserId} className={`${s.tRow} ${s.tUsers}`}>
                 <span className={s.docCell}>
                   <span className={s.docTitle}>{r.name ?? r.zohoUserId}</span>
                 </span>
@@ -132,7 +139,6 @@ export function UserManagement() {
                 </span>
               </div>
             ))}
-            {loading && rows.length === 0 && <div className={s.none}>Loading users…</div>}
             {!loading && visible.length === 0 && <div className={s.none}>No users match.</div>}
           </div>
         </>

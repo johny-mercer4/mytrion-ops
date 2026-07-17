@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { FuelMark } from '../components/BrandMark';
 import { beginZohoLogin } from '../api/auth';
 import { ApiError } from '../api/transport';
+import { AuthScreen } from './AuthScreen';
 import styles from './Screen.module.css';
 
 /**
@@ -31,16 +31,22 @@ export function LoginGate({ initialError }: { initialError?: string | undefined 
   }
 
   return (
-    <div className={styles.screen}>
-      <div className={styles.card}>
-        <FuelMark size={42} />
-        <h1 className={styles.title}>Sign in to Mytrion</h1>
-        <p className={styles.body}>Use your Zoho account to access the Mytrion portal.</p>
-        <button className={styles.button} onClick={signIn} disabled={busy}>
-          {busy ? 'Redirecting…' : 'Sign in with Zoho'}
-        </button>
-        {error ? <p className={styles.error}>{error}</p> : null}
-      </div>
-    </div>
+    <AuthScreen
+      phase={busy ? 'redirecting' : 'idle'}
+      title={busy ? 'Connecting to Zoho' : 'Sign in to Mytrion'}
+      body={
+        busy
+          ? 'Opening Zoho securely — you’ll confirm your account, then we’ll bring you back here.'
+          : 'Use your Zoho account to access the Mytrion portal.'
+      }
+      error={error}
+      action={
+        busy ? null : (
+          <button type="button" className={styles.button} onClick={() => void signIn()}>
+            Sign in with Zoho
+          </button>
+        )
+      }
+    />
   );
 }

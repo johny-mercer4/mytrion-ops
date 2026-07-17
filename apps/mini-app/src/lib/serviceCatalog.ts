@@ -38,7 +38,6 @@ const DRIVER_CATALOG: CatalogGroup[] = [
     groupLabelKey: 'svcgrp.yourCard',
     items: [
       { key: 'drv-status', labelKey: 'cat.drvStatus', icon: 'shield', action: 'status' },
-      { key: 'drv-balance', labelKey: 'cat.drvBalance', icon: 'wallet', action: 'balance' },
       { key: 'drv-txns', labelKey: 'cat.drvTxns', icon: 'list', action: 'txns' },
       // Both of these read data the backend ALREADY scopes to the driver's own card, so neither
       // needed a new endpoint — they were simply missing from the catalog. `last-used` was wired end
@@ -118,7 +117,7 @@ export function getCatalog(isDriver: boolean): CatalogGroup[] {
 }
 
 export function defaultPinned(isDriver: boolean): string[] {
-  return isDriver ? ['drv-status', 'drv-balance', 'drv-txns'] : ['fin-balance', 'card-status', 'fin-invoice-view', 'fin-txn-reports'];
+  return isDriver ? ['drv-status', 'drv-txns'] : ['fin-balance', 'card-status', 'fin-invoice-view', 'fin-txn-reports'];
 }
 
 export function findCatalogItem(key: string, isDriver: boolean): { item: CatalogItem; groupLabelKey: string } | undefined {

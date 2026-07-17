@@ -1,7 +1,8 @@
 /**
- * DWH client directory — search semantics over octane.intm_zoho_deals (mocked dwhQuery)
+ * DWH client directory — search semantics over octane.stg_zoho_deals (mocked dwhQuery)
  * and the admin route gate. Clients must be searchable by company name, carrier id, or
- * application id, newest applications first, active rows only.
+ * application id, newest applications first. Recency comes from DISTINCT ON (zoho_deal_id)
+ * ordered by valid_from — NOT is_active, which is broken upstream (see dwhClients.ts header).
  */
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -37,11 +38,14 @@ afterAll(async () => {
 beforeEach(() => query.mockClear());
 
 describe('searchDwhClients — query construction', () => {
-  it('browse mode: active rows only, newest application first', async () => {
+  it('browse mode: latest version per deal, no Closed Lost, newest application first', async () => {
     await searchDwhClients({});
     const [sql, params] = query.mock.calls.at(-1) as [string, unknown[]];
-    expect(sql).toContain('octane.intm_zoho_deals');
-    expect(sql).toContain('is_active = true');
+    expect(sql).toContain('octane.stg_zoho_deals');
+    expect(sql).toContain('distinct on (zoho_deal_id)');
+    expect(sql).toContain('valid_from desc');
+    expect(sql).not.toContain('is_active');
+    expect(sql).toContain(`stage is distinct from 'Closed Lost'`);
     expect(sql).toContain('order by application_date desc nulls last');
     expect(sql).toContain('limit 25');
     expect(params).toEqual([]);

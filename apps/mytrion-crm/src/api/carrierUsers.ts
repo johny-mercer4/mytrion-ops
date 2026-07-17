@@ -155,6 +155,17 @@ export async function listRegisteredCompanies(): Promise<RegisteredCompany[]> {
   return data.registrations;
 }
 
+/** Active owner + drivers for one carrier (Sales Client Manage / driver gating). */
+export async function getCarrierRegistrations(
+  carrierId: string,
+  signal?: AbortSignal,
+): Promise<{ owner: RegisteredCompany | null; drivers: RegisteredCompany[] }> {
+  return (await request('GET', '/carrier-registrations/for-carrier', {
+    query: { carrier_id: carrierId },
+    ...(signal ? { signal } : {}),
+  })) as { owner: RegisteredCompany | null; drivers: RegisteredCompany[] };
+}
+
 /** Soft-disable a registered owner/driver — reversible, frees their card for reassignment. */
 export async function revokeRegistration(id: string): Promise<void> {
   await request('POST', `/carrier-registrations/${encodeURIComponent(id)}/revoke`, { body: {} });

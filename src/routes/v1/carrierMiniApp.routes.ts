@@ -12,7 +12,7 @@ import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { env, isProduction } from '../../config/env.js';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { db } from '../../db/client.js';
-import { FLEET_CARD_LIMIT, listDwhCards, findDwhCardById, findDwhCardByNumber } from '../../integrations/dwhCards.js';
+import { FLEET_CARD_LIMIT, getDwhCompanyDetails, listDwhCards, findDwhCardById, findDwhCardByNumber } from '../../integrations/dwhCards.js';
 import { listDwhTransactions, resolveDwhTxnRange } from '../../integrations/dwhTransactions.js';
 import { searchDwhClients } from '../../integrations/dwhClients.js';
 import { searchDwhOperators } from '../../integrations/dwhOperators.js';
@@ -365,15 +365,12 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   const guard = { onRequest: [app.sessionOrApiKey] };
 
   /**
-   * Admin-gated: generate a carrier registration link (owner or driver). This is the seed for the
-   * mini-app — an admin sends an owner the link; the owner then hands out per-card driver links
-   * from inside the app.
+   * Generate a carrier registration link (owner or driver). Used by Admin Client Management and
+   * Sales Data Center → client Manage. Any authenticated session may create an invite (audit logs
+   * the actor); the mini-app still handles redeem/sign-in.
    */
   app.post('/carrier-invitations', guard, async (request, reply) => {
     const ctx = requireContext(request);
-    if (ctx.role !== 'admin' && !ctx.bypassRbac) {
-      throw new RBACError('Generating carrier invites requires admin access');
-    }
     const body = createInviteSchema.parse(request.body);
     const fallbackAgent = inviteAgentFromContext(ctx);
     const { invite, inviteUrl } = await createCarrierInvite(ctx, {
@@ -392,13 +389,14 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       ...(body.ttl_hours !== undefined ? { ttlHours: body.ttl_hours } : {}),
     });
     await auditFromContext(ctx, {
-      action: 'admin.carrier_invitation.create',
+      action: 'carrier.invitation.create',
       status: 'ok',
       resourceType: 'carrier_invitation',
       resourceId: invite.id,
       detail: {
         ...(invite.carrierId ? { carrierId: invite.carrierId } : {}),
         ...(invite.applicationId ? { applicationId: invite.applicationId } : {}),
+        role: ctx.role,
       },
     });
     return reply.code(201).send({ invite, inviteUrl });
@@ -442,11 +440,11 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   });
 
   /**
-   * The carrier's active fuel cards (octane.stg_cmp_card, current rows) — what the admin picks a
-   * driver's card_id FROM when generating a driver link. No driver identity lives on the card.
+   * The carrier's active fuel cards (octane.stg_cmp_card, current rows) — used when generating a
+   * driver registration link (Admin + Sales client Manage). Auth-gated; no admin role required.
    */
   app.get('/carrier-users/dwh-cards', guard, async (request) => {
-    requireAdmin(request);
+    requireContext(request);
     if (!env.DWH_DATABASE_URL) {
       throw new AppError('The data warehouse is not configured (DWH_DATABASE_URL)', {
         statusCode: 503,
@@ -479,6 +477,18 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     const ctx = requireAdmin(request);
     const registrations = await registeredMiniAppCompanyRepo.list(ctx);
     return { registrations };
+  });
+
+  /**
+   * One carrier's active owner + drivers — used by Sales Client Manage to gate driver invites
+   * (driver requires an active owner) without exposing the full admin registration list.
+   */
+  app.get('/carrier-registrations/for-carrier', guard, async (request) => {
+    const ctx = requireContext(request);
+    const q = z.object({ carrier_id: z.string().min(1) }).parse(request.query);
+    const owner = (await registeredMiniAppCompanyRepo.findActiveOwnerByCarrier(ctx, q.carrier_id)) ?? null;
+    const drivers = await registeredMiniAppCompanyRepo.listDriversByCarrier(ctx, q.carrier_id);
+    return { owner, drivers };
   });
 
   /** Soft-disable a registered owner/driver — the row (and its history) stays, access doesn't. A
@@ -890,10 +900,29 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
 
   // ── Self-service reads — real servercrm/DWH data behind the mini-app's demo action sheets ────
 
+  // Owner-only. The only balance that exists is the CARRIER's EFS pool — there is no per-card
+  // figure (stg_cmp_card.balance is 0.00 across the board), so for a driver this endpoint could
+  // only ever return company money. The driver card and catalog no longer offer it, and the gate
+  // here is what makes that real: a missing button must never be the only thing standing between a
+  // driver's initData and the company's finances (the same lesson as /invoices and /tracking).
   app.post('/carrier/mini-app/balance', async (request) => {
     const body = selfServiceSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
     return serverCrmWrapper.getCarrierBalance(carrierId);
+  });
+
+  /**
+   * The carrier's company profile (id, contact, address) for the owner's profile sheet.
+   *
+   * Owner-only: this is company-level contact and address data, an account holder's view — a driver
+   * asking about their card has no need for the company's email and mailing address. carrierId is
+   * always returned (it is the caller's own), even when the DWH has no dim_company row.
+   */
+  app.post('/carrier/mini-app/company', async (request) => {
+    const body = selfServiceSchema.parse(request.body);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
+    const details = env.DWH_DATABASE_URL ? await getDwhCompanyDetails(carrierId).catch(() => null) : null;
+    return details ?? { carrierId, companyName: null, email: null, phone: null, address: null, city: null, state: null, zip: null };
   });
 
   // The card list is carrier-wide upstream; a driver only ever sees their own card in it. `overview`

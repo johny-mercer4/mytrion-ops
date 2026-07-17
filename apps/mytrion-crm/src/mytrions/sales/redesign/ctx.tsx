@@ -7,12 +7,13 @@
 import { createContext, useContext } from 'react';
 import type { BadgeVM } from './salesData';
 import type { DealVM, LeadVM } from './dataCenterLive';
+import type { IconName } from './icons';
 
 /** A detail-modal payload (announcements, inbox items). */
 export interface DetailVM {
   title: string;
   body: string;
-  icon: string;
+  icon: IconName;
   iconStyle: string;
   metaLabel: string;
   meta: string;
@@ -29,7 +30,6 @@ export interface ClientRecord {
   cards: number;
   active: number;
   gallons: string;
-  balance: string;
   status: 'active' | 'attention' | 'debtor';
   mc: string;
   dot: string;
@@ -51,6 +51,14 @@ export interface SalesCtx {
   /** The ticket the Tickets tab should auto-select on entry (consumed via clearFocusTicket). */
   focusTicketId: string | null;
   clearFocusTicket: () => void;
+  /**
+   * Jump to Automations and auto-open a catalog action (e.g. Create Ticket → Instant redirect).
+   * `automationId` is an `AUTO_LIST` id like `card-activation`.
+   */
+  openAutomation: (automationId: string) => void;
+  /** Consumed by AutoTab on entry via clearFocusAutomation. */
+  focusAutomationId: string | null;
+  clearFocusAutomation: () => void;
 }
 
 export const SalesContext = createContext<SalesCtx | null>(null);

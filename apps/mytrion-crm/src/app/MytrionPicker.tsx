@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom';
 import { useUserContext } from '../context/UserContextProvider';
-import { MYTRIONS, type MytrionId } from '../access/mytrions.config';
+import { MYTRIONS, MYTRION_URL_SLUG, COMING_SOON_PICKER_TILES, type MytrionId } from '../access/mytrions.config';
 import { TopBar } from '../components/TopBar';
-import { ArrowRightIcon, CheckIcon, MytrionGlyph } from '../components/icons';
+import { CheckIcon, MytrionGlyph } from '../components/icons';
 import styles from './MytrionPicker.module.css';
 
 const HUE_VAR: Record<string, string> = {
@@ -11,6 +11,7 @@ const HUE_VAR: Record<string, string> = {
   purple: '--purple',
   orange: '--orange',
   danger: '--danger',
+  warning: '--warning',
 };
 
 /** Landing picker (design 1a): hero + a grid of the Mytrions the user may enter. */
@@ -21,6 +22,10 @@ export function MytrionPicker({ ids }: { ids: MytrionId[] }) {
   return (
     <div className={styles.screen}>
       <TopBar showIdentity />
+      <div className={styles.bgAmbient} aria-hidden="true">
+        <div className={styles.bgOrb1} />
+        <div className={styles.bgOrb2} />
+      </div>
       <div className={styles.scroll}>
         <div className={styles.content}>
           <header className={styles.hero}>
@@ -31,45 +36,55 @@ export function MytrionPicker({ ids }: { ids: MytrionId[] }) {
               department's data and grounded in its own knowledge base. Pick one to enter — you can
               switch any time.
             </p>
-            <div className={styles.tags}>
-              <span className={styles.accessTag}>
-                <CheckIcon size={11} />
-                {ctx.profile} · access
-              </span>
-              <span className={styles.mono}>role: {ctx.role || '—'}</span>
-              <span className={styles.mono}>uid: {ctx.userId}</span>
-            </div>
+
           </header>
 
           <ul className={styles.grid}>
-            {ids.map((id) => {
+            {ids.map((id, index) => {
               const m = MYTRIONS[id];
               const hue = HUE_VAR[m.hue] ?? '--accent';
               return (
                 <li key={id}>
-                  <Link className={styles.card} to={`/m/${id}`}>
-                    <div className={styles.cardTop}>
+                  <Link 
+                    className={`${styles.card} ${styles.dynamicHover}`} 
+                    to={`/main/${MYTRION_URL_SLUG[id]}`}
+                    style={{ 
+                      '--card-hue': `var(${hue})`,
+                      animationDelay: `${index * 0.05}s`
+                    } as React.CSSProperties}
+                  >
+                    <span
+                      className={styles.glyph}
+                      style={{ background: `color-mix(in srgb, var(${hue}) 14%, transparent)`, color: `var(${hue})` }}
+                    >
+                      <MytrionGlyph name={m.icon} size={22} />
+                    </span>
+                    <div className={styles.cardTitle}>{m.title.replace(/ Mytrion$/, '')}</div>
+                  </Link>
+                </li>
+              );
+            })}
+            {COMING_SOON_PICKER_TILES.map((tile, i) => {
+              const index = ids.length + i;
+              const hue = HUE_VAR[tile.hue] ?? '--accent';
+              return (
+                <li key={tile.id}>
+                  <div 
+                    className={`${styles.card} ${styles.cardSoon}`} 
+                    aria-disabled="true"
+                    style={{ animationDelay: `${index * 0.05}s` }}
+                  >
+                    <div className={styles.cardHead}>
                       <span
                         className={styles.glyph}
                         style={{ background: `color-mix(in srgb, var(${hue}) 14%, transparent)`, color: `var(${hue})` }}
                       >
-                        <MytrionGlyph name={m.icon} size={22} />
+                        <MytrionGlyph name={tile.icon} size={22} />
                       </span>
-                      <span className={`${styles.badge} ${m.status === 'ported' ? styles.ported : styles.new}`}>
-                        {m.status === 'ported' ? 'Ported' : 'New'}
-                      </span>
+                      <span className={styles.soonBadge}>Coming soon</span>
                     </div>
-                    <div>
-                      <div className={styles.cardTitle}>{m.title.replace(/ Mytrion$/, '')}</div>
-                      <div className={styles.cardDept}>
-                        {m.allDepartments ? `${m.department} · all departments` : m.department}
-                      </div>
-                    </div>
-                    <p className={styles.blurb}>{m.blurb}</p>
-                    <span className={styles.enter}>
-                      Enter <ArrowRightIcon size={12} />
-                    </span>
-                  </Link>
+                    <div className={styles.cardTitle}>{tile.title.replace(/ Mytrion$/, '')}</div>
+                  </div>
                 </li>
               );
             })}

@@ -53,6 +53,16 @@ const EnvSchema = z.object({
   // READ ONLY; set to '0' to allow writes. A read-only DB user is the real guarantee — this is defence in depth.
   AWS_MYSQL_READONLY: flag('1'),
 
+  // --- CMP MySQL SSH tunnel (local dev only — mirrors scripts/db-tunnel.sh) ---
+  // When AWS_MYSQL_HOST is 127.0.0.1 / localhost, ensureCmpTunnel() opens the forward on demand.
+  MYSQL_SSH_HOST: z.string().default(''),
+  MYSQL_SSH_PORT: z.coerce.number().int().positive().default(22),
+  MYSQL_SSH_USER: z.string().default(''),
+  MYSQL_SSH_KEYFILE: z.string().default(''),
+  MYSQL_DB_HOST: z.string().default(''),
+  MYSQL_DB_PORT: z.coerce.number().int().positive().default(3306),
+  MYSQL_DB_LOCAL_PORT: z.coerce.number().int().positive().default(3307),
+
   // --- OpenAI ---
   OPENAI_API_KEY: z.string().default(''),
   // Model IDs by role: FOUR_O_MINI = default chat, FIVE_O_MINI = reasoning/hard tasks,
@@ -412,7 +422,8 @@ const EnvSchema = z.object({
   // KNOWN_DEPARTMENTS (watch the "department claims ignored" warn log).
   FF_SESSION_DEPT_AUTHORITATIVE: flag('1'),
   // Zoho OAuth worker sign-in (/v1/auth/zoho/*) + Bearer-session identity on caller routes.
-  FF_ZOHO_OAUTH_ENABLED: flag('0'),
+  // ON by default — the portal always expects Zoho OAuth; set to 0 only for emergency static-key bypass.
+  FF_ZOHO_OAUTH_ENABLED: flag('1'),
   // Multi-agent orchestrator endpoint (POST /v1/agent). FF_DEEP_AGENTS_ENABLED is kept as a
   // deprecated alias — either flag enables the endpoint.
   FF_ORCHESTRATOR_ENABLED: flag('0'),
