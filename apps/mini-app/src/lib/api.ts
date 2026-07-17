@@ -143,6 +143,20 @@ export interface DriverInviteResult {
   expiresAt: string;
 }
 
+/** Owner corrects the driver name on one of their cards. The backend resolves the carrier from the
+ *  caller's own registration and matches on (carrier, card), so a cardId that isn't theirs 404s. */
+export async function renameDriver(
+  initData: string,
+  cardId: string,
+  driverName: string,
+): Promise<{ cardId: string; driverName: string }> {
+  return (await request('POST', '/carrier/mini-app/driver-name', {
+    initData,
+    cardId,
+    driverName,
+  })) as { cardId: string; driverName: string };
+}
+
 export async function createDriverInvite(
   initData: string,
   cardId: string,

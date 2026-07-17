@@ -55,6 +55,7 @@ vi.mock('../../src/repos/carrierInvitationRepo.js', () => ({
     findLiveDriverByCard: vi.fn(),
     listPendingDriverInvitesByCarrier: vi.fn(async () => []),
     markRedeemed: vi.fn(),
+    renameDriverByCard: vi.fn(),
   },
 }));
 
@@ -63,6 +64,7 @@ vi.mock('../../src/repos/registeredMiniAppCompanyRepo.js', () => ({
     findByTelegramUserId: vi.fn(),
     list: vi.fn(async () => []),
     listDriversByCarrier: vi.fn(async () => []),
+    renameDriverByCard: vi.fn(),
     upsert: vi.fn(),
   },
 }));
@@ -1402,4 +1404,87 @@ describe('driver self-registration by card number', () => {
       expect(registrationRepo.upsert.mock.calls[0]?.[1]).toMatchObject({ driverName: expected });
     });
   }
+});
+
+describe('owner renames a driver on the fleet screen', () => {
+  const CARRIER = '5758544';
+
+  it('renames the registered driver holding that card', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(registrationRow());
+    registrationRepo.renameDriverByCard.mockResolvedValueOnce({ id: 'rma_9', driverName: 'James Reyes' } as never);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-name',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', cardId: 'card_1', driverName: '  James Reyes  ' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ cardId: 'card_1', driverName: 'James Reyes' });
+    // The carrier is taken from the caller's own registration, never the body — that where-clause
+    // IS the authorization, so it has to be the caller's carrier that reaches the repo.
+    expect(registrationRepo.renameDriverByCard).toHaveBeenCalledWith(expect.anything(), CARRIER, 'card_1', 'James Reyes');
+    // A registered driver was found, so the pending-invite path must not also fire.
+    expect(inviteRepo.renameDriverByCard).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the pending invite when the driver has not signed in yet', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(registrationRow());
+    registrationRepo.renameDriverByCard.mockResolvedValueOnce(undefined);
+    inviteRepo.renameDriverByCard.mockResolvedValueOnce(inviteRow({ id: 'inv_9', driverName: 'James Reyes' }));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-name',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', cardId: 'card_2', driverName: 'James Reyes' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(inviteRepo.renameDriverByCard).toHaveBeenCalledWith(expect.anything(), CARRIER, 'card_2', 'James Reyes');
+  });
+
+  it("404s a card with no driver — including another carrier's card, which simply matches nothing", async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(registrationRow());
+    registrationRepo.renameDriverByCard.mockResolvedValueOnce(undefined);
+    inviteRepo.renameDriverByCard.mockResolvedValueOnce(undefined);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-name',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', cardId: 'someone-elses-card', driverName: 'Mallory' },
+    });
+
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('refuses a driver — renaming the roster is the owner\'s job', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(
+      registrationRow({ profile: 'driver', companyType: null, cardId: 'card_1', driverName: 'James Reyes' }),
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-name',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', cardId: 'card_1', driverName: 'Fleet Manager' },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(registrationRepo.renameDriverByCard).not.toHaveBeenCalled();
+  });
+
+  it('rejects a blank name at the schema', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-name',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', cardId: 'card_1', driverName: '   ' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(registrationRepo.renameDriverByCard).not.toHaveBeenCalled();
+  });
 });

@@ -115,6 +115,36 @@ export const registeredMiniAppCompanyRepo = {
     return rows.map(toDto);
   },
 
+  /**
+   * Rename the ACTIVE driver holding one card — the owner correcting their fleet roster.
+   *
+   * Keyed by (tenant, carrier, card), never by a client-supplied row id: an id would let one owner
+   * name-edit another carrier's driver by guessing, since the ids are opaque but enumerable in a
+   * response. The carrier here comes from the caller's own registration, so the where-clause IS the
+   * authorization.
+   */
+  async renameDriverByCard(
+    ctx: TenantContext,
+    carrierId: string,
+    cardId: string,
+    driverName: string,
+  ): Promise<RegisteredMiniAppCompanyDto | undefined> {
+    const rows = await db
+      .update(registeredMiniAppCompanies)
+      .set({ driverName, updatedAt: new Date() })
+      .where(
+        and(
+          eq(registeredMiniAppCompanies.tenantId, ctx.tenantId),
+          eq(registeredMiniAppCompanies.carrierId, carrierId),
+          eq(registeredMiniAppCompanies.cardId, cardId),
+          eq(registeredMiniAppCompanies.profile, 'driver'),
+          eq(registeredMiniAppCompanies.status, 'active'),
+        ),
+      )
+      .returning();
+    return rows[0] ? toDto(rows[0]) : undefined;
+  },
+
   /** Soft-disable: revokes access without deleting the row, preserving registration history. */
   async revoke(ctx: TenantContext, id: string): Promise<RegisteredMiniAppCompanyDto | undefined> {
     const rows = await db

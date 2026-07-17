@@ -134,6 +134,12 @@ const ownerDriverInviteSchema = z.object({
   cardId: z.string().min(1).max(120),
   driverName: z.string().min(1).max(200),
 });
+/** Same 200-char cap as the invite form and the driver's own sign-in — one column, one bound. */
+const ownerDriverRenameSchema = z.object({
+  initData: z.string().min(1),
+  cardId: z.string().min(1).max(120),
+  driverName: z.string().trim().min(1).max(200),
+});
 
 // ── Self-service reads (any registered user — owner or driver; carrier-level data both may see) ─
 const selfServiceSchema = z.object({ initData: z.string().min(1) });
@@ -811,6 +817,36 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       company: { companyName: registration.companyName, carrierId, companyType: registration.companyType },
       fleet,
     };
+  });
+
+  /**
+   * Owner corrects the driver name on one of their cards.
+   *
+   * Renames whichever the fleet row is showing: an active registration if the driver signed in, else
+   * the still-pending invite (the roster shows that name before the link is ever opened). Only the
+   * label changes — not who holds the card, so this is not a reassignment path.
+   *
+   * The carrier comes from the caller's own registration and the repos filter on (tenant, carrier,
+   * card), so an owner cannot reach another carrier's row by sending a cardId that isn't theirs:
+   * the update simply matches nothing and 404s.
+   */
+  app.post('/carrier/mini-app/driver-name', async (request) => {
+    const body = ownerDriverRenameSchema.parse(request.body);
+    const { ctx, carrierId } = await requireRegisteredOwner(body.initData);
+
+    const renamed = await registeredMiniAppCompanyRepo.renameDriverByCard(ctx, carrierId, body.cardId, body.driverName);
+    const target = renamed ?? (await carrierInvitationRepo.renameDriverByCard(ctx, carrierId, body.cardId, body.driverName));
+    if (!target) {
+      throw new NotFoundError('That card has no driver to rename');
+    }
+    await auditFromContext(ctx, {
+      action: 'carrier.mini_app.driver_rename',
+      status: 'ok',
+      resourceType: renamed ? 'registered_mini_app_company' : 'carrier_invitation',
+      resourceId: target.id,
+      detail: { carrierId, cardId: body.cardId },
+    });
+    return { cardId: body.cardId, driverName: body.driverName };
   });
 
   /**

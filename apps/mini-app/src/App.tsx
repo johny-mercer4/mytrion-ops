@@ -13,6 +13,7 @@ import {
   fetchPaymentInfo,
   fetchRegistrationPreview,
   fetchTracking,
+  renameDriver,
   sendServiceRequest,
   fetchTransactions,
   redeemRegistration,
@@ -1017,6 +1018,7 @@ function FleetView({
   onRetry,
   onCreate,
   onRegenerate,
+  onRename,
   showToast,
   askConfirm,
 }: {
@@ -1028,6 +1030,7 @@ function FleetView({
   onRetry: () => void;
   onCreate: (cardId: string, name: string) => Promise<void>;
   onRegenerate: (cardId: string, name: string) => Promise<void>;
+  onRename: (cardId: string, driverName: string) => Promise<void>;
   showToast: (msg: string, kind?: ToastKind) => void;
   askConfirm: (cfg: ConfirmConfig) => void;
 }) {
@@ -1228,6 +1231,16 @@ function FleetView({
                         <div style={{ fontSize: 13, color: 'var(--fg)' }}>{t('card.registeredInfo', { name: c.driverName ?? '' })}</div>
                       </div>
                     )}
+                    {/* Rename, for a card that HAS a driver. A self-registering driver types their own
+                        name, and a pending invite carries whatever was typed when it was issued —
+                        either can be wrong, and this roster is what the owner reads. */}
+                    {c.cardId && (c.status === 'registered' || c.status === 'pending') && (
+                      <RenameDriver
+                        cardId={c.cardId}
+                        currentName={c.driverName ?? ''}
+                        onRename={onRename}
+                      />
+                    )}
                   </div>
                 )}
               </div>
@@ -1235,6 +1248,83 @@ function FleetView({
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Inline driver rename on a fleet card. Collapsed to a link until tapped — the roster is read far
+ *  more often than it is corrected, so an always-open input would be noise on every row. */
+function RenameDriver({
+  cardId,
+  currentName,
+  onRename,
+}: {
+  cardId: string;
+  currentName: string;
+  onRename: (cardId: string, driverName: string) => Promise<void>;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(currentName);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function save() {
+    const next = value.trim();
+    if (!next) {
+      setError(t('card.renameRequired'));
+      return;
+    }
+    if (next === currentName) {
+      setOpen(false);
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await onRename(cardId, next);
+      haptic('success');
+      setOpen(false);
+    } catch (e) {
+      haptic('error');
+      setError(e instanceof ApiError ? e.message : t('error.reason'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="press"
+        onClick={() => { haptic('tap'); setValue(currentName); setError(''); setOpen(true); }}
+        style={{ marginTop: 10, border: 'none', background: 'transparent', color: 'var(--link-accent)', fontFamily: "'Geist'", fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: '6px 0' }}
+      >
+        {t('card.renameCta')}
+      </button>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 12 }}>
+      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('card.name')}</label>
+      <input
+        value={value}
+        autoComplete="name"
+        onChange={(e) => setValue(e.target.value.slice(0, 200))}
+        placeholder={t('login.namePlaceholder')}
+        style={{ width: '100%', minWidth: 0, height: 46, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 15, padding: '0 13px', boxSizing: 'border-box' }}
+      />
+      {error && <div style={{ fontSize: 12.5, color: 'var(--destructive)', lineHeight: 1.45 }}>{error}</div>}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" className="press" onClick={() => void save()} disabled={busy} style={{ flex: 1, height: 44, border: 'none', borderRadius: 12, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}>
+          {busy ? <Spinner size={17} /> : t('card.renameSave')}
+        </button>
+        <button type="button" className="press" onClick={() => setOpen(false)} disabled={busy} style={{ flex: 'none', height: 44, padding: '0 16px', border: '1px solid var(--border)', borderRadius: 12, background: 'transparent', color: 'var(--muted-fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+          {t('common.back')}
+        </button>
+      </div>
     </div>
   );
 }
@@ -2270,6 +2360,16 @@ export function App() {
   const createLink = (cardId: string, name: string) => submitDriverLink(cardId, name, 'toast.driverLinkCreated');
   const regenerateLink = (cardId: string, name: string) => submitDriverLink(cardId, name, 'toast.newLinkGenerated');
 
+  async function renameDriverName(cardId: string, driverName: string): Promise<void> {
+    if (!wa?.initData) throw new ApiError(t('auth.openInTelegram'), 'NO_INITDATA', 0);
+    // Patch the row from the response, not from the input: the backend trims, and the roster should
+    // show exactly what was stored. Throws on failure so the inline form keeps the error and the
+    // name on screen stays the one that is really saved.
+    const res = await renameDriver(wa.initData, cardId, driverName);
+    setFleetCards((cs) => cs.map((c) => (c.cardId === cardId ? { ...c, driverName: res.driverName } : c)));
+    showToast(t('toast.driverRenamed'), 'success');
+  }
+
   const signedIn = screen === 'home' || screen === 'fleet';
 
   return (
@@ -2313,6 +2413,7 @@ export function App() {
             onRetry={() => loadFleet(true)}
             onCreate={createLink}
             onRegenerate={regenerateLink}
+            onRename={renameDriverName}
             showToast={showToast}
             askConfirm={askConfirm}
           />
