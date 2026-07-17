@@ -51,23 +51,25 @@ const argb = (h: string) => `FF${h}`;
 
 interface ColumnSpec {
   header: string;
-  /** Relative width — used for PDF layout and scaled to the XLSX character grid. */
+  /** Relative width for the PDF's proportional layout. */
   weight: number;
+  /** Excel's character-count width — a different unit from `weight`, not derived from it. */
+  xlsxWidth: number;
   align: 'left' | 'right' | 'center';
   /** Excel number format; presence also marks the column as numeric for alignment/summing. */
   numFmt?: string;
 }
 
 const COLUMNS: ColumnSpec[] = [
-  { header: 'Date', weight: 9, align: 'left' },
-  { header: 'Location', weight: 24, align: 'left' },
-  { header: 'City', weight: 14, align: 'left' },
-  { header: 'State', weight: 5, align: 'center' },
-  { header: 'Card', weight: 9, align: 'left' },
-  { header: 'Category', weight: 8, align: 'left' },
-  { header: 'Qty', weight: 7, align: 'right', numFmt: '#,##0.00' },
-  { header: 'Amount', weight: 9, align: 'right', numFmt: '#,##0.00' },
-  { header: 'Discount', weight: 9, align: 'right', numFmt: '#,##0.00' },
+  { header: 'Date', weight: 13, xlsxWidth: 19, align: 'left' },
+  { header: 'Location', weight: 22, xlsxWidth: 26, align: 'left' },
+  { header: 'City', weight: 12, xlsxWidth: 16, align: 'left' },
+  { header: 'State', weight: 5, xlsxWidth: 8, align: 'center' },
+  { header: 'Card', weight: 9, xlsxWidth: 13, align: 'left' },
+  { header: 'Category', weight: 8, xlsxWidth: 12, align: 'left' },
+  { header: 'Qty', weight: 7, xlsxWidth: 10, align: 'right', numFmt: '#,##0.00' },
+  { header: 'Amount', weight: 9, xlsxWidth: 12, align: 'right', numFmt: '#,##0.00' },
+  { header: 'Discount', weight: 9, xlsxWidth: 12, align: 'right', numFmt: '#,##0.00' },
 ];
 
 const MAX_PDF_ROWS = 2_000;
@@ -90,20 +92,24 @@ const last4 = (v: unknown): string => {
 };
 
 /**
- * 'YYYY-MM-DD' from whatever the row carries.
+ * 'YYYY-MM-DD HH:MM' from whatever the row carries. The clock time matters to a carrier — two
+ * fuel-ups at one stop on one day are only distinguishable by it — so it is not sliced off.
  *
- * `pg` hands back a `timestamp without time zone` as a JS Date, and String()-ing that yields
- * "Thu Jul 16 2026 …" — slicing 10 chars off it drops the year entirely. The mini-app never hit
- * this because JSON serialises Dates to ISO on the way to the browser; this builder reads the rows
- * before that happens. Read the Date's local parts (not toISOString, which would shift the naive
- * timestamp by the server's UTC offset and can roll the day backwards).
+ * Deliberately a STRING, not a Date, even for Excel. `pg` hands back `timestamp without time zone`
+ * as a JS Date in local time; passing that to exceljs serialises it via UTC and silently shifts the
+ * clock. The same trap makes `toISOString()` wrong here — so read the Date's local parts. An
+ * ISO-shaped string still sorts correctly, so nothing is lost by not being a real date cell.
+ *
+ * (String()-ing the Date instead would yield "Thu Jul 16 2026 …", whose first 10 chars have no year
+ * in them at all — the bug this replaced.)
  */
 function dateCell(v: unknown): string {
+  const pad = (x: number) => String(x).padStart(2, '0');
   if (v instanceof Date) {
-    const pad = (x: number) => String(x).padStart(2, '0');
-    return `${v.getFullYear()}-${pad(v.getMonth() + 1)}-${pad(v.getDate())}`;
+    return `${v.getFullYear()}-${pad(v.getMonth() + 1)}-${pad(v.getDate())} ${pad(v.getHours())}:${pad(v.getMinutes())}`;
   }
-  return s(v).slice(0, 10);
+  // An ISO-ish string from JSON ("2026-07-16T12:14:00") — swap the T for a space, drop the seconds.
+  return s(v).replace('T', ' ').slice(0, 16);
 }
 
 /** A row as typed cells — strings stay strings, money/quantity stay numbers so Excel can sum them. */
@@ -251,7 +257,7 @@ async function toXlsx(grid: Grid, meta: TxnReportMeta): Promise<Buffer> {
 
   if (grid.rows.length) ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: lastRow, column: lastCol } };
   COLUMNS.forEach((c, i) => {
-    ws.getColumn(i + 1).width = Math.max(c.header.length + 4, c.weight + 2);
+    ws.getColumn(i + 1).width = c.xlsxWidth;
   });
 
   return Buffer.from(await wb.xlsx.writeBuffer());
