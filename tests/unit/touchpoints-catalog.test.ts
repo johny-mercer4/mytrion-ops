@@ -38,15 +38,15 @@ describe('catalog shape', () => {
   it('has unique keys and the expected size', () => {
     const keys = all.map((t) => t.key);
     expect(new Set(keys).size).toBe(keys.length);
-    // +11 billing Deluge touchpoints (Transactions reads/writes + carrier memory/fuzzy).
-    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(40);
-    // +4 billing servercrm touchpoints (deals, debtors, avg-days, carrier-type).
-    expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(48);
+    // +14 billing Deluge touchpoints (Transactions reads/writes + carrier memory/fuzzy + Returns).
+    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(43);
+    // +7 billing servercrm touchpoints (deals, debtors, avg-days, carrier-type, 3× prepay).
+    expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(51);
   });
 
   it('billing touchpoints are billing-gated and portfolio-wide (no owner scoping)', () => {
     const billing = all.filter((t) => t.key.startsWith('billing.'));
-    expect(billing).toHaveLength(15);
+    expect(billing).toHaveLength(21);
     for (const tp of billing) {
       expect(tp.departments, `${tp.key} must be billing-gated`).toEqual(['billing']);
       // Billing is a portfolio role: no per-agent carrier ownership gate (would wrongly

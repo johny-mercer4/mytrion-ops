@@ -10,7 +10,7 @@
  */
 import { z } from 'zod';
 import type { Touchpoint } from '../types.js';
-import { carrierId } from './common.js';
+import { carrierId, ymdDate } from './common.js';
 
 const BILLING_DEPARTMENTS = ['billing'] as const;
 
@@ -55,5 +55,44 @@ export const serverCrmBillingTouchpoints: Touchpoint[] = [
     method: 'GET',
     pathTemplate: '/api/billing/dwh/carrier-type',
     paramsSchema: z.object({ carrierId }),
+  },
+
+  // ── Prepay (Phase 2) ────────────────────────────────────────────────────
+  {
+    kind: 'servercrm',
+    key: 'billing.prepay.companies',
+    title: 'Prepay companies (loaded vs payments over a range)',
+    riskClass: 'read',
+    departments: BILLING_DEPARTMENTS,
+    method: 'GET',
+    pathTemplate: '/api/billing/dwh/prepay-companies',
+    // `fresh=1` bypasses servercrm's 2-minute list cache (Refresh button).
+    paramsSchema: z.object({ startDate: ymdDate, endDate: ymdDate, fresh: z.enum(['0', '1']).optional() }),
+  },
+  {
+    kind: 'servercrm',
+    key: 'billing.prepay.rmve',
+    title: 'Live EFS RMVE for the visible page (batch, max 60)',
+    riskClass: 'read',
+    departments: BILLING_DEPARTMENTS,
+    method: 'GET',
+    pathTemplate: '/api/billing/dwh/prepay-rmve',
+    // carrierIds is a comma-joined list (widget parity); the upstream caps the batch.
+    paramsSchema: z.object({
+      carrierIds: z.string().max(2000),
+      startDate: ymdDate,
+      endDate: ymdDate,
+      fresh: z.enum(['0', '1']).optional(),
+    }),
+  },
+  {
+    kind: 'servercrm',
+    key: 'billing.prepay.ledger',
+    title: 'Per-carrier daily reconciliation ledger (modal)',
+    riskClass: 'read',
+    departments: BILLING_DEPARTMENTS,
+    method: 'GET',
+    pathTemplate: '/api/billing/prepay-ledger',
+    paramsSchema: z.object({ carrierId, startDate: ymdDate, endDate: ymdDate }),
   },
 ];

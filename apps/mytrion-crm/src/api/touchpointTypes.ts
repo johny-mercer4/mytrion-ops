@@ -539,6 +539,29 @@ export interface TouchpointMap {
   'billing.debtors.list': { params: { fresh?: '0' | '1' }; result: BillingDebtorsResult };
   'billing.datacenter.avgDays': { params: { carrierId: string }; result: Record<string, unknown> };
   'billing.carrier.type': { params: { carrierId: string }; result: Record<string, unknown> };
+  // Prepay (Phase 2)
+  'billing.prepay.companies': {
+    params: { startDate: string; endDate: string; fresh?: '0' | '1' };
+    result: BillingPrepayCompanies;
+  };
+  'billing.prepay.rmve': {
+    params: { carrierIds: string; startDate: string; endDate: string; fresh?: '0' | '1' };
+    result: Record<string, unknown>;
+  };
+  'billing.prepay.ledger': {
+    params: { carrierId: string; startDate: string; endDate: string };
+    result: BillingPrepayLedger;
+  };
+  // Returns (Phase 2) — matchedBy injected server-side; UI never sends it.
+  'billing.returns.list': { params: { page: number; limit?: number }; result: BillingReturnsPage };
+  'billing.returns.candidates': {
+    params: { query?: string; amount?: string; beforeDate?: string; customerName?: string };
+    result: BillingReturnCandidates;
+  };
+  'billing.returns.match': {
+    params: { returnRecordId: string; transactionRecordId: string };
+    result: BillingWriteResult;
+  };
 }
 
 // ---- Customer Service result shapes (widget-observed; legitimately-sparse fields optional) ----
@@ -668,6 +691,36 @@ export interface BillingDealsResult {
 export interface BillingDebtorsResult {
   debtors?: Array<Record<string, unknown>>;
   data?: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+}
+
+export interface BillingPrepayCompanies {
+  companies?: Array<Record<string, unknown>>;
+  data?: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+}
+
+export interface BillingPrepayLedger {
+  rows?: Array<Record<string, unknown>>;
+  data?: Array<Record<string, unknown>>;
+  totals?: Record<string, number | string | null>;
+  [k: string]: unknown;
+}
+
+export interface BillingReturnsPage {
+  returns?: Array<Record<string, unknown>>;
+  records?: Array<Record<string, unknown>>;
+  hasMore?: boolean;
+  has_more?: boolean;
+  page?: number;
+  [k: string]: unknown;
+}
+
+export interface BillingReturnCandidates {
+  status?: string;
+  records?: Array<Record<string, unknown>>;
+  mode?: string;
+  message?: string;
   [k: string]: unknown;
 }
 

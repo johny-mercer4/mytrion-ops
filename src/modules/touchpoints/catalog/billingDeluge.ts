@@ -198,4 +198,49 @@ export const billingDelugeTouchpoints: Touchpoint[] = [
       carrierId,
     }),
   },
+
+  // ── Returns & chargebacks (Phase 2) ─────────────────────────────────────
+  {
+    kind: 'deluge',
+    key: 'billing.returns.list',
+    title: 'Returns / chargebacks (paged, Mx_Merchant_Returns)',
+    riskClass: 'read',
+    departments: BILLING_DEPARTMENTS,
+    functionNames: ['mytrionfetchreturns'],
+    unwrap: 'permissive',
+    paramsSchema: z.object({
+      page: limit(100_000, 1),
+      limit: limit(500, 200),
+    }),
+  },
+  {
+    kind: 'deluge',
+    key: 'billing.returns.candidates',
+    title: 'Find the original MX transaction for a return',
+    riskClass: 'read',
+    departments: BILLING_DEPARTMENTS,
+    functionNames: ['mytrionsearchreturncandidates'],
+    unwrap: 'permissive',
+    paramsSchema: z.object({
+      query: z.string().max(300).default(''),
+      amount: z.string().max(40).default(''),
+      beforeDate: z.string().max(40).default(''),
+      customerName: z.string().max(300).default(''),
+    }),
+  },
+  {
+    kind: 'deluge',
+    key: 'billing.returns.match',
+    title: 'Manual-match a return + reverse the CMP payment',
+    riskClass: 'write',
+    departments: BILLING_DEPARTMENTS,
+    agentNameParam: 'matchedBy',
+    functionNames: ['mytrionmanualmatchreturn'],
+    unwrap: 'permissive',
+    paramsSchema: z.object({
+      returnRecordId: idString,
+      transactionRecordId: idString,
+      matchedBy: shortText(200).optional(),
+    }),
+  },
 ];
