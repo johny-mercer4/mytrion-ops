@@ -1317,7 +1317,8 @@ type SheetData =
   | { kind: 'lastused'; v: LastUsedResult }
   | { kind: 'payment'; v: PaymentInfoResult }
   | { kind: 'invoices'; v: SalesInvoicesResult }
-  | { kind: 'tracking'; v: TrackingResult };
+  | { kind: 'tracking'; v: TrackingResult }
+  | { kind: 'manualcode'; v: { cardNumber: string | null } };
 
 function ActionSheet({
   target,
@@ -1375,7 +1376,13 @@ function ActionSheet({
         else if (service === 'lastused') next = { kind: 'lastused', v: await fetchLastUsed(initData) };
         else if (service === 'payment') next = { kind: 'payment', v: await fetchPaymentInfo(initData) };
         else if (service === 'invoices') next = { kind: 'invoices', v: await fetchInvoices(initData, { range: invRange }) };
-        else next = { kind: 'tracking', v: await fetchTracking(initData) };
+        // No fetch: the manual entry code IS the card number the session already holds. Sending a
+        // request would only ask the backend to hand back what it put in the session at sign-in.
+        else if (service === 'manualcode') next = { kind: 'manualcode', v: { cardNumber: session.ownCardNumber } };
+        else if (service === 'tracking') next = { kind: 'tracking', v: await fetchTracking(initData) };
+        // Explicit, because this was a bare `else` that swallowed every unhandled key into a tracking
+        // fetch — a new ServiceKey would silently open the wrong sheet instead of failing.
+        else throw new Error(`Unhandled service: ${String(service)}`);
         if (cancelled) return;
         setData(next);
         setLoading(false);
@@ -1782,6 +1789,31 @@ function ActionSheet({
                       </div>
                     );
                   })}
+                </div>
+              );
+            })()
+          ) : data?.kind === 'manualcode' ? (
+            (() => {
+              const pan = data.v.cardNumber;
+              if (!pan) {
+                return <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('manualcode.unavailable')}</div>;
+              }
+              // Shown revealed, unlike the home hero. The hero sits on screen unprompted, so it masks
+              // by default; getting here took a deliberate tap on an item that says "Reveal", and the
+              // driver is reading it to type into a pump keypad. Masking it behind a second tap would
+              // add friction to the one job this item exists for.
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '6px 0 4px' }}>
+                  <span style={{ width: 54, height: 54, borderRadius: 16, background: 'var(--secondary)', color: 'var(--link-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                    <Icon name="key" size={26} strokeWidth={2} className="" />
+                  </span>
+                  <span
+                    className="selectable"
+                    style={{ fontSize: 22, fontWeight: 700, letterSpacing: '.04em', color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.35, wordBreak: 'break-all' }}
+                  >
+                    {groupCardNumber(pan)}
+                  </span>
+                  <span style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 12, maxWidth: 280, lineHeight: 1.5 }}>{t('manualcode.hint')}</span>
                 </div>
               );
             })()

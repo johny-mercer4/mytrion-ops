@@ -33,6 +33,10 @@ vi.mock('../../src/wrappers/serverCrmWrapper.js', () => ({
   },
 }));
 
+vi.mock('../../src/integrations/zohoFunctions.js', () => ({
+  executeZohoFunctionWithFallback: vi.fn(),
+}));
+
 vi.mock('../../src/db/client.js', () => ({
   db: {
     transaction: async <T>(fn: (tx: object) => Promise<T>): Promise<T> => fn({}),
@@ -85,6 +89,7 @@ import { registeredMiniAppCompanyRepo } from '../../src/repos/registeredMiniAppC
 import { listDwhCards } from '../../src/integrations/dwhCards.js';
 import { listDwhTransactions, resolveDwhTxnRange } from '../../src/integrations/dwhTransactions.js';
 import { sendDocument, TelegramChatUnreachableError } from '../../src/integrations/telegramCarrierBot.js';
+import { executeZohoFunctionWithFallback } from '../../src/integrations/zohoFunctions.js';
 import { serverCrmWrapper } from '../../src/wrappers/serverCrmWrapper.js';
 
 const inviteRepo = vi.mocked(carrierInvitationRepo);
@@ -379,10 +384,17 @@ describe('owner-only money views', () => {
   // OCTANE_MINIAPP_SERVICES_SPEC §2 ("no carrier balance, invoices, payment info, account status")
   // put these out of a driver's reach. The catalog never offers them the button — but the button was
   // the only thing stopping them: their own initData fetched the whole carrier's invoices.
+  // Tracking is here for a different reason than the money views. It is not that a driver shouldn't
+  // see shipments — it is that the upstream CANNOT tell us which shipment is theirs: the response is
+  // { trackingNumber, startDate, cardsOrdered } with no card identity, so scopeRowsToCard has nothing
+  // to filter on and every other driver read's scoping has no equivalent here. The route accepted a
+  // driver's initData and returned the whole fleet's shipments; no catalog entry pointed at it, so
+  // the leak was reachable only by a direct call — and nothing in this suite would have caught it.
   for (const [url, payload] of [
     ['/v1/carrier/mini-app/invoices', { range: 'last_30' }],
     ['/v1/carrier/mini-app/payment-info', {}],
     ['/v1/carrier/mini-app/invoices/signed-url', { invoiceId: '71800' }],
+    ['/v1/carrier/mini-app/tracking', {}],
   ] as const) {
     it(`refuses a driver at ${url}`, async () => {
       registrationRepo.findByTelegramUserId.mockResolvedValueOnce(driverReg());
@@ -398,6 +410,8 @@ describe('owner-only money views', () => {
       expect(res.json()).toMatchObject({ error: { code: 'NOT_A_REGISTERED_OWNER_USER' } });
       expect(crm.getInvoices).not.toHaveBeenCalled();
       expect(crm.getPaymentInfo).not.toHaveBeenCalled();
+      // The 403 must land BEFORE the upstream call, not filter its result afterwards.
+      expect(executeZohoFunctionWithFallback).not.toHaveBeenCalled();
     });
   }
 

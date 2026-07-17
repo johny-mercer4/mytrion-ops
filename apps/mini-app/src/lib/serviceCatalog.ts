@@ -31,11 +31,16 @@ const DRIVER_CATALOG: CatalogGroup[] = [
       { key: 'drv-status', labelKey: 'cat.drvStatus', icon: 'shield', action: 'status' },
       { key: 'drv-balance', labelKey: 'cat.drvBalance', icon: 'wallet', action: 'balance' },
       { key: 'drv-txns', labelKey: 'cat.drvTxns', icon: 'list', action: 'txns' },
+      // Both of these read data the backend ALREADY scopes to the driver's own card, so neither
+      // needed a new endpoint — they were simply missing from the catalog. `last-used` was wired end
+      // to end (route, client, renderer) and unreachable for want of this line; the manual entry code
+      // is the card number the session already carries, which is why it can render with no fetch.
+      { key: 'drv-last-used', labelKey: 'cat.drvLastUsed', icon: 'clock', action: 'lastused' },
+      { key: 'drv-reveal-code', labelKey: 'cat.drvRevealCode', icon: 'key', action: 'manualcode' },
       { key: 'drv-override-card', labelKey: 'cat.drvOverrideCard', icon: 'lock', action: 'generic' },
       { key: 'drv-money-code', labelKey: 'cat.drvMoneyCode', icon: 'dollar', action: 'generic' },
       { key: 'drv-hold-unhold', labelKey: 'cat.drvHoldUnhold', icon: 'clock', action: null },
       { key: 'drv-change-pin', labelKey: 'cat.drvChangePin', icon: 'key', action: null },
-      { key: 'drv-reveal-code', labelKey: 'cat.drvRevealCode', icon: 'key', action: null },
     ],
   },
 ];

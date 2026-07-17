@@ -1114,9 +1114,16 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     return { sent: true, fileName: `Octane_Invoice_${body.invoiceId}.pdf` };
   });
 
+  // Owner-only, unlike the other self-service reads. Every driver-reachable endpoint scopes its rows
+  // to the caller's own card (see scopeRowsToCard) — this one CANNOT: the upstream response is a
+  // shipment record ({ trackingNumber, startDate, cardsOrdered }) with no card identity in it at
+  // all, so there is nothing to filter on. It describes a carrier's bulk card order, not any one
+  // driver's card. Under requireRegisteredCarrierUser a driver's initData was accepted and got the
+  // whole fleet's shipments back; no catalog entry pointed here, but the route was open to a direct
+  // call. Answering "where is my card" for a driver needs an upstream that returns per-card rows.
   app.post('/carrier/mini-app/tracking', async (request) => {
     const body = selfServiceSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
     try {
       return await executeZohoFunctionWithFallback(['mytriontruckingnumberrequest'], { carrierId }, { unwrap: 'status' });
     } catch (err) {
