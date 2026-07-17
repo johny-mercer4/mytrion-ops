@@ -282,7 +282,7 @@ export async function fetchTracking(initData: string): Promise<TrackingResult> {
   return (await request('POST', '/carrier/mini-app/tracking', { initData })) as TrackingResult;
 }
 
-export type TxnExportFormat = 'csv' | 'excel' | 'text';
+export type TxnExportFormat = 'csv' | 'xlsx' | 'pdf';
 
 export interface TxnExportSent {
   sent?: boolean;
@@ -298,7 +298,7 @@ export interface TxnExportSent {
 export async function sendTransactionsReport(
   initData: string,
   range: { range?: string; from?: string; to?: string },
-  format: 'csv' | 'excel' | 'text',
+  format: TxnExportFormat,
 ): Promise<TxnExportSent> {
   return (await request('POST', '/carrier/mini-app/transactions/export', {
     initData,

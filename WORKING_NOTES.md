@@ -2524,3 +2524,40 @@ live Telegram — no test registration to send to. On `build`.
 
 **Still open:** `carrierMiniApp.routes.ts` is now 1117 lines against CLAUDE.md's 600 cap (it was 960
 before this work) — it wants splitting into admin / registration / self-service route modules.
+
+## 2026-07-17 — Client-facing reports: real XLSX + branded PDF
+
+The export files go to carriers, so they became branded documents. Formats are now **CSV / XLSX /
+PDF** (the old `.xls` was an HTML table Excel merely tolerates, and plain-text is superseded).
+
+- **No new deps** — `exceljs` ^4.4.0 and `pdfkit` ^0.19.1 were already in package.json.
+- **Not built on `modules/files/generate/{excel,pdf}.ts`.** Those render agent-emitted specs with
+  equal-width, left-aligned columns — fine for a data dump, wrong for a client document with 9
+  columns and money in three of them. `modules/carrier/txnReport.ts` owns the column spec (per-column
+  weight / alignment / Excel numFmt) and both renderers read from it.
+- **Brand.** `DESIGN_SPEC.md` §8 says the accent is an amber→orange CTA — **stale**. `global.css` is
+  authoritative: the v2 rebrand moved buttons to blue (`--primary: #2451ff`) but kept the logo
+  gradient as the mark (`--brand-amber #ffd200` → `--brand-orange #ff5a00`, logo stops
+  `#ffdd1e/#ffba18/#ff520a`). A document carries the mark, not a button, so it uses the gradient.
+- **XLSX**: ink title band + gradient subtitle rule, frozen header, autofilter, per-column widths,
+  `$#,##0.00` / `#,##0.00` number formats, zebra rows, and **real `SUM()` formulas** in the totals row
+  so the sheet stays correct if a client filters or edits.
+- **PDF**: landscape A4, ink header band + gradient rule, dark table header repeated on every page,
+  zebra rows, right-aligned money, orange totals rule, footer with generated stamp + page numbers.
+  Guarded at 2000 rows (413 `TXN_EXPORT_TOO_LARGE`, pointing at Excel/CSV).
+- **Bug caught by rendering the PDF and looking at it:** `→` came out as `!'`. pdfkit's built-in
+  Helvetica is WinAnsi-encoded and silently garbles anything outside that set rather than failing.
+  `pdfSafe()` maps arrows to an en-dash and drops other unencodable characters (embedding a Unicode
+  TTF would cost ~300KB per PDF for one arrow). `•` was fine — U+2022 is in WinAnsi.
+
+Verify (real rows, carrier 5765985, 21 line items): `file` reports **"Microsoft Excel 2007+"** and
+**"PDF document, 1 pages"** — a real xlsx, not the HTML hack. Build 21–29ms, Telegram upload
+146–420ms. PDF rendered to PNG and visually checked: header/gradient/zebra/totals all correct, and
+the arrow fix confirmed. All three sent to a real Telegram chat. 602 tests green, lint/typecheck/
+build clean both sides.
+
+Measured earlier the same session (real routes, carrier 5765985): FAST 287–1022ms vs LIVE
+2038–11503ms — and `day` showed FAST rows=0 / LIVE rows=2 `efs+2`, i.e. the progressive split
+earning its keep. Also note carrier **5836348 (MMB TRANSPORT INC) has zero transactions** and
+inactive cards, so it cannot demo; **1825 carriers** have 30-day data, and the fast path holds at
+242–810ms across a largest/median/small sample.

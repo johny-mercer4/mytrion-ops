@@ -143,7 +143,7 @@ const rangeSchema = z.object({
  * Default false so a caller that never heard of `live` gets the fast path, not the slow one.
  */
 const txnRangeSchema = rangeSchema.extend({ live: z.boolean().optional().default(false) });
-const txnExportSchema = rangeSchema.extend({ format: z.enum(['csv', 'excel', 'text']).default('csv') });
+const txnExportSchema = rangeSchema.extend({ format: z.enum(['csv', 'xlsx', 'pdf']).default('xlsx') });
 const invoicesSchema = z.object({
   initData: z.string().min(1),
   range: z.string().max(20).optional(),
@@ -879,10 +879,11 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     }
 
     const rangeLabel = result.range.from ? `${result.range.from} → ${result.range.to}` : String(result.range.preset);
-    const report = buildTxnReport(result.data, body.format, {
+    const report = await buildTxnReport(result.data, body.format, {
       company: registration.companyName ?? 'Octane',
       range: rangeLabel,
       cardLast4: cardNumber ? cardNumber.slice(-4) : String(carrierId),
+      scopedToCard: Boolean(cardNumber),
     });
 
     // A private chat's id IS the user's id; telegramChatId is only populated when the redeem call
@@ -893,7 +894,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
         chatId,
         fileName: report.fileName,
         contentType: report.contentType,
-        bytes: report.body,
+        bytes: report.bytes,
         caption: `Transactions · ${rangeLabel} · ${result.data.length} line items`,
       });
     } catch (err) {

@@ -1558,7 +1558,7 @@ function ActionSheet({
                     <div style={{ marginTop: 14 }}>
                       <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-fg)', marginBottom: 7 }}>{t('txns.exportToTelegram')}</div>
                       <div style={{ display: 'flex', gap: 8 }}>
-                        {(['csv', 'excel', 'text'] as const).map((fmt) => (
+                        {(['xlsx', 'pdf', 'csv'] as const).map((fmt) => (
                           <button
                             key={fmt}
                             type="button"
@@ -1567,7 +1567,7 @@ function ActionSheet({
                             onClick={() => void doExport(rows, fmt)}
                             style={{ flex: 1, height: 42, border: 'none', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: exportBusy ? 'default' : 'pointer', opacity: exportBusy && exportBusy !== fmt ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                           >
-                            {exportBusy === fmt ? <Spinner size={16} /> : fmt === 'csv' ? 'CSV' : fmt === 'excel' ? 'Excel' : 'Text'}
+                            {exportBusy === fmt ? <Spinner size={16} /> : fmt === 'xlsx' ? 'Excel' : fmt === 'pdf' ? 'PDF' : 'CSV'}
                           </button>
                         ))}
                       </div>

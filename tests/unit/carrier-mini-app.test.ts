@@ -577,7 +577,7 @@ describe('driver row scoping (own card only)', () => {
       const sent = botSendDocument.mock.calls[0]![0];
       // A private chat's id IS the user id — telegramChatId is null on this registration.
       expect(sent.chatId).toBe('123456');
-      expect(sent.fileName).toMatch(/^transactions_7593_.*\.csv$/);
+      expect(sent.fileName).toMatch(/^Octane_Transactions_7593_.*\.csv$/);
       expect(String(sent.bytes)).toContain('LOVES #711');
       // Masked in the file, exactly as the sheet shows it.
       expect(String(sent.bytes)).not.toContain(OWN_CARD);
@@ -592,7 +592,7 @@ describe('driver row scoping (own card only)', () => {
         method: 'POST',
         url: '/v1/carrier/mini-app/transactions/export',
         headers: { 'content-type': 'application/json' },
-        payload: { initData: 'signed', range: 'month', format: 'text' },
+        payload: { initData: 'signed', range: 'month', format: 'pdf' },
       });
 
       expect(botSendDocument.mock.calls[0]![0].chatId).toBe('999888');
@@ -642,7 +642,7 @@ describe('driver row scoping (own card only)', () => {
         method: 'POST',
         url: '/v1/carrier/mini-app/transactions/export',
         headers: { 'content-type': 'application/json' },
-        payload: { initData: 'signed', range: 'day', format: 'csv' },
+        payload: { initData: 'signed', range: 'day', format: 'xlsx' },
       });
 
       expect(res.statusCode).toBe(404);
