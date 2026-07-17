@@ -28,6 +28,7 @@ import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompa
 import { buildInviteUrl, createCarrierInvite } from '../../modules/carrier/inviteService.js';
 import {
   parseInitDataUser,
+  escapeTelegramHtml,
   sendDocument,
   signTelegramInitData,
   TelegramChatUnreachableError,
@@ -889,13 +890,27 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     // A private chat's id IS the user's id; telegramChatId is only populated when the redeem call
     // happened to carry the header, so it can't be relied on alone.
     const chatId = registration.telegramChatId ?? telegramUserId;
+    // The caption is the message the carrier actually reads in the chat — the file is an
+    // attachment to it, not the other way round. It leads with the same figures the mini-app's
+    // sheet just showed, so the two agree. Company name is escaped: it is data, and a stray '&'
+    // would make Telegram reject the send outright.
+    const money = (v: unknown) => `$${Number(v ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const scope = cardNumber ? `Card •••• ${cardNumber.slice(-4)}` : 'All cards';
+    const caption = [
+      `<b>Octane · Transaction Report</b>`,
+      `${escapeTelegramHtml(registration.companyName ?? 'Octane')} · ${scope}`,
+      `${rangeLabel}`,
+      ``,
+      `${result.data.length} line items · <b>${money(result.totals['funded_total'])}</b> spent · ${money(result.totals['discount_amount'])} saved`,
+    ].join('\n');
     try {
       await sendDocument({
         chatId,
         fileName: report.fileName,
         contentType: report.contentType,
         bytes: report.bytes,
-        caption: `Transactions · ${rangeLabel} · ${result.data.length} line items`,
+        caption,
+        parseMode: 'HTML',
       });
     } catch (err) {
       if (err instanceof TelegramChatUnreachableError) {

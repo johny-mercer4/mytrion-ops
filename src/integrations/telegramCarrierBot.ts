@@ -83,12 +83,20 @@ function isChatUnreachable(description: string): boolean {
  * Separate from `callCarrierBot` because sendDocument needs multipart/form-data — a JSON body only
  * works for re-sending an already-uploaded file_id, not for new bytes.
  */
+/** Escape the five characters Telegram's HTML parse mode treats as markup. A company name is data —
+ *  an unescaped `&` or `<` in one would make Telegram reject the whole send with a parse error. */
+export function escapeTelegramHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 export async function sendDocument(opts: {
   chatId: number | string;
   fileName: string;
   contentType: string;
   bytes: Uint8Array | string;
   caption?: string;
+  /** Set 'HTML' when the caption carries markup — it must already be escaped (see above). */
+  parseMode?: 'HTML' | 'MarkdownV2';
 }): Promise<void> {
   const token = env.TELEGRAM_CARRIER_BOT_TOKEN;
   if (!token) throw new Error('Carrier bot is not configured (TELEGRAM_CARRIER_BOT_TOKEN is empty).');
@@ -96,6 +104,7 @@ export async function sendDocument(opts: {
   const form = new FormData();
   form.append('chat_id', String(opts.chatId));
   if (opts.caption) form.append('caption', opts.caption);
+  if (opts.parseMode) form.append('parse_mode', opts.parseMode);
   const body = typeof opts.bytes === 'string' ? new TextEncoder().encode(opts.bytes) : opts.bytes;
   // Copy into a fresh ArrayBuffer-backed view: a Uint8Array over a SharedArrayBuffer (or a pooled
   // Node Buffer) is not accepted by the Blob constructor's type contract.
