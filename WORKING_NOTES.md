@@ -2881,3 +2881,67 @@ ONZMOVE surfaces as 2 rows (two distinct zoho_deal_id, same carrier) — left un
 resolve to the same carrier so provisioning is unaffected. Separate prod-config issues found the
 same session (not code): FF_ZOHO_OAUTH_ENABLED unset, ZOHO_OAUTH_REDIRECT_URI defaulting to
 localhost:5173, and the stale /widget base URL (SPA now serves at root /).
+
+## 2026-07-17 (pm) — Sales Mytrion Desk fixes: attachments, live owner/status/order/toast
+
+Branch `feature/func`. Six reported bugs in the Sales ticket console (`TicketsTab.tsx` +
+`/v1/desk/*`), all traced against the actual reference widget (`~/Desktop/Octane-Project/
+zoho-octane/app/ticketdashboard.html`, the Vue prototype this tab was "ported verbatim" from) and
+its servercrm WS backend (`~/Desktop/Octane-Project/servercrm`) — read for protocol/pattern
+reference only, per the "never import from Mytrion" rule; nothing there was edited.
+
+### Root causes (not guessed — read off the reference and the live webhook code)
+
+- **Attachments as a comment, not the Attachments tab (#1) / Desk-side attachment invisible in
+  Mytrion (#2):** the reply/create/escalation routes uploaded via `POST /uploads` then attached the
+  id to a **comment** (`attachmentIds`) — Desk's comment-attachment path, not the ticket's
+  Attachments tab. And `/desk/tickets/:id/comments` never called `GET /tickets/{id}/attachments` at
+  all, so anything landed there (by an agent, or previously by us) never reached Mytrion. Fixed both
+  ends: `uploadTicketAttachment` now hits `POST /tickets/{id}/attachments` directly (dropped
+  `uploadDeskFile`, now dead), and the comments route fetches+merges the ticket-level attachments
+  list, flagged `mine` like comments already are. Confirmed via the reference's own
+  `fetchTicketAttachments`/`formatAttachments` — it never reads `comment.attachments` either; the
+  ticket-level list is the sole attachment source there too.
+- **Owner not shown (#6):** `searchTicketsByCreator`/`ticketsPage` can return a bare `assigneeId`
+  with no embedded `assignee{firstName,lastName}` (Desk's `include`/`fields` behavior isn't
+  consistent enough to trust here — the reference gets it embedded for free on `/tickets/search`
+  with zero extra params, which is not reproducible with confidence). Added
+  `modules/tools/deskOwners.ts::enrichTicketOwners`, joining `assigneeId` against the **same cached
+  Desk agent roster CS analytics already uses** (`fetchDeskAgentRoster`, 10 min TTL) — zero new Desk
+  calls in the common case.
+- **New message doesn't reorder the list (#5):** tickets were paged from Desk sorted by
+  `createdTime`, which never changes. The reference sorts client-side by a `lastActivityTime` it
+  bumps on every WS event. Ported the sort (not the bump): `loadTickets()` now orders by
+  `modifiedTime || createdTime` descending — Desk bumps `modifiedTime` on a new comment/thread, so
+  the WS-triggered reload (already wired) naturally reorders. `modifiedTime`/`description` added to
+  `TICKET_FIELDS` (the fallback `/tickets` path needs it named to come back at all).
+- **No toast on new message (#4):** the WS handler reloaded silently. `InboxTab.tsx` already does
+  `pushToast` + reload on its own WS event — `TicketsTab.tsx` was just missing the equivalent. Added
+  it, gated the same way the reference gates its own notification: only when the event's ticket
+  isn't the one currently open (and only reload the open thread when it IS — was unconditionally
+  reloading `msgsLoad` before, a harmless but pointless extra fetch on every unrelated ticket's
+  event).
+- **Status not live, only on refresh (#3):** confirmed (webhook.js in servercrm) only
+  `Ticket_Comment_Add`/`Ticket_Attachment_Add` are wired — **no push signal exists for a pure status
+  change**, in the reference either. Fixing that for real means a new Desk webhook subscription +
+  servercrm handler, a different repo/deploy entirely. In-scope fix: a 25s poll of the ticket list
+  while the tab is mounted, alongside the existing WS-triggered reload. Flagging the bigger fix as a
+  follow-up, not doing it silently.
+
+### Also
+
+- Removed the "📎 filename" caption-comment hack — the real attachment bubble (now correctly
+  sourced) makes it redundant. Kept stripping it for **historical** comments that already have one,
+  so old tickets don't show a doubled-up bubble.
+- New tests: `zoho-desk.test.ts` covers the two new wrapper methods directly (right path, right
+  query params); `desk-routes.test.ts` covers the route-level contract (file-only reply never calls
+  `postTicketComment`; comments route merges + flags attachments). 29/29 green.
+
+### Test status (repo-wide, not just this change)
+
+Root: lint 0 errors (7 pre-existing warnings, none in touched files), typecheck clean, `pnpm test`
+649/665 green. **The 16 failures are all in `cs-routes.test.ts`, pre-existing and unrelated** —
+`vitest.config.ts` has an uncommitted `FF_ZOHO_OAUTH_ENABLED: '1'` default flip (working-tree change
+found mid-session, not made here) that the CS-analytics RBAC tests haven't caught up with yet. Ran
+this change's own files in isolation to confirm: clean before and after. `apps/mytrion-crm`:
+typecheck clean, 17/17 test files green (116 tests).

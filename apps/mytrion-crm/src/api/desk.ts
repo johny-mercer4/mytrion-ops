@@ -87,12 +87,16 @@ export interface DeskTicket {
   [k: string]: unknown;
 }
 
-/** A Desk attachment on a comment/thread (id + name + byte size). */
+/** A ticket's Attachments-tab entry (id + name + byte size + who added it + when). */
 export interface DeskAttachment {
   id?: string | number;
   name?: string;
   size?: string | number;
   href?: string;
+  creatorId?: string;
+  createdTime?: string;
+  /** Server-set: this file was uploaded via the app's shared Desk agent → it's the caller's own. */
+  mine?: boolean;
 }
 
 export interface DeskComment {
@@ -148,12 +152,12 @@ export async function listDeskTickets(
 export async function listDeskComments(
   ticketId: string,
   limit = 50,
-): Promise<{ comments: DeskComment[]; threads: DeskThread[] }> {
+): Promise<{ comments: DeskComment[]; threads: DeskThread[]; attachments: DeskAttachment[] }> {
   const res = (await request('GET', `/desk/tickets/${encodeURIComponent(ticketId)}/comments`, {
     query: { limit },
     headers: DESK_HEADERS,
-  })) as { comments?: DeskComment[]; threads?: DeskThread[] };
-  return { comments: res.comments ?? [], threads: res.threads ?? [] };
+  })) as { comments?: DeskComment[]; threads?: DeskThread[]; attachments?: DeskAttachment[] };
+  return { comments: res.comments ?? [], threads: res.threads ?? [], attachments: res.attachments ?? [] };
 }
 
 /** Post an agent reply, optionally with a file attachment (sent multipart when a file is present). */

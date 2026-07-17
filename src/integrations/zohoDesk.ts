@@ -21,7 +21,7 @@ const TICKET_INCLUDE = 'contacts,assignee,team,departments';
 // creator-scope the list. Everything mapTicket renders must be listed here (fields restricts output).
 const TICKET_FIELDS = [
   'id', 'ticketNumber', 'subject', 'status', 'statusType', 'priority', 'channel',
-  'createdTime', 'dueDate', 'isOverDue',
+  'createdTime', 'modifiedTime', 'dueDate', 'isOverDue', 'description',
   'cf_crm_created_by_id', 'cf_target_department', 'cf_carrier_id_application_id',
   'cf_ticket_type', 'cf_original_stream_manager',
 ].join(',');
@@ -319,8 +319,9 @@ export class ZohoDeskWrapper extends ZohoWrapper {
 
   /**
    * Post an agent reply/comment on a ticket. `isPublic` true = customer-visible reply. Optional
-   * `attachmentIds` are ids from `uploadDeskFile` (Desk requires them in the comment body, NOT the
-   * `/uploads` id passed any other way).
+   * `attachmentIds` attach an already-uploaded file (an id from Desk's `/uploads`) to this one
+   * comment bubble — for a file the user should find on the ticket's Attachments tab instead, use
+   * `uploadTicketAttachment`.
    */
   async postTicketComment(
     ticketId: string,
@@ -339,18 +340,40 @@ export class ZohoDeskWrapper extends ZohoWrapper {
     return text ? (JSON.parse(text) as Record<string, unknown>) : {};
   }
 
-  /** Upload a file to Desk (`POST /uploads`, multipart field `file`) → reusable attachment id. */
-  async uploadDeskFile(buffer: Buffer, fileName: string, mime: string): Promise<string> {
+  /**
+   * Upload a file straight onto a ticket's Attachments tab (`POST /tickets/{id}/attachments`,
+   * multipart field `file`) — this is the endpoint Desk's own Attachments tab reads from, as
+   * opposed to a comment's `attachmentIds` (which attaches a file to one comment bubble instead).
+   */
+  async uploadTicketAttachment(
+    ticketId: string,
+    buffer: Buffer,
+    fileName: string,
+    mime: string,
+    isPublic = true,
+  ): Promise<Record<string, unknown>> {
     const form = new FormData();
     form.append('file', new Blob([new Uint8Array(buffer)], { type: mime || 'application/octet-stream' }), fileName);
-    const res = await this.requestRaw('POST', '/uploads', { body: form });
+    const path = `/tickets/${encodeURIComponent(ticketId)}/attachments`;
+    const res = await this.requestRaw('POST', path, { body: form, query: { isPublic } });
     const text = await res.text();
     if (!res.ok) {
-      throw new Error(`[zoho-desk] POST /uploads HTTP ${res.status}: ${text.slice(0, 300)}`);
+      throw new Error(`[zoho-desk] POST ${path} HTTP ${res.status}: ${text.slice(0, 300)}`);
     }
-    const id = text ? (JSON.parse(text) as { id?: string }).id : undefined;
-    if (!id) throw new Error(`[zoho-desk] POST /uploads returned no id: ${text.slice(0, 200)}`);
-    return id;
+    return text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  }
+
+  /**
+   * A ticket's Attachments-tab entries (`GET /tickets/{id}/attachments`) — files that live on the
+   * ticket itself rather than any one comment/thread. The conversation view merges these in so an
+   * attachment added straight to Desk's Attachments tab (bypassing comments) still reaches Mytrion.
+   */
+  async getTicketAttachments(ticketId: string, limit = 99): Promise<Record<string, unknown>[]> {
+    return this.listGet<Record<string, unknown>>(`/tickets/${encodeURIComponent(ticketId)}/attachments`, {
+      from: 1,
+      limit: clampLimit(limit, MAX_TICKET_LIMIT),
+      sortBy: 'createdTime',
+    });
   }
 
   /** Download a ticket attachment's bytes (`GET /tickets/{id}/attachments/{attId}/content`). */
@@ -466,8 +489,15 @@ export const postTicketComment = (
   isPublic?: boolean,
   attachmentIds?: string[],
 ): Promise<Record<string, unknown>> => zohoDesk.postTicketComment(ticketId, content, isPublic, attachmentIds);
-export const uploadDeskFile = (buffer: Buffer, fileName: string, mime: string): Promise<string> =>
-  zohoDesk.uploadDeskFile(buffer, fileName, mime);
+export const uploadTicketAttachment = (
+  ticketId: string,
+  buffer: Buffer,
+  fileName: string,
+  mime: string,
+  isPublic?: boolean,
+): Promise<Record<string, unknown>> => zohoDesk.uploadTicketAttachment(ticketId, buffer, fileName, mime, isPublic);
+export const getTicketAttachments = (ticketId: string, limit?: number): Promise<Record<string, unknown>[]> =>
+  zohoDesk.getTicketAttachments(ticketId, limit);
 export const getTicketAttachmentContent = (
   ticketId: string,
   attachmentId: string,

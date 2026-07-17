@@ -141,10 +141,18 @@ export function TicketsTab() {
     enabled: !!zohoUserId,
     subscribe: { type: 'subscribe', userId: zohoUserId, ticketIds },
     onMessage: (m) => {
-      if (m.type === 'ticket_comment_added' || m.type === 'ticket_attachment_added') {
+      if (m.type !== 'ticket_comment_added' && m.type !== 'ticket_attachment_added') return;
+      const tid = String(m.ticketId ?? '');
+      if (tid && tid === selectedTicket) {
         msgsLoad.reload();
-        ticketsLoad.reload();
+      } else if (tid) {
+        // Not the open ticket — surface a toast (matches the reference dashboard's notification),
+        // same as the sidebar unread badge already does for this event.
+        const t = allTickets.find((x) => x.id === tid);
+        const label = m.type === 'ticket_attachment_added' ? 'New attachment' : 'New message';
+        pushToast(label, t ? `#${t.num} · ${t.subject}` : `Ticket #${tid}`);
       }
+      ticketsLoad.reload();
     },
   });
   // Push a fresh subscribe frame whenever the loaded ticket-id set changes.
@@ -152,6 +160,15 @@ export function TicketsTab() {
     resubscribe();
     // eslint-disable-next-line
   }, [ticketIdsKey]);
+
+  // Belt-and-suspenders poll: the WS only ever fires on a new comment/attachment, so a pure status
+  // change (re-assigned, closed, reopened — no message) never pushes an event. Without this, that
+  // kind of update would only ever appear after a manual refresh.
+  useEffect(() => {
+    const iv = setInterval(() => ticketsLoad.reload(), 25_000);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line
+  }, []);
 
   // Auto-scroll the thread to the bottom on selection change / new reply (reference scrollTicket).
   useEffect(() => {

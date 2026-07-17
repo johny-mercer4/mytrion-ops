@@ -16,17 +16,19 @@ import {
   createDeskTicket,
   DESK_DEPARTMENTS,
   getTicketAttachmentContent,
+  getTicketAttachments,
   getTicketComments,
   getTicketThread,
   getTicketThreads,
   listTicketsByCreator,
   postTicketComment,
   searchTicketsByCreator,
-  uploadDeskFile,
+  uploadTicketAttachment,
 } from '../../integrations/zohoDesk.js';
 import { fetchDealOwnerId } from '../../integrations/salesDataCenter.js';
 import { dispatchTouchpoint } from '../../modules/touchpoints/dispatcher.js';
 import { assertTicketOwned } from '../../modules/tools/deskScope.js';
+import { enrichTicketOwners } from '../../modules/tools/deskOwners.js';
 import { resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment } from './helpers.js';
@@ -122,11 +124,11 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
       // paths are creator-scoped, so `scoped:true`; the fallback is just bounded to a recency window.
       try {
         const tickets = await searchTicketsByCreator(crmUserId, paging);
-        return { tickets, scoped: true };
+        return { tickets: await enrichTicketOwners(tickets), scoped: true };
       } catch (err) {
         if (err instanceof Error && /SCOPE_MISMATCH|403/.test(err.message)) {
           const tickets = await listTicketsByCreator(crmUserId, { maxPages: 6 });
-          return { tickets, scoped: true, windowed: true };
+          return { tickets: await enrichTicketOwners(tickets), scoped: true, windowed: true };
         }
         throw err;
       }
@@ -136,9 +138,12 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * One ticket's conversation — the requester↔agent THREADS (the ticket's actual body/replies)
-   * plus agent COMMENTS. Auto-created tickets carry their content as a thread, not a comment, so
-   * threads alone are what make the pane non-empty. The UI merges + sorts the two by time.
+   * One ticket's conversation — the requester↔agent THREADS (the ticket's actual body/replies),
+   * agent COMMENTS, and the ticket's Attachments-tab ATTACHMENTS (files that live on the ticket
+   * itself, not tied to any one comment/thread — the only way a file added straight to Desk's
+   * Attachments tab, or sent from Mytrion via uploadTicketAttachment, reaches the conversation).
+   * Auto-created tickets carry their content as a thread, not a comment, so threads alone are what
+   * make the pane non-empty. The UI merges + sorts all three by time.
    */
   app.get('/desk/tickets/:id/comments', guard, async (request) => {
     const ctx = requireSalesAccess(request);
@@ -146,9 +151,10 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
     const q = commentsQuery.parse(request.query);
     try {
       await assertTicketOwned(ctx, id);
-      const [threadList, comments] = await Promise.all([
+      const [threadList, comments, attachments] = await Promise.all([
         getTicketThreads(id, q.limit).catch(() => [] as Record<string, unknown>[]),
         getTicketComments(id, q.limit).catch(() => [] as Record<string, unknown>[]),
+        getTicketAttachments(id, q.limit).catch(() => [] as Record<string, unknown>[]),
       ]);
       // The thread LIST only carries a truncated `summary`; fetch each thread's full `content` in
       // parallel (bounded to the most recent 15) so long messages aren't cut off. Falls back to the
@@ -165,11 +171,13 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
           }
         }),
       );
-      // Flag the caller's OWN comments — those posted via the app's shared Desk agent — so the UI
-      // right-aligns them as "me" (the reference matches commenterId to a fixed zohoDeskAdminId).
+      // Flag the caller's OWN comments/attachments — those posted via the app's shared Desk agent —
+      // so the UI right-aligns them as "me" (the reference matches commenter/creator to a fixed
+      // zohoDeskAdminId).
       const agentId = env.ZOHO_DESK_AGENT_ID;
       const flagged = comments.map((c) => ({ ...c, mine: String(c.commenterId ?? '') === agentId }));
-      return { threads: enriched, comments: flagged };
+      const flaggedAttachments = attachments.map((a) => ({ ...a, mine: String(a.creatorId ?? '') === agentId }));
+      return { threads: enriched, comments: flagged, attachments: flaggedAttachments };
     } catch (err) {
       if (err instanceof AppError) throw err;
       throw deskError(err);
@@ -178,8 +186,10 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
 
   /**
    * Post an agent reply (write — audited). Accepts JSON `{content,is_public}` OR multipart
-   * (`content` + `is_public` fields + an optional file). A file is uploaded to Desk (`/uploads`)
-   * and attached to the comment via `attachmentIds`.
+   * (`content` + `is_public` fields + an optional file). Text becomes a comment; a file goes
+   * straight to the ticket's Attachments tab (uploadTicketAttachment) — NOT a comment attachment —
+   * so it shows up where Desk agents actually look for it. The two are independent: a reply may
+   * carry either, or both.
    */
   app.post('/desk/tickets/:id/reply', guard, async (request) => {
     const ctx = requireSalesAccess(request);
@@ -203,19 +213,16 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
     }
     try {
       await assertTicketOwned(ctx, id);
-      const attachmentIds: string[] = [];
-      if (file) attachmentIds.push(await uploadDeskFile(file.buffer, file.name, file.mime));
-      // A Desk comment must carry content — caption a file-only reply.
-      const text = content || `📎 ${file?.name ?? 'attachment'}`;
-      const comment = await postTicketComment(id, text, isPublic, attachmentIds);
+      const comment = content ? await postTicketComment(id, content, isPublic) : undefined;
+      if (file) await uploadTicketAttachment(id, file.buffer, file.name, file.mime, isPublic);
       await auditFromContext(ctx, {
         action: 'desk.ticket.reply',
         status: 'ok',
         resourceType: 'desk_ticket',
         resourceId: id,
-        detail: { length: text.length, isPublic, hasAttachment: !!file },
+        detail: { length: content.length, isPublic, hasAttachment: !!file },
       });
-      return { comment };
+      return { comment, attached: !!file };
     } catch (err) {
       if (err instanceof AppError) throw err;
       throw deskError(err);
@@ -291,13 +298,11 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
         dealId: f.dealId,
         deskTicketId,
       }).catch((e: unknown) => warnings.push(`crm-link: ${e instanceof Error ? e.message : 'failed'}`));
-      // Attachment: upload the file to Desk and hand it onto the NEW ticket as a comment attachment —
-      // the same working path the conversation reply uses (real-dept tickets accept it). Best-effort:
-      // the ticket already exists, so we never fail the create over an attachment hiccup.
+      // Attachment: land it straight on the new ticket's Attachments tab. Best-effort: the ticket
+      // already exists, so we never fail the create over an attachment hiccup.
       if (file) {
         try {
-          const uploadId = await uploadDeskFile(file.buffer, file.name, file.mime);
-          await postTicketComment(deskTicketId, `📎 ${file.name}`, true, [uploadId]);
+          await uploadTicketAttachment(deskTicketId, file.buffer, file.name, file.mime, true);
           attached = true;
         } catch (e) {
           warnings.push(`attachment: ${e instanceof Error ? e.message : 'failed'}`);
@@ -345,12 +350,11 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
       }
       const warnings: string[] = [];
       let attached = false;
-      // Attach the file onto the escalation's Desk ticket (the returned ticketId) as a comment
-      // attachment — the reliable path. Best-effort: the escalation already exists.
+      // Attach the file onto the escalation's Desk ticket's Attachments tab (the returned
+      // ticketId). Best-effort: the escalation already exists.
       if (file) {
         try {
-          const uploadId = await uploadDeskFile(file.buffer, file.name, file.mime);
-          await postTicketComment(ticketId, `📎 ${file.name}`, true, [uploadId]);
+          await uploadTicketAttachment(ticketId, file.buffer, file.name, file.mime, true);
           attached = true;
         } catch (e) {
           warnings.push(`attachment: ${e instanceof Error ? e.message : 'failed'}`);

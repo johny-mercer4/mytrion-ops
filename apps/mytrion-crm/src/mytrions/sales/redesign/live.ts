@@ -429,6 +429,14 @@ export async function loadTickets(): Promise<{ tickets: TicketVM[]; scoped: bool
     }
     if (res.windowed || res.tickets.length < PAGE) break;
   }
+  // Most-recently-active first (a new comment/attachment bumps modifiedTime), so a ticket that
+  // just got a reply jumps back to the top of the list instead of sitting wherever it was created.
+  const activityMs = (t: Parameters<typeof mapTicket>[0]): number => {
+    const iso = (t.modifiedTime as string | undefined) ?? t.createdTime;
+    const ms = iso ? new Date(iso).getTime() : 0;
+    return Number.isNaN(ms) ? 0 : ms;
+  };
+  rows.sort((a, b) => activityMs(b) - activityMs(a));
   return { tickets: rows.map(mapTicket), scoped };
 }
 
@@ -455,51 +463,44 @@ interface TicketMsgRow extends TicketMsgVM {
 }
 
 export async function loadTicketMessages(ticketId: string): Promise<TicketMsgVM[]> {
-  const { threads, comments } = await listDeskComments(ticketId, 50);
+  const { threads, comments, attachments } = await listDeskComments(ticketId, 50);
   const ms = (v: string | undefined): number => {
     const t = v ? new Date(v).getTime() : 0;
     return Number.isNaN(t) ? 0 : t;
   };
-  const attRows = (
-    atts: { id?: string | number; name?: string; size?: string | number }[] | undefined,
-    from: string,
-    time: string,
-    ts: number,
-  ): TicketMsgRow[] =>
-    (atts ?? [])
-      .filter((a) => a && a.id)
-      .map((a) => ({
-        from,
-        type: 'attachment' as const,
-        text: '',
-        time,
-        file: { name: String(a.name ?? 'attachment'), size: fmtBytes(a.size), attId: String(a.id), ticketId },
-        _ts: ts,
-      }));
 
   // Placement (matches the reference dashboard): the caller's OWN posts go right ("me"), everyone
   // else left. The app posts REPLIES as COMMENTS via its shared Desk agent, which the server flags
   // as `mine`. THREADS are the requester's inbound message + any other-agent email replies — never
-  // the caller's, so they render left, labelled by author. Attachments become their own bubbles.
+  // the caller's, so they render left, labelled by author.
   const rows: TicketMsgRow[] = [];
   for (const t of threads ?? []) {
     const text = stripHtml(String(t.content ?? t.summary ?? ''));
     const who = fullName(t.author) || t.author?.name || (t.direction === 'out' ? 'Agent' : 'Customer');
-    const ts = ms(t.createdTime);
-    const time = relTime(t.createdTime);
-    if (text) rows.push({ from: who, type: 'comment', text, time, _ts: ts });
-    rows.push(...attRows(t.attachments, who, time, ts));
+    if (text) rows.push({ from: who, type: 'comment', text, time: relTime(t.createdTime), _ts: ms(t.createdTime) });
   }
   for (const c of comments ?? []) {
     const text = stripHtml(String(c.content ?? ''));
     const cm = c.commenter;
     const who = c.mine ? 'me' : fullName(cm) || cm?.name || 'Support';
-    const ts = ms(c.commentedTime);
-    const time = relTime(c.commentedTime);
-    // The app captions a file-only reply "📎 name"; drop that placeholder text when an attachment rides along.
+    // Older tickets carry a "📎 name" placeholder comment from before attachments got their own
+    // Attachments-tab bubble — drop that placeholder text now that the real file renders separately.
     const isCaption = /^📎\s/.test(text) && (c.attachments?.length ?? 0) > 0;
-    if (text && !isCaption) rows.push({ from: who, type: 'comment', text, time, _ts: ts });
-    rows.push(...attRows(c.attachments, who, time, ts));
+    if (text && !isCaption) rows.push({ from: who, type: 'comment', text, time: relTime(c.commentedTime), _ts: ms(c.commentedTime) });
+  }
+  // Attachments are ticket-level (Desk's Attachments tab), not tied to one comment/thread — this is
+  // also where a file Mytrion sends, or one a Desk agent uploads directly, shows up for BOTH sides.
+  for (const a of attachments ?? []) {
+    if (!a?.id) continue;
+    const who = a.mine ? 'me' : 'Support';
+    rows.push({
+      from: who,
+      type: 'attachment',
+      text: '',
+      time: relTime(a.createdTime),
+      file: { name: String(a.name ?? 'attachment'), size: fmtBytes(a.size), attId: String(a.id), ticketId },
+      _ts: ms(a.createdTime),
+    });
   }
   return rows.sort((a, b) => a._ts - b._ts).map(({ _ts, ...m }) => m);
 }
