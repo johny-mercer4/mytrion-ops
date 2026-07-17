@@ -802,7 +802,7 @@ function DriverHero({
               className={revealed ? 'selectable' : ''}
               style={{ fontSize: 28, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02, letterSpacing: '-.01em' }}
             >
-              {revealed ? money(balance.efs_balance ?? balance.balance) : '$ • • • •'}
+              {revealed ? money(balance.efs_balance ?? balance.balance) : '• • • •'}
             </span>
           ) : (
             <span aria-label={t('home.efsBalance')} style={{ display: 'block', width: 148, height: 29, borderRadius: 8, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
