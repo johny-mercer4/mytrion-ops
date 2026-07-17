@@ -670,14 +670,48 @@ function CardWave() {
 /** EFS® | WEX co-brand marks (bottom-right of the physical card), approximated with styled text —
  * EFS wordmark, a thin divider, and WEX in its red rounded badge. */
 
+const BALANCE_KEY = 'octane.lastBalance';
+
+/**
+ * Last-known balance, so coming back to Home paints the number instead of "—".
+ *
+ * The balance endpoint reaches live EFS through servercrm and takes 1.9–3.3s (measured), and Home
+ * unmounts whenever you visit Services or Inbox — so every return trip re-ran that wait. The cached
+ * value is only ever the FIRST paint: the fetch below still runs and overwrites it, so a stale
+ * figure is on screen for one request, not for a session.
+ *
+ * Scoped by company: a Telegram account can be re-registered to another carrier, and one carrier's
+ * money must never flash up under another's name.
+ */
+function readCachedBalance(company: string): CarrierBalance | null {
+  try {
+    const raw = localStorage.getItem(BALANCE_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as { company?: string; balance?: CarrierBalance };
+    return v.company === company && v.balance ? v.balance : null;
+  } catch {
+    return null; // unparseable or storage blocked — just fetch
+  }
+}
+
+function writeCachedBalance(company: string, balance: CarrierBalance): void {
+  try {
+    localStorage.setItem(BALANCE_KEY, JSON.stringify({ company, balance }));
+  } catch {
+    /* storage can be unavailable (private mode / quota) — the cache is an optimisation, not state */
+  }
+}
+
 function OwnerHero({ initData, company, onOpenDetails }: { initData: string; company: string; onOpenDetails: () => void }) {
   const { t } = useI18n();
-  const [balance, setBalance] = useState<CarrierBalance | null>(null);
+  const [balance, setBalance] = useState<CarrierBalance | null>(() => readCachedBalance(company));
   useEffect(() => {
     let cancelled = false;
     fetchBalance(initData)
       .then((v) => {
-        if (!cancelled) setBalance(v);
+        if (cancelled) return;
+        setBalance(v);
+        writeCachedBalance(company, v);
       })
       .catch(() => {
         /* the balance tile falls back to '—' below — not worth a dedicated error state on Home */
@@ -685,7 +719,7 @@ function OwnerHero({ initData, company, onOpenDetails }: { initData: string; com
     return () => {
       cancelled = true;
     };
-  }, [initData]);
+  }, [initData, company]);
   const creditLimit = balance?.credit_limit != null ? Number(balance.credit_limit) : null;
   const creditRemaining = balance?.credit_remaining != null ? Number(balance.credit_remaining) : null;
   const pct = creditLimit && creditRemaining != null && creditLimit > 0 ? Math.max(0, Math.min(100, (creditRemaining / creditLimit) * 100)) : 100;
@@ -714,15 +748,25 @@ function OwnerHero({ initData, company, onOpenDetails }: { initData: string; com
       <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 9 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           <span style={eyebrow}>{t('home.efsBalance')}</span>
-          <span className="selectable" style={{ fontSize: 32, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02, letterSpacing: '-.01em' }}>
-            {balance ? money(balance.efs_balance ?? balance.balance) : '—'}
-          </span>
+          {balance ? (
+            <span className="selectable" style={{ fontSize: 32, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02, letterSpacing: '-.01em' }}>
+              {money(balance.efs_balance ?? balance.balance)}
+            </span>
+          ) : (
+            /* Only the very first open lands here — after that the cache paints a real number. A
+               shimmer reads as "loading"; a bare "—" reads as "your balance is unknown". */
+            <span aria-label={t('home.efsBalance')} style={{ display: 'block', width: 168, height: 33, borderRadius: 9, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
+          )}
         </div>
         <div style={{ display: 'flex', height: 5, borderRadius: 3, overflow: 'hidden', background: 'rgba(255,255,255,.18)' }}>
           <div style={{ width: `${pct}%`, background: 'var(--primary)', borderRadius: 3 }} />
         </div>
         <div style={{ fontSize: 12.5, fontWeight: 600, color: 'rgba(255,255,255,.88)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {creditLimit != null && creditRemaining != null ? t('home.creditAvailable', { amt: money(creditRemaining) }) : (balance?.efs_error ?? t('home.balanceNote'))}
+          {creditLimit != null && creditRemaining != null
+            ? t('home.creditAvailable', { amt: money(creditRemaining) })
+            : balance
+              ? (balance.efs_error ?? t('home.balanceNote'))
+              : '\u00A0'}
         </div>
       </div>
     </div>
