@@ -580,11 +580,17 @@ function groupCardNumber(n: string): string {
 }
 
 /** Masked PAN in the physical-card style: all-but-last-4 as asterisks + the real last 4. */
+/**
+ * The card number as a client expects to see it: `•••• 7549`.
+ *
+ * Same idiom as the transaction rows and the exported report, so one carrier's card reads
+ * identically everywhere. Two things this deliberately is NOT: the old 15-asterisk wall, and a
+ * length-faithful mask — an EFS PAN is 19 digits (4-4-4-4-3), so masking to the revealed shape
+ * splits the last four across groups as `•••7 549`, which reads as if the last four were "549".
+ */
 function maskedCardNumber(n: string): string {
   const digits = n.replace(/\D/g, '');
-  const last4 = digits.slice(-4) || n.slice(-4);
-  const stars = '*'.repeat(Math.max(8, digits.length - 4));
-  return `${stars} ${last4}`;
+  return `•••• ${digits.slice(-4) || n.slice(-4)}`;
 }
 
 /** Smooth an array of anchor points into a flowing SVG path (midpoint-quadratic smoothing). */
@@ -683,14 +689,17 @@ function OwnerHero({ initData, company, onOpenDetails }: { initData: string; com
   const creditLimit = balance?.credit_limit != null ? Number(balance.credit_limit) : null;
   const creditRemaining = balance?.credit_remaining != null ? Number(balance.credit_remaining) : null;
   const pct = creditLimit && creditRemaining != null && creditLimit > 0 ? Math.max(0, Math.min(100, (creditRemaining / creditLimit) * 100)) : 100;
-  const eyebrow = { fontSize: 9.5, fontWeight: 700, letterSpacing: '.12em', color: 'rgba(255,255,255,.65)' } as const;
+  const eyebrow = { fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' } as const;
   return (
     /* Same fuel-card shell as DriverHero (wave ribbon, dark, EFS·WEX) — owners/fleet see a card that
        matches the driver's, but carrying the account balance instead of a card number. */
-    <div style={{ position: 'relative', background: '#161719', borderRadius: 18, overflow: 'hidden', padding: '13px 15px', aspectRatio: '1.95 / 1', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+    <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', aspectRatio: '1.62 / 1', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
       <CardContours />
       <CardWave />
-      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '52%', background: 'linear-gradient(to top, rgba(18,19,21,.97) 62%, rgba(18,19,21,0))', pointerEvents: 'none' }} />
+      {/* The scrim is what makes the numbers legible: it lands the text band on near-solid ink while
+          the ribbon stays vivid above it. Taken to 60% / opaque-to-70% so the balance never sits on
+          the gradient — white on amber fails AA, which DESIGN_SPEC §8 calls out explicitly. */}
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '60%', background: 'linear-gradient(to top, rgba(18,19,21,.985) 70%, rgba(18,19,21,0))', pointerEvents: 'none' }} />
       <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 46, background: 'linear-gradient(to bottom, rgba(18,19,21,.72), rgba(18,19,21,0))', pointerEvents: 'none' }} />
 
       {/* Top row: company left, Details button right */}
@@ -702,17 +711,17 @@ function OwnerHero({ initData, company, onOpenDetails }: { initData: string; com
       </div>
 
       {/* Bottom block: balance amount + credit bar + credit-available (compact) */}
-      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 9 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           <span style={eyebrow}>{t('home.efsBalance')}</span>
-          <span className="selectable" style={{ fontSize: 26, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', lineHeight: 1.05, textShadow: '0 1px 3px rgba(0,0,0,.7)' }}>
+          <span className="selectable" style={{ fontSize: 32, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02, letterSpacing: '-.01em' }}>
             {balance ? money(balance.efs_balance ?? balance.balance) : '—'}
           </span>
         </div>
         <div style={{ display: 'flex', height: 5, borderRadius: 3, overflow: 'hidden', background: 'rgba(255,255,255,.18)' }}>
           <div style={{ width: `${pct}%`, background: 'var(--primary)', borderRadius: 3 }} />
         </div>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,.9)', textShadow: '0 1px 3px rgba(0,0,0,.7)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: 'rgba(255,255,255,.88)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {creditLimit != null && creditRemaining != null ? t('home.creditAvailable', { amt: money(creditRemaining) }) : (balance?.efs_error ?? t('home.balanceNote'))}
         </div>
       </div>
@@ -765,7 +774,10 @@ function DriverHero({
               {copied ? t('card.copied') : t('card.copy')}
             </button>
           </div>
-          <span className="selectable" style={{ fontSize: 17, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.04em', textShadow: '0 1px 3px rgba(0,0,0,.6)', whiteSpace: 'nowrap' }}>{display}</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' }}>{t('card.numberLabel')}</span>
+            <span className="selectable" style={{ fontSize: 19, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.04em', whiteSpace: 'nowrap' }}>{display}</span>
+          </div>
         </div>
       </div>
       <div style={{ fontSize: 13, color: 'var(--muted-fg)', margin: '-6px 4px 0' }}>{t('home.cardStanding')}</div>
