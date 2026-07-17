@@ -719,10 +719,21 @@ const BALANCE_KEY = 'octane.lastBalance';
  *
  * Returns null only until the FIRST ever response — that is the one state worth a skeleton.
  */
-function useCarrierBalance(initData: string, carrierId: string | null): CarrierBalance | null {
+interface BalanceState {
+  balance: CarrierBalance | null;
+  /** The fetch failed AND there is no cached figure to fall back on — the card has nothing true to
+   *  show and must say so rather than skeleton forever. */
+  failed: boolean;
+  retry: () => void;
+}
+
+function useCarrierBalance(initData: string, carrierId: string | null): BalanceState {
   const [balance, setBalance] = useState<CarrierBalance | null>(() => readCachedBalance(carrierId));
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let cancelled = false;
+    setFailed(false);
     fetchBalance(initData)
       .then((v) => {
         if (cancelled) return;
@@ -730,13 +741,17 @@ function useCarrierBalance(initData: string, carrierId: string | null): CarrierB
         writeCachedBalance(carrierId, v);
       })
       .catch(() => {
-        /* the card falls back to the cached figure, or the skeleton — not worth an error state */
+        // Previously swallowed. The card then sat on its skeleton forever, telling the driver it was
+        // loading something that had already failed — measured against a real outage: the balance
+        // endpoint 502'd and the hero span animated indefinitely. A cached figure for THIS carrier
+        // is still theirs and worth showing; with nothing cached, the card has to admit it.
+        if (!cancelled) setFailed(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [initData, carrierId]);
-  return balance;
+  }, [initData, carrierId, attempt]);
+  return { balance, failed, retry: () => setAttempt((n) => n + 1) };
 }
 
 function readCachedBalance(carrierId: string | null): CarrierBalance | null {
@@ -763,10 +778,13 @@ function writeCachedBalance(carrierId: string | null, balance: CarrierBalance): 
 
 function OwnerHero({ initData, company, carrierId, onOpenDetails }: { initData: string; company: string; carrierId: string | null; onOpenDetails: () => void }) {
   const { t } = useI18n();
-  const balance = useCarrierBalance(initData, carrierId);
+  const { balance, failed: balanceFailed, retry: retryBalance } = useCarrierBalance(initData, carrierId);
   const creditLimit = balance?.credit_limit != null ? Number(balance.credit_limit) : null;
   const creditRemaining = balance?.credit_remaining != null ? Number(balance.credit_remaining) : null;
-  const pct = creditLimit && creditRemaining != null && creditLimit > 0 ? Math.max(0, Math.min(100, (creditRemaining / creditLimit) * 100)) : 100;
+  // 100 was the fallback when there is no balance, which painted a FULL bar — i.e. "all your
+  // credit is available" — while the number above it was still loading or had failed outright.
+  // null means the bar has nothing true to draw and is not drawn.
+  const pct = creditLimit && creditRemaining != null && creditLimit > 0 ? Math.max(0, Math.min(100, (creditRemaining / creditLimit) * 100)) : null;
   const eyebrow = { fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' } as const;
   return (
     /* Deliberately NOT the fuel-card shell DriverHero uses. That card shows a PAN and depicts the
@@ -800,12 +818,28 @@ function OwnerHero({ initData, company, carrierId, onOpenDetails }: { initData: 
           ) : (
             /* Only the very first open lands here — after that the cache paints a real number. A
                shimmer reads as "loading"; a bare "—" reads as "your balance is unknown". */
+            balanceFailed ? (
+              /* A skeleton here would claim the number is still coming. It isn't — the fetch failed,
+                 and without a retry the only way out is closing the app. */
+              <button
+                type="button"
+                className="press"
+                onClick={retryBalance}
+                style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'rgba(255,255,255,.14)', color: '#FFFFFF', borderRadius: 9, padding: '7px 12px', fontFamily: "'Geist'", fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+              >
+                <Icon name="refresh" size={14} strokeWidth={2.2} className="" />
+                {t('home.balanceRetry')}
+              </button>
+            ) : (
             <span aria-label={t('home.efsBalance')} style={{ display: 'block', width: 168, height: 33, borderRadius: 9, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
+            )
           )}
         </div>
-        <div style={{ display: 'flex', height: 5, borderRadius: 3, overflow: 'hidden', background: 'rgba(255,255,255,.18)' }}>
-          <div style={{ width: `${pct}%`, background: 'var(--primary)', borderRadius: 3 }} />
-        </div>
+        {pct != null && (
+          <div style={{ display: 'flex', height: 5, borderRadius: 3, overflow: 'hidden', background: 'rgba(255,255,255,.18)' }}>
+            <div style={{ width: `${pct}%`, background: 'var(--primary)', borderRadius: 3 }} />
+          </div>
+        )}
         <div style={{ fontSize: 12.5, fontWeight: 600, color: 'rgba(255,255,255,.88)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {creditLimit != null && creditRemaining != null
             ? t('home.creditAvailable', { amt: money(creditRemaining) })
@@ -838,7 +872,7 @@ function DriverHero({
   const { t } = useI18n();
   // A driver's catalog lists "Check available balance" (docx), and that service already reads this
   // same carrier balance — so the card leads with it rather than making them open a sheet for it.
-  const balance = useCarrierBalance(initData, carrierId);
+  const { balance, failed: balanceFailed, retry: retryBalance } = useCarrierBalance(initData, carrierId);
   // No invented fallback: if the DWH has not resolved the real PAN there is nothing truthful to
   // show, so the number skeletons rather than displaying a fiction the Copy button would hand out.
   const realFull = session.ownCardNumber;
@@ -877,7 +911,20 @@ function DriverHero({
               {revealed ? money(balance.efs_balance ?? balance.balance) : '• • • •'}
             </span>
           ) : (
+            balanceFailed ? (
+              /* A skeleton here would claim the number is still coming. It isn't. */
+              <button
+                type="button"
+                className="press"
+                onClick={retryBalance}
+                style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'rgba(255,255,255,.14)', color: '#FFFFFF', borderRadius: 9, padding: '6px 11px', fontFamily: "'Geist'", fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
+              >
+                <Icon name="refresh" size={13} strokeWidth={2.2} className="" />
+                {t('home.balanceRetry')}
+              </button>
+            ) : (
             <span aria-label={t('home.efsBalance')} style={{ display: 'block', width: 148, height: 29, borderRadius: 8, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
+            )
           )}
         </div>
 
