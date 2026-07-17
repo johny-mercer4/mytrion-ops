@@ -2814,3 +2814,49 @@ Demo rows (`DEMO-FLEET-1` / `DEMO-OWNEROP-1`, 5 registrations + 7 invitations) d
 every service 400 (`carrierId must be a positive integer`) for whoever opened them. 9 real
 registrations, 46 invitations remain. Test with `?dev=1&uid=772010` (F 4 TRUCKING LLC, carrier
 5747140) or `uid=567461899` (carrier 5836348).
+
+### DECISION 2026-07-17 — Inbox owner mapping: extend `ownerKind`, don't mint carrier_users
+
+**Chosen: add `ownerKind: 'mini_app'` to `InboxOwnerKind`; `ownerId` = `registered_mini_app_companies.id`.**
+
+The mini-app's Inbox is fabricated (`seedInbox()` invents "Payment due" for owners with nothing due).
+Backing it with the real `inbox_events` table needs an owner key, and the mini-app user is a
+`registered_mini_app_companies` row (`telegram_user_id`), not the `carrier_users` row (`cu_…`) that
+`ownerKind: 'client'` expects. Three options were weighed; this records why B won, so it isn't
+re-litigated.
+
+**Why B**
+- `owner_kind` is plain `text NOT NULL` in the migration — no DB enum, no CHECK. `InboxOwnerKind` is
+  a TypeScript `$type<>` union, so a third kind is a **type change with no migration**.
+- `inbox_events_tenant_owner_idx` is `(tenant_id, owner_kind, owner_id, created_at)` — covers a new
+  kind for free.
+- `inboxEventRepo` is already generic over `ownerKind` (`list` filters on it, `create` takes it), and
+  `hub.ts` topics are `inbox:<kind>:<id>` — the pattern generalises with no plumbing.
+- The schema comment states the intent outright: *"One column pair covers both audiences."*
+  `ownerKind` IS the extension point.
+- Bonus: `registeredMiniAppCompanyRepo.upsert` conflicts on `(tenantId, telegramUserId)`, so the row
+  id is **stable across revoke → re-register**. Inbox history survives a re-registration.
+
+**Why not A (create a `carrier_users` row per registration)** — this is a security argument, not an
+aesthetic one. `carrier_users.login` and `.passwordHash` are both `NOT NULL`, and a mini-app user
+authenticates by Telegram initData HMAC — they have neither and never will. A would mean fabricating
+credentials to obtain a notification key, producing a login account that someone who is not the
+driver could authenticate as. New attack surface for no gain.
+
+The `carrier_users` header comment says it is "consumed by /v1/auth/client/login (future Telegram
+mini-app + the /client web page)" — that intent **predates the mini-app that actually got built**,
+which uses Telegram identity, not login/password. That consumer never materialised. Honouring stale
+intent by minting passwords is worse than extending the discriminator that exists for this.
+
+**Why not C (separate mini-app feed table)** — duplicates the table, the repo, the unread logic and
+the WS plumbing for no benefit.
+
+**Caveat to handle when implementing:** `owner_kind` is unconstrained at the DB level, so a typo
+writes silently — `'miniapp'` and `'mini_app'` would become two feeds nobody notices. Make the
+`InboxOwnerKind` union the single source of truth and validate in `inboxEventRepo.create` (the
+pattern `SERVICE_REQUEST_KEYS` uses for the Desk request enum).
+
+**Still undecided, and the real work:** what actually publishes a client event. Nothing writes
+`ownerKind: 'client'` rows today, so the mapping only makes the feed addressable — the events
+themselves (invoice issued, payment received, card shipped, ticket replied) each need a real upstream
+trigger. Until one exists, an honest empty Inbox beats the current invented one.
