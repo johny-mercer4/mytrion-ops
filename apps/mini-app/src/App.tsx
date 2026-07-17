@@ -754,18 +754,14 @@ function DriverHero({
   fullName,
   initData,
   revealed,
-  copied,
   onToggleReveal,
-  onCopy,
 }: {
   session: Session;
   company: string;
   fullName: string;
   initData: string;
   revealed: boolean;
-  copied: boolean;
   onToggleReveal: () => void;
-  onCopy: () => void;
 }) {
   const { t } = useI18n();
   // A driver's catalog lists "Check available balance" (docx), and that service already reads this
@@ -780,12 +776,18 @@ function DriverHero({
       <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', aspectRatio: '1.55 / 1', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
         <CardContours />
 
-        {/* Top band: driver name (Telegram) left — in the logo's place — company/service right. */}
+        {/* Top band: driver name left, company + reveal right — the toggle rides at the card's top
+            corner the way a payment app puts it, and where the owner card already puts Details. */}
         <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '52%' }}>{fullName}</span>
-          {company && (
-            <span style={{ fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,.9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '46%', textAlign: 'right' }}>{company}</span>
-          )}
+          <span style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{fullName}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, flex: 'none', maxWidth: '58%' }}>
+            {company && (
+              <span style={{ fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,.9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company}</span>
+            )}
+            <button type="button" className="press" aria-label={revealed ? 'Hide card number' : 'Show card number'} onClick={onToggleReveal} style={{ width: 30, height: 30, flex: 'none', border: 'none', borderRadius: 9, background: 'rgba(255,255,255,.15)', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <EyeToggle revealed={revealed} size={15} />
+            </button>
+          </div>
         </div>
 
         {/* Balance mid-card: the figure a driver opens the app for, and the same value their
@@ -801,20 +803,9 @@ function DriverHero({
           )}
         </div>
 
-        {/* Card number last, with reveal/copy on ITS label row — the controls act on this number, so
-            they sit with it. Beside the balance they read as if they revealed the money. */}
+        {/* Card number last. The number stays `selectable`, so it can still be picked up by hand. */}
         <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' }}>{t('card.numberLabel')}</span>
-            <div style={{ display: 'flex', gap: 7, flex: 'none' }}>
-              <button type="button" className="press" aria-label={revealed ? 'Hide card number' : 'Show card number'} onClick={onToggleReveal} style={{ width: 30, height: 30, border: 'none', borderRadius: 9, background: 'rgba(255,255,255,.13)', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                <EyeToggle revealed={revealed} size={15} />
-              </button>
-              <button type="button" className="press" onClick={onCopy} style={{ height: 30, padding: '0 11px', border: 'none', borderRadius: 9, background: 'rgba(255,255,255,.13)', color: '#FFFFFF', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                {copied ? t('card.copied') : t('card.copy')}
-              </button>
-            </div>
-          </div>
+          <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' }}>{t('card.numberLabel')}</span>
           {display ? (
             <span className="selectable" style={{ fontSize: 18, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em', whiteSpace: 'nowrap' }}>{display}</span>
           ) : (
@@ -836,9 +827,7 @@ interface HomeProps {
   pinned: string[];
   inbox: InboxItem[];
   cardRevealed: boolean;
-  cardCopied: boolean;
   onToggleCardReveal: () => void;
-  onCopyCardNumber: () => void;
   onTogglePin: (key: string) => void;
   onOpenAction: (target: OpenAction) => void;
   onGoToServices: () => void;
@@ -856,9 +845,7 @@ function Home({
   pinned,
   inbox,
   cardRevealed,
-  cardCopied,
   onToggleCardReveal,
-  onCopyCardNumber,
   onTogglePin,
   onOpenAction,
   onGoToServices,
@@ -878,7 +865,7 @@ function Home({
     <SlideIn key={tab} dir={slideDir}>
     <div style={{ padding: '16px 16px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {session.isDriver ? (
-        <DriverHero session={session} company={company} fullName={fullName} initData={initData} revealed={cardRevealed} copied={cardCopied} onToggleReveal={onToggleCardReveal} onCopy={onCopyCardNumber} />
+        <DriverHero session={session} company={company} fullName={fullName} initData={initData} revealed={cardRevealed} onToggleReveal={onToggleCardReveal} />
       ) : (
         <OwnerHero initData={initData} company={company} onOpenDetails={() => onOpenAction({ kind: 'service', key: 'status' })} />
       )}
@@ -1843,7 +1830,6 @@ export function App() {
   const [pinned, setPinned] = useState<string[]>([]);
   const [inbox, setInbox] = useState<InboxItem[]>([]);
   const [cardRevealed, setCardRevealed] = useState(false);
-  const [cardCopied, setCardCopied] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [confirmCfg, setConfirmCfg] = useState<ConfirmConfig | null>(null);
   const pinnedInit = useRef(false);
@@ -2036,26 +2022,6 @@ export function App() {
     setCardRevealed((v) => !v);
   }
 
-  function copyCardNumber() {
-    // Nothing to copy until the real PAN resolves. This used to fall back to a synthesised number,
-    // so a DWH miss put a fictional card number on the driver's clipboard — indistinguishable from
-    // the real one, and the likeliest place for it to end up was a support chat.
-    const full = session.ownCardNumber;
-    if (!full) {
-      haptic('error');
-      showToast(t('toast.cardNumberUnavailable'), 'error');
-      return;
-    }
-    try {
-      navigator.clipboard?.writeText(full);
-    } catch {
-      // ignore
-    }
-    haptic('success');
-    setCardCopied(true);
-    showToast(t('toast.cardNumberCopied'));
-    setTimeout(() => setCardCopied(false), 1600);
-  }
 
   function markAllRead() {
     haptic('tap');
@@ -2142,9 +2108,7 @@ export function App() {
             pinned={pinned}
             inbox={inbox}
             cardRevealed={cardRevealed}
-            cardCopied={cardCopied}
             onToggleCardReveal={toggleCardReveal}
-            onCopyCardNumber={copyCardNumber}
             onTogglePin={togglePin}
             onOpenAction={handleOpenAction}
             onGoToServices={() => setTab('services')}
