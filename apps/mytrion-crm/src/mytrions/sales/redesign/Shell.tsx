@@ -339,17 +339,8 @@ export function SalesRedesign() {
             lead={lead}
             onClose={() => setLead(null)}
             onCall={(phone) => {
-              const ok = clickToDial(phone);
-              if (!ok) {
-                pushToast(
-                  'Phone',
-                  phone.trim()
-                    ? 'RingCentral is still loading — try again in a moment.'
-                    : 'No phone number on this lead.',
-                );
-              } else {
-                pushToast('Calling', phone);
-              }
+              // Dial silently when RC isn't ready — no "Phone / backend" error toasts.
+              if (clickToDial(phone)) pushToast('Calling', phone);
             }}
           />
         )}

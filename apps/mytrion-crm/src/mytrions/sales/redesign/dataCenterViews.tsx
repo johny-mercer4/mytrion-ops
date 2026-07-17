@@ -94,11 +94,8 @@ export function LeadsView({ leads, search, view }: { leads: LeadVM[]; search: st
   const dial = (e: MouseEvent, phone: string): void => {
     stop(e);
     if (!phone.trim()) return;
-    const ok = clickToDial(phone);
-    pushToast(
-      ok ? 'Calling' : 'Phone',
-      ok ? phone : 'RingCentral is still loading — try again in a moment.',
-    );
+    // Success only — never toast Phone/backend load failures.
+    if (clickToDial(phone)) pushToast('Calling', phone);
   };
 
   if (view === 'list') {
