@@ -10,7 +10,7 @@ export function NotFound() {
         <FuelMark size={42} />
         <h1 className={styles.title}>Page not found</h1>
         <p className={styles.body}>That page doesn’t exist.</p>
-        <Link className={styles.link} to="/">
+        <Link className={styles.link} to="/main">
           ← Back to your Mytrions
         </Link>
       </div>

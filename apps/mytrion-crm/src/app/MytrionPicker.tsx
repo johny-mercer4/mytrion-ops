@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useUserContext } from '../context/UserContextProvider';
-import { MYTRIONS, type MytrionId } from '../access/mytrions.config';
+import { MYTRIONS, MYTRION_URL_SLUG, type MytrionId } from '../access/mytrions.config';
 import { TopBar } from '../components/TopBar';
 import { ArrowRightIcon, CheckIcon, MytrionGlyph } from '../components/icons';
 import styles from './MytrionPicker.module.css';
@@ -47,7 +47,7 @@ export function MytrionPicker({ ids }: { ids: MytrionId[] }) {
               const hue = HUE_VAR[m.hue] ?? '--accent';
               return (
                 <li key={id}>
-                  <Link className={styles.card} to={`/m/${id}`}>
+                  <Link className={styles.card} to={`/main/${MYTRION_URL_SLUG[id]}`}>
                     <div className={styles.cardTop}>
                       <span
                         className={styles.glyph}

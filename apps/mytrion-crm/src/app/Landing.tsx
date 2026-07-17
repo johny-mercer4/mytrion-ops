@@ -1,6 +1,7 @@
 import { Navigate } from 'react-router-dom';
 import { useUserContext } from '../context/UserContextProvider';
 import { resolveAccessibleMytrions } from '../access/resolveAccess';
+import { MYTRION_URL_SLUG } from '../access/mytrions.config';
 import { Forbidden } from './Forbidden';
 import { MytrionPicker } from './MytrionPicker';
 
@@ -18,7 +19,7 @@ export function Landing() {
   // Auto-route to the configured home when it's actually accessible, else when there's just one.
   const target = homeMytrion && accessible.includes(homeMytrion) ? homeMytrion : accessible.length === 1 ? accessible[0] : null;
   if (target) {
-    return <Navigate to={`/m/${target}`} replace />;
+    return <Navigate to={`/main/${MYTRION_URL_SLUG[target]}`} replace />;
   }
   return <MytrionPicker ids={accessible} />;
 }

@@ -261,6 +261,34 @@ export function isMytrionId(value: string): value is MytrionId {
 }
 
 /**
+ * Public URL slug for each Mytrion, used under /main/:slug (e.g. /main/salesmytrion). Kept distinct
+ * from the internal MytrionId (which stays the DB/RBAC-facing department key) so the URL can read
+ * naturally without renaming anything backend-side. `customer-service` shortens to "cs" to match
+ * the org's own shorthand for the department.
+ */
+export const MYTRION_URL_SLUG: Record<MytrionId, string> = {
+  admin: 'adminmytrion',
+  sales: 'salesmytrion',
+  billing: 'billingmytrion',
+  collection: 'collectionmytrion',
+  finance: 'financemytrion',
+  retention: 'retentionmytrion',
+  verification: 'verificationmytrion',
+  manager: 'managermytrion',
+  analyst: 'analystmytrion',
+  'customer-service': 'csmytrion',
+};
+
+const URL_SLUG_TO_ID: Record<string, MytrionId> = Object.fromEntries(
+  Object.entries(MYTRION_URL_SLUG).map(([id, slug]) => [slug, id as MytrionId]),
+);
+
+/** Resolve a /main/:slug path param back to its MytrionId, or undefined for an unknown slug. */
+export function mytrionIdFromUrlSlug(slug: string): MytrionId | undefined {
+  return URL_SLUG_TO_ID[slug];
+}
+
+/**
  * Backend department agent keys (mirror of src/modules/agents/types.ts AGENT_KEYS). The chat UI sends
  * `agent:<key>` to POST /v1/agent for direct-to-child. Every non-admin MytrionId equals its agent key;
  * `admin` has no agent (→ orchestrator mode). `marketing` has no Mytrion but appears in an admin's

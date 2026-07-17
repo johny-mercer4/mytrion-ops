@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 import { useParams } from 'react-router-dom';
 import { useUserContext } from '../context/UserContextProvider';
 import { canAccess } from '../access/resolveAccess';
-import { MYTRIONS, isMytrionId } from '../access/mytrions.config';
+import { MYTRIONS, mytrionIdFromUrlSlug } from '../access/mytrions.config';
 import { MYTRION_MODULES } from '../mytrions/registry';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { StatusMessage } from '../components/StatusMessage';
@@ -10,15 +10,17 @@ import { Forbidden } from './Forbidden';
 import { NotFound } from './NotFound';
 
 /**
- * Validates the :mytrion path param and gates on canAccess. A bad slug → 404; a known slug the user
- * may not enter → 403 (never a silent redirect, so a bad deep-link is legible). On pass it lazy-loads
- * the matching Mytrion module (each module renders its own <MytrionShell>).
+ * Validates the :mytrion path param (the public URL slug, e.g. "salesmytrion" — see
+ * MYTRION_URL_SLUG in mytrions.config) and gates on canAccess. A bad slug → 404; a known slug the
+ * user may not enter → 403 (never a silent redirect, so a bad deep-link is legible). On pass it
+ * lazy-loads the matching Mytrion module (each module renders its own <MytrionShell>).
  */
 export function MytrionGuard() {
   const ctx = useUserContext();
-  const { mytrion } = useParams();
+  const { mytrion: slug } = useParams();
 
-  if (!mytrion || !isMytrionId(mytrion)) return <NotFound />;
+  const mytrion = slug ? mytrionIdFromUrlSlug(slug) : undefined;
+  if (!mytrion) return <NotFound />;
   if (!canAccess(ctx, mytrion)) {
     return <Forbidden reason={`${ctx.userName} cannot access ${MYTRIONS[mytrion].title}.`} />;
   }
