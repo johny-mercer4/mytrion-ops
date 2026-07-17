@@ -1007,19 +1007,111 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   // A signed URL isn't itself carrier-scoped upstream, so re-check the invoice belongs to THIS
   // caller's carrier before minting one — otherwise any registered user could probe arbitrary
   // invoiceIds.
-  app.post('/carrier/mini-app/invoices/signed-url', async (request) => {
-    const body = invoiceSignedUrlSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
+  /** Resolve an invoice to a signed URL, but only after proving it is THIS carrier's. The upstream
+   *  signed-url endpoint takes an invoiceId and nothing else — the ids are enumerable integers, so
+   *  without this check any owner could mint a URL for anyone's invoice. */
+  async function ownedInvoiceUrl(
+    initData: string,
+    invoiceId: string,
+  ): Promise<{ url: string; carrierId: string; invoice: Record<string, unknown>; registration: RegisteredMiniAppCompany }> {
+    const { carrierId, registration } = await requireRegisteredOwnerUser(initData);
     const list = await serverCrmWrapper.getInvoices(carrierId, { range: 'all_time' });
-    const owned = (list.data ?? []).some((inv) => String(inv['invoice_id'] ?? inv['id'] ?? '') === body.invoiceId);
-    if (!owned) {
+    const invoice = (list.data ?? []).find((inv) => String(inv['invoice_id'] ?? inv['id'] ?? '') === invoiceId);
+    if (!invoice) {
       throw new AppError('That invoice does not belong to this carrier', {
         statusCode: 403,
         code: 'INVOICE_NOT_OWNED',
         expose: true,
       });
     }
-    return serverCrmWrapper.getInvoiceSignedUrl(body.invoiceId);
+    const { url } = (await serverCrmWrapper.getInvoiceSignedUrl(invoiceId)) as { url?: string };
+    if (!url) {
+      throw new AppError('That invoice has no document to download', {
+        statusCode: 404,
+        code: 'INVOICE_NO_DOCUMENT',
+        expose: true,
+      });
+    }
+    return { url, carrierId, invoice, registration };
+  }
+
+  app.post('/carrier/mini-app/invoices/signed-url', async (request) => {
+    const body = invoiceSignedUrlSchema.parse(request.body);
+    const { url } = await ownedInvoiceUrl(body.initData, body.invoiceId);
+    return { url };
+  });
+
+  /**
+   * Deliver one invoice PDF to the caller's Telegram chat.
+   *
+   * Same reason the transaction report goes this way: a Telegram WebApp cannot reliably save a file
+   * — an in-app WebView download either silently no-ops or escapes to an external browser, and the
+   * signed URL expires. In the chat the document persists and can be forwarded to a bookkeeper.
+   *
+   * The bytes are pulled through the SIGNED URL rather than servercrm's client, which parses JSON
+   * and would mangle a PDF.
+   */
+  app.post('/carrier/mini-app/invoices/send', async (request) => {
+    const body = invoiceSignedUrlSchema.parse(request.body);
+    // One registration lookup, not two: ownedInvoiceUrl already resolves the owner. verifyTelegramUser
+    // is just the HMAC — no DB — so it stays.
+    const { telegramUserId } = verifyTelegramUser(body.initData);
+    const { url, carrierId, invoice, registration } = await ownedInvoiceUrl(body.initData, body.invoiceId);
+
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new AppError("Couldn't fetch that invoice document. Please try again.", {
+        statusCode: 502,
+        code: 'INVOICE_FETCH_FAILED',
+        expose: true,
+      });
+    }
+    const bytes = Buffer.from(await res.arrayBuffer());
+
+    const money = (v: unknown) => `$${Number(v ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const status = String(invoice['status'] ?? '').replace(/_/g, ' ');
+    const caption = [
+      `<b>Octane · Invoice #${escapeTelegramHtml(body.invoiceId)}</b>`,
+      escapeTelegramHtml(registration.companyName ?? 'Octane'),
+      ``,
+      `${money(invoice['total_amount'])} · ${escapeTelegramHtml(status)}`,
+    ].join('\n');
+
+    try {
+      await sendDocument({
+        chatId: registration.telegramChatId ?? telegramUserId,
+        fileName: `Octane_Invoice_${body.invoiceId}.pdf`,
+        contentType: 'application/pdf',
+        bytes,
+        caption,
+        parseMode: 'HTML',
+      });
+    } catch (err) {
+      if (err instanceof TelegramChatUnreachableError) {
+        throw new AppError('Open a chat with the Octane bot first, then try again.', {
+          statusCode: 409,
+          code: 'TELEGRAM_CHAT_UNREACHABLE',
+          expose: true,
+          cause: err,
+        });
+      }
+      throw new AppError("Couldn't send the invoice to your Telegram. Please try again.", {
+        statusCode: 502,
+        code: 'INVOICE_SEND_FAILED',
+        expose: true,
+        cause: err,
+      });
+    }
+
+    await auditFromContext(telegramCtx(registration.profile, telegramUserId), {
+      action: 'carrier.mini_app.invoice_send',
+      status: 'ok',
+      resourceType: 'carrier_invoice',
+      resourceId: body.invoiceId,
+      detail: { carrierId, bytes: bytes.length },
+    });
+
+    return { sent: true, fileName: `Octane_Invoice_${body.invoiceId}.pdf` };
   });
 
   app.post('/carrier/mini-app/tracking', async (request) => {

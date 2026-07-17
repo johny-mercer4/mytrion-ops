@@ -1,8 +1,7 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import {
   createCarrierInvitation,
   listCards,
-  searchClients,
   searchOperators,
   type CarrierProfile,
   type DwhCard,
@@ -11,10 +10,22 @@ import {
 } from '../../api/carrierUsers';
 import { getImpersonation } from '../../api/impersonation';
 import { getSession } from '../../api/session';
-import { BuildingIcon, PersonIcon, SearchIcon, SendArrowIcon } from '../../components/icons';
+import { BuildingIcon, PersonIcon, SendArrowIcon } from '../../components/icons';
 import { copyToClipboard } from './carrierUserUtil';
+import { ClientCombobox } from './ClientCombobox';
+import { RadioToggleGroup } from './RadioToggleGroup';
 import { adminToast } from './toast';
 import s from './admin.module.css';
+
+/** Seed values for a fresh link — used to reissue an invite that expired or was cancelled. */
+export interface InviteDraft {
+  profile: CarrierProfile;
+  carrierId: string;
+  applicationId: string;
+  companyName: string;
+  cardId: string;
+  driverName: string;
+}
 
 /**
  * The "New carrier user" form — both owners and drivers are provisioned as a Telegram invite
@@ -23,15 +34,17 @@ import s from './admin.module.css';
  * profiles; a driver additionally picks the one active fuel card the invite is for, listed
  * straight from servercrm.
  */
-export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => void }) {
-  const [profile, setProfile] = useState<CarrierProfile>('owner');
+export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated: () => void; initial?: InviteDraft }) {
+  const [profile, setProfile] = useState<CarrierProfile>(initial?.profile ?? 'owner');
   const [picked, setPicked] = useState<DwhClient | null>(null);
-  const [manual, setManual] = useState(false);
-  const [carrierId, setCarrierId] = useState('');
-  const [applicationId, setApplicationId] = useState('');
-  const [companyName, setCompanyName] = useState('');
-  const [cardId, setCardId] = useState('');
-  const [driverName, setDriverName] = useState('');
+  // A reissued draft opens straight into manual entry: its ids came from the dead invite, not from
+  // a client the agent picked, and they need to be visible and editable.
+  const [manual, setManual] = useState(Boolean(initial));
+  const [carrierId, setCarrierId] = useState(initial?.carrierId ?? '');
+  const [applicationId, setApplicationId] = useState(initial?.applicationId ?? '');
+  const [companyName, setCompanyName] = useState(initial?.companyName ?? '');
+  const [cardId, setCardId] = useState(initial?.cardId ?? '');
+  const [driverName, setDriverName] = useState(initial?.driverName ?? '');
   const [ttlHours, setTtlHours] = useState(168); // 7 days — matches the backend's own default
   const [busy, setBusy] = useState(false);
   const [inviteUrl, setInviteUrl] = useState('');
@@ -39,8 +52,12 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
   const isOwner = profile === 'owner';
 
   // Reset everything tied to "which client" when switching profile — a driver invite under the
-  // wrong owner's carrier would be a real mistake, not just a UI nicety.
+  // wrong owner's carrier would be a real mistake, not just a UI nicety. Keyed off the previous
+  // value rather than the effect firing, so a prefilled mount doesn't wipe its own draft.
+  const prevProfile = useRef(profile);
   useEffect(() => {
+    if (prevProfile.current === profile) return;
+    prevProfile.current = profile;
     setPicked(null);
     setManual(false);
     setCarrierId('');
@@ -51,48 +68,13 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
     setInviteUrl('');
   }, [profile]);
 
-  // ── DWH client search: debounced, newest applications first. Shared by owner + driver. ──
-  const [clientQuery, setClientQuery] = useState('');
-  const [clientResults, setClientResults] = useState<DwhClient[] | null>(null);
-  const [clientBusy, setClientBusy] = useState(false);
-  const [clientError, setClientError] = useState('');
-  useEffect(() => {
-    if (picked || manual) return;
-    const q = clientQuery.trim();
-    if (q.length < 2) {
-      setClientResults(null);
-      setClientError('');
-      setClientBusy(false);
-      return;
-    }
-    setClientBusy(true);
-    const ac = new AbortController();
-    const timer = setTimeout(() => {
-      searchClients(q, 15, ac.signal)
-        .then((clients) => {
-          setClientResults(clients);
-          setClientError('');
-        })
-        .catch((e: unknown) => {
-          if (!ac.signal.aborted) setClientError(e instanceof Error ? e.message : String(e));
-        })
-        .finally(() => {
-          if (!ac.signal.aborted) setClientBusy(false);
-        });
-    }, 300);
-    return () => {
-      clearTimeout(timer);
-      ac.abort();
-    };
-  }, [clientQuery, picked, manual]);
+  const blockerId = `${useId()}-blocker`;
 
   function pickClient(c: DwhClient) {
     setPicked(c);
     setCarrierId(c.carrierId ?? '');
     setApplicationId(c.applicationId ?? '');
     setCompanyName(c.companyName ?? '');
-    setClientResults(null);
-    setClientQuery('');
   }
 
   function clearClient() {
@@ -147,11 +129,17 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
   // picker. Left null on failure, so cardCount/companyType stay undetermined rather than wrong.
   const [cardsError, setCardsError] = useState('');
   const [cardsReload, setCardsReload] = useState(0);
+  // Same previous-value guard as the profile reset: on a prefilled mount the carrier id is already
+  // set, and an unconditional clear here would drop the draft's card before the list even loads.
+  const prevCarrier = useRef(carrierId);
   useEffect(() => {
     setCards(null);
     setCardsError('');
-    setCardManual(false);
-    setCardId('');
+    if (prevCarrier.current !== carrierId) {
+      prevCarrier.current = carrierId;
+      setCardManual(false);
+      setCardId('');
+    }
     const cid = carrierId.trim();
     if (!cid) {
       setCardsBusy(false);
@@ -237,16 +225,31 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
       {/* Step 1 — account type */}
       <div className={s.formStep}>
         <div className={s.eyebrow}>Account type</div>
-        <div className={s.toggleRow} role="radiogroup" aria-label="Account type">
-          <button type="button" role="radio" aria-checked={isOwner} className={`${s.toggle} ${isOwner ? s.toggleOn : ''}`} onClick={() => setProfile('owner')}>
-            <BuildingIcon size={13} />
-            Owner
-          </button>
-          <button type="button" role="radio" aria-checked={!isOwner} className={`${s.toggle} ${!isOwner ? s.toggleOn : ''}`} onClick={() => setProfile('driver')}>
-            <PersonIcon size={13} />
-            Driver
-          </button>
-        </div>
+        <RadioToggleGroup
+          label="Account type"
+          value={profile}
+          onChange={setProfile}
+          options={[
+            {
+              value: 'owner',
+              label: (
+                <>
+                  <BuildingIcon size={13} />
+                  Owner
+                </>
+              ),
+            },
+            {
+              value: 'driver',
+              label: (
+                <>
+                  <PersonIcon size={13} />
+                  Driver
+                </>
+              ),
+            },
+          ]}
+        />
         <p className={s.fieldHint}>
           {isOwner
             ? 'Owner-operator (one card, drives it themself) or company owner (multiple drivers/cards) — auto-detected below.'
@@ -257,24 +260,16 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
       {/* Step 1b — link expiry */}
       <div className={s.formStep}>
         <div className={s.eyebrow}>Link expires in</div>
-        <div className={s.toggleRow} role="radiogroup" aria-label="Link expiry">
-          {([
-            [24, '24 hours'],
-            [72, '3 days'],
-            [168, '7 days'],
-          ] as const).map(([hours, label]) => (
-            <button
-              key={hours}
-              type="button"
-              role="radio"
-              aria-checked={ttlHours === hours}
-              className={`${s.toggle} ${ttlHours === hours ? s.toggleOn : ''}`}
-              onClick={() => setTtlHours(hours)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <RadioToggleGroup
+          label="Link expiry"
+          value={ttlHours}
+          onChange={setTtlHours}
+          options={[
+            { value: 24, label: '24 hours' },
+            { value: 72, label: '3 days' },
+            { value: 168, label: '7 days' },
+          ]}
+        />
       </div>
 
       {/* Step 2 — which client */}
@@ -298,53 +293,7 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
           </div>
         )}
 
-        {!picked && !manual && (
-          <>
-            <div style={{ position: 'relative' }}>
-              <label className={s.search} style={{ margin: 0 }}>
-                <SearchIcon size={14} />
-                <input
-                  className={s.searchInput}
-                  value={clientQuery}
-                  onChange={(e) => setClientQuery(e.target.value)}
-                  placeholder="Search your clients — company name, carrier id, or application id"
-                  autoComplete="off"
-                />
-                {clientBusy && <span className={s.chipMeta}>searching…</span>}
-              </label>
-              {clientResults && (
-                <div className={s.clientPick} role="listbox" aria-label="Matching clients">
-                  {clientResults.map((c, i) => (
-                    <button
-                      key={`${c.carrierId ?? ''}:${c.applicationId ?? ''}:${i}`}
-                      type="button"
-                      role="option"
-                      aria-selected="false"
-                      className={s.clientPickRow}
-                      onClick={() => pickClient(c)}
-                    >
-                      <span className={s.docTitle}>{c.companyName ?? '(unnamed deal)'}</span>
-                      <span className={s.checkMeta}>
-                        {c.carrierId ? `carrier ${c.carrierId}` : 'no carrier yet'}
-                        {c.applicationId ? ` · app ${c.applicationId}` : ''}
-                        {c.applicationDate ? ` · applied ${c.applicationDate}` : ''}
-                        {c.stage ? ` · ${c.stage}` : ''}
-                      </span>
-                    </button>
-                  ))}
-                  {clientResults.length === 0 && <div className={s.none}>No clients match.</div>}
-                </div>
-              )}
-            </div>
-            {clientError && <p className={s.errorNote}>{clientError}</p>}
-            <p className={s.fieldHint}>
-              Newest applications first.{' '}
-              <button type="button" className={s.linkBtn} onClick={() => setManual(true)}>
-                Enter the details manually instead
-              </button>
-            </p>
-          </>
-        )}
+        {!picked && !manual && <ClientCombobox onPick={pickClient} onManual={() => setManual(true)} />}
 
         {!picked && manual && (
           <>
@@ -524,11 +473,21 @@ export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => vo
         </div>
       ) : (
         <div className={s.inlineRow}>
-          <button type="submit" className={s.primaryBtn} disabled={!valid || busy}>
+          {/* Enabled even when invalid: a disabled button is unfocusable, so a screen reader user
+              could never reach the reason it was disabled. submit is gated in generateInvite. */}
+          <button
+            type="submit"
+            className={s.primaryBtn}
+            disabled={busy}
+            aria-disabled={!valid}
+            aria-describedby={blockerId}
+          >
             <SendArrowIcon size={13} />
             {busy ? 'Generating…' : 'Generate registration link'}
           </button>
-          {blocker && <span className={s.fieldHint}>{blocker}</span>}
+          <span className={s.fieldHint} id={blockerId} role="status">
+            {blocker}
+          </span>
         </div>
       )}
     </form>

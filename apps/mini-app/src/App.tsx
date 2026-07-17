@@ -7,7 +7,6 @@ import {
   fetchAccountStatus,
   fetchBalance,
   fetchFleet,
-  fetchInvoiceSignedUrl,
   fetchInvoices,
   fetchLastUsed,
   fetchMiniAppSession,
@@ -16,6 +15,7 @@ import {
   fetchTracking,
   fetchTransactions,
   redeemRegistration,
+  sendInvoice,
   sendTransactionsReport,
   type CarrierBalance,
   type FleetCard,
@@ -1288,6 +1288,20 @@ const TXN_RANGES: ReadonlyArray<{ value: TxnRange; key: string }> = [
   { value: 'custom', key: 'txns.custom' },
 ];
 
+/**
+ * Invoice periods. NOT the transaction presets: invoices come from salesMytrion, whose vocabulary is
+ * last_7 | last_30 | last_90 | last_365 | custom | all_time. servercrm falls back to last_30 on an
+ * unknown preset *silently*, so feeding it 'month' would look wired and quietly do nothing.
+ */
+type InvoiceRange = 'last_7' | 'last_30' | 'last_90' | 'last_365' | 'all_time';
+const INVOICE_RANGES: ReadonlyArray<{ value: InvoiceRange; key: string }> = [
+  { value: 'last_7', key: 'inv.last7' },
+  { value: 'last_30', key: 'inv.last30' },
+  { value: 'last_90', key: 'inv.last90' },
+  { value: 'last_365', key: 'inv.last365' },
+  { value: 'all_time', key: 'inv.allTime' },
+];
+
 type SheetData =
   | { kind: 'balance'; v: CarrierBalance }
   | { kind: 'status'; v: StatusResult }
@@ -1317,6 +1331,7 @@ function ActionSheet({
   const [loadError, setLoadError] = useState('');
   const [data, setData] = useState<SheetData | null>(null);
   const [range, setRange] = useState<TxnRange>('month');
+  const [invRange, setInvRange] = useState<InvoiceRange>('last_30');
   // Lazy init, and relative to TODAY: these were literal dates ('2026-06-01'/'2026-07-09'), so the
   // custom range opened on a window that had already gone stale — by this writing it ended 8 days
   // in the past. Last 30 days is the neutral default; the presets cover the calendar shapes.
@@ -1351,7 +1366,7 @@ function ActionSheet({
         else if (service === 'txns') next = { kind: 'txns', v: await fetchTransactions(initData, txnOpts, false) };
         else if (service === 'lastused') next = { kind: 'lastused', v: await fetchLastUsed(initData) };
         else if (service === 'payment') next = { kind: 'payment', v: await fetchPaymentInfo(initData) };
-        else if (service === 'invoices') next = { kind: 'invoices', v: await fetchInvoices(initData, { range: 'last_30' }) };
+        else if (service === 'invoices') next = { kind: 'invoices', v: await fetchInvoices(initData, { range: invRange }) };
         else next = { kind: 'tracking', v: await fetchTracking(initData) };
         if (cancelled) return;
         setData(next);
@@ -1388,7 +1403,7 @@ function ActionSheet({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target, dwhRange, from, to]);
+  }, [target, dwhRange, invRange, from, to]);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -1435,29 +1450,18 @@ function ActionSheet({
 
   async function openInvoice(id: string) {
     haptic('tap');
+    if (invoiceBusyId) return;
     setInvoiceBusyId(id);
-    // Open the tab synchronously, inside the click's user-gesture — a tab opened after the
-    // `await` below is no longer gesture-triggered and gets popup-blocked (esp. in Telegram's WebView).
-    // Can't pass 'noopener' here: it makes window.open return null, so there'd be no handle to
-    // navigate once the signed URL comes back. Sever the opener link manually instead — same effect.
-    const tab = window.open('', '_blank');
-    if (tab) {
-      try {
-        tab.opener = null;
-      } catch {
-        /* best-effort; a same-origin about:blank child always allows this */
-      }
-    }
     try {
-      const { url } = await fetchInvoiceSignedUrl(initData, id);
-      if (url && tab) tab.location.href = url;
-      else {
-        tab?.close();
-        showToast(t('toast.invoiceDownloadFailed'), 'error');
-      }
-    } catch {
-      tab?.close();
-      showToast(t('toast.invoiceDownloadFailed'), 'error');
+      await sendInvoice(initData, id);
+      haptic('success');
+      showToast(t('toast.invoiceSentToTelegram'));
+    } catch (e) {
+      // "You never opened the bot chat" is the one failure the user can act on, so it keeps its own
+      // message rather than being flattened into a generic error.
+      const code = e instanceof ApiError ? e.code : '';
+      haptic('error');
+      showToast(code === 'TELEGRAM_CHAT_UNREACHABLE' ? t('toast.openBotFirst') : t('toast.invoiceDownloadFailed'), 'error');
     } finally {
       setInvoiceBusyId(null);
     }
@@ -1660,11 +1664,51 @@ function ActionSheet({
               );
             })()
           ) : data?.kind === 'invoices' ? (
-            (data.v.data ?? []).length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('invoice.empty')}</div>
-            ) : (
-              <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
-                {(data.v.data ?? []).map((inv, i) => {
+            (() => {
+              const rows = data.v.data ?? [];
+              const sum = data.v.summary ?? {};
+              // Use the backend's sum_open_balance, never billed-minus-paid. servercrm computes it as
+              // SUM(GREATEST(total_amount - total_paid, 0)) FILTER (status IN PENDING, PARTIALLY_PAID)
+              // — so it counts only what is actually owed, and clamps at zero. Subtracting here got
+              // both wrong: it showed -$16.60 for a carrier that had OVERPAID, and it counted PAID and
+              // CANCELLED invoices as if they were open.
+              const openBalance = Number(sum['sum_open_balance'] ?? 0);
+              return (
+                <>
+                  <div style={{ display: 'flex', gap: 7, marginBottom: 12, overflowX: 'auto', paddingBottom: 2, scrollbarWidth: 'none' }}>
+                    {INVOICE_RANGES.map((r) => (
+                      <button
+                        key={r.value}
+                        type="button"
+                        onClick={() => setInvRange(r.value)}
+                        style={{ flex: 'none', height: 36, padding: '0 14px', border: 'none', borderRadius: 10, fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', cursor: 'pointer', background: invRange === r.value ? 'var(--primary)' : 'var(--secondary)', color: invRange === r.value ? '#FFFFFF' : 'var(--muted-fg)' }}
+                      >
+                        {t(r.key)}
+                      </button>
+                    ))}
+                  </div>
+                  {/* The backend has sent this summary all along; nothing read it. Billed vs still
+                      open is the pair an owner opens invoices for — the list answers "which" after. */}
+                  {sum['sum_total_amount'] != null && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                      <div style={{ background: 'var(--primary)', borderRadius: 14, padding: '13px 14px' }}>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,.75)' }}>{t('inv.billed')}</div>
+                        <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(sum['sum_total_amount'])}</div>
+                      </div>
+                      <div style={{ background: 'var(--secondary)', borderRadius: 14, padding: '13px 14px' }}>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('inv.open', { n: fmt(sum['open_count'] ?? 0) })}</div>
+                        <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(openBalance)}</div>
+                      </div>
+                      <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--muted-fg)', textAlign: 'center', marginTop: -2 }}>
+                        {t('inv.summaryLine', { total: fmt(sum['total_invoices'] ?? rows.length), paid: fmt(sum['paid_count'] ?? 0) })}
+                      </div>
+                    </div>
+                  )}
+                  {rows.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('invoice.empty')}</div>
+                  ) : (
+                    <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                {rows.map((inv, i) => {
                   const id = String(inv['invoice_id'] ?? inv['id'] ?? '');
                   const label = String(inv['invoice_ref'] ?? inv['invoice_number'] ?? id);
                   const busy = invoiceBusyId === id;
@@ -1676,13 +1720,16 @@ function ActionSheet({
                         <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2 }}>{money(inv['total_amount'] ?? inv['amount'])} · {fmt(inv['status'])}</div>
                       </div>
                       {busy ? <Spinner size={16} /> : (
-                        <span style={{ borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, padding: '7px 12px', flex: 'none' }}>{t('common.view')}</span>
+                        <span style={{ borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, padding: '7px 12px', flex: 'none' }}>{t('invoice.send')}</span>
                       )}
                     </div>
                   );
                 })}
-              </div>
-            )
+                    </div>
+                  )}
+                </>
+              );
+            })()
           ) : data?.kind === 'payment' ? (
             (() => {
               const p = data.v;

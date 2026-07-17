@@ -29,6 +29,16 @@ export interface CarrierRowList {
   [k: string]: unknown;
 }
 
+/** Invoice list + the summary servercrm accumulates over the whole window: `total_invoices`,
+ *  `paid_count`, `open_count`, `cancelled_count`, `sum_total_amount`, `sum_total_paid` and
+ *  `sum_open_balance` (the last filtered to PENDING/PARTIALLY_PAID — i.e. what is actually owed). */
+export interface CarrierInvoices {
+  count?: number;
+  summary?: Record<string, unknown>;
+  data?: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+}
+
 /** Transaction line items + the accumulated totals servercrm computes over the whole filter set. */
 export interface CarrierTransactions {
   totals?: Record<string, unknown>;
@@ -78,7 +88,7 @@ export const serverCrmWrapper = {
 
   /** Invoice list (DWH's `public.cmp_invoice` replica). `carrierId` is a query param here, not a path segment. */
   getInvoices(carrierId: string, opts: InvoicesRangeOpts = {}) {
-    return crmGet<{ data?: Array<Record<string, unknown>> }>('/api/salesMytrion/fetchInvoices', {
+    return crmGet<CarrierInvoices>('/api/salesMytrion/fetchInvoices', {
       carrierId,
       range: opts.from && opts.to ? 'custom' : (opts.range ?? 'last_30'),
       ...(opts.status ? { status: opts.status } : {}),

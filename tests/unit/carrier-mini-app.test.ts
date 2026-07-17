@@ -436,6 +436,44 @@ describe('owner-only money views', () => {
   });
 });
 
+describe('invoice delivery', () => {
+  it('refuses an invoice that is not this carrier\'s — the ids are enumerable integers', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(registrationRow());
+    // The upstream signed-url endpoint takes an invoiceId and nothing else, so this ownership join
+    // is the only thing between one carrier and another's invoice.
+    crm.getInvoices.mockResolvedValueOnce({ data: [{ id: '71800' }], count: 1 });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/invoices/send',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', invoiceId: '1' },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ error: { code: 'INVOICE_NOT_OWNED' } });
+    expect(botSendDocument).not.toHaveBeenCalled();
+    expect(crm.getInvoiceSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('refuses a driver outright — invoices are owner-only', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(
+      registrationRow({ profile: 'driver', companyType: null, cardId: 'card_1' }),
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/invoices/send',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', invoiceId: '71800' },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ error: { code: 'NOT_A_REGISTERED_OWNER_USER' } });
+    expect(botSendDocument).not.toHaveBeenCalled();
+  });
+});
+
 describe('driver row scoping (own card only)', () => {
   // Same carrier, same last-4 (7593), different cards. A live DWH probe found one real carrier with
   // 11 active cards sharing a last-4, so this is the shape the old client-side last-4 filter got

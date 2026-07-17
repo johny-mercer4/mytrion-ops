@@ -8,15 +8,27 @@ import {
   type RegisteredCompany,
 } from '../../api/carrierUsers';
 import { BuildingIcon, PersonIcon, PlusIcon, SearchIcon, XIcon } from '../../components/icons';
-import { CarrierUserForm } from './CarrierUserForm';
+import { CarrierInvitations } from './CarrierInvitations';
+import { CarrierUserForm, type InviteDraft } from './CarrierUserForm';
 import { copyToClipboard } from './carrierUserUtil';
 import { ConfirmDialog } from './ConfirmDialog';
+import { Pager, PAGE_SIZE } from './Pager';
 import { adminToast } from './toast';
 import s from './admin.module.css';
 
 const COLS = { gridTemplateColumns: '2fr 1.1fr 1fr 1.2fr 1fr .9fr' } as const;
-const INV_COLS = { gridTemplateColumns: '2fr 1fr 1fr 1fr 1.1fr .9fr' } as const;
-const PAGE_SIZE = 10;
+
+/** Title and blurb for each sub-item — the sidebar names the section, the header names the view. */
+const VIEWS = {
+  registered: {
+    title: 'Registered companies',
+    sub: 'Owners and drivers who finished signing in inside the mini-app.',
+  },
+  invitations: {
+    title: 'Invitations',
+    sub: 'Every registration link generated — live, redeemed, or spent.',
+  },
+} as const;
 
 /** A destructive action held until the admin confirms it. */
 interface PendingConfirm {
@@ -35,32 +47,17 @@ interface CarrierGroup {
   drivers: RegisteredCompany[];
 }
 
-/** Prev/Next pager shared by both tables below — hides itself when everything fits on one page. */
-function Pager({ page, total, onChange }: { page: number; total: number; onChange: (page: number) => void }) {
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  if (totalPages <= 1) return null;
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 'var(--space-3)', padding: 'var(--space-3) 0' }}>
-      <span className={s.chipMeta}>
-        Page {page} of {totalPages} · {total} total
-      </span>
-      <button type="button" className={s.ghostBtn} disabled={page <= 1} onClick={() => onChange(page - 1)}>
-        Prev
-      </button>
-      <button type="button" className={s.ghostBtn} disabled={page >= totalPages} onClick={() => onChange(page + 1)}>
-        Next
-      </button>
-    </div>
-  );
-}
-
 /**
  * Carrier User Management — generates Telegram invite links for owners and drivers (no
- * login/password; the bot's mini-app handles sign-in). The table below is a tree of who's
- * actually FINISHED registering (registered_mini_app_companies) — a sent invite that was never
- * opened doesn't show up here; see Audit Log for invite-generation history.
+ * login/password; the bot's mini-app handles sign-in). The registered tree is who's actually
+ * FINISHED registering (registered_mini_app_companies) — a sent invite that was never opened
+ * doesn't show up there; see Audit Log for invite-generation history.
+ *
+ * `view` picks which table the sidebar sub-item is asking for. Both live in this one component so
+ * the confirm dialog, the busy row, and the invite form are shared rather than duplicated — and so
+ * switching sub-items doesn't refetch either list.
  */
-export function CarrierUsers() {
+export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'invitations' }) {
   const [registrations, setRegistrations] = useState<RegisteredCompany[]>([]);
   const [loading, setLoading] = useState(true);
   // Load failures only. An action's outcome is transient and belongs in a toast; a table that
@@ -68,12 +65,13 @@ export function CarrierUsers() {
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [draft, setDraft] = useState<InviteDraft | null>(null);
+  const [formKey, setFormKey] = useState(0);
   const [invitations, setInvitations] = useState<CarrierInvitation[]>([]);
   const [invLoading, setInvLoading] = useState(true);
   const [invError, setInvError] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [regPage, setRegPage] = useState(1);
-  const [invPage, setInvPage] = useState(1);
   const [pending, setPending] = useState<PendingConfirm | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
 
@@ -165,6 +163,26 @@ export function CarrierUsers() {
     });
   }
 
+  /** Seed the form from a spent invite, remounting it so the draft actually takes. */
+  function reissue(inv: CarrierInvitation) {
+    setDraft({
+      profile: inv.profile,
+      carrierId: inv.carrierId ?? '',
+      applicationId: inv.applicationId ?? '',
+      companyName: inv.companyName ?? '',
+      cardId: inv.cardId ?? '',
+      driverName: inv.driverName ?? '',
+    });
+    setFormKey((k) => k + 1);
+    setShowForm(true);
+  }
+
+  function openBlankForm() {
+    setDraft(null);
+    setFormKey((k) => k + 1);
+    setShowForm(true);
+  }
+
   /** The link is only reachable from this row, so a failed copy has to hand it back somehow —
    * hence the URL in the toast body, and long enough on screen to select it. */
   async function copyInvite(url: string) {
@@ -216,41 +234,71 @@ export function CarrierUsers() {
   // Clamp to the last page that still exists: cancelling the only invite on page 2 drops the list
   // to one page, and an unclamped page 2 renders an empty table with no pager left to escape it.
   const regPageSafe = Math.min(regPage, Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)));
-  const invPageSafe = Math.min(invPage, Math.max(1, Math.ceil(invitations.length / PAGE_SIZE)));
   const pagedGroups = filtered.slice((regPageSafe - 1) * PAGE_SIZE, regPageSafe * PAGE_SIZE);
-  const pagedInvitations = invitations.slice((invPageSafe - 1) * PAGE_SIZE, invPageSafe * PAGE_SIZE);
+
+  // The header's Refresh acts on whichever table is on screen.
+  const refreshing = view === 'invitations' ? invLoading : loading;
+  const refresh = () => void (view === 'invitations' ? loadInvitations() : load());
 
   return (
     <div className={`${s.panel} ${s.panelWide}`}>
+      {/* One header per view. The page used to stack two — the module title over the table's own
+          title, each with its own subtitle and its own button on a separate row — and the module
+          title only repeated what the sidebar already says. It's an eyebrow now. */}
       <div className={s.head}>
         <div>
-          <h2 className={s.h2}>Carrier User Management</h2>
-          <p className={s.sub}>Generate Telegram registration links — company owners see every card, drivers see one.</p>
+          <div className={s.eyebrow}>Carrier User Management</div>
+          <h2 className={s.h2}>{VIEWS[view].title}</h2>
+          <p className={s.sub}>{VIEWS[view].sub}</p>
         </div>
-        {showForm ? (
-          <button type="button" className={s.ghostBtn} onClick={() => setShowForm(false)}>
-            <XIcon size={11} /> Cancel
+        <div className={s.inlineRow}>
+          <button type="button" className={s.ghostBtn} disabled={refreshing} onClick={refresh}>
+            {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
-        ) : (
-          <button type="button" className={s.primaryBtn} onClick={() => setShowForm(true)}>
-            <PlusIcon size={14} />
-            New registration link
-          </button>
-        )}
+          {showForm ? (
+            <button type="button" className={s.ghostBtn} onClick={() => setShowForm(false)}>
+              <XIcon size={11} /> Cancel
+            </button>
+          ) : (
+            <button type="button" className={s.primaryBtn} onClick={openBlankForm}>
+              <PlusIcon size={14} />
+              New registration link
+            </button>
+          )}
+        </div>
       </div>
 
-      {showForm && <CarrierUserForm onInviteCreated={() => void loadInvitations()} />}
-
-      {error && (
-        <p className={s.errorNote} role="alert">
-          {error}{' '}
-          <button type="button" className={s.linkBtn} onClick={() => void load()}>
-            Retry
-          </button>
-        </p>
+      {showForm && (
+        <CarrierUserForm
+          key={formKey}
+          onInviteCreated={() => void loadInvitations()}
+          {...(draft ? { initial: draft } : {})}
+        />
       )}
 
-      <label className={s.search}>
+      {view === 'invitations' ? (
+        <CarrierInvitations
+          invitations={invitations}
+          loading={invLoading}
+          error={invError}
+          busyId={busyId}
+          onRefresh={() => void loadInvitations()}
+          onCopy={(url) => void copyInvite(url)}
+          onCancel={askCancel}
+          onReissue={reissue}
+        />
+      ) : (
+        <>
+          {error && (
+            <p className={s.errorNote} role="alert">
+              {error}{' '}
+              <button type="button" className={s.linkBtn} onClick={() => void load()}>
+                Retry
+              </button>
+            </p>
+          )}
+
+          <label className={s.search}>
         <SearchIcon size={14} />
         <input
           className={s.searchInput}
@@ -258,30 +306,37 @@ export function CarrierUsers() {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filter — company, carrier id, telegram username…"
         />
+        {/* Counts companies, matching what the table actually lists — the old chip counted raw
+            registration rows against a table grouped by company. */}
         <span className={s.chipMeta}>
-          {registrations.length} registered
+          {filtered.length === groups.length ? `${groups.length} companies` : `${filtered.length} of ${groups.length}`}
         </span>
       </label>
 
-      <div className={s.table}>
-        <div className={s.tHead} style={COLS}>
-          <span>Company</span>
-          <span>Type</span>
-          <span>Carrier</span>
-          <span>Telegram</span>
-          <span>Registered</span>
-          <span>Actions</span>
+      <div className={s.table} role="table" aria-label="Registered carrier companies">
+        <div className={s.tHead} style={COLS} role="row">
+          <span role="columnheader">Company</span>
+          <span role="columnheader">Type</span>
+          <span role="columnheader">Carrier</span>
+          <span role="columnheader">Telegram</span>
+          <span role="columnheader">Registered</span>
+          <span role="columnheader">Actions</span>
         </div>
-        {loading && <div className={s.none}>Loading registered companies…</div>}
+        {loading && (
+          <div className={s.none} role="row">
+            <span role="cell">Loading registered companies…</span>
+          </div>
+        )}
         {!loading &&
           pagedGroups.map((g) => (
-            <div key={g.key}>
-              <div className={s.tRow} style={COLS}>
-                <span className={s.cellStack}>
+            // rowgroup keeps the owner and its drivers a valid subtree of the table.
+            <div key={g.key} role="rowgroup">
+              <div className={`${s.tRow} ${g.owner?.status === 'revoked' ? s.tRowRevoked : ''}`} style={COLS} role="row">
+                <span className={s.cellStack} role="cell">
                   <span className={s.docTitle}>{g.companyName ?? '(unnamed company)'}</span>
                   {!g.owner && <span className={s.cellSub}>Owner hasn't registered yet</span>}
                 </span>
-                <span style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                <span style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }} role="cell">
                   {g.owner && (
                     <span className={`${s.pill} ${g.owner.companyType === 'fleet-manager' ? s.pillInfo : s.pillNeutral}`}>
                       {g.owner.companyType === 'fleet-manager' ? <BuildingIcon size={11} /> : <PersonIcon size={11} />}
@@ -290,10 +345,16 @@ export function CarrierUsers() {
                   )}
                   {g.owner?.status === 'revoked' && <span className={`${s.pill} ${s.pillBad}`}>Revoked</span>}
                 </span>
-                <span className={s.mono}>{g.carrierId ?? '—'}</span>
-                <span className={s.cellSub}>{g.owner ? `@${g.owner.telegramUsername ?? g.owner.telegramUserId}` : '—'}</span>
-                <span className={s.cellSub}>{g.owner ? new Date(g.owner.createdAt).toLocaleDateString() : '—'}</span>
-                <span>
+                <span className={s.mono} role="cell">
+                  {g.carrierId ?? '—'}
+                </span>
+                <span className={s.cellSub} role="cell">
+                  {g.owner ? `@${g.owner.telegramUsername ?? g.owner.telegramUserId}` : '—'}
+                </span>
+                <span className={s.cellSub} role="cell" title={g.owner ? new Date(g.owner.createdAt).toLocaleString() : ''}>
+                  {g.owner ? new Date(g.owner.createdAt).toLocaleDateString() : '—'}
+                </span>
+                <span role="cell">
                   {g.owner && g.owner.status === 'active' && (
                     <button
                       type="button"
@@ -307,22 +368,33 @@ export function CarrierUsers() {
                 </span>
               </div>
               {g.drivers.map((d) => (
-                <div key={d.id} className={s.tRow} style={{ ...COLS, opacity: d.status === 'revoked' ? 0.55 : 1 }}>
-                  <span className={s.cellStack} style={{ paddingLeft: 'var(--space-4)' }}>
-                    <span className={s.docTitle}>↳ {d.driverName ?? 'Driver'}</span>
+                <div
+                  key={d.id}
+                  className={`${s.tRow} ${d.status === 'revoked' ? s.tRowRevoked : ''}`}
+                  style={COLS}
+                  role="row"
+                >
+                  <span className={s.cellStack} style={{ paddingLeft: 'var(--space-4)' }} role="cell">
+                    <span className={s.docTitle}>{d.driverName ?? 'Driver'}</span>
                     <span className={s.cellSub}>card {d.cardId ?? '?'}</span>
                   </span>
-                  <span style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                  <span style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }} role="cell">
                     <span className={`${s.pill} ${s.pillNeutral}`}>
                       <PersonIcon size={11} />
                       Driver
                     </span>
                     {d.status === 'revoked' && <span className={`${s.pill} ${s.pillBad}`}>Revoked</span>}
                   </span>
-                  <span className={s.mono}>{d.carrierId ?? '—'}</span>
-                  <span className={s.cellSub}>@{d.telegramUsername ?? d.telegramUserId}</span>
-                  <span className={s.cellSub}>{new Date(d.createdAt).toLocaleDateString()}</span>
-                  <span>
+                  <span className={s.mono} role="cell">
+                    {d.carrierId ?? '—'}
+                  </span>
+                  <span className={s.cellSub} role="cell">
+                    @{d.telegramUsername ?? d.telegramUserId}
+                  </span>
+                  <span className={s.cellSub} role="cell" title={new Date(d.createdAt).toLocaleString()}>
+                    {new Date(d.createdAt).toLocaleDateString()}
+                  </span>
+                  <span role="cell">
                     {d.status === 'active' && (
                       <button
                         type="button"
@@ -339,84 +411,16 @@ export function CarrierUsers() {
             </div>
           ))}
         {!loading && filtered.length === 0 && (
-          <div className={s.none}>
-            {registrations.length === 0 ? 'No registered companies yet — generate an invite link above.' : 'No companies match your filter.'}
+          <div className={s.none} role="row">
+            <span role="cell">
+              {registrations.length === 0 ? 'No registered companies yet — generate an invite link above.' : 'No companies match your filter.'}
+            </span>
           </div>
         )}
       </div>
       {!loading && <Pager page={regPageSafe} total={filtered.length} onChange={setRegPage} />}
-
-      <div className={s.head}>
-        <div>
-          <h2 className={s.h2}>Pending invitations</h2>
-          <p className={s.sub}>Links generated but not yet (or no longer) redeemed.</p>
-        </div>
-      </div>
-
-      {invError && (
-        <p className={s.errorNote} role="alert">
-          {invError}{' '}
-          <button type="button" className={s.linkBtn} onClick={() => void loadInvitations()}>
-            Retry
-          </button>
-        </p>
+        </>
       )}
-
-      <div className={s.table}>
-        <div className={s.tHead} style={INV_COLS}>
-          <span>Company</span>
-          <span>Type</span>
-          <span>Carrier</span>
-          <span>Status</span>
-          <span>Expires</span>
-          <span>Actions</span>
-        </div>
-        {invLoading && <div className={s.none}>Loading invitations…</div>}
-        {!invLoading &&
-          pagedInvitations.map((inv) => {
-            const isExpired = inv.status === 'pending' && new Date(inv.expiresAt).getTime() < Date.now();
-            const displayStatus = isExpired ? 'expired' : inv.status;
-            const pillClass = displayStatus === 'redeemed' ? s.pillGood : displayStatus === 'pending' ? s.pillInfo : s.pillNeutral;
-            return (
-              <div key={inv.id} className={s.tRow} style={INV_COLS}>
-                <span className={s.cellStack}>
-                  <span className={s.docTitle}>{inv.companyName ?? '(unnamed company)'}</span>
-                  {inv.profile === 'driver' && <span className={s.cellSub}>driver · card {inv.cardId ?? '?'}</span>}
-                </span>
-                <span>
-                  <span className={`${s.pill} ${s.pillNeutral}`}>
-                    {inv.profile === 'owner' ? <BuildingIcon size={11} /> : <PersonIcon size={11} />}
-                    {inv.profile === 'owner' ? 'Owner' : 'Driver'}
-                  </span>
-                </span>
-                <span className={s.mono}>{inv.carrierId ?? inv.applicationId ?? '—'}</span>
-                <span>
-                  <span className={`${s.pill} ${pillClass}`}>{displayStatus}</span>
-                </span>
-                <span className={s.cellSub}>{new Date(inv.expiresAt).toLocaleString()}</span>
-                <span style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                  {inv.status === 'pending' && !isExpired && (
-                    <>
-                      <button type="button" className={s.miniBtn} onClick={() => void copyInvite(inv.inviteUrl)}>
-                        Copy
-                      </button>
-                      <button
-                        type="button"
-                        className={`${s.miniBtn} ${s.miniDanger}`}
-                        disabled={busyId === inv.id}
-                        onClick={() => askCancel(inv)}
-                      >
-                        Cancel
-                      </button>
-                    </>
-                  )}
-                </span>
-              </div>
-            );
-          })}
-        {!invLoading && invitations.length === 0 && <div className={s.none}>No invitations yet.</div>}
-      </div>
-      {!invLoading && <Pager page={invPageSafe} total={invitations.length} onChange={setInvPage} />}
 
       {pending && (
         <ConfirmDialog

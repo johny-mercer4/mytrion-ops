@@ -278,6 +278,18 @@ export async function fetchInvoiceSignedUrl(initData: string, invoiceId: string)
   return (await request('POST', '/carrier/mini-app/invoices/signed-url', { initData, invoiceId })) as SignedUrlResult;
 }
 
+/**
+ * Deliver one invoice PDF to this user's Telegram chat. Same reason the transaction report goes that
+ * way: a Telegram WebApp cannot reliably save a file, and the signed URL expires — in the chat the
+ * document persists and can be forwarded.
+ */
+export async function sendInvoice(initData: string, invoiceId: string): Promise<{ sent?: boolean; fileName?: string }> {
+  return (await request('POST', '/carrier/mini-app/invoices/send', { initData, invoiceId })) as {
+    sent?: boolean;
+    fileName?: string;
+  };
+}
+
 export async function fetchTracking(initData: string): Promise<TrackingResult> {
   return (await request('POST', '/carrier/mini-app/tracking', { initData })) as TrackingResult;
 }

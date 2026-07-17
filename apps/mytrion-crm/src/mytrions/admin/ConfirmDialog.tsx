@@ -61,7 +61,9 @@ export function ConfirmDialog({
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
-      previous?.focus();
+      // Confirming a revoke unmounts the button that opened this, so the trigger can be detached
+      // by now — focusing it would silently drop focus to <body>.
+      if (previous?.isConnected) previous.focus();
     };
   }, []);
 

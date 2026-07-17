@@ -852,8 +852,16 @@
 .clientPickRow:last-child {
   border-bottom: none;
 }
-.clientPickRow:hover {
+.clientPickRow:hover,
+.clientPickRowActive {
   background: var(--accent-soft);
+}
+
+/* Revoked rows: dimming the whole row to 55% opacity dragged its text under the contrast floor.
+   A tint carries the same "inactive" read without touching legibility — the Revoked pill is what
+   actually states the status. */
+.tRowRevoked {
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
 }
 
 /* ── Guided create-form (Carrier Users) ─────────────────────────────────────── */
