@@ -700,16 +700,6 @@ function CardContours() {
   );
 }
 
-/**
- * The proportion of a real fuel card: ISO/IEC 7810 ID-1, 85.60 x 53.98 mm.
- *
- * Both heroes imitate the plastic, so the plastic decides the shape — this is not a taste number.
- * They were 1.5 (owner) and 1.55 (driver), i.e. both TALLER than the thing they depict, and the
- * owner — which carries the least content — was the tallest of the two. Because the card's height
- * is derived from the ratio and its content is laid out space-between, the surplus showed up as a
- * 64px void between the company name and the balance.
- */
-const CARD_RATIO = '1.586 / 1';
 
 const BALANCE_KEY = 'octane.lastBalance';
 
@@ -874,31 +864,30 @@ function OwnerHero({ initData, company, carrierId, onOpenDetails }: { initData: 
 function DriverHero({
   session,
   company,
-  carrierId,
   fullName,
-  initData,
   revealed,
   onToggleReveal,
 }: {
   session: Session;
   company: string;
-  carrierId: string | null;
   fullName: string;
-  initData: string;
   revealed: boolean;
   onToggleReveal: () => void;
 }) {
   const { t } = useI18n();
-  // A driver's catalog lists "Check available balance" (docx), and that service already reads this
-  // same carrier balance — so the card leads with it rather than making them open a sheet for it.
-  const { balance, failed: balanceFailed, retry: retryBalance } = useCarrierBalance(initData, carrierId);
   // No invented fallback: if the DWH has not resolved the real PAN there is nothing truthful to
   // show, so the number skeletons rather than displaying a fiction the Copy button would hand out.
   const realFull = session.ownCardNumber;
   const display = realFull ? (revealed ? groupCardNumber(realFull) : maskedCardNumber(realFull)) : null;
   return (
     <>
-      <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', aspectRatio: CARD_RATIO, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+      {/* No balance, and no fixed card ratio. The only balance available is the CARRIER's EFS pool
+          (getCarrierBalance is carrier-scoped; stg_cmp_card.balance is 0.00 for every card), so
+          showing it here put company money on a driver's screen. With it gone the card has just two
+          rows — a 1.586 ratio spread them apart with space-between and left a large void down the
+          middle. Height comes from the content now, with one comfortable gap, so it reads as a tidy
+          card. Styling (contours, dark fill, radius) is unchanged. */}
+      <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '17px 17px 18px', display: 'flex', flexDirection: 'column', gap: 40 }}>
         <CardContours />
 
         {/* Top band: driver name left, company + reveal right — the toggle rides at the card's top
@@ -915,49 +904,21 @@ function DriverHero({
           </div>
         </div>
 
-        {/* Balance mid-card: the figure a driver opens the app for, and the same value their
-            catalog's "Check available balance" reads. */}
-        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' }}>{t('home.efsBalance')}</span>
-          {balance ? (
-            /* The eye is the card's privacy toggle, not just the number's — it covers every figure
-               on the card, the way a payment app's does. `selectable` only while revealed, so a
-               drag can't lift the mask characters as if they were the amount. */
-            <span
-              className={revealed ? 'selectable' : ''}
-              style={{ fontSize: 28, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02, letterSpacing: '-.01em' }}
-            >
-              {revealed ? money(balance.efs_balance ?? balance.balance) : '• • • •'}
-            </span>
-          ) : (
-            balanceFailed ? (
-              /* A skeleton here would claim the number is still coming. It isn't. */
-              <button
-                type="button"
-                className="press"
-                onClick={retryBalance}
-                style={{ alignSelf: 'flex-start', marginTop: 6, display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'rgba(255,255,255,.14)', color: '#FFFFFF', borderRadius: 9, padding: '6px 11px', fontFamily: "'Geist'", fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
-              >
-                <Icon name="refresh" size={13} strokeWidth={2.2} className="" />
-                {t('home.balanceRetry')}
-              </button>
-            ) : (
-            <span aria-label={t('home.efsBalance')} style={{ display: 'block', width: 148, height: 29, borderRadius: 8, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
-            )
-          )}
-        </div>
-
-        {/* Card number last. The number stays `selectable`, so it can still be picked up by hand. */}
+        {/* Card number + standing at the bottom, the way a real card sets its number in the lower
+            third. The number stays `selectable` so it can still be picked up by hand. */}
         <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' }}>{t('card.numberLabel')}</span>
           {display ? (
-            <span className={revealed ? 'selectable' : ''} style={{ fontSize: 18, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em', whiteSpace: 'nowrap' }}>{display}</span>
+            <span className={revealed ? 'selectable' : ''} style={{ fontSize: 20, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.03em', whiteSpace: 'nowrap' }}>{display}</span>
           ) : (
-            <span aria-label={t('card.numberLabel')} style={{ display: 'block', width: 196, height: 19, borderRadius: 6, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
+            <span aria-label={t('card.numberLabel')} style={{ display: 'block', width: 196, height: 21, borderRadius: 6, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
           )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--success)', flex: 'none' }} />
+            <span style={{ fontSize: 12.5, fontWeight: 500, color: 'rgba(255,255,255,.72)' }}>{t('home.cardStanding')}</span>
+          </div>
         </div>
       </div>
-      <div style={{ fontSize: 13, color: 'var(--muted-fg)', margin: '-6px 4px 0' }}>{t('home.cardStanding')}</div>
     </>
   );
 }
@@ -1009,7 +970,7 @@ function Home({
     <SlideIn key={tab} dir={slideDir}>
     <div style={{ padding: '16px 16px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {session.isDriver ? (
-        <DriverHero session={session} company={company} carrierId={session.carrierId} fullName={fullName} initData={initData} revealed={cardRevealed} onToggleReveal={onToggleCardReveal} />
+        <DriverHero session={session} company={company} fullName={fullName} revealed={cardRevealed} onToggleReveal={onToggleCardReveal} />
       ) : (
         <OwnerHero initData={initData} company={company} carrierId={session.carrierId} onOpenDetails={() => onOpenAction({ kind: 'service', key: 'status' })} />
       )}
