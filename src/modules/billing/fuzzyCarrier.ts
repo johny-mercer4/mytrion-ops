@@ -29,6 +29,26 @@ interface DimCompanyRow {
 
 const MAX_MATCHES = 12;
 
+/** Industry-generic words that make a lone-token match useless (too many hits). */
+const TOKEN_STOPWORDS = new Set([
+  'trucking',
+  'transport',
+  'transportation',
+  'logistics',
+  'freight',
+  'carrier',
+  'carriers',
+  'express',
+  'trans',
+  'llc',
+  'inc',
+  'corp',
+  'company',
+  'enterprises',
+  'group',
+  'services',
+]);
+
 export async function fuzzyResolveCarrier(input: {
   senderName?: string | undefined;
   description?: string | undefined;
@@ -55,10 +75,13 @@ export async function fuzzyResolveCarrier(input: {
       [`%${raw}%`],
     );
     let rows = contains;
-    if (rows.length === 0) {
+    // Broad single-token fallback ONLY when we have no signal at all (no memory hit, no full-string
+    // contains match) — otherwise a common industry word like "TRUCKING" floods the suggestions.
+    if (rows.length === 0 && byCarrier.size === 0) {
       const token = raw
         .split(/\s+/)
-        .filter((w) => w.replace(/[^a-z0-9]/gi, '').length >= 4)
+        .map((w) => w.replace(/[^a-z0-9]/gi, ''))
+        .filter((w) => w.length >= 4 && !TOKEN_STOPWORDS.has(w.toLowerCase()))
         .sort((a, b) => b.length - a.length)[0];
       if (token) {
         rows = await dwh.query<DimCompanyRow>(

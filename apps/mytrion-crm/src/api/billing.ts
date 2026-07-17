@@ -5,7 +5,15 @@
  */
 import { request } from './transport';
 import { callTouchpoint } from './touchpoints';
-import type { TouchpointKey, TouchpointMap } from './touchpointTypes';
+import type {
+  BillingFuzzyResult,
+  BillingMemoryResult,
+  BillingReturnCandidates,
+  BillingReturnsPage,
+  BillingTransactionsPage,
+  TouchpointKey,
+  TouchpointMap,
+} from './touchpointTypes';
 
 const BILLING_HEADERS = { 'x-department-access': 'billing' } as const;
 const BILLING_DEPARTMENTS = ['billing'];
@@ -18,6 +26,56 @@ export function billingTouchpoint<K extends BillingTouchpointKey>(
   params: TouchpointMap[K]['params'],
 ): Promise<TouchpointMap[K]['result']> {
   return callTouchpoint(key, params, { departmentAccess: BILLING_DEPARTMENTS });
+}
+
+// ---- Postgres-backed reads (replace the Zoho billing.* read touchpoints) ----
+
+function billingGet<T>(path: string): Promise<T> {
+  return request('GET', path, { headers: BILLING_HEADERS }) as Promise<T>;
+}
+
+/** Paged payment ledger (newest first). */
+export function fetchTransactions(page: number, limit: number): Promise<BillingTransactionsPage> {
+  return billingGet(`/billing/transactions?page=${page}&limit=${limit}`);
+}
+
+/** Full-dataset text search. */
+export function searchTransactions(query: string): Promise<BillingTransactionsPage> {
+  return billingGet(`/billing/transactions/search?query=${encodeURIComponent(query)}`);
+}
+
+/** Paged returns / chargebacks queue. */
+export function fetchReturns(page: number, limit: number): Promise<BillingReturnsPage> {
+  return billingGet(`/billing/returns?page=${page}&limit=${limit}`);
+}
+
+/** Candidate original payments for manually matching a return. */
+export function searchReturnCandidates(p: {
+  query?: string;
+  amount?: string;
+  beforeDate?: string;
+  customerName?: string;
+}): Promise<BillingReturnCandidates> {
+  const qs = new URLSearchParams();
+  if (p.query) qs.set('query', p.query);
+  if (p.amount) qs.set('amount', p.amount);
+  if (p.beforeDate) qs.set('beforeDate', p.beforeDate);
+  if (p.customerName) qs.set('customerName', p.customerName);
+  return billingGet(`/billing/returns/candidates?${qs.toString()}`);
+}
+
+/** Learned company → carrier memory (fetched whole). */
+export function fetchCarrierMemory(): Promise<BillingMemoryResult> {
+  return billingGet('/billing/carrier/memory');
+}
+
+/** Fuzzy carrier suggestion from a payer name / bank descriptor. */
+export function fuzzyCarrier(p: {
+  senderName?: string;
+  description?: string;
+  email?: string;
+}): Promise<BillingFuzzyResult> {
+  return request('POST', '/billing/carrier/fuzzy', { headers: BILLING_HEADERS, body: p }) as Promise<BillingFuzzyResult>;
 }
 
 // ---- Data Center deal-billing edit (direct Deals update via REST) ----

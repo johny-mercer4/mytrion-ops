@@ -10,7 +10,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 
-import { billingTouchpoint } from '@/api/billing';
+import { billingTouchpoint, fuzzyCarrier } from '@/api/billing';
 import { dateFull, fmtCurrency, srcLabel, txTypeFor } from './data';
 import {
   BM_SAVE_MSG_MS,
@@ -139,7 +139,7 @@ export function TransactionModal({ tx, currentUserName, onClose, onPatch, onToas
     if (!sender && !tx.email && !tx.description) return;
     let off = false;
     setFuzzyLoading(true);
-    void billingTouchpoint('billing.carrier.fuzzy', {
+    void fuzzyCarrier({
       senderName: sender,
       description: tx.description,
       email: tx.email,

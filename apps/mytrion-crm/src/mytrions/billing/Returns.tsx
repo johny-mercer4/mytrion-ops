@@ -10,7 +10,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { billingTouchpoint } from '@/api/billing';
+import { fetchReturns } from '@/api/billing';
 import { useLoad } from '../_shared/useLoad';
 import { readBool } from './transactionModel';
 import { ReturnMatchModal } from './ReturnMatchModal';
@@ -67,7 +67,7 @@ async function fetchAllReturns(): Promise<ReturnRow[]> {
   let page = 1;
   let hasMore = true;
   while (hasMore && page <= MAX_PAGES) {
-    const data = await billingTouchpoint('billing.returns.list', { page, limit: PAGE_SIZE });
+    const data = await fetchReturns(page, PAGE_SIZE);
     const recs = data.returns ?? data.records ?? [];
     for (const r of recs) all.push(mapReturn(r));
     hasMore = readBool(data.hasMore) || readBool(data.has_more);

@@ -479,17 +479,10 @@ export interface TouchpointMap {
   };
   // ---- Billing (departmentAccess: ['billing'] — use api/billing.ts billingTouchpoint) ----
   // mappedBy/unmappedBy are injected server-side from the session; the UI never sends them.
-  'billing.transactions.list': {
-    params: { page: number; limit?: number };
-    result: BillingTransactionsPage;
-  };
-  'billing.transactions.search': { params: { query: string }; result: BillingTransactionsPage };
+  // billing.transactions.list/.search, billing.carrier.fuzzy/.memory, billing.returns.list/.candidates
+  // moved to Postgres-backed REST routes (see api/billing.ts fetchTransactions / searchTransactions /
+  // fetchReturns / searchReturnCandidates / fetchCarrierMemory / fuzzyCarrier).
   'billing.invoices.search': { params: { carrierId: string }; result: BillingInvoicesResult };
-  'billing.carrier.fuzzy': {
-    params: { senderName?: string; description?: string; email?: string };
-    result: BillingFuzzyResult;
-  };
-  'billing.carrier.memory': { params: Record<string, never>; result: BillingMemoryResult };
   'billing.transactions.mapInvoice': {
     params: {
       invoiceId: string;
@@ -552,12 +545,7 @@ export interface TouchpointMap {
     params: { carrierId: string; startDate: string; endDate: string };
     result: BillingPrepayLedger;
   };
-  // Returns (Phase 2) — matchedBy injected server-side; UI never sends it.
-  'billing.returns.list': { params: { page: number; limit?: number }; result: BillingReturnsPage };
-  'billing.returns.candidates': {
-    params: { query?: string; amount?: string; beforeDate?: string; customerName?: string };
-    result: BillingReturnCandidates;
-  };
+  // Returns — matchedBy injected server-side; UI never sends it. (list/candidates moved to REST.)
   'billing.returns.match': {
     params: { returnRecordId: string; transactionRecordId: string };
     result: BillingWriteResult;

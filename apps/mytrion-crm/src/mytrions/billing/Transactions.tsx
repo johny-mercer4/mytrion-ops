@@ -16,7 +16,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { billingTouchpoint, broadcastMapping } from '@/api/billing';
+import { broadcastMapping, fetchTransactions, searchTransactions } from '@/api/billing';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useLoad } from '../_shared/useLoad';
 import { type TxSource, dateLabel, fmtCurrency } from './data';
@@ -59,7 +59,7 @@ const CARRIER_OPTIONS = [
 ];
 
 function fetchPage(page: number): Promise<BillingTransactionsPage> {
-  return billingTouchpoint('billing.transactions.list', { page, limit: BM_TX_PAGE_SIZE });
+  return fetchTransactions(page, BM_TX_PAGE_SIZE);
 }
 function pageHasMore(d: PageData): boolean {
   return readBool(d?.has_more) || readBool(d?.hasMore) || readBool(d?.more_records);
@@ -131,7 +131,7 @@ export function Transactions() {
     let off = false;
     const timer = setTimeout(() => {
       setSearchFetching(true);
-      billingTouchpoint('billing.transactions.search', { query: q })
+      searchTransactions(q)
         .then((data) => {
           if (!off) setServerExtras(extractRecords(data).map(normalizeTx));
         })

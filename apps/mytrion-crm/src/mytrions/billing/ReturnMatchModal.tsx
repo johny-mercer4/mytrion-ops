@@ -10,7 +10,7 @@
  */
 import { type CSSProperties, useEffect, useState } from 'react';
 
-import { billingTouchpoint } from '@/api/billing';
+import { billingTouchpoint, searchReturnCandidates } from '@/api/billing';
 import { readStr } from './transactionModel';
 import {
   type Candidate,
@@ -58,7 +58,7 @@ export function ReturnMatchModal({ ret, onClose, onMatched, onToast }: ReturnMat
     setResults([]);
     setSelectedId('');
     try {
-      const data = await billingTouchpoint('billing.returns.candidates', {
+      const data = await searchReturnCandidates({
         query: q,
         amount: String(ret.amount),
         beforeDate: ret.returnDate.slice(0, 10),

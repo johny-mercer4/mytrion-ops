@@ -128,7 +128,8 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
   app.post('/billing/carrier/fuzzy', guard, async (request) => {
     requireBillingAccess(request);
     const body = fuzzyBody.parse(request.body ?? {});
-    return fuzzyResolveCarrier(body);
+    const result = await fuzzyResolveCarrier(body);
+    return { status: 'success', ...result };
   });
 
   /** Data Center billing-fields edit on a Deal (allowlisted, casing-resolved, audited). */
