@@ -18,8 +18,6 @@ import { Pager, PAGE_SIZE } from './Pager';
 import { RadioToggleGroup } from './RadioToggleGroup';
 import s from './admin.module.css';
 
-const INV_COLS = { gridTemplateColumns: '2fr 1fr 1fr 1fr 1.1fr 1.1fr' } as const;
-
 type StatusFilter = InviteStatus | 'all';
 
 const FILTERS: ReadonlyArray<{ value: StatusFilter; label: string }> = [
@@ -107,8 +105,9 @@ export function CarrierInvitations({
         </span>
       </label>
 
-      <div className={s.table} role="table" aria-label="Carrier invitations">
-        <div className={s.tHead} style={INV_COLS} role="row">
+      <div className={s.tableScroll}>
+        <div className={s.table} role="table" aria-label="Carrier invitations">
+        <div className={`${s.tHead} ${s.tInvite}`} role="row">
           <span role="columnheader">Company</span>
           <span role="columnheader">Type</span>
           <span role="columnheader">Carrier</span>
@@ -127,7 +126,7 @@ export function CarrierInvitations({
             const live = isLiveInvite(inv);
             const soon = expiresSoon(inv);
             return (
-              <div key={inv.id} className={s.tRow} style={INV_COLS} role="row">
+              <div key={inv.id} className={`${s.tRow} ${s.tInvite}`} role="row">
                 <span className={s.cellStack} role="cell">
                   <span className={s.docTitle}>{inv.companyName ?? '(unnamed company)'}</span>
                   {inv.profile === 'driver' && <span className={s.cellSub}>driver · card {inv.cardId ?? '?'}</span>}
@@ -169,9 +168,10 @@ export function CarrierInvitations({
                   ) : (
                     st !== 'redeemed' && (
                       // A spent link used to leave a dead row with nothing to do. There's no
-                      // resend/extend endpoint, so the honest action is to seed a fresh one.
+                      // resend/extend endpoint, so the honest action is to seed a fresh one — and
+                      // it's named for the control it opens, not invented as a second synonym.
                       <button type="button" className={s.miniBtn} onClick={() => onReissue(inv)}>
-                        New link
+                        New registration link
                       </button>
                     )
                   )}
@@ -179,13 +179,16 @@ export function CarrierInvitations({
               </div>
             );
           })}
-        {!loading && filtered.length === 0 && (
-          <div className={s.none} role="row">
-            <span role="cell">
-              {invitations.length === 0 ? 'No invitations yet.' : 'No invitations match this filter.'}
-            </span>
-          </div>
-        )}
+          {!loading && filtered.length === 0 && (
+            <div className={s.none} role="row">
+              <span role="cell">
+                {invitations.length === 0
+                  ? 'No invitations yet. Use New registration link to create one.'
+                  : 'No invitations match this filter.'}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
       {!loading && <Pager page={pageSafe} total={filtered.length} onChange={setPage} />}
     </>

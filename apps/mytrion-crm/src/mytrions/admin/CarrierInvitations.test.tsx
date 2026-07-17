@@ -106,12 +106,12 @@ describe('CarrierInvitations', () => {
   it('offers a new link on spent invites, but not on a redeemed one', async () => {
     const { onReissue, user } = setup();
 
-    await user.click(within(rowFor('Expired Co')).getByRole('button', { name: 'New link' }));
+    await user.click(within(rowFor('Expired Co')).getByRole('button', { name: 'New registration link' }));
     expect(onReissue).toHaveBeenCalledWith(expect.objectContaining({ id: 'expired' }));
 
-    expect(within(rowFor('Cancelled Co')).getByRole('button', { name: 'New link' })).toBeInTheDocument();
+    expect(within(rowFor('Cancelled Co')).getByRole('button', { name: 'New registration link' })).toBeInTheDocument();
     // Redeemed is a finished job, not a failure to retry.
-    expect(within(rowFor('Redeemed Co')).queryByRole('button', { name: 'New link' })).not.toBeInTheDocument();
+    expect(within(rowFor('Redeemed Co')).queryByRole('button', { name: 'New registration link' })).not.toBeInTheDocument();
   });
 
   it('hands the invite url to the copy handler', async () => {
@@ -152,6 +152,6 @@ describe('CarrierInvitations', () => {
 
   it('says the table is empty when there is nothing at all', () => {
     setup({ invitations: [] });
-    expect(screen.getByText('No invitations yet.')).toBeInTheDocument();
+    expect(screen.getByText(/No invitations yet\./)).toBeInTheDocument();
   });
 });

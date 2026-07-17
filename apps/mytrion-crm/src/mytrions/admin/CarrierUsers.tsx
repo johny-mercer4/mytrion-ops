@@ -16,8 +16,6 @@ import { Pager, PAGE_SIZE } from './Pager';
 import { adminToast } from './toast';
 import s from './admin.module.css';
 
-const COLS = { gridTemplateColumns: '2fr 1.1fr 1fr 1.2fr 1fr .9fr' } as const;
-
 /** Title and blurb for each sub-item — the sidebar names the section, the header names the view. */
 const VIEWS = {
   registered: {
@@ -256,8 +254,10 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
           {showForm ? (
+            // "Close", not "Cancel" — the rows below have a Cancel that kills an invite, and one
+            // screen shouldn't spend the same word on two different outcomes.
             <button type="button" className={s.ghostBtn} onClick={() => setShowForm(false)}>
-              <XIcon size={11} /> Cancel
+              <XIcon size={11} /> Close
             </button>
           ) : (
             <button type="button" className={s.primaryBtn} onClick={openBlankForm}>
@@ -313,8 +313,9 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
         </span>
       </label>
 
-      <div className={s.table} role="table" aria-label="Registered carrier companies">
-        <div className={s.tHead} style={COLS} role="row">
+      <div className={s.tableScroll}>
+        <div className={s.table} role="table" aria-label="Registered carrier companies">
+        <div className={`${s.tHead} ${s.tCarrier}`} role="row">
           <span role="columnheader">Company</span>
           <span role="columnheader">Type</span>
           <span role="columnheader">Carrier</span>
@@ -330,8 +331,8 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
         {!loading &&
           pagedGroups.map((g) => (
             // rowgroup keeps the owner and its drivers a valid subtree of the table.
-            <div key={g.key} role="rowgroup">
-              <div className={`${s.tRow} ${g.owner?.status === 'revoked' ? s.tRowRevoked : ''}`} style={COLS} role="row">
+            <div key={g.key} className={s.tGroup} role="rowgroup">
+              <div className={`${s.tRow} ${s.tCarrier} ${g.owner?.status === 'revoked' ? s.tRowRevoked : ''}`} role="row">
                 <span className={s.cellStack} role="cell">
                   <span className={s.docTitle}>{g.companyName ?? '(unnamed company)'}</span>
                   {!g.owner && <span className={s.cellSub}>Owner hasn't registered yet</span>}
@@ -370,8 +371,7 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
               {g.drivers.map((d) => (
                 <div
                   key={d.id}
-                  className={`${s.tRow} ${d.status === 'revoked' ? s.tRowRevoked : ''}`}
-                  style={COLS}
+                  className={`${s.tRow} ${s.tCarrier} ${d.status === 'revoked' ? s.tRowRevoked : ''}`}
                   role="row"
                 >
                   <span className={s.cellStack} style={{ paddingLeft: 'var(--space-4)' }} role="cell">
@@ -410,13 +410,16 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
               ))}
             </div>
           ))}
-        {!loading && filtered.length === 0 && (
-          <div className={s.none} role="row">
-            <span role="cell">
-              {registrations.length === 0 ? 'No registered companies yet — generate an invite link above.' : 'No companies match your filter.'}
-            </span>
-          </div>
-        )}
+          {!loading && filtered.length === 0 && (
+            <div className={s.none} role="row">
+              <span role="cell">
+                {registrations.length === 0
+                  ? 'No one has registered yet. Use New registration link to invite an owner or driver.'
+                  : 'No companies match your filter.'}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
       {!loading && <Pager page={regPageSafe} total={filtered.length} onChange={setRegPage} />}
         </>

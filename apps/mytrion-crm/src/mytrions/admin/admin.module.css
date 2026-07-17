@@ -251,6 +251,9 @@
   border-radius: var(--radius-full);
   font-size: var(--text-2xs);
   font-weight: var(--fw-semibold);
+  /* A status label is one token — "Owner-operator" breaking across two lines turns a pill into a
+     blob and pushes the row taller than its neighbours. */
+  white-space: nowrap;
 }
 .pillGood {
   background: var(--tint-good-bg);
