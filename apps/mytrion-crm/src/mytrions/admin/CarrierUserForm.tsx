@@ -13,6 +13,7 @@ import { getImpersonation } from '../../api/impersonation';
 import { getSession } from '../../api/session';
 import { BuildingIcon, PersonIcon, SearchIcon, SendArrowIcon } from '../../components/icons';
 import { copyToClipboard } from './carrierUserUtil';
+import { adminToast } from './toast';
 import s from './admin.module.css';
 
 /**
@@ -22,13 +23,7 @@ import s from './admin.module.css';
  * profiles; a driver additionally picks the one active fuel card the invite is for, listed
  * straight from servercrm.
  */
-export function CarrierUserForm({
-  onInviteCreated,
-  onError,
-}: {
-  onInviteCreated: (inviteUrl: string) => void;
-  onError: (message: string) => void;
-}) {
+export function CarrierUserForm({ onInviteCreated }: { onInviteCreated: () => void }) {
   const [profile, setProfile] = useState<CarrierProfile>('owner');
   const [picked, setPicked] = useState<DwhClient | null>(null);
   const [manual, setManual] = useState(false);
@@ -177,10 +172,16 @@ export function CarrierUserForm({
         ttlHours,
       });
       setInviteUrl(res.inviteUrl);
-      copyToClipboard(res.inviteUrl);
-      onInviteCreated(res.inviteUrl);
+      // The link itself is fine either way — only the clipboard hop can fail, and the field below
+      // still holds it, so that's a warning rather than an error.
+      if (await copyToClipboard(res.inviteUrl)) {
+        adminToast.success('Registration link generated', 'Copied to your clipboard.');
+      } else {
+        adminToast.warning('Registration link generated', 'The clipboard was blocked — copy it from the field below.');
+      }
+      onInviteCreated();
     } catch (err) {
-      onError(err instanceof Error ? err.message : String(err));
+      adminToast.error('Could not generate the link', err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }

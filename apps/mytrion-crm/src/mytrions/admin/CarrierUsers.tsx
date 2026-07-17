@@ -10,6 +10,7 @@ import {
 import { BuildingIcon, PersonIcon, PlusIcon, SearchIcon, XIcon } from '../../components/icons';
 import { CarrierUserForm } from './CarrierUserForm';
 import { copyToClipboard } from './carrierUserUtil';
+import { adminToast } from './toast';
 import s from './admin.module.css';
 
 const COLS = { gridTemplateColumns: '2fr 1.1fr 1fr 1.2fr 1fr .9fr' } as const;
@@ -52,8 +53,9 @@ function Pager({ page, total, onChange }: { page: number; total: number; onChang
 export function CarrierUsers() {
   const [registrations, setRegistrations] = useState<RegisteredCompany[]>([]);
   const [loading, setLoading] = useState(true);
+  // Load failures only. An action's outcome is transient and belongs in a toast; a table that
+  // failed to load is a standing condition the admin has to be able to read and retry.
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const [query, setQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [invitations, setInvitations] = useState<CarrierInvitation[]>([]);
@@ -97,10 +99,10 @@ export function CarrierUsers() {
     setBusyId(id);
     try {
       await revokeRegistration(id);
-      setNotice(`${label}'s access was revoked.`);
+      adminToast.success('Access revoked', `${label} can no longer open the mini-app.`);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      adminToast.error('Revoke failed', e instanceof Error ? e.message : String(e));
     } finally {
       setBusyId(null);
     }
@@ -110,13 +112,20 @@ export function CarrierUsers() {
     setBusyId(id);
     try {
       await cancelInvitation(id);
-      setNotice('Invite cancelled.');
+      adminToast.success('Invite cancelled', 'The link no longer works.');
       await loadInvitations();
     } catch (e) {
-      setInvError(e instanceof Error ? e.message : String(e));
+      adminToast.error('Cancel failed', e instanceof Error ? e.message : String(e));
     } finally {
       setBusyId(null);
     }
+  }
+
+  /** The link is only reachable from this row, so a failed copy has to hand it back somehow —
+   * hence the URL in the toast body, and long enough on screen to select it. */
+  async function copyInvite(url: string) {
+    if (await copyToClipboard(url)) adminToast.success('Invite link copied');
+    else adminToast.error('Copy failed — select the link below', url, 15000);
   }
 
   // Group into a tree: one row per carrier (the owner/operator), drivers nested beneath it. A
@@ -160,8 +169,12 @@ export function CarrierUsers() {
     setRegPage(1);
   }, [query]);
 
-  const pagedGroups = filtered.slice((regPage - 1) * PAGE_SIZE, regPage * PAGE_SIZE);
-  const pagedInvitations = invitations.slice((invPage - 1) * PAGE_SIZE, invPage * PAGE_SIZE);
+  // Clamp to the last page that still exists: cancelling the only invite on page 2 drops the list
+  // to one page, and an unclamped page 2 renders an empty table with no pager left to escape it.
+  const regPageSafe = Math.min(regPage, Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)));
+  const invPageSafe = Math.min(invPage, Math.max(1, Math.ceil(invitations.length / PAGE_SIZE)));
+  const pagedGroups = filtered.slice((regPageSafe - 1) * PAGE_SIZE, regPageSafe * PAGE_SIZE);
+  const pagedInvitations = invitations.slice((invPageSafe - 1) * PAGE_SIZE, invPageSafe * PAGE_SIZE);
 
   return (
     <div className={`${s.panel} ${s.panelWide}`}>
@@ -182,24 +195,14 @@ export function CarrierUsers() {
         )}
       </div>
 
-      {showForm && (
-        <CarrierUserForm
-          onInviteCreated={() => {
-            setNotice('Registration link generated and copied to your clipboard.');
-            void loadInvitations();
-          }}
-          onError={(msg) => setError(msg)}
-        />
-      )}
+      {showForm && <CarrierUserForm onInviteCreated={() => void loadInvitations()} />}
 
-      {notice && (
-        <p className={s.noticeNote} role="status">
-          {notice}
-        </p>
-      )}
       {error && (
         <p className={s.errorNote} role="alert">
-          {error}
+          {error}{' '}
+          <button type="button" className={s.linkBtn} onClick={() => void load()}>
+            Retry
+          </button>
         </p>
       )}
 
@@ -297,7 +300,7 @@ export function CarrierUsers() {
           </div>
         )}
       </div>
-      {!loading && <Pager page={regPage} total={filtered.length} onChange={setRegPage} />}
+      {!loading && <Pager page={regPageSafe} total={filtered.length} onChange={setRegPage} />}
 
       <div className={s.head}>
         <div>
@@ -308,7 +311,10 @@ export function CarrierUsers() {
 
       {invError && (
         <p className={s.errorNote} role="alert">
-          {invError}
+          {invError}{' '}
+          <button type="button" className={s.linkBtn} onClick={() => void loadInvitations()}>
+            Retry
+          </button>
         </p>
       )}
 
@@ -347,7 +353,7 @@ export function CarrierUsers() {
                 <span style={{ display: 'flex', gap: 'var(--space-2)' }}>
                   {inv.status === 'pending' && !isExpired && (
                     <>
-                      <button type="button" className={s.miniBtn} onClick={() => copyToClipboard(inv.inviteUrl)}>
+                      <button type="button" className={s.miniBtn} onClick={() => void copyInvite(inv.inviteUrl)}>
                         Copy
                       </button>
                       <button
@@ -366,7 +372,7 @@ export function CarrierUsers() {
           })}
         {!invLoading && invitations.length === 0 && <div className={s.none}>No invitations yet.</div>}
       </div>
-      {!invLoading && <Pager page={invPage} total={invitations.length} onChange={setInvPage} />}
+      {!invLoading && <Pager page={invPageSafe} total={invitations.length} onChange={setInvPage} />}
     </div>
   );
 }

@@ -567,12 +567,6 @@ function AppHeader({ user, onOpenProfile }: { user: TelegramWebAppUser | undefin
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // Home
 
-/** Fallback ONLY when the real card number is unresolved: '5412 7734 90' + fabricated tail. */
-function fullCardNumber(ownCard: string): string {
-  const last4 = ownCard || '7549';
-  return '5412 7734 90' + last4.slice(0, 2) + ' ' + last4;
-}
-
 /** Group a raw digit string into 4s for readability (real EFS PANs are 19 digits → 5 groups). */
 function groupCardNumber(n: string): string {
   const digits = n.replace(/\D/g, '');
@@ -581,16 +575,17 @@ function groupCardNumber(n: string): string {
 
 /** Masked PAN in the physical-card style: all-but-last-4 as asterisks + the real last 4. */
 /**
- * The card number as a client expects to see it: `•••• 7549`.
+ * The hero card mimics the PHYSICAL card, which prints the masked number as asterisks — so this one
+ * does too. The transaction rows and the exported report deliberately keep `•••• 7549`: those are
+ * app and document chrome, not a picture of the card in the driver's hand.
  *
- * Same idiom as the transaction rows and the exported report, so one carrier's card reads
- * identically everywhere. Two things this deliberately is NOT: the old 15-asterisk wall, and a
- * length-faithful mask — an EFS PAN is 19 digits (4-4-4-4-3), so masking to the revealed shape
- * splits the last four across groups as `•••7 549`, which reads as if the last four were "549".
+ * Not length-faithful: an EFS PAN is 19 digits, and masking to its real 4-4-4-4-3 grouping splits
+ * the last four across groups as `•••7 549`, which reads as if the last four were "549".
  */
 function maskedCardNumber(n: string): string {
   const digits = n.replace(/\D/g, '');
-  return `•••• ${digits.slice(-4) || n.slice(-4)}`;
+  const last4 = digits.slice(-4) || n.slice(-4);
+  return `${'*'.repeat(Math.max(digits.length - last4.length, 8))} ${last4}`;
 }
 
 /** Smooth an array of anchor points into a flowing SVG path (midpoint-quadratic smoothing). */
@@ -629,7 +624,10 @@ function CardContours() {
     { x: 420, y: 80 },
   ];
   return (
-    <svg aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.09 }} viewBox="0 0 400 200" preserveAspectRatio="none" fill="none" stroke="#FFFFFF" strokeWidth={0.7}>
+    // opacity 0.09 -> 0.045 and a thinner stroke: these were set to survive under the amber ribbon.
+    // Without it they are the card's only texture, and at the old weight they compete with the
+    // figures instead of sitting behind them.
+    <svg aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.045 }} viewBox="0 0 400 200" preserveAspectRatio="none" fill="none" stroke="#FFFFFF" strokeWidth={0.55}>
       {Array.from({ length: 26 }, (_, i) => (
         <path key={i} d={smoothWavePath(base.map((p) => ({ x: p.x, y: p.y - 96 + i * 8.5 })))} />
       ))}
@@ -754,8 +752,10 @@ function DriverHero({
   onCopy: () => void;
 }) {
   const { t } = useI18n();
-  const realFull = session.ownCardNumber ?? fullCardNumber(session.ownCard).replace(/\s/g, '');
-  const display = revealed ? groupCardNumber(realFull) : maskedCardNumber(realFull);
+  // No invented fallback: if the DWH has not resolved the real PAN there is nothing truthful to
+  // show, so the number skeletons rather than displaying a fiction the Copy button would hand out.
+  const realFull = session.ownCardNumber;
+  const display = realFull ? (revealed ? groupCardNumber(realFull) : maskedCardNumber(realFull)) : null;
   return (
     <>
       <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', aspectRatio: '1.55 / 1', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
@@ -781,7 +781,11 @@ function DriverHero({
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' }}>{t('card.numberLabel')}</span>
-            <span className="selectable" style={{ fontSize: 19, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.04em', whiteSpace: 'nowrap' }}>{display}</span>
+            {display ? (
+              <span className="selectable" style={{ fontSize: 19, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.04em', whiteSpace: 'nowrap' }}>{display}</span>
+            ) : (
+              <span aria-label={t('card.numberLabel')} style={{ display: 'block', width: 196, height: 20, borderRadius: 6, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
+            )}
           </div>
         </div>
       </div>
@@ -2000,7 +2004,15 @@ export function App() {
   }
 
   function copyCardNumber() {
-    const full = session.ownCardNumber ?? fullCardNumber(session.ownCard).replace(/\s/g, '');
+    // Nothing to copy until the real PAN resolves. This used to fall back to a synthesised number,
+    // so a DWH miss put a fictional card number on the driver's clipboard — indistinguishable from
+    // the real one, and the likeliest place for it to end up was a support chat.
+    const full = session.ownCardNumber;
+    if (!full) {
+      haptic('error');
+      showToast(t('toast.cardNumberUnavailable'), 'error');
+      return;
+    }
     try {
       navigator.clipboard?.writeText(full);
     } catch {

@@ -8,6 +8,7 @@ import { DwhDatabase } from './DwhDatabase';
 import { KnowledgeBase } from './KnowledgeBase';
 import { KnowledgeBrowser } from './KnowledgeBrowser';
 import { OctaneScope } from './scope/OctaneScope';
+import { AdminToastHost } from './toast';
 import { Train } from './Train';
 import { UserManagement } from './UserManagement';
 
@@ -42,6 +43,7 @@ export default function AdminMytrion() {
       {tab === 'cmp' && <CmpDatabase />}
       {tab === 'dwh' && <DwhDatabase />}
       {tab === 'scope' && <OctaneScope />}
+      <AdminToastHost />
     </MytrionShell>
   );
 }
