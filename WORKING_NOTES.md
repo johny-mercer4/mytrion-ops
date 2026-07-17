@@ -2410,3 +2410,117 @@ render in the Paper White design with real data — 1225 team open tickets, 515 
 (edit modal round-trips), analytics KPI/donut/leaderboard with real agent names, floating
 copilot streams a tool-grounded answer. 571 backend + 49 app tests green; vendored bundle
 rebuilt. Still unpushed on feature/customer-service-mytrion.
+## 2026-07-17 — Mini-app: driver row scoping moved server-side (own card only)
+
+Pre-presentation review of the carrier mini-app surfaced a live data leak in the three driver
+services, fixed here. Service-catalog decisions (which services per role) are still open.
+
+- **The bug.** `/carrier/mini-app/{transactions,last-used,status}` returned servercrm's CARRIER-wide
+  rows and the mini-app filtered to the driver's card **in the browser** (`App.tsx` `rowIsOwnCard`).
+  The driver's device therefore received the whole fleet's fuel history; only the render was scoped.
+  Contradicted OCTANE_MINIAPP_SERVICES_SPEC §2 ("own card only") and §6 ("carrier resolved from the
+  session"). Endpoints are also reachable directly with any valid initData, so the UI filter was not
+  a boundary at all.
+- **Worse: the filter was wrong.** `rowIsOwnCard` compared **last-4**, which is NOT unique within a
+  carrier. Live DWH probe: carrier `5805408` has **11 active cards sharing last-4 `7593`** (5807078
+  has 10 on `7547`). Those drivers saw each other's rows *as their own*.
+- **Fix.** New `src/modules/carrier/driverCardScope.ts` — `scopeRowsToCard` matches on the **full**
+  number (probe confirmed `octane.stg_cmp_card.card_number` and
+  `octane.mart_transaction_line_items.card_number` are both bare 19-digit strings, so `=` is the
+  correct join), plus `scopeTransactionsToCard` which also **recomputes `totals`** from the scoped
+  rows — passing servercrm's carrier-accumulated totals through would have leaked fleet spend even
+  with rows filtered. Routes call it for `profile === 'driver'` only; owners stay carrier-wide.
+- **Fail-closed.** `requireDriverCardNumber` 503s (`DRIVER_CARD_UNRESOLVED`) when the DWH can't
+  resolve the card, and throws *before* the fetch. `resolveDriverCardNumber` is best-effort/null
+  elsewhere; here null must never degrade to carrier-wide rows.
+- **Pagination trap.** The wrapper asked for `limit: 100` fleet-wide, so filtering after the fact
+  could show a driver an empty list while page 1 held only other cards' rows. Driver reads now
+  request servercrm's 5000 ceiling (`DRIVER_TXN_FETCH_LIMIT`) and set `scope_truncated: true` when
+  upstream reports `more_records` — short lists are surfaced, not silently under-reported.
+- **Considered and rejected: querying the DWH directly from mytrion.** `agentDwh.getCarrierTransactions`
+  merges a **live EFS gap-fill** on top of the mart (~3h refresh lag), so a direct mart read would
+  silently drop the newest transactions — exactly what a driver is checking on.
+- Removed the client-side `rowIsOwnCard` filters (server is authoritative now) + a comment warning
+  against re-adding one.
+- **Follow-up (right long-term fix):** give servercrm's `/api/agent/dwh/transactions/:carrierId` a
+  `cardNumber` filter so scoping happens at the source; the mytrion-side filter should stay as
+  defense-in-depth regardless. Note `servercrm` local checkout is **98 commits behind origin/build**
+  (money-code routes exist there, not locally) — pull before judging what's available.
+- Verify: backend typecheck + lint clean (2 warnings, both pre-existing), backend build clean,
+  mini-app typecheck + build clean, **558/558 tests green** (7 new, incl. an 11-cards-share-last-4
+  regression test and a fail-closed test). On `build`.
+
+## 2026-07-17 — Mini-app: progressive transactions + report delivered via the bot
+
+Two changes, both driven by measurement. servercrm and zoho-octane are UNTOUCHED — the widgets'
+endpoints and Deluge functions are byte-for-byte as they were.
+
+### Why: the Transactions sheet was 3.4–24.5s
+
+Measured against the real deployed servercrm (`/api/agent/dwh/transactions`):
+
+| call | time | rows |
+|---|--:|--:|
+| carrier 5765985 month | 24.5s cold / **9.3s warm** | 21 (`live_merged=0`) |
+| carrier 5776046 month | 11.1s / **3.4s warm** | 699 (`live_merged=3`) |
+| same, `limit=100` (old default) | 3.6s | 103 |
+
+The cost is the live EFS SOAP leg, NOT the DWH query or the row count — 5765985 merged **zero** rows
+and still took 9.3s, and `limit=100` vs `limit=5000` differed by ~200ms. (That also retires the
+"raising the limit adds load" worry from the earlier session: it doesn't.)
+
+Three-way data audit first, carrier 5765985 / 30d — the sources AGREE, so this is purely a latency
+problem, not a correctness one:
+- `EFS ∩ mart = 29` (all of EFS), **`EFS \ mart = 0`**, `mart ∩ cmp_transaction = 30`.
+- EFS *is* fresher at the tail: on busy carrier 5776046 it held **17 rows newer than the mart's max**.
+  So the gap-fill earns its keep — it just must not sit in the request path.
+- **`/api/companies/:id/billing-history` is NOT transactions** — it's a balance ledger
+  (`amount`, `balanceBefore→balanceAfter`, `refNum`). No card, location, or fuel quantity. It suits
+  "payment status" / "add funds", not the Transactions sheet.
+- CMP REST `/api/transactions` does work, but only `carrierId` + `cardNumber` filter — `companyId`,
+  `carrier_id`, `id` are silently IGNORED (Spring drops unknown params) and you get the unfiltered
+  global feed at HTTP 200. Its date params don't work either and it caps at 2000 rows. Not usable.
+
+### What changed (option A — mytrion merges, servercrm untouched)
+
+- **`src/integrations/dwhTransactions.ts`** — reads `octane.mart_transaction_line_items` directly,
+  skipping the EFS leg. **568–684ms** vs 3.4–24.5s. The ET range vocabulary and the `totals` key
+  names are a faithful port of servercrm (`_resolveRange`, `countDwhTransactions`) ON PURPOSE: both
+  phases must resolve the same window or rows would jump between paint and refresh.
+- **`POST /carrier/mini-app/transactions` gained `live`** (default **false**, so an unaware caller
+  gets the fast path). false → DWH-only + `live: {pending: true}`; true → servercrm's existing
+  merged endpoint. Drivers are scoped in both — at the SQL level on the fast path.
+- **Mini-app** paints phase 1, then folds in phase 2 with a quiet "checking for newer" line. A failed
+  upgrade keeps the real rows rather than throwing an error screen.
+- **Fixed my own bug from the earlier session:** `driverCardScope.scopeTransactionsToCard` was
+  rebuilding `totals` with invented keys (`line_items_total`, `sum_amount`, …). Those are
+  servercrm's SQL *aliases*; its returned object uses `transactions`/`line_items`/`funded_total`/
+  `fuel_quantity`/`total_fuel_quantity`/`discount_amount`. Now shared via `totalsFromRows`.
+
+### Report → Telegram document
+
+The sheet's CSV/Excel/Text buttons no longer blob-download (a Telegram WebView can't reliably save a
+file); the bot delivers the report to the user's chat instead.
+- `sendDocument` (multipart) + `TelegramChatUnreachableError` in `telegramCarrierBot.ts`. A bot
+  cannot message first, so a 403 is surfaced as 409 `TELEGRAM_CHAT_UNREACHABLE` → "open the bot chat
+  first", not a generic failure.
+- `src/modules/carrier/txnReport.ts` — server-side builder (port of the mini-app's `txnExport.ts`,
+  which is now **deleted**: keeping two copies of the grid would only drift).
+- `POST /carrier/mini-app/transactions/export` — reads the FAST path (a report is a record of a
+  window, not a live view), driver-scoped, 404s an empty window instead of sending an empty file,
+  audit-logged. Chat target is `telegramChatId ?? telegramUserId` — a private chat's id IS the user
+  id, and `telegramChatId` is only populated when redeem happened to carry the header.
+- **Real-data verification caught a bug the mocks didn't:** `pg` returns `transaction_date` as a
+  Date, and `String(date).slice(0,10)` renders `"Thu Jul 16"` — the year is gone. The mini-app never
+  hit it (JSON serialises Dates to ISO); this builder reads rows before that. Fixed via `dateCell`
+  (local parts, not `toISOString`, which would shift the naive timestamp and can roll the day back).
+  Pinned by a test.
+
+Verify: report rendered from REAL DWH rows — dates `2026-07-16`, PAN masked to `****7549`, 0 full
+PANs in the file, BOM present, totals match the DWH exactly (644.56 gal / $2824.46 / $360.51).
+565 tests green (21 in this suite), lint clean (2 pre-existing warnings), backend + mini-app
+typecheck and build clean. The bot's `sendDocument` leg is unit-tested but NOT exercised against
+live Telegram — no test registration to send to. On `build`.
+
+**Still open:** `carrierMiniApp.routes.ts` is now 1117 lines against CLAUDE.md's 600 cap (it was 960
+before this work) — it wants splitting into admin / registration / self-service route modules.

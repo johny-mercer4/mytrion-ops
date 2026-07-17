@@ -9,6 +9,9 @@ export interface TransactionsRangeOpts {
   range?: string | undefined;
   from?: string | undefined;
   to?: string | undefined;
+  /** Rows per page. servercrm defaults to 500 and caps at 5000. Driver-scoped reads raise this so
+   *  the caller's own-card filter sees the whole window rather than page 1 of the fleet's rows. */
+  limit?: number | undefined;
 }
 
 export interface InvoicesRangeOpts {
@@ -16,6 +19,22 @@ export interface InvoicesRangeOpts {
   status?: string | undefined;
   from?: string | undefined;
   to?: string | undefined;
+}
+
+/** A `{ count, data[] }` row list from the DWH marts (cards, last-used). servercrm selects whole
+ *  mart rows, so the columns stay open-ended — `card_number` is the only one callers rely on. */
+export interface CarrierRowList {
+  count?: number;
+  data?: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+}
+
+/** Transaction line items + the accumulated totals servercrm computes over the whole filter set. */
+export interface CarrierTransactions {
+  totals?: Record<string, unknown>;
+  data?: Array<Record<string, unknown>>;
+  pagination?: Record<string, unknown>;
+  [k: string]: unknown;
 }
 
 export const serverCrmWrapper = {
@@ -31,12 +50,12 @@ export const serverCrmWrapper = {
 
   /** The carrier's fuel cards (DWH mart). */
   getCards(carrierId: string) {
-    return crmGet(`/api/agent/dwh/cards/${encodeURIComponent(carrierId)}`);
+    return crmGet<CarrierRowList>(`/api/agent/dwh/cards/${encodeURIComponent(carrierId)}`);
   },
 
   /** Per-card last-used date (DWH mart). */
   getLastUsed(carrierId: string, range?: string) {
-    return crmGet(`/api/agent/dwh/cards/${encodeURIComponent(carrierId)}/last-used`, {
+    return crmGet<CarrierRowList>(`/api/agent/dwh/cards/${encodeURIComponent(carrierId)}/last-used`, {
       range: range ?? 'all_time',
     });
   },
@@ -44,11 +63,11 @@ export const serverCrmWrapper = {
   /** Fuel transaction line items (DWH mart). `range` follows servercrm's vocabulary
    * (day/week/month/quarter/half_year/year/all_time), overridden to 'custom' when from+to are set. */
   getTransactions(carrierId: string, opts: TransactionsRangeOpts = {}) {
-    return crmGet(`/api/agent/dwh/transactions/${encodeURIComponent(carrierId)}`, {
+    return crmGet<CarrierTransactions>(`/api/agent/dwh/transactions/${encodeURIComponent(carrierId)}`, {
       range: opts.from && opts.to ? 'custom' : (opts.range ?? 'month'),
       ...(opts.from ? { from: opts.from } : {}),
       ...(opts.to ? { to: opts.to } : {}),
-      limit: 100,
+      limit: opts.limit ?? 100,
     });
   },
 

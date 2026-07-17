@@ -13,19 +13,28 @@ import { env, isProduction } from '../../config/env.js';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { db } from '../../db/client.js';
 import { listDwhCards, findDwhCardByNumber } from '../../integrations/dwhCards.js';
+import { listDwhTransactions } from '../../integrations/dwhTransactions.js';
 import { searchDwhClients } from '../../integrations/dwhClients.js';
 import { searchDwhOperators } from '../../integrations/dwhOperators.js';
 import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
+import {
+  DRIVER_TXN_FETCH_LIMIT,
+  scopeRowsToCard,
+  scopeTransactionsToCard,
+} from '../../modules/carrier/driverCardScope.js';
 import { executeZohoFunctionWithFallback } from '../../integrations/zohoFunctions.js';
 import { carrierInvitationRepo } from '../../repos/carrierInvitationRepo.js';
 import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompanyRepo.js';
 import { buildInviteUrl, createCarrierInvite } from '../../modules/carrier/inviteService.js';
 import {
   parseInitDataUser,
+  sendDocument,
   signTelegramInitData,
+  TelegramChatUnreachableError,
   verifyTelegramInitData,
   type TelegramWebAppUser,
 } from '../../integrations/telegramCarrierBot.js';
+import { buildTxnReport } from '../../modules/carrier/txnReport.js';
 import type { RegisteredMiniAppCompany } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { RBACError } from '../../lib/errors.js';
@@ -125,6 +134,16 @@ const rangeSchema = z.object({
   from: z.string().max(10).optional(),
   to: z.string().max(10).optional(),
 });
+/**
+ * `live` drives the mini-app's two-phase transactions read:
+ *   false (default) — DWH mart only, ~200ms. Paints immediately, but misses anything newer than
+ *                     the mart's last refresh (~3h).
+ *   true            — servercrm's endpoint: the same mart rows PLUS a live EFS gap-fill, which
+ *                     costs 3–24s. The caller fires this second and swaps the list in.
+ * Default false so a caller that never heard of `live` gets the fast path, not the slow one.
+ */
+const txnRangeSchema = rangeSchema.extend({ live: z.boolean().optional().default(false) });
+const txnExportSchema = rangeSchema.extend({ format: z.enum(['csv', 'excel', 'text']).default('csv') });
 const invoicesSchema = z.object({
   initData: z.string().min(1),
   range: z.string().max(20).optional(),
@@ -247,6 +266,26 @@ async function requireRegisteredCarrierUser(
     });
   }
   return { registration, carrierId: registration.carrierId };
+}
+
+/**
+ * The driver's own card number — the scope key for every row-level driver filter below.
+ *
+ * FAIL-CLOSED BY DESIGN: resolveDriverCardNumber is best-effort and returns null when the DWH is
+ * unconfigured/down or the card is gone. Every other caller treats that null as "degrade to the
+ * masked cardId", but here a null must NEVER fall through to the carrier-wide rows — that is
+ * exactly the leak this scoping exists to prevent. So: no card number → no data, 503.
+ */
+async function requireDriverCardNumber(registration: RegisteredMiniAppCompany): Promise<string> {
+  const cardNumber = await resolveDriverCardNumber(registration.carrierId, registration.cardId);
+  if (!cardNumber) {
+    throw new AppError("We couldn't confirm which card is yours right now. Please try again shortly.", {
+      statusCode: 503,
+      code: 'DRIVER_CARD_UNRESOLVED',
+      expose: true,
+    });
+  }
+  return cardNumber;
 }
 
 const createInviteSchema = z.object({
@@ -761,26 +800,144 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     return serverCrmWrapper.getCarrierBalance(carrierId);
   });
 
+  // The card list is carrier-wide upstream; a driver only ever sees their own card in it. `overview`
+  // stays carrier-level (it is the account standing the driver catalog's "Check card status" shows).
   app.post('/carrier/mini-app/status', async (request) => {
     const body = selfServiceSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
     const [overview, cards] = await Promise.all([
       serverCrmWrapper.getCarrierOverview(carrierId),
       serverCrmWrapper.getCards(carrierId),
     ]);
-    return { overview, cards };
+    if (registration.profile !== 'driver') return { overview, cards };
+    const cardNumber = await requireDriverCardNumber(registration);
+    const rows = scopeRowsToCard(cards.data ?? [], cardNumber);
+    return { overview, cards: { ...cards, data: rows, count: rows.length, active_count: rows.length } };
   });
 
+  /**
+   * Transactions, in two phases (see `txnRangeSchema.live`). The FAST phase reads the DWH mart
+   * directly — it skips servercrm's live EFS gap-fill, which is what makes the merged read cost
+   * 3–24s. The SLOW phase delegates to servercrm so the EFS merge/de-dup logic stays in exactly one
+   * place (and the zoho-octane widgets' endpoint is untouched).
+   *
+   * A driver is scoped to their own card in BOTH phases — at the SQL level on the fast path, and by
+   * filtering servercrm's carrier-wide payload on the merged path.
+   */
   app.post('/carrier/mini-app/transactions', async (request) => {
-    const body = rangeSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
-    return serverCrmWrapper.getTransactions(carrierId, { range: body.range, from: body.from, to: body.to });
+    const body = txnRangeSchema.parse(request.body);
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const opts = { range: body.range, from: body.from, to: body.to };
+    const isDriver = registration.profile === 'driver';
+    const cardNumber = isDriver ? await requireDriverCardNumber(registration) : null;
+
+    if (!body.live) {
+      const result = await listDwhTransactions({
+        carrierId,
+        ...(cardNumber ? { cardNumber } : {}),
+        ...opts,
+        limit: DRIVER_TXN_FETCH_LIMIT,
+      });
+      // Tell the client the EFS tail is still missing, so it knows to fire the live phase.
+      return { ...result, live: { merged: 0, pending: true } };
+    }
+
+    if (!cardNumber) return serverCrmWrapper.getTransactions(carrierId, opts);
+    const merged = await serverCrmWrapper.getTransactions(carrierId, { ...opts, limit: DRIVER_TXN_FETCH_LIMIT });
+    return scopeTransactionsToCard(merged, cardNumber);
+  });
+
+  /**
+   * Build the transactions report and deliver it to the caller's Telegram chat as a document.
+   *
+   * Delivery is via the bot, not an HTTP download, because a Telegram WebApp has no dependable way
+   * to save a file — the report lands in the bot chat instead, where it persists and can be shared.
+   *
+   * Reads the FAST DWH path deliberately: a report is a record of the window, not a live view, so
+   * it isn't worth the EFS gap-fill's seconds. Drivers get their own card only.
+   */
+  app.post('/carrier/mini-app/transactions/export', async (request) => {
+    const body = txnExportSchema.parse(request.body);
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const { telegramUserId } = verifyTelegramUser(body.initData);
+    const isDriver = registration.profile === 'driver';
+    const cardNumber = isDriver ? await requireDriverCardNumber(registration) : null;
+
+    const result = await listDwhTransactions({
+      carrierId,
+      ...(cardNumber ? { cardNumber } : {}),
+      range: body.range,
+      from: body.from,
+      to: body.to,
+      limit: DRIVER_TXN_FETCH_LIMIT,
+    });
+    if (result.data.length === 0) {
+      throw new AppError('There are no transactions in that period to export.', {
+        statusCode: 404,
+        code: 'TXN_EXPORT_EMPTY',
+        expose: true,
+      });
+    }
+
+    const rangeLabel = result.range.from ? `${result.range.from} → ${result.range.to}` : String(result.range.preset);
+    const report = buildTxnReport(result.data, body.format, {
+      company: registration.companyName ?? 'Octane',
+      range: rangeLabel,
+      cardLast4: cardNumber ? cardNumber.slice(-4) : String(carrierId),
+    });
+
+    // A private chat's id IS the user's id; telegramChatId is only populated when the redeem call
+    // happened to carry the header, so it can't be relied on alone.
+    const chatId = registration.telegramChatId ?? telegramUserId;
+    try {
+      await sendDocument({
+        chatId,
+        fileName: report.fileName,
+        contentType: report.contentType,
+        bytes: report.body,
+        caption: `Transactions · ${rangeLabel} · ${result.data.length} line items`,
+      });
+    } catch (err) {
+      if (err instanceof TelegramChatUnreachableError) {
+        throw new AppError('Open a chat with the Octane bot first, then try the export again.', {
+          statusCode: 409,
+          code: 'TELEGRAM_CHAT_UNREACHABLE',
+          expose: true,
+          cause: err,
+        });
+      }
+      throw new AppError("Couldn't send the report to your Telegram. Please try again.", {
+        statusCode: 502,
+        code: 'TXN_EXPORT_SEND_FAILED',
+        expose: true,
+        cause: err,
+      });
+    }
+
+    await auditFromContext(telegramCtx(registration.profile, telegramUserId), {
+      action: 'carrier.mini_app.transactions_export',
+      status: 'ok',
+      resourceType: 'carrier_transactions_report',
+      resourceId: String(carrierId),
+      detail: {
+        format: body.format,
+        range: rangeLabel,
+        rows: result.data.length,
+        scopedToCard: Boolean(cardNumber),
+      },
+    });
+
+    return { sent: true, fileName: report.fileName, rows: result.data.length };
   });
 
   app.post('/carrier/mini-app/last-used', async (request) => {
     const body = rangeSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
-    return serverCrmWrapper.getLastUsed(carrierId, body.range);
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const result = await serverCrmWrapper.getLastUsed(carrierId, body.range);
+    if (registration.profile !== 'driver') return result;
+    const cardNumber = await requireDriverCardNumber(registration);
+    const rows = scopeRowsToCard(result.data ?? [], cardNumber);
+    return { ...result, data: rows, count: rows.length };
   });
 
   app.post('/carrier/mini-app/payment-info', async (request) => {

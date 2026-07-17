@@ -16,6 +16,7 @@ import {
   fetchTracking,
   fetchTransactions,
   redeemRegistration,
+  sendTransactionsReport,
   type CarrierBalance,
   type FleetCard,
   type LastUsedResult,
@@ -26,6 +27,7 @@ import {
   type StatusResult,
   type TrackingResult,
   type TransactionsResult,
+  type TxnExportFormat,
 } from './lib/api';
 import { getRegistrationId, getTelegramWebApp, haptic, type TelegramWebAppUser } from './lib/telegram';
 import { getStoredTheme, initTheme, setTheme, type Theme } from './lib/theme';
@@ -33,7 +35,6 @@ import { LANGUAGES, useI18n } from './lib/i18n';
 import { LogoLockup } from './components/logo';
 import { BackChevron, Chevron, EyeToggle, Icon, SearchGlyph, type IconName } from './components/icons';
 import { seedInbox, type InboxItem } from './lib/demo';
-import { exportTransactions, type TxnExportFormat } from './lib/txnExport';
 import type { OpenAction } from './lib/actionTarget';
 import { defaultPinned, findCatalogItem } from './lib/serviceCatalog';
 import { ConfirmDialog, type ConfirmConfig } from './components/ConfirmDialog';
@@ -1195,14 +1196,12 @@ function ProfileSheet({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// Service action sheet (self-service — demo data until EFS integrations land)
+// Service action sheet
 
-/** True when a transaction/card row's card number ends with the driver's own last-4. Real fields
- * aren't confirmed to be masked or full PANs, so this only ever compares the trailing digits. */
-function rowIsOwnCard(cardNumberField: unknown, ownCard: string): boolean {
-  const s = typeof cardNumberField === 'string' ? cardNumberField : typeof cardNumberField === 'number' ? String(cardNumberField) : '';
-  return s.slice(-4) === ownCard;
-}
+// Driver row-scoping is the BACKEND's job — /carrier/mini-app/{transactions,last-used,status} filter
+// to the driver's own card by full number before responding. Do not re-add a client-side filter: it
+// can only hide rows the device already received, and matching on last-4 (what this used to do) is
+// wrong anyway — last-4 is not unique within a carrier.
 
 /** Transaction period vocabulary — mirrors servercrm's DWH range param + the zoho-octane
  * self-service transactions presets (Today / This Week / … / This Year), plus a custom from-to. */
@@ -1230,7 +1229,6 @@ function ActionSheet({
   target,
   session,
   initData,
-  company,
   onClose,
   showToast,
   onSendGeneric,
@@ -1238,7 +1236,6 @@ function ActionSheet({
   target: OpenAction;
   session: Session;
   initData: string;
-  company: string;
   onClose: () => void;
   showToast: (msg: string, kind?: ToastKind) => void;
   onSendGeneric: (title: string) => void;
@@ -1252,6 +1249,10 @@ function ActionSheet({
   const [to, setTo] = useState('2026-07-09');
   const [genericSent, setGenericSent] = useState(false);
   const [invoiceBusyId, setInvoiceBusyId] = useState<string | null>(null);
+  /** Phase 2 of the transactions read is in flight — rows are already shown, freshest are pending. */
+  const [liveRefreshing, setLiveRefreshing] = useState(false);
+  /** Which export format is currently being built + sent to Telegram, if any. */
+  const [exportBusy, setExportBusy] = useState<TxnExportFormat | null>(null);
 
   const service = target.kind === 'service' ? target.key : null;
   const sheetTitle = target.kind === 'generic' ? target.title : t(`svc.${service}`);
@@ -1265,30 +1266,46 @@ function ActionSheet({
     let cancelled = false;
     setLoading(true);
     setLoadError('');
+    setLiveRefreshing(false);
     async function load() {
       try {
+        const txnOpts = dwhRange === 'custom' ? { range: 'custom', from, to } : { range: dwhRange };
         let next: SheetData;
         if (service === 'balance') next = { kind: 'balance', v: await fetchBalance(initData) };
         else if (service === 'status') next = { kind: 'status', v: await fetchAccountStatus(initData) };
-        else if (service === 'txns') {
-          next = {
-            kind: 'txns',
-            v: await fetchTransactions(initData, dwhRange === 'custom' ? { range: 'custom', from, to } : { range: dwhRange }),
-          };
-        } else if (service === 'lastused') next = { kind: 'lastused', v: await fetchLastUsed(initData) };
+        else if (service === 'txns') next = { kind: 'txns', v: await fetchTransactions(initData, txnOpts, false) };
+        else if (service === 'lastused') next = { kind: 'lastused', v: await fetchLastUsed(initData) };
         else if (service === 'payment') next = { kind: 'payment', v: await fetchPaymentInfo(initData) };
         else if (service === 'invoices') next = { kind: 'invoices', v: await fetchInvoices(initData, { range: 'last_30' }) };
         else next = { kind: 'tracking', v: await fetchTracking(initData) };
-        if (!cancelled) setData(next);
+        if (cancelled) return;
+        setData(next);
+        setLoading(false);
+
+        // Phase 2 — only transactions have a live tail worth waiting for. The list is already on
+        // screen; this folds in anything the DWH mart hasn't picked up yet (its refresh lags ~3h)
+        // by asking the backend for the EFS-merged truth. Seconds, so it must never block phase 1.
+        if (next.kind === 'txns' && next.v.live?.pending) {
+          setLiveRefreshing(true);
+          try {
+            const merged = await fetchTransactions(initData, txnOpts, true);
+            if (!cancelled) setData({ kind: 'txns', v: merged });
+          } catch (e) {
+            // The fast rows are real and already rendered — a failed upgrade is not worth an error
+            // screen. Drop the indicator and leave them be.
+            console.warn('[ActionSheet] live refresh failed; keeping DWH rows', e);
+          } finally {
+            if (!cancelled) setLiveRefreshing(false);
+          }
+        }
       } catch (e) {
         // Backend errors here (crmGet's upstream passthrough, DB failures) are DTO/validation
         // text meant for API integrators, not the end user — never surface e.message directly.
         if (!cancelled) {
           console.error('[ActionSheet] load failed', e);
           setLoadError(t('sheet.loadError'));
+          setLoading(false);
         }
-      } finally {
-        if (!cancelled) setLoading(false);
       }
     }
     void load();
@@ -1306,17 +1323,32 @@ function ActionSheet({
     };
   }, []);
 
-  function doExport(rows: Array<Record<string, unknown>>, format: TxnExportFormat) {
+  /**
+   * The report is built server-side and delivered by the bot as a Telegram document — a WebView
+   * can't reliably save a file, and the rows are re-queried on the backend anyway, so nothing from
+   * this screen is uploaded. `rows` is only consulted to keep the empty case instant.
+   */
+  async function doExport(rows: Array<Record<string, unknown>>, format: TxnExportFormat) {
     haptic('tap');
     if (!rows.length) {
       showToast(t('txns.empty'), 'error');
       return;
     }
+    if (exportBusy) return;
+    setExportBusy(format);
     try {
-      exportTransactions(rows, format, { company, range, cardLast4: session.ownCard });
-      showToast(t('toast.csvExportStarted'));
-    } catch {
-      showToast(t('sheet.loadError'), 'error');
+      const opts = range === 'custom' ? { range: 'custom', from, to } : { range };
+      await sendTransactionsReport(initData, opts, format);
+      haptic('success');
+      showToast(t('toast.reportSentToTelegram'));
+    } catch (e) {
+      // The backend distinguishes "you never opened the bot chat" from a genuine failure — that one
+      // is actionable by the user, so it's worth its own message rather than a generic error.
+      const code = e instanceof ApiError ? e.code : '';
+      haptic('error');
+      showToast(code === 'TELEGRAM_CHAT_UNREACHABLE' ? t('toast.openBotFirst') : t('sheet.loadError'), 'error');
+    } finally {
+      setExportBusy(null);
     }
   }
 
@@ -1410,7 +1442,7 @@ function ActionSheet({
           ) : data?.kind === 'status' ? (
             (() => {
               const { overview, cards } = data.v;
-              const rows = (cards.data ?? []).filter((c) => !session.isDriver || rowIsOwnCard(c['card_number'], session.ownCard));
+              const rows = cards.data ?? [];
               const shown = rows.slice(0, 20);
               const extra = (cards.count ?? rows.length) - shown.length;
               return (
@@ -1459,8 +1491,7 @@ function ActionSheet({
             })()
           ) : data?.kind === 'txns' ? (
             (() => {
-              const rowsAll = data.v.data ?? [];
-              const rows = session.isDriver ? rowsAll.filter((r) => rowIsOwnCard(r['card_number'], session.ownCard)) : rowsAll;
+              const rows = data.v.data ?? [];
               return (
                 <>
                   {/* Horizontal-scroll period chips — too many presets to fit a fixed row on mobile. */}
@@ -1502,6 +1533,12 @@ function ActionSheet({
                       </label>
                     </div>
                   )}
+                  {liveRefreshing && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, marginBottom: 10, fontSize: 12, color: 'var(--muted-fg)' }}>
+                      <Spinner size={12} />
+                      {t('txns.checkingLive')}
+                    </div>
+                  )}
                   {rows.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('txns.empty')}</div>
                   ) : (
@@ -1519,17 +1556,18 @@ function ActionSheet({
                   )}
                   {rows.length > 0 && (
                     <div style={{ marginTop: 14 }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-fg)', marginBottom: 7 }}>{t('common.export')}</div>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-fg)', marginBottom: 7 }}>{t('txns.exportToTelegram')}</div>
                       <div style={{ display: 'flex', gap: 8 }}>
                         {(['csv', 'excel', 'text'] as const).map((fmt) => (
                           <button
                             key={fmt}
                             type="button"
                             className="press"
-                            onClick={() => doExport(rows, fmt)}
-                            style={{ flex: 1, height: 42, border: 'none', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+                            disabled={exportBusy !== null}
+                            onClick={() => void doExport(rows, fmt)}
+                            style={{ flex: 1, height: 42, border: 'none', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: exportBusy ? 'default' : 'pointer', opacity: exportBusy && exportBusy !== fmt ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                           >
-                            {fmt === 'csv' ? 'CSV' : fmt === 'excel' ? 'Excel' : 'Text'}
+                            {exportBusy === fmt ? <Spinner size={16} /> : fmt === 'csv' ? 'CSV' : fmt === 'excel' ? 'Excel' : 'Text'}
                           </button>
                         ))}
                       </div>
@@ -1587,8 +1625,7 @@ function ActionSheet({
             })()
           ) : data?.kind === 'lastused' ? (
             (() => {
-              const rowsAll = data.v.data ?? [];
-              const rows = session.isDriver ? rowsAll.filter((r) => rowIsOwnCard(r['card_number'], session.ownCard)) : rowsAll;
+              const rows = data.v.data ?? [];
               return rows.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('status.noCards')}</div>
               ) : (
@@ -2021,7 +2058,6 @@ export function App() {
           target={openAction}
           session={session}
           initData={wa?.initData ?? ''}
-          company={company}
           onClose={() => setOpenAction(null)}
           showToast={showToast}
           onSendGeneric={sendGenericRequest}
