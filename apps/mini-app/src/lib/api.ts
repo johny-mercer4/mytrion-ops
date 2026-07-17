@@ -294,6 +294,24 @@ export async function fetchTracking(initData: string): Promise<TrackingResult> {
   return (await request('POST', '/carrier/mini-app/tracking', { initData })) as TrackingResult;
 }
 
+export type ServiceRequestKey = 'override-card';
+
+/**
+ * File a real Zoho Desk ticket. The card is NOT sent — the backend resolves a driver's card from
+ * their own registration, so this payload cannot aim the request at someone else's card.
+ */
+export async function sendServiceRequest(
+  initData: string,
+  service: ServiceRequestKey,
+  comment?: string,
+): Promise<{ ticketId: string; subject: string }> {
+  return (await request('POST', '/carrier/mini-app/service-request', {
+    initData,
+    service,
+    ...(comment ? { comment } : {}),
+  })) as { ticketId: string; subject: string };
+}
+
 export type TxnExportFormat = 'csv' | 'xlsx' | 'pdf';
 
 export interface TxnExportSent {

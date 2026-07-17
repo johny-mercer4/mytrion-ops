@@ -13,6 +13,7 @@ import {
   fetchPaymentInfo,
   fetchRegistrationPreview,
   fetchTracking,
+  sendServiceRequest,
   fetchTransactions,
   redeemRegistration,
   sendInvoice,
@@ -903,7 +904,7 @@ function Home({
               type="button"
               className="press"
               onClick={() => {
-                if (item.action === 'generic') onOpenAction({ kind: 'generic', key: item.key, title: t(item.labelKey) });
+                if (item.action === 'generic') onOpenAction({ kind: 'generic', key: item.key, title: t(item.labelKey), ...(item.request ? { request: item.request } : {}) });
                 else if (item.action) onOpenAction({ kind: 'service', key: item.action });
               }}
               style={{ textAlign: 'left', background: 'transparent', border: 'none', borderTop: '1px solid var(--border)', padding: '12px 0', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, width: '100%', fontFamily: "'Geist'" }}
@@ -1347,6 +1348,9 @@ function ActionSheet({
   const [from, setFrom] = useState(() => isoDay(new Date(Date.now() - 30 * 864e5)));
   const [to, setTo] = useState(() => isoDay(new Date()));
   const [genericSent, setGenericSent] = useState(false);
+  const [genericBusy, setGenericBusy] = useState(false);
+  const [genericError, setGenericError] = useState('');
+  const [genericTicketId, setGenericTicketId] = useState('');
   const [invoiceBusyId, setInvoiceBusyId] = useState<string | null>(null);
   /** Phase 2 of the transactions read is in flight — rows are already shown, freshest are pending. */
   const [liveRefreshing, setLiveRefreshing] = useState(false);
@@ -1457,10 +1461,36 @@ function ActionSheet({
     }
   }
 
-  function sendGeneric() {
-    haptic('success');
-    setGenericSent(true);
-    onSendGeneric(sheetTitle);
+  /**
+   * Files a real Desk ticket when the catalog item carries a `request` key; otherwise falls back to
+   * the placeholder that only ever wrote a local inbox row.
+   *
+   * The success state is set from the RESPONSE, never optimistically — showing "Request sent" for a
+   * ticket that failed to create is the exact fake this replaces.
+   */
+  async function sendGeneric() {
+    const requestKey = target.kind === 'generic' ? target.request : undefined;
+    if (!requestKey) {
+      haptic('success');
+      setGenericSent(true);
+      onSendGeneric(sheetTitle);
+      return;
+    }
+    if (genericBusy) return;
+    setGenericBusy(true);
+    setGenericError('');
+    try {
+      const res = await sendServiceRequest(initData, requestKey);
+      haptic('success');
+      setGenericTicketId(res.ticketId);
+      setGenericSent(true);
+      onSendGeneric(sheetTitle);
+    } catch (e) {
+      haptic('error');
+      setGenericError(e instanceof Error ? e.message : t('generic.sendFailed'));
+    } finally {
+      setGenericBusy(false);
+    }
   }
 
   async function openInvoice(id: string) {
@@ -1860,13 +1890,23 @@ function ActionSheet({
               </div>
               <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--fg)' }}>{t('generic.sentTitle')}</div>
               <div style={{ fontSize: 13, color: 'var(--muted-fg)', lineHeight: 1.5, maxWidth: 260 }}>{t('generic.sentBody')}</div>
+              {/* A real ticket id, so the driver can quote it to support — and so "sent" is checkable
+                  rather than something the screen merely claims. */}
+              {genericTicketId && (
+                <div className="selectable" style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg)', background: 'var(--secondary)', borderRadius: 10, padding: '8px 14px', fontVariantNumeric: 'tabular-nums' }}>
+                  {t('generic.ticketNo', { id: genericTicketId })}
+                </div>
+              )}
             </div>
           ) : (
             <>
               <div style={{ fontSize: 14, color: 'var(--fg)', lineHeight: 1.5, marginBottom: 6 }}>{t('generic.notSentBody1')}</div>
               <div style={{ fontSize: 13, color: 'var(--muted-fg)', lineHeight: 1.5, marginBottom: 16 }}>{t('generic.notSentBody2')}</div>
-              <button type="button" className="press" onClick={sendGeneric} style={{ width: '100%', height: 50, border: 'none', borderRadius: 14, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>
-                {t('generic.sendButton')}
+              {genericError && (
+                <div style={{ fontSize: 13, color: 'var(--danger)', lineHeight: 1.5, marginBottom: 12 }}>{genericError}</div>
+              )}
+              <button type="button" className="press" onClick={sendGeneric} disabled={genericBusy} style={{ width: '100%', height: 50, border: 'none', borderRadius: 14, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 15, cursor: genericBusy ? 'default' : 'pointer', opacity: genericBusy ? 0.6 : 1 }}>
+                {genericBusy ? t('generic.sending') : t('generic.sendButton')}
               </button>
             </>
           )}

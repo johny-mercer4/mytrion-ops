@@ -323,6 +323,9 @@ const STRINGS: Record<Lang, Dict> = {
     'generic.notSentBody1': "Send this request to the Octane team — we'll process it and reply right here in Telegram.",
     'generic.notSentBody2': 'Most requests are handled within a few minutes during business hours.',
     'generic.sendButton': 'Send request',
+    'generic.sending': 'Sending…',
+    'generic.sendFailed': 'Could not send your request.',
+    'generic.ticketNo': 'Ticket #{id}',
     'generic.sentTitle': 'Request sent',
     'generic.sentBody': "Our team will follow up in this chat shortly. You'll get a notification in your Inbox.",
 
@@ -629,6 +632,9 @@ const STRINGS: Record<Lang, Dict> = {
     'generic.notSentBody1': 'Отправьте этот запрос команде Octane — мы обработаем его и ответим прямо здесь, в Telegram.',
     'generic.notSentBody2': 'Большинство запросов обрабатываются в течение нескольких минут в рабочее время.',
     'generic.sendButton': 'Отправить запрос',
+    'generic.sending': 'Отправка…',
+    'generic.sendFailed': 'Не удалось отправить запрос.',
+    'generic.ticketNo': 'Заявка №{id}',
     'generic.sentTitle': 'Запрос отправлен',
     'generic.sentBody': 'Наша команда свяжется с вами в этом чате в ближайшее время. Вы получите уведомление во Входящих.',
 
@@ -935,6 +941,9 @@ const STRINGS: Record<Lang, Dict> = {
     'generic.notSentBody1': "Ushbu so'rovni Octane jamoasiga yuboring — biz uni ko'rib chiqamiz va shu yerda, Telegram'da javob beramiz.",
     'generic.notSentBody2': "Ko'pchilik so'rovlar ish vaqtida bir necha daqiqa ichida bajariladi.",
     'generic.sendButton': "So'rov yuborish",
+    'generic.sending': "Yuborilmoqda…",
+    'generic.sendFailed': "So'rovni yuborib bo'lmadi.",
+    'generic.ticketNo': "Ariza №{id}",
     'generic.sentTitle': "So'rov yuborildi",
     'generic.sentBody': "Jamoamiz tez orada shu chatda javob beradi. Xabarlar bo'limida bildirishnoma olasiz.",
 
@@ -1241,6 +1250,9 @@ const STRINGS: Record<Lang, Dict> = {
     'generic.notSentBody1': 'Envía esta solicitud al equipo de Octane — la procesaremos y responderemos aquí mismo en Telegram.',
     'generic.notSentBody2': 'La mayoría de las solicitudes se atienden en pocos minutos en horario laboral.',
     'generic.sendButton': 'Enviar solicitud',
+    'generic.sending': 'Enviando…',
+    'generic.sendFailed': 'No se pudo enviar su solicitud.',
+    'generic.ticketNo': 'Ticket n.º {id}',
     'generic.sentTitle': 'Solicitud enviada',
     'generic.sentBody': 'Nuestro equipo dará seguimiento en este chat en breve. Recibirás una notificación en tu Bandeja.',
 

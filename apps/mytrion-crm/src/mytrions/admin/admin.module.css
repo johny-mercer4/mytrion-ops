@@ -257,6 +257,15 @@
 .right {
   text-align: right;
 }
+/* A cell whose value is the warning — a live invite inside its last day. Amber matches the
+   "Expired" pill it's about to become, so the countdown and the outcome are one scale. */
+.cellWarn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--warning);
+}
+
 .mono {
   font-family: var(--font-mono);
   color: var(--text-muted);

@@ -24,6 +24,12 @@ import {
   scopeTransactionsToCard,
 } from '../../modules/carrier/driverCardScope.js';
 import { executeZohoFunctionWithFallback } from '../../integrations/zohoFunctions.js';
+import {
+  fileServiceRequest,
+  serviceRequestAllows,
+  serviceRequestSpec,
+  type ServiceRequestKey,
+} from '../../modules/carrier/serviceRequest.js';
 import { carrierInvitationRepo } from '../../repos/carrierInvitationRepo.js';
 import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompanyRepo.js';
 import { buildInviteUrl, createCarrierInvite } from '../../modules/carrier/inviteService.js';
@@ -156,6 +162,14 @@ const invoicesSchema = z.object({
 const invoiceSignedUrlSchema = z.object({
   initData: z.string().min(1),
   invoiceId: z.string().min(1).max(120),
+});
+/** `service` is an enum, not free text: it selects a spec from a server-side map (subject, Desk
+ *  department, allowed roles), so a caller cannot invent a request type or route one to an arbitrary
+ *  queue. `comment` is the only free text and lands in the ticket body as content. */
+const serviceRequestSchema = z.object({
+  initData: z.string().min(1),
+  service: z.enum(['override-card'] as const satisfies readonly ServiceRequestKey[]),
+  comment: z.string().max(2000).optional(),
 });
 const driverSelfRegisterSchema = z.object({
   initData: z.string().min(1),
@@ -1112,6 +1126,61 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     });
 
     return { sent: true, fileName: `Octane_Invoice_${body.invoiceId}.pdf` };
+  });
+
+  /**
+   * File a service request as a real Zoho Desk ticket.
+   *
+   * The card is NEVER taken from the request body. A driver's card is resolved from their own
+   * registration server-side, so a driver cannot file an override against a colleague's card by
+   * editing the payload — the same reason the read endpoints scope rows rather than trusting a
+   * client-side filter.
+   */
+  app.post('/carrier/mini-app/service-request', async (request) => {
+    const body = serviceRequestSchema.parse(request.body);
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const profile = registration.profile;
+    if (!serviceRequestAllows(body.service, profile)) {
+      throw new RBACError('This request is not available for your account.');
+    }
+    const cardNumber = profile === 'driver' ? await requireDriverCardNumber(registration) : null;
+    const ctx = telegramCtx(profile, registration.telegramUserId);
+    try {
+      const ticketId = await fileServiceRequest({
+        key: body.service,
+        profile,
+        carrierId,
+        cardNumber,
+        requesterName: registration.driverName ?? registration.companyName ?? 'Octane customer',
+        telegramUserId: registration.telegramUserId,
+        telegramUsername: registration.telegramUsername,
+        companyName: registration.companyName,
+        comment: body.comment?.trim() || null,
+      });
+      await auditFromContext(ctx, {
+        action: 'carrier.mini_app.service_request',
+        status: 'ok',
+        resourceType: 'desk_ticket',
+        resourceId: ticketId,
+        detail: { service: body.service, carrierId, profile },
+      });
+      return { ticketId, subject: serviceRequestSpec(body.service).subject };
+    } catch (err) {
+      await auditFromContext(ctx, {
+        action: 'carrier.mini_app.service_request',
+        status: 'error',
+        resourceType: 'desk_ticket',
+        detail: { service: body.service, carrierId, profile },
+      });
+      // The mini-app must not report "sent" on a ticket that does not exist — that is exactly the
+      // fake this endpoint replaces.
+      throw new AppError("We couldn't send your request. Please try again shortly.", {
+        statusCode: 502,
+        code: 'SERVICE_REQUEST_FAILED',
+        expose: true,
+        cause: err,
+      });
+    }
   });
 
   // Owner-only, unlike the other self-service reads. Every driver-reachable endpoint scopes its rows

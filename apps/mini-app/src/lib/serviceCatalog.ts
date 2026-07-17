@@ -11,12 +11,21 @@
  */
 import type { IconName } from '../components/icons';
 import type { ServiceKey } from './demo';
+import type { ServiceRequestKey } from './api';
 
 export interface CatalogItem {
   key: string;
   labelKey: string;
   icon: IconName;
   action: ServiceKey | 'generic' | null;
+  /**
+   * Set on a `generic` item to make it file a REAL Zoho Desk ticket instead of the placeholder.
+   *
+   * Without it, `generic` still runs sendGenericRequest(): a local inbox row reading "Request sent"
+   * and no network call whatsoever. The backend map (modules/carrier/serviceRequest.ts) decides who
+   * may file each key, so adding one here does not by itself grant a role access.
+   */
+  request?: ServiceRequestKey;
 }
 
 export interface CatalogGroup {
@@ -37,7 +46,7 @@ const DRIVER_CATALOG: CatalogGroup[] = [
       // is the card number the session already carries, which is why it can render with no fetch.
       { key: 'drv-last-used', labelKey: 'cat.drvLastUsed', icon: 'clock', action: 'lastused' },
       { key: 'drv-reveal-code', labelKey: 'cat.drvRevealCode', icon: 'key', action: 'manualcode' },
-      { key: 'drv-override-card', labelKey: 'cat.drvOverrideCard', icon: 'lock', action: 'generic' },
+      { key: 'drv-override-card', labelKey: 'cat.drvOverrideCard', icon: 'lock', action: 'generic', request: 'override-card' },
       { key: 'drv-money-code', labelKey: 'cat.drvMoneyCode', icon: 'dollar', action: 'generic' },
       { key: 'drv-hold-unhold', labelKey: 'cat.drvHoldUnhold', icon: 'clock', action: null },
       { key: 'drv-change-pin', labelKey: 'cat.drvChangePin', icon: 'key', action: null },

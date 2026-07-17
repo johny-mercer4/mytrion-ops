@@ -33,7 +33,7 @@ export function ServicesTab({
 
   function openItem(item: CatalogItem) {
     if (!item.action) return;
-    if (item.action === 'generic') onOpen({ kind: 'generic', key: item.key, title: t(item.labelKey) });
+    if (item.action === 'generic') onOpen({ kind: 'generic', key: item.key, title: t(item.labelKey), ...(item.request ? { request: item.request } : {}) });
     else onOpen({ kind: 'service', key: item.action });
   }
 

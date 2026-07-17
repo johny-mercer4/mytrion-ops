@@ -24,6 +24,7 @@ import {
   ShieldOff,
   Square,
   Sun,
+  TriangleAlert,
   User,
   Users,
   X,
@@ -90,6 +91,8 @@ export const RevokeIcon = icon(ShieldOff, 11);
 export const BanIcon = icon(Ban, 11);
 export const ChevronLeftIcon = icon(ChevronLeft, 13);
 export const ChevronRightIcon = icon(ChevronRight, 13);
+/** Warning — pairs with the warn tint so urgency isn't carried by colour alone. */
+export const AlertIcon = icon(TriangleAlert, 11);
 
 // ── content ─────────────────────────────────────────────────────────────────
 export const DocIcon = icon(FileText, 14);

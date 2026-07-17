@@ -5,7 +5,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import type { CarrierInvitation } from '../../api/carrierUsers';
-import { BanIcon, BuildingIcon, CopyIcon, PersonIcon, PlusIcon, SearchIcon } from '../../components/icons';
+import { AlertIcon, BanIcon, BuildingIcon, CopyIcon, PersonIcon, PlusIcon, SearchIcon } from '../../components/icons';
 import {
   INVITE_STATUS_LABEL,
   expiresSoon,
@@ -32,11 +32,17 @@ const FILTERS: ReadonlyArray<{ value: StatusFilter; label: string }> = [
 /** Bar width per column, tracking real rows: company, pill, id, status pill, expiry, actions. */
 const INV_SKELETON = ['58%', '64px', '52%', '70px', '46%', '96px'] as const;
 
+/**
+ * Status colour tracks what the status means, and the two dead ends are not the same thing:
+ * expired lapsed on its own (amber — nobody did anything wrong, and a fresh link fixes it), while
+ * cancelled is someone deliberately killing the link (red). They were the wrong way round, with
+ * cancelled rendered in neutral grey as if it were a category rather than a termination.
+ */
 const PILL_CLASS: Record<InviteStatus, string> = {
-  redeemed: 'pillGood',
-  pending: 'pillInfo',
-  expired: 'pillBad',
-  cancelled: 'pillNeutral',
+  pending: 'pillInfo', // live, waiting on the carrier
+  redeemed: 'pillGood', // the job the link existed to do
+  expired: 'pillWarn', // lapsed on its own
+  cancelled: 'pillBad', // revoked by hand
 };
 
 export function CarrierInvitations({
@@ -153,9 +159,17 @@ export function CarrierInvitations({
                 {/* Relative first, absolute in the tooltip: "in 4 hours" is the thing the agent is
                     actually deciding on. Once a link is redeemed or cancelled its expiry stops
                     meaning anything, and a countdown next to "Redeemed" just reads as still-live. */}
-                <span className={s.cellSub} role="cell" title={new Date(inv.expiresAt).toLocaleString()}>
+                {/* Amber once it's inside its last day — the same colour "Expired" will turn into,
+                    so the warning and the outcome it predicts read as one scale. The icon carries
+                    it too: colour alone would leave the urgency invisible to anyone who can't see
+                    the hue. */}
+                <span
+                  className={`${s.cellSub} ${soon ? s.cellWarn : ''}`}
+                  role="cell"
+                  title={new Date(inv.expiresAt).toLocaleString()}
+                >
                   {st === 'redeemed' || st === 'cancelled' ? '—' : relativeTime(inv.expiresAt)}
-                  {soon && ' ⚠'}
+                  {soon && <AlertIcon />}
                 </span>
                 <span style={{ display: 'flex', gap: 'var(--space-2)' }} role="cell">
                   {live ? (

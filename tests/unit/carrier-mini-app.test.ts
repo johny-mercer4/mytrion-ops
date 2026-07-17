@@ -37,6 +37,11 @@ vi.mock('../../src/integrations/zohoFunctions.js', () => ({
   executeZohoFunctionWithFallback: vi.fn(),
 }));
 
+vi.mock('../../src/integrations/zohoDesk.js', () => ({
+  createDeskTicket: vi.fn(async () => '1057080000099887766'),
+  DESK_DEPARTMENTS: { cs: '1057080000000323033', billing: '1057080000000329409', verification: '1057080000010223377', maintenance: '1057080000006966104' },
+}));
+
 vi.mock('../../src/db/client.js', () => ({
   db: {
     transaction: async <T>(fn: (tx: object) => Promise<T>): Promise<T> => fn({}),
@@ -90,6 +95,7 @@ import { listDwhCards } from '../../src/integrations/dwhCards.js';
 import { listDwhTransactions, resolveDwhTxnRange } from '../../src/integrations/dwhTransactions.js';
 import { sendDocument, TelegramChatUnreachableError } from '../../src/integrations/telegramCarrierBot.js';
 import { executeZohoFunctionWithFallback } from '../../src/integrations/zohoFunctions.js';
+import { createDeskTicket } from '../../src/integrations/zohoDesk.js';
 import { serverCrmWrapper } from '../../src/wrappers/serverCrmWrapper.js';
 
 const inviteRepo = vi.mocked(carrierInvitationRepo);
@@ -895,5 +901,104 @@ describe('driver row scoping (own card only)', () => {
       expect(res.json()).toMatchObject({ error: { code: 'TXN_EXPORT_EMPTY' } });
       expect(botSendDocument).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('service requests file real Desk tickets', () => {
+  const OWN_CARD = '7083050030880417593';
+  const OTHER_CARD = '7083050030889467593';
+
+  function driverReg(overrides: Record<string, unknown> = {}) {
+    return registrationRow({
+      profile: 'driver',
+      companyType: null,
+      cardId: 'card_1',
+      driverName: 'James Reyes',
+      ...overrides,
+    });
+  }
+
+  function withResolvableCard(reg = driverReg()) {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(reg);
+    dwhCards.mockResolvedValueOnce([
+      { cardId: 'card_1', cardNumber: OWN_CARD, cardType: 'FUEL', status: 'Active', balance: '0' },
+      { cardId: 'card_2', cardNumber: OTHER_CARD, cardType: 'FUEL', status: 'Active', balance: '0' },
+    ]);
+  }
+
+  it('creates a ticket for a driver and returns its real id', async () => {
+    withResolvableCard();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/service-request',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', service: 'override-card' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // The id comes from Desk. The UI shows "Request sent" off THIS value, so a fabricated or
+    // optimistic success is exactly what must not be possible.
+    expect(res.json()).toMatchObject({ ticketId: '1057080000099887766' });
+    expect(createDeskTicket).toHaveBeenCalledTimes(1);
+  });
+
+  it("stamps the driver's OWN card, ignoring anything the payload claims", async () => {
+    withResolvableCard();
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/service-request',
+      headers: { 'content-type': 'application/json' },
+      // A driver trying to file an override against a colleague's card. The field is not in the
+      // schema, so it is stripped — the card must come from their registration, never the body.
+      payload: { initData: 'signed', service: 'override-card', cardNumber: OTHER_CARD },
+    });
+
+    const arg = vi.mocked(createDeskTicket).mock.calls[0]?.[0];
+    expect(arg?.cf?.cf_card_number).toBe(OWN_CARD);
+    expect(JSON.stringify(arg)).not.toContain(OTHER_CARD);
+  });
+
+  it('routes to Customer Service — the same queue servercrm maps "override card" to', async () => {
+    withResolvableCard();
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/service-request',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', service: 'override-card' },
+    });
+
+    expect(vi.mocked(createDeskTicket).mock.calls[0]?.[0]?.departmentId).toBe('1057080000000323033');
+  });
+
+  it('rejects an unknown service rather than filing it somewhere', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(driverReg());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/service-request',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', service: 'close-account' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(createDeskTicket).not.toHaveBeenCalled();
+  });
+
+  it('fails loudly when Desk rejects the ticket — never reports a send that did not happen', async () => {
+    withResolvableCard();
+    vi.mocked(createDeskTicket).mockRejectedValueOnce(new Error('[zoho-desk] POST /tickets HTTP 422'));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/service-request',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', service: 'override-card' },
+    });
+
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toMatchObject({ error: { code: 'SERVICE_REQUEST_FAILED' } });
   });
 });
