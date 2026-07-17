@@ -1,6 +1,6 @@
 import { Pin } from 'lucide-react';
 import { useState, type ReactElement } from 'react';
-import { Chevron, Icon, SearchGlyph } from '../components/icons';
+import { Icon, SearchGlyph } from '../components/icons';
 import { useI18n } from '../lib/i18n';
 import { getCatalog, type CatalogItem } from '../lib/serviceCatalog';
 import type { OpenAction } from '../lib/actionTarget';
@@ -61,18 +61,18 @@ export function ServicesTab({
                   onClick={() => openItem(it)}
                   style={{
                     display: 'flex',
-                    alignItems: 'flex-start',
+                    alignItems: 'center',
                     gap: 14,
                     padding: '16px 0',
                     borderTop: '1px solid var(--border)',
                     cursor: soon ? 'default' : 'pointer',
                   }}
                 >
-                  <span style={{ width: 38, height: 38, borderRadius: 11, flex: 'none', alignSelf: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--secondary)', color: soon ? 'var(--muted-fg)' : 'var(--fg)' }}>
+                  <span style={{ width: 38, height: 38, borderRadius: 11, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--secondary)', color: soon ? 'var(--muted-fg)' : 'var(--fg)' }}>
                     <Icon name={it.icon} size={19} strokeWidth={1.7} className="" />
                   </span>
                   <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, lineHeight: 1.4, color: soon ? 'var(--muted-fg)' : 'var(--fg)' }}>{t(it.labelKey)}</span>
-                  {soon && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--muted-fg)', background: 'var(--secondary)', padding: '4px 8px', borderRadius: 7, flex: 'none', alignSelf: 'center' }}>{t('services.soon')}</span>}
+                  {soon && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--muted-fg)', background: 'var(--secondary)', padding: '4px 8px', borderRadius: 7, flex: 'none' }}>{t('services.soon')}</span>}
                   {!soon && (
                     <button
                       type="button"
@@ -94,7 +94,6 @@ export function ServicesTab({
                        */
                       style={{
                         flex: 'none',
-                        alignSelf: 'center',
                         width: 40,
                         height: 40,
                         display: 'flex',
@@ -110,7 +109,6 @@ export function ServicesTab({
                       <Pin size={16} strokeWidth={2.2} fill={isPinned ? 'currentColor' : 'none'} aria-hidden />
                     </button>
                   )}
-                  {!soon && <Chevron style={{ alignSelf: 'center' }} />}
                 </div>
               );
             })}
