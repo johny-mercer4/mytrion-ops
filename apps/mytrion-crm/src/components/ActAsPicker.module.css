@@ -109,6 +109,43 @@
 .search::placeholder {
   color: var(--text-muted);
 }
+.search:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.loadingRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 18px 12px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 25%, var(--border));
+  border-top-color: var(--accent);
+  animation: spin 0.75s linear infinite;
+  flex: none;
+}
+
+.searchSpin {
+  display: inline-flex;
+  animation: spin 0.75s linear infinite;
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner,
+  .searchSpin {
+    animation: none;
+  }
+}
 
 .options {
   overflow-y: auto;

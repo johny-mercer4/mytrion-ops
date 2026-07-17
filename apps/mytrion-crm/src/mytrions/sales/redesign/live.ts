@@ -4,10 +4,11 @@
  * tab swaps `import … from '../mock'` for a `useLoad(loadX)` with loading/error/empty. NO mock/
  * fake data — every array here comes from a real backend call.
  */
-import { listDeskComments, listDeskTickets, type DeskTicket } from '@/api/desk';
+import { getDeskTicket, listDeskComments, listDeskTickets, type DeskTicket } from '@/api/desk';
 import { getImpersonation } from '@/api/impersonation';
 import { callTouchpoint } from '@/api/touchpoints';
 import { ICO } from './salesData';
+import type { IconName } from './icons';
 
 // ---- tiny load hook (extracted to _shared/useLoad; re-exported for existing importers) ----
 
@@ -23,6 +24,9 @@ export function isTicketClosed(status: string | undefined): boolean {
 
 const n = (v: unknown): number => (typeof v === 'number' ? v : Number(v ?? 0) || 0);
 export const numFmt = (v: unknown): string => n(v).toLocaleString('en-US');
+/** Gallons — keep up to 2 decimals (matches Sales Dashboard volume cells). */
+export const galFmt = (v: unknown): string =>
+  n(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
 export const money = (v: unknown): string => {
   const x = n(v);
   return x < 0 ? `-$${Math.abs(x).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : `$${x.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
@@ -132,13 +136,13 @@ export interface AnnVM {
   title: string;
   body: string;
   time: string;
-  icon: string;
+  icon: IconName;
   prio: string;
 }
-const ANN_DEFAULT = { color: 'var(--accent)', icon: 'M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z' };
-const ANN_META: Record<string, { color: string; icon: string }> = {
+const ANN_DEFAULT = { color: 'var(--accent)', icon: 'sparkles' } satisfies { color: string; icon: IconName };
+const ANN_META: Record<string, { color: string; icon: IconName }> = {
   ai: ANN_DEFAULT,
-  system: { color: 'var(--warn)', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z' },
+  system: { color: 'var(--warn)', icon: 'gear' },
   policy: { color: 'var(--violet)', icon: ICO.doc },
   analytics: { color: 'var(--accent)', icon: ICO.trend },
   security: { color: 'var(--danger)', icon: ICO.warn },
@@ -244,8 +248,8 @@ export interface RecordVM {
   phone: string;
   cards: number;
   active: number;
+  /** This billing-cycle gallons (from dashboard.agent_sales transactions.volume). */
   gallons: string;
-  balance: string;
   status: 'active' | 'attention' | 'debtor';
   mc: string;
   dot: string;
@@ -253,31 +257,57 @@ export interface RecordVM {
 const truthy = (v: unknown): boolean =>
   v === true || v === 1 || ['1', 'true', 't', 'yes'].includes(String(v ?? '').toLowerCase());
 
-function mapRecord(c: Record<string, unknown>): RecordVM {
+function mapRecord(c: Record<string, unknown>, cycleGallonsByCarrier: Map<string, number>): RecordVM {
   const debt = n(c.computed_debt);
   const days = n(c.computed_debt_days);
   const suspended = truthy(c.is_loc_suspended);
   const active = truthy(c.computed_is_active);
   const status: RecordVM['status'] = (debt >= 1 && days >= 2) || suspended ? 'debtor' : active ? 'active' : 'attention';
-  const bal = n(c.balance ?? c.efs_balance ?? c.prepay_balance ?? 0);
+  const carrierId = String(c.carrier_id ?? '');
   return {
-    id: String(c.carrier_id ?? ''),
+    id: carrierId,
     name: String(c.company_name ?? '(unnamed)'),
     carrier: `CR-${c.carrier_id ?? ''}`,
     contact: String(c.deal_full_name ?? c.contact_name ?? c.agent ?? '—'),
     phone: String(c.deal_phone ?? c.contact_phone ?? '—'),
     cards: n(c.total_produced_cards ?? c.total_active_cards),
     active: n(c.total_active_cards),
-    gallons: numFmt(n(c.total_volume ?? c.gallons_90d ?? 0)),
-    balance: money(bal),
+    // Cycle gallons from dashboard.agent_sales `transactions` (full-cycle per-carrier volume).
+    gallons: galFmt(cycleGallonsByCarrier.get(carrierId) ?? 0),
     status,
     mc: String(c.deal_money_code ?? c.comdata_id ?? '—'),
     dot: String(c.dot ?? '—'),
   };
 }
+
+/**
+ * carrier_id → this-cycle gallons. `dashboard.agent_sales`'s `transactions` rows are full-cycle
+ * per-carrier totals by default (same source as the Sales Dashboard TX table). Best-effort: a
+ * failed fetch just means Clients cards show 0 gallons, not a broken tab.
+ */
+async function loadCycleGallonsByCarrier(): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  try {
+    const res = await callTouchpoint('dashboard.agent_sales', {});
+    if (res.success === false) return map;
+    for (const row of res.data?.transactions ?? []) {
+      const id = row.carrier_id != null ? String(row.carrier_id) : '';
+      if (!id) continue;
+      // Prefer `volume`; fall back to alternate keys some dashboard payloads use.
+      const vol = n(row.volume ?? row.gallons ?? row.total_volume);
+      map.set(id, vol);
+    }
+  } catch {
+    /* best-effort */
+  }
+  return map;
+}
 export async function loadRecords(): Promise<RecordVM[]> {
-  const res = await callTouchpoint('clients.by_agent', {});
-  return (res.data ?? []).map((c) => mapRecord(c as Record<string, unknown>));
+  const [res, cycleGallonsByCarrier] = await Promise.all([
+    callTouchpoint('clients.by_agent', {}),
+    loadCycleGallonsByCarrier(),
+  ]);
+  return (res.data ?? []).map((c) => mapRecord(c as Record<string, unknown>, cycleGallonsByCarrier));
 }
 
 // ---- Dashboard (dashboard.agent_sales) ----
@@ -296,17 +326,27 @@ export async function loadDashboard(): Promise<DashboardVM> {
   const kpiRaw = (d.kpi ?? {}) as Record<string, unknown>;
   const kpi: Record<string, number> = {};
   for (const [k, v] of Object.entries(kpiRaw)) kpi[k] = n(v);
-  const bars = (d.cardsByCompany ?? []).slice(0, 8).map((r) => {
+  const bars = (d.cardsByCompany ?? []).map((r) => {
     const row = r as Record<string, unknown>;
-    return { name: String(row.carrier_name ?? row.carrier_id ?? '—'), active: n(row.active_cards), status: String(row.company_status ?? 'active').toLowerCase() };
+    return {
+      name: String(row.carrier_name ?? row.carrier_id ?? '—'),
+      active: n(row.active_cards),
+      status: String(row.company_status ?? 'active').toLowerCase(),
+    };
   });
   const activity = ((d.cardActivity ?? d.dailyActivity ?? []) as Record<string, unknown>[]).map((b) => ({
     m: String(b.month_label ?? b.activity_month ?? '').slice(0, 6),
     tx: n(b.transactions),
   }));
-  const txTable = (d.transactions ?? []).slice(0, 8).map((r) => {
+  const txTable = (d.transactions ?? []).map((r) => {
     const row = r as Record<string, unknown>;
-    return { name: String(row.carrier_name ?? '—'), newCards: n(row.new_cards), tx: n(row.transactions), gallons: numFmt(n(row.volume)), total: money(n(row.total)) };
+    return {
+      name: String(row.carrier_name ?? '—'),
+      newCards: n(row.new_cards),
+      tx: n(row.transactions),
+      gallons: numFmt(n(row.volume)),
+      total: money(n(row.total)),
+    };
   });
   return { kpi, bars, activity, txTable, cycle: (d.cycle ?? {}) as { start?: string; end?: string } };
 }
@@ -314,6 +354,8 @@ export async function loadDashboard(): Promise<DashboardVM> {
 // ---- Carriers (sales.carriers_search) ----
 
 export interface CarrierSearchVM {
+  /** Stable row key for lead-create state (snapshot id, else DOT). */
+  id: string;
   dot: string;
   owner: string;
   phone: string;
@@ -322,19 +364,30 @@ export interface CarrierSearchVM {
   units: string;
   unitsNum: number;
   address: string;
+  truckSize: string;
+  addDate: string;
+  changeDate: string;
 }
 export async function searchCarriers(query: string, limit = 200): Promise<CarrierSearchVM[]> {
   const res = await callTouchpoint('sales.carriers_search', { query, limit });
-  return (res.carriers ?? []).map((c) => ({
-    dot: String(c.dot_number ?? '—'),
-    owner: String(c.owner_full_name ?? '—'),
-    phone: String(c.phone_number ?? '—'),
-    email: String(c.email ?? '—'),
-    status: String(c.operating_status ?? 'unknown'),
-    units: String(c.power_units ?? '—'),
-    unitsNum: typeof c.power_units === 'number' ? c.power_units : Number(c.power_units) || 0,
-    address: String(c.physical_address ?? ''),
-  }));
+  return (res.carriers ?? []).map((c) => {
+    const dot = c.dot_number != null && String(c.dot_number) !== '' ? String(c.dot_number) : '—';
+    const id = c.id != null && String(c.id) !== '' ? String(c.id) : `dot:${dot}`;
+    return {
+      id,
+      dot,
+      owner: String(c.owner_full_name ?? '—'),
+      phone: String(c.phone_number ?? '—'),
+      email: String(c.email ?? '—'),
+      status: String(c.operating_status ?? 'unknown'),
+      units: String(c.power_units ?? '—'),
+      unitsNum: typeof c.power_units === 'number' ? c.power_units : Number(c.power_units) || 0,
+      address: String(c.physical_address ?? ''),
+      truckSize: c.truck_size != null ? String(c.truck_size) : '',
+      addDate: c.add_date ? String(c.add_date).slice(0, 10) : '',
+      changeDate: c.change_date ? String(c.change_date).slice(0, 10) : '',
+    };
+  });
 }
 
 // ---- Tickets (Zoho Desk) → TICKETS / TICKET_MSGS shape ----
@@ -403,33 +456,73 @@ function mapTicket(t: DeskTicket): TicketVM {
     overdue: Boolean(t.isOverDue),
   };
 }
-export async function loadTickets(): Promise<{ tickets: TicketVM[]; scoped: boolean }> {
-  // A real agent's own session scopes the list server-side. When an admin is "viewing as" an agent
-  // (act-as), pass that agent's id so the (admin-honored) ?zoho_user_id override scopes to THEM —
-  // the desk route resolves identity from the session, not the act-as headers.
+/** One page of creator-scoped Desk tickets (search `from` is 0-based offset; max `limit` 99). */
+export interface TicketsPageResult {
+  tickets: TicketVM[];
+  scoped: boolean;
+  /** True when Desk.search is unavailable — server still pages via /tickets creator scan. */
+  windowed: boolean;
+  hasMore: boolean;
+  /** Next `from` for infinite-scroll load-more (ticketdashboard.html: from += limit). */
+  nextFrom: number;
+}
+
+const TICKET_PAGE = 20;
+/** Desk search is capped around ~2,000 rows; 99×20 covers that window. */
+const MAX_TICKET_PAGES = 20;
+
+function ticketScope(): { zohoUserId?: string } {
+  // When an admin is "viewing as" an agent, pass that agent's id so ?zoho_user_id scopes to them.
   const actAsId = getImpersonation()?.zohoUserId;
-  const scope = actAsId ? { zohoUserId: actAsId } : {};
-  // Page the full open-ticket set (Desk caps a page at 99): the WS unread badge only counts
-  // events for ticket ids the client knows, so a busy agent's older tickets must load too.
-  // Capped to bound render + Desk API cost; a short page (or the server's windowed fallback,
-  // which already returns its full bounded set) ends the loop.
-  const PAGE = 99;
-  const MAX_PAGES = 5; // ≈495 tickets
+  return actAsId ? { zohoUserId: actAsId } : {};
+}
+
+/** Fetch one owned ticket (WS promote for tickets outside the loaded pages). */
+export async function loadTicketById(ticketId: string): Promise<TicketVM> {
+  return mapTicket(await getDeskTicket(ticketId));
+}
+
+/** One page — matches zoho-octane ticketdashboard.html (`from=0`, `limit=20`, from += limit). */
+export async function loadTicketsPage(opts: {
+  from?: number;
+  limit?: number;
+} = {}): Promise<TicketsPageResult> {
+  const limit = Math.min(99, Math.max(1, opts.limit ?? TICKET_PAGE));
+  const from = Math.max(0, opts.from ?? 0);
+  const res = await listDeskTickets({ from, limit, ...ticketScope() });
+  const raw = res.tickets;
+  const hasMore = typeof res.hasMore === 'boolean' ? res.hasMore : raw.length >= limit;
+  const nextFrom = typeof res.nextFrom === 'number' ? res.nextFrom : from + limit;
+  return {
+    tickets: raw.map(mapTicket),
+    scoped: res.scoped,
+    windowed: Boolean(res.windowed),
+    hasMore,
+    nextFrom,
+  };
+}
+
+/**
+ * Full creator-scoped set (for sidebar WS subscribe + badge). Pages until exhausted or the Desk
+ * search window (~2k). Prefer `loadTicketsPage` in the Tickets tab for progressive loading.
+ */
+export async function loadTickets(): Promise<{ tickets: TicketVM[]; scoped: boolean }> {
   const seen = new Set<string>();
-  const rows: Parameters<typeof mapTicket>[0][] = [];
+  const rows: TicketVM[] = [];
   let scoped = true;
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const res = await listDeskTickets({ from: 1 + page * PAGE, limit: PAGE, ...scope });
+  let from = 0;
+  for (let page = 0; page < MAX_TICKET_PAGES; page++) {
+    const res = await loadTicketsPage({ from, limit: 99 });
     scoped = res.scoped;
     for (const t of res.tickets) {
-      const id = String((t as { id?: unknown }).id ?? '');
-      if (id && seen.has(id)) continue;
-      if (id) seen.add(id);
+      if (t.id && seen.has(t.id)) continue;
+      if (t.id) seen.add(t.id);
       rows.push(t);
     }
-    if (res.windowed || res.tickets.length < PAGE) break;
+    if (!res.hasMore) break;
+    from = res.nextFrom;
   }
-  return { tickets: rows.map(mapTicket), scoped };
+  return { tickets: rows, scoped };
 }
 
 export interface TicketMsgVM {
@@ -455,98 +548,50 @@ interface TicketMsgRow extends TicketMsgVM {
 }
 
 export async function loadTicketMessages(ticketId: string): Promise<TicketMsgVM[]> {
-  const { threads, comments } = await listDeskComments(ticketId, 50);
+  // Reference ticketdashboard loads comments with limit 100; Desk caps lists at 99.
+  const { threads, comments, attachments } = await listDeskComments(ticketId, 99);
   const ms = (v: string | undefined): number => {
     const t = v ? new Date(v).getTime() : 0;
     return Number.isNaN(t) ? 0 : t;
   };
-  const attRows = (
-    atts: { id?: string | number; name?: string; size?: string | number }[] | undefined,
-    from: string,
-    time: string,
-    ts: number,
-  ): TicketMsgRow[] =>
-    (atts ?? [])
-      .filter((a) => a && a.id)
-      .map((a) => ({
-        from,
-        type: 'attachment' as const,
-        text: '',
-        time,
-        file: { name: String(a.name ?? 'attachment'), size: fmtBytes(a.size), attId: String(a.id), ticketId },
-        _ts: ts,
-      }));
 
   // Placement (matches the reference dashboard): the caller's OWN posts go right ("me"), everyone
   // else left. The app posts REPLIES as COMMENTS via its shared Desk agent, which the server flags
   // as `mine`. THREADS are the requester's inbound message + any other-agent email replies — never
-  // the caller's, so they render left, labelled by author. Attachments become their own bubbles.
+  // the caller's, so they render left, labelled by author.
   const rows: TicketMsgRow[] = [];
   for (const t of threads ?? []) {
     const text = stripHtml(String(t.content ?? t.summary ?? ''));
     const who = fullName(t.author) || t.author?.name || (t.direction === 'out' ? 'Agent' : 'Customer');
-    const ts = ms(t.createdTime);
-    const time = relTime(t.createdTime);
-    if (text) rows.push({ from: who, type: 'comment', text, time, _ts: ts });
-    rows.push(...attRows(t.attachments, who, time, ts));
+    if (text) rows.push({ from: who, type: 'comment', text, time: relTime(t.createdTime), _ts: ms(t.createdTime) });
   }
   for (const c of comments ?? []) {
     const text = stripHtml(String(c.content ?? ''));
     const cm = c.commenter;
     const who = c.mine ? 'me' : fullName(cm) || cm?.name || 'Support';
-    const ts = ms(c.commentedTime);
-    const time = relTime(c.commentedTime);
-    // The app captions a file-only reply "📎 name"; drop that placeholder text when an attachment rides along.
+    // Older tickets carry a "📎 name" placeholder comment from before attachments got their own
+    // Attachments-tab bubble — drop that placeholder text now that the real file renders separately.
     const isCaption = /^📎\s/.test(text) && (c.attachments?.length ?? 0) > 0;
-    if (text && !isCaption) rows.push({ from: who, type: 'comment', text, time, _ts: ts });
-    rows.push(...attRows(c.attachments, who, time, ts));
+    if (text && !isCaption) rows.push({ from: who, type: 'comment', text, time: relTime(c.commentedTime), _ts: ms(c.commentedTime) });
+  }
+  // Attachments are ticket-level (Desk's Attachments tab), not tied to one comment/thread — this is
+  // also where a file Mytrion sends, or one a Desk agent uploads directly, shows up for BOTH sides.
+  for (const a of attachments ?? []) {
+    if (!a?.id) continue;
+    const who = a.mine ? 'me' : 'Support';
+    rows.push({
+      from: who,
+      type: 'attachment',
+      text: '',
+      time: relTime(a.createdTime),
+      file: { name: String(a.name ?? 'attachment'), size: fmtBytes(a.size), attId: String(a.id), ticketId },
+      _ts: ms(a.createdTime),
+    });
   }
   return rows.sort((a, b) => a._ts - b._ts).map(({ _ts, ...m }) => m);
 }
 
-// ---- Client drilldown modal: cards (dwh.cards) + activity (dwh.transactions) ----
-
-function maskCard(raw: unknown): string {
-  const digits = String(raw ?? '').replace(/\D/g, '');
-  return digits ? `•••• ${digits.slice(-4)}` : '—';
-}
-
-export interface ClientCardVM {
-  num: string;
-  status: string;
-  tone: string;
-}
-/** A carrier's cards from the DWH (card_number + Active/Inactive/Unknown status only). */
-export async function loadClientCards(carrierId: string): Promise<ClientCardVM[]> {
-  if (!carrierId) return [];
-  const res = await callTouchpoint('dwh.cards', { carrierId });
-  return (res.data ?? []).map((c) => {
-    const up = String(c.status ?? '').trim().toUpperCase();
-    const tone = up === 'ACTIVE' ? 'var(--ok)' : up === 'INACTIVE' ? 'var(--muted)' : 'var(--warn)';
-    return { num: maskCard(c.card_number), status: up || 'UNKNOWN', tone };
-  });
-}
-
-export interface ClientActivityVM {
-  title: string;
-  sub: string;
-  tone: string;
-}
-/** A carrier's recent fuel-card transactions (DWH line items) as an activity feed. */
-export async function loadClientActivity(carrierId: string): Promise<ClientActivityVM[]> {
-  if (!carrierId) return [];
-  const res = await callTouchpoint('dwh.transactions', { carrierId, limit: 15 });
-  const rows = (res.data ?? []).slice(0, 15);
-  return rows.map((r) => {
-    const gal = n(r.line_item_fuel_quantity ?? r.fuel_quantity);
-    const amt = r.line_item_amount ?? r.amount;
-    const card = maskCard(r.card_number);
-    const loc = String(r.location_name ?? r.merchant_name ?? r.location ?? '').trim();
-    const date = r.transaction_date ? relTime(String(r.transaction_date)) : '';
-    const title = gal > 0 ? `${gal.toLocaleString('en-US', { maximumFractionDigits: 1 })} gal fueled` : 'Fuel transaction';
-    const sub = [date, amt != null ? money(amt) : '', card !== '—' ? `Card ${card}` : '', loc]
-      .filter(Boolean)
-      .join(' · ');
-    return { title, sub, tone: 'var(--violet)' };
-  });
-}
+export {
+  loadClientCards, loadClientActivity, CLIENT_ACTIVITY_PAGE,
+  type ClientCardVM, type ClientActivityVM, type ClientActivityPage,
+} from './clientDrilldown';

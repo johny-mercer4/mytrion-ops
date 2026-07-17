@@ -59,6 +59,9 @@ html,body{height:100%;margin:0}
   .ss-btn-p:active{transform:translateY(1px)}
   .ss-ico-btn{transition:background .14s,color .14s,border-color .14s}
   .ss-ico-btn:hover{background:rgba(var(--accent-rgb),.12)!important;color:var(--accent)!important;border-color:rgba(var(--accent-rgb),.4)!important}
+  /* Icons: never baseline-align; keep crisp inside flex rows / icon boxes */
+  .ss-root svg.ss-icon{display:block;flex-shrink:0;overflow:visible;vertical-align:middle}
+  .ss-root .ss-ico-btn svg,.ss-root button > svg.ss-icon{display:block}
   .ss-scroll{overflow-y:auto}
   .ss-root input,.ss-root textarea,.ss-root button,.ss-root select{font-family:inherit}
   .ss-in{appearance:none;-webkit-appearance:none;background-color:var(--surface)}
@@ -67,5 +70,51 @@ html,body{height:100%;margin:0}
     background-repeat:no-repeat;background-position:right 12px center;padding-right:34px!important;
   }
   .ss-in:focus{outline:none;border-color:rgba(var(--accent-rgb),.7)!important;box-shadow:0 0 0 3px rgba(var(--accent-rgb),.15)!important;background-color:var(--surface)!important}
+  /* Dropdown / picklist rows — readable in both themes (never light text on soft accent wash). */
+  .ss-menu-i{
+    display:block;width:100%;text-align:left;padding:9px 13px;border:none;border-radius:var(--radius-md);
+    background:transparent;color:var(--text);font-size:12.5px;font-weight:500;cursor:pointer;
+    transition:background .12s,color .12s;
+  }
+  .ss-menu-i:hover{background:var(--alt)!important;color:var(--text)!important}
+  .ss-root.light .ss-menu-i:hover{background:var(--surface-2)!important}
+  .ss-menu-i.is-on,.ss-menu-i[aria-selected="true"]{
+    background:rgba(var(--accent-rgb),.14)!important;color:var(--accent)!important;font-weight:700;
+  }
+  .ss-root.light .ss-menu-i.is-on,.ss-root.light .ss-menu-i[aria-selected="true"]{
+    background:rgba(var(--accent-rgb),.1)!important;color:#1d4ed8!important;
+  }
+  .ss-menu-i.is-auto{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .ss-menu-i .ss-auto-tag{
+    flex:none;font-size:9.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+    padding:2px 7px;border-radius:var(--radius-md);
+    color:var(--orange);background:color-mix(in srgb,var(--orange) 14%,transparent);
+    border:1px solid color-mix(in srgb,var(--orange) 28%,transparent);
+  }
+  /* Attachment drop-zone hover / drag */
+  .ss-attach{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;width:100%;
+    padding:22px;border:1.5px dashed var(--border);border-radius:var(--radius-md);
+    background:var(--surface);cursor:pointer;text-align:center;
+    transition:border-color .15s,background .15s,box-shadow .15s,transform .12s;
+  }
+  .ss-attach:hover{
+    border-color:rgba(var(--accent-rgb),.55)!important;
+    background:rgba(var(--accent-rgb),.06)!important;
+    box-shadow:0 0 0 3px rgba(var(--accent-rgb),.1);
+  }
+  .ss-attach.is-drag{
+    border-color:var(--accent)!important;
+    background:rgba(var(--accent-rgb),.1)!important;
+    box-shadow:0 0 0 3px rgba(var(--accent-rgb),.14);
+  }
+  .ss-root.light .ss-attach{background:var(--surface-2)}
+  .ss-root.light .ss-attach:hover,.ss-root.light .ss-attach.is-drag{background:rgba(var(--accent-rgb),.07)!important}
+  /* Modal scrim — readable over light + dark canvases */
+  .ss-scrim{
+    position:fixed;inset:0;z-index:130;display:flex;align-items:center;justify-content:center;padding:24px;
+    background:rgba(15,23,42,.48);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+  }
+  .ss-root.light .ss-scrim{background:rgba(15,23,42,.42)}
   a{color:var(--accent);text-decoration:none}
   a:hover{color:var(--accent);text-decoration:underline}

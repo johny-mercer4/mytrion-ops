@@ -110,6 +110,18 @@ export async function createCarrierInvite(
         expose: true,
       });
     }
+    // Drivers nest under the owner — no owner registration means no driver link.
+    const owner = await registeredMiniAppCompanyRepo.findActiveOwnerByCarrier(ctx, carrierId);
+    if (!owner) {
+      throw new AppError(
+        'Create and register the owner user first — drivers can only be invited under an active owner',
+        {
+          statusCode: 400,
+          code: 'DRIVER_NEEDS_OWNER',
+          expose: true,
+        },
+      );
+    }
     if (!cardId) {
       throw new AppError('A driver invite needs the card it belongs to', {
         statusCode: 400,

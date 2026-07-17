@@ -20,17 +20,27 @@ export function useLoad<T>(fn: () => Promise<T>, deps: unknown[]): Loaded<T> {
   const reload = useCallback(() => setTick((t) => t + 1), []);
   const depsKey = JSON.stringify(deps);
   const prevKey = useRef(depsKey);
+  const dataRef = useRef<T | null>(null);
+  dataRef.current = data;
   useEffect(() => {
     let off = false;
-    // Drop stale data when the INPUTS change; a plain reload() keeps the old value visible.
+    // Drop stale data when the INPUTS change; a plain reload() keeps the old value visible
+    // and does not flip `loading` (avoids chat/list flicker while reconciling).
     if (prevKey.current !== depsKey) {
       prevKey.current = depsKey;
       setData(null);
+      dataRef.current = null;
+      setLoading(true);
+    } else {
+      setLoading(dataRef.current === null);
     }
-    setLoading(true);
     setError(null);
     fn()
-      .then((d) => !off && setData(d))
+      .then((d) => {
+        if (off) return;
+        dataRef.current = d;
+        setData(d);
+      })
       .catch((e: unknown) => !off && setError(e instanceof Error ? e.message : 'Failed to load'))
       .finally(() => !off && setLoading(false));
     return () => {

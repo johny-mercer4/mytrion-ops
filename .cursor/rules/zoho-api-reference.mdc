@@ -1,6 +1,6 @@
 ---
-description: Zoho CRM v8 / Desk v1 API conventions, metadata fetch, and COQL — use when building or debugging Zoho integrations
-globs: src/integrations/**/*.ts,src/modules/tools/**/*.ts,metadataScripts/**/*.ts,src/routes/**/*zoho*,src/routes/**/*desk*,src/routes/**/*crm*
+description: Zoho CRM v8 / Desk v1 / People v3 / WorkDrive v1 API conventions, metadata fetch, and COQL — use when building or debugging Zoho integrations
+globs: src/integrations/**/*.ts,src/modules/tools/**/*.ts,metadataScripts/**/*.ts,src/routes/**/*zoho*,src/routes/**/*desk*,src/routes/**/*crm*,src/routes/**/*people*,src/routes/**/*workdrive*
 alwaysApply: false
 ---
 
@@ -10,7 +10,10 @@ alwaysApply: false
 
 - Claude/Cursor skill: `.claude/skills/zoho-crm-api/SKILL.md` — CRM REST **v8**, metadata, COQL, bulk, credits
 - Claude/Cursor skill: `.claude/skills/zoho-desk-api/SKILL.md` — Desk **v1**, `orgId` header, tickets, fields
-- Official: [CRM v8](https://www.zoho.com/crm/developer/docs/api/v8/) · [COQL Overview](https://www.zoho.com/crm/developer/docs/api/v8/COQL-Overview.html) · [Desk API](https://desk.zoho.com/DeskAPIDocument)
+- Claude/Cursor skill: `.claude/skills/zoho-people-api/SKILL.md` — People API **v3**, forms/records CRUD, employees, attendance, timesheets
+- Claude/Cursor skill: `.claude/skills/zoho-workdrive-api/SKILL.md` — WorkDrive API **v1**, team folders, files, upload/download, sharing
+
+- Official: [CRM v8](https://www.zoho.com/crm/developer/docs/api/v8/) · [COQL Overview](https://www.zoho.com/crm/developer/docs/api/v8/COQL-Overview.html) · [Desk API](https://desk.zoho.com/DeskAPIDocument) · [People API](https://www.zoho.com/people/api/v3/) · [WorkDrive API](https://workdrive.zoho.com/apidocs)
 
 ## Live field metadata (PROD `.env` tokens)
 

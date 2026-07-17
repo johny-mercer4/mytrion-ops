@@ -92,6 +92,26 @@ export const registeredMiniAppCompanyRepo = {
     return rows.map(toDto);
   },
 
+  /** ACTIVE registered owner for a carrier — required before any driver invite can be created. */
+  async findActiveOwnerByCarrier(
+    ctx: TenantContext,
+    carrierId: string,
+  ): Promise<RegisteredMiniAppCompanyDto | undefined> {
+    const rows = await db
+      .select()
+      .from(registeredMiniAppCompanies)
+      .where(
+        and(
+          eq(registeredMiniAppCompanies.tenantId, ctx.tenantId),
+          eq(registeredMiniAppCompanies.carrierId, carrierId),
+          eq(registeredMiniAppCompanies.profile, 'owner'),
+          eq(registeredMiniAppCompanies.status, 'active'),
+        ),
+      )
+      .limit(1);
+    return rows[0] ? toDto(rows[0]) : undefined;
+  },
+
   /**
    * ACTIVE registered drivers of one carrier — the owner's fleet roster, and the source of truth
    * for "is this card already taken" (assertDriverCardAvailable). Revoked drivers are excluded on

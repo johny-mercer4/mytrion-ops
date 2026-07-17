@@ -1,0 +1,28 @@
+---
+description: RingCentral API conventions, authentication, SDKs, and Embeddable widgets — use when building or debugging RingCentral integrations
+globs: src/integrations/**/*.ts,src/modules/tools/**/*.ts,metadataScripts/**/*.ts,src/routes/**/*ringcentral*,src/routes/**/*rc*
+alwaysApply: false
+---
+
+# RingCentral API reference (this repo)
+
+## Skills (full docs)
+
+- Claude/Cursor skill: `.claude/skills/ringcentral-api/SKILL.md` — RingCentral REST API, SDKs, Embeddable voice widget, WebRTC, SMS, and auth.
+
+- Official: [RingCentral Developers](https://developers.ringcentral.com/) · [API Reference](https://developers.ringcentral.com/api-reference) · [RingCentral Embeddable](https://github.com/ringcentral/ringcentral-embeddable)
+
+## Auth wiring
+
+- Prefer using the official RingCentral SDK (`@ringcentral/sdk` for Node.js) for authentication.
+- Auth Flow: JWT is recommended for server-to-server integrations. Authorization Code with PKCE is for user-facing applications.
+- Production base URL: `https://platform.ringcentral.com`
+
+## RingCentral Embeddable Widget
+
+- Injected via a `<script>` tag referencing `adapter.js`.
+- Interacts with the parent application using `window.postMessage` (e.g., `rc-call-ring-notify`, `rc-adapter-new-call`).
+- Uses WebRTC, requiring the application to be served over HTTPS.
+- **OAuth Redirect URI** (Developer Console → Auth) must be exactly:
+  `https://apps.ringcentral.com/integration/ringcentral-embeddable/latest/redirect.html`
+  — **not** your Render URL. Empty redirect list → `invalid_client` / OAU-113.

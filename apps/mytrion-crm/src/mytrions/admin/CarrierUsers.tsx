@@ -252,7 +252,7 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
         <div>
           <div className={s.eyebrow}>Carrier User Management</div>
           <h2 className={s.h2}>{VIEWS[view].title}</h2>
-          <p className={s.sub}>{VIEWS[view].sub}</p>
+
         </div>
         <div className={s.inlineRow}>
           <button type="button" className={s.ghostBtn} disabled={refreshing} onClick={refresh}>

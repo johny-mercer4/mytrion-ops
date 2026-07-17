@@ -9,6 +9,7 @@
  */
 import { env } from '../../config/env.js';
 import { cmpDb } from '../../integrations/awsMysql.js';
+import { cmpTunnelRequired, ensureCmpTunnel } from '../../integrations/cmpTunnel.js';
 import { AppError } from '../../lib/errors.js';
 
 export interface CmpColumn {
@@ -104,6 +105,16 @@ export async function getCmpSchema(): Promise<CmpSchemaSnapshot> {
       statusCode: 503,
       code: 'CMP_DB_UNCONFIGURED',
     });
+  }
+
+  if (cmpTunnelRequired()) {
+    const tunnel = await ensureCmpTunnel();
+    if (!tunnel.ready) {
+      throw new AppError(tunnel.message, {
+        statusCode: 503,
+        code: 'CMP_TUNNEL_UNAVAILABLE',
+      });
+    }
   }
 
   const database = await resolveDatabase();

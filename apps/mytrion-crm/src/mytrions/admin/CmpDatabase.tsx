@@ -9,6 +9,7 @@ export function CmpDatabase() {
       title="CMP Database"
       subtitle="Live, read-only schema of the CMP MySQL — tables, columns, data types, and how recently each table was written. Structure only; no row data is ever read."
       load={getCmpSchema}
+      loadingMessage="Connecting SSH tunnel and loading schema…"
       headerIcon={<DatabaseIcon size={14} />}
     />
   );

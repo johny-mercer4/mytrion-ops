@@ -75,9 +75,6 @@
 [data-mytrion='customer-service'] { --accent: #e0a83e; --accent-strong: #f2c86a; --on-accent: #241a06; --accent-soft: rgba(224, 168, 62, 0.14); --accent-glow: rgba(224, 168, 62, 0.28); }
 [data-theme='light'] [data-mytrion='customer-service'] { --accent: #b4770f; --accent-strong: #ce9022; --on-accent: #fff; --accent-soft: rgba(180, 119, 15, 0.1); --accent-glow: rgba(180, 119, 15, 0.2); }
 
-[data-mytrion='retention'] { --accent: #e85dc0; --accent-strong: #f08fd4; --on-accent: #2a0a22; --accent-soft: rgba(232, 93, 192, 0.13); --accent-glow: rgba(232, 93, 192, 0.28); }
-[data-theme='light'] [data-mytrion='retention'] { --accent: #c0269e; --accent-strong: #db3ab5; --on-accent: #fff; --accent-soft: rgba(192, 38, 158, 0.1); --accent-glow: rgba(192, 38, 158, 0.2); }
-
 [data-mytrion='verification'] { --accent: #6d7cff; --accent-strong: #94a0ff; --on-accent: #0a0c2e; --accent-soft: rgba(109, 124, 255, 0.14); --accent-glow: rgba(109, 124, 255, 0.28); }
 [data-theme='light'] [data-mytrion='verification'] { --accent: #4f46e5; --accent-strong: #4338ca; --on-accent: #fff; --accent-soft: rgba(79, 70, 229, 0.1); --accent-glow: rgba(79, 70, 229, 0.2); }
 

@@ -62,9 +62,9 @@ describe('resolveAccessibleMytrions', () => {
 describe('server-resolved access is authoritative (verified session)', () => {
   it('uses accessibleMytrions verbatim (in display order), overriding the static table', () => {
     const { accessible, homeMytrion } = resolveAccessibleMytrions(
-      ctx({ profile: 'Sales Agent', accessibleMytrions: ['retention', 'sales'], homeMytrion: 'sales', allDepartmentAccess: false }),
+      ctx({ profile: 'Sales Agent', accessibleMytrions: ['billing', 'sales'], homeMytrion: 'sales', allDepartmentAccess: false }),
     );
-    expect(accessible).toEqual(['sales', 'retention']); // reordered to MYTRION_ORDER
+    expect(accessible).toEqual(['sales', 'billing']); // reordered to MYTRION_ORDER
     expect(homeMytrion).toBe('sales');
   });
 
