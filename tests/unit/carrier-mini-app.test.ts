@@ -13,6 +13,10 @@ vi.hoisted(() => {
 vi.mock('../../src/integrations/dwhCards.js', () => ({
   listDwhCards: vi.fn(async () => []),
   findDwhCardByNumber: vi.fn(async () => null),
+  // Card lookups by id are EXACT queries, not a scan of listDwhCards — that scan capped at 100 and
+  // silently broke every driver on a carrier with more cards than that.
+  findDwhCardById: vi.fn(async () => null),
+  isActiveCardOfCarrier: vi.fn(async () => false),
 }));
 
 vi.mock('../../src/integrations/dwhTransactions.js', () => ({
@@ -93,7 +97,7 @@ import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { carrierInvitationRepo } from '../../src/repos/carrierInvitationRepo.js';
 import { registeredMiniAppCompanyRepo } from '../../src/repos/registeredMiniAppCompanyRepo.js';
-import { listDwhCards, findDwhCardByNumber } from '../../src/integrations/dwhCards.js';
+import { listDwhCards, findDwhCardById, findDwhCardByNumber, isActiveCardOfCarrier } from '../../src/integrations/dwhCards.js';
 import { listDwhTransactions, resolveDwhTxnRange } from '../../src/integrations/dwhTransactions.js';
 import { sendDocument, TelegramChatUnreachableError, parseInitDataUser, signTelegramInitData, verifyTelegramInitData } from '../../src/integrations/telegramCarrierBot.js';
 import { executeZohoFunctionWithFallback } from '../../src/integrations/zohoFunctions.js';
@@ -133,6 +137,8 @@ beforeEach(() => {
   vi.resetAllMocks();
   dwhCards.mockResolvedValue([]);
   vi.mocked(findDwhCardByNumber).mockResolvedValue(null);
+  vi.mocked(findDwhCardById).mockResolvedValue(null);
+  vi.mocked(isActiveCardOfCarrier).mockResolvedValue(false);
   crm.getCarrierOverview.mockResolvedValue({ company_name: 'Acme Transport LLC', is_active: true });
   registrationRepo.list.mockResolvedValue([]);
   registrationRepo.listDriversByCarrier.mockResolvedValue([]);
@@ -537,10 +543,8 @@ describe('driver row scoping (own card only)', () => {
   /** The driver's registration resolves cardId 'card_1' -> OWN_CARD via the DWH card directory. */
   function withResolvableCard() {
     registrationRepo.findByTelegramUserId.mockResolvedValueOnce(driverRow());
-    dwhCards.mockResolvedValueOnce([
-      { cardId: 'card_1', cardNumber: OWN_CARD, cardType: 'FUEL', status: 'Active', balance: '0' },
-      { cardId: 'card_2', cardNumber: OTHER_CARD_SAME_LAST4, cardType: 'FUEL', status: 'Active', balance: '0' },
-    ]);
+    // Exact lookup by (carrier, card) — the old scan of listDwhCards capped at 100.
+    vi.mocked(findDwhCardById).mockResolvedValueOnce({ cardId: 'card_1', cardNumber: OWN_CARD, cardType: 'FUEL', status: 'Active', balance: '0' });
   }
 
   const dwhResult = (rows: Array<Record<string, unknown>>) => ({
@@ -587,7 +591,7 @@ describe('driver row scoping (own card only)', () => {
 
     it('fails closed with 503 rather than querying at all when the driver card cannot be resolved', async () => {
       registrationRepo.findByTelegramUserId.mockResolvedValueOnce(driverRow());
-      dwhCards.mockResolvedValueOnce([]); // card gone / DWH degraded
+      vi.mocked(findDwhCardById).mockResolvedValueOnce(null); // card gone / DWH degraded
 
       const res = await app.inject({
         method: 'POST',
@@ -826,7 +830,7 @@ describe('driver row scoping (own card only)', () => {
 
     it('prefers a stored telegramChatId when the registration captured one', async () => {
       registrationRepo.findByTelegramUserId.mockResolvedValueOnce(driverRow({ telegramChatId: '999888' }));
-      dwhCards.mockResolvedValueOnce([{ cardId: 'card_1', cardNumber: OWN_CARD, cardType: 'FUEL', status: 'Active', balance: '0' }]);
+      vi.mocked(findDwhCardById).mockResolvedValueOnce({ cardId: 'card_1', cardNumber: OWN_CARD, cardType: 'FUEL', status: 'Active', balance: '0' });
       dwhTxns.mockResolvedValueOnce(dwhResult(reportRows));
 
       await app.inject({
@@ -943,10 +947,7 @@ describe('service requests file real Desk tickets', () => {
 
   function withResolvableCard(reg = driverReg()) {
     registrationRepo.findByTelegramUserId.mockResolvedValueOnce(reg);
-    dwhCards.mockResolvedValueOnce([
-      { cardId: 'card_1', cardNumber: OWN_CARD, cardType: 'FUEL', status: 'Active', balance: '0' },
-      { cardId: 'card_2', cardNumber: OTHER_CARD, cardType: 'FUEL', status: 'Active', balance: '0' },
-    ]);
+    vi.mocked(findDwhCardById).mockResolvedValueOnce({ cardId: 'card_1', cardNumber: OWN_CARD, cardType: 'FUEL', status: 'Active', balance: '0' });
   }
 
   it('creates a ticket for a driver and returns its real id', async () => {
@@ -1113,7 +1114,8 @@ describe('driver self-registration by card number', () => {
   /** Card resolves, card is active for the carrier, nobody else holds it, no live invite. */
   function cardAvailable() {
     vi.mocked(findDwhCardByNumber).mockResolvedValueOnce(cardOwner);
-    dwhCards.mockResolvedValueOnce([{ cardId: 'card_1', cardNumber: CARD, cardType: 'FUEL', status: 'Active', balance: '0' }]);
+    vi.mocked(isActiveCardOfCarrier).mockResolvedValueOnce(true);
+    vi.mocked(findDwhCardById).mockResolvedValue({ cardId: 'card_1', cardNumber: CARD, cardType: 'FUEL', status: 'Active', balance: '0' });
     inviteRepo.findLiveDriverByCard.mockResolvedValueOnce(undefined);
     registrationRepo.listDriversByCarrier.mockResolvedValueOnce([]);
     // create() returns a CarrierInvitationDto — ISO strings, not the Dates inviteRow() carries.
@@ -1262,7 +1264,8 @@ describe('driver self-registration by card number', () => {
     driverTg();
     registrationRepo.findByTelegramUserId.mockResolvedValueOnce(undefined);
     vi.mocked(findDwhCardByNumber).mockResolvedValueOnce(cardOwner);
-    dwhCards.mockResolvedValueOnce([{ cardId: 'card_1', cardNumber: CARD, cardType: 'FUEL', status: 'Active', balance: '0' }]);
+    vi.mocked(isActiveCardOfCarrier).mockResolvedValueOnce(true);
+    vi.mocked(findDwhCardById).mockResolvedValue({ cardId: 'card_1', cardNumber: CARD, cardType: 'FUEL', status: 'Active', balance: '0' });
     inviteRepo.findLiveDriverByCard.mockResolvedValueOnce(undefined);
     // Someone else already holds this card. Possession of the number must not be enough to take
     // over a colleague's registration.
@@ -1283,7 +1286,7 @@ describe('driver self-registration by card number', () => {
     driverTg();
     registrationRepo.findByTelegramUserId.mockResolvedValueOnce(undefined);
     vi.mocked(findDwhCardByNumber).mockResolvedValueOnce(cardOwner);
-    dwhCards.mockResolvedValueOnce([{ cardId: 'card_1', cardNumber: CARD, cardType: 'FUEL', status: 'Active', balance: '0' }]);
+    vi.mocked(isActiveCardOfCarrier).mockResolvedValueOnce(true);
     // findLiveDriverByCard returns the DB row (Dates), unlike create() which returns a DTO
     // (ISO strings) — inviteRow() is the row shape.
     inviteRepo.findLiveDriverByCard.mockResolvedValueOnce(

@@ -46,6 +46,32 @@ export async function listDwhCards(carrierId: string, limit = 100): Promise<DwhC
   return rows.map(toDto);
 }
 
+/**
+ * Is this card an active card of this carrier? An exact lookup, not a scan.
+ *
+ * The membership check used to run `listDwhCards(carrierId).some(c => c.cardId === cardId)` — over a
+ * list capped at 100 (200 hard max). Real carriers are far bigger: measured live, 5809710 has 510
+ * active cards, 5794015 has 230. So a driver whose card sorted past the first 100 was told "That
+ * card is not an active card of this carrier" and could not register AT ALL — the check answered
+ * "does your card appear in the newest 100" while claiming to answer "is your card active".
+ *
+ * Asking the database about the one card removes the cap from the question entirely.
+ */
+export async function findDwhCardById(carrierId: string, cardId: string): Promise<DwhCard | null> {
+  const rows = await dwhQuery<CardRow>(
+    `select card_id, card_number, card_type, status, balance
+       from octane.stg_cmp_card
+      where is_active = true and carrier_id = $1 and card_id = $2
+      limit 1`,
+    [carrierId, cardId],
+  );
+  return rows[0] ? toDto(rows[0]) : null;
+}
+
+export async function isActiveCardOfCarrier(carrierId: string, cardId: string): Promise<boolean> {
+  return (await findDwhCardById(carrierId, cardId)) !== null;
+}
+
 /** The carrier + card a fuel-card NUMBER resolves to — drives driver self-registration (the number
  * is printed on the physical card, so possession identifies the carrier/card). Active cards only. */
 export interface DwhCardOwner {

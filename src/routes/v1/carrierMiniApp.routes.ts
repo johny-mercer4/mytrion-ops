@@ -12,7 +12,7 @@ import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { env, isProduction } from '../../config/env.js';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { db } from '../../db/client.js';
-import { listDwhCards, findDwhCardByNumber } from '../../integrations/dwhCards.js';
+import { listDwhCards, findDwhCardById, findDwhCardByNumber } from '../../integrations/dwhCards.js';
 import { listDwhTransactions, resolveDwhTxnRange } from '../../integrations/dwhTransactions.js';
 import { searchDwhClients } from '../../integrations/dwhClients.js';
 import { searchDwhOperators } from '../../integrations/dwhOperators.js';
@@ -1362,8 +1362,10 @@ function toRegistrationView(row: {
 async function resolveDriverCardNumber(carrierId: string | null, cardId: string | null): Promise<string | null> {
   if (!carrierId || !cardId || !env.DWH_DATABASE_URL) return null;
   try {
-    const cards = await listDwhCards(carrierId);
-    return cards.find((c) => c.cardId === cardId)?.cardNumber ?? null;
+    // Exact lookup. This used to `.find()` inside listDwhCards, which caps at 100 — so on a carrier
+    // with 230 (or 510) active cards a driver whose card sorted past the cap resolved to null, and
+    // requireDriverCardNumber turned that into a permanent 503: every read they had, dead.
+    return (await findDwhCardById(carrierId, cardId))?.cardNumber ?? null;
   } catch {
     return null;
   }

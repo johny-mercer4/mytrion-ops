@@ -11,7 +11,7 @@
  */
 import { env } from '../../config/env.js';
 import { AppError, ConflictError } from '../../lib/errors.js';
-import { listDwhCards } from '../../integrations/dwhCards.js';
+import { isActiveCardOfCarrier, listDwhCards } from '../../integrations/dwhCards.js';
 import { carrierInvitationRepo, type CarrierInvitationDto } from '../../repos/carrierInvitationRepo.js';
 import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompanyRepo.js';
 import type { CarrierCompanyType } from '../../db/schema/index.js';
@@ -55,8 +55,10 @@ async function assertDriverCardAvailable(
   cardId: string,
 ): Promise<void> {
   if (env.DWH_DATABASE_URL) {
-    const cards = await listDwhCards(carrierId);
-    if (!cards.some((c) => c.cardId === cardId)) {
+    // An exact lookup, not a membership test over a listing. listDwhCards caps at 100 (200 hard
+    // max) while real carriers run to 510 active cards, so scanning it rejected every card that
+    // sorted past the cap — a driver on a big fleet could not register at all.
+    if (!(await isActiveCardOfCarrier(carrierId, cardId))) {
       throw new AppError('That card is not an active card of this carrier', {
         statusCode: 400,
         code: 'CARD_NOT_ACTIVE',
