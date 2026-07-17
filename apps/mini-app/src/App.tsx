@@ -107,6 +107,12 @@ function fmt(v: unknown): string {
  * verbatim rather than passed through `new Date()`, which would re-interpret it in the phone's
  * timezone and shift the clock.
  */
+/** 'YYYY-MM-DD' for a date input's value, in the device's own timezone. */
+function isoDay(d: Date): string {
+  const pad = (x: number) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function txnDateTime(v: unknown): string {
   const t = fmt(v);
   return t === '—' ? t : t.replace('T', ' ').slice(0, 16);
@@ -1257,8 +1263,11 @@ function ActionSheet({
   const [loadError, setLoadError] = useState('');
   const [data, setData] = useState<SheetData | null>(null);
   const [range, setRange] = useState<TxnRange>('month');
-  const [from, setFrom] = useState('2026-06-01');
-  const [to, setTo] = useState('2026-07-09');
+  // Lazy init, and relative to TODAY: these were literal dates ('2026-06-01'/'2026-07-09'), so the
+  // custom range opened on a window that had already gone stale — by this writing it ended 8 days
+  // in the past. Last 30 days is the neutral default; the presets cover the calendar shapes.
+  const [from, setFrom] = useState(() => isoDay(new Date(Date.now() - 30 * 864e5)));
+  const [to, setTo] = useState(() => isoDay(new Date()));
   const [genericSent, setGenericSent] = useState(false);
   const [invoiceBusyId, setInvoiceBusyId] = useState<string | null>(null);
   /** Phase 2 of the transactions read is in flight — rows are already shown, freshest are pending. */
@@ -1545,6 +1554,33 @@ function ActionSheet({
                       </label>
                     </div>
                   )}
+                  {/* Period summary — a payment app always answers "what did this period cost?" before
+                      the line items. The backend has sent these totals all along (they are computed
+                      over the WHOLE window, not just the rendered page); nothing rendered them. */}
+                  {rows.length > 0 && (() => {
+                    const tot = data.v.totals ?? {};
+                    const spend = tot['funded_total'];
+                    const gal = tot['total_fuel_quantity'] ?? tot['fuel_quantity'];
+                    const saved = tot['discount_amount'];
+                    if (spend == null) return null;
+                    return (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                        <div style={{ background: 'var(--primary)', borderRadius: 14, padding: '13px 14px' }}>
+                          <div style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,.75)' }}>{t('txns.totalSpent')}</div>
+                          <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(spend)}</div>
+                        </div>
+                        <div style={{ background: 'var(--secondary)', borderRadius: 14, padding: '13px 14px' }}>
+                          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('txns.saved')}</div>
+                          <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(saved ?? 0)}</div>
+                        </div>
+                        {gal != null && (
+                          <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--muted-fg)', textAlign: 'center', marginTop: -2 }}>
+                            {t('txns.gallons', { n: fmt(gal) })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {liveRefreshing && (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, marginBottom: 10, fontSize: 12, color: 'var(--muted-fg)' }}>
                       <Spinner size={12} />
