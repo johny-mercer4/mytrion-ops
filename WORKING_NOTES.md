@@ -2730,3 +2730,87 @@ against the local backend), not just typechecked.
 - **The carrier tree now scrolls inside its own box** (Linear/Stripe pattern the brief cites). Drop
   `max-height` on `.tableScroll` to revert to page scroll.
 - **`admin.module.css` is ~1000 lines** against CLAUDE.md's 600 cap.
+
+## 2026-07-17 — mini-app: driver services, real tickets, and three capped-list bugs
+
+Branch `feature/mini-app-transactions`, 43 commits, **not pushed** (push permission denied — run
+`git push -u origin feature/mini-app-transactions` yourself). 660 tests green, typecheck clean, lint
+0 errors (7 pre-existing warnings).
+
+### Shipped
+
+- **Driver catalog 3 → 7 real services.** `last-used` was already wired end to end (route, client,
+  renderer, scoping) and unreachable purely for want of a catalog line. `reveal-code` renders the PAN
+  the session already carries — no fetch.
+- **Every fake "Request sent" is gone.** 8 catalog items called `sendGenericRequest()`, which wrote a
+  local inbox row and made no network call. They now file real Zoho Desk tickets via
+  `modules/carrier/serviceRequest.ts`. Departments mirror servercrm's own `departmentMap`
+  (`routes/mobileAppRoutes.js`) so they land in the queue the mobile app already feeds.
+  **Fake items remaining across both catalogs: 0.** Driver 7 of 9 real, owner 14 of 31; the other 19
+  are `soon` and need upstreams that don't exist.
+- **Driver name** is asked for at card-number sign-in (was silently taken from the Telegram profile,
+  which is a nickname as often as a name — it lands in the owner's roster). Owners can correct it
+  from the fleet screen.
+
+### Security
+
+- **`/tracking` leaked the whole fleet to any driver.** Every other driver-reachable read scopes to
+  their card; tracking *cannot* — the upstream returns `{trackingNumber, startDate, cardsOrdered}`
+  with no card identity. Now owner-only. Regression test confirmed failing (200, not 403) against the
+  unfixed route. Nothing in 621 tests had caught it.
+- Service requests: the card is resolved server-side from the caller's registration, never the body.
+  `service` is an enum over a server-side map. Driver rename/owner rename key on `(tenant, carrier,
+  card)` — the where-clause IS the authorization.
+
+### Three bugs, one root cause: asking a capped list a question it can't answer
+
+`listDwhCards` defaulted to 100 rows (hard cap 200). Measured on the live DWH across 7967 carriers:
+p99 = 46 active cards, 16 carriers over 100, **max 510**. Three call sites scanned that list:
+
+1. `assertDriverCardAvailable` — a driver past the cap got "That card is not an active card of this
+   carrier" and **could not register at all**.
+2. `resolveDriverCardNumber` — returned null → `requireDriverCardNumber` 503 → **every read that
+   driver had was permanently dead**.
+3. Fleet screen — owner of the 510-card carrier saw 100, and because the filter counts and search run
+   client-side over that array, it **reported 100 as the total**.
+
+Fixed with `findDwhCardById` / `countDwhCards` (exact queries) and `FLEET_CARD_LIMIT = 1000`.
+Pagination was rejected deliberately: p99 is 46, the max payload is 53 KB, and paging would break the
+counts and search it was meant to serve. Verified live: card 17385 of 230 went 400 → 201; fleet
+returned 510/510 (68 KB, 450 ms).
+
+**This also produced the first end-to-end proof that driver scoping filters.** Every carrier with a
+registered driver had one card, or all its transactions on the driver's card — scoping was
+indistinguishable from a passthrough. On carrier 5794015 (7599 line items across 95 cards, 230 active
+cards) the driver's reads return 315 rows on 1 card.
+
+### Test-suite trap (cost two debugging cycles)
+
+`vi.clearAllMocks()` does **not** drain the `mockResolvedValueOnce` queue. A test whose path never
+reached a queued value leaked it into the next test — silently swapping a 201 for a 409 and blaming
+production code that was correct. `beforeEach` now uses `resetAllMocks()` and re-applies the factory
+defaults. Do not revert it.
+
+### Open — decisions needed, not mechanical work
+
+- **Inbox is entirely fabricated.** `seedInbox()` invents "Payment due", "New invoice", "Payment
+  received" for owners with no payment actually due. No backend route exists. A real `inbox_events`
+  table, `inboxEventRepo` and a WebSocket topic (`inbox:<ownerKind>:<ownerId>`) DO exist — but
+  `ownerKind: 'client'` keys on a `carrier_users` row id (`cu_…`) while a mini-app user is a
+  `registered_mini_app_companies` row keyed by `telegram_user_id`. **They do not join.** Resolving
+  that mapping is the first decision, before any Inbox work.
+- **Re-login after a Telegram account change is a dead end** — "This card already has a registered
+  driver", no path out but support. Deliberately not fixed: a card number is printed on the plastic
+  and handed to fuel attendants, so "card = access" opens a takeover vector. Product decision.
+- **Desk ticket creation has never been run end to end** — it would file into the live Customer
+  Service queue. Needs authorization.
+- `carrierMiniApp.routes.ts` is ~1220 lines against the 600 cap. Splitting it is overdue.
+- 19 `soon` services; invoice status filter (endpoint takes `status`, UI never sends it); the
+  `CardWave` redesign.
+
+### Local DB
+
+Demo rows (`DEMO-FLEET-1` / `DEMO-OWNEROP-1`, 5 registrations + 7 invitations) deleted — they made
+every service 400 (`carrierId must be a positive integer`) for whoever opened them. 9 real
+registrations, 46 invitations remain. Test with `?dev=1&uid=772010` (F 4 TRUCKING LLC, carrier
+5747140) or `uid=567461899` (carrier 5836348).
