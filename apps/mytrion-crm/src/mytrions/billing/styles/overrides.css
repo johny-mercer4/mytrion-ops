@@ -207,3 +207,176 @@
     justify-content: center;
 }
 .bm-root .bm-copilot-send:disabled { opacity: 0.5; cursor: default; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Redesign polish — Finance-grade motion + Finance-style sidebar footer.
+   Subtle, meaning-carrying micro-animations (short fade-ups, hover-lift, pulse)
+   in the billing sky-blue palette. Pure CSS, no libraries. Panel entrances use
+   animation-fill-mode: backwards so no lingering transform traps the fixed
+   modal/copilot/boot overlays.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Header "Live" status pill + pulsing dot ── */
+.bm-root .bm-header-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.bm-root .bm-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--success-text);
+    box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2);
+    animation: bmPulseOnline 2s ease-in-out infinite;
+}
+@keyframes bmPulseOnline {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.22); }
+    50% { box-shadow: 0 0 0 5px rgba(46, 204, 113, 0.06); }
+}
+
+/* ── Finance-style sidebar footer: labeled theme switch + user card ── */
+.bm-root .bm-sidebar-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.625rem;
+    border-top: 1px solid var(--border);
+    text-align: left;
+    letter-spacing: 0;
+}
+.bm-root .bm-theme-toggle {
+    width: 100%;
+    padding: 0.5rem 0.7rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    color: var(--text-secondary);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    cursor: pointer;
+    /* No background transition — theme flip stays instant (like Finance); hover recolors border. */
+    transition: color 160ms ease, border-color 160ms ease;
+}
+.bm-root .bm-theme-toggle:hover {
+    color: var(--text-primary);
+    background: var(--surface-raised);
+    border-color: var(--billing-accent-glow);
+}
+.bm-root .bm-theme-toggle svg { flex-shrink: 0; }
+.bm-root .bm-theme-toggle span { flex: 1; text-align: left; }
+
+.bm-root .bm-user-card {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.6rem;
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    transition: border-color 160ms ease;
+}
+.bm-root .bm-user-card:hover { border-color: var(--billing-accent-glow); }
+.bm-root .bm-user-avatar {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    border-radius: var(--radius-md);
+    background: linear-gradient(140deg, var(--billing-accent), var(--accent-hover));
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+}
+.bm-root .bm-user-meta { line-height: 1.25; min-width: 0; }
+.bm-root .bm-user-name {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.bm-root .bm-user-role {
+    font-size: 0.5625rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ── Panel entrance (Finance mfPanelIn) — fade + 6px rise on first mount ── */
+@keyframes bmPanelIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+}
+@keyframes bmFadeUpSm {
+    from { opacity: 0; transform: translateY(7px); }
+    to { opacity: 1; transform: none; }
+}
+.bm-root .bm-content .bm-panel {
+    animation: bmPanelIn 0.4s cubic-bezier(0.2, 0, 0, 1) backwards;
+}
+
+/* ── Stat cards: staggered entrance + hover-lift ── */
+.bm-root .bm-summary-banner > .bm-summary-item,
+.bm-root .db-kpi-grid > .db-kpi-card {
+    animation: bmFadeUpSm 0.4s cubic-bezier(0.2, 0, 0, 1) backwards;
+    transition: transform 0.16s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.16s ease, border-color 0.16s ease;
+}
+.bm-root .bm-summary-banner > .bm-summary-item:nth-child(2),
+.bm-root .db-kpi-grid > .db-kpi-card:nth-child(2) { animation-delay: 0.05s; }
+.bm-root .bm-summary-banner > .bm-summary-item:nth-child(3),
+.bm-root .db-kpi-grid > .db-kpi-card:nth-child(3) { animation-delay: 0.1s; }
+.bm-root .bm-summary-banner > .bm-summary-item:nth-child(4),
+.bm-root .db-kpi-grid > .db-kpi-card:nth-child(4) { animation-delay: 0.15s; }
+.bm-root .bm-summary-banner > .bm-summary-item:hover,
+.bm-root .db-kpi-grid > .db-kpi-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--billing-accent-glow);
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+}
+
+/* ── Table rows: smooth hover + a subtle nudge affordance ── */
+.bm-root .dc-deal-row,
+.bm-root .db-row-item,
+.bm-root .tx-row,
+.bm-root .rt-row {
+    transition: background 0.14s ease, transform 0.14s ease;
+}
+.bm-root .dc-deal-row:hover,
+.bm-root .tx-row:hover,
+.bm-root .rt-row:hover { transform: translateX(2px); }
+
+/* ── Buttons: gentle press feedback ── */
+.bm-root .bm-btn:active,
+.bm-root .bm-refresh-btn:active,
+.bm-root .dc-filter-tab:active { transform: translateY(1px); }
+
+/* ── Reduced motion: honour the OS setting ── */
+@media (prefers-reduced-motion: reduce) {
+    .bm-root .bm-content .bm-panel,
+    .bm-root .bm-summary-banner > .bm-summary-item,
+    .bm-root .db-kpi-grid > .db-kpi-card,
+    .bm-root .bm-status-dot { animation: none; }
+    .bm-root .bm-summary-banner > .bm-summary-item:hover,
+    .bm-root .db-kpi-grid > .db-kpi-card:hover,
+    .bm-root .dc-deal-row:hover,
+    .bm-root .tx-row:hover,
+    .bm-root .rt-row:hover { transform: none; }
+}
