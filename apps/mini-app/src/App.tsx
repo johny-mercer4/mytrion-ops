@@ -118,9 +118,16 @@ function txnDateTime(v: unknown): string {
   return t === '—' ? t : t.replace('T', ' ').slice(0, 16);
 }
 
+/**
+ * Money always carries both decimal places. With only `maximumFractionDigits` the trailing zeros
+ * were dropped, so a screen could show "$1,000" next to "$1,497.94", and a transaction list ran
+ * "$327.37 / $324.1 / $14" — the ragged column a client reads as a bug in the numbers themselves.
+ */
 function money(v: unknown): string {
   const n = typeof v === 'string' ? Number(v) : typeof v === 'number' ? v : NaN;
-  return Number.isFinite(n) ? `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : fmt(v);
+  return Number.isFinite(n)
+    ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : fmt(v);
 }
 
 /** Countdown from an ISO deadline: {expired, short:"17h"/"45m"}. */
