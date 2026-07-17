@@ -390,10 +390,26 @@ function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: Regis
  * Driver self-registers by fuel-card number (the number is on the physical card); Company accounts
  * are invite-only, so that branch just points to the registration link.
  */
-function LoginScreen({ firstName, onDriverRegister }: { firstName: string; onDriverRegister: (cardNumber: string) => Promise<void> }) {
+function LoginScreen({
+  firstName,
+  defaultName,
+  onDriverRegister,
+}: {
+  firstName: string;
+  /** The Telegram profile name, used to prefill — not to decide. See `name` below. */
+  defaultName: string;
+  onDriverRegister: (cardNumber: string, driverName: string) => Promise<void>;
+}) {
   const { t } = useI18n();
   const [role, setRole] = useState<'choose' | 'driver' | 'company'>('choose');
   const [card, setCard] = useState('');
+  /**
+   * Prefilled from Telegram, but the driver's to correct. This name is what their OWNER sees beside
+   * this card in the fleet roster and what support reads on a ticket — and a Telegram display name
+   * is whatever the person happened to set: a nickname, an emoji, the phone's default. It was being
+   * taken silently.
+   */
+  const [name, setName] = useState(defaultName);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -403,11 +419,16 @@ function LoginScreen({ firstName, onDriverRegister }: { firstName: string; onDri
       setError(t('login.cardInvalid'));
       return;
     }
+    const who = name.trim();
+    if (!who) {
+      setError(t('login.nameRequired'));
+      return;
+    }
     setBusy(true);
     setError('');
     haptic('tap');
     try {
-      await onDriverRegister(value);
+      await onDriverRegister(value, who);
     } catch (e) {
       haptic('error');
       setError(e instanceof ApiError ? e.message : t('error.reason'));
@@ -476,6 +497,17 @@ function LoginScreen({ firstName, onDriverRegister }: { firstName: string; onDri
                 placeholder={t('login.cardPlaceholder')}
                 style={{ width: '100%', minWidth: 0, height: 50, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 16, fontVariantNumeric: 'tabular-nums', letterSpacing: '.04em', padding: '0 14px', boxSizing: 'border-box' }}
               />
+            </label>
+            <label style={{ width: '100%' }}>
+              <span style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 7 }}>{t('login.namePrompt')}</span>
+              <input
+                value={name}
+                autoComplete="name"
+                onChange={(e) => setName(e.target.value.slice(0, 200))}
+                placeholder={t('login.namePlaceholder')}
+                style={{ width: '100%', minWidth: 0, height: 50, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 16, padding: '0 14px', boxSizing: 'border-box' }}
+              />
+              <span style={{ display: 'block', fontSize: 12, color: 'var(--muted-fg)', marginTop: 6, lineHeight: 1.45 }}>{t('login.nameHint')}</span>
             </label>
             {error && <div style={{ fontSize: 13, color: 'var(--destructive)', lineHeight: 1.45 }}>{error}</div>}
             <CtaButton onClick={() => void submit()} disabled={busy}>
@@ -1965,6 +1997,9 @@ export function App() {
   const wa = getTelegramWebApp();
   const user = wa?.initDataUnsafe.user;
   const firstName = user?.first_name || 'there';
+  /** Prefill only — the sign-in screen lets the driver correct it before it reaches their owner's
+   *  roster. Mirrors the backend's fallback order so the prefill matches what it would have used. */
+  const telegramName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim() || user?.username || '';
   const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();
   const { t } = useI18n();
 
@@ -2137,9 +2172,9 @@ export function App() {
       .finally(() => setBusy(false));
   }
 
-  async function submitDriverCard(cardNumber: string): Promise<void> {
+  async function submitDriverCard(cardNumber: string, driverName: string): Promise<void> {
     if (!wa?.initData) throw new ApiError(t('auth.openInTelegram'), 'NO_INITDATA', 0);
-    const res = await driverSelfRegister(wa.initData, cardNumber);
+    const res = await driverSelfRegister(wa.initData, cardNumber, driverName);
     setRegistration(res.registration);
     haptic('success');
     setScreen('home');
@@ -2245,7 +2280,7 @@ export function App() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowX: 'hidden', overflowY: 'auto' }}>
         {screen === 'loading' && <LoadingScreen />}
         {screen === 'error' && <ErrorScreen title={errorTitle} reason={errorReason} agentName={supportAgentName} />}
-        {screen === 'login' && <LoginScreen firstName={firstName} onDriverRegister={submitDriverCard} />}
+        {screen === 'login' && <LoginScreen firstName={firstName} defaultName={telegramName} onDriverRegister={submitDriverCard} />}
         {screen === 'confirm' && preview && <ConfirmScreen preview={preview} firstName={firstName} busy={busy} onConfirm={confirm} />}
         {screen === 'success' && <SuccessScreen session={session} company={company} onContinue={goHome} />}
         {screen === 'already' && <AlreadyScreen company={company} agentName={supportAgentName} onContinue={goHome} />}

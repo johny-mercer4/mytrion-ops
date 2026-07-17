@@ -1344,6 +1344,39 @@ describe('driver self-registration by card number', () => {
     expect(vi.mocked(findDwhCardByNumber)).not.toHaveBeenCalled();
   });
 
+  it("uses the name the driver typed, not their Telegram profile name", async () => {
+    // The Telegram display name is whatever the person set — here a nickname. It is the owner's
+    // fleet roster this lands in, so the typed name has to win.
+    vi.mocked(parseInitDataUser).mockReturnValueOnce({ id: 987654, first_name: '🔥Sasha🔥', username: 'sasha_777' } as never);
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(undefined);
+    cardAvailable();
+    registrationRepo.upsert.mockResolvedValueOnce(
+      registrationRow({ id: 'rma_self', profile: 'driver', telegramUserId: '987654', carrierId: CARRIER, cardId: 'card_1', companyType: null }),
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-self-register',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', cardNumber: CARD, driverName: '  James Reyes  ' },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(inviteRepo.create.mock.calls[0]?.[1]).toMatchObject({ driverName: 'James Reyes' });
+    expect(registrationRepo.upsert.mock.calls[0]?.[1]).toMatchObject({ driverName: 'James Reyes' });
+  });
+
+  it('rejects a blank typed name rather than silently falling back to Telegram', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-self-register',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', cardNumber: CARD, driverName: '   ' },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+
   for (const [tg, expected, why] of [
     [{ first_name: 'James', last_name: 'Reyes' }, 'James Reyes', 'first + last name'],
     [{ first_name: 'James' }, 'James', 'first name only'],

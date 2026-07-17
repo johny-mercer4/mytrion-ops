@@ -175,6 +175,10 @@ const serviceRequestSchema = z.object({
 const driverSelfRegisterSchema = z.object({
   initData: z.string().min(1),
   cardNumber: z.string().trim().min(4).max(40),
+  /** The driver's own name, typed on the card-number sign-in screen. Optional so an older client
+   *  keeps working; when absent the Telegram profile name is used, as before. Same 200-char cap the
+   *  owner's driver-invite form uses — it lands in the same column. */
+  driverName: z.string().trim().min(1).max(200).optional(),
 });
 
 function verifyTelegramUser(initData: string): { tgUser: TelegramWebAppUser; telegramUserId: string } {
@@ -1226,7 +1230,19 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       });
     }
     const ctx = lookupCtx();
-    const driverName = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(' ').trim() || tgUser.username || 'Driver';
+    /**
+     * The name the driver typed wins over their Telegram profile name.
+     *
+     * This string is not cosmetic: it is what the OWNER sees in their fleet roster next to a card,
+     * and what support reads on a ticket. A Telegram display name is whatever the person set it to
+     * — a nickname, emoji, or the phone's default — so deriving it silently put "🔥Sasha🔥" against
+     * a truck. The profile name stays as the fallback for clients that don't send one.
+     */
+    const driverName =
+      body.driverName ||
+      [tgUser.first_name, tgUser.last_name].filter(Boolean).join(' ').trim() ||
+      tgUser.username ||
+      'Driver';
 
     // Idempotency + cross-carrier guard before minting any invite (avoids orphan pending invites).
     const existing = await registeredMiniAppCompanyRepo.findByTelegramUserId(ctx, telegramUserId);

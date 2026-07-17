@@ -105,10 +105,12 @@ export async function fetchMiniAppSession(initData: string): Promise<{ registrat
 export async function driverSelfRegister(
   initData: string,
   cardNumber: string,
+  driverName?: string,
 ): Promise<{ registration: RegistrationView }> {
   return (await request('POST', '/carrier/mini-app/driver-self-register', {
     initData,
     cardNumber,
+    ...(driverName ? { driverName } : {}),
   })) as { registration: RegistrationView };
 }
 
