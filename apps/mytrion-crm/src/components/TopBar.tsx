@@ -60,7 +60,7 @@ export function TopBar({
             />
           ))}
         {showSwitch && (
-          <Link to="/" className={styles.switch}>
+          <Link to="/main" className={styles.switch}>
             <SwitchIcon size={13} />
             Switch Mytrion
           </Link>

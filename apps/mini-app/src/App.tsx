@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Check, CircleAlert, LayoutGrid } from 'lucide-react';
 import {
   ApiError,
@@ -7,15 +7,18 @@ import {
   fetchAccountStatus,
   fetchBalance,
   fetchFleet,
-  fetchInvoiceSignedUrl,
   fetchInvoices,
   fetchLastUsed,
   fetchMiniAppSession,
   fetchPaymentInfo,
   fetchRegistrationPreview,
   fetchTracking,
+  renameDriver,
+  sendServiceRequest,
   fetchTransactions,
   redeemRegistration,
+  sendInvoice,
+  sendTransactionsReport,
   type CarrierBalance,
   type FleetCard,
   type LastUsedResult,
@@ -26,6 +29,7 @@ import {
   type StatusResult,
   type TrackingResult,
   type TransactionsResult,
+  type TxnExportFormat,
 } from './lib/api';
 import { getRegistrationId, getTelegramWebApp, haptic, type TelegramWebAppUser } from './lib/telegram';
 import { getStoredTheme, initTheme, setTheme, type Theme } from './lib/theme';
@@ -33,7 +37,6 @@ import { LANGUAGES, useI18n } from './lib/i18n';
 import { LogoLockup } from './components/logo';
 import { BackChevron, Chevron, EyeToggle, Icon, SearchGlyph, type IconName } from './components/icons';
 import { seedInbox, type InboxItem } from './lib/demo';
-import { exportTransactions, type TxnExportFormat } from './lib/txnExport';
 import type { OpenAction } from './lib/actionTarget';
 import { defaultPinned, findCatalogItem } from './lib/serviceCatalog';
 import { ConfirmDialog, type ConfirmConfig } from './components/ConfirmDialog';
@@ -56,6 +59,9 @@ interface Session {
   ownCard: string;
   /** Driver's real full fuel-card number (from the backend session), null when unresolved. */
   ownCardNumber: string | null;
+  /** The carrier this session belongs to — identity, unlike companyName which is display text and
+   *  is routinely null. Anything cached per account must key on this. */
+  carrierId: string | null;
 }
 
 function cleanAgentName(agentName: string | null | undefined): string | null {
@@ -79,6 +85,7 @@ function sessionFrom(reg: RegistrationView | null): Session {
     isFleetManager,
     ownCard,
     ownCardNumber,
+    carrierId: reg?.carrierId ?? null,
   };
 }
 
@@ -99,9 +106,34 @@ function fmt(v: unknown): string {
   if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(2);
   return String(v);
 }
+/**
+ * 'YYYY-MM-DD HH:MM' for a transaction. The clock time is what tells two fuel-ups at the same stop
+ * on the same day apart, so it is shown rather than sliced off. The backend sends the mart's
+ * `timestamp without time zone` through JSON as "2026-07-16T12:14:00" — no zone, so it is displayed
+ * verbatim rather than passed through `new Date()`, which would re-interpret it in the phone's
+ * timezone and shift the clock.
+ */
+/** 'YYYY-MM-DD' for a date input's value, in the device's own timezone. */
+function isoDay(d: Date): string {
+  const pad = (x: number) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function txnDateTime(v: unknown): string {
+  const t = fmt(v);
+  return t === '—' ? t : t.replace('T', ' ').slice(0, 16);
+}
+
+/**
+ * Money always carries both decimal places. With only `maximumFractionDigits` the trailing zeros
+ * were dropped, so a screen could show "$1,000" next to "$1,497.94", and a transaction list ran
+ * "$327.37 / $324.1 / $14" — the ragged column a client reads as a bug in the numbers themselves.
+ */
 function money(v: unknown): string {
   const n = typeof v === 'string' ? Number(v) : typeof v === 'number' ? v : NaN;
-  return Number.isFinite(n) ? `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : fmt(v);
+  return Number.isFinite(n)
+    ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : fmt(v);
 }
 
 /** Countdown from an ISO deadline: {expired, short:"17h"/"45m"}. */
@@ -363,10 +395,26 @@ function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: Regis
  * Driver self-registers by fuel-card number (the number is on the physical card); Company accounts
  * are invite-only, so that branch just points to the registration link.
  */
-function LoginScreen({ firstName, onDriverRegister }: { firstName: string; onDriverRegister: (cardNumber: string) => Promise<void> }) {
+function LoginScreen({
+  firstName,
+  defaultName,
+  onDriverRegister,
+}: {
+  firstName: string;
+  /** The Telegram profile name, used to prefill — not to decide. See `name` below. */
+  defaultName: string;
+  onDriverRegister: (cardNumber: string, driverName: string) => Promise<void>;
+}) {
   const { t } = useI18n();
   const [role, setRole] = useState<'choose' | 'driver' | 'company'>('choose');
   const [card, setCard] = useState('');
+  /**
+   * Prefilled from Telegram, but the driver's to correct. This name is what their OWNER sees beside
+   * this card in the fleet roster and what support reads on a ticket — and a Telegram display name
+   * is whatever the person happened to set: a nickname, an emoji, the phone's default. It was being
+   * taken silently.
+   */
+  const [name, setName] = useState(defaultName);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -376,11 +424,16 @@ function LoginScreen({ firstName, onDriverRegister }: { firstName: string; onDri
       setError(t('login.cardInvalid'));
       return;
     }
+    const who = name.trim();
+    if (!who) {
+      setError(t('login.nameRequired'));
+      return;
+    }
     setBusy(true);
     setError('');
     haptic('tap');
     try {
-      await onDriverRegister(value);
+      await onDriverRegister(value, who);
     } catch (e) {
       haptic('error');
       setError(e instanceof ApiError ? e.message : t('error.reason'));
@@ -449,6 +502,17 @@ function LoginScreen({ firstName, onDriverRegister }: { firstName: string; onDri
                 placeholder={t('login.cardPlaceholder')}
                 style={{ width: '100%', minWidth: 0, height: 50, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 16, fontVariantNumeric: 'tabular-nums', letterSpacing: '.04em', padding: '0 14px', boxSizing: 'border-box' }}
               />
+            </label>
+            <label style={{ width: '100%' }}>
+              <span style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 7 }}>{t('login.namePrompt')}</span>
+              <input
+                value={name}
+                autoComplete="name"
+                onChange={(e) => setName(e.target.value.slice(0, 200))}
+                placeholder={t('login.namePlaceholder')}
+                style={{ width: '100%', minWidth: 0, height: 50, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 16, padding: '0 14px', boxSizing: 'border-box' }}
+              />
+              <span style={{ display: 'block', fontSize: 12, color: 'var(--muted-fg)', marginTop: 6, lineHeight: 1.45 }}>{t('login.nameHint')}</span>
             </label>
             {error && <div style={{ fontSize: 13, color: 'var(--destructive)', lineHeight: 1.45 }}>{error}</div>}
             <CtaButton onClick={() => void submit()} disabled={busy}>
@@ -530,9 +594,17 @@ function AppHeader({ user, onOpenProfile }: { user: TelegramWebAppUser | undefin
         type="button"
         onClick={onOpenProfile}
         aria-label="Profile"
-        style={{ width: 37, height: 37, borderRadius: '50%', border: 'none', cursor: 'pointer', overflow: 'hidden', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 0 2px var(--card),0 0 0 3px var(--border)', background: user?.photo_url ? undefined : 'var(--primary)' }}
+        /**
+         * 44×44 tap target (Apple HIG / WCAG 2.5.5 minimum; the avatar alone was 37), with the
+         * visible avatar kept at 38 inside it. The button itself is a transparent box — growing the
+         * avatar to 44 would have made it the tallest thing in the header and pushed the whole bar
+         * down 7px, so the extra reach overhangs into the header's padding instead.
+         */
+        style={{ width: 44, height: 44, margin: '-3px -3px -3px 0', border: 'none', background: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}
       >
-        {user?.photo_url ? <img src={user.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initialsOf(user)}
+        <span style={{ width: 38, height: 38, borderRadius: '50%', overflow: 'hidden', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 0 2px var(--card),0 0 0 3px var(--border)', background: user?.photo_url ? undefined : 'var(--primary)' }}>
+          {user?.photo_url ? <img src={user.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initialsOf(user)}
+        </span>
       </button>
     </div>
   );
@@ -541,12 +613,6 @@ function AppHeader({ user, onOpenProfile }: { user: TelegramWebAppUser | undefin
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // Home
 
-/** Fallback ONLY when the real card number is unresolved: '5412 7734 90' + fabricated tail. */
-function fullCardNumber(ownCard: string): string {
-  const last4 = ownCard || '7549';
-  return '5412 7734 90' + last4.slice(0, 2) + ' ' + last4;
-}
-
 /** Group a raw digit string into 4s for readability (real EFS PANs are 19 digits → 5 groups). */
 function groupCardNumber(n: string): string {
   const digits = n.replace(/\D/g, '');
@@ -554,11 +620,18 @@ function groupCardNumber(n: string): string {
 }
 
 /** Masked PAN in the physical-card style: all-but-last-4 as asterisks + the real last 4. */
+/**
+ * The hero card mimics the PHYSICAL card, which prints the masked number as asterisks — so this one
+ * does too. The transaction rows and the exported report deliberately keep `•••• 7549`: those are
+ * app and document chrome, not a picture of the card in the driver's hand.
+ *
+ * Not length-faithful: an EFS PAN is 19 digits, and masking to its real 4-4-4-4-3 grouping splits
+ * the last four across groups as `•••7 549`, which reads as if the last four were "549".
+ */
 function maskedCardNumber(n: string): string {
   const digits = n.replace(/\D/g, '');
   const last4 = digits.slice(-4) || n.slice(-4);
-  const stars = '*'.repeat(Math.max(8, digits.length - 4));
-  return `${stars} ${last4}`;
+  return `${'*'.repeat(Math.max(digits.length - last4.length, 8))} ${last4}`;
 }
 
 /** Smooth an array of anchor points into a flowing SVG path (midpoint-quadratic smoothing). */
@@ -597,7 +670,10 @@ function CardContours() {
     { x: 420, y: 80 },
   ];
   return (
-    <svg aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.09 }} viewBox="0 0 400 200" preserveAspectRatio="none" fill="none" stroke="#FFFFFF" strokeWidth={0.7}>
+    // opacity 0.09 -> 0.045 and a thinner stroke: these were set to survive under the amber ribbon.
+    // Without it they are the card's only texture, and at the old weight they compete with the
+    // figures instead of sitting behind them.
+    <svg aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.045 }} viewBox="0 0 400 200" preserveAspectRatio="none" fill="none" stroke="#FFFFFF" strokeWidth={0.55}>
       {Array.from({ length: 26 }, (_, i) => (
         <path key={i} d={smoothWavePath(base.map((p) => ({ x: p.x, y: p.y - 96 + i * 8.5 })))} />
       ))}
@@ -605,89 +681,171 @@ function CardContours() {
   );
 }
 
-function CardWave() {
-  const gid = useId();
-  const LINES = 34;
-  // Two y-profiles (upper + lower edge) tracing the physical card: small LEFT crest, central valley,
-  // a taller ROUNDED RIGHT crest — vivid yellow→orange→red. The ribbon sits in the UPPER-MIDDLE so
-  // all card text lives below it on the dark band (that's how the real card keeps text legible while
-  // the wave stays vivid). Edges differ so lines fan/converge, not rigid stripes.
-  const xs = [-20, 60, 132, 205, 285, 350, 420];
-  const topY = [88, 60, 94, 64, 40, 70, 66];
-  const botY = [116, 90, 122, 94, 72, 102, 98];
-  return (
-    <svg aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.95 }} viewBox="0 0 400 200" preserveAspectRatio="none" fill="none">
-      <defs>
-        {/* Vivid yellow → orange → red, matching the branded app card. */}
-        <linearGradient id={gid} x1="0" y1="0" x2="400" y2="0" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#FFCE00" />
-          <stop offset="0.4" stopColor="#FF9500" />
-          <stop offset="0.72" stopColor="#FA6015" />
-          <stop offset="1" stopColor="#F03C16" />
-        </linearGradient>
-      </defs>
-      {Array.from({ length: LINES }, (_, i) => {
-        const f = i / (LINES - 1); // 0 = top edge, 1 = bottom edge
-        const pts = xs.map((x, k) => ({ x, y: topY[k]! + (botY[k]! - topY[k]!) * f }));
-        return <path key={i} d={smoothWavePath(pts)} stroke={`url(#${gid})`} strokeWidth={1.15} strokeLinecap="round" />;
-      })}
-    </svg>
-  );
+/**
+ * The proportion of a real fuel card: ISO/IEC 7810 ID-1, 85.60 x 53.98 mm.
+ *
+ * Both heroes imitate the plastic, so the plastic decides the shape — this is not a taste number.
+ * They were 1.5 (owner) and 1.55 (driver), i.e. both TALLER than the thing they depict, and the
+ * owner — which carries the least content — was the tallest of the two. Because the card's height
+ * is derived from the ratio and its content is laid out space-between, the surplus showed up as a
+ * 64px void between the company name and the balance.
+ */
+const CARD_RATIO = '1.586 / 1';
+
+const BALANCE_KEY = 'octane.lastBalance';
+
+/**
+ * Last-known balance, so coming back to Home paints the number instead of "—".
+ *
+ * The balance endpoint reaches live EFS through servercrm and takes 1.9–3.3s (measured), and Home
+ * unmounts whenever you visit Services or Inbox — so every return trip re-ran that wait. The cached
+ * value is only ever the FIRST paint: the fetch below still runs and overwrites it, so a stale
+ * figure is on screen for one request, not for a session.
+ *
+ * Scoped by CARRIER ID, not company name. The name is display text and is routinely null — an
+ * invite created without one, or any registration whose companyName never got filled. Two empty
+ * names compared equal, so the scope collapsed and the cache hit across accounts: measured, after
+ * re-registering from carrier 5794015 to 5791860 the hero showed KBUFF TRUCKING's $2,000 balance and
+ * $70,547 credit line under EL PROSSIAH LLC for ~2s before the fetch landed. A name is also not
+ * identity — it can repeat and it can change. The carrier id is both always present and the thing
+ * that actually distinguishes one carrier's money from another's.
+ */
+/**
+ * The carrier balance, painted from cache first and refreshed in the background.
+ *
+ * Shared by both heroes on purpose: the endpoint takes 1.9–3.3s (it reaches live EFS through
+ * servercrm) and Home unmounts on every trip to Services or Inbox, so both cards need the same
+ * cache-then-refresh behaviour. Two copies of it would drift.
+ *
+ * Returns null only until the FIRST ever response — that is the one state worth a skeleton.
+ */
+interface BalanceState {
+  balance: CarrierBalance | null;
+  /** The fetch failed AND there is no cached figure to fall back on — the card has nothing true to
+   *  show and must say so rather than skeleton forever. */
+  failed: boolean;
+  retry: () => void;
 }
 
-/** EFS® | WEX co-brand marks (bottom-right of the physical card), approximated with styled text —
- * EFS wordmark, a thin divider, and WEX in its red rounded badge. */
-
-function OwnerHero({ initData, company, onOpenDetails }: { initData: string; company: string; onOpenDetails: () => void }) {
-  const { t } = useI18n();
-  const [balance, setBalance] = useState<CarrierBalance | null>(null);
+function useCarrierBalance(initData: string, carrierId: string | null): BalanceState {
+  const [balance, setBalance] = useState<CarrierBalance | null>(() => readCachedBalance(carrierId));
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let cancelled = false;
+    setFailed(false);
     fetchBalance(initData)
       .then((v) => {
-        if (!cancelled) setBalance(v);
+        if (cancelled) return;
+        setBalance(v);
+        writeCachedBalance(carrierId, v);
       })
       .catch(() => {
-        /* the balance tile falls back to '—' below — not worth a dedicated error state on Home */
+        // Previously swallowed. The card then sat on its skeleton forever, telling the driver it was
+        // loading something that had already failed — measured against a real outage: the balance
+        // endpoint 502'd and the hero span animated indefinitely. A cached figure for THIS carrier
+        // is still theirs and worth showing; with nothing cached, the card has to admit it.
+        if (!cancelled) setFailed(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [initData]);
+  }, [initData, carrierId, attempt]);
+  return { balance, failed, retry: () => setAttempt((n) => n + 1) };
+}
+
+function readCachedBalance(carrierId: string | null): CarrierBalance | null {
+  // No carrier resolved yet — there is nothing to key on, so a hit would be a guess.
+  if (!carrierId) return null;
+  try {
+    const raw = localStorage.getItem(BALANCE_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as { carrierId?: string; balance?: CarrierBalance };
+    return v.carrierId === carrierId && v.balance ? v.balance : null;
+  } catch {
+    return null; // unparseable or storage blocked — just fetch
+  }
+}
+
+function writeCachedBalance(carrierId: string | null, balance: CarrierBalance): void {
+  if (!carrierId) return;
+  try {
+    localStorage.setItem(BALANCE_KEY, JSON.stringify({ carrierId, balance }));
+  } catch {
+    /* storage can be unavailable (private mode / quota) — the cache is an optimisation, not state */
+  }
+}
+
+function OwnerHero({ initData, company, carrierId, onOpenDetails }: { initData: string; company: string; carrierId: string | null; onOpenDetails: () => void }) {
+  const { t } = useI18n();
+  const { balance, failed: balanceFailed, retry: retryBalance } = useCarrierBalance(initData, carrierId);
   const creditLimit = balance?.credit_limit != null ? Number(balance.credit_limit) : null;
   const creditRemaining = balance?.credit_remaining != null ? Number(balance.credit_remaining) : null;
-  const pct = creditLimit && creditRemaining != null && creditLimit > 0 ? Math.max(0, Math.min(100, (creditRemaining / creditLimit) * 100)) : 100;
-  const eyebrow = { fontSize: 9.5, fontWeight: 700, letterSpacing: '.12em', color: 'rgba(255,255,255,.65)' } as const;
+  // 100 was the fallback when there is no balance, which painted a FULL bar — i.e. "all your
+  // credit is available" — while the number above it was still loading or had failed outright.
+  // null means the bar has nothing true to draw and is not drawn.
+  const pct = creditLimit && creditRemaining != null && creditLimit > 0 ? Math.max(0, Math.min(100, (creditRemaining / creditLimit) * 100)) : null;
+  const eyebrow = { fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' } as const;
   return (
-    /* Same fuel-card shell as DriverHero (wave ribbon, dark, EFS·WEX) — owners/fleet see a card that
-       matches the driver's, but carrying the account balance instead of a card number. */
-    <div style={{ position: 'relative', background: '#161719', borderRadius: 18, overflow: 'hidden', padding: '13px 15px', aspectRatio: '1.95 / 1', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+    /* Deliberately NOT the fuel-card shell DriverHero uses. That card shows a PAN and depicts the
+       plastic, so the plastic's proportion belongs on it. This one shows a company name and a
+       balance — an account panel, not a card. Constraining it to the card ratio invented 52px of
+       void between the only two things it displays, so its height comes from its content. */
+    <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', display: 'flex', flexDirection: 'column' }}>
+      {/* Contours only. The amber ribbon is out for now, and the scrims went with it: they existed
+          solely to keep text legible on top of it, and the shell is already near-black. */}
       <CardContours />
-      <CardWave />
-      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '52%', background: 'linear-gradient(to top, rgba(18,19,21,.97) 62%, rgba(18,19,21,0))', pointerEvents: 'none' }} />
-      <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 46, background: 'linear-gradient(to bottom, rgba(18,19,21,.72), rgba(18,19,21,0))', pointerEvents: 'none' }} />
 
       {/* Top row: company left, Details button right */}
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-        <span style={{ minWidth: 0, flex: 1, fontSize: 15, fontWeight: 700, color: '#FFFFFF', textShadow: '0 1px 3px rgba(0,0,0,.6)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company || ''}</span>
+        <span style={{ minWidth: 0, flex: 1, fontSize: 15, fontWeight: 700, color: '#FFFFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company || ''}</span>
         <button type="button" className="press" onClick={onOpenDetails} style={{ height: 30, flex: 'none', background: 'rgba(255,255,255,.16)', border: 'none', borderRadius: 9, padding: '0 12px', fontSize: 12.5, fontWeight: 600, color: '#FFFFFF', cursor: 'pointer' }}>
           {t('common.details')}
         </button>
       </div>
 
       {/* Bottom block: balance amount + credit bar + credit-available (compact) */}
-      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+      {/* The separation from the header is this padding now, not surplus the aspect ratio had to
+          dump somewhere. 10px was what the ratio left behind and reads cramped under a 30px
+          header row; 22 is the breathing room the old 64px void was accidentally providing. */}
+      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 9, paddingTop: 22 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={eyebrow}>{t('home.efsBalance')}</span>
-          <span className="selectable" style={{ fontSize: 26, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', lineHeight: 1.05, textShadow: '0 1px 3px rgba(0,0,0,.7)' }}>
-            {balance ? money(balance.efs_balance ?? balance.balance) : '—'}
-          </span>
+          {balance ? (
+            <span className="selectable" style={{ fontSize: 32, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02, letterSpacing: '-.01em' }}>
+              {money(balance.efs_balance ?? balance.balance)}
+            </span>
+          ) : (
+            /* Only the very first open lands here — after that the cache paints a real number. A
+               shimmer reads as "loading"; a bare "—" reads as "your balance is unknown". */
+            balanceFailed ? (
+              /* A skeleton here would claim the number is still coming. It isn't — the fetch failed,
+                 and without a retry the only way out is closing the app. */
+              <button
+                type="button"
+                className="press"
+                onClick={retryBalance}
+                style={{ alignSelf: 'flex-start', marginTop: 7, display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'rgba(255,255,255,.14)', color: '#FFFFFF', borderRadius: 9, padding: '7px 12px', fontFamily: "'Geist'", fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+              >
+                <Icon name="refresh" size={14} strokeWidth={2.2} className="" />
+                {t('home.balanceRetry')}
+              </button>
+            ) : (
+            <span aria-label={t('home.efsBalance')} style={{ display: 'block', width: 168, height: 33, borderRadius: 9, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
+            )
+          )}
         </div>
-        <div style={{ display: 'flex', height: 5, borderRadius: 3, overflow: 'hidden', background: 'rgba(255,255,255,.18)' }}>
-          <div style={{ width: `${pct}%`, background: 'var(--primary)', borderRadius: 3 }} />
-        </div>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,.9)', textShadow: '0 1px 3px rgba(0,0,0,.7)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {creditLimit != null && creditRemaining != null ? t('home.creditAvailable', { amt: money(creditRemaining) }) : (balance?.efs_error ?? t('home.balanceNote'))}
+        {pct != null && (
+          <div style={{ display: 'flex', height: 5, borderRadius: 3, overflow: 'hidden', background: 'rgba(255,255,255,.18)' }}>
+            <div style={{ width: `${pct}%`, background: 'var(--primary)', borderRadius: 3 }} />
+          </div>
+        )}
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: 'rgba(255,255,255,.88)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {creditLimit != null && creditRemaining != null
+            ? t('home.creditAvailable', { amt: money(creditRemaining) })
+            : balance
+              ? (balance.efs_error ?? t('home.balanceNote'))
+              : '\u00A0'}
         </div>
       </div>
     </div>
@@ -697,49 +855,87 @@ function OwnerHero({ initData, company, onOpenDetails }: { initData: string; com
 function DriverHero({
   session,
   company,
+  carrierId,
   fullName,
+  initData,
   revealed,
-  copied,
   onToggleReveal,
-  onCopy,
 }: {
   session: Session;
   company: string;
+  carrierId: string | null;
   fullName: string;
+  initData: string;
   revealed: boolean;
-  copied: boolean;
   onToggleReveal: () => void;
-  onCopy: () => void;
 }) {
   const { t } = useI18n();
-  const realFull = session.ownCardNumber ?? fullCardNumber(session.ownCard).replace(/\s/g, '');
-  const display = revealed ? groupCardNumber(realFull) : maskedCardNumber(realFull);
+  // A driver's catalog lists "Check available balance" (docx), and that service already reads this
+  // same carrier balance — so the card leads with it rather than making them open a sheet for it.
+  const { balance, failed: balanceFailed, retry: retryBalance } = useCarrierBalance(initData, carrierId);
+  // No invented fallback: if the DWH has not resolved the real PAN there is nothing truthful to
+  // show, so the number skeletons rather than displaying a fiction the Copy button would hand out.
+  const realFull = session.ownCardNumber;
+  const display = realFull ? (revealed ? groupCardNumber(realFull) : maskedCardNumber(realFull)) : null;
   return (
     <>
-      <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', aspectRatio: '1.55 / 1', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+      <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', aspectRatio: CARD_RATIO, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
         <CardContours />
-        <CardWave />
-        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '54%', background: 'linear-gradient(to top, rgba(18,19,21,.97) 60%, rgba(18,19,21,0))', pointerEvents: 'none' }} />
 
-        {/* Top band: driver name (Telegram) left — in the logo's place — company/service right. */}
+        {/* Top band: driver name left, company + reveal right — the toggle rides at the card's top
+            corner the way a payment app puts it, and where the owner card already puts Details. */}
         <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', textShadow: '0 1px 3px rgba(0,0,0,.6)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '52%' }}>{fullName}</span>
-          {company && (
-            <span style={{ fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,.9)', textShadow: '0 1px 3px rgba(0,0,0,.6)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '46%', textAlign: 'right' }}>{company}</span>
+          <span style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{fullName}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, flex: 'none', maxWidth: '58%' }}>
+            {company && (
+              <span style={{ fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,.9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company}</span>
+            )}
+            <button type="button" className="press" aria-label={revealed ? 'Hide card details' : 'Show card details'} onClick={onToggleReveal} style={{ width: 30, height: 30, flex: 'none', border: 'none', borderRadius: 9, background: 'rgba(255,255,255,.15)', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <EyeToggle revealed={revealed} size={15} />
+            </button>
+          </div>
+        </div>
+
+        {/* Balance mid-card: the figure a driver opens the app for, and the same value their
+            catalog's "Check available balance" reads. */}
+        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' }}>{t('home.efsBalance')}</span>
+          {balance ? (
+            /* The eye is the card's privacy toggle, not just the number's — it covers every figure
+               on the card, the way a payment app's does. `selectable` only while revealed, so a
+               drag can't lift the mask characters as if they were the amount. */
+            <span
+              className={revealed ? 'selectable' : ''}
+              style={{ fontSize: 28, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02, letterSpacing: '-.01em' }}
+            >
+              {revealed ? money(balance.efs_balance ?? balance.balance) : '• • • •'}
+            </span>
+          ) : (
+            balanceFailed ? (
+              /* A skeleton here would claim the number is still coming. It isn't. */
+              <button
+                type="button"
+                className="press"
+                onClick={retryBalance}
+                style={{ alignSelf: 'flex-start', marginTop: 6, display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'rgba(255,255,255,.14)', color: '#FFFFFF', borderRadius: 9, padding: '6px 11px', fontFamily: "'Geist'", fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
+              >
+                <Icon name="refresh" size={13} strokeWidth={2.2} className="" />
+                {t('home.balanceRetry')}
+              </button>
+            ) : (
+            <span aria-label={t('home.efsBalance')} style={{ display: 'block', width: 148, height: 29, borderRadius: 8, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
+            )
           )}
         </div>
 
-        {/* Bottom block: eye/copy (right), then masked number (left) — holder name sits up top. */}
-        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <button type="button" className="press" aria-label={revealed ? 'Hide card number' : 'Show card number'} onClick={onToggleReveal} style={{ width: 34, height: 34, border: 'none', borderRadius: 10, background: 'rgba(255,255,255,.15)', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-              <EyeToggle revealed={revealed} size={17} />
-            </button>
-            <button type="button" className="press" onClick={onCopy} style={{ height: 34, padding: '0 13px', border: 'none', borderRadius: 10, background: 'rgba(255,255,255,.15)', color: '#FFFFFF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              {copied ? t('card.copied') : t('card.copy')}
-            </button>
-          </div>
-          <span className="selectable" style={{ fontSize: 17, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.04em', textShadow: '0 1px 3px rgba(0,0,0,.6)', whiteSpace: 'nowrap' }}>{display}</span>
+        {/* Card number last. The number stays `selectable`, so it can still be picked up by hand. */}
+        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' }}>{t('card.numberLabel')}</span>
+          {display ? (
+            <span className={revealed ? 'selectable' : ''} style={{ fontSize: 18, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em', whiteSpace: 'nowrap' }}>{display}</span>
+          ) : (
+            <span aria-label={t('card.numberLabel')} style={{ display: 'block', width: 196, height: 19, borderRadius: 6, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
+          )}
         </div>
       </div>
       <div style={{ fontSize: 13, color: 'var(--muted-fg)', margin: '-6px 4px 0' }}>{t('home.cardStanding')}</div>
@@ -756,9 +952,7 @@ interface HomeProps {
   pinned: string[];
   inbox: InboxItem[];
   cardRevealed: boolean;
-  cardCopied: boolean;
   onToggleCardReveal: () => void;
-  onCopyCardNumber: () => void;
   onTogglePin: (key: string) => void;
   onOpenAction: (target: OpenAction) => void;
   onGoToServices: () => void;
@@ -776,9 +970,7 @@ function Home({
   pinned,
   inbox,
   cardRevealed,
-  cardCopied,
   onToggleCardReveal,
-  onCopyCardNumber,
   onTogglePin,
   onOpenAction,
   onGoToServices,
@@ -798,9 +990,9 @@ function Home({
     <SlideIn key={tab} dir={slideDir}>
     <div style={{ padding: '16px 16px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {session.isDriver ? (
-        <DriverHero session={session} company={company} fullName={fullName} revealed={cardRevealed} copied={cardCopied} onToggleReveal={onToggleCardReveal} onCopy={onCopyCardNumber} />
+        <DriverHero session={session} company={company} carrierId={session.carrierId} fullName={fullName} initData={initData} revealed={cardRevealed} onToggleReveal={onToggleCardReveal} />
       ) : (
-        <OwnerHero initData={initData} company={company} onOpenDetails={() => onOpenAction({ kind: 'service', key: 'status' })} />
+        <OwnerHero initData={initData} company={company} carrierId={session.carrierId} onOpenDetails={() => onOpenAction({ kind: 'service', key: 'status' })} />
       )}
 
       {/* quick actions */}
@@ -822,7 +1014,7 @@ function Home({
               type="button"
               className="press"
               onClick={() => {
-                if (item.action === 'generic') onOpenAction({ kind: 'generic', key: item.key, title: t(item.labelKey) });
+                if (item.action === 'generic') onOpenAction({ kind: 'generic', key: item.key, title: t(item.labelKey), ...(item.request ? { request: item.request } : {}) });
                 else if (item.action) onOpenAction({ kind: 'service', key: item.action });
               }}
               style={{ textAlign: 'left', background: 'transparent', border: 'none', borderTop: '1px solid var(--border)', padding: '12px 0', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, width: '100%', fontFamily: "'Geist'" }}
@@ -903,6 +1095,7 @@ function FleetView({
   onRetry,
   onCreate,
   onRegenerate,
+  onRename,
   showToast,
   askConfirm,
 }: {
@@ -914,6 +1107,7 @@ function FleetView({
   onRetry: () => void;
   onCreate: (cardId: string, name: string) => Promise<void>;
   onRegenerate: (cardId: string, name: string) => Promise<void>;
+  onRename: (cardId: string, driverName: string) => Promise<void>;
   showToast: (msg: string, kind?: ToastKind) => void;
   askConfirm: (cfg: ConfirmConfig) => void;
 }) {
@@ -982,7 +1176,7 @@ function FleetView({
           <SearchGlyph />
           <input className="selectable" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('fleet.search')} style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14 }} />
         </div>
-        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', marginBottom: 14, paddingBottom: 2 }}>
+        <div className="hscroll" style={{ display: 'flex', gap: 8, marginBottom: 14, paddingBottom: 2 }}>
           {FILTERS.map((f) => {
             const active = filter === f;
             return (
@@ -1114,6 +1308,16 @@ function FleetView({
                         <div style={{ fontSize: 13, color: 'var(--fg)' }}>{t('card.registeredInfo', { name: c.driverName ?? '' })}</div>
                       </div>
                     )}
+                    {/* Rename, for a card that HAS a driver. A self-registering driver types their own
+                        name, and a pending invite carries whatever was typed when it was issued —
+                        either can be wrong, and this roster is what the owner reads. */}
+                    {c.cardId && (c.status === 'registered' || c.status === 'pending') && (
+                      <RenameDriver
+                        cardId={c.cardId}
+                        currentName={c.driverName ?? ''}
+                        onRename={onRename}
+                      />
+                    )}
                   </div>
                 )}
               </div>
@@ -1125,20 +1329,95 @@ function FleetView({
   );
 }
 
+/** Inline driver rename on a fleet card. Collapsed to a link until tapped — the roster is read far
+ *  more often than it is corrected, so an always-open input would be noise on every row. */
+function RenameDriver({
+  cardId,
+  currentName,
+  onRename,
+}: {
+  cardId: string;
+  currentName: string;
+  onRename: (cardId: string, driverName: string) => Promise<void>;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(currentName);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function save() {
+    const next = value.trim();
+    if (!next) {
+      setError(t('card.renameRequired'));
+      return;
+    }
+    if (next === currentName) {
+      setOpen(false);
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await onRename(cardId, next);
+      haptic('success');
+      setOpen(false);
+    } catch (e) {
+      haptic('error');
+      setError(e instanceof ApiError ? e.message : t('error.reason'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="press"
+        onClick={() => { haptic('tap'); setValue(currentName); setError(''); setOpen(true); }}
+        style={{ marginTop: 10, border: 'none', background: 'transparent', color: 'var(--link-accent)', fontFamily: "'Geist'", fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: '6px 0' }}
+      >
+        {t('card.renameCta')}
+      </button>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 12 }}>
+      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('card.name')}</label>
+      <input
+        value={value}
+        autoComplete="name"
+        onChange={(e) => setValue(e.target.value.slice(0, 200))}
+        placeholder={t('login.namePlaceholder')}
+        style={{ width: '100%', minWidth: 0, height: 46, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 15, padding: '0 13px', boxSizing: 'border-box' }}
+      />
+      {error && <div style={{ fontSize: 12.5, color: 'var(--destructive)', lineHeight: 1.45 }}>{error}</div>}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" className="press" onClick={() => void save()} disabled={busy} style={{ flex: 1, height: 44, border: 'none', borderRadius: 12, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}>
+          {busy ? <Spinner size={17} /> : t('card.renameSave')}
+        </button>
+        <button type="button" className="press" onClick={() => setOpen(false)} disabled={busy} style={{ flex: 'none', height: 44, padding: '0 16px', border: '1px solid var(--border)', borderRadius: 12, background: 'transparent', color: 'var(--muted-fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+          {t('common.back')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // Profile bottom sheet
 
 function ProfileSheet({
   user,
   company,
-  roleLabel,
   theme,
   onTheme,
   onClose,
 }: {
   user: TelegramWebAppUser | undefined;
   company: string;
-  roleLabel: string;
   theme: Theme;
   onTheme: (t: Theme) => void;
   onClose: () => void;
@@ -1165,7 +1444,6 @@ function ProfileSheet({
             <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fullName}</div>
             <div style={{ fontSize: 13, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company}</div>
           </div>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--owner-badge-fg)', padding: '5px 10px', borderRadius: 8, background: 'var(--owner-badge-bg)', flex: 'none', maxWidth: 110, textAlign: 'center', lineHeight: 1.3 }}>{roleLabel}</span>
         </div>
 
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 9 }}>{t('menu.theme')}</div>
@@ -1195,14 +1473,12 @@ function ProfileSheet({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// Service action sheet (self-service — demo data until EFS integrations land)
+// Service action sheet
 
-/** True when a transaction/card row's card number ends with the driver's own last-4. Real fields
- * aren't confirmed to be masked or full PANs, so this only ever compares the trailing digits. */
-function rowIsOwnCard(cardNumberField: unknown, ownCard: string): boolean {
-  const s = typeof cardNumberField === 'string' ? cardNumberField : typeof cardNumberField === 'number' ? String(cardNumberField) : '';
-  return s.slice(-4) === ownCard;
-}
+// Driver row-scoping is the BACKEND's job — /carrier/mini-app/{transactions,last-used,status} filter
+// to the driver's own card by full number before responding. Do not re-add a client-side filter: it
+// can only hide rows the device already received, and matching on last-4 (what this used to do) is
+// wrong anyway — last-4 is not unique within a carrier.
 
 /** Transaction period vocabulary — mirrors servercrm's DWH range param + the zoho-octane
  * self-service transactions presets (Today / This Week / … / This Year), plus a custom from-to. */
@@ -1217,6 +1493,20 @@ const TXN_RANGES: ReadonlyArray<{ value: TxnRange; key: string }> = [
   { value: 'custom', key: 'txns.custom' },
 ];
 
+/**
+ * Invoice periods. NOT the transaction presets: invoices come from salesMytrion, whose vocabulary is
+ * last_7 | last_30 | last_90 | last_365 | custom | all_time. servercrm falls back to last_30 on an
+ * unknown preset *silently*, so feeding it 'month' would look wired and quietly do nothing.
+ */
+type InvoiceRange = 'last_7' | 'last_30' | 'last_90' | 'last_365' | 'all_time';
+const INVOICE_RANGES: ReadonlyArray<{ value: InvoiceRange; key: string }> = [
+  { value: 'last_7', key: 'inv.last7' },
+  { value: 'last_30', key: 'inv.last30' },
+  { value: 'last_90', key: 'inv.last90' },
+  { value: 'last_365', key: 'inv.last365' },
+  { value: 'all_time', key: 'inv.allTime' },
+];
+
 type SheetData =
   | { kind: 'balance'; v: CarrierBalance }
   | { kind: 'status'; v: StatusResult }
@@ -1224,13 +1514,13 @@ type SheetData =
   | { kind: 'lastused'; v: LastUsedResult }
   | { kind: 'payment'; v: PaymentInfoResult }
   | { kind: 'invoices'; v: SalesInvoicesResult }
-  | { kind: 'tracking'; v: TrackingResult };
+  | { kind: 'tracking'; v: TrackingResult }
+  | { kind: 'manualcode'; v: { cardNumber: string | null } };
 
 function ActionSheet({
   target,
   session,
   initData,
-  company,
   onClose,
   showToast,
   onSendGeneric,
@@ -1238,7 +1528,6 @@ function ActionSheet({
   target: OpenAction;
   session: Session;
   initData: string;
-  company: string;
   onClose: () => void;
   showToast: (msg: string, kind?: ToastKind) => void;
   onSendGeneric: (title: string) => void;
@@ -1248,10 +1537,22 @@ function ActionSheet({
   const [loadError, setLoadError] = useState('');
   const [data, setData] = useState<SheetData | null>(null);
   const [range, setRange] = useState<TxnRange>('month');
-  const [from, setFrom] = useState('2026-06-01');
-  const [to, setTo] = useState('2026-07-09');
+  const [invRange, setInvRange] = useState<InvoiceRange>('last_30');
+  // Lazy init, and relative to TODAY: these were literal dates ('2026-06-01'/'2026-07-09'), so the
+  // custom range opened on a window that had already gone stale — by this writing it ended 8 days
+  // in the past. Last 30 days is the neutral default; the presets cover the calendar shapes.
+  const [from, setFrom] = useState(() => isoDay(new Date(Date.now() - 30 * 864e5)));
+  const [to, setTo] = useState(() => isoDay(new Date()));
   const [genericSent, setGenericSent] = useState(false);
+  const [genericBusy, setGenericBusy] = useState(false);
+  const [genericError, setGenericError] = useState('');
+  const [genericTicketId, setGenericTicketId] = useState('');
+  const [genericComment, setGenericComment] = useState('');
   const [invoiceBusyId, setInvoiceBusyId] = useState<string | null>(null);
+  /** Phase 2 of the transactions read is in flight — rows are already shown, freshest are pending. */
+  const [liveRefreshing, setLiveRefreshing] = useState(false);
+  /** Which export format is currently being built + sent to Telegram, if any. */
+  const [exportBusy, setExportBusy] = useState<TxnExportFormat | null>(null);
 
   const service = target.kind === 'service' ? target.key : null;
   const sheetTitle = target.kind === 'generic' ? target.title : t(`svc.${service}`);
@@ -1265,30 +1566,65 @@ function ActionSheet({
     let cancelled = false;
     setLoading(true);
     setLoadError('');
+    setLiveRefreshing(false);
     async function load() {
       try {
+        const txnOpts = dwhRange === 'custom' ? { range: 'custom', from, to } : { range: dwhRange };
         let next: SheetData;
         if (service === 'balance') next = { kind: 'balance', v: await fetchBalance(initData) };
         else if (service === 'status') next = { kind: 'status', v: await fetchAccountStatus(initData) };
-        else if (service === 'txns') {
-          next = {
-            kind: 'txns',
-            v: await fetchTransactions(initData, dwhRange === 'custom' ? { range: 'custom', from, to } : { range: dwhRange }),
-          };
-        } else if (service === 'lastused') next = { kind: 'lastused', v: await fetchLastUsed(initData) };
+        else if (service === 'txns') next = { kind: 'txns', v: await fetchTransactions(initData, txnOpts, false) };
+        else if (service === 'lastused') next = { kind: 'lastused', v: await fetchLastUsed(initData) };
         else if (service === 'payment') next = { kind: 'payment', v: await fetchPaymentInfo(initData) };
-        else if (service === 'invoices') next = { kind: 'invoices', v: await fetchInvoices(initData, { range: 'last_30' }) };
-        else next = { kind: 'tracking', v: await fetchTracking(initData) };
-        if (!cancelled) setData(next);
+        else if (service === 'invoices') next = { kind: 'invoices', v: await fetchInvoices(initData, { range: invRange }) };
+        // No fetch: the manual entry code IS the card number the session already holds. Sending a
+        // request would only ask the backend to hand back what it put in the session at sign-in.
+        else if (service === 'manualcode') next = { kind: 'manualcode', v: { cardNumber: session.ownCardNumber } };
+        else if (service === 'tracking') next = { kind: 'tracking', v: await fetchTracking(initData) };
+        // Explicit, because this was a bare `else` that swallowed every unhandled key into a tracking
+        // fetch — a new ServiceKey would silently open the wrong sheet instead of failing.
+        else throw new Error(`Unhandled service: ${String(service)}`);
+        if (cancelled) return;
+        setData(next);
+        setLoading(false);
+
+        // Phase 2 — only transactions have a live tail worth waiting for. The list is already on
+        // screen; this folds in anything the DWH mart hasn't picked up yet (its refresh lags ~3h)
+        // by asking the backend for the EFS-merged truth. Seconds, so it must never block phase 1.
+        if (next.kind === 'txns' && next.v.live?.pending) {
+          setLiveRefreshing(true);
+          try {
+            const merged = await fetchTransactions(initData, txnOpts, true);
+            if (!cancelled) setData({ kind: 'txns', v: merged });
+          } catch (e) {
+            // The fast rows are real and already rendered — a failed upgrade is not worth an error
+            // screen. Drop the indicator and leave them be.
+            console.warn('[ActionSheet] live refresh failed; keeping DWH rows', e);
+          } finally {
+            if (!cancelled) setLiveRefreshing(false);
+          }
+        }
       } catch (e) {
         // Backend errors here (crmGet's upstream passthrough, DB failures) are DTO/validation
         // text meant for API integrators, not the end user — never surface e.message directly.
+        //
+        // But the STATUS is reliable, and it decides the only thing the user cares about: will
+        // pulling down help? Every failure used to say "Pull down to try again", including 4xx —
+        // which fail identically forever. A driver whose account data the upstream rejects (seen
+        // live: HTTP 400 "carrierId must be a positive integer") was told to retry a call that
+        // could never succeed, and would pull until they gave up.
         if (!cancelled) {
           console.error('[ActionSheet] load failed', e);
-          setLoadError(t('sheet.loadError'));
+          const status = e instanceof ApiError ? e.status : -1;
+          setLoadError(
+            status === 0
+              ? t('sheet.loadErrorOffline')
+              : status >= 400 && status < 500
+                ? t('sheet.loadErrorAccount')
+                : t('sheet.loadError'),
+          );
+          setLoading(false);
         }
-      } finally {
-        if (!cancelled) setLoading(false);
       }
     }
     void load();
@@ -1296,7 +1632,7 @@ function ActionSheet({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target, dwhRange, from, to]);
+  }, [target, dwhRange, invRange, from, to]);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -1306,51 +1642,81 @@ function ActionSheet({
     };
   }, []);
 
-  function doExport(rows: Array<Record<string, unknown>>, format: TxnExportFormat) {
+  /**
+   * The report is built server-side and delivered by the bot as a Telegram document — a WebView
+   * can't reliably save a file, and the rows are re-queried on the backend anyway, so nothing from
+   * this screen is uploaded. `rows` is only consulted to keep the empty case instant.
+   */
+  async function doExport(rows: Array<Record<string, unknown>>, format: TxnExportFormat) {
     haptic('tap');
     if (!rows.length) {
       showToast(t('txns.empty'), 'error');
       return;
     }
+    if (exportBusy) return;
+    setExportBusy(format);
     try {
-      exportTransactions(rows, format, { company, range, cardLast4: session.ownCard });
-      showToast(t('toast.csvExportStarted'));
-    } catch {
-      showToast(t('sheet.loadError'), 'error');
+      const opts = range === 'custom' ? { range: 'custom', from, to } : { range };
+      await sendTransactionsReport(initData, opts, format);
+      haptic('success');
+      showToast(t('toast.reportSentToTelegram'));
+    } catch (e) {
+      // The backend distinguishes "you never opened the bot chat" from a genuine failure — that one
+      // is actionable by the user, so it's worth its own message rather than a generic error.
+      const code = e instanceof ApiError ? e.code : '';
+      haptic('error');
+      showToast(code === 'TELEGRAM_CHAT_UNREACHABLE' ? t('toast.openBotFirst') : t('sheet.loadError'), 'error');
+    } finally {
+      setExportBusy(null);
     }
   }
 
-  function sendGeneric() {
-    haptic('success');
-    setGenericSent(true);
-    onSendGeneric(sheetTitle);
+  /**
+   * Files a real Desk ticket when the catalog item carries a `request` key; otherwise falls back to
+   * the placeholder that only ever wrote a local inbox row.
+   *
+   * The success state is set from the RESPONSE, never optimistically — showing "Request sent" for a
+   * ticket that failed to create is the exact fake this replaces.
+   */
+  async function sendGeneric() {
+    const requestKey = target.kind === 'generic' ? target.request : undefined;
+    if (!requestKey) {
+      haptic('success');
+      setGenericSent(true);
+      onSendGeneric(sheetTitle);
+      return;
+    }
+    if (genericBusy) return;
+    setGenericBusy(true);
+    setGenericError('');
+    try {
+      const res = await sendServiceRequest(initData, requestKey, genericComment.trim() || undefined);
+      haptic('success');
+      setGenericTicketId(res.ticketId);
+      setGenericSent(true);
+      onSendGeneric(sheetTitle);
+    } catch (e) {
+      haptic('error');
+      setGenericError(e instanceof Error ? e.message : t('generic.sendFailed'));
+    } finally {
+      setGenericBusy(false);
+    }
   }
 
   async function openInvoice(id: string) {
     haptic('tap');
+    if (invoiceBusyId) return;
     setInvoiceBusyId(id);
-    // Open the tab synchronously, inside the click's user-gesture — a tab opened after the
-    // `await` below is no longer gesture-triggered and gets popup-blocked (esp. in Telegram's WebView).
-    // Can't pass 'noopener' here: it makes window.open return null, so there'd be no handle to
-    // navigate once the signed URL comes back. Sever the opener link manually instead — same effect.
-    const tab = window.open('', '_blank');
-    if (tab) {
-      try {
-        tab.opener = null;
-      } catch {
-        /* best-effort; a same-origin about:blank child always allows this */
-      }
-    }
     try {
-      const { url } = await fetchInvoiceSignedUrl(initData, id);
-      if (url && tab) tab.location.href = url;
-      else {
-        tab?.close();
-        showToast(t('toast.invoiceDownloadFailed'), 'error');
-      }
-    } catch {
-      tab?.close();
-      showToast(t('toast.invoiceDownloadFailed'), 'error');
+      await sendInvoice(initData, id);
+      haptic('success');
+      showToast(t('toast.invoiceSentToTelegram'));
+    } catch (e) {
+      // "You never opened the bot chat" is the one failure the user can act on, so it keeps its own
+      // message rather than being flattened into a generic error.
+      const code = e instanceof ApiError ? e.code : '';
+      haptic('error');
+      showToast(code === 'TELEGRAM_CHAT_UNREACHABLE' ? t('toast.openBotFirst') : t('toast.invoiceDownloadFailed'), 'error');
     } finally {
       setInvoiceBusyId(null);
     }
@@ -1410,7 +1776,7 @@ function ActionSheet({
           ) : data?.kind === 'status' ? (
             (() => {
               const { overview, cards } = data.v;
-              const rows = (cards.data ?? []).filter((c) => !session.isDriver || rowIsOwnCard(c['card_number'], session.ownCard));
+              const rows = cards.data ?? [];
               const shown = rows.slice(0, 20);
               const extra = (cards.count ?? rows.length) - shown.length;
               return (
@@ -1459,12 +1825,11 @@ function ActionSheet({
             })()
           ) : data?.kind === 'txns' ? (
             (() => {
-              const rowsAll = data.v.data ?? [];
-              const rows = session.isDriver ? rowsAll.filter((r) => rowIsOwnCard(r['card_number'], session.ownCard)) : rowsAll;
+              const rows = data.v.data ?? [];
               return (
                 <>
                   {/* Horizontal-scroll period chips — too many presets to fit a fixed row on mobile. */}
-                  <div style={{ display: 'flex', gap: 7, marginBottom: 12, overflowX: 'auto', paddingBottom: 2, scrollbarWidth: 'none' }}>
+                  <div className="hscroll" style={{ display: 'flex', gap: 7, marginBottom: 12, paddingBottom: 2 }}>
                     {TXN_RANGES.map((r) => (
                       <button
                         key={r.value}
@@ -1502,6 +1867,39 @@ function ActionSheet({
                       </label>
                     </div>
                   )}
+                  {/* Period summary — a payment app always answers "what did this period cost?" before
+                      the line items. The backend has sent these totals all along (they are computed
+                      over the WHOLE window, not just the rendered page); nothing rendered them. */}
+                  {rows.length > 0 && (() => {
+                    const tot = data.v.totals ?? {};
+                    const spend = tot['funded_total'];
+                    const gal = tot['total_fuel_quantity'] ?? tot['fuel_quantity'];
+                    const saved = tot['discount_amount'];
+                    if (spend == null) return null;
+                    return (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                        <div style={{ background: 'var(--primary)', borderRadius: 14, padding: '13px 14px' }}>
+                          <div style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,.75)' }}>{t('txns.totalSpent')}</div>
+                          <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(spend)}</div>
+                        </div>
+                        <div style={{ background: 'var(--secondary)', borderRadius: 14, padding: '13px 14px' }}>
+                          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('txns.saved')}</div>
+                          <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(saved ?? 0)}</div>
+                        </div>
+                        {gal != null && (
+                          <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--muted-fg)', textAlign: 'center', marginTop: -2 }}>
+                            {t('txns.gallons', { n: fmt(gal) })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  {liveRefreshing && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, marginBottom: 10, fontSize: 12, color: 'var(--muted-fg)' }}>
+                      <Spinner size={12} />
+                      {t('txns.checkingLive')}
+                    </div>
+                  )}
                   {rows.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('txns.empty')}</div>
                   ) : (
@@ -1510,40 +1908,67 @@ function ActionSheet({
                         <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 13.5, color: 'var(--fg)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.3 }}>{fmt(tx['location_name'])}</div>
-                            <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fmt(tx['transaction_date']).slice(0, 10)} · •••• {last4(fmt(tx['card_number']), null)}</div>
+                            <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{txnDateTime(tx['transaction_date'])} · •••• {last4(fmt(tx['card_number']), null)}</div>
                           </div>
                           <span className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', flex: 'none', textAlign: 'right', whiteSpace: 'nowrap' }}>{money(tx['line_item_amount'] ?? tx['funded_total'] ?? tx['net_total'])}</span>
                         </div>
                       ))}
                     </div>
                   )}
-                  {rows.length > 0 && (
-                    <div style={{ marginTop: 14 }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-fg)', marginBottom: 7 }}>{t('common.export')}</div>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        {(['csv', 'excel', 'text'] as const).map((fmt) => (
-                          <button
-                            key={fmt}
-                            type="button"
-                            className="press"
-                            onClick={() => doExport(rows, fmt)}
-                            style={{ flex: 1, height: 42, border: 'none', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-                          >
-                            {fmt === 'csv' ? 'CSV' : fmt === 'excel' ? 'Excel' : 'Text'}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </>
               );
             })()
           ) : data?.kind === 'invoices' ? (
-            (data.v.data ?? []).length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('invoice.empty')}</div>
-            ) : (
-              <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
-                {(data.v.data ?? []).map((inv, i) => {
+            (() => {
+              const rows = data.v.data ?? [];
+              const sum = data.v.summary ?? {};
+              // Use the backend's sum_open_balance, never billed-minus-paid. servercrm computes it as
+              // SUM(GREATEST(total_amount - total_paid, 0)) FILTER (status IN PENDING, PARTIALLY_PAID)
+              // — so it counts only what is actually owed, and clamps at zero. Subtracting here got
+              // both wrong: it showed -$16.60 for a carrier that had OVERPAID, and it counted PAID and
+              // CANCELLED invoices as if they were open.
+              const openBalance = Number(sum['sum_open_balance'] ?? 0);
+              return (
+                <>
+                  <div className="hscroll" style={{ display: 'flex', gap: 7, marginBottom: 12, paddingBottom: 2 }}>
+                    {INVOICE_RANGES.map((r) => (
+                      <button
+                        key={r.value}
+                        type="button"
+                        onClick={() => setInvRange(r.value)}
+                        style={{ flex: 'none', height: 36, padding: '0 14px', border: 'none', borderRadius: 10, fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', cursor: 'pointer', background: invRange === r.value ? 'var(--primary)' : 'var(--secondary)', color: invRange === r.value ? '#FFFFFF' : 'var(--muted-fg)' }}
+                      >
+                        {t(r.key)}
+                      </button>
+                    ))}
+                  </div>
+                  {/* The backend has sent this summary all along; nothing read it. Billed vs still
+                      open is the pair an owner opens invoices for — the list answers "which" after. */}
+                  {sum['sum_total_amount'] != null && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                      <div style={{ background: 'var(--primary)', borderRadius: 14, padding: '13px 14px' }}>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,.75)' }}>{t('inv.billed')}</div>
+                        <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(sum['sum_total_amount'])}</div>
+                      </div>
+                      <div style={{ background: 'var(--secondary)', borderRadius: 14, padding: '13px 14px' }}>
+                        {/* "2 open / $0.26" read as a bug next to "Billed $18,051.53" — but it is
+                            true: two invoices were short by 19c and 7c. The tile names the money and
+                            the line below carries the counts, so neither has to explain the other. */}
+                        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('inv.outstanding')}</div>
+                        <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(openBalance)}</div>
+                      </div>
+                      <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--muted-fg)', textAlign: 'center', marginTop: -2 }}>
+                        {t('inv.summaryLine', { total: fmt(sum['total_invoices'] ?? rows.length), paid: fmt(sum['paid_count'] ?? 0) })}
+                        {Number(sum['open_count'] ?? 0) > 0 && ` · ${t('inv.openCount', { n: fmt(sum['open_count']) })}`}
+                        {Number(sum['cancelled_count'] ?? 0) > 0 && ` · ${t('inv.cancelledCount', { n: fmt(sum['cancelled_count']) })}`}
+                      </div>
+                    </div>
+                  )}
+                  {rows.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('invoice.empty')}</div>
+                  ) : (
+                    <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                {rows.map((inv, i) => {
                   const id = String(inv['invoice_id'] ?? inv['id'] ?? '');
                   const label = String(inv['invoice_ref'] ?? inv['invoice_number'] ?? id);
                   const busy = invoiceBusyId === id;
@@ -1555,13 +1980,16 @@ function ActionSheet({
                         <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2 }}>{money(inv['total_amount'] ?? inv['amount'])} · {fmt(inv['status'])}</div>
                       </div>
                       {busy ? <Spinner size={16} /> : (
-                        <span style={{ borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, padding: '7px 12px', flex: 'none' }}>{t('common.view')}</span>
+                        <span style={{ borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, padding: '7px 12px', flex: 'none' }}>{t('invoice.download')}</span>
                       )}
                     </div>
                   );
                 })}
-              </div>
-            )
+                    </div>
+                  )}
+                </>
+              );
+            })()
           ) : data?.kind === 'payment' ? (
             (() => {
               const p = data.v;
@@ -1587,8 +2015,7 @@ function ActionSheet({
             })()
           ) : data?.kind === 'lastused' ? (
             (() => {
-              const rowsAll = data.v.data ?? [];
-              const rows = session.isDriver ? rowsAll.filter((r) => rowIsOwnCard(r['card_number'], session.ownCard)) : rowsAll;
+              const rows = data.v.data ?? [];
               return rows.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('status.noCards')}</div>
               ) : (
@@ -1602,6 +2029,31 @@ function ActionSheet({
                       </div>
                     );
                   })}
+                </div>
+              );
+            })()
+          ) : data?.kind === 'manualcode' ? (
+            (() => {
+              const pan = data.v.cardNumber;
+              if (!pan) {
+                return <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('manualcode.unavailable')}</div>;
+              }
+              // Shown revealed, unlike the home hero. The hero sits on screen unprompted, so it masks
+              // by default; getting here took a deliberate tap on an item that says "Reveal", and the
+              // driver is reading it to type into a pump keypad. Masking it behind a second tap would
+              // add friction to the one job this item exists for.
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '6px 0 4px' }}>
+                  <span style={{ width: 54, height: 54, borderRadius: 16, background: 'var(--secondary)', color: 'var(--link-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                    <Icon name="key" size={26} strokeWidth={2} className="" />
+                  </span>
+                  <span
+                    className="selectable"
+                    style={{ fontSize: 22, fontWeight: 700, letterSpacing: '.04em', color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.35, wordBreak: 'break-all' }}
+                  >
+                    {groupCardNumber(pan)}
+                  </span>
+                  <span style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 12, maxWidth: 280, lineHeight: 1.5 }}>{t('manualcode.hint')}</span>
                 </div>
               );
             })()
@@ -1648,17 +2100,69 @@ function ActionSheet({
               </div>
               <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--fg)' }}>{t('generic.sentTitle')}</div>
               <div style={{ fontSize: 13, color: 'var(--muted-fg)', lineHeight: 1.5, maxWidth: 260 }}>{t('generic.sentBody')}</div>
+              {/* A real ticket id, so the driver can quote it to support — and so "sent" is checkable
+                  rather than something the screen merely claims. */}
+              {genericTicketId && (
+                <div className="selectable" style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg)', background: 'var(--secondary)', borderRadius: 10, padding: '8px 14px', fontVariantNumeric: 'tabular-nums' }}>
+                  {t('generic.ticketNo', { id: genericTicketId })}
+                </div>
+              )}
             </div>
           ) : (
             <>
               <div style={{ fontSize: 14, color: 'var(--fg)', lineHeight: 1.5, marginBottom: 6 }}>{t('generic.notSentBody1')}</div>
               <div style={{ fontSize: 13, color: 'var(--muted-fg)', lineHeight: 1.5, marginBottom: 16 }}>{t('generic.notSentBody2')}</div>
-              <button type="button" className="press" onClick={sendGeneric} style={{ width: '100%', height: 50, border: 'none', borderRadius: 14, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>
-                {t('generic.sendButton')}
+              {/* Only for requests that actually reach a human. A driver's card is resolved
+                  server-side, but an owner has a fleet — the ticket would otherwise say "replace a
+                  lost card" and name no card, leaving support to ask before they can start. */}
+              {target.kind === 'generic' && target.request && (
+                <textarea
+                  value={genericComment}
+                  onChange={(e) => setGenericComment(e.target.value.slice(0, 2000))}
+                  placeholder={t('generic.commentPlaceholder')}
+                  rows={3}
+                  style={{ width: '100%', boxSizing: 'border-box', resize: 'none', border: '1px solid var(--border)', borderRadius: 14, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 15, lineHeight: 1.5, padding: '12px 14px', marginBottom: 12 }}
+                />
+              )}
+              {genericError && (
+                <div style={{ fontSize: 13, color: 'var(--danger)', lineHeight: 1.5, marginBottom: 12 }}>{genericError}</div>
+              )}
+              <button type="button" className="press" onClick={sendGeneric} disabled={genericBusy} style={{ width: '100%', height: 50, border: 'none', borderRadius: 14, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 15, cursor: genericBusy ? 'default' : 'pointer', opacity: genericBusy ? 0.6 : 1 }}>
+                {genericBusy ? t('generic.sending') : t('generic.sendButton')}
               </button>
             </>
           )}
         </div>
+        {/* Export bar — pinned, not the tail of the list. It used to live at the bottom of the
+            scroll area, so reaching it meant scrolling past every transaction; a client pulling a
+            year would never find it. As a sibling of the scroll container it stays put. */}
+        {data?.kind === 'txns' && (data.v.data ?? []).length > 0 && (
+          <div style={{ flex: 'none', borderTop: '1px solid var(--border)', background: 'var(--card)', padding: '12px 20px calc(14px + env(safe-area-inset-bottom))' }}>
+            {/* Indeterminate by necessity: the work is a server-side build plus a Telegram upload
+                behind our own API, so there are no progress events to report. The bar says
+                "working"; it does not claim a percentage it cannot know. */}
+            <div style={{ height: 2, borderRadius: 2, overflow: 'hidden', background: exportBusy ? 'var(--secondary)' : 'transparent', marginBottom: 9 }}>
+              {exportBusy && <div style={{ width: '40%', height: '100%', borderRadius: 2, background: 'var(--primary)', animation: 'octbar 1.1s ease-in-out infinite' }} />}
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-fg)', marginBottom: 7 }}>
+              {exportBusy ? t('txns.sendingReport') : t('txns.exportToTelegram')}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {(['xlsx', 'pdf', 'csv'] as const).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  className="press"
+                  disabled={exportBusy !== null}
+                  onClick={() => void doExport(data.v.data ?? [], f)}
+                  style={{ flex: 1, height: 42, border: 'none', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: exportBusy ? 'default' : 'pointer', opacity: exportBusy && exportBusy !== f ? 0.45 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  {exportBusy === f ? <Spinner size={16} /> : f === 'xlsx' ? 'Excel' : f === 'pdf' ? 'PDF' : 'CSV'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
@@ -1670,6 +2174,9 @@ export function App() {
   const wa = getTelegramWebApp();
   const user = wa?.initDataUnsafe.user;
   const firstName = user?.first_name || 'there';
+  /** Prefill only — the sign-in screen lets the driver correct it before it reaches their owner's
+   *  roster. Mirrors the backend's fallback order so the prefill matches what it would have used. */
+  const telegramName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim() || user?.username || '';
   const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();
   const { t } = useI18n();
 
@@ -1686,7 +2193,6 @@ export function App() {
   const [pinned, setPinned] = useState<string[]>([]);
   const [inbox, setInbox] = useState<InboxItem[]>([]);
   const [cardRevealed, setCardRevealed] = useState(false);
-  const [cardCopied, setCardCopied] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [confirmCfg, setConfirmCfg] = useState<ConfirmConfig | null>(null);
   const pinnedInit = useRef(false);
@@ -1702,7 +2208,6 @@ export function App() {
   const session = sessionFrom(registration);
   const company = registration?.companyName ?? preview?.companyName ?? '';
   const supportAgentName = registration?.agentName ?? preview?.agentName ?? null;
-  const roleLabel = t(session.isFleetManager ? 'role.fleet' : session.isOwner ? 'role.owner' : 'role.driver');
 
   function showError(reason: string, title = t('error.title')) {
     setErrorTitle(title);
@@ -1843,9 +2348,9 @@ export function App() {
       .finally(() => setBusy(false));
   }
 
-  async function submitDriverCard(cardNumber: string): Promise<void> {
+  async function submitDriverCard(cardNumber: string, driverName: string): Promise<void> {
     if (!wa?.initData) throw new ApiError(t('auth.openInTelegram'), 'NO_INITDATA', 0);
-    const res = await driverSelfRegister(wa.initData, cardNumber);
+    const res = await driverSelfRegister(wa.initData, cardNumber, driverName);
     setRegistration(res.registration);
     haptic('success');
     setScreen('home');
@@ -1879,18 +2384,6 @@ export function App() {
     setCardRevealed((v) => !v);
   }
 
-  function copyCardNumber() {
-    const full = session.ownCardNumber ?? fullCardNumber(session.ownCard).replace(/\s/g, '');
-    try {
-      navigator.clipboard?.writeText(full);
-    } catch {
-      // ignore
-    }
-    haptic('success');
-    setCardCopied(true);
-    showToast(t('toast.cardNumberCopied'));
-    setTimeout(() => setCardCopied(false), 1600);
-  }
 
   function markAllRead() {
     haptic('tap');
@@ -1953,6 +2446,16 @@ export function App() {
   const createLink = (cardId: string, name: string) => submitDriverLink(cardId, name, 'toast.driverLinkCreated');
   const regenerateLink = (cardId: string, name: string) => submitDriverLink(cardId, name, 'toast.newLinkGenerated');
 
+  async function renameDriverName(cardId: string, driverName: string): Promise<void> {
+    if (!wa?.initData) throw new ApiError(t('auth.openInTelegram'), 'NO_INITDATA', 0);
+    // Patch the row from the response, not from the input: the backend trims, and the roster should
+    // show exactly what was stored. Throws on failure so the inline form keeps the error and the
+    // name on screen stays the one that is really saved.
+    const res = await renameDriver(wa.initData, cardId, driverName);
+    setFleetCards((cs) => cs.map((c) => (c.cardId === cardId ? { ...c, driverName: res.driverName } : c)));
+    showToast(t('toast.driverRenamed'), 'success');
+  }
+
   const signedIn = screen === 'home' || screen === 'fleet';
 
   return (
@@ -1963,7 +2466,7 @@ export function App() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowX: 'hidden', overflowY: 'auto' }}>
         {screen === 'loading' && <LoadingScreen />}
         {screen === 'error' && <ErrorScreen title={errorTitle} reason={errorReason} agentName={supportAgentName} />}
-        {screen === 'login' && <LoginScreen firstName={firstName} onDriverRegister={submitDriverCard} />}
+        {screen === 'login' && <LoginScreen firstName={firstName} defaultName={telegramName} onDriverRegister={submitDriverCard} />}
         {screen === 'confirm' && preview && <ConfirmScreen preview={preview} firstName={firstName} busy={busy} onConfirm={confirm} />}
         {screen === 'success' && <SuccessScreen session={session} company={company} onContinue={goHome} />}
         {screen === 'already' && <AlreadyScreen company={company} agentName={supportAgentName} onContinue={goHome} />}
@@ -1977,9 +2480,7 @@ export function App() {
             pinned={pinned}
             inbox={inbox}
             cardRevealed={cardRevealed}
-            cardCopied={cardCopied}
             onToggleCardReveal={toggleCardReveal}
-            onCopyCardNumber={copyCardNumber}
             onTogglePin={togglePin}
             onOpenAction={handleOpenAction}
             onGoToServices={() => setTab('services')}
@@ -1998,6 +2499,7 @@ export function App() {
             onRetry={() => loadFleet(true)}
             onCreate={createLink}
             onRegenerate={regenerateLink}
+            onRename={renameDriverName}
             showToast={showToast}
             askConfirm={askConfirm}
           />
@@ -2010,7 +2512,6 @@ export function App() {
         <ProfileSheet
           user={user}
           company={company}
-          roleLabel={roleLabel}
           theme={theme}
           onTheme={chooseTheme}
           onClose={() => setProfileOpen(false)}
@@ -2021,7 +2522,6 @@ export function App() {
           target={openAction}
           session={session}
           initData={wa?.initData ?? ''}
-          company={company}
           onClose={() => setOpenAction(null)}
           showToast={showToast}
           onSendGeneric={sendGenericRequest}

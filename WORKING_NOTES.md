@@ -2410,3 +2410,453 @@ render in the Paper White design with real data — 1225 team open tickets, 515 
 (edit modal round-trips), analytics KPI/donut/leaderboard with real agent names, floating
 copilot streams a tool-grounded answer. 571 backend + 49 app tests green; vendored bundle
 rebuilt. Still unpushed on feature/customer-service-mytrion.
+## 2026-07-17 — Mini-app: driver row scoping moved server-side (own card only)
+
+Pre-presentation review of the carrier mini-app surfaced a live data leak in the three driver
+services, fixed here. Service-catalog decisions (which services per role) are still open.
+
+- **The bug.** `/carrier/mini-app/{transactions,last-used,status}` returned servercrm's CARRIER-wide
+  rows and the mini-app filtered to the driver's card **in the browser** (`App.tsx` `rowIsOwnCard`).
+  The driver's device therefore received the whole fleet's fuel history; only the render was scoped.
+  Contradicted OCTANE_MINIAPP_SERVICES_SPEC §2 ("own card only") and §6 ("carrier resolved from the
+  session"). Endpoints are also reachable directly with any valid initData, so the UI filter was not
+  a boundary at all.
+- **Worse: the filter was wrong.** `rowIsOwnCard` compared **last-4**, which is NOT unique within a
+  carrier. Live DWH probe: carrier `5805408` has **11 active cards sharing last-4 `7593`** (5807078
+  has 10 on `7547`). Those drivers saw each other's rows *as their own*.
+- **Fix.** New `src/modules/carrier/driverCardScope.ts` — `scopeRowsToCard` matches on the **full**
+  number (probe confirmed `octane.stg_cmp_card.card_number` and
+  `octane.mart_transaction_line_items.card_number` are both bare 19-digit strings, so `=` is the
+  correct join), plus `scopeTransactionsToCard` which also **recomputes `totals`** from the scoped
+  rows — passing servercrm's carrier-accumulated totals through would have leaked fleet spend even
+  with rows filtered. Routes call it for `profile === 'driver'` only; owners stay carrier-wide.
+- **Fail-closed.** `requireDriverCardNumber` 503s (`DRIVER_CARD_UNRESOLVED`) when the DWH can't
+  resolve the card, and throws *before* the fetch. `resolveDriverCardNumber` is best-effort/null
+  elsewhere; here null must never degrade to carrier-wide rows.
+- **Pagination trap.** The wrapper asked for `limit: 100` fleet-wide, so filtering after the fact
+  could show a driver an empty list while page 1 held only other cards' rows. Driver reads now
+  request servercrm's 5000 ceiling (`DRIVER_TXN_FETCH_LIMIT`) and set `scope_truncated: true` when
+  upstream reports `more_records` — short lists are surfaced, not silently under-reported.
+- **Considered and rejected: querying the DWH directly from mytrion.** `agentDwh.getCarrierTransactions`
+  merges a **live EFS gap-fill** on top of the mart (~3h refresh lag), so a direct mart read would
+  silently drop the newest transactions — exactly what a driver is checking on.
+- Removed the client-side `rowIsOwnCard` filters (server is authoritative now) + a comment warning
+  against re-adding one.
+- **Follow-up (right long-term fix):** give servercrm's `/api/agent/dwh/transactions/:carrierId` a
+  `cardNumber` filter so scoping happens at the source; the mytrion-side filter should stay as
+  defense-in-depth regardless. Note `servercrm` local checkout is **98 commits behind origin/build**
+  (money-code routes exist there, not locally) — pull before judging what's available.
+- Verify: backend typecheck + lint clean (2 warnings, both pre-existing), backend build clean,
+  mini-app typecheck + build clean, **558/558 tests green** (7 new, incl. an 11-cards-share-last-4
+  regression test and a fail-closed test). On `build`.
+
+## 2026-07-17 — Mini-app: progressive transactions + report delivered via the bot
+
+Two changes, both driven by measurement. servercrm and zoho-octane are UNTOUCHED — the widgets'
+endpoints and Deluge functions are byte-for-byte as they were.
+
+### Why: the Transactions sheet was 3.4–24.5s
+
+Measured against the real deployed servercrm (`/api/agent/dwh/transactions`):
+
+| call | time | rows |
+|---|--:|--:|
+| carrier 5765985 month | 24.5s cold / **9.3s warm** | 21 (`live_merged=0`) |
+| carrier 5776046 month | 11.1s / **3.4s warm** | 699 (`live_merged=3`) |
+| same, `limit=100` (old default) | 3.6s | 103 |
+
+The cost is the live EFS SOAP leg, NOT the DWH query or the row count — 5765985 merged **zero** rows
+and still took 9.3s, and `limit=100` vs `limit=5000` differed by ~200ms. (That also retires the
+"raising the limit adds load" worry from the earlier session: it doesn't.)
+
+Three-way data audit first, carrier 5765985 / 30d — the sources AGREE, so this is purely a latency
+problem, not a correctness one:
+- `EFS ∩ mart = 29` (all of EFS), **`EFS \ mart = 0`**, `mart ∩ cmp_transaction = 30`.
+- EFS *is* fresher at the tail: on busy carrier 5776046 it held **17 rows newer than the mart's max**.
+  So the gap-fill earns its keep — it just must not sit in the request path.
+- **`/api/companies/:id/billing-history` is NOT transactions** — it's a balance ledger
+  (`amount`, `balanceBefore→balanceAfter`, `refNum`). No card, location, or fuel quantity. It suits
+  "payment status" / "add funds", not the Transactions sheet.
+- CMP REST `/api/transactions` does work, but only `carrierId` + `cardNumber` filter — `companyId`,
+  `carrier_id`, `id` are silently IGNORED (Spring drops unknown params) and you get the unfiltered
+  global feed at HTTP 200. Its date params don't work either and it caps at 2000 rows. Not usable.
+
+### What changed (option A — mytrion merges, servercrm untouched)
+
+- **`src/integrations/dwhTransactions.ts`** — reads `octane.mart_transaction_line_items` directly,
+  skipping the EFS leg. **568–684ms** vs 3.4–24.5s. The ET range vocabulary and the `totals` key
+  names are a faithful port of servercrm (`_resolveRange`, `countDwhTransactions`) ON PURPOSE: both
+  phases must resolve the same window or rows would jump between paint and refresh.
+- **`POST /carrier/mini-app/transactions` gained `live`** (default **false**, so an unaware caller
+  gets the fast path). false → DWH-only + `live: {pending: true}`; true → servercrm's existing
+  merged endpoint. Drivers are scoped in both — at the SQL level on the fast path.
+- **Mini-app** paints phase 1, then folds in phase 2 with a quiet "checking for newer" line. A failed
+  upgrade keeps the real rows rather than throwing an error screen.
+- **Fixed my own bug from the earlier session:** `driverCardScope.scopeTransactionsToCard` was
+  rebuilding `totals` with invented keys (`line_items_total`, `sum_amount`, …). Those are
+  servercrm's SQL *aliases*; its returned object uses `transactions`/`line_items`/`funded_total`/
+  `fuel_quantity`/`total_fuel_quantity`/`discount_amount`. Now shared via `totalsFromRows`.
+
+### Report → Telegram document
+
+The sheet's CSV/Excel/Text buttons no longer blob-download (a Telegram WebView can't reliably save a
+file); the bot delivers the report to the user's chat instead.
+- `sendDocument` (multipart) + `TelegramChatUnreachableError` in `telegramCarrierBot.ts`. A bot
+  cannot message first, so a 403 is surfaced as 409 `TELEGRAM_CHAT_UNREACHABLE` → "open the bot chat
+  first", not a generic failure.
+- `src/modules/carrier/txnReport.ts` — server-side builder (port of the mini-app's `txnExport.ts`,
+  which is now **deleted**: keeping two copies of the grid would only drift).
+- `POST /carrier/mini-app/transactions/export` — reads the FAST path (a report is a record of a
+  window, not a live view), driver-scoped, 404s an empty window instead of sending an empty file,
+  audit-logged. Chat target is `telegramChatId ?? telegramUserId` — a private chat's id IS the user
+  id, and `telegramChatId` is only populated when redeem happened to carry the header.
+- **Real-data verification caught a bug the mocks didn't:** `pg` returns `transaction_date` as a
+  Date, and `String(date).slice(0,10)` renders `"Thu Jul 16"` — the year is gone. The mini-app never
+  hit it (JSON serialises Dates to ISO); this builder reads rows before that. Fixed via `dateCell`
+  (local parts, not `toISOString`, which would shift the naive timestamp and can roll the day back).
+  Pinned by a test.
+
+Verify: report rendered from REAL DWH rows — dates `2026-07-16`, PAN masked to `****7549`, 0 full
+PANs in the file, BOM present, totals match the DWH exactly (644.56 gal / $2824.46 / $360.51).
+565 tests green (21 in this suite), lint clean (2 pre-existing warnings), backend + mini-app
+typecheck and build clean. The bot's `sendDocument` leg is unit-tested but NOT exercised against
+live Telegram — no test registration to send to. On `build`.
+
+**Still open:** `carrierMiniApp.routes.ts` is now 1117 lines against CLAUDE.md's 600 cap (it was 960
+before this work) — it wants splitting into admin / registration / self-service route modules.
+
+## 2026-07-17 — Client-facing reports: real XLSX + branded PDF
+
+The export files go to carriers, so they became branded documents. Formats are now **CSV / XLSX /
+PDF** (the old `.xls` was an HTML table Excel merely tolerates, and plain-text is superseded).
+
+- **No new deps** — `exceljs` ^4.4.0 and `pdfkit` ^0.19.1 were already in package.json.
+- **Not built on `modules/files/generate/{excel,pdf}.ts`.** Those render agent-emitted specs with
+  equal-width, left-aligned columns — fine for a data dump, wrong for a client document with 9
+  columns and money in three of them. `modules/carrier/txnReport.ts` owns the column spec (per-column
+  weight / alignment / Excel numFmt) and both renderers read from it.
+- **Brand.** `DESIGN_SPEC.md` §8 says the accent is an amber→orange CTA — **stale**. `global.css` is
+  authoritative: the v2 rebrand moved buttons to blue (`--primary: #2451ff`) but kept the logo
+  gradient as the mark (`--brand-amber #ffd200` → `--brand-orange #ff5a00`, logo stops
+  `#ffdd1e/#ffba18/#ff520a`). A document carries the mark, not a button, so it uses the gradient.
+- **XLSX**: ink title band + gradient subtitle rule, frozen header, autofilter, per-column widths,
+  `$#,##0.00` / `#,##0.00` number formats, zebra rows, and **real `SUM()` formulas** in the totals row
+  so the sheet stays correct if a client filters or edits.
+- **PDF**: landscape A4, ink header band + gradient rule, dark table header repeated on every page,
+  zebra rows, right-aligned money, orange totals rule, footer with generated stamp + page numbers.
+  Guarded at 2000 rows (413 `TXN_EXPORT_TOO_LARGE`, pointing at Excel/CSV).
+- **Bug caught by rendering the PDF and looking at it:** `→` came out as `!'`. pdfkit's built-in
+  Helvetica is WinAnsi-encoded and silently garbles anything outside that set rather than failing.
+  `pdfSafe()` maps arrows to an en-dash and drops other unencodable characters (embedding a Unicode
+  TTF would cost ~300KB per PDF for one arrow). `•` was fine — U+2022 is in WinAnsi.
+
+Verify (real rows, carrier 5765985, 21 line items): `file` reports **"Microsoft Excel 2007+"** and
+**"PDF document, 1 pages"** — a real xlsx, not the HTML hack. Build 21–29ms, Telegram upload
+146–420ms. PDF rendered to PNG and visually checked: header/gradient/zebra/totals all correct, and
+the arrow fix confirmed. All three sent to a real Telegram chat. 602 tests green, lint/typecheck/
+build clean both sides.
+
+Measured earlier the same session (real routes, carrier 5765985): FAST 287–1022ms vs LIVE
+2038–11503ms — and `day` showed FAST rows=0 / LIVE rows=2 `efs+2`, i.e. the progressive split
+earning its keep. Also note carrier **5836348 (MMB TRANSPORT INC) has zero transactions** and
+inactive cards, so it cannot demo; **1825 carriers** have 30-day data, and the fast path holds at
+242–810ms across a largest/median/small sample.
+
+## 2026-07-17 — Mini-app session wrap: what shipped, and the two follow-ups
+
+Branch `feature/mini-app-transactions`, 23 commits on top of `origin/build`. Not pushed.
+Gate at every commit: 619 tests green, lint clean (2 pre-existing warnings), backend + mini-app
+typecheck and build clean.
+
+### Shipped
+
+**Security** (all found by measuring, not by reading):
+- Driver rows were filtered in the BROWSER — the device received the whole fleet's fuel history, and
+  the match was on last-4, which is not unique within a carrier (live probe: carrier 5805408 has 11
+  active cards ending 7593, so those drivers saw each other's rows as their own). Now scoped
+  server-side on the full 19-digit number, fail-closed.
+- `invoices` / `invoices/signed-url` / `payment-info` accepted any driver's initData (verified: 200,
+  4 invoices). New `requireRegisteredOwnerUser` — NOT `requireRegisteredOwner`, which also demands
+  fleet-manager because it guards driver management; an owner-operator still owns the account.
+- Revoke bricked the Telegram account: the rebind guard fired on revoked rows AND the upsert never
+  cleared `status`/`revokedAt`, so redeem returned 201 while every later request 403'd.
+- The card number was FABRICATED when the DWH had not resolved it ('5412 7734 90' + a hardcoded
+  '7549' fallback) and Copy put that fiction on the clipboard. Now skeletons.
+
+**Correctness**
+- pg returns `timestamp without time zone` as a local Date; JSON then emits UTC — the fast phase
+  showed 16:59 for a 21:59 transaction while servercrm's phase showed 21:59, and the PDF showed a
+  third answer. Normalised in `dwhTransactions.naiveTimestamp`.
+- servercrm's EFS gap-fill reaches outside the asked-for window and its totals are DWH-only, so
+  "Today" listed two of YESTERDAY's transactions above "$0.00 spent". `clampToWindow` fixes both.
+- Owner `year` went 318 rows -> 100 when the live phase landed (the owner path let servercrm's
+  default limit of 100 apply). One `TXN_FETCH_LIMIT` now.
+
+**Performance** — transactions paint in ~600ms instead of 3.4–24.5s. The cost is the live EFS SOAP
+leg, not the DWH: one carrier merged ZERO rows and still took 9.3s, and limit=100 vs 5000 differed by
+~200ms. `live=false` reads the mart directly; `live=true` delegates to servercrm so the EFS
+merge/de-dup stays in one place. Balance is cached (endpoint is 1.9–3.3s; Home unmounts on every trip
+to Services/Inbox).
+
+**Client reports** — CSV / real XLSX (exceljs) / branded PDF (pdfkit), delivered as a Telegram
+document because a WebApp cannot reliably save a file. `apps/mini-app/src/lib/txnExport.ts` is gone;
+`src/modules/carrier/txnReport.ts` owns it.
+
+### Follow-up 1 — the invoice service (do this in a fresh session)
+
+Give invoices the treatment transactions just got. The endpoint ALREADY accepts range/status/from/to.
+
+- **The range is hardcoded**: `fetchInvoices(initData, { range: 'last_30' })` in App.tsx — the period
+  chips are not wired to it at all, so a client cannot change the window.
+- **`summary` is thrown away**, exactly as `totals` was: the backend sends
+  `{total_invoices: 25, paid_count: 22, open_count: 2, cancelled_count: 0, sum_total_amount: 38453.43,
+  sum_total_paid: …}`. Rows also carry `open_balance`, `days_overdue`, `total_paid`, `due_date`,
+  `status` — plenty for the stat tiles (reuse the balance sheet's tile pattern, as the txns sheet does).
+- **No Telegram export.** Mirror `modules/carrier/txnReport.ts`: same BRAND block, same ColumnSpec
+  shape (`weight` for the PDF's proportional layout, `xlsxWidth` for Excel's character grid — they are
+  different units), same `pdfSafe` (pdfkit's Helvetica is WinAnsi; `→` renders as `!'`), same
+  `bufferPages: true` (or only the LAST page gets a footer), and a page-break check before the totals.
+- **No progressive phase needed**: invoices are 462–1804ms with no EFS leg.
+- Small bug: the sheet reads `invoice_ref ?? invoice_number ?? id`, but the response has NEITHER of the
+  first two — it always falls back to `id`.
+- Money: use `minimumFractionDigits: 2`, and do NOT put a currency symbol in an Excel numFmt — a
+  locale-bound `$` renders as the VIEWER's currency ("US$327,37").
+
+### Follow-up 2 — the card ribbon (separate session)
+
+`CardWave` was removed (`git show 070d15f^:apps/mini-app/src/App.tsx` has it). It never matched the
+physical card because of one ratio: 34 lines across a ~30-unit band = ~0.9 spacing, against a 1.15
+stroke — every line overlapped its neighbour, so the band rendered as a solid blob instead of the real
+card's separated line-art. Fewer lines with the stroke well under the spacing, and a band roughly twice
+as thick (~30% of the card, not ~15%). It must stay in the upper-middle so the card's text keeps a dark
+band to sit on.
+
+### Still open
+
+- **Push / PR** — branch is ready, rebased on `origin/build`.
+- **Period filter redesign** ("B"): the chips still scroll horizontally; the code's own comment admits
+  "too many presets to fit a fixed row on mobile". Proposal was a trigger pill + an in-sheet list.
+- **The eye now masks the balance too**, and `revealed` starts false — so the balance opens masked. One
+  boolean cannot both mask the PAN and show the balance on open; separate toggles if that matters.
+- **`carrierMiniApp.routes.ts` is ~1030 lines** against CLAUDE.md's 600 cap (960 before this branch).
+  Wants splitting into admin / registration / self-service modules.
+- **servercrm local checkout is 98 commits behind `origin/build`** — money-code routes exist there, not
+  locally.
+
+---
+
+## 2026-07-17 — Carrier User Management UI/UX audit + CRM-wide design pass
+
+Started as "carrier management has no toasts", became a full audit of the surface and then three
+CRM-wide consolidations. Everything below is verified in the running app (dev server on :5181
+against the local backend), not just typechecked.
+
+### Carrier User Management — the fixes that mattered
+
+- **Toasts.** New `admin/toast.tsx` + host at the Admin root. The old inline `notice`/`error`
+  banners had no clearing call anywhere — "Invite cancelled." sat on the page forever. Ported
+  rather than reused from `scope/toast.tsx`: that stack is `position: absolute` inside the scope's
+  own positioned root and styled with scope-local vars, so neither placement nor colour survives
+  outside it. Split by lifetime: action outcomes → toast, load failures → inline banner + Retry.
+- **`copyToClipboard` was lying.** `void navigator.clipboard?.writeText(text)` inside a `try/catch`
+  cannot catch anything — `writeText` rejects *asynchronously*, so a blocked clipboard produced an
+  unhandled rejection while the UI claimed "copied to your clipboard". Now returns whether the text
+  landed, with an `execCommand` fallback; a failed copy hands the URL back in the toast, since that
+  row is the only place the link exists.
+- **Pagination dead-end.** Cancelling the only invite on page 2 dropped the list to one page →
+  `Pager` returned null → `slice(10,20)` = `[]` → empty table, no pager left to escape. Both tables
+  clamp to the last page that exists.
+- **Errors rendered as data.** `listCards(...).catch(() => setCards([]))` made a network failure
+  read as "this carrier has no cards" — and that drove both the company-type badge and the driver's
+  card picker. Failures now stay `null` with their own error + Retry, so cardCount is undetermined
+  rather than wrong. Same for the operator lookup.
+- **Debounce + abort.** The cards effect fired one request *per keystroke* of a manually-typed
+  carrier id. All three lookups now debounce at 300ms and abort on cleanup. Trap worth remembering:
+  transport wraps an aborted fetch as `ApiError('NETWORK')`, so without an `aborted` guard every
+  abort renders as "Couldn't read the card list" — the exact lying-error class above.
+- **Symmetric confirms.** Cancel-invite had no confirmation at all while revoke double-confirmed —
+  backwards, since revoke is a soft status flip (`registeredMiniAppCompanyRepo.revoke`) and cancel
+  has no path back. New `ConfirmDialog` (built on AuditLog's modal pattern) focuses the *dismiss*
+  button, not confirm.
+- **Reissue.** A spent invite left a row with no action. No resend/extend endpoint exists, so
+  "New registration link" seeds a fresh draft from the dead invite. The form's reset effects now
+  guard on the *previous* value, otherwise a prefilled mount wipes its own draft.
+- **Caught live, not by tests:** redeemed invites kept counting down ("in 7 days") next to their
+  Redeemed pill, reading as still-live. Settled invites show `—`.
+
+### CRM-wide
+
+- **Icons → lucide.** `components/icons.tsx` keeps its 25 named exports and per-icon default sizes
+  but each now renders lucide. The hand-drawn SVGs were tracing lucide's own paths (`HomeIcon` =
+  `Home`, `DocIcon` = `FileText`, `ScopeIcon` = `Hash`) — the app was maintaining a near-duplicate
+  of a library 33 files already import directly. `Sparkle` (FuelMark/Gem) and `MytrionGlyph` stay
+  hand-drawn: brand, not UI furniture. Kept `aria-hidden`, which lucide doesn't set by default.
+- **Radius → flat 6px.** `--radius-xs/sm/md/lg` all 6px; `--radius-full` deliberately untouched so
+  pills/avatars/dots stay round. Swept 349 hardcoded px radii across 38 files to `var(--radius-md)`,
+  leaving 56 pill values, 78 `50%` circles, and 6 asymmetric chat-bubble radii (speech-bubble tails).
+  **`customer-service/styles/shared-theme.css` was shadowing the whole scale** with its own 8/10px —
+  that module would have silently ignored the change, and is presumably how it drifted in the first
+  place.
+- **Skeleton primitive.** `components/ui/skeleton.tsx` (sheen only) + `components/mytrion/
+  table-skeleton.tsx` (composed). Gradient is `from-muted via-accent to-muted`, which already map to
+  `--surface-alt`/`--surface-raised` — no arbitrary colours. Animation registered as
+  `--animate-shimmer` in the theme block, the first `--animate-*` in the codebase.
+- **Nav nesting.** `NavItem.children` is opt-in, so the other nine Mytrions are untouched. A parent
+  with children is a *section*, not a destination — it gets a quiet state and the selected child
+  keeps the accent, because both wearing `navActive` left two identical "selected" rows.
+
+### Gotchas worth keeping
+
+- **`grid-template-columns` in a JSX `style` prop cannot be overridden by a media query.** That's
+  why the carrier tables squashed instead of adapting; column ratios now live in CSS classes.
+- **`position: sticky` anchors to the nearest scrollport.** `.table`'s `overflow: hidden` and the
+  `overflow-x` wrapper both qualified, and both are exactly as tall as their content — a sticky
+  header would silently do nothing. `.tableScroll` owns both axes with a height bound; `.table` is
+  `overflow: visible`.
+- **`.tRow:nth-child(even)` broke when rows moved inside a `role="rowgroup"`** — striping marked
+  "2nd row of its group", so sibling drivers shaded differently. Zebra is scoped to direct children
+  now; the tree separates *companies* instead.
+- **`userEvent` deadlocks against fake timers** (its async wrapper awaits a real macrotask). Tests
+  for debounced effects use `fireEvent`.
+- CSS-module class lookups are `string | undefined` under `noUncheckedIndexedAccess` — annotating a
+  prop as `string` rejects them.
+
+### Still open
+
+- **Two icons collide:** Knowledge Base and CMP Database both map to `Database` — their hand-drawn
+  paths were both cylinders, so this is pre-existing. `Library`/`BookOpen` for Knowledge Base is a
+  design call.
+- **`.cs-root` still has its own shimmer** — consolidating means touching customer-service's styling.
+- **The carrier tree now scrolls inside its own box** (Linear/Stripe pattern the brief cites). Drop
+  `max-height` on `.tableScroll` to revert to page scroll.
+- **`admin.module.css` is ~1000 lines** against CLAUDE.md's 600 cap.
+
+## 2026-07-17 — mini-app: driver services, real tickets, and three capped-list bugs
+
+Branch `feature/mini-app-transactions`, 43 commits, **not pushed** (push permission denied — run
+`git push -u origin feature/mini-app-transactions` yourself). 660 tests green, typecheck clean, lint
+0 errors (7 pre-existing warnings).
+
+### Shipped
+
+- **Driver catalog 3 → 7 real services.** `last-used` was already wired end to end (route, client,
+  renderer, scoping) and unreachable purely for want of a catalog line. `reveal-code` renders the PAN
+  the session already carries — no fetch.
+- **Every fake "Request sent" is gone.** 8 catalog items called `sendGenericRequest()`, which wrote a
+  local inbox row and made no network call. They now file real Zoho Desk tickets via
+  `modules/carrier/serviceRequest.ts`. Departments mirror servercrm's own `departmentMap`
+  (`routes/mobileAppRoutes.js`) so they land in the queue the mobile app already feeds.
+  **Fake items remaining across both catalogs: 0.** Driver 7 of 9 real, owner 14 of 31; the other 19
+  are `soon` and need upstreams that don't exist.
+- **Driver name** is asked for at card-number sign-in (was silently taken from the Telegram profile,
+  which is a nickname as often as a name — it lands in the owner's roster). Owners can correct it
+  from the fleet screen.
+
+### Security
+
+- **`/tracking` leaked the whole fleet to any driver.** Every other driver-reachable read scopes to
+  their card; tracking *cannot* — the upstream returns `{trackingNumber, startDate, cardsOrdered}`
+  with no card identity. Now owner-only. Regression test confirmed failing (200, not 403) against the
+  unfixed route. Nothing in 621 tests had caught it.
+- Service requests: the card is resolved server-side from the caller's registration, never the body.
+  `service` is an enum over a server-side map. Driver rename/owner rename key on `(tenant, carrier,
+  card)` — the where-clause IS the authorization.
+
+### Three bugs, one root cause: asking a capped list a question it can't answer
+
+`listDwhCards` defaulted to 100 rows (hard cap 200). Measured on the live DWH across 7967 carriers:
+p99 = 46 active cards, 16 carriers over 100, **max 510**. Three call sites scanned that list:
+
+1. `assertDriverCardAvailable` — a driver past the cap got "That card is not an active card of this
+   carrier" and **could not register at all**.
+2. `resolveDriverCardNumber` — returned null → `requireDriverCardNumber` 503 → **every read that
+   driver had was permanently dead**.
+3. Fleet screen — owner of the 510-card carrier saw 100, and because the filter counts and search run
+   client-side over that array, it **reported 100 as the total**.
+
+Fixed with `findDwhCardById` / `countDwhCards` (exact queries) and `FLEET_CARD_LIMIT = 1000`.
+Pagination was rejected deliberately: p99 is 46, the max payload is 53 KB, and paging would break the
+counts and search it was meant to serve. Verified live: card 17385 of 230 went 400 → 201; fleet
+returned 510/510 (68 KB, 450 ms).
+
+**This also produced the first end-to-end proof that driver scoping filters.** Every carrier with a
+registered driver had one card, or all its transactions on the driver's card — scoping was
+indistinguishable from a passthrough. On carrier 5794015 (7599 line items across 95 cards, 230 active
+cards) the driver's reads return 315 rows on 1 card.
+
+### Test-suite trap (cost two debugging cycles)
+
+`vi.clearAllMocks()` does **not** drain the `mockResolvedValueOnce` queue. A test whose path never
+reached a queued value leaked it into the next test — silently swapping a 201 for a 409 and blaming
+production code that was correct. `beforeEach` now uses `resetAllMocks()` and re-applies the factory
+defaults. Do not revert it.
+
+### Open — decisions needed, not mechanical work
+
+- **Inbox is entirely fabricated.** `seedInbox()` invents "Payment due", "New invoice", "Payment
+  received" for owners with no payment actually due. No backend route exists. A real `inbox_events`
+  table, `inboxEventRepo` and a WebSocket topic (`inbox:<ownerKind>:<ownerId>`) DO exist — but
+  `ownerKind: 'client'` keys on a `carrier_users` row id (`cu_…`) while a mini-app user is a
+  `registered_mini_app_companies` row keyed by `telegram_user_id`. **They do not join.** Resolving
+  that mapping is the first decision, before any Inbox work.
+- **Re-login after a Telegram account change is a dead end** — "This card already has a registered
+  driver", no path out but support. Deliberately not fixed: a card number is printed on the plastic
+  and handed to fuel attendants, so "card = access" opens a takeover vector. Product decision.
+- **Desk ticket creation has never been run end to end** — it would file into the live Customer
+  Service queue. Needs authorization.
+- `carrierMiniApp.routes.ts` is ~1220 lines against the 600 cap. Splitting it is overdue.
+- 19 `soon` services; invoice status filter (endpoint takes `status`, UI never sends it); the
+  `CardWave` redesign.
+
+### Local DB
+
+Demo rows (`DEMO-FLEET-1` / `DEMO-OWNEROP-1`, 5 registrations + 7 invitations) deleted — they made
+every service 400 (`carrierId must be a positive integer`) for whoever opened them. 9 real
+registrations, 46 invitations remain. Test with `?dev=1&uid=772010` (F 4 TRUCKING LLC, carrier
+5747140) or `uid=567461899` (carrier 5836348).
+
+### DECISION 2026-07-17 — Inbox owner mapping: extend `ownerKind`, don't mint carrier_users
+
+**Chosen: add `ownerKind: 'mini_app'` to `InboxOwnerKind`; `ownerId` = `registered_mini_app_companies.id`.**
+
+The mini-app's Inbox is fabricated (`seedInbox()` invents "Payment due" for owners with nothing due).
+Backing it with the real `inbox_events` table needs an owner key, and the mini-app user is a
+`registered_mini_app_companies` row (`telegram_user_id`), not the `carrier_users` row (`cu_…`) that
+`ownerKind: 'client'` expects. Three options were weighed; this records why B won, so it isn't
+re-litigated.
+
+**Why B**
+- `owner_kind` is plain `text NOT NULL` in the migration — no DB enum, no CHECK. `InboxOwnerKind` is
+  a TypeScript `$type<>` union, so a third kind is a **type change with no migration**.
+- `inbox_events_tenant_owner_idx` is `(tenant_id, owner_kind, owner_id, created_at)` — covers a new
+  kind for free.
+- `inboxEventRepo` is already generic over `ownerKind` (`list` filters on it, `create` takes it), and
+  `hub.ts` topics are `inbox:<kind>:<id>` — the pattern generalises with no plumbing.
+- The schema comment states the intent outright: *"One column pair covers both audiences."*
+  `ownerKind` IS the extension point.
+- Bonus: `registeredMiniAppCompanyRepo.upsert` conflicts on `(tenantId, telegramUserId)`, so the row
+  id is **stable across revoke → re-register**. Inbox history survives a re-registration.
+
+**Why not A (create a `carrier_users` row per registration)** — this is a security argument, not an
+aesthetic one. `carrier_users.login` and `.passwordHash` are both `NOT NULL`, and a mini-app user
+authenticates by Telegram initData HMAC — they have neither and never will. A would mean fabricating
+credentials to obtain a notification key, producing a login account that someone who is not the
+driver could authenticate as. New attack surface for no gain.
+
+The `carrier_users` header comment says it is "consumed by /v1/auth/client/login (future Telegram
+mini-app + the /client web page)" — that intent **predates the mini-app that actually got built**,
+which uses Telegram identity, not login/password. That consumer never materialised. Honouring stale
+intent by minting passwords is worse than extending the discriminator that exists for this.
+
+**Why not C (separate mini-app feed table)** — duplicates the table, the repo, the unread logic and
+the WS plumbing for no benefit.
+
+**Caveat to handle when implementing:** `owner_kind` is unconstrained at the DB level, so a typo
+writes silently — `'miniapp'` and `'mini_app'` would become two feeds nobody notices. Make the
+`InboxOwnerKind` union the single source of truth and validate in `inboxEventRepo.create` (the
+pattern `SERVICE_REQUEST_KEYS` uses for the Desk request enum).
+
+**Still undecided, and the real work:** what actually publishes a client event. Nothing writes
+`ownerKind: 'client'` rows today, so the mapping only makes the feed addressable — the events
+themselves (invoice issued, payment received, card shipped, ticket replied) each need a real upstream
+trigger. Until one exists, an honest empty Inbox beats the current invented one.

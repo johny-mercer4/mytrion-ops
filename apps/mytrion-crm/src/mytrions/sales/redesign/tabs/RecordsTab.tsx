@@ -122,7 +122,7 @@ export function RecordsTab() {
         name: c.name,
         carrier: c.carrier,
         initials: c.name.split(' ').map((w) => w.charAt(0)).slice(0, 2).join(''),
-        avStyle: `width:40px;height:40px;border-radius:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;background:color-mix(in srgb, ${col} 15%, transparent);color:${col}`,
+        avStyle: `width:40px;height:40px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;background:color-mix(in srgb, ${col} 15%, transparent);color:${col}`,
         statusBadge: badge(lbl, col),
         balColor: debt ? 'var(--danger)' : 'var(--muted)',
         balance: c.balance,
@@ -141,11 +141,11 @@ export function RecordsTab() {
       </div>
 
       {/* sub-tabs */}
-      <div style={s('display:flex;gap:6px;margin-bottom:16px;padding:4px;border-radius:13px;background:var(--surface);border:1px solid var(--border);width:fit-content;max-width:100%;overflow-x:auto')}>
+      <div style={s('display:flex;gap:6px;margin-bottom:16px;padding:4px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);width:fit-content;max-width:100%;overflow-x:auto')}>
         {DC_TABS.map((t) => {
           const on = dcSub === t.id;
           return (
-            <button key={t.id} onClick={() => setDcSub(t.id)} style={s(`display:flex;align-items:center;gap:8px;padding:9px 15px;border-radius:10px;border:1px solid ${on ? 'rgba(var(--accent-rgb),.4)' : 'transparent'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .14s`)}>
+            <button key={t.id} onClick={() => setDcSub(t.id)} style={s(`display:flex;align-items:center;gap:8px;padding:9px 15px;border-radius:var(--radius-md);border:1px solid ${on ? 'rgba(var(--accent-rgb),.4)' : 'transparent'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .14s`)}>
               <Svg d={t.icon} size={16} style={{ flexShrink: 0 }} />
               {t.label}
             </button>
@@ -157,14 +157,14 @@ export function RecordsTab() {
       <div style={s('display:flex;gap:12px;margin-bottom:18px;flex-wrap:wrap;align-items:center')}>
         <div style={s('position:relative;flex:1;min-width:240px')}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={s('position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--muted)')}><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-          <input value={search[dcSub]} onChange={(e) => setSearchVal(e.currentTarget.value)} placeholder={SEARCH_PLACEHOLDER[dcSub]} className="ss-in" style={s('width:100%;height:44px;padding:0 16px 0 44px;border-radius:13px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;box-shadow:var(--shadow-sm)')} />
+          <input value={search[dcSub]} onChange={(e) => setSearchVal(e.currentTarget.value)} placeholder={SEARCH_PLACEHOLDER[dcSub]} className="ss-in" style={s('width:100%;height:44px;padding:0 16px 0 44px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;box-shadow:var(--shadow-sm)')} />
         </div>
         {showView && (
-          <div style={s('display:flex;gap:4px;padding:4px;border-radius:12px;background:var(--surface);border:1px solid var(--border)')}>
+          <div style={s('display:flex;gap:4px;padding:4px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
             {VIEW_BTNS.map((b) => {
               const on = view === b.v;
               return (
-                <button key={b.v} onClick={() => setView(b.v)} style={s(`display:flex;align-items:center;gap:7px;padding:8px 13px;border-radius:9px;border:none;background:${on ? 'rgba(var(--accent-rgb),.14)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:12px;font-weight:700;cursor:pointer;transition:all .14s`)}>
+                <button key={b.v} onClick={() => setView(b.v)} style={s(`display:flex;align-items:center;gap:7px;padding:8px 13px;border-radius:var(--radius-md);border:none;background:${on ? 'rgba(var(--accent-rgb),.14)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:12px;font-weight:700;cursor:pointer;transition:all .14s`)}>
                   <Svg d={b.icon} size={15} />
                   {b.label}
                 </button>
@@ -179,7 +179,7 @@ export function RecordsTab() {
         <Gate loading={recsLoad.loading} error={recsLoad.error} empty={clients.length === 0} emptyMsg="No clients match your search.">
           <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:14px')}>
             {clients.map((c) => (
-              <div key={c.id} onClick={c.onClick} className="ss-card-h" style={s('padding:18px;border-radius:16px;background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
+              <div key={c.id} onClick={c.onClick} className="ss-card-h" style={s('padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
                 <div style={s('display:flex;align-items:center;gap:12px')}>
                   <div style={s(c.avStyle)}>{c.initials}</div>
                   <div style={s('min-width:0;flex:1')}>
@@ -226,9 +226,9 @@ export function RecordsTab() {
       )}
 
       {dcSub === 'money' && (
-        <div style={s('padding:20px;border-radius:16px;background:var(--surface);border:1px solid var(--border)')}>
+        <div style={s('padding:20px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
           <div style={s('font-size:13px;font-weight:700;margin-bottom:14px')}>Money Codes Issued</div>
-          <div style={s('border-radius:12px;border:1px solid var(--border);overflow:hidden')}>
+          <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);overflow:hidden')}>
             <div style={s("display:grid;grid-template-columns:1.3fr 1.4fr 0.8fr 1fr auto;gap:8px;padding:11px 15px;background:var(--alt);font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)")}>
               <span>Code</span><span>Carrier</span><span style={s('text-align:right')}>Amount</span><span>Issued</span><span>Status</span>
             </div>

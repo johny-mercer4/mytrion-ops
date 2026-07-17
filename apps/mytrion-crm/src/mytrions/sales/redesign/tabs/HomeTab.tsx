@@ -272,7 +272,7 @@ export function HomeTab() {
     return {
       id,
       label,
-      style: `padding:5px 13px;border-radius:7px;border:none;cursor:pointer;font-size:11.5px;font-weight:700;background:${on ? 'var(--accent)' : 'transparent'};color:${on ? '#fff' : 'var(--muted)'};transition:all .14s`,
+      style: `padding:5px 13px;border-radius:var(--radius-md);border:none;cursor:pointer;font-size:11.5px;font-weight:700;background:${on ? 'var(--accent)' : 'transparent'};color:${on ? '#fff' : 'var(--muted)'};transition:all .14s`,
       onClick: () => setActivityRange(id),
     };
   });
@@ -302,17 +302,17 @@ export function HomeTab() {
     <div className="ss-fu">
       {/* hero */}
       <div style={s('display:grid;grid-template-columns:1.35fr 1fr;gap:18px;margin-bottom:18px')}>
-        <div style={s('position:relative;overflow:hidden;border-radius:18px;padding:26px 28px;background:linear-gradient(120deg, rgba(var(--accent-rgb),.14), rgba(var(--violet-rgb),.10)), var(--surface);border:1px solid var(--border)')}>
+        <div style={s('position:relative;overflow:hidden;border-radius:var(--radius-md);padding:26px 28px;background:linear-gradient(120deg, rgba(var(--accent-rgb),.14), rgba(var(--violet-rgb),.10)), var(--surface);border:1px solid var(--border)')}>
           <div style={s('position:absolute;right:-40px;top:-40px;width:190px;height:190px;border-radius:50%;background:radial-gradient(circle,rgba(var(--accent-rgb),.22),transparent 70%);pointer-events:none')}></div>
           <div style={s('font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent)')}>{dateLabel}</div>
           <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:30px;letter-spacing:.01em;margin-top:8px;line-height:1.1')}>Good {timeOfDay}, <span style={s('background:linear-gradient(120deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent')}>{user.first}</span></div>
           <div style={s('font-size:13.5px;color:var(--text2);margin-top:8px;max-width:440px')}>Here's your briefing for today. You're ahead of the queue — {inboxUnread} items need a look.</div>
           <div style={s('display:flex;gap:10px;margin-top:18px')}>
-            <button onClick={goAuto} className="ss-btn-p" style={s('height:38px;padding:0 16px;border-radius:10px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer;display:flex;align-items:center;gap:7px')}><Svg d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" size={15} strokeWidth={2.2} />Run an action</button>
-            <button className="ss-ico-btn" style={s('height:38px;padding:0 15px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer;display:flex;align-items:center;gap:7px')}><Svg d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" size={15} />Ask Mytrion AI</button>
+            <button onClick={goAuto} className="ss-btn-p" style={s('height:38px;padding:0 16px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer;display:flex;align-items:center;gap:7px')}><Svg d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" size={15} strokeWidth={2.2} />Run an action</button>
+            <button className="ss-ico-btn" style={s('height:38px;padding:0 15px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer;display:flex;align-items:center;gap:7px')}><Svg d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" size={15} />Ask Mytrion AI</button>
           </div>
         </div>
-        <div style={s('border-radius:18px;padding:22px 24px;background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;justify-content:center')}>
+        <div style={s('border-radius:var(--radius-md);padding:22px 24px;background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;justify-content:center')}>
           <div style={s('display:flex;justify-content:space-between;align-items:baseline')}>
             <span style={s('font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)')}>Workday Progress</span>
             <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text2)")}>{timeFmt}</span>
@@ -337,7 +337,7 @@ export function HomeTab() {
         {ann.error && <StateNote tone="danger">{ann.error}</StateNote>}
         {!ann.loading && !ann.error && annData.length === 0 && <StateNote tone="muted">No announcements</StateNote>}
         {annData.map((a) => (
-          <div key={a.title} onClick={() => openAnn(a)} className="ss-card-h" style={s('flex:0 0 300px;display:flex;gap:12px;padding:15px;border-radius:14px;background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
+          <div key={a.title} onClick={() => openAnn(a)} className="ss-card-h" style={s('flex:0 0 300px;display:flex;gap:12px;padding:15px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
             <div style={s(iconBox(a.color, 40))}><Svg d={a.icon} size={18} /></div>
             <div style={s('min-width:0')}>
               <div style={s('font-size:13px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical')}>{a.title}</div>
@@ -348,20 +348,20 @@ export function HomeTab() {
       </div>
 
       {/* snapshot */}
-      <div style={s('margin-top:24px;border-radius:18px;background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
+      <div style={s('margin-top:24px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
         <div style={s('display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)')}>
           <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}>Today's Snapshot</div>
           <div style={s('display:flex;align-items:center;gap:10px')}>
             <span style={s('font-size:11px;color:var(--muted)')}>Updated {timeFmt}</span>
-            <button onClick={refreshSnapshot} aria-label="Refresh" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}><Svg d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" size={15} style={s(snapSpinCss)} /></button>
+            <button onClick={refreshSnapshot} aria-label="Refresh" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}><Svg d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" size={15} style={s(snapSpinCss)} /></button>
           </div>
         </div>
         <div style={s('padding:18px 20px')}>
           {snapLoading && (
             <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:12px')}>
               {skel8.map((sk) => (
-                <div key={sk} style={s('padding:16px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
-                  <div className="ss-skel" style={s('width:34px;height:34px;border-radius:9px')}></div>
+                <div key={sk} style={s('padding:16px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
+                  <div className="ss-skel" style={s('width:34px;height:34px;border-radius:var(--radius-md)')}></div>
                   <div className="ss-skel" style={s('width:54px;height:20px;margin-top:12px')}></div>
                   <div className="ss-skel" style={s('width:80%;height:11px;margin-top:8px')}></div>
                 </div>
@@ -376,7 +376,7 @@ export function HomeTab() {
                   <div style={s('font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px')}>{g.label}</div>
                   <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:12px')}>
                     {g.cells.map((c) => (
-                      <div key={c.label} className="ss-card-h" style={s('padding:15px;border-radius:13px;background:linear-gradient(180deg,var(--surface-2),var(--surface));border:1px solid var(--border);position:relative')}>
+                      <div key={c.label} className="ss-card-h" style={s('padding:15px;border-radius:var(--radius-md);background:linear-gradient(180deg,var(--surface-2),var(--surface));border:1px solid var(--border);position:relative')}>
                         <div style={s(c.iconStyle)}><Svg d={c.icon} size={18} /></div>
                         <div style={s(`font-family:'JetBrains Mono',monospace;font-weight:600;font-size:23px;margin-top:12px;color:${c.color}`)}>{c.value}</div>
                         <div style={s('font-size:12px;font-weight:600;color:var(--text);margin-top:2px')}>{c.label}</div>
@@ -392,10 +392,10 @@ export function HomeTab() {
       </div>
 
       {/* activity */}
-      <div style={s('margin-top:18px;border-radius:18px;background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
+      <div style={s('margin-top:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
         <div style={s('display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px')}>
           <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}>Your Activity</div>
-          <div style={s('display:flex;gap:3px;padding:3px;border-radius:9px;background:var(--alt);border:1px solid var(--border2)')}>
+          <div style={s('display:flex;gap:3px;padding:3px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
             {activityRanges.map((r) => (
               <button key={r.id} onClick={r.onClick} style={s(r.style)}>{r.label}</button>
             ))}
@@ -408,14 +408,14 @@ export function HomeTab() {
             <>
               <div style={s('display:grid;grid-template-columns:repeat(7,1fr);gap:11px')}>
                 {activityTiles.map((t) => (
-                  <div key={t.label} style={s('padding:13px;border-radius:12px;background:var(--alt);border:1px solid var(--border2);text-align:center')}>
+                  <div key={t.label} style={s('padding:13px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2);text-align:center')}>
                     <div style={s(t.iconStyle)}><Svg d={t.icon} size={16} /></div>
                     <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:19px;margin-top:9px")}>{t.value}</div>
                     <div style={s('font-size:10.5px;color:var(--muted);margin-top:2px')}>{t.label}</div>
                   </div>
                 ))}
               </div>
-              <div style={s('margin-top:14px;padding:13px 16px;border-radius:12px;background:linear-gradient(120deg,rgba(var(--accent-rgb),.08),transparent);border:1px solid var(--border2);display:flex;align-items:center;gap:16px;flex-wrap:wrap')}>
+              <div style={s('margin-top:14px;padding:13px 16px;border-radius:var(--radius-md);background:linear-gradient(120deg,rgba(var(--accent-rgb),.08),transparent);border:1px solid var(--border2);display:flex;align-items:center;gap:16px;flex-wrap:wrap')}>
                 <span style={s('font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)')}>Daily average</span>
                 {activityAverages.map((a) => (
                   <span key={a.label} style={s('font-size:12px;color:var(--text2)')}><strong style={s("font-family:'JetBrains Mono',monospace;color:var(--text)")}>{a.value}</strong> {a.label}/day</span>
@@ -429,10 +429,10 @@ export function HomeTab() {
       {/* CTA + inbox preview */}
       <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px')}>
         <div>
-          <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Svg d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" size={17} /></span>Quick Actions</div><button onClick={goAuto} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:7px')}>All guides →</button></div>
+          <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Svg d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" size={17} /></span>Quick Actions</div><button onClick={goAuto} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-md)')}>All guides →</button></div>
           <div style={s('display:flex;flex-direction:column;gap:12px')}>
             {ctaCards.map((c) => (
-              <div key={c.name} onClick={goAuto} className="ss-card-h" style={s('padding:16px;border-radius:14px;background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
+              <div key={c.name} onClick={goAuto} className="ss-card-h" style={s('padding:16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
                 <div style={s('display:flex;align-items:center;gap:6px;margin-bottom:9px')}>
                   {c.codes.map((code) => (
                     <span key={code.text} style={s(code.style)}>{code.text}</span>
@@ -447,13 +447,13 @@ export function HomeTab() {
           </div>
         </div>
         <div>
-          <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" /></svg></span>Recent Inbox</div><button onClick={goInbox} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:7px')}>View all →</button></div>
+          <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" /></svg></span>Recent Inbox</div><button onClick={goInbox} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-md)')}>View all →</button></div>
           <div style={s('display:flex;flex-direction:column;gap:10px')}>
             {inbox.loading && <StateNote tone="muted">Loading…</StateNote>}
             {inbox.error && <StateNote tone="danger">{inbox.error}</StateNote>}
             {!inbox.loading && !inbox.error && inboxData.length === 0 && <StateNote tone="muted">No messages</StateNote>}
             {inboxPreview.map((i) => (
-              <div key={i.id} onClick={i.onClick} className="ss-card-h" style={s('display:flex;gap:12px;padding:13px 14px;border-radius:13px;background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm);position:relative;overflow:hidden')}>
+              <div key={i.id} onClick={i.onClick} className="ss-card-h" style={s('display:flex;gap:12px;padding:13px 14px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm);position:relative;overflow:hidden')}>
                 <div style={s(`position:absolute;left:0;top:0;bottom:0;width:3px;background:${i.barColor}`)}></div>
                 <div style={s(i.iconStyle)}><Svg d={i.icon} size={15} /></div>
                 <div style={s('min-width:0;flex:1')}>

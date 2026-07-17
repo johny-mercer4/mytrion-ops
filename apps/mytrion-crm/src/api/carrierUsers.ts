@@ -18,9 +18,10 @@ export interface DwhClient {
 }
 
 /** Search the DWH client directory by company name, carrier id, or application id. */
-export async function searchClients(q: string, limit = 15): Promise<DwhClient[]> {
+export async function searchClients(q: string, limit = 15, signal?: AbortSignal): Promise<DwhClient[]> {
   const data = (await request('GET', '/carrier-clients', {
     query: { q: q || undefined, limit },
+    ...(signal ? { signal } : {}),
   })) as { clients: DwhClient[] };
   return data.clients;
 }
@@ -43,9 +44,10 @@ export interface DwhOperator {
 }
 
 /** Search servercrm operator logins by carrier id or company name. */
-export async function searchOperators(q: string, limit = 15): Promise<DwhOperator[]> {
+export async function searchOperators(q: string, limit = 15, signal?: AbortSignal): Promise<DwhOperator[]> {
   const data = (await request('GET', '/carrier-users/dwh-operators', {
     query: { q: q || undefined, limit },
+    ...(signal ? { signal } : {}),
   })) as { operators: DwhOperator[] };
   return data.operators;
 }
@@ -60,9 +62,10 @@ export interface DwhCard {
 }
 
 /** List a carrier's active fuel cards. */
-export async function listCards(carrierId: string, limit = 100): Promise<DwhCard[]> {
+export async function listCards(carrierId: string, limit = 100, signal?: AbortSignal): Promise<DwhCard[]> {
   const data = (await request('GET', '/carrier-users/dwh-cards', {
     query: { carrier_id: carrierId, limit },
+    ...(signal ? { signal } : {}),
   })) as { cards: DwhCard[] };
   return data.cards;
 }

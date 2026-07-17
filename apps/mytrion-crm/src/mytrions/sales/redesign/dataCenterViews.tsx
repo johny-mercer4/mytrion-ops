@@ -19,7 +19,7 @@ import {
 } from './dataCenterLive';
 
 const AV = (size = 34, fs = 13): string =>
-  `width:${size}px;height:${size}px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:${fs}px;background:var(--raised);color:var(--text2)`;
+  `width:${size}px;height:${size}px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:${fs}px;background:var(--raised);color:var(--text2)`;
 const COUNT_CHIP =
   "min-width:22px;height:20px;padding:0 7px;border-radius:99px;background:var(--raised);color:var(--muted);font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace";
 const SUB = 'font-size:11px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
@@ -38,7 +38,7 @@ function EmptyRow({ msg }: { msg: string }) {
 
 function KanbanCol({ col, count, children }: { col: { label: string; col: string }; count: number; children: React.ReactNode }) {
   return (
-    <div style={s('flex:0 0 264px;width:264px;border-radius:16px;background:var(--alt);border:1px solid var(--border2);display:flex;flex-direction:column;max-height:640px')}>
+    <div style={s('flex:0 0 264px;width:264px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2);display:flex;flex-direction:column;max-height:640px')}>
       <div style={s('display:flex;align-items:center;gap:9px;padding:13px 15px;border-bottom:1px solid var(--border2)')}>
         <span style={s(`width:8px;height:8px;border-radius:50%;background:${col.col}`)} />
         <span style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:13.5px;letter-spacing:.04em;text-transform:uppercase;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{col.label}</span>
@@ -59,7 +59,7 @@ export function LeadsView({ leads, search, view }: { leads: LeadVM[]; search: st
     : leads;
 
   if (rows.length === 0) {
-    return <div style={s('border-radius:14px;border:1px solid var(--border);background:var(--surface)')}><EmptyRow msg="No leads found." /></div>;
+    return <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)')}><EmptyRow msg="No leads found." /></div>;
   }
 
   const statusBadge = (l: LeadVM) =>
@@ -67,7 +67,7 @@ export function LeadsView({ leads, search, view }: { leads: LeadVM[]; search: st
 
   if (view === 'list') {
     return (
-      <div style={s('border-radius:14px;border:1px solid var(--border);overflow:hidden;background:var(--surface)')}>
+      <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);overflow:hidden;background:var(--surface)')}>
         <div style={s('display:grid;grid-template-columns:1.4fr 1fr 1.2fr 0.8fr 1fr;gap:10px;padding:12px 16px;background:var(--alt);font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>
           <span>Name</span><span>Status</span><span>Source</span><span>Created</span><span style={s('text-align:right')}>Phone</span>
         </div>
@@ -96,7 +96,7 @@ export function LeadsView({ leads, search, view }: { leads: LeadVM[]; search: st
             {cards.map((ld) => {
               const b = statusBadge(ld);
               return (
-                <div key={ld.id} onClick={() => openLead(ld)} className="ss-card-h" style={s(`padding:13px;border-radius:13px;background:var(--surface);border:1px solid var(--border);border-left:3px solid ${col.col};cursor:pointer;box-shadow:var(--shadow-sm)`)}>
+                <div key={ld.id} onClick={() => openLead(ld)} className="ss-card-h" style={s(`padding:13px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-left:3px solid ${col.col};cursor:pointer;box-shadow:var(--shadow-sm)`)}>
                   <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:8px')}>
                     <div style={s('font-size:13px;font-weight:700;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.contact}</div>
                     <span style={s(`${b.style};flex-shrink:0;white-space:nowrap`)}>{b.text}</span>
@@ -129,7 +129,7 @@ export function DealsView({ deals, search, view }: { deals: DealVM[]; search: st
 
   if (view === 'list') {
     return (
-      <div style={s('border-radius:14px;border:1px solid var(--border);overflow:hidden;background:var(--surface)')}>
+      <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);overflow:hidden;background:var(--surface)')}>
         <div style={s('display:grid;grid-template-columns:1.6fr 1fr 0.9fr 0.9fr 0.8fr;gap:10px;padding:12px 16px;background:var(--alt);font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>
           <span>Deal</span><span>Stage</span><span>Carrier</span><span>App ID</span><span style={s('text-align:right')}>Created</span>
         </div>
@@ -154,7 +154,7 @@ export function DealsView({ deals, search, view }: { deals: DealVM[]; search: st
         return (
           <KanbanCol key={col.key} col={col} count={cards.length}>
             {cards.map((dl) => (
-              <div key={dl.id} onClick={() => openDeal(dl)} className="ss-card-h" style={s(`padding:13px;border-radius:13px;background:var(--surface);border:1px solid var(--border);border-left:3px solid ${col.col};cursor:pointer;box-shadow:var(--shadow-sm)`)}>
+              <div key={dl.id} onClick={() => openDeal(dl)} className="ss-card-h" style={s(`padding:13px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-left:3px solid ${col.col};cursor:pointer;box-shadow:var(--shadow-sm)`)}>
                 <div style={s('font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{dl.name}</div>
                 {dl.carrierId && <div style={s(SUB)}>Carrier: {dl.carrierId}</div>}
                 {dl.app && <div style={s(SUB)}>App ID: {dl.app}</div>}
@@ -190,7 +190,7 @@ export function RejectionsView({ rejections, search }: { rejections: RejectionVM
     : rejections;
 
   return (
-    <div style={s('border-radius:14px;border:1px solid var(--border);overflow:hidden;background:var(--surface)')}>
+    <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);overflow:hidden;background:var(--surface)')}>
       <div style={s('display:grid;grid-template-columns:1.6fr 0.9fr 1.6fr 0.9fr 1fr;gap:10px;padding:12px 16px;background:var(--alt);font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>
         <span>Company</span><span>Ticket</span><span>Reason</span><span>Reported</span><span style={s('text-align:right')}>Status</span>
       </div>

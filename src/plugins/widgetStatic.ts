@@ -59,7 +59,11 @@ export async function registerWidgetStatic(app: FastifyInstance): Promise<void> 
     });
     await scope.register(fastifyStatic, {
       root: widgetDir,
-      prefix: '/widget/',
+      // Serve the worker portal at the ROOT so the domain itself is the Mytrion Ops gate
+      // (login → Zoho OAuth → CRM). The SPA's router lives at '/' + '/m/:mytrion' and its assets
+      // are relative (vite base './'), so it must run at root, not a sub-path. Deep-link/refresh
+      // fallback to index.html for non-API GETs is handled by the not-found handler (errorHandler).
+      prefix: '/',
       index: ['index.html'],
       // index.html must revalidate so a redeploy is picked up; vite's hashed assets cache hard.
       setHeaders: (res, filePath) => {
@@ -69,9 +73,7 @@ export async function registerWidgetStatic(app: FastifyInstance): Promise<void> 
         );
       },
     });
-    // Bare /widget → /widget/ so the index resolves.
-    scope.get('/widget', async (_req, reply) => reply.redirect('/widget/'));
   });
 
-  logger.info({ dir: widgetDir }, 'serving AI Chat widget at /widget/');
+  logger.info({ dir: widgetDir }, 'serving Mytrion Ops portal at / (root)');
 }

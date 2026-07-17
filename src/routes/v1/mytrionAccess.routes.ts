@@ -2,7 +2,7 @@ import type { FastifyInstance, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
 import { RBACError } from '../../lib/errors.js';
 import { DEFAULT_PROFILE_SEED, MYTRION_IDS, type MytrionId } from '../../lib/mytrions.js';
-import { listActiveUsers } from '../../integrations/zohoCrm.js';
+import { listActiveUsersCached } from '../../modules/auth/actAsDirectory.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { mytrionAccessService } from '../../modules/access/mytrionAccessService.js';
 import { mytrionProfileDefaultsRepo, type MytrionProfileDefaultDto } from '../../repos/mytrionProfileDefaultsRepo.js';
@@ -70,30 +70,33 @@ export async function mytrionAccessRoutes(app: FastifyInstance): Promise<void> {
   }
 
   // Active Zoho users + each one's stored override + resolved EFFECTIVE access.
+  // Resolves all users' access via resolveBatch (2 bulk queries total) instead of fanning out
+  // resolveWorkerAccess per row (2 DB round trips PER user) — that N+1 was the main cause of this
+  // endpoint being slow for orgs with more than a handful of workers.
   app.get('/admin/mytrion-access/users', guard, async (request) => {
     const ctx = requireAdmin(request);
-    const [users, overrides] = await Promise.all([listActiveUsers(), workerMytrionAccessRepo.list(ctx)]);
+    const [users, overrides] = await Promise.all([listActiveUsersCached(), workerMytrionAccessRepo.list(ctx)]);
     const byId = new Map(overrides.map((o) => [o.zohoUserId, o]));
-    const rows = await Promise.all(
-      users.map(async (u) => {
-        const effective = await mytrionAccessService.resolveWorkerAccess({
-          tenantId: ctx.tenantId,
-          zohoUserId: u.zohoUserId,
-          profileName: u.profile,
-          zohoRole: u.role,
-          userName: u.name,
-        });
-        return {
-          zohoUserId: u.zohoUserId,
-          name: u.name,
-          email: u.email,
-          profile: u.profile,
-          role: u.role,
-          override: byId.get(u.zohoUserId) ?? null,
-          effective,
-        };
-      }),
+    const effectiveById = await mytrionAccessService.resolveBatch(
+      ctx.tenantId,
+      users.map((u) => ({
+        tenantId: ctx.tenantId,
+        zohoUserId: u.zohoUserId,
+        profileName: u.profile,
+        zohoRole: u.role,
+        userName: u.name,
+      })),
+      overrides,
     );
+    const rows = users.map((u) => ({
+      zohoUserId: u.zohoUserId,
+      name: u.name,
+      email: u.email,
+      profile: u.profile,
+      role: u.role,
+      override: byId.get(u.zohoUserId) ?? null,
+      effective: effectiveById.get(u.zohoUserId),
+    }));
     return { users: rows };
   });
 

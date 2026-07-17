@@ -24,7 +24,7 @@ import {
 import { downloadTxnReport } from './txnReportExport';
 
 const mono = "font-family:'JetBrains Mono',monospace";
-const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:11px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
+const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
 const labelCss = 'font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
 const sectionLabel = 'font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:10px';
 const chipOn = 'padding:5px 10px;border-radius:999px;border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);font-size:11.5px;font-weight:700;cursor:pointer';
@@ -92,7 +92,7 @@ export function AutoInvoicesPanel({
   return (
     <div style={s('display:flex;flex-direction:column;gap:12px')}>
       {panelMsg && (
-        <div style={s(`padding:12px 14px;border-radius:11px;background:color-mix(in srgb,var(--${panelMsg.type === 'error' ? 'danger' : 'ok'}) 12%,transparent);border:1px solid color-mix(in srgb,var(--${panelMsg.type === 'error' ? 'danger' : 'ok'}) 30%,transparent);font-size:12.5px;color:var(--${panelMsg.type === 'error' ? 'danger' : 'ok'});line-height:1.5;display:flex;justify-content:space-between;align-items:flex-start`)}>
+        <div style={s(`padding:12px 14px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--${panelMsg.type === 'error' ? 'danger' : 'ok'}) 12%,transparent);border:1px solid color-mix(in srgb,var(--${panelMsg.type === 'error' ? 'danger' : 'ok'}) 30%,transparent);font-size:12.5px;color:var(--${panelMsg.type === 'error' ? 'danger' : 'ok'});line-height:1.5;display:flex;justify-content:space-between;align-items:flex-start`)}>
           <div>
             <strong style={s('display:block;margin-bottom:2px')}>{panelMsg.title}</strong>
             {panelMsg.body}
@@ -110,7 +110,7 @@ export function AutoInvoicesPanel({
             type="button"
             disabled={dlBusy !== null || selected.size === 0}
             onClick={() => onBulk('pdf')}
-            style={s('height:34px;padding:0 12px;border-radius:9px;border:1px solid var(--border);background:var(--surface);font-size:11.5px;font-weight:700;cursor:pointer;color:var(--text)')}
+            style={s('height:34px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-size:11.5px;font-weight:700;cursor:pointer;color:var(--text)')}
           >
             {dlBusy === 'bulk-pdf' ? '…' : 'Download Selected PDF'}
           </button>
@@ -118,13 +118,13 @@ export function AutoInvoicesPanel({
             type="button"
             disabled={dlBusy !== null || selected.size === 0}
             onClick={() => onBulk('excel')}
-            style={s('height:34px;padding:0 12px;border-radius:9px;border:1px solid var(--border);background:var(--surface);font-size:11.5px;font-weight:700;cursor:pointer;color:var(--text)')}
+            style={s('height:34px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-size:11.5px;font-weight:700;cursor:pointer;color:var(--text)')}
           >
             {dlBusy === 'bulk-excel' ? '…' : 'Download Selected Excel'}
           </button>
         </div>
       </div>
-      <div style={s('border-radius:13px;border:1px solid var(--border);overflow:hidden')}>
+      <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);overflow:hidden')}>
         <div style={s('display:grid;grid-template-columns:28px 1.2fr 1fr 0.9fr auto auto;gap:8px;padding:11px 15px;background:var(--surface-2);font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>
           <span />
           <span>Invoice</span>
@@ -151,7 +151,7 @@ export function AutoInvoicesPanel({
                   type="button"
                   disabled={!r.id || dlBusy !== null}
                   onClick={() => onOne(r, t)}
-                  style={s('padding:4px 8px;border-radius:7px;border:1px solid var(--border);background:var(--surface);font-size:10px;font-weight:700;text-transform:uppercase;cursor:pointer;color:var(--text2)')}
+                  style={s('padding:4px 8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-size:10px;font-weight:700;text-transform:uppercase;cursor:pointer;color:var(--text2)')}
                 >
                   {dlBusy === `${r.id}-${t}` ? '…' : t}
                 </button>
@@ -272,9 +272,9 @@ export function AutoTransactionsPanel({
   };
 
   const optionsBlock = report && report.transactions.length > 0 ? (
-    <div style={s('padding:14px;border-radius:13px;border:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;gap:16px')}>
+    <div style={s('padding:14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;gap:16px')}>
       {panelMsg && (
-        <div style={s(`padding:12px 14px;border-radius:11px;background:color-mix(in srgb,var(--${panelMsg.type === 'error' ? 'danger' : 'ok'}) 12%,transparent);border:1px solid color-mix(in srgb,var(--${panelMsg.type === 'error' ? 'danger' : 'ok'}) 30%,transparent);font-size:12.5px;color:var(--${panelMsg.type === 'error' ? 'danger' : 'ok'});line-height:1.5;display:flex;justify-content:space-between;align-items:flex-start`)}>
+        <div style={s(`padding:12px 14px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--${panelMsg.type === 'error' ? 'danger' : 'ok'}) 12%,transparent);border:1px solid color-mix(in srgb,var(--${panelMsg.type === 'error' ? 'danger' : 'ok'}) 30%,transparent);font-size:12.5px;color:var(--${panelMsg.type === 'error' ? 'danger' : 'ok'});line-height:1.5;display:flex;justify-content:space-between;align-items:flex-start`)}>
           <div>
             <strong style={s('display:block;margin-bottom:2px')}>{panelMsg.title}</strong>
             {panelMsg.body}
@@ -409,7 +409,7 @@ export function AutoTransactionsPanel({
           disabled={busy || !report || processed.length === 0}
           onClick={onDownload}
           className="ss-btn-p"
-          style={s('height:42px;padding:0 18px;border-radius:11px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:13px;cursor:pointer')}
+          style={s('height:42px;padding:0 18px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:13px;cursor:pointer')}
         >
           {busy ? 'Generating…' : `Download ${opts.format.toUpperCase()}`}
         </button>
@@ -428,7 +428,7 @@ export function AutoTransactionsPanel({
   ) : (
     <div style={s('display:flex;flex-direction:column;gap:12px')}>
       {groups.map((g) => (
-        <div key={g.key} style={s('border-radius:13px;border:1px solid var(--border);overflow:hidden')}>
+        <div key={g.key} style={s('border-radius:var(--radius-md);border:1px solid var(--border);overflow:hidden')}>
           <div style={s('display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--surface-2);font-size:12.5px')}>
             <span style={s(`${mono};font-weight:700`)}>
               {g.isCard
@@ -486,14 +486,14 @@ export function AutoTransactionsPanel({
             ['Discount', money(liveTotals.discount)],
             ['Gallons', liveTotals.gallons ? liveTotals.gallons.toFixed(1) : '—'],
           ].map(([k, v]) => (
-            <div key={k} style={s('padding:12px;border-radius:11px;background:var(--surface-2);border:1px solid var(--border2)')}>
+            <div key={k} style={s('padding:12px;border-radius:var(--radius-md);background:var(--surface-2);border:1px solid var(--border2)')}>
               <div style={s(labelCss)}>{k}</div>
               <div style={s(`${mono};font-size:15px;font-weight:700`)}>{v}</div>
             </div>
           ))}
         </div>
         {report?.moreRecords && (
-          <div style={s('margin-top:10px;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);font-size:12px;color:var(--text2)')}>
+          <div style={s('margin-top:10px;padding:10px 12px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);font-size:12px;color:var(--text2)')}>
             Showing a fetched subset — server totals may be higher. Export uses filtered rows from the fetched set (up to 5,000 line items).
           </div>
         )}

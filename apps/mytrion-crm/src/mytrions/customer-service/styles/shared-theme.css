@@ -99,12 +99,10 @@
     --scrollbar-thumb: #D3D8DF;
     --scrollbar-track: transparent;
 
-    /* ── Radii ── */
-    --radius-xs: 3px;
-    --radius-sm: 5px;
-    --radius-md: 8px;
-    --radius-lg: 10px;
-    --radius-full: 999px;
+    /* ── Radii ──
+       Deliberately not redefined here: this block used to shadow the app scale with its own
+       8/10px, which is exactly how this module drifted from the rest of the CRM. The values now
+       cascade from theme.css so there is one corner radius to change. */
 
     /* ── Tables — open, airy, divider-only ── */
     --table-head-bg: transparent;

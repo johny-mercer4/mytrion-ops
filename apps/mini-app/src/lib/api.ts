@@ -105,10 +105,12 @@ export async function fetchMiniAppSession(initData: string): Promise<{ registrat
 export async function driverSelfRegister(
   initData: string,
   cardNumber: string,
+  driverName?: string,
 ): Promise<{ registration: RegistrationView }> {
   return (await request('POST', '/carrier/mini-app/driver-self-register', {
     initData,
     cardNumber,
+    ...(driverName ? { driverName } : {}),
   })) as { registration: RegistrationView };
 }
 
@@ -139,6 +141,20 @@ export interface DriverInviteResult {
   invite: { id: string; cardId: string | null; driverName: string | null };
   inviteUrl: string;
   expiresAt: string;
+}
+
+/** Owner corrects the driver name on one of their cards. The backend resolves the carrier from the
+ *  caller's own registration and matches on (carrier, card), so a cardId that isn't theirs 404s. */
+export async function renameDriver(
+  initData: string,
+  cardId: string,
+  driverName: string,
+): Promise<{ cardId: string; driverName: string }> {
+  return (await request('POST', '/carrier/mini-app/driver-name', {
+    initData,
+    cardId,
+    driverName,
+  })) as { cardId: string; driverName: string };
 }
 
 export async function createDriverInvite(
@@ -204,6 +220,8 @@ export interface TransactionsResult {
   data?: Array<Record<string, unknown>>;
   pagination?: Record<string, unknown>;
   range?: { from?: string; to?: string };
+  /** `pending: true` marks the fast DWH-only phase — the live EFS tail hasn't been merged yet. */
+  live?: { merged?: number; pending?: boolean; as_of?: string | null };
 }
 
 /** Shape unconfirmed by any existing caller — render defensively, don't assume exact field names. */
@@ -244,11 +262,17 @@ export async function fetchAccountStatus(initData: string): Promise<StatusResult
   return (await request('POST', '/carrier/mini-app/status', { initData })) as StatusResult;
 }
 
+/**
+ * Transactions, in two phases. `live: false` (the default) reads the DWH mart only and lands in
+ * well under a second; `live: true` asks the backend for the same window merged with a live EFS
+ * gap-fill, which is authoritative but costs seconds. Call the fast one first, paint, then upgrade.
+ */
 export async function fetchTransactions(
   initData: string,
   range?: { range?: string; from?: string; to?: string },
+  live = false,
 ): Promise<TransactionsResult> {
-  return (await request('POST', '/carrier/mini-app/transactions', { initData, ...range })) as TransactionsResult;
+  return (await request('POST', '/carrier/mini-app/transactions', { initData, ...range, live })) as TransactionsResult;
 }
 
 export async function fetchLastUsed(initData: string, range?: string): Promise<LastUsedResult> {
@@ -270,6 +294,69 @@ export async function fetchInvoiceSignedUrl(initData: string, invoiceId: string)
   return (await request('POST', '/carrier/mini-app/invoices/signed-url', { initData, invoiceId })) as SignedUrlResult;
 }
 
+/**
+ * Deliver one invoice PDF to this user's Telegram chat. Same reason the transaction report goes that
+ * way: a Telegram WebApp cannot reliably save a file, and the signed URL expires — in the chat the
+ * document persists and can be forwarded.
+ */
+export async function sendInvoice(initData: string, invoiceId: string): Promise<{ sent?: boolean; fileName?: string }> {
+  return (await request('POST', '/carrier/mini-app/invoices/send', { initData, invoiceId })) as {
+    sent?: boolean;
+    fileName?: string;
+  };
+}
+
 export async function fetchTracking(initData: string): Promise<TrackingResult> {
   return (await request('POST', '/carrier/mini-app/tracking', { initData })) as TrackingResult;
+}
+
+export type ServiceRequestKey =
+  | 'override-card'
+  | 'money-code'
+  | 'card-activate'
+  | 'card-limit'
+  | 'card-replace'
+  | 'card-fraud'
+  | 'billing-form'
+  | 'ref-guides';
+
+/**
+ * File a real Zoho Desk ticket. The card is NOT sent — the backend resolves a driver's card from
+ * their own registration, so this payload cannot aim the request at someone else's card.
+ */
+export async function sendServiceRequest(
+  initData: string,
+  service: ServiceRequestKey,
+  comment?: string,
+): Promise<{ ticketId: string; subject: string }> {
+  return (await request('POST', '/carrier/mini-app/service-request', {
+    initData,
+    service,
+    ...(comment ? { comment } : {}),
+  })) as { ticketId: string; subject: string };
+}
+
+export type TxnExportFormat = 'csv' | 'xlsx' | 'pdf';
+
+export interface TxnExportSent {
+  sent?: boolean;
+  fileName?: string;
+  rows?: number;
+}
+
+/**
+ * Build the transactions report server-side and have the bot deliver it to this user's Telegram
+ * chat. Nothing downloads here: a Telegram WebApp can't reliably save a file, so the document lands
+ * in the bot chat instead — where it persists and can be forwarded.
+ */
+export async function sendTransactionsReport(
+  initData: string,
+  range: { range?: string; from?: string; to?: string },
+  format: TxnExportFormat,
+): Promise<TxnExportSent> {
+  return (await request('POST', '/carrier/mini-app/transactions/export', {
+    initData,
+    ...range,
+    format,
+  })) as TxnExportSent;
 }

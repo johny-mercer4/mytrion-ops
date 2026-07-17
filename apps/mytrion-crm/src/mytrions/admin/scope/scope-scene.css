@@ -73,7 +73,7 @@
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     border: 1px solid var(--gb);
-    border-radius: 4px;
+    border-radius: var(--radius-md);
 }
 .oct-zoom__btn {
     display: flex;
@@ -85,7 +85,7 @@
     background: transparent;
     color: var(--sub);
     cursor: pointer;
-    border-radius: 3px;
+    border-radius: var(--radius-md);
     transition: background .15s, color .15s;
 }
 .oct-zoom__btn:hover { background: var(--glass); color: var(--ink); }
@@ -130,7 +130,7 @@
     padding: 8px 15px;
     font-size: 12.5px;
     font-weight: 600;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     border: 1px solid transparent;
     cursor: pointer;
     font-family: 'Inter', sans-serif;
@@ -177,7 +177,7 @@
     background: var(--bg1);
     border: 1px solid var(--gb);
     border-left: 3px solid var(--sub);
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     box-shadow: 0 18px 48px rgba(0, 0, 0, .5);
     animation: octRise 180ms ease;
 }

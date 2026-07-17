@@ -12,20 +12,38 @@ import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { env, isProduction } from '../../config/env.js';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { db } from '../../db/client.js';
-import { listDwhCards, findDwhCardByNumber } from '../../integrations/dwhCards.js';
+import { FLEET_CARD_LIMIT, listDwhCards, findDwhCardById, findDwhCardByNumber } from '../../integrations/dwhCards.js';
+import { listDwhTransactions, resolveDwhTxnRange } from '../../integrations/dwhTransactions.js';
 import { searchDwhClients } from '../../integrations/dwhClients.js';
 import { searchDwhOperators } from '../../integrations/dwhOperators.js';
 import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
+import {
+  TXN_FETCH_LIMIT,
+  cardDigits,
+  clampToWindow,
+  scopeRowsToCard,
+  scopeTransactionsToCard,
+} from '../../modules/carrier/driverCardScope.js';
 import { executeZohoFunctionWithFallback } from '../../integrations/zohoFunctions.js';
+import {
+  fileServiceRequest,
+  serviceRequestAllows,
+  serviceRequestSpec,
+  SERVICE_REQUEST_KEYS,
+} from '../../modules/carrier/serviceRequest.js';
 import { carrierInvitationRepo } from '../../repos/carrierInvitationRepo.js';
 import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompanyRepo.js';
 import { buildInviteUrl, createCarrierInvite } from '../../modules/carrier/inviteService.js';
 import {
   parseInitDataUser,
+  escapeTelegramHtml,
+  sendDocument,
   signTelegramInitData,
+  TelegramChatUnreachableError,
   verifyTelegramInitData,
   type TelegramWebAppUser,
 } from '../../integrations/telegramCarrierBot.js';
+import { buildTxnReport } from '../../modules/carrier/txnReport.js';
 import type { RegisteredMiniAppCompany } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { RBACError } from '../../lib/errors.js';
@@ -116,6 +134,12 @@ const ownerDriverInviteSchema = z.object({
   cardId: z.string().min(1).max(120),
   driverName: z.string().min(1).max(200),
 });
+/** Same 200-char cap as the invite form and the driver's own sign-in — one column, one bound. */
+const ownerDriverRenameSchema = z.object({
+  initData: z.string().min(1),
+  cardId: z.string().min(1).max(120),
+  driverName: z.string().trim().min(1).max(200),
+});
 
 // ── Self-service reads (any registered user — owner or driver; carrier-level data both may see) ─
 const selfServiceSchema = z.object({ initData: z.string().min(1) });
@@ -125,6 +149,16 @@ const rangeSchema = z.object({
   from: z.string().max(10).optional(),
   to: z.string().max(10).optional(),
 });
+/**
+ * `live` drives the mini-app's two-phase transactions read:
+ *   false (default) — DWH mart only, ~200ms. Paints immediately, but misses anything newer than
+ *                     the mart's last refresh (~3h).
+ *   true            — servercrm's endpoint: the same mart rows PLUS a live EFS gap-fill, which
+ *                     costs 3–24s. The caller fires this second and swaps the list in.
+ * Default false so a caller that never heard of `live` gets the fast path, not the slow one.
+ */
+const txnRangeSchema = rangeSchema.extend({ live: z.boolean().optional().default(false) });
+const txnExportSchema = rangeSchema.extend({ format: z.enum(['csv', 'xlsx', 'pdf']).default('xlsx') });
 const invoicesSchema = z.object({
   initData: z.string().min(1),
   range: z.string().max(20).optional(),
@@ -136,9 +170,21 @@ const invoiceSignedUrlSchema = z.object({
   initData: z.string().min(1),
   invoiceId: z.string().min(1).max(120),
 });
+/** `service` is an enum, not free text: it selects a spec from a server-side map (subject, Desk
+ *  department, allowed roles), so a caller cannot invent a request type or route one to an arbitrary
+ *  queue. `comment` is the only free text and lands in the ticket body as content. */
+const serviceRequestSchema = z.object({
+  initData: z.string().min(1),
+  service: z.enum(SERVICE_REQUEST_KEYS),
+  comment: z.string().max(2000).optional(),
+});
 const driverSelfRegisterSchema = z.object({
   initData: z.string().min(1),
   cardNumber: z.string().trim().min(4).max(40),
+  /** The driver's own name, typed on the card-number sign-in screen. Optional so an older client
+   *  keeps working; when absent the Telegram profile name is used, as before. Same 200-char cap the
+   *  owner's driver-invite form uses — it lands in the same column. */
+  driverName: z.string().trim().min(1).max(200).optional(),
 });
 
 function verifyTelegramUser(initData: string): { tgUser: TelegramWebAppUser; telegramUserId: string } {
@@ -247,6 +293,55 @@ async function requireRegisteredCarrierUser(
     });
   }
   return { registration, carrierId: registration.carrierId };
+}
+
+/**
+ * Verify initData and resolve the caller to ANY registered OWNER with a carrier — the gate for the
+ * money views a driver must never see: invoices and payment info.
+ *
+ * Distinct from `requireRegisteredOwner`, which additionally demands `fleet-manager` because it
+ * guards driver management; an owner-operator has no fleet to manage but is still the owner of the
+ * account, and the docx's "For Fleet Owners" category covers both. The only thing excluded here is
+ * a driver.
+ *
+ * These reads were open to any registered carrier user, so a driver's initData could fetch the
+ * whole carrier's invoices directly — the UI simply never offered them the button. Both the docx
+ * (invoices/payment sit under Fleet Owners; the driver list has neither) and
+ * OCTANE_MINIAPP_SERVICES_SPEC §2 ("no carrier balance, invoices, payment info, account status")
+ * agree, so this is the code catching up with them.
+ */
+async function requireRegisteredOwnerUser(
+  initData: string,
+): Promise<{ registration: RegisteredMiniAppCompany; carrierId: string }> {
+  const { registration } = await requireRegisteredMiniAppUser(initData);
+  if (registration.profile !== 'owner' || !registration.carrierId) {
+    throw new AppError('This view is only available to the company owner', {
+      statusCode: 403,
+      code: 'NOT_A_REGISTERED_OWNER_USER',
+      expose: true,
+    });
+  }
+  return { registration, carrierId: registration.carrierId };
+}
+
+/**
+ * The driver's own card number — the scope key for every row-level driver filter below.
+ *
+ * FAIL-CLOSED BY DESIGN: resolveDriverCardNumber is best-effort and returns null when the DWH is
+ * unconfigured/down or the card is gone. Every other caller treats that null as "degrade to the
+ * masked cardId", but here a null must NEVER fall through to the carrier-wide rows — that is
+ * exactly the leak this scoping exists to prevent. So: no card number → no data, 503.
+ */
+async function requireDriverCardNumber(registration: RegisteredMiniAppCompany): Promise<string> {
+  const cardNumber = await resolveDriverCardNumber(registration.carrierId, registration.cardId);
+  if (!cardNumber) {
+    throw new AppError("We couldn't confirm which card is yours right now. Please try again shortly.", {
+      statusCode: 503,
+      code: 'DRIVER_CARD_UNRESOLVED',
+      expose: true,
+    });
+  }
+  return cardNumber;
 }
 
 const createInviteSchema = z.object({
@@ -568,7 +663,13 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       if (!invite) throw new NotFoundError('This invite link is not valid');
 
       const existing = await registeredMiniAppCompanyRepo.findByTelegramUserId(ctx, telegramUserId, tx);
-      if (existing && !sameRegistrationSubject(existing, invite)) {
+      // A REVOKED registration no longer owns this Telegram account, so it must not veto a new one.
+      // findByTelegramUserId returns revoked rows too, so without this check revoke was a dead end:
+      // the user could neither use their access (403 MINI_APP_REVOKED) nor be re-registered anywhere
+      // — the account was bricked. This does not weaken the guard: an ACTIVE registration still
+      // blocks a rebind, which is what stops a leaked link from moving someone's account.
+      const bindingExists = Boolean(existing) && existing?.status !== 'revoked';
+      if (bindingExists && existing && !sameRegistrationSubject(existing, invite)) {
         throw new ConflictError('This Telegram account is already registered to another carrier', {
           code: 'TELEGRAM_ALREADY_REGISTERED',
         });
@@ -685,7 +786,11 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     const { ctx, carrierId, registration } = await requireRegisteredOwner(body.initData);
 
     const [cards, drivers, pending] = await Promise.all([
-      env.DWH_DATABASE_URL ? listDwhCards(carrierId).catch(() => []) : Promise.resolve([]),
+      // The owner's whole fleet, not the default 100. The screen's filter counts and search run over
+      // this array client-side, so a short list doesn't just hide cards — it misreports the totals
+      // beside the chips. Measured: the largest real carrier has 510 active cards, so an owner of it
+      // was seeing 100 and being told that was all of them.
+      env.DWH_DATABASE_URL ? listDwhCards(carrierId, FLEET_CARD_LIMIT).catch(() => []) : Promise.resolve([]),
       registeredMiniAppCompanyRepo.listDriversByCarrier(ctx, carrierId),
       carrierInvitationRepo.listPendingDriverInvitesByCarrier(ctx, carrierId),
     ]);
@@ -716,6 +821,36 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       company: { companyName: registration.companyName, carrierId, companyType: registration.companyType },
       fleet,
     };
+  });
+
+  /**
+   * Owner corrects the driver name on one of their cards.
+   *
+   * Renames whichever the fleet row is showing: an active registration if the driver signed in, else
+   * the still-pending invite (the roster shows that name before the link is ever opened). Only the
+   * label changes — not who holds the card, so this is not a reassignment path.
+   *
+   * The carrier comes from the caller's own registration and the repos filter on (tenant, carrier,
+   * card), so an owner cannot reach another carrier's row by sending a cardId that isn't theirs:
+   * the update simply matches nothing and 404s.
+   */
+  app.post('/carrier/mini-app/driver-name', async (request) => {
+    const body = ownerDriverRenameSchema.parse(request.body);
+    const { ctx, carrierId } = await requireRegisteredOwner(body.initData);
+
+    const renamed = await registeredMiniAppCompanyRepo.renameDriverByCard(ctx, carrierId, body.cardId, body.driverName);
+    const target = renamed ?? (await carrierInvitationRepo.renameDriverByCard(ctx, carrierId, body.cardId, body.driverName));
+    if (!target) {
+      throw new NotFoundError('That card has no driver to rename');
+    }
+    await auditFromContext(ctx, {
+      action: 'carrier.mini_app.driver_rename',
+      status: 'ok',
+      resourceType: renamed ? 'registered_mini_app_company' : 'carrier_invitation',
+      resourceId: target.id,
+      detail: { carrierId, cardId: body.cardId },
+    });
+    return { cardId: body.cardId, driverName: body.driverName };
   });
 
   /**
@@ -761,61 +896,348 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     return serverCrmWrapper.getCarrierBalance(carrierId);
   });
 
+  // The card list is carrier-wide upstream; a driver only ever sees their own card in it. `overview`
+  // stays carrier-level (it is the account standing the driver catalog's "Check card status" shows).
   app.post('/carrier/mini-app/status', async (request) => {
     const body = selfServiceSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
     const [overview, cards] = await Promise.all([
       serverCrmWrapper.getCarrierOverview(carrierId),
       serverCrmWrapper.getCards(carrierId),
     ]);
-    return { overview, cards };
+    if (registration.profile !== 'driver') return { overview, cards };
+    const cardNumber = await requireDriverCardNumber(registration);
+    const rows = scopeRowsToCard(cards.data ?? [], cardNumber);
+    return { overview, cards: { ...cards, data: rows, count: rows.length, active_count: rows.length } };
   });
 
+  /**
+   * Transactions, in two phases (see `txnRangeSchema.live`). The FAST phase reads the DWH mart
+   * directly — it skips servercrm's live EFS gap-fill, which is what makes the merged read cost
+   * 3–24s. The SLOW phase delegates to servercrm so the EFS merge/de-dup logic stays in exactly one
+   * place (and the zoho-octane widgets' endpoint is untouched).
+   *
+   * A driver is scoped to their own card in BOTH phases — at the SQL level on the fast path, and by
+   * filtering servercrm's carrier-wide payload on the merged path.
+   */
   app.post('/carrier/mini-app/transactions', async (request) => {
-    const body = rangeSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
-    return serverCrmWrapper.getTransactions(carrierId, { range: body.range, from: body.from, to: body.to });
+    const body = txnRangeSchema.parse(request.body);
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const opts = { range: body.range, from: body.from, to: body.to };
+    const isDriver = registration.profile === 'driver';
+    const cardNumber = isDriver ? await requireDriverCardNumber(registration) : null;
+
+    if (!body.live) {
+      const result = await listDwhTransactions({
+        carrierId,
+        ...(cardNumber ? { cardNumber } : {}),
+        ...opts,
+        limit: TXN_FETCH_LIMIT,
+      });
+      // Tell the client the EFS tail is still missing, so it knows to fire the live phase.
+      return { ...result, live: { merged: 0, pending: true } };
+    }
+
+    const merged = await serverCrmWrapper.getTransactions(carrierId, { ...opts, limit: TXN_FETCH_LIMIT });
+    const scoped = cardNumber ? scopeTransactionsToCard(merged, cardNumber) : merged;
+    return clampToWindow(scoped, resolveDwhTxnRange(body.range, body.from, body.to));
+  });
+
+  /**
+   * Build the transactions report and deliver it to the caller's Telegram chat as a document.
+   *
+   * Delivery is via the bot, not an HTTP download, because a Telegram WebApp has no dependable way
+   * to save a file — the report lands in the bot chat instead, where it persists and can be shared.
+   *
+   * Reads the FAST DWH path deliberately: a report is a record of the window, not a live view, so
+   * it isn't worth the EFS gap-fill's seconds. Drivers get their own card only.
+   */
+  app.post('/carrier/mini-app/transactions/export', async (request) => {
+    const body = txnExportSchema.parse(request.body);
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const { telegramUserId } = verifyTelegramUser(body.initData);
+    const isDriver = registration.profile === 'driver';
+    const cardNumber = isDriver ? await requireDriverCardNumber(registration) : null;
+
+    const result = await listDwhTransactions({
+      carrierId,
+      ...(cardNumber ? { cardNumber } : {}),
+      range: body.range,
+      from: body.from,
+      to: body.to,
+      limit: TXN_FETCH_LIMIT,
+    });
+    if (result.data.length === 0) {
+      throw new AppError('There are no transactions in that period to export.', {
+        statusCode: 404,
+        code: 'TXN_EXPORT_EMPTY',
+        expose: true,
+      });
+    }
+
+    const rangeLabel = result.range.from ? `${result.range.from} → ${result.range.to}` : String(result.range.preset);
+    const report = await buildTxnReport(result.data, body.format, {
+      company: registration.companyName ?? 'Octane',
+      range: rangeLabel,
+      cardLast4: cardNumber ? cardNumber.slice(-4) : String(carrierId),
+      scopedToCard: Boolean(cardNumber),
+    });
+
+    // A private chat's id IS the user's id; telegramChatId is only populated when the redeem call
+    // happened to carry the header, so it can't be relied on alone.
+    const chatId = registration.telegramChatId ?? telegramUserId;
+    // The caption is the message the carrier actually reads in the chat — the file is an
+    // attachment to it, not the other way round. It leads with the same figures the mini-app's
+    // sheet just showed, so the two agree. Company name is escaped: it is data, and a stray '&'
+    // would make Telegram reject the send outright.
+    const money = (v: unknown) => `$${Number(v ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const scope = cardNumber ? `Card •••• ${cardNumber.slice(-4)}` : 'All cards';
+    const caption = [
+      `<b>Octane · Transaction Report</b>`,
+      `${escapeTelegramHtml(registration.companyName ?? 'Octane')} · ${scope}`,
+      `${rangeLabel}`,
+      ``,
+      `${result.data.length} line items · <b>${money(result.totals['funded_total'])}</b> spent · ${money(result.totals['discount_amount'])} saved`,
+    ].join('\n');
+    try {
+      await sendDocument({
+        chatId,
+        fileName: report.fileName,
+        contentType: report.contentType,
+        bytes: report.bytes,
+        caption,
+        parseMode: 'HTML',
+      });
+    } catch (err) {
+      if (err instanceof TelegramChatUnreachableError) {
+        throw new AppError('Open a chat with the Octane bot first, then try the export again.', {
+          statusCode: 409,
+          code: 'TELEGRAM_CHAT_UNREACHABLE',
+          expose: true,
+          cause: err,
+        });
+      }
+      throw new AppError("Couldn't send the report to your Telegram. Please try again.", {
+        statusCode: 502,
+        code: 'TXN_EXPORT_SEND_FAILED',
+        expose: true,
+        cause: err,
+      });
+    }
+
+    await auditFromContext(telegramCtx(registration.profile, telegramUserId), {
+      action: 'carrier.mini_app.transactions_export',
+      status: 'ok',
+      resourceType: 'carrier_transactions_report',
+      resourceId: String(carrierId),
+      detail: {
+        format: body.format,
+        range: rangeLabel,
+        rows: result.data.length,
+        scopedToCard: Boolean(cardNumber),
+      },
+    });
+
+    return { sent: true, fileName: report.fileName, rows: result.data.length };
   });
 
   app.post('/carrier/mini-app/last-used', async (request) => {
     const body = rangeSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
-    return serverCrmWrapper.getLastUsed(carrierId, body.range);
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const result = await serverCrmWrapper.getLastUsed(carrierId, body.range);
+    if (registration.profile !== 'driver') return result;
+    const cardNumber = await requireDriverCardNumber(registration);
+    const rows = scopeRowsToCard(result.data ?? [], cardNumber);
+    return { ...result, data: rows, count: rows.length };
   });
 
   app.post('/carrier/mini-app/payment-info', async (request) => {
     const body = selfServiceSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
     return serverCrmWrapper.getPaymentInfo(carrierId);
   });
 
   app.post('/carrier/mini-app/invoices', async (request) => {
     const body = invoicesSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
     return serverCrmWrapper.getInvoices(carrierId, { range: body.range, status: body.status, from: body.from, to: body.to });
   });
 
   // A signed URL isn't itself carrier-scoped upstream, so re-check the invoice belongs to THIS
   // caller's carrier before minting one — otherwise any registered user could probe arbitrary
   // invoiceIds.
-  app.post('/carrier/mini-app/invoices/signed-url', async (request) => {
-    const body = invoiceSignedUrlSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+  /** Resolve an invoice to a signed URL, but only after proving it is THIS carrier's. The upstream
+   *  signed-url endpoint takes an invoiceId and nothing else — the ids are enumerable integers, so
+   *  without this check any owner could mint a URL for anyone's invoice. */
+  async function ownedInvoiceUrl(
+    initData: string,
+    invoiceId: string,
+  ): Promise<{ url: string; carrierId: string; invoice: Record<string, unknown>; registration: RegisteredMiniAppCompany }> {
+    const { carrierId, registration } = await requireRegisteredOwnerUser(initData);
     const list = await serverCrmWrapper.getInvoices(carrierId, { range: 'all_time' });
-    const owned = (list.data ?? []).some((inv) => String(inv['invoice_id'] ?? inv['id'] ?? '') === body.invoiceId);
-    if (!owned) {
+    const invoice = (list.data ?? []).find((inv) => String(inv['invoice_id'] ?? inv['id'] ?? '') === invoiceId);
+    if (!invoice) {
       throw new AppError('That invoice does not belong to this carrier', {
         statusCode: 403,
         code: 'INVOICE_NOT_OWNED',
         expose: true,
       });
     }
-    return serverCrmWrapper.getInvoiceSignedUrl(body.invoiceId);
+    const { url } = (await serverCrmWrapper.getInvoiceSignedUrl(invoiceId)) as { url?: string };
+    if (!url) {
+      throw new AppError('That invoice has no document to download', {
+        statusCode: 404,
+        code: 'INVOICE_NO_DOCUMENT',
+        expose: true,
+      });
+    }
+    return { url, carrierId, invoice, registration };
+  }
+
+  app.post('/carrier/mini-app/invoices/signed-url', async (request) => {
+    const body = invoiceSignedUrlSchema.parse(request.body);
+    const { url } = await ownedInvoiceUrl(body.initData, body.invoiceId);
+    return { url };
   });
 
+  /**
+   * Deliver one invoice PDF to the caller's Telegram chat.
+   *
+   * Same reason the transaction report goes this way: a Telegram WebApp cannot reliably save a file
+   * — an in-app WebView download either silently no-ops or escapes to an external browser, and the
+   * signed URL expires. In the chat the document persists and can be forwarded to a bookkeeper.
+   *
+   * The bytes are pulled through the SIGNED URL rather than servercrm's client, which parses JSON
+   * and would mangle a PDF.
+   */
+  app.post('/carrier/mini-app/invoices/send', async (request) => {
+    const body = invoiceSignedUrlSchema.parse(request.body);
+    // One registration lookup, not two: ownedInvoiceUrl already resolves the owner. verifyTelegramUser
+    // is just the HMAC — no DB — so it stays.
+    const { telegramUserId } = verifyTelegramUser(body.initData);
+    const { url, carrierId, invoice, registration } = await ownedInvoiceUrl(body.initData, body.invoiceId);
+
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new AppError("Couldn't fetch that invoice document. Please try again.", {
+        statusCode: 502,
+        code: 'INVOICE_FETCH_FAILED',
+        expose: true,
+      });
+    }
+    const bytes = Buffer.from(await res.arrayBuffer());
+
+    const money = (v: unknown) => `$${Number(v ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const status = String(invoice['status'] ?? '').replace(/_/g, ' ');
+    const caption = [
+      `<b>Octane · Invoice #${escapeTelegramHtml(body.invoiceId)}</b>`,
+      escapeTelegramHtml(registration.companyName ?? 'Octane'),
+      ``,
+      `${money(invoice['total_amount'])} · ${escapeTelegramHtml(status)}`,
+    ].join('\n');
+
+    try {
+      await sendDocument({
+        chatId: registration.telegramChatId ?? telegramUserId,
+        fileName: `Octane_Invoice_${body.invoiceId}.pdf`,
+        contentType: 'application/pdf',
+        bytes,
+        caption,
+        parseMode: 'HTML',
+      });
+    } catch (err) {
+      if (err instanceof TelegramChatUnreachableError) {
+        throw new AppError('Open a chat with the Octane bot first, then try again.', {
+          statusCode: 409,
+          code: 'TELEGRAM_CHAT_UNREACHABLE',
+          expose: true,
+          cause: err,
+        });
+      }
+      throw new AppError("Couldn't send the invoice to your Telegram. Please try again.", {
+        statusCode: 502,
+        code: 'INVOICE_SEND_FAILED',
+        expose: true,
+        cause: err,
+      });
+    }
+
+    await auditFromContext(telegramCtx(registration.profile, telegramUserId), {
+      action: 'carrier.mini_app.invoice_send',
+      status: 'ok',
+      resourceType: 'carrier_invoice',
+      resourceId: body.invoiceId,
+      detail: { carrierId, bytes: bytes.length },
+    });
+
+    return { sent: true, fileName: `Octane_Invoice_${body.invoiceId}.pdf` };
+  });
+
+  /**
+   * File a service request as a real Zoho Desk ticket.
+   *
+   * The card is NEVER taken from the request body. A driver's card is resolved from their own
+   * registration server-side, so a driver cannot file an override against a colleague's card by
+   * editing the payload — the same reason the read endpoints scope rows rather than trusting a
+   * client-side filter.
+   */
+  app.post('/carrier/mini-app/service-request', async (request) => {
+    const body = serviceRequestSchema.parse(request.body);
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const profile = registration.profile;
+    if (!serviceRequestAllows(body.service, profile)) {
+      throw new RBACError('This request is not available for your account.');
+    }
+    const cardNumber = profile === 'driver' ? await requireDriverCardNumber(registration) : null;
+    const ctx = telegramCtx(profile, registration.telegramUserId);
+    try {
+      const ticketId = await fileServiceRequest({
+        key: body.service,
+        profile,
+        carrierId,
+        cardNumber,
+        requesterName: registration.driverName ?? registration.companyName ?? 'Octane customer',
+        telegramUserId: registration.telegramUserId,
+        telegramUsername: registration.telegramUsername,
+        companyName: registration.companyName,
+        comment: body.comment?.trim() || null,
+      });
+      await auditFromContext(ctx, {
+        action: 'carrier.mini_app.service_request',
+        status: 'ok',
+        resourceType: 'desk_ticket',
+        resourceId: ticketId,
+        detail: { service: body.service, carrierId, profile },
+      });
+      return { ticketId, subject: serviceRequestSpec(body.service).subject };
+    } catch (err) {
+      await auditFromContext(ctx, {
+        action: 'carrier.mini_app.service_request',
+        status: 'error',
+        resourceType: 'desk_ticket',
+        detail: { service: body.service, carrierId, profile },
+      });
+      // The mini-app must not report "sent" on a ticket that does not exist — that is exactly the
+      // fake this endpoint replaces.
+      throw new AppError("We couldn't send your request. Please try again shortly.", {
+        statusCode: 502,
+        code: 'SERVICE_REQUEST_FAILED',
+        expose: true,
+        cause: err,
+      });
+    }
+  });
+
+  // Owner-only, unlike the other self-service reads. Every driver-reachable endpoint scopes its rows
+  // to the caller's own card (see scopeRowsToCard) — this one CANNOT: the upstream response is a
+  // shipment record ({ trackingNumber, startDate, cardsOrdered }) with no card identity in it at
+  // all, so there is nothing to filter on. It describes a carrier's bulk card order, not any one
+  // driver's card. Under requireRegisteredCarrierUser a driver's initData was accepted and got the
+  // whole fleet's shipments back; no catalog entry pointed here, but the route was open to a direct
+  // call. Answering "where is my card" for a driver needs an upstream that returns per-card rows.
   app.post('/carrier/mini-app/tracking', async (request) => {
     const body = selfServiceSchema.parse(request.body);
-    const { carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
     try {
       return await executeZohoFunctionWithFallback(['mytriontruckingnumberrequest'], { carrierId }, { unwrap: 'status' });
     } catch (err) {
@@ -833,7 +1255,13 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   app.post('/carrier/mini-app/driver-self-register', async (request, reply) => {
     const body = driverSelfRegisterSchema.parse(request.body);
     const { tgUser, telegramUserId } = verifyTelegramUser(body.initData);
-    const card = await findDwhCardByNumber(body.cardNumber.trim());
+    // Digits only. The lookup is an exact `card_number = $1` against a column of bare 19-digit
+    // strings, and the number is PRINTED on the card in groups of four — the mini-app's own input
+    // even re-groups it as you type. Trimming alone left the backend depending on the client to
+    // strip the spaces back out: any caller forwarding what the driver actually sees got a 404 for
+    // a card that exists. Same normalization the row scoping uses, so both agree on what a card
+    // number is.
+    const card = await findDwhCardByNumber(cardDigits(body.cardNumber));
     if (!card) {
       throw new AppError('No active fuel card matches that number', {
         statusCode: 404,
@@ -842,10 +1270,29 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       });
     }
     const ctx = lookupCtx();
-    const driverName = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(' ').trim() || tgUser.username || 'Driver';
+    /**
+     * The name the driver typed wins over their Telegram profile name.
+     *
+     * This string is not cosmetic: it is what the OWNER sees in their fleet roster next to a card,
+     * and what support reads on a ticket. A Telegram display name is whatever the person set it to
+     * — a nickname, emoji, or the phone's default — so deriving it silently put "🔥Sasha🔥" against
+     * a truck. The profile name stays as the fallback for clients that don't send one.
+     */
+    const driverName =
+      body.driverName ||
+      [tgUser.first_name, tgUser.last_name].filter(Boolean).join(' ').trim() ||
+      tgUser.username ||
+      'Driver';
 
     // Idempotency + cross-carrier guard before minting any invite (avoids orphan pending invites).
-    const existing = await registeredMiniAppCompanyRepo.findByTelegramUserId(ctx, telegramUserId);
+    //
+    // A REVOKED registration no longer owns this Telegram account, so it must not veto a new one —
+    // the same rule the redeem path already applies. findByTelegramUserId returns revoked rows too,
+    // so without this filter revoke was a dead end for card-number sign-in specifically: redeeming
+    // an invite worked, signing in with the card 409'd TELEGRAM_ALREADY_REGISTERED forever. The
+    // upsert below clears status/revokedAt, so proceeding is what actually restores access.
+    const found = await registeredMiniAppCompanyRepo.findByTelegramUserId(ctx, telegramUserId);
+    const existing = found && found.status !== 'revoked' ? found : undefined;
     if (existing) {
       const sameCard = existing.profile === 'driver' && existing.carrierId === card.carrierId && existing.cardId === card.cardId;
       if (!sameCard) {
@@ -926,8 +1373,10 @@ function toRegistrationView(row: {
 async function resolveDriverCardNumber(carrierId: string | null, cardId: string | null): Promise<string | null> {
   if (!carrierId || !cardId || !env.DWH_DATABASE_URL) return null;
   try {
-    const cards = await listDwhCards(carrierId);
-    return cards.find((c) => c.cardId === cardId)?.cardNumber ?? null;
+    // Exact lookup. This used to `.find()` inside listDwhCards, which caps at 100 — so on a carrier
+    // with 230 (or 510) active cards a driver whose card sorted past the cap resolved to null, and
+    // requireDriverCardNumber turned that into a permanent 503: every read they had, dead.
+    return (await findDwhCardById(carrierId, cardId))?.cardNumber ?? null;
   } catch {
     return null;
   }

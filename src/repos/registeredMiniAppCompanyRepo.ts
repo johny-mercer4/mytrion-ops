@@ -115,6 +115,36 @@ export const registeredMiniAppCompanyRepo = {
     return rows.map(toDto);
   },
 
+  /**
+   * Rename the ACTIVE driver holding one card — the owner correcting their fleet roster.
+   *
+   * Keyed by (tenant, carrier, card), never by a client-supplied row id: an id would let one owner
+   * name-edit another carrier's driver by guessing, since the ids are opaque but enumerable in a
+   * response. The carrier here comes from the caller's own registration, so the where-clause IS the
+   * authorization.
+   */
+  async renameDriverByCard(
+    ctx: TenantContext,
+    carrierId: string,
+    cardId: string,
+    driverName: string,
+  ): Promise<RegisteredMiniAppCompanyDto | undefined> {
+    const rows = await db
+      .update(registeredMiniAppCompanies)
+      .set({ driverName, updatedAt: new Date() })
+      .where(
+        and(
+          eq(registeredMiniAppCompanies.tenantId, ctx.tenantId),
+          eq(registeredMiniAppCompanies.carrierId, carrierId),
+          eq(registeredMiniAppCompanies.cardId, cardId),
+          eq(registeredMiniAppCompanies.profile, 'driver'),
+          eq(registeredMiniAppCompanies.status, 'active'),
+        ),
+      )
+      .returning();
+    return rows[0] ? toDto(rows[0]) : undefined;
+  },
+
   /** Soft-disable: revokes access without deleting the row, preserving registration history. */
   async revoke(ctx: TenantContext, id: string): Promise<RegisteredMiniAppCompanyDto | undefined> {
     const rows = await db
@@ -167,6 +197,12 @@ export const registeredMiniAppCompanyRepo = {
           driverName: input.driverName ?? null,
           companyType: input.companyType ?? null,
           cardCount: input.cardCount ?? null,
+          // Redeeming a valid invite IS the grant of access, so it must clear a previous revoke.
+          // Without these the row kept status='revoked' through a successful redeem: the call
+          // returned 201 with a registration, and every subsequent request 403'd MINI_APP_REVOKED
+          // — a re-registration that silently reported success and granted nothing.
+          status: 'active',
+          revokedAt: null,
           updatedAt: new Date(),
         },
       })

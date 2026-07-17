@@ -51,13 +51,13 @@ export function HomeTab() {
   return (
     <div className="mf-fu">
       <div style={s('display:grid;grid-template-columns:1.5fr 1fr;gap:16px')}>
-        <div style={s('position:relative;overflow:hidden;border-radius:16px;padding:22px 24px;background:linear-gradient(125deg, rgba(var(--accent-rgb),.14), rgba(var(--teal-rgb),.07)), var(--surface);border:1px solid var(--border)')}>
+        <div style={s('position:relative;overflow:hidden;border-radius:var(--radius-md);padding:22px 24px;background:linear-gradient(125deg, rgba(var(--accent-rgb),.14), rgba(var(--teal-rgb),.07)), var(--surface);border:1px solid var(--border)')}>
           <div style={s('position:absolute;right:-46px;top:-46px;width:200px;height:200px;border-radius:50%;background:radial-gradient(circle,rgba(var(--accent-rgb),.20),transparent 70%);pointer-events:none')} />
           <div style={s('display:flex;align-items:center;justify-content:space-between')}>
             <div style={s('font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--accent)')}>Parent Balance · EFS Account</div>
             <div style={s('display:flex;align-items:center;gap:8px')}>
               <span style={s(balanceModeStyle(balance))}>{balanceModeLabel(balance)}</span>
-              <button type="button" onClick={refreshBalance} aria-label="Refresh balance" className="mf-ico" style={s('width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
+              <button type="button" onClick={refreshBalance} aria-label="Refresh balance" className="mf-ico" style={s('width:28px;height:28px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
                 <Svg d={ICONS.refresh} size={14} {...(balSpin ? { style: { animation: 'mf-spin .8s linear infinite' } } : {})} />
               </button>
             </div>
@@ -82,7 +82,7 @@ export function HomeTab() {
           )}
         </div>
 
-        <div className="mf-card" style={s('border-radius:16px;padding:18px 20px;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;gap:18px')}>
+        <div className="mf-card" style={s('border-radius:var(--radius-md);padding:18px 20px;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;gap:18px')}>
           <div style={s('position:relative;width:104px;height:104px;flex-shrink:0')}>
             <svg width="104" height="104" viewBox="0 0 120 120" style={{ transform: 'rotate(-90deg)' }}>
               <circle cx="60" cy="60" r="52" fill="none" stroke="var(--raised)" strokeWidth="10" />
@@ -104,8 +104,8 @@ export function HomeTab() {
       </div>
 
       <div style={s('display:grid;grid-template-columns:1fr 1.55fr;gap:16px;margin-top:16px')}>
-        <div className="mf-card" style={s('border-radius:16px;padding:18px 20px;background:linear-gradient(180deg,var(--surface-2),var(--surface));border:1px solid var(--border);display:flex;align-items:center;gap:16px')}>
-          <div style={s('width:52px;height:52px;border-radius:13px;background:var(--orange-s);color:var(--orange);display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
+        <div className="mf-card" style={s('border-radius:var(--radius-md);padding:18px 20px;background:linear-gradient(180deg,var(--surface-2),var(--surface));border:1px solid var(--border);display:flex;align-items:center;gap:16px')}>
+          <div style={s('width:52px;height:52px;border-radius:var(--radius-md);background:var(--orange-s);color:var(--orange);display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
             <Svg d={ICONS.flame} size={26} />
           </div>
           <div>
@@ -116,7 +116,7 @@ export function HomeTab() {
             <div style={s('font-size:10.5px;color:var(--muted);margin-top:2px')}>Keep it alive — clear 1 debtor today</div>
           </div>
         </div>
-        <div className="mf-card" style={s('border-radius:16px;padding:18px 20px;background:var(--surface);border:1px solid var(--border)')}>
+        <div className="mf-card" style={s('border-radius:var(--radius-md);padding:18px 20px;background:var(--surface);border:1px solid var(--border)')}>
           <div style={s('display:flex;align-items:baseline;justify-content:space-between')}>
             <span style={s('font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)')}>Today&apos;s Recovery Goal</span>
             <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent)")}>{goalPct}%</span>
@@ -134,7 +134,7 @@ export function HomeTab() {
 
       <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:16px')}>
         {homeKpis().map((k) => (
-          <div key={k.label} className="mf-card" style={s('padding:16px;border-radius:14px;background:linear-gradient(180deg,var(--surface-2),var(--surface));border:1px solid var(--border);position:relative;overflow:hidden')}>
+          <div key={k.label} className="mf-card" style={s('padding:16px;border-radius:var(--radius-md);background:linear-gradient(180deg,var(--surface-2),var(--surface));border:1px solid var(--border);position:relative;overflow:hidden')}>
             <div style={s('display:flex;align-items:center;justify-content:space-between')}>
               <div style={s(k.iconStyle)}><Svg d={k.icon} size={17} /></div>
               <span style={s(k.deltaStyle)}>{k.delta}</span>
@@ -147,7 +147,7 @@ export function HomeTab() {
       </div>
 
       <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px')}>
-        <div style={s('border-radius:16px;background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
+        <div style={s('border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
           <div style={s('display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--border)')}>
             <div style={s('display:flex;align-items:center;gap:8px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:14px;letter-spacing:.05em;text-transform:uppercase')}>
               <span style={s('color:var(--danger);display:flex')}><Svg d={ICONS.alert} size={16} /></span>
@@ -173,9 +173,9 @@ export function HomeTab() {
                       setDashSub('debtors');
                       if (client) openClient(client);
                     }}
-                    style={s('display:flex;align-items:center;gap:12px;padding:11px 11px;border-radius:11px;cursor:pointer;width:100%;border:none;background:transparent;text-align:left')}
+                    style={s('display:flex;align-items:center;gap:12px;padding:11px 11px;border-radius:var(--radius-md);cursor:pointer;width:100%;border:none;background:transparent;text-align:left')}
                   >
-                    <div style={s('width:34px;height:34px;border-radius:9px;background:var(--danger-s);color:var(--danger);display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
+                    <div style={s('width:34px;height:34px;border-radius:var(--radius-md);background:var(--danger-s);color:var(--danger);display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
                       <Svg d={ICONS.alert} size={16} />
                     </div>
                     <div style={s('flex:1;min-width:0')}>
@@ -196,7 +196,7 @@ export function HomeTab() {
           </div>
         </div>
 
-        <div style={s('border-radius:16px;background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
+        <div style={s('border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
           <div style={s('display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--border)')}>
             <div style={s('display:flex;align-items:center;gap:8px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:14px;letter-spacing:.05em;text-transform:uppercase')}>
               <span style={s('width:7px;height:7px;border-radius:50%;background:var(--accent);animation:mf-dot 1.6s ease-in-out infinite')} />
@@ -211,8 +211,8 @@ export function HomeTab() {
               <SkelBlock heights={[50, 50, 50]} />
             ) : (
               liveFeed.map((f) => (
-                <div key={f.key} className={f.flash ? 'mf-flash' : undefined} style={s('display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px')}>
-                  <div style={s('width:32px;height:32px;border-radius:9px;background:var(--accent-s);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
+                <div key={f.key} className={f.flash ? 'mf-flash' : undefined} style={s('display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:var(--radius-md)')}>
+                  <div style={s('width:32px;height:32px;border-radius:var(--radius-md);background:var(--accent-s);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
                     <Svg d={ICONS.fuel} size={15} />
                   </div>
                   <div style={s('flex:1;min-width:0')}>
@@ -230,8 +230,8 @@ export function HomeTab() {
         </div>
       </div>
 
-      <div className="mf-card" style={s('margin-top:16px;border-radius:16px;padding:16px 20px;background:linear-gradient(120deg, rgba(var(--accent-rgb),.10), rgba(var(--teal-rgb),.05)), var(--surface);border:1px solid var(--border);display:flex;align-items:center;gap:16px')}>
-        <div style={s('width:42px;height:42px;border-radius:12px;background:var(--accent-s);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
+      <div className="mf-card" style={s('margin-top:16px;border-radius:var(--radius-md);padding:16px 20px;background:linear-gradient(120deg, rgba(var(--accent-rgb),.10), rgba(var(--teal-rgb),.05)), var(--surface);border:1px solid var(--border);display:flex;align-items:center;gap:16px')}>
+        <div style={s('width:42px;height:42px;border-radius:var(--radius-md);background:var(--accent-s);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
           <Svg d={ICONS.spark} size={22} />
         </div>
         <div style={s('flex:1;min-width:0')}>
@@ -245,7 +245,7 @@ export function HomeTab() {
             go('dashboard');
             setDashSub('debtors');
           }}
-          style={s('height:34px;padding:0 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:700;font-size:11.5px;cursor:pointer;white-space:nowrap;flex-shrink:0')}
+          style={s('height:34px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:700;font-size:11.5px;cursor:pointer;white-space:nowrap;flex-shrink:0')}
         >
           Investigate →
         </button>

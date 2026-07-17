@@ -22,7 +22,7 @@ const DEPT_COL: Record<string, string> = {
 };
 
 const catalogCard = (soon: boolean, dragging: boolean): string =>
-  `text-align:left;padding:18px;border-radius:16px;background:var(--surface);border:1px solid ${dragging ? 'var(--accent)' : 'var(--border)'};cursor:${soon ? 'default' : 'grab'};box-shadow:${dragging ? '0 12px 32px rgba(0,0,0,0.15)' : 'var(--shadow-sm)'};transform:${dragging ? 'scale(1.02)' : 'scale(1)'};position:relative;overflow:hidden;opacity:${soon ? 0.55 : dragging ? 0.95 : 1};width:100%;display:flex;flex-direction:column;gap:12px;transition:all .2s cubic-bezier(0.2, 0, 0, 1)`;
+  `text-align:left;padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${dragging ? 'var(--accent)' : 'var(--border)'};cursor:${soon ? 'default' : 'grab'};box-shadow:${dragging ? '0 12px 32px rgba(0,0,0,0.15)' : 'var(--shadow-sm)'};transform:${dragging ? 'scale(1.02)' : 'scale(1)'};position:relative;overflow:hidden;opacity:${soon ? 0.55 : dragging ? 0.95 : 1};width:100%;display:flex;flex-direction:column;gap:12px;transition:all .2s cubic-bezier(0.2, 0, 0, 1)`;
 
 function CategoryHeader({ category, count }: { category: AutoCategory; count: number }) {
   return (

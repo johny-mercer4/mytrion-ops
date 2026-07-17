@@ -28,6 +28,16 @@ export async function resolveActAsTarget(zohoUserId: string): Promise<CrmUser | 
   return users.get(zohoUserId) ?? null;
 }
 
+/**
+ * The full active-users roster, TTL-cached via the same provider as resolveActAsTarget — used by
+ * the admin "User Management" listing so it doesn't re-fetch all 5 paginated CRM pages (the
+ * slowest part of that request) on every load.
+ */
+export async function listActiveUsersCached(): Promise<CrmUser[]> {
+  const users = await directory().get();
+  return Array.from(users.values());
+}
+
 /** For tests: drop the cached directory so the next call re-fetches. */
 export function clearActAsDirectory(): void {
   provider?.clear();

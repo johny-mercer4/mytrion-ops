@@ -205,7 +205,7 @@ export function SalesRedesign() {
         {/* SIDEBAR */}
         <aside style={s(`flex-shrink:0;width:${navCollapsed ? '68px' : '238px'};transition:width .18s cubic-bezier(.2,0,0,1);display:flex;flex-direction:column;background:color-mix(in srgb, var(--bg) 84%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-right:1px solid var(--border);position:relative;z-index:30`)}>
           <div style={s(`display:flex;align-items:center;gap:11px;padding:18px ${navCollapsed ? '0' : '18px'} 16px;${navCollapsed ? 'justify-content:center' : ''}`)}>
-            <div style={s('width:36px;height:36px;border-radius:11px;background:linear-gradient(140deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(var(--accent-rgb),.4);flex-shrink:0')}>
+            <div style={s('width:36px;height:36px;border-radius:var(--radius-md);background:linear-gradient(140deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(var(--accent-rgb),.4);flex-shrink:0')}>
               <Svg d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" size={20} stroke="#fff" />
             </div>
             {!navCollapsed && (
@@ -216,7 +216,7 @@ export function SalesRedesign() {
                   </div>
                   <div style={s("font-size:9.5px;color:var(--muted);font-weight:600;letter-spacing:.07em;text-transform:uppercase")}>Sales Intelligence</div>
                 </div>
-                <button onClick={toggleNav} aria-label="Collapse sidebar" title="Collapse sidebar" className="ss-ico-btn" style={s('margin-left:auto;width:28px;height:28px;flex-shrink:0;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
+                <button onClick={toggleNav} aria-label="Collapse sidebar" title="Collapse sidebar" className="ss-ico-btn" style={s('margin-left:auto;width:28px;height:28px;flex-shrink:0;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
                   <Svg d={PANEL} size={15} />
                 </button>
               </>
@@ -224,7 +224,7 @@ export function SalesRedesign() {
           </div>
           {navCollapsed && (
             <div style={s('display:flex;justify-content:center;padding:0 0 8px')}>
-              <button onClick={toggleNav} aria-label="Expand sidebar" title="Expand sidebar" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
+              <button onClick={toggleNav} aria-label="Expand sidebar" title="Expand sidebar" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
                 <Svg d={PANEL} size={15} />
               </button>
             </div>
@@ -233,7 +233,7 @@ export function SalesRedesign() {
             {NAV.map((n) => {
               const active = section === n.id;
               const soon = n.comingSoon === true;
-              const style = `display:flex;align-items:center;gap:11px;padding:10px ${navCollapsed ? '0' : '12px'};${navCollapsed ? 'justify-content:center' : ''};border:none;width:100%;background:${active ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${active ? 'var(--accent)' : 'var(--muted)'};font-size:13px;font-weight:${active ? 700 : 600};cursor:${soon ? 'default' : 'pointer'};opacity:${soon ? '.5' : '1'};border-radius:10px;box-shadow:${active ? 'inset 2.5px 0 0 var(--accent)' : 'none'};transition:background .14s,color .14s`;
+              const style = `display:flex;align-items:center;gap:11px;padding:10px ${navCollapsed ? '0' : '12px'};${navCollapsed ? 'justify-content:center' : ''};border:none;width:100%;background:${active ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${active ? 'var(--accent)' : 'var(--muted)'};font-size:13px;font-weight:${active ? 700 : 600};cursor:${soon ? 'default' : 'pointer'};opacity:${soon ? '.5' : '1'};border-radius:var(--radius-md);box-shadow:${active ? 'inset 2.5px 0 0 var(--accent)' : 'none'};transition:background .14s,color .14s`;
               return (
                 <button
                   key={n.id}
@@ -260,11 +260,11 @@ export function SalesRedesign() {
             })}
           </nav>
           <div style={s('padding:12px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px')}>
-            <button onClick={ctx.toggleTheme} title={navCollapsed ? 'Toggle theme' : undefined} aria-label="Toggle theme" className="ss-ico-btn" style={s(`height:38px;padding:0 ${navCollapsed ? '0' : '12px'};display:flex;align-items:center;${navCollapsed ? 'justify-content:center' : 'gap:9px'};border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase`)}>
+            <button onClick={ctx.toggleTheme} title={navCollapsed ? 'Toggle theme' : undefined} aria-label="Toggle theme" className="ss-ico-btn" style={s(`height:38px;padding:0 ${navCollapsed ? '0' : '12px'};display:flex;align-items:center;${navCollapsed ? 'justify-content:center' : 'gap:9px'};border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase`)}>
               <Svg d={theme === 'light' ? MOON : SUN} size={16} style={{ flexShrink: 0 }} />
               {!navCollapsed && <span style={s('flex:1;text-align:left')}>{theme === 'light' ? 'Dark' : 'Light'} mode</span>}
             </button>
-            <div title={navCollapsed ? displayName : undefined} style={s(`display:flex;align-items:center;gap:10px;padding:8px ${navCollapsed ? '0' : '10px'};${navCollapsed ? 'justify-content:center' : ''};border-radius:12px;background:var(--surface);border:1px solid var(--border)`)}>
+            <div title={navCollapsed ? displayName : undefined} style={s(`display:flex;align-items:center;gap:10px;padding:8px ${navCollapsed ? '0' : '10px'};${navCollapsed ? 'justify-content:center' : ''};border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)`)}>
               <div style={s('width:32px;height:32px;border-radius:50%;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0')}>{initials}</div>
               {!navCollapsed && (
                 <div style={s('line-height:1.2;min-width:0')}>
@@ -304,7 +304,7 @@ export function SalesRedesign() {
         {/* DETAIL MODAL */}
         {detail && (
           <div onClick={() => setDetail(null)} style={s('position:fixed;inset:0;z-index:120;background:rgba(3,7,14,.6);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
-            <div onClick={(e) => e.stopPropagation()} style={s('width:100%;max-width:520px;border-radius:18px;background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}>
+            <div onClick={(e) => e.stopPropagation()} style={s('width:100%;max-width:520px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}>
               <div style={s('display:flex;align-items:flex-start;gap:13px;padding:20px 22px;border-bottom:1px solid var(--border)')}>
                 <div style={s(detail.iconStyle)}><Svg d={detail.icon} size={19} /></div>
                 <div style={s('flex:1;min-width:0')}>
@@ -313,7 +313,7 @@ export function SalesRedesign() {
                     {detail.badges.map((b, i) => <span key={i} style={s(b.style)}>{b.text}</span>)}
                   </div>
                 </div>
-                <button onClick={() => setDetail(null)} aria-label="Close" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
+                <button onClick={() => setDetail(null)} aria-label="Close" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
                   <Svg d="M18 6L6 18M6 6l12 12" size={15} strokeWidth={2.4} />
                 </button>
               </div>
@@ -324,7 +324,7 @@ export function SalesRedesign() {
                 </div>
               </div>
               <div style={s('padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end')}>
-                <button onClick={() => setDetail(null)} style={s('height:36px;padding:0 18px;border-radius:9px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>Close</button>
+                <button onClick={() => setDetail(null)} style={s('height:36px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>Close</button>
               </div>
             </div>
           </div>
@@ -374,9 +374,9 @@ export function SalesRedesign() {
 
         {/* AI CHAT PANEL */}
         {chatOpen && (
-          <div style={s('position:fixed;right:24px;bottom:94px;z-index:95;width:380px;max-width:calc(100vw - 40px);height:560px;max-height:calc(100vh - 130px);display:flex;flex-direction:column;border-radius:20px;overflow:hidden;background:var(--surface);border:1px solid var(--border);box-shadow:0 24px 60px rgba(0,0,0,.5);animation:ss-pop .24s cubic-bezier(.2,0,0,1) both')}>
+          <div style={s('position:fixed;right:24px;bottom:94px;z-index:95;width:380px;max-width:calc(100vw - 40px);height:560px;max-height:calc(100vh - 130px);display:flex;flex-direction:column;border-radius:var(--radius-md);overflow:hidden;background:var(--surface);border:1px solid var(--border);box-shadow:0 24px 60px rgba(0,0,0,.5);animation:ss-pop .24s cubic-bezier(.2,0,0,1) both')}>
             <div style={s('flex-shrink:0;padding:15px 17px;display:flex;align-items:center;gap:11px;background:linear-gradient(120deg,rgba(var(--accent-rgb),.16),rgba(var(--violet-rgb),.12)),var(--surface);border-bottom:1px solid var(--border)')}>
-              <div style={s('position:relative;width:36px;height:36px;border-radius:11px;background:linear-gradient(140deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(var(--accent-rgb),.4)')}>
+              <div style={s('position:relative;width:36px;height:36px;border-radius:var(--radius-md);background:linear-gradient(140deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(var(--accent-rgb),.4)')}>
                 <Svg d={SPARK} size={19} stroke="#fff" />
                 <span style={s('position:absolute;right:-1px;bottom:-1px;width:11px;height:11px;border-radius:50%;background:var(--ok);border:2px solid var(--surface)')} />
               </div>
@@ -384,14 +384,14 @@ export function SalesRedesign() {
                 <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.05em;text-transform:uppercase")}>Mytrion AI</div>
                 <div style={s('font-size:10.5px;color:var(--ok);font-weight:600')}>● Online · Sales copilot</div>
               </div>
-              <button onClick={() => setChatOpen(false)} aria-label="Close chat" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
+              <button onClick={() => setChatOpen(false)} aria-label="Close chat" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
                 <Svg d="M18 6L6 18M6 6l12 12" size={15} strokeWidth={2.4} />
               </button>
             </div>
             <div ref={chatBody} className="ss-scroll" style={s('flex:1;min-height:0;padding:16px;display:flex;flex-direction:column;gap:12px;background:var(--bg)')}>
               {chat.messages.length === 0 && (
                 <div style={s('display:flex;gap:8px;align-items:flex-end')}>
-                  <div style={s('width:26px;height:26px;border-radius:8px;background:linear-gradient(140deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
+                  <div style={s('width:26px;height:26px;border-radius:var(--radius-md);background:linear-gradient(140deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
                     <Svg d={SPARK} size={14} stroke="#fff" />
                   </div>
                   <div style={s('max-width:80%;padding:11px 13px;border-radius:14px 14px 14px 4px;background:var(--surface);border:1px solid var(--border);font-size:13px;line-height:1.5;color:var(--text)')}>
@@ -405,7 +405,7 @@ export function SalesRedesign() {
                 return (
                   <div key={m.id} style={s(`display:flex;gap:8px;align-items:flex-end;${ai ? '' : 'flex-direction:row-reverse'}`)}>
                     {ai && (
-                      <div style={s('width:26px;height:26px;border-radius:8px;background:linear-gradient(140deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
+                      <div style={s('width:26px;height:26px;border-radius:var(--radius-md);background:linear-gradient(140deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
                         <Svg d={SPARK} size={14} stroke="#fff" />
                       </div>
                     )}
@@ -431,8 +431,8 @@ export function SalesRedesign() {
                 ))}
               </div>
               <div style={s('display:flex;gap:9px;align-items:flex-end;padding:11px 13px 13px')}>
-                <input value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); sendChat(); } }} placeholder="Ask about pipeline, cards, invoices…" className="ss-in" style={s('flex:1;height:40px;padding:0 13px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px')} />
-                <button onClick={() => sendChat()} aria-label="Send" className="ss-btn-p" style={s('width:40px;height:40px;flex-shrink:0;border-radius:11px;border:none;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center')}>
+                <input value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); sendChat(); } }} placeholder="Ask about pipeline, cards, invoices…" className="ss-in" style={s('flex:1;height:40px;padding:0 13px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px')} />
+                <button onClick={() => sendChat()} aria-label="Send" className="ss-btn-p" style={s('width:40px;height:40px;flex-shrink:0;border-radius:var(--radius-md);border:none;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center')}>
                   <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
                 </button>
               </div>
@@ -442,8 +442,8 @@ export function SalesRedesign() {
 
         {/* TOAST */}
         {toast && (
-          <div style={s('position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:130;display:flex;align-items:center;gap:11px;padding:13px 18px;border-radius:12px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);animation:ss-pop .2s both')}>
-            <span style={s('width:28px;height:28px;border-radius:8px;background:rgba(52,211,153,.16);color:var(--ok);display:flex;align-items:center;justify-content:center')}><Svg d="M20 6L9 17l-5-5" size={16} strokeWidth={2.4} /></span>
+          <div style={s('position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:130;display:flex;align-items:center;gap:11px;padding:13px 18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);animation:ss-pop .2s both')}>
+            <span style={s('width:28px;height:28px;border-radius:var(--radius-md);background:rgba(52,211,153,.16);color:var(--ok);display:flex;align-items:center;justify-content:center')}><Svg d="M20 6L9 17l-5-5" size={16} strokeWidth={2.4} /></span>
             <div>
               <div style={s('font-size:12.5px;font-weight:700')}>{toast.title}</div>
               <div style={s('font-size:11.5px;color:var(--muted)')}>{toast.msg}</div>
@@ -482,11 +482,11 @@ function ClientModal({
   const initials = client.name.split(' ').map((w) => w[0]).slice(0, 2).join('');
   const cardsL = useLoad(() => loadClientCards(client.id), [client.id]);
   const actL = useLoad(() => loadClientActivity(client.id), [client.id]);
-  const avStyle = `width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:19px;background:color-mix(in srgb,${col} 16%,transparent);color:${col}`;
+  const avStyle = `width:52px;height:52px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:19px;background:color-mix(in srgb,${col} 16%,transparent);color:${col}`;
   const tabs: Array<['overview' | 'cards' | 'activity', string]> = [['overview', 'Overview'], ['cards', 'Cards'], ['activity', 'Activity']];
   return (
     <div onClick={onClose} style={s('position:fixed;inset:0;z-index:118;background:rgba(3,7,14,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
-      <div onClick={(e) => e.stopPropagation()} style={s('width:100%;max-width:560px;max-height:86vh;display:flex;flex-direction:column;border-radius:20px;background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}>
+      <div onClick={(e) => e.stopPropagation()} style={s('width:100%;max-width:560px;max-height:86vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}>
         <div style={s('padding:22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px')}>
           <div style={s(avStyle)}>{initials}</div>
           <div style={s('flex:1;min-width:0')}>
@@ -494,7 +494,7 @@ function ClientModal({
             <div style={s("font-size:11.5px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:3px")}>{client.carrier} · MC {client.mc} · DOT {client.dot}</div>
           </div>
           <span style={s(statusBadge.style)}>{statusBadge.text}</span>
-          <button onClick={onClose} aria-label="Close" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
+          <button onClick={onClose} aria-label="Close" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
             <Svg d="M18 6L6 18M6 6l12 12" size={15} strokeWidth={2.4} />
           </button>
         </div>
@@ -509,20 +509,20 @@ function ClientModal({
         <div className="ss-scroll" style={s('flex:1;min-height:0;padding:22px')}>
           {clientTab === 'overview' && (
             <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-              <div style={s('padding:15px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
+              <div style={s('padding:15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
                 <div style={s('font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Primary Contact</div>
                 <div style={s('font-size:14px;font-weight:700;margin-top:5px')}>{client.contact}</div>
                 <div style={s("font-size:12px;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:3px")}>{client.phone}</div>
               </div>
-              <div style={s('padding:15px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
+              <div style={s('padding:15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
                 <div style={s('font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Balance</div>
                 <div style={s(`font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:600;margin-top:5px;color:${balColor}`)}>{client.balance}</div>
               </div>
-              <div style={s('padding:15px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
+              <div style={s('padding:15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
                 <div style={s('font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Cards</div>
                 <div style={s("font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:600;margin-top:5px")}>{client.active}<span style={s('color:var(--muted);font-size:14px')}>/{client.cards}</span> active</div>
               </div>
-              <div style={s('padding:15px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
+              <div style={s('padding:15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
                 <div style={s('font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Gallons · Cycle</div>
                 <div style={s("font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:600;margin-top:5px;color:var(--violet)")}>{client.gallons}</div>
               </div>
@@ -536,7 +536,7 @@ function ClientModal({
                 <div style={s('font-size:12.5px;color:var(--muted);padding:8px 2px')}>No cards on file for this carrier.</div>
               )}
               {(cardsL.data ?? []).map((card, i) => (
-                <div key={`${card.num}-${i}`} style={s('display:flex;align-items:center;gap:12px;padding:13px 15px;border-radius:12px;background:var(--alt);border:1px solid var(--border2)')}>
+                <div key={`${card.num}-${i}`} style={s('display:flex;align-items:center;gap:12px;padding:13px 15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
                   <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600")}>{card.num}</span>
                   <span style={s(`font-size:10px;font-weight:700;padding:3px 8px;border-radius:99px;background:color-mix(in srgb,${card.tone} 16%,transparent);color:${card.tone}`)}>{card.status}</span>
                 </div>
@@ -569,8 +569,8 @@ function ClientModal({
           )}
         </div>
         <div style={s('padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px')}>
-          <button onClick={onClose} style={s('height:38px;padding:0 18px;border-radius:10px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>Close</button>
-          <button onClick={onRun} className="ss-btn-p" style={s('height:38px;padding:0 18px;border-radius:10px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer')}>Run an action</button>
+          <button onClick={onClose} style={s('height:38px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>Close</button>
+          <button onClick={onRun} className="ss-btn-p" style={s('height:38px;padding:0 18px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer')}>Run an action</button>
         </div>
       </div>
     </div>

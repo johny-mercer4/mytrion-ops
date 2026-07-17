@@ -14,7 +14,7 @@ import { mapWex, mapWexSearchRow, type WexResult } from './autoLive';
 
 interface WexQ { appId: string; last: string; mc: string; }
 
-const inp40 = 'width:100%;height:40px;padding:0 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
+const inp40 = 'width:100%;height:40px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
 const labelCss = 'font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
 const dropMsg = 'padding:14px;font-size:12.5px;color:var(--muted);text-align:center';
 const dropErr = 'padding:14px;font-size:12.5px;color:var(--danger);text-align:center';
@@ -75,15 +75,15 @@ export function AutoWexPanel() {
         <div><Lbl t="Application ID" /><input value={wexQ.appId} onChange={(e) => setWexField('appId', e.target.value)} placeholder="e.g. 872228" className="ss-in" style={s(inp40)} /></div>
         <div><Lbl t="Last Name" /><input value={wexQ.last} onChange={(e) => setWexField('last', e.target.value)} placeholder="e.g. Crossan" className="ss-in" style={s(inp40)} /></div>
         <div><Lbl t="MC Number" /><input value={wexQ.mc} onChange={(e) => setWexField('mc', e.target.value)} placeholder="e.g. 285921" className="ss-in" style={s(inp40)} /></div>
-        <div style={s('display:flex;align-items:flex-end')}><button onClick={runWex} className="ss-btn-p" style={s(btnP('width:100%;height:40px;border-radius:10px;font-size:13px'))}>Search</button></div>
+        <div style={s('display:flex;align-items:flex-end')}><button onClick={runWex} className="ss-btn-p" style={s(btnP('width:100%;height:40px;border-radius:var(--radius-md);font-size:13px'))}>Search</button></div>
       </div>
-      {wexSearching && <div style={s('margin-top:16px;display:flex;flex-direction:column;gap:9px')}>{skel8.map((sk) => <div key={sk} style={s('display:flex;gap:10px;padding:13px;border-radius:11px;background:var(--alt);border:1px solid var(--border2)')}><div className="ss-skel" style={s('flex:1;height:14px')}></div><div className="ss-skel" style={s('width:60px;height:14px')}></div></div>)}</div>}
+      {wexSearching && <div style={s('margin-top:16px;display:flex;flex-direction:column;gap:9px')}>{skel8.map((sk) => <div key={sk} style={s('display:flex;gap:10px;padding:13px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}><div className="ss-skel" style={s('flex:1;height:14px')}></div><div className="ss-skel" style={s('width:60px;height:14px')}></div></div>)}</div>}
       {wexErr && <div style={s(`margin-top:16px;${dropErr}`)}>{wexErr}</div>}
       {wexShow && wexResultsVM.length === 0 && !wexErr && <div style={s(`margin-top:16px;${dropMsg}`)}>No applications found.</div>}
       {wexShow && wexResultsVM.length > 0 && (
         <div style={s('margin-top:16px;display:flex;flex-direction:column;gap:9px')}>
           {wexResultsVM.map((r) => (
-            <div key={r.appId} className="ss-card-h" style={s('padding:13px 15px;border-radius:12px;background:var(--surface);border:1px solid var(--border)')}>
+            <div key={r.appId} className="ss-card-h" style={s('padding:13px 15px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
               <div style={s('display:flex;align-items:center;justify-content:space-between;gap:8px')}><span style={s('font-size:13.5px;font-weight:700')}>{r.company}</span><Badge vm={r.statusBadge} /></div>
               <div style={s(`font-size:11.5px;color:var(--muted);margin-top:5px;${mono}`)}>App #{r.appId} · {r.contact} · {r.status}</div>
             </div>

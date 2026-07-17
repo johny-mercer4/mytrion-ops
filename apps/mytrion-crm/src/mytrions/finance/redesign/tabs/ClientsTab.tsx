@@ -95,7 +95,7 @@ export function ClientsTab() {
             {label}
           </button>
         ))}
-        <div style={s('display:flex;align-items:center;gap:8px;margin-left:auto;min-width:200px;max-width:300px;height:36px;padding:0 12px;border-radius:10px;background:var(--surface);border:1px solid var(--border)')}>
+        <div style={s('display:flex;align-items:center;gap:8px;margin-left:auto;min-width:200px;max-width:300px;height:36px;padding:0 12px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
           <Svg d={ICONS.search} size={14} stroke="var(--muted)" />
           <input
             className="mf-in"
@@ -136,7 +136,7 @@ export function ClientsTab() {
                   onClick={() => openClient(c)}
                   style={s('display:flex;align-items:center;gap:13px;padding:13px 16px;border-bottom:1px solid var(--border2);cursor:pointer;width:100%;border-left:none;border-right:none;border-top:none;background:transparent;text-align:left')}
                 >
-                  <div style={s(`width:38px;height:38px;border-radius:10px;background:${avBg};color:${avFg};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0`)}>
+                  <div style={s(`width:38px;height:38px;border-radius:var(--radius-md);background:${avBg};color:${avFg};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0`)}>
                     {initials(c.company)}
                   </div>
                   <div style={s('flex:1;min-width:0')}>

@@ -185,6 +185,35 @@ export const carrierInvitationRepo = {
     return rows[0];
   },
 
+  /**
+   * Rename the driver on a still-pending invite for one card — the fleet roster shows that name
+   * before the driver ever opens the link, so a typo needs fixing there too.
+   *
+   * Keyed by (tenant, carrier, card) like the registered-driver rename, so the where-clause is the
+   * authorization; `status: 'pending'` keeps a redeemed invite's historical name intact.
+   */
+  async renameDriverByCard(
+    ctx: TenantContext,
+    carrierId: string,
+    cardId: string,
+    driverName: string,
+  ): Promise<CarrierInvitation | undefined> {
+    const rows = await db
+      .update(carrierInvitations)
+      .set({ driverName, updatedAt: new Date() })
+      .where(
+        and(
+          eq(carrierInvitations.tenantId, ctx.tenantId),
+          eq(carrierInvitations.carrierId, carrierId),
+          eq(carrierInvitations.cardId, cardId),
+          eq(carrierInvitations.profile, 'driver'),
+          eq(carrierInvitations.status, 'pending'),
+        ),
+      )
+      .returning();
+    return rows[0];
+  },
+
   /** Redemption is one-shot: only flips a still-pending invite (avoids a double-redeem race). */
   async markRedeemed(
     ctx: TenantContext,

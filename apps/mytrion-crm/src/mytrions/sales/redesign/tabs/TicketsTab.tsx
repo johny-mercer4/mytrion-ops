@@ -283,35 +283,35 @@ export function TicketsTab() {
     <>
       <div className="ss-fu" style={s('display:flex;flex-direction:column;gap:10px;height:100%;min-height:0')}>
         {!scoped && (
-          <div style={s('flex-shrink:0;display:flex;align-items:center;gap:9px;padding:9px 13px;border-radius:11px;background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 34%,transparent);font-size:12px;color:var(--text2);line-height:1.4')}>
+          <div style={s('flex-shrink:0;display:flex;align-items:center;gap:9px;padding:9px 13px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 34%,transparent);font-size:12px;color:var(--text2);line-height:1.4')}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
             <span>Showing <strong style={s('color:var(--text)')}>recent org tickets</strong> — filtering to your own tickets needs the Desk <em>search</em> permission on the connection.</span>
           </div>
         )}
         <div style={s('flex:1;min-height:0;display:flex;gap:14px')}>
         {/* LIST */}
-        <div style={s('width:320px;flex-shrink:0;display:flex;flex-direction:column;border-radius:16px;background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
+        <div style={s('width:320px;flex-shrink:0;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
           <div style={s('padding:14px 15px 12px;border-bottom:1px solid var(--border)')}>
             <div style={s('display:flex;align-items:center;justify-content:space-between;margin-bottom:11px')}>
               <span style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.05em;text-transform:uppercase')}>My Tickets</span>
               <div style={s('display:flex;align-items:center;gap:7px')}>
                 <span title={scoped ? undefined : 'Showing recent tickets — Desk search scope unavailable'} style={s('font-size:10.5px;font-weight:700;color:var(--ok);display:flex;align-items:center;gap:5px')}><span style={s('width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 22%,transparent)')} />LIVE</span>
-                <button onClick={refreshTickets} aria-label="Refresh" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={s(ticketsSpinStyle)}><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg></button>
+                <button onClick={refreshTickets} aria-label="Refresh" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={s(ticketsSpinStyle)}><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg></button>
               </div>
             </div>
             <div style={s('position:relative;margin-bottom:9px')}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={s('position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted)')}><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-              <input value={ticketSearch} onChange={(e) => setTicketSearch(e.currentTarget.value)} placeholder="Search tickets…" className="ss-in" style={s('width:100%;height:36px;padding:0 12px 0 34px;border-radius:10px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:12.5px')} />
+              <input value={ticketSearch} onChange={(e) => setTicketSearch(e.currentTarget.value)} placeholder="Search tickets…" className="ss-in" style={s('width:100%;height:36px;padding:0 12px 0 34px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:12.5px')} />
             </div>
-            <button onClick={() => go('create')} className="ss-btn-p" style={s('width:100%;height:36px;margin-bottom:9px;border-radius:10px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px')}>
+            <button onClick={() => go('create')} className="ss-btn-p" style={s('width:100%;height:36px;margin-bottom:9px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px')}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
               New Ticket
             </button>
-            <div style={s('display:flex;gap:3px;padding:3px;border-radius:9px;background:var(--alt);border:1px solid var(--border2)')}>
+            <div style={s('display:flex;gap:3px;padding:3px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
               {FILTERS.map(([id, label]) => {
                 const on = tkF === id;
                 return (
-                  <button key={id} onClick={() => setTicketFilter(id)} style={s(`flex:1;padding:6px 4px;border-radius:8px;border:none;cursor:pointer;font-size:11px;font-weight:700;background:${on ? 'var(--accent)' : 'transparent'};color:${on ? '#fff' : 'var(--muted)'};transition:all .14s;white-space:nowrap`)}>{label}</button>
+                  <button key={id} onClick={() => setTicketFilter(id)} style={s(`flex:1;padding:6px 4px;border-radius:var(--radius-md);border:none;cursor:pointer;font-size:11px;font-weight:700;background:${on ? 'var(--accent)' : 'transparent'};color:${on ? '#fff' : 'var(--muted)'};transition:all .14s;white-space:nowrap`)}>{label}</button>
                 );
               })}
             </div>
@@ -319,12 +319,12 @@ export function TicketsTab() {
           <div className="ss-scroll" style={s('flex:1;min-height:0;padding:11px;display:flex;flex-direction:column;gap:9px')}>
             {ticketsLoad.loading && allTickets.length === 0 &&
               Array.from({ length: 6 }).map((_, i) => (
-                <div key={`sk-${i}`} style={s('display:flex;flex-direction:column;gap:10px;padding:13px 14px;border-radius:13px;border:1px solid var(--border);background:var(--surface)')}>
-                  <div className="ss-skel" style={s('height:13px;width:82%;border-radius:6px')} />
-                  <div className="ss-skel" style={s('height:10px;width:44%;border-radius:6px')} />
+                <div key={`sk-${i}`} style={s('display:flex;flex-direction:column;gap:10px;padding:13px 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)')}>
+                  <div className="ss-skel" style={s('height:13px;width:82%;border-radius:var(--radius-md)')} />
+                  <div className="ss-skel" style={s('height:10px;width:44%;border-radius:var(--radius-md)')} />
                   <div style={s('display:flex;align-items:center;gap:8px')}>
                     <div className="ss-skel" style={s('width:22px;height:22px;border-radius:50%')} />
-                    <div className="ss-skel" style={s('height:10px;flex:1;border-radius:6px')} />
+                    <div className="ss-skel" style={s('height:10px;flex:1;border-radius:var(--radius-md)')} />
                   </div>
                 </div>
               ))}
@@ -342,7 +342,7 @@ export function TicketsTab() {
               const contact = t.contact || '—';
               const contactInitials = contact === '—' ? '?' : contact.split(' ').map((w) => w[0]).slice(0, 2).join('');
               return (
-                <button key={t.id} onClick={() => selectTicket(t.id)} className="ss-card-h" style={s(`position:relative;display:flex;flex-direction:column;gap:9px;padding:13px 14px 13px 15px;border-radius:13px;border:1px solid ${active ? 'rgba(var(--accent-rgb),.5)' : 'var(--border)'};border-left:3px solid ${prioCol};background:${active ? 'rgba(var(--accent-rgb),.09)' : 'var(--surface)'};cursor:pointer;transition:all .14s;text-align:left;width:100%`)}>
+                <button key={t.id} onClick={() => selectTicket(t.id)} className="ss-card-h" style={s(`position:relative;display:flex;flex-direction:column;gap:9px;padding:13px 14px 13px 15px;border-radius:var(--radius-md);border:1px solid ${active ? 'rgba(var(--accent-rgb),.5)' : 'var(--border)'};border-left:3px solid ${prioCol};background:${active ? 'rgba(var(--accent-rgb),.09)' : 'var(--surface)'};cursor:pointer;transition:all .14s;text-align:left;width:100%`)}>
                   <div style={s('font-size:13px;font-weight:700;line-height:1.35;text-align:left;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical')}>{t.subject}</div>
                   <div style={s('display:flex;align-items:center;gap:8px;font-size:11px')}>
                     <span style={s("font-family:'JetBrains Mono',monospace;color:var(--muted)")}>#{t.num}</span>
@@ -367,11 +367,11 @@ export function TicketsTab() {
         </div>
 
         {/* CHAT */}
-        <div style={s('flex:1;min-width:0;display:flex;flex-direction:column;border-radius:16px;background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
+        <div style={s('flex:1;min-width:0;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
           {tkSel ? (
             <>
               <div style={s('flex-shrink:0;padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:13px')}>
-                <div style={s('width:40px;height:40px;border-radius:12px;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;flex-shrink:0')}>{tkInitials}</div>
+                <div style={s('width:40px;height:40px;border-radius:var(--radius-md);background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;flex-shrink:0')}>{tkInitials}</div>
                 <div style={s('flex:1;min-width:0')}>
                   <div style={s('font-size:14.5px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{tkSel.subject}</div>
                   <div style={s("font-size:11.5px;color:var(--muted);margin-top:3px;font-family:'JetBrains Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis")}>#{tkSel.num} · {tkCompany} · {tkSel.contact || 'N/A'}</div>
@@ -381,7 +381,7 @@ export function TicketsTab() {
                     <span style={s(`flex-shrink:0;font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:99px;background:color-mix(in srgb,${tkSla.col} 14%,transparent);color:${tkSla.col};white-space:nowrap`)}>{tkSla.text}</span>
                   )}
                   <span style={s(tkStatusBadge.style)}>{tkStatusBadge.text}</span>
-                  <button onClick={() => setTicketDetailsOpen((v) => !v)} aria-label="Ticket details" className="ss-ico-btn" style={s('width:34px;height:34px;border-radius:9px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0')}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><line x1="12" y1="11" x2="12" y2="16" /><line x1="12" y1="8" x2="12" y2="8" /></svg></button>
+                  <button onClick={() => setTicketDetailsOpen((v) => !v)} aria-label="Ticket details" className="ss-ico-btn" style={s('width:34px;height:34px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0')}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><line x1="12" y1="11" x2="12" y2="16" /><line x1="12" y1="8" x2="12" y2="8" /></svg></button>
                 </div>
               </div>
               <div ref={bodyRef} className="ss-scroll" style={s('flex:1;min-height:0;padding:18px;display:flex;flex-direction:column;gap:14px;background:var(--bg)')}>
@@ -410,7 +410,7 @@ export function TicketsTab() {
                   const bubbleStyle = me
                     ? 'padding:10px 13px;border-radius:14px 14px 4px 14px;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;font-size:13px;line-height:1.5;word-break:break-word'
                     : 'padding:10px 13px;border-radius:14px 14px 14px 4px;background:var(--alt);border:1px solid var(--border);color:var(--text);font-size:13px;line-height:1.5;word-break:break-word';
-                  const attachStyle = `display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;border:1px solid ${me ? 'rgba(var(--accent-rgb),.4)' : 'var(--border)'};background:${me ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};cursor:pointer;min-width:190px;max-width:260px`;
+                  const attachStyle = `display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid ${me ? 'rgba(var(--accent-rgb),.4)' : 'var(--border)'};background:${me ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};cursor:pointer;min-width:190px;max-width:260px`;
                   return (
                     <div key={i} style={s(rowStyle)}>
                       <div style={s(avStyle)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg></div>
@@ -418,7 +418,7 @@ export function TicketsTab() {
                         {type === 'comment' && <div style={s(bubbleStyle)}>{m.text}</div>}
                         {type === 'attachment' && m.file && (
                           <div onClick={() => downloadAttachment(m.file!)} style={s(attachStyle)}>
-                            <div style={s('width:34px;height:34px;border-radius:9px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent)')}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg></div>
+                            <div style={s('width:34px;height:34px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent)')}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg></div>
                             <div style={s('min-width:0')}><div style={s('font-size:12.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{m.file.name}</div><div style={s('font-size:10.5px;color:var(--muted)')}>{[m.file.size, 'Click to download'].filter(Boolean).join(' · ')}</div></div>
                           </div>
                         )}
@@ -438,7 +438,7 @@ export function TicketsTab() {
                     ))}
                   </div>
                   {attachFile && (
-                    <div style={s('display:flex;align-items:center;gap:8px;margin:9px 78px 0 14px;padding:7px 11px;border-radius:10px;background:rgba(var(--accent-rgb),.1);border:1px solid rgba(var(--accent-rgb),.3);width:fit-content;max-width:calc(100% - 92px)')}>
+                    <div style={s('display:flex;align-items:center;gap:8px;margin:9px 78px 0 14px;padding:7px 11px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.1);border:1px solid rgba(var(--accent-rgb),.3);width:fit-content;max-width:calc(100% - 92px)')}>
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
                       <span style={s('font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{attachFile.name}</span>
                       <button onClick={() => { setAttachFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }} aria-label="Remove attachment" style={s('flex-shrink:0;border:none;background:transparent;color:var(--danger);font-size:11px;font-weight:700;cursor:pointer')}>✕</button>
@@ -446,9 +446,9 @@ export function TicketsTab() {
                   )}
                   <div style={s('padding:11px 78px 12px 14px;display:flex;gap:10px;align-items:flex-end')}>
                     <input ref={fileInputRef} type="file" onChange={onPickFile} style={{ display: 'none' }} />
-                    <button onClick={() => fileInputRef.current?.click()} aria-label="Attach file" title="Attach a file" className="ss-ico-btn" style={s(`width:40px;height:40px;flex-shrink:0;border-radius:11px;border:1px solid ${attachFile ? 'rgba(var(--accent-rgb),.5)' : 'var(--border)'};background:${attachFile ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${attachFile ? 'var(--accent)' : 'var(--text2)'};cursor:pointer;display:flex;align-items:center;justify-content:center`)}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg></button>
-                    <input value={ticketReply} onChange={(e) => setTicketReply(e.currentTarget.value)} onKeyDown={ticketReplyKey} onPaste={onPasteReply} placeholder={attachFile ? 'Add a message (optional)…' : 'Type or paste a reply…'} className="ss-in" style={s('flex:1;height:40px;padding:0 14px;border-radius:11px;border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px')} />
-                    <button onClick={sendTicketReply} disabled={sending} aria-label="Send reply" className="ss-btn-p" style={s(`width:40px;height:40px;flex-shrink:0;border-radius:11px;border:none;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;cursor:${sending ? 'default' : 'pointer'};opacity:${sending ? '.7' : '1'};display:flex;align-items:center;justify-content:center`)}>{sending ? <span style={s('width:15px;height:15px;border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;animation:ss-spin .8s linear infinite')} /> : <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}</button>
+                    <button onClick={() => fileInputRef.current?.click()} aria-label="Attach file" title="Attach a file" className="ss-ico-btn" style={s(`width:40px;height:40px;flex-shrink:0;border-radius:var(--radius-md);border:1px solid ${attachFile ? 'rgba(var(--accent-rgb),.5)' : 'var(--border)'};background:${attachFile ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${attachFile ? 'var(--accent)' : 'var(--text2)'};cursor:pointer;display:flex;align-items:center;justify-content:center`)}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg></button>
+                    <input value={ticketReply} onChange={(e) => setTicketReply(e.currentTarget.value)} onKeyDown={ticketReplyKey} onPaste={onPasteReply} placeholder={attachFile ? 'Add a message (optional)…' : 'Type or paste a reply…'} className="ss-in" style={s('flex:1;height:40px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px')} />
+                    <button onClick={sendTicketReply} disabled={sending} aria-label="Send reply" className="ss-btn-p" style={s(`width:40px;height:40px;flex-shrink:0;border-radius:var(--radius-md);border:none;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;cursor:${sending ? 'default' : 'pointer'};opacity:${sending ? '.7' : '1'};display:flex;align-items:center;justify-content:center`)}>{sending ? <span style={s('width:15px;height:15px;border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;animation:ss-spin .8s linear infinite')} /> : <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}</button>
                   </div>
                 </div>
               )}
@@ -457,7 +457,7 @@ export function TicketsTab() {
               )}
             </>
           ) : (
-            <div style={s('flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--muted);padding:24px;text-align:center')}><div style={s('width:64px;height:64px;border-radius:16px;background:var(--raised);display:flex;align-items:center;justify-content:center;color:var(--accent)')}><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg></div><div style={s('font-size:14px;font-weight:700;color:var(--text)')}>{ticketsLoad.loading ? 'Loading tickets…' : ticketsLoad.error ? 'Could not load tickets' : 'No ticket selected'}</div><div style={s('font-size:12.5px')}>{ticketsLoad.error ? ticketsLoad.error : 'Pick a ticket from the list to view the thread and reply.'}</div></div>
+            <div style={s('flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--muted);padding:24px;text-align:center')}><div style={s('width:64px;height:64px;border-radius:var(--radius-md);background:var(--raised);display:flex;align-items:center;justify-content:center;color:var(--accent)')}><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg></div><div style={s('font-size:14px;font-weight:700;color:var(--text)')}>{ticketsLoad.loading ? 'Loading tickets…' : ticketsLoad.error ? 'Could not load tickets' : 'No ticket selected'}</div><div style={s('font-size:12.5px')}>{ticketsLoad.error ? ticketsLoad.error : 'Pick a ticket from the list to view the thread and reply.'}</div></div>
           )}
         </div>
         </div>
@@ -469,11 +469,11 @@ export function TicketsTab() {
           <div style={s('position:fixed;top:0;right:0;bottom:0;z-index:131;width:330px;max-width:92vw;background:var(--surface);border-left:1px solid var(--border);box-shadow:var(--shadow);display:flex;flex-direction:column;animation:ss-slidein .25s cubic-bezier(.2,0,0,1) both')}>
             <div style={s('display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--border)')}>
               <span style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.05em;text-transform:uppercase')}>Ticket Details</span>
-              <button onClick={() => setTicketDetailsOpen(false)} className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+              <button onClick={() => setTicketDetailsOpen(false)} className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
             </div>
             <div className="ss-scroll" style={s('flex:1;min-height:0;padding:16px 18px 22px;display:flex;flex-direction:column;gap:15px')}>
               <div><div style={s(`${DETAIL_ROW_STYLE};margin-bottom:5px`)}>Subject</div><div style={s('font-size:13.5px;font-weight:700;line-height:1.4')}>{tkSel.subject}</div></div>
-              <div><div style={s(`${DETAIL_ROW_STYLE};margin-bottom:5px`)}>Description</div><div style={s('padding:11px 12px;border-radius:10px;background:var(--alt);border:1px solid var(--border2);font-size:12.5px;line-height:1.5;color:var(--text2);white-space:pre-wrap')}>{tkSel.description || '—'}</div></div>
+              <div><div style={s(`${DETAIL_ROW_STYLE};margin-bottom:5px`)}>Description</div><div style={s('padding:11px 12px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2);font-size:12.5px;line-height:1.5;color:var(--text2);white-space:pre-wrap')}>{tkSel.description || '—'}</div></div>
               <div><div style={s(`${DETAIL_ROW_STYLE};margin-bottom:6px`)}>Status</div><span style={s(tkStatusBadge.style)}>{tkStatusBadge.text}</span></div>
               {detailRows.map(([label, value, accent]) => (
                 <div key={label}><div style={s(`${DETAIL_ROW_STYLE};margin-bottom:4px`)}>{label}</div><div style={s(`font-size:12.5px;font-weight:700;color:${accent ? 'var(--accent)' : 'var(--text)'}`)}>{value}</div></div>
