@@ -91,9 +91,9 @@ import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { carrierInvitationRepo } from '../../src/repos/carrierInvitationRepo.js';
 import { registeredMiniAppCompanyRepo } from '../../src/repos/registeredMiniAppCompanyRepo.js';
-import { listDwhCards } from '../../src/integrations/dwhCards.js';
+import { listDwhCards, findDwhCardByNumber } from '../../src/integrations/dwhCards.js';
 import { listDwhTransactions, resolveDwhTxnRange } from '../../src/integrations/dwhTransactions.js';
-import { sendDocument, TelegramChatUnreachableError } from '../../src/integrations/telegramCarrierBot.js';
+import { sendDocument, TelegramChatUnreachableError, parseInitDataUser, verifyTelegramInitData } from '../../src/integrations/telegramCarrierBot.js';
 import { executeZohoFunctionWithFallback } from '../../src/integrations/zohoFunctions.js';
 import { createDeskTicket } from '../../src/integrations/zohoDesk.js';
 import { serverCrmWrapper } from '../../src/wrappers/serverCrmWrapper.js';
@@ -974,8 +974,9 @@ describe('service requests file real Desk tickets', () => {
   });
 
   it('rejects an unknown service rather than filing it somewhere', async () => {
-    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(driverReg());
-
+    // Deliberately queues NO registration: the schema rejects before auth runs, so a queued
+    // mockResolvedValueOnce would go unconsumed — and vi.clearAllMocks() does not drain the once
+    // queue, so it would surface in whichever test called findByTelegramUserId next.
     const res = await app.inject({
       method: 'POST',
       url: '/v1/carrier/mini-app/service-request',
@@ -1001,4 +1002,272 @@ describe('service requests file real Desk tickets', () => {
     expect(res.statusCode).toBe(502);
     expect(res.json()).toMatchObject({ error: { code: 'SERVICE_REQUEST_FAILED' } });
   });
+});
+
+describe('driver self-registration by card number', () => {
+  const CARD = '7083050030880417593';
+  const CARRIER = '5765985';
+  const cardOwner = { cardId: 'card_1', carrierId: CARRIER, cardNumber: CARD };
+
+  /** Card resolves, card is active for the carrier, nobody else holds it, no live invite. */
+  function cardAvailable() {
+    vi.mocked(findDwhCardByNumber).mockResolvedValueOnce(cardOwner);
+    dwhCards.mockResolvedValueOnce([{ cardId: 'card_1', cardNumber: CARD, cardType: 'FUEL', status: 'Active', balance: '0' }]);
+    inviteRepo.findLiveDriverByCard.mockResolvedValueOnce(undefined);
+    registrationRepo.listDriversByCarrier.mockResolvedValueOnce([]);
+    // create() returns a CarrierInvitationDto — ISO strings, not the Dates inviteRow() carries.
+    inviteRepo.create.mockResolvedValueOnce({
+      id: 'inv_self',
+      profile: 'driver',
+      carrierId: CARRIER,
+      applicationId: null,
+      companyName: null,
+      cardId: 'card_1',
+      driverName: 'James Reyes',
+      companyType: null,
+      cardCount: null,
+      agentName: null,
+      agentZohoUserId: null,
+      status: 'pending',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  function driverTg(user: Record<string, unknown> = {}) {
+    vi.mocked(parseInitDataUser).mockReturnValueOnce({ id: 987654, first_name: 'James', last_name: 'Reyes', ...user } as never);
+  }
+
+  it('registers a driver from a card number alone — no invite link', async () => {
+    driverTg();
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(undefined);
+    cardAvailable();
+    registrationRepo.upsert.mockResolvedValueOnce(
+      registrationRow({ id: 'rma_self', profile: 'driver', telegramUserId: '987654', carrierId: CARRIER, cardId: 'card_1', driverName: 'James Reyes', companyType: null, cardCount: null }),
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-self-register',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', cardNumber: CARD },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ registration: { profile: 'driver', carrierId: CARRIER, cardId: 'card_1' } });
+    // The carrier is derived from the CARD, never from the request — possession of the number is
+    // the whole claim being made.
+    expect(inviteRepo.create.mock.calls[0]?.[1]).toMatchObject({ profile: 'driver', carrierId: CARRIER, cardId: 'card_1' });
+  });
+
+  it('accepts the number formatted the way it is printed on the card', async () => {
+    driverTg();
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(undefined);
+    cardAvailable();
+    registrationRepo.upsert.mockResolvedValueOnce(
+      registrationRow({ id: 'rma_self', profile: 'driver', telegramUserId: '987654', carrierId: CARRIER, cardId: 'card_1', driverName: 'James Reyes', companyType: null }),
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-self-register',
+      headers: { 'content-type': 'application/json' },
+      // Groups of four + a dash: what a driver reads off the card, and what the mini-app's own
+      // input box renders as you type. The lookup is an exact match on a bare-digit column, so
+      // without normalization this 404s on a card that exists.
+      payload: { initData: 'signed', cardNumber: ' 7083 0500 3088-0417 593 ' },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(vi.mocked(findDwhCardByNumber)).toHaveBeenCalledWith(CARD);
+  });
+
+  it('404s an unknown card', async () => {
+    driverTg();
+    vi.mocked(findDwhCardByNumber).mockResolvedValueOnce(null);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-self-register',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', cardNumber: '9999999999999999999' },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toMatchObject({ error: { code: 'CARD_NOT_FOUND' } });
+    // No invite may be minted for a card that does not resolve — otherwise a wrong guess leaves an
+    // orphan pending invite behind.
+    expect(inviteRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('is idempotent — re-registering the same card returns the existing registration, not a second one', async () => {
+    driverTg();
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(
+      registrationRow({ id: 'rma_self', profile: 'driver', telegramUserId: '987654', carrierId: CARRIER, cardId: 'card_1', driverName: 'James Reyes', companyType: null }),
+    );
+    vi.mocked(findDwhCardByNumber).mockResolvedValueOnce(cardOwner);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-self-register',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', cardNumber: CARD },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ registration: { id: 'rma_self' } });
+    expect(inviteRepo.create).not.toHaveBeenCalled();
+    expect(registrationRepo.upsert).not.toHaveBeenCalled();
+  });
+
+  it("refuses to move a Telegram account to another carrier's card", async () => {
+    driverTg();
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(
+      registrationRow({ id: 'rma_self', profile: 'driver', telegramUserId: '987654', carrierId: '5836348', cardId: 'card_9', companyType: null }),
+    );
+    vi.mocked(findDwhCardByNumber).mockResolvedValueOnce(cardOwner);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-self-register',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', cardNumber: CARD },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ error: { code: 'TELEGRAM_ALREADY_REGISTERED' } });
+    expect(inviteRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses an OWNER account trying to self-register as a driver', async () => {
+    driverTg();
+    // An owner's registration has profile 'owner', so it can never match sameCard — the route must
+    // not quietly convert an owner into a driver (or hand them a second registration).
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(registrationRow({ telegramUserId: '987654', carrierId: CARRIER }));
+    vi.mocked(findDwhCardByNumber).mockResolvedValueOnce(cardOwner);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-self-register',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', cardNumber: CARD },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(registrationRepo.upsert).not.toHaveBeenCalled();
+  });
+
+  it('refuses a card that already has a registered driver — one card, one driver', async () => {
+    driverTg();
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(undefined);
+    vi.mocked(findDwhCardByNumber).mockResolvedValueOnce(cardOwner);
+    dwhCards.mockResolvedValueOnce([{ cardId: 'card_1', cardNumber: CARD, cardType: 'FUEL', status: 'Active', balance: '0' }]);
+    inviteRepo.findLiveDriverByCard.mockResolvedValueOnce(undefined);
+    // Someone else already holds this card. Possession of the number must not be enough to take
+    // over a colleague's registration.
+    registrationRepo.listDriversByCarrier.mockResolvedValueOnce([{ cardId: 'card_1', driverName: 'Other Driver' } as never]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-self-register',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', cardNumber: CARD },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(registrationRepo.upsert).not.toHaveBeenCalled();
+  });
+
+  it('refuses a card that already has a pending driver invite', async () => {
+    driverTg();
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(undefined);
+    vi.mocked(findDwhCardByNumber).mockResolvedValueOnce(cardOwner);
+    dwhCards.mockResolvedValueOnce([{ cardId: 'card_1', cardNumber: CARD, cardType: 'FUEL', status: 'Active', balance: '0' }]);
+    // findLiveDriverByCard returns the DB row (Dates), unlike create() which returns a DTO
+    // (ISO strings) — inviteRow() is the row shape.
+    inviteRepo.findLiveDriverByCard.mockResolvedValueOnce(
+      inviteRow({ id: 'inv_live', profile: 'driver', cardId: 'card_1', driverName: 'Someone Else' }),
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-self-register',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', cardNumber: CARD },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(registrationRepo.upsert).not.toHaveBeenCalled();
+  });
+
+  it('refuses a card that is not active for its carrier', async () => {
+    driverTg();
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(undefined);
+    vi.mocked(findDwhCardByNumber).mockResolvedValueOnce(cardOwner);
+    dwhCards.mockResolvedValueOnce([]); // card not in the carrier's active list
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-self-register',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', cardNumber: CARD },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: { code: 'CARD_NOT_ACTIVE' } });
+  });
+
+  it('rejects an unverifiable Telegram identity before touching the card directory', async () => {
+    vi.mocked(verifyTelegramInitData).mockReturnValueOnce({ ok: false });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-self-register',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'forged', cardNumber: CARD },
+    });
+
+    expect(res.statusCode).toBe(401);
+    // The card number is the only secret here, so an unverified caller must not even learn whether
+    // it resolves — that would turn this into a card-number oracle.
+    expect(vi.mocked(findDwhCardByNumber)).not.toHaveBeenCalled();
+  });
+
+  it('rejects a too-short card number at the schema', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-self-register',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', cardNumber: '12' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(vi.mocked(findDwhCardByNumber)).not.toHaveBeenCalled();
+  });
+
+  for (const [tg, expected, why] of [
+    [{ first_name: 'James', last_name: 'Reyes' }, 'James Reyes', 'first + last name'],
+    [{ first_name: 'James' }, 'James', 'first name only'],
+    [{ username: 'jreyes' }, 'jreyes', 'username when no name is set'],
+    [{}, 'Driver', 'a Telegram account with neither'],
+  ] as const) {
+    it(`names the driver from ${why}`, async () => {
+      vi.mocked(parseInitDataUser).mockReturnValueOnce({ id: 987654, ...tg } as never);
+      registrationRepo.findByTelegramUserId.mockResolvedValueOnce(undefined);
+      cardAvailable();
+      registrationRepo.upsert.mockResolvedValueOnce(
+        registrationRow({ id: 'rma_self', profile: 'driver', telegramUserId: '987654', carrierId: CARRIER, cardId: 'card_1', companyType: null }),
+      );
+
+      await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/driver-self-register',
+        headers: { 'content-type': 'application/json' },
+        payload: { initData: 'signed', cardNumber: CARD },
+      });
+
+      expect(inviteRepo.create.mock.calls[0]?.[1]).toMatchObject({ driverName: expected });
+      expect(registrationRepo.upsert.mock.calls[0]?.[1]).toMatchObject({ driverName: expected });
+    });
+  }
 });

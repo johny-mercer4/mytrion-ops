@@ -19,6 +19,7 @@ import { searchDwhOperators } from '../../integrations/dwhOperators.js';
 import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
 import {
   TXN_FETCH_LIMIT,
+  cardDigits,
   clampToWindow,
   scopeRowsToCard,
   scopeTransactionsToCard,
@@ -1210,7 +1211,13 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   app.post('/carrier/mini-app/driver-self-register', async (request, reply) => {
     const body = driverSelfRegisterSchema.parse(request.body);
     const { tgUser, telegramUserId } = verifyTelegramUser(body.initData);
-    const card = await findDwhCardByNumber(body.cardNumber.trim());
+    // Digits only. The lookup is an exact `card_number = $1` against a column of bare 19-digit
+    // strings, and the number is PRINTED on the card in groups of four — the mini-app's own input
+    // even re-groups it as you type. Trimming alone left the backend depending on the client to
+    // strip the spaces back out: any caller forwarding what the driver actually sees got a 404 for
+    // a card that exists. Same normalization the row scoping uses, so both agree on what a card
+    // number is.
+    const card = await findDwhCardByNumber(cardDigits(body.cardNumber));
     if (!card) {
       throw new AppError('No active fuel card matches that number', {
         statusCode: 404,

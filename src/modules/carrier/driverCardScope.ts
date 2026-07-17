@@ -23,8 +23,12 @@ import type { CarrierTransactions } from '../../wrappers/serverCrmWrapper.js';
 export const TXN_FETCH_LIMIT = 5000;
 
 /** Digits-only view of a card number — both DWH sources store bare 19-digit strings, but callers
- *  (and any future formatted source) may carry spaces/dashes. Normalizing keeps `===` honest. */
-function cardDigits(value: unknown): string {
+ *  (and any future formatted source) may carry spaces/dashes. Normalizing keeps `===` honest.
+ *
+ *  Exported because self-registration needs the SAME normalization before its exact-match lookup:
+ *  the number is printed on the card in groups of four and the mini-app's own input renders it that
+ *  way, so a caller that forwards what the driver sees would otherwise miss a valid card. */
+export function cardDigits(value: unknown): string {
   if (typeof value !== 'string' && typeof value !== 'number') return '';
   return String(value).replace(/\D/g, '');
 }
