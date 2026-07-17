@@ -175,7 +175,9 @@ async function toXlsx(grid: Grid, meta: TxnReportMeta): Promise<Buffer> {
   wb.creator = 'Octane Fuel Cards';
   wb.created = new Date();
   const ws = wb.addWorksheet('Transactions', {
-    views: [{ state: 'frozen', ySplit: 4 }], // title block + header stay put while scrolling
+    // showGridLines off: the sheet's rules are drawn as cell borders, so Excel's own grid must not
+    // show through anywhere and reintroduce the ragged look.
+    views: [{ state: 'frozen', ySplit: 4, showGridLines: false }],
     pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
   });
 
@@ -218,6 +220,10 @@ async function toXlsx(grid: Grid, meta: TxnReportMeta): Promise<Buffer> {
     cell.font = { bold: true, size: 10, color: { argb: argb('FFFFFF') } };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(BRAND.ink) } };
     cell.alignment = { horizontal: c.align, vertical: 'middle', indent: 1 };
+    cell.border = {
+      left: { style: 'hair', color: { argb: argb(BRAND.ink) } },
+      right: { style: 'hair', color: { argb: argb(BRAND.ink) } },
+    };
   });
   headerRow.height = XLSX_HEAD_H;
 
@@ -232,8 +238,12 @@ async function toXlsx(grid: Grid, meta: TxnReportMeta): Promise<Buffer> {
       cell.alignment = { horizontal: spec.align, vertical: 'middle', indent: spec.align === 'right' ? 0 : 1 };
       cell.font = { size: 10, color: { argb: argb(BRAND.ink) } };
       if (spec.numFmt) cell.numFmt = spec.numFmt;
-      if (ri % 2 === 1) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(BRAND.zebra) } };
-      cell.border = { bottom: { style: 'hair', color: { argb: argb(BRAND.border) } } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(ri % 2 === 1 ? BRAND.zebra : 'FFFFFF') } };
+      cell.border = {
+        bottom: { style: 'hair', color: { argb: argb(BRAND.border) } },
+        left: { style: 'hair', color: { argb: argb(BRAND.border) } },
+        right: { style: 'hair', color: { argb: argb(BRAND.border) } },
+      };
     });
     row.height = XLSX_ROW_H;
   });
@@ -250,8 +260,13 @@ async function toXlsx(grid: Grid, meta: TxnReportMeta): Promise<Buffer> {
   });
   totalRow.eachCell((cell, i) => {
     cell.font = { bold: true, size: 10, color: { argb: argb(BRAND.ink) } };
-    cell.alignment = { horizontal: COLUMNS[i - 1]?.align ?? 'left' };
-    cell.border = { top: { style: 'medium', color: { argb: argb(BRAND.orange) } } };
+    cell.alignment = { horizontal: COLUMNS[i - 1]?.align ?? 'left', vertical: 'middle', indent: 1 };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb('FFFFFF') } };
+    cell.border = {
+      top: { style: 'medium', color: { argb: argb(BRAND.orange) } },
+      left: { style: 'hair', color: { argb: argb(BRAND.border) } },
+      right: { style: 'hair', color: { argb: argb(BRAND.border) } },
+    };
   });
   totalRow.height = XLSX_ROW_H + 3;
 

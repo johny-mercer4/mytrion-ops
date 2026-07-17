@@ -727,13 +727,14 @@ function OwnerHero({ initData, company, onOpenDetails }: { initData: string; com
   return (
     /* Same fuel-card shell as DriverHero (wave ribbon, dark, EFS·WEX) — owners/fleet see a card that
        matches the driver's, but carrying the account balance instead of a card number. */
-    <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', aspectRatio: '1.62 / 1', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+    <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', aspectRatio: '1.5 / 1', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
       <CardContours />
       <CardWave />
       {/* The scrim is what makes the numbers legible: it lands the text band on near-solid ink while
-          the ribbon stays vivid above it. Taken to 60% / opaque-to-70% so the balance never sits on
-          the gradient — white on amber fails AA, which DESIGN_SPEC §8 calls out explicitly. */}
-      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '60%', background: 'linear-gradient(to top, rgba(18,19,21,.985) 70%, rgba(18,19,21,0))', pointerEvents: 'none' }} />
+          the ribbon stays vivid above it. White on amber fails AA — DESIGN_SPEC §8 says so outright
+          — so this reaches 66% of the card and is fully opaque across the lower half rather than
+          still fading where the figures start. */}
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '66%', background: 'linear-gradient(to top, rgb(18,19,21) 58%, rgba(18,19,21,.92) 78%, rgba(18,19,21,0))', pointerEvents: 'none' }} />
       <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 46, background: 'linear-gradient(to bottom, rgba(18,19,21,.72), rgba(18,19,21,0))', pointerEvents: 'none' }} />
 
       {/* Top row: company left, Details button right */}
@@ -745,8 +746,8 @@ function OwnerHero({ initData, company, onOpenDetails }: { initData: string; com
       </div>
 
       {/* Bottom block: balance amount + credit bar + credit-available (compact) */}
-      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 9 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 9, paddingTop: 10 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={eyebrow}>{t('home.efsBalance')}</span>
           {balance ? (
             <span className="selectable" style={{ fontSize: 32, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02, letterSpacing: '-.01em' }}>
