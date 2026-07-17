@@ -1696,11 +1696,16 @@ function ActionSheet({
                         <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(sum['sum_total_amount'])}</div>
                       </div>
                       <div style={{ background: 'var(--secondary)', borderRadius: 14, padding: '13px 14px' }}>
-                        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('inv.open', { n: fmt(sum['open_count'] ?? 0) })}</div>
+                        {/* "2 open / $0.26" read as a bug next to "Billed $18,051.53" — but it is
+                            true: two invoices were short by 19c and 7c. The tile names the money and
+                            the line below carries the counts, so neither has to explain the other. */}
+                        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('inv.outstanding')}</div>
                         <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(openBalance)}</div>
                       </div>
                       <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--muted-fg)', textAlign: 'center', marginTop: -2 }}>
                         {t('inv.summaryLine', { total: fmt(sum['total_invoices'] ?? rows.length), paid: fmt(sum['paid_count'] ?? 0) })}
+                        {Number(sum['open_count'] ?? 0) > 0 && ` · ${t('inv.openCount', { n: fmt(sum['open_count']) })}`}
+                        {Number(sum['cancelled_count'] ?? 0) > 0 && ` · ${t('inv.cancelledCount', { n: fmt(sum['cancelled_count']) })}`}
                       </div>
                     </div>
                   )}

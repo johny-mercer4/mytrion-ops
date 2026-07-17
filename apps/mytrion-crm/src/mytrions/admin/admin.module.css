@@ -208,13 +208,15 @@
   grid-template-columns: 2fr 1fr 1fr 1fr 1.1fr 1.1fr;
 }
 
-/* Under ~820px the six columns stop fitting — pills wrap and carrier ids break across three lines.
-   These are power-user tables, so the density stays and the table scrolls sideways instead. */
+/* Below this the six columns stop fitting and the row degrades — pills wrap, carrier ids break
+   across lines. These are power-user tables, so the density stays and the table scrolls sideways
+   rather than crushing the data. Measured against the widest real content: a `DEMO-OWNEROP-1`
+   carrier id next to an `Owner-operator` pill. */
 .tableScroll {
   overflow-x: auto;
 }
 .tableScroll > .table {
-  min-width: 820px;
+  min-width: 1040px;
 }
 
 .right {
@@ -223,6 +225,11 @@
 .mono {
   font-family: var(--font-mono);
   color: var(--text-muted);
+}
+/* An id is a single token to scan and compare — wrapping `DEMO-OWNEROP-1` across two lines makes
+   the column unscannable. Scoped to rows so `.mono` inputs elsewhere keep their own behaviour. */
+.tRow .mono {
+  white-space: nowrap;
 }
 .docCell {
   display: flex;
