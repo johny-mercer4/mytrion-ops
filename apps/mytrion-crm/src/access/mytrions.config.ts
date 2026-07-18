@@ -238,6 +238,17 @@ export const MYTRION_ORDER: MytrionId[] = [
   'analyst',
 ];
 
+/**
+ * Live MytrionIds temporarily parked as Coming soon — shown on the picker grid but not
+ * enterable (filtered out of resolveAccessibleMytrions / canAccess).
+ */
+export const COMING_SOON_MYTRION_IDS: readonly MytrionId[] = [
+  'collection',
+  'verification',
+  'manager',
+  'analyst',
+];
+
 /** Picker-only tiles — visible on the wizard grid but not routable yet. */
 export interface ComingSoonPickerTile {
   id: string;
@@ -247,6 +258,12 @@ export interface ComingSoonPickerTile {
 }
 
 export const COMING_SOON_PICKER_TILES: ComingSoonPickerTile[] = [
+  ...COMING_SOON_MYTRION_IDS.map((id) => ({
+    id,
+    title: MYTRIONS[id].title,
+    icon: MYTRIONS[id].icon,
+    hue: MYTRIONS[id].hue,
+  })),
   {
     id: 'hr',
     title: 'HR Mytrion',

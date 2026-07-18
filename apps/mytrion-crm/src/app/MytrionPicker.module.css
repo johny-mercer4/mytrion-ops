@@ -264,13 +264,20 @@
   z-index: 1;
   flex: none;
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-weight: 800;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
-  color: var(--text-muted);
-  border: 1px solid color-mix(in srgb, var(--text-muted) 22%, transparent);
+  padding: 5px 10px;
+  border-radius: 999px;
+  color: #fff;
   white-space: nowrap;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--soon-hue, var(--orange)) 92%, #fff),
+    color-mix(in srgb, var(--soon-hue, var(--orange)) 55%, var(--accent))
+  );
+  border: 1px solid color-mix(in srgb, var(--soon-hue, var(--orange)) 45%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--soon-hue, var(--orange)) 18%, transparent),
+    0 4px 14px -2px color-mix(in srgb, var(--soon-hue, var(--orange)) 45%, transparent);
 }

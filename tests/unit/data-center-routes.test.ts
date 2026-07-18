@@ -172,3 +172,91 @@ describe('ringcentral embed-config — browser credentials', () => {
     );
   });
 });
+
+describe('ringcentral embed-config — OAuth sign-in without a shared JWT', () => {
+  const saved = {
+    enabled: env.FF_RINGCENTRAL_ENABLED,
+    ack: env.RINGCENTRAL_BROWSER_CREDS_ACK,
+    id: env.RINGCENTRAL_CLIENT_ID,
+    secret: env.RINGCENTRAL_CLIENT_SECRET,
+    jwt: env.RINGCENTRAL_JWT,
+  };
+  beforeAll(() => {
+    env.FF_RINGCENTRAL_ENABLED = true;
+    env.RINGCENTRAL_BROWSER_CREDS_ACK = false;
+    env.RINGCENTRAL_CLIENT_ID = 'rc-client-id';
+    env.RINGCENTRAL_CLIENT_SECRET = '';
+    env.RINGCENTRAL_JWT = '';
+  });
+  afterAll(() => {
+    env.FF_RINGCENTRAL_ENABLED = saved.enabled;
+    env.RINGCENTRAL_BROWSER_CREDS_ACK = saved.ack;
+    env.RINGCENTRAL_CLIENT_ID = saved.id;
+    env.RINGCENTRAL_CLIENT_SECRET = saved.secret;
+    env.RINGCENTRAL_JWT = saved.jwt;
+  });
+
+  it('serves the adapter config from CLIENT_ID alone (agents sign in in the widget)', async () => {
+    const token = await workerToken('Sales Rep');
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/ringcentral/embed-config',
+      headers: bearer(token),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().enabled).toBe(true);
+    expect(res.json().adapterUrl).toContain('clientId=rc-client-id');
+    expect(res.body).not.toContain('clientSecret=');
+    expect(res.body).not.toContain('jwt=');
+  });
+});
+
+describe('ringcentral call-events — capture', () => {
+  it('a non-sales worker cannot post call events', async () => {
+    const token = await workerToken('Billing Clerk');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/ringcentral/call-events',
+      headers: { ...bearer(token), 'x-department-access': 'sales' },
+      payload: { kind: 'ended', to: '+15551230000' },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('a sales worker’s ended-call event is accepted (202) and audited', async () => {
+    const token = await workerToken('Sales Rep');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/ringcentral/call-events',
+      headers: bearer(token),
+      payload: {
+        kind: 'ended',
+        direction: 'Outbound',
+        to: '+15551230000',
+        sessionId: 'sess-1',
+        durationMs: 42_000,
+        dealId: 'deal-9',
+      },
+    });
+    expect(res.statusCode).toBe(202);
+    expect(auditFromContext).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: 'ringcentral.call_event',
+        resourceId: 'sess-1',
+        detail: expect.objectContaining({ kind: 'ended', to: '+15551230000', dealId: 'deal-9' }),
+      }),
+    );
+  });
+
+  it('rejects an unknown event kind (schema validation)', async () => {
+    const token = await workerToken('Sales Rep');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/ringcentral/call-events',
+      headers: bearer(token),
+      payload: { kind: 'bogus' },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});

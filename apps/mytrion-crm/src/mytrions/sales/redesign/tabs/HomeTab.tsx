@@ -30,6 +30,7 @@ import {
 } from '../live';
 import { useServerCrmSocket } from '../useServerCrmSocket';
 import { useSales } from '../ctx';
+import { ActivityTilesSkeleton, HomeBelowFoldSkeleton } from './HomeSkeleton';
 
 type AnnItem = AnnVM;
 type InboxItem = InboxVM;
@@ -99,7 +100,7 @@ const COL_OF: Record<InboxType, string> = {
   info: 'var(--ok)',
 };
 
-/** Centered muted "Loading…" / red error text — the design's own light-weight states. */
+/** Centered muted / red status text — used for errors and true empty states only. */
 function StateNote({ tone, children }: { tone: 'muted' | 'danger'; children: ReactNode }) {
   return (
     <div style={s(`width:100%;padding:22px;text-align:center;color:var(--${tone});font-size:12.5px;font-weight:600`)}>
@@ -123,6 +124,8 @@ export function HomeTab() {
   // ---- local per-tab state ----
   const [activityRange, setActivityRange] = useState<string>('week');
   const [, setTick] = useState<number>(0); // drives the 30s clock re-render
+  /** One-shot: keep a single below-fold skeleton until the first home loads settle. */
+  const [homeReady, setHomeReady] = useState(false);
 
   const act = useLoad(
     () => loadActivity(activityRange as 'today' | 'week' | 'month'),
@@ -133,6 +136,30 @@ export function HomeTab() {
     const clock = setInterval(() => setTick((t) => t + 1), 30000);
     return () => clearInterval(clock);
   }, []);
+
+  useEffect(() => {
+    if (homeReady) return;
+    const pending =
+      (snap.loading && snap.data === null && !snap.error) ||
+      (ann.loading && ann.data === null && !ann.error) ||
+      (act.loading && act.data === null && !act.error) ||
+      (inbox.loading && inbox.data === null && !inbox.error);
+    if (!pending) setHomeReady(true);
+  }, [
+    homeReady,
+    snap.loading,
+    snap.data,
+    snap.error,
+    ann.loading,
+    ann.data,
+    ann.error,
+    act.loading,
+    act.data,
+    act.error,
+    inbox.loading,
+    inbox.data,
+    inbox.error,
+  ]);
 
   // Real-time: announcements + owner-scoped inbox reload (toast is shell-level).
   useServerCrmSocket({
@@ -185,15 +212,12 @@ export function HomeTab() {
   const timeOfDay = T.tod;
   const dateLabel = T.dateLabel;
   const timeFmt = T.timeFmt;
-  const workdayPct = T.pct;
   const workdayFill = `${T.pct}%`;
-  const workdayKnob = `${Math.min(T.pct, 96)}%`;
+  const workdayKnob = `${T.knobPct}%`;
+  const workday = T.workday;
   const annData = ann.data ?? [];
   const inboxData = inbox.data ?? [];
-  const snapLoading = snap.loading;
-  const snapReady = !snap.loading && !snap.error && !!snap.data;
   const snapSpinCss = snap.loading ? 'animation:ss-spin .9s linear infinite' : '';
-  const skel8 = [1, 2, 3, 4, 5, 6, 7, 8];
 
   const green = 'var(--ok)';
   const red = 'var(--danger)';
@@ -210,6 +234,11 @@ export function HomeTab() {
     help,
   });
   const sf = snap.data;
+  const debtAmt = sf?.total_debt_amount ?? 0;
+  const moneyOwed = debtAmt > 0 ? money(-debtAmt) : '$0';
+  const volumeTrend = sf?.volume_trend && sf.volume_trend !== '—' ? sf.volume_trend : '0%';
+  const volumeColor =
+    sf?.volume_trend_dir === 'down' ? red : sf?.volume_trend_dir === 'up' ? green : accent;
   const snapshotGroups: SnapGroup[] = [
     {
       label: 'Your Clients',
@@ -217,7 +246,7 @@ export function HomeTab() {
         mk('users', accent, numFmt(sf?.active_clients ?? 0), 'Active Customers', 'Fueled in the last 10 days'),
         mk('lead', red, numFmt(sf?.inactive_clients ?? 0), 'Need Attention', 'Quiet 10+ days — worth a call'),
         mk('clock', orange, numFmt(sf?.stuck_deals_count ?? 0), 'Stuck Applications', 'Sitting 15+ days'),
-        mk('money', red, money(-(sf?.total_debt_amount ?? 0)), 'Money Owed', `${numFmt(sf?.total_debtors ?? 0)} debtors · ${numFmt(sf?.total_hard_debtors ?? 0)} hard`),
+        mk('money', debtAmt > 0 ? red : accent, moneyOwed, 'Money Owed', `${numFmt(sf?.total_debtors ?? 0)} debtors · ${numFmt(sf?.total_hard_debtors ?? 0)} hard`),
       ],
     },
     {
@@ -226,7 +255,7 @@ export function HomeTab() {
         mk('card', green, numFmt(sf?.swipes_this_week ?? 0), 'Fuel Transactions', sf?.fuel_tx_caption ?? 'Mon–today this week'),
         mk('fuel', violet, numFmt(sf?.gallons_this_week ?? 0), 'Gallons Pumped', 'Gallons this cycle'),
         mk('card', accent, numFmt(sf?.new_cards_this_week ?? 0), 'New Cards', 'Activated for new units'),
-        mk('trend', sf?.volume_trend_dir === 'down' ? red : sf?.volume_trend_dir === 'up' ? green : accent, sf?.volume_trend ?? '—', 'Volume Trend', 'Week over week'),
+        mk('trend', volumeColor, volumeTrend, 'Volume Trend', 'Week over week'),
       ],
     },
     {
@@ -320,154 +349,156 @@ export function HomeTab() {
             <span style={s('font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)')}>Workday Progress</span>
             <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text2)")}>{timeFmt}</span>
           </div>
-          <div style={s('position:relative;height:9px;border-radius:99px;background:var(--raised);margin:18px 0 10px')}>
-            <div style={s(`position:absolute;inset:0;width:${workdayFill};border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-2))`)}></div>
-            <div style={s(`position:absolute;top:50%;left:${workdayKnob};transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);box-shadow:0 2px 8px rgba(var(--accent-rgb),.5)`)}></div>
+          <div style={s('position:relative;height:9px;border-radius:99px;background:var(--raised);margin:18px 0 10px;overflow:visible')}>
+            {/* Phase track ticks: morning · midday · afternoon · close */}
+            <div aria-hidden="true" style={s('position:absolute;inset:0;display:flex;pointer-events:none')}>
+              <div style={s('flex:1;border-right:1px solid color-mix(in srgb, var(--border) 70%, transparent)')} />
+              <div style={s('flex:1;border-right:1px solid color-mix(in srgb, var(--border) 70%, transparent)')} />
+              <div style={s('flex:1;border-right:1px solid color-mix(in srgb, var(--border) 70%, transparent)')} />
+              <div style={s('flex:1')} />
+            </div>
+            <div style={s(`position:absolute;inset:0;width:${workdayFill};border-radius:99px;background:${workday.barGradient};transition:width .35s ease,background .35s ease`)}></div>
+            <div style={s(`position:absolute;top:50%;left:${workdayKnob};transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:var(--surface);border:2px solid ${workday.accent};box-shadow:0 2px 8px color-mix(in srgb, ${workday.accent} 55%, transparent);transition:left .35s ease,border-color .35s ease`)}></div>
           </div>
           <div style={s('display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);font-weight:600')}>
-            <span>9:00 AM</span><span style={s("color:var(--accent);font-family:'JetBrains Mono',monospace")}>{workdayPct}% done</span><span>6:00 PM</span>
+            <span>9:00 AM</span>
+            <span style={s(`color:${workday.accent};font-family:'JetBrains Mono',monospace;font-weight:700`)}>{workday.statusLabel}</span>
+            <span>6:00 PM</span>
           </div>
         </div>
       </div>
 
-      {/* announcements */}
-      <div style={s('display:flex;align-items:center;justify-content:space-between;margin:22px 2px 12px')}>
-        <div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name={ICO.bell} size={17} /></span>Updates &amp; Announcements</div>
-        <span style={s('font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:3px 9px;border-radius:99px;background:rgba(var(--accent-rgb),.14);color:var(--accent)')}>{annData.length} NEW</span>
-      </div>
-      <div style={s('display:flex;gap:12px;overflow-x:auto;padding-bottom:6px')}>
-        {ann.loading && <StateNote tone="muted">Loading…</StateNote>}
-        {ann.error && <StateNote tone="danger">{ann.error}</StateNote>}
-        {!ann.loading && !ann.error && annData.length === 0 && <StateNote tone="muted">No announcements</StateNote>}
-        {annData.map((a) => (
-          <div key={a.title} onClick={() => openAnn(a)} className="ss-card-h" style={s('flex:0 0 300px;display:flex;gap:12px;padding:15px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
-            <div style={s(iconBox(a.color, 40))}><Icon name={a.icon} size={18} /></div>
-            <div style={s('min-width:0')}>
-              <div style={s('font-size:13px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical')}>{a.title}</div>
-              <div style={s('font-size:11px;color:var(--muted);margin-top:4px')}>{a.time}</div>
-            </div>
+      {!homeReady ? (
+        <HomeBelowFoldSkeleton />
+      ) : (
+        <>
+          {/* announcements */}
+          <div style={s('display:flex;align-items:center;justify-content:space-between;margin:22px 2px 12px')}>
+            <div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name={ICO.bell} size={17} /></span>Updates &amp; Announcements</div>
+            <span style={s('font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:3px 9px;border-radius:99px;background:rgba(var(--accent-rgb),.14);color:var(--accent)')}>{annData.length} NEW</span>
           </div>
-        ))}
-      </div>
-
-      {/* snapshot */}
-      <div style={s('margin-top:24px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
-        <div style={s('display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)')}>
-          <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}>Today's Snapshot</div>
-          <div style={s('display:flex;align-items:center;gap:10px')}>
-            <span style={s('font-size:11px;color:var(--muted)')}>Updated {timeFmt}</span>
-            <button onClick={refreshSnapshot} aria-label="Refresh" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}><Icon name="refresh" size={15} style={s(snapSpinCss)} /></button>
-          </div>
-        </div>
-        <div style={s('padding:18px 20px')}>
-          {snapLoading && (
-            <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:12px')}>
-              {skel8.map((sk) => (
-                <div key={sk} style={s('padding:16px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
-                  <div className="ss-skel" style={s('width:34px;height:34px;border-radius:var(--radius-md)')}></div>
-                  <div className="ss-skel" style={s('width:54px;height:20px;margin-top:12px')}></div>
-                  <div className="ss-skel" style={s('width:80%;height:11px;margin-top:8px')}></div>
+          <div style={s('display:flex;gap:12px;overflow-x:auto;padding-bottom:6px')}>
+            {ann.error && <StateNote tone="danger">{ann.error}</StateNote>}
+            {!ann.error && annData.length === 0 && <StateNote tone="muted">No announcements</StateNote>}
+            {annData.map((a) => (
+              <div key={a.title} onClick={() => openAnn(a)} className="ss-card-h" style={s('flex:0 0 300px;display:flex;gap:12px;padding:15px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
+                <div style={s(iconBox(a.color, 40))}><Icon name={a.icon} size={18} /></div>
+                <div style={s('min-width:0')}>
+                  <div style={s('font-size:13px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical')}>{a.title}</div>
+                  <div style={s('font-size:11px;color:var(--muted);margin-top:4px')}>{a.time}</div>
                 </div>
-              ))}
+              </div>
+            ))}
+          </div>
+
+          {/* snapshot */}
+          <div style={s('margin-top:24px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
+            <div style={s('display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)')}>
+              <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}>Today's Snapshot</div>
+              <div style={s('display:flex;align-items:center;gap:10px')}>
+                <span style={s('font-size:11px;color:var(--muted)')}>Updated {timeFmt}</span>
+                <button onClick={refreshSnapshot} aria-label="Refresh" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}><Icon name="refresh" size={15} style={s(snapSpinCss)} /></button>
+              </div>
             </div>
-          )}
-          {snap.error && <StateNote tone="danger">{snap.error}</StateNote>}
-          {snapReady && (
-            <div>
-              {snapshotGroups.map((g) => (
-                <div key={g.label} style={s('margin-bottom:16px')}>
-                  <div style={s('font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px')}>{g.label}</div>
-                  <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:12px')}>
-                    {g.cells.map((c) => (
-                      <div key={c.label} className="ss-card-h" style={s('padding:15px;border-radius:var(--radius-md);background:linear-gradient(180deg,var(--surface-2),var(--surface));border:1px solid var(--border);position:relative')}>
-                        <div style={s(c.iconStyle)}><Icon name={c.icon} size={18} /></div>
-                        <div style={s(`font-family:'JetBrains Mono',monospace;font-weight:600;font-size:23px;margin-top:12px;color:${c.color}`)}>{c.value}</div>
-                        <div style={s('font-size:12px;font-weight:600;color:var(--text);margin-top:2px')}>{c.label}</div>
-                        <div style={s('font-size:10.5px;color:var(--muted);margin-top:4px;line-height:1.35')}>{c.help}</div>
+            <div style={s('padding:18px 20px')}>
+              {snap.error && <StateNote tone="danger">{snap.error}</StateNote>}
+              {!snap.error && (
+                <div>
+                  {snapshotGroups.map((g) => (
+                    <div key={g.label} style={s('margin-bottom:16px')}>
+                      <div style={s('font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px')}>{g.label}</div>
+                      <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:12px')}>
+                        {g.cells.map((c) => (
+                          <div key={c.label} className="ss-card-h" style={s('padding:15px;border-radius:var(--radius-md);background:linear-gradient(180deg,var(--surface-2),var(--surface));border:1px solid var(--border);position:relative')}>
+                            <div style={s(c.iconStyle)}><Icon name={c.icon} size={18} /></div>
+                            <div style={s(`font-family:'JetBrains Mono',monospace;font-weight:600;font-size:23px;line-height:1.15;min-height:27px;margin-top:12px;color:${c.color}`)}>{c.value}</div>
+                            <div style={s('font-size:12px;font-weight:600;color:var(--text);margin-top:2px')}>{c.label}</div>
+                            <div style={s('font-size:10.5px;color:var(--muted);margin-top:4px;line-height:1.35')}>{c.help}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* activity */}
+          <div style={s('margin-top:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
+            <div style={s('display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px')}>
+              <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}>Your Activity</div>
+              <div style={s('display:flex;gap:3px;padding:3px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
+                {activityRanges.map((r) => (
+                  <button key={r.id} onClick={r.onClick} style={s(r.style)}>{r.label}</button>
+                ))}
+              </div>
+            </div>
+            <div style={s('padding:18px 20px')}>
+              {act.loading && !act.data && <ActivityTilesSkeleton />}
+              {!act.loading && act.error && <StateNote tone="danger">{act.error}</StateNote>}
+              {(act.data || (!act.loading && !act.error)) && (
+                <>
+                  <div style={s(`display:grid;grid-template-columns:repeat(7,1fr);gap:11px;opacity:${act.loading ? '.55' : '1'};transition:opacity .2s`)}>
+                    {activityTiles.map((t) => (
+                      <div key={t.label} style={s('padding:13px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2);text-align:center')}>
+                        <div style={s(t.iconStyle)}><Icon name={t.icon} size={16} /></div>
+                        <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:19px;line-height:1.15;min-height:22px;margin-top:9px")}>{t.value}</div>
+                        <div style={s('font-size:10.5px;color:var(--muted);margin-top:2px')}>{t.label}</div>
                       </div>
                     ))}
                   </div>
-                </div>
-              ))}
+                  <div style={s('margin-top:14px;padding:13px 16px;border-radius:var(--radius-md);background:linear-gradient(120deg,rgba(var(--accent-rgb),.08),transparent);border:1px solid var(--border2);display:flex;align-items:center;gap:16px;flex-wrap:wrap')}>
+                    <span style={s('font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)')}>Daily average</span>
+                    {activityAverages.map((a) => (
+                      <span key={a.label} style={s('font-size:12px;color:var(--text2)')}><strong style={s("font-family:'JetBrains Mono',monospace;color:var(--text)")}>{a.value}</strong> {a.label}/day</span>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* activity */}
-      <div style={s('margin-top:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
-        <div style={s('display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px')}>
-          <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}>Your Activity</div>
-          <div style={s('display:flex;gap:3px;padding:3px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
-            {activityRanges.map((r) => (
-              <button key={r.id} onClick={r.onClick} style={s(r.style)}>{r.label}</button>
-            ))}
           </div>
-        </div>
-        <div style={s('padding:18px 20px')}>
-          {act.loading && <StateNote tone="muted">Loading…</StateNote>}
-          {!act.loading && act.error && <StateNote tone="danger">{act.error}</StateNote>}
-          {!act.loading && !act.error && (
-            <>
-              <div style={s('display:grid;grid-template-columns:repeat(7,1fr);gap:11px')}>
-                {activityTiles.map((t) => (
-                  <div key={t.label} style={s('padding:13px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2);text-align:center')}>
-                    <div style={s(t.iconStyle)}><Icon name={t.icon} size={16} /></div>
-                    <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:19px;margin-top:9px")}>{t.value}</div>
-                    <div style={s('font-size:10.5px;color:var(--muted);margin-top:2px')}>{t.label}</div>
+
+          {/* CTA + inbox preview */}
+          <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px')}>
+            <div>
+              <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name={ICO.bolt} size={17} /></span>Quick Actions</div><button onClick={goAuto} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-md)')}>All guides →</button></div>
+              <div style={s('display:flex;flex-direction:column;gap:12px')}>
+                {ctaCards.map((c) => (
+                  <div key={c.name} onClick={goAuto} className="ss-card-h" style={s('padding:16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
+                    <div style={s('display:flex;align-items:center;gap:6px;margin-bottom:9px')}>
+                      {c.codes.map((code) => (
+                        <span key={code.text} style={s(code.style)}>{code.text}</span>
+                      ))}
+                      <div style={s('flex:1')}></div>
+                      {c.top && (<span style={s('font-size:9px;font-weight:800;padding:2px 7px;border-radius:99px;background:rgba(248,113,113,.16);color:var(--danger)')}>TOP</span>)}
+                    </div>
+                    <div style={s('font-size:14px;font-weight:700')}>{c.name}</div>
+                    <div style={s('font-size:12px;color:var(--muted);margin-top:5px;line-height:1.45')}>{c.desc}</div>
                   </div>
                 ))}
               </div>
-              <div style={s('margin-top:14px;padding:13px 16px;border-radius:var(--radius-md);background:linear-gradient(120deg,rgba(var(--accent-rgb),.08),transparent);border:1px solid var(--border2);display:flex;align-items:center;gap:16px;flex-wrap:wrap')}>
-                <span style={s('font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)')}>Daily average</span>
-                {activityAverages.map((a) => (
-                  <span key={a.label} style={s('font-size:12px;color:var(--text2)')}><strong style={s("font-family:'JetBrains Mono',monospace;color:var(--text)")}>{a.value}</strong> {a.label}/day</span>
+            </div>
+            <div>
+              <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name="inbox" size={17} /></span>Recent Inbox</div><button onClick={goInbox} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-md)')}>View all →</button></div>
+              <div style={s('display:flex;flex-direction:column;gap:10px')}>
+                {inbox.error && <StateNote tone="danger">{inbox.error}</StateNote>}
+                {!inbox.error && inboxData.length === 0 && <StateNote tone="muted">No messages</StateNote>}
+                {inboxPreview.map((i) => (
+                  <div key={i.id} onClick={i.onClick} className="ss-card-h" style={s('display:flex;gap:12px;padding:13px 14px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm);position:relative;overflow:hidden')}>
+                    <div style={s(`position:absolute;left:0;top:0;bottom:0;width:3px;background:${i.barColor}`)}></div>
+                    <div style={s(i.iconStyle)}><Icon name={i.icon} size={15} /></div>
+                    <div style={s('min-width:0;flex:1')}>
+                      <div style={s('display:flex;justify-content:space-between;gap:8px')}><span style={s('font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{i.title}</span><span style={s('font-size:10.5px;color:var(--muted);white-space:nowrap')}>{i.time}</span></div>
+                      <div style={s('font-size:11.5px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{i.desc}</div>
+                    </div>
+                  </div>
                 ))}
               </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* CTA + inbox preview */}
-      <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px')}>
-        <div>
-          <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name={ICO.bolt} size={17} /></span>Quick Actions</div><button onClick={goAuto} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-md)')}>All guides →</button></div>
-          <div style={s('display:flex;flex-direction:column;gap:12px')}>
-            {ctaCards.map((c) => (
-              <div key={c.name} onClick={goAuto} className="ss-card-h" style={s('padding:16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
-                <div style={s('display:flex;align-items:center;gap:6px;margin-bottom:9px')}>
-                  {c.codes.map((code) => (
-                    <span key={code.text} style={s(code.style)}>{code.text}</span>
-                  ))}
-                  <div style={s('flex:1')}></div>
-                  {c.top && (<span style={s('font-size:9px;font-weight:800;padding:2px 7px;border-radius:99px;background:rgba(248,113,113,.16);color:var(--danger)')}>TOP</span>)}
-                </div>
-                <div style={s('font-size:14px;font-weight:700')}>{c.name}</div>
-                <div style={s('font-size:12px;color:var(--muted);margin-top:5px;line-height:1.45')}>{c.desc}</div>
-              </div>
-            ))}
+            </div>
           </div>
-        </div>
-        <div>
-          <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name="inbox" size={17} /></span>Recent Inbox</div><button onClick={goInbox} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-md)')}>View all →</button></div>
-          <div style={s('display:flex;flex-direction:column;gap:10px')}>
-            {inbox.loading && <StateNote tone="muted">Loading…</StateNote>}
-            {inbox.error && <StateNote tone="danger">{inbox.error}</StateNote>}
-            {!inbox.loading && !inbox.error && inboxData.length === 0 && <StateNote tone="muted">No messages</StateNote>}
-            {inboxPreview.map((i) => (
-              <div key={i.id} onClick={i.onClick} className="ss-card-h" style={s('display:flex;gap:12px;padding:13px 14px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm);position:relative;overflow:hidden')}>
-                <div style={s(`position:absolute;left:0;top:0;bottom:0;width:3px;background:${i.barColor}`)}></div>
-                <div style={s(i.iconStyle)}><Icon name={i.icon} size={15} /></div>
-                <div style={s('min-width:0;flex:1')}>
-                  <div style={s('display:flex;justify-content:space-between;gap:8px')}><span style={s('font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{i.title}</span><span style={s('font-size:10.5px;color:var(--muted);white-space:nowrap')}>{i.time}</span></div>
-                  <div style={s('font-size:11.5px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{i.desc}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }

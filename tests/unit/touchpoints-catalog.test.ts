@@ -43,6 +43,9 @@ describe('catalog shape', () => {
     expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(30);
     // +7 billing servercrm touchpoints (deals, debtors, avg-days, carrier-type, 3× prepay).
     expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(51);
+    // BOCA + Close Application (Playwright microservice) + Zapier ticket-email webhook.
+    expect(all.filter((t) => t.kind === 'browserauto')).toHaveLength(2);
+    expect(all.filter((t) => t.kind === 'zapier')).toHaveLength(1);
   });
 
   it('billing touchpoints are billing-gated and portfolio-wide (no owner scoping)', () => {

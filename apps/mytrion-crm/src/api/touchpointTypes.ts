@@ -75,6 +75,8 @@ export interface SalesInvoicesResult {
 
 export interface WexTasksResult {
   wexTasks?: Array<{ sbj?: string; description?: string; createdDate?: string }>;
+  /** Current Update — Full Wex Task Field (Deluge `wexTaskField`). */
+  wexTaskField?: string;
   dealId?: string;
 }
 
@@ -318,10 +320,13 @@ export interface CarrierSearchResult {
 
 /** mytrioncreatelead — permissive: the UI inspects success/leadId/response (DUPLICATE_DATA). */
 export interface CreateLeadResult {
-  success?: boolean;
+  /** Deluge sometimes returns the string `"true"` / `"false"`. */
+  success?: boolean | string;
   leadId?: string | number;
   message?: string;
   response?: unknown;
+  code?: string;
+  details?: { id?: string | number };
 }
 
 export interface CreateEscalationResult {
@@ -425,6 +430,54 @@ export interface TouchpointMap {
       dot?: string;
     };
     result: { data?: Array<Record<string, unknown>>; applications?: Array<Record<string, unknown>>; count?: number };
+  };
+  'browser.boca': {
+    params: {
+      appId: string;
+      assignedTo?: string;
+      priority?: '' | 'High' | 'Normal' | 'Low';
+      dueDate?: string;
+      status?: string;
+    };
+    result: {
+      success?: boolean;
+      action?: string;
+      status?: string;
+      reason?: string;
+      message?: string;
+      error?: string;
+    };
+  };
+  'browser.close_application': {
+    params: {
+      appId: string;
+      assignedTo?: string;
+      priority?: '' | 'High' | 'Normal' | 'Low';
+      dueDate?: string;
+      status?: string;
+    };
+    result: {
+      success?: boolean;
+      action?: string;
+      status?: string;
+      reason?: string;
+      message?: string;
+      error?: string;
+    };
+  };
+  'zapier.ticket_email': {
+    params: {
+      companyName: string;
+      carrierId: string;
+      agentEmail: string;
+      ticketType: 'replacement' | 'reactivation';
+      companyAddress?: string;
+      address?: string;
+      city?: string;
+      state?: string;
+      zip?: string;
+    };
+    result: { status?: string; message?: string; error?: string };
   };
   'sales_mytrion.fetch_invoices': {
     params: { carrierId: string; range?: string; status?: string; from?: string; to?: string };

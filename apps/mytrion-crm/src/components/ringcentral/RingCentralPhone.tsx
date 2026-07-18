@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fetchRingCentralEmbedConfig } from '@/api/ringcentral';
 import { RC_ADAPTER_SCRIPT_ID } from './ringcentralDial';
+import { subscribeRingCentral, type RingCentralCallEvent } from './ringcentralEvents';
 import { X, Info, CheckCircle, AlertCircle } from 'lucide-react';
 
 type ToastType = 'info' | 'success' | 'error';
@@ -12,6 +13,38 @@ interface ToastMsg {
 }
 
 let toastId = 0;
+
+function fmtDuration(ms: number): string {
+  const total = Math.round(ms / 1000);
+  const m = Math.floor(total / 60);
+  const sec = total % 60;
+  return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
+/** Map a normalized call event to a toast, or null for events we don't surface. */
+function toastFor(e: RingCentralCallEvent): { type: ToastType; title: string; message: string } | null {
+  const peer = e.peer || 'Unknown number';
+  switch (e.kind) {
+    case 'login':
+      return { type: 'success', title: 'RingCentral connected', message: e.peer ? `Signed in as ${e.peer}` : 'Signed in.' };
+    case 'logout':
+      return { type: 'info', title: 'RingCentral signed out', message: 'Open the phone widget to sign back in.' };
+    case 'ringing':
+      return e.direction === 'Outbound'
+        ? { type: 'info', title: 'Dialing…', message: peer }
+        : { type: 'info', title: 'Incoming call', message: `From ${peer}` };
+    case 'connected':
+      return { type: 'success', title: 'Call connected', message: peer };
+    case 'ended': {
+      const parts = [peer];
+      if (e.durationMs !== undefined) parts.push(fmtDuration(e.durationMs));
+      if (e.result) parts.push(e.result);
+      return { type: 'info', title: 'Call ended', message: parts.join(' · ') };
+    }
+    default:
+      return null;
+  }
+}
 
 export function RingCentralPhone() {
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
@@ -31,6 +64,7 @@ export function RingCentralPhone() {
   useEffect(() => {
     let cancelled = false;
 
+    // 1) Load the Embeddable adapter (no shared secrets by default — agents sign in in the widget).
     void (async () => {
       try {
         const cfg = await fetchRingCentralEmbedConfig();
@@ -41,34 +75,27 @@ export function RingCentralPhone() {
         script.id = RC_ADAPTER_SCRIPT_ID;
         script.src = cfg.adapterUrl;
         script.async = true;
+        // Stay quiet on load failure — never toast Phone/backend load errors (matches dial sites).
         script.onerror = () => {
-          addToast('error', 'Phone Failed', 'Could not load RingCentral Embeddable widget.');
+          console.warn('[ringcentral] Embeddable adapter failed to load');
           script.remove();
         };
         document.body.appendChild(script);
-      } catch (err) {
-        // quiet fail
+      } catch {
+        // Widget unavailable (RC disabled / not configured) — fail silently.
       }
     })();
 
-    const handleMessage = (e: MessageEvent) => {
-      const data = e.data;
-      if (!data || typeof data.type !== 'string') return;
-      
-      if (data.type === 'rc-call-ring-notify') {
-        addToast('info', 'Incoming Call', `Call ringing from: ${data.call?.from || 'Unknown'}`);
-      } else if (data.type === 'rc-call-start-notify') {
-        addToast('success', 'Call Started', `Call started with: ${data.call?.to || data.call?.from || 'Unknown'}`);
-      } else if (data.type === 'rc-call-end-notify') {
-        addToast('info', 'Call Ended', 'Call ended.');
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
+    // 2) Surface normalized call-lifecycle + sign-in events (also captured server-side by the bridge).
+    const unsubscribe = subscribeRingCentral((event) => {
+      if (cancelled) return;
+      const t = toastFor(event);
+      if (t) addToast(t.type, t.title, t.message);
+    });
 
     return () => {
       cancelled = true;
-      window.removeEventListener('message', handleMessage);
+      unsubscribe();
       const script = document.getElementById(RC_ADAPTER_SCRIPT_ID);
       if (script) script.remove();
       const frame = document.getElementById('rc-widget-adapter-frame');
@@ -104,18 +131,18 @@ export function RingCentralPhone() {
           {t.type === 'error' && <AlertCircle size={20} color="var(--danger)" />}
           {t.type === 'success' && <CheckCircle size={20} color="var(--success)" />}
           {t.type === 'info' && <Info size={20} color="var(--accent)" />}
-          
+
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <div style={{ fontWeight: 600, fontSize: '14px' }}>{t.title}</div>
             <div style={{ fontSize: '13px', color: 'var(--muted)' }}>{t.message}</div>
           </div>
-          
-          <button 
-            onClick={() => removeToast(t.id)} 
-            style={{ 
-              background: 'transparent', 
-              border: 'none', 
-              color: 'var(--muted)', 
+
+          <button
+            onClick={() => removeToast(t.id)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--muted)',
               cursor: 'pointer',
               padding: '2px',
               display: 'flex'

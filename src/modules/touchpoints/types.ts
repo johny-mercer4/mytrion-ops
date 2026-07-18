@@ -53,7 +53,26 @@ export interface ServerCrmTouchpoint extends TouchpointBase {
   paramsSchema: ZodTypeAny;
 }
 
-export type Touchpoint = DelugeTouchpoint | ServerCrmTouchpoint;
+/** Playwright browser-automation microservice (BOCA / Close Application). */
+export interface BrowserAutoTouchpoint extends TouchpointBase {
+  kind: 'browserauto';
+  method: 'POST';
+  pathTemplate: string;
+  paramsSchema: ZodTypeAny;
+}
+
+/** Zapier catch-hook (card replacement / account reactivation email tickets). */
+export interface ZapierTouchpoint extends TouchpointBase {
+  kind: 'zapier';
+  method: 'POST';
+  paramsSchema: ZodTypeAny;
+}
+
+export type Touchpoint =
+  | DelugeTouchpoint
+  | ServerCrmTouchpoint
+  | BrowserAutoTouchpoint
+  | ZapierTouchpoint;
 
 /** The dispatcher's uniform result envelope (route wraps it as `{ key, data }`). */
 export interface TouchpointResult {

@@ -1,12 +1,12 @@
 /**
  * Sales Mytrion redesign — the bespoke self-contained shell (ported from the reference
- * prototype): boot loader, sidebar with nav badges, top bar + live clock, theme toggle,
- * user card, the shared detail + client modals, and the toast. Owns cross-tab chrome; each
- * tab is a self-contained component under ./tabs. (AI chat launcher is disabled for now.)
+ * prototype): sidebar with nav badges, top bar + live clock, theme toggle, user card, the
+ * shared detail + client modals, and the toast. Owns cross-tab chrome; each tab is a
+ * self-contained component under ./tabs. (AI chat launcher is disabled for now.)
+ * Boot splash removed — tabs own their own skeletons (avoids double loaders on Home).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RingCentralPhone } from '@/components/ringcentral/RingCentralPhone';
-import { MytrionLoader } from '@/components/MytrionLoader';
 
 import { s } from './dc';
 import { Icon } from './icons';
@@ -22,6 +22,7 @@ import { isAdmin } from '@/access/resolveAccess';
 import { ViewAsPicker } from './ViewAsPicker';
 import { LeadModal, DealModal } from './dataCenterModals';
 import { clickToDial } from '@/components/ringcentral/ringcentralDial';
+import { setDialContext } from '@/components/ringcentral/ringcentralEvents';
 import { useTheme } from '@/hooks/useTheme';
 import type { DealVM, LeadVM } from './dataCenterLive';
 import './theme.css';
@@ -35,6 +36,15 @@ import { CreateTab } from './tabs/CreateTab';
 import { AutoTab } from './tabs/AutoTab';
 import { DashTab } from './tabs/DashTab';
 import { CarriersTab } from './tabs/CarriersTab';
+import { ComingSoonPanel } from './tabs/ComingSoonPanel';
+
+/** Colorful SOON chip hues per parked nav id. */
+const SOON_HUE: Record<string, string> = {
+  retention: 'var(--orange)',
+  verification: 'var(--violet)',
+  tickets: 'var(--accent)',
+  callHub: 'var(--ok)',
+};
 
 /** Tabs that render edge-to-edge (own scroll/height), bypassing the centered max-width wrapper. */
 const FULL_BLEED = new Set(['tickets']);
@@ -69,7 +79,6 @@ export function SalesRedesign() {
   const { theme, toggle: toggleTheme } = useTheme();
   const [section, setSection] = useState('home');
   const fullBleed = FULL_BLEED.has(section);
-  const [booting, setBooting] = useState(true);
   const [, tick] = useState(0);
   const [toast, setToast] = useState<{ title: string; msg: string; tone: 'ok' | 'warn' | 'err' } | null>(null);
   const [detail, setDetail] = useState<DetailVM | null>(null);
@@ -82,12 +91,8 @@ export function SalesRedesign() {
   const [navQuery, setNavQuery] = useState('');
 
   useEffect(() => {
-    const t = setTimeout(() => setBooting(false), 1750);
     const clock = setInterval(() => tick((n) => n + 1), 30_000);
-    return () => {
-      clearTimeout(t);
-      clearInterval(clock);
-    };
+    return () => clearInterval(clock);
   }, []);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -106,8 +111,8 @@ export function SalesRedesign() {
   // the tab marks them read); Tickets = unread ticket messages (bumped by WS, cleared on open). Shell-
   // level (not tab-scoped) so the toast on a new inbox message fires no matter which tab is open.
   const liveBadges = useSidebarBadges(currentUserId, pushToast);
+  const sectionComingSoon = NAV.some((n) => n.id === section && n.comingSoon === true);
   const ticketsComingSoon = NAV.some((n) => n.id === 'tickets' && n.comingSoon === true);
-  const retentionComingSoon = NAV.some((n) => n.id === 'retention' && n.comingSoon === true);
   const badgeCounts: Record<string, number | undefined> = {
     inbox: liveBadges.inbox || undefined,
     // Hide the unread badge while Tickets is parked as Coming soon.
@@ -181,7 +186,6 @@ export function SalesRedesign() {
         style={s('height:100vh;display:flex;flex-direction:row;background:radial-gradient(1200px 500px at 78% -8%, rgba(var(--accent-rgb),.10), transparent 60%), radial-gradient(900px 480px at 0% 108%, rgba(var(--violet-rgb),.08), transparent 55%), var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;font-size:14px;overflow:hidden;position:relative')}
       >
         <RingCentralPhone />
-        {booting && <MytrionLoader appName="Sales" />}
 
         {/* SIDEBAR */}
         <aside style={s(`flex-shrink:0;width:${navCollapsed ? '68px' : '238px'};transition:width .18s cubic-bezier(.2,0,0,1);display:flex;flex-direction:column;background:color-mix(in srgb, var(--bg) 84%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-right:1px solid var(--border);position:relative;z-index:30`)}>
@@ -246,25 +250,28 @@ export function SalesRedesign() {
                 {group.items.map((n) => {
                   const active = section === n.id;
                   const soon = n.comingSoon === true;
-                  const style = `display:flex;align-items:center;gap:11px;padding:10px ${navCollapsed ? '0' : '12px'};${navCollapsed ? 'justify-content:center' : ''};border:none;width:100%;background:${active ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${active ? 'var(--accent)' : 'var(--muted)'};font-size:13px;font-weight:${active ? 700 : 600};cursor:${soon ? 'default' : 'pointer'};opacity:${soon ? '.5' : '1'};border-radius:var(--radius-md);box-shadow:${active ? 'inset 2.5px 0 0 var(--accent)' : 'none'};transition:background .14s,color .14s`;
+                  const soonHue = SOON_HUE[n.id] ?? 'var(--warn)';
+                  const style = `display:flex;align-items:center;gap:11px;padding:10px ${navCollapsed ? '0' : '12px'};${navCollapsed ? 'justify-content:center' : ''};border:none;width:100%;background:${active ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${active ? 'var(--accent)' : 'var(--muted)'};font-size:13px;font-weight:${active ? 700 : 600};cursor:pointer;opacity:${soon && !active ? '.72' : '1'};border-radius:var(--radius-md);box-shadow:${active ? 'inset 2.5px 0 0 var(--accent)' : 'none'};transition:background .14s,color .14s,opacity .14s`;
                   return (
                     <button
                       key={n.id}
-                      onClick={soon ? undefined : () => go(n.id)}
-                      disabled={soon}
+                      onClick={() => go(n.id)}
                       title={soon ? `${n.label} — coming soon` : navCollapsed ? n.label : undefined}
-                      className={soon ? undefined : 'ss-tab-x'}
+                      className="ss-tab-x"
                       style={s(style)}
                     >
                       <span style={s('position:relative;flex-shrink:0;display:inline-flex')}>
                         <Icon name={n.icon} size={18} style={{ flexShrink: 0 }} />
-                        {navCollapsed && badgeCounts[n.id] ? (
+                        {navCollapsed && soon ? (
+                          <span style={s(`position:absolute;top:-5px;right:-6px;width:8px;height:8px;border-radius:50%;background:${soonHue};border:1.5px solid var(--bg);box-shadow:0 0 0 1px color-mix(in srgb, ${soonHue} 40%, transparent)`)} />
+                        ) : null}
+                        {navCollapsed && !soon && badgeCounts[n.id] ? (
                           <span style={s('position:absolute;top:-6px;right:-7px;background:var(--accent);color:#fff;font-size:8px;font-weight:800;min-width:14px;height:14px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 3px;border:1.5px solid var(--bg)')}>{badgeCounts[n.id]}</span>
                         ) : null}
                       </span>
                       {!navCollapsed && <span style={s('flex:1;text-align:left')}>{n.label}</span>}
                       {!navCollapsed && soon ? (
-                        <span style={s('font-size:8.5px;font-weight:800;letter-spacing:.05em;padding:2px 7px;border-radius:99px;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)')}>SOON</span>
+                        <span style={s(`font-size:8.5px;font-weight:800;letter-spacing:.06em;padding:3px 8px;border-radius:99px;color:#fff;background:linear-gradient(135deg, color-mix(in srgb, ${soonHue} 92%, #fff), color-mix(in srgb, ${soonHue} 55%, var(--accent)));box-shadow:0 2px 8px color-mix(in srgb, ${soonHue} 40%, transparent)`)}>SOON</span>
                       ) : !navCollapsed && badgeCounts[n.id] ? (
                         <span style={s('background:var(--accent);color:#fff;font-size:9.5px;font-weight:800;min-width:18px;height:18px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px')}>{badgeCounts[n.id]}</span>
                       ) : null}
@@ -302,16 +309,22 @@ export function SalesRedesign() {
             {/* Keyed on the acted-as agent: switching "View as" remounts the panels so every
                 tab refetches under the new identity (the transport sends fresh x-act-as headers).
                 Full-bleed tabs (Tickets) fill the whole panel; others center under a max-width. */}
-            <div id="ss-panels" key={actAsKey} style={s(fullBleed ? 'flex:1;min-width:0;height:100%;padding:16px 18px' : 'max-width:1180px;margin:0 auto;padding:24px 24px 90px')}>
-              {section === 'home' && <HomeTab />}
-              {section === 'inbox' && <InboxTab />}
-              {section === 'tickets' && !ticketsComingSoon && <TicketsTab />}
-              {section === 'retention' && !retentionComingSoon && <RetentionTab />}
-              {section === 'records' && <RecordsTab />}
-              {section === 'create' && <CreateTab />}
-              {section === 'auto' && <AutoTab />}
-              {section === 'dash' && <DashTab />}
-              {section === 'carriers' && <CarriersTab />}
+            <div id="ss-panels" key={actAsKey} style={s(fullBleed && !sectionComingSoon ? 'flex:1;min-width:0;height:100%;padding:16px 18px' : 'max-width:1180px;margin:0 auto;padding:24px 24px 90px')}>
+              {sectionComingSoon ? (
+                <ComingSoonPanel sectionId={section} />
+              ) : (
+                <>
+                  {section === 'home' && <HomeTab />}
+                  {section === 'inbox' && <InboxTab />}
+                  {section === 'tickets' && <TicketsTab />}
+                  {section === 'retention' && <RetentionTab />}
+                  {section === 'records' && <RecordsTab />}
+                  {section === 'create' && <CreateTab />}
+                  {section === 'auto' && <AutoTab />}
+                  {section === 'dash' && <DashTab />}
+                  {section === 'carriers' && <CarriersTab />}
+                </>
+              )}
             </div>
           </main>
         </div>
@@ -363,11 +376,21 @@ export function SalesRedesign() {
             onClose={() => setLead(null)}
             onCall={(phone) => {
               // Dial silently when RC isn't ready — no "Phone / backend" error toasts.
+              setDialContext({ leadId: lead.id });
               if (clickToDial(phone)) pushToast('Calling', phone);
             }}
           />
         )}
-        {deal && <DealModal deal={deal} onClose={() => setDeal(null)} />}
+        {deal && (
+          <DealModal
+            deal={deal}
+            onClose={() => setDeal(null)}
+            onCall={(phone) => {
+              setDialContext({ dealId: deal.id });
+              if (clickToDial(phone)) pushToast('Calling', phone);
+            }}
+          />
+        )}
 
 
         {/* TOAST */}

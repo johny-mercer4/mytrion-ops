@@ -18,8 +18,14 @@ const RGB: Record<string, string> = {
   'var(--violet-rgb)': 'var(--violet-rgb)',
 };
 
-/** Dept-code chip style (C=orange, Q=accent, V=ok, M=violet). */
-export function deptStyle(code: string): string {
+/** Code / label chip tinted with an explicit color (theme CSS vars preferred). */
+export function chipStyle(col: string): string {
+  return `font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;padding:2px 7px;border-radius:var(--radius-md);color:${col};background:color-mix(in srgb, ${col} 15%, transparent)`;
+}
+
+/** Dept-code chip style (C=orange, Q=accent, V=ok, M=violet). Pass `color` to override (e.g. per-automation accent). */
+export function deptStyle(code: string, color?: string): string {
+  if (color) return chipStyle(color);
   const c = String(code || '')[0] ?? '';
   const map: Record<string, string> = {
     C: 'var(--orange)',
@@ -27,8 +33,7 @@ export function deptStyle(code: string): string {
     V: 'var(--ok)',
     M: 'var(--violet)',
   };
-  const col = map[c] ?? 'var(--muted)';
-  return `font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;padding:2px 7px;border-radius:var(--radius-md);color:${col};background:color-mix(in srgb, ${col} 15%, transparent)`;
+  return chipStyle(map[c] ?? 'var(--muted)');
 }
 
 /** A rounded status pill. */
@@ -129,11 +134,22 @@ export const NAV_GROUPS: NavGroup[] = [
 /** Flat list for lookups (comingSoon checks, labels, etc.). */
 export const NAV: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 
+/**
+ * Top-bar titles — deliberately different from in-page H1s so chrome + content don't echo
+ * the same uppercase phrase (e.g. top "New Entry" vs form "Create a Lead").
+ */
 export const NAVLABEL: Record<string, string> = {
-  home: 'Home', inbox: 'Inbox', tickets: 'Tickets', retention: 'Retention',
-  verification: 'Verification Pipeline', records: 'Data Center',
-  create: 'Create Ticket', auto: 'Automations', dash: 'Dashboard', carriers: 'Carriers',
-  callHub: 'Call Hub',
+  home: "Today's Briefing",
+  inbox: 'Message Center',
+  tickets: 'Support Queue',
+  retention: 'Retention Desk',
+  verification: 'Verification Desk',
+  records: 'Pipeline Hub',
+  create: 'New Entry',
+  auto: 'Action Catalog',
+  dash: 'Live Dashboard',
+  carriers: 'Carrier Lookup',
+  callHub: 'Call Workspace',
 };
 
 // ---------- time / workday ----------
@@ -156,6 +172,50 @@ export function nyToday(): string {
   return nyDaysAgo(0);
 }
 
+export type WorkdayPhase = 'pre' | 'morning' | 'midday' | 'afternoon' | 'closing' | 'overtime';
+
+export interface WorkdayStyle {
+  /** Fill gradient for the progress bar. */
+  barGradient: string;
+  /** Knob / status accent color. */
+  accent: string;
+  /** Short status under the bar ("42% done" / "Overtime"). */
+  statusLabel: string;
+}
+
+const WORKDAY_STYLE: Record<WorkdayPhase, Omit<WorkdayStyle, 'statusLabel'> & { status: (pct: number) => string }> = {
+  pre: {
+    barGradient: 'linear-gradient(90deg, var(--muted), color-mix(in srgb, var(--muted) 60%, var(--accent)))',
+    accent: 'var(--muted)',
+    status: () => 'Not started',
+  },
+  morning: {
+    barGradient: 'linear-gradient(90deg, #22c55e, var(--accent))',
+    accent: '#22c55e',
+    status: (pct) => `${pct}% done`,
+  },
+  midday: {
+    barGradient: 'linear-gradient(90deg, var(--accent), var(--accent-2))',
+    accent: 'var(--accent)',
+    status: (pct) => `${pct}% done`,
+  },
+  afternoon: {
+    barGradient: 'linear-gradient(90deg, var(--accent-2), var(--violet))',
+    accent: 'var(--violet)',
+    status: (pct) => `${pct}% done`,
+  },
+  closing: {
+    barGradient: 'linear-gradient(90deg, var(--orange), var(--warn))',
+    accent: 'var(--orange)',
+    status: (pct) => `${pct}% done`,
+  },
+  overtime: {
+    barGradient: 'linear-gradient(90deg, var(--warn), var(--danger))',
+    accent: 'var(--danger)',
+    status: () => 'Overtime',
+  },
+};
+
 export function timeParts(now: Date = new Date()) {
   // The workday progress + clock are always in New York (EST/EDT), regardless of the viewer's
   // own timezone — the sales floor runs on NY hours.
@@ -170,11 +230,34 @@ export function timeParts(now: Date = new Date()) {
   const tod = h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
   const startMin = 9 * 60;
   const endMin = 18 * 60;
-  const nowMin = Math.max(startMin, Math.min(endMin, h * 60 + min));
-  const pct = Math.round(((nowMin - startMin) / (endMin - startMin)) * 100);
+  const rawMin = h * 60 + min;
+  const before = rawMin < startMin;
+  const overtime = rawMin > endMin;
+  const clamped = Math.max(startMin, Math.min(endMin, rawMin));
+  const pct = before ? 0 : overtime ? 100 : Math.round(((clamped - startMin) / (endMin - startMin)) * 100);
+
+  let phase: WorkdayPhase;
+  if (before) phase = 'pre';
+  else if (overtime) phase = 'overtime';
+  else if (rawMin < 12 * 60) phase = 'morning';
+  else if (rawMin < 15 * 60) phase = 'midday';
+  else if (rawMin < 17 * 60) phase = 'afternoon';
+  else phase = 'closing';
+
+  const styleDef = WORKDAY_STYLE[phase];
+  const workday: WorkdayStyle = {
+    barGradient: styleDef.barGradient,
+    accent: styleDef.accent,
+    statusLabel: styleDef.status(pct),
+  };
+
   return {
     tod,
-    pct: Math.max(2, pct),
+    pct,
+    phase,
+    workday,
+    /** Knob sits on the fill end; stay inset so it doesn't clip the track. */
+    knobPct: before ? 0 : Math.min(Math.max(pct, 2), 96),
     timeFmt: now.toLocaleTimeString('en-US', { timeZone: NY_TZ, hour: 'numeric', minute: '2-digit', hour12: true }),
     dateLabel: now.toLocaleDateString('en-US', { timeZone: NY_TZ, weekday: 'long', month: 'long', day: 'numeric' }),
   };

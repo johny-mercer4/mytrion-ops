@@ -22,6 +22,7 @@ import {
   type TxnSortBy,
 } from './txnReport';
 import { downloadTxnReport } from './txnReportExport';
+import { AutoEmptyState } from './AutoActionResult';
 
 const mono = "font-family:'JetBrains Mono',monospace";
 const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
@@ -88,6 +89,16 @@ export function AutoInvoicesPanel({
       })
       .finally(() => setDlBusy(null));
   };
+
+  if (rows.length === 0) {
+    return (
+      <AutoEmptyState
+        title="No invoices found"
+        message="No invoices found for the selected date range."
+        icon="invoice"
+      />
+    );
+  }
 
   return (
     <div style={s('display:flex;flex-direction:column;gap:12px')}>
@@ -418,13 +429,17 @@ export function AutoTransactionsPanel({
   ) : null;
 
   const listBlock = !report?.transactions.length ? (
-    <div style={s('padding:24px;text-align:center;color:var(--muted);font-size:13px')}>
-      No transactions in this range.
-    </div>
+    <AutoEmptyState
+      title="No transactions found"
+      message="No transactions in this range."
+      icon="card"
+    />
   ) : groups.length === 0 ? (
-    <div style={s('padding:24px;text-align:center;color:var(--muted);font-size:13px')}>
-      No transactions match the selected filters.
-    </div>
+    <AutoEmptyState
+      title="No matching transactions"
+      message="No transactions match the selected filters."
+      icon="filter"
+    />
   ) : (
     <div style={s('display:flex;flex-direction:column;gap:12px')}>
       {groups.map((g) => (

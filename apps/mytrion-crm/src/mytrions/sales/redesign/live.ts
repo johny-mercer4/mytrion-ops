@@ -29,7 +29,11 @@ export const galFmt = (v: unknown): string =>
   n(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
 export const money = (v: unknown): string => {
   const x = n(v);
-  return x < 0 ? `-$${Math.abs(x).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : `$${x.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+  // Avoid "$-0" / "-$0" from signed zero or sub-dollar amounts that round to 0.
+  if (x === 0 || Object.is(x, -0) || Math.abs(x) < 0.5) return '$0';
+  return x < 0
+    ? `-$${Math.abs(x).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+    : `$${x.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 };
 export function relTime(iso: string | undefined): string {
   if (!iso) return '';
@@ -62,9 +66,9 @@ function stripHtml(html: string): string {
 
 // ---- Home: snapshot (dashboard.home_snapshot) ----
 
-/** Week-over-week % change → a display string ("+6%" / "-47%" / "—") + a direction. */
+/** Week-over-week % change → a display string ("+6%" / "-47%" / "0%") + a direction. */
 export function pctChange(cur: number, prev: number): { text: string; dir: 'up' | 'down' | 'flat' } {
-  if (!prev) return cur > 0 ? { text: 'New', dir: 'up' } : { text: '—', dir: 'flat' };
+  if (!prev) return cur > 0 ? { text: 'New', dir: 'up' } : { text: '0%', dir: 'flat' };
   const pct = Math.round(((cur - prev) / prev) * 100);
   if (pct === 0) return { text: '0%', dir: 'flat' };
   return { text: `${pct > 0 ? '+' : ''}${pct}%`, dir: pct > 0 ? 'up' : 'down' };
@@ -85,7 +89,7 @@ export interface SnapshotFields {
   swipes_today: number;
   gallons_today: number;
   new_cards_today: number;
-  /** Week-over-week gallons change, e.g. "+6%" / "-47%" / "—". */
+  /** Week-over-week gallons change, e.g. "+6%" / "-47%" / "0%". */
   volume_trend: string;
   volume_trend_dir: 'up' | 'down' | 'flat';
   /** Fuel-transactions week-over-week caption, e.g. "↑ 6% vs last week". */
@@ -106,7 +110,9 @@ export async function loadSnapshot(): Promise<SnapshotFields> {
   const arrow = tx.dir === 'up' ? '↑' : tx.dir === 'down' ? '↓' : '→';
   // The arrow carries the direction, so strip the sign from the % (no "↓ -29%").
   const fuel_tx_caption =
-    tx.dir === 'flat' || tx.text === '—' ? 'Same as last week' : `${arrow} ${tx.text.replace(/[+-]/, '')} vs last week`;
+    tx.dir === 'flat' || tx.text === '0%'
+      ? 'Same as last week'
+      : `${arrow} ${tx.text.replace(/[+-]/, '')} vs last week`;
   return {
     active_clients: g('active_clients'),
     inactive_clients: g('inactive_clients'),
@@ -368,26 +374,54 @@ export interface CarrierSearchVM {
   addDate: string;
   changeDate: string;
 }
-export async function searchCarriers(query: string, limit = 200): Promise<CarrierSearchVM[]> {
+export interface CarrierSearchPage {
+  rows: CarrierSearchVM[];
+  /** Full match count from servercrm (may exceed rows.length). */
+  total: number;
+  /** True when the backend has more rows than this fetch window returned. */
+  moreRecords: boolean;
+}
+
+function mapCarrierSearchRow(c: {
+  id?: string | number;
+  dot_number?: string | number;
+  owner_full_name?: string;
+  phone_number?: string;
+  email?: string;
+  operating_status?: string;
+  power_units?: number | string;
+  physical_address?: string;
+  truck_size?: string | number;
+  add_date?: string;
+  change_date?: string;
+}): CarrierSearchVM {
+  const dot = c.dot_number != null && String(c.dot_number) !== '' ? String(c.dot_number) : '—';
+  const id = c.id != null && String(c.id) !== '' ? String(c.id) : `dot:${dot}`;
+  return {
+    id,
+    dot,
+    owner: String(c.owner_full_name ?? '—'),
+    phone: String(c.phone_number ?? '—'),
+    email: String(c.email ?? '—'),
+    status: String(c.operating_status ?? 'unknown'),
+    units: String(c.power_units ?? '—'),
+    unitsNum: typeof c.power_units === 'number' ? c.power_units : Number(c.power_units) || 0,
+    address: String(c.physical_address ?? ''),
+    truckSize: c.truck_size != null ? String(c.truck_size) : '',
+    addDate: c.add_date ? String(c.add_date).slice(0, 10) : '',
+    changeDate: c.change_date ? String(c.change_date).slice(0, 10) : '',
+  };
+}
+
+export async function searchCarriers(query: string, limit = 200): Promise<CarrierSearchPage> {
   const res = await callTouchpoint('sales.carriers_search', { query, limit });
-  return (res.carriers ?? []).map((c) => {
-    const dot = c.dot_number != null && String(c.dot_number) !== '' ? String(c.dot_number) : '—';
-    const id = c.id != null && String(c.id) !== '' ? String(c.id) : `dot:${dot}`;
-    return {
-      id,
-      dot,
-      owner: String(c.owner_full_name ?? '—'),
-      phone: String(c.phone_number ?? '—'),
-      email: String(c.email ?? '—'),
-      status: String(c.operating_status ?? 'unknown'),
-      units: String(c.power_units ?? '—'),
-      unitsNum: typeof c.power_units === 'number' ? c.power_units : Number(c.power_units) || 0,
-      address: String(c.physical_address ?? ''),
-      truckSize: c.truck_size != null ? String(c.truck_size) : '',
-      addDate: c.add_date ? String(c.add_date).slice(0, 10) : '',
-      changeDate: c.change_date ? String(c.change_date).slice(0, 10) : '',
-    };
-  });
+  const rows = (res.carriers ?? []).map(mapCarrierSearchRow);
+  const total = Number(res.total);
+  return {
+    rows,
+    total: Number.isFinite(total) && total > 0 ? total : rows.length,
+    moreRecords: !!res.more_records,
+  };
 }
 
 // ---- Tickets (Zoho Desk) → TICKETS / TICKET_MSGS shape ----

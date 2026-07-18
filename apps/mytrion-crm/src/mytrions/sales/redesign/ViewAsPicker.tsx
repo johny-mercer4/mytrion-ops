@@ -139,7 +139,7 @@ export function ViewAsPicker() {
             className="ss-scroll"
           >
             {error && <div style={s('padding:10px 12px;font-size:12px;color:var(--danger)')}>{error}</div>}
-            {!error && loading && <div style={s('padding:10px 12px;font-size:12px;color:var(--muted)')}>Loading agents…</div>}
+
             {!error && !loading && filtered.length === 0 && (
               <div style={s('padding:10px 12px;font-size:12px;color:var(--muted)')}>No agents found.</div>
             )}

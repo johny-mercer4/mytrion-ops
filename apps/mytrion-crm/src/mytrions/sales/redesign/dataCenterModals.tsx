@@ -153,9 +153,19 @@ export function LeadModal({
   );
 }
 
-export function DealModal({ deal, onClose }: { deal: DealVM; onClose: () => void }) {
+export function DealModal({
+  deal,
+  onClose,
+  onCall,
+}: {
+  deal: DealVM;
+  onClose: () => void;
+  /** Click-to-dial via RingCentral Embeddable (Sales shell wires this). */
+  onCall?: (phone: string) => void;
+}) {
   const meta = { col: dealStageColor(deal.stage), label: deal.stage };
   const stageBadge = badge(meta.label, meta.col);
+  const canCallPhone = Boolean(onCall && deal.phone.trim() && deal.phone !== '—');
   return (
     <div onClick={onClose} style={s('position:fixed;inset:0;z-index:120;background:rgba(3,7,14,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
       <div onClick={(e) => e.stopPropagation()} style={s(`width:100%;max-width:560px;max-height:86vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid ${meta.col};box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
@@ -190,7 +200,7 @@ export function DealModal({ deal, onClose }: { deal: DealVM; onClose: () => void
           <div style={s(`margin-top:14px;${CARD}`)}>
             <div style={s(`${CARD_LABEL};margin-bottom:6px`)}>Contact</div>
             <div style={s('font-size:13px;font-weight:600')}>{deal.contact}</div>
-            <div style={s("font-size:12px;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{deal.phone}</div>
+            <ContactCallRow label="Phone" value={deal.phone} {...(onCall ? { onCall } : {})} />
           </div>
           <div style={s(`margin-top:14px;${CARD}`)}>
             <div style={s(`${CARD_LABEL};margin-bottom:6px`)}>Notes</div>
@@ -198,6 +208,15 @@ export function DealModal({ deal, onClose }: { deal: DealVM; onClose: () => void
           </div>
         </div>
         <div style={s('padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px')}>
+          {canCallPhone && (
+            <button
+              type="button"
+              onClick={() => onCall?.(deal.phone)}
+              style={s('height:38px;padding:0 18px;border-radius:var(--radius-md);border:none;cursor:pointer;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px')}
+            >
+              Call {deal.phone}
+            </button>
+          )}
           <button onClick={onClose} style={s('height:38px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>Close</button>
         </div>
       </div>

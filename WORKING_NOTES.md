@@ -1927,16 +1927,13 @@ payments, tracking, billing-form, card-last-used, wex-tasks, card-deactivation, 
 - Writes: card activate (`dwh.card_activate` + optional `efs.card_info`), deactivate, limits,
   unit/driver, fraud release, override, money-code **draw** (preview on deal select → amount /
   reason / unit → `dwh.money_code_draw`).
-- Ticket-style (widget used Zapier / browser-automation): card-replacement, reactivation, BOCA,
-  close-app → `createDeskTicket` with matching C-* types (Ops-native path).
+- Ticket-style writes initially stubbed via Desk (later replaced — see 2026-07-18: real Zapier +
+  browser-automation touchpoints for card-replacement, reactivation, BOCA, close-app).
 - EFS login → opens credentials PDF + logs usage.
 - Tiny catalog fix: `dwh.money_code_draw` accepts optional `unit_number` (ServerCRM already did).
-- Deal picker enriched with Zoho Deal ids from CRM (needed for Desk ticket creates) + app-only
-  deals for BOCA / close / wex-tasks.
+- Deal picker enriched with Zoho Deal ids from CRM + app-only deals for BOCA / close / wex-tasks.
 
-**Remaining gaps (blocked without new backends):** live Photon address autocomplete; direct Zapier
-email webhook / browser-automation BOCA+close (Desk ticket is the substitute); money-code unit is
-forwarded only after the catalog schema allow-list (done).
+**Remaining gaps:** live Photon address autocomplete for card replacement (optional UX polish).
 
 ## 2026-07-14 — Automations export parity (txn PDF/Excel + invoice downloads)
 
@@ -3295,3 +3292,188 @@ for true ticketdashboard search parity.
 - Upgraded sign-in and sign-out UI components.
 - Replaced favicon.ico with a beautiful unique 'M' vector logo in SVG format.
 - Resolved TypeScript compilation errors caused by legacy unused loader code.
+
+### 2026-07-18 — Black screen / 404 after theme rename
+
+- Root cause: `useTheme.ts` was renamed to `.tsx`; Vite's module graph kept importing
+  `/src/hooks/useTheme.ts`, which fell through to `index.html` → failed module load → blank app.
+- Fix: split provider into `themeContext.tsx` and keep a stable `useTheme.ts` re-export entry.
+- Also: drop dead `/favicon.ico` link from `index.html` (file removed; SVG-only now).
+- `--rocket` hue token must be a solid color (not a gradient) for `color-mix` / `color:` usage.
+
+### 2026-07-18 — Coming soon: Collection / Verification / Manager / Analytics
+
+- Parked those four on `COMING_SOON_MYTRION_IDS` → picker Coming soon tiles (with HR).
+- `resolveAccessibleMytrions` / `canAccess` exclude them so they are not enterable.
+
+### 2026-07-18 — Coming soon badge color
+
+- Replaced muted gray SOON chip with a per-tile gradient pill (tile hue → accent).
+
+### 2026-07-18 — Sales Home hover / empty values / loader
+
+- Removed `translateY` from `.ss-card-h:hover` (cards no longer jump up).
+- Money Owed / volume trend empty → `$0` / `0%` (no `$-0` or em-dash).
+- Homepage: one below-fold skeleton until first loads settle; no stacked “Loading…”.
+
+### 2026-07-18 — Sales workday / soon tabs / titles / no double boot
+
+- Workday bar phases: morning→midday→afternoon→closing→overtime (distinct gradients + status).
+- Removed Sales shell `MytrionLoader` boot; Home skeleton is the only first paint loader.
+- Coming soon nav: colorful SOON chips; click opens `ComingSoonPanel` in main.
+- Top-bar `NAVLABEL`s renamed so they don’t echo in-page H1s (e.g. New Entry vs Create a Lead).
+
+### 2026-07-18 — Automations: txn report → CS + unique icon colors
+
+- Transactions Report (`C-15`) category `dept: 'C'` (Customer Service).
+- Each automation has a `color` CSS var (`--accent`, `--cyan`, `--ok`, …) via `autoIconColor`
+  so catalog + runner icons stay unique and track `.ss-root` / `.ss-root.light`.
+- Code badges (`C-15`, `Q-1`, …) use the same per-action color (`deptStyle(code, autoIconColor(a))`).
+
+### 2026-07-18 — Automations: standardized deal picklist + loaders
+
+- New `AutoPicklist.tsx`: shared `AutoDealPicklist` / `AutoCardPicklist`, `DealPickOption`
+  (company title + contact · App · phone), `PicklistMicroLoader`, `AutoMacroLoader`.
+- `AutoTab` uses those for every deal/card-needing action + the run-phase “waiting” UI.
+- `.ss-pick-row` hover: accent wash + left rail (light/dark, reduced-motion safe).
+
+### 2026-07-18 — Automations: standardized result states (success / error / empty)
+
+- Ported zoho-octane `showActionResult` + `.automation-empty` language into
+  `AutoActionResult.tsx` (`AutoStatusResult`, `AutoEmptyState`).
+- Modal done-step: error → “Couldn't complete that”; empty invoices/txns/messages → empty
+  tone; writes → success. Shared Done / secondary actions.
+- Picklist / WEX / catalog / invoice+txn panels use `AutoEmptyState` for empties.
+
+### 2026-07-18 — Automations: deal chip X + tracking + WEX tasks
+
+- Select Deal clear (X): `align-items:flex-start` / top-right (`.ss-deal-chip`), matching
+  zoho-octane `.automation-selected-deal` — was vertically centered on 2-line chips.
+- Tracking (C-22): rich `DonePayload.kind: 'tracking'`; numbers link to parcelsapp status
+  (hoverable). Deluge `mytriontruckingnumberrequest` unchanged.
+- WEX tasks (C-2/C-19): Deluge `application.update` only (stop merging empty WEX SF status
+  table). Rich task cards + summary; empty → “No WEX tasks found” in the modal.
+
+### 2026-07-18 — Automations: picklist loaders + App/Carrier + card status badges
+
+- Root cause of white-block loaders: `AutoFloatingDrop` portaled to `document.body`,
+  outside `.ss-root` → CSS vars / shimmer broke. Portal now mounts under `.ss-root`.
+- Micro-loader: spinner label + `.ss-pick-skel` accent shimmer (light/dark).
+- Deal rows: `App ####` + `CR-####` badges; meta line is contact · phone.
+- Card status: ACTIVE green, INACTIVE orange (`--warn`), FRAUD red.
+
+### 2026-07-18 — WEX tasks empty-under-summary fix + single (non-double) picklist loader
+
+- `AutoWexTasksPanel`: only show the "No WEX tasks found" empty state when BOTH
+  `wexTaskField` (summary) and `wexTasks[]` are empty. Deluge frequently fills only the
+  summary text (e.g. "Approved prepay") with an empty task array — that summary IS the
+  result and was being contradicted by an empty state rendered right under it.
+- `PicklistMicroLoader`: dropped the spinner-row header — shimmer skeleton rows alone are
+  the loader now (spinner + skeleton together read as two competing loaders).
+
+### 2026-07-18 — Full automations-catalog audit vs zoho-octane self-service (22 blocks)
+
+Reviewed every `AUTO_LIST` block's dispatch in `autoRunners.ts` against the reference
+widget's per-block transport table (function/endpoint, validation, merge behavior).
+Confirmed correct for 21/22 blocks — endpoints, required-field validation (carrier/app/card
+presence, money-code eligibility, unit-driver "at least one field", address completeness),
+Deluge function-name casing fallback (`executeZohoFunctionWithFallback`), and unwrap modes
+(`status`/`cardAction`/`successFlag`/`permissive`) all match the widget's contract. Card
+pickers for `fraud-hold-release` / `override-card` already filter to fraud-status cards
+only (`cardPool` in AutoTab), matching "card picker, fraud-eligible only".
+
+**Bug found + fixed — Check Payment Information (C-18/Q-2):** the reference fetches DWH
+`payment-info` and live CMP `check_payment` **in parallel** and merges both into one view.
+Our `payments` case was calling them **sequentially with fallback-on-error only** — if the
+primary succeeded, the CMP invoices call was never made, silently dropping half the
+reference's result. Fixed:
+- New `DonePayload` kind `'payments'` (`autoLive.ts`): `{ summary, cmpInvoices, cmpError }`.
+- `autoRunners.ts`: `Promise.allSettled` both touchpoints; only throws if BOTH sources
+  fail (previously any primary failure with no CMP fallback swallowed the real error).
+- New `AutoPaymentsPanel` (`AutoRichResults.tsx`): summary stat grid + CMP invoice cards
+  with status badges, independent empty/error state per source.
+
+**Retracted (was wrong):** earlier notes claimed BOCA/close/replacement/reactivation route to
+Desk tickets because Ops had no browser-automation/Zapier path. That was incorrect — those
+actions must hit the same real backends as the Zoho widget (see 2026-07-18 entry below).
+
+## 2026-07-18 — Real BOCA / Zapier automations + WEX search parity + Ops logging
+
+Corrected Sales Automations so write actions match zoho-octane self-service, not Desk substitutes.
+
+**Browser automation (BOCA C-27 / Close Application C-14):**
+- New integration `src/integrations/browserAutomation.ts` + env
+  `BROWSER_AUTOMATION_URL` / `BROWSER_AUTOMATION_KEY` / `BROWSER_AUTOMATION_TIMEOUT_MS` (5m default).
+- Touchpoints `browser.boca` → `POST /wex/boca/{appId}`,
+  `browser.close_application` → `POST /wex/application/{appId}/close`.
+- CRM UI: Assigned To locked to WEX SF owner (`wex.application`), priority, due date, fixed comment.
+- `autoRunners` calls those touchpoints; success/skipped messaging matches the widget.
+
+**Zapier (Card Replacement C-6 / Account Reactivation C-7):**
+- New integration `src/integrations/zapier.ts` + env `ZAPIER_TICKET_WEBHOOK_URL`
+  (same catch-hook the widget posts to).
+- Touchpoint `zapier.ticket_email` proxies `{ companyName, carrierId, agentEmail, ticketType, … }`.
+
+**Automation logs:**
+- `logAutomation` now mirrors `_logOpsAutomation`: hyphen→underscore type, `triggerDate` /
+  `triggerTime`, agent name; still fire-and-forget on every successful `runAuto`.
+- WEX field search also logs `wex_apps_application` after a successful search.
+
+**WEX search (C-29):** `AutoWexPanel` exposes all 8 fields (appId, firstName, lastName, company,
+email, phone, mc, dot) — same contract as `wex.applications_search`.
+
+**Deploy note:** set `BROWSER_AUTOMATION_*` and `ZAPIER_TICKET_WEBHOOK_URL` on the Ops service
+or these four actions will 502 as unconfigured.
+
+## 2026-07-18 — Carriers tab: Fetch 200/500, filters, lead create/duplicate
+
+Fixed Carrier Lookup so it matches zoho-octane `CarrierSearchPanel` end-to-end.
+
+**Fetch 200/500 (was broken):** changing the Fetch select only updated React state and never
+re-queried. Widget does `@change="search"`. Now `onFetchLimitChange` re-runs the search and
+passes the new limit explicitly (avoids the setState race that would still POST `limit: 200`).
+
+**Search meta:** `searchCarriers` returns `{ rows, total, moreRecords }` from
+`sales.carriers_search`; UI shows the widget “X of Y matches — refine…” hint when truncated.
+
+**Filters / pagination:** status chips, has-contact, min-units, Clear, client page 50/100 —
+page state clamped when filters shrink the set.
+
+**Create Lead + already-exists:** hardened `resolveCreateLeadOutcome` — string success flags,
+walks nested / JSON-string / `data[]` DUPLICATE_DATA for the existing lead id, and no longer
+treats a bare failure `leadId` as a duplicate. Shared by Carriers row actions + Create tab form.
+
+## 2026-07-18 — RingCentral softphone: sign-in unblocked + call-event capture
+
+Got the Sales Mytrion Embeddable softphone actually working end-to-end.
+
+**Sign-in was blocked (root cause):** `ringcentral.isConfigured()` required `RINGCENTRAL_JWT`, but
+the `.env` is set up for per-agent OAuth (redirect URI = Embeddable's hosted `redirect.html`, no
+JWT). So `/v1/ringcentral/embed-config` 404'd and the widget never loaded. Fix: `isConfigured()`
+now needs only `FF_RINGCENTRAL_ENABLED` + `CLIENT_ID`; the shared secret+JWT are gated behind a new
+`canEmbedBrowserCreds()` (`BROWSER_CREDS_ACK && secret && jwt`) — auto-login stays opt-in/audited.
+
+**Adapter URL:** now passes `redirectUri` (new `RINGCENTRAL_REDIRECT_URI` env, defaults to the
+Embeddable callback) so authorization-code sign-in is explicit (avoids OAU-113).
+
+**Call-event capture:** rewrote the frontend event handling into `ringcentralEvents.ts` — normalizes
+`rc-active-call-notify` / `rc-call-end-notify` / `rc-ringout-call-notify` / `rc-login-status-notify`
+into one event (dedup per session+phase, talk-duration from connect→end), tags outbound calls with
+the Data Center lead/deal via `setDialContext()`, and POSTs each to new `POST /v1/ringcentral/call-events`
+(zod-validated, sales-guarded, audit-logged as `ringcentral.call_event`). `RingCentralPhone.tsx` now
+shows direction-aware toasts (dialing / incoming / connected / ended+duration) + sign-in status.
+
+**Deals dialing:** `DealModal` had no `onCall` — wired it (phone call-row + footer Call button), Shell
+passes `onCall` for both Lead and Deal modals, and Leads list dials now tag `leadId`.
+
+**Contacts/messages:** native Embeddable tabs — appear once the RC app token carries Read Contacts /
+Read Messages / SMS scopes (documented in `.env.example`). No app code needed.
+
+**Still needs (RingCentral Developer Console, can't do from code):** app = client-side web app,
+3-legged OAuth; redirect URI must match `RINGCENTRAL_REDIRECT_URI`; scopes VoIP Calling + WebSocket
+Subscriptions (+ Read Contacts/Messages/SMS/Call Log for those tabs).
+
+**Verify:** `pnpm typecheck` + `pnpm lint` (RC/DC files) clean; `data-center-routes.test.ts` 11/11
+green incl. 4 new (JWT-less embed-config, call-events RBAC/audit/validation). NOTE: this branch has
+pre-existing unrelated failures (cs-routes, carrier-mini-app, touchpoints count 84≠81) and web
+`tsc` unused-import errors in admin/icons — none touched by this work.

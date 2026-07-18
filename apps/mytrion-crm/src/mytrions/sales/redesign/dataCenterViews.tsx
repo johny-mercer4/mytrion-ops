@@ -9,6 +9,7 @@ import { badge } from './salesData';
 import { useSales } from './ctx';
 import { Icon } from './icons';
 import { clickToDial } from '@/components/ringcentral/ringcentralDial';
+import { setDialContext } from '@/components/ringcentral/ringcentralEvents';
 import {
   dealColumns,
   dealStageColor,
@@ -91,10 +92,11 @@ export function LeadsView({ leads, search, view }: { leads: LeadVM[]; search: st
     );
   };
 
-  const dial = (e: MouseEvent, phone: string): void => {
+  const dial = (e: MouseEvent, phone: string, leadId: string): void => {
     stop(e);
     if (!phone.trim()) return;
     // Success only — never toast Phone/backend load failures.
+    setDialContext({ leadId });
     if (clickToDial(phone)) pushToast('Calling', phone);
   };
 
@@ -143,7 +145,7 @@ export function LeadsView({ leads, search, view }: { leads: LeadVM[]; search: st
               >
                 {hoverField === phoneKey && ld.phone ? (
                   <div style={s('width:96px;height:26px;border-radius:var(--radius-md);overflow:hidden;display:flex;background:linear-gradient(140deg,var(--accent),var(--accent-2))')}>
-                    <button type="button" aria-label="Call phone" onClick={(e) => dial(e, ld.phone)} style={s('flex:1;height:100%;border:none;cursor:pointer;background:transparent;color:#fff;display:flex;align-items:center;justify-content:center')}>
+                    <button type="button" aria-label="Call phone" onClick={(e) => dial(e, ld.phone, ld.id)} style={s('flex:1;height:100%;border:none;cursor:pointer;background:transparent;color:#fff;display:flex;align-items:center;justify-content:center')}>
                       <Icon name="calls" size={12} color="#fff" />
                     </button>
                     <span style={s('width:1px;background:rgba(255,255,255,.3);flex-shrink:0')} />
@@ -162,7 +164,7 @@ export function LeadsView({ leads, search, view }: { leads: LeadVM[]; search: st
               >
                 {hoverField === cellKey && ld.cell ? (
                   <div style={s('width:96px;height:26px;border-radius:var(--radius-md);overflow:hidden;display:flex;background:linear-gradient(140deg,var(--accent),var(--accent-2))')}>
-                    <button type="button" aria-label="Call cell" onClick={(e) => dial(e, ld.cell)} style={s('flex:1;height:100%;border:none;cursor:pointer;background:transparent;color:#fff;display:flex;align-items:center;justify-content:center')}>
+                    <button type="button" aria-label="Call cell" onClick={(e) => dial(e, ld.cell, ld.id)} style={s('flex:1;height:100%;border:none;cursor:pointer;background:transparent;color:#fff;display:flex;align-items:center;justify-content:center')}>
                       <Icon name="calls" size={12} color="#fff" />
                     </button>
                     <span style={s('width:1px;background:rgba(255,255,255,.3);flex-shrink:0')} />
