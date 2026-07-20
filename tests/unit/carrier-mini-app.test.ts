@@ -66,6 +66,7 @@ vi.mock('../../src/repos/carrierInvitationRepo.js', () => ({
 vi.mock('../../src/repos/registeredMiniAppCompanyRepo.js', () => ({
   registeredMiniAppCompanyRepo: {
     findByTelegramUserId: vi.fn(),
+    findActiveOwnerByCarrier: vi.fn(),
     list: vi.fn(async () => []),
     listDriversByCarrier: vi.fn(async () => []),
     renameDriverByCard: vi.fn(),
@@ -142,6 +143,15 @@ beforeEach(() => {
   crm.getCarrierOverview.mockResolvedValue({ company_name: 'Acme Transport LLC', is_active: true });
   registrationRepo.list.mockResolvedValue([]);
   registrationRepo.listDriversByCarrier.mockResolvedValue([]);
+  // Driver invites nest under an active owner (inviteService.createCarrierInvite). Default to an
+  // owner present so driver-invite paths reach the card checks; a test wanting DRIVER_NEEDS_OWNER
+  // overrides this with a single undefined. createCarrierInvite only reads truthiness, so the exact
+  // shape is immaterial — cast the Date-carrying row to the Dto (string dates) the repo declares.
+  registrationRepo.findActiveOwnerByCarrier.mockResolvedValue(
+    registrationRow({ profile: 'owner' }) as unknown as Awaited<
+      ReturnType<typeof registrationRepo.findActiveOwnerByCarrier>
+    >,
+  );
   inviteRepo.listPendingDriverInvitesByCarrier.mockResolvedValue([]);
   vi.mocked(verifyTelegramInitData).mockReturnValue({ ok: true, fields: {} });
   vi.mocked(parseInitDataUser).mockReturnValue({ id: 123456, username: 'fleet_owner' });
