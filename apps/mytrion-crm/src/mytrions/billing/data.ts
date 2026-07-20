@@ -86,14 +86,48 @@ export function dateFull(iso: string): string {
 
 // ---- color/label meta (widget StatusBadge tone + display label) ----
 
-export function stageMeta(stage: string): { tone: 'good' | 'bad' | 'info' | 'neutral' } {
+/** Deal stage progression (design parity) — drives the % fill of the stage progress bar. */
+const STAGE_ORDER = [
+  'Application Sent',
+  'Application Filled',
+  'Application Approved',
+  'CS Validation',
+  'EFS Processing',
+  'Vendor Validation',
+  'Cards Sent',
+  'Cards Activated',
+  'Billing Form Sent',
+  'Billing Form Filled',
+  'Card Funded',
+  'Card Swiped',
+];
+
+export function stageMeta(stage: string): { tone: 'good' | 'bad' | 'info' | 'neutral'; pct: number } {
   const good = ['Card Funded', 'Card Swiped', 'Cards Activated', 'Cards Sent'];
   const bad = ['Closed Lost'];
   const info = ['Billing Form Sent', 'Billing Form Filled', 'EFS Processing', 'Vendor Validation', 'CS Validation'];
-  if (bad.includes(stage)) return { tone: 'bad' };
-  if (good.includes(stage)) return { tone: 'good' };
-  if (info.includes(stage)) return { tone: 'info' };
-  return { tone: 'neutral' };
+  let tone: 'good' | 'bad' | 'info' | 'neutral' = 'neutral';
+  if (bad.includes(stage)) tone = 'bad';
+  else if (good.includes(stage)) tone = 'good';
+  else if (info.includes(stage)) tone = 'info';
+  const idx = STAGE_ORDER.indexOf(stage);
+  const pct = stage === 'Closed Lost' ? 100 : idx >= 0 ? Math.round(((idx + 1) / STAGE_ORDER.length) * 100) : 8;
+  return { tone, pct };
+}
+
+/** Clean a raw Zoho billing_cycle enum (e.g. "WEEKLY_MON_SUN", "SEMI_WEEKLY") to a display label. */
+export function fmtCycle(raw: string): string {
+  const s = (raw || '').trim();
+  if (!s) return '';
+  const u = s.toUpperCase();
+  if (u.startsWith('SEMI_WEEKLY') || u === 'SEMIWEEKLY') return 'Semi-Weekly';
+  if (u.startsWith('BI_WEEKLY') || u === 'BIWEEKLY' || u === 'BI-WEEKLY') return 'Bi-Weekly';
+  if (u.startsWith('BI_MONTHLY') || u === 'BIMONTHLY') return 'Bi-Monthly';
+  if (u.startsWith('WEEKLY')) return 'Weekly';
+  if (u.startsWith('MONTHLY')) return 'Monthly';
+  if (u.startsWith('DAILY')) return 'Daily';
+  // Fallback: underscores → spaces, Title Case.
+  return s.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export function payMeta(t: PayType): { tone: 'good' | 'warn' | 'info' | 'neutral'; label: string } {

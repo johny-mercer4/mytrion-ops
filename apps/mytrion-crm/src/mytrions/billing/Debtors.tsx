@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { billingTouchpoint } from '@/api/billing';
 import { useLoad } from '../_shared/useLoad';
-import { type Debtor, dateFull, fmtCurrency, type Invoice } from './data';
+import { type Debtor, dateFull, fmtCurrency, fmtCycle, type Invoice } from './data';
 
 const ITEMS_PER_PAGE = 50;
 const HARD_DEBT_DAYS = 15;
@@ -258,7 +258,7 @@ export function Debtors() {
                     </div>
                     <div className="db-col-cycle">
                       {debtor.cycle ? (
-                        <span className="db-cycle-badge">{debtor.cycle}</span>
+                        <span className="db-cycle-badge">{fmtCycle(debtor.cycle)}</span>
                       ) : (
                         <span className="db-cycle-none">—</span>
                       )}

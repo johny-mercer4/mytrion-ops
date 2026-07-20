@@ -245,9 +245,23 @@
 }
 
 .bm-root .dc-badge-loc {
-    background: var(--success-bg);
-    color: var(--success-text);
-    border: 1px solid var(--success-border);
+    background: var(--accent-bg);
+    color: var(--billing-accent);
+    border: 1px solid var(--accent-border);
+}
+
+/* ── Stage progress bar under the stage chip (design parity) ── */
+.bm-root .dc-stage-bar {
+    height: 3px;
+    margin-top: 6px;
+    background: var(--border-light);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.bm-root .dc-stage-bar > div {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 200ms ease;
 }
 
 .bm-root .dc-badge-deposit {

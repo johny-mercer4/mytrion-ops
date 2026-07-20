@@ -70,6 +70,15 @@ const TONE_BADGE: Record<Tone, string> = {
 };
 const stageBadge = (stage: string): string => TONE_BADGE[stageMeta(stage).tone];
 
+/** stage tone → the progress-bar fill colour (design: stage bar under the chip). */
+const STAGE_BAR_COLOR: Record<Tone, string> = {
+  good: 'var(--success-text)',
+  bad: 'var(--danger-text)',
+  info: 'var(--billing-accent)',
+  warn: 'var(--warning-text)',
+  neutral: 'var(--text-muted)',
+};
+
 /** Payment-type badge — the widget's dedicated dc-badge-* palette (loc=green, prepay=amber, deposit=purple). */
 const PAY_BADGE: Record<PayType, string> = {
   'Line of Credit': 'dc-badge-loc',
@@ -413,6 +422,14 @@ export function DataCenter() {
                       </td>
                       <td>
                         <span className={`bm-badge ${stageBadge(deal.stage)}`}>{deal.stage || '—'}</span>
+                        <div className="dc-stage-bar">
+                          <div
+                            style={{
+                              width: `${stageMeta(deal.stage).pct}%`,
+                              background: STAGE_BAR_COLOR[stageMeta(deal.stage).tone],
+                            }}
+                          />
+                        </div>
                       </td>
                       <td style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{deal.appDate || '—'}</td>
                       <td>
