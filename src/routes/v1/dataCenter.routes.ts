@@ -115,15 +115,21 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * The caller's applications-filled-per-day counts (by CRM `Application_Date`) over the trailing
-   * window — powers the Home daily-goal bar + streak. Owner-scoped like Leads/Deals.
+   * The caller's applications-filled-per-day counts (CRM Deals `Application_Date` — the
+   * "application filled" date) over the trailing window — Home daily-goal bar + streak.
+   * Owner-scoped like Leads/Deals; pass ?zoho_user_id when acting-as / admin targeting.
    */
   app.get('/data-center/app-stats', guard, async (request) => {
     const ctx = requireSalesAccess(request);
     const q = scopeQuery.parse(request.query);
     const ownerId = resolveZohoUserId(ctx, q.zoho_user_id);
     try {
-      return await fetchAgentApplicationStats(ownerId);
+      const stats = await fetchAgentApplicationStats(ownerId);
+      request.log.debug(
+        { ownerId, total: stats.total, days: Object.keys(stats.days).length },
+        'data-center app-stats',
+      );
+      return stats;
     } catch (err) {
       throw crmError(err);
     }

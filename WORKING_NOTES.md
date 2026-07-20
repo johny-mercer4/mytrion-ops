@@ -4075,3 +4075,36 @@ color-coded stage headers) applied to Sales Retention without leaving the Sales 
 - `RetentionBoardUi.tsx` — hero, 4-up metric strip, column heads (count + gal), cards, empty.
 - Cases / Open Pool / RetentionTab wired to `.ss-ret-*` chrome; tab badges for active + pool.
 - Column hints + left rail colors align with stage SLA copy (2 BD / 5 BD / OoR attempts).
+
+## 2026-07-21 — Inbox live toast on every Sales tab
+
+Shell `useSidebarBadges` already held the ServerCRM WS; hardened so inbox push works off-Inbox:
+- Toast title fixed to **New inbox message** (subject as body) so subjects with “error” don’t
+  render as error-tone; fires for the effective user on any tab.
+- `watchKey` reconnects the shell socket on View-as user change; refs avoid stale owner match.
+- `inboxLiveBus.publishInboxLive` fans out to InboxTab + Home preview lists (shell still owns toast).
+
+## 2026-07-21 — Fix: Home goal/streak stuck at 0
+
+Home called `getAppStats()` with **no** `zoho_user_id`, unlike Deals/Desk. Failures / empty
+owner resolution rendered as silent zeros (no error UI). Backend COQL on
+`Deals.Application_Date` (application filled) was already correct — verified live for Daniel
+(29 apps / 90d; week + best non-zero).
+
+- FE always passes session / act-as `zoho_user_id`; normalizes day counts; shows load/error on
+  goal bar + streak strip.
+- Route logs owner + totals at debug.
+
+## 2026-07-21 — Data Center Money Codes (zoho-octane parity)
+
+Reference: `zoho-octane` self-service Records → Money Codes.
+
+**Correction:** list/void are **not** DWH touchpoints — the ledger is our Ops DB table
+`money_code_requests` (ServerCRM draw writes the same table via `MYTRION_OPS_DB_INTERNAL`).
+
+- Migration `0034`: draw-model columns (company_name, batch_id, unit_number, USED, …);
+  drop the old ACTIVE unique arbiter.
+- Local touchpoints: `money_code.list` (SQL, own-only) + `money_code.void` (own-only check
+  on Ops DB, then ServerCRM EFS-safe void which writes back to the same table).
+- Draw/preview stay `dwh.money_code` / `dwh.money_code_draw` (live EFS).
+- FE: `dataCenterMoneyCodes.tsx` — never shows `efs_money_code`.

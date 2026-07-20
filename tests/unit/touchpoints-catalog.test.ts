@@ -114,6 +114,7 @@ describe('catalog shape', () => {
       'dwh.money_code_draw',
       'efs.card_override',
       'fraud.hold_release',
+      'money_code.void',
     ]);
   });
 

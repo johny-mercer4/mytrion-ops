@@ -131,6 +131,52 @@ export interface MoneyCodeDrawResult {
   request_id?: string | number;
 }
 
+/** One physical money-code draw (batch collapsed). Code value is never returned. */
+export interface MoneyCodeRequestRow {
+  id: number | string;
+  carrier_id?: number | string;
+  company_name?: string | null;
+  money_code_amount?: number | string | null;
+  code_total?: number | string | null;
+  batch_rows?: number | string | null;
+  invoice_ids?: unknown;
+  billing_type?: string | null;
+  valid_until?: string | null;
+  status?: string | null;
+  requested_by?: string | null;
+  moneycode_reason?: string | null;
+  unit_number?: string | null;
+  created_at?: string | null;
+  voided_at?: string | null;
+  void_reason?: string | null;
+  has_code?: boolean;
+  notified_at?: string | null;
+  notify_error?: string | null;
+  [k: string]: unknown;
+}
+
+export interface MoneyCodeRequestsResult {
+  success?: boolean;
+  data?: MoneyCodeRequestRow[];
+  more_records?: boolean;
+  page?: number;
+  limit?: number;
+}
+
+export interface MoneyCodeVoidResult {
+  success?: boolean;
+  outcome?:
+    | 'voided'
+    | 'already_voided_synced'
+    | 'never_issued_voided'
+    | 'noop_not_issued'
+    | 'used_not_voided'
+    | string;
+  record?: MoneyCodeRequestRow;
+  message?: string;
+  efs?: { amount?: number | string; numUses?: number | string };
+}
+
 export interface SignedUrlResult {
   url?: string;
   expiresIn?: number;
@@ -372,6 +418,22 @@ export interface TouchpointMap {
       unit_number?: string;
     };
     result: MoneyCodeDrawResult;
+  };
+  /** Local Ops DB ledger (`money_code_requests`) — own draws only. */
+  'money_code.list': {
+    params: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      status?: 'ISSUED' | 'VOIDED' | 'USED';
+      carrierId?: string;
+    };
+    result: MoneyCodeRequestsResult;
+  };
+  /** Own-only void; EFS-safe path via ServerCRM, writes back to Ops DB. */
+  'money_code.void': {
+    params: { requestId: number; reason?: string };
+    result: MoneyCodeVoidResult;
   };
   'dwh.cards_last_used': {
     params: { carrierId: string; range?: string };

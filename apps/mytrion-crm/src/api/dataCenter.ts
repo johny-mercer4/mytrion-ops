@@ -39,8 +39,9 @@ export function listRejections(zohoUserId?: string): Promise<CrmRow[]> {
   return get('/data-center/rejections', zohoUserId);
 }
 
-/** Per-day applications-filled counts (by CRM `Application_Date`) for the caller — Home goal bar +
- *  streak. Returns an object (not a keyed array), so it bypasses the get() array-unwrapper. */
+/** Per-day applications-filled counts (by CRM `Application_Date` — "application filled") for the
+ *  caller — Home goal bar + streak. Returns an object (not a keyed array), so it bypasses the get()
+ *  array-unwrapper. Always pass `zohoUserId` from the session / act-as target (same as Deals). */
 export interface AppStats {
   /** 'YYYY-MM-DD' → applications filled that day. */
   days: Record<string, number>;
@@ -50,10 +51,24 @@ export interface AppStats {
 }
 
 export async function getAppStats(zohoUserId?: string): Promise<AppStats> {
-  return (await request('GET', '/data-center/app-stats', {
+  const res = (await request('GET', '/data-center/app-stats', {
     query: zohoUserId ? { zoho_user_id: zohoUserId } : {},
     headers: DC_HEADERS,
-  })) as AppStats;
+  })) as Partial<AppStats> | null;
+  if (!res || typeof res !== 'object' || res.days == null || typeof res.days !== 'object') {
+    throw new Error('App stats response missing days map');
+  }
+  const days: Record<string, number> = {};
+  for (const [k, v] of Object.entries(res.days)) {
+    const n = typeof v === 'number' ? v : Number(v);
+    if (k && Number.isFinite(n) && n > 0) days[k] = n;
+  }
+  return {
+    days,
+    total: typeof res.total === 'number' ? res.total : Object.values(days).reduce((a, b) => a + b, 0),
+    windowDays: typeof res.windowDays === 'number' ? res.windowDays : 90,
+    truncated: res.truncated === true,
+  };
 }
 
 /**

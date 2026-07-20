@@ -239,6 +239,13 @@
       "when": 1784568000000,
       "tag": "0033_retention_sales_agent_board",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1784571600000,
+      "tag": "0034_money_code_requests_draw_model",
+      "breakpoints": true
     }
   ]
 }
