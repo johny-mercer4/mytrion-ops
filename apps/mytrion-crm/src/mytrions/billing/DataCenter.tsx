@@ -18,7 +18,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import { billingTouchpoint, updateDealBilling } from '@/api/billing';
 import type { BillingDealsResult, BillingInvoicesResult } from '@/api/touchpointTypes';
 import { useLoad } from '../_shared/useLoad';
-import { type Deal, type PayType, type Verify, payMeta, stageMeta } from './data';
+import { type Deal, type PayType, type StageSem, type Verify, payMeta, stageMeta } from './data';
 
 /* ── icon path constants (verbatim from the widget template) ── */
 const P_REFRESH =
@@ -57,24 +57,25 @@ const PAY_OPTIONS: PayType[] = ['Line of Credit', 'Prepay', 'Deposit'];
 const CYCLE_OPTIONS = ['Weekly', 'Bi-Weekly', 'Monthly', 'Bi-Monthly'];
 const VERIFY_OPTIONS: Verify[] = ['Verified', 'Pending', 'Failed'];
 
-/** stageMeta / payMeta tone → the ported bm-badge modifier class. */
-type Tone = 'good' | 'bad' | 'info' | 'neutral' | 'warn';
-const TONE_BADGE: Record<Tone, string> = {
-  good: 'bm-badge-success',
-  bad: 'bm-badge-danger',
-  info: 'bm-badge-info',
-  warn: 'bm-badge-warning',
-  neutral: 'bm-badge-muted',
+/** Design sem → the bm-badge modifier class (stage chip). */
+const SEM_BADGE: Record<StageSem, string> = {
+  muted: 'bm-badge-muted',
+  warning: 'bm-badge-warning',
+  accent: 'bm-badge-info',
+  purple: 'bm-badge-purple',
+  success: 'bm-badge-success',
+  danger: 'bm-badge-danger',
 };
-const stageBadge = (stage: string): string => TONE_BADGE[stageMeta(stage).tone];
+const stageBadge = (stage: string): string => SEM_BADGE[stageMeta(stage).sem];
 
-/** stage tone → the progress-bar fill colour (design: stage bar under the chip). */
-const STAGE_BAR_COLOR: Record<Tone, string> = {
-  good: 'var(--success-text)',
-  bad: 'var(--danger-text)',
-  info: 'var(--billing-accent)',
-  warn: 'var(--warning-text)',
-  neutral: 'var(--text-muted)',
+/** Design sem → the stage progress-bar fill colour. */
+const SEM_COLOR: Record<StageSem, string> = {
+  muted: 'var(--mutedc)',
+  warning: 'var(--warning-text)',
+  accent: 'var(--billing-accent)',
+  purple: 'var(--purple-text)',
+  success: 'var(--success-text)',
+  danger: 'var(--danger-text)',
 };
 
 /** Payment-type badge — the widget's dedicated dc-badge-* palette (loc=green, prepay=amber, deposit=purple). */
@@ -415,7 +416,7 @@ export function DataCenter() {
                           <div
                             style={{
                               width: `${stageMeta(deal.stage).pct}%`,
-                              background: STAGE_BAR_COLOR[stageMeta(deal.stage).tone],
+                              background: SEM_COLOR[stageMeta(deal.stage).sem],
                             }}
                           />
                         </div>

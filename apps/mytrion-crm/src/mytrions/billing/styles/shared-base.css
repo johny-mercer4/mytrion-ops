@@ -219,15 +219,17 @@
     flex: 1;
 }
 
-/* Design: title-case nav labels, 13px, medium weight (not uppercase). */
+/* Design nav item: title-case, 13px/500, 2px transparent left border; active =
+   accent-bg + bright --text + 600 + accent left border (NOT blue text). */
 .bm-root .bm-nav-item {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
-    padding: 9px 12px;
+    gap: 11px;
+    padding: 10px 12px;
     border-radius: var(--radius-md);
     cursor: pointer;
-    border: 1px solid transparent;
+    border: none;
+    border-left: 2px solid transparent;
     transition: all 100ms ease;
     color: var(--text-secondary);
     font-size: 0.8125rem;
@@ -240,18 +242,19 @@
 
 .bm-root .bm-nav-item:hover {
     background: var(--surface-raised);
-    color: var(--text-secondary);
-    border-color: var(--border-light);
+    color: var(--text-primary);
 }
 
 .bm-root .bm-nav-item.active {
     background: var(--accent-bg);
-    color: var(--billing-accent);
-    border-color: transparent;
+    color: var(--color-brand-hover);
+    font-weight: 600;
+    border-left-color: var(--billing-accent);
 }
 
+/* Active icon follows the item colour (bright --text), not accent-blue. */
 .bm-root .bm-nav-item.active .nav-icon {
-    color: var(--billing-accent);
+    color: inherit;
 }
 
 .bm-root .nav-icon {

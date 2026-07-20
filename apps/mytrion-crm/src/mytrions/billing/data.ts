@@ -86,11 +86,14 @@ export function dateFull(iso: string): string {
 
 // ---- color/label meta (widget StatusBadge tone + display label) ----
 
-/** Deal stage progression (design parity) — drives the % fill of the stage progress bar. */
+/** Semantic colour keys shared by the design's chip() palette. */
+export type StageSem = 'muted' | 'warning' | 'accent' | 'purple' | 'success' | 'danger';
+
+/** Deal stage progression (verbatim design order) — drives both the chip colour
+ *  and the % fill of the stage progress bar. */
 const STAGE_ORDER = [
   'Application Sent',
   'Application Filled',
-  'Application Approved',
   'CS Validation',
   'EFS Processing',
   'Vendor Validation',
@@ -100,19 +103,21 @@ const STAGE_ORDER = [
   'Billing Form Filled',
   'Card Funded',
   'Card Swiped',
+  'Closed Lost',
 ];
 
-export function stageMeta(stage: string): { tone: 'good' | 'bad' | 'info' | 'neutral'; pct: number } {
-  const good = ['Card Funded', 'Card Swiped', 'Cards Activated', 'Cards Sent'];
-  const bad = ['Closed Lost'];
-  const info = ['Billing Form Sent', 'Billing Form Filled', 'EFS Processing', 'Vendor Validation', 'CS Validation'];
-  let tone: 'good' | 'bad' | 'info' | 'neutral' = 'neutral';
-  if (bad.includes(stage)) tone = 'bad';
-  else if (good.includes(stage)) tone = 'good';
-  else if (info.includes(stage)) tone = 'info';
+/** Design _stageMeta: index bands → sem colour; pct = (idx+1)/11. */
+export function stageMeta(stage: string): { sem: StageSem; pct: number } {
+  if (stage === 'Closed Lost') return { sem: 'danger', pct: 100 };
   const idx = STAGE_ORDER.indexOf(stage);
-  const pct = stage === 'Closed Lost' ? 100 : idx >= 0 ? Math.round(((idx + 1) / STAGE_ORDER.length) * 100) : 8;
-  return { tone, pct };
+  let sem: StageSem;
+  if (idx <= 1) sem = 'muted';
+  else if (idx <= 4) sem = 'warning';
+  else if (idx <= 6) sem = 'accent';
+  else if (idx <= 8) sem = 'purple';
+  else sem = 'success';
+  const pct = idx >= 0 ? Math.round(((idx + 1) / 11) * 100) : 8;
+  return { sem, pct };
 }
 
 /** Clean a raw Zoho billing_cycle enum (e.g. "WEEKLY_MON_SUN", "SEMI_WEEKLY") to a display label. */

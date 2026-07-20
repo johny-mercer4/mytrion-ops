@@ -168,11 +168,9 @@ export function typeLabel(t: string): string {
   return t === 'Card-Chargeback' ? 'Chargeback' : t || '—';
 }
 
-/** Shared db-status-badge tone class for the type column. */
+/** Type-column chip colour (design typeChip): Chargeback → purple, else → accent. */
 export function typeBadgeClass(t: string): string {
-  if (t === 'Card-Chargeback') return 'db-status-pending';
-  if (t === 'Wire') return 'db-status-ok';
-  return 'db-status-partial';
+  return t === 'Card-Chargeback' ? 'bm-badge-purple' : 'bm-badge-info';
 }
 
 /** Whether a candidate's amount equals the return amount, to the cent. */
