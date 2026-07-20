@@ -34,6 +34,20 @@ vi.mock('../../src/wrappers/serverCrmWrapper.js', () => ({
     getPaymentInfo: vi.fn(),
     getInvoices: vi.fn(),
     getInvoiceSignedUrl: vi.fn(),
+    getMoneyCodePreview: vi.fn(),
+    drawMoneyCode: vi.fn(),
+  },
+}));
+
+vi.mock('../../src/wrappers/efsWrapper.js', () => ({
+  efsWrapper: {
+    getCards: vi.fn(),
+    getCardEfsInfo: vi.fn(),
+    overrideCard: vi.fn(),
+    setCardStatus: vi.fn(),
+    setCardLimits: vi.fn(),
+    updateCardInfo: vi.fn(),
+    fraudHoldRelease: vi.fn(),
   },
 }));
 
@@ -104,6 +118,9 @@ import { sendDocument, TelegramChatUnreachableError, parseInitDataUser, signTele
 import { executeZohoFunctionWithFallback } from '../../src/integrations/zohoFunctions.js';
 import { createDeskTicket } from '../../src/integrations/zohoDesk.js';
 import { serverCrmWrapper } from '../../src/wrappers/serverCrmWrapper.js';
+import { efsWrapper } from '../../src/wrappers/efsWrapper.js';
+import { env } from '../../src/config/env.js';
+import { resetRateBucketsForTests } from '../../src/modules/security/rateBucket.js';
 
 const inviteRepo = vi.mocked(carrierInvitationRepo);
 const registrationRepo = vi.mocked(registeredMiniAppCompanyRepo);
@@ -112,6 +129,7 @@ const dwhTxns = vi.mocked(listDwhTransactions);
 const dwhRange = vi.mocked(resolveDwhTxnRange);
 const botSendDocument = vi.mocked(sendDocument);
 const crm = vi.mocked(serverCrmWrapper);
+const efs = vi.mocked(efsWrapper);
 
 let app: FastifyInstance;
 
@@ -158,6 +176,19 @@ beforeEach(() => {
   vi.mocked(signTelegramInitData).mockReturnValue('signed-init-data');
   vi.mocked(sendDocument).mockResolvedValue(undefined);
   vi.mocked(createDeskTicket).mockResolvedValue('1057080000099887766');
+  // Write-action defaults: flags OFF (each write test opts in explicitly), a fresh rate bucket so
+  // the per-carrier window from a prior test can't leak a spurious 429, and benign wrapper stubs.
+  env.FF_MINIAPP_CARD_WRITES_ENABLED = false;
+  env.FF_MINIAPP_MONEY_CODE_ENABLED = false;
+  resetRateBucketsForTests();
+  efs.getCardEfsInfo.mockResolvedValue({ ok: true } as never);
+  efs.overrideCard.mockResolvedValue({ ok: true } as never);
+  efs.setCardStatus.mockResolvedValue({ ok: true } as never);
+  efs.setCardLimits.mockResolvedValue({ ok: true } as never);
+  efs.updateCardInfo.mockResolvedValue({ ok: true } as never);
+  efs.fraudHoldRelease.mockResolvedValue({ ok: true } as never);
+  crm.getMoneyCodePreview.mockResolvedValue({ drawable: 500 } as never);
+  crm.drawMoneyCode.mockResolvedValue({ ok: true } as never);
 });
 
 function inviteRow(overrides: Record<string, unknown> = {}) {
@@ -1530,5 +1561,282 @@ describe('owner renames a driver on the fleet screen', () => {
 
     expect(res.statusCode).toBe(400);
     expect(registrationRepo.renameDriverByCard).not.toHaveBeenCalled();
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+// Write-action endpoints (carrierMiniAppActions.routes.ts) — the security layer that guards the
+// EFS / servercrm writes behind the mini-app. A write here moves real money and card state, so the
+// gates must fire in a fixed order BEFORE any wrapper is called: feature flag → auth (role) → rate
+// limit → card ownership. Each test asserts both the rejection code AND that the wrapper was never
+// reached, so a reordering that leaks a write past a gate fails loudly.
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+describe('mini-app write actions — RBAC + gate order', () => {
+  const CARRIER = '5758544';
+
+  const ownerRow = (o: Record<string, unknown> = {}) =>
+    registrationRow({ profile: 'owner', carrierId: CARRIER, ...o });
+  const driverRow = (o: Record<string, unknown> = {}) =>
+    registrationRow({ profile: 'driver', carrierId: CARRIER, cardId: 'card_own', companyType: null, ...o });
+
+  /** The DWH confirms `cardId` is a card of CARRIER, resolving to `cardNumber` for EFS. */
+  function ownsCard(cardId: string, cardNumber: string) {
+    vi.mocked(findDwhCardById).mockResolvedValue({ cardId, cardNumber, cardType: 'FUEL', status: 'Active', balance: '0' });
+  }
+
+  describe('feature flags fail closed (503) before touching EFS', () => {
+    it('blocks a card write with MINIAPP_WRITES_DISABLED while the flag is off', async () => {
+      registrationRepo.findByTelegramUserId.mockResolvedValue(ownerRow());
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/card/set-status',
+        headers: { 'content-type': 'application/json' },
+        payload: { initData: 'signed', cardId: 'card_own', action: 'deactivate' },
+      });
+
+      expect(res.statusCode).toBe(503);
+      expect(res.json()).toMatchObject({ error: { code: 'MINIAPP_WRITES_DISABLED' } });
+      expect(efs.setCardStatus).not.toHaveBeenCalled();
+    });
+
+    it('blocks money code with MINIAPP_MONEY_CODE_DISABLED while the flag is off', async () => {
+      registrationRepo.findByTelegramUserId.mockResolvedValue(ownerRow());
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/money-code/preview',
+        headers: { 'content-type': 'application/json' },
+        payload: { initData: 'signed' },
+      });
+
+      expect(res.statusCode).toBe(503);
+      expect(res.json()).toMatchObject({ error: { code: 'MINIAPP_MONEY_CODE_DISABLED' } });
+      expect(crm.getMoneyCodePreview).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('role gate — a driver cannot reach an owner-only write', () => {
+    beforeEach(() => {
+      env.FF_MINIAPP_CARD_WRITES_ENABLED = true;
+      env.FF_MINIAPP_MONEY_CODE_ENABLED = true;
+    });
+
+    for (const [url, extra] of [
+      ['/v1/carrier/mini-app/card/set-status', { cardId: 'card_own', action: 'deactivate' }],
+      ['/v1/carrier/mini-app/card/limits', { cardId: 'card_own', limitId: 'ULSD', value: 10, action: 'increase' }],
+      ['/v1/carrier/mini-app/card/info', { cardId: 'card_own', unitNumber: '42' }],
+      ['/v1/carrier/mini-app/card/fraud-request', { cardId: 'card_own', request: 'fraud_hold' }],
+      ['/v1/carrier/mini-app/money-code/preview', {}],
+      ['/v1/carrier/mini-app/money-code/draw', { amount: 100, unitNumber: '42', reason: 'fuel' }],
+    ] as const) {
+      it(`403s a driver on ${url}`, async () => {
+        registrationRepo.findByTelegramUserId.mockResolvedValue(driverRow());
+        ownsCard('card_own', '7083050030880417593'); // even with a resolvable card, role is checked first
+
+        const res = await app.inject({
+          method: 'POST',
+          url,
+          headers: { 'content-type': 'application/json' },
+          payload: { initData: 'signed', ...extra },
+        });
+
+        expect(res.statusCode).toBe(403);
+        expect(res.json()).toMatchObject({ error: { code: 'NOT_A_REGISTERED_OWNER_USER' } });
+        expect(efs.setCardStatus).not.toHaveBeenCalled();
+        expect(efs.setCardLimits).not.toHaveBeenCalled();
+        expect(crm.drawMoneyCode).not.toHaveBeenCalled();
+      });
+    }
+  });
+
+  describe('card ownership — an owner cannot aim a write at a foreign card', () => {
+    beforeEach(() => {
+      env.FF_MINIAPP_CARD_WRITES_ENABLED = true;
+    });
+
+    it("404s when the cardId is not a card of the caller's carrier", async () => {
+      registrationRepo.findByTelegramUserId.mockResolvedValue(ownerRow());
+      vi.mocked(findDwhCardById).mockResolvedValue(null); // DWH: this card is not on this carrier
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/card/set-status',
+        headers: { 'content-type': 'application/json' },
+        payload: { initData: 'signed', cardId: 'card_from_another_fleet', action: 'deactivate' },
+      });
+
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+      expect(efs.setCardStatus).not.toHaveBeenCalled();
+    });
+
+    it("resolves the card against the OWNER's carrierId, never a body-supplied carrier", async () => {
+      registrationRepo.findByTelegramUserId.mockResolvedValue(ownerRow());
+      ownsCard('card_own', '7083050030880417593');
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/card/set-status',
+        headers: { 'content-type': 'application/json' },
+        // A hostile body carrierId must be ignored — scoping comes from the verified registration.
+        payload: { initData: 'signed', cardId: 'card_own', action: 'activate', carrierId: '9999999' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(findDwhCardById).toHaveBeenCalledWith(CARRIER, 'card_own');
+      expect(efs.setCardStatus).toHaveBeenCalledWith(CARRIER, '7083050030880417593', 'activate');
+    });
+  });
+
+  describe('rate limit — the 6th write in a window is refused per carrier', () => {
+    beforeEach(() => {
+      env.FF_MINIAPP_CARD_WRITES_ENABLED = true;
+    });
+
+    it('allows 5 then 429s the 6th with MINIAPP_WRITE_RATE_LIMITED', async () => {
+      registrationRepo.findByTelegramUserId.mockResolvedValue(ownerRow());
+      ownsCard('card_own', '7083050030880417593');
+      const call = () =>
+        app.inject({
+          method: 'POST',
+          url: '/v1/carrier/mini-app/card/set-status',
+          headers: { 'content-type': 'application/json' },
+          payload: { initData: 'signed', cardId: 'card_own', action: 'activate' },
+        });
+
+      for (let i = 0; i < 5; i++) expect((await call()).statusCode).toBe(200);
+      const sixth = await call();
+
+      expect(sixth.statusCode).toBe(429);
+      expect(sixth.json()).toMatchObject({ error: { code: 'MINIAPP_WRITE_RATE_LIMITED' } });
+      // The token is taken BEFORE the card resolve/EFS call, so the refused write never reached EFS.
+      expect(efs.setCardStatus).toHaveBeenCalledTimes(5);
+    });
+  });
+
+  describe("driver override — pinned to the driver's OWN card, body cardId ignored", () => {
+    beforeEach(() => {
+      env.FF_MINIAPP_CARD_WRITES_ENABLED = true;
+    });
+
+    it("overrides the driver's registered card even when the payload names another", async () => {
+      registrationRepo.findByTelegramUserId.mockResolvedValue(driverRow({ cardId: 'card_own' }));
+      // Only the driver's own (carrier, card_own) resolves; a stray body cardId is never looked up.
+      vi.mocked(findDwhCardById).mockImplementation(async (carrier, cardId) =>
+        carrier === CARRIER && cardId === 'card_own'
+          ? { cardId: 'card_own', cardNumber: 'DRIVER_OWN_PAN', cardType: 'FUEL', status: 'Active', balance: '0' }
+          : null,
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/card/override',
+        headers: { 'content-type': 'application/json' },
+        payload: { initData: 'signed', cardId: 'card_belonging_to_a_colleague' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(efs.overrideCard).toHaveBeenCalledWith(CARRIER, 'DRIVER_OWN_PAN');
+      // The colleague's card the driver tried to name is never resolved, let alone acted on.
+      expect(findDwhCardById).not.toHaveBeenCalledWith(CARRIER, 'card_belonging_to_a_colleague');
+    });
+  });
+
+  describe('unregistered / revoked identities are turned away at the write layer', () => {
+    beforeEach(() => {
+      env.FF_MINIAPP_CARD_WRITES_ENABLED = true;
+    });
+
+    it('404s an unregistered Telegram user (MINI_APP_NOT_REGISTERED)', async () => {
+      registrationRepo.findByTelegramUserId.mockResolvedValue(undefined);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/card/set-status',
+        headers: { 'content-type': 'application/json' },
+        payload: { initData: 'signed', cardId: 'card_own', action: 'activate' },
+      });
+
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toMatchObject({ error: { code: 'MINI_APP_NOT_REGISTERED' } });
+      expect(efs.setCardStatus).not.toHaveBeenCalled();
+    });
+
+    it('403s a revoked registration (MINI_APP_REVOKED)', async () => {
+      registrationRepo.findByTelegramUserId.mockResolvedValue(ownerRow({ status: 'revoked' }));
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/card/set-status',
+        headers: { 'content-type': 'application/json' },
+        payload: { initData: 'signed', cardId: 'card_own', action: 'activate' },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: { code: 'MINI_APP_REVOKED' } });
+      expect(efs.setCardStatus).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('limit change is clamped server-side', () => {
+    beforeEach(() => {
+      env.FF_MINIAPP_CARD_WRITES_ENABLED = true;
+    });
+
+    it('422s a change above MINIAPP_LIMIT_CHANGE_MAX before any EFS call', async () => {
+      registrationRepo.findByTelegramUserId.mockResolvedValue(ownerRow());
+      ownsCard('card_own', '7083050030880417593');
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/card/limits',
+        headers: { 'content-type': 'application/json' },
+        payload: {
+          initData: 'signed',
+          cardId: 'card_own',
+          limitId: 'ULSD',
+          value: env.MINIAPP_LIMIT_CHANGE_MAX + 1,
+          action: 'increase',
+        },
+      });
+
+      expect(res.statusCode).toBe(422);
+      expect(res.json()).toMatchObject({ error: { code: 'LIMIT_CHANGE_TOO_LARGE' } });
+      expect(efs.setCardLimits).not.toHaveBeenCalled();
+    });
+  });
+});
+
+// A driver's transaction export must never carry the owner's discount terms — the report is forced
+// to retail pricing regardless of what the client asks for. This lives on carrierMiniApp.routes but
+// is a scoping/RBAC invariant, so it belongs with the mini-app security tests.
+describe('driver transaction export is always retail-priced', () => {
+  it('forces retail even when a driver asks for discount pricing', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValue(
+      registrationRow({ profile: 'driver', carrierId: '5758544', cardId: 'card_1', companyType: null }),
+    );
+    vi.mocked(findDwhCardById).mockResolvedValue({ cardId: 'card_1', cardNumber: '7083050030880417593', cardType: 'FUEL', status: 'Active', balance: '0' });
+    dwhTxns.mockResolvedValue({
+      data: [{ transaction_id: 't1', card_number: '7083050030880417593', line_item_amount: 100, line_item_funded_amount: 90, line_item_discount_amount: 10 }],
+      totals: { transactions: 1, line_items: 1, funded_total: 90, fuel_quantity: 20, total_fuel_quantity: 20, discount_amount: 10 },
+      range: { preset: 'month', from: '2026-07-01', to: '2026-07-17' },
+      pagination: { page: 1, limit: 5000, count: 1, more_records: false },
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/transactions/export',
+      headers: { 'content-type': 'application/json' },
+      // Driver explicitly asks for 'discount' — the route must override it to 'retail'.
+      payload: { initData: 'signed', range: 'month', format: 'csv', priceMode: 'discount' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // The report is delivered to the bot chat; its caption reflects the price mode actually used.
+    const caption = botSendDocument.mock.calls.at(-1)?.[0]?.caption ?? '';
+    expect(caption).toMatch(/retail/i);
+    // The "saved" (discount) summary line is the owner-only variant — it must never reach a driver.
+    expect(caption).not.toMatch(/saved/i);
   });
 });
