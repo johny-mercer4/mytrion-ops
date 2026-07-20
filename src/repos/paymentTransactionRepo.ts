@@ -1,4 +1,4 @@
-import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, ilike, inArray, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   paymentTransactions,
@@ -236,6 +236,38 @@ export const paymentTransactionRepo = {
       .where(eq(paymentTransactions.id, id))
       .returning();
     return rows[0];
+  },
+
+  /**
+   * Prepay aggregate: sum amount per (carrier_id, source) over [startYmd, endExclusiveYmd) in UTC —
+   * feeds the mytrion-ops prepay ledger's zelle/chase/merchant columns. Bounds are UTC (matches how
+   * MX `occurred_at` is stored), exclusive end (the widget's date convention).
+   */
+  async sumForPrepay(
+    sources: string[],
+    startYmd: string,
+    endExclusiveYmd: string,
+  ): Promise<Array<{ carrierId: string; source: string; total: number }>> {
+    if (sources.length === 0) return [];
+    const startUtc = `${startYmd}T00:00:00+00:00`;
+    const endUtc = `${endExclusiveYmd}T00:00:00+00:00`;
+    const rows = await db
+      .select({
+        carrierId: paymentTransactions.carrierId,
+        source: paymentTransactions.source,
+        total: sql<number>`sum(${paymentTransactions.amount})::float8`,
+      })
+      .from(paymentTransactions)
+      .where(
+        and(
+          inArray(paymentTransactions.source, sources),
+          sql`${paymentTransactions.carrierId} is not null`,
+          sql`${paymentTransactions.occurredAt} >= ${startUtc}`,
+          sql`${paymentTransactions.occurredAt} < ${endUtc}`,
+        ),
+      )
+      .groupBy(paymentTransactions.carrierId, paymentTransactions.source);
+    return rows.map((r) => ({ carrierId: String(r.carrierId), source: r.source, total: Number(r.total) || 0 }));
   },
 
   /** Format money for callers building NewPaymentTransaction rows. */
