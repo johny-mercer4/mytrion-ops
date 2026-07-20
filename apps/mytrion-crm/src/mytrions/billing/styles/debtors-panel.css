@@ -10,6 +10,20 @@
     height: 100%;
     overflow: hidden;
 }
+
+/* Export-to-Excel button — a green-accented sibling of the Refresh button. */
+.bm-root .db-export-btn {
+    color: var(--success-text);
+    border-color: var(--success-border);
+    background: var(--success-bg);
+}
+.bm-root .db-export-btn:hover:not(:disabled) {
+    border-color: var(--success-text);
+}
+.bm-root .db-export-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
 /* ── Header Row ── */
 .bm-root .db-header-row {
     display: flex;

@@ -239,7 +239,7 @@ export function Transactions() {
     setSource('all');
     setCarrierFilter('all');
     setServerExtras(null);
-    firstPage.reload();
+    firstPage.refresh();
   }
 
   const patchRow = useCallback((recordId: string, patch: Partial<TxRow>) => {
@@ -337,8 +337,8 @@ export function Transactions() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <button className="bm-refresh-btn" onClick={reload} disabled={firstPage.loading} title="Refresh">
-            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" className={firstPage.loading ? 'spin-icon' : undefined}>
+          <button className="bm-refresh-btn" onClick={reload} disabled={firstPage.loading || firstPage.refreshing} title="Refresh">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" className={firstPage.loading || firstPage.refreshing ? 'spin-icon' : undefined}>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={REFRESH_PATH} />
             </svg>
             Refresh
