@@ -110,12 +110,13 @@ export function resolvePhase1Transition(
 
   switch (input.outcome) {
     case 'start_working':
+      // Kept for API compatibility — new cases auto-enter Working on create.
       return {
         phaseCode: RETENTION_PHASE.agent,
         statusCode: 'p1_in_progress',
         agentOutcome: null,
         eventType: 'status_change',
-        eventNotes: 'Agent started working the case',
+        eventNotes: 'Agent started working the case (legacy)',
       };
 
     case 'returned':
@@ -139,7 +140,7 @@ export function resolvePhase1Transition(
         currentDeadlineAt: comms.currentDeadlineAt,
         currentDeadlineType: comms.currentDeadlineType,
         eventType: 'outcome_recorded',
-        eventNotes: 'Out of Reach — log channel attempts (5 max, 1 BD each)',
+        eventNotes: 'Out of Reach — log channel attempts (5 max, 5 BD each)',
       };
     }
 

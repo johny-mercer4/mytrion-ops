@@ -118,6 +118,8 @@ export const retentionCasePhase1Repo = {
     input: {
       channel: CommunicationChannel;
       notes?: string | undefined;
+      /** Screenshot / proof (data URL or https) — required for non-RingCentral channels. */
+      evidenceUrl?: string | undefined;
       actorZohoUserId?: string | undefined;
     },
   ): Promise<RetentionCaseDto> {
@@ -137,13 +139,44 @@ export const retentionCasePhase1Repo = {
         expose: true,
       });
     }
-    // Board: Out of Reach first, then choose channels (attempts only in OoR).
+    // Channel attempts only after agent marks Out of Reach.
     if (existing.statusCode !== 'p1_out_of_reach') {
       throw new AppError('Mark Out of Reach before logging channel attempts', {
         statusCode: 409,
         code: 'RETENTION_BAD_STATUS',
         expose: true,
       });
+    }
+    const evidenceUrl = input.evidenceUrl?.trim() || undefined;
+    const noteTrim = input.notes?.trim() || undefined;
+    if (input.channel !== 'ringcentral') {
+      // Screenshot OR notes — either is enough proof for TG/WA/etc.
+      if (!evidenceUrl && !noteTrim) {
+        throw new AppError('Add a screenshot or a short note as proof for this channel', {
+          statusCode: 400,
+          code: 'RETENTION_EVIDENCE_REQUIRED',
+          expose: true,
+        });
+      }
+      if (evidenceUrl) {
+        if (evidenceUrl.length > 1_800_000) {
+          throw new AppError('Screenshot is too large (max ~1.5MB)', {
+            statusCode: 400,
+            code: 'VALIDATION_ERROR',
+            expose: true,
+          });
+        }
+        if (
+          !evidenceUrl.startsWith('data:image/') &&
+          !/^https:\/\//i.test(evidenceUrl)
+        ) {
+          throw new AppError('Evidence must be an image data URL or https link', {
+            statusCode: 400,
+            code: 'VALIDATION_ERROR',
+            expose: true,
+          });
+        }
+      }
     }
     const attempts = Math.min(existing.outOfReachAttempts + 1, MAX_OUT_OF_REACH_ATTEMPTS);
     const toPool = attempts >= MAX_OUT_OF_REACH_ATTEMPTS;
@@ -156,12 +189,13 @@ export const retentionCasePhase1Repo = {
         })
       : null;
     const nextDeadline = toPool ? null : nextCommsAttemptDeadline();
+    // Stay OoR between attempts 1–4 (agent may still pick Reached / Dissatisfied / Vacation).
     const rows = await db
       .update(retentionCases)
       .set({
         outOfReachAttempts: toPool ? 0 : attempts,
         statusCode: toPool ? pool!.statusCode : 'p1_out_of_reach',
-        agentOutcome: 'out_of_reach',
+        agentOutcome: toPool ? 'out_of_reach' : 'out_of_reach',
         assignedAgentZohoUserId: toPool ? null : existing.assignedAgentZohoUserId,
         poolOwnerZohoUserId: toPool ? (pool!.poolOwnerZohoUserId ?? null) : existing.poolOwnerZohoUserId,
         pendingClaimantZohoUserId: toPool ? null : existing.pendingClaimantZohoUserId,
@@ -184,8 +218,9 @@ export const retentionCasePhase1Repo = {
       eventType: 'comms_attempt',
       actorZohoUserId: input.actorZohoUserId,
       channel: input.channel,
+      evidenceUrl,
       notes:
-        input.notes?.trim() ||
+        noteTrim ||
         (toPool
           ? `${channelLabel} attempt ${attempts}/${MAX_OUT_OF_REACH_ATTEMPTS} — sent to Open Pool`
           : `${channelLabel} attempt ${attempts}/${MAX_OUT_OF_REACH_ATTEMPTS}`),
@@ -196,6 +231,7 @@ export const retentionCasePhase1Repo = {
         carrierId: row.carrierId,
         companyName: row.companyName,
         previousOwnerZohoUserId: previousOwner,
+        zohoDealId: row.zohoDealId,
       });
     }
     return toRetentionCaseDto(row);

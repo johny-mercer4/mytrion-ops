@@ -1,6 +1,6 @@
 /**
- * Sales Open Pool claim approval — request → owner approve/decline / 1 BD auto.
- * Instant claim is only used when there is no pool owner to ask.
+ * Sales Open Pool claim — instant assign (no sales-agent approval UI).
+ * approve/decline + 1 BD auto remain for ops/admin / leftover pending rows.
  */
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { db } from '../db/client.js';
@@ -10,15 +10,10 @@ import {
   MIN_INACTIVE_DAYS_FOR_POOL_CLAIM,
   moveToCiti,
   patchToUpdateInput,
-  stampClaimApproveDeadline,
   stampNewOwnerDeadline,
   stampPoolClaimDeadline,
 } from '../modules/retention/deadlines.js';
-import {
-  notifyClaimApproved,
-  notifyClaimDeclined,
-  notifyClaimRequestToOwner,
-} from '../modules/retention/notify.js';
+import { notifyClaimApproved, notifyClaimDeclined } from '../modules/retention/notify.js';
 import { MAX_OPEN_POOL_AGENTS } from '../modules/retention/phase1.js';
 import type { TenantContext } from '../types/tenantContext.js';
 import { firstOrThrow } from './util.js';
@@ -104,8 +99,7 @@ async function finalizeClaim(
 
 export const retentionPoolClaimRepo = {
   /**
-   * Request a claim from Open Pool. If no pool owner is on file, assigns instantly.
-   * Otherwise moves to p1_pool_claim_pending with a 1 BD approve deadline.
+   * Claim from Open Pool — assigns to the caller immediately (Sales does not review claims).
    */
   async requestClaim(
     ctx: TenantContext,
@@ -145,46 +139,12 @@ export const retentionPoolClaimRepo = {
       });
     }
 
-    // No owner to ask → instant assign (legacy / missing owner stamp).
-    if (!owner) {
-      const dto = await finalizeClaim(ctx, existing, claimant, {
-        agentName: opts.agentName,
-        actorZohoUserId: claimant,
-        notes: `Claimed from Open Pool (no prior owner on file) — assignment ${existing.assignmentCount + 1}/${MAX_OPEN_POOL_AGENTS}`,
-      });
-      return { ...dto, pendingApproval: false };
-    }
-
-    const approve = stampClaimApproveDeadline();
-    const rows = await db
-      .update(retentionCases)
-      .set({
-        statusCode: 'p1_pool_claim_pending',
-        pendingClaimantZohoUserId: claimant,
-        currentDeadlineAt: approve.currentDeadlineAt,
-        currentDeadlineType: approve.currentDeadlineType,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(retentionCases.id, existing.id), eq(retentionCases.tenantId, ctx.tenantId)))
-      .returning();
-    const row = firstOrThrow(rows, 'Failed to request pool claim');
-    await appendRetentionEvent({
-      caseId: row.id,
-      fromStatus: existing.statusCode,
-      toStatus: row.statusCode,
-      eventType: 'status_change',
+    const dto = await finalizeClaim(ctx, existing, claimant, {
+      agentName: opts.agentName,
       actorZohoUserId: claimant,
-      notes: `Claim requested — awaiting owner approve (1 BD auto-approve)`,
+      notes: `Claimed from Open Pool — assignment ${existing.assignmentCount + 1}/${MAX_OPEN_POOL_AGENTS}`,
     });
-    await notifyClaimRequestToOwner(ctx, {
-      caseId: String(row.id),
-      carrierId: row.carrierId,
-      companyName: row.companyName,
-      ownerZohoUserId: owner,
-      claimantZohoUserId: claimant,
-    });
-    // Keep pool list live for other agents.
-    return { ...toRetentionCaseDto(row), pendingApproval: true };
+    return { ...dto, pendingApproval: false };
   },
 
   async approveClaim(

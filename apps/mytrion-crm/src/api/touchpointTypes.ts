@@ -578,7 +578,12 @@ export interface TouchpointMap {
     result: { case: RetentionCaseRow };
   };
   'retention.log_attempt': {
-    params: { caseId: string; channel: RetentionChannel; notes?: string };
+    params: {
+      caseId: string;
+      channel: RetentionChannel;
+      notes?: string;
+      evidence_url?: string;
+    };
     result: { case: RetentionCaseRow };
   };
   'retention.pool_list': {
@@ -840,7 +845,7 @@ export type RetentionDissatisfactionReason =
   | 'trust_issues'
   | 'switched_other';
 
-/** Agent-selectable outcomes — Returned is sync-only (hourly DWH close). */
+/** Agent-selectable outcomes — Returned is sync-only; Working starts on case create. */
 export type RetentionPhase1Outcome =
   | 'reached'
   | 'out_of_reach'
@@ -849,7 +854,6 @@ export type RetentionPhase1Outcome =
   | 'no_action_2bd'
   | 'escalate_retention'
   | 'send_to_open_pool'
-  | 'start_working'
   | 'ops_confirm_vacation'
   | 'ops_deny_vacation';
 
@@ -904,6 +908,7 @@ export interface RetentionCaseEventRow {
   actorZohoUserId: string | null;
   channel: RetentionChannel | null;
   notes: string | null;
+  evidenceUrl: string | null;
   occurredAt: string;
 }
 
@@ -921,7 +926,14 @@ export interface RetentionCaseDetailResult {
 
 export interface RetentionLookupsResult {
   phases: Array<{ code: string; label: string; sortOrder: number }>;
-  statuses: Array<{ code: string; phaseCode: string; label: string; isTerminal: boolean }>;
+  statuses: Array<{
+    code: string;
+    phaseCode: string;
+    label: string;
+    isTerminal: boolean;
+    boardColumn: string | null;
+    sortOrder: number;
+  }>;
   channels: RetentionChannel[];
   dissatisfactionReasons: RetentionDissatisfactionReason[];
   outcomes: RetentionPhase1Outcome[];

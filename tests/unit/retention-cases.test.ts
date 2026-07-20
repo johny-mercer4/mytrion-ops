@@ -189,6 +189,7 @@ function candidate(overrides: Partial<RetentionCandidate> = {}): RetentionCandid
     applicationId: '9001',
     agentName: 'Rep Riley',
     agentZohoUserId: '777',
+    dealStage: 'Card Swiped',
     activeCards: 12,
     lastTransactionAt: new Date('2026-06-20T00:00:00Z'),
     daysInactive: 16,
@@ -342,7 +343,7 @@ describe('retention routes — CRUD', () => {
       expect.objectContaining({
         carrierId: '104882',
         phaseCode: 'phase_1_agent',
-        statusCode: 'p1_new',
+        statusCode: 'p1_in_progress',
         source: 'manual',
       }),
     );
@@ -439,7 +440,7 @@ describe('retention sync — auto record generation', () => {
       expect.objectContaining({
         carrierId: '111',
         phaseCode: 'phase_1_agent',
-        statusCode: 'p1_new',
+        statusCode: 'p1_in_progress',
         source: 'auto',
       }),
     );
@@ -456,8 +457,9 @@ describe('retention sync — auto record generation', () => {
         agentOutcome: 'returned',
       }),
     );
-    // phase_3_citi is final — never auto-closed; its carrier is not even activity-checked.
-    expect(lastTxMock).toHaveBeenCalledWith(['444']);
+    // phase_3_citi is final — never auto-closed; any post-create tx closes other open cases.
+    expect(lastTxMock).toHaveBeenCalledWith(expect.arrayContaining(['222', '444']));
+    expect(lastTxMock.mock.calls[0]?.[0]).not.toContain('555');
   });
 
   it('never closes a citi-phase case even when the client transacted', async () => {
@@ -507,5 +509,65 @@ describe('frequency classification (pure)', () => {
     const now = new Date('2026-07-08T12:00:00Z');
     expect(daysSince(new Date('2026-07-05T13:00:00Z'), now)).toBe(2);
     expect(daysSince(new Date('2026-07-09T00:00:00Z'), now)).toBe(0);
+  });
+});
+
+describe('retention entry exclusions (pure)', () => {
+  const swipe = new Date('2026-06-01T00:00:00Z');
+
+  it('allows Card Swiped active non-debtors', async () => {
+    const { isRetentionEntryEligible } = await import('../../src/integrations/dwhRetention.js');
+    expect(
+      isRetentionEntryEligible({
+        firstSwipeDate: swipe,
+        dealStage: 'Card Swiped',
+        isActive: true,
+        isBillingDebtor: false,
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  it('excludes debtors, pre-swipe, Closed Lost / OoB, deactivated', async () => {
+    const { isRetentionEntryEligible } = await import('../../src/integrations/dwhRetention.js');
+    expect(
+      isRetentionEntryEligible({
+        firstSwipeDate: swipe,
+        dealStage: 'Card Swiped',
+        isActive: true,
+        isBillingDebtor: true,
+      }).reason,
+    ).toBe('debtor');
+    expect(
+      isRetentionEntryEligible({
+        firstSwipeDate: null,
+        dealStage: 'Card Funded',
+        isActive: true,
+        isBillingDebtor: false,
+      }).reason,
+    ).toBe('pre_card_swiped');
+    expect(
+      isRetentionEntryEligible({
+        firstSwipeDate: swipe,
+        dealStage: 'Closed Lost',
+        isActive: true,
+        isBillingDebtor: false,
+      }).reason,
+    ).toBe('out_of_business');
+    expect(
+      isRetentionEntryEligible({
+        firstSwipeDate: swipe,
+        dealStage: 'Out of Business',
+        isActive: true,
+        isBillingDebtor: false,
+      }).reason,
+    ).toBe('out_of_business');
+    expect(
+      isRetentionEntryEligible({
+        firstSwipeDate: swipe,
+        dealStage: 'Card Swiped',
+        isActive: false,
+        isBillingDebtor: false,
+      }).reason,
+    ).toBe('deactivated');
   });
 });

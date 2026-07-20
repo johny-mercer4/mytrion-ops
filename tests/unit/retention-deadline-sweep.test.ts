@@ -71,16 +71,21 @@ describe('resolveExpiry', () => {
     expect(t?.currentDeadlineType).toBe(RETENTION_WAIT_DEADLINE_TYPE);
   });
 
-  it('5BD post-contact → Open Pool', () => {
+  it('5BD post-contact (Reached) → Open Pool (not Retention)', () => {
     const t = resolveExpiry(
       baseCase({
         statusCode: 'p1_reached',
         currentDeadlineType: POST_CONTACT_DEADLINE_TYPE,
-        agentOutcome: 'returned',
+        agentOutcome: 'reached',
+        assignedAgentZohoUserId: '777',
       }),
       now,
     );
+    expect(t?.phaseCode).toBe('phase_1_agent');
     expect(t?.statusCode).toBe('p1_open_pool');
+    expect(t?.agentOutcome).toBe('reached');
+    expect(t?.assignedAgentZohoUserId).toBeNull();
+    expect(t?.poolOwnerZohoUserId).toBe('777');
     expect(t?.currentDeadlineType).toBe(POOL_CLAIM_DEADLINE_TYPE);
   });
 
@@ -160,11 +165,11 @@ describe('resolveExpiry', () => {
     expect(t?.currentDeadlineAt).toBeNull();
   });
 
-  it('skips 1BD comms attempt (SLA only)', () => {
+  it('skips 5BD comms attempt (SLA only)', () => {
     const t = resolveExpiry(
       baseCase({
         statusCode: 'p1_out_of_reach',
-        currentDeadlineType: '1BD_comms_attempt',
+        currentDeadlineType: '5BD_comms_attempt',
       }),
       now,
     );

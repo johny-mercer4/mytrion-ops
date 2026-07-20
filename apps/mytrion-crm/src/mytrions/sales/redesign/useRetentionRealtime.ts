@@ -50,12 +50,6 @@ export function useRetentionRealtime(
         pushToast?.(event.title, event.detail ?? 'New retention case — 2 BD to act');
       } else if (event.type === 'retention.pool.opened') {
         pushToast?.(event.title, event.detail ?? 'Deal entered Open Pool');
-      } else if (event.type === 'retention.claim_request') {
-        pushToast?.(event.title, 'Open Retention → Claims to approve');
-      } else if (event.type === 'retention.claim_approved') {
-        pushToast?.(event.title, event.detail ?? 'Your claim was approved');
-      } else if (event.type === 'retention.claim_declined') {
-        pushToast?.(event.title, event.detail ?? 'Your claim was declined');
       } else if (event.type === 'retention.ops.vacation_signoff') {
         pushToast?.(event.title, event.detail ?? 'Ops vacation confirmation needed');
       }

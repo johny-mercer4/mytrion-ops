@@ -1,15 +1,19 @@
 /**
  * DWH retention signals — the transaction-frequency layer that feeds retention-case
- * generation. Reads `octane.dim_company` (client identity; debtors and never-swiped
- * companies excluded at the source) joined with 90-day aggregates from
- * `octane.mart_transaction_line_items`. Read-only (dwhQuery pool enforces it).
+ * generation. Reads `octane.dim_company` + 90-day mart aggregates + billing debt
+ * (`public.cmp_invoice`, same rule as Billing Mytrion / Sales Clients roster).
  *
- * Frequency model (Retention future workflow, entry point):
- *   high   — a transaction expected every 2 days
+ * Entry exclusions (RetentionFinal / Sales Agent Phase 1):
+ *   - Debtors → Collections (cmp_invoice overdue debt, not stale dim.is_debtor)
+ *   - Pre–Card Swiped (Verification / WEX / funded-but-never-used) → no first_swipe_date
+ *   - Closed Lost / Out of Business → deal_stage = 'Closed Lost'
+ *   - Deactivated → is_active ≠ 1
+ *
+ * Frequency model:
+ *   high   — expected every 2 days
  *   medium — every 5 days
  *   low    — every 7 days
- * A carrier is classified from its average transaction gap over the last 90 days and
- * BREACHES when its days-inactive exceed the class threshold.
+ * Breach when days-inactive exceeds the class threshold.
  */
 import type { FrequencyClass } from '../db/schema/index.js';
 import { dwhQuery } from './dwh.js';
@@ -19,6 +23,40 @@ export const FREQUENCY_THRESHOLD_DAYS: Record<FrequencyClass, number> = {
   medium: 5,
   low: 7,
 };
+
+/** Mirrors Billing / Sales Clients debt rule (`dwhClientRoster.ts`). */
+const DEBT_OVERDUE_DAYS = 2;
+const DEBT_OPEN_BALANCE_MIN = 1;
+
+/** Closed Lost = CRM terminal for Out of Business / lost (no separate OoB stage in dim). */
+export const RETENTION_EXCLUDED_DEAL_STAGES = ['Closed Lost'] as const;
+
+/**
+ * Pure eligibility for a deal to enter the Sales Retention case stream.
+ * - Must have swiped (`first_swipe_date`) — excludes Verification / WEX / funded-never-used
+ *   (Card Swiped in Zoho is the stage; warehouse truth is first swipe).
+ * - Must not be Closed Lost / Out of Business.
+ * - Must not be a billing debtor (cmp_invoice rule).
+ * - Must be active (Verification deactivation → is_active ≠ 1).
+ */
+export function isRetentionEntryEligible(input: {
+  firstSwipeDate: Date | null;
+  dealStage: string | null;
+  isActive: boolean;
+  isBillingDebtor: boolean;
+}): { ok: boolean; reason?: string } {
+  if (!input.isActive) return { ok: false, reason: 'deactivated' };
+  if (input.isBillingDebtor) return { ok: false, reason: 'debtor' };
+  if (!input.firstSwipeDate) return { ok: false, reason: 'pre_card_swiped' };
+  const stage = (input.dealStage ?? '').trim();
+  if (
+    (RETENTION_EXCLUDED_DEAL_STAGES as readonly string[]).includes(stage) ||
+    /out\s*of\s*business/i.test(stage)
+  ) {
+    return { ok: false, reason: 'out_of_business' };
+  }
+  return { ok: true };
+}
 
 /** Classify a carrier from its distinct transaction days in the last 90 days. */
 export function classifyFrequency(txDays90d: number): {
@@ -46,6 +84,7 @@ export interface RetentionCandidate {
   applicationId: string | null;
   agentName: string | null;
   agentZohoUserId: string | null;
+  dealStage: string | null;
   activeCards: number | null;
   lastTransactionAt: Date | null;
   daysInactive: number;
@@ -63,6 +102,7 @@ interface CandidateRow {
   application_id: number | null;
   agent: string | null;
   agent_zoho_user_id: number | null;
+  deal_stage: string | null;
   total_active_cards: number | string | null;
   last_tx: string | Date | null;
   tx_days_90d: number | string | null;
@@ -86,6 +126,7 @@ function toCandidate(row: CandidateRow, now: Date): RetentionCandidate {
     applicationId: row.application_id != null ? String(row.application_id) : null,
     agentName: row.agent,
     agentZohoUserId: row.agent_zoho_user_id != null ? String(row.agent_zoho_user_id) : null,
+    dealStage: row.deal_stage,
     activeCards: row.total_active_cards != null ? Number(row.total_active_cards) : null,
     lastTransactionAt,
     daysInactive,
@@ -98,12 +139,8 @@ function toCandidate(row: CandidateRow, now: Date): RetentionCandidate {
 }
 
 /**
- * Scan for frequency-breach candidates: active, non-debtor carriers with at least one
- * historical swipe whose latest transaction is older than the MINIMUM threshold (2 days —
- * precise per-class breach filtering happens in `toCandidate`). `lookbackDays` bounds how
- * long-dead an account may be and still enter the scan (long-churned accounts were
- * caught when they lapsed; re-sweeping them nightly would flood the list forever).
- * Highest 90-day volume first — the SOP's "high-volume clients with a recent drop".
+ * Scan for frequency-breach candidates after Sales Agent entry exclusions.
+ * `lookbackDays` bounds how long-dead an account may be and still enter the scan.
  */
 export async function scanRetentionCandidates(
   opts: { lookbackDays?: number; limit?: number; now?: Date } = {},
@@ -111,7 +148,19 @@ export async function scanRetentionCandidates(
   const lookbackDays = Math.min(Math.max(opts.lookbackDays ?? 45, 3), 365);
   const limit = Math.min(Math.max(opts.limit ?? 500, 1), 2000);
   const rows = await dwhQuery<CandidateRow>(
-    `with tx as (
+    `with billing_debtors as (
+       -- Same rule as Billing Mytrion / Sales Clients roster (cmp_invoice, not dim.is_debtor).
+       select carrier_id
+         from public.cmp_invoice
+        where status in ('PENDING', 'PARTIALLY_PAID')
+          and coalesce(total_paid, 0) < total_amount
+          and greatest(total_amount - coalesce(total_paid, 0), 0) >= ${DEBT_OPEN_BALANCE_MIN}
+          and create_date is not null
+          and (current_date - create_date::date) >= ${DEBT_OVERDUE_DAYS}
+          and carrier_id is not null
+        group by carrier_id
+     ),
+     tx as (
        select carrier_id,
               max(transaction_date)                       as last_tx_90d,
               count(distinct transaction_date::date)      as tx_days_90d,
@@ -124,12 +173,15 @@ export async function scanRetentionCandidates(
      company as (
        select distinct on (carrier_id)
               carrier_id, company_name, application_id, agent, agent_zoho_user_id,
-              total_active_cards, last_transaction_date
+              deal_stage, total_active_cards, last_transaction_date, first_swipe_date
          from octane.dim_company
         where carrier_id is not null
           and is_active = 1
-          and coalesce(is_debtor, false) = false
+          -- Card Swiped / has used a card (excludes Verification + WEX + funded-never-used).
           and first_swipe_date is not null
+          -- Out of Business / lost in CRM pipeline (Closed Lost; no separate OoB stage).
+          and coalesce(deal_stage, '') <> 'Closed Lost'
+          and coalesce(deal_stage, '') not ilike '%out of business%'
         order by carrier_id, update_date desc nulls last
      )
      select c.carrier_id,
@@ -137,13 +189,16 @@ export async function scanRetentionCandidates(
             c.application_id,
             c.agent,
             c.agent_zoho_user_id,
+            c.deal_stage,
             c.total_active_cards,
             greatest(tx.last_tx_90d, c.last_transaction_date) as last_tx,
             coalesce(tx.tx_days_90d, 0)                       as tx_days_90d,
             coalesce(tx.gallons_90d, 0)                       as gallons_90d
        from company c
        left join tx on tx.carrier_id = c.carrier_id
-      where greatest(tx.last_tx_90d, c.last_transaction_date) is not null
+       left join billing_debtors d on d.carrier_id = c.carrier_id
+      where d.carrier_id is null
+        and greatest(tx.last_tx_90d, c.last_transaction_date) is not null
         and greatest(tx.last_tx_90d, c.last_transaction_date) < now() - interval '2 days'
         and greatest(tx.last_tx_90d, c.last_transaction_date) >= now() - ($1 || ' days')::interval
       order by coalesce(tx.gallons_90d, 0) desc

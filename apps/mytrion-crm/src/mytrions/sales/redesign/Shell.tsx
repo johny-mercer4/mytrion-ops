@@ -389,7 +389,7 @@ export function SalesRedesign() {
             onCall={(phone) => {
               // Dial silently when RC isn't ready — no "Phone / backend" error toasts.
               setDialContext({ leadId: lead.id });
-              if (clickToDial(phone)) pushToast('Calling', phone);
+              clickToDial(phone);
             }}
           />
         )}
@@ -400,7 +400,7 @@ export function SalesRedesign() {
             onClose={() => setDeal(null)}
             onCall={(phone) => {
               setDialContext({ dealId: deal.id });
-              if (clickToDial(phone)) pushToast('Calling', phone);
+              clickToDial(phone);
             }}
           />
         )}

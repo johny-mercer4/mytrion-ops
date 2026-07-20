@@ -2,12 +2,13 @@
  * Retention case auto-generation — the sync run that replaces the manual daily
  * "source file refresh + sort the Retention List" (SOP steps 1–4):
  *
- *   1. Scan the DWH for frequency-breach candidates (active, non-debtor carriers whose
- *      days-inactive exceed their high/medium/low cadence threshold).
- *   2. Breached carrier WITHOUT an open case → create one (phase_1_agent / p1_new).
+ *   1. Scan the DWH for frequency-breach candidates (active, Card-Swiped, non-debtor,
+ *      not Closed Lost / OoB — see dwhRetention exclusions — whose days-inactive exceed
+ *      their high/medium/low cadence threshold).
+ *   2. Breached carrier WITHOUT an open case → create one (phase_1_agent / p1_in_progress).
  *   3. Breached carrier WITH an open case → refresh its DWH metrics in place.
- *   4. Open case whose carrier transacted again after the case opened and is back inside
- *      its threshold → close as p1_returned. phase_3_citi is final — never auto-closed.
+ *   4. Open case whose carrier has ANY transaction after the case opened → close as
+ *      p1_returned. phase_3_citi is final — never auto-closed.
  */
 import {
   RETENTION_PHASE,
@@ -51,10 +52,10 @@ function candidateMetrics(c: RetentionCandidate): RetentionMetricsInput {
   };
 }
 
-function hasReturned(row: RetentionCase, lastTx: Date | undefined, now: Date): boolean {
+/** Any fuel after case creation closes the episode (board constant). */
+function hasReturned(row: RetentionCase, lastTx: Date | undefined, _now: Date): boolean {
   if (!lastTx) return false;
-  const threshold = row.thresholdDays ?? 7;
-  return lastTx.getTime() > row.createdAt.getTime() && daysSince(lastTx, now) <= threshold;
+  return lastTx.getTime() > row.createdAt.getTime();
 }
 
 export async function syncRetentionCases(
@@ -97,7 +98,7 @@ export async function syncRetentionCases(
         agentName: candidate.agentName ?? undefined,
         assignedAgentZohoUserId: candidate.agentZohoUserId ?? undefined,
         phaseCode: RETENTION_PHASE.agent,
-        statusCode: RETENTION_STATUS.p1New,
+        statusCode: RETENTION_STATUS.p1InProgress,
         source: 'auto',
         metrics: candidateMetrics(candidate),
       });
@@ -113,9 +114,7 @@ export async function syncRetentionCases(
     }
   }
 
-  const returnCheck = openRows.filter(
-    (row) => row.phaseCode !== RETENTION_PHASE.citi && !breachedIds.has(row.carrierId),
-  );
+  const returnCheck = openRows.filter((row) => row.phaseCode !== RETENTION_PHASE.citi);
   if (returnCheck.length > 0) {
     const lastTxByCarrier = await fetchCarrierLastTransactions(
       returnCheck.map((row) => row.carrierId),
@@ -127,7 +126,7 @@ export async function syncRetentionCases(
         statusCode: RETENTION_STATUS.p1Returned,
         agentOutcome: 'returned',
         eventType: 'outcome_recorded',
-        eventNotes: 'Auto-closed: carrier returned inside threshold',
+        eventNotes: 'Auto-closed: new transaction after case opened',
         metrics: {
           lastTransactionAt: lastTx ?? null,
           daysInactive: lastTx ? daysSince(lastTx, now) : 0,
