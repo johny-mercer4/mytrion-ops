@@ -141,15 +141,28 @@ export class ZohoCrmRecordsWrapper extends ZohoWrapper {
     trigger?: readonly string[],
   ): Promise<{ code: string; id: string; message: string; row: Record<string, unknown> }> {
     const path = `/${encodeURIComponent(module)}`;
-    const json = await this.request<MutationResponse>('POST', path, {
+    // requestRaw (NOT request) so a duplicate is PARSED rather than thrown: Zoho returns the existing
+    // record id inside a DUPLICATE_DATA body on an HTTP 400 (often wrapped in MULTIPLE_OR_MULTI_ERRORS),
+    // and the caller needs that raw row to link the existing record.
+    const res = await this.requestRaw('POST', path, {
       body: { data: [data], ...(trigger ? { trigger } : {}) },
     });
-    const row = (json.data?.[0] ?? {}) as MutationRow;
+    const text = await res.text();
+    let parsed: MutationResponse = {};
+    if (text) {
+      try {
+        parsed = JSON.parse(text) as MutationResponse;
+      } catch {
+        /* non-JSON error body — leave parsed empty */
+      }
+    }
+    const row = (parsed.data?.[0] ?? {}) as MutationRow;
+    const hasRow = Object.keys(row).length > 0;
     return {
       code: String(row.code ?? ''),
       id: String(row.details?.id ?? ''),
       message: String(row.message ?? ''),
-      row: row as Record<string, unknown>,
+      row: (hasRow ? row : parsed) as Record<string, unknown>,
     };
   }
 
