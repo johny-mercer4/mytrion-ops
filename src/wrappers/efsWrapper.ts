@@ -44,4 +44,38 @@ export const efsWrapper = {
   activateCard(carrierId: string, cardNumber: string) {
     return crmPost(`/api/agent/dwh/cards/${encodeURIComponent(carrierId)}/${encodeURIComponent(cardNumber)}/activate`);
   },
+
+  /** C-1 / C-3 — flip a card ACTIVE/INACTIVE (full echo-back upstream preserves prompts/limits).
+   * servercrm no-ops with a friendly message when the card is already in the target state. */
+  setCardStatus(carrierId: string, cardNumber: string, action: 'activate' | 'deactivate') {
+    return crmPost('/api/efs/card/status', { carrierId, cardNumber, action: action.toUpperCase() });
+  },
+
+  /** C-4 / C-5 — INCREASE/DECREASE one EFS limit bucket by `value`. servercrm merges policy ∪ card
+   * limits and writes the adjusted set back; `value` is the CHANGE amount, not the new absolute. */
+  setCardLimits(
+    carrierId: string,
+    cardNumber: string,
+    change: { limitId: string; value: number; action: 'increase' | 'decrease' },
+  ) {
+    return crmPost('/api/efs/card/limits', {
+      carrierId,
+      cardNumber,
+      limitId: change.limitId,
+      value: change.value,
+      action: change.action.toUpperCase(),
+    });
+  },
+
+  /** C-10 — raise a fraud hold/release request (servercrm forwards to the fraud team's intake;
+   * no direct EFS mutation happens here). */
+  fraudHoldRelease(payload: {
+    carrierId: string;
+    cardNumber: string;
+    ticketType: 'fraud_hold' | 'fraud_release';
+    companyName: string;
+    agentEmail: string;
+  }) {
+    return crmPost('/api/fraud/hold-release', payload);
+  },
 };

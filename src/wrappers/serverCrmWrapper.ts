@@ -3,7 +3,7 @@
  * per carrier-facing capability instead of raw path strings scattered across callers. Mirrors
  * servercrm's own internal split (agentDwh.js's per-capability functions on top of one client).
  */
-import { crmGet } from './serverCrmClient.js';
+import { crmGet, crmPost } from './serverCrmClient.js';
 
 export interface TransactionsRangeOpts {
   range?: string | undefined;
@@ -101,5 +101,29 @@ export const serverCrmWrapper = {
    * must verify ownership (e.g. via getInvoices) before minting one. */
   getInvoiceSignedUrl(invoiceId: string) {
     return crmGet(`/api/salesMytrion/invoices/${encodeURIComponent(invoiceId)}/signed-url`, { type: 'pdf' });
+  },
+
+  /** C-17 step 1 — the drawable money-code window for a carrier: `{ eligible, available, drawn,
+   * moneycode_reasons[] … }`. servercrm computes the limit (a % of the latest invoice); the caller
+   * must treat this as the ONLY source of truth and never invent a limit client-side. */
+  getMoneyCodePreview(carrierId: string) {
+    return crmGet(`/api/agent/dwh/money-code/${encodeURIComponent(carrierId)}`);
+  },
+
+  /** C-17 step 2 — draw against the window. Mirrors the agent widget's body exactly
+   * (`moneycode_reason` / `unit_number` are servercrm's field names). A 422 means the window moved
+   * (someone drew concurrently) — the error body carries the fresh `available`. The code value is
+   * never in the response; delivery to the carrier happens upstream. */
+  drawMoneyCode(
+    carrierId: string,
+    opts: { amount: number; unitNumber: string; reason: string; requestedBy?: string | undefined },
+  ) {
+    return crmPost('/api/agent/dwh/money-code/draw', {
+      carrierId,
+      amount: opts.amount,
+      moneycode_reason: opts.reason,
+      unit_number: opts.unitNumber,
+      ...(opts.requestedBy ? { requestedBy: opts.requestedBy } : {}),
+    });
   },
 };

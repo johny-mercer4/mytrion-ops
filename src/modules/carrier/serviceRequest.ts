@@ -29,7 +29,8 @@ export type ServiceRequestKey =
   | 'card-replace'
   | 'card-fraud'
   | 'billing-form'
-  | 'ref-guides';
+  | 'ref-guides'
+  | 'account-reactivate';
 
 interface ServiceRequestSpec {
   /** Desk ticket subject. Prefixed with the channel so CS can see where it came from. */
@@ -107,6 +108,14 @@ const SERVICE_REQUESTS: Record<ServiceRequestKey, ServiceRequestSpec> = {
     dept: 'cs',
     roles: ['owner'],
     ticketType: 'Reports Center',
+  },
+  // C-7 — reactivating a suspended account is tied to payment review, so it stays a human
+  // decision: this files the structured request; CS verifies and reactivates.
+  'account-reactivate': {
+    subject: 'Reactivate my account',
+    dept: 'cs',
+    roles: ['owner'],
+    ticketType: 'Card Management',
   },
 };
 

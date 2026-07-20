@@ -3282,3 +3282,27 @@ for true ticketdashboard search parity.
 - Driver invite requires active owner registration (inviteService + UI gate)
 - Sales: GET /carrier-registrations/for-carrier; Driver picks available card number
 
+
+### 2026-07-20 — Mini-app: wire C-code automations (Faza 1 backend)
+
+Telegram-guruh tahlili (Analitika/) asosida agent widgetining avtomatlashtirilgan bloklarini
+mini-app'ga ulash — backend qismi:
+
+- **modules/carrier/miniAppAuth.ts (yangi)** — carrierMiniApp.routes.ts'dagi auth/scoping
+  helperlar (verifyTelegramUser, requireRegistered*, requireDriverCardNumber, resolveDriver*)
+  ko'chirildi, endi ikkala route fayl bitta gate to'plamini ishlatadi.
+- **routes/v1/carrierMiniAppActions.routes.ts (yangi)** — C-16 override, C-1/C-3 set-status,
+  C-4/5 limits (delta MINIAPP_LIMIT_CHANGE_MAX bilan cheklangan), C-26 card/info, C-10
+  fraud-request, C-17 money-code preview/draw, + /card/efs diagnostika o'qishi. Hammasi:
+  DWH orqali karta egaligi tekshiruvi (owner cardId → findDwhCardById; driver → o'z kartasi,
+  fail-closed), carrier-boshiga 5/min rate-limit, audit, FF_MINIAPP_* flaglar (default OFF).
+- **wrappers**: efsWrapper += setCardStatus/setCardLimits/fraudHoldRelease;
+  serverCrmWrapper += getMoneyCodePreview/drawMoneyCode (widget bilan bir xil body).
+- **C-15**: txnReport priceMode ('discount'|'retail') — retail: Amount=funded+discount,
+  Discount ustuni bo'sh; export route driverni har doim retail'ga majburlaydi
+  ("driverga discount kursatish shart emas" — BILLAD chat talabi). Caption ham mos.
+- **serviceRequest**: 'account-reactivate' (C-7) ticket spec (owner).
+- **apps/mini-app/lib/api.ts** — barcha yangi endpointlar uchun typed client funksiyalar.
+
+Qolgan (keyingi sessiya): App.tsx sheet UI'lari + i18n kalitlari + serviceCatalog'ni real
+actionlarga o'tkazish; RBAC cross-tenant testlar (rule 9) yozish.

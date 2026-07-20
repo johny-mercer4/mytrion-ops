@@ -334,7 +334,8 @@ export type ServiceRequestKey =
   | 'card-replace'
   | 'card-fraud'
   | 'billing-form'
-  | 'ref-guides';
+  | 'ref-guides'
+  | 'account-reactivate';
 
 /**
  * File a real Zoho Desk ticket. The card is NOT sent — the backend resolves a driver's card from
@@ -369,10 +370,114 @@ export async function sendTransactionsReport(
   initData: string,
   range: { range?: string; from?: string; to?: string },
   format: TxnExportFormat,
+  /** 'retail' = the "without discount" variant (EFS Retail Price Only). Ignored for drivers —
+   * the backend forces retail for them regardless of what is sent. */
+  priceMode: 'discount' | 'retail' = 'discount',
 ): Promise<TxnExportSent> {
   return (await request('POST', '/carrier/mini-app/transactions/export', {
     initData,
     ...range,
     format,
+    priceMode,
   })) as TxnExportSent;
+}
+
+// ── Self-service WRITE actions (wired to the agent widget's automations; see backend
+//    carrierMiniAppActions.routes.ts). All are feature-flagged server-side: a 503 with code
+//    MINIAPP_WRITES_DISABLED / MINIAPP_MONEY_CODE_DISABLED means "fall back to a service request".
+
+/** Live EFS info for one card (status, hold flag, limits) — the diagnostics read. Owners pass the
+ * cardId from the fleet list; drivers pass nothing (the backend pins them to their own card). */
+export async function fetchCardEfs(initData: string, cardId?: string): Promise<Record<string, unknown>> {
+  return (await request('POST', '/carrier/mini-app/card/efs', {
+    initData,
+    ...(cardId ? { cardId } : {}),
+  })) as Record<string, unknown>;
+}
+
+/** C-16 — override a fraud-held card for ~30 minutes. Drivers: own card only (omit cardId). */
+export async function overrideCard(initData: string, cardId?: string): Promise<Record<string, unknown>> {
+  return (await request('POST', '/carrier/mini-app/card/override', {
+    initData,
+    ...(cardId ? { cardId } : {}),
+  })) as Record<string, unknown>;
+}
+
+/** C-1 / C-3 — activate or deactivate a card. Owner-only. */
+export async function setCardStatus(
+  initData: string,
+  cardId: string,
+  action: 'activate' | 'deactivate',
+): Promise<Record<string, unknown>> {
+  return (await request('POST', '/carrier/mini-app/card/set-status', { initData, cardId, action })) as Record<
+    string,
+    unknown
+  >;
+}
+
+/** C-4 / C-5 — change one EFS limit bucket by `value` (the delta, not the new absolute). Owner-only;
+ * the backend rejects deltas above its configured cap. */
+export async function setCardLimits(
+  initData: string,
+  cardId: string,
+  change: { limitId: string; value: number; action: 'increase' | 'decrease' },
+): Promise<Record<string, unknown>> {
+  return (await request('POST', '/carrier/mini-app/card/limits', { initData, cardId, ...change })) as Record<
+    string,
+    unknown
+  >;
+}
+
+/** C-26 — unit number / driver id / driver name on the card, in EFS. Owner-only. */
+export async function updateCardInfo(
+  initData: string,
+  cardId: string,
+  fields: { unitNumber?: string; driverId?: string; driverName?: string },
+): Promise<Record<string, unknown>> {
+  return (await request('POST', '/carrier/mini-app/card/info', { initData, cardId, ...fields })) as Record<
+    string,
+    unknown
+  >;
+}
+
+/** C-10 — raise a fraud hold/release request (a human on the fraud team acts on it). Owner-only. */
+export async function sendFraudRequest(
+  initData: string,
+  cardId: string,
+  requestType: 'fraud_hold' | 'fraud_release',
+): Promise<Record<string, unknown>> {
+  return (await request('POST', '/carrier/mini-app/card/fraud-request', {
+    initData,
+    cardId,
+    request: requestType,
+  })) as Record<string, unknown>;
+}
+
+export interface MoneyCodePreview {
+  eligible?: boolean;
+  available?: number | string | null;
+  drawn?: number | string | null;
+  moneycode_reasons?: string[];
+  [k: string]: unknown;
+}
+
+/** C-17 step 1 — the drawable window. The backend (ultimately servercrm) owns the limit math. */
+export async function fetchMoneyCodePreview(initData: string): Promise<MoneyCodePreview> {
+  return (await request('POST', '/carrier/mini-app/money-code/preview', { initData })) as MoneyCodePreview;
+}
+
+export interface MoneyCodeDrawResult {
+  money_code_amount?: number | string;
+  available_after?: number | string | null;
+  moneycode_reason?: string;
+  [k: string]: unknown;
+}
+
+/** C-17 step 2 — draw. The code value is never in the response (delivery happens upstream);
+ * report the outcome, not a code. */
+export async function drawMoneyCode(
+  initData: string,
+  draw: { amount: number; unitNumber: string; reason: string },
+): Promise<MoneyCodeDrawResult> {
+  return (await request('POST', '/carrier/mini-app/money-code/draw', { initData, ...draw })) as MoneyCodeDrawResult;
 }

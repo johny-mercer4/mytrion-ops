@@ -27,6 +27,13 @@ export interface TxnReportMeta {
   cardLast4: string;
   /** Set for a driver export — the report then states it covers a single card. */
   scopedToCard?: boolean | undefined;
+  /**
+   * 'discount' (default) — today's report: Amount is the funded (discounted) total, Discount shown.
+   * 'retail' — EFS "Retail Price Only": Amount is re-priced to funded+discount and the Discount
+   * column is blanked (totals included). Used for accounting's "without discount" variant and
+   * FORCED for driver exports, whose reports must not reveal the owner's discount terms.
+   */
+  priceMode?: 'discount' | 'retail' | undefined;
 }
 
 export interface BuiltTxnReport {
@@ -121,18 +128,24 @@ interface Grid {
 }
 
 /** Field fallbacks mirror the mini-app's Transactions sheet: the mart's `line_item_*` names, with
- *  CMP's `funded_total`/`net_total` tolerated. */
-function toGrid(txns: ReadonlyArray<Record<string, unknown>>): Grid {
+ *  CMP's `funded_total`/`net_total` tolerated.
+ *
+ *  `retail` mode: Amount becomes funded+discount (the retail price, matching how the agent widget
+ *  and EFS re-price when discounts are hidden) and the Discount column is blanked rather than
+ *  zeroed — a 0.00 would read as "there was no discount", which is not the claim being made. */
+function toGrid(txns: ReadonlyArray<Record<string, unknown>>, priceMode: 'discount' | 'retail'): Grid {
+  const retail = priceMode === 'retail';
   let qty = 0;
   let amount = 0;
   let discount = 0;
   const rows = txns.map((t) => {
-    const a = n(t['line_item_amount'] ?? t['funded_total'] ?? t['net_total']);
+    const funded = n(t['line_item_amount'] ?? t['funded_total'] ?? t['net_total']);
     const d = n(t['line_item_discount_amount']);
+    const a = retail ? funded + d : funded;
     const q = n(t['line_item_fuel_quantity'] ?? t['transaction_fuel_quantity']);
     qty += q;
     amount += a;
-    discount += d;
+    if (!retail) discount += d;
     return [
       dateCell(t['transaction_date']),
       s(t['location_name']),
@@ -142,7 +155,7 @@ function toGrid(txns: ReadonlyArray<Record<string, unknown>>): Grid {
       s(t['line_item_category']),
       q,
       a,
-      d,
+      retail ? '' : d,
     ] as Cell[];
   });
   return { rows, totals: { qty, amount, discount } };
@@ -153,8 +166,11 @@ function safe(part: string): string {
   return (part || '').replace(/[^a-z0-9_-]+/gi, '-').slice(0, 40) || 'export';
 }
 
-const subtitle = (meta: TxnReportMeta): string =>
-  meta.scopedToCard ? `Card •••• ${meta.cardLast4} · ${meta.range}` : `All cards · ${meta.range}`;
+const subtitle = (meta: TxnReportMeta): string => {
+  const scope = meta.scopedToCard ? `Card •••• ${meta.cardLast4}` : 'All cards';
+  const price = meta.priceMode === 'retail' ? ' · Retail prices' : '';
+  return `${scope} · ${meta.range}${price}`;
+};
 
 // ── CSV ────────────────────────────────────────────────────────────────────────────────────────
 // No branding possible in CSV — it is the machine-readable option. Kept faithful to the grid.
@@ -433,8 +449,9 @@ export async function buildTxnReport(
   format: TxnReportFormat,
   meta: TxnReportMeta,
 ): Promise<BuiltTxnReport> {
-  const grid = toGrid(txns);
-  const base = `Octane_Transactions_${safe(meta.cardLast4)}_${safe(meta.range)}`;
+  const grid = toGrid(txns, meta.priceMode ?? 'discount');
+  const retailTag = meta.priceMode === 'retail' ? '_Retail' : '';
+  const base = `Octane_Transactions_${safe(meta.cardLast4)}_${safe(meta.range)}${retailTag}`;
   if (format === 'csv') {
     // Leading BOM so Excel reads the UTF-8 bytes as UTF-8 rather than the local ANSI codepage.
     return { fileName: `${base}.csv`, contentType: 'text/csv; charset=utf-8', bytes: Buffer.from(`\uFEFF${toCsv(grid)}`, 'utf8') };

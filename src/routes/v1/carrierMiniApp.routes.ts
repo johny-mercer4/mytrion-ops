@@ -4,15 +4,13 @@
  * invite id in the URL is the capability (opaque cuid2, unguessable); the ACTUAL identity proof is
  * the Telegram `initData` HMAC verified in the redeem step (verifyTelegramInitData).
  */
-import { createId } from '@paralleldrive/cuid2';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AppError, ConflictError, NotFoundError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { env, isProduction } from '../../config/env.js';
-import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { db } from '../../db/client.js';
-import { FLEET_CARD_LIMIT, getDwhCompanyDetails, listDwhCards, findDwhCardById, findDwhCardByNumber } from '../../integrations/dwhCards.js';
+import { FLEET_CARD_LIMIT, getDwhCompanyDetails, listDwhCards, findDwhCardByNumber } from '../../integrations/dwhCards.js';
 import { listDwhTransactions, resolveDwhTxnRange } from '../../integrations/dwhTransactions.js';
 import { searchDwhClients } from '../../integrations/dwhClients.js';
 import { searchDwhOperators } from '../../integrations/dwhOperators.js';
@@ -35,47 +33,28 @@ import { carrierInvitationRepo } from '../../repos/carrierInvitationRepo.js';
 import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompanyRepo.js';
 import { buildInviteUrl, createCarrierInvite } from '../../modules/carrier/inviteService.js';
 import {
-  parseInitDataUser,
   escapeTelegramHtml,
   sendDocument,
   signTelegramInitData,
   TelegramChatUnreachableError,
-  verifyTelegramInitData,
-  type TelegramWebAppUser,
 } from '../../integrations/telegramCarrierBot.js';
 import { buildTxnReport } from '../../modules/carrier/txnReport.js';
+import {
+  lookupCtx,
+  requireDriverCardNumber,
+  requireRegisteredCarrierUser,
+  requireRegisteredMiniAppUser,
+  requireRegisteredOwner,
+  requireRegisteredOwnerUser,
+  resolveDriverExtras,
+  telegramCtx,
+  toRegistrationView,
+  verifyTelegramUser,
+} from '../../modules/carrier/miniAppAuth.js';
 import type { RegisteredMiniAppCompany } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { RBACError } from '../../lib/errors.js';
 import { requireContext } from './helpers.js';
-
-/** Tenant-scoping only — no admin authority. Repos key off ctx.tenantId; audit reads the rest. */
-function lookupCtx(): TenantContext {
-  return {
-    tenantId: DEFAULT_TENANT_ID,
-    userId: 'system:mini-app',
-    audience: 'internal',
-    role: 'viewer',
-    scopes: [],
-    departments: [],
-    allDepartmentAccess: false,
-    requestId: `mini-app-${createId()}`,
-  };
-}
-
-/** The actual actor once a Telegram user is verified — customer audience, deny-by-default. */
-function telegramCtx(profile: 'owner' | 'driver', telegramUserId: string): TenantContext {
-  return {
-    tenantId: DEFAULT_TENANT_ID,
-    userId: `telegram:${telegramUserId}`,
-    audience: 'customer',
-    role: profile === 'owner' ? 'fleet_manager' : 'driver',
-    scopes: [],
-    departments: [],
-    allDepartmentAccess: false,
-    requestId: `mini-app-${createId()}`,
-  };
-}
 
 function sameRegistrationSubject(
   existing: Pick<RegisteredMiniAppCompany, 'profile' | 'carrierId' | 'applicationId' | 'cardId'>,
@@ -158,7 +137,15 @@ const rangeSchema = z.object({
  * Default false so a caller that never heard of `live` gets the fast path, not the slow one.
  */
 const txnRangeSchema = rangeSchema.extend({ live: z.boolean().optional().default(false) });
-const txnExportSchema = rangeSchema.extend({ format: z.enum(['csv', 'xlsx', 'pdf']).default('xlsx') });
+/** `priceMode` mirrors the EFS report builder's "Show Discount Detail" / "Retail Price Only"
+ *  toggles (Display Features spec): 'discount' is today's report; 'retail' re-prices Amount to
+ *  funded+discount and blanks the Discount column. A DRIVER is always forced to 'retail' in the
+ *  route — owners hide their discount terms from drivers ("driverga discount kursatish shart
+ *  emas"), and a missing toggle must not be what enforces that. */
+const txnExportSchema = rangeSchema.extend({
+  format: z.enum(['csv', 'xlsx', 'pdf']).default('xlsx'),
+  priceMode: z.enum(['discount', 'retail']).default('discount'),
+});
 const invoicesSchema = z.object({
   initData: z.string().min(1),
   range: z.string().max(20).optional(),
@@ -186,163 +173,6 @@ const driverSelfRegisterSchema = z.object({
    *  owner's driver-invite form uses — it lands in the same column. */
   driverName: z.string().trim().min(1).max(200).optional(),
 });
-
-function verifyTelegramUser(initData: string): { tgUser: TelegramWebAppUser; telegramUserId: string } {
-  if (!env.TELEGRAM_CARRIER_BOT_TOKEN) {
-    throw new AppError('The carrier bot is not configured', {
-      statusCode: 503,
-      code: 'BOT_UNCONFIGURED',
-      expose: true,
-    });
-  }
-  const verified = verifyTelegramInitData(initData);
-  if (!verified.ok) {
-    throw new AppError('Could not verify your Telegram identity', {
-      statusCode: 401,
-      code: 'TELEGRAM_VERIFY_FAILED',
-      expose: true,
-    });
-  }
-  const tgUser = parseInitDataUser(verified.fields);
-  if (!tgUser) {
-    throw new AppError('Missing Telegram user in verified payload', {
-      statusCode: 400,
-      code: 'TELEGRAM_USER_MISSING',
-      expose: true,
-    });
-  }
-  return { tgUser, telegramUserId: String(tgUser.id) };
-}
-
-/**
- * Resolve the current Telegram user to an existing mini-app registration. This is the returning
- * user's login path once onboarding is complete: Telegram proves identity; no password is involved.
- */
-async function requireRegisteredMiniAppUser(
-  initData: string,
-): Promise<{ ctx: TenantContext; registration: RegisteredMiniAppCompany; tgUser: TelegramWebAppUser; telegramUserId: string }> {
-  const { tgUser, telegramUserId } = verifyTelegramUser(initData);
-  const lookup = lookupCtx();
-  const registration = await registeredMiniAppCompanyRepo.findByTelegramUserId(lookup, telegramUserId);
-  if (!registration) {
-    throw new AppError('This Telegram account is not registered yet. Open your Octane registration link to finish setup.', {
-      statusCode: 404,
-      code: 'MINI_APP_NOT_REGISTERED',
-      expose: true,
-    });
-  }
-  if (registration.status === 'revoked') {
-    throw new AppError('Your access has been revoked. Contact your Octane rep to reconnect.', {
-      statusCode: 403,
-      code: 'MINI_APP_REVOKED',
-      expose: true,
-    });
-  }
-  return {
-    ctx: telegramCtx(registration.profile, telegramUserId),
-    registration,
-    tgUser,
-    telegramUserId,
-  };
-}
-
-/**
- * Verify initData and resolve the caller to a REGISTERED OWNER with a carrier — the auth gate for
- * the owner-only fleet endpoints. A driver, an unregistered user, or an owner with no carrier id
- * is rejected. The verified Telegram identity, not the request body, is trusted.
- */
-async function requireRegisteredOwner(
-  initData: string,
-): Promise<{ ctx: TenantContext; registration: RegisteredMiniAppCompany; carrierId: string; tgUser: TelegramWebAppUser }> {
-  const { registration, tgUser, telegramUserId } = await requireRegisteredMiniAppUser(initData);
-  if (
-    !registration ||
-    registration.profile !== 'owner' ||
-    registration.companyType !== 'fleet-manager' ||
-    !registration.carrierId
-  ) {
-    throw new AppError('Only a fleet company owner can manage drivers', {
-      statusCode: 403,
-      code: 'NOT_A_REGISTERED_OWNER',
-      expose: true,
-    });
-  }
-  return {
-    ctx: telegramCtx('owner', telegramUserId),
-    registration,
-    carrierId: registration.carrierId,
-    tgUser,
-  };
-}
-
-/**
- * Verify initData and resolve the caller to ANY registered carrier user (owner or driver) with a
- * carrier id — the auth gate for the self-service reads (balance, status, transactions, invoices,
- * payment info, last-used, tracking). Unlike requireRegisteredOwner, a driver is allowed: these are
- * carrier-level views the driver catalog also lists (e.g. "Check available balance").
- */
-async function requireRegisteredCarrierUser(
-  initData: string,
-): Promise<{ registration: RegisteredMiniAppCompany; carrierId: string }> {
-  const { registration } = await requireRegisteredMiniAppUser(initData);
-  if (!registration.carrierId) {
-    throw new AppError('This registration has no linked carrier yet', {
-      statusCode: 404,
-      code: 'NO_CARRIER_ID',
-      expose: true,
-    });
-  }
-  return { registration, carrierId: registration.carrierId };
-}
-
-/**
- * Verify initData and resolve the caller to ANY registered OWNER with a carrier — the gate for the
- * money views a driver must never see: invoices and payment info.
- *
- * Distinct from `requireRegisteredOwner`, which additionally demands `fleet-manager` because it
- * guards driver management; an owner-operator has no fleet to manage but is still the owner of the
- * account, and the docx's "For Fleet Owners" category covers both. The only thing excluded here is
- * a driver.
- *
- * These reads were open to any registered carrier user, so a driver's initData could fetch the
- * whole carrier's invoices directly — the UI simply never offered them the button. Both the docx
- * (invoices/payment sit under Fleet Owners; the driver list has neither) and
- * OCTANE_MINIAPP_SERVICES_SPEC §2 ("no carrier balance, invoices, payment info, account status")
- * agree, so this is the code catching up with them.
- */
-async function requireRegisteredOwnerUser(
-  initData: string,
-): Promise<{ registration: RegisteredMiniAppCompany; carrierId: string }> {
-  const { registration } = await requireRegisteredMiniAppUser(initData);
-  if (registration.profile !== 'owner' || !registration.carrierId) {
-    throw new AppError('This view is only available to the company owner', {
-      statusCode: 403,
-      code: 'NOT_A_REGISTERED_OWNER_USER',
-      expose: true,
-    });
-  }
-  return { registration, carrierId: registration.carrierId };
-}
-
-/**
- * The driver's own card number — the scope key for every row-level driver filter below.
- *
- * FAIL-CLOSED BY DESIGN: resolveDriverCardNumber is best-effort and returns null when the DWH is
- * unconfigured/down or the card is gone. Every other caller treats that null as "degrade to the
- * masked cardId", but here a null must NEVER fall through to the carrier-wide rows — that is
- * exactly the leak this scoping exists to prevent. So: no card number → no data, 503.
- */
-async function requireDriverCardNumber(registration: RegisteredMiniAppCompany): Promise<string> {
-  const cardNumber = await resolveDriverCardNumber(registration.carrierId, registration.cardId);
-  if (!cardNumber) {
-    throw new AppError("We couldn't confirm which card is yours right now. Please try again shortly.", {
-      statusCode: 503,
-      code: 'DRIVER_CARD_UNRESOLVED',
-      expose: true,
-    });
-  }
-  return cardNumber;
-}
 
 const createInviteSchema = z.object({
   profile: z.enum(['owner', 'driver']).default('owner'),
@@ -1005,11 +835,14 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     }
 
     const rangeLabel = result.range.from ? `${result.range.from} → ${result.range.to}` : String(result.range.preset);
+    // Drivers are ALWAYS retail — the owner's discount terms never reach a driver's report.
+    const priceMode = isDriver ? ('retail' as const) : body.priceMode;
     const report = await buildTxnReport(result.data, body.format, {
       company: registration.companyName ?? 'Octane',
       range: rangeLabel,
       cardLast4: cardNumber ? cardNumber.slice(-4) : String(carrierId),
       scopedToCard: Boolean(cardNumber),
+      priceMode,
     });
 
     // A private chat's id IS the user's id; telegramChatId is only populated when the redeem call
@@ -1021,12 +854,19 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     // would make Telegram reject the send outright.
     const money = (v: unknown) => `$${Number(v ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const scope = cardNumber ? `Card •••• ${cardNumber.slice(-4)}` : 'All cards';
+    // Retail mode: no "saved" figure — the discount is exactly what this variant exists to hide
+    // (drivers are always retail), and the spent figure is re-priced to match the file.
+    const retailSpent = Number(result.totals['funded_total'] ?? 0) + Number(result.totals['discount_amount'] ?? 0);
+    const summaryLine =
+      priceMode === 'retail'
+        ? `${result.data.length} line items · <b>${money(retailSpent)}</b> retail`
+        : `${result.data.length} line items · <b>${money(result.totals['funded_total'])}</b> spent · ${money(result.totals['discount_amount'])} saved`;
     const caption = [
       `<b>Octane · Transaction Report</b>`,
       `${escapeTelegramHtml(registration.companyName ?? 'Octane')} · ${scope}`,
       `${rangeLabel}`,
       ``,
-      `${result.data.length} line items · <b>${money(result.totals['funded_total'])}</b> spent · ${money(result.totals['discount_amount'])} saved`,
+      summaryLine,
     ].join('\n');
     try {
       await sendDocument({
@@ -1064,6 +904,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
         range: rangeLabel,
         rows: result.data.length,
         scopedToCard: Boolean(cardNumber),
+        priceMode,
       },
     });
 
@@ -1367,72 +1208,4 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     const extras = await resolveDriverExtras(registration);
     return reply.code(201).send({ registration: toRegistrationView({ ...registration, ...extras }) });
   });
-}
-
-function toRegistrationView(row: {
-  id: string;
-  profile: 'owner' | 'driver';
-  companyName: string | null;
-  carrierId: string | null;
-  companyType: 'owner-operator' | 'fleet-manager' | null;
-  cardCount: number | null;
-  cardId: string | null;
-  agentName: string | null;
-  cardNumber?: string | null;
-}) {
-  return {
-    id: row.id,
-    profile: row.profile,
-    companyName: row.companyName,
-    carrierId: row.carrierId,
-    companyType: row.companyType,
-    cardCount: row.cardCount,
-    cardId: row.cardId,
-    agentName: row.agentName,
-    cardNumber: row.cardNumber ?? null,
-  };
-}
-
-/**
- * The driver's real fuel-card number (octane.stg_cmp_card.card_number), looked up by cardId from the
- * DWH replica — the mini-app session only carries cardId, so this is what lets the driver hero show
- * the real PAN instead of a fabricated one. Best-effort: null (not an error) if the DWH is
- * unconfigured, the lookup fails, or no card matches — the UI falls back to the masked cardId.
- */
-async function resolveDriverCardNumber(carrierId: string | null, cardId: string | null): Promise<string | null> {
-  if (!carrierId || !cardId || !env.DWH_DATABASE_URL) return null;
-  try {
-    // Exact lookup. This used to `.find()` inside listDwhCards, which caps at 100 — so on a carrier
-    // with 230 (or 510) active cards a driver whose card sorted past the cap resolved to null, and
-    // requireDriverCardNumber turned that into a permanent 503: every read they had, dead.
-    return (await findDwhCardById(carrierId, cardId))?.cardNumber ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * The carrier's company name from the DWH — used to fill a driver registration's card label when the
- * invite didn't capture a companyName (older invites). Best-effort, never blocks.
- */
-async function resolveCarrierCompanyName(carrierId: string | null): Promise<string | null> {
-  if (!carrierId || !env.DWH_DATABASE_URL) return null;
-  try {
-    const operators = await searchDwhOperators({ q: carrierId, limit: 10 });
-    return operators.find((o) => o.carrierId === carrierId)?.companyName ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/** DWH-resolved extras for a DRIVER registration (real card number + company name fallback). */
-async function resolveDriverExtras(
-  reg: Pick<RegisteredMiniAppCompany, 'profile' | 'carrierId' | 'cardId' | 'companyName'>,
-): Promise<{ cardNumber: string | null; companyName?: string }> {
-  if (reg.profile !== 'driver') return { cardNumber: null };
-  const [cardNumber, resolvedCompany] = await Promise.all([
-    resolveDriverCardNumber(reg.carrierId, reg.cardId),
-    reg.companyName ? Promise.resolve(reg.companyName) : resolveCarrierCompanyName(reg.carrierId),
-  ]);
-  return { cardNumber, ...(resolvedCompany ? { companyName: resolvedCompany } : {}) };
 }
