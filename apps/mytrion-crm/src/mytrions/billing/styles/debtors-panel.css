@@ -38,6 +38,19 @@
     align-items: center;
 }
 
+/* ── Full-width contextual search row (design parity) ── */
+.bm-root .db-search-row {
+    display: flex;
+    width: 100%;
+}
+.bm-root .db-search-row .db-search-wrap {
+    width: 100%;
+}
+.bm-root .db-search-row .db-search-input {
+    flex: 1;
+    width: auto;
+}
+
 /* ── Search Input ── */
 .bm-root .db-search-wrap {
     position: relative;
@@ -287,7 +300,7 @@
 .bm-root .db-col-company { flex: 1; min-width: 0; padding-right: 1rem; }
 .bm-root .db-col-cycle   { flex: 0 0 110px; text-align: center; }
 .bm-root .db-col-status  { flex: 0 0 100px; text-align: center; }
-.bm-root .db-col-age     { flex: 0 0 80px; text-align: center; }
+.bm-root .db-col-age     { flex: 0 0 180px; text-align: left; padding-right: 1rem; }
 .bm-root .db-col-count   { flex: 0 0 80px; text-align: center; }
 .bm-root .db-col-owed    { flex: 0 0 120px; text-align: right; padding-right: 0.5rem; }
 .bm-root .db-col-remain  { flex: 0 0 120px; text-align: right; }
@@ -392,7 +405,7 @@
 }
 .bm-root .db-age-bar {
     flex: 1;
-    height: 5px;
+    height: 6px;
     background: var(--border-light);
     border-radius: 3px;
     overflow: hidden;

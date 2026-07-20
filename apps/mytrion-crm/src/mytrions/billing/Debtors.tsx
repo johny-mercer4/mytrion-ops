@@ -159,26 +159,6 @@ export function Debtors() {
             <option value="recent">Recent (&lt;15d)</option>
           </select>
 
-          <div className="db-search-wrap">
-            <svg className="db-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={SEARCH_PATH} />
-            </svg>
-            <input
-              type="text"
-              className="db-search-input"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search Carrier ID or Company..."
-            />
-            {search ? (
-              <button className="db-search-clear" onClick={() => setSearch('')}>
-                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={CLOSE_PATH} />
-                </svg>
-              </button>
-            ) : null}
-          </div>
-
           <button className="bm-refresh-btn" onClick={page.reload} disabled={page.loading}>
             <svg
               className={page.loading ? 'spin-icon' : undefined}
@@ -192,6 +172,29 @@ export function Debtors() {
             </svg>
             Refresh
           </button>
+        </div>
+      </div>
+
+      {/* ── Full-width contextual search (design parity) ── */}
+      <div className="db-search-row">
+        <div className="db-search-wrap">
+          <svg className="db-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={SEARCH_PATH} />
+          </svg>
+          <input
+            type="text"
+            className="db-search-input"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search Carrier ID or Company..."
+          />
+          {search ? (
+            <button className="db-search-clear" onClick={() => setSearch('')}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={CLOSE_PATH} />
+              </svg>
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -238,11 +241,11 @@ export function Debtors() {
           {/* List Header */}
           <div className="db-list-header">
             <div className="db-col-carrier">Carrier</div>
-            <div className="db-col-company">Company Name</div>
-            <div className="db-col-cycle">Billing Cycle</div>
+            <div className="db-col-company">Company</div>
+            <div className="db-col-cycle">Cycle</div>
             <div className="db-col-status">Status</div>
             <div className="db-col-age">Oldest Debt</div>
-            <div className="db-col-count">Invoices</div>
+            <div className="db-col-count">Inv</div>
             <div className="db-col-owed">Total Owed</div>
             <div className="db-col-remain">Remaining</div>
           </div>
