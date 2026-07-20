@@ -3306,3 +3306,29 @@ mini-app'ga ulash — backend qismi:
 
 Qolgan (keyingi sessiya): App.tsx sheet UI'lari + i18n kalitlari + serviceCatalog'ni real
 actionlarga o'tkazish; RBAC cross-tenant testlar (rule 9) yozish.
+
+## 2026-07-20 (davomi) — RBAC testlar + driver self-register owner'dan decouple
+
+**T2 — RBAC/security testlar (carrierMiniAppActions.routes.ts):** tests/unit/carrier-mini-app.test.ts
++16 test. Gate tartibi: feature-flag(503) → auth/role(403) → rate-limit(429) → card-egaligi(404).
+Har biri rejection kodi + wrapper chaqirilmagani. Baseline fix: carrier-mini-app mock'ida
+findActiveOwnerByCarrier stub yo'q edi (build branchdan) — 11 test qulagan, tuzatildi.
+
+**Driver self-register owner-gate'dan decouple (mahsuliy talab):** 60 kartali kompaniyada
+60 link generatsiya og'ir → har driver o'z card# bilan self-register qiladi, owner ro'yxatdan
+o'tmagan bo'lsa ham.
+- `CreateCarrierInviteArgs.allowWithoutOwner?` qo'shildi (inviteService.ts). Faqat card-possession
+  self-register uzatadi; admin/owner-issued invite'lar hali DRIVER_NEEDS_OWNER talab qiladi.
+- `findDwhCardByNumber` (dwhCards.ts): `limit 1`→`limit 2` + ambiguity guard — bir card# ikki
+  carrier'ga chiqsa fail-closed (null + warn log), noto'g'ri carrier'ga bog'lamaydi. `is_active=true`
+  allaqachon faqat AKTIV kartalar login qilishini ta'minlaydi.
+- Testlar: self-register owner'siz 201 + findActiveOwnerByCarrier chaqirilmaydi; yangi
+  tests/unit/dwh-cards.test.ts (is_active + ambiguity, 6 test).
+
+**Audit natijasi (mini-app user mgmt):**
+- Admin "Registered companies" (CarrierUsers.tsx) driverlarni owner ostiga ALLAQACHON nest qiladi
+  + driver Revoke tugmasi bor. Screenshot'da driver ko'rinmasligi = ma'lumot yo'q (driver yo'q).
+- Ochiq risk (keyingi): one-driver-per-card DB unique constraint yo'q (faqat pre-insert query,
+  concurrent race mumkin) — migration kerak bo'lsa alohida.
+
+Holat: typecheck toza, 695 test yashil.

@@ -1211,6 +1211,31 @@ describe('driver self-registration by card number', () => {
     expect(inviteRepo.create.mock.calls[0]?.[1]).toMatchObject({ profile: 'driver', carrierId: CARRIER, cardId: 'card_1' });
   });
 
+  it('onboards a driver even when NO owner has registered for the carrier — card possession is the proof', async () => {
+    // The real-world driver: a fleet with 60 cards where the owner never opened the mini-app. The
+    // driver holds a valid card, so they must not be blocked on the owner. (Before decoupling this
+    // 400'd with DRIVER_NEEDS_OWNER.)
+    driverTg();
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(undefined);
+    cardAvailable();
+    registrationRepo.findActiveOwnerByCarrier.mockResolvedValue(undefined); // no owner for this carrier
+    registrationRepo.upsert.mockResolvedValueOnce(
+      registrationRow({ id: 'rma_self', profile: 'driver', telegramUserId: '987654', carrierId: CARRIER, cardId: 'card_1', driverName: 'James Reyes', companyType: null, cardCount: null }),
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/driver-self-register',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', cardNumber: CARD },
+    });
+
+    expect(res.statusCode).toBe(201);
+    // The owner precondition is skipped entirely on the card-possession path — not merely satisfied.
+    expect(registrationRepo.findActiveOwnerByCarrier).not.toHaveBeenCalled();
+    expect(registrationRepo.upsert).toHaveBeenCalled();
+  });
+
   it('accepts the number formatted the way it is printed on the card', async () => {
     driverTg();
     registrationRepo.findByTelegramUserId.mockResolvedValueOnce(undefined);

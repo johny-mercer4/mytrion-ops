@@ -5,6 +5,7 @@
  * driver's `card_id` FROM when binding a `carrier_users` driver account. Read-only.
  */
 import { dwhQuery } from './dwh.js';
+import { logger } from '../lib/logger.js';
 
 export interface DwhCard {
   cardId: string | null;
@@ -104,15 +105,26 @@ export interface DwhCardOwner {
 }
 
 export async function findDwhCardByNumber(cardNumber: string): Promise<DwhCardOwner | null> {
+  // `limit 2`, not `limit 1`: `card_number` has no uniqueness constraint on this read-only replica,
+  // and this lookup is what binds a self-registering driver to a carrier by card possession alone.
+  // If the same active number resolves to TWO DIFFERENT carriers, a bare `limit 1` (no ORDER BY)
+  // would bind the driver to an arbitrary one — so fail closed instead of guessing.
   const rows = await dwhQuery<{ card_id: string | number | null; carrier_id: string | number | null; card_number: string | null }>(
     `select card_id, carrier_id, card_number
        from octane.stg_cmp_card
       where is_active = true and card_number = $1
-      limit 1`,
+      limit 2`,
     [cardNumber],
   );
   const row = rows[0];
   if (!row || row.card_id == null || row.carrier_id == null) return null;
+  if (rows.length > 1 && rows[1]?.carrier_id != null && String(rows[1].carrier_id) !== String(row.carrier_id)) {
+    logger.warn(
+      { cardNumber, carriers: [String(row.carrier_id), String(rows[1].carrier_id)] },
+      'findDwhCardByNumber: card number resolves to multiple carriers — refusing to bind',
+    );
+    return null;
+  }
   return { cardId: String(row.card_id), carrierId: String(row.carrier_id), cardNumber: String(row.card_number ?? cardNumber) };
 }
 

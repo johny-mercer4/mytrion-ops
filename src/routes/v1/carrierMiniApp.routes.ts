@@ -1181,6 +1181,9 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       carrierId: card.carrierId,
       cardId: card.cardId,
       driverName,
+      // Card possession IS the carrier-membership proof here — a driver holding a card the DWH ties
+      // to this carrier onboards on their own, without waiting for the company owner to register.
+      allowWithoutOwner: true,
     });
     const registration = await db.transaction(async (tx) => {
       await carrierInvitationRepo.markRedeemed(ctx, invite.id, `telegram:${telegramUserId}`, tx);
