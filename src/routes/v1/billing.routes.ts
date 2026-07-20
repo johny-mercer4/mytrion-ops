@@ -23,6 +23,7 @@ import {
   reverseMapping,
 } from '../../modules/billing/cmpWrites.js';
 import { fuzzyResolveCarrier } from '../../modules/billing/fuzzyCarrier.js';
+import { getPrepayCompanies, getPrepayLedgerProxy, getPrepayRmveProxy } from '../../modules/billing/prepayLedger.js';
 import { toCandidateWire, toReturnWire, toTxWire } from '../../modules/billing/wire.js';
 import { resolveWritePayload } from '../../modules/customerService/fieldResolver.js';
 import { carrierMemoryRepo } from '../../repos/carrierMemoryRepo.js';
@@ -173,6 +174,31 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     requireBillingAccess(request);
     const rows = await carrierMemoryRepo.list();
     return { data: rows.map((m) => ({ companyName: m.companyName, carrierId: m.carrierId })) };
+  });
+
+  // ─── Prepay (mytrion-ops-owned): companies composed here from DWH + PG +
+  //     servercrm externals; per-carrier ledger + EFS RMVE proxied to servercrm. ──
+  const prepayRange = z.object({ startDate: z.string().min(8), endDate: z.string().min(8) });
+
+  /** Prepay companies list (DWH companies + loads/draws, PG payments, servercrm externals). */
+  app.get('/billing/prepay/companies', guard, async (request) => {
+    requireBillingAccess(request);
+    const q = prepayRange.parse(request.query);
+    return getPrepayCompanies(q);
+  });
+
+  /** Per-carrier daily reconciliation ledger (modal) — proxied to servercrm. */
+  app.get('/billing/prepay/ledger', guard, async (request) => {
+    requireBillingAccess(request);
+    const q = prepayRange.extend({ carrierId: z.string().min(1) }).parse(request.query);
+    return getPrepayLedgerProxy(q.carrierId, q.startDate, q.endDate);
+  });
+
+  /** EFS RMVE batch for the visible page — proxied to servercrm (EFS lives server-side). */
+  app.get('/billing/prepay/rmve', guard, async (request) => {
+    requireBillingAccess(request);
+    const q = prepayRange.extend({ carrierIds: z.string().min(1), fresh: z.string().optional() }).parse(request.query);
+    return getPrepayRmveProxy(q.carrierIds, q.startDate, q.endDate, q.fresh === '1' || q.fresh === 'true');
   });
 
   /** Fuzzy carrier suggestion from a payer name / bank descriptor (DWH roster + PG memory). */
