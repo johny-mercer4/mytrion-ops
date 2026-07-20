@@ -13,10 +13,23 @@
 .bm-root .dc-deal-row {
     cursor: pointer;
     transition: background 100ms;
+    /* Fixed height so row-windowing offsets (DC_ROW_H) stay exact — content must fit. */
+    height: 52px;
 }
 
 .bm-root .dc-deal-row:hover {
     background: var(--surface-raised) !important;
+}
+
+/* Keep every cell to one line so a long value can't grow the row and drift the window. */
+.bm-root .dc-deal-row > td {
+    white-space: nowrap;
+}
+
+.bm-root .dc-deal-row > td:first-child > div {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 260px;
 }
 
 /* ── Client list card (mobile) ── */

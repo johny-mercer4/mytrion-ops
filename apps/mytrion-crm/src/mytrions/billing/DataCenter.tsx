@@ -18,6 +18,10 @@ import { billingTouchpoint } from '@/api/billing';
 import type { BillingDealsResult, BillingInvoicesResult } from '@/api/touchpointTypes';
 import { useLoad } from '../_shared/useLoad';
 import { type Deal, type PayType, type StageSem, type Verify, payMeta, stageMeta } from './data';
+import { useWindowedRows } from './useWindowedRows';
+
+/** Fixed rendered height of a Data Center deal row (px) — must match `.dc-deal-row { height }`. */
+const DC_ROW_H = 52;
 
 /* ── icon path constants (verbatim from the widget template) ── */
 const P_REFRESH =
@@ -193,6 +197,13 @@ export function DataCenter() {
         ? selectedStages[0]
         : `${selectedStages.length} Stages`;
 
+  // Row virtualization: only the visible slice is in the DOM, so switching to/from
+  // this tab (Shell toggles display:none↔contents) no longer style-recalcs thousands
+  // of <tr> nodes, and scrolling stays smooth regardless of deal count.
+  const tableWrapRef = useRef<HTMLDivElement>(null);
+  const win = useWindowedRows(tableWrapRef, filtered.length, DC_ROW_H);
+  const windowed = useMemo(() => filtered.slice(win.start, win.end), [filtered, win.start, win.end]);
+
   const stageRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!stageOpen) return;
@@ -343,7 +354,7 @@ export function DataCenter() {
       {/* ── Deals Table ── */}
       {!loading || deals.length > 0 ? (
         <div className="bm-section" style={{ flex: 1, minHeight: 0 }}>
-          <div className="bm-table-wrap" style={{ flex: 1, minHeight: 0 }}>
+          <div className="bm-table-wrap" ref={tableWrapRef} style={{ flex: 1, minHeight: 0 }}>
             <table className="bm-table" id="dc-deals-table">
               <thead>
                 <tr>
@@ -375,7 +386,13 @@ export function DataCenter() {
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((deal) => (
+                  <>
+                    {win.padTop > 0 ? (
+                      <tr aria-hidden style={{ height: win.padTop }}>
+                        <td colSpan={7} style={{ padding: 0, border: 0 }} />
+                      </tr>
+                    ) : null}
+                    {windowed.map((deal) => (
                     <tr key={deal.id} className="dc-deal-row" onClick={() => setOpenDeal(deal)}>
                       <td>
                         <div style={{ fontWeight: 600, fontSize: '0.8125rem' }}>{deal.name || '—'}</div>
@@ -415,7 +432,13 @@ export function DataCenter() {
                         </svg>
                       </td>
                     </tr>
-                  ))
+                    ))}
+                    {win.padBottom > 0 ? (
+                      <tr aria-hidden style={{ height: win.padBottom }}>
+                        <td colSpan={7} style={{ padding: 0, border: 0 }} />
+                      </tr>
+                    ) : null}
+                  </>
                 )}
               </tbody>
             </table>
