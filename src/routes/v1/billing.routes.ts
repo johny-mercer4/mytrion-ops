@@ -14,7 +14,6 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { NotFoundError } from '../../lib/errors.js';
 import { serverCrmPost } from '../../integrations/serverCrm.js';
-import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
   applyInvoicePayment,
@@ -25,7 +24,6 @@ import {
 import { fuzzyResolveCarrier } from '../../modules/billing/fuzzyCarrier.js';
 import { getPrepayCompanies, getPrepayLedgerProxy, getPrepayRmveProxy } from '../../modules/billing/prepayLedger.js';
 import { toCandidateWire, toReturnWire, toTxWire } from '../../modules/billing/wire.js';
-import { resolveWritePayload } from '../../modules/customerService/fieldResolver.js';
 import { carrierMemoryRepo } from '../../repos/carrierMemoryRepo.js';
 import { paymentReturnRepo } from '../../repos/paymentReturnRepo.js';
 import { paymentTransactionRepo } from '../../repos/paymentTransactionRepo.js';
@@ -112,16 +110,6 @@ const fuzzyBody = z.object({
   description: z.string().max(400).optional(),
   email: z.string().max(200).optional(),
 });
-
-/** Data Center billing edit — exact widget allowlist (datacenter-panel.js edit modal). */
-const dealBillingBody = z
-  .object({
-    Payment_Type_Billing: z.string().max(60).nullable().optional(),
-    Billing_Cycle: z.string().max(60).nullable().optional(),
-    Billing_Verification: z.union([z.string().max(60), z.boolean()]).nullable().optional(),
-  })
-  .strict()
-  .refine((v) => Object.keys(v).length > 0, 'no billing fields supplied');
 
 const idParam = z.object({ id: z.string().regex(/^\d+$/, 'id must be a CRM record id').max(60) });
 
@@ -379,26 +367,6 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     if (isJunkCompanyName(b.companyName)) return { status: 'success', skipped: true };
     const { created } = await carrierMemoryRepo.insertDedup({ companyName: b.companyName, carrierId: b.carrierId, createdBy: actor(ctx) });
     return { status: 'success', created };
-  });
-
-  /** Data Center billing-fields edit on a Deal (allowlisted, casing-resolved, audited). */
-  app.post('/billing/data-center/deals/:id', guard, async (request) => {
-    const ctx = requireBillingAccess(request);
-    const { id } = idParam.parse(request.params);
-    const body = dealBillingBody.parse(request.body);
-    const resolved = await resolveWritePayload(
-      'Deals',
-      Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined)),
-    );
-    await zohoCrmRecords.updateRecord('Deals', id, resolved);
-    await auditFromContext(ctx, {
-      action: 'billing.datacenter.deal_update',
-      status: 'ok',
-      resourceType: 'crm_deal',
-      resourceId: id,
-      detail: { fields: Object.keys(resolved) },
-    });
-    return { id, updatedFields: Object.keys(resolved) };
   });
 
   /**

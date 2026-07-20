@@ -3,19 +3,18 @@
  * (bm-panel / bm-summary-* / bm-toolbar / dc-filter-tabs + dc-stage-* multiselect / bm-table /
  * bm-modal-* / dc-detail-* / bm-toast), scoped under `.bm-root`.
  *
- * Data is LIVE: deals load via billingTouchpoint('billing.datacenter.deals') and map onto the
- * `Deal` view-model in ./data.ts. The single write is the deal-billing edit — three picklist
- * fields (Payment_Type_Billing / Billing_Cycle / Billing_Verification) saved through
- * updateDealBilling (POST /billing/data-center/deals/:id, allowlisted + audited); success updates
- * the row in local state and raises a toast, failures surface the server message inline + toast.
+ * Data is LIVE and READ-ONLY (fully Zoho-free): deals load via
+ * billingTouchpoint('billing.datacenter.deals') from the DWH and map onto the `Deal` view-model in
+ * ./data.ts. The deal-billing edit (a Zoho CRM write) was removed — billing fields are now managed
+ * in Zoho CRM directly, so Data Center never writes to Zoho.
  *
  * Detail modal lazy-loads avg-days (billing.datacenter.avgDays) and invoices/prepay
- * (billing.invoices.search); Debtor Status + Recent Transactions render as graceful, honest
- * placeholders (no per-carrier billing touchpoint wired for those yet).
+ * (billing.invoices.search) — both DWH-sourced; Debtor Status + Recent Transactions render as
+ * graceful, honest placeholders (no per-carrier billing touchpoint wired for those yet).
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
-import { billingTouchpoint, updateDealBilling } from '@/api/billing';
+import { billingTouchpoint } from '@/api/billing';
 import type { BillingDealsResult, BillingInvoicesResult } from '@/api/touchpointTypes';
 import { useLoad } from '../_shared/useLoad';
 import { type Deal, type PayType, type StageSem, type Verify, payMeta, stageMeta } from './data';
@@ -26,7 +25,6 @@ const P_REFRESH =
 const P_SEARCH = 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z';
 const P_CLOSE = 'M6 18L18 6M6 6l12 12';
 const P_WARN = 'M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z';
-const P_CHECK = 'M5 13l4 4L19 7';
 const P_FILTER = 'M3 4h18M6 12h12M10 20h4';
 const P_CHEVRON = 'M19 9l-7 7-7-7';
 
@@ -53,9 +51,6 @@ const STAGE_OPTIONS = [
   'Closed Lost',
 ];
 
-const PAY_OPTIONS: PayType[] = ['Line of Credit', 'Prepay', 'Deposit'];
-const CYCLE_OPTIONS = ['Weekly', 'Bi-Weekly', 'Monthly', 'Bi-Monthly'];
-const VERIFY_OPTIONS: Verify[] = ['Verified', 'Pending', 'Failed'];
 
 /** Design sem → the bm-badge modifier class (stage chip). */
 const SEM_BADGE: Record<StageSem, string> = {
@@ -141,13 +136,6 @@ function mapDeals(result: BillingDealsResult): Deal[] {
   return rows.map(toDeal);
 }
 
-/* ── toast ── */
-interface ToastState {
-  id: number;
-  type: 'success' | 'error';
-  message: string;
-}
-
 export function DataCenter() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [search, setSearch] = useState('');
@@ -155,8 +143,6 @@ export function DataCenter() {
   const [selectedStages, setSelectedStages] = useState<string[]>([]);
   const [stageOpen, setStageOpen] = useState(false);
   const [openDeal, setOpenDeal] = useState<Deal | null>(null);
-  const [editDeal, setEditDeal] = useState<Deal | null>(null);
-  const [toast, setToast] = useState<ToastState | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
 
   const load = useLoad<BillingDealsResult>(
@@ -168,13 +154,6 @@ export function DataCenter() {
   useEffect(() => {
     if (load.data) setDeals(mapDeals(load.data));
   }, [load.data]);
-
-  // Toast auto-dismiss.
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 3200);
-    return () => clearTimeout(t);
-  }, [toast]);
 
   const loading = load.loading;
 
@@ -235,12 +214,6 @@ export function DataCenter() {
     setActiveFilter('all');
     setSelectedStages([]);
     setRefreshTick((t) => t + 1);
-  }
-
-  function applyEdit(id: string, patch: { payType: PayType; cycle: string; verify: Verify }) {
-    setDeals((prev) => prev.map((d) => (d.id === id ? { ...d, ...patch } : d)));
-    setEditDeal(null);
-    setToast({ id: Date.now(), type: 'success', message: 'Deal updated successfully' });
   }
 
   return (
@@ -450,37 +423,8 @@ export function DataCenter() {
         </div>
       ) : null}
 
-      {/* ── Deal Detail modal ── */}
-      {openDeal ? (
-        <DealDetailModal
-          deal={openDeal}
-          onClose={() => setOpenDeal(null)}
-          onEdit={(d) => {
-            setOpenDeal(null);
-            setEditDeal(d);
-          }}
-        />
-      ) : null}
-
-      {/* ── Edit modal (the single write) ── */}
-      {editDeal ? (
-        <EditDealModal
-          deal={editDeal}
-          onClose={() => setEditDeal(null)}
-          onSaved={(patch) => applyEdit(editDeal.id, patch)}
-          onError={(m) => setToast({ id: Date.now(), type: 'error', message: m })}
-        />
-      ) : null}
-
-      {/* ── Toast ── */}
-      {toast ? (
-        <div className={`bm-toast bm-toast--${toast.type}`}>
-          <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={toast.type === 'success' ? P_CHECK : P_WARN} />
-          </svg>
-          {toast.message}
-        </div>
-      ) : null}
+      {/* ── Deal Detail modal (read-only) ── */}
+      {openDeal ? <DealDetailModal deal={openDeal} onClose={() => setOpenDeal(null)} /> : null}
     </div>
   );
 }
@@ -529,7 +473,7 @@ function parseAvgDays(res: Record<string, unknown> | null): number | null {
   return toNum(res.avgDays);
 }
 
-function DealDetailModal({ deal, onClose, onEdit }: { deal: Deal; onClose: () => void; onEdit: (d: Deal) => void }) {
+function DealDetailModal({ deal, onClose }: { deal: Deal; onClose: () => void }) {
   const isPrepay = deal.payType === 'Prepay';
 
   useEffect(() => {
@@ -658,9 +602,6 @@ function DealDetailModal({ deal, onClose, onEdit }: { deal: Deal; onClose: () =>
           <button className="bm-btn bm-btn-ghost" onClick={onClose}>
             Close
           </button>
-          <button className="bm-btn bm-btn-primary" onClick={() => onEdit(deal)}>
-            Edit Deal
-          </button>
         </div>
       </div>
     </div>
@@ -709,149 +650,6 @@ function DetailRow({ label, value }: { label: string; value: ReactNode }) {
     <div className="bm-field-row">
       <span className="bm-field-label">{label}</span>
       <span className="bm-field-value">{value}</span>
-    </div>
-  );
-}
-
-/* ═══════════ Edit modal (the single write) ═══════════ */
-
-function EditDealModal({
-  deal,
-  onClose,
-  onSaved,
-  onError,
-}: {
-  deal: Deal;
-  onClose: () => void;
-  onSaved: (patch: { payType: PayType; cycle: string; verify: Verify }) => void;
-  onError: (message: string) => void;
-}) {
-  const [payType, setPayType] = useState<PayType>(deal.payType);
-  const [cycle, setCycle] = useState(deal.cycle);
-  const [verify, setVerify] = useState<Verify>(deal.verify);
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  async function save() {
-    if (saving) return;
-    const changes: Parameters<typeof updateDealBilling>[1] = {};
-    if (payType !== deal.payType) changes.Payment_Type_Billing = payType || null;
-    if (cycle !== deal.cycle) changes.Billing_Cycle = cycle || null;
-    if (verify !== deal.verify) changes.Billing_Verification = verify || null;
-    if (Object.keys(changes).length === 0) {
-      onClose();
-      return;
-    }
-    setSaving(true);
-    setSaveMsg(null);
-    try {
-      await updateDealBilling(deal.id, changes);
-      // Success: hand the patch up so the parent patches the row in local state + toasts.
-      onSaved({ payType, cycle, verify });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Try again.';
-      setSaving(false);
-      setSaveMsg({ type: 'error', text: `Save failed. ${msg}` });
-      onError(`Save failed. ${msg}`);
-    }
-  }
-
-  return (
-    <div className="bm-modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="bm-modal-box" style={{ maxWidth: '560px' }}>
-        <div className="bm-modal-header">
-          <h3 className="bm-modal-title">Edit Deal</h3>
-          <button className="bm-modal-close" onClick={onClose}>
-            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={P_CLOSE} />
-            </svg>
-          </button>
-        </div>
-
-        <div className="bm-modal-body">
-          {/* Read-only info */}
-          <div className="dc-edit-section">
-            <div className="dc-edit-section-title">Deal Info</div>
-            <div className="bm-field-row">
-              <span className="bm-field-label">Deal Name</span>
-              <span className="bm-field-value">{deal.name || '—'}</span>
-            </div>
-            <div className="bm-field-row">
-              <span className="bm-field-label">Stage</span>
-              <span className={`bm-badge ${stageBadge(deal.stage)}`}>{deal.stage || '—'}</span>
-            </div>
-            <div className="bm-field-row">
-              <span className="bm-field-label">Carrier ID</span>
-              <span className="bm-field-value" style={{ fontFamily: MONO }}>{deal.carrierId || '—'}</span>
-            </div>
-            <div className="bm-field-row">
-              <span className="bm-field-label">Deal ID</span>
-              <span className="bm-field-value" style={{ fontFamily: MONO, fontSize: '0.6875rem', color: 'var(--text-muted)' }}>{deal.id}</span>
-            </div>
-          </div>
-
-          {/* Editable fields */}
-          <div className="dc-edit-section" style={{ marginTop: '1rem' }}>
-            <div className="dc-edit-section-title">Editable Fields</div>
-            <div className="dc-edit-field">
-              <label className="dc-edit-label" htmlFor="dc-edit-payment-type">Payment Type / Billing</label>
-              <select id="dc-edit-payment-type" className="dc-edit-input" value={payType} onChange={(e) => setPayType(e.target.value as PayType)}>
-                <option value="">— None —</option>
-                {PAY_OPTIONS.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            </div>
-            <div className="dc-edit-field">
-              <label className="dc-edit-label" htmlFor="dc-edit-billing-cycle">Billing Cycle</label>
-              <select id="dc-edit-billing-cycle" className="dc-edit-input" value={cycle} onChange={(e) => setCycle(e.target.value)}>
-                <option value="">— None —</option>
-                {CYCLE_OPTIONS.concat(cycle && !CYCLE_OPTIONS.includes(cycle) ? [cycle] : []).map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-            <div className="dc-edit-field">
-              <label className="dc-edit-label" htmlFor="dc-edit-billing-verification">Billing Verification</label>
-              <select id="dc-edit-billing-verification" className="dc-edit-input" value={verify} onChange={(e) => setVerify(e.target.value as Verify)}>
-                <option value="">— None —</option>
-                {VERIFY_OPTIONS.map((v) => (
-                  <option key={v} value={v}>{v}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {saveMsg ? (
-            <div className={`tx-save-msg ${saveMsg.type}`} style={{ marginTop: '0.75rem' }}>
-              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={saveMsg.type === 'success' ? P_CHECK : P_WARN} />
-              </svg>
-              {saveMsg.text}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="bm-modal-footer">
-          <button className="bm-btn bm-btn-ghost" onClick={onClose} disabled={saving}>
-            Cancel
-          </button>
-          <button className="bm-btn bm-btn-primary" onClick={save} disabled={saving} id="dc-btn-save">
-            {saving ? (
-              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ animation: 'ai-spin 0.8s linear infinite' }}>
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={P_REFRESH} />
-              </svg>
-            ) : null}
-            {saving ? 'Saving…' : 'Save Changes'}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

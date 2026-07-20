@@ -166,21 +166,7 @@ export function saveCarrierMemory(companyName: string, carrierId: string): Promi
   return billingWrite('/billing/carrier/memory', { companyName, carrierId });
 }
 
-// ---- Data Center deal-billing edit (direct Deals update via REST) ----
-
-export function updateDealBilling(
-  id: string,
-  changes: Partial<{
-    Payment_Type_Billing: string | null;
-    Billing_Cycle: string | null;
-    Billing_Verification: string | boolean | null;
-  }>,
-): Promise<{ id: string; updatedFields: string[] }> {
-  return request('POST', `/billing/data-center/deals/${encodeURIComponent(id)}`, {
-    headers: BILLING_HEADERS,
-    body: changes,
-  }) as Promise<{ id: string; updatedFields: string[] }>;
-}
+// Data Center is now read-only (the Zoho deal-billing edit was removed) — no write here.
 
 // ---- Real-time mapping relay (Phase 3b) ----
 
