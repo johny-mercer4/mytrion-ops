@@ -4,19 +4,21 @@
  * must own (carrierParam → assertCarrierOwned for non-admins).
  */
 import { z } from 'zod';
+import { fetchTruckingNumbers } from '../../../integrations/salesCrmActions.js';
 import type { Touchpoint } from '../types.js';
 import { carrierId, cardNumber, idString, shortText } from './common.js';
 
 export const carrierDelugeTouchpoints: Touchpoint[] = [
+  // Migrated off Zoho Deluge to a native Zoho-CRM call (kind: 'local'); carrierParam is retained so the
+  // dispatcher's assertCarrierOwned still gates non-admins. Byte-compatible with the old Deluge output.
   {
-    kind: 'deluge',
+    kind: 'local',
     key: 'carrier.trucking_number_request',
     title: 'Tracking numbers (FedEx card shipments)',
     riskClass: 'read',
     carrierParam: 'carrierId',
-    functionNames: ['mytriontruckingnumberrequest'],
-    unwrap: 'status',
     paramsSchema: z.object({ carrierId }),
+    handler: (_ctx, params) => fetchTruckingNumbers(String(params.carrierId)),
   },
   {
     kind: 'deluge',

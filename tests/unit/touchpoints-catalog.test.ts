@@ -9,29 +9,25 @@ import { getTouchpoint, listTouchpoints } from '../../src/modules/touchpoints/ca
 const all = listTouchpoints();
 
 /**
- * Legacy widget Deluge functions still served via `kind: 'deluge'`. NOTE: the four Sales dashboards
- * (mytrionhomesnapshot, mytrionAgentSalesDashboard, mytriondbdebtorsinfo, mytrioncompanydashboard) were
- * migrated to native TypeScript handlers (kind: 'local', src/integrations/salesDashboards.ts) — they no
- * longer hit Zoho Deluge, so they're intentionally absent from this list.
+ * Legacy widget Deluge functions still served via `kind: 'deluge'`. Migrated to native TypeScript
+ * handlers (kind: 'local') and therefore intentionally ABSENT from this list:
+ *   - dashboards → src/integrations/salesDashboards.ts (mytrionhomesnapshot, mytrionAgentSalesDashboard,
+ *     mytriondbdebtorsinfo, mytrioncompanydashboard);
+ *   - CRM-backed → src/integrations/salesCrmActions.ts (mytrionfetchannouncements, mytrionfetchinbox,
+ *     mytriondeleteinboxmessage, mytrioncreatelead, mytrionapplicationupdate, mytriontruckingnumberrequest).
  */
 const WIDGET_DELUGE_FUNCTIONS = [
   'mytrionCallback',
-  'mytrionapplicationupdate',
-  'mytriontruckingnumberrequest',
   'mytrionCheckPayment',
   'mytrionfetchbillingforminfo',
   'mytrioncardstatus',
   'mytrioncardlimits',
   'mytrionSearchInvoices',
-  'mytrionfetchannouncements',
-  'mytrioncreatelead',
   'createescalationticket',
   'createticketincrm',
   'uploadticketattachment',
   'uploadescalationattachment',
   'createmaintenance',
-  'mytrionfetchinbox',
-  'mytriondeleteinboxmessage',
   'mytriondatacenterleads',
 ] as const;
 
@@ -40,9 +36,10 @@ describe('catalog shape', () => {
     const keys = all.map((t) => t.key);
     expect(new Set(keys).size).toBe(keys.length);
     // Billing kept only 1 Deluge touchpoint (invoices.search, a CMP read); the rest of the
-    // Transactions/Returns/carrier surface moved to Postgres-backed REST routes. The four Sales
-    // dashboards migrated Deluge→native (kind: 'local'), dropping the deluge count 30→26.
-    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(26);
+    // Transactions/Returns/carrier surface moved to Postgres-backed REST routes. Two waves of Sales
+    // touchpoints migrated Deluge→native (kind: 'local'): 4 dashboards + 6 CRM-backed (inbox/
+    // announcements/leads/application/trucking), dropping the deluge count 30→20.
+    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(20);
     // +7 billing servercrm touchpoints (deals, debtors, avg-days, carrier-type, 3× prepay).
     expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(51);
     // BOCA + Close Application (Playwright microservice) + Zapier ticket-email webhook.

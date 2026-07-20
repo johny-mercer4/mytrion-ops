@@ -130,6 +130,47 @@ export class ZohoCrmRecordsWrapper extends ZohoWrapper {
     return this.assertRowSuccess('insert', module, json);
   }
 
+  /**
+   * Insert one record but return the RAW per-row result (code + id + message + row) instead of throwing
+   * on a non-SUCCESS code. Lets callers handle Zoho's row-level outcomes themselves — notably
+   * DUPLICATE_DATA, which carries the EXISTING record id under `row.details.id` (the UI links to it).
+   */
+  async insertRecordDetailed(
+    module: string,
+    data: Record<string, unknown>,
+    trigger?: readonly string[],
+  ): Promise<{ code: string; id: string; message: string; row: Record<string, unknown> }> {
+    const path = `/${encodeURIComponent(module)}`;
+    const json = await this.request<MutationResponse>('POST', path, {
+      body: { data: [data], ...(trigger ? { trigger } : {}) },
+    });
+    const row = (json.data?.[0] ?? {}) as MutationRow;
+    return {
+      code: String(row.code ?? ''),
+      id: String(row.details?.id ?? ''),
+      message: String(row.message ?? ''),
+      row: row as Record<string, unknown>,
+    };
+  }
+
+  /** Related-list records (`GET /{module}/{id}/{relatedList}`). 204/404 → []. */
+  async getRelatedRecords(
+    module: string,
+    id: string,
+    relatedList: string,
+    fields?: readonly string[],
+  ): Promise<Array<Record<string, unknown>>> {
+    const path = `/${encodeURIComponent(module)}/${encodeURIComponent(id)}/${encodeURIComponent(relatedList)}`;
+    const res = await this.requestRaw('GET', path, {
+      query: { ...(fields?.length ? { fields: fields.join(',') } : {}), per_page: 200 },
+    });
+    if (res.status === 204 || res.status === 404) return [];
+    const text = await res.text();
+    if (!res.ok) throw this.httpError('GET', path, res.status, text);
+    const json = text ? (JSON.parse(text) as { data?: Array<Record<string, unknown>> }) : {};
+    return json.data ?? [];
+  }
+
   /** Delete one record (row-level code checked like every other mutation). */
   async deleteRecord(module: string, id: string): Promise<void> {
     const path = `/${encodeURIComponent(module)}`;

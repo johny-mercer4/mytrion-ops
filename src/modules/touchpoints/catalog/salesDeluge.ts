@@ -10,6 +10,13 @@ import {
   fetchDebtorsInfo,
   fetchHomeSnapshot,
 } from '../../../integrations/salesDashboards.js';
+import {
+  createLead,
+  deleteInboxMessage,
+  fetchAnnouncements,
+  fetchApplicationUpdate,
+  fetchInbox,
+} from '../../../integrations/salesCrmActions.js';
 import type { Touchpoint } from '../types.js';
 import { idString, shortText, ymdDate } from './common.js';
 
@@ -26,25 +33,22 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
     unwrap: 'status',
     paramsSchema: userKeyed,
   },
+  // application.update / leads.create migrated off Zoho Deluge to native Zoho-CRM calls (kind: 'local',
+  // src/integrations/salesCrmActions.ts). Return shapes are byte-compatible with the old Deluge output.
   {
-    kind: 'deluge',
+    kind: 'local',
     key: 'application.update',
     title: 'WEX application tasks fetch',
     riskClass: 'read',
-    functionNames: ['mytrionapplicationupdate'],
-    unwrap: 'status',
     paramsSchema: z.object({ appId: idString }),
+    handler: (_ctx, params) => fetchApplicationUpdate(String(params.appId)),
   },
   {
-    kind: 'deluge',
+    kind: 'local',
     key: 'leads.create',
     title: 'Create Lead in CRM',
     riskClass: 'write',
     identityParam: 'userId',
-    functionNames: ['mytrioncreatelead'],
-    // Permissive on purpose: the widget inspects {success, leadId, response} itself —
-    // a DUPLICATE_DATA failure carries the EXISTING lead id the UI must link to.
-    unwrap: 'permissive',
     paramsSchema: z.object({
       userId: idString.optional(),
       createPayload: z
@@ -59,6 +63,10 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
         })
         .passthrough(), // optional extras: email, dot, fullAddress, truckSize, salutation, …
     }),
+    // A DUPLICATE_DATA failure returns { success:false, response } carrying the EXISTING lead id — the
+    // UI (resolveCreateLeadOutcome) pulls it from `response` to link the existing lead.
+    handler: (_ctx, params) =>
+      createLead(String(params.userId ?? ''), (params.createPayload as Record<string, unknown>) ?? {}),
   },
   // Dashboards — migrated off Zoho Deluge to native TypeScript (kind: 'local'). Each handler does the
   // same orchestration the Deluge function did (servercrm DWH endpoints + Zoho COQL) but skips the Zoho
@@ -105,33 +113,32 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
     paramsSchema: userKeyed,
     handler: async (ctx, params) => fetchHomeSnapshot(String(params.userId ?? ''), ctx.userName?.trim() ?? ''),
   },
+  // Announcements + inbox migrated off Zoho Deluge to native Zoho-CRM calls (kind: 'local',
+  // src/integrations/salesCrmActions.ts). Return shapes are byte-compatible with the old Deluge output.
   {
-    kind: 'deluge',
+    kind: 'local',
     key: 'inbox.announcements',
     title: 'Announcements feed',
     riskClass: 'read',
-    functionNames: ['mytrionfetchannouncements'],
-    unwrap: 'permissive',
     paramsSchema: z.object({}),
+    handler: () => fetchAnnouncements(),
   },
   {
-    kind: 'deluge',
+    kind: 'local',
     key: 'inbox.list',
     title: 'CRM inbox messages',
     riskClass: 'read',
     identityParam: 'userId',
-    functionNames: ['mytrionfetchinbox'],
-    unwrap: 'status',
     paramsSchema: userKeyed,
+    handler: (_ctx, params) => fetchInbox(String(params.userId ?? '')),
   },
   {
-    kind: 'deluge',
+    kind: 'local',
     key: 'inbox.delete_message',
     title: 'Delete a CRM inbox message',
     riskClass: 'write',
-    functionNames: ['mytriondeleteinboxmessage'],
-    unwrap: 'permissive', // widget treats this as fire-and-forget
     paramsSchema: z.object({ recordId: idString }),
+    handler: (_ctx, params) => deleteInboxMessage(String(params.recordId)),
   },
   {
     kind: 'deluge',
