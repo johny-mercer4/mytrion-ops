@@ -84,7 +84,7 @@
     --accent:             #38bdf8;
 
     /* ── Layout ── */
-    --sidebar-width:      220px;
+    --sidebar-width:      216px;
     --sidebar-collapsed:  64px;
     --header-height:      56px;
     --bottom-nav-height:  62px;
@@ -105,6 +105,7 @@
     /* ── Design parity: progress-bar track + card shadow (dark = none) ── */
     --track:        rgba(200, 204, 218, 0.08);
     --card-shadow:  none;
+    --dim:          #3f465e;
 
     /* ── Status ── */
     --success: #2ECC71;
@@ -211,6 +212,7 @@
     /* Design parity: track + soft card shadow on white surfaces */
     --track:        rgba(79, 88, 150, 0.13);
     --card-shadow:  0 1px 2px rgba(20, 23, 49, 0.05), 0 6px 16px rgba(37, 99, 235, 0.07);
+    --dim:          #b4bad4;
 
     /* Shadows — soft blue-tinted, avoid flat gray */
     --shadow-sm: 0 1px 4px rgba(37, 99, 235, 0.07), 0 1px 2px rgba(0,0,0,0.04);

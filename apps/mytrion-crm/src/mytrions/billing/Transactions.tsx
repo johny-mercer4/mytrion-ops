@@ -420,29 +420,6 @@ export function Transactions() {
             </select>
           </div>
 
-          {/* Record count line */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 0.125rem' }}>
-            <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-              {searchResults !== null ? (
-                <>
-                  <strong style={{ color: 'var(--text-secondary)' }}>{filtered.length.toLocaleString()}</strong> search results
-                </>
-              ) : (
-                <>
-                  Showing <strong style={{ color: 'var(--text-secondary)' }}>{filtered.length.toLocaleString()}</strong> of{' '}
-                  <strong style={{ color: 'var(--text-secondary)' }}>{rows.length.toLocaleString()}</strong> loaded
-                  {hasMore ? (
-                    <>
-                      {' · '}
-                      <strong style={{ color: 'var(--billing-accent)' }}>{totalFetched.toLocaleString()}</strong> total available
-                    </>
-                  ) : null}
-                </>
-              )}
-            </span>
-            {firstPage.error ? <span style={{ fontSize: '0.6875rem', color: 'var(--danger-text)' }}>{firstPage.error}</span> : null}
-          </div>
-
           {/* List */}
           <div className="bm-table-wrap" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {filtered.length === 0 ? (

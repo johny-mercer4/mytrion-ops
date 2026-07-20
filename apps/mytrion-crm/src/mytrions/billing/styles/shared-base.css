@@ -59,8 +59,8 @@
     position: relative;
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0 1rem;
+    gap: 14px;
+    padding: 0 20px;
     height: var(--header-height);
     background: var(--header-bg);
     border-bottom: 1px solid var(--border);
@@ -86,12 +86,11 @@
 
 .bm-root .bm-header-title {
     font-family: 'Rajdhani', sans-serif;
-    font-size: 1rem;
+    font-size: 1.25rem;
     font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--text-primary);
-    flex: 1;
+    letter-spacing: 0.04em;
+    text-transform: none;
+    color: var(--color-brand-hover);
 }
 
 .bm-root .bm-header-title span {
@@ -99,15 +98,57 @@
 }
 
 .bm-root .bm-header-badge {
-    font-size: 0.5625rem;
-    font-weight: 800;
-    letter-spacing: 0.08em;
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    padding: 0.15rem 0.45rem;
-    border-radius: 2px;
+    padding: 3px 8px;
+    border-radius: 3px;
     background: var(--accent-bg);
     color: var(--billing-accent);
     border: 1px solid var(--accent-border);
+}
+
+/* ── Topbar theme toggle + avatar (design) ── */
+.bm-root .bm-header-theme {
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 120ms;
+    flex-shrink: 0;
+    padding: 0;
+    outline: none;
+}
+
+.bm-root .bm-header-theme:hover {
+    background: var(--accent-bg);
+    color: var(--billing-accent);
+    border-color: var(--accent-border);
+}
+
+.bm-root .bm-header-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    background: var(--accent-bg);
+    border: 1px solid var(--accent-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--billing-accent);
+    flex-shrink: 0;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
 }
 
 /* ── View-only badge (verification agents) ── */
@@ -174,24 +215,25 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-    padding: 0.75rem 0.5rem;
+    padding: 14px 12px;
     flex: 1;
 }
 
+/* Design: title-case nav labels, 13px, medium weight (not uppercase). */
 .bm-root .bm-nav-item {
     display: flex;
     align-items: center;
     gap: 0.625rem;
-    padding: 0.6rem 0.75rem;
+    padding: 9px 12px;
     border-radius: var(--radius-md);
     cursor: pointer;
     border: 1px solid transparent;
     transition: all 100ms ease;
-    color: var(--text-muted);
-    font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    text-transform: none;
     user-select: none;
     position: relative;
 }
@@ -203,9 +245,9 @@
 }
 
 .bm-root .bm-nav-item.active {
-    background: var(--accent-bg-subtle);
+    background: var(--accent-bg);
     color: var(--billing-accent);
-    border-color: var(--accent-border);
+    border-color: transparent;
 }
 
 .bm-root .bm-nav-item.active .nav-icon {
@@ -213,8 +255,8 @@
 }
 
 .bm-root .nav-icon {
-    width: 18px;
-    height: 18px;
+    width: 17px;
+    height: 17px;
     flex-shrink: 0;
     transition: color 100ms;
 }
@@ -226,17 +268,9 @@
     text-overflow: ellipsis;
 }
 
-/* ── Active accent bar ── */
+/* ── Active accent bar — design nav pills have no left bar ── */
 .bm-root .bm-nav-item.active::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 20%;
-    bottom: 20%;
-    width: 2px;
-    background: var(--billing-accent);
-    border-radius: 0 2px 2px 0;
-    box-shadow: var(--accent-glow);
+    display: none;
 }
 
 /* ── Disabled / coming-soon nav item ── */
@@ -270,13 +304,12 @@
     pointer-events: none;
 }
 
-/* ── Sidebar footer ── */
+/* ── Sidebar footer (design: version string only) ── */
 .bm-root .bm-sidebar-footer {
-    padding: 0.75rem;
-    border-top: 1px solid var(--border);
+    padding: 8px 12px;
     font-size: 0.625rem;
-    color: var(--text-muted);
-    text-align: center;
+    color: var(--dim);
+    text-align: left;
     letter-spacing: 0.04em;
 }
 
