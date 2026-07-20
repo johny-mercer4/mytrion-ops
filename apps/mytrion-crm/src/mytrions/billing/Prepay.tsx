@@ -4,13 +4,14 @@
  * the Debtors panel / db-pagination / bm-modal-* + pl-* daily reconciliation ledger), scoped
  * under `.bm-root`. Read-only.
  *
- * Data is LIVE via three billing.prepay.* touchpoints:
- *   • billing.prepay.companies — the company roll-up for the selected date window.
- *   • billing.prepay.rmve      — lazy EFS-RMVE enrichment for the VISIBLE page only (the list's
- *                                baseline RMVE comes from FundStation draws and is blind to
- *                                removals done directly in EFS; this converges loaded/difference
- *                                to the modal's numbers without ~400 EFS calls up front).
- *   • billing.prepay.ledger    — the per-carrier daily ledger for the row→modal drill-down.
+ * Data is LIVE via three PG-backed REST routes (/v1/billing/prepay/*, see api/billing.ts):
+ *   • fetchPrepayCompanies — the company roll-up, composed in mytrion-ops (DWH companies +
+ *                            loads/draws, PG Zelle/Chase/Merchant, servercrm EFS/CMP/Maintenance).
+ *   • fetchPrepayRmve      — lazy EFS-RMVE enrichment for the VISIBLE page only (the list's
+ *                            baseline RMVE comes from FundStation draws and is blind to removals
+ *                            done directly in EFS; this converges loaded/difference to the modal's
+ *                            numbers without ~400 EFS calls up front). Proxied to servercrm.
+ *   • fetchPrepayLedger    — the per-carrier daily ledger for the row→modal drill-down (proxied).
  *
  * Date-mode segmented control (day=1d / month=30d / quarter=90d rolling windows / custom range)
  * with the widget's _ymd / computeRange / _shiftYmd helpers ported verbatim. The ledger API
@@ -22,7 +23,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { billingTouchpoint } from '@/api/billing';
+import { fetchPrepayCompanies, fetchPrepayLedger, fetchPrepayRmve } from '@/api/billing';
 import type { BillingPrepayCompanies, BillingPrepayLedger } from '@/api/touchpointTypes';
 import { useLoad } from '../_shared/useLoad';
 import { fmtCurrency } from './data';
@@ -267,9 +268,8 @@ export function Prepay() {
   const load = useLoad<BillingPrepayCompanies>(() => {
     const r = appliedRange;
     if (!r) return Promise.resolve<BillingPrepayCompanies>({});
-    return freshRef.current
-      ? billingTouchpoint('billing.prepay.companies', { startDate: r.startDate, endDate: r.endDate, fresh: '1' })
-      : billingTouchpoint('billing.prepay.companies', { startDate: r.startDate, endDate: r.endDate });
+    // Composed in mytrion-ops (DWH + PG + servercrm externals); always fresh (no cache).
+    return fetchPrepayCompanies(r.startDate, r.endDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appliedRange?.startDate, appliedRange?.endDate, freshTick]);
 
@@ -347,18 +347,7 @@ export function Prepay() {
     setRmveSyncing(true);
     void (async () => {
       try {
-        const res = useFresh
-          ? await billingTouchpoint('billing.prepay.rmve', {
-              carrierIds: targets.join(','),
-              startDate: range.startDate,
-              endDate: range.endDate,
-              fresh: '1',
-            })
-          : await billingTouchpoint('billing.prepay.rmve', {
-              carrierIds: targets.join(','),
-              startDate: range.startDate,
-              endDate: range.endDate,
-            });
+        const res = await fetchPrepayRmve(targets.join(','), range.startDate, range.endDate, useFresh);
         if (token !== rmveToken.current) return; // list was refetched meanwhile
         const map = extractRmveMap(res);
         setCompanies((prev) => {
@@ -871,12 +860,7 @@ function PrepayLedgerModal({
   );
 
   const load = useLoad<BillingPrepayLedger>(
-    () =>
-      billingTouchpoint('billing.prepay.ledger', {
-        carrierId: company.carrierId,
-        startDate: detailRange.start,
-        endDate: detailRange.end,
-      }),
+    () => fetchPrepayLedger(company.carrierId, detailRange.start, detailRange.end),
     [company.carrierId, detailRange.start, detailRange.end],
   );
 

@@ -8,6 +8,8 @@ import { callTouchpoint } from './touchpoints';
 import type {
   BillingFuzzyResult,
   BillingMemoryResult,
+  BillingPrepayCompanies,
+  BillingPrepayLedger,
   BillingReturnCandidates,
   BillingReturnsPage,
   BillingTransactionsPage,
@@ -68,6 +70,38 @@ export function searchReturnCandidates(p: {
 /** Learned company → carrier memory (fetched whole). */
 export function fetchCarrierMemory(): Promise<BillingMemoryResult> {
   return billingGet('/billing/carrier/memory');
+}
+
+/** Prepay companies list — mytrion-ops-composed (DWH companies + loads/draws, PG
+ *  Zelle/Chase/Merchant, servercrm EFS/CMP/Maintenance externals). */
+export function fetchPrepayCompanies(startDate: string, endDate: string): Promise<BillingPrepayCompanies> {
+  return billingGet(
+    `/billing/prepay/companies?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+  );
+}
+
+/** Live EFS RMVE batch for the visible page (proxied to servercrm). */
+export function fetchPrepayRmve(
+  carrierIds: string,
+  startDate: string,
+  endDate: string,
+  fresh = false,
+): Promise<Record<string, unknown>> {
+  const f = fresh ? '&fresh=1' : '';
+  return billingGet(
+    `/billing/prepay/rmve?carrierIds=${encodeURIComponent(carrierIds)}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}${f}`,
+  );
+}
+
+/** Per-carrier daily reconciliation ledger (modal; proxied to servercrm). */
+export function fetchPrepayLedger(
+  carrierId: string,
+  startDate: string,
+  endDate: string,
+): Promise<BillingPrepayLedger> {
+  return billingGet(
+    `/billing/prepay/ledger?carrierId=${encodeURIComponent(carrierId)}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+  );
 }
 
 /** Fuzzy carrier suggestion from a payer name / bank descriptor. */
