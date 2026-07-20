@@ -26,7 +26,7 @@ export function CreateTab() {
         {TABS.map((t) => {
           const on = mode === t.id;
           return (
-            <button key={t.id} onClick={() => setMode(t.id)} style={s(`display:flex;align-items:center;gap:8px;padding:10px 18px;border-radius:var(--radius-md);border:1px solid ${on ? 'rgba(var(--accent-rgb),.4)' : 'transparent'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .14s`)}>
+            <button key={t.id} onClick={() => setMode(t.id)} style={s(`display:flex;align-items:center;gap:8px;padding:10px 18px;border-radius:var(--radius-md);border:1px solid ${on ? 'rgba(var(--accent-rgb),.4)' : 'transparent'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .14s`)}>
               <Icon name={t.icon} size={16} />
               {t.label}
             </button>

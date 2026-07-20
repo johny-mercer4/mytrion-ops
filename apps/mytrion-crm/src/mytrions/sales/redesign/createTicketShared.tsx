@@ -60,9 +60,9 @@ export function AttachZone({ id, file, onFile }: { id: string; file: File | null
       <div style={s('display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-radius:var(--radius-md);background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.3)')}>
         <div style={s('display:flex;align-items:center;gap:9px;min-width:0')}>
           <Icon name="check" size={18} color="var(--ok)" style={{ flexShrink: 0 }} />
-          <span style={s('font-size:12.5px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{file.name}</span>
+          <span style={s('font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{file.name}</span>
         </div>
-        <button type="button" onClick={() => onFile(null)} style={s('flex-shrink:0;border:none;background:transparent;color:var(--danger);font-size:11.5px;font-weight:700;cursor:pointer')}>Remove</button>
+        <button type="button" onClick={() => onFile(null)} style={s('flex-shrink:0;border:none;background:transparent;color:var(--danger);font-size:12px;font-weight:700;cursor:pointer')}>Remove</button>
       </div>
     );
   }
@@ -76,8 +76,8 @@ export function AttachZone({ id, file, onFile }: { id: string; file: File | null
         onDrop={(e) => { e.preventDefault(); setDragging(false); take(e.dataTransfer.files?.[0]); }}
       >
         <Icon name="upload" size={26} color="var(--accent)" strokeWidth={1.8} />
-        <div style={s('font-size:12.5px;color:var(--text2)')}><span style={s('color:var(--accent);font-weight:700')}>Click to upload</span>, drag &amp; drop, or paste</div>
-        <div style={s('font-size:10.5px;color:var(--faint)')}>PNG, JPG, PDF, DOC, XLS, CSV · max 20MB</div>
+        <div style={s('font-size:13px;color:var(--text2)')}><span style={s('color:var(--accent);font-weight:700')}>Click to upload</span>, drag &amp; drop, or paste</div>
+        <div style={s('font-size:11px;color:var(--faint)')}>PNG, JPG, PDF, DOC, XLS, CSV · max 20MB</div>
       </label>
       <input id={id} type="file" onChange={(e) => take(e.currentTarget.files?.[0])} style={{ display: 'none' }} />
     </>
@@ -86,7 +86,7 @@ export function AttachZone({ id, file, onFile }: { id: string; file: File | null
 
 export function BackBtn({ onClick }: { onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className="ss-ico-btn" style={s('height:46px;padding:0 16px;display:inline-flex;align-items:center;gap:8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:12.5px;font-weight:700')}>
+    <button type="button" onClick={onClick} className="ss-ico-btn" style={s('height:46px;padding:0 16px;display:inline-flex;align-items:center;gap:8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:13px;font-weight:700')}>
       <Icon name="chevronLeft" size={15} strokeWidth={2.2} />Back
     </button>
   );

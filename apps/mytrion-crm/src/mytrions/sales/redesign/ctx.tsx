@@ -30,9 +30,17 @@ export interface ClientRecord {
   cards: number;
   active: number;
   gallons: string;
+  /** Raw billing-cycle gallons (numeric) — drives the loyalty tier level. */
+  cycleGallons: number;
   status: 'active' | 'attention' | 'debtor';
   mc: string;
   dot: string;
+  /** Real per-calendar-month loyalty inputs (DWH) — shown as the "this month" figure. */
+  gallonsThisMonth: number;
+  activeCardsThisMonth: number;
+  transactionsThisMonth: number;
+  gallonsPrevMonth: number;
+  activeCardsPrevMonth: number;
 }
 
 export interface SalesCtx {

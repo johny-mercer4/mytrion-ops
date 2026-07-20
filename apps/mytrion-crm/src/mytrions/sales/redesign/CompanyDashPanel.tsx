@@ -50,7 +50,7 @@ function Gauge(props: {
           {pct != null ? `${Math.min(Math.round(pct), 999)}% of target` : 'No target set'}
         </text>
       </svg>
-      <div style={s('font-size:12.5px;font-weight:800;margin-top:6px')}>{props.label}</div>
+      <div style={s('font-size:13px;font-weight:800;margin-top:6px')}>{props.label}</div>
       <div style={s('font-size:11px;color:var(--faint);margin-top:3px')}>
         {props.target != null ? `Target: ${props.target.toLocaleString()}` : 'Not set yet'}
       </div>

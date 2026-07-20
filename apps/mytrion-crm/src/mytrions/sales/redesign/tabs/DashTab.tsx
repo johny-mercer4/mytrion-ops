@@ -50,7 +50,7 @@ export function DashTab() {
         >
           Dashboard
         </div>
-        <div style={s('font-size:12.5px;color:var(--muted);margin-top:2px')}>{todayDate}</div>
+        <div style={s('font-size:13px;color:var(--muted);margin-top:2px')}>{todayDate}</div>
       </div>
 
       <div
@@ -77,7 +77,7 @@ export function DashTab() {
                   on ? 'color-mix(in srgb,var(--accent) 45%,var(--border))' : 'transparent'
                 };background:${on ? 'color-mix(in srgb,var(--accent) 12%,transparent)' : 'transparent'};color:${
                   soon ? 'var(--faint)' : on ? 'var(--accent)' : 'var(--muted)'
-                };font-size:12.5px;font-weight:700;cursor:${soon ? 'default' : 'pointer'};opacity:${
+                };font-size:13px;font-weight:700;cursor:${soon ? 'default' : 'pointer'};opacity:${
                   soon ? 0.55 : 1
                 };white-space:nowrap;transition:background .14s,color .14s,border-color .14s`,
               )}

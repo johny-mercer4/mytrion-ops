@@ -57,18 +57,18 @@
   border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
 }
 
-/* sign out — glassmorphic red / danger tone */
+/* sign out — beautiful glass danger tone */
 .signout {
-  background: rgba(220, 38, 38, 0.08);
-  border-color: rgba(220, 38, 38, 0.2);
-  color: var(--danger);
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
   transition: all var(--dur-fast) var(--ease-standard);
+  padding: var(--space-1) var(--space-2);
 }
 .signout:hover {
-  background: var(--danger);
-  color: #fff;
-  border-color: var(--danger);
-  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+  background: rgba(220, 38, 38, 0.08);
+  color: var(--danger);
+  border-color: rgba(220, 38, 38, 0.2);
   transform: translateY(-1px);
 }
 

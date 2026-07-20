@@ -142,7 +142,7 @@ export function SalesDashCharts(p: SalesDashChartsProps) {
 
         <div className="msd-bar-chart">
           {p.bars.length === 0 ? (
-            <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12.5 }}>
+            <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
               {p.selectedDates && !p.dailyByCarrier.length
                 ? 'Day drilldown needs daily carrier data — open Automations → Transactions Report for a date range.'
                 : p.companyQ

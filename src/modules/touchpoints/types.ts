@@ -1,10 +1,12 @@
 /**
  * Touchpoint model — one declarative entry per legacy-widget outbound call (Deluge
- * function or servercrm endpoint). The catalog is data; the dispatcher is the only code
- * path, so adding a touchpoint = adding an entry, never a route.
+ * function or servercrm endpoint) or a DB-backed local handler. The catalog is data;
+ * the dispatcher is the only code path, so adding a touchpoint = adding an entry,
+ * never a route.
  */
 import type { ZodTypeAny } from 'zod';
 import type { UnwrapMode } from '../../integrations/zohoFunctions.js';
+import type { TenantContext } from '../../types/tenantContext.js';
 
 /**
  * read        — pure lookups (balances, invoices, dashboards).
@@ -68,11 +70,22 @@ export interface ZapierTouchpoint extends TouchpointBase {
   paramsSchema: ZodTypeAny;
 }
 
+/**
+ * DB-backed / in-process handler (e.g. retention_cases). Runs after the same
+ * RBAC + identity injection as proxy kinds; the handler receives the verified ctx.
+ */
+export interface LocalTouchpoint extends TouchpointBase {
+  kind: 'local';
+  paramsSchema: ZodTypeAny;
+  handler: (ctx: TenantContext, params: Record<string, unknown>) => Promise<unknown>;
+}
+
 export type Touchpoint =
   | DelugeTouchpoint
   | ServerCrmTouchpoint
   | BrowserAutoTouchpoint
-  | ZapierTouchpoint;
+  | ZapierTouchpoint
+  | LocalTouchpoint;
 
 /** The dispatcher's uniform result envelope (route wraps it as `{ key, data }`). */
 export interface TouchpointResult {

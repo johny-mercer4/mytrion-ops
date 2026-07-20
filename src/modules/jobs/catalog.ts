@@ -95,11 +95,31 @@ export const retentionScanJob = defineJob({
   queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 600, deadLetter: DEAD_LETTER_QUEUE },
 });
 
-/** Every 5 min: DWH frequency-breach scan → create/refresh/close retention cases (no LLM). */
+/**
+ * Every hour: DWH frequency-breach scan → create/refresh/close retention cases (no LLM).
+ * Optional lookback/limit are for Admin manual / backfill runs; cron sends `{}`.
+ */
 export const retentionCaseSyncJob = defineJob({
   name: 'automation.retention.case-sync',
-  schema: emptyPayload,
+  schema: z.object({
+    lookbackDays: z.number().int().min(3).max(365).optional(),
+    limit: z.number().int().min(1).max(2000).optional(),
+    trigger: z.enum(['cron', 'manual']).optional(),
+  }),
   queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 600, deadLetter: DEAD_LETTER_QUEUE },
+});
+
+/**
+ * Every 15 minutes: apply overdue retention deadlines (2BD → Retention, vacation,
+ * Open Pool SLA, 10BD → CITI, etc.). Deterministic — no LLM.
+ */
+export const retentionDeadlineSweepJob = defineJob({
+  name: 'automation.retention.deadline-sweep',
+  schema: z.object({
+    limit: z.number().int().min(1).max(500).optional(),
+    trigger: z.enum(['cron', 'manual']).optional(),
+  }),
+  queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 300, deadLetter: DEAD_LETTER_QUEUE },
 });
 
 export const verificationRecheckJob = defineJob({
@@ -143,6 +163,7 @@ export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
   debtorSweepJob,
   retentionScanJob,
   retentionCaseSyncJob,
+  retentionDeadlineSweepJob,
   verificationRecheckJob,
   checkpointSweepJob,
   deadLetterJob,
@@ -159,12 +180,25 @@ export const DEPARTMENT_AUTOMATION_QUEUES = new Set<string>([
 export const CRON_SCHEDULES: Array<{ name: string; cron: string }> = [
   { name: debtorSweepJob.name, cron: '0 8 * * 1-5' }, // weekday mornings
   { name: retentionScanJob.name, cron: '0 9 * * 1' }, // Monday morning
-  // Every 5 minutes: cases surface near-real-time. Safe: singleton policy (runs never
-  // overlap) + the DWH scan is a single seconds-fast read-only query. Don't go tighter —
-  // sub-minute cadence just hammers the warehouse without changing what reps see.
-  { name: retentionCaseSyncJob.name, cron: '*/5 * * * *' },
+  // Every hour: DWH → retention cases (incl. auto-close Returned). Singleton so runs never
+  // overlap; Admin can also enqueue on demand for a manual / backfill pass.
+  { name: retentionCaseSyncJob.name, cron: '0 * * * *' },
+  // Every 15 minutes: Phase-1/2 timer paths (2BD, vacation, pool SLA, 10BD→CITI).
+  { name: retentionDeadlineSweepJob.name, cron: '*/15 * * * *' },
   { name: verificationRecheckJob.name, cron: '0 7 * * *' }, // daily
   { name: checkpointSweepJob.name, cron: '30 3 * * *' }, // nightly
   { name: approvalsExpiryJob.name, cron: '15 * * * *' }, // hourly
   { name: memoryDecayJob.name, cron: '45 3 * * *' }, // nightly
 ];
+
+/** Queues an admin may trigger from Mytrion Admin (empty / optional payload only). */
+export const MANUAL_TRIGGERABLE_QUEUES = new Set<string>([
+  debtorSweepJob.name,
+  retentionScanJob.name,
+  retentionCaseSyncJob.name,
+  retentionDeadlineSweepJob.name,
+  verificationRecheckJob.name,
+  checkpointSweepJob.name,
+  approvalsExpiryJob.name,
+  memoryDecayJob.name,
+]);

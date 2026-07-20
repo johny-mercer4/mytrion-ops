@@ -554,6 +554,87 @@ export interface TouchpointMap {
     params: { carrierId: string; startDate: string; endDate: string };
     result: BillingPrepayLedger;
   };
+
+  // ---- Retention Phase 1 (Sales Mytrion — local DB handlers) ----
+  'retention.my_cases': {
+    params: { open?: boolean; phase_code?: string; limit?: number };
+    result: RetentionCasesListResult;
+  };
+  'retention.case_get': {
+    params: { caseId: string };
+    result: RetentionCaseDetailResult;
+  };
+  'retention.case_contact': {
+    params: { caseId: string };
+    result: { contactPhone: string | null };
+  };
+  'retention.record_outcome': {
+    params: {
+      caseId: string;
+      outcome: RetentionPhase1Outcome;
+      dissatisfaction_reason?: RetentionDissatisfactionReason;
+      reason_note?: string;
+    };
+    result: { case: RetentionCaseRow };
+  };
+  'retention.log_attempt': {
+    params: { caseId: string; channel: RetentionChannel; notes?: string };
+    result: { case: RetentionCaseRow };
+  };
+  'retention.pool_list': {
+    params: { limit?: number };
+    result: RetentionCasesListResult;
+  };
+  'retention.pool_claim': {
+    params: { caseId: string };
+    result: { case: RetentionCaseRow; pendingApproval: boolean };
+  };
+  'retention.pool_claims_pending': {
+    params: { limit?: number };
+    result: RetentionCasesListResult;
+  };
+  'retention.pool_claim_approve': {
+    params: { caseId: string };
+    result: { case: RetentionCaseRow };
+  };
+  'retention.pool_claim_decline': {
+    params: { caseId: string };
+    result: { case: RetentionCaseRow };
+  };
+  'retention.lookups': {
+    params: { phase_code?: string };
+    result: RetentionLookupsResult;
+  };
+
+  // ---- Finance (ServerCRM) ----
+  'finance.analytics_fueling': {
+    params: Record<string, unknown>;
+    result: FinanceAnalyticsFuelingResult;
+  };
+  'finance.debtors': {
+    params: Record<string, unknown>;
+    result: FinanceDebtorsResult;
+  };
+  'finance.main_transactions': {
+    params: Record<string, unknown>;
+    result: FinanceTransactionsResult;
+  };
+  'finance.clients': {
+    params: Record<string, unknown>;
+    result: FinanceClientsResult;
+  };
+  'finance.client_invoices': {
+    params: { carrierId: string; limit?: number };
+    result: Record<string, unknown>;
+  };
+  'finance.client_payments': {
+    params: { carrierId: string; limit?: number };
+    result: Record<string, unknown>;
+  };
+  'finance.client_recent_transactions': {
+    params: { carrierId: string; limit?: number };
+    result: Record<string, unknown>;
+  };
 }
 
 // ---- Customer Service result shapes (widget-observed; legitimately-sparse fields optional) ----
@@ -714,6 +795,136 @@ export interface BillingReturnCandidates {
   mode?: string;
   message?: string;
   [k: string]: unknown;
+}
+
+// ---- Finance result shapes ----
+export interface FinanceDebtorsResult {
+  debtors?: Array<Record<string, unknown>>;
+  data?: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+}
+
+export interface FinanceTransactionsResult {
+  records?: Array<Record<string, unknown>>;
+  data?: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+}
+
+export interface FinanceClientsResult {
+  clients?: Array<Record<string, unknown>>;
+  data?: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+}
+
+export interface FinanceAnalyticsFuelingResult {
+  fueling?: Array<Record<string, unknown>>;
+  data?: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+}
+
+// ---- Retention Phase 1 result shapes ----
+
+export type RetentionChannel =
+  | 'telegram'
+  | 'whatsapp'
+  | 'sms'
+  | 'ringcentral'
+  | 'instagram'
+  | 'facebook'
+  | 'email';
+
+export type RetentionDissatisfactionReason =
+  | 'low_discounts'
+  | 'payment_cycle'
+  | 'cs_service'
+  | 'trust_issues'
+  | 'switched_other';
+
+/** Agent-selectable outcomes — Returned is sync-only (hourly DWH close). */
+export type RetentionPhase1Outcome =
+  | 'reached'
+  | 'out_of_reach'
+  | 'dissatisfied'
+  | 'vacation'
+  | 'no_action_2bd'
+  | 'escalate_retention'
+  | 'send_to_open_pool'
+  | 'start_working'
+  | 'ops_confirm_vacation'
+  | 'ops_deny_vacation';
+
+export interface RetentionCaseRow {
+  id: string;
+  carrierId: string;
+  zohoDealId: string | null;
+  companyName: string | null;
+  applicationId: string | null;
+  agentName: string | null;
+  phaseCode: string;
+  statusCode: string;
+  phaseChangedAt: string;
+  transactionFrequency: 'high' | 'medium' | 'low' | null;
+  agentOutcome: string | null;
+  dissatisfactionReason: RetentionDissatisfactionReason | null;
+  reasonNote: string | null;
+  assignedAgentZohoUserId: string | null;
+  poolOwnerZohoUserId: string | null;
+  pendingClaimantZohoUserId: string | null;
+  assignmentCount: number;
+  openPoolAttemptCount: number;
+  outOfReachAttempts: number;
+  dealOwnerChanged: boolean;
+  currentDeadlineAt: string | null;
+  currentDeadlineType: string | null;
+  vacationCountdownEnd: string | null;
+  citiFolderEnteredAt: string | null;
+  citiFolderHoldUntil: string | null;
+  lastReviewCycleAt: string | null;
+  salesManagerZohoUserId: string | null;
+  thresholdDays: number | null;
+  lastTransactionAt: string | null;
+  daysInactive: number | null;
+  txCount90d: number | null;
+  gallons90d: number | null;
+  activeCards: number | null;
+  source: 'auto' | 'manual';
+  lastSyncedAt: string | null;
+  closedAt: string | null;
+  isOpen: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RetentionCaseEventRow {
+  id: string;
+  caseId: string;
+  fromStatus: string | null;
+  toStatus: string;
+  eventType: string;
+  actorZohoUserId: string | null;
+  channel: RetentionChannel | null;
+  notes: string | null;
+  occurredAt: string;
+}
+
+export interface RetentionCasesListResult {
+  cases: RetentionCaseRow[];
+  total: number;
+}
+
+export interface RetentionCaseDetailResult {
+  case: RetentionCaseRow;
+  events: RetentionCaseEventRow[];
+  /** DWH dim_company contact phone — for RingCentral click-to-dial. */
+  contactPhone?: string | null;
+}
+
+export interface RetentionLookupsResult {
+  phases: Array<{ code: string; label: string; sortOrder: number }>;
+  statuses: Array<{ code: string; phaseCode: string; label: string; isTerminal: boolean }>;
+  channels: RetentionChannel[];
+  dissatisfactionReasons: RetentionDissatisfactionReason[];
+  outcomes: RetentionPhase1Outcome[];
 }
 
 export type TouchpointKey = keyof TouchpointMap;

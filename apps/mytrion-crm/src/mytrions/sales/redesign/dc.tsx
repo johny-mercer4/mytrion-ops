@@ -5,7 +5,7 @@
  * hand-conversion. `Chip`/`Badge` render the reference's badge shapes; icons come from
  * `<Icon>` (see ./icons). Everything lives under the `.ss-root` theme scope (see theme.css).
  */
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 
 const CACHE = new Map<string, CSSProperties>();
 
@@ -44,6 +44,31 @@ export function s(css: string | undefined): CSSProperties {
   const frozen = out as CSSProperties;
   CACHE.set(css, frozen);
   return frozen;
+}
+
+/**
+ * a11y props that make a styled, non-semantic element (a click-through card/row) behave like a
+ * button for keyboard users: focusable, announced as a button, and activated by Enter/Space. Pairs
+ * with the global :focus-visible ring in theme.css. Use where a real <button> would fight the card
+ * layout — spread onto the element and drop its inline onClick (this provides it).
+ */
+export function clickable(onActivate: () => void): {
+  role: 'button';
+  tabIndex: 0;
+  onClick: () => void;
+  onKeyDown: (e: KeyboardEvent) => void;
+} {
+  return {
+    role: 'button',
+    tabIndex: 0,
+    onClick: onActivate,
+    onKeyDown: (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onActivate();
+      }
+    },
+  };
 }
 
 // Icons now come from ready-made lucide-react glyphs via `<Icon name=… />` (see ./icons).
