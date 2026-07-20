@@ -7,7 +7,7 @@
  * read-state kept local in localStorage; real-time refresh over the servercrm WebSocket
  * (subscribe {type:'subscribe'} → reload on crm_inbox_notification).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { getSession } from '@/api/session';
 import { useImpersonation } from '@/context/ImpersonationProvider';
@@ -16,6 +16,7 @@ import { Icon, type IconName } from '../icons';
 import { badge, iconBox, ICO } from '../salesData';
 import { useSales } from '../ctx';
 import { useLoad, loadInbox, deleteInboxMessage, type InboxVM } from '../live';
+import { publishInboxReload } from '../inboxLiveBus';
 import { useServerCrmSocket } from '../useServerCrmSocket';
 import { useInboxRead, markInboxRead, markInboxReadMany } from '../inboxRead';
 
@@ -46,6 +47,12 @@ export function InboxTab() {
   const read = useInboxRead();
   const [items, setItems] = useState<InboxItem[]>([]);
   const [wsReady, setWsReady] = useState(false);
+  const [refreshSpin, setRefreshSpin] = useState(false);
+  const spinTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => () => {
+    if (spinTimer.current) clearTimeout(spinTimer.current);
+  }, []);
 
   // The effective CRM user this inbox belongs to (the acted-as agent for an admin, else the
   // signed-in worker) — the same id the fetch is scoped to and that WS events must match.
@@ -101,6 +108,15 @@ export function InboxTab() {
     markInboxReadMany(items.map((i) => i.id));
     pushToast('All caught up', 'Marked everything as read');
   };
+  const refreshInbox = (): void => {
+    if (refreshSpin) return;
+    setRefreshSpin(true);
+    reload();
+    publishInboxReload();
+    if (spinTimer.current) clearTimeout(spinTimer.current);
+    spinTimer.current = setTimeout(() => setRefreshSpin(false), 900);
+  };
+  const refreshSpinCss = refreshSpin ? 'animation:ss-spin .9s linear infinite' : '';
   const markReadOnly = (i: InboxItem, e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     markInboxRead(i.id);
@@ -135,12 +151,23 @@ export function InboxTab() {
       <div style={s('display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px')}>
         <div>
           <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.04em;text-transform:uppercase')}>Inbox</div>
-          <div style={s('font-size:12.5px;color:var(--muted);margin-top:2px')}>Reminders, alerts &amp; tasks assigned to you</div>
+          <div style={s('font-size:13px;color:var(--muted);margin-top:2px')}>Reminders, alerts &amp; tasks assigned to you</div>
         </div>
         <div style={s('display:flex;align-items:center;gap:9px')}>
           <span style={s(`display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:${wsReady ? 'var(--ok)' : 'var(--muted)'}`)}>
             <span style={s(`width:7px;height:7px;border-radius:50%;background:${wsReady ? 'var(--ok)' : 'var(--muted)'};box-shadow:0 0 0 3px color-mix(in srgb,${wsReady ? 'var(--ok)' : 'var(--muted)'} 22%,transparent)`)}></span>{wsReady ? 'LIVE' : 'OFFLINE'}
           </span>
+          <button
+            type="button"
+            onClick={refreshInbox}
+            disabled={refreshSpin}
+            aria-label="Refresh inbox"
+            title="Fetch latest messages"
+            className="ss-ico-btn"
+            style={s('width:34px;height:34px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}
+          >
+            <Icon name="refresh" size={15} style={s(refreshSpinCss)} />
+          </button>
           {inboxUnreadHas && (
             <button onClick={markAllRead} className="ss-ico-btn" style={s('height:34px;padding:0 13px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:12px;font-weight:700;cursor:pointer')}>Mark all read</button>
           )}
@@ -159,7 +186,18 @@ export function InboxTab() {
         })}
       </div>
       {isInitialLoading && (
-        <div style={s('text-align:center;padding:64px 20px;color:var(--muted);font-size:13px')}>Loading…</div>
+        <div style={s('display:flex;flex-direction:column;gap:11px;padding:8px 0')}>
+          {[1, 2, 3].map((sk) => (
+            <div key={sk} style={s('display:flex;gap:13px;padding:15px 16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
+              <div className="ss-skel" style={s('width:38px;height:38px;border-radius:var(--radius-md);flex-shrink:0')} />
+              <div style={s('flex:1;display:flex;flex-direction:column;gap:8px')}>
+                <div className="ss-skel" style={s('width:52%;height:14px')} />
+                <div className="ss-skel" style={s('width:88%;height:12px')} />
+                <div className="ss-skel" style={s('width:34%;height:11px')} />
+              </div>
+            </div>
+          ))}
+        </div>
       )}
       {hasError && (
         <div style={s('text-align:center;padding:64px 20px;color:var(--danger);font-size:13px')}>{error}</div>

@@ -182,7 +182,7 @@ export function ClientManagePanel({
   }
 
   const field = 'width:100%;height:36px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px;outline:none;box-sizing:border-box';
-  const label = 'font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:6px;display:block';
+  const label = 'font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:6px;display:block';
   const tile = 'padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)';
 
   const ownerStatusLabel = regsBusy
@@ -196,13 +196,13 @@ export function ClientManagePanel({
   return (
     <form onSubmit={(e) => void generateInvite(e)} style={s('display:flex;flex-direction:column;gap:16px')}>
       <div style={s(tile)}>
-        <div style={s('font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Client</div>
+        <div style={s('font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Client</div>
         <div style={s('font-size:14px;font-weight:700;margin-top:5px')}>{companyName || '—'}</div>
         <div style={s("font-size:12px;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:3px")}>
           Carrier {carrierId || '—'}
           {companyType ? ` · ${companyType}` : ''}
         </div>
-        <div style={s(`margin-top:10px;font-size:11.5px;font-weight:700;color:${ownerReady ? 'var(--ok)' : 'var(--warn)'}`)}>
+        <div style={s(`margin-top:10px;font-size:12px;font-weight:700;color:${ownerReady ? 'var(--ok)' : 'var(--warn)'}`)}>
           {ownerStatusLabel}
           {ownerReady && owner?.telegramUsername ? ` · @${owner.telegramUsername}` : ''}
         </div>
@@ -214,7 +214,7 @@ export function ClientManagePanel({
           <button
             type="button"
             onClick={() => setProfile('owner')}
-            style={s(`flex:1;height:38px;border-radius:var(--radius-md);border:1px solid ${isOwner ? 'var(--accent)' : 'var(--border)'};background:${isOwner ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${isOwner ? 'var(--accent)' : 'var(--text2)'};font-weight:700;font-size:12.5px;cursor:pointer`)}
+            style={s(`flex:1;height:38px;border-radius:var(--radius-md);border:1px solid ${isOwner ? 'var(--accent)' : 'var(--border)'};background:${isOwner ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${isOwner ? 'var(--accent)' : 'var(--text2)'};font-weight:700;font-size:13px;cursor:pointer`)}
           >
             Owner
           </button>
@@ -229,12 +229,12 @@ export function ClientManagePanel({
             }}
             disabled={!ownerReady}
             title={ownerReady ? 'Driver under this owner user' : 'Requires an active owner user'}
-            style={s(`flex:1;height:38px;border-radius:var(--radius-md);border:1px solid ${!isOwner ? 'var(--accent)' : 'var(--border)'};background:${!isOwner ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${!isOwner ? 'var(--accent)' : 'var(--text2)'};font-weight:700;font-size:12.5px;cursor:${ownerReady ? 'pointer' : 'default'};opacity:${ownerReady ? '1' : '.45'}`)}
+            style={s(`flex:1;height:38px;border-radius:var(--radius-md);border:1px solid ${!isOwner ? 'var(--accent)' : 'var(--border)'};background:${!isOwner ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${!isOwner ? 'var(--accent)' : 'var(--text2)'};font-weight:700;font-size:13px;cursor:${ownerReady ? 'pointer' : 'default'};opacity:${ownerReady ? '1' : '.45'}`)}
           >
             Driver
           </button>
         </div>
-        <div style={s('font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.45')}>
+        <div style={s('font-size:12px;color:var(--muted);margin-top:8px;line-height:1.45')}>
           {isOwner
             ? 'Owner user link — fleet access for all cards. Drivers unlock after this owner user finishes registration.'
             : 'Driver user link — child of the owner user, tied to one carrier card number.'}
@@ -317,7 +317,7 @@ export function ClientManagePanel({
           type="submit"
           disabled={busy || !valid}
           className="ss-btn-p"
-          style={s(`height:40px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:13px;cursor:${busy || !valid ? 'default' : 'pointer'};opacity:${busy || !valid ? '.55' : '1'};display:flex;align-items:center;justify-content:center;gap:8px`)}
+          style={s(`height:40px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:${busy || !valid ? 'default' : 'pointer'};opacity:${busy || !valid ? '.55' : '1'};display:flex;align-items:center;justify-content:center;gap:8px`)}
         >
           <Icon name="link" size={16} color="#fff" />
           {busy ? 'Generating…' : 'Generate registration link'}
@@ -326,7 +326,7 @@ export function ClientManagePanel({
 
       {inviteUrl && (
         <div style={s(tile)}>
-          <div style={s('font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Registration link</div>
+          <div style={s('font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Registration link</div>
           <div style={s("font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--text2);margin-top:8px;word-break:break-all;line-height:1.45")}>{inviteUrl}</div>
           <button
             type="button"

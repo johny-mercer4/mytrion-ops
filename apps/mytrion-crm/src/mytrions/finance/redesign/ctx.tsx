@@ -27,6 +27,12 @@ export interface FinanceCtx {
   openClient: (client: Client, tab?: ClientDrillTab) => void;
   lastSync: Date;
   refreshSync: () => void;
+  // Live data
+  dashDebtors: any[];
+  dashPayments: any[];
+  fuelingMetrics: any;
+  txFeed: any[];
+  clientsFeed: any[];
 }
 
 export const FinanceContext = createContext<FinanceCtx | null>(null);

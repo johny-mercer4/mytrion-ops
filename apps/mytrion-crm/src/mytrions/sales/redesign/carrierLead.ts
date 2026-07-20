@@ -4,6 +4,7 @@
  */
 import { callTouchpoint } from '@/api/touchpoints';
 import { resolveCreateLeadOutcome } from './createLeadOutcome';
+import { invalidateDcCache } from './dcCache';
 import type { CarrierSearchVM } from './live';
 
 export interface CarrierLeadOutcome {
@@ -45,5 +46,8 @@ export function carrierToCreatePayload(c: CarrierSearchVM): Record<string, strin
 
 export async function createLeadFromCarrier(c: CarrierSearchVM): Promise<CarrierLeadOutcome> {
   const res = await callTouchpoint('leads.create', { createPayload: carrierToCreatePayload(c) });
-  return resolveCreateLeadOutcome(res);
+  const outcome = resolveCreateLeadOutcome(res);
+  // A freshly created lead should show up in the Data Center Leads list without a manual refresh.
+  if (outcome.ok && !outcome.duplicate) invalidateDcCache('sales:leads');
+  return outcome;
 }

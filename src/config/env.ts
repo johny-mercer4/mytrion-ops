@@ -278,11 +278,19 @@ const EnvSchema = z.object({
   ZOHO_PROJECTS_REFRESH_TOKEN: z.string().default(''),
   ZOHO_PROJECTS_BASE_URL: z.string().default('https://projectsapi.zoho.com/api/v3'),
 
-  // --- RingCentral (Sales Mytrion Embeddable softphone; JWT = shared extension for now) ---
+  // --- RingCentral (Sales Mytrion Embeddable softphone) ---
+  // Default path = per-agent OAuth sign-in in the widget (only CLIENT_ID is required). The shared
+  // CLIENT_SECRET + org JWT are the auto-login shortcut, embedded only when BROWSER_CREDS_ACK=1.
   RINGCENTRAL_CLIENT_ID: z.string().default(''),
   RINGCENTRAL_CLIENT_SECRET: z.string().default(''),
   RINGCENTRAL_JWT: z.string().default(''),
   RINGCENTRAL_SERVER_URL: z.string().default('https://platform.ringcentral.com'),
+  // Embeddable-hosted OAuth callback — register the SAME value in the RingCentral app → Auth.
+  RINGCENTRAL_REDIRECT_URI: z
+    .string()
+    .default(
+      'https://apps.ringcentral.com/integration/ringcentral-embeddable/latest/redirect.html',
+    ),
   // Gates GET /v1/ringcentral/embed-config + the Sales softphone bootstrap.
   FF_RINGCENTRAL_ENABLED: flag('0'),
   // Explicit ops acknowledgment that the shared client secret + org JWT are handed to every
@@ -316,6 +324,17 @@ const EnvSchema = z.object({
   // --- Server CRM (outbound integration) ---
   SERVER_CRM_URL: z.string().default(''),
   SERVER_CRM_KEY: z.string().default(''),
+
+  // --- Browser automation microservice (BOCA / Close Application — Playwright) ---
+  // Same host the Zoho self-service widget hits via BROWSER_AUTOMATION_BASE_URL.
+  BROWSER_AUTOMATION_URL: z.string().default(''),
+  BROWSER_AUTOMATION_KEY: z.string().default(''),
+  // These runs drive a real browser; 30s outbound default is too short.
+  BROWSER_AUTOMATION_TIMEOUT_MS: z.coerce.number().int().positive().default(300_000),
+
+  // --- Zapier catch-hook (card replacement / account reactivation email tickets) ---
+  // Widget hardcodes hooks.zapier.com/hooks/catch/21602064/433y0ax/ — set the same URL here.
+  ZAPIER_TICKET_WEBHOOK_URL: z.string().default(''),
 
   // --- Inbound server API key (callers present this to reach this engine) ---
   API_KEY: z.string().default(''),
@@ -453,6 +472,11 @@ const EnvSchema = z.object({
   FF_AGENT_MEMORY: flag('0'),
   // Interactive browser WRITE actions (navigate/click/fill/…). Off = scrape/read-class only.
   FF_BROWSER_WRITES: flag('0'),
+  // Retention Open Pool notify (Ryan Saab) + Ops Manager vacation signoff — Zoho user ids.
+  // Empty = skip inbox notify (sweep/transitions still run).
+  RETENTION_OPEN_POOL_NOTIFY_ZOHO_USER_ID: z.string().default(''),
+  RETENTION_OPS_MANAGER_ZOHO_USER_ID: z.string().default(''),
+
   // Background jobs (pg-boss on the app Postgres, own 'pgboss' schema — self-migrating).
   FF_JOBS_ENABLED: flag('0'),
   // inline: this process runs boss + workers + schedules (default, single Render service).

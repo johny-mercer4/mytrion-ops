@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { FuelMark } from '../components/BrandMark';
 import styles from './Screen.module.css';
 
 type AuthPhase = 'idle' | 'redirecting' | 'exchanging';
@@ -25,12 +24,7 @@ export function AuthScreen({
 
   return (
     <div className={`${styles.screen} ${styles.authScreen}`}>
-      <div className={styles.authGlow} aria-hidden="true" />
       <div className={`${styles.card} ${styles.authCard}`} role={busy ? 'status' : undefined} aria-busy={busy}>
-        <div className={styles.authMark}>
-          <FuelMark size={48} />
-          {busy && <span className={styles.authRing} aria-hidden="true" />}
-        </div>
 
         <p className={styles.authEyebrow}>Mytrion</p>
         <h1 className={styles.title}>{title}</h1>

@@ -1,0 +1,897 @@
+/* =====================================================
+   Billing Mytrion — Payment Transactions Panel
+   ===================================================== */
+
+/* ── Panel layout ── */
+.bm-root .tx-panel {
+    gap: 0.875rem;
+    padding: 1.25rem;
+    height: 100%;
+    overflow: hidden;
+}
+
+/* ── Scrollable list container ── */
+.bm-root .tx-list-scroll {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    min-height: 0;
+}
+
+/* ── Date separator ── */
+.bm-root .tx-date-sep {
+    display: flex;
+    align-items: center;
+    padding: 0.4375rem 0.875rem;
+    font-size: 0.5875rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    background: var(--surface-alt);
+    border-bottom: 1px solid var(--border-dark);
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+/* ── Transaction row ── */
+.bm-root .tx-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 0.875rem;
+    border-bottom: 1px solid var(--border-dark);
+    transition: background 80ms;
+    cursor: pointer;
+}
+
+.bm-root .tx-row:last-of-type {
+    border-bottom: none;
+}
+
+.bm-root .tx-row:hover {
+    background: var(--accent-bg-subtle);
+}
+
+/* ── Source badge (inline pill in the row) ── */
+.bm-root .tx-source-badge {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 46px;
+    padding: 0.2rem 0.5rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.5625rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+/* Source colours */
+.bm-root .tx-source-zelle {
+    background: rgba(108, 0, 255, 0.12);
+    color: #9333EA;
+    border: 1px solid rgba(108, 0, 255, 0.22);
+}
+
+.bm-root .tx-source-ach {
+    background: rgba(46, 204, 113, 0.10);
+    color: #2ECC71;
+    border: 1px solid rgba(46, 204, 113, 0.22);
+}
+
+.bm-root .tx-source-wire {
+    background: var(--accent-bg);
+    color: var(--billing-accent);
+    border: 1px solid var(--accent-border);
+}
+
+.bm-root .tx-source-check {
+    background: rgba(245, 158, 11, 0.10);
+    color: #F59E0B;
+    border: 1px solid rgba(245, 158, 11, 0.22);
+}
+
+.bm-root .tx-source-card {
+    background: rgba(239, 68, 68, 0.10);
+    color: #EF4444;
+    border: 1px solid rgba(239, 68, 68, 0.22);
+}
+
+.bm-root .tx-source-chase {
+    background: rgba(0, 48, 135, 0.18);
+    color: #4D9FFF;
+    border: 1px solid rgba(0, 48, 135, 0.40);
+}
+
+.bm-root .tx-source-mx {
+    background: rgba(20, 184, 166, 0.12);
+    color: #14B8A6;
+    border: 1px solid rgba(20, 184, 166, 0.25);
+}
+
+.bm-root .tx-source-stripe {
+    background: rgba(99, 102, 241, 0.14);
+    color: #818CF8;
+    border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.bm-root .tx-source-other {
+    background: var(--surface-raised);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+}
+
+/* Large version for modal header */
+.bm-root .tx-source-badge-lg {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 56px;
+    padding: 0.325rem 0.75rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.6875rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+}
+
+/* ── Row body ── */
+.bm-root .tx-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.bm-root .tx-sender {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bm-root .tx-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.1875rem;
+    flex-wrap: nowrap;
+    overflow: hidden;
+}
+
+.bm-root .tx-memo {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    font-style: italic;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+
+/* ── Carrier column ── */
+.bm-root .tx-carrier-col {
+    flex-shrink: 0;
+    min-width: 80px;
+    text-align: right;
+}
+
+.bm-root .tx-carrier-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── Amount column ── */
+.bm-root .tx-amount-col {
+    flex-shrink: 0;
+    text-align: right;
+    min-width: 72px;
+}
+
+.bm-root .tx-amount-value {
+    display: block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--success-text);
+    line-height: 1;
+}
+
+.bm-root .tx-date-inline {
+    display: block;
+    font-size: 0.5875rem;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
+}
+
+/* ── Load more row ── */
+.bm-root .tx-load-more-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    border-top: 1px solid var(--border-dark);
+}
+
+.bm-root .tx-load-more-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5625rem 1.25rem;
+    background: var(--accent-bg-subtle);
+    border: 1px solid var(--accent-border);
+    border-radius: var(--radius-md);
+    color: var(--billing-accent);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 120ms;
+    font-family: inherit;
+    outline: none;
+}
+
+.bm-root .tx-load-more-btn:hover:not(:disabled) {
+    background: var(--accent-bg);
+    box-shadow: var(--accent-glow);
+}
+
+.bm-root .tx-load-more-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.bm-root .tx-end-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.875rem;
+    font-size: 0.625rem;
+    color: var(--text-muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-top: 1px solid var(--border-dark);
+}
+
+/* =================================================
+   DETAIL MODAL
+   ================================================= */
+.bm-root .tx-detail-modal {
+    max-width: 540px;
+}
+
+/* ── Accent header ── */
+.bm-root .tx-modal-accent-hdr {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 1.125rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.bm-root .tx-modal-accent-zelle {
+    background: linear-gradient(135deg, rgba(108, 0, 255, 0.18) 0%, rgba(139, 92, 246, 0.12) 100%);
+}
+
+.bm-root .tx-modal-accent-ach {
+    background: linear-gradient(135deg, rgba(46, 204, 113, 0.14) 0%, rgba(5, 150, 105, 0.10) 100%);
+}
+
+.bm-root .tx-modal-accent-wire {
+    background: linear-gradient(135deg, var(--accent-bg-strong) 0%, rgba(0, 150, 200, 0.10) 100%);
+}
+
+.bm-root .tx-modal-accent-check {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.14) 0%, rgba(217, 119, 6, 0.10) 100%);
+}
+
+.bm-root .tx-modal-accent-card {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.14) 0%, rgba(185, 28, 28, 0.10) 100%);
+}
+
+.bm-root .tx-modal-accent-chase {
+    background: linear-gradient(135deg, rgba(0, 48, 135, 0.22) 0%, rgba(77, 159, 255, 0.10) 100%);
+}
+
+.bm-root .tx-modal-accent-mx {
+    background: linear-gradient(135deg, rgba(20, 184, 166, 0.18) 0%, rgba(13, 148, 136, 0.12) 100%);
+}
+
+.bm-root .tx-modal-accent-stripe {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.20) 0%, rgba(79, 70, 229, 0.12) 100%);
+}
+
+.bm-root .tx-modal-accent-other {
+    background: var(--surface);
+}
+
+.bm-root .tx-modal-sender {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.0625rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-primary);
+}
+
+.bm-root .tx-modal-amount {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.375rem;
+    font-weight: 700;
+    color: var(--success-text);
+    line-height: 1;
+    text-align: right;
+}
+
+/* ── Section inside modal body ── */
+.bm-root .tx-detail-section {
+    margin-bottom: 1.125rem;
+}
+
+.bm-root .tx-detail-section:last-child {
+    margin-bottom: 0;
+}
+
+.bm-root .tx-detail-section-title {
+    font-size: 0.6875rem;
+    font-weight: 800;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-primary);
+    margin-bottom: 0.75rem;
+    padding: 0.4375rem 0.5rem;
+    border-bottom: 1px solid var(--border);
+    border-left: 3px solid var(--billing-accent);
+    background: var(--accent-bg-subtle);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+/* ── Proposed carrier chips ── */
+.bm-root .tx-proposed-chip {
+    padding: 0.25rem 0.625rem;
+    border-radius: 2px;
+    border: 1px solid var(--warning-border);
+    background: var(--warning-bg);
+    color: var(--warning-text);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    cursor: pointer;
+    transition: all 100ms;
+    outline: none;
+    letter-spacing: 0.02em;
+}
+
+.bm-root .tx-proposed-chip:hover {
+    background: var(--warning-bg);
+    border-color: var(--warning-border);
+}
+
+/* ── Carrier edit row ── */
+.bm-root .tx-carrier-edit-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.625rem;
+}
+
+/* ── Save message ── */
+.bm-root .tx-save-msg {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    padding: 0.375rem 0;
+    margin-top: 0.25rem;
+}
+
+.bm-root .tx-save-msg.success {
+    color: var(--success-text);
+}
+
+.bm-root .tx-save-msg.error {
+    color: var(--danger-text);
+}
+
+/* =================================================
+   CARRIER SEARCH UX
+   ================================================= */
+
+/* ── Field group wrapper ── */
+.bm-root .tx-carrier-field-group {
+    margin-bottom: 0.75rem;
+}
+
+/* ── Sub-label inside modal ── */
+.bm-root .tx-field-sublabel {
+    display: block;
+    font-size: 0.5625rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 0.3rem;
+}
+
+/* ── Readonly proposed carrier input ── */
+.bm-root .tx-readonly-input {
+    width: 100%;
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 0.4375rem 0.625rem;
+    cursor: default;
+    outline: none;
+    box-sizing: border-box;
+    opacity: 0.9;
+}
+
+/* ── Carrier ID search row ── */
+.bm-root .tx-carrier-search-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* ── Carrier ID text input ── */
+.bm-root .tx-carrier-input {
+    flex: 1;
+    min-width: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    padding: 0.5rem 0.75rem;
+    outline: none;
+    font-family: inherit;
+    transition: border-color 120ms, box-shadow 120ms;
+    box-sizing: border-box;
+}
+
+.bm-root .tx-carrier-input:focus {
+    border-color: var(--accent-border-strong);
+    box-shadow: var(--accent-ring);
+}
+
+.bm-root .tx-carrier-input::placeholder {
+    color: var(--text-muted);
+}
+
+/* =================================================
+   INVOICE RESULTS
+   ================================================= */
+
+.bm-root .tx-invoice-results {
+    margin-top: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.bm-root .tx-invoice-results-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--surface-alt);
+    border-bottom: 1px solid var(--border-dark);
+}
+
+.bm-root .tx-invoice-summary-text {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    letter-spacing: 0.03em;
+}
+
+.bm-root .tx-invoice-daterange {
+    font-size: 0.5625rem;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.03em;
+}
+
+/* ── Individual invoice card ── */
+.bm-root .tx-invoice-card {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-dark);
+    cursor: pointer;
+    transition: background 80ms;
+    position: relative;
+    border-left: 3px solid transparent;
+}
+
+.bm-root .tx-invoice-card:last-child {
+    border-bottom: none;
+}
+
+.bm-root .tx-invoice-card:hover {
+    background: var(--accent-bg-subtle);
+    border-left-color: var(--accent-border-strong);
+}
+
+.bm-root .tx-invoice-card.is-assigned {
+    background: var(--success-bg);
+    border-left-color: var(--success-text);
+}
+
+/* ── Invoice card top row ── */
+.bm-root .tx-invoice-top-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.bm-root .tx-invoice-num {
+    display: block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 0.02em;
+    line-height: 1;
+}
+
+.bm-root .tx-invoice-period {
+    display: block;
+    font-size: 0.5875rem;
+    color: var(--text-muted);
+    margin-top: 0.2rem;
+    letter-spacing: 0.04em;
+}
+
+/* ── Amounts grid ── */
+.bm-root .tx-invoice-amounts {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.4375rem;
+}
+
+.bm-root .tx-inv-amount-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.bm-root .tx-inv-label {
+    font-size: 0.5375rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.bm-root .tx-inv-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* ── Action hints ── */
+.bm-root .tx-invoice-click-hint {
+    font-size: 0.5625rem;
+    color: var(--accent-border-strong);
+    letter-spacing: 0.04em;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.bm-root .tx-invoice-card:hover .tx-invoice-click-hint {
+    color: var(--billing-accent);
+}
+
+.bm-root .tx-invoice-assigned-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.5625rem;
+    font-weight: 800;
+    color: var(--success-text);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+/* =================================================
+   PREPAY TOP-UP UI
+   ================================================= */
+.bm-root .tx-prepay-topup {
+    margin-top: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius-md);
+    background: var(--warning-bg);
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+}
+
+.bm-root .tx-prepay-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.5625rem;
+    font-weight: 800;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--warning-text);
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius-sm);
+    padding: 0.25rem 0.625rem;
+    width: fit-content;
+}
+
+.bm-root .tx-prepay-info {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin: 0;
+}
+
+.bm-root .tx-prepay-info strong {
+    color: var(--warning-text);
+    font-weight: 700;
+}
+
+.bm-root .tx-topup-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius-md);
+    color: var(--warning-text);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 140ms;
+    font-family: inherit;
+    outline: none;
+    width: 100%;
+}
+
+.bm-root .tx-topup-btn:hover:not(:disabled) {
+    background: var(--warning-border);
+    border-color: var(--warning-border);
+    box-shadow: 0 0 16px var(--warning-border);
+}
+
+.bm-root .tx-topup-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+
+/* =================================================
+   UNMAP — reverse a mapping (CMP + CRM)
+   ================================================= */
+.bm-root .tx-unmap-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--surface-alt);
+    border-top: 1px solid var(--purple-border);
+}
+
+.bm-root .tx-unmap-hint {
+    font-size: 0.6rem;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+
+.bm-root .tx-unmap-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.65rem;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-family: inherit;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all 130ms ease;
+    outline: none;
+}
+
+.bm-root .tx-unmap-btn:hover:not(:disabled) {
+    color: var(--danger-text);
+    border-color: var(--danger-border);
+    background: var(--danger-bg);
+}
+
+.bm-root .tx-unmap-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.bm-root .tx-unmap-btn svg { width: 12px; height: 12px; }
+
+/* Confirm state */
+.bm-root .tx-unmap-confirm {
+    padding: 0.65rem 0.75rem;
+    background: var(--danger-bg);
+    border-top: 1px solid var(--danger-border);
+}
+
+.bm-root .tx-unmap-confirm-msg {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.72rem;
+    line-height: 1.35;
+    color: var(--danger-text);
+    margin-bottom: 0.6rem;
+}
+
+.bm-root .tx-unmap-confirm-msg svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+.bm-root .tx-unmap-confirm-actions { display: flex; gap: 0.5rem; }
+
+.bm-root .tx-unmap-confirm-yes,
+.bm-root .tx-unmap-confirm-no {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 0.42rem 0.7rem;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    font-family: inherit;
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 130ms ease;
+    outline: none;
+}
+
+.bm-root .tx-unmap-confirm-yes {
+    background: #ef4444;
+    color: #fff;
+    border-color: #ef4444;
+}
+
+.bm-root .tx-unmap-confirm-yes:hover:not(:disabled) {
+    background: #dc2626;
+    border-color: #dc2626;
+    box-shadow: 0 0 14px var(--danger-border);
+}
+
+.bm-root .tx-unmap-confirm-no {
+    background: transparent;
+    color: var(--text-secondary);
+    border-color: var(--border);
+}
+
+.bm-root .tx-unmap-confirm-no:hover:not(:disabled) {
+    background: var(--surface-raised);
+    border-color: var(--border-light);
+    color: var(--text-primary);
+}
+
+.bm-root .tx-unmap-confirm-yes:disabled,
+.bm-root .tx-unmap-confirm-no:disabled { opacity: 0.6; cursor: not-allowed; }
+
+
+/* =================================================
+   TOAST
+   ================================================= */
+.bm-root .bm-toast {
+    position: fixed;
+    bottom: 1.25rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.125rem;
+    border-radius: var(--radius-md);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    box-shadow: var(--shadow-md);
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.bm-root .bm-toast--success {
+    background: var(--surface);
+    border: 1px solid var(--success-border);
+    color: var(--success-text);
+}
+
+.bm-root .bm-toast--error {
+    background: var(--surface);
+    border: 1px solid var(--danger-border);
+    color: var(--danger-text);
+}
+
+.bm-root .bm-toast-slide-enter-active,
+.bm-root .bm-toast-slide-leave-active {
+    transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.bm-root .bm-toast-slide-enter-from,
+.bm-root .bm-toast-slide-leave-to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(12px);
+}
+
+/* =================================================
+   RESPONSIVE
+   ================================================= */
+@media (max-width: 860px) {
+    .bm-root .tx-summary-banner {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .bm-root .tx-panel {
+        padding: 0.875rem;
+    }
+
+    .bm-root .tx-summary-banner {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.5rem;
+    }
+
+    .bm-root .tx-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .bm-root .tx-carrier-col {
+        display: none;
+    }
+
+    .bm-root .tx-modal-accent-hdr {
+        flex-direction: column;
+    }
+
+    .bm-root .tx-modal-amount {
+        text-align: left;
+        font-size: 1.125rem;
+    }
+}
+
+@media (max-width: 440px) {
+    .bm-root .tx-summary-banner {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .bm-root .tx-source-badge {
+        min-width: 36px;
+        font-size: 0.5rem;
+    }
+}

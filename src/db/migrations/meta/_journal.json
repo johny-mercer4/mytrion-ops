@@ -183,6 +183,41 @@
       "when": 1784239574094,
       "tag": "0025_view_as",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1784319237000,
+      "tag": "0026_payments_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1784547000000,
+      "tag": "0027_retention_workflow_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1784550000000,
+      "tag": "0028_retention_agent_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1784553600000,
+      "tag": "0029_retention_timer_statuses",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1784557200000,
+      "tag": "0030_retention_pool_claim_approval",
+      "breakpoints": true
     }
   ]
 }

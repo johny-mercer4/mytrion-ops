@@ -11,6 +11,7 @@
  * Embeddable). Switch to per-agent OAuth/PKCE before multi-extension prod.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 import { ringcentral } from '../../integrations/ringcentral.js';
 import { NotFoundError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
@@ -21,6 +22,25 @@ function requireSalesAccess(request: FastifyRequest): TenantContext {
   return requireDepartment(request, 'sales', 'RingCentral phone');
 }
 
+/**
+ * A single call-lifecycle event forwarded from the Sales softphone. The Embeddable widget streams
+ * these over postMessage (ringing → connected → ended, plus sign-in status); the browser normalizes
+ * each into this shape so the backend can audit "which number, when, how it ended".
+ */
+const callEventSchema = z.object({
+  kind: z.enum(['ringing', 'connected', 'ended', 'login', 'logout']),
+  sessionId: z.string().max(128).optional(),
+  direction: z.enum(['Inbound', 'Outbound']).optional(),
+  from: z.string().max(64).optional(),
+  to: z.string().max(64).optional(),
+  telephonyStatus: z.string().max(48).optional(),
+  result: z.string().max(64).optional(),
+  startTime: z.string().max(48).optional(),
+  durationMs: z.number().int().nonnegative().max(86_400_000).optional(),
+  leadId: z.string().max(64).optional(),
+  dealId: z.string().max(64).optional(),
+});
+
 export async function ringcentralRoutes(app: FastifyInstance): Promise<void> {
   const guard = { onRequest: [app.sessionOrApiKey] };
 
@@ -28,7 +48,7 @@ export async function ringcentralRoutes(app: FastifyInstance): Promise<void> {
     const ctx = requireSalesAccess(request);
     if (!ringcentral.isConfigured()) {
       throw new NotFoundError(
-        'RingCentral is not configured (set FF_RINGCENTRAL_ENABLED=1 and RINGCENTRAL_CLIENT_ID/SECRET/JWT).',
+        'RingCentral is not configured (set FF_RINGCENTRAL_ENABLED=1 and RINGCENTRAL_CLIENT_ID).',
       );
     }
 
@@ -48,5 +68,22 @@ export async function ringcentralRoutes(app: FastifyInstance): Promise<void> {
       );
     }
     return config;
+  });
+
+  // Capture call-lifecycle events from the Sales softphone (ringing/connected/ended + sign-in) into
+  // the audit trail. Best-effort, sales-guarded; the widget forwards each postMessage event here so
+  // there is a server-side record of who called which number and when it ended.
+  app.post('/ringcentral/call-events', guard, async (request, reply) => {
+    const ctx = requireSalesAccess(request);
+    const body = callEventSchema.parse(request.body ?? {});
+    await auditFromContext(ctx, {
+      action: 'ringcentral.call_event',
+      status: 'ok',
+      resourceType: 'ringcentral_call',
+      ...(body.sessionId ? { resourceId: body.sessionId } : {}),
+      detail: { ...body },
+    });
+    reply.code(202);
+    return { ok: true };
   });
 }

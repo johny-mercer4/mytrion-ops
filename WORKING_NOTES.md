@@ -1927,16 +1927,13 @@ payments, tracking, billing-form, card-last-used, wex-tasks, card-deactivation, 
 - Writes: card activate (`dwh.card_activate` + optional `efs.card_info`), deactivate, limits,
   unit/driver, fraud release, override, money-code **draw** (preview on deal select → amount /
   reason / unit → `dwh.money_code_draw`).
-- Ticket-style (widget used Zapier / browser-automation): card-replacement, reactivation, BOCA,
-  close-app → `createDeskTicket` with matching C-* types (Ops-native path).
+- Ticket-style writes initially stubbed via Desk (later replaced — see 2026-07-18: real Zapier +
+  browser-automation touchpoints for card-replacement, reactivation, BOCA, close-app).
 - EFS login → opens credentials PDF + logs usage.
 - Tiny catalog fix: `dwh.money_code_draw` accepts optional `unit_number` (ServerCRM already did).
-- Deal picker enriched with Zoho Deal ids from CRM (needed for Desk ticket creates) + app-only
-  deals for BOCA / close / wex-tasks.
+- Deal picker enriched with Zoho Deal ids from CRM + app-only deals for BOCA / close / wex-tasks.
 
-**Remaining gaps (blocked without new backends):** live Photon address autocomplete; direct Zapier
-email webhook / browser-automation BOCA+close (Desk ticket is the substitute); money-code unit is
-forwarded only after the catalog schema allow-list (done).
+**Remaining gaps:** live Photon address autocomplete for card replacement (optional UX polish).
 
 ## 2026-07-14 — Automations export parity (txn PDF/Excel + invoice downloads)
 
@@ -3423,3 +3420,589 @@ so'rovi. Yechim: owner txns sheet'ida chip-qator — "All cards" (company level)
   ham o'tkazadi. i18n: txns.allCards ×4.
 - Test (Mac'da): owner cardId → faqat shu karta qatorlari; begona/noto'g'ri cardId → 404;
   driver + cardId body → o'z kartasi (ignor).
+## 2026-07-18 — UI/UX Redesign
+- Seeded the skills for modern web guidance. Any future agent must consult the `modern-web-guidance` skill before modifying UI/UX.
+- Emphasized glassmorphism, dynamic thematics, and removal of double loading indicators.
+
+### UI Polish & Theming (2026-07-18)
+
+- Standardized themes across all Mytrion apps using a global ThemeProvider and React Context.
+- Updated MytrionLoader to match Sales' 'Rocket' loader style but without generic text.
+- Fixed dark mode visibility for Admin logo.
+- Upgraded sign-in and sign-out UI components.
+- Replaced favicon.ico with a beautiful unique 'M' vector logo in SVG format.
+- Resolved TypeScript compilation errors caused by legacy unused loader code.
+
+### 2026-07-18 — Black screen / 404 after theme rename
+
+- Root cause: `useTheme.ts` was renamed to `.tsx`; Vite's module graph kept importing
+  `/src/hooks/useTheme.ts`, which fell through to `index.html` → failed module load → blank app.
+- Fix: split provider into `themeContext.tsx` and keep a stable `useTheme.ts` re-export entry.
+- Also: drop dead `/favicon.ico` link from `index.html` (file removed; SVG-only now).
+- `--rocket` hue token must be a solid color (not a gradient) for `color-mix` / `color:` usage.
+
+### 2026-07-18 — Coming soon: Collection / Verification / Manager / Analytics
+
+- Parked those four on `COMING_SOON_MYTRION_IDS` → picker Coming soon tiles (with HR).
+- `resolveAccessibleMytrions` / `canAccess` exclude them so they are not enterable.
+
+### 2026-07-18 — Coming soon badge color
+
+- Replaced muted gray SOON chip with a per-tile gradient pill (tile hue → accent).
+
+### 2026-07-18 — Sales Home hover / empty values / loader
+
+- Removed `translateY` from `.ss-card-h:hover` (cards no longer jump up).
+- Money Owed / volume trend empty → `$0` / `0%` (no `$-0` or em-dash).
+- Homepage: one below-fold skeleton until first loads settle; no stacked “Loading…”.
+
+### 2026-07-18 — Sales workday / soon tabs / titles / no double boot
+
+- Workday bar phases: morning→midday→afternoon→closing→overtime (distinct gradients + status).
+- Removed Sales shell `MytrionLoader` boot; Home skeleton is the only first paint loader.
+- Coming soon nav: colorful SOON chips; click opens `ComingSoonPanel` in main.
+- Top-bar `NAVLABEL`s renamed so they don’t echo in-page H1s (e.g. New Entry vs Create a Lead).
+
+### 2026-07-18 — Automations: txn report → CS + unique icon colors
+
+- Transactions Report (`C-15`) category `dept: 'C'` (Customer Service).
+- Each automation has a `color` CSS var (`--accent`, `--cyan`, `--ok`, …) via `autoIconColor`
+  so catalog + runner icons stay unique and track `.ss-root` / `.ss-root.light`.
+- Code badges (`C-15`, `Q-1`, …) use the same per-action color (`deptStyle(code, autoIconColor(a))`).
+
+### 2026-07-18 — Automations: standardized deal picklist + loaders
+
+- New `AutoPicklist.tsx`: shared `AutoDealPicklist` / `AutoCardPicklist`, `DealPickOption`
+  (company title + contact · App · phone), `PicklistMicroLoader`, `AutoMacroLoader`.
+- `AutoTab` uses those for every deal/card-needing action + the run-phase “waiting” UI.
+- `.ss-pick-row` hover: accent wash + left rail (light/dark, reduced-motion safe).
+
+### 2026-07-18 — Automations: standardized result states (success / error / empty)
+
+- Ported zoho-octane `showActionResult` + `.automation-empty` language into
+  `AutoActionResult.tsx` (`AutoStatusResult`, `AutoEmptyState`).
+- Modal done-step: error → “Couldn't complete that”; empty invoices/txns/messages → empty
+  tone; writes → success. Shared Done / secondary actions.
+- Picklist / WEX / catalog / invoice+txn panels use `AutoEmptyState` for empties.
+
+### 2026-07-18 — Automations: deal chip X + tracking + WEX tasks
+
+- Select Deal clear (X): `align-items:flex-start` / top-right (`.ss-deal-chip`), matching
+  zoho-octane `.automation-selected-deal` — was vertically centered on 2-line chips.
+- Tracking (C-22): rich `DonePayload.kind: 'tracking'`; numbers link to parcelsapp status
+  (hoverable). Deluge `mytriontruckingnumberrequest` unchanged.
+- WEX tasks (C-2/C-19): Deluge `application.update` only (stop merging empty WEX SF status
+  table). Rich task cards + summary; empty → “No WEX tasks found” in the modal.
+
+### 2026-07-18 — Automations: picklist loaders + App/Carrier + card status badges
+
+- Root cause of white-block loaders: `AutoFloatingDrop` portaled to `document.body`,
+  outside `.ss-root` → CSS vars / shimmer broke. Portal now mounts under `.ss-root`.
+- Micro-loader: spinner label + `.ss-pick-skel` accent shimmer (light/dark).
+- Deal rows: `App ####` + `CR-####` badges; meta line is contact · phone.
+- Card status: ACTIVE green, INACTIVE orange (`--warn`), FRAUD red.
+
+### 2026-07-18 — WEX tasks empty-under-summary fix + single (non-double) picklist loader
+
+- `AutoWexTasksPanel`: only show the "No WEX tasks found" empty state when BOTH
+  `wexTaskField` (summary) and `wexTasks[]` are empty. Deluge frequently fills only the
+  summary text (e.g. "Approved prepay") with an empty task array — that summary IS the
+  result and was being contradicted by an empty state rendered right under it.
+- `PicklistMicroLoader`: dropped the spinner-row header — shimmer skeleton rows alone are
+  the loader now (spinner + skeleton together read as two competing loaders).
+
+### 2026-07-18 — Full automations-catalog audit vs zoho-octane self-service (22 blocks)
+
+Reviewed every `AUTO_LIST` block's dispatch in `autoRunners.ts` against the reference
+widget's per-block transport table (function/endpoint, validation, merge behavior).
+Confirmed correct for 21/22 blocks — endpoints, required-field validation (carrier/app/card
+presence, money-code eligibility, unit-driver "at least one field", address completeness),
+Deluge function-name casing fallback (`executeZohoFunctionWithFallback`), and unwrap modes
+(`status`/`cardAction`/`successFlag`/`permissive`) all match the widget's contract. Card
+pickers for `fraud-hold-release` / `override-card` already filter to fraud-status cards
+only (`cardPool` in AutoTab), matching "card picker, fraud-eligible only".
+
+**Bug found + fixed — Check Payment Information (C-18/Q-2):** the reference fetches DWH
+`payment-info` and live CMP `check_payment` **in parallel** and merges both into one view.
+Our `payments` case was calling them **sequentially with fallback-on-error only** — if the
+primary succeeded, the CMP invoices call was never made, silently dropping half the
+reference's result. Fixed:
+- New `DonePayload` kind `'payments'` (`autoLive.ts`): `{ summary, cmpInvoices, cmpError }`.
+- `autoRunners.ts`: `Promise.allSettled` both touchpoints; only throws if BOTH sources
+  fail (previously any primary failure with no CMP fallback swallowed the real error).
+- New `AutoPaymentsPanel` (`AutoRichResults.tsx`): summary stat grid + CMP invoice cards
+  with status badges, independent empty/error state per source.
+
+**Retracted (was wrong):** earlier notes claimed BOCA/close/replacement/reactivation route to
+Desk tickets because Ops had no browser-automation/Zapier path. That was incorrect — those
+actions must hit the same real backends as the Zoho widget (see 2026-07-18 entry below).
+
+## 2026-07-18 — Real BOCA / Zapier automations + WEX search parity + Ops logging
+
+Corrected Sales Automations so write actions match zoho-octane self-service, not Desk substitutes.
+
+**Browser automation (BOCA C-27 / Close Application C-14):**
+- New integration `src/integrations/browserAutomation.ts` + env
+  `BROWSER_AUTOMATION_URL` / `BROWSER_AUTOMATION_KEY` / `BROWSER_AUTOMATION_TIMEOUT_MS` (5m default).
+- Touchpoints `browser.boca` → `POST /wex/boca/{appId}`,
+  `browser.close_application` → `POST /wex/application/{appId}/close`.
+- CRM UI: Assigned To locked to WEX SF owner (`wex.application`), priority, due date, fixed comment.
+- `autoRunners` calls those touchpoints; success/skipped messaging matches the widget.
+
+**Zapier (Card Replacement C-6 / Account Reactivation C-7):**
+- New integration `src/integrations/zapier.ts` + env `ZAPIER_TICKET_WEBHOOK_URL`
+  (same catch-hook the widget posts to).
+- Touchpoint `zapier.ticket_email` proxies `{ companyName, carrierId, agentEmail, ticketType, … }`.
+
+**Automation logs:**
+- `logAutomation` now mirrors `_logOpsAutomation`: hyphen→underscore type, `triggerDate` /
+  `triggerTime`, agent name; still fire-and-forget on every successful `runAuto`.
+- WEX field search also logs `wex_apps_application` after a successful search.
+
+**WEX search (C-29):** `AutoWexPanel` exposes all 8 fields (appId, firstName, lastName, company,
+email, phone, mc, dot) — same contract as `wex.applications_search`.
+
+**Deploy note:** set `BROWSER_AUTOMATION_*` and `ZAPIER_TICKET_WEBHOOK_URL` on the Ops service
+or these four actions will 502 as unconfigured.
+
+## 2026-07-18 — Carriers tab: Fetch 200/500, filters, lead create/duplicate
+
+Fixed Carrier Lookup so it matches zoho-octane `CarrierSearchPanel` end-to-end.
+
+**Fetch 200/500 (was broken):** changing the Fetch select only updated React state and never
+re-queried. Widget does `@change="search"`. Now `onFetchLimitChange` re-runs the search and
+passes the new limit explicitly (avoids the setState race that would still POST `limit: 200`).
+
+**Search meta:** `searchCarriers` returns `{ rows, total, moreRecords }` from
+`sales.carriers_search`; UI shows the widget “X of Y matches — refine…” hint when truncated.
+
+**Filters / pagination:** status chips, has-contact, min-units, Clear, client page 50/100 —
+page state clamped when filters shrink the set.
+
+**Create Lead + already-exists:** hardened `resolveCreateLeadOutcome` — string success flags,
+walks nested / JSON-string / `data[]` DUPLICATE_DATA for the existing lead id, and no longer
+treats a bare failure `leadId` as a duplicate. Shared by Carriers row actions + Create tab form.
+
+## 2026-07-18 — Sales Inbox refresh + live toast/badge verification
+
+**Inbox tab:** refresh button (spinning icon, same pattern as Home/Tickets) calls `inbox.list`
+and keeps the existing list visible while reconciling. Initial load uses shimmer rows (no plain
+"Loading…" text). `inboxLiveBus` publishes manual refresh so shell `useSidebarBadges` reloads too
+— nav unread count stays aligned after a pull-to-refresh style click.
+
+**Live toast (verified):** `Shell` → `useSidebarBadges(currentUserId, pushToast)` owns the
+servercrm socket app-wide. On `crm_inbox_notification` for the current user it reloads inbox data
+and fires a toast (subject as title, matching zoho-octane InboxPanel). Toast shows on every tab,
+not only when Inbox is open.
+
+**Nav badge (verified):** sidebar Inbox pill = `countUnread(inbox messages, localStorage read set)`.
+WS push + manual refresh both reload the badge source; marking read in the tab drops the count
+immediately. Task-type rows (`type: task`) increment unread like any other message — the WS frame
+does not carry message type, so the toast uses the notification subject until the list fetch lands.
+
+## 2026-07-18 — RingCentral softphone: sign-in unblocked + call-event capture
+
+Got the Sales Mytrion Embeddable softphone actually working end-to-end.
+
+**Sign-in was blocked (root cause):** `ringcentral.isConfigured()` required `RINGCENTRAL_JWT`, but
+the `.env` is set up for per-agent OAuth (redirect URI = Embeddable's hosted `redirect.html`, no
+JWT). So `/v1/ringcentral/embed-config` 404'd and the widget never loaded. Fix: `isConfigured()`
+now needs only `FF_RINGCENTRAL_ENABLED` + `CLIENT_ID`; the shared secret+JWT are gated behind a new
+`canEmbedBrowserCreds()` (`BROWSER_CREDS_ACK && secret && jwt`) — auto-login stays opt-in/audited.
+
+**Adapter URL:** now passes `redirectUri` (new `RINGCENTRAL_REDIRECT_URI` env, defaults to the
+Embeddable callback) so authorization-code sign-in is explicit (avoids OAU-113).
+
+**Call-event capture:** rewrote the frontend event handling into `ringcentralEvents.ts` — normalizes
+`rc-active-call-notify` / `rc-call-end-notify` / `rc-ringout-call-notify` / `rc-login-status-notify`
+into one event (dedup per session+phase, talk-duration from connect→end), tags outbound calls with
+the Data Center lead/deal via `setDialContext()`, and POSTs each to new `POST /v1/ringcentral/call-events`
+(zod-validated, sales-guarded, audit-logged as `ringcentral.call_event`). `RingCentralPhone.tsx` now
+shows direction-aware toasts (dialing / incoming / connected / ended+duration) + sign-in status.
+
+**Deals dialing:** `DealModal` had no `onCall` — wired it (phone call-row + footer Call button), Shell
+passes `onCall` for both Lead and Deal modals, and Leads list dials now tag `leadId`.
+
+**Contacts/messages:** native Embeddable tabs — appear once the RC app token carries Read Contacts /
+Read Messages / SMS scopes (documented in `.env.example`). No app code needed.
+
+**Still needs (RingCentral Developer Console, can't do from code):** app = client-side web app,
+3-legged OAuth; redirect URI must match `RINGCENTRAL_REDIRECT_URI`; scopes VoIP Calling + WebSocket
+Subscriptions (+ Read Contacts/Messages/SMS/Call Log for those tabs).
+
+**Verify:** `pnpm typecheck` + `pnpm lint` (RC/DC files) clean; `data-center-routes.test.ts` 11/11
+green incl. 4 new (JWT-less embed-config, call-events RBAC/audit/validation). NOTE: this branch has
+pre-existing unrelated failures (cs-routes, carrier-mini-app, touchpoints count 84≠81) and web
+`tsc` unused-import errors in admin/icons — none touched by this work.
+
+## 2026-07-18 — Design audit pass 1: P0 accessibility (contrast + keyboard)
+
+Implemented the "P0 now" slice of the Sales Mytrion design audit (claude.ai/design project "Sales
+Mytrion design audit"). Scoped to the highest-priority, lowest-risk findings; the P1 color/type
+unification and the gamification "prize" are deferred as follow-ups.
+
+- **Contrast (WCAG AA):** the accent cyan→violet gradient carried `color:#fff` (~2:1 on the cyan
+  end — fails AA). Added `--on-accent` to `.ss-root` (dark `#04131c`, light `#ffffff`) and swapped
+  all 16 gradient buttons across 9 redesign files to `color:var(--on-accent)` — dark label in dark
+  theme, white kept in light (already AA there).
+- **Keyboard a11y:** Home's announcement / quick-action / inbox cards were `<div onClick>` (no
+  focus/role/Enter). Added a `clickable()` helper in `dc.tsx` (role=button, tabIndex, Enter/Space)
+  and one global `.ss-root :focus-visible` ring in `theme.css`; existing input/picklist focus
+  styles still win via equal specificity + source order.
+- **Type tweak:** snapshot KPI numerals 600→500 weight at 23px (audit: "reads a touch heavy").
+
+Verify: web `tsc` clean for every file this touched. Remaining tsc noise (icons.tsx, admin/*, and
+the concurrent inbox-live-reload WIP in sidebarBadges/InboxTab) is unrelated. Not committed — left
+in the working tree for review.
+
+Follow-ups (not done): P1 — unify the forked `.ss-root` palette + duplicate accent (`#4cc2f5` vs
+app `#38bef0`), collapse the ~15 ad-hoc font sizes onto the app `--text-*` scale, de-rainbow Today's
+Snapshot (neutral numerals, status hues only). Then the habit loop: goal bar → streak → celebration.
+
+## 2026-07-18 — Design audit pass 2: P1 unification + the habit-loop "prize"
+
+Finished the rest of the audit (orchestrated: a 5-agent understand workflow to map data/tokens, then
+implement, then a 3-dimension adversarial review workflow — 16 agents, 7 confirmed findings all fixed).
+
+- **Habit loop (the "prize"):** new `streakStore.ts` — client-side, user-scoped localStorage (mirrors
+  `ticketUnread.ts`; no backend day-history exists so it accumulates per NY-calendar day). Home now has
+  a **goal bar** ("X / N apps · M to go") wired to the real, previously-unrendered `dailyAct.data?.apps`
+  vs `DAILY_APPS_GOAL`; a **🔥 streak / ⭐ best-day / week-total** strip; and a **celebration** overlay +
+  toast on a fresh goal hit / new personal best (guarded against re-fire via persisted day record +
+  `lastCelebrated`). Honest limitation: the streak begins the day it ships (no backfill possible).
+- **De-rainbowed snapshot** (cells live in `HomeTab.tsx`, not salesData): 8 vanity hues → neutral
+  `--text`; 4 status cells keep a hue **paired with a glyph/sign** (warn triangle, clock, `-$`, ▲/▼);
+  fixed the two same-metric color contradictions. Number weight already 600→500 (pass 1).
+- **Wayfinding:** top bar now leads with the clicked nav label + descriptive title as a muted secondary
+  ("Data Center · Pipeline Hub"), Shell.tsx:304. (Coming-soon nav grouping was already done.)
+- **Typography:** added a documented `--ss-text-*` scale to `.ss-root`; normalized ~170 off-scale sizes
+  (12.5→13, 11.5→12, 10.5→11) across tsx/css + a JSX numeric prop, leaving the badge micro-sizes.
+
+**Review fixes (all 7 confirmed defects):** (1) `nyDaysAgo` DST bug — fixed-24h subtraction skipped/
+duped a calendar day twice a year, corrupting the streak; rewrote to UTC calendar math. (2–4) three
+light-theme WCAG-AA failures — added text-grade `--ok-text`/`--accent-text` tokens (dark reuses base;
+light darkens) for the goal-bar + celebration text, and `--text2` for the label on the tinted hero.
+(5) celebration overlay was a second `role=status` live region duplicating the toast → made it
+`aria-hidden` (toast is the sole SR announcement). (6) hardened `streakStore.load()` to coerce nested
+day records (a corrupted value would `NaN`-poison the week total). (7) finished the size normalize.
+Two review findings were adversarially rejected as false positives (a View-as unmount concern — Shell
+keys panels on `actAsKey`; and a reduced-motion claim).
+
+**Verify:** web `tsc` clean for every touched file (remaining errors are unrelated pre-existing/
+concurrent WIP: icons.tsx, admin/*, sidebarBadges). Not committed — left in the working tree. Live
+visual check still blocked by the pre-existing tsc errors on `build` (use `vite dev`, which skips tsc).
+
+## 2026-07-20 — Retention workflow data model v2 (migrated to prod)
+
+Replaced the flat `retention_cases` shape (0020/0023) with the evolving-workflow model:
+
+- **Lookups (not enums):** `retention_phases`, `retention_statuses` (`is_terminal`, `phase_code`) —
+  statuses grow via INSERT, no `ALTER TYPE`.
+- **Native enums (fixed picklists only):** `communication_channel`, `dissatisfaction_reason`,
+  `transaction_frequency`, `agent_outcome`.
+- **Core + audit:** `retention_cases` (timers, assignment caps, DWH metrics, Zoho text ids) +
+  `retention_case_events`. Partial unique open case per `(tenant_id, carrier_id)`.
+- **Ops adaptations vs sketch:** no local `deals`/`agents` tables → `zoho_deal_id` /
+  `assigned_agent_zoho_user_id` / actor text; `tenant_id` isolation; open = `closed_at IS NULL`.
+- **Seed:** 3 phases, 22 statuses (7 terminal). Open pool lives as phase-1 statuses.
+- **Migration:** `0027_retention_workflow_v2` applied to Render app Postgres (`MYTRION_OPS_DATABASE_URL`).
+  Old episode rows dropped (regenerate via DWH sync job).
+- **Code:** schema, repo, `/v1/retention` routes (+ `/phases`, `/statuses`), sync, unit tests updated
+  to `phase_code` / `status_code` / `transactionFrequency`.
+
+Verify: `pnpm typecheck` clean; `retention-cases` unit tests 21/21; prod tables/enums/indexes/seeds
+confirmed (4 tables, 22 statuses, 4 enums, open-carrier unique + deadline index).
+Not committed — left in the working tree for review.
+
+## 2026-07-20 — Sales UI feedback: table z-index, refresh confirmation, Home metric color
+
+Three fixes from user feedback (with screenshots):
+
+- **Dashboard → Sales → Transaction Details z-index (msd.css):** the sticky `.msd-tx-table th`
+  for the Volume column overrode the solid header bg with a *translucent* gold (`rgba(...,.08)`),
+  so scrolled body rows bled through the sticky header. Made it opaque via
+  `color-mix(#f59e0b 8%, var(--surface-2))` (dark) + a light-theme background, and bumped the
+  sticky-header `z-index` 1→3 so the header always sits above the details.
+- **Refresh confirmation:** the Dashboard `SalesDashPanel.fetch(true)` and Home's snapshot Refresh
+  updated silently. Dashboard now `pushToast('Dashboard refreshed' | "Couldn't refresh", …)` on the
+  forced fetch (tone auto-derives green/red from the title). Home snapshot: added a `snapRefreshPending`
+  ref + a `snap.data`-watch effect (reload() is fire-and-forget and useLoad doesn't flip `loading` on
+  reload) → toasts "Snapshot refreshed" once the fresh data lands.
+- **Home metric coloring (partial revert of the de-rainbow):** user found the all-neutral snapshot
+  too grey. Restored a *curated, consistent* palette — each metric owns ONE hue across groups
+  (Active=accent, Fuel Tx=cyan, Gallons=violet, New Cards/Tasks=green), which keeps the audit's
+  "same metric = same color" consistency win while bringing color back. Status cells keep red/amber
+  and the glyph/sign pairings (warn/clock icon, -$, ▲/▼) added in pass 2.
+
+Verify: web `tsc` clean for every touched file (SalesDashPanel, HomeTab, msd.css); remaining errors
+are the same unrelated pre-existing/concurrent WIP. Not committed — left in the working tree.
+
+## 2026-07-20 — Phase 1 Retention in Sales Mytrion (UI + touchpoints)
+
+Wired the real Phase 1 (Sales Agent) retention workflow into Sales Mytrion against the v2
+tables. Scheduled automation (2BD auto-escalate, vacation job, Ryan Saab email, CITI) deferred.
+
+**Backend**
+- New touchpoint kind `local` (DB-backed handlers) in types + dispatcher.
+- `src/modules/retention/phase1.ts` — outcome→status map, 2BD helper, attempt/pool guards.
+- `retentionCasePhase1Repo` — listForAgent, listOpenPool, getWithEvents, claimFromPool (cap 3),
+  logCommsAttempt (5→Open Pool). Core create stamps `2BD_agent_action` deadline.
+- Catalog: `retention.my_cases|case_get|record_outcome|log_attempt|pool_list|pool_claim|lookups`
+  (`departments: ['sales']`, identityParam self-scopes non-admins).
+
+**Frontend (Sales redesign)**
+- Un-parked Retention nav. Cases = Kanban+List (`RetentionCasesPane`) + detail drawer with the
+  5 outcomes / channel attempts / dissatisfied reasons. Open Pool = live `pool_list` + claim.
+- Data via `retentionData.ts` → `callTouchpoint('retention.*')`.
+
+**Tests:** phase1 pure (11) + touchpoint self-scope/claim-cap (3) + existing retention routes (21).
+Verify: backend `pnpm typecheck` clean; retention unit tests 35/35. Not committed.
+
+## 2026-07-20 — Home goal bar + streak: wired to REAL Zoho COQL (Application_Date)
+
+Replaced the client-side/localStorage streak (fake accumulation) with real per-agent data from Zoho
+CRM. Validated the COQL live via the Zoho CRM MCP first: `select Application_Date from Deals where
+Owner = '<uid>' and Application_Date >= '<since>' order by Application_Date desc limit 0, 2000`
+(Application_Date is a `date` field → 'YYYY-MM-DD'; note this org's COQL parser rejects a bare
+`limit N` and a trailing `is not null` — use offset-form limit, and `>= since` already drops nulls).
+
+- **Backend:** `salesDataCenter.fetchAgentApplicationStats(ownerId, windowDays=90)` runs that COQL,
+  buckets rows into a `{ 'YYYY-MM-DD': count }` map (`AgentAppStats`: days/total/windowDays/truncated).
+  New owner-scoped route `GET /v1/data-center/app-stats` (mirrors leads/deals: requireSalesAccess +
+  resolveZohoUserId; admins may target `?zoho_user_id`).
+- **Frontend:** `api/dataCenter.getAppStats()`; `streakStore.ts` rewritten to PURE data-driven funcs
+  over the day-map — `todayApps / topDay / weekTotal / currentStreak(days,goal) / isNewBest` — plus a
+  tiny per-user `claimCelebration` localStorage guard (the only persisted state; fires goal/PB toast
+  once per NY day). HomeTab now `useLoad(getAppStats, [uid])`; goal bar (today), 🔥 streak, ⭐ best day,
+  week total, and the celebration all derive from real COQL data. Snapshot Refresh reloads it too.
+- **Goal:** `DAILY_APPS_GOAL` 5 → 3 (live data shows agents fill ~1–3 apps/day; 5 was never reachable).
+  Tunable constant; a per-rep target is the future step.
+
+**Verify:** backend `pnpm typecheck` clean; web `tsc` clean for all touched files; `data-center-routes`
+14/14 (+3 new: non-sales 403, sales-rep own-scope never victim, admin ?zoho_user_id). Not committed.
+
+## 2026-07-20 — Sales Mytrion: remove remaining mock/seed data
+
+- Deleted `redesign/mock.ts` (orphaned `DEALPOOL` fixture; Open Pool is live).
+- Slimmed `sales/data.ts` to `CALL_TO_ACTIONS` only (Home Quick Actions catalog). Removed
+  unused seed arrays: announcements, snapshot, automations, inbox, clients, carriers,
+  synthetic fuel activity.
+- Comments in `live.ts` / `salesData.ts` updated — no seed fixtures in the redesign path.
+
+## 2026-07-20 — Admin Jobs tab + 2h retention case-sync
+
+Retention bulk insert already ran via pg-boss (`automation.retention.case-sync`). This session
+makes it operable from Mytrion Admin and slows the cron to every 2 hours.
+
+**Backend**
+- Cron `*/5` → `0 */2 * * *` (JOBS_CRON_TZ). Payload may include optional `lookbackDays` /
+  `limit` / `trigger` for Admin backfill; cron still sends `{}`.
+- Worker returns the sync summary as pg-boss `output` (visible in Admin).
+- `GET /v1/agent/jobs` — catalog + live schedules + counts + recent runs (admin).
+- `POST /v1/agent/jobs/:name/run` — enqueue allowlisted cron queues (admin); retention accepts
+  lookback/limit. Singleton overlap → 409.
+- `listJobCatalog` / `recentJobRuns` / `triggerCatalogJob` helpers.
+
+**Frontend (Admin Mytrion)**
+- New **Jobs** tab: all queues, cron vs live schedule, counts, Run buttons, Recent runs with
+  output modal. Prominent **Run retention sync** with lookback/limit fields.
+- Client: `api/jobs.ts`.
+
+**Tests:** `tests/unit/jobs-admin.test.ts` (4). Backend typecheck clean. Not committed.
+
+## 2026-07-20 — Retention load speed (remote DB)
+
+Local API → Render Postgres was ~1–4s/request (network RTT), and case open also awaited
+DWH for phone (~1.5s more). Fixes: drop DWH from `case_get` (lazy `retention.case_contact`);
+single-query list (no separate count); agent index `0028`; modal seeds from board row so
+paint is instant while events load.
+
+## 2026-07-20 — Retention UI: modal, loaders, RC call, no manual Returned, hourly sync
+
+- Case detail is a **centered modal** (not sidebar); skeleton loaders on first board + detail
+  load only (refresh keeps rows / spins refresh icon — no double loaders).
+- **Returned** removed from agent actions + touchpoint outcomes; `resolvePhase1Transition`
+  rejects manual returned (auto-close stays on hourly DWH sync).
+- **Log attempt** = RingCentral phone call (click-to-dial when DWH `contact_phone` present) +
+  log channel `ringcentral`; other channels remain secondary for the 5-attempt count.
+- **Cadence** copy clarified: usual fueling rhythm (2/5/7d from 90d history).
+- Case-sync cron `0 */2 * * *` → `0 * * * *` (every hour).
+
+## 2026-07-20 — Jobs 503 fix: enable FF_JOBS + migrate prod
+
+Admin Jobs tab returned 503 because `FF_JOBS_ENABLED` defaulted off (commented in `.env`).
+- Set `FF_JOBS_ENABLED=1` + `JOBS_WORKER_MODE=inline` locally against Render app Postgres.
+- Ran `pnpm db:migrate` against that DB (migrations applied successfully).
+- Softened `GET /v1/agent/jobs` to return catalog + `enabled:false` / reason instead of hard 503
+  when jobs are off; UI shows the reason banner and disables Run buttons.
+- Restarted local API so pg-boss boots on the prod DB.
+
+## 2026-07-20 — Loyalty Tiers in Data Center → Clients (real DWH)
+
+Implemented the "Loyalty Tiers v3" program per the approved plan (/Users/user/.claude/plans/
+abstract-forging-backus.md). Each client gets a Bronze/Silver/Gold tier from REAL DWH data, evaluated
+on the CALENDAR month (user-confirmed).
+
+- **Backend:** `src/integrations/dwhLoyalty.ts` `fetchLoyaltyStatsByAgent` — one owner-scoped DWH query
+  (`octane.mart_transaction_line_items`, grouped by carrier, this + prev calendar month) returning
+  `sum(line_item_fuel_quantity)` (gallons) + `count(distinct card_number)` (active cards = ≥1 tx that
+  month — NOT the all-time `total_active_cards`) + `count(distinct transaction_id)`. Owner mapped to the
+  client's CURRENT agent via `dim_company` (newest-per-carrier) with the **last-12-digit suffix match**
+  on `agent_zoho_user_id` (session vs DWH org-prefix mismatch — mirrors `warehouse_gallons.ts`); owner
+  id kept a string, bound as `$1`. Route `GET /v1/data-center/loyalty-stats` (owner-scoped like
+  leads/deals; `dwhError` 502). Tests: `data-center-routes.test.ts` +3 (non-sales 403, rep own-scope
+  never victim, admin target) → 17/17.
+- **Frontend:** `loyalty.ts` — pure config (thresholds + rewards from the deck) + `resolveTier` (track by
+  card count, T3 segments cap 12, tier by gallons, 1-month grace within 10%), `tierRewards`, colors.
+  Theme-aware `--tier-{gold,silver,bronze}[-text]` tokens (AA-safe label text per theme). `getLoyaltyStats`
+  in api/dataCenter.ts; merged into the roster in `live.ts` (best-effort, 5 raw numeric fields added to
+  `RecordVM` + `ClientRecord`). `RecordsTab`: tier badge on each client card + a **loyalty distribution
+  bar** atop the list (Gold/Silver/Bronze/Building counts across the book). `ClientModal`: tier badge in
+  the header + a dedicated **Loyalty tab** (tier + segment, gallons-vs-next progress bar, 4 stat tiles,
+  6 rewards with active/inactive states & values). Tier is derived only from the raw month numbers, never
+  the formatted cycle `gallons` string.
+
+Notes: rewards are display-only program rules; Money-Code % is shown but not wired to issuance (future).
+DAILY month basis differs from the client card's existing "cycle gallons" (26→25) tile — labeled
+distinctly ("This month" vs "Cycle"). **Run a live DWH probe before merge** to confirm the suffix match
+returns rows (no direct DWH tool in this session).
+
+Verify: backend `pnpm typecheck` clean; web `tsc` clean for every touched file; `data-center-routes`
+17/17. Not committed — left in the working tree.
+
+## 2026-07-20 — Loyalty tiers: fixes from live review
+
+Three issues from the user testing the Clients tab:
+- **ClientModal tabs disappearing on the Cards tab.** The header / tab bar / footer were flex children
+  with no `flex-shrink:0`; a tall Cards list made flexbox shrink the tab bar, and since it has
+  `overflow-x:auto` (→ implicit `overflow-y:auto`) its buttons got clipped. Added `flex-shrink:0` to all
+  three + an opaque `background:var(--surface)` on the tab bar (ClientModal.tsx).
+- **"No active fuel cards this month" even though the client has active cards.** The tier's TRACK was
+  keyed on cards that *transacted this month* (`activeCardsThisMonth`), which is 0 for a client that
+  pumped earlier in the cycle. Re-based `resolveTier(activeCards, gallons)`: **track from the client's
+  actual active-card count** (roster `active`), **level from billing-cycle gallons** (the reliable 752
+  already shown), dropped the grace/prev-month coupling. Now any client with active cards gets a
+  track/tier (e.g. "Building toward Bronze") instead of the empty state.
+- **Show this-month gallons distinctly + "make sure gallons show properly (it's July 20)."** Added raw
+  `cycleGallons` to RecordVM/ClientRecord. Client card now shows **Gallons · Cycle** (violet) AND
+  **Gallons · Month** (accent) with colored dot labels; ClientModal Loyalty tab shows both gallon
+  figures + **Active cards** (total) and **Cards used · This month** (DWH transacted) so the two
+  card/gallon definitions are unambiguous. The this-month figure is the real DWH calendar-month count
+  (0 is legitimate if the client had no July transactions yet; cycle covers late-June activity).
+
+Note: tier level now uses the billing-cycle gallons (stable, matches the card + not understated
+mid-month), NOT the partial calendar month — a deliberate revision of the earlier calendar-month
+choice based on the July-20 reality. The DWH per-month query is retained for the "this month" display.
+
+Verify: web `tsc` clean for every touched file. Not committed.
+
+## 2026-07-20 — Phase 1 board flow: log→result + instant UI
+
+Aligned Sales Retention Phase 1 with the board sticky notes:
+- **Outcome first**, then OoR channel attempts (TG/WA/SMS/RC/IG/FB/EM). Attempts only allowed
+  when status is `p1_out_of_reach` (repo rejects otherwise).
+- Each OoR outcome / attempt stamps a **1 BD** deadline (`1BD_comms_attempt`); 5th attempt
+  still auto-sends to Open Pool.
+- Modal + kanban update **instantly** from mutation responses (local timeline events, no
+  post-write `detail.reload()` race). Board `onUpdated` keeps columns in sync.
+- UI split: `RetentionCaseActions.tsx` (stage panels) + leaner `RetentionCaseDetail.tsx`.
+- Returned remains sync-only; Dissatisfied / No-action / Vacation paths unchanged.
+
+Verify: `vitest` retention-phase1 + retention-touchpoints green. Not committed.
+
+## 2026-07-20 — Retention deferred timers (deadline sweep)
+
+Wired the board timer paths that were deferred after Phase-1 UI:
+
+- **Job** `automation.retention.deadline-sweep` every 15m (+ Admin trigger).
+- **2BD no-action** → Retention + stamp `10BD_retention` → on expiry → CITI (`p3_hold`).
+- **Reached** (agent outcome; fuel-again Returned stays sync-only) → `5BD_post_contact` →
+  Open Pool if no fuel.
+- **Open Pool** stamps `3BD_pool_claim`; unclaimed → Retention; claim → `p1_pool_assigned` +
+  `3BD_new_owner`; 3rd agent fail → CITI. Cap claim auto-moves to CITI.
+- **Vacation** 14D → `p1_vacation_followup` (2BD) → `p1_awaiting_ops` → Ops confirm/deny
+  touchpoints (confirm → Phase 1, deny → CITI). Inbox notify Ops.
+- **Ryan Saab / deal owner** inbox notify on Open Pool via
+  `RETENTION_OPEN_POOL_NOTIFY_ZOHO_USER_ID` (+ previous owner).
+- Migration `0029_retention_timer_statuses` (reached / vacation_followup / awaiting_ops).
+
+Verify: vitest retention-phase1 + deadline-sweep + touchpoints + cases green. Apply
+`pnpm db:migrate` before prod use. Not committed.
+
+## 2026-07-20 — Sales Data Center: this-month gallons fix, caching, filters, editable Leads/Deals
+
+Four-part upgrade to Sales Mytrion → Data Center (all owner-scoped, RBAC rule #9 honored).
+
+1. **This-month gallons = 0 for all clients — ROOT CAUSE FOUND + fixed.** Ran a read-only DWH
+   probe (analytics agent): July 2026 data exists (55,595 rows, freshest = today); the `dim_company`
+   owner-join and on-fact `agent_zoho_user_id` scoping return *identical* non-zero gallons — so the
+   join was never the problem. The real cause: warehouse `agent_zoho_user_id` is 19 digits, so
+   `right(id,12)` is a zero-PADDED `000000676127`, but the app's session id (short) yields `676127`
+   → `= $1` matches nothing for every agent. Fix in `dwhLoyalty.ts`: `lpad(right(...,12),12,'0') =
+   lpad($1,12,'0')` (both sides). Also log the failure in `live.ts loadLoyaltyStatsSafe` instead of
+   swallowing. NOTE: if it still shows 0 after deploy, the session id genuinely doesn't share its
+   last-12 record digits with the warehouse id (identity-mapping issue, not query).
+2. **Loyalty tier re-based on THIS-MONTH gallons** (program basis), with a this-cycle fallback when a
+   client has no current-month pumps (never collapses an active client to "Building"): `tierGallons()`
+   in RecordsTab + ClientModal; `resolveTier` doc updated; loyalty progress-bar label → "This month".
+3. **Caching (SWR)** — new `dcCache.ts` (`useCachedLoad` + `invalidateDcCache` + `formatCachedAt`):
+   instant paint from a per-agent module cache, background revalidate only when >60s stale, a Refresh
+   button + "Updated Xs ago" caption in the toolbar. Strictly faster (tab switches/refresh never blank).
+   Wired Clients/Leads/Deals/Rejections. Edits + carrier-lead-create call `invalidateDcCache` → the
+   list refetches instantly.
+4. **Filters** — Leads by Status + Source, Deals by Stage (styled native `DcSelect` in the toolbar,
+   applied in `dataCenterViews`).
+5. **Editable Leads/Deals** — owner-scoped `PATCH /v1/data-center/leads|deals/:id` mirroring the
+   cs/billing deal-write pattern (zod `.strict()` allowlist → `resolveWritePayload` casing-resolve →
+   `updateRecord` → audit) PLUS a mandatory Owner==caller check (cs/billing skip it; sales is
+   owner-scoped). Lead: MC/DOT/Referral_Source/Cell/Phone/Email/Description. Deal: Email/Phone/
+   Description. Field API names live-verified via Zoho CRM MCP. Frontend: inline-edit mode in the Lead/
+   Deal modals (optimistic apply + toast + cache-invalidate), Deal Value StatCard removed (grid → 3
+   cells), Deal Email row added, `LeadEdit`/`DealEdit` raw-value objects on the VMs.
+
+Verify: `pnpm typecheck` ✓, `pnpm test tests/unit/data-center-routes.test.ts` ✓ (25 tests incl. 8 new
+PATCH/RBAC — non-owner edit 403, admin act-as, allowlist 400, 404). Web typecheck: my files clean (24
+errors are ALL pre-existing branch WIP — finance/*, admin/*, icons.tsx, sidebarBadges.ts). Full backend
+suite has 28 pre-existing failures (cs-routes/carrier-mini-app/touchpoints — confirmed identical on a
+stashed clean branch, NOT mine). Not committed.
+
+## 2026-07-20 — Retention realtime (Octane WebSocket)
+
+New retention cases push live to the assigned sales agent:
+- `notifyCaseCreated` → `inbox_events` + `publishInboxEvent` (`retention.case.created`)
+  from hourly sync create + manual `POST /v1/retention/cases`.
+- Open Pool / Ops notifies also call `publishInboxEvent` (were persist-only before).
+- Pool opens also fan out on topic `retention:pool` (any internal worker may subscribe).
+- Sales FE: `useOctaneRealtime` + `useRetentionRealtime` in Shell; Cases pane merges the
+  new row instantly; Pool tab reloads on `retention.pool.opened`.
+
+Note: live push requires `JOBS_WORKER_MODE=inline` (same process as WS). Split workers
+still persist inbox rows; FE sees them on next fetch until pg NOTIFY exists.
+
+Verify: realtime-inbox + retention unit tests + typecheck green. Not committed.
+
+## 2026-07-20 — Sales Open Pool claim approval (Sales Mytrion gaps)
+
+Filled Sales-agent gaps only (CS / Retention desk / CITI batch deferred):
+
+- Open Pool claim is no longer instant: **request → owner approve/decline** or
+  **1 BD auto-approve** (`1BD_claim_approve`). Requires **10+ days inactive**.
+- `pool_owner_zoho_user_id` + `pending_claimant_zoho_user_id` + status
+  `p1_pool_claim_pending` (migration `0030_retention_pool_claim_approval`).
+- Touchpoints: `pool_claim` (request), `pool_claims_pending`, `pool_claim_approve`,
+  `pool_claim_decline`. FE: Retention → **Claims** pane + Pool copy/CTA updated.
+- Inbox/WS: `retention.claim_request|approved|declined`.
+
+Still deferred (CS Mytrion / later): Retention desk UI, P2→pool loop, Zoho owner
+email SMTP, Verification/OOB/WEX DWH exclusions (no columns in scan today),
+CITI Sales Manager bi-weekly batch, pre-entry funded-no-use alert, MOR reports.
+
+Verify: retention unit tests + typecheck green. Not committed.
+
+## 2026-07-20 — Retention migrations applied + API restarted
+
+- Ran `pnpm db:migrate` against Render app Postgres (`MYTRION_OPS_DATABASE_URL`).
+  Applied through `0030_retention_pool_claim_approval` (journal ids through 31).
+- Confirmed live columns: `pool_owner_zoho_user_id`, `pending_claimant_zoho_user_id`.
+- Restarted local API (`tsx watch src/server.ts` on :3001) so inline jobs + WS use
+  the new schema.

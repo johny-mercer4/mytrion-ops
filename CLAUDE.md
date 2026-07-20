@@ -16,6 +16,7 @@ Borrows architecture patterns from Mytrion but is a clean, standalone codebase.
 7. Read-only is default. Write tools require `riskClass: 'write'` and admin role.
 8. Every tool call is audit-logged.
 9. Tests for RBAC cross-tenant leakage MUST pass before any feature work.
+10. For any UI/UX and web components work, you MUST first consult the `modern-web-guidance` skill. Prioritize modern aesthetics such as glassmorphism, dynamic animations, modern color thematics, and sleek loading states (avoid double loaders).
 
 ## Daily workflow
 

@@ -1,0 +1,543 @@
+/* =====================================================
+   Billing Mytrion — Debtors Panel Styles
+   ===================================================== */
+
+.bm-root .bm-debtors-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+    padding: 1.25rem;
+    height: 100%;
+    overflow: hidden;
+}
+/* ── Header Row ── */
+.bm-root .db-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.bm-root .db-title {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.bm-root .db-subtitle {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    margin-top: 0.2rem;
+}
+
+.bm-root .db-controls {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+/* ── Search Input ── */
+.bm-root .db-search-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    transition: border-color 120ms, box-shadow 120ms;
+}
+
+.bm-root .db-search-wrap:focus-within {
+    border-color: var(--accent-border-strong);
+    box-shadow: var(--accent-ring);
+}
+
+.bm-root .db-search-icon {
+    position: absolute;
+    left: 0.625rem;
+    width: 14px;
+    height: 14px;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+.bm-root .db-search-input {
+    width: 220px;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    padding: 0.5rem 2rem 0.5rem 2rem;
+    outline: none;
+    font-family: inherit;
+}
+
+.bm-root .db-search-input::placeholder {
+    color: var(--text-muted);
+}
+
+.bm-root .db-search-clear {
+    position: absolute;
+    right: 0.5rem;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.bm-root .db-search-clear:hover {
+    color: var(--text-primary);
+}
+
+/* ── Select Filters ── */
+.bm-root .db-filter-select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    padding: 0.5rem 1.75rem 0.5rem 0.75rem;
+    outline: none;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%236b7280' viewBox='0 0 24 24'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    transition: border-color 120ms;
+}
+
+.bm-root .db-filter-select:focus,
+.bm-root .db-filter-select:hover {
+    border-color: var(--accent-border-strong);
+}
+
+.bm-root .db-filter-select option {
+    background: var(--surface-alt);
+    color: var(--text-primary);
+}
+
+/* ── Refresh Button ── */
+.bm-root .db-refresh-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 0.875rem;
+    background: var(--accent-bg-subtle);
+    border: 1px solid var(--accent-border);
+    border-radius: var(--radius-sm);
+    color: var(--billing-accent);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 120ms;
+    font-family: inherit;
+    outline: none;
+}
+
+.bm-root .db-refresh-btn:hover:not(:disabled) {
+    background: var(--accent-bg);
+    box-shadow: var(--accent-glow);
+}
+
+.bm-root .db-refresh-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.bm-root .spin-icon {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ── KPI Grid ── */
+.bm-root .db-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+}
+
+.bm-root .db-kpi-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 0.875rem 1rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.25rem;
+    transition: border-color 150ms;
+    position: relative;
+    overflow: hidden;
+}
+
+.bm-root .db-kpi-card:hover {
+    border-color: var(--accent-bg-strong);
+}
+
+.bm-root .db-kpi-card::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 3px;
+    height: 100%;
+    background: var(--accent-border-strong);
+}
+
+.bm-root .db-kpi-card.db-danger-card::after {
+    background: var(--danger-border);
+}
+
+.bm-root .db-kpi-title {
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.bm-root .db-kpi-value {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.375rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+}
+
+.bm-root .db-kpi-value.text-danger {
+    color: var(--danger-text);
+}
+
+.bm-root .db-kpi-value.text-warning {
+    color: var(--warning-text);
+}
+
+.bm-root .db-kpi-badge {
+    background: var(--danger-bg);
+    color: var(--danger-text);
+    padding: 0.15rem 0.4rem;
+    border-radius: 2px;
+    font-size: 0.5625rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+}
+
+/* ── Content Area & List ── */
+.bm-root .db-content-area {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    min-height: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+}
+
+.bm-root .db-list-header {
+    display: flex;
+    align-items: center;
+    padding: 0.625rem 0.875rem;
+    background: var(--surface-alt);
+    border-bottom: 1px solid var(--border-dark);
+    font-size: 0.5625rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+.bm-root .db-row-item {
+    border-bottom: 1px solid var(--border-dark);
+    transition: background 80ms;
+}
+
+.bm-root .db-row-item:last-of-type {
+    border-bottom: none;
+}
+
+.bm-root .db-row-main {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 0.875rem;
+    cursor: pointer;
+}
+
+.bm-root .db-row-main:hover {
+    background: var(--accent-bg-subtle);
+}
+
+.bm-root .db-col-carrier { flex: 0 0 100px; }
+.bm-root .db-col-company { flex: 1; min-width: 0; padding-right: 1rem; }
+.bm-root .db-col-cycle   { flex: 0 0 110px; text-align: center; }
+.bm-root .db-col-status  { flex: 0 0 100px; text-align: center; }
+.bm-root .db-col-age     { flex: 0 0 80px; text-align: center; }
+.bm-root .db-col-count   { flex: 0 0 80px; text-align: center; }
+.bm-root .db-col-owed    { flex: 0 0 120px; text-align: right; padding-right: 0.5rem; }
+.bm-root .db-col-remain  { flex: 0 0 120px; text-align: right; }
+.bm-root .db-col-chevron { flex: 0 0 30px; display: flex; justify-content: flex-end; }
+
+.bm-root .db-cycle-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.2rem 0.5rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.5625rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: var(--accent-bg-subtle);
+    color: var(--billing-accent);
+    border: 1px solid var(--accent-border);
+    white-space: nowrap;
+}
+.bm-root .db-cycle-none {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* ── Row Content Styling ── */
+.bm-root .db-carrier-id {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.bm-root .db-company-name {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bm-root .db-status-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.2rem 0.5rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.5625rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.bm-root .db-status-pending {
+    background: var(--danger-bg);
+    color: var(--danger-text);
+    border: 1px solid var(--danger-border);
+}
+
+.bm-root .db-status-partial {
+    background: var(--warning-bg);
+    color: var(--warning-text);
+    border: 1px solid var(--warning-border);
+}
+
+.bm-root .db-status-ok {
+    background: var(--success-bg);
+    color: var(--success-text);
+    border: 1px solid var(--success-border);
+}
+
+/* Quiet caption for informational CMP states ("no CMP action") — plain dim
+   text so it never competes with the actionable badges above it. */
+.bm-root .db-cmp-quiet {
+    font-size: 0.625rem;
+    font-style: italic;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+.bm-root .db-age-text {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.bm-root .db-age-text.text-danger {
+    color: var(--danger-text);
+    font-weight: 700;
+}
+
+.bm-root .db-count-text {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.bm-root .db-money-muted {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+}
+
+.bm-root .db-money-bold {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--danger-text);
+}
+
+.bm-root .db-chevron-icon {
+    color: var(--text-muted);
+    transition: transform 0.2s;
+}
+
+.bm-root .db-chevron-icon.expanded {
+    transform: rotate(90deg);
+    color: var(--billing-accent);
+}
+
+/* ── Expanded Sub-Invoices ── */
+.bm-root .db-sub-invoices {
+    background: rgba(0, 0, 0, 0.15);
+    border-top: 1px solid var(--border-dark);
+    padding: 0.75rem 0.875rem 0.75rem 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.bm-root .light-mode .db-sub-invoices {
+    background: rgba(0, 0, 0, 0.02);
+}
+
+.bm-root .db-invoice-card {
+    display: flex;
+    align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.625rem 0.875rem;
+    border-left: 3px solid var(--billing-accent);
+}
+
+.bm-root .db-invoice-card.db-overdue {
+    border-left-color: var(--danger-text);
+}
+
+.bm-root .db-inv-col-info { flex: 1; display: flex; flex-direction: column; gap: 0.2rem; }
+.bm-root .db-inv-col-age  { flex: 0 0 100px; display: flex; flex-direction: column; gap: 0.2rem; }
+.bm-root .db-inv-col-amt  { flex: 0 0 120px; text-align: right; display: flex; flex-direction: column; gap: 0.2rem; }
+
+.bm-root .db-inv-label {
+    font-size: 0.5375rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.bm-root .db-inv-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.bm-root .db-inv-val.text-danger {
+    color: var(--danger-text);
+}
+
+.bm-root .db-inv-val.text-bold {
+    font-size: 0.8125rem;
+    font-weight: 700;
+}
+
+/* ── Empty & Error States ── */
+.bm-root .db-empty-state {
+    padding: 3rem;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+}
+
+.bm-root .db-error-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    color: var(--danger-text);
+    padding: 2rem;
+    text-align: center;
+}
+
+.bm-root .db-error-msg {
+    font-size: 0.8125rem;
+    max-width: 400px;
+}
+
+/* ── Pagination Controls ── */
+.bm-root .db-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.875rem 1.25rem;
+    background: var(--surface-alt);
+    border-top: 1px solid var(--border-dark);
+}
+
+.bm-root .db-page-info {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+}
+
+.bm-root .db-page-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.bm-root .db-page-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.4rem 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 120ms;
+    outline: none;
+}
+
+.bm-root .db-page-btn:hover:not(:disabled) {
+    border-color: var(--accent-border-strong);
+    background: var(--accent-bg-subtle);
+}
+
+.bm-root .db-page-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.bm-root .db-page-current {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}

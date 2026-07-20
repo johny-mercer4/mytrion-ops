@@ -8,11 +8,18 @@ import type { UserContext } from '../context/userContext';
 import {
   ADMIN_PROFILES,
   ADMIN_ROLES,
+  COMING_SOON_MYTRION_IDS,
   MYTRIONS,
   MYTRION_ORDER,
   type MytrionAccessRule,
   type MytrionId,
 } from './mytrions.config';
+
+const COMING_SOON = new Set<MytrionId>(COMING_SOON_MYTRION_IDS);
+
+function isEnterable(id: MytrionId): boolean {
+  return !COMING_SOON.has(id);
+}
 
 const eq = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
 const inList = (value: string, list: string[]): boolean => Boolean(value) && list.some((x) => eq(x, value));
@@ -57,15 +64,20 @@ export function resolveAccessibleMytrions(ctx: UserContext): AccessResult {
   const admin = isAdmin(ctx);
   if (ctx.accessibleMytrions) {
     const granted = new Set(ctx.accessibleMytrions);
-    const accessible = MYTRION_ORDER.filter((id) => granted.has(id));
-    return { accessible, isAdmin: admin, homeMytrion: ctx.homeMytrion ?? null };
+    const accessible = MYTRION_ORDER.filter((id) => granted.has(id) && isEnterable(id));
+    const home =
+      ctx.homeMytrion && accessible.includes(ctx.homeMytrion) ? ctx.homeMytrion : null;
+    return { accessible, isAdmin: admin, homeMytrion: home };
   }
-  const accessible = MYTRION_ORDER.filter((id) => ruleAllows(ctx, MYTRIONS[id], admin));
+  const accessible = MYTRION_ORDER.filter(
+    (id) => isEnterable(id) && ruleAllows(ctx, MYTRIONS[id], admin),
+  );
   return { accessible, isAdmin: admin, homeMytrion: null };
 }
 
 /** Single-Mytrion gate used by the route guard. */
 export function canAccess(ctx: UserContext, id: MytrionId): boolean {
+  if (!isEnterable(id)) return false;
   if (ctx.accessibleMytrions) return ctx.accessibleMytrions.includes(id);
   const rule = MYTRIONS[id];
   return rule ? ruleAllows(ctx, rule) : false;

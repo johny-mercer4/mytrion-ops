@@ -70,6 +70,22 @@ describe('logAutomation', () => {
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(String(url)).toContain('/v1/automation/logs');
-    expect(JSON.parse(String(init.body))).toEqual({ automationType: 'balance', agentName: 'Robiya' });
+    const body = JSON.parse(String(init.body)) as Record<string, string>;
+    expect(body.automationType).toBe('balance');
+    expect(body.agentName).toBe('Robiya');
+    expect(body.triggerDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(body.triggerTime).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+  });
+
+  it('aliases catalog ids to widget log keys and hyphen→underscore', async () => {
+    seedSession();
+    const fetchMock = vi.fn(async () => jsonResponse(200, { id: '1' }));
+    vi.stubGlobal('fetch', fetchMock);
+    logAutomation('close-app');
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body)) as {
+      automationType: string;
+    };
+    expect(body.automationType).toBe('close_wex_application');
   });
 });

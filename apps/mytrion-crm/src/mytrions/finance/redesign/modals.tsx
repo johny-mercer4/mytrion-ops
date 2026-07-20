@@ -67,18 +67,22 @@ export function ClientModal({
   drillLoading,
   onClose,
 }: {
-  client: Client;
+  client: any;
   tab: ClientDrillTab;
   setTab: (t: ClientDrillTab) => void;
   drillLoading: boolean;
   onClose: () => void;
 }) {
-  const billed = client.invoices.reduce((s, i) => s + i.total, 0);
-  const paid = client.invoices.reduce((s, i) => s + i.paid, 0);
-  const openBal = client.invoices.reduce((s, i) => s + i.open, 0);
+  const invoices = Array.isArray(client.invoices) ? client.invoices : [];
+  const payments = Array.isArray(client.payments) ? client.payments : [];
+  const fuel = Array.isArray(client.fuel) ? client.fuel : [];
+
+  const billed = invoices.reduce((s: number, i: any) => s + (i.total || 0), 0);
+  const paid = invoices.reduce((s: number, i: any) => s + (i.paid || 0), 0);
+  const openBal = invoices.reduce((s: number, i: any) => s + (i.open || 0), 0);
   const badges = [
     badge(client.active ? 'Active' : 'Inactive', client.active ? 'ok' : 'muted'),
-    badge(client.terms, 'blue'),
+    badge(client.terms || 'Prepay', 'blue'),
   ];
   if (client.suspended) badges.push(badge('LOC SUSPENDED', 'danger'));
   if (client.wex) badges.push(badge('WEX FUNDED', 'violet'));
@@ -91,9 +95,9 @@ export function ClientModal({
   ];
 
   const tabs: { id: ClientDrillTab; label: string; count: number }[] = [
-    { id: 'invoices', label: 'Invoices', count: client.invoices.length },
-    { id: 'payments', label: 'Payments', count: client.payments.length },
-    { id: 'fuel', label: 'Recent Fuel', count: client.fuel.length },
+    { id: 'invoices', label: 'Invoices', count: invoices.length },
+    { id: 'payments', label: 'Payments', count: payments.length },
+    { id: 'fuel', label: 'Recent Fuel', count: fuel.length },
     { id: 'info', label: 'Info', count: 0 },
   ];
 
@@ -107,11 +111,11 @@ export function ClientModal({
           <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:12px')}>
             <div style={s('display:flex;align-items:center;gap:13px;min-width:0')}>
               <div style={s(`width:46px;height:46px;border-radius:var(--radius-md);background:${avBg};color:${avFg};display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0`)}>
-                {initials(client.company)}
+                {initials(client.company || 'C')}
               </div>
               <div style={s('min-width:0')}>
                 <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:18px;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{client.company}</div>
-                <div style={s("font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px")}>#{client.carrier} · DOT {client.dot}</div>
+                <div style={s("font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px")}>#{client.carrier} · DOT {client.dot || 'N/A'}</div>
               </div>
             </div>
             <CloseBtn onClose={onClose} />
@@ -170,26 +174,26 @@ export function ClientModal({
   );
 }
 
-function ClientInfo({ client }: { client: Client }) {
+function ClientInfo({ client }: { client: any }) {
   const mono = "font-family:'JetBrains Mono',monospace";
   const groups = [
     {
       label: 'Company',
       rows: [
         { k: 'Carrier ID', v: client.carrier, mono },
-        { k: 'DOT', v: client.dot, mono },
-        { k: 'Email', v: client.email, mono: '' },
-        { k: 'Phone', v: client.phone, mono },
-        { k: 'Address', v: `${client.city}, ${client.state}`, mono: '' },
+        { k: 'DOT', v: client.dot || 'N/A', mono },
+        { k: 'Email', v: client.email || 'N/A', mono: '' },
+        { k: 'Phone', v: client.phone || 'N/A', mono },
+        { k: 'Address', v: `${client.city || ''}, ${client.state || ''}`, mono: '' },
       ],
     },
     {
       label: 'Credit & Sales',
       rows: [
-        { k: 'Credit Limit', v: client.credit === 'WEX' ? 'WEX' : fmtCurrency(parseFloat(client.credit.replace(/,/g, '')) || 0), mono: '' },
-        { k: 'Payment Terms', v: client.terms, mono: '' },
-        { k: 'Agent', v: client.agent, mono: '' },
-        { k: 'Deal Stage', v: client.stage, mono: '' },
+        { k: 'Credit Limit', v: client.credit === 'WEX' ? 'WEX' : fmtCurrency(client.creditLimit || 0), mono: '' },
+        { k: 'Payment Terms', v: client.terms || 'Prepay', mono: '' },
+        { k: 'Agent', v: client.agent || 'System', mono: '' },
+        { k: 'Deal Stage', v: client.stage || 'N/A', mono: '' },
       ],
     },
   ];
@@ -202,23 +206,27 @@ function ClientInfo({ client }: { client: Client }) {
   );
 }
 
-function ClientTable({ tab, client }: { tab: ClientDrillTab; client: Client }) {
+function ClientTable({ tab, client }: { tab: ClientDrillTab; client: any }) {
+  const invoices = Array.isArray(client.invoices) ? client.invoices : [];
+  const payments = Array.isArray(client.payments) ? client.payments : [];
+  const fuel = Array.isArray(client.fuel) ? client.fuel : [];
+
   if (tab === 'invoices') {
-    return client.invoices.length ? (
-      <DrillRows rows={client.invoices.map((iv) => invoiceRow(iv))} />
+    return invoices.length ? (
+      <DrillRows rows={invoices.map((iv: any) => invoiceRow(iv))} />
     ) : (
       <Empty msg="No invoices on file." />
     );
   }
   if (tab === 'payments') {
-    return client.payments.length ? (
-      <DrillRows rows={client.payments.map((p) => paymentRow(p))} />
+    return payments.length ? (
+      <DrillRows rows={payments.map((p: any) => paymentRow(p))} />
     ) : (
       <Empty msg="No payment transactions found." />
     );
   }
-  return client.fuel.length ? (
-    <DrillRows rows={client.fuel.map((f) => fuelRow(f))} />
+  return fuel.length ? (
+    <DrillRows rows={fuel.map((f: any) => fuelRow(f))} />
   ) : (
     <Empty msg="No recent fueling." />
   );

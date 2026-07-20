@@ -3,8 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSessionUser } from '../../sales/redesign/sessionUser';
 import { FinanceContext, type ToastType } from './ctx';
 import { s, Svg } from './dc';
-import { NAV, NAV_LABEL, navBtnStyle, relTime, suspendedCount, topDebtors, type DashSub, type FinanceSection } from './financeData';
-import { buildLiveItem, pickRandomTx, seedLiveFeed, type LiveFeedItem } from './financeLive';
+import { NAV, NAV_LABEL, navBtnStyle, relTime, type DashSub, type FinanceSection } from './financeData';
+import { buildLiveItem, seedLiveFeed, type LiveFeedItem } from './financeLive';
 import { ICONS } from './financeUi';
 import { ClientModal, TxModal } from './modals';
 import { DashboardTab } from './tabs/DashboardTab';
@@ -12,6 +12,10 @@ import { ClientsTab } from './tabs/ClientsTab';
 import { HomeTab } from './tabs/HomeTab';
 import { TransactionsTab } from './tabs/TransactionsTab';
 import type { ClientDrillTab } from './financeData';
+import { MytrionLoader } from '../../../components/MytrionLoader';
+import { useTheme } from '../../../hooks/useTheme';
+import { useLoad } from '../../_shared/useLoad';
+import { financeTouchpoint } from '../../../api/finance';
 import type { Client, TransactionLine } from '../data';
 import './theme.css';
 
@@ -46,16 +50,21 @@ function toastIconStyle(type: ToastType): string {
 
 export function FinanceRedesign() {
   const user = useSessionUser();
+
+  const dashDebtorsRes = useLoad(() => financeTouchpoint('finance.debtors', {}), []);
+  const txFeedRes = useLoad(() => financeTouchpoint('finance.main_transactions', {}), []);
+  const fuelingMetricsRes = useLoad(() => financeTouchpoint('finance.analytics_fueling', {}), []);
+  const clientsRes = useLoad(() => financeTouchpoint('finance.clients', {}), []);
+
   const mainRef = useRef<HTMLElement>(null);
   const sectionTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const toastTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const liveIntervalRef = useRef<ReturnType<typeof setInterval>>();
 
-  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  const { theme, toggle: toggleTheme } = useTheme();
   const [section, setSection] = useState<FinanceSection>('home');
   const [dashSub, setDashSubState] = useState<DashSub>('debtors');
   const [booting, setBooting] = useState(true);
-  const [bootPct, setBootPct] = useState(8);
   const [, tick] = useState(0);
   const [lastSync, setLastSync] = useState(() => new Date());
   const [toast, setToast] = useState<{ title: string; msg: string; type: ToastType } | null>(null);
@@ -93,28 +102,20 @@ export function FinanceRedesign() {
   }, []);
 
   const tickLive = useCallback(() => {
-    const t = pickRandomTx();
-    const item = buildLiveItem({ ...t, date: new Date().toISOString().slice(0, 10) }, true);
-    setLiveFeed((prev) => [item, ...prev].slice(0, 6));
+    // Live feed currently not connected to real WebSocket.
     setLiveNew((n) => n + 1);
     setLastSync(new Date());
   }, []);
 
   useEffect(() => {
-    const bootInterval = setInterval(() => {
-      setBootPct((p) => Math.min(100, p + 10 + Math.random() * 17));
-    }, 150);
     const bootDone = setTimeout(() => {
-      clearInterval(bootInterval);
       setBooting(false);
-      setBootPct(100);
       startAnim();
       settleSection('home');
       liveIntervalRef.current = setInterval(tickLive, 5600);
     }, 1650);
     const clock = setInterval(() => tick((n) => n + 1), 20_000);
     return () => {
-      clearInterval(bootInterval);
       clearTimeout(bootDone);
       clearInterval(clock);
       clearInterval(liveIntervalRef.current);
@@ -165,7 +166,7 @@ export function FinanceRedesign() {
   const ctx = useMemo(
     () => ({
       theme,
-      toggleTheme: () => setTheme((t) => (t === 'light' ? 'dark' : 'light')),
+      toggleTheme,
       section,
       go,
       dashSub,
@@ -184,6 +185,11 @@ export function FinanceRedesign() {
       openClient,
       lastSync,
       refreshSync,
+      dashDebtors: Array.isArray((dashDebtorsRes.data as any)?.debtors) ? (dashDebtorsRes.data as any).debtors : Array.isArray((dashDebtorsRes.data as any)?.data) ? (dashDebtorsRes.data as any).data : Array.isArray(dashDebtorsRes.data) ? dashDebtorsRes.data : [],
+      dashPayments: Array.isArray((txFeedRes.data as any)?.records) ? (txFeedRes.data as any).records : Array.isArray((txFeedRes.data as any)?.data) ? (txFeedRes.data as any).data : Array.isArray(txFeedRes.data) ? txFeedRes.data : [],
+      txFeed: Array.isArray((txFeedRes.data as any)?.records) ? (txFeedRes.data as any).records : Array.isArray((txFeedRes.data as any)?.data) ? (txFeedRes.data as any).data : Array.isArray(txFeedRes.data) ? txFeedRes.data : [],
+      clientsFeed: Array.isArray((clientsRes.data as any)?.records) ? (clientsRes.data as any).records : Array.isArray((clientsRes.data as any)?.data) ? (clientsRes.data as any).data : Array.isArray(clientsRes.data) ? clientsRes.data : [],
+      fuelingMetrics: fuelingMetricsRes.data || {},
     }),
     [
       theme,
@@ -205,12 +211,16 @@ export function FinanceRedesign() {
       openClient,
       lastSync,
       refreshSync,
+      dashDebtorsRes.data,
+      txFeedRes.data,
+      clientsRes.data,
+      fuelingMetricsRes.data,
     ],
   );
 
   const timeFmt = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  const debtorBadge = topDebtors().length;
-  const suspendedBadge = suspendedCount();
+  const debtorBadge = Array.isArray(ctx.dashDebtors) ? ctx.dashDebtors.length : 0;
+  const suspendedBadge = Array.isArray(ctx.clientsFeed) ? ctx.clientsFeed.filter((c: any) => c.suspended).length : 0;
 
   return (
     <FinanceContext.Provider value={ctx}>
@@ -218,32 +228,7 @@ export function FinanceRedesign() {
         className={`mf-root ${theme === 'light' ? 'light' : ''}`}
         style={s('height:100vh;display:flex;flex-direction:row;background:radial-gradient(1200px 520px at 82% -10%, rgba(var(--accent-rgb),.11), transparent 60%), radial-gradient(900px 480px at -5% 110%, rgba(var(--teal-rgb),.07), transparent 55%), var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;font-size:14px;overflow:hidden;position:relative')}
       >
-        {booting && (
-          <div style={s('position:absolute;inset:0;z-index:300;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;background:radial-gradient(700px 420px at 50% 42%, rgba(var(--accent-rgb),.10), transparent 70%), var(--bg)')}>
-            <div style={s('position:absolute;top:0;left:0;right:0;height:2px;overflow:hidden')}>
-              <div style={s('position:absolute;top:0;left:0;height:2px;width:32%;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:mf-sweep 1.5s linear infinite')} />
-            </div>
-            <div style={s('position:relative;width:118px;height:118px;display:flex;align-items:center;justify-content:center')}>
-              <div style={s('position:absolute;inset:0;border-radius:50%;border:2px solid var(--border)')} />
-              <div style={s('position:absolute;inset:0;border-radius:50%;border:2px solid transparent;border-top-color:var(--accent);border-right-color:rgba(var(--accent-rgb),.5);animation:mf-spin 1s linear infinite')} />
-              <div style={s('position:absolute;inset:15px;border-radius:50%;border:1.5px solid transparent;border-bottom-color:var(--accent-2);animation:mf-spin 1.5s linear infinite reverse')} />
-              <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:14px;letter-spacing:.13em;text-transform:uppercase;text-align:center;line-height:1.05")}>
-                My<span style={s('color:var(--accent)')}>trion</span>
-                <br />
-                <span style={s('font-size:9px;letter-spacing:.28em;color:var(--muted)')}>FINANCE</span>
-              </div>
-            </div>
-            <div style={s('text-align:center')}>
-              <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:17px;letter-spacing:.09em;text-transform:uppercase')}>Connecting to Finance</div>
-              <div style={s('font-size:12.5px;color:var(--muted);margin-top:5px')}>
-                Securing your workspace<span style={{ animation: 'mf-pulse 1.2s infinite' }}>…</span>
-              </div>
-            </div>
-            <div style={s('width:220px;height:3px;border-radius:99px;background:var(--raised);overflow:hidden')}>
-              <div style={s(`height:100%;width:${bootPct}%;background:linear-gradient(90deg,var(--accent),var(--accent-2));border-radius:99px;transition:width .18s ease`)} />
-            </div>
-          </div>
-        )}
+        {booting && <MytrionLoader appName="Finance" />}
 
         <aside style={s('flex-shrink:0;width:236px;display:flex;flex-direction:column;background:color-mix(in srgb, var(--bg) 82%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-right:1px solid var(--border);position:relative;z-index:30')}>
           <div style={s('display:flex;align-items:center;gap:11px;padding:18px 18px 15px')}>

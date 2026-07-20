@@ -4,14 +4,19 @@
  * execution path.
  */
 import type { Touchpoint } from '../types.js';
+import { billingDelugeTouchpoints } from './billingDeluge.js';
+import { browserAutoTouchpoints } from './browserAuto.js';
 import { carrierDelugeTouchpoints } from './carrierDeluge.js';
 import { csDelugeTouchpoints } from './csDeluge.js';
 import { financeDelugeTouchpoints } from './financeDeluge.js';
+import { retentionTouchpoints } from './retention.js';
 import { salesDelugeTouchpoints } from './salesDeluge.js';
 import { serverCrmAgentTouchpoints } from './serverCrmAgent.js';
+import { serverCrmBillingTouchpoints } from './serverCrmBilling.js';
 import { serverCrmFinanceTouchpoints } from './serverCrmFinance.js';
 import { serverCrmMiscTouchpoints } from './serverCrmMisc.js';
 import { ticketsDelugeTouchpoints } from './ticketsDeluge.js';
+import { zapierTouchpoints } from './zapier.js';
 
 const ALL: Touchpoint[] = [
   ...carrierDelugeTouchpoints,
@@ -19,9 +24,14 @@ const ALL: Touchpoint[] = [
   ...ticketsDelugeTouchpoints,
   ...financeDelugeTouchpoints,
   ...csDelugeTouchpoints,
+  ...billingDelugeTouchpoints,
   ...serverCrmAgentTouchpoints,
   ...serverCrmMiscTouchpoints,
   ...serverCrmFinanceTouchpoints,
+  ...serverCrmBillingTouchpoints,
+  ...browserAutoTouchpoints,
+  ...zapierTouchpoints,
+  ...retentionTouchpoints,
 ];
 
 const byKey = new Map<string, Touchpoint>();

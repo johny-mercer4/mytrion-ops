@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { AccessIcon, DatabaseIcon, HistoryIcon, KnowledgeIcon, ScopeIcon, SearchIcon, TrainIcon, UsersIcon, WarehouseIcon } from '../../components/icons';
+import { AccessIcon, DatabaseIcon, HistoryIcon, JobsIcon, KnowledgeIcon, ScopeIcon, SearchIcon, TrainIcon, UsersIcon, WarehouseIcon } from '../../components/icons';
 import { MytrionShell, type NavItem } from '../_shared/MytrionShell';
 import { AuditLog } from './AuditLog';
 import { CarrierUsers } from './CarrierUsers';
 import { CmpDatabase } from './CmpDatabase';
 import { DwhDatabase } from './DwhDatabase';
+import { Jobs } from './Jobs';
 import { KnowledgeBase } from './KnowledgeBase';
 import { KnowledgeBrowser } from './KnowledgeBrowser';
 import { OctaneScope } from './scope/OctaneScope';
@@ -12,7 +13,7 @@ import { AdminToastHost } from './toast';
 import { Train } from './Train';
 import { UserManagement } from './UserManagement';
 
-type Tab = 'kb' | 'train' | 'browser' | 'scope' | 'carriers' | 'carrier-invites' | 'audit' | 'cmp' | 'dwh' | 'access';
+type Tab = 'kb' | 'train' | 'browser' | 'scope' | 'carriers' | 'carrier-invites' | 'audit' | 'jobs' | 'cmp' | 'dwh' | 'access';
 
 const CARRIER_TABS: Tab[] = ['carriers', 'carrier-invites'];
 
@@ -51,6 +52,7 @@ export default function AdminMytrion() {
       ],
     },
     { key: 'audit', label: 'Audit Log', icon: <HistoryIcon size={18} />, active: tab === 'audit', onClick: () => setTab('audit') },
+    { key: 'jobs', label: 'Jobs', icon: <JobsIcon />, active: tab === 'jobs', onClick: () => setTab('jobs') },
     { key: 'cmp', label: 'CMP Database', icon: <DatabaseIcon />, active: tab === 'cmp', onClick: () => setTab('cmp') },
     { key: 'dwh', label: 'Data Warehouse', icon: <WarehouseIcon />, active: tab === 'dwh', onClick: () => setTab('dwh') },
     { key: 'scope', label: 'Octane-Scope', icon: <ScopeIcon />, active: tab === 'scope', onClick: () => setTab('scope') },
@@ -65,6 +67,7 @@ export default function AdminMytrion() {
       {/* One element across both sub-tabs, so switching keeps the loaded lists and the form state. */}
       {CARRIER_TABS.includes(tab) && <CarrierUsers view={tab === 'carrier-invites' ? 'invitations' : 'registered'} />}
       {tab === 'audit' && <AuditLog />}
+      {tab === 'jobs' && <Jobs />}
       {tab === 'cmp' && <CmpDatabase />}
       {tab === 'dwh' && <DwhDatabase />}
       {tab === 'scope' && <OctaneScope />}

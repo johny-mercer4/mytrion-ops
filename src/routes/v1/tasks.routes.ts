@@ -11,10 +11,17 @@ import { AppError, NotFoundError, RBACError } from '../../lib/errors.js';
 import { agentRegistry } from '../../modules/agents/agentRegistry.js';
 import { AGENT_KEYS, isAgentKey } from '../../modules/agents/types.js';
 import { startSSE } from '../../modules/chat/streaming.js';
-import { jobsEnabled } from '../../modules/jobs/boss.js';
+import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import { triggerCatalogJob } from '../../modules/jobs/adminTrigger.js';
+import { getBoss, jobsEnabled } from '../../modules/jobs/boss.js';
 import { agentRunJob } from '../../modules/jobs/catalog.js';
 import { enqueue } from '../../modules/jobs/queue.js';
-import { jobCounts, recentFailures } from '../../modules/jobs/status.js';
+import {
+  jobCounts,
+  listJobCatalog,
+  recentFailures,
+  recentJobRuns,
+} from '../../modules/jobs/status.js';
 import { agentTaskRepo } from '../../repos/agentTaskRepo.js';
 import type { AgentTask } from '../../db/schema/index.js';
 import { buildCallerContext, callerIdentitySchema } from './callerIdentity.js';
@@ -173,5 +180,104 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
     }
     const [counts, failures] = await Promise.all([jobCounts(), recentFailures()]);
     return { counts, failures };
+  });
+
+  /** Full Admin jobs dashboard: catalog, live schedules, counts, recent runs + outputs. */
+  app.get('/agent/jobs', guard, async (request) => {
+    const q = z
+      .object({
+        ...callerIdentitySchema.shape,
+        name: z.string().max(120).optional(),
+        state: z.string().max(40).optional(),
+        limit: z.coerce.number().int().min(1).max(100).optional(),
+      })
+      .parse(request.query);
+    const ctx = await buildCallerContext(request, q);
+    if (!ctx.allDepartmentAccess && !ctx.bypassRbac) {
+      throw new RBACError('Job dashboard requires all-department (admin) access');
+    }
+
+    const enabled = jobsEnabled();
+    let counts: Awaited<ReturnType<typeof jobCounts>> = [];
+    let runs: Awaited<ReturnType<typeof recentJobRuns>> = [];
+    let schedules: Array<{ name: string; cron: string; timezone: string | null }> = [];
+    let dbError: string | undefined;
+
+    if (enabled) {
+      try {
+        [counts, runs] = await Promise.all([
+          jobCounts(),
+          recentJobRuns({
+            ...(q.name ? { name: q.name } : {}),
+            ...(q.state ? { state: q.state } : {}),
+            limit: q.limit ?? 40,
+          }),
+        ]);
+      } catch (err) {
+        dbError = err instanceof Error ? err.message : String(err);
+      }
+      try {
+        const raw = await getBoss().getSchedules();
+        schedules = raw.map((s) => ({
+          name: s.name,
+          cron: s.cron,
+          timezone: s.timezone || null,
+        }));
+      } catch {
+        // Boss may not be started yet — catalog cron still shown.
+      }
+    }
+
+    const catalog = listJobCatalog({
+      jobsEnabled: enabled,
+      liveScheduleNames: new Set(schedules.map((s) => s.name)),
+    });
+
+    return {
+      enabled,
+      ...(enabled
+        ? dbError
+          ? { reason: `pg-boss schema unread: ${dbError}` }
+          : {}
+        : { reason: 'Background jobs are disabled (set FF_JOBS_ENABLED=1 and restart).' }),
+      cronTz: env.JOBS_CRON_TZ,
+      workerMode: env.JOBS_WORKER_MODE,
+      catalog,
+      schedules,
+      counts,
+      runs,
+    };
+  });
+
+  /** Manually enqueue a catalog cron job (Admin). Retention case-sync accepts lookback/limit. */
+  app.post('/agent/jobs/:name/run', guard, async (request, reply) => {
+    requireJobs();
+    const params = z.object({ name: z.string().min(1).max(120) }).parse(request.params);
+    const body = z
+      .object({
+        ...callerIdentitySchema.shape,
+        lookback_days: z.coerce.number().int().min(3).max(365).optional(),
+        limit: z.coerce.number().int().min(1).max(2000).optional(),
+      })
+      .parse(request.body ?? {});
+    const ctx = await buildCallerContext(request, body);
+    if (!ctx.allDepartmentAccess && !ctx.bypassRbac) {
+      throw new RBACError('Triggering jobs requires all-department (admin) access');
+    }
+
+    const payload: Record<string, unknown> = {};
+    if (body.lookback_days !== undefined) payload.lookbackDays = body.lookback_days;
+    if (body.limit !== undefined) payload.limit = body.limit;
+
+    const result = await triggerCatalogJob(params.name, payload);
+    await auditFromContext(ctx, {
+      action: 'jobs.trigger',
+      status: 'ok',
+      resourceType: 'job',
+      resourceId: result.jobId,
+      detail: { queue: result.name, ...payload },
+    });
+    void reply.code(202);
+    return { queued: true, ...result };
   });
 }

@@ -1,14 +1,14 @@
 /**
- * Retention — in-page tabs for Cases and Open Pool (Open Pool reuses PoolTab).
- * Nav item stays Coming soon until this surface is ready to ship.
+ * Retention — Cases (Phase 1) + Open Pool + incoming claim approvals (Sales agents).
  */
 import { useState } from 'react';
 
 import { s } from '../dc';
-import { Icon } from '../icons';
+import { PoolClaimsPane } from '../PoolClaimsPane';
+import { RetentionCasesPane } from '../RetentionCasesPane';
 import { PoolTab } from './PoolTab';
 
-type RetentionPane = 'cases' | 'pool';
+type RetentionPane = 'cases' | 'pool' | 'claims';
 
 export function RetentionTab() {
   const [pane, setPane] = useState<RetentionPane>('cases');
@@ -16,6 +16,7 @@ export function RetentionTab() {
   const tabs: Array<[RetentionPane, string]> = [
     ['cases', 'Cases'],
     ['pool', 'Open Pool'],
+    ['claims', 'Claims'],
   ];
 
   return (
@@ -36,19 +37,9 @@ export function RetentionTab() {
         })}
       </div>
 
-      {pane === 'cases' && (
-        <div style={s('padding:48px 24px;text-align:center;border-radius:var(--radius-md);border:1px dashed var(--border);background:var(--alt)')}>
-          <div style={s('width:44px;height:44px;margin:0 auto 14px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)')}>
-            <Icon name="clock" size={22} />
-          </div>
-          <div style={s('font-size:15px;font-weight:700')}>Cases</div>
-          <div style={s('font-size:12.5px;color:var(--muted);margin-top:6px;max-width:320px;margin-left:auto;margin-right:auto;line-height:1.5')}>
-            Retention cases board is coming soon.
-          </div>
-        </div>
-      )}
-
+      {pane === 'cases' && <RetentionCasesPane />}
       {pane === 'pool' && <PoolTab />}
+      {pane === 'claims' && <PoolClaimsPane />}
     </div>
   );
 }

@@ -38,8 +38,28 @@ describe('catalog shape', () => {
   it('has unique keys and the expected size', () => {
     const keys = all.map((t) => t.key);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(29);
-    expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(44);
+    // Billing kept only 1 Deluge touchpoint (invoices.search, a CMP read); the rest of the
+    // Transactions/Returns/carrier surface moved to Postgres-backed REST routes.
+    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(30);
+    // +7 billing servercrm touchpoints (deals, debtors, avg-days, carrier-type, 3× prepay).
+    expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(51);
+    // BOCA + Close Application (Playwright microservice) + Zapier ticket-email webhook.
+    expect(all.filter((t) => t.kind === 'browserauto')).toHaveLength(2);
+    expect(all.filter((t) => t.kind === 'zapier')).toHaveLength(1);
+  });
+
+  it('billing touchpoints are billing-gated and portfolio-wide (no owner scoping)', () => {
+    const billing = all.filter((t) => t.key.startsWith('billing.'));
+    // 1 Deluge (invoices.search) + 7 servercrm (DWH/prepay reads); everything else is now REST.
+    expect(billing).toHaveLength(8);
+    for (const tp of billing) {
+      expect(tp.departments, `${tp.key} must be billing-gated`).toEqual(['billing']);
+      // Billing is a portfolio role: no per-agent carrier ownership gate (would wrongly
+      // block agents from carriers not on their personal roster).
+      expect(tp.carrierParam, `${tp.key} must NOT be owner-scoped`).toBeUndefined();
+    }
+    // Money-adjacent mapping writes are 'write' (billing's core job), never 'destructive'.
+    expect(billing.some((t) => t.riskClass === 'destructive')).toBe(false);
   });
 
   it('finance touchpoints are finance-department scoped and cover the widget surface', () => {

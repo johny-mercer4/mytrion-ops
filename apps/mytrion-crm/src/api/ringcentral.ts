@@ -21,3 +21,31 @@ export async function fetchRingCentralEmbedConfig(): Promise<RingCentralEmbedCon
     headers: SALES_HEADERS,
   })) as RingCentralEmbedConfig;
 }
+
+/** A normalized RingCentral call-lifecycle event (kept in sync with callEventSchema on the backend). */
+export interface RingCentralCallEventPayload {
+  kind: 'ringing' | 'connected' | 'ended' | 'login' | 'logout';
+  sessionId?: string;
+  direction?: 'Inbound' | 'Outbound';
+  from?: string;
+  to?: string;
+  telephonyStatus?: string;
+  result?: string;
+  startTime?: string;
+  durationMs?: number;
+  /** CRM correlation — the Data Center lead/deal this call was dialed from (outbound only). */
+  leadId?: string;
+  dealId?: string;
+}
+
+/**
+ * Forward one call-lifecycle event to the ops backend for the audit trail ("which number, when,
+ * how it ended"). The softphone bridge calls this for every event, so callers must swallow errors —
+ * a logging hiccup must never surface to the agent mid-call.
+ */
+export async function postRingCentralCallEvent(payload: RingCentralCallEventPayload): Promise<void> {
+  await request('POST', '/ringcentral/call-events', {
+    headers: SALES_HEADERS,
+    body: payload,
+  });
+}
