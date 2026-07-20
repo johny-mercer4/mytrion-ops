@@ -274,6 +274,20 @@ export async function fetchBalance(initData: string): Promise<CarrierBalance> {
   return (await request('POST', '/carrier/mini-app/balance', { initData })) as CarrierBalance;
 }
 
+/** Driver-safe funds check — booleans only, never the figure (the amount is the owner's business). */
+export interface CardFundsResult {
+  /** true/false from the live EFS pool; null = EFS unreachable → show "unknown", not "no money". */
+  hasFunds: boolean | null;
+  accountActive: boolean | null;
+  /** The caller's own card's status (drivers only; null for owners). */
+  cardStatus: string | null;
+  efsError: string | null;
+}
+
+export async function fetchCardFunds(initData: string): Promise<CardFundsResult> {
+  return (await request('POST', '/carrier/mini-app/card/funds', { initData })) as CardFundsResult;
+}
+
 export async function fetchAccountStatus(initData: string): Promise<StatusResult> {
   return (await request('POST', '/carrier/mini-app/status', { initData })) as StatusResult;
 }
@@ -285,7 +299,8 @@ export async function fetchAccountStatus(initData: string): Promise<StatusResult
  */
 export async function fetchTransactions(
   initData: string,
-  range?: { range?: string; from?: string; to?: string },
+  /** `cardId` (owner only) narrows to one card — ignored server-side for drivers. */
+  range?: { range?: string; from?: string; to?: string; cardId?: string },
   live = false,
 ): Promise<TransactionsResult> {
   return (await request('POST', '/carrier/mini-app/transactions', { initData, ...range, live })) as TransactionsResult;
@@ -335,7 +350,8 @@ export type ServiceRequestKey =
   | 'card-fraud'
   | 'billing-form'
   | 'ref-guides'
-  | 'account-reactivate';
+  | 'account-reactivate'
+  | 'dispute-txn';
 
 /**
  * File a real Zoho Desk ticket. The card is NOT sent — the backend resolves a driver's card from
@@ -368,17 +384,20 @@ export interface TxnExportSent {
  */
 export async function sendTransactionsReport(
   initData: string,
-  range: { range?: string; from?: string; to?: string },
+  range: { range?: string; from?: string; to?: string; cardId?: string },
   format: TxnExportFormat,
   /** 'retail' = the "without discount" variant (EFS Retail Price Only). Ignored for drivers —
    * the backend forces retail for them regardless of what is sent. */
   priceMode: 'discount' | 'retail' = 'discount',
+  /** Full card number + Driver/Unit/Driver ID columns. */
+  detailed = false,
 ): Promise<TxnExportSent> {
   return (await request('POST', '/carrier/mini-app/transactions/export', {
     initData,
     ...range,
     format,
     priceMode,
+    detailed,
   })) as TxnExportSent;
 }
 
@@ -428,16 +447,18 @@ export async function setCardLimits(
   >;
 }
 
-/** C-26 — unit number / driver id / driver name on the card, in EFS. Owner-only. */
+/** C-26 — unit number / driver id / driver name on the card, in EFS. Owner: any card via cardId;
+ *  DRIVER: omit cardId (pinned to their own card server-side), unitNumber/driverId only. */
 export async function updateCardInfo(
   initData: string,
-  cardId: string,
+  cardId: string | undefined,
   fields: { unitNumber?: string; driverId?: string; driverName?: string },
 ): Promise<Record<string, unknown>> {
-  return (await request('POST', '/carrier/mini-app/card/info', { initData, cardId, ...fields })) as Record<
-    string,
-    unknown
-  >;
+  return (await request('POST', '/carrier/mini-app/card/info', {
+    initData,
+    ...(cardId ? { cardId } : {}),
+    ...fields,
+  })) as Record<string, unknown>;
 }
 
 /** C-10 — raise a fraud hold/release request (a human on the fraud team acts on it). Owner-only. */

@@ -47,8 +47,10 @@ const DRIVER_CATALOG: CatalogGroup[] = [
       // ask, but for a DRIVER it is an owner-authorized action (the money-code backend is owner-only),
       // so it sits in the `soon` block below until a driver→owner approval flow exists — surfacing it
       // as an openable request a driver cannot complete would only dead-end them.
+      // "Does my card have money behind it?" — the first question at a declined pump. Boolean-only
+      // funds check (shared EFS pool, amount never shown to a driver — see /card/funds).
+      { key: 'drv-funds', labelKey: 'cat.drvFunds', icon: 'wallet', action: 'funds' },
       { key: 'drv-override-card', labelKey: 'cat.drvOverrideCard', icon: 'lock', action: 'generic', request: 'override-card' },
-      { key: 'drv-stations', labelKey: 'cat.supFindStations', icon: 'pin', action: 'stations' },
       { key: 'drv-txns', labelKey: 'cat.drvTxns', icon: 'list', action: 'txns' },
       // Both of these read data the backend ALREADY scopes to the driver's own card, so neither
       // needed a new endpoint — they were simply missing from the catalog. `last-used` was wired end
@@ -59,7 +61,7 @@ const DRIVER_CATALOG: CatalogGroup[] = [
       // Soon — money code is an owner-authorized action; a driver cannot self-serve it yet.
       { key: 'drv-money-code', labelKey: 'cat.drvMoneyCode', icon: 'banknote', action: null },
       { key: 'drv-hold-unhold', labelKey: 'cat.drvHoldUnhold', icon: 'clock', action: null },
-      { key: 'drv-change-pin', labelKey: 'cat.drvChangePin', icon: 'key', action: null },
+      { key: 'drv-change-pin', labelKey: 'cat.drvChangePin', icon: 'key', action: 'pinunit' },
     ],
   },
 ];
@@ -70,7 +72,7 @@ const OWNER_CATALOG: CatalogGroup[] = [
     items: [
       // Demand-ranked (same analysis): money code is the #1 ask by 3×; balance also lives on the
       // home hero, so it does not need the top slot here.
-      { key: 'fin-money-code', labelKey: 'cat.finMoneyCode', icon: 'banknote', action: 'generic', request: 'money-code' },
+      { key: 'fin-money-code', labelKey: 'cat.finMoneyCode', icon: 'banknote', action: 'moneycode' },
       { key: 'fin-balance', labelKey: 'cat.finBalance', icon: 'wallet', action: 'balance' },
       { key: 'fin-txn-reports', labelKey: 'cat.finTxnReports', icon: 'list', action: 'txns' },
       { key: 'fin-invoice-view', labelKey: 'cat.finInvoiceView', icon: 'doc', action: 'invoices' },
@@ -85,9 +87,9 @@ const OWNER_CATALOG: CatalogGroup[] = [
   {
     groupLabelKey: 'svcgrp.cardMgmt',
     items: [
-      { key: 'card-activate', labelKey: 'cat.cardActivate', icon: 'card', action: 'generic', request: 'card-activate' },
+      { key: 'card-activate', labelKey: 'cat.cardActivate', icon: 'card', action: 'cardops' },
       { key: 'card-status', labelKey: 'cat.cardStatus', icon: 'shield', action: 'status' },
-      { key: 'card-limit', labelKey: 'cat.cardLimit', icon: 'list', action: 'generic', request: 'card-limit' },
+      { key: 'card-limit', labelKey: 'cat.cardLimit', icon: 'list', action: 'cardops' },
       { key: 'card-replace', labelKey: 'cat.cardReplace', icon: 'refresh', action: 'generic', request: 'card-replace' },
       { key: 'card-fraud', labelKey: 'cat.cardFraud', icon: 'alert', action: 'generic', request: 'card-fraud' },
       { key: 'card-track', labelKey: 'cat.cardTrack', icon: 'pin', action: 'tracking' },
@@ -117,9 +119,9 @@ const OWNER_CATALOG: CatalogGroup[] = [
   {
     groupLabelKey: 'svcgrp.support',
     items: [
-      // Demand-ranked (chat analysis): stations 814 asks (the "supported truck stops" list was
-      // pasted into chats weekly — now a static in-app page), roadside/service booking 757 next.
-      { key: 'sup-find-stations', labelKey: 'cat.supFindStations', icon: 'pin', action: 'stations' },
+      // Demand-ranked (chat analysis): stations 814 asks (covered by the MOBILE app, deliberately
+      // NOT the mini-app — owner decision 2026-07-20), roadside/service booking 757 next.
+      { key: 'sup-find-stations', labelKey: 'cat.supFindStations', icon: 'pin', action: null },
       { key: 'sup-book-service', labelKey: 'cat.supBookService', icon: 'truck', action: null },
       { key: 'sup-dispute-txn', labelKey: 'cat.supDisputeTxn', icon: 'alert', action: 'generic', request: 'dispute-txn' },
       { key: 'sup-talk-agent', labelKey: 'cat.supTalkAgent', icon: 'headset', action: null },
@@ -136,7 +138,7 @@ export function defaultPinned(isDriver: boolean): string[] {
   // already lives on the home hero, so its pin slot goes to reports instead. Only affects users
   // with no stored pins — a user's own arrangement always wins.
   return isDriver
-    ? ['drv-override-card', 'drv-txns'] // not drv-money-code: it is a `soon` (owner-authorized) item for drivers, so it isn't pinnable
+    ? ['drv-funds', 'drv-override-card', 'drv-txns'] // not drv-money-code: it is a `soon` (owner-authorized) item for drivers, so it isn't pinnable
     : ['fin-money-code', 'card-status', 'fin-txn-reports', 'fin-invoice-view'];
 }
 

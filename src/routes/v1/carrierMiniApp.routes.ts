@@ -10,7 +10,7 @@ import { AppError, ConflictError, NotFoundError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { env, isProduction } from '../../config/env.js';
 import { db } from '../../db/client.js';
-import { FLEET_CARD_LIMIT, getDwhCompanyDetails, listDwhCards, findDwhCardByNumber } from '../../integrations/dwhCards.js';
+import { FLEET_CARD_LIMIT, getDwhCompanyDetails, listDwhCards, findDwhCardByIdAnyStatus, findDwhCardByNumber } from '../../integrations/dwhCards.js';
 import { listDwhTransactions, resolveDwhTxnRange } from '../../integrations/dwhTransactions.js';
 import { searchDwhClients } from '../../integrations/dwhClients.js';
 import { searchDwhOperators } from '../../integrations/dwhOperators.js';
@@ -137,13 +137,19 @@ const rangeSchema = z.object({
  *                     costs 3–24s. The caller fires this second and swaps the list in.
  * Default false so a caller that never heard of `live` gets the fast path, not the slow one.
  */
-const txnRangeSchema = rangeSchema.extend({ live: z.boolean().optional().default(false) });
+/** Owner narrowing to ONE card — the accounting "driver-level report" ask (41 chat requests:
+ *  "Unit 2022 ni statementiga", per-driver fuel statements). Opaque cardId, resolved against the
+ *  caller's own carrier only; a DRIVER's scope stays their registered card and this field is
+ *  ignored for them (never a way to widen). */
+const txnCardFilter = { cardId: z.string().min(1).max(120).optional() };
+const txnRangeSchema = rangeSchema.extend({ live: z.boolean().optional().default(false), ...txnCardFilter });
 /** `priceMode` mirrors the EFS report builder's "Show Discount Detail" / "Retail Price Only"
  *  toggles (Display Features spec): 'discount' is today's report; 'retail' re-prices Amount to
  *  funded+discount and blanks the Discount column. A DRIVER is always forced to 'retail' in the
  *  route — owners hide their discount terms from drivers ("driverga discount kursatish shart
  *  emas"), and a missing toggle must not be what enforces that. */
 const txnExportSchema = rangeSchema.extend({
+  ...txnCardFilter,
   format: z.enum(['csv', 'xlsx', 'pdf']).default('xlsx'),
   priceMode: z.enum(['discount', 'retail']).default('discount'),
   /** Full card number + Driver/Unit/Driver ID columns (client feedback; EFS "Show Entire Card
@@ -750,6 +756,43 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   });
 
   /**
+   * Driver-safe funds check — "is there money behind my card right now?" as a BOOLEAN, never the
+   * figure. Every card draws on the carrier's shared EFS pool (there is no per-card balance), and
+   * the company's money is the owner's business, not the driver's — so this endpoint reduces the
+   * live EFS read to hasFunds + account standing and, for a driver, their own card's status. The
+   * owner keeps the full-figure /balance above; this one answers the driver's "will the pump
+   * decline me?" moment without leaking the amount.
+   */
+  app.post('/carrier/mini-app/card/funds', async (request) => {
+    const body = selfServiceSchema.parse(request.body);
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const [balance, cards] = await Promise.all([
+      serverCrmWrapper.getCarrierBalance(carrierId).catch(() => null),
+      serverCrmWrapper.getCards(carrierId).catch(() => null),
+    ]);
+
+    // null efs_balance = EFS outage → hasFunds null means "unknown", NOT "no money" — the UI must
+    // show a neutral state rather than telling a driver at the pump their company is broke.
+    const efsBalance = balance?.efs_balance;
+    const hasFunds = typeof efsBalance === 'number' ? efsBalance > 0 : null;
+
+    let cardStatus: string | null = null;
+    if (registration.profile === 'driver') {
+      const cardNumber = await requireDriverCardNumber(registration);
+      const rows = scopeRowsToCard(cards?.data ?? [], cardNumber);
+      const raw = rows[0]?.['status'];
+      cardStatus = typeof raw === 'string' && raw.length > 0 ? raw : null;
+    }
+
+    return {
+      hasFunds,
+      accountActive: typeof balance?.is_active === 'boolean' ? balance.is_active : null,
+      cardStatus,
+      efsError: balance == null ? 'BALANCE_UNAVAILABLE' : (balance.efs_error ?? null),
+    };
+  });
+
+  /**
    * The carrier's company profile (id, contact, address) for the owner's profile sheet.
    *
    * Owner-only: this is company-level contact and address data, an account holder's view — a driver
@@ -787,12 +830,32 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    * A driver is scoped to their own card in BOTH phases — at the SQL level on the fast path, and by
    * filtering servercrm's carrier-wide payload on the merged path.
    */
+  /** Owner's optional single-card narrowing for transaction reads/exports. Fail-closed: the
+   *  opaque cardId must resolve within the CALLER'S carrier (active cards), else 404 — a guessed
+   *  or foreign id never becomes a filter, and a driver never reaches this path at all. */
+  async function resolveOwnerCardFilter(carrierId: string, cardId: string | undefined): Promise<string | null> {
+    if (!cardId) return null;
+    // Any-status on purpose: this is a HISTORY read — a deactivated card's past spend is
+    // still reportable. Ownership (same carrier) is the gate, not activity.
+    const card = await findDwhCardByIdAnyStatus(carrierId, cardId).catch(() => null);
+    if (!card) {
+      throw new AppError('That card was not found on your account.', {
+        statusCode: 404,
+        code: 'CARD_NOT_FOUND',
+        expose: true,
+      });
+    }
+    return card.cardNumber;
+  }
+
   app.post('/carrier/mini-app/transactions', async (request) => {
     const body = txnRangeSchema.parse(request.body);
     const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
     const opts = { range: body.range, from: body.from, to: body.to };
     const isDriver = registration.profile === 'driver';
-    const cardNumber = isDriver ? await requireDriverCardNumber(registration) : null;
+    const cardNumber = isDriver
+      ? await requireDriverCardNumber(registration)
+      : await resolveOwnerCardFilter(carrierId, body.cardId);
 
     if (!body.live) {
       const result = await listDwhTransactions({
@@ -824,7 +887,9 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
     const { telegramUserId } = verifyTelegramUser(body.initData);
     const isDriver = registration.profile === 'driver';
-    const cardNumber = isDriver ? await requireDriverCardNumber(registration) : null;
+    const cardNumber = isDriver
+      ? await requireDriverCardNumber(registration)
+      : await resolveOwnerCardFilter(carrierId, body.cardId);
 
     const result = await listDwhTransactions({
       carrierId,
@@ -848,7 +913,8 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     const report = await buildTxnReport(result.data, body.format, {
       company: registration.companyName ?? 'Octane',
       range: rangeLabel,
-      cardLast4: cardNumber ? cardNumber.slice(-4) : String(carrierId),
+      // Product rule 2026-07-20: last SIX digits identify a fuel card (field name is historical).
+      cardLast4: cardNumber ? cardNumber.slice(-6) : String(carrierId),
       scopedToCard: Boolean(cardNumber),
       priceMode,
       detailed: body.detailed,
@@ -862,7 +928,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     // sheet just showed, so the two agree. Company name is escaped: it is data, and a stray '&'
     // would make Telegram reject the send outright.
     const money = (v: unknown) => `$${Number(v ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    const scope = cardNumber ? `Card •••• ${cardNumber.slice(-4)}` : 'All cards';
+    const scope = cardNumber ? `Card •••• ${cardNumber.slice(-6)}` : 'All cards';
     // Retail mode: no "saved" figure — the discount is exactly what this variant exists to hide
     // (drivers are always retail), and the spent figure is re-priced to match the file.
     const retailSpent = Number(result.totals['funded_total'] ?? 0) + Number(result.totals['discount_amount'] ?? 0);

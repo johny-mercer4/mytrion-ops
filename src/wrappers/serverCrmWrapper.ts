@@ -47,10 +47,21 @@ export interface CarrierTransactions {
   [k: string]: unknown;
 }
 
+/** carrier-balance payload (servercrm agentDwh.getCarrierBalance). `efs_balance` is the carrier's
+ *  live available funds for BOTH account types — LOC: room on the line; prepay: prepaid balance —
+ *  and is null (with `efs_error` set) when EFS is unreachable. */
+export interface CarrierBalance {
+  is_active?: boolean;
+  account_type?: string | null;
+  efs_balance?: number | null;
+  efs_error?: string | null;
+  [k: string]: unknown;
+}
+
 export const serverCrmWrapper = {
   /** Real-time carrier limit + EFS balance (servercrm calls live EFS internally). */
   getCarrierBalance(carrierId: string) {
-    return crmGet(`/api/agent/dwh/carrier-balance/${encodeURIComponent(carrierId)}`);
+    return crmGet<CarrierBalance>(`/api/agent/dwh/carrier-balance/${encodeURIComponent(carrierId)}`);
   },
 
   /** Account standing + debt — combines DWH context, live EFS balance, and CMP invoice debt. */
