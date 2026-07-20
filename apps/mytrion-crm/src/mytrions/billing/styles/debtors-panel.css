@@ -320,20 +320,20 @@
 .bm-root .bm-debtors-panel .db-col-count   { flex: 0.7 1 0; text-align: right; }
 .bm-root .bm-debtors-panel .db-col-remain  { flex: 1 1 0; text-align: right; }
 
-/* Design: cycle is a neutral muted chip (not accent-blue), normal case. */
+/* Design chip('muted') — muted-tinted, 11px/600, 3px radius, normal case. */
 .bm-root .db-cycle-badge {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0.2rem 0.5rem;
-    border-radius: var(--radius-sm);
+    padding: 2px 8px;
+    border-radius: 3px;
     font-size: 0.6875rem;
     font-weight: 600;
-    letter-spacing: 0.01em;
+    letter-spacing: 0;
     text-transform: none;
-    background: var(--surface-raised);
-    color: var(--text-secondary);
-    border: 1px solid var(--border);
+    background: var(--muted-bg);
+    color: var(--mutedc);
+    border: 1px solid var(--muted-bd);
     white-space: nowrap;
 }
 .bm-root .db-cycle-none {
@@ -358,16 +358,18 @@
     text-overflow: ellipsis;
 }
 
+/* Design chip() — 11px/600, 3px radius, normal case (Returns Type + Debtors Status). */
 .bm-root .db-status-badge {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0.2rem 0.5rem;
-    border-radius: var(--radius-sm);
-    font-size: 0.5625rem;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    white-space: nowrap;
 }
 
 .bm-root .db-status-pending {

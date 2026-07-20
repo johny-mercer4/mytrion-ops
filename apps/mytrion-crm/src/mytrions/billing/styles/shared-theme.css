@@ -106,6 +106,10 @@
     --track:        rgba(200, 204, 218, 0.08);
     --card-shadow:  none;
     --dim:          #3f465e;
+    /* Design muted-chip sem tokens (chip('muted')). */
+    --mutedc:       #9399b4;
+    --muted-bg:     rgba(200, 204, 218, 0.06);
+    --muted-bd:     rgba(200, 204, 218, 0.14);
 
     /* ── Status ── */
     --success: #2ECC71;
@@ -213,6 +217,10 @@
     --track:        rgba(79, 88, 150, 0.13);
     --card-shadow:  0 1px 2px rgba(20, 23, 49, 0.05), 0 6px 16px rgba(37, 99, 235, 0.07);
     --dim:          #b4bad4;
+    /* Design muted-chip sem tokens (chip('muted')). */
+    --mutedc:       #565d85;
+    --muted-bg:     rgba(79, 88, 150, 0.10);
+    --muted-bd:     rgba(79, 88, 150, 0.20);
 
     /* Shadows — soft blue-tinted, avoid flat gray */
     --shadow-sm: 0 1px 4px rgba(37, 99, 235, 0.07), 0 1px 2px rgba(0,0,0,0.04);
