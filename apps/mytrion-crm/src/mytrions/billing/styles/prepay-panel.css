@@ -3,6 +3,29 @@
    Daily reconciliation ledger. Token-based (light + dark safe).
    ===================================================== */
 
+/* Cell loader — shown in Loaded / Payments / Difference (and the KPI totals) while EFS-RMVE and the
+   deferred externals batch are still computing, so half-calculated numbers aren't read as final.
+   Reuses the datacenter shimmer keyframes (all billing CSS loads together). */
+.bm-root .pp-cell-skeleton {
+    display: inline-block;
+    width: 68px;
+    height: 13px;
+    border-radius: 3px;
+    background: linear-gradient(
+        90deg,
+        var(--surface-alt) 25%,
+        var(--surface-raised) 50%,
+        var(--surface-alt) 75%
+    );
+    background-size: 200% 100%;
+    animation: dc-shimmer 1.4s ease-in-out infinite;
+    vertical-align: middle;
+}
+.bm-root .pp-cell-skeleton-lg {
+    width: 120px;
+    height: 22px;
+}
+
 /* ── Filter bar: its own full-width row under the title so every filter
    fits on ONE line (mirrors the Returns rt-toolbar); wraps only when
    space truly runs out. ── */

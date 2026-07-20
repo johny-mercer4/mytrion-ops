@@ -143,24 +143,15 @@ export async function getPrepayCompanies(opts: {
     warnings.push(`payments-pg: ${(e as Error).message}`);
   }
 
-  // 4. EFS money codes + Zoho Maintenance + CMP Stripe (servercrm).
-  try {
-    const res = await serverCrmGet<ExternalsReply>(
-      `/api/billing/prepay-externals?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
-    );
-    for (const [cid, ext] of Object.entries(res.externals ?? {})) {
-      const a = agg.get(cid);
-      if (!a) continue;
-      a.money_code += Number(ext.money_code) || 0;
-      a.maintenance += Number(ext.maintenance) || 0;
-      a.stripe += Number(ext.stripe) || 0;
-    }
-    if (res.warnings?.length) warnings.push(...res.warnings.map((w) => `externals: ${w}`));
-  } catch (e) {
-    warnings.push(`externals: ${(e as Error).message}`);
-  }
+  // NOTE: externals (EFS money codes + Zoho Maintenance + CMP Stripe) are the slow source
+  // (~7.2s of an ~8.5s total — CMP Stripe pagination). They are DEFERRED to a separate background
+  // call (getPrepayExternalsBatch → GET /billing/prepay/externals) that the frontend fires once
+  // this list renders, patching money_code/maintenance/stripe into rows in place — mirroring the
+  // lazy EFS-RMVE enrichment. So this endpoint returns from DWH + PG only (~1.3s) and the list
+  // shows as fast as the other tabs; the externals fill in a moment later.
 
-  // 5. Assemble rows + totals (servercrm formula).
+  // 5. Assemble rows + totals (servercrm formula). money_code/maintenance/stripe are 0 here and
+  // get patched in by the deferred externals batch.
   const companies: PrepayCompanyRow[] = [];
   let totalLoaded = 0;
   let totalPayments = 0;
@@ -199,6 +190,18 @@ export async function getPrepayCompanies(opts: {
     range: { startDate, endDate },
     warnings,
   };
+}
+
+/**
+ * Deferred externals batch — EFS money codes + Zoho Maintenance + CMP Stripe, per carrier, for the
+ * window. Split out of getPrepayCompanies because it's the slow source (CMP Stripe pagination); the
+ * frontend fetches it in the background after the base list renders and patches rows in place.
+ * `endDate` is EXCLUSIVE (widget convention). Returns servercrm's `{ externals, warnings }` reply.
+ */
+export async function getPrepayExternalsBatch(startDate: string, endDate: string): Promise<ExternalsReply> {
+  return serverCrmGet<ExternalsReply>(
+    `/api/billing/prepay-externals?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+  );
 }
 
 /** Per-carrier daily ledger (modal) — proxied to servercrm for now. */

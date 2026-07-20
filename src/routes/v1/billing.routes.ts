@@ -22,7 +22,12 @@ import {
   reverseMapping,
 } from '../../modules/billing/cmpWrites.js';
 import { fuzzyResolveCarrier } from '../../modules/billing/fuzzyCarrier.js';
-import { getPrepayCompanies, getPrepayLedgerProxy, getPrepayRmveProxy } from '../../modules/billing/prepayLedger.js';
+import {
+  getPrepayCompanies,
+  getPrepayExternalsBatch,
+  getPrepayLedgerProxy,
+  getPrepayRmveProxy,
+} from '../../modules/billing/prepayLedger.js';
 import { toCandidateWire, toReturnWire, toTxWire } from '../../modules/billing/wire.js';
 import { carrierMemoryRepo } from '../../repos/carrierMemoryRepo.js';
 import { paymentReturnRepo } from '../../repos/paymentReturnRepo.js';
@@ -173,6 +178,14 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     requireBillingAccess(request);
     const q = prepayRange.parse(request.query);
     return getPrepayCompanies(q);
+  });
+
+  /** Deferred prepay externals (EFS money codes + Zoho Maintenance + CMP Stripe) — the slow source,
+   *  fetched in the background by the frontend after the companies list renders. */
+  app.get('/billing/prepay/externals', guard, async (request) => {
+    requireBillingAccess(request);
+    const q = prepayRange.parse(request.query);
+    return getPrepayExternalsBatch(q.startDate, q.endDate);
   });
 
   /** Per-carrier daily reconciliation ledger (modal) — proxied to servercrm. */

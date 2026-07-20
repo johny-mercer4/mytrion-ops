@@ -93,6 +93,14 @@ export function fetchPrepayRmve(
   );
 }
 
+/** Deferred prepay externals (EFS money codes + Zoho Maintenance + CMP Stripe) — the slow source,
+ *  loaded in the background after the companies list renders and patched into rows. */
+export function fetchPrepayExternals(startDate: string, endDate: string): Promise<Record<string, unknown>> {
+  return billingGet(
+    `/billing/prepay/externals?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+  );
+}
+
 /** Per-carrier daily reconciliation ledger (modal; proxied to servercrm). */
 export function fetchPrepayLedger(
   carrierId: string,
