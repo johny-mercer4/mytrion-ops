@@ -32,6 +32,11 @@ export interface SocketOptions {
   onClose?: () => void;
   /** Set false to disable (e.g. no session yet). Default true. */
   enabled?: boolean;
+  /**
+   * When this value changes (e.g. View-as user id), tear down and reopen the socket so the
+   * subscribe frame is bound to the new identity. Payload-only changes still use `resubscribe()`.
+   */
+  watchKey?: string;
 }
 
 /**
@@ -122,9 +127,9 @@ export function useServerCrmSocket(opts: SocketOptions): { resubscribe: () => vo
         socketRef.current = null;
       }
     };
-    // Reconnect lifecycle is keyed on enabled only; payload changes ride optsRef + resubscribe().
+    // Reconnect when enabled/watchKey change; ticket id list updates use resubscribe().
     // eslint-disable-next-line
-  }, [opts.enabled]);
+  }, [opts.enabled, opts.watchKey]);
 
   return { resubscribe };
 }

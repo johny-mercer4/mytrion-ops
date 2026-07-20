@@ -18,7 +18,7 @@ export function addBusinessDays(from: Date, days: number): Date {
 }
 
 export const PHASE1_DEADLINE_TYPE = '2BD_agent_action' as const;
-export const COMMS_ATTEMPT_DEADLINE_TYPE = '1BD_comms_attempt' as const;
+export const COMMS_ATTEMPT_DEADLINE_TYPE = '5BD_comms_attempt' as const;
 export const POST_CONTACT_DEADLINE_TYPE = '5BD_post_contact' as const;
 export const POOL_CLAIM_DEADLINE_TYPE = '3BD_pool_claim' as const;
 /** Owner has 1 BD to approve an Open Pool claim request (else auto-approve). */
@@ -82,7 +82,7 @@ export function stampPhase1ActionDeadline(now: Date = new Date()): DeadlineStamp
 }
 
 export function stampCommsAttemptDeadline(now: Date = new Date()): DeadlineStamp {
-  return stampBusinessDays(1, COMMS_ATTEMPT_DEADLINE_TYPE, now);
+  return stampBusinessDays(5, COMMS_ATTEMPT_DEADLINE_TYPE, now);
 }
 
 export function stampPostContactDeadline(now: Date = new Date()): DeadlineStamp {
@@ -126,7 +126,7 @@ export function handoffToRetention(
     phaseCode: RETENTION_PHASE.retention,
     statusCode: 'p2_new',
     agentOutcome: opts.agentOutcome ?? null,
-    assignedAgentZohoUserId: null,
+    // Keep sales assignee so Dissatisfied / Closed still appear on the agent Kanban.
     currentDeadlineAt: wait.currentDeadlineAt,
     currentDeadlineType: wait.currentDeadlineType,
     vacationCountdownEnd: null,
@@ -223,15 +223,15 @@ export function resetPhase1AfterOps(
   const now = opts.now ?? new Date();
   const action = stampPhase1ActionDeadline(now);
   return {
-    phaseCode: RETENTION_PHASE.agent,
-    statusCode: 'p1_new',
+      phaseCode: RETENTION_PHASE.agent,
+    statusCode: 'p1_in_progress',
     agentOutcome: null,
     outOfReachAttempts: 0,
     vacationCountdownEnd: null,
     currentDeadlineAt: action.currentDeadlineAt,
     currentDeadlineType: action.currentDeadlineType,
     eventType: 'signoff',
-    eventNotes: 'Ops confirmed vacation — back to Phase 1',
+    eventNotes: 'Ops confirmed vacation — back to Phase 1 (New)',
   };
 }
 
@@ -241,11 +241,13 @@ export function reachedWatching(opts: { now?: Date } = {}): CaseTransitionPatch 
   return {
     phaseCode: RETENTION_PHASE.agent,
     statusCode: 'p1_reached',
-    agentOutcome: 'returned',
+    agentOutcome: 'reached',
+    // Clear OoR attempt counter — Reached is watch-only (no channel attempts).
+    outOfReachAttempts: 0,
     currentDeadlineAt: watch.currentDeadlineAt,
     currentDeadlineType: watch.currentDeadlineType,
     eventType: 'outcome_recorded',
-    eventNotes: 'Reached — 5 BD window for new transaction',
+    eventNotes: 'Reached — watch 5 BD for fuel (closes on txn; else Open Pool)',
   };
 }
 
@@ -323,7 +325,7 @@ export function describeDeadline(row: Pick<RetentionCase, 'currentDeadlineType'>
     case PHASE1_DEADLINE_TYPE:
       return '2 BD agent action';
     case COMMS_ATTEMPT_DEADLINE_TYPE:
-      return '1 BD comms attempt';
+      return '5 BD comms attempt';
     case POST_CONTACT_DEADLINE_TYPE:
       return '5 BD post-contact';
     case POOL_CLAIM_DEADLINE_TYPE:

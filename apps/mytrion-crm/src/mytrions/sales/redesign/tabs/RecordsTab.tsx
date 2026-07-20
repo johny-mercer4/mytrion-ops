@@ -4,11 +4,11 @@
  * per-tab search and a board/list toggle for the pipeline tabs.
  *
  * Live data:
- *   - Clients     → loadRecords()   (clients.by_agent + cycle gallons from dashboard.agent_sales)
+ *   - Clients     → loadRecords()   (ONE DWH roster query: dim_company + mart_transaction_line_items + cmp_invoice)
  *   - Leads       → loadLeads()      (Zoho CRM COQL, Owner-scoped)
  *   - Deals       → loadDeals()      (Zoho CRM COQL, Owner-scoped)
  *   - Rejections  → loadRejections() (Zoho CRM COQL — lost/declined Deals, Owner-scoped)
- *   - Money Codes → no CRM/COQL source (issued via EFS; not a Zoho module) → styled empty state
+ *   - Money Codes → local Ops DB money_code_requests (own draws + void; codes never shown)
  */
 import { useMemo, useState } from 'react';
 import { s } from '../dc';
@@ -28,6 +28,7 @@ import { useCachedLoad, formatCachedAt, type CachedLoad } from '../dcCache';
 import { getImpersonation } from '@/api/impersonation';
 import { useSales } from '../ctx';
 import { LeadsView, DealsView, RejectionsView } from '../dataCenterViews';
+import { MoneyCodesView } from '../dataCenterMoneyCodes';
 
 /** Tier level from this-CALENDAR-month gallons (the program basis), falling back to this-cycle
  *  gallons when the client has no current-month pumps yet — so a mid-month/empty month never
@@ -95,7 +96,7 @@ const SEARCH_PLACEHOLDER: Record<DcSub, string> = {
   leads: 'Search leads by name, company, source, email or phone…',
   deals: 'Search deals by company or deal name…',
   rejections: 'Search rejections by company, app ID or reason…',
-  money: 'Search money codes by code or carrier…',
+  money: 'Search by company or carrier ID…',
 };
 
 const VIEW_BTNS: { v: PipeView; label: string; icon: IconName }[] = [
@@ -405,20 +406,7 @@ export function RecordsTab() {
         </Gate>
       )}
 
-      {dcSub === 'money' && (
-        <div style={s('padding:20px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
-          <div style={s('font-size:13px;font-weight:700;margin-bottom:14px')}>Money Codes Issued</div>
-          <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);overflow:hidden')}>
-            <div style={s("display:grid;grid-template-columns:1.3fr 1.4fr 0.8fr 1fr auto;gap:8px;padding:11px 15px;background:var(--alt);font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)")}>
-              <span>Code</span><span>Carrier</span><span style={s('text-align:right')}>Amount</span><span>Issued</span><span>Status</span>
-            </div>
-            <div style={s('padding:36px 20px;text-align:center;color:var(--muted);font-size:13px;line-height:1.6')}>
-              Money codes are issued through EFS, not Zoho CRM — there's nothing to show here yet.<br />
-              Issue one from a client's <strong style={s('color:var(--text2)')}>Automations</strong>, and it'll appear on the account.
-            </div>
-          </div>
-        </div>
-      )}
+      {dcSub === 'money' && <MoneyCodesView search={search.money} />}
     </div>
   );
 }

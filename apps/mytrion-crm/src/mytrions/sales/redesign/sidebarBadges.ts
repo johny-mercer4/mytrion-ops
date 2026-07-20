@@ -4,14 +4,15 @@
  *   - Inbox   = messages not yet read (marking read in the tab decrements it immediately).
  *   - Tickets = unread ticket messages (a `ticket_comment_added` bumps it; opening a ticket clears).
  *
- * Also owns the toasts (inbox + ticket comment/attachment) so they fire on every tab — matching
- * ticketdashboard.html. The Tickets tab listens on `ticketLiveBus` to refresh the open thread.
+ * Also owns the toasts (inbox + ticket comment/attachment) so they fire on every Sales tab —
+ * matching ticketdashboard.html / self-service InboxPanel. Tabs listen on `inboxLiveBus` /
+ * `ticketLiveBus` to refresh their own lists.
  */
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useLoad, loadInbox, loadTickets } from './live';
 import { useServerCrmSocket } from './useServerCrmSocket';
 import { useInboxRead, countUnread } from './inboxRead';
-import { publishInboxReload, subscribeInboxReload } from './inboxLiveBus';
+import { publishInboxLive, subscribeInboxReload } from './inboxLiveBus';
 import { setTicketDirectory } from './ticketDirectory';
 import { useTicketUnread, totalTicketUnread, bumpTicketUnread, clearTicketUnread } from './ticketUnread';
 import { getOpenTicketId, publishTicketLive } from './ticketLiveBus';
@@ -34,6 +35,18 @@ export function useSidebarBadges(
   const ticketIds = tickets.map((t) => String(t.id));
   const idsKey = ticketIds.join(',');
 
+  // Latest identity / toast / ticket set for the socket callback (avoid stale closures).
+  const userIdRef = useRef(currentUserId);
+  userIdRef.current = currentUserId;
+  const pushToastRef = useRef(pushToast);
+  pushToastRef.current = pushToast;
+  const ticketsRef = useRef(tickets);
+  ticketsRef.current = tickets;
+  const ticketIdsRef = useRef(ticketIds);
+  ticketIdsRef.current = ticketIds;
+  const inboxReloadRef = useRef(inboxLoad.reload);
+  inboxReloadRef.current = inboxLoad.reload;
+
   // Keep a lookup the Tickets tab can use to pin older tickets that aren't paged in yet.
   useEffect(() => {
     setTicketDirectory(tickets);
@@ -43,18 +56,24 @@ export function useSidebarBadges(
 
   const { resubscribe } = useServerCrmSocket({
     enabled: !!currentUserId,
+    // Re-open when View-as / session user changes so subscribe.userId stays correct.
+    watchKey: currentUserId,
     // Same frame as zoho-octane ticketdashboard.html — userId + the caller's ticket ids.
     subscribe: { type: 'subscribe', userId: currentUserId, ticketIds },
     onMessage: (m) => {
       if (m.type === 'crm_inbox_notification') {
-        if (idsMatch(String(m.ownerId ?? ''), currentUserId)) {
-          inboxLoad.reload();
-          const subject = String(m.subject ?? m.name ?? 'New notification');
-          pushToast?.(subject, 'New inbox message');
+        const eventOwner = String(m.ownerId ?? '').trim();
+        const self = userIdRef.current.trim();
+        if (idsMatch(eventOwner, self)) {
+          inboxReloadRef.current();
+          const subject = String(m.subject ?? m.name ?? 'New notification').trim() || 'New notification';
+          // Fixed title so subject text like "Error…" never flips the toast to an error tone.
+          pushToastRef.current?.('New inbox message', subject);
+          publishInboxLive({ ownerId: eventOwner, subject });
         } else if (m.ownerId !== undefined) {
           console.debug('[inbox] crm_inbox_notification owner mismatch', {
             eventOwnerId: m.ownerId,
-            currentUserId,
+            currentUserId: self,
           });
         }
         return;
@@ -63,7 +82,8 @@ export function useSidebarBadges(
       if (m.type !== 'ticket_comment_added' && m.type !== 'ticket_attachment_added') return;
 
       const tid = String(m.ticketId ?? '').trim();
-      if (!tid || !ticketIds.includes(tid)) return;
+      const ids = ticketIdsRef.current;
+      if (!tid || !ids.includes(tid)) return;
 
       // Always notify the Tickets tab (reload thread / move to top).
       publishTicketLive({ ticketId: tid, type: m.type });
@@ -75,10 +95,10 @@ export function useSidebarBadges(
       }
 
       bumpTicketUnread(tid);
-      const t = tickets.find((x) => x.id === tid);
+      const t = ticketsRef.current.find((x) => x.id === tid);
       const label = m.type === 'ticket_attachment_added' ? 'New attachment' : 'New comment';
       const detail = t ? `#${t.num} · ${t.subject}` : `Ticket #${tid}`;
-      pushToast?.(label, detail);
+      pushToastRef.current?.(label, detail);
     },
   });
 

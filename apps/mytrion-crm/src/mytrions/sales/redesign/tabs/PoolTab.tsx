@@ -1,6 +1,6 @@
 /**
  * Open Pool — claimable retention cases (status p1_open_pool). Agents select rows and
- * request assignment to themselves (Phase 1 restarts; assignment_count caps at 3).
+ * claim instantly (Phase 1 restarts; assignment_count caps at 3).
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, MouseEvent } from 'react';
@@ -8,6 +8,7 @@ import { s } from '../dc';
 import { Icon } from '../icons';
 import { useSales } from '../ctx';
 import { useLoad } from '../../../_shared/useLoad';
+import { RetentionHero, RetentionPoolMetrics, fmtGal } from '../RetentionBoardUi';
 import {
   claimOpenPoolCase,
   loadOpenPoolCases,
@@ -21,7 +22,7 @@ type SortKey = 'carrierId' | 'companyName' | 'daysInactive' | 'gallons90d' | 'as
 const poolGrid =
   'display:grid;grid-template-columns:44px 40px 118px 1.6fr 1.1fr 1.05fr 90px 80px 1.1fr;gap:10px;align-items:center';
 
-export function PoolTab() {
+export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) => void }) {
   const { pushToast } = useSales();
   const feed = useLoad(() => loadOpenPoolCases(), []);
   const [cases, setCases] = useState<RetentionCaseRow[]>([]);
@@ -40,6 +41,10 @@ export function PoolTab() {
   useEffect(() => {
     if (feed.data?.cases) setCases(feed.data.cases);
   }, [feed.data?.cases]);
+
+  useEffect(() => {
+    if (!feed.loading) onAvailableCount?.(cases.length);
+  }, [cases.length, feed.loading, onAvailableCount]);
 
   const refresh = (): void => {
     setSpin(true);
@@ -102,12 +107,10 @@ export function PoolTab() {
     const ids = selected.slice();
     let ok = 0;
     const errors: string[] = [];
-    let pending = 0;
     for (const id of ids) {
       try {
-        const res = await claimOpenPoolCase(id);
-        if (res.pendingApproval) pending += 1;
-        else ok += 1;
+        await claimOpenPoolCase(id);
+        ok += 1;
       } catch (e) {
         errors.push(e instanceof Error ? e.message : 'Failed');
       }
@@ -120,12 +123,6 @@ export function PoolTab() {
     if (ok > 0) {
       pushToast('Claimed', `${ok} deal${ok !== 1 ? 's' : ''} assigned to you — Phase 1 restarted`);
     }
-    if (pending > 0) {
-      pushToast(
-        'Claim requested',
-        `${pending} awaiting deal-owner approve (auto-approves in 1 BD)`,
-      );
-    }
     if (errors.length > 0) {
       pushToast('Some claims failed', errors[0] ?? 'Could not claim');
     }
@@ -136,51 +133,70 @@ export function PoolTab() {
   const stop = (e: MouseEvent): void => e.stopPropagation();
   const closeX = <Icon name="close" size={15} strokeWidth={2.4} />;
 
+  const poolGallons = useMemo(
+    () => cases.reduce((sum, c) => sum + (c.gallons90d ?? 0), 0),
+    [cases],
+  );
+  const avgQuietDays = useMemo(() => {
+    const days = cases.map((c) => c.daysInactive).filter((d): d is number => typeof d === 'number' && d >= 0);
+    if (days.length === 0) return null;
+    return Math.round(days.reduce((a, b) => a + b, 0) / days.length);
+  }, [cases]);
+
   return (
     <>
       <div className="ss-fu" style={s('display:flex;flex-direction:column;height:calc(100vh - 150px);min-height:480px')}>
-        <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap')}>
-          <div>
-            <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.04em;text-transform:uppercase')}>Open Pool</div>
-            <div style={s('font-size:13px;color:var(--muted);margin-top:2px')}>
-              Request a claim — owner approves (or auto in 1 BD). Needs 10+ days inactive · max 3
-              agents · 3 BD per assignment.
-            </div>
-          </div>
-          <div style={s('display:flex;align-items:center;gap:8px')}>
-            <button
-              type="button"
-              disabled={!selected.length}
-              onClick={() => {
-                if (!selected.length) return;
-                setModalOpen(true);
-                setConfirm(false);
-              }}
-              className={selected.length ? 'ss-btn-p' : undefined}
-              style={s(
-                selected.length
-                  ? 'height:38px;padding:0 16px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:7px'
-                  : 'height:38px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:13px;cursor:not-allowed;display:flex;align-items:center;gap:7px',
-              )}
-            >
-              <Icon name="assign" size={15} strokeWidth={2.2} />
-              Request claim{selected.length ? ` (${selected.length})` : ''}
-            </button>
-            <button
-              type="button"
-              onClick={refresh}
-              aria-label="Refresh"
-              className="ss-ico-btn"
-              style={s('width:38px;height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}
-            >
-              <Icon name="refresh" size={16} style={s(spin || feed.loading ? 'animation:ss-spin .9s linear infinite' : '')} />
-            </button>
-          </div>
-        </div>
-
-        <div style={s('display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px')}>
-          <Stat label="Available" value={String(cases.length)} col="var(--ok)" />
-          <Stat label="Selected" value={String(selected.length)} col="var(--accent)" />
+        <div style={s('margin-bottom:14px')}>
+          <RetentionHero
+            title="Open Pool"
+            sub="Claim a deal instantly. Needs 10+ days inactive · max 3 agents · 3 BD per assignment."
+            actions={
+              <>
+                <button
+                  type="button"
+                  disabled={!selected.length}
+                  onClick={() => {
+                    if (!selected.length) return;
+                    setModalOpen(true);
+                    setConfirm(false);
+                  }}
+                  className={selected.length ? 'ss-btn-p' : undefined}
+                  style={s(
+                    selected.length
+                      ? 'height:38px;padding:0 16px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:7px'
+                      : 'height:38px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:13px;cursor:not-allowed;display:flex;align-items:center;gap:7px',
+                  )}
+                >
+                  <Icon name="assign" size={15} strokeWidth={2.2} />
+                  Claim{selected.length ? ` (${selected.length})` : ''}
+                </button>
+                <button
+                  type="button"
+                  onClick={refresh}
+                  aria-label="Refresh"
+                  className="ss-ico-btn"
+                  style={s(
+                    'width:38px;height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center',
+                  )}
+                >
+                  <Icon
+                    name="refresh"
+                    size={16}
+                    style={s(spin || feed.loading ? 'animation:ss-spin .9s linear infinite' : '')}
+                  />
+                </button>
+              </>
+            }
+          >
+            {!feed.loading || cases.length > 0 ? (
+              <RetentionPoolMetrics
+                available={cases.length}
+                selected={selected.length}
+                gallons={poolGallons}
+                avgQuietDays={avgQuietDays}
+              />
+            ) : null}
+          </RetentionHero>
         </div>
 
         <div style={s('display:flex;gap:10px;margin-bottom:10px')}>
@@ -243,7 +259,7 @@ export function PoolTab() {
                         : '—'}
                     </span>
                     <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px")}>
-                      {c.gallons90d != null ? Math.round(c.gallons90d).toLocaleString() : '—'}
+                      {c.gallons90d != null ? fmtGal(c.gallons90d) : '—'}
                     </span>
                     <span style={s('font-size:12px;font-weight:700')}>{c.assignmentCount}/3</span>
                     <span style={s('font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
@@ -333,14 +349,5 @@ export function PoolTab() {
         </div>
       )}
     </>
-  );
-}
-
-function Stat({ label, value, col }: { label: string; value: string; col: string }) {
-  return (
-    <span style={s(`display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:99px;background:color-mix(in srgb,${col} 12%,transparent);font-size:12px;font-weight:700;color:${col}`)}>
-      <span style={s(`width:7px;height:7px;border-radius:50%;background:${col}`)} />
-      {value} {label}
-    </span>
   );
 }

@@ -54,6 +54,7 @@ export const transactionFrequencyEnum = pgEnum('transaction_frequency', [
 
 export const agentOutcomeEnum = pgEnum('agent_outcome', [
   'out_of_reach',
+  'reached',
   'returned',
   'dissatisfied',
   'vacation',
@@ -82,6 +83,13 @@ export const retentionStatuses = pgTable('retention_statuses', {
     .references(() => retentionPhases.code),
   label: text('label').notNull(),
   isTerminal: boolean('is_terminal').notNull().default(false),
+  /**
+   * Sales Agent Kanban column:
+   * new | reached | out_of_reach | vacation | dissatisfied | closed
+   * Null = not shown on the Sales board (Retention-desk-only statuses).
+   */
+  boardColumn: text('board_column'),
+  sortOrder: smallint('sort_order').notNull().default(100),
 });
 
 export type RetentionPhaseRow = typeof retentionPhases.$inferSelect;
@@ -116,7 +124,7 @@ export const retentionCases = pgTable(
     statusCode: text('status_code')
       .notNull()
       .references(() => retentionStatuses.code)
-      .default('p1_new'),
+      .default('p1_in_progress'),
     phaseChangedAt: timestamp('phase_changed_at', { withTimezone: true }).notNull().defaultNow(),
 
     transactionFrequency: transactionFrequencyEnum('transaction_frequency'),
@@ -140,7 +148,7 @@ export const retentionCases = pgTable(
     dealOwnerChanged: boolean('deal_owner_changed').notNull().default(false),
 
     currentDeadlineAt: timestamp('current_deadline_at', { withTimezone: true }),
-    /** e.g. '2BD_agent_action' | '10BD_retention' | '7D_citi_hold' */
+    /** e.g. '2BD_agent_action' | '5BD_comms_attempt' | '5BD_post_contact' | '10BD_retention' */
     currentDeadlineType: text('current_deadline_type'),
     vacationCountdownEnd: timestamp('vacation_countdown_end', { withTimezone: true }),
     citiFolderEnteredAt: timestamp('citi_folder_entered_at', { withTimezone: true }),
@@ -198,6 +206,11 @@ export const retentionCaseEvents = pgTable(
     actorZohoUserId: text('actor_zoho_user_id'),
     channel: communicationChannelEnum('channel'),
     notes: text('notes'),
+    /**
+     * Screenshot / proof for non-RC channel attempts (data URL or https).
+     * Required for TG / WA / SMS / IG / FB / email logs.
+     */
+    evidenceUrl: text('evidence_url'),
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
@@ -219,8 +232,24 @@ export const RETENTION_PHASE = {
 
 export const RETENTION_STATUS = {
   p1New: 'p1_new',
+  /** Default for newly created breach cases — New (call within 2 BD). */
+  p1InProgress: 'p1_in_progress',
+  p1Reached: 'p1_reached',
+  p1OutOfReach: 'p1_out_of_reach',
+  p1Vacation: 'p1_vacation',
+  p1Dissatisfied: 'p1_dissatisfied',
   p1Returned: 'p1_returned',
   p3Closed: 'p3_closed',
+} as const;
+
+/** Sales Agent Kanban board columns (matches retention_statuses.board_column). */
+export const RETENTION_BOARD_COLUMN = {
+  new: 'new',
+  reached: 'reached',
+  outOfReach: 'out_of_reach',
+  vacation: 'vacation',
+  dissatisfied: 'dissatisfied',
+  closed: 'closed',
 } as const;
 
 /** Terminal status codes (must match the seed in migration 0027). */

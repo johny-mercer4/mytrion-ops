@@ -99,19 +99,21 @@ describe('RBAC matrix', () => {
 });
 
 describe('identity injection (session-authoritative)', () => {
+  // NB: uses user.callback as the deluge vehicle — the dashboards (home_snapshot etc.) migrated to
+  // native `kind: 'local'` handlers and no longer flow through executeZohoFunctionWithFallback.
   it('overwrites a non-admin caller-supplied userId with the session identity', async () => {
-    await dispatchTouchpoint(salesCtx(), 'dashboard.home_snapshot', { userId: '999' });
+    await dispatchTouchpoint(salesCtx(), 'user.callback', { userId: '999' });
     expect(executeFallbackMock).toHaveBeenCalledWith(
-      ['mytrionhomesnapshot'],
+      ['mytrionCallback'],
       expect.objectContaining({ userId: '42' }),
       expect.anything(),
     );
   });
 
   it('honors an admin override', async () => {
-    await dispatchTouchpoint(adminCtx(), 'dashboard.home_snapshot', { userId: '777' });
+    await dispatchTouchpoint(adminCtx(), 'user.callback', { userId: '777' });
     expect(executeFallbackMock).toHaveBeenCalledWith(
-      ['mytrionhomesnapshot'],
+      ['mytrionCallback'],
       expect.objectContaining({ userId: '777' }),
       expect.anything(),
     );

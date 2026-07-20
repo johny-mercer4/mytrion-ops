@@ -1,27 +1,45 @@
 /**
- * Retention case detail — centered modal with Phase 1 actions + event trail.
- * Mutations update board + timeline instantly (no refetch wait).
+ * Retention case modal — call-first Phase 1:
+ *   New → call → stage → (OoR) channel attempts → terminal stages close modal.
+ * RingCentral call-end auto-logs an attempt while OoR; New→OoR after a call counts attempt 1.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { clickToDial } from '@/components/ringcentral/ringcentralDial';
-import { setDialContext } from '@/components/ringcentral/ringcentralEvents';
+import {
+  setDialContext,
+  subscribeRingCentral,
+} from '@/components/ringcentral/ringcentralEvents';
 import type { RetentionCaseEventRow } from '@/api/touchpointTypes';
 import { useLoad } from '../../_shared/useLoad';
 import { useSales } from './ctx';
 import { s } from './dc';
-import { Icon } from './icons';
-import { RetentionCaseActions } from './RetentionCaseActions';
 import {
-  cadenceExplain,
-  deadlineCaption,
-  freqLabel,
-  isOverdue,
+  RetentionCaseActions,
+  type NewWizardStep,
+  type PendingCallLog,
+  type StatusPick,
+} from './RetentionCaseActions';
+import {
+  RetentionCaseHeader,
+  RetentionDetailSkeleton,
+  RetentionEventTrail,
+  RetentionMetaGrid,
+} from './RetentionCaseMeta';
+import {
+  attemptEvent,
+  bumpAttempts,
+  isNewStatus,
+  optimisticOutOfReach,
+  pendingRcNote,
+} from './retentionCaseActionsLogic';
+import {
+  fileToEvidenceDataUrl,
+  formatUsPhone,
   loadRetentionCase,
   loadRetentionCaseContact,
   localRetentionEvent,
   logRetentionAttempt,
-  quietCaption,
   recordRetentionOutcome,
   statusLabel,
   type RetentionCaseRow,
@@ -32,7 +50,6 @@ import {
 
 interface Props {
   caseId: string;
-  /** Board row for instant paint while events fetch from the app DB. */
   seed?: RetentionCaseRow | null;
   onClose: () => void;
   onUpdated: (row: RetentionCaseRow) => void;
@@ -47,13 +64,31 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
   const [busy, setBusy] = useState(false);
   const [reason, setReason] = useState<RetentionDissatisfactionReason | ''>('');
   const [reasonNote, setReasonNote] = useState('');
-  const [channel, setChannel] = useState<RetentionChannel>('ringcentral');
+  const [channel, setChannel] = useState<RetentionChannel>('telegram');
   const [attemptNote, setAttemptNote] = useState('');
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
   const [contactPhone, setContactPhone] = useState<string | null>(null);
+  const [awaitingCallEnd, setAwaitingCallEnd] = useState(false);
+  const [pendingCall, setPendingCall] = useState<PendingCallLog | null>(null);
+  const [statusPick, setStatusPick] = useState<StatusPick>('');
+  const [newWizardStep, setNewWizardStep] = useState<NewWizardStep>('call');
 
   const row = liveCase ?? seed;
+  const rowRef = useRef(row);
+  const busyRef = useRef(busy);
+  const awaitingRef = useRef(awaitingCallEnd);
+  const logRcRef = useRef<(call: PendingCallLog | null) => Promise<boolean>>(async () => false);
+  rowRef.current = row;
+  busyRef.current = busy;
+  awaitingRef.current = awaitingCallEnd;
+
   const initialLoad = detail.loading && !row;
   const eventsLoading = detail.loading && !eventsHydrated && !!row;
+  const forceStage = pendingCall != null && !!row && isNewStatus(row.statusCode);
+  const forceAttempt = pendingCall != null && row?.statusCode === 'p1_out_of_reach';
+  const blockClose = forceStage || forceAttempt;
+  const phoneDisplay = formatUsPhone(contactPhone) || contactPhone?.trim() || '';
 
   useEffect(() => {
     setLiveCase(seed);
@@ -61,10 +96,15 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
     setEventsHydrated(false);
     setBusy(false);
     setAttemptNote('');
-    setChannel('ringcentral');
+    setChannel('telegram');
+    setEvidenceFile(null);
+    setEvidencePreview(null);
+    setAwaitingCallEnd(false);
+    setPendingCall(null);
+    setStatusPick('');
+    setNewWizardStep('call');
   }, [caseId]); // eslint-disable-line react-hooks/exhaustive-deps -- reset on case switch only
 
-  // Hydrate once from the server. Skip if the agent already mutated (avoids stale overwrite).
   useEffect(() => {
     if (!detail.data || eventsHydrated) return;
     setLiveCase(detail.data.case);
@@ -93,25 +133,149 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
   }, [caseId]);
 
   useEffect(() => {
+    if (!evidenceFile) {
+      setEvidencePreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(evidenceFile);
+    setEvidencePreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [evidenceFile]);
+
+  useEffect(() => {
+    return subscribeRingCentral((ev) => {
+      if (ev.kind !== 'ended') return;
+      if (ev.direction && ev.direction !== 'Outbound') return;
+      const forThisCase =
+        ev.retentionCaseId === caseId || (awaitingRef.current && !ev.retentionCaseId);
+      if (!forThisCase) return;
+      setAwaitingCallEnd(false);
+      const call: PendingCallLog = {
+        peer: ev.peer,
+        ...(ev.sessionId ? { sessionId: ev.sessionId } : {}),
+        ...(ev.result ? { result: ev.result } : {}),
+        ...(ev.durationMs != null ? { durationMs: ev.durationMs } : {}),
+      };
+      setPendingCall(call);
+      setChannel('ringcentral');
+      const cur = rowRef.current;
+      if (!cur) return;
+      if (cur.statusCode === 'p1_out_of_reach') {
+        void logRcRef.current(call);
+        return;
+      }
+      if (isNewStatus(cur.statusCode)) setNewWizardStep('stage');
+    });
+  }, [caseId]);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      if (blockClose) {
+        pushToast(
+          forceAttempt ? 'Retry the call log' : 'Pick a stage',
+          forceAttempt
+            ? 'RingCentral attempt did not save — retry'
+            : 'Choose Out of Reach, Reached, Dissatisfied, or Vacation',
+        );
+        return;
+      }
+      onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, blockClose, forceAttempt, pushToast]);
+
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent): void => {
+      if (!row?.isOpen || row.phaseCode !== 'phase_1_agent') return;
+      if (row.statusCode !== 'p1_out_of_reach') return;
+      const item = Array.from(e.clipboardData?.items ?? []).find((i) =>
+        i.type.startsWith('image/'),
+      );
+      const file = item?.getAsFile();
+      if (file) {
+        e.preventDefault();
+        setEvidenceFile(file);
+        pushToast('Screenshot pasted', file.name || 'clipboard image');
+      }
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [row?.isOpen, row?.phaseCode, row?.statusCode, pushToast]);
+
+  const requestClose = (): void => {
+    if (forceAttempt) {
+      pushToast('Retry the call log', 'RingCentral attempt did not save — retry');
+      return;
+    }
+    if (forceStage) {
+      pushToast('Pick a stage', 'Call ended — choose a stage before closing');
+      return;
+    }
+    onClose();
+  };
 
   const applyUpdate = (
     updated: RetentionCaseRow,
-    event: RetentionCaseEventRow,
+    events: RetentionCaseEventRow | RetentionCaseEventRow[],
     toastTitle: string,
     toastBody: string,
   ): void => {
+    const list = Array.isArray(events) ? events : [events];
     setLiveCase(updated);
-    setLiveEvents((prev) => [event, ...prev.filter((e) => e.id !== event.id)]);
+    setLiveEvents((prev) => {
+      const ids = new Set(list.map((e) => e.id));
+      return [...list, ...prev.filter((e) => !ids.has(e.id))];
+    });
     setEventsHydrated(true);
     onUpdated(updated);
     pushToast(toastTitle, toastBody);
   };
+
+  const clearAttemptUi = (opts?: { keepStage?: boolean }): void => {
+    setPendingCall(null);
+    setAwaitingCallEnd(false);
+    setAttemptNote('');
+    setEvidenceFile(null);
+    setChannel('telegram');
+    // After every attempt, surface the stage picker with OoR pre-selected.
+    setStatusPick(opts?.keepStage ? 'out_of_reach' : '');
+  };
+
+  const logRcAttempt = async (call: PendingCallLog | null = pendingCall): Promise<boolean> => {
+    const cur = rowRef.current;
+    if (!cur || busyRef.current || cur.statusCode !== 'p1_out_of_reach') return false;
+    const fromStatus = cur.statusCode;
+    const note = pendingRcNote(call);
+    setBusy(true);
+    const optimistic = bumpAttempts(cur);
+    setLiveCase(optimistic);
+    onUpdated(optimistic);
+    try {
+      const updated = await logRetentionAttempt(caseId, 'ringcentral', note);
+      const pooled = updated.statusCode === 'p1_open_pool';
+      applyUpdate(
+        updated,
+        attemptEvent(caseId, fromStatus, updated, 'ringcentral', note),
+        pooled ? 'Sent to Open Pool' : 'RingCentral attempt logged',
+        pooled
+          ? '5 attempts — Ryan + deal owner notified'
+          : `${updated.outOfReachAttempts}/5 · choose stage below`,
+      );
+      clearAttemptUi({ keepStage: !pooled });
+      if (pooled) onClose();
+      return true;
+    } catch (e) {
+      setLiveCase(cur);
+      onUpdated(cur);
+      pushToast('Log failed', e instanceof Error ? e.message : 'Could not log call');
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  logRcRef.current = logRcAttempt;
 
   const act = async (
     outcome: RetentionPhase1Outcome,
@@ -119,28 +283,86 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
       dissatisfactionReason?: RetentionDissatisfactionReason;
       reasonNote?: string;
     },
+    opts?: { close?: boolean },
   ): Promise<void> => {
-    if (busy || !row) return;
+    if (busy || !row || forceAttempt) return;
     const fromStatus = row.statusCode;
+    const callForAttempt = outcome === 'out_of_reach' ? pendingCall : null;
     setBusy(true);
+    if (outcome === 'out_of_reach') {
+      const optimistic = optimisticOutOfReach(row, !!callForAttempt);
+      setLiveCase(optimistic);
+      onUpdated(optimistic);
+    }
     try {
-      const updated = await recordRetentionOutcome(caseId, outcome, extra ?? {});
-      applyUpdate(
-        updated,
+      let updated = await recordRetentionOutcome(caseId, outcome, extra ?? {});
+      const events: RetentionCaseEventRow[] = [
         localRetentionEvent(caseId, {
           fromStatus,
           toStatus: updated.statusCode,
           eventType: 'outcome_recorded',
           notes: statusLabel(updated.statusCode),
+          ...(callForAttempt ? { channel: 'ringcentral' } : {}),
         }),
-        'Case updated',
-        statusLabel(updated.statusCode),
+      ];
+
+      if (outcome === 'out_of_reach' && callForAttempt) {
+        try {
+          const afterStage = updated.statusCode;
+          updated = await logRetentionAttempt(
+            caseId,
+            'ringcentral',
+            pendingRcNote(callForAttempt),
+          );
+          events.unshift(
+            attemptEvent(
+              caseId,
+              afterStage,
+              updated,
+              'ringcentral',
+              pendingRcNote(callForAttempt),
+            ),
+          );
+          setPendingCall(null);
+        } catch (e) {
+          applyUpdate(
+            updated,
+            events,
+            'Moved to Out of Reach',
+            e instanceof Error ? e.message : 'Retry RingCentral attempt log',
+          );
+          setStatusPick('');
+          return;
+        }
+      } else {
+        setPendingCall(null);
+      }
+
+      applyUpdate(
+        updated,
+        events,
+        'Status saved',
+        callForAttempt && outcome === 'out_of_reach'
+          ? `Out of Reach · RingCentral ${updated.outOfReachAttempts}/5 · choose next stage after each attempt`
+          : statusLabel(updated.statusCode),
       );
+      setStatusPick(updated.statusCode === 'p1_out_of_reach' ? 'out_of_reach' : '');
+      if (opts?.close !== false && updated.statusCode !== 'p1_out_of_reach') onClose();
     } catch (e) {
+      setLiveCase(row);
+      onUpdated(row);
       pushToast('Update failed', e instanceof Error ? e.message : 'Could not record outcome');
     } finally {
       setBusy(false);
     }
+  };
+
+  const onConfirmStage = (): void => {
+    if (statusPick === 'reached') void act('reached');
+    else if (statusPick === 'vacation') {
+      const note = reasonNote.trim();
+      void act('vacation', note ? { reasonNote: note } : undefined);
+    } else if (statusPick === 'out_of_reach') void act('out_of_reach', undefined, { close: false });
   };
 
   const onDissatisfied = (e: FormEvent): void => {
@@ -160,68 +382,59 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
     });
   };
 
-  const onLogPhoneCall = async (): Promise<void> => {
-    if (busy || !row) return;
-    setBusy(true);
-    const fromStatus = row.statusCode;
-    const note = attemptNote.trim() || undefined;
-    try {
-      if (contactPhone?.trim()) {
-        if (row.zohoDealId) setDialContext({ dealId: row.zohoDealId });
-        if (clickToDial(contactPhone)) {
-          pushToast('Calling via RingCentral', contactPhone);
-        } else {
-          pushToast('RingCentral not ready', 'Open the phone widget, then try again');
-        }
-      }
-      const updated = await logRetentionAttempt(caseId, 'ringcentral', note);
-      const pooled = updated.statusCode === 'p1_open_pool';
-      applyUpdate(
-        updated,
-        localRetentionEvent(caseId, {
-          fromStatus,
-          toStatus: updated.statusCode,
-          eventType: 'comms_attempt',
-          channel: 'ringcentral',
-          notes: note ?? `RC attempt ${updated.outOfReachAttempts}/5`,
-        }),
-        'Phone call logged',
-        `${updated.outOfReachAttempts}/5${pooled ? ' — sent to Open Pool' : ''}`,
-      );
-      setAttemptNote('');
-    } catch (e) {
-      pushToast('Log failed', e instanceof Error ? e.message : 'Could not log call');
-    } finally {
-      setBusy(false);
+  const onCall = (): void => {
+    if (!row || !contactPhone?.trim()) {
+      pushToast('No phone', 'No DWH contact number for this carrier');
+      return;
+    }
+    setDialContext({
+      retentionCaseId: caseId,
+      ...(row.zohoDealId ? { dealId: row.zohoDealId } : {}),
+    });
+    setAwaitingCallEnd(true);
+    if (!clickToDial(contactPhone)) {
+      setAwaitingCallEnd(false);
+      pushToast('RingCentral not ready', 'Open the phone widget, then try again');
     }
   };
 
   const onLogOtherChannel = async (): Promise<void> => {
-    if (busy || !row) return;
-    if (channel === 'ringcentral') {
-      await onLogPhoneCall();
+    if (busy || !row || forceAttempt) return;
+    if (row.statusCode !== 'p1_out_of_reach') {
+      pushToast('Mark Out of Reach first', 'Channel attempts start after OoR stage');
       return;
     }
-    setBusy(true);
-    const fromStatus = row.statusCode;
+    if (channel === 'ringcentral') {
+      await logRcAttempt(pendingCall);
+      return;
+    }
     const note = attemptNote.trim() || undefined;
+    if (!evidenceFile && !note) {
+      pushToast('Proof required', 'Add a screenshot or a short note');
+      return;
+    }
+    const fromStatus = row.statusCode;
+    setBusy(true);
+    const optimistic = bumpAttempts(row);
+    setLiveCase(optimistic);
+    onUpdated(optimistic);
     try {
-      const updated = await logRetentionAttempt(caseId, channel, note);
+      const evidenceUrl = evidenceFile ? await fileToEvidenceDataUrl(evidenceFile) : undefined;
+      const updated = await logRetentionAttempt(caseId, channel, note, evidenceUrl);
       const pooled = updated.statusCode === 'p1_open_pool';
       applyUpdate(
         updated,
-        localRetentionEvent(caseId, {
-          fromStatus,
-          toStatus: updated.statusCode,
-          eventType: 'comms_attempt',
-          channel,
-          notes: note ?? `${channel} attempt ${updated.outOfReachAttempts}/5`,
-        }),
-        'Attempt logged',
-        `${updated.outOfReachAttempts}/5${pooled ? ' — sent to Open Pool' : ''}`,
+        attemptEvent(caseId, fromStatus, updated, channel, note, evidenceUrl),
+        pooled ? 'Sent to Open Pool' : 'Attempt logged',
+        pooled
+          ? '5 attempts — Ryan + deal owner notified'
+          : `${updated.outOfReachAttempts}/5 · choose stage below`,
       );
-      setAttemptNote('');
+      clearAttemptUi({ keepStage: !pooled });
+      if (pooled) onClose();
     } catch (e) {
+      setLiveCase(row);
+      onUpdated(row);
       pushToast('Log failed', e instanceof Error ? e.message : 'Could not log attempt');
     } finally {
       setBusy(false);
@@ -231,7 +444,7 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
   return (
     <div
       role="presentation"
-      onClick={onClose}
+      onClick={requestClose}
       style={s(
         'position:fixed;inset:0;z-index:140;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(3,7,14,.58);backdrop-filter:blur(3px)',
       )}
@@ -246,45 +459,13 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
           'width:min(560px,100%);max-height:min(90vh,820px);display:flex;flex-direction:column;border-radius:var(--radius-lg);border:1px solid var(--border);background:var(--surface);box-shadow:var(--shadow);overflow:hidden;animation:ss-fadein .18s ease both',
         )}
       >
-        <div
-          style={s(
-            'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 18px;border-bottom:1px solid var(--border);flex-shrink:0',
-          )}
-        >
-          <div style={s('min-width:0')}>
-            {initialLoad ? (
-              <>
-                <div className="ss-skel" style={s('height:18px;width:55%;margin-bottom:8px')} />
-                <div className="ss-skel" style={s('height:12px;width:30%')} />
-              </>
-            ) : (
-              <>
-                <div
-                  style={s(
-                    'font-family:Rajdhani,sans-serif;font-weight:700;font-size:18px;letter-spacing:.04em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap',
-                  )}
-                >
-                  {row?.companyName || 'Case'}
-                </div>
-                <div style={s("font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace")}>
-                  {row?.carrierId ?? caseId}
-                  {contactPhone ? ` · ${contactPhone}` : ''}
-                </div>
-              </>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="ss-ico-btn"
-            aria-label="Close"
-            style={s(
-              'width:34px;height:34px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0',
-            )}
-          >
-            <Icon name="close" size={15} strokeWidth={2.4} />
-          </button>
-        </div>
+        <RetentionCaseHeader
+          loading={initialLoad}
+          companyName={row?.companyName || 'Case'}
+          carrierId={row?.carrierId ?? caseId}
+          phoneDisplay={phoneDisplay}
+          onClose={requestClose}
+        />
 
         <div
           className="ss-scroll"
@@ -294,40 +475,46 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
             <div style={s('color:var(--danger);font-size:13px')}>{detail.error}</div>
           )}
 
-          {initialLoad && <DetailSkeleton />}
+          {initialLoad && <RetentionDetailSkeleton />}
 
           {row && (
             <>
-              <MetaGrid row={row} />
-              <div
-                style={s(
-                  'padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border2);background:var(--alt);font-size:12px;color:var(--muted);line-height:1.45',
-                )}
-              >
-                <strong style={s('color:var(--text2)')}>Log → leave result.</strong> Choose an
-                outcome, then log each attempt with stage + result. Returned closes via hourly sync.
-              </div>
+              <RetentionMetaGrid row={row} />
               {row.isOpen &&
                 row.phaseCode === 'phase_1_agent' &&
                 row.statusCode !== 'p1_open_pool' && (
-                <RetentionCaseActions
-                  row={row}
-                  busy={busy}
-                  contactPhone={contactPhone}
-                  reason={reason}
-                  reasonNote={reasonNote}
-                  channel={channel}
-                  attemptNote={attemptNote}
-                  setReason={setReason}
-                  setReasonNote={setReasonNote}
-                  setChannel={setChannel}
-                  setAttemptNote={setAttemptNote}
-                  onAct={act}
-                  onDissatisfied={onDissatisfied}
-                  onLogPhoneCall={onLogPhoneCall}
-                  onLogOtherChannel={onLogOtherChannel}
-                />
-              )}
+                  <RetentionCaseActions
+                    row={row}
+                    busy={busy}
+                    contactPhone={contactPhone}
+                    newWizardStep={newWizardStep}
+                    setNewWizardStep={setNewWizardStep}
+                    forceStage={forceStage}
+                    forceAttempt={forceAttempt}
+                    pendingCall={pendingCall}
+                    reason={reason}
+                    reasonNote={reasonNote}
+                    channel={channel}
+                    attemptNote={attemptNote}
+                    evidenceFile={evidenceFile}
+                    evidencePreview={evidencePreview}
+                    statusPick={statusPick}
+                    setStatusPick={setStatusPick}
+                    setReason={setReason}
+                    setReasonNote={setReasonNote}
+                    setChannel={setChannel}
+                    setAttemptNote={setAttemptNote}
+                    setEvidenceFile={setEvidenceFile}
+                    onCall={onCall}
+                    onAct={act}
+                    onDissatisfied={onDissatisfied}
+                    onConfirmStage={onConfirmStage}
+                    onLogPhoneCall={async () => {
+                      await logRcAttempt(pendingCall);
+                    }}
+                    onLogOtherChannel={onLogOtherChannel}
+                  />
+                )}
               {row.isOpen && row.phaseCode !== 'phase_1_agent' && (
                 <div
                   style={s(
@@ -345,7 +532,7 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
                   )}
                 >
                   <strong style={s('color:var(--text)')}>In Sales Open Pool.</strong> Another agent
-                  can claim it (max 3 assignments). Claim from the Pool tab.
+                  can claim it from the Open Pool tab (max 3 assignments).
                 </div>
               )}
               {eventsLoading ? (
@@ -355,130 +542,11 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
                   <div className="ss-skel" style={s('height:56px')} />
                 </div>
               ) : (
-                <EventTrail events={liveEvents} />
+                <RetentionEventTrail events={liveEvents} />
               )}
             </>
           )}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function DetailSkeleton() {
-  return (
-    <div style={s('display:flex;flex-direction:column;gap:12px')} aria-hidden="true">
-      <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:10px')}>
-        {Array.from({ length: 8 }, (_, i) => (
-          <div key={i} className="ss-skel" style={s('height:58px;border-radius:var(--radius-md)')} />
-        ))}
-      </div>
-      <div className="ss-skel" style={s('height:72px;border-radius:var(--radius-md)')} />
-      <div className="ss-skel" style={s('height:120px;border-radius:var(--radius-md)')} />
-    </div>
-  );
-}
-
-function MetaGrid({ row }: { row: RetentionCaseRow }) {
-  const overdue = isOverdue(row);
-  const cells: [string, string, string?][] = [
-    ['Status', statusLabel(row.statusCode)],
-    ['Frequency', freqLabel(row.transactionFrequency), cadenceExplain(row.transactionFrequency)],
-    ['Inactivity', quietCaption(row)],
-    ['Deadline', deadlineCaption(row)],
-    ['90d gallons', row.gallons90d != null ? Math.round(row.gallons90d).toLocaleString() : '—'],
-    ['Call attempts', `${row.outOfReachAttempts}/5`],
-    ['Assignment', String(row.assignmentCount)],
-    ['Agent', row.agentName || '—'],
-  ];
-  return (
-    <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:10px')}>
-      {cells.map(([label, value, hint]) => (
-        <div
-          key={label}
-          style={s(
-            'padding:10px 12px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border)',
-          )}
-          title={hint}
-        >
-          <div
-            style={s(
-              'font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)',
-            )}
-          >
-            {label}
-          </div>
-          <div
-            style={s(
-              `font-size:13px;font-weight:700;margin-top:4px;color:${label === 'Deadline' && overdue ? 'var(--danger)' : 'var(--text)'}`,
-            )}
-          >
-            {value}
-          </div>
-          {hint ? (
-            <div style={s('font-size:10px;color:var(--faint);margin-top:3px;line-height:1.3')}>{hint}</div>
-          ) : null}
-        </div>
-      ))}
-      {row.reasonNote && (
-        <div
-          style={s(
-            'grid-column:1/-1;padding:10px 12px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border)',
-          )}
-        >
-          <div
-            style={s(
-              'font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)',
-            )}
-          >
-            Note
-          </div>
-          <div style={s('font-size:13px;margin-top:4px;color:var(--text2);line-height:1.45')}>
-            {row.reasonNote}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function EventTrail({ events }: { events: RetentionCaseEventRow[] }) {
-  if (events.length === 0) {
-    return <div style={s('font-size:12px;color:var(--muted)')}>No events yet.</div>;
-  }
-  return (
-    <div>
-      <div
-        style={s(
-          'font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:8px',
-        )}
-      >
-        Timeline
-      </div>
-      <div style={s('display:flex;flex-direction:column;gap:8px')}>
-        {events.map((ev) => (
-          <div
-            key={ev.id}
-            style={s(
-              'padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border2);background:var(--surface)',
-            )}
-          >
-            <div style={s('display:flex;justify-content:space-between;gap:8px;font-size:11px')}>
-              <span style={s('font-weight:700;color:var(--accent)')}>{ev.eventType}</span>
-              <span style={s('color:var(--muted)')}>
-                {new Date(ev.occurredAt).toLocaleString()}
-              </span>
-            </div>
-            <div style={s('font-size:12px;color:var(--text2);margin-top:4px')}>
-              {ev.fromStatus ? `${statusLabel(ev.fromStatus)} → ` : ''}
-              {statusLabel(ev.toStatus)}
-              {ev.channel ? ` · ${ev.channel}` : ''}
-            </div>
-            {ev.notes && (
-              <div style={s('font-size:12px;color:var(--muted);margin-top:4px')}>{ev.notes}</div>
-            )}
-          </div>
-        ))}
       </div>
     </div>
   );

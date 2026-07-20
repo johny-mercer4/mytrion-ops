@@ -218,6 +218,34 @@
       "when": 1784557200000,
       "tag": "0030_retention_pool_claim_approval",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1784560800000,
+      "tag": "0031_retention_attempt_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1784564400000,
+      "tag": "0032_retention_5bd_comms_attempt",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1784568000000,
+      "tag": "0033_retention_sales_agent_board",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1784571600000,
+      "tag": "0034_money_code_requests_draw_model",
+      "breakpoints": true
     }
   ]
 }

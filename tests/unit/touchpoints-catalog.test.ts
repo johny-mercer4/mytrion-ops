@@ -8,29 +8,26 @@ import { getTouchpoint, listTouchpoints } from '../../src/modules/touchpoints/ca
 
 const all = listTouchpoints();
 
-/** The widget's 21 unique Deluge functions (SELF_SERVICE_API_TOUCHPOINTS golden list). */
+/**
+ * Legacy widget Deluge functions still served via `kind: 'deluge'`. Migrated to native TypeScript
+ * handlers (kind: 'local') and therefore intentionally ABSENT from this list:
+ *   - dashboards → src/integrations/salesDashboards.ts (mytrionhomesnapshot, mytrionAgentSalesDashboard,
+ *     mytriondbdebtorsinfo, mytrioncompanydashboard);
+ *   - CRM-backed → src/integrations/salesCrmActions.ts (mytrionfetchannouncements, mytrionfetchinbox,
+ *     mytriondeleteinboxmessage, mytrioncreatelead, mytrionapplicationupdate, mytriontruckingnumberrequest).
+ */
 const WIDGET_DELUGE_FUNCTIONS = [
   'mytrionCallback',
-  'mytrionapplicationupdate',
-  'mytriontruckingnumberrequest',
   'mytrionCheckPayment',
   'mytrionfetchbillingforminfo',
   'mytrioncardstatus',
   'mytrioncardlimits',
   'mytrionSearchInvoices',
-  'mytrionAgentSalesDashboard',
-  'mytrioncompanydashboard',
-  'mytriondbdebtorsinfo',
-  'mytrionhomesnapshot',
-  'mytrionfetchannouncements',
-  'mytrioncreatelead',
   'createescalationticket',
   'createticketincrm',
   'uploadticketattachment',
   'uploadescalationattachment',
   'createmaintenance',
-  'mytrionfetchinbox',
-  'mytriondeleteinboxmessage',
   'mytriondatacenterleads',
 ] as const;
 
@@ -39,8 +36,10 @@ describe('catalog shape', () => {
     const keys = all.map((t) => t.key);
     expect(new Set(keys).size).toBe(keys.length);
     // Billing kept only 1 Deluge touchpoint (invoices.search, a CMP read); the rest of the
-    // Transactions/Returns/carrier surface moved to Postgres-backed REST routes.
-    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(30);
+    // Transactions/Returns/carrier surface moved to Postgres-backed REST routes. Two waves of Sales
+    // touchpoints migrated Deluge→native (kind: 'local'): 4 dashboards + 6 CRM-backed (inbox/
+    // announcements/leads/application/trucking), dropping the deluge count 30→20.
+    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(20);
     // +7 billing servercrm touchpoints (deals, debtors, avg-days, carrier-type, 3× prepay).
     expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(51);
     // BOCA + Close Application (Playwright microservice) + Zapier ticket-email webhook.
@@ -115,6 +114,7 @@ describe('catalog shape', () => {
       'dwh.money_code_draw',
       'efs.card_override',
       'fraud.hold_release',
+      'money_code.void',
     ]);
   });
 

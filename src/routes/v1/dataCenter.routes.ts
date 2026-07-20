@@ -17,7 +17,7 @@ import {
   fetchDealOwnerId,
   fetchLeadOwnerId,
 } from '../../integrations/salesDataCenter.js';
-import { fetchLoyaltyStatsByAgent } from '../../integrations/dwhLoyalty.js';
+import { fetchAgentClients } from '../../integrations/dwhClientRoster.js';
 import { listRejectionReportTickets } from '../../integrations/zohoDesk.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
@@ -75,7 +75,7 @@ function crmError(err: unknown): AppError {
   });
 }
 
-/** Same shape as crmError but attributed to the DWH (loyalty-stats source is the warehouse, not CRM). */
+/** Same shape as crmError but attributed to the DWH (the clients roster source is the warehouse, not CRM). */
 function dwhError(err: unknown): AppError {
   return new AppError('Data warehouse request failed', {
     statusCode: 502,
@@ -115,32 +115,46 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * The caller's applications-filled-per-day counts (by CRM `Application_Date`) over the trailing
-   * window — powers the Home daily-goal bar + streak. Owner-scoped like Leads/Deals.
+   * The caller's applications-filled-per-day counts (CRM Deals `Application_Date` — the
+   * "application filled" date) over the trailing window — Home daily-goal bar + streak.
+   * Owner-scoped like Leads/Deals; pass ?zoho_user_id when acting-as / admin targeting.
    */
   app.get('/data-center/app-stats', guard, async (request) => {
     const ctx = requireSalesAccess(request);
     const q = scopeQuery.parse(request.query);
     const ownerId = resolveZohoUserId(ctx, q.zoho_user_id);
     try {
-      return await fetchAgentApplicationStats(ownerId);
+      const stats = await fetchAgentApplicationStats(ownerId);
+      request.log.debug(
+        { ownerId, total: stats.total, days: Object.keys(stats.days).length },
+        'data-center app-stats',
+      );
+      return stats;
     } catch (err) {
       throw crmError(err);
     }
   });
 
   /**
-   * The caller's per-client loyalty stats (this + prev calendar month gallons + active-card counts,
-   * by CRM/DWH `carrier_id`) — powers the Data Center → Clients loyalty tier + rewards. DWH-sourced,
-   * owner-scoped like Leads/Deals (admins may target another agent via ?zoho_user_id).
+   * The caller's full client roster — carrier metadata + computed debt/activity overlays + cycle /
+   * this-month / prev-month gallons, in ONE DWH query (dim_company + mart_transaction_line_items +
+   * cmp_invoice). This is the sole source the Clients tab needs: it replaced the servercrm by-agent
+   * roster (+ its live-CMP overlay) and the separate loyalty query. Owner-scoped like Leads/Deals.
+   *
+   * Owner→carrier matching mirrors servercrm's by-agent (id-suffix OR display name), so we return the
+   * SAME carriers. The name arm needs the caller's display name: pass it for the self case (and an
+   * act-as-by-header session, where ctx.userName is already the target). An admin targeting ANOTHER
+   * agent via ?zoho_user_id uses the id path only — we don't have that agent's name.
    */
-  app.get('/data-center/loyalty-stats', guard, async (request) => {
+  app.get('/data-center/clients', guard, async (request) => {
     const ctx = requireSalesAccess(request);
     const q = scopeQuery.parse(request.query);
     const ownerId = resolveZohoUserId(ctx, q.zoho_user_id);
+    const targetingOther = ctx.allDepartmentAccess && Boolean(q.zoho_user_id?.trim());
+    const ownerName = targetingOther ? undefined : ctx.userName?.trim() || undefined;
     try {
-      const stats = await fetchLoyaltyStatsByAgent(ownerId);
-      return { stats };
+      const clients = await fetchAgentClients(ownerId, ownerName);
+      return { clients };
     } catch (err) {
       throw dwhError(err);
     }

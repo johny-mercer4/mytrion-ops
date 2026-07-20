@@ -112,7 +112,7 @@ export function LeadsView({
     if (!phone.trim()) return;
     // Success only — never toast Phone/backend load failures.
     setDialContext({ leadId });
-    if (clickToDial(phone)) pushToast('Calling', phone);
+    clickToDial(phone);
   };
 
   if (view === 'list') {
