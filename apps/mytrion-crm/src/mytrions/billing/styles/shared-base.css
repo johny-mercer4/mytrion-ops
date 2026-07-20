@@ -849,16 +849,16 @@
 .bm-root .bm-refresh-btn {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    padding: 0.5rem 0.875rem;
-    background: var(--accent-bg-subtle);
-    border: 1px solid var(--accent-border);
-    border-radius: var(--radius-sm);
-    color: var(--billing-accent);
-    font-size: 0.6875rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    gap: 0.5rem;
+    padding: 0.5rem 0.8125rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-transform: none;
     cursor: pointer;
     transition: all 120ms;
     font-family: inherit;
@@ -866,8 +866,8 @@
 }
 
 .bm-root .bm-refresh-btn:hover:not(:disabled) {
-    background: var(--accent-bg);
-    box-shadow: var(--accent-glow);
+    border-color: var(--accent-border);
+    color: var(--text-primary);
 }
 
 .bm-root .bm-refresh-btn:disabled {

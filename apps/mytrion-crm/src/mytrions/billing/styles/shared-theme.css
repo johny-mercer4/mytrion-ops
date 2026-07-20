@@ -12,6 +12,15 @@
     --color-on-brand:      #22232e;
     --color-accent:        #38bdf8;
 
+    /* ── Aliases for the shared MytrionLoader (it reads --bg / --accent-soft /
+          --accent-strong / --text, which the billing scope otherwise doesn't define,
+          leaving the loader with no background). These are var() refs so they follow
+          the light/dark theme automatically. ── */
+    --bg:             var(--color-bg-primary);
+    --text:           var(--color-brand-hover);
+    --accent-soft:    var(--accent-bg);
+    --accent-strong:  var(--accent-hover);
+
     /* ── Billing accent ── */
     --billing-accent:      #38bdf8;
     --billing-accent-glow: rgba(56, 189, 248, 0.20);
@@ -80,9 +89,9 @@
     --header-height:      56px;
     --bottom-nav-height:  62px;
 
-    /* ── Surfaces ── */
-    --surface:        #2a2b38;
-    --surface-alt:    #252632;
+    /* ── Surfaces ── (design: cards = #252632, raised/hover = #2a2b38) ── */
+    --surface:        #252632;
+    --surface-alt:    #2a2b38;
     --surface-raised: rgba(200, 204, 218, 0.05);
     --sidebar-bg:     #1e1f2a;
     --header-bg:      #1e1f2a;
