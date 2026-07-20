@@ -43,6 +43,11 @@
     border-bottom: 1px solid var(--border-light);
     transition: background 80ms;
     cursor: pointer;
+    /* Skip layout/paint for off-screen rows — smooths scroll + first render of
+       long ledgers (the list can be 1000+ rows). Reserve ~row height so the
+       scrollbar stays stable. */
+    content-visibility: auto;
+    contain-intrinsic-size: 0 58px;
 }
 
 .bm-root .tx-row:last-of-type {

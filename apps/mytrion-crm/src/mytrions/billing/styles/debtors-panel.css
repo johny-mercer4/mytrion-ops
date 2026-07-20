@@ -283,6 +283,10 @@
 .bm-root .db-row-item {
     border-bottom: 1px solid var(--border-light);
     transition: background 80ms;
+    /* Off-screen rows skip layout/paint — smooths scrolling long Debtors/Prepay
+       lists. contain-intrinsic-size reserves ~row height for scrollbar stability. */
+    content-visibility: auto;
+    contain-intrinsic-size: 0 46px;
 }
 
 .bm-root .db-row-item:last-of-type {
