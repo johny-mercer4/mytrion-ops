@@ -68,6 +68,15 @@
     --sidebar-bg: #FFFFFF;
     --header-bg: #FFFFFF;
 
+    /* ── Aliases for the shared MytrionLoader (it reads --bg / --text /
+          --accent-soft / --accent-strong, which .cs-root otherwise doesn't
+          define — leaving the boot loader with no background). var() refs so
+          they follow the light/dark theme automatically. ── */
+    --bg:            var(--surface);
+    --text:          var(--text-primary);
+    --accent-soft:   var(--cs-accent-soft);
+    --accent-strong: var(--cs-accent-hover);
+
     /* ── Borders ── */
     --border: #E4E7EC;
     --border-light: #EEF0F3;

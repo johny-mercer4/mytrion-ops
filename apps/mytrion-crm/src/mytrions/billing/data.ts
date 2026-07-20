@@ -86,14 +86,53 @@ export function dateFull(iso: string): string {
 
 // ---- color/label meta (widget StatusBadge tone + display label) ----
 
-export function stageMeta(stage: string): { tone: 'good' | 'bad' | 'info' | 'neutral' } {
-  const good = ['Card Funded', 'Card Swiped', 'Cards Activated', 'Cards Sent'];
-  const bad = ['Closed Lost'];
-  const info = ['Billing Form Sent', 'Billing Form Filled', 'EFS Processing', 'Vendor Validation', 'CS Validation'];
-  if (bad.includes(stage)) return { tone: 'bad' };
-  if (good.includes(stage)) return { tone: 'good' };
-  if (info.includes(stage)) return { tone: 'info' };
-  return { tone: 'neutral' };
+/** Semantic colour keys shared by the design's chip() palette. */
+export type StageSem = 'muted' | 'warning' | 'accent' | 'purple' | 'success' | 'danger';
+
+/** Deal stage progression (verbatim design order) — drives both the chip colour
+ *  and the % fill of the stage progress bar. */
+const STAGE_ORDER = [
+  'Application Sent',
+  'Application Filled',
+  'CS Validation',
+  'EFS Processing',
+  'Vendor Validation',
+  'Cards Sent',
+  'Cards Activated',
+  'Billing Form Sent',
+  'Billing Form Filled',
+  'Card Funded',
+  'Card Swiped',
+  'Closed Lost',
+];
+
+/** Design _stageMeta: index bands → sem colour; pct = (idx+1)/11. */
+export function stageMeta(stage: string): { sem: StageSem; pct: number } {
+  if (stage === 'Closed Lost') return { sem: 'danger', pct: 100 };
+  const idx = STAGE_ORDER.indexOf(stage);
+  let sem: StageSem;
+  if (idx <= 1) sem = 'muted';
+  else if (idx <= 4) sem = 'warning';
+  else if (idx <= 6) sem = 'accent';
+  else if (idx <= 8) sem = 'purple';
+  else sem = 'success';
+  const pct = idx >= 0 ? Math.round(((idx + 1) / 11) * 100) : 8;
+  return { sem, pct };
+}
+
+/** Clean a raw Zoho billing_cycle enum (e.g. "WEEKLY_MON_SUN", "SEMI_WEEKLY") to a display label. */
+export function fmtCycle(raw: string): string {
+  const s = (raw || '').trim();
+  if (!s) return '';
+  const u = s.toUpperCase();
+  if (u.startsWith('SEMI_WEEKLY') || u === 'SEMIWEEKLY') return 'Semi-Weekly';
+  if (u.startsWith('BI_WEEKLY') || u === 'BIWEEKLY' || u === 'BI-WEEKLY') return 'Bi-Weekly';
+  if (u.startsWith('BI_MONTHLY') || u === 'BIMONTHLY') return 'Bi-Monthly';
+  if (u.startsWith('WEEKLY')) return 'Weekly';
+  if (u.startsWith('MONTHLY')) return 'Monthly';
+  if (u.startsWith('DAILY')) return 'Daily';
+  // Fallback: underscores → spaces, Title Case.
+  return s.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export function payMeta(t: PayType): { tone: 'good' | 'warn' | 'info' | 'neutral'; label: string } {

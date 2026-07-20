@@ -9,7 +9,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { billingTouchpoint } from '@/api/billing';
 import { useLoad } from '../_shared/useLoad';
-import { type Debtor, dateFull, fmtCurrency, type Invoice } from './data';
+import { type Debtor, dateFull, fmtCurrency, fmtCycle, type Invoice } from './data';
+import { exportDebtorsXlsx } from './debtorsExport';
 
 const ITEMS_PER_PAGE = 50;
 const HARD_DEBT_DAYS = 15;
@@ -22,6 +23,10 @@ const REFRESH_PATH =
 const ERROR_PATH = 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z';
 const CHEVRON_LEFT = 'M15 19l-7-7 7-7';
 const CHEVRON_RIGHT = 'M9 5l7 7-7 7';
+const DOWNLOAD_PATH = 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M7 10l5 5 5-5M12 15V3';
+
+const STATUS_LABELS: Record<string, string> = { all: 'All Statuses', pending: 'Pending', partial: 'Partial' };
+const AGE_LABELS: Record<string, string> = { all: 'All Ages', hard: 'Hard Debt (≥15d)', recent: 'Recent (<15d)' };
 
 // ---- raw → view-model mapping (defensive; the DWH envelope shape varies) ----
 
@@ -80,13 +85,18 @@ function mapDebtor(raw: Record<string, unknown>): Debtor {
 }
 
 export function Debtors() {
-  const page = useLoad(() => billingTouchpoint('billing.debtors.list', {}), []);
+  // `fresh` (Refresh button) bypasses servercrm's 2-min debtors cache; normal loads use it.
+  const page = useLoad(
+    (fresh) => billingTouchpoint('billing.debtors.list', fresh ? { fresh: '1' } : {}),
+    [],
+  );
 
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterAge, setFilterAge] = useState('all');
   const [selected, setSelected] = useState<Debtor | null>(null);
   const [pageNum, setPageNum] = useState(1);
+  const [exporting, setExporting] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const debtors = useMemo(() => extractRows(page.data).map(mapDebtor), [page.data]);
@@ -137,6 +147,23 @@ export function Debtors() {
     }
   }
 
+  // Styled .xlsx of the CURRENT filtered view (matches the KPIs), two sheets: debtors + invoices.
+  function downloadExcel() {
+    if (exporting || filtered.length === 0) return;
+    setExporting(true);
+    exportDebtorsXlsx(filtered, {
+      statusLabel: STATUS_LABELS[filterStatus] ?? '',
+      ageLabel: AGE_LABELS[filterAge] ?? '',
+      search,
+    })
+      .catch((e: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error('Debtors Excel export failed:', e);
+        alert('Excel export failed: ' + (e instanceof Error ? e.message : String(e)));
+      })
+      .finally(() => setExporting(false));
+  }
+
   return (
     <div className="bm-panel bm-debtors-panel">
       {/* ── Header & Search ── */}
@@ -159,29 +186,32 @@ export function Debtors() {
             <option value="recent">Recent (&lt;15d)</option>
           </select>
 
-          <div className="db-search-wrap">
-            <svg className="db-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={SEARCH_PATH} />
-            </svg>
-            <input
-              type="text"
-              className="db-search-input"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search Carrier ID or Company..."
-            />
-            {search ? (
-              <button className="db-search-clear" onClick={() => setSearch('')}>
-                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={CLOSE_PATH} />
-                </svg>
-              </button>
-            ) : null}
-          </div>
-
-          <button className="bm-refresh-btn" onClick={page.reload} disabled={page.loading}>
+          <button
+            className="bm-refresh-btn db-export-btn"
+            onClick={downloadExcel}
+            disabled={exporting || page.loading || filtered.length === 0}
+            title={filtered.length === 0 ? 'Nothing to export' : `Export ${filtered.length} debtor(s) to Excel`}
+          >
             <svg
-              className={page.loading ? 'spin-icon' : undefined}
+              className={exporting ? 'spin-icon' : undefined}
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={DOWNLOAD_PATH} />
+            </svg>
+            {exporting ? 'Exporting…' : 'Export Excel'}
+          </button>
+
+          <button
+            className="bm-refresh-btn"
+            onClick={page.refresh}
+            disabled={page.loading || page.refreshing}
+          >
+            <svg
+              className={page.loading || page.refreshing ? 'spin-icon' : undefined}
               width="14"
               height="14"
               fill="none"
@@ -192,6 +222,29 @@ export function Debtors() {
             </svg>
             Refresh
           </button>
+        </div>
+      </div>
+
+      {/* ── Full-width contextual search (design parity) ── */}
+      <div className="db-search-row">
+        <div className="db-search-wrap">
+          <svg className="db-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={SEARCH_PATH} />
+          </svg>
+          <input
+            type="text"
+            className="db-search-input"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search Carrier ID or Company..."
+          />
+          {search ? (
+            <button className="db-search-clear" onClick={() => setSearch('')}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={CLOSE_PATH} />
+              </svg>
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -229,7 +282,7 @@ export function Debtors() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={ERROR_PATH} />
           </svg>
           <div className="db-error-msg">{page.error}</div>
-          <button className="bm-refresh-btn" onClick={page.reload} style={{ width: 'fit-content', marginTop: '0.5rem' }}>
+          <button className="bm-refresh-btn" onClick={page.refresh} style={{ width: 'fit-content', marginTop: '0.5rem' }}>
             Try Again
           </button>
         </div>
@@ -238,12 +291,11 @@ export function Debtors() {
           {/* List Header */}
           <div className="db-list-header">
             <div className="db-col-carrier">Carrier</div>
-            <div className="db-col-company">Company Name</div>
-            <div className="db-col-cycle">Billing Cycle</div>
+            <div className="db-col-company">Company</div>
+            <div className="db-col-cycle">Cycle</div>
             <div className="db-col-status">Status</div>
             <div className="db-col-age">Oldest Debt</div>
-            <div className="db-col-count">Invoices</div>
-            <div className="db-col-owed">Total Owed</div>
+            <div className="db-col-count">Inv</div>
             <div className="db-col-remain">Remaining</div>
           </div>
 
@@ -258,7 +310,7 @@ export function Debtors() {
                     </div>
                     <div className="db-col-cycle">
                       {debtor.cycle ? (
-                        <span className="db-cycle-badge">{debtor.cycle}</span>
+                        <span className="db-cycle-badge">{fmtCycle(debtor.cycle)}</span>
                       ) : (
                         <span className="db-cycle-none">—</span>
                       )}
@@ -271,10 +323,24 @@ export function Debtors() {
                       </span>
                     </div>
                     <div className="db-col-age">
-                      <span className={`db-age-text${debtor.isHard ? ' text-danger' : ''}`}>{debtor.age}d</span>
+                      <div className="db-age-cell">
+                        <span
+                          className="db-age-text"
+                          style={{ color: debtor.isHard ? 'var(--danger-text)' : 'var(--warning-text)' }}
+                        >
+                          {debtor.age}d
+                        </span>
+                        <div className="db-age-bar">
+                          <div
+                            style={{
+                              width: `${Math.min(Math.round((debtor.age / 31) * 100), 100)}%`,
+                              background: debtor.isHard ? 'var(--danger-text)' : 'var(--warning-text)',
+                            }}
+                          />
+                        </div>
+                      </div>
                     </div>
                     <div className="db-col-count db-count-text">{debtor.invoiceCount}</div>
-                    <div className="db-col-owed db-money-muted">{fmtCurrency(debtor.totalOwed)}</div>
                     <div className="db-col-remain db-money-bold">{fmtCurrency(debtor.totalRemaining)}</div>
                   </div>
                 </div>

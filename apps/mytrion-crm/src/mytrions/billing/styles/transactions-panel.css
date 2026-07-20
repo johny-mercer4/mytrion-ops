@@ -2,10 +2,8 @@
    Billing Mytrion — Payment Transactions Panel
    ===================================================== */
 
-/* ── Panel layout ── */
+/* ── Panel layout (inherits .bm-panel: 22px 26px / gap 16px) ── */
 .bm-root .tx-panel {
-    gap: 0.875rem;
-    padding: 1.25rem;
     height: 100%;
     overflow: hidden;
 }
@@ -22,14 +20,15 @@
 .bm-root .tx-date-sep {
     display: flex;
     align-items: center;
-    padding: 0.4375rem 0.875rem;
-    font-size: 0.5875rem;
+    justify-content: space-between;
+    padding: 9px 16px;
+    font-size: 0.6875rem;
     font-weight: 700;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--text-muted);
-    background: var(--surface-alt);
-    border-bottom: 1px solid var(--border-dark);
+    color: var(--text-secondary);
+    background: var(--sidebar-bg);
+    border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;
     z-index: 2;
@@ -39,11 +38,16 @@
 .bm-root .tx-row {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 0.875rem;
-    border-bottom: 1px solid var(--border-dark);
+    gap: 14px;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--border-light);
     transition: background 80ms;
     cursor: pointer;
+    /* Skip layout/paint for off-screen rows — smooths scroll + first render of
+       long ledgers (the list can be 1000+ rows). Reserve ~row height so the
+       scrollbar stays stable. */
+    content-visibility: auto;
+    contain-intrinsic-size: 0 58px;
 }
 
 .bm-root .tx-row:last-of-type {
@@ -60,7 +64,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 46px;
+    width: 64px;
     padding: 0.2rem 0.5rem;
     border-radius: var(--radius-sm);
     font-size: 0.5625rem;
@@ -194,13 +198,13 @@
 .bm-root .tx-amount-col {
     flex-shrink: 0;
     text-align: right;
-    min-width: 72px;
+    width: 110px;
 }
 
 .bm-root .tx-amount-value {
     display: block;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.9375rem;
+    font-size: 0.875rem;
     font-weight: 600;
     color: var(--success-text);
     line-height: 1;
@@ -208,7 +212,7 @@
 
 .bm-root .tx-date-inline {
     display: block;
-    font-size: 0.5875rem;
+    font-size: 0.6875rem;
     color: var(--text-muted);
     margin-top: 0.25rem;
 }
