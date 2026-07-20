@@ -17,6 +17,7 @@ import {
   renameDriver,
   sendServiceRequest,
   fetchTransactions,
+  overrideCard,
   redeemRegistration,
   sendInvoice,
   sendTransactionsReport,
@@ -968,7 +969,11 @@ function Home({
   if (tab === 'services') return <SlideIn key={tab} dir={slideDir}><ServicesTab isDriver={session.isDriver} pinned={pinned} onTogglePin={onTogglePin} onOpen={onOpenAction} /></SlideIn>;
   if (tab === 'inbox') return <SlideIn key={tab} dir={slideDir}><InboxTab items={inbox} onMarkAllRead={onMarkAllRead} onRead={onReadNotif} /></SlideIn>;
 
-  const pinnedItems = pinned.map((key) => findCatalogItem(key, session.isDriver)).filter((x): x is NonNullable<typeof x> => !!x);
+  // Drop `soon` items (action === null): they cannot be opened, so a stale pin for one — e.g. a
+  // driver who pinned money code before it became owner-gated — must not render as a dead home row.
+  const pinnedItems = pinned
+    .map((key) => findCatalogItem(key, session.isDriver))
+    .filter((x): x is NonNullable<typeof x> => !!x && x.item.action !== null);
 
   return (
     <SlideIn key={tab} dir={slideDir}>
@@ -1552,6 +1557,24 @@ function ProfileSheet({
 
 /** Transaction period vocabulary — mirrors servercrm's DWH range param + the zoho-octane
  * self-service transactions presets (Today / This Week / … / This Year), plus a custom from-to. */
+/** The in-network truck-stop chains — verbatim the "Supported truck stops" list the support team
+ *  pasted into carrier chats (the single most-asked question in the 9-group chat analysis: 814
+ *  times). Brand names, deliberately not translated. Update here when the network changes. */
+const STATION_CHAINS = [
+  'TA / Petro',
+  "Love's",
+  "Casey's",
+  'Sapp Brothers',
+  'Speedway',
+  '7-Eleven',
+  'SEI Fuels',
+  'RaceTrac',
+  'Raceway',
+  'Maverik',
+  'Kum & Go',
+  'Irving',
+] as const;
+
 type TxnRange = 'day' | 'week' | 'month' | 'quarter' | 'half_year' | 'year' | 'custom';
 const TXN_RANGES: ReadonlyArray<{ value: TxnRange; key: string }> = [
   { value: 'day', key: 'txns.day' },
@@ -1585,7 +1608,8 @@ type SheetData =
   | { kind: 'payment'; v: PaymentInfoResult }
   | { kind: 'invoices'; v: SalesInvoicesResult }
   | { kind: 'tracking'; v: TrackingResult }
-  | { kind: 'manualcode'; v: { cardNumber: string | null } };
+  | { kind: 'manualcode'; v: { cardNumber: string | null } }
+  | { kind: 'stations'; v: null };
 
 function ActionSheet({
   target,
@@ -1623,6 +1647,11 @@ function ActionSheet({
   const [liveRefreshing, setLiveRefreshing] = useState(false);
   /** Which export format is currently being built + sent to Telegram, if any. */
   const [exportBusy, setExportBusy] = useState<TxnExportFormat | null>(null);
+  /** "Without discount" (retail) report variant — accounting asks for both weekly. Owner-only in
+   *  the UI; the backend forces retail for drivers regardless. */
+  const [exportRetail, setExportRetail] = useState(false);
+  /** Detailed columns: full card number + Driver / Unit / Driver ID (client feedback). */
+  const [exportDetailed, setExportDetailed] = useState(false);
 
   const service = target.kind === 'service' ? target.key : null;
   // A driver's status sheet is about their CARD, not the account — the generic svc.status title says
@@ -1657,6 +1686,9 @@ function ActionSheet({
         // No fetch: the manual entry code IS the card number the session already holds. Sending a
         // request would only ask the backend to hand back what it put in the session at sign-in.
         else if (service === 'manualcode') next = { kind: 'manualcode', v: { cardNumber: session.ownCardNumber } };
+        // Static content — the in-network chains list. No fetch: this is the exact list support
+        // pasted into chats 814 times (9-group analysis); shipping it in-app is the whole point.
+        else if (service === 'stations') next = { kind: 'stations', v: null };
         else if (service === 'tracking') next = { kind: 'tracking', v: await fetchTracking(initData) };
         // Explicit, because this was a bare `else` that swallowed every unhandled key into a tracking
         // fetch — a new ServiceKey would silently open the wrong sheet instead of failing.
@@ -1734,7 +1766,7 @@ function ActionSheet({
     setExportBusy(format);
     try {
       const opts = range === 'custom' ? { range: 'custom', from, to } : { range };
-      await sendTransactionsReport(initData, opts, format);
+      await sendTransactionsReport(initData, opts, format, exportRetail ? 'retail' : 'discount', exportDetailed);
       haptic('success');
       showToast(t('toast.reportSentToTelegram'));
     } catch (e) {
@@ -2176,6 +2208,20 @@ function ActionSheet({
                 </div>
               );
             })()
+          ) : data?.kind === 'stations' ? (
+            <div style={{ padding: '2px 0' }}>
+              <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                {STATION_CHAINS.map((name, i) => (
+                  <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: i === STATION_CHAINS.length - 1 ? 'none' : '1px solid var(--border)' }}>
+                    <span style={{ width: 30, height: 30, borderRadius: 9, background: 'var(--card)', color: 'var(--link-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                      <Icon name="pin" size={14} strokeWidth={2} className="" />
+                    </span>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{name}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--muted-fg)', lineHeight: 1.55, marginTop: 12 }}>{t('stations.note')}</div>
+            </div>
           ) : data?.kind === 'tracking' ? (
             (() => {
               const tr = data.v;
@@ -2234,6 +2280,35 @@ function ActionSheet({
               {/* Only for requests that actually reach a human. A driver's card is resolved
                   server-side, but an owner has a fleet — the ticket would otherwise say "replace a
                   lost card" and name no card, leaving support to ask before they can start. */}
+              {/* Driver override is WIRED (C-16): one tap, own card, EFS auto-reverts in ~30min.
+                  Shown above the ticket form; if the server flag is off (503 MINIAPP_WRITES_DISABLED)
+                  the ticket below remains the fallback, so the driver is never stranded. */}
+              {target.kind === 'generic' && target.request === 'override-card' && session.isDriver && (
+                <button
+                  type="button"
+                  className="press"
+                  disabled={genericBusy}
+                  onClick={() => {
+                    haptic('tap');
+                    setGenericBusy(true);
+                    overrideCard(initData)
+                      .then(() => {
+                        haptic('success');
+                        showToast(t('ovr.done'));
+                        onClose();
+                      })
+                      .catch((e) => {
+                        haptic('error');
+                        const code = e instanceof ApiError ? e.code : '';
+                        showToast(code === 'MINIAPP_WRITES_DISABLED' ? t('ovr.disabled') : t('ovr.fail'), 'error');
+                      })
+                      .finally(() => setGenericBusy(false));
+                  }}
+                  style={{ width: '100%', height: 48, border: 'none', borderRadius: 12, marginBottom: 14, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+                >
+                  {genericBusy ? <Spinner size={16} /> : t('ovr.now')}
+                </button>
+              )}
               {target.kind === 'generic' && target.request && (
                 <textarea
                   value={genericComment}
@@ -2265,6 +2340,16 @@ function ActionSheet({
             </div>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-fg)', marginBottom: 7 }}>
               {exportBusy ? t('txns.sendingReport') : t('txns.exportToTelegram')}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              {!session.isDriver && (
+                <button type="button" className="press" onClick={() => { haptic('tap'); setExportRetail((v) => !v); }} style={{ flex: 1, height: 34, borderRadius: 9, fontFamily: "'Geist'", fontWeight: 600, fontSize: 12, cursor: 'pointer', background: exportRetail ? 'var(--primary)' : 'var(--secondary)', color: exportRetail ? '#FFFFFF' : 'var(--muted-fg)', border: 'none' }}>
+                  {t('txns.retailOnly')}
+                </button>
+              )}
+              <button type="button" className="press" onClick={() => { haptic('tap'); setExportDetailed((v) => !v); }} style={{ flex: 1, height: 34, borderRadius: 9, fontFamily: "'Geist'", fontWeight: 600, fontSize: 12, cursor: 'pointer', background: exportDetailed ? 'var(--primary)' : 'var(--secondary)', color: exportDetailed ? '#FFFFFF' : 'var(--muted-fg)', border: 'none' }}>
+                {t('txns.detailedCols')}
+              </button>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               {(['xlsx', 'pdf', 'csv'] as const).map((f) => (

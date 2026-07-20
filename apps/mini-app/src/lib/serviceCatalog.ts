@@ -43,9 +43,12 @@ const DRIVER_CATALOG: CatalogGroup[] = [
       //
       // In-group ORDER IS DATA-DRIVEN: the 9-group Telegram support-chat analysis (54k messages,
       // Analitika/servislar_strategiyasi.md) put money codes (2 251 asks, ~30% of everything) and
-      // override far ahead of the reads — most-asked first, `soon` items last.
-      { key: 'drv-money-code', labelKey: 'cat.drvMoneyCode', icon: 'banknote', action: 'generic', request: 'money-code' },
+      // override far ahead of the reads — most-asked first, `soon` items last. Money code is the #1
+      // ask, but for a DRIVER it is an owner-authorized action (the money-code backend is owner-only),
+      // so it sits in the `soon` block below until a driver→owner approval flow exists — surfacing it
+      // as an openable request a driver cannot complete would only dead-end them.
       { key: 'drv-override-card', labelKey: 'cat.drvOverrideCard', icon: 'lock', action: 'generic', request: 'override-card' },
+      { key: 'drv-stations', labelKey: 'cat.supFindStations', icon: 'pin', action: 'stations' },
       { key: 'drv-txns', labelKey: 'cat.drvTxns', icon: 'list', action: 'txns' },
       // Both of these read data the backend ALREADY scopes to the driver's own card, so neither
       // needed a new endpoint — they were simply missing from the catalog. `last-used` was wired end
@@ -53,6 +56,8 @@ const DRIVER_CATALOG: CatalogGroup[] = [
       // is the card number the session already carries, which is why it can render with no fetch.
       { key: 'drv-last-used', labelKey: 'cat.drvLastUsed', icon: 'clock', action: 'lastused' },
       { key: 'drv-reveal-code', labelKey: 'cat.drvRevealCode', icon: 'key', action: 'manualcode' },
+      // Soon — money code is an owner-authorized action; a driver cannot self-serve it yet.
+      { key: 'drv-money-code', labelKey: 'cat.drvMoneyCode', icon: 'banknote', action: null },
       { key: 'drv-hold-unhold', labelKey: 'cat.drvHoldUnhold', icon: 'clock', action: null },
       { key: 'drv-change-pin', labelKey: 'cat.drvChangePin', icon: 'key', action: null },
     ],
@@ -112,11 +117,11 @@ const OWNER_CATALOG: CatalogGroup[] = [
   {
     groupLabelKey: 'svcgrp.support',
     items: [
-      // Demand-ranked `soon` queue: stations (814 asks — the "supported truck stops" list is pasted
-      // into chats weekly) and roadside/service booking (757) are worth un-parking first.
-      { key: 'sup-find-stations', labelKey: 'cat.supFindStations', icon: 'pin', action: null },
+      // Demand-ranked (chat analysis): stations 814 asks (the "supported truck stops" list was
+      // pasted into chats weekly — now a static in-app page), roadside/service booking 757 next.
+      { key: 'sup-find-stations', labelKey: 'cat.supFindStations', icon: 'pin', action: 'stations' },
       { key: 'sup-book-service', labelKey: 'cat.supBookService', icon: 'truck', action: null },
-      { key: 'sup-dispute-txn', labelKey: 'cat.supDisputeTxn', icon: 'alert', action: null },
+      { key: 'sup-dispute-txn', labelKey: 'cat.supDisputeTxn', icon: 'alert', action: 'generic', request: 'dispute-txn' },
       { key: 'sup-talk-agent', labelKey: 'cat.supTalkAgent', icon: 'headset', action: null },
     ],
   },
@@ -131,7 +136,7 @@ export function defaultPinned(isDriver: boolean): string[] {
   // already lives on the home hero, so its pin slot goes to reports instead. Only affects users
   // with no stored pins — a user's own arrangement always wins.
   return isDriver
-    ? ['drv-money-code', 'drv-txns']
+    ? ['drv-override-card', 'drv-txns'] // not drv-money-code: it is a `soon` (owner-authorized) item for drivers, so it isn't pinnable
     : ['fin-money-code', 'card-status', 'fin-txn-reports', 'fin-invoice-view'];
 }
 
