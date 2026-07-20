@@ -190,9 +190,9 @@
     position: absolute;
     top: 0;
     left: 0;
-    width: 3px;
+    width: 2px;
     height: 100%;
-    background: var(--accent-border-strong);
+    background: var(--billing-accent);
 }
 
 .bm-root .db-kpi-card.db-danger-card::after {
@@ -211,11 +211,11 @@
 }
 
 .bm-root .db-kpi-value {
-    font-family: 'Rajdhani', sans-serif;
-    font-size: 1.375rem;
-    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.625rem;
+    font-weight: 600;
     color: var(--text-primary);
-    line-height: 1;
+    line-height: 1.05;
 }
 
 .bm-root .db-kpi-value.text-danger {

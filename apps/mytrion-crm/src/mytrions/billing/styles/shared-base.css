@@ -301,8 +301,8 @@
     flex-direction: column;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 1.25rem;
-    gap: 1.25rem;
+    padding: 22px 26px;
+    gap: 16px;
     height: 100%;
 }
 
@@ -323,16 +323,17 @@
 
 .bm-root .bm-panel-title {
     font-family: 'Rajdhani', sans-serif;
-    font-size: 1.125rem;
+    font-size: 1.5rem;
     font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--text-primary);
+    letter-spacing: 0.02em;
+    text-transform: none;
+    line-height: 1;
+    color: var(--color-brand-hover);
     margin: 0;
 }
 
 .bm-root .bm-panel-subtitle {
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     color: var(--text-muted);
     font-weight: 400;
     letter-spacing: 0.02em;
@@ -413,55 +414,61 @@
 .bm-root .bm-stat-trend.down { color: var(--billing-danger); }
 .bm-root .bm-stat-trend.flat { color: var(--text-muted); }
 
-/* ── Summary Banner (Horizontal stats) ── */
+/* ── KPI cards (design: separate cards, mono value, colored left accent bar, sub-line, no icon) ──
+   The per-card accent colour comes from an inline `--stat-color` set by each panel; it tints both
+   the value and the 2px left bar. */
 .bm-root .bm-summary-banner {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 0.875rem;
-    padding: 1.25rem;
-    background: var(--surface-alt);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
+    gap: 12px;
 }
 
 .bm-root .bm-summary-item {
+    position: relative;
+    overflow: hidden;
     display: flex;
-    align-items: center;
-    gap: 0.875rem;
-    padding-right: 0.875rem;
-    border-right: 1px solid var(--border-light);
+    flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 13px 15px;
 }
 
-.bm-root .bm-summary-item:last-child {
-    border-right: none;
-    padding-right: 0;
+/* 2px colored left accent bar. */
+.bm-root .bm-summary-item::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--stat-color, var(--billing-accent));
 }
 
-.bm-root .bm-summary-icon {
-    width: 36px;
-    height: 36px;
-    border-radius: var(--radius-sm);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-
-.bm-root .bm-summary-amount {
-    font-family: 'Rajdhani', sans-serif;
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    line-height: 1;
-    margin-bottom: 0.15rem;
-}
+/* Legacy icon slot — design has no icon; hide if a panel still renders it. */
+.bm-root .bm-summary-icon { display: none; }
 
 .bm-root .bm-summary-label {
     font-size: 0.625rem;
     font-weight: 600;
     color: var(--text-muted);
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
+}
+
+.bm-root .bm-summary-amount {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.625rem;
+    font-weight: 600;
+    color: var(--stat-color, var(--text-primary));
+    line-height: 1.05;
+    margin-top: 4px;
+}
+
+.bm-root .bm-summary-sub {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    margin-top: 2px;
 }
 
 /* ── Standardized Toolbar ── */
@@ -823,18 +830,19 @@
 
 .bm-root .bm-title {
     font-family: 'Rajdhani', sans-serif;
-    font-size: 1.25rem;
+    font-size: 1.5rem;
     font-weight: 700;
-    color: var(--text-primary);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    color: var(--color-brand-hover);
+    letter-spacing: 0.02em;
+    text-transform: none;
+    line-height: 1;
     margin: 0;
 }
 
 .bm-root .bm-subtitle {
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     color: var(--text-muted);
-    margin-top: 0.2rem;
+    margin-top: 0.3125rem;
 }
 
 /* ── Standardized Refresh Button ── */

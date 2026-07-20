@@ -13,7 +13,7 @@
  * (billing.invoices.search); Debtor Status + Recent Transactions render as graceful, honest
  * placeholders (no per-carrier billing touchpoint wired for those yet).
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import { billingTouchpoint, updateDealBilling } from '@/api/billing';
 import type { BillingDealsResult, BillingInvoicesResult } from '@/api/touchpointTypes';
@@ -257,34 +257,10 @@ export function DataCenter() {
 
       {/* ── Stat Cards ── */}
       <div className="bm-summary-banner">
-        <StatItem
-          bg="var(--accent-bg)"
-          color="var(--billing-accent)"
-          value={deals.length}
-          label="Total Deals"
-          icon="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"
-        />
-        <StatItem
-          bg="var(--success-bg)"
-          color="var(--success-text)"
-          value={statCounts.loc}
-          label="Line of Credit"
-          icon="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-        />
-        <StatItem
-          bg="var(--warning-bg)"
-          color="var(--warning-text)"
-          value={statCounts.prepay}
-          label="Prepay"
-          icon="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-        />
-        <StatItem
-          bg="var(--purple-bg)"
-          color="var(--purple-text)"
-          value={statCounts.deposit}
-          label="Deposit"
-          icon="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
-        />
+        <StatItem color="var(--billing-accent)" value={deals.length} label="Total Deals" sub="in book" />
+        <StatItem color="var(--billing-accent)" value={statCounts.loc} label="Line of Credit" sub={pctOfBook(statCounts.loc, deals.length)} />
+        <StatItem color="var(--warning-text)" value={statCounts.prepay} label="Prepay" sub={pctOfBook(statCounts.prepay, deals.length)} />
+        <StatItem color="var(--purple-text)" value={statCounts.deposit} label="Deposit" sub={pctOfBook(statCounts.deposit, deals.length)} />
       </div>
 
       {/* ── Toolbar ── */}
@@ -499,18 +475,17 @@ export function DataCenter() {
 }
 
 /* ═══════════ Stat card ═══════════ */
-function StatItem({ bg, color, value, label, icon }: { bg: string; color: string; value: number; label: string; icon: string }) {
+/** "X% of book" sub-line for a type count against the total (empty if no deals). */
+function pctOfBook(count: number, total: number): string {
+  return total > 0 ? `${Math.round((count / total) * 100)}% of book` : '—';
+}
+
+function StatItem({ color, value, label, sub }: { color: string; value: number; label: string; sub?: string }) {
   return (
-    <div className="bm-summary-item">
-      <div className="bm-summary-icon" style={{ background: bg, color }}>
-        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={icon} />
-        </svg>
-      </div>
-      <div>
-        <div className="bm-summary-amount">{value}</div>
-        <div className="bm-summary-label">{label}</div>
-      </div>
+    <div className="bm-summary-item" style={{ '--stat-color': color } as CSSProperties}>
+      <div className="bm-summary-label">{label}</div>
+      <div className="bm-summary-amount">{value}</div>
+      {sub ? <div className="bm-summary-sub">{sub}</div> : null}
     </div>
   );
 }
