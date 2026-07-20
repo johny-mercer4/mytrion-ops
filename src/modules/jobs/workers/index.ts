@@ -11,11 +11,13 @@ import {
   deadLetterJob,
   agentRunJob,
   retentionCaseSyncJob,
+  retentionDeadlineSweepJob,
 } from '../catalog.js';
 import { handleAgentRunJobs } from './agentRun.js';
 import { bulkIngestJob, handleBulkIngestJobs } from './knowledgeIngest.js';
 import { AUTOMATIONS, makeAutomationHandler } from './automations.js';
 import { runRetentionCaseSync } from './retentionCaseSync.js';
+import { runRetentionDeadlineSweep } from './retentionDeadlineSweep.js';
 import {
   decayAgentMemories,
   handleDeadLetterJobs,
@@ -31,9 +33,18 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
     await boss.work(spec.queue, { batchSize: 1 }, async () => handler());
   }
 
-  await boss.work(retentionCaseSyncJob.name, { batchSize: 1 }, async () =>
-    runRetentionCaseSync(),
-  );
+  await boss.work(retentionCaseSyncJob.name, { batchSize: 1 }, async (jobs) => {
+    const job = jobs[0];
+    if (!job) return undefined;
+    const payload = retentionCaseSyncJob.schema.parse(job.data ?? {});
+    return runRetentionCaseSync(payload);
+  });
+  await boss.work(retentionDeadlineSweepJob.name, { batchSize: 1 }, async (jobs) => {
+    const job = jobs[0];
+    if (!job) return undefined;
+    const payload = retentionDeadlineSweepJob.schema.parse(job.data ?? {});
+    return runRetentionDeadlineSweep(payload);
+  });
   await boss.work(bulkIngestJob.name, { batchSize: 1 }, handleBulkIngestJobs);
   await boss.work(checkpointSweepJob.name, { batchSize: 1 }, async () => sweepStaleCheckpoints());
   await boss.work(approvalsExpiryJob.name, { batchSize: 1 }, async () => sweepExpiredApprovals());

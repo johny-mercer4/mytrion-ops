@@ -31,8 +31,8 @@ const grad = 'linear-gradient(120deg,var(--accent),var(--accent-2))';
 /** Surface (not alt) — light-mode picklists stay clean white, not grey wash. */
 const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
 const labelCss = 'font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
-const noteWarn = 'padding:14px 16px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);font-size:12.5px;color:var(--text2);line-height:1.5';
-const noteErr = 'padding:12px 14px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);font-size:12.5px;color:var(--danger);line-height:1.5';
+const noteWarn = 'padding:14px 16px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);font-size:13px;color:var(--text2);line-height:1.5';
+const noteErr = 'padding:12px 14px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);font-size:13px;color:var(--danger);line-height:1.5';
 const mono = "font-family:'JetBrains Mono',monospace";
 const invRanges = [
   { label: 'Last 7 Days', range: 'last_7' },
@@ -51,7 +51,7 @@ const txnRanges = TXN_RANGE_PRESETS.map((p) => ({ value: p.value, label: p.label
 const todayIso = () => nyToday();
 const daysAgoIso = (n: number) => nyDaysAgo(n);
 const limitBtn = (on: boolean, col: string): string =>
-  `flex:1;padding:9px;border-radius:var(--radius-md);border:1px solid ${on ? col : 'var(--border)'};background:${on ? `color-mix(in srgb,${col} 16%,transparent)` : 'var(--surface)'};color:${on ? col : 'var(--muted)'};font-size:12.5px;font-weight:700;cursor:pointer;transition:all .14s`;
+  `flex:1;padding:9px;border-radius:var(--radius-md);border:1px solid ${on ? col : 'var(--border)'};background:${on ? `color-mix(in srgb,${col} 16%,transparent)` : 'var(--surface)'};color:${on ? col : 'var(--muted)'};font-size:13px;font-weight:700;cursor:pointer;transition:all .14s`;
 const btnP = (extra: string): string => `border:none;background:${grad};color:#fff;font-weight:700;cursor:pointer;${extra}`;
 function Lbl({ t }: { t: string }) { return <div style={s(labelCss)}>{t}</div>; }
 const closeX16 = (
@@ -297,7 +297,7 @@ export function AutoTab() {
       <div className="ss-fu">
         <div style={s('margin-bottom:16px')}>
           <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.04em;text-transform:uppercase')}>Self-Service Actions</div>
-          <div style={s('font-size:12.5px;color:var(--muted);margin-top:2px')}>Handle Customer Service, Billing &amp; Verification yourself — no ticket needed. <strong style={s('color:var(--text2)')}>{String(autoCatalog.length)}</strong> actions available.</div>
+          <div style={s('font-size:13px;color:var(--muted);margin-top:2px')}>Handle Customer Service, Billing &amp; Verification yourself — no ticket needed. <strong style={s('color:var(--text2)')}>{String(autoCatalog.length)}</strong> actions available.</div>
         </div>
         <div style={s('position:relative;margin-bottom:18px')}>
           <Icon name="search" size={16} style={s('position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--muted)')} />
@@ -332,7 +332,7 @@ export function AutoTab() {
                   {kind === 'search' && <AutoWexPanel />}
 
                   {kind === 'link' && (
-                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:12.5px;color:var(--text2);line-height:1.5')}>Opens the WEX EFS eManager credentials guide PDF in a new tab.</div>
+                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:13px;color:var(--text2);line-height:1.5')}>Opens the WEX EFS eManager credentials guide PDF in a new tab.</div>
                   )}
 
                   {needsDeal && (
@@ -446,7 +446,7 @@ export function AutoTab() {
                       )}
                       {mcPreviewErr && <div style={s(noteErr)}>{mcPreviewErr}</div>}
                       {mcPreview && (
-                        <div style={s(`padding:14px 16px;border-radius:var(--radius-md);background:${mcPreview.eligible ? 'rgba(var(--accent-rgb),.08)' : 'color-mix(in srgb,var(--warn) 12%,transparent)'};border:1px solid ${mcPreview.eligible ? 'rgba(var(--accent-rgb),.2)' : 'color-mix(in srgb,var(--warn) 30%,transparent)'};font-size:12.5px;color:var(--text2);line-height:1.5`)}>
+                        <div style={s(`padding:14px 16px;border-radius:var(--radius-md);background:${mcPreview.eligible ? 'rgba(var(--accent-rgb),.08)' : 'color-mix(in srgb,var(--warn) 12%,transparent)'};border:1px solid ${mcPreview.eligible ? 'rgba(var(--accent-rgb),.2)' : 'color-mix(in srgb,var(--warn) 30%,transparent)'};font-size:13px;color:var(--text2);line-height:1.5`)}>
                           {mcPreview.eligible
                             ? <>Eligible — <strong style={s('color:var(--text)')}>{money(mcPreview.available)}</strong> available of a {money(mcPreview.credit_limit)} line{mcPreview.billing_cycle_label ? ` (${mcPreview.billing_cycle_label})` : ''}.</>
                             : <>Not eligible right now{mcPreview.available != null ? ` — ${money(mcPreview.available)} available` : ''}.</>}
@@ -476,14 +476,14 @@ export function AutoTab() {
                   )}
 
                   {b.id === 'reactivation' && hasDeal && (
-                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:12.5px;color:var(--text2);line-height:1.5')}>
+                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:13px;color:var(--text2);line-height:1.5')}>
                       Submits a reactivation email request for <strong style={s('color:var(--text)')}>{autoDeal?.name}</strong>. You will receive the answer by email.
                     </div>
                   )}
 
                   {b.id === 'card-replacement' && hasDeal && (
                     <div>
-                      <div style={s('font-size:12.5px;color:var(--text2);margin-bottom:12px')}>Confirm the shipping address for the replacement cards.</div>
+                      <div style={s('font-size:13px;color:var(--text2);margin-bottom:12px')}>Confirm the shipping address for the replacement cards.</div>
                       <div style={s('display:grid;grid-template-columns:2fr 1fr;gap:12px')}>
                         <div style={s('grid-column:1 / -1')}><Lbl t="Street Address" /><input value={autoAddr.address} onChange={(e) => setAddr('address', e.target.value)} placeholder="123 Fleet Way" className="ss-in" style={s(inp42)} /></div>
                         <div><Lbl t="City" /><input value={autoAddr.city} onChange={(e) => setAddr('city', e.target.value)} placeholder="City" className="ss-in" style={s(inp42)} /></div>
@@ -496,7 +496,7 @@ export function AutoTab() {
                   )}
 
                   {(kind === 'simple' || kind === 'wex-tasks') && hasDeal && (
-                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:12.5px;color:var(--text2);line-height:1.5')}><strong style={s('color:var(--text)')}>Ready.</strong> This will run against <strong style={s('color:var(--text)')}>{autoDeal?.name}</strong> and return an instant result.</div>
+                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:13px;color:var(--text2);line-height:1.5')}><strong style={s('color:var(--text)')}>Ready.</strong> This will run against <strong style={s('color:var(--text)')}>{autoDeal?.name}</strong> and return an instant result.</div>
                   )}
 
                   {kind !== 'search' && (
@@ -564,19 +564,19 @@ export function AutoTab() {
                   {autoResultTable && (
                     <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);overflow:hidden')}>
                       <div style={s('padding:11px 15px;background:var(--alt);font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)')}>{autoResultTable.title}</div>
-                      <div style={s(`display:grid;grid-template-columns:repeat(${autoResultTable.columns.length},1fr);gap:8px;padding:10px 15px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--border2)`)}>
+                      <div style={s(`display:grid;grid-template-columns:repeat(${autoResultTable.columns.length},1fr);gap:8px;padding:10px 15px;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--border2)`)}>
                         {autoResultTable.columns.map((c) => <span key={c}>{c}</span>)}
                       </div>
                       {autoResultTable.rows.map((row, i) => (
-                        <div key={i} className="ss-row-h" style={s(`display:grid;grid-template-columns:repeat(${autoResultTable.columns.length},1fr);gap:8px;padding:12px 15px;border-top:1px solid var(--border2);font-size:12.5px`)}>
+                        <div key={i} className="ss-row-h" style={s(`display:grid;grid-template-columns:repeat(${autoResultTable.columns.length},1fr);gap:8px;padding:12px 15px;border-top:1px solid var(--border2);font-size:13px`)}>
                           {row.map((cell, j) => <span key={j} style={s(j === 0 ? mono : 'color:var(--text2)')}>{cell}</span>)}
                         </div>
                       ))}
                     </div>
                   )}
                   <div style={s(`display:flex;justify-content:flex-end;gap:10px;${bodyTxnSplit ? 'flex-shrink:0;padding-top:4px' : 'margin-top:4px'}`)}>
-                    <button onClick={resetAuto} className="ss-auto-result-btn-sec" style={s('height:42px;padding:0 18px;font-size:12.5px')}>Run another</button>
-                    <button onClick={closeAuto} className="ss-btn-p" style={s(btnP('height:42px;padding:0 22px;border-radius:var(--radius-md);font-size:12.5px'))}>Done</button>
+                    <button onClick={resetAuto} className="ss-auto-result-btn-sec" style={s('height:42px;padding:0 18px;font-size:13px')}>Run another</button>
+                    <button onClick={closeAuto} className="ss-btn-p" style={s(btnP('height:42px;padding:0 22px;border-radius:var(--radius-md);font-size:13px'))}>Done</button>
                   </div>
                 </div>
               ) : (

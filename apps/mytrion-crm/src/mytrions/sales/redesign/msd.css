@@ -725,7 +725,8 @@
   position: sticky;
   top: 0;
   background: var(--surface-2, #1a2130);
-  z-index: 1;
+  /* Header sits above every scrolled body/detail cell (incl. the tinted Volume column). */
+  z-index: 3;
 }
 .ss-root.light .msd-tx-table th {
   background: var(--alt);
@@ -777,7 +778,9 @@
 /* Volume column: full-cell gold wash — no icon, no pill chips */
 .ss-root .msd-tx-th--vol {
   color: #f59e0b !important;
-  background: rgba(245, 158, 11, 0.08) !important;
+  /* Opaque gold wash over the sticky-header base — a translucent header let scrolled rows show
+     through it (the reported z-index/bleed bug). color-mix keeps the tint but stays fully opaque. */
+  background: color-mix(in srgb, #f59e0b 8%, var(--surface-2, #1a2130)) !important;
 }
 .ss-root .msd-tx-vol {
   color: #fcd34d !important;
@@ -791,6 +794,7 @@
 }
 .ss-root.light .msd-tx-th--gold,
 .ss-root.light .msd-tx-th--vol { color: #92400e !important; }
+.ss-root.light .msd-tx-th--vol { background: color-mix(in srgb, #f59e0b 12%, var(--alt)) !important; }
 .ss-root.light .msd-tx-gold,
 .ss-root.light .msd-tx-vol { color: #b45309 !important; }
 .ss-root.light .msd-tx-gold--total,

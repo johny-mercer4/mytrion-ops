@@ -1,12 +1,11 @@
 /**
- * Sales Mytrion redesign — live-data adapters. Maps the app's touchpoints + Desk routes onto the
- * exact shapes the redesign tabs render (the same objects that mock.ts used to provide), so each
- * tab swaps `import … from '../mock'` for a `useLoad(loadX)` with loading/error/empty. NO mock/
- * fake data — every array here comes from a real backend call.
+ * Sales Mytrion redesign — live-data adapters. Maps touchpoints + Desk routes onto the shapes
+ * the redesign tabs render. Every array comes from a real backend call (no seed fixtures).
  */
 import { getDeskTicket, listDeskComments, listDeskTickets, type DeskTicket } from '@/api/desk';
 import { getImpersonation } from '@/api/impersonation';
 import { callTouchpoint } from '@/api/touchpoints';
+import { getLoyaltyStats, type LoyaltyStats } from '@/api/dataCenter';
 import { ICO } from './salesData';
 import type { IconName } from './icons';
 
@@ -256,20 +255,35 @@ export interface RecordVM {
   active: number;
   /** This billing-cycle gallons (from dashboard.agent_sales transactions.volume). */
   gallons: string;
+  /** Raw billing-cycle gallons (numeric) — drives the loyalty tier level. */
+  cycleGallons: number;
   status: 'active' | 'attention' | 'debtor';
   mc: string;
   dot: string;
+  /** Real per-calendar-month loyalty inputs (DWH via /data-center/loyalty-stats). Zero when the
+   *  client had no transactions that month or the stats fetch failed. Drive the tier from THESE —
+   *  never the formatted `gallons` string (cycle) or `active`/`cards` (all-time). */
+  gallonsThisMonth: number;
+  activeCardsThisMonth: number;
+  transactionsThisMonth: number;
+  gallonsPrevMonth: number;
+  activeCardsPrevMonth: number;
 }
 const truthy = (v: unknown): boolean =>
   v === true || v === 1 || ['1', 'true', 't', 'yes'].includes(String(v ?? '').toLowerCase());
 
-function mapRecord(c: Record<string, unknown>, cycleGallonsByCarrier: Map<string, number>): RecordVM {
+function mapRecord(
+  c: Record<string, unknown>,
+  cycleGallonsByCarrier: Map<string, number>,
+  loyaltyStats: LoyaltyStats,
+): RecordVM {
   const debt = n(c.computed_debt);
   const days = n(c.computed_debt_days);
   const suspended = truthy(c.is_loc_suspended);
   const active = truthy(c.computed_is_active);
   const status: RecordVM['status'] = (debt >= 1 && days >= 2) || suspended ? 'debtor' : active ? 'active' : 'attention';
   const carrierId = String(c.carrier_id ?? '');
+  const ls = loyaltyStats[carrierId];
   return {
     id: carrierId,
     name: String(c.company_name ?? '(unnamed)'),
@@ -280,9 +294,15 @@ function mapRecord(c: Record<string, unknown>, cycleGallonsByCarrier: Map<string
     active: n(c.total_active_cards),
     // Cycle gallons from dashboard.agent_sales `transactions` (full-cycle per-carrier volume).
     gallons: galFmt(cycleGallonsByCarrier.get(carrierId) ?? 0),
+    cycleGallons: cycleGallonsByCarrier.get(carrierId) ?? 0,
     status,
     mc: String(c.deal_money_code ?? c.comdata_id ?? '—'),
     dot: String(c.dot ?? '—'),
+    gallonsThisMonth: ls?.gallonsThisMonth ?? 0,
+    activeCardsThisMonth: ls?.activeCardsThisMonth ?? 0,
+    transactionsThisMonth: ls?.transactionsThisMonth ?? 0,
+    gallonsPrevMonth: ls?.gallonsPrevMonth ?? 0,
+    activeCardsPrevMonth: ls?.activeCardsPrevMonth ?? 0,
   };
 }
 
@@ -308,12 +328,26 @@ async function loadCycleGallonsByCarrier(): Promise<Map<string, number>> {
   }
   return map;
 }
+/** Best-effort: a failed loyalty-stats fetch just means clients show no tier, not a broken Clients tab.
+ *  We log the failure (rather than swallow silently) so a 502 from the DWH is diagnosable — an
+ *  empty `{}` here is why every client can show 0 this-month gallons / "Building". */
+async function loadLoyaltyStatsSafe(): Promise<LoyaltyStats> {
+  try {
+    return await getLoyaltyStats();
+  } catch (err) {
+    console.warn('[sales] loyalty-stats fetch failed — clients will show 0 this-month gallons:', err);
+    return {};
+  }
+}
 export async function loadRecords(): Promise<RecordVM[]> {
-  const [res, cycleGallonsByCarrier] = await Promise.all([
+  const [res, cycleGallonsByCarrier, loyaltyStats] = await Promise.all([
     callTouchpoint('clients.by_agent', {}),
     loadCycleGallonsByCarrier(),
+    loadLoyaltyStatsSafe(),
   ]);
-  return (res.data ?? []).map((c) => mapRecord(c as Record<string, unknown>, cycleGallonsByCarrier));
+  return (res.data ?? []).map((c) =>
+    mapRecord(c as Record<string, unknown>, cycleGallonsByCarrier, loyaltyStats),
+  );
 }
 
 // ---- Dashboard (dashboard.agent_sales) ----

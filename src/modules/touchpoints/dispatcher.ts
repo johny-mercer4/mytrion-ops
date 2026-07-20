@@ -249,6 +249,7 @@ async function executeZapier(params: Record<string, unknown>): Promise<unknown> 
 }
 
 async function executeTouchpointKind(
+  ctx: TenantContext,
   tp: Touchpoint,
   params: Record<string, unknown>,
 ): Promise<unknown> {
@@ -261,6 +262,8 @@ async function executeTouchpointKind(
       return executeBrowserAuto(tp, params);
     case 'zapier':
       return executeZapier(params);
+    case 'local':
+      return tp.handler(ctx, params);
     default: {
       const _exhaustive: never = tp;
       throw new AppError(`Unsupported touchpoint kind`, {
@@ -296,6 +299,6 @@ export async function dispatchTouchpoint(
     await assertCarrierOwned(ctx, String(carrier));
   }
 
-  const data = await executeTouchpointKind(tp, params);
+  const data = await executeTouchpointKind(ctx, tp, params);
   return { key: tp.key, kind: tp.kind, data };
 }

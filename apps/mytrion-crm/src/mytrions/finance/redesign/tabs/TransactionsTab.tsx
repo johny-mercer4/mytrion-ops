@@ -4,7 +4,6 @@ import { useFinanceCtx } from '../ctx';
 import { s, Svg } from '../dc';
 import {
   chipStyle,
-  filterTransactions,
   fmtCurrency,
   galC,
   kpiIcon,
@@ -32,7 +31,7 @@ const TX_PRESETS = [
 ] as const;
 
 export function TransactionsTab() {
-  const { openTx, refreshSync, pushToast, txLoading, startAnim } = useFinanceCtx();
+  const { openTx, refreshSync, pushToast, txLoading, startAnim, txFeed } = useFinanceCtx();
   const [search, setSearch] = useState('');
   const [preset, setPreset] = useState('month');
   const [visible, setVisible] = useState(8);
@@ -41,7 +40,43 @@ export function TransactionsTab() {
 
   const loading = txLoading || localLoading;
 
-  const all = useMemo(() => filterTransactions(search, preset), [search, preset]);
+  const rawTxFeed = useMemo(() => {
+    return (txFeed || []).map((raw) => ({
+      txId: String(raw.transaction_id || raw.id || 'TX000'),
+      date: String(raw.date || raw.created_at || new Date().toISOString()),
+      company: String(raw.company_name || raw.deal_name || 'N/A'),
+      loc: String(raw.location || 'Unknown'),
+      state: String(raw.state || 'XX'),
+      amount: Number(raw.amount || raw.total || 0),
+      gal: Number(raw.gallons || 0),
+      disc: Number(raw.discount || 0),
+      grade: String(raw.fuel_type || 'Diesel'),
+      carrier: String(raw.carrier_id || '99999'),
+    }));
+  }, [txFeed]);
+
+  const all = useMemo(() => {
+    let list = rawTxFeed;
+    if (preset === 'week') {
+      const ms = 7 * 86400000;
+      const now = Date.now();
+      list = list.filter((t) => now - new Date(t.date).getTime() < ms);
+    } else if (preset === 'month') {
+      const ms = 30 * 86400000;
+      const now = Date.now();
+      list = list.filter((t) => now - new Date(t.date).getTime() < ms);
+    } else if (preset === 'quarter') {
+      const ms = 90 * 86400000;
+      const now = Date.now();
+      list = list.filter((t) => now - new Date(t.date).getTime() < ms);
+    }
+    const sTerm = search.toLowerCase();
+    if (sTerm) {
+      list = list.filter((t) => t.company.toLowerCase().includes(sTerm) || t.carrier.includes(sTerm) || t.txId.toLowerCase().includes(sTerm));
+    }
+    return list;
+  }, [search, preset, rawTxFeed]);
+
   const shown = all.slice(0, visible);
   const txUnique = new Set(all.map((t) => t.txId)).size;
   const txSumAmt = all.reduce((s, t) => s + t.amount, 0);

@@ -273,6 +273,68 @@
 .tAudit {
   grid-template-columns: 0.9fr 1.4fr 1.1fr 0.9fr 1.4fr 0.7fr;
 }
+.tJobs {
+  grid-template-columns: 2.4fr 1.3fr 1.1fr 0.9fr 0.7fr;
+}
+.jobTitle {
+  display: block;
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  line-height: var(--lh-sm);
+}
+.jobDesc {
+  margin-top: var(--space-0_5);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-sm);
+  color: var(--text-muted);
+  max-width: 42ch;
+}
+.statusOn {
+  color: var(--success, #22c55e);
+  font-weight: var(--fw-semibold);
+  font-size: var(--text-xs);
+}
+.statusOff {
+  color: var(--warning, #f59e0b);
+  font-weight: var(--fw-semibold);
+  font-size: var(--text-xs);
+}
+.statusReady {
+  color: var(--text-secondary);
+  font-weight: var(--fw-semibold);
+  font-size: var(--text-xs);
+}
+.tJobRuns {
+  grid-template-columns: 0.8fr 1.8fr 0.7fr 1.6fr;
+}
+.tRow.tJobRuns {
+  cursor: pointer;
+}
+.jobsFormRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+.jobsFormRow .field {
+  min-width: 120px;
+  max-width: 160px;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
 
 /* The carrier tables scroll inside this box rather than with the page, which is what lets the
    column header stay put (sticky anchors to its nearest scrollport, so that scrollport has to be

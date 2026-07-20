@@ -3,8 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSessionUser } from '../../sales/redesign/sessionUser';
 import { FinanceContext, type ToastType } from './ctx';
 import { s, Svg } from './dc';
-import { NAV, NAV_LABEL, navBtnStyle, relTime, suspendedCount, topDebtors, type DashSub, type FinanceSection } from './financeData';
-import { buildLiveItem, pickRandomTx, seedLiveFeed, type LiveFeedItem } from './financeLive';
+import { NAV, NAV_LABEL, navBtnStyle, relTime, type DashSub, type FinanceSection } from './financeData';
+import { buildLiveItem, seedLiveFeed, type LiveFeedItem } from './financeLive';
 import { ICONS } from './financeUi';
 import { ClientModal, TxModal } from './modals';
 import { DashboardTab } from './tabs/DashboardTab';
@@ -14,6 +14,8 @@ import { TransactionsTab } from './tabs/TransactionsTab';
 import type { ClientDrillTab } from './financeData';
 import { MytrionLoader } from '../../../components/MytrionLoader';
 import { useTheme } from '../../../hooks/useTheme';
+import { useLoad } from '../../_shared/useLoad';
+import { financeTouchpoint } from '../../../api/finance';
 import type { Client, TransactionLine } from '../data';
 import './theme.css';
 
@@ -48,6 +50,12 @@ function toastIconStyle(type: ToastType): string {
 
 export function FinanceRedesign() {
   const user = useSessionUser();
+
+  const dashDebtorsRes = useLoad(() => financeTouchpoint('finance.debtors', {}), []);
+  const txFeedRes = useLoad(() => financeTouchpoint('finance.main_transactions', {}), []);
+  const fuelingMetricsRes = useLoad(() => financeTouchpoint('finance.analytics_fueling', {}), []);
+  const clientsRes = useLoad(() => financeTouchpoint('finance.clients', {}), []);
+
   const mainRef = useRef<HTMLElement>(null);
   const sectionTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const toastTimerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -94,9 +102,7 @@ export function FinanceRedesign() {
   }, []);
 
   const tickLive = useCallback(() => {
-    const t = pickRandomTx();
-    const item = buildLiveItem({ ...t, date: new Date().toISOString().slice(0, 10) }, true);
-    setLiveFeed((prev) => [item, ...prev].slice(0, 6));
+    // Live feed currently not connected to real WebSocket.
     setLiveNew((n) => n + 1);
     setLastSync(new Date());
   }, []);
@@ -179,6 +185,11 @@ export function FinanceRedesign() {
       openClient,
       lastSync,
       refreshSync,
+      dashDebtors: Array.isArray((dashDebtorsRes.data as any)?.debtors) ? (dashDebtorsRes.data as any).debtors : Array.isArray((dashDebtorsRes.data as any)?.data) ? (dashDebtorsRes.data as any).data : Array.isArray(dashDebtorsRes.data) ? dashDebtorsRes.data : [],
+      dashPayments: Array.isArray((txFeedRes.data as any)?.records) ? (txFeedRes.data as any).records : Array.isArray((txFeedRes.data as any)?.data) ? (txFeedRes.data as any).data : Array.isArray(txFeedRes.data) ? txFeedRes.data : [],
+      txFeed: Array.isArray((txFeedRes.data as any)?.records) ? (txFeedRes.data as any).records : Array.isArray((txFeedRes.data as any)?.data) ? (txFeedRes.data as any).data : Array.isArray(txFeedRes.data) ? txFeedRes.data : [],
+      clientsFeed: Array.isArray((clientsRes.data as any)?.records) ? (clientsRes.data as any).records : Array.isArray((clientsRes.data as any)?.data) ? (clientsRes.data as any).data : Array.isArray(clientsRes.data) ? clientsRes.data : [],
+      fuelingMetrics: fuelingMetricsRes.data || {},
     }),
     [
       theme,
@@ -200,12 +211,16 @@ export function FinanceRedesign() {
       openClient,
       lastSync,
       refreshSync,
+      dashDebtorsRes.data,
+      txFeedRes.data,
+      clientsRes.data,
+      fuelingMetricsRes.data,
     ],
   );
 
   const timeFmt = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  const debtorBadge = topDebtors().length;
-  const suspendedBadge = suspendedCount();
+  const debtorBadge = Array.isArray(ctx.dashDebtors) ? ctx.dashDebtors.length : 0;
+  const suspendedBadge = Array.isArray(ctx.clientsFeed) ? ctx.clientsFeed.filter((c: any) => c.suspended).length : 0;
 
   return (
     <FinanceContext.Provider value={ctx}>

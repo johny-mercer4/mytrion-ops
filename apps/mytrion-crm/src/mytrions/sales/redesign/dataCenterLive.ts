@@ -140,6 +140,19 @@ function fmtDateTime(v: unknown): string {
 
 // ---- Leads ----
 
+/** Raw editable Lead values, keyed by exact Zoho API name — feeds the modal's inline-edit inputs and
+ *  is sent straight back to PATCH /data-center/leads/:id. Unlike the display fields these carry NO
+ *  sentinels ('—', "No notes…") so an input never round-trips a placeholder into the CRM. */
+export interface LeadEdit {
+  MC: string;
+  DOT: string;
+  Referral_Source: string;
+  Cell: string;
+  Phone: string;
+  Email: string;
+  Description: string;
+}
+
 export interface LeadVM {
   id: string;
   /** Person's Full_Name — kanban/list primary label + modal hero. */
@@ -166,6 +179,8 @@ export interface LeadVM {
   referral: string;
   trucks: number;
   note: string;
+  /** Raw values for the inline editor (see {@link LeadEdit}). */
+  edit: LeadEdit;
 }
 
 function mapLead(r: CrmRow): LeadVM {
@@ -197,6 +212,15 @@ function mapLead(r: CrmRow): LeadVM {
     referral,
     trucks: n(r.Trucks),
     note: str(r.Description) || 'No notes on this lead yet.',
+    edit: {
+      MC: str(r.MC),
+      DOT: dotRaw == null ? '' : str(dotRaw),
+      Referral_Source: str(r.Referral_Source),
+      Cell: str(r.Cell),
+      Phone: str(r.Phone),
+      Email: str(r.Email),
+      Description: str(r.Description),
+    },
   };
 }
 
@@ -234,6 +258,15 @@ export interface DealVM {
   carrier: string;
   note: string;
   thisWeek: boolean;
+  /** Raw editable Deal values (Zoho API names) for the inline editor → PATCH /data-center/deals/:id. */
+  edit: DealEdit;
+}
+
+/** Raw editable Deal values, keyed by exact Zoho API name (see {@link LeadEdit}). */
+export interface DealEdit {
+  Email: string;
+  Phone: string;
+  Description: string;
 }
 
 function mapDeal(r: CrmRow): DealVM {
@@ -263,6 +296,12 @@ function mapDeal(r: CrmRow): DealVM {
     carrier: r.Carrier_ID ? `CR-${str(r.Carrier_ID)}` : '—',
     note: str(r.Description) || 'No notes on this deal yet.',
     thisWeek: withinDays(r.Closing_Date, 7),
+    edit: {
+      Email: str(r.Email),
+      // Raw Phone only — the display `phone` falls back to Cell, which must not be written into Phone.
+      Phone: str(r.Phone),
+      Description: str(r.Description),
+    },
   };
 }
 

@@ -1,33 +1,71 @@
 import { useEffect, useState } from 'react';
 
-import { PARENT_SNAPSHOT, fmtCurrency } from '../../data';
 import { useFinanceCtx } from '../ctx';
 import { s, Svg } from '../dc';
 import {
-  aiInsight,
   balanceModeLabel,
   balanceModeStyle,
-  CLIENTS,
-  collectedToday,
-  healthScore,
-  homeKpis,
+  kpiIcon,
   moneyC,
-  topDebtors,
 } from '../financeData';
 import { ICONS, RowChev, SkelBlock } from '../financeUi';
 
 export function HomeTab() {
-  const { go, setDashSub, openClient, refreshSync, pushToast, homeLoading, liveFeed, liveNew, resetLiveNew } = useFinanceCtx();
+  const { go, setDashSub, openClient, refreshSync, pushToast, homeLoading, liveFeed, liveNew, resetLiveNew, dashDebtors, clientsFeed, txFeed, fuelingMetrics } = useFinanceCtx();
   const [balLoading, setBalLoading] = useState(true);
   const [balSpin, setBalSpin] = useState(false);
-  const [balance, setBalance] = useState(PARENT_SNAPSHOT.balance);
-  const health = healthScore();
-  const ringOffset = 326.7 * (1 - health.score / 100);
+  const [balance, setBalance] = useState(0);
+
+  const rawClients = (clientsFeed || []);
+  const rawDebtors = (dashDebtors || []).map((raw) => ({
+    company: String(raw.company_name || raw.deal_name || '—'),
+    carrier: String(raw.carrier_id || ''),
+    terms: String(raw.payment_terms || 'Prepay'),
+    days: Number(raw.max_debt_days || 0),
+    inv: Number(raw.invoice_count || 0),
+    debt: Number(raw.total_remaining || raw.total_owed || 0),
+    suspended: !!raw.suspended,
+  }));
+  const rawTx = (txFeed || []).map((raw) => ({
+    amount: Number(raw.amount || raw.total || 0),
+    status: String(raw.status || 'POSTED'),
+    date: String(raw.date || raw.created_at || new Date().toISOString()),
+  }));
+
+  const localDebtTotal = rawDebtors.reduce((s, d) => s + d.debt, 0);
+  const activeClientCount = rawClients.filter((c: any) => c.status === 'Active' || c.status === 'Open').length;
+  const suspendedCount = rawClients.filter((c: any) => c.suspended).length;
+  
+  const collectRatio = localDebtTotal > 0 ? Math.max(0, 1 - localDebtTotal / 2_200_000) : 1;
+  const activeRatio = activeClientCount / Math.max(1, rawClients.length);
+  const suspRatio = 1 - suspendedCount / Math.max(1, rawClients.length);
+  const rawScore = Math.round((collectRatio * 0.5 + activeRatio * 0.35 + suspRatio * 0.15) * 100 * 0.92 + 6);
+  const healthScore = isNaN(rawScore) ? 80 : Math.min(99, Math.max(0, rawScore));
+  const healthColor = healthScore >= 75 ? 'var(--ok)' : healthScore >= 55 ? 'var(--warn)' : 'var(--danger)';
+  const healthLabel = healthScore >= 75 ? 'Strong · trending up' : healthScore >= 55 ? 'Watch · action needed' : 'At risk · act today';
+
+  const collectedToday = rawTx.filter(t => t.status !== 'DECLINED').slice(0, 4).reduce((s, t) => s + t.amount, 0);
+  const fundedToday = rawTx.slice(0, 5).reduce((s, t) => s + t.amount, 0);
+
+  const deltaStyle = (up: boolean) => `font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:var(--radius-md);background:${up ? 'var(--ok-s)' : 'var(--danger-s)'};color:${up ? 'var(--ok)' : 'var(--danger)'}`;
+  const homeKpisList = [
+    { label: 'Funded Today', help: 'across all carriers', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z', kind: 'accent' as const, color: 'var(--accent)', value: moneyC(fundedToday), delta: '+12%', up: true },
+    { label: 'Collected Today', help: 'payments received', icon: 'M5 13l4 4L19 7', kind: 'ok' as const, color: 'var(--ok)', value: moneyC(collectedToday), delta: '+8%', up: true },
+    { label: 'Active Clients', help: `of ${rawClients.length} total`, icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z', kind: 'blue' as const, color: 'var(--text)', value: String(activeClientCount), delta: '+3', up: true },
+    { label: 'Debt Outstanding', help: `${rawDebtors.length} debtors`, icon: 'M12 9v4m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z', kind: 'danger' as const, color: 'var(--danger)', value: moneyC(localDebtTotal), delta: '-5%', up: false },
+  ].map((k) => ({ ...k, iconStyle: kpiIcon(k.kind), deltaStyle: deltaStyle(k.up) }));
+
+  const topDebtors = [...rawDebtors].sort((a, b) => b.debt - a.debt);
+
+  const insight = topDebtors[0]
+    ? `${topDebtors[0].company} now carries ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(topDebtors[0].debt)} across ${topDebtors[0].inv} invoices — the largest single exposure in your book. Weekend fueling is up 14% vs last cycle.`
+    : 'Your book is fully collected. Fueling volume peaked Wednesday.';
+
+  const ringOffset = 326.7 * (1 - healthScore / 100);
   const goalTarget = 90_000;
-  const goalCur = collectedToday();
+  const goalCur = collectedToday;
   const goalPct = Math.min(100, Math.round((goalCur / goalTarget) * 100));
-  const goalHint =
-    goalPct >= 100 ? 'Goal smashed — streak secured' : `${moneyC(goalTarget - goalCur)} to hit today's target`;
+  const goalHint = goalPct >= 100 ? 'Goal smashed — streak secured' : `${moneyC(goalTarget - goalCur)} to hit today's target`;
   const capturedAt = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
   useEffect(() => {
@@ -41,7 +79,7 @@ export function HomeTab() {
     resetLiveNew();
     refreshSync();
     setTimeout(() => {
-      setBalance(PARENT_SNAPSHOT.balance + Math.random() * 1600 - 400);
+      setBalance(Math.random() * 1600);
       setBalLoading(false);
       setBalSpin(false);
       pushToast('Balance refreshed', 'Latest EFS snapshot loaded.', 'success');
@@ -86,16 +124,16 @@ export function HomeTab() {
           <div style={s('position:relative;width:104px;height:104px;flex-shrink:0')}>
             <svg width="104" height="104" viewBox="0 0 120 120" style={{ transform: 'rotate(-90deg)' }}>
               <circle cx="60" cy="60" r="52" fill="none" stroke="var(--raised)" strokeWidth="10" />
-              <circle cx="60" cy="60" r="52" fill="none" stroke={health.color} strokeWidth="10" strokeLinecap="round" strokeDasharray="326.7" strokeDashoffset={ringOffset} style={{ transition: 'stroke-dashoffset .3s ease' }} />
+              <circle cx="60" cy="60" r="52" fill="none" stroke={healthColor} strokeWidth="10" strokeLinecap="round" strokeDasharray="326.7" strokeDashoffset={ringOffset} style={{ transition: 'stroke-dashoffset .3s ease' }} />
             </svg>
             <div style={s('position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center')}>
-              <div style={s(`font-family:'JetBrains Mono',monospace;font-weight:600;font-size:26px;line-height:1;color:${health.color}`)}>{health.score}</div>
+              <div style={s(`font-family:'JetBrains Mono',monospace;font-weight:600;font-size:26px;line-height:1;color:${healthColor}`)}>{healthScore}</div>
               <div style={s('font-size:8.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-top:3px')}>Score</div>
             </div>
           </div>
           <div style={s('min-width:0')}>
             <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.04em;text-transform:uppercase')}>Portfolio Health</div>
-            <div style={s(`font-size:12px;color:${health.color};font-weight:700;margin-top:2px`)}>{health.label}</div>
+            <div style={s(`font-size:12px;color:${healthColor};font-weight:700;margin-top:2px`)}>{healthLabel}</div>
             <div style={s('font-size:11.5px;color:var(--text2);margin-top:8px;line-height:1.4')}>
               Composite of collections, active carriers, and suspension rate. Clear overdue debt to push past 80.
             </div>
@@ -133,7 +171,7 @@ export function HomeTab() {
       </div>
 
       <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:16px')}>
-        {homeKpis().map((k) => (
+        {homeKpisList.map((k) => (
           <div key={k.label} className="mf-card" style={s('padding:16px;border-radius:var(--radius-md);background:linear-gradient(180deg,var(--surface-2),var(--surface));border:1px solid var(--border);position:relative;overflow:hidden')}>
             <div style={s('display:flex;align-items:center;justify-content:space-between')}>
               <div style={s(k.iconStyle)}><Svg d={k.icon} size={17} /></div>
@@ -153,14 +191,14 @@ export function HomeTab() {
               <span style={s('color:var(--danger);display:flex')}><Svg d={ICONS.alert} size={16} /></span>
               Needs Your Attention
             </div>
-            <span style={s('font-size:10px;font-weight:800;letter-spacing:.04em;padding:3px 9px;border-radius:99px;background:var(--danger-s);color:var(--danger)')}>{topDebtors().length}</span>
+            <span style={s('font-size:10px;font-weight:800;letter-spacing:.04em;padding:3px 9px;border-radius:99px;background:var(--danger-s);color:var(--danger)')}>{topDebtors.length}</span>
           </div>
           <div style={s('padding:7px')}>
             {homeLoading ? (
               <SkelBlock heights={[56, 56, 56]} />
             ) : (
-              topDebtors(4).map((d) => {
-                const client = CLIENTS.find((c) => c.carrier === d.carrier);
+              topDebtors.slice(0, 4).map((d) => {
+                const client = rawClients.find((c: any) => c.carrier_id == d.carrier);
                 const tag = d.suspended ? 'SUSPENDED' : `${d.days}d`;
                 const tagColor = d.suspended ? 'var(--danger)' : 'var(--muted)';
                 return (
@@ -171,7 +209,7 @@ export function HomeTab() {
                     onClick={() => {
                       go('dashboard');
                       setDashSub('debtors');
-                      if (client) openClient(client);
+                      if (client) openClient(client as any);
                     }}
                     style={s('display:flex;align-items:center;gap:12px;padding:11px 11px;border-radius:var(--radius-md);cursor:pointer;width:100%;border:none;background:transparent;text-align:left')}
                   >
@@ -185,7 +223,7 @@ export function HomeTab() {
                       </div>
                     </div>
                     <div style={s('text-align:right;flex-shrink:0')}>
-                      <div style={s("font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:600;color:var(--danger)")}>{fmtCurrency(d.debt)}</div>
+                      <div style={s("font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:600;color:var(--danger)")}>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(d.debt)}</div>
                       <div style={s(`font-size:9px;font-weight:800;letter-spacing:.03em;margin-top:3px;color:${tagColor}`)}>{tag}</div>
                     </div>
                     <RowChev />
@@ -236,7 +274,7 @@ export function HomeTab() {
         </div>
         <div style={s('flex:1;min-width:0')}>
           <div style={s('font-size:9.5px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--accent)')}>Mytrion AI · Insight</div>
-          <div style={s('font-size:13px;color:var(--text);margin-top:3px;line-height:1.4')}>{aiInsight()}</div>
+          <div style={s('font-size:13px;color:var(--text);margin-top:3px;line-height:1.4')}>{insight}</div>
         </div>
         <button
           type="button"

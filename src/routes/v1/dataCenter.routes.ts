@@ -9,9 +9,19 @@
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { AppError } from '../../lib/errors.js';
-import { fetchAgentDeals, fetchAgentLeads } from '../../integrations/salesDataCenter.js';
+import { AppError, RBACError } from '../../lib/errors.js';
+import {
+  fetchAgentApplicationStats,
+  fetchAgentDeals,
+  fetchAgentLeads,
+  fetchDealOwnerId,
+  fetchLeadOwnerId,
+} from '../../integrations/salesDataCenter.js';
+import { fetchLoyaltyStatsByAgent } from '../../integrations/dwhLoyalty.js';
 import { listRejectionReportTickets } from '../../integrations/zohoDesk.js';
+import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
+import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import { resolveWritePayload } from '../../modules/customerService/fieldResolver.js';
 import { resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment } from './helpers.js';
@@ -23,10 +33,53 @@ function requireSalesAccess(request: FastifyRequest): TenantContext {
 
 const scopeQuery = z.object({ zoho_user_id: z.string().max(120).optional() });
 
+const idParam = z.object({ id: z.string().regex(/^\d+$/, 'id must be a CRM record id').max(60) });
+
+/** An email that may be a valid address, an empty string (clears the field), or null. */
+const editableEmail = z.union([z.string().email().max(100), z.string().max(0)]).nullable().optional();
+
+/**
+ * Inline-editable Lead fields (live-verified API names/types against `/settings/fields`). `.strict()`
+ * so an unexpected key 400s; every field optional+nullable (null/'' clears it); `resolveWritePayload`
+ * casing-resolves before the write so an unknown key can never silently no-op.
+ */
+const leadEditBody = z
+  .object({
+    MC: z.string().max(255).nullable().optional(),
+    DOT: z.union([z.number().int(), z.string().regex(/^\d{0,9}$/)]).nullable().optional(),
+    Referral_Source: z.string().max(255).nullable().optional(),
+    Cell: z.string().max(30).nullable().optional(),
+    Phone: z.string().max(30).nullable().optional(),
+    Email: editableEmail,
+    Description: z.string().max(32000).nullable().optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, 'no editable fields supplied');
+
+/** Inline-editable Deal fields (Description = the "Notes" textarea; deal value is intentionally not editable). */
+const dealEditBody = z
+  .object({
+    Email: editableEmail,
+    Phone: z.string().max(30).nullable().optional(),
+    Description: z.string().max(32000).nullable().optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, 'no editable fields supplied');
+
 function crmError(err: unknown): AppError {
   return new AppError('Zoho CRM request failed', {
     statusCode: 502,
     code: 'ZOHO_CRM_ERROR',
+    cause: err,
+    expose: true,
+  });
+}
+
+/** Same shape as crmError but attributed to the DWH (loyalty-stats source is the warehouse, not CRM). */
+function dwhError(err: unknown): AppError {
+  return new AppError('Data warehouse request failed', {
+    statusCode: 502,
+    code: 'DWH_ERROR',
     cause: err,
     expose: true,
   });
@@ -62,6 +115,38 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * The caller's applications-filled-per-day counts (by CRM `Application_Date`) over the trailing
+   * window — powers the Home daily-goal bar + streak. Owner-scoped like Leads/Deals.
+   */
+  app.get('/data-center/app-stats', guard, async (request) => {
+    const ctx = requireSalesAccess(request);
+    const q = scopeQuery.parse(request.query);
+    const ownerId = resolveZohoUserId(ctx, q.zoho_user_id);
+    try {
+      return await fetchAgentApplicationStats(ownerId);
+    } catch (err) {
+      throw crmError(err);
+    }
+  });
+
+  /**
+   * The caller's per-client loyalty stats (this + prev calendar month gallons + active-card counts,
+   * by CRM/DWH `carrier_id`) — powers the Data Center → Clients loyalty tier + rewards. DWH-sourced,
+   * owner-scoped like Leads/Deals (admins may target another agent via ?zoho_user_id).
+   */
+  app.get('/data-center/loyalty-stats', guard, async (request) => {
+    const ctx = requireSalesAccess(request);
+    const q = scopeQuery.parse(request.query);
+    const ownerId = resolveZohoUserId(ctx, q.zoho_user_id);
+    try {
+      const stats = await fetchLoyaltyStatsByAgent(ownerId);
+      return { stats };
+    } catch (err) {
+      throw dwhError(err);
+    }
+  });
+
+  /**
    * Rejection reports — the auto-created "Rejection Report: …" tickets from Zoho Desk (there is no
    * Desk custom module for these; they're ordinary tickets keyed by subject). Org-wide (they're
    * system reports, not owner-scoped), returned newest-first within the recent window.
@@ -74,5 +159,73 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
     } catch (err) {
       throw crmError(err);
     }
+  });
+
+  /**
+   * Owner-scoped inline edit of a CRM record (Lead/Deal). Mirrors the cs/billing deal-write pattern
+   * (allowlist → casing-resolve → updateRecord → audit) but adds the Owner check the department-wide
+   * cs/billing routes skip: a non-admin may only edit records they own, and an admin acting-as an
+   * agent (?zoho_user_id) is confined to that agent's records — keeping writes scoped exactly like the
+   * reads (RBAC rule #9). `bypassRbac` (system) short-circuits the ownership check.
+   */
+  async function ownerScopedUpdate(
+    request: FastifyRequest,
+    module: 'Leads' | 'Deals',
+    body: Record<string, unknown>,
+    fetchOwner: (id: string) => Promise<string | null>,
+  ): Promise<{ id: string; updatedFields: string[] }> {
+    const ctx = requireSalesAccess(request);
+    const { id } = idParam.parse(request.params);
+    const q = scopeQuery.parse(request.query);
+    const targetOwner = resolveZohoUserId(ctx, q.zoho_user_id);
+    if (!ctx.bypassRbac) {
+      let recordOwner: string | null;
+      try {
+        recordOwner = await fetchOwner(id);
+      } catch (err) {
+        throw crmError(err);
+      }
+      if (!recordOwner) {
+        throw new AppError('Record not found', { statusCode: 404, code: 'NOT_FOUND', expose: true });
+      }
+      if (recordOwner !== targetOwner) {
+        throw new RBACError('You can only edit your own records');
+      }
+    }
+    // Normalize '' → null (Zoho clears a field on null, not on empty string) and drop undefined keys.
+    const payload = Object.fromEntries(
+      Object.entries(body)
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => [k, v === '' ? null : v]),
+    );
+    if (Object.keys(payload).length === 0) {
+      throw new AppError('No editable fields supplied', { statusCode: 400, code: 'NO_FIELDS', expose: true });
+    }
+    const resolved = await resolveWritePayload(module, payload);
+    try {
+      await zohoCrmRecords.updateRecord(module, id, resolved);
+    } catch (err) {
+      throw crmError(err);
+    }
+    await auditFromContext(ctx, {
+      action: module === 'Leads' ? 'sales.datacenter.lead_update' : 'sales.datacenter.deal_update',
+      status: 'ok',
+      resourceType: module === 'Leads' ? 'crm_lead' : 'crm_deal',
+      resourceId: id,
+      detail: { fields: Object.keys(resolved) },
+    });
+    return { id, updatedFields: Object.keys(resolved) };
+  }
+
+  /** Edit an owned Lead's contact/qualification fields (MC/DOT/Referral/Cell/Phone/Email/Notes). */
+  app.patch('/data-center/leads/:id', guard, async (request) => {
+    const body = leadEditBody.parse(request.body);
+    return ownerScopedUpdate(request, 'Leads', body, fetchLeadOwnerId);
+  });
+
+  /** Edit an owned Deal's contact fields (Email/Phone/Notes). */
+  app.patch('/data-center/deals/:id', guard, async (request) => {
+    const body = dealEditBody.parse(request.body);
+    return ownerScopedUpdate(request, 'Deals', body, fetchDealOwnerId);
   });
 }

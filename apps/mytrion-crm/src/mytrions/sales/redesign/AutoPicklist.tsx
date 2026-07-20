@@ -100,7 +100,7 @@ function DropMsg({ children, danger }: { children: ReactNode; danger?: boolean }
   return (
     <div
       style={s(
-        `padding:16px 15px;font-size:12.5px;text-align:center;color:${danger ? 'var(--danger)' : 'var(--muted)'};font-weight:${danger ? 600 : 500}`,
+        `padding:16px 15px;font-size:13px;text-align:center;color:${danger ? 'var(--danger)' : 'var(--muted)'};font-weight:${danger ? 600 : 500}`,
       )}
     >
       {children}
@@ -162,7 +162,7 @@ export function DealSelectedChip({
         <div style={s('font-size:13.5px;font-weight:700;line-height:1.3')}>{deal.name}</div>
         <DealIdBadges deal={deal} />
         {meta ? (
-          <div style={s(`font-size:11.5px;color:var(--muted);margin-top:5px;${MONO};line-height:1.35`)}>{meta}</div>
+          <div style={s(`font-size:12px;color:var(--muted);margin-top:5px;${MONO};line-height:1.35`)}>{meta}</div>
         ) : null}
       </div>
       <button

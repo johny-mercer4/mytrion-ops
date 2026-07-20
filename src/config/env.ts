@@ -464,6 +464,11 @@ const EnvSchema = z.object({
   FF_AGENT_MEMORY: flag('0'),
   // Interactive browser WRITE actions (navigate/click/fill/…). Off = scrape/read-class only.
   FF_BROWSER_WRITES: flag('0'),
+  // Retention Open Pool notify (Ryan Saab) + Ops Manager vacation signoff — Zoho user ids.
+  // Empty = skip inbox notify (sweep/transitions still run).
+  RETENTION_OPEN_POOL_NOTIFY_ZOHO_USER_ID: z.string().default(''),
+  RETENTION_OPS_MANAGER_ZOHO_USER_ID: z.string().default(''),
+
   // Background jobs (pg-boss on the app Postgres, own 'pgboss' schema — self-migrating).
   FF_JOBS_ENABLED: flag('0'),
   // inline: this process runs boss + workers + schedules (default, single Render service).

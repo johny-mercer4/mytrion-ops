@@ -63,7 +63,7 @@ export function EscalationForm() {
     <>
       <div style={s('margin-bottom:20px')}>
         <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.04em;text-transform:uppercase')}>Escalate a Request</div>
-        <div style={s('font-size:12.5px;color:var(--muted);margin-top:3px')}>File an escalation for a request that needs a manager or another team to step in.</div>
+        <div style={s('font-size:13px;color:var(--muted);margin-top:3px')}>File an escalation for a request that needs a manager or another team to step in.</div>
       </div>
       <div style={s('padding:22px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:17px')}>
         <div><div style={s(LABEL)}>Subject <span style={s('color:var(--accent)')}>*</span></div><input value={subject} onChange={(e) => setSubject(e.currentTarget.value)} placeholder="Brief summary of the escalation" className="ss-in" style={s(FIELD)} /></div>
@@ -171,7 +171,7 @@ export function CreateLeadForm() {
     <>
       <div style={s('margin-bottom:20px')}>
         <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.04em;text-transform:uppercase')}>Create a Lead</div>
-        <div style={s('font-size:12.5px;color:var(--muted);margin-top:3px')}>Add a new lead to your pipeline. Last name, company, and a 10-digit phone are required.</div>
+        <div style={s('font-size:13px;color:var(--muted);margin-top:3px')}>Add a new lead to your pipeline. Last name, company, and a 10-digit phone are required.</div>
       </div>
       {result && (
         <div
@@ -191,7 +191,7 @@ export function CreateLeadForm() {
             <div style={s(`font-weight:700;font-size:13.5px;color:${result.duplicate ? 'var(--orange)' : 'var(--ok)'}`)}>
               {result.duplicate ? 'Lead already exists' : 'Lead created'}
             </div>
-            <div style={s('font-size:12.5px;color:var(--muted);margin-top:3px')}>
+            <div style={s('font-size:13px;color:var(--muted);margin-top:3px')}>
               {result.duplicate
                 ? `${result.company} is already in Zoho CRM.`
                 : `${result.company} was added to your leads.`}
@@ -205,7 +205,7 @@ export function CreateLeadForm() {
                 rel="noopener noreferrer"
                 className="ss-btn-p"
                 style={s(
-                  `height:34px;padding:0 16px;border-radius:var(--radius-md);border:none;display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:12.5px;text-decoration:none;color:#fff;background:${
+                  `height:34px;padding:0 16px;border-radius:var(--radius-md);border:none;display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:13px;text-decoration:none;color:#fff;background:${
                     result.duplicate
                       ? 'linear-gradient(120deg,var(--orange),#d97706)'
                       : 'linear-gradient(120deg,var(--accent),var(--accent-2))'
@@ -242,7 +242,7 @@ export function CreateLeadForm() {
         <div>
           <div style={s('display:flex;align-items:center;justify-content:space-between;margin-bottom:8px')}>
             <div style={s(`${LABEL};margin-bottom:0`)}>Phone <span style={s('color:var(--accent)')}>*</span></div>
-            <span style={s(`font-size:10.5px;font-weight:700;font-family:'JetBrains Mono',monospace;color:${digits.length === 10 ? 'var(--ok)' : 'var(--faint)'}`)}>{digits.length}/10 digits</span>
+            <span style={s(`font-size:11px;font-weight:700;font-family:'JetBrains Mono',monospace;color:${digits.length === 10 ? 'var(--ok)' : 'var(--faint)'}`)}>{digits.length}/10 digits</span>
           </div>
           <input value={phone} onChange={(e) => setPhone(e.currentTarget.value)} inputMode="numeric" placeholder="10-digit phone — no dashes, brackets, or spaces" className="ss-in" style={s(FIELD)} />
         </div>

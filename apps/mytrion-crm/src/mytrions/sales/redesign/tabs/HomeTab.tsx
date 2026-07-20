@@ -8,10 +8,11 @@
  * (activity range, inbox read map, clock tick) stays local; cross-tab affordances come from
  * useSales(). The Quick Actions cards render the static CALL_TO_ACTIONS catalog (action config).
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { getSession } from '@/api/session';
+import { getAppStats } from '@/api/dataCenter';
 import { useImpersonation } from '@/context/ImpersonationProvider';
-import { s } from '../dc';
+import { s, clickable } from '../dc';
 import { Icon, type IconName } from '../icons';
 import { ICO, iconBox, badge, deptStyle, timeParts } from '../salesData';
 import { useSessionUser } from '../sessionUser';
@@ -30,6 +31,15 @@ import {
 } from '../live';
 import { useServerCrmSocket } from '../useServerCrmSocket';
 import { useSales } from '../ctx';
+import {
+  DAILY_APPS_GOAL,
+  todayApps,
+  topDay,
+  weekTotal,
+  currentStreak,
+  isNewBest,
+  claimCelebration,
+} from '../streakStore';
 import { ActivityTilesSkeleton, HomeBelowFoldSkeleton } from './HomeSkeleton';
 
 type AnnItem = AnnVM;
@@ -103,14 +113,41 @@ const COL_OF: Record<InboxType, string> = {
 /** Centered muted / red status text — used for errors and true empty states only. */
 function StateNote({ tone, children }: { tone: 'muted' | 'danger'; children: ReactNode }) {
   return (
-    <div style={s(`width:100%;padding:22px;text-align:center;color:var(--${tone});font-size:12.5px;font-weight:600`)}>
+    <div style={s(`width:100%;padding:22px;text-align:center;color:var(--${tone});font-size:13px;font-weight:600`)}>
       {children}
     </div>
   );
 }
 
+/** One mini stat in the habit-loop strip (streak / personal best / momentum). */
+function StreakStat({
+  emoji,
+  icon,
+  value,
+  label,
+  tone,
+}: {
+  emoji?: string;
+  icon?: IconName;
+  value: number;
+  label: string;
+  tone: string;
+}) {
+  return (
+    <div className="ss-card-h" style={s('display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-sm)')}>
+      <div style={s(`width:38px;height:38px;flex-shrink:0;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-size:19px;background:color-mix(in srgb,${tone} 15%,transparent);color:${tone}`)}>
+        {emoji ?? (icon ? <Icon name={icon} size={18} /> : null)}
+      </div>
+      <div style={s('min-width:0')}>
+        <div style={s("font-family:'JetBrains Mono',monospace;font-weight:500;font-size:22px;line-height:1;color:var(--text)")}>{value}</div>
+        <div style={s('font-size:11px;color:var(--muted);margin-top:5px')}>{label}</div>
+      </div>
+    </div>
+  );
+}
+
 export function HomeTab() {
-  const { openDetail, go } = useSales();
+  const { openDetail, go, pushToast } = useSales();
   const user = useSessionUser();
   const { actingAs } = useImpersonation();
   const currentUserId = String(actingAs?.zohoUserId ?? getSession()?.worker.zohoUserId ?? '');
@@ -120,12 +157,18 @@ export function HomeTab() {
   const dailyAct = useLoad(() => loadActivity('today'), []); // snapshot "Tasks Done" (today)
   const ann = useLoad(loadAnnouncements, []);
   const inbox = useLoad(loadInbox, [currentUserId]);
+  // Real per-day applications (Zoho COQL: Deals.Application_Date, owner-scoped) — goal bar + streak.
+  const appStats = useLoad(() => getAppStats(), [currentUserId]);
 
   // ---- local per-tab state ----
   const [activityRange, setActivityRange] = useState<string>('week');
   const [, setTick] = useState<number>(0); // drives the 30s clock re-render
   /** One-shot: keep a single below-fold skeleton until the first home loads settle. */
   const [homeReady, setHomeReady] = useState(false);
+  /** Transient goal/personal-best celebration overlay (auto-dismissed). */
+  const [celebration, setCelebration] = useState<{ emoji: string; title: string; msg: string } | null>(null);
+  /** Set while a user-initiated snapshot refresh is in flight, so we can confirm it on completion. */
+  const snapRefreshPending = useRef(false);
 
   const act = useLoad(
     () => loadActivity(activityRange as 'today' | 'week' | 'month'),
@@ -175,8 +218,10 @@ export function HomeTab() {
   });
 
   const refreshSnapshot = (): void => {
+    snapRefreshPending.current = true;
     snap.reload();
     dailyAct.reload();
+    appStats.reload();
   };
 
   const openInbox = (i: InboxItem): void => {
@@ -219,12 +264,53 @@ export function HomeTab() {
   const inboxData = inbox.data ?? [];
   const snapSpinCss = snap.loading ? 'animation:ss-spin .9s linear infinite' : '';
 
+  // ---- daily-goal habit loop — REAL data (Zoho COQL: Deals.Application_Date per day, owner-scoped) ----
+  const appDays = appStats.data?.days ?? {};
+  const appsDone = todayApps(appDays);
+  const goalMet = appsDone >= DAILY_APPS_GOAL;
+  const appsGoalPct = DAILY_APPS_GOAL > 0 ? Math.min(100, Math.round((appsDone / DAILY_APPS_GOAL) * 100)) : 0;
+  const appsToGo = Math.max(0, DAILY_APPS_GOAL - appsDone);
+  const streakDays = currentStreak(appDays, DAILY_APPS_GOAL);
+  const bestDay = topDay(appDays);
+  const weekApps = weekTotal(appDays);
+
+  // Celebrate a fresh personal best / goal hit at most once per day (claimCelebration guards re-fires
+  // across reloads + tab switches). Runs once the real app-stats settle.
+  useEffect(() => {
+    if (!appStats.data) return;
+    if (isNewBest(appDays) && claimCelebration('best')) {
+      const msg = `${appsDone} apps today — a new personal best.`;
+      setCelebration({ emoji: '🏆', title: 'New personal best!', msg });
+      pushToast('New personal best!', msg);
+    } else if (goalMet && claimCelebration('goal')) {
+      const msg = `You hit ${DAILY_APPS_GOAL} apps today. Streak alive 🔥`;
+      setCelebration({ emoji: '🎉', title: 'Daily goal hit!', msg });
+      pushToast('Daily goal hit!', msg);
+    }
+  }, [appStats.data]);
+
+  useEffect(() => {
+    if (!celebration) return;
+    const t = setTimeout(() => setCelebration(null), 3800);
+    return () => clearTimeout(t);
+  }, [celebration]);
+
+  // Confirm a user-initiated snapshot refresh once the fresh data lands. reload() is fire-and-forget
+  // and useLoad doesn't flip `loading` on reload, so watch the data reference changing instead.
+  useEffect(() => {
+    if (snapRefreshPending.current && snap.data) {
+      snapRefreshPending.current = false;
+      pushToast('Snapshot refreshed', `Updated ${timeFmt} ET`);
+    }
+  }, [snap.data]);
+
   const green = 'var(--ok)';
   const red = 'var(--danger)';
   const amber = 'var(--warn)';
-  const orange = 'var(--orange)';
   const accent = 'var(--accent)';
   const violet = 'var(--violet)';
+  const cyan = 'var(--cyan)';
+  const neutral = 'var(--text)';
   const mk = (icon: keyof typeof ICO, col: string, value: string | number, label: string, help: string): SnapCell => ({
     icon: ICO[icon],
     iconStyle: iconBox(col, 36),
@@ -236,32 +322,38 @@ export function HomeTab() {
   const sf = snap.data;
   const debtAmt = sf?.total_debt_amount ?? 0;
   const moneyOwed = debtAmt > 0 ? money(-debtAmt) : '$0';
-  const volumeTrend = sf?.volume_trend && sf.volume_trend !== '—' ? sf.volume_trend : '0%';
-  const volumeColor =
-    sf?.volume_trend_dir === 'down' ? red : sf?.volume_trend_dir === 'up' ? green : accent;
+  // Volume trend keeps a status hue but pairs it with an arrow glyph so direction survives grayscale
+  // and red/green colorblindness (audit: never rely on hue alone).
+  const volDir = sf?.volume_trend_dir;
+  const volumeTrendRaw = sf?.volume_trend && sf.volume_trend !== '—' ? sf.volume_trend : '0%';
+  const volumeTrend = `${volDir === 'up' ? '▲ ' : volDir === 'down' ? '▼ ' : ''}${volumeTrendRaw}`;
+  const volumeColor = volDir === 'down' ? red : volDir === 'up' ? green : neutral;
+  // Curated coloring: each metric owns ONE consistent hue across groups (fixes the old "same metric,
+  // two colors" rainbow) — counts get a calm brand hue, status cells keep red/amber and are always
+  // backed by a glyph or sign (warn/clock icon, -$, ▲/▼) so meaning survives grayscale/colorblindness.
   const snapshotGroups: SnapGroup[] = [
     {
       label: 'Your Clients',
       cells: [
         mk('users', accent, numFmt(sf?.active_clients ?? 0), 'Active Customers', 'Fueled in the last 10 days'),
-        mk('lead', red, numFmt(sf?.inactive_clients ?? 0), 'Need Attention', 'Quiet 10+ days — worth a call'),
-        mk('clock', orange, numFmt(sf?.stuck_deals_count ?? 0), 'Stuck Applications', 'Sitting 15+ days'),
-        mk('money', debtAmt > 0 ? red : accent, moneyOwed, 'Money Owed', `${numFmt(sf?.total_debtors ?? 0)} debtors · ${numFmt(sf?.total_hard_debtors ?? 0)} hard`),
+        mk('warn', (sf?.inactive_clients ?? 0) > 0 ? red : neutral, numFmt(sf?.inactive_clients ?? 0), 'Need Attention', 'Quiet 10+ days — worth a call'),
+        mk('clock', (sf?.stuck_deals_count ?? 0) > 0 ? amber : neutral, numFmt(sf?.stuck_deals_count ?? 0), 'Stuck Applications', 'Sitting 15+ days'),
+        mk('money', debtAmt > 0 ? red : neutral, moneyOwed, 'Money Owed', `${numFmt(sf?.total_debtors ?? 0)} debtors · ${numFmt(sf?.total_hard_debtors ?? 0)} hard`),
       ],
     },
     {
       label: 'This Week',
       cells: [
-        mk('card', green, numFmt(sf?.swipes_this_week ?? 0), 'Fuel Transactions', sf?.fuel_tx_caption ?? 'Mon–today this week'),
+        mk('card', cyan, numFmt(sf?.swipes_this_week ?? 0), 'Fuel Transactions', sf?.fuel_tx_caption ?? 'Mon–today this week'),
         mk('fuel', violet, numFmt(sf?.gallons_this_week ?? 0), 'Gallons Pumped', 'Gallons this cycle'),
-        mk('card', accent, numFmt(sf?.new_cards_this_week ?? 0), 'New Cards', 'Activated for new units'),
+        mk('card', green, numFmt(sf?.new_cards_this_week ?? 0), 'New Cards', 'Activated for new units'),
         mk('trend', volumeColor, volumeTrend, 'Volume Trend', 'Week over week'),
       ],
     },
     {
       label: 'Today',
       cells: [
-        mk('card', accent, numFmt(sf?.swipes_today ?? 0), 'Fuel Transactions', 'So far today'),
+        mk('card', cyan, numFmt(sf?.swipes_today ?? 0), 'Fuel Transactions', 'So far today'),
         mk('fuel', violet, numFmt(sf?.gallons_today ?? 0), 'Gallons Pumped', 'So far today'),
         mk('card', green, numFmt(sf?.new_cards_today ?? 0), 'New Cards', 'Activated today'),
         mk('check', green, numFmt(dailyAct.data?.tasks ?? 0), 'Tasks Done', 'Cleared from your queue'),
@@ -306,7 +398,7 @@ export function HomeTab() {
     return {
       id,
       label,
-      style: `padding:5px 13px;border-radius:var(--radius-md);border:none;cursor:pointer;font-size:11.5px;font-weight:700;background:${on ? 'var(--accent)' : 'transparent'};color:${on ? '#fff' : 'var(--muted)'};transition:all .14s`,
+      style: `padding:5px 13px;border-radius:var(--radius-md);border:none;cursor:pointer;font-size:12px;font-weight:700;background:${on ? 'var(--accent)' : 'transparent'};color:${on ? '#fff' : 'var(--muted)'};transition:all .14s`,
       onClick: () => setActivityRange(id),
     };
   });
@@ -340,8 +432,19 @@ export function HomeTab() {
           <div style={s('position:absolute;right:-40px;top:-40px;width:190px;height:190px;border-radius:50%;background:radial-gradient(circle,rgba(var(--accent-rgb),.22),transparent 70%);pointer-events:none')}></div>
           <div style={s('font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent)')}>{dateLabel}</div>
           <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:30px;letter-spacing:.01em;margin-top:8px;line-height:1.1')}>Good {timeOfDay}, <span style={s('background:linear-gradient(120deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent')}>{user.first}</span></div>
+          {/* Daily goal bar — the audit's "turn the workday bar into a goal bar"; real apps-today count. */}
+          <div style={s('margin-top:18px')}>
+            <div style={s('display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px')}>
+              <span style={s('font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--text2)')}>Today's Goal</span>
+              <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text2)")}>{appsDone} / {DAILY_APPS_GOAL} apps</span>
+            </div>
+            <div style={s('position:relative;height:9px;border-radius:99px;background:var(--raised);overflow:hidden')}>
+              <div style={s(`position:absolute;inset:0 auto 0 0;width:${appsGoalPct}%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .55s cubic-bezier(.2,0,0,1)`)}></div>
+            </div>
+            <div style={s(`font-size:11px;margin-top:7px;font-weight:700;font-family:'JetBrains Mono',monospace;color:${goalMet ? 'var(--ok-text)' : 'var(--accent-text)'}`)}>{goalMet ? 'Goal met — nice work ✦' : `${appsToGo} more to hit your goal ✦`}</div>
+          </div>
           <div style={s('display:flex;gap:10px;margin-top:18px')}>
-            <button onClick={goAuto} className="ss-btn-p" style={s('height:38px;padding:0 16px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer;display:flex;align-items:center;gap:7px')}><Icon name={ICO.bolt} size={15} strokeWidth={2.2} />Run an action</button>
+            <button onClick={goAuto} className="ss-btn-p" style={s('height:38px;padding:0 16px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:7px')}><Icon name={ICO.bolt} size={15} strokeWidth={2.2} />Run an action</button>
           </div>
         </div>
         <div style={s('border-radius:var(--radius-md);padding:22px 24px;background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;justify-content:center')}>
@@ -360,13 +463,33 @@ export function HomeTab() {
             <div style={s(`position:absolute;inset:0;width:${workdayFill};border-radius:99px;background:${workday.barGradient};transition:width .35s ease,background .35s ease`)}></div>
             <div style={s(`position:absolute;top:50%;left:${workdayKnob};transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:var(--surface);border:2px solid ${workday.accent};box-shadow:0 2px 8px color-mix(in srgb, ${workday.accent} 55%, transparent);transition:left .35s ease,border-color .35s ease`)}></div>
           </div>
-          <div style={s('display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);font-weight:600')}>
+          <div style={s('display:flex;justify-content:space-between;font-size:11px;color:var(--muted);font-weight:600')}>
             <span>9:00 AM</span>
             <span style={s(`color:${workday.accent};font-family:'JetBrains Mono',monospace;font-weight:700`)}>{workday.statusLabel}</span>
             <span>6:00 PM</span>
           </div>
         </div>
       </div>
+
+      {/* Habit loop — streak · personal best · momentum (client-side; begins the day it ships). */}
+      <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px')}>
+        <StreakStat emoji="🔥" value={streakDays} label="day streak" tone="var(--orange)" />
+        <StreakStat emoji="⭐" value={bestDay} label="best day · apps" tone="var(--warn)" />
+        <StreakStat icon="doc" value={weekApps} label="this week · apps" tone="var(--accent)" />
+      </div>
+
+      {celebration && (
+        <div aria-hidden="true" style={s('position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;pointer-events:none')}>
+          <div style={s('position:relative;padding:20px 28px;border-radius:var(--radius-md);background:linear-gradient(120deg,rgba(var(--accent-rgb),.16),rgba(var(--violet-rgb),.12)),var(--surface);border:1px solid rgba(var(--accent-rgb),.45);box-shadow:var(--shadow);display:flex;align-items:center;gap:16px;animation:ss-pop .3s cubic-bezier(.2,0,0,1) both')}>
+            <div aria-hidden="true" style={s('position:absolute;inset:0;border-radius:var(--radius-md);border:2px solid var(--accent);animation:ss-ring .9s ease-out both;pointer-events:none')}></div>
+            <span style={s('font-size:34px')}>{celebration.emoji}</span>
+            <div style={s('min-width:0')}>
+              <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:18px;letter-spacing:.03em;text-transform:uppercase;color:var(--ok-text)")}>{celebration.title}</div>
+              <div style={s('font-size:13px;color:var(--text2);margin-top:2px')}>{celebration.msg}</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {!homeReady ? (
         <HomeBelowFoldSkeleton />
@@ -375,13 +498,13 @@ export function HomeTab() {
           {/* announcements */}
           <div style={s('display:flex;align-items:center;justify-content:space-between;margin:22px 2px 12px')}>
             <div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name={ICO.bell} size={17} /></span>Updates &amp; Announcements</div>
-            <span style={s('font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:3px 9px;border-radius:99px;background:rgba(var(--accent-rgb),.14);color:var(--accent)')}>{annData.length} NEW</span>
+            <span style={s('font-size:11px;font-weight:800;letter-spacing:.04em;padding:3px 9px;border-radius:99px;background:rgba(var(--accent-rgb),.14);color:var(--accent)')}>{annData.length} NEW</span>
           </div>
           <div style={s('display:flex;gap:12px;overflow-x:auto;padding-bottom:6px')}>
             {ann.error && <StateNote tone="danger">{ann.error}</StateNote>}
             {!ann.error && annData.length === 0 && <StateNote tone="muted">No announcements</StateNote>}
             {annData.map((a) => (
-              <div key={a.title} onClick={() => openAnn(a)} className="ss-card-h" style={s('flex:0 0 300px;display:flex;gap:12px;padding:15px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
+              <div key={a.title} {...clickable(() => openAnn(a))} className="ss-card-h" style={s('flex:0 0 300px;display:flex;gap:12px;padding:15px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
                 <div style={s(iconBox(a.color, 40))}><Icon name={a.icon} size={18} /></div>
                 <div style={s('min-width:0')}>
                   <div style={s('font-size:13px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical')}>{a.title}</div>
@@ -406,14 +529,14 @@ export function HomeTab() {
                 <div>
                   {snapshotGroups.map((g) => (
                     <div key={g.label} style={s('margin-bottom:16px')}>
-                      <div style={s('font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px')}>{g.label}</div>
+                      <div style={s('font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px')}>{g.label}</div>
                       <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:12px')}>
                         {g.cells.map((c) => (
                           <div key={c.label} className="ss-card-h" style={s('padding:15px;border-radius:var(--radius-md);background:linear-gradient(180deg,var(--surface-2),var(--surface));border:1px solid var(--border);position:relative')}>
                             <div style={s(c.iconStyle)}><Icon name={c.icon} size={18} /></div>
-                            <div style={s(`font-family:'JetBrains Mono',monospace;font-weight:600;font-size:23px;line-height:1.15;min-height:27px;margin-top:12px;color:${c.color}`)}>{c.value}</div>
+                            <div style={s(`font-family:'JetBrains Mono',monospace;font-weight:500;font-size:23px;line-height:1.15;min-height:27px;margin-top:12px;color:${c.color}`)}>{c.value}</div>
                             <div style={s('font-size:12px;font-weight:600;color:var(--text);margin-top:2px')}>{c.label}</div>
-                            <div style={s('font-size:10.5px;color:var(--muted);margin-top:4px;line-height:1.35')}>{c.help}</div>
+                            <div style={s('font-size:11px;color:var(--muted);margin-top:4px;line-height:1.35')}>{c.help}</div>
                           </div>
                         ))}
                       </div>
@@ -444,7 +567,7 @@ export function HomeTab() {
                       <div key={t.label} style={s('padding:13px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2);text-align:center')}>
                         <div style={s(t.iconStyle)}><Icon name={t.icon} size={16} /></div>
                         <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:19px;line-height:1.15;min-height:22px;margin-top:9px")}>{t.value}</div>
-                        <div style={s('font-size:10.5px;color:var(--muted);margin-top:2px')}>{t.label}</div>
+                        <div style={s('font-size:11px;color:var(--muted);margin-top:2px')}>{t.label}</div>
                       </div>
                     ))}
                   </div>
@@ -465,7 +588,7 @@ export function HomeTab() {
               <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name={ICO.bolt} size={17} /></span>Quick Actions</div><button onClick={goAuto} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-md)')}>All guides →</button></div>
               <div style={s('display:flex;flex-direction:column;gap:12px')}>
                 {ctaCards.map((c) => (
-                  <div key={c.name} onClick={goAuto} className="ss-card-h" style={s('padding:16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
+                  <div key={c.name} {...clickable(goAuto)} className="ss-card-h" style={s('padding:16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
                     <div style={s('display:flex;align-items:center;gap:6px;margin-bottom:9px')}>
                       {c.codes.map((code) => (
                         <span key={code.text} style={s(code.style)}>{code.text}</span>
@@ -485,12 +608,12 @@ export function HomeTab() {
                 {inbox.error && <StateNote tone="danger">{inbox.error}</StateNote>}
                 {!inbox.error && inboxData.length === 0 && <StateNote tone="muted">No messages</StateNote>}
                 {inboxPreview.map((i) => (
-                  <div key={i.id} onClick={i.onClick} className="ss-card-h" style={s('display:flex;gap:12px;padding:13px 14px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm);position:relative;overflow:hidden')}>
+                  <div key={i.id} {...clickable(i.onClick)} className="ss-card-h" style={s('display:flex;gap:12px;padding:13px 14px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm);position:relative;overflow:hidden')}>
                     <div style={s(`position:absolute;left:0;top:0;bottom:0;width:3px;background:${i.barColor}`)}></div>
                     <div style={s(i.iconStyle)}><Icon name={i.icon} size={15} /></div>
                     <div style={s('min-width:0;flex:1')}>
-                      <div style={s('display:flex;justify-content:space-between;gap:8px')}><span style={s('font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{i.title}</span><span style={s('font-size:10.5px;color:var(--muted);white-space:nowrap')}>{i.time}</span></div>
-                      <div style={s('font-size:11.5px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{i.desc}</div>
+                      <div style={s('display:flex;justify-content:space-between;gap:8px')}><span style={s('font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{i.title}</span><span style={s('font-size:11px;color:var(--muted);white-space:nowrap')}>{i.time}</span></div>
+                      <div style={s('font-size:12px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{i.desc}</div>
                     </div>
                   </div>
                 ))}

@@ -78,7 +78,7 @@ export function ViewAsPicker() {
           <Icon name="user" size={10} strokeWidth={2.5} />
         </span>
         <span style={s('font-size:9.5px;font-weight:800;letter-spacing:.08em;color:var(--accent)')}>ADMIN VIEW</span>
-        <span style={s('font-size:12.5px;font-weight:700;color:var(--text);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
+        <span style={s('font-size:13px;font-weight:700;color:var(--text);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
           {actingAs.name}
         </span>
         <button
@@ -106,7 +106,7 @@ export function ViewAsPicker() {
 
   return (
     <div style={s('display:flex;align-items:center;gap:9px')}>
-      <span style={s('font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>View as</span>
+      <span style={s('font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>View as</span>
       <div style={s('position:relative')}>
         <div
           style={s(
@@ -127,7 +127,7 @@ export function ViewAsPicker() {
             placeholder={loading ? 'Loading agents…' : 'Search agents…'}
             aria-label="Search agents to view as"
             autoComplete="off"
-            style={s('flex:1;min-width:0;border:none;background:none;outline:none;color:var(--text);font-size:12.5px')}
+            style={s('flex:1;min-width:0;border:none;background:none;outline:none;color:var(--text);font-size:13px')}
           />
         </div>
         {open && (
@@ -167,13 +167,13 @@ export function ViewAsPicker() {
               >
                 <span
                   style={s(
-                    'flex-shrink:0;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);font-size:10.5px;font-weight:700',
+                    'flex-shrink:0;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);font-size:11px;font-weight:700',
                   )}
                 >
                   {initials(a.name ?? a.zohoUserId)}
                 </span>
                 <span style={s('min-width:0')}>
-                  <span style={s('display:block;font-size:12.5px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
+                  <span style={s('display:block;font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
                     {a.name ?? a.zohoUserId}
                   </span>
                   <span style={s('display:block;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>

@@ -90,7 +90,7 @@ export function AutoCatalog({
 
   return (
     <div style={s('display:flex;flex-direction:column;gap:22px')}>
-      <div style={s('font-size:11.5px;color:var(--muted)')}>
+      <div style={s('font-size:12px;color:var(--muted)')}>
         Drag blocks to set your preferred order — saved on this device.
       </div>
       {sections.map(({ category, items: sectionItems }) => (
