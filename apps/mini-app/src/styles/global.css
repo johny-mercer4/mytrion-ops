@@ -61,7 +61,10 @@
   --secondary: #e9ebf1;
   --secondary-foreground: #111318;
   --muted: #ffffff;
-  --muted-foreground: #7a8091;
+  /* #7a8091 measured 3.9:1 on a white card — under WCAG AA (4.5:1) for the 11.5–13px labels that
+     use this token everywhere. #6a7080 reads 4.8:1 on card and 4.1:1 on --secondary while staying
+     visibly "muted" next to the #111318 foreground. (Dark theme's 5.4:1 needs no change.) */
+  --muted-foreground: #6a7080;
   /* Solid, visible gray — not the dark theme's faint 8%-white, which computes to a near-white
      rgba(247,249,253) on a white card and vanishes entirely. This is what gives light-mode cards
      an edge instead of bleeding into the page. */
@@ -74,7 +77,10 @@
   --logo-ring: #000000;
 
   --destructive: #d92b2e;
-  --success: #1dab53;
+  /* #1dab53 measured 3.0:1 on white — fails AA even for large text, and this token colors real
+     TEXT ("Active" statuses), not just badges. #168447 reads 4.75:1 in the same hue family.
+     (Dark theme's #2bd866 at 9.3:1 needs no change.) */
+  --success: #168447;
 
 
   /* Soft elevation to lift white cards off the off-white page — dark mode gets none (see above). */

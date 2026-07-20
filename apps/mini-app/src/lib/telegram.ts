@@ -19,6 +19,15 @@ export interface TelegramHapticFeedback {
   notificationOccurred: (type: 'error' | 'success' | 'warning') => void;
 }
 
+/** Telegram's native header back arrow — shown/hidden by the app to mirror its own layered
+ *  navigation (sheets, sub-screens). Present on every client that supports Mini Apps ≥6.1. */
+export interface TelegramBackButton {
+  show: () => void;
+  hide: () => void;
+  onClick: (handler: () => void) => void;
+  offClick: (handler: () => void) => void;
+}
+
 export interface TelegramWebApp {
   initData: string;
   initDataUnsafe: { start_param?: string; user?: TelegramWebAppUser };
@@ -30,6 +39,7 @@ export interface TelegramWebApp {
   setBackgroundColor?: (color: string) => void;
   setBottomBarColor?: (color: string) => void;
   HapticFeedback?: TelegramHapticFeedback;
+  BackButton?: TelegramBackButton;
 }
 
 declare global {

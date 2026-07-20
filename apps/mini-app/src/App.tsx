@@ -228,17 +228,19 @@ function CtaButton({ children, onClick, disabled, style }: { children: ReactNode
   );
 }
 
-function Spinner({ size = 34 }: { size?: number }) {
+function Spinner({ size = 34, color = 'var(--primary)' }: { size?: number; color?: string }) {
   return (
     <div
       style={{
         width: size,
         height: size,
         borderRadius: '50%',
-        // Theme-adaptive track (faint in both light + dark) with a solid primary arc on top, so the
-        // spinner reads clearly against the dark-default background — --secondary was too low-contrast.
-        border: '3px solid color-mix(in srgb, var(--primary) 22%, transparent)',
-        borderTopColor: 'var(--primary)',
+        // Theme-adaptive track (faint in both light + dark) with a solid arc on top. `color`
+        // defaults to --primary for spinners on the page background; inside a filled CTA (primary
+        // background) it must be passed '#FFFFFF' — a primary arc on a primary button is invisible,
+        // which read as the loading button "losing its color" in dark mode.
+        border: `3px solid color-mix(in srgb, ${color} 22%, transparent)`,
+        borderTopColor: color,
         animation: 'octspin .8s linear infinite',
       }}
     />
@@ -392,7 +394,7 @@ function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: Regis
           </div>
         </DetailCard>
         <CtaButton onClick={onConfirm} disabled={busy}>
-          {busy ? <Spinner size={20} /> : t('confirm.cta')}
+          {busy ? <Spinner size={20} color="#FFFFFF" /> : t('confirm.cta')}
         </CtaButton>
         {!cd.expired && cd.short && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 13px', borderRadius: 9, background: 'color-mix(in srgb, var(--primary) 14%, transparent)', color: 'var(--link-accent)', fontSize: 12, fontWeight: 600 }}>
@@ -535,7 +537,7 @@ function LoginScreen({
             </label>
             {error && <div style={{ fontSize: 13, color: 'var(--destructive)', lineHeight: 1.45 }}>{error}</div>}
             <CtaButton onClick={() => void submit()} disabled={busy}>
-              {busy ? <Spinner size={20} /> : t('login.continue')}
+              {busy ? <Spinner size={20} color="#FFFFFF" /> : t('login.continue')}
             </CtaButton>
             <button type="button" className="press" onClick={() => { setRole('choose'); setError(''); }} style={{ border: 'none', background: 'transparent', color: 'var(--muted-fg)', fontFamily: "'Geist'", fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: 6 }}>
               {t('common.back')}
@@ -908,10 +910,12 @@ function DriverHero({
             third. The number stays `selectable` so it can still be picked up by hand. */}
         <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' }}>{t('card.numberLabel')}</span>
-          {display ? (
+          {/* No skeleton shimmer here: a driver's card number is what they typed at sign-in and what
+              the session already carries, so it is present on first paint — a shimmer only ever
+              flashed for a frame. If the PAN genuinely hasn't resolved yet, render nothing rather
+              than a loading placeholder for data that init already has. */}
+          {display && (
             <span className={revealed ? 'selectable' : ''} style={{ fontSize: 20, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.03em', whiteSpace: 'nowrap' }}>{display}</span>
-          ) : (
-            <span aria-label={t('card.numberLabel')} style={{ display: 'block', width: 196, height: 21, borderRadius: 6, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8 }}>
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--success)', flex: 'none' }} />
@@ -1455,17 +1459,27 @@ function ProfileSheet({
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'rgba(0,0,0,.42)', animation: 'octfade .2s ease' }} />
-      <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 41, background: 'var(--card)', borderRadius: '24px 24px 0 0', padding: '10px 20px calc(34px + env(safe-area-inset-bottom))', boxShadow: '0 -8px 40px rgba(0,0,0,.28)', animation: 'octsheet .28s cubic-bezier(.32,.72,0,1)' }}>
-        <div style={{ width: 38, height: 4, borderRadius: 2, background: 'var(--border)', margin: '0 auto 18px' }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 22 }}>
-          <div style={{ width: 52, height: 52, borderRadius: '50%', overflow: 'hidden', background: user?.photo_url ? undefined : 'var(--primary)', color: '#FFFFFF', fontWeight: 700, fontSize: 19, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
-            {user?.photo_url ? <img src={user.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initialsOf(user)}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fullName}</div>
-            <div style={{ fontSize: 13, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company}</div>
+      {/* Same sheet skeleton as ActionSheet: capped height, fixed header with an explicit close
+          button, scrollable body. Without the cap, an owner's sheet (company block + theme + 4
+          languages) outgrew short viewports — Telegram Desktop especially — pushing the handle
+          off-screen and burying the tap-to-close backdrop entirely, with no way back. */}
+      <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 41, maxHeight: '84%', display: 'flex', flexDirection: 'column', background: 'var(--card)', borderRadius: '24px 24px 0 0', boxShadow: '0 -8px 40px rgba(0,0,0,.28)', animation: 'octsheet .28s cubic-bezier(.32,.72,0,1)' }}>
+        <div style={{ flex: 'none', padding: '10px 20px 0' }}>
+          <div style={{ width: 38, height: 4, borderRadius: 2, background: 'var(--border)', margin: '0 auto 18px' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 22 }}>
+            <div style={{ width: 52, height: 52, borderRadius: '50%', overflow: 'hidden', background: user?.photo_url ? undefined : 'var(--primary)', color: '#FFFFFF', fontWeight: 700, fontSize: 19, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+              {user?.photo_url ? <img src={user.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initialsOf(user)}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fullName}</div>
+              <div style={{ fontSize: 13, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company}</div>
+            </div>
+            <button type="button" onClick={onClose} style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: 'var(--secondary)', color: 'var(--muted-fg)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: 'none' }}>
+              <Icon name="x" size={14} strokeWidth={1.8} className="" />
+            </button>
           </div>
         </div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 20px calc(34px + env(safe-area-inset-bottom))' }}>
 
         {isOwner && details && (
           <>
@@ -1521,6 +1535,7 @@ function ProfileSheet({
               </button>
             );
           })}
+        </div>
         </div>
       </div>
     </>
@@ -2417,6 +2432,34 @@ export function App() {
     // registration id read once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Telegram's native header Back arrow mirrors the app's layered navigation: visible whenever a
+  // layer is open, and one tap closes the TOP-MOST layer only (confirm dialog → action sheet →
+  // profile sheet → fleet sub-screen). Before this, sheets and the fleet screen had no system-level
+  // way back — only their own on-screen buttons, which the profile sheet lacked entirely.
+  useEffect(() => {
+    const bb = wa?.BackButton;
+    if (!bb) return undefined;
+    const layered = Boolean(confirmCfg) || openAction !== null || profileOpen || screen === 'fleet';
+    if (!layered) {
+      bb.hide();
+      return undefined;
+    }
+    const onBack = () => {
+      haptic('tap');
+      if (confirmCfg) setConfirmCfg(null);
+      else if (openAction !== null) setOpenAction(null);
+      else if (profileOpen) setProfileOpen(false);
+      else goHome();
+    };
+    bb.onClick(onBack);
+    bb.show();
+    return () => {
+      bb.offClick(onBack);
+    };
+    // wa/goHome are stable for the app's lifetime; the layers are what drive show/hide.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmCfg, openAction, profileOpen, screen]);
 
   function chooseTheme(next: Theme) {
     if (next === theme) return;

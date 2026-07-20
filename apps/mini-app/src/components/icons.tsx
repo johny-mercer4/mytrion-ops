@@ -4,6 +4,7 @@
  */
 import {
   ArrowUpDown,
+  Banknote,
   Check,
   CheckCheck,
   ChevronLeft,
@@ -49,6 +50,7 @@ export type IconName =
   | 'x'
   | 'userplus'
   | 'dollar'
+  | 'banknote'
   | 'key'
   | 'alert'
   | 'headset'
@@ -74,6 +76,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   x: X,
   userplus: UserPlus,
   dollar: DollarSign,
+  banknote: Banknote,
   key: KeyRound,
   alert: TriangleAlert,
   headset: Headset,
