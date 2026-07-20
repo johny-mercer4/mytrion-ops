@@ -3340,3 +3340,86 @@ Holat: typecheck toza, 695 test yashil.
 - `/carrier/mini-app/driver-self-register`: verified Telegram user boshiga 3 urinish/daqiqa
   (takeToken, `SELF_REGISTER_RATE_LIMITED` 429) — karta-raqam enumeration oracle yopildi.
 - Testlar: same-carrier duplikat birinchi qatorga bog'lanadi; 4-urinish 429 va DWH'ga yetmaydi.
+
+### 2026-07-20 — Txn report detailed + stations/dispute/override UI (SelfService filtri)
+
+- txnReport: `detailed` rejim — to'liq PAN + Driver/Unit/Driver ID ustunlari (12 ustun, uch
+  renderer dinamik ustunlarga o'tkazildi, totals endi header bo'yicha). Route/api `detailed` param.
+- Stations sheet (statik, 814 so'rov): yangi ServiceKey, katalogda unpark (owner+driver), 4 tilda.
+- Dispute-txn: real Billing ticket (owner+driver), katalogda unpark.
+- Export panel: "Chegirmasiz" (owner-only ko'rinadi) + "Batafsil" toggle'lari.
+- Driver override: generic sheet ustida bir-bosishlik real C-16 tugmasi; flag o'chiq bo'lsa
+  ticket-fallback saqlangan (503 → xabar).
+
+### 2026-07-20 — Owner write-action UI (T3 yakuni)
+
+- `moneycode` sheet (C-17): preview (available/drawn) → summa+unit+sabab (sabablar backenddan)
+  → draw → muvaffaqiyat ekrani (kod QIYMATI hech qachon ko'rsatilmaydi — widget qoidasi).
+  Flag o'chiq (503) → xuddi shu sheet ichida money-code TICKET fallback formasi.
+- `cardops` sheet (C-1/C-3/C-4-5/C-26): fleet'dan karta tanlash → per-card EFS holat →
+  Activate/Deactivate · kunlik limit (ULSD/DEF, +/− delta) · Unit/Driver/ID saqlash.
+  MINIAPP_WRITES_DISABLED → katalog so'roviga yo'naltiruvchi toast.
+- Katalog: fin-money-code → 'moneycode'; card-activate/card-limit → 'cardops'.
+- Stations sheet OLIB TASHLANDI (owner qarori: mobil appda bor) — katalogda yana 'soon'.
+- i18n: mc.*/co.* to'plami 4 tilda; 2 noto'g'ri kalit tuzatildi.
+
+### 2026-07-20 — Override sheet tozalash + driver PIN/Unit info sheet
+
+- Driver override sheet: ticket-forma va uning intro matni YASHIRILDI — faqat direkt tugma;
+  MINIAPP_WRITES_DISABLED bo'lsa forma fallback sifatida ochiladi (ovrFallback). ovr.hint qo'shildi.
+- drv-change-pin unpark → 'pinunit' READ sheet (analitika: 62 PIN so'rovi, deyarli hammasi
+  "PIN nima/ishlamayapti"): o'z kartasining EFS'dan unit/driver_id/driver_name + PIN yo'riqnomasi
+  (Driver ID yoki last-4; bo'lmasa Override/so'rov) + "unitni owner o'zgartiradi" izohi. 4 tilda.
+
+### 2026-07-20 — Override UX yakuniy: bitta tugma + Home timer + bot xabari
+
+- Override sheet: ticket forma/tugma/intro BUTUNLAY yashirildi (driver) — bitta tugma. Ticket
+  fallback olib tashlandi (owner qarori: agent widgetda ham override direct, ticket ochilmaydi);
+  flag o'chiq → faqat xabar.
+- Home (driver): muvaffaqiyatli override'dan keyin yashil countdown-karta (~30 daq, sekundlab),
+  localStorage orqali app qayta ochilganda ham saqlanadi; tugagach o'zi yo'qoladi.
+- Backend override: muvaffaqiyatdan keyin best-effort bot xabari (karta last-4 bilan) — pump
+  oldida WebView yopilsa ham chat xabari qoladi. Hech qachon override'ni bloklamaydi.
+
+### 2026-07-20 — Product rule: fuel karta LAST 6 raqam bilan ko'rsatiladi (last-4 emas)
+
+- App.tsx: last4() -> tail6() (barcha •••• ko'rinishlar), maskedCardNumber ham 6 xonaga.
+- txnReport: tail6 (Card ustuni), meta.cardLast4 endi 6 xona saqlaydi (nom tarixiy, izohda).
+- Export caption + override bot xabari: slice(-6).
+Sabab: last-4 fleet ichida unikal emas (bitta carrier'da 11 karta bir xil last-4 — DWH o'lchovi).
+
+### 2026-07-20 — PIN/Unit endi EDITABLE + sheet cache + copy + driver funds check
+
+- pinunit sheet endi TAHRIRLANADI: driver o'z unit/driverId'sini o'zgartiradi (C-26 orqali,
+  updateCardInfo cardId'siz — o'z kartasiga pinned). Dirty-check Save, saqlangach
+  cardops/pinunit/status cache invalidatsiyasi. Hintlar 4 tilda yangilandi ("unitni owner
+  o'zgartiradi" → o'zi o'zgartira olishi; UZ ikki string birinchi urinishda anchor xato ketgan,
+  keyin tuzatildi).
+- SHEET_CACHE (60s TTL): barcha service sheetlar cache-first ochiladi (cacheId = service +
+  ko'rinishni o'zgartiruvchi paramlar); txns fast-phase cache'dan chiqsa ham live-merge davom
+  etadi. invalidateSheetCache(prefix...) yozuvlardan keyin chaqiriladi.
+- manualcode: copy tugmasi (clipboard + toast). svc.manualcode va boshqa yetishmagan kalitlar
+  4 tilga qo'shildi (missing-key scanner bilan tekshirilgan).
+- YANGI: driver "available balance" tekshiruvi — /carrier/mini-app/card/funds (owner ham
+  chaqira oladi). Har karta carrier'ning umumiy EFS pool'iga bog'langani uchun javob FAQAT
+  boolean: hasFunds (efs_balance>0), accountActive, driver uchun o'z kartasi statusi. Summa
+  ATAYIN qaytarilmaydi — kompaniya puli owner'ning ishi (owner'da to'liq /balance bor).
+  EFS outage → hasFunds null = "hozir tekshirib bo'lmadi" (hech qachon "pul yo'q" emas).
+  UI: drv-funds katalog itemi (driver ro'yxatida birinchi, default-pinned), uch holatli sheet
+  (✓ yashil / ✗ qizil / … neytral) + karta-status va account-inactive ogohlantirishlari. 4 tilda.
+
+### 2026-07-20 — Txn report: owner uchun karta filtri (company ↔ driver level)
+
+Telegram tahlili (txn_report_tahlili.md): 41 ta "bitta unit/driver/karta kesimida report"
+so'rovi. Yechim: owner txns sheet'ida chip-qator — "All cards" (company level) yoki bitta karta
+(driver level); tanlov ro'yxatga HAM exportga HAM ta'sir qiladi.
+
+- Backend: txnRangeSchema/txnExportSchema += optional cardId (opaque). resolveOwnerCardFilter():
+  faqat owner, findDwhCardById bilan O'Z carrier'i ichida resolve (fail-closed 404 CARD_NOT_FOUND).
+  Driver'da body.cardId e'tiborga olinmaydi — scope'i requireDriverCardNumber'ligicha (hech qachon
+  kengaymaydi). Fast (SQL) va live (scopeTransactionsToCard) fazalar bir xil filtrda.
+- Frontend: txnFleet lazy fetch (owner, sheet ochilganda bir marta), chip-qator •••• last6 + ism;
+  1 kartali fleet'da yashirin. cacheId va live-upgrade cache kalitiga cardId qo'shildi; doExport
+  ham o'tkazadi. i18n: txns.allCards ×4.
+- Test (Mac'da): owner cardId → faqat shu karta qatorlari; begona/noto'g'ri cardId → 404;
+  driver + cardId body → o'z kartasi (ignor).

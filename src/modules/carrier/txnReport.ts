@@ -125,9 +125,11 @@ const n = (v: unknown): number => {
   const x = typeof v === 'string' ? Number(v) : typeof v === 'number' ? v : NaN;
   return Number.isFinite(x) ? x : 0;
 };
-const last4 = (v: unknown): string => {
+/** Product rule (2026-07-20): fuel cards show their LAST 6 digits — last-4 is not unique within a
+ *  fleet (one carrier measured 11 active cards sharing a last-4). */
+const tail6 = (v: unknown): string => {
   const t = s(v);
-  return t.length >= 4 ? t.slice(-4) : t;
+  return t.length >= 6 ? t.slice(-6) : t;
 };
 
 /**
@@ -185,7 +187,7 @@ function toGrid(
     if (!retail) discount += d;
     // Detailed: the full PAN (it identifies the row for accounting; the client owns these cards)
     // plus the driver identity fields the mart already carries on every line item.
-    const card = detailed ? s(t['card_number']) : `•••• ${last4(t['card_number'])}`;
+    const card = detailed ? s(t['card_number']) : `•••• ${tail6(t['card_number'])}`;
     const driverCells: Cell[] = detailed
       ? [s(t['driver_card_name'] ?? t['driver_name']), s(t['driver_unit'] ?? t['unit_number']), s(t['driver_id'])]
       : [];

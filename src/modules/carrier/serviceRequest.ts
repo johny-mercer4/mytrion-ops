@@ -30,7 +30,8 @@ export type ServiceRequestKey =
   | 'card-fraud'
   | 'billing-form'
   | 'ref-guides'
-  | 'account-reactivate';
+  | 'account-reactivate'
+  | 'dispute-txn';
 
 interface ServiceRequestSpec {
   /** Desk ticket subject. Prefixed with the channel so CS can see where it came from. */
@@ -116,6 +117,14 @@ const SERVICE_REQUESTS: Record<ServiceRequestKey, ServiceRequestSpec> = {
     dept: 'cs',
     roles: ['owner'],
     ticketType: 'Card Management',
+  },
+  // "Dispute a transaction — for billing questions, not suspected fraud" (SelfService spec), so it
+  // routes to Billing, and a driver may flag a charge on their own card too.
+  'dispute-txn': {
+    subject: 'Dispute a transaction',
+    dept: 'billing',
+    roles: ['owner', 'driver'],
+    ticketType: 'Billing',
   },
 };
 

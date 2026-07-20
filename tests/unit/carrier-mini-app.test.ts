@@ -870,7 +870,7 @@ describe('driver row scoping (own card only)', () => {
       const sent = botSendDocument.mock.calls[0]![0];
       // A private chat's id IS the user id — telegramChatId is null on this registration.
       expect(sent.chatId).toBe('123456');
-      expect(sent.fileName).toMatch(/^Octane_Transactions_7593_.*\.csv$/);
+      expect(sent.fileName).toMatch(/^Octane_Transactions_417593_.*\.csv$/);
       expect(String(sent.bytes)).toContain('LOVES #711');
       // Masked in the file, exactly as the sheet shows it.
       expect(String(sent.bytes)).not.toContain(OWN_CARD);
@@ -1673,7 +1673,6 @@ describe('mini-app write actions — RBAC + gate order', () => {
     for (const [url, extra] of [
       ['/v1/carrier/mini-app/card/set-status', { cardId: 'card_own', action: 'deactivate' }],
       ['/v1/carrier/mini-app/card/limits', { cardId: 'card_own', limitId: 'ULSD', value: 10, action: 'increase' }],
-      ['/v1/carrier/mini-app/card/info', { cardId: 'card_own', unitNumber: '42' }],
       ['/v1/carrier/mini-app/card/fraud-request', { cardId: 'card_own', request: 'fraud_hold' }],
       ['/v1/carrier/mini-app/money-code/preview', {}],
       ['/v1/carrier/mini-app/money-code/draw', { amount: 100, unitNumber: '42', reason: 'fuel' }],
@@ -1696,6 +1695,42 @@ describe('mini-app write actions — RBAC + gate order', () => {
         expect(crm.drawMoneyCode).not.toHaveBeenCalled();
       });
     }
+  });
+
+  describe('card/info — a driver edits unit/driverId on their OWN card, never the roster name', () => {
+    beforeEach(() => {
+      env.FF_MINIAPP_CARD_WRITES_ENABLED = true;
+    });
+
+    it('lets a driver set unitNumber + driverId with no cardId (pinned to their own card)', async () => {
+      registrationRepo.findByTelegramUserId.mockResolvedValue(driverRow());
+      vi.mocked(findDwhCardById).mockResolvedValue({ cardId: 'card_own', cardNumber: 'DRIVER_OWN_PAN', cardType: 'FUEL', status: 'Active', balance: '0' });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/card/info',
+        headers: { 'content-type': 'application/json' },
+        payload: { initData: 'signed', unitNumber: '4031', driverId: '2605' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(efs.updateCardInfo).toHaveBeenCalledWith(CARRIER, 'DRIVER_OWN_PAN', { unitNumber: '4031', driverId: '2605' });
+    });
+
+    it('403s a driver trying to rename the roster driverName (owner-only field)', async () => {
+      registrationRepo.findByTelegramUserId.mockResolvedValue(driverRow());
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/card/info',
+        headers: { 'content-type': 'application/json' },
+        payload: { initData: 'signed', driverName: 'Someone Else' },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: { code: 'DRIVER_NAME_OWNER_ONLY' } });
+      expect(efs.updateCardInfo).not.toHaveBeenCalled();
+    });
   });
 
   describe('card ownership — an owner cannot aim a write at a foreign card', () => {
@@ -1766,6 +1801,10 @@ describe('mini-app write actions — RBAC + gate order', () => {
   describe("driver override — pinned to the driver's OWN card, body cardId ignored", () => {
     beforeEach(() => {
       env.FF_MINIAPP_CARD_WRITES_ENABLED = true;
+      // Force the REAL efs.overrideCard path: the route has a dev-mock short-circuit gated on
+      // FF_DEV_MOCK_TELEGRAM_ENABLED that returns a canned result without calling EFS, so this
+      // assertion (own card reaches EFS, colleague card never resolved) needs the mock off.
+      env.FF_DEV_MOCK_TELEGRAM_ENABLED = false;
     });
 
     it("overrides the driver's registered card even when the payload names another", async () => {

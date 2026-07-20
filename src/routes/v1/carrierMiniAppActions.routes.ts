@@ -23,11 +23,12 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AppError, NotFoundError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
-import { env } from '../../config/env.js';
+import { env, isProduction } from '../../config/env.js';
 import { findDwhCardById } from '../../integrations/dwhCards.js';
 import { takeToken } from '../../modules/security/rateBucket.js';
 import { efsWrapper } from '../../wrappers/efsWrapper.js';
 import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
+import { sendPlainReply } from '../../integrations/telegramCarrierBot.js';
 import {
   requireDriverCardNumber,
   requireRegisteredCarrierUser,
@@ -50,7 +51,8 @@ const limitsSchema = initDataSchema.extend({
   action: z.enum(['increase', 'decrease']),
 });
 const cardInfoSchema = initDataSchema.extend({
-  cardId: z.string().min(1).max(120),
+  /** Owner picks a card; a DRIVER omits this — they are pinned to their own card. */
+  cardId: z.string().min(1).max(120).optional(),
   unitNumber: z.string().trim().max(60).optional(),
   driverId: z.string().trim().max(60).optional(),
   driverName: z.string().trim().max(200).optional(),
@@ -142,13 +144,29 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
     takeWriteToken(carrierId);
     const { cardNumber, cardId } = await resolveActionCard(registration, carrierId, body.cardId);
     const ctx = telegramCtx(registration.profile, registration.telegramUserId);
-    const result = await efsWrapper.overrideCard(carrierId, cardNumber);
+    // DEV ONLY — same explicit opt-in gate as the mock-init-data route: lets the full override UX
+    // (button → toast → Home countdown → bot receipt → audit row) be clicked through locally
+    // without a real fraud-held card. Impossible in production BY CONSTRUCTION (isProduction).
+    const result =
+      !isProduction && env.FF_DEV_MOCK_TELEGRAM_ENABLED
+        ? { success: true, cardNumber, previousStatus: 'Hold', override: true, message: 'DEV MOCK — EFS not called' }
+        : await efsWrapper.overrideCard(carrierId, cardNumber);
     await auditFromContext(ctx, {
       action: 'carrier.mini_app.card_override',
       status: 'ok',
       resourceType: 'efs_card',
       resourceId: cardId,
       detail: { carrierId, profile: registration.profile },
+    });
+    // Best-effort bot receipt: the ~30-min window matters at the PUMP, where the driver may close
+    // the mini-app — a chat message (with the card's last 4) outlives the WebView. Never blocks or
+    // fails the override itself; a user who hasn't opened the bot chat simply gets no message.
+    const chatId = registration.telegramChatId ?? registration.telegramUserId;
+    void sendPlainReply(
+      chatId,
+      `Card •••• ${cardNumber.slice(-6)} is overridden — you can fuel for about 30 minutes.`,
+    ).catch(() => {
+      /* chat unreachable — the in-app toast + Home countdown already told them */
     });
     return result;
   });
@@ -205,7 +223,12 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
     return result;
   });
 
-  /** C-26 — unit number / driver id / driver name on the card, in EFS. Owner-only. */
+  /** C-26 — unit number / driver id / driver name on the card, in EFS.
+   *
+   * Owner: any of the three fields, on any of their cards. DRIVER: their OWN card only, and only
+   * `unitNumber` (they switch trucks — 'he is on unit 4031 right now' is a weekly chat ask) and
+   * `driverId` (which IS the pump PIN prompt — this is the self-service "change my PIN" from the
+   * SelfService spec). `driverName` stays owner-only: it is the roster label the OWNER reads. */
   app.post('/carrier/mini-app/card/info', async (request) => {
     requireWritesEnabled();
     const body = cardInfoSchema.parse(request.body);
@@ -221,17 +244,24 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
         expose: true,
       });
     }
-    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData);
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
+    if (registration.profile === 'driver' && body.driverName) {
+      throw new AppError('The driver name on the card is managed by your company owner', {
+        statusCode: 403,
+        code: 'DRIVER_NAME_OWNER_ONLY',
+        expose: true,
+      });
+    }
     takeWriteToken(carrierId);
-    const { cardNumber } = await resolveActionCard(registration, carrierId, body.cardId);
-    const ctx = telegramCtx('owner', registration.telegramUserId);
-    const result = await efsWrapper.updateCardInfo(carrierId, cardNumber, fields);
+    const resolved = await resolveActionCard(registration, carrierId, body.cardId);
+    const ctx = telegramCtx(registration.profile, registration.telegramUserId);
+    const result = await efsWrapper.updateCardInfo(carrierId, resolved.cardNumber, fields);
     await auditFromContext(ctx, {
       action: 'carrier.mini_app.card_info_change',
       status: 'ok',
       resourceType: 'efs_card',
-      resourceId: body.cardId,
-      detail: { carrierId, fields: Object.keys(fields) },
+      resourceId: resolved.cardId,
+      detail: { carrierId, profile: registration.profile, fields: Object.keys(fields) },
     });
     return result;
   });
