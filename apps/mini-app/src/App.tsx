@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Check, CircleAlert, LayoutGrid } from 'lucide-react';
+import { Check, ChevronRight, CircleAlert, LayoutGrid } from 'lucide-react';
 import {
   ApiError,
   createDriverInvite,
   driverSelfRegister,
   fetchAccountStatus,
   fetchBalance,
+  fetchCardFunds,
   fetchFleet,
   fetchInvoices,
   fetchLastUsed,
@@ -18,10 +19,18 @@ import {
   sendServiceRequest,
   fetchTransactions,
   overrideCard,
+  fetchMoneyCodePreview,
+  drawMoneyCode,
+  fetchCardEfs,
+  setCardStatus,
+  setCardLimits,
+  updateCardInfo,
+  type MoneyCodePreview,
   redeemRegistration,
   sendInvoice,
   sendTransactionsReport,
   type CarrierBalance,
+  type CardFundsResult,
   type FleetCard,
   type LastUsedResult,
   type PaymentInfoResult,
@@ -80,7 +89,7 @@ function sessionFrom(reg: RegistrationView | null): Session {
   const isOwnerOp = reg?.profile === 'owner' && companyType !== 'fleet-manager';
   const ownCardNumber = reg?.cardNumber?.trim() || null;
   // Prefer the real card number's last-4; fall back to the cardId's trailing digits when unresolved.
-  const ownCard = (ownCardNumber ?? reg?.cardId ?? '7549').slice(-4);
+  const ownCard = (ownCardNumber ?? reg?.cardId ?? '417593').slice(-6);
   return {
     isDriver,
     isOwner,
@@ -97,10 +106,12 @@ function initialsOf(user: TelegramWebAppUser | undefined): string {
   return s || user?.username?.[0]?.toUpperCase() || 'OC';
 }
 
-function last4(cardNumber: string | null, cardId: string | null): string {
-  const n = cardNumber?.trim();
-  if (n && n.length >= 4) return n.slice(-4);
-  return cardId ?? '——';
+/** Product rule (2026-07-20): fuel cards are identified by their LAST 6 digits everywhere —
+ *  last-4 collides too often within a fleet (one carrier measured 11 cards sharing a last-4). */
+function tail6(cardNumber: string | null, cardId: string | null): string {
+  const t = (cardNumber ?? '').replace(/\D/g, '');
+  if (t.length >= 6) return t.slice(-6);
+  return t || (cardId ?? '').slice(-6) || '——';
 }
 
 /** Same formatting rules as the sales admin's automation runners (apps/mytrion-crm/.../specs.ts) — servercrm figures are `number | string | null`, never pre-formatted. */
@@ -650,10 +661,13 @@ function groupCardNumber(n: string): string {
  * Not length-faithful: an EFS PAN is 19 digits, and masking to its real 4-4-4-4-3 grouping splits
  * the last four across groups as `•••7 549`, which reads as if the last four were "549".
  */
+/** HOME HERO EXCEPTION to the last-6 rule: the big card visual masks to last-4 — it's aesthetic,
+ *  not an identifier (the eye toggle reveals the full number right there). Everywhere a card is
+ *  IDENTIFIED among others (lists, reports, bot messages) stays last-6 via tail6(). */
 function maskedCardNumber(n: string): string {
   const digits = n.replace(/\D/g, '');
-  const last4 = digits.slice(-4) || n.slice(-4);
-  return `${'*'.repeat(Math.max(digits.length - last4.length, 8))} ${last4}`;
+  const tail = digits.slice(-4) || n.slice(-4);
+  return `${'*'.repeat(Math.max(digits.length - tail.length, 8))} ${tail}`;
 }
 
 /** Smooth an array of anchor points into a flowing SVG path (midpoint-quadratic smoothing). */
@@ -864,20 +878,55 @@ function OwnerHero({ initData, company, carrierId, onOpenDetails }: { initData: 
   );
 }
 
+/** Home-hero funds/status snapshot — module-level so tab switches don't refetch a live EFS read
+ *  the sheet cache (SHEET_CACHE) can't share (it lives inside ActionSheet's keying). Same 60s TTL. */
+let heroFundsCache: { at: number; v: CardFundsResult } | null = null;
+
 function DriverHero({
   session,
   company,
   fullName,
+  initData,
   revealed,
   onToggleReveal,
+  onOpenFunds,
 }: {
   session: Session;
   company: string;
   fullName: string;
+  initData: string;
   revealed: boolean;
   onToggleReveal: () => void;
+  onOpenFunds?: (() => void) | undefined;
 }) {
   const { t } = useI18n();
+  // Live standing for the bottom band: the driver's own card status + boolean funds (never the
+  // figure — see /card/funds). Best-effort: until (or unless) it loads, the band shows the static
+  // good-standing line it always showed, so the hero never blocks on EFS.
+  const [funds, setFunds] = useState<CardFundsResult | null>(() =>
+    heroFundsCache && Date.now() - heroFundsCache.at < SHEET_TTL_MS ? heroFundsCache.v : null,
+  );
+  useEffect(() => {
+    if (heroFundsCache && Date.now() - heroFundsCache.at < SHEET_TTL_MS) return;
+    let cancelled = false;
+    fetchCardFunds(initData)
+      .then((v) => {
+        heroFundsCache = { at: Date.now(), v };
+        if (!cancelled) setFunds(v);
+      })
+      .catch(() => {}); // hero keeps its static line — a funds hiccup must not mark the card bad
+    return () => {
+      cancelled = true;
+    };
+  }, [initData]);
+  const cardStatus = (funds?.cardStatus ?? '').trim();
+  const acctDown = funds?.accountActive === false;
+  const cardOk = !acctDown && (cardStatus === '' || cardStatus.toLowerCase() === 'active');
+  const standingText = acctDown
+    ? t('home.acctInactive')
+    : cardOk
+      ? t('home.cardStanding')
+      : `${cardStatus} · ${t('home.cardAttention')}`;
   // No invented fallback: if the DWH has not resolved the real PAN there is nothing truthful to
   // show, so the number skeletons rather than displaying a fiction the Copy button would hand out.
   const realFull = session.ownCardNumber;
@@ -918,9 +967,26 @@ function DriverHero({
           {display && (
             <span className={revealed ? 'selectable' : ''} style={{ fontSize: 20, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.03em', whiteSpace: 'nowrap' }}>{display}</span>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8 }}>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--success)', flex: 'none' }} />
-            <span style={{ fontSize: 12.5, fontWeight: 500, color: 'rgba(255,255,255,.72)' }}>{t('home.cardStanding')}</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 8 }}>
+            {/* Chip, matching the funds pill — the pair reads as one status row instead of a faint
+                caption next to a bright pill. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, padding: '5px 10px', borderRadius: 999, background: cardOk ? 'rgba(74,222,128,.16)' : 'rgba(248,113,113,.18)' }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: cardOk ? '#4ADE80' : '#FCA5A5', flex: 'none' }} />
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: cardOk ? '#4ADE80' : '#FCA5A5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{standingText}</span>
+            </div>
+            {/* Funds pill — boolean only, tappable into the full funds sheet. Hidden while unknown
+                (loading or EFS outage): an absent pill reads as "nothing to report", a red one as
+                "you will be declined" — only show the latter when it is actually true. */}
+            {funds?.hasFunds != null && (
+              <button
+                type="button"
+                className="press"
+                onClick={onOpenFunds}
+                style={{ border: 'none', cursor: onOpenFunds ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 999, flex: 'none', background: funds.hasFunds ? 'rgba(74,222,128,.16)' : 'rgba(248,113,113,.18)', color: funds.hasFunds ? '#4ADE80' : '#FCA5A5', fontFamily: "'Geist'", fontSize: 11.5, fontWeight: 700 }}
+              >
+                {funds.hasFunds ? `✓ ${t('home.fundsOk')}` : `✗ ${t('home.fundsNo')}`}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -944,6 +1010,42 @@ interface HomeProps {
   onViewFleet: () => void;
   onMarkAllRead: () => void;
   onReadNotif: (id: string) => void;
+  overrideUntil: number | null;
+  onOverrideExpire: () => void;
+}
+
+/** Live ~30-minute countdown card shown on Home after a successful C-16 override — the driver's
+ *  proof-at-a-glance that the card is open, without reopening the sheet. Ticks every second;
+ *  calls onExpire (which clears the persisted timestamp) when the window closes. */
+function OverrideBanner({ until, onExpire }: { until: number; onExpire: () => void }) {
+  const { t } = useI18n();
+  const [, force] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => force((x) => x + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const leftMs = until - Date.now();
+  useEffect(() => {
+    if (leftMs <= 0) onExpire();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leftMs <= 0]);
+  if (leftMs <= 0) return null;
+  const mm = Math.floor(leftMs / 60000);
+  const ss = Math.floor((leftMs % 60000) / 1000);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'color-mix(in srgb, var(--success) 13%, var(--card))', border: '1px solid color-mix(in srgb, var(--success) 35%, transparent)', borderRadius: 16, padding: '13px 15px', margin: '0 0 14px' }}>
+      <span style={{ width: 38, height: 38, borderRadius: 12, background: 'color-mix(in srgb, var(--success) 18%, transparent)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+        <Icon name="lock" size={18} strokeWidth={2} className="" />
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--fg)' }}>{t('ovrbn.active')}</span>
+        <span style={{ display: 'block', fontSize: 12.5, color: 'var(--muted-fg)', marginTop: 2 }}>{t('ovrbn.left')}</span>
+      </span>
+      <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--success)', fontVariantNumeric: 'tabular-nums', flex: 'none' }}>
+        {mm}:{String(ss).padStart(2, '0')}
+      </span>
+    </div>
+  );
 }
 
 function Home({
@@ -962,6 +1064,8 @@ function Home({
   onViewFleet,
   onMarkAllRead,
   onReadNotif,
+  overrideUntil,
+  onOverrideExpire,
 }: HomeProps) {
   const { t } = useI18n();
   const slideDir = useSlideDirection(tab, HOME_TABS);
@@ -979,7 +1083,10 @@ function Home({
     <SlideIn key={tab} dir={slideDir}>
     <div style={{ padding: '16px 16px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {session.isDriver ? (
-        <DriverHero session={session} company={company} fullName={fullName} revealed={cardRevealed} onToggleReveal={onToggleCardReveal} />
+        <>
+          {overrideUntil != null && overrideUntil > Date.now() && <OverrideBanner until={overrideUntil} onExpire={onOverrideExpire} />}
+          <DriverHero session={session} company={company} fullName={fullName} initData={initData} revealed={cardRevealed} onToggleReveal={onToggleCardReveal} onOpenFunds={() => onOpenAction({ kind: 'service', key: 'funds' })} />
+        </>
       ) : (
         <OwnerHero initData={initData} company={company} carrierId={session.carrierId} onOpenDetails={() => onOpenAction({ kind: 'service', key: 'status' })} />
       )}
@@ -1121,7 +1228,7 @@ function FleetView({
   const shown = rows.filter((r) => {
     if (filter !== 'all' && r.status !== filter) return false;
     if (q) {
-      const hay = `${last4(r.cardNumber, r.cardId)} ${(r.driverName ?? 'unassigned')}`.toLowerCase();
+      const hay = `${tail6(r.cardNumber, r.cardId)} ${(r.driverName ?? 'unassigned')}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -1237,7 +1344,7 @@ function FleetView({
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span className="selectable" style={{ fontWeight: 700, fontSize: 15, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em' }}>•••• {last4(c.cardNumber, c.cardId)}</span>
+                      <span className="selectable" style={{ fontWeight: 700, fontSize: 15, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em' }}>•••• {tail6(c.cardNumber, c.cardId)}</span>
                     </div>
                     <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.driverName ?? t('card.unassigned')}</div>
                   </div>
@@ -1271,7 +1378,7 @@ function FleetView({
                           onClick={() => void run(id, onCreate)}
                           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, border: 'none', borderRadius: 12, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: 'pointer', opacity: busy || !(drafts[id] ?? '').trim() ? 0.6 : 1 }}
                         >
-                          {busy ? <Spinner size={18} /> : t('card.create')}
+                          {busy ? <Spinner size={18} color="#FFFFFF" /> : t('card.create')}
                         </button>
                       </div>
                     )}
@@ -1311,7 +1418,7 @@ function FleetView({
                           }
                           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, border: 'none', borderRadius: 12, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: 'pointer', opacity: busy ? 0.6 : 1 }}
                         >
-                          {busy ? <Spinner size={18} /> : t('card.regenerate')}
+                          {busy ? <Spinner size={18} color="#FFFFFF" /> : t('card.regenerate')}
                         </button>
                       </div>
                     )}
@@ -1409,7 +1516,7 @@ function RenameDriver({
       {error && <div style={{ fontSize: 12.5, color: 'var(--destructive)', lineHeight: 1.45 }}>{error}</div>}
       <div style={{ display: 'flex', gap: 8 }}>
         <button type="button" className="press" onClick={() => void save()} disabled={busy} style={{ flex: 1, height: 44, border: 'none', borderRadius: 12, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}>
-          {busy ? <Spinner size={17} /> : t('card.renameSave')}
+          {busy ? <Spinner size={17} color="#FFFFFF" /> : t('card.renameSave')}
         </button>
         <button type="button" className="press" onClick={() => setOpen(false)} disabled={busy} style={{ flex: 'none', height: 44, padding: '0 16px', border: '1px solid var(--border)', borderRadius: 12, background: 'transparent', color: 'var(--muted-fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
           {t('common.back')}
@@ -1557,24 +1664,6 @@ function ProfileSheet({
 
 /** Transaction period vocabulary — mirrors servercrm's DWH range param + the zoho-octane
  * self-service transactions presets (Today / This Week / … / This Year), plus a custom from-to. */
-/** The in-network truck-stop chains — verbatim the "Supported truck stops" list the support team
- *  pasted into carrier chats (the single most-asked question in the 9-group chat analysis: 814
- *  times). Brand names, deliberately not translated. Update here when the network changes. */
-const STATION_CHAINS = [
-  'TA / Petro',
-  "Love's",
-  "Casey's",
-  'Sapp Brothers',
-  'Speedway',
-  '7-Eleven',
-  'SEI Fuels',
-  'RaceTrac',
-  'Raceway',
-  'Maverik',
-  'Kum & Go',
-  'Irving',
-] as const;
-
 type TxnRange = 'day' | 'week' | 'month' | 'quarter' | 'half_year' | 'year' | 'custom';
 const TXN_RANGES: ReadonlyArray<{ value: TxnRange; key: string }> = [
   { value: 'day', key: 'txns.day' },
@@ -1602,6 +1691,7 @@ const INVOICE_RANGES: ReadonlyArray<{ value: InvoiceRange; key: string }> = [
 
 type SheetData =
   | { kind: 'balance'; v: CarrierBalance }
+  | { kind: 'funds'; v: CardFundsResult }
   | { kind: 'status'; v: StatusResult }
   | { kind: 'txns'; v: TransactionsResult }
   | { kind: 'lastused'; v: LastUsedResult }
@@ -1609,7 +1699,23 @@ type SheetData =
   | { kind: 'invoices'; v: SalesInvoicesResult }
   | { kind: 'tracking'; v: TrackingResult }
   | { kind: 'manualcode'; v: { cardNumber: string | null } }
-  | { kind: 'stations'; v: null };
+  | { kind: 'moneycode'; v: { disabled: boolean; preview: MoneyCodePreview | null } }
+  | { kind: 'cardops'; v: { fleet: FleetCard[] } }
+  | { kind: 'pinunit'; v: Record<string, unknown> | null };
+
+/**
+ * 60-second sheet cache. Every sheet open used to refetch from scratch — on the Telegram WebView
+ * that is a visible spinner every single time, for data that rarely changes inside a minute.
+ * Mutations (money-code draw, card ops, pin/unit save) delete the keys they invalidate, so a
+ * write is never followed by a stale read. Module-level on purpose: it must outlive the sheet.
+ */
+const SHEET_CACHE = new Map<string, { at: number; data: SheetData }>();
+const SHEET_TTL_MS = 60_000;
+function invalidateSheetCache(...prefixes: string[]): void {
+  for (const key of [...SHEET_CACHE.keys()]) {
+    if (prefixes.some((p) => key.startsWith(p))) SHEET_CACHE.delete(key);
+  }
+}
 
 function ActionSheet({
   target,
@@ -1618,6 +1724,8 @@ function ActionSheet({
   onClose,
   showToast,
   onSendGeneric,
+  onOverrideDone,
+  overrideUntil,
 }: {
   target: OpenAction;
   session: Session;
@@ -1625,6 +1733,10 @@ function ActionSheet({
   onClose: () => void;
   showToast: (msg: string, kind?: ToastKind) => void;
   onSendGeneric: (title: string) => void;
+  /** Successful C-16 override → App shows the Home countdown card until this timestamp. */
+  onOverrideDone: (until: number) => void;
+  /** Active override window end — the sheet shows "already open" instead of a second button. */
+  overrideUntil: number | null;
 }) {
   const { t } = useI18n();
   const [loading, setLoading] = useState(true);
@@ -1647,11 +1759,41 @@ function ActionSheet({
   const [liveRefreshing, setLiveRefreshing] = useState(false);
   /** Which export format is currently being built + sent to Telegram, if any. */
   const [exportBusy, setExportBusy] = useState<TxnExportFormat | null>(null);
+  /** Owner's card filter on the txns sheet — null = company level (all cards), else one card
+   *  ("driver-level report"; 41 chat asks). Drivers never see the picker: they are server-pinned. */
+  const [txnCardSel, setTxnCardSel] = useState<{ cardId: string; last6: string } | null>(null);
+  const [txnFleet, setTxnFleet] = useState<FleetCard[] | null>(null);
   /** "Without discount" (retail) report variant — accounting asks for both weekly. Owner-only in
    *  the UI; the backend forces retail for drivers regardless. */
   const [exportRetail, setExportRetail] = useState(false);
   /** Detailed columns: full card number + Driver / Unit / Driver ID (client feedback). */
   const [exportDetailed, setExportDetailed] = useState(false);
+  // ── Money-code draw form (C-17) ──
+  const [mcAmount, setMcAmount] = useState('');
+  const [mcUnit, setMcUnit] = useState('');
+  const [mcReason, setMcReason] = useState('');
+  const [mcBusy, setMcBusy] = useState(false);
+  const [mcDone, setMcDone] = useState<{ amount: number; after: number | null } | null>(null);
+  // ── PIN/Unit sheet: driver o'z unit/driverId'sini tahrirlaydi ──
+  const [puUnit, setPuUnit] = useState('');
+  const [puDriverId, setPuDriverId] = useState('');
+  const [puBusy, setPuBusy] = useState(false);
+  useEffect(() => {
+    if (data?.kind !== 'pinunit' || !data.v) return;
+    setPuUnit(String(data.v['unit_number'] ?? ''));
+    setPuDriverId(String(data.v['driver_id'] ?? ''));
+  }, [data]);
+  // ── Card-ops sheet (C-1/C-3/C-4-5/C-26) ──
+  const [coCard, setCoCard] = useState<FleetCard | null>(null);
+  const [coEfs, setCoEfs] = useState<Record<string, unknown> | null>(null);
+  const [coEfsLoading, setCoEfsLoading] = useState(false);
+  const [coBusy, setCoBusy] = useState<string | null>(null);
+  const [coLimitId, setCoLimitId] = useState<'ULSD' | 'DEFD'>('ULSD');
+  const [coLimitVal, setCoLimitVal] = useState('');
+  const [coLimitDir, setCoLimitDir] = useState<'increase' | 'decrease'>('increase');
+  const [coUnit, setCoUnit] = useState('');
+  const [coDriverName, setCoDriverName] = useState('');
+  const [coDriverId, setCoDriverId] = useState('');
 
   const service = target.kind === 'service' ? target.key : null;
   // A driver's status sheet is about their CARD, not the account — the generic svc.status title says
@@ -1675,9 +1817,21 @@ function ActionSheet({
     setLiveRefreshing(false);
     async function load() {
       try {
-        const txnOpts = dwhRange === 'custom' ? { range: 'custom', from, to } : { range: dwhRange };
+        const cardFilter = txnCardSel && !session.isDriver ? { cardId: txnCardSel.cardId } : {};
+        const txnOpts = dwhRange === 'custom' ? { range: 'custom', from, to, ...cardFilter } : { range: dwhRange, ...cardFilter };
+        // Params that change WHAT a sheet shows are part of its cache identity.
+        const cacheId = `${service}|${service === 'txns' ? `${dwhRange}|${from}|${to}|${txnCardSel?.cardId ?? ''}` : ''}|${service === 'invoices' ? invRange : ''}`;
+        const hit = SHEET_CACHE.get(cacheId);
+        if (hit && Date.now() - hit.at < SHEET_TTL_MS) {
+          if (cancelled) return;
+          setData(hit.data);
+          setLoading(false);
+          // A cached fast-phase txns list still upgrades to the live EFS merge below.
+          if (!(hit.data.kind === 'txns' && hit.data.v.live?.pending)) return;
+        }
         let next: SheetData;
         if (service === 'balance') next = { kind: 'balance', v: await fetchBalance(initData) };
+        else if (service === 'funds') next = { kind: 'funds', v: await fetchCardFunds(initData) };
         else if (service === 'status') next = { kind: 'status', v: await fetchAccountStatus(initData) };
         else if (service === 'txns') next = { kind: 'txns', v: await fetchTransactions(initData, txnOpts, false) };
         else if (service === 'lastused') next = { kind: 'lastused', v: await fetchLastUsed(initData) };
@@ -1688,12 +1842,33 @@ function ActionSheet({
         else if (service === 'manualcode') next = { kind: 'manualcode', v: { cardNumber: session.ownCardNumber } };
         // Static content — the in-network chains list. No fetch: this is the exact list support
         // pasted into chats 814 times (9-group analysis); shipping it in-app is the whole point.
-        else if (service === 'stations') next = { kind: 'stations', v: null };
+        // C-17 preview. A 503 (flag off) is NOT a load error — the sheet degrades to filing the
+        // same money-code ticket, so the owner is never stranded on a dead screen.
+        else if (service === 'moneycode') {
+          try {
+            next = { kind: 'moneycode', v: { disabled: false, preview: await fetchMoneyCodePreview(initData) } };
+          } catch (e) {
+            if (e instanceof ApiError && e.code === 'MINIAPP_MONEY_CODE_DISABLED') {
+              next = { kind: 'moneycode', v: { disabled: true, preview: null } };
+            } else throw e;
+          }
+        }
+        // Driver PIN/Unit INFO — analytics: 62 PIN asks, nearly all "what IS my pin / it doesn't
+        // work", answered by support with the Driver ID or last-4. So this is a READ of the
+        // driver's own card EFS facts + that guidance, not a write. Best-effort: the sheet still
+        // renders its guidance if the EFS read fails.
+        else if (service === 'pinunit') next = { kind: 'pinunit', v: await fetchCardEfs(initData).catch(() => null) };
+        // Card ops (C-1/C-3/C-4-5/C-26): the picker is the owner's own fleet list.
+        else if (service === 'cardops') {
+          const fl = await fetchFleet(initData);
+          next = { kind: 'cardops', v: { fleet: fl.fleet.filter((c) => c.cardId) } };
+        }
         else if (service === 'tracking') next = { kind: 'tracking', v: await fetchTracking(initData) };
         // Explicit, because this was a bare `else` that swallowed every unhandled key into a tracking
         // fetch — a new ServiceKey would silently open the wrong sheet instead of failing.
         else throw new Error(`Unhandled service: ${String(service)}`);
         if (cancelled) return;
+        SHEET_CACHE.set(cacheId, { at: Date.now(), data: next });
         setData(next);
         setLoading(false);
 
@@ -1704,7 +1879,11 @@ function ActionSheet({
           setLiveRefreshing(true);
           try {
             const merged = await fetchTransactions(initData, txnOpts, true);
-            if (!cancelled) setData({ kind: 'txns', v: merged });
+            if (!cancelled) {
+              const upgraded: SheetData = { kind: 'txns', v: merged };
+              SHEET_CACHE.set(`txns|${dwhRange}|${from}|${to}|${txnCardSel?.cardId ?? ''}|`, { at: Date.now(), data: upgraded });
+              setData(upgraded);
+            }
           } catch (e) {
             // The fast rows are real and already rendered — a failed upgrade is not worth an error
             // screen. Drop the indicator and leave them be.
@@ -1741,7 +1920,24 @@ function ActionSheet({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target, dwhRange, invRange, from, to]);
+  }, [target, dwhRange, invRange, from, to, txnCardSel]);
+
+  // The card-filter chips need the fleet list; owners only, fetched once per sheet mount.
+  useEffect(() => {
+    if (service !== 'txns' || session.isDriver || txnFleet !== null) return;
+    let cancelled = false;
+    fetchFleet(initData)
+      .then((f) => {
+        if (!cancelled) setTxnFleet(f.fleet.filter((c) => c.cardId));
+      })
+      .catch(() => {
+        if (!cancelled) setTxnFleet([]); // no chips — the sheet still works at company level
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [service, initData]);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -1765,7 +1961,8 @@ function ActionSheet({
     if (exportBusy) return;
     setExportBusy(format);
     try {
-      const opts = range === 'custom' ? { range: 'custom', from, to } : { range };
+      const cardFilter = txnCardSel && !session.isDriver ? { cardId: txnCardSel.cardId } : {};
+      const opts = range === 'custom' ? { range: 'custom', from, to, ...cardFilter } : { range, ...cardFilter };
       await sendTransactionsReport(initData, opts, format, exportRetail ? 'retail' : 'discount', exportDetailed);
       haptic('success');
       showToast(t('toast.reportSentToTelegram'));
@@ -1882,6 +2079,39 @@ function ActionSheet({
                 </>
               );
             })()
+          ) : data?.kind === 'funds' ? (
+            (() => {
+              const f = data.v;
+              // Three-state on purpose: an EFS outage (hasFunds null) must read as "can't check right
+              // now", never as "no money" — a driver at the pump acts on this screen immediately.
+              const state: 'ok' | 'no' | 'unknown' = f.hasFunds === true ? 'ok' : f.hasFunds === false ? 'no' : 'unknown';
+              const tone = state === 'ok' ? 'var(--success)' : state === 'no' ? 'var(--destructive)' : 'var(--muted-fg)';
+              const cardIssue = f.cardStatus != null && f.cardStatus.toLowerCase() !== 'active';
+              return (
+                <>
+                  <div style={{ background: 'var(--secondary)', borderRadius: 16, padding: '22px 16px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 34, lineHeight: 1 }}>{state === 'ok' ? '✓' : state === 'no' ? '✗' : '…'}</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: tone, marginTop: 8 }}>
+                      {t(state === 'ok' ? 'funds.ok' : state === 'no' ? 'funds.no' : 'funds.unknown')}
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 6, lineHeight: 1.5 }}>
+                      {t(state === 'ok' ? 'funds.okSub' : state === 'no' ? 'funds.noSub' : 'funds.unknownSub')}
+                    </div>
+                  </div>
+                  {f.accountActive === false && (
+                    <div style={{ fontSize: 13, color: 'var(--destructive)', marginTop: 12, lineHeight: 1.5 }}>⚠ {t('funds.accountInactive')}</div>
+                  )}
+                  {cardIssue && (
+                    <div style={{ fontSize: 13, color: 'var(--destructive)', marginTop: 12, lineHeight: 1.5 }}>
+                      ⚠ {t('funds.cardIssue').replace('{status}', f.cardStatus ?? '')}
+                    </div>
+                  )}
+                  {state === 'ok' && !cardIssue && f.accountActive !== false && (
+                    <div style={{ fontSize: 12, color: 'var(--muted-fg)', marginTop: 12, lineHeight: 1.5 }}>{t('funds.allGood')}</div>
+                  )}
+                </>
+              );
+            })()
           ) : data?.kind === 'status' ? (
             (() => {
               const { overview, cards } = data.v;
@@ -1954,7 +2184,7 @@ function ActionSheet({
                         const status = fmt(c['status']);
                         return (
                           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
-                            <span className="selectable" style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {last4(fmt(c['card_number']), null)}</span>
+                            <span className="selectable" style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {tail6(fmt(c['card_number']), null)}</span>
                             <span style={{ fontSize: 12, fontWeight: 700, color: status.toLowerCase() === 'active' ? 'var(--success)' : 'var(--destructive)' }}>{status}</span>
                           </div>
                         );
@@ -1972,31 +2202,45 @@ function ActionSheet({
               const rows = data.v.data ?? [];
               return (
                 <>
-                  {/* Horizontal-scroll period chips — too many presets to fit a fixed row on mobile. */}
-                  <div className="hscroll" style={{ display: 'flex', gap: 7, marginBottom: 12, paddingBottom: 2 }}>
-                    {TXN_RANGES.map((r) => (
-                      <button
-                        key={r.value}
-                        type="button"
-                        onClick={() => setRange(r.value)}
-                        style={{
-                          flex: 'none',
-                          height: 36,
-                          padding: '0 14px',
-                          border: 'none',
-                          borderRadius: 10,
-                          fontFamily: "'Geist'",
-                          fontWeight: 700,
-                          fontSize: 13,
-                          whiteSpace: 'nowrap',
-                          cursor: 'pointer',
-                          background: range === r.value ? 'var(--primary)' : 'var(--secondary)',
-                          color: range === r.value ? '#FFFFFF' : 'var(--muted-fg)',
-                        }}
+                  {/* ONE filter row, two labeled dropdowns: Period + Card. Replaced the two
+                      horizontal chip rows — stacked scrolling "tabs" read as clutter on mobile
+                      (user feedback), while native selects are one tap, show the current choice
+                      at rest, and never overflow. Card select is owner-only (drivers are pinned
+                      server-side) and waits for the fleet list. */}
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                    <label style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.period')}</span>
+                      <select
+                        value={range}
+                        onChange={(e) => { haptic('tap'); setRange(e.target.value as TxnRange); }}
+                        style={{ width: '100%', height: 42, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13.5, padding: '0 10px', boxSizing: 'border-box' }}
                       >
-                        {t(r.key)}
-                      </button>
-                    ))}
+                        {TXN_RANGES.map((r) => (
+                          <option key={r.value} value={r.value}>{t(r.key)}</option>
+                        ))}
+                      </select>
+                    </label>
+                    {!session.isDriver && (txnFleet?.length ?? 0) > 0 && (
+                      <label style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.card')}</span>
+                        <select
+                          value={txnCardSel?.cardId ?? ''}
+                          onChange={(e) => {
+                            haptic('tap');
+                            const c = (txnFleet ?? []).find((x) => x.cardId === e.target.value);
+                            setTxnCardSel(c?.cardId ? { cardId: c.cardId, last6: tail6(c.cardNumber, null) ?? '' } : null);
+                          }}
+                          style={{ width: '100%', height: 42, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13.5, padding: '0 10px', boxSizing: 'border-box' }}
+                        >
+                          <option value="">{t('txns.allCards')}</option>
+                          {(txnFleet ?? []).map((c) => (
+                            <option key={c.cardId} value={c.cardId ?? ''}>
+                              {`•••• ${tail6(c.cardNumber, null) ?? ''}${c.driverName ? ` · ${c.driverName}` : ''}`}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                   </div>
                   {range === 'custom' && (
                     /* Stack From/To vertically — side-by-side native date inputs overflow/merge on narrow mobile. */
@@ -2052,7 +2296,7 @@ function ActionSheet({
                         <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 13.5, color: 'var(--fg)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.3 }}>{fmt(tx['location_name'])}</div>
-                            <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{txnDateTime(tx['transaction_date'])} · •••• {last4(fmt(tx['card_number']), null)}</div>
+                            <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{txnDateTime(tx['transaction_date'])} · •••• {tail6(fmt(tx['card_number']), null)}</div>
                           </div>
                           <span className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', flex: 'none', textAlign: 'right', whiteSpace: 'nowrap' }}>{money(tx['line_item_amount'] ?? tx['funded_total'] ?? tx['net_total'])}</span>
                         </div>
@@ -2175,7 +2419,7 @@ function ActionSheet({
                     const lastUsed = c['last_used_date'] ?? c['last_transaction_date'] ?? c['lastUsedDate'] ?? c['last_used'];
                     return (
                       <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-                        <span className="selectable" style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {last4(fmt(c['card_number']), null)}</span>
+                        <span className="selectable" style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {tail6(fmt(c['card_number']), null)}</span>
                         <span style={{ fontSize: 13, color: 'var(--fg)' }}>{fmt(lastUsed).slice(0, 10)}</span>
                       </div>
                     );
@@ -2204,24 +2448,256 @@ function ActionSheet({
                   >
                     {groupCardNumber(pan)}
                   </span>
+                  <button
+                    type="button"
+                    className="press"
+                    onClick={() => {
+                      try { navigator.clipboard?.writeText(pan); } catch { /* clipboard unavailable */ }
+                      haptic('tap');
+                      showToast(t('toast.cardCopied'));
+                    }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 7, height: 38, padding: '0 16px', marginTop: 14, border: 'none', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+                  >
+                    <Icon name="copy" size={14} strokeWidth={2} className="" />
+                    {t('manualcode.copy')}
+                  </button>
                   <span style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 12, maxWidth: 280, lineHeight: 1.5 }}>{t('manualcode.hint')}</span>
                 </div>
               );
             })()
-          ) : data?.kind === 'stations' ? (
-            <div style={{ padding: '2px 0' }}>
-              <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
-                {STATION_CHAINS.map((name, i) => (
-                  <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: i === STATION_CHAINS.length - 1 ? 'none' : '1px solid var(--border)' }}>
-                    <span style={{ width: 30, height: 30, borderRadius: 9, background: 'var(--card)', color: 'var(--link-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
-                      <Icon name="pin" size={14} strokeWidth={2} className="" />
+          ) : data?.kind === 'moneycode' ? (
+            (() => {
+              const v = data.v;
+              const money = (x: unknown) => `$${Number(x ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+              if (mcDone) {
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '18px 0 8px' }}>
+                    <span style={{ width: 54, height: 54, borderRadius: '50%', background: 'color-mix(in srgb, var(--success) 15%, transparent)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                      <Check size={26} strokeWidth={2.4} aria-hidden />
                     </span>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{name}</span>
+                    <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--fg)' }}>{t('mc.doneTitle', { amount: money(mcDone.amount) })}</div>
+                    {/* The CODE VALUE is deliberately never shown here — same rule as the agent
+                        widget: issuance/delivery happen upstream, nobody reads codes off a screen. */}
+                    <div style={{ fontSize: 13.5, color: 'var(--muted-fg)', marginTop: 8, maxWidth: 300, lineHeight: 1.55 }}>{t('mc.doneBody')}</div>
+                    {mcDone.after != null && (
+                      <div style={{ fontSize: 12.5, color: 'var(--muted-fg)', marginTop: 10 }}>{t('mc.afterLeft', { amount: money(mcDone.after) })}</div>
+                    )}
                   </div>
-                ))}
-              </div>
-              <div style={{ fontSize: 12.5, color: 'var(--muted-fg)', lineHeight: 1.55, marginTop: 12 }}>{t('stations.note')}</div>
-            </div>
+                );
+              }
+              if (v.disabled) {
+                return (
+                  <div style={{ padding: '4px 0' }}>
+                    <div style={{ fontSize: 13.5, color: 'var(--muted-fg)', lineHeight: 1.55, marginBottom: 14 }}>{t('mc.disabled')}</div>
+                    <textarea value={genericComment} onChange={(e) => setGenericComment(e.target.value)} placeholder={t('generic.commentPlaceholder')} rows={3} style={{ width: '100%', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, padding: '10px 12px', resize: 'none', marginBottom: 12 }} />
+                    <button type="button" className="press" disabled={genericBusy} onClick={() => { haptic('tap'); setGenericBusy(true); sendServiceRequest(initData, 'money-code', genericComment.trim() || undefined).then(() => { haptic('success'); showToast(t('generic.sentTitle')); onSendGeneric(sheetTitle); onClose(); }).catch(() => { haptic('error'); showToast(t('sheet.loadError'), 'error'); }).finally(() => setGenericBusy(false)); }} style={{ width: '100%', height: 48, border: 'none', borderRadius: 12, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {genericBusy ? <Spinner size={16} color="#FFFFFF" /> : t('mc.sendRequest')}
+                    </button>
+                  </div>
+                );
+              }
+              const preview = v.preview;
+              const available = Number(preview?.available ?? 0);
+              const eligible = preview?.eligible !== false && available > 0;
+              const reasons = Array.isArray(preview?.moneycode_reasons) && preview.moneycode_reasons.length ? preview.moneycode_reasons.map(String) : ['Fuel', 'Repair', 'Other'];
+              const amountNum = Number(mcAmount);
+              const canDraw = eligible && Number.isFinite(amountNum) && amountNum > 0 && amountNum <= available && mcUnit.trim().length > 0 && mcReason.length > 0 && !mcBusy;
+              return (
+                <div style={{ padding: '2px 0' }}>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                    <div style={{ flex: 1, background: 'var(--secondary)', borderRadius: 14, padding: '12px 14px' }}>
+                      <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('mc.available')}</div>
+                      <div style={{ fontSize: 19, fontWeight: 800, color: eligible ? 'var(--fg)' : 'var(--muted-fg)', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{money(available)}</div>
+                    </div>
+                    <div style={{ flex: 1, background: 'var(--secondary)', borderRadius: 14, padding: '12px 14px' }}>
+                      <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('mc.drawn')}</div>
+                      <div style={{ fontSize: 19, fontWeight: 800, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{money(preview?.drawn)}</div>
+                    </div>
+                  </div>
+                  {!eligible ? (
+                    <div style={{ fontSize: 13.5, color: 'var(--muted-fg)', lineHeight: 1.55 }}>{t('mc.notEligible')}</div>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('mc.amount')}</div>
+                      <input inputMode="decimal" value={mcAmount} onChange={(e) => setMcAmount(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0.00" style={{ width: '100%', height: 46, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 16, fontWeight: 700, padding: '0 14px', marginBottom: 12, fontVariantNumeric: 'tabular-nums' }} />
+                      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('mc.unit')}</div>
+                      <input value={mcUnit} onChange={(e) => setMcUnit(e.target.value)} placeholder="1656" style={{ width: '100%', height: 46, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 15, padding: '0 14px', marginBottom: 12 }} />
+                      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('mc.reason')}</div>
+                      <div className="hscroll" style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+                        {reasons.map((r) => (
+                          <button key={r} type="button" onClick={() => { haptic('tap'); setMcReason(r); }} style={{ flex: 'none', height: 34, padding: '0 14px', borderRadius: 17, border: 'none', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, cursor: 'pointer', background: mcReason === r ? 'var(--primary)' : 'var(--secondary)', color: mcReason === r ? '#FFFFFF' : 'var(--muted-fg)', whiteSpace: 'nowrap' }}>{r}</button>
+                        ))}
+                      </div>
+                      <button type="button" className="press" disabled={!canDraw} onClick={() => {
+                        haptic('tap');
+                        setMcBusy(true);
+                        drawMoneyCode(initData, { amount: amountNum, unitNumber: mcUnit.trim(), reason: mcReason })
+                          .then((res) => {
+                            haptic('success');
+                            invalidateSheetCache('moneycode');
+                            setMcDone({ amount: res.money_code_amount != null ? Number(res.money_code_amount) : amountNum, after: res.available_after != null ? Number(res.available_after) : null });
+                            setMcAmount(''); setMcUnit(''); setMcReason('');
+                          })
+                          .catch((e) => { haptic('error'); showToast(e instanceof ApiError ? e.message : t('sheet.loadError'), 'error'); })
+                          .finally(() => setMcBusy(false));
+                      }} style={{ width: '100%', height: 48, border: 'none', borderRadius: 12, background: canDraw ? 'var(--primary)' : 'var(--secondary)', color: canDraw ? '#FFFFFF' : 'var(--muted-fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: canDraw ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {mcBusy ? <Spinner size={16} color="#FFFFFF" /> : t('mc.draw')}
+                      </button>
+                    </>
+                  )}
+                </div>
+              );
+            })()
+          ) : data?.kind === 'pinunit' ? (
+            (() => {
+              const efs = data.v;
+              // The driver's NAME is not self-editable (owner changes it via card ops), so it must
+              // not sit among the inputs looking like a disabled field — it is the sheet's header:
+              // whose card this is, above what the driver can actually change.
+              const driverName = String(efs?.['driver_name'] ?? '').trim();
+              const dirty =
+                puUnit.trim() !== String(efs?.['unit_number'] ?? '').trim() ||
+                puDriverId.trim() !== String(efs?.['driver_id'] ?? '').trim();
+              const inputStyle = { width: '100%', height: 44, borderRadius: 11, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 15, fontWeight: 600, padding: '0 12px', marginBottom: 10, fontVariantNumeric: 'tabular-nums' } as const;
+              return (
+                <div style={{ padding: '2px 0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--secondary)', borderRadius: 14, padding: '14px 14px', marginBottom: 14 }}>
+                    <span style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--card)', color: 'var(--link-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                      <Icon name="card" size={18} strokeWidth={2} className="" />
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span className="selectable" style={{ display: 'block', fontSize: 15.5, fontWeight: 700, color: 'var(--fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{driverName || t('pu.driverName')}</span>
+                      <span style={{ display: 'block', fontSize: 12.5, color: 'var(--muted-fg)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>•••• {tail6(session.ownCardNumber, null)}</span>
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('pu.unit')}</div>
+                  <input value={puUnit} onChange={(e) => setPuUnit(e.target.value)} placeholder="4031" style={inputStyle} />
+                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('pu.driverId')}</div>
+                  <input value={puDriverId} onChange={(e) => setPuDriverId(e.target.value)} placeholder="2605" style={inputStyle} />
+                  <button
+                    type="button"
+                    className="press"
+                    disabled={puBusy || !dirty || !(puUnit.trim() || puDriverId.trim())}
+                    onClick={() => {
+                      haptic('tap');
+                      setPuBusy(true);
+                      updateCardInfo(initData, undefined, {
+                        ...(puUnit.trim() ? { unitNumber: puUnit.trim() } : {}),
+                        ...(puDriverId.trim() ? { driverId: puDriverId.trim() } : {}),
+                      })
+                        .then(() => {
+                          haptic('success');
+                          invalidateSheetCache('pinunit', 'cardops', 'status');
+                          showToast(t('pu.saved'));
+                        })
+                        .catch((e) => {
+                          haptic('error');
+                          const code = e instanceof ApiError ? e.code : '';
+                          showToast(code === 'MINIAPP_WRITES_DISABLED' ? t('co.writesDisabled') : e instanceof ApiError ? e.message : t('sheet.loadError'), 'error');
+                        })
+                        .finally(() => setPuBusy(false));
+                    }}
+                    style={{ width: '100%', height: 46, border: 'none', borderRadius: 12, marginBottom: 14, background: dirty ? 'var(--primary)' : 'var(--secondary)', color: dirty ? '#FFFFFF' : 'var(--muted-fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: dirty ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    {puBusy ? <Spinner size={15} color="#FFFFFF" /> : t('pu.save')}
+                  </button>
+                  <div style={{ fontSize: 13.5, color: 'var(--fg)', lineHeight: 1.6, marginBottom: 10 }}>{t('pu.pinHint')}</div>
+                  <div style={{ fontSize: 12.5, color: 'var(--muted-fg)', lineHeight: 1.55 }}>{t('pu.unitHint')}</div>
+                </div>
+              );
+            })()
+          ) : data?.kind === 'cardops' ? (
+            (() => {
+              const doOp = (op: string, fn: () => Promise<unknown>, doneMsg: string) => {
+                if (coBusy) return;
+                haptic('tap');
+                setCoBusy(op);
+                fn()
+                  .then(() => { haptic('success'); showToast(doneMsg); invalidateSheetCache('cardops', 'pinunit', 'status'); })
+                  .catch((e) => {
+                    haptic('error');
+                    const code = e instanceof ApiError ? e.code : '';
+                    showToast(code === 'MINIAPP_WRITES_DISABLED' ? t('co.writesDisabled') : e instanceof ApiError ? e.message : t('sheet.loadError'), 'error');
+                  })
+                  .finally(() => setCoBusy(null));
+              };
+              if (!coCard) {
+                const cards = data.v.fleet;
+                if (!cards.length) return <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('co.noCards')}</div>;
+                return (
+                  <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                    {cards.map((c, i) => (
+                      <button key={c.cardId ?? i} type="button" className="row-press" onClick={() => {
+                        haptic('tap');
+                        setCoCard(c); setCoEfs(null); setCoEfsLoading(true);
+                        setCoUnit(''); setCoDriverName(c.driverName ?? ''); setCoDriverId('');
+                        fetchCardEfs(initData, c.cardId ?? undefined)
+                          .then((efs) => { setCoEfs(efs); const u = efs['unit_number']; const dn = efs['driver_name']; const di = efs['driver_id']; if (u != null) setCoUnit(String(u)); if (dn != null && !c.driverName) setCoDriverName(String(dn)); if (di != null) setCoDriverId(String(di)); })
+                          .catch(() => setCoEfs(null))
+                          .finally(() => setCoEfsLoading(false));
+                      }} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', border: 'none', borderBottom: i === cards.length - 1 ? 'none' : '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontFamily: "'Geist'", textAlign: 'left' }}>
+                        <span style={{ width: 30, height: 30, borderRadius: 9, background: 'var(--card)', color: 'var(--link-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                          <Icon name="card" size={14} strokeWidth={2} className="" />
+                        </span>
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {tail6(c.cardNumber, null)}</span>
+                          <span style={{ display: 'block', fontSize: 12, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.driverName ?? t('co.noDriver')}</span>
+                        </span>
+                        <ChevronRight size={15} strokeWidth={2} color="var(--muted-fg)" aria-hidden />
+                      </button>
+                    ))}
+                  </div>
+                );
+              }
+              const efsStatus = coEfs ? String(coEfs['status'] ?? coEfs['card_status'] ?? '') : '';
+              const inputStyle = { width: '100%', height: 44, borderRadius: 11, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, padding: '0 12px', marginBottom: 10 } as const;
+              const opBtn = (bg: string, fg: string) => ({ flex: 1, height: 44, border: 'none', borderRadius: 11, background: bg, color: fg, fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' } as const);
+              return (
+                <div style={{ padding: '2px 0' }}>
+                  <button type="button" className="press" onClick={() => { haptic('tap'); setCoCard(null); setCoEfs(null); }} style={{ display: 'flex', alignItems: 'center', gap: 5, border: 'none', background: 'transparent', color: 'var(--muted-fg)', fontFamily: "'Geist'", fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: '2px 8px 10px 0' }}>
+                    <ChevronRight size={14} strokeWidth={2.4} style={{ transform: 'rotate(180deg)' }} aria-hidden />
+                    {t('co.allCards')}
+                  </button>
+                  <div style={{ background: 'var(--secondary)', borderRadius: 14, padding: '13px 14px', marginBottom: 16 }}>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {tail6(coCard.cardNumber, null)}</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--muted-fg)', marginTop: 3 }}>
+                      {coEfsLoading ? t('loading') : efsStatus ? `${t('co.efsStatus')}: ${efsStatus}` : coCard.driverName ?? ''}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('co.statusOps')}</div>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+                    <button type="button" className="press" disabled={coBusy !== null} onClick={() => doOp('act', () => setCardStatus(initData, coCard.cardId ?? '', 'activate'), t('co.activated'))} style={opBtn('var(--primary)', '#FFFFFF')}>
+                      {coBusy === 'act' ? <Spinner size={15} color="#FFFFFF" /> : t('co.activate')}
+                    </button>
+                    <button type="button" className="press" disabled={coBusy !== null} onClick={() => doOp('deact', () => setCardStatus(initData, coCard.cardId ?? '', 'deactivate'), t('co.deactivated'))} style={opBtn('color-mix(in srgb, var(--destructive) 14%, transparent)', 'var(--destructive)')}>
+                      {coBusy === 'deact' ? <Spinner size={15} color="var(--destructive)" /> : t('co.deactivate')}
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('co.limitOps')}</div>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                    {(['ULSD', 'DEFD'] as const).map((l) => (
+                      <button key={l} type="button" onClick={() => { haptic('tap'); setCoLimitId(l); }} style={{ flex: 1, height: 34, borderRadius: 9, border: 'none', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12, cursor: 'pointer', background: coLimitId === l ? 'var(--primary)' : 'var(--secondary)', color: coLimitId === l ? '#FFFFFF' : 'var(--muted-fg)' }}>{l === 'ULSD' ? t('co.diesel') : 'DEF'}</button>
+                    ))}
+                    {(['increase', 'decrease'] as const).map((d) => (
+                      <button key={d} type="button" onClick={() => { haptic('tap'); setCoLimitDir(d); }} style={{ flex: 1, height: 34, borderRadius: 9, border: 'none', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12, cursor: 'pointer', background: coLimitDir === d ? 'var(--primary)' : 'var(--secondary)', color: coLimitDir === d ? '#FFFFFF' : 'var(--muted-fg)' }}>{d === 'increase' ? '+' : '−'}</button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+                    <input inputMode="numeric" value={coLimitVal} onChange={(e) => setCoLimitVal(e.target.value.replace(/[^0-9]/g, ''))} placeholder={t('co.gallons')} style={{ ...inputStyle, flex: 1, width: 'auto', marginBottom: 0 }} />
+                    <button type="button" className="press" disabled={coBusy !== null || !Number(coLimitVal)} onClick={() => doOp('lim', () => setCardLimits(initData, coCard.cardId ?? '', { limitId: coLimitId, value: Number(coLimitVal), action: coLimitDir }), t('co.limitDone'))} style={{ ...opBtn('var(--primary)', '#FFFFFF'), flex: 'none', width: 110, opacity: Number(coLimitVal) ? 1 : 0.5 }}>
+                      {coBusy === 'lim' ? <Spinner size={15} color="#FFFFFF" /> : t('co.apply')}
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('co.unitDriver')}</div>
+                  <input value={coUnit} onChange={(e) => setCoUnit(e.target.value)} placeholder={t('co.unitNumber')} style={inputStyle} />
+                  <input value={coDriverName} onChange={(e) => setCoDriverName(e.target.value)} placeholder={t('co.driverName')} style={inputStyle} />
+                  <input value={coDriverId} onChange={(e) => setCoDriverId(e.target.value)} placeholder={t('co.driverId')} style={inputStyle} />
+                  <button type="button" className="press" disabled={coBusy !== null || !(coUnit.trim() || coDriverName.trim() || coDriverId.trim())} onClick={() => doOp('info', () => updateCardInfo(initData, coCard.cardId ?? '', { ...(coUnit.trim() ? { unitNumber: coUnit.trim() } : {}), ...(coDriverName.trim() ? { driverName: coDriverName.trim() } : {}), ...(coDriverId.trim() ? { driverId: coDriverId.trim() } : {}) }), t('co.infoDone'))} style={{ ...opBtn('var(--primary)', '#FFFFFF'), width: '100%', marginTop: 2 }}>
+                    {coBusy === 'info' ? <Spinner size={15} color="#FFFFFF" /> : t('co.save')}
+                  </button>
+                </div>
+              );
+            })()
           ) : data?.kind === 'tracking' ? (
             (() => {
               const tr = data.v;
@@ -2275,15 +2751,28 @@ function ActionSheet({
             </div>
           ) : (
             <>
-              <div style={{ fontSize: 14, color: 'var(--fg)', lineHeight: 1.5, marginBottom: 6 }}>{t('generic.notSentBody1')}</div>
-              <div style={{ fontSize: 13, color: 'var(--muted-fg)', lineHeight: 1.5, marginBottom: 16 }}>{t('generic.notSentBody2')}</div>
+              {!(target.kind === 'generic' && target.request === 'override-card' && session.isDriver) && (
+                <>
+                  <div style={{ fontSize: 14, color: 'var(--fg)', lineHeight: 1.5, marginBottom: 6 }}>{t('generic.notSentBody1')}</div>
+                  <div style={{ fontSize: 13, color: 'var(--muted-fg)', lineHeight: 1.5, marginBottom: 16 }}>{t('generic.notSentBody2')}</div>
+                </>
+              )}
               {/* Only for requests that actually reach a human. A driver's card is resolved
                   server-side, but an owner has a fleet — the ticket would otherwise say "replace a
                   lost card" and name no card, leaving support to ask before they can start. */}
               {/* Driver override is WIRED (C-16): one tap, own card, EFS auto-reverts in ~30min.
-                  Shown above the ticket form; if the server flag is off (503 MINIAPP_WRITES_DISABLED)
-                  the ticket below remains the fallback, so the driver is never stranded. */}
+                  The ticket form below stays hidden while this works — it appears only when the
+                  direct path is refused (flag off), so the driver is never stranded either way. */}
               {target.kind === 'generic' && target.request === 'override-card' && session.isDriver && (
+                <div style={{ fontSize: 13.5, color: 'var(--muted-fg)', lineHeight: 1.55, marginBottom: 14 }}>{t('ovr.hint')}</div>
+              )}
+              {target.kind === 'generic' && target.request === 'override-card' && session.isDriver && overrideUntil != null && overrideUntil > Date.now() && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'color-mix(in srgb, var(--success) 13%, transparent)', borderRadius: 12, padding: '12px 14px', fontSize: 13.5, fontWeight: 600, color: 'var(--success)' }}>
+                  <Check size={16} strokeWidth={2.6} aria-hidden />
+                  {t('ovrbn.active')} · {Math.max(1, Math.ceil((overrideUntil - Date.now()) / 60000))} min
+                </div>
+              )}
+              {target.kind === 'generic' && target.request === 'override-card' && session.isDriver && !(overrideUntil != null && overrideUntil > Date.now()) && (
                 <button
                   type="button"
                   className="press"
@@ -2295,21 +2784,27 @@ function ActionSheet({
                       .then(() => {
                         haptic('success');
                         showToast(t('ovr.done'));
+                        // Home shows a live ~30-min countdown card for the window EFS just opened.
+                        onOverrideDone(Date.now() + 30 * 60 * 1000);
+                        setGenericBusy(false);
                         onClose();
                       })
                       .catch((e) => {
+                        // No ticket fallback ON PURPOSE: override is a direct EFS action in the
+                        // agent widget too (C-16) — nobody files a ticket for it. Flag off or a
+                        // real failure both surface as a message; support handles it live in chat.
                         haptic('error');
                         const code = e instanceof ApiError ? e.code : '';
-                        showToast(code === 'MINIAPP_WRITES_DISABLED' ? t('ovr.disabled') : t('ovr.fail'), 'error');
-                      })
-                      .finally(() => setGenericBusy(false));
+                        showToast(code === 'MINIAPP_WRITES_DISABLED' ? t('ovr.disabled') : e instanceof ApiError ? e.message : t('ovr.fail'), 'error');
+                        setGenericBusy(false);
+                      });
                   }}
                   style={{ width: '100%', height: 48, border: 'none', borderRadius: 12, marginBottom: 14, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
                 >
-                  {genericBusy ? <Spinner size={16} /> : t('ovr.now')}
+                  {genericBusy ? <Spinner size={16} color="#FFFFFF" /> : t('ovr.now')}
                 </button>
               )}
-              {target.kind === 'generic' && target.request && (
+              {target.kind === 'generic' && target.request && !(target.request === 'override-card' && session.isDriver) && (
                 <textarea
                   value={genericComment}
                   onChange={(e) => setGenericComment(e.target.value.slice(0, 2000))}
@@ -2321,9 +2816,11 @@ function ActionSheet({
               {genericError && (
                 <div style={{ fontSize: 13, color: 'var(--danger)', lineHeight: 1.5, marginBottom: 12 }}>{genericError}</div>
               )}
-              <button type="button" className="press" onClick={sendGeneric} disabled={genericBusy} style={{ width: '100%', height: 50, border: 'none', borderRadius: 14, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 15, cursor: genericBusy ? 'default' : 'pointer', opacity: genericBusy ? 0.6 : 1 }}>
-                {genericBusy ? t('generic.sending') : t('generic.sendButton')}
-              </button>
+              {!(target.kind === 'generic' && target.request === 'override-card' && session.isDriver) && (
+                <button type="button" className="press" onClick={sendGeneric} disabled={genericBusy} style={{ width: '100%', height: 50, border: 'none', borderRadius: 14, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 15, cursor: genericBusy ? 'default' : 'pointer', opacity: genericBusy ? 0.6 : 1 }}>
+                  {genericBusy ? t('generic.sending') : t('generic.sendButton')}
+                </button>
+              )}
             </>
           )}
         </div>
@@ -2398,6 +2895,24 @@ export function App() {
   const [inbox, setInbox] = useState<InboxItem[]>([]);
   const [cardRevealed, setCardRevealed] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
+  /** Successful C-16 override window end (ms epoch) — survives an app reopen via localStorage so
+   *  the Home countdown card doesn't vanish if the driver closes Telegram at the pump. */
+  const [overrideUntil, setOverrideUntil] = useState<number | null>(() => {
+    try {
+      const v = Number(localStorage.getItem('octane.overrideUntil'));
+      return Number.isFinite(v) && v > Date.now() ? v : null;
+    } catch {
+      return null;
+    }
+  });
+  function markOverride(until: number) {
+    setOverrideUntil(until);
+    try { localStorage.setItem('octane.overrideUntil', String(until)); } catch { /* persist best-effort */ }
+  }
+  function clearOverride() {
+    setOverrideUntil(null);
+    try { localStorage.removeItem('octane.overrideUntil'); } catch { /* ignore */ }
+  }
   const [confirmCfg, setConfirmCfg] = useState<ConfirmConfig | null>(null);
   const pinnedInit = useRef(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -2719,6 +3234,8 @@ export function App() {
             onViewFleet={viewFleet}
             onMarkAllRead={markAllRead}
             onReadNotif={readNotif}
+            overrideUntil={overrideUntil}
+            onOverrideExpire={clearOverride}
           />
         )}
         {screen === 'fleet' && (
@@ -2760,6 +3277,8 @@ export function App() {
           onClose={() => setOpenAction(null)}
           showToast={showToast}
           onSendGeneric={sendGenericRequest}
+          onOverrideDone={markOverride}
+          overrideUntil={overrideUntil}
         />
       )}
       <Toast toast={toast} />

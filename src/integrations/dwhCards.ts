@@ -92,6 +92,20 @@ export async function findDwhCardById(carrierId: string, cardId: string): Promis
   return rows[0] ? toDto(rows[0]) : null;
 }
 
+/** Same exact lookup WITHOUT the active-only clause — for READ paths only (the owner's
+ *  transaction-history filter): a deactivated card's past transactions are still the owner's to
+ *  report on. Every WRITE path keeps using findDwhCardById (active-only) above. */
+export async function findDwhCardByIdAnyStatus(carrierId: string, cardId: string): Promise<DwhCard | null> {
+  const rows = await dwhQuery<CardRow>(
+    `select card_id, card_number, card_type, status, balance
+       from octane.stg_cmp_card
+      where carrier_id = $1 and card_id = $2
+      limit 1`,
+    [carrierId, cardId],
+  );
+  return rows[0] ? toDto(rows[0]) : null;
+}
+
 export async function isActiveCardOfCarrier(carrierId: string, cardId: string): Promise<boolean> {
   return (await findDwhCardById(carrierId, cardId)) !== null;
 }
