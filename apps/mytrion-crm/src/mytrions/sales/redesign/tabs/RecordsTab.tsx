@@ -4,7 +4,7 @@
  * per-tab search and a board/list toggle for the pipeline tabs.
  *
  * Live data:
- *   - Clients     → loadRecords()   (clients.by_agent + cycle gallons from dashboard.agent_sales)
+ *   - Clients     → loadRecords()   (ONE DWH roster query: dim_company + mart_transaction_line_items + cmp_invoice)
  *   - Leads       → loadLeads()      (Zoho CRM COQL, Owner-scoped)
  *   - Deals       → loadDeals()      (Zoho CRM COQL, Owner-scoped)
  *   - Rejections  → loadRejections() (Zoho CRM COQL — lost/declined Deals, Owner-scoped)

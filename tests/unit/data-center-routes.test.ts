@@ -40,9 +40,9 @@ vi.mock('../../src/integrations/zohoDesk.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/integrations/zohoDesk.js')>();
   return { ...mod, listRejectionReportTickets: vi.fn(async () => []) };
 });
-vi.mock('../../src/integrations/dwhLoyalty.js', async (importOriginal) => {
-  const mod = await importOriginal<typeof import('../../src/integrations/dwhLoyalty.js')>();
-  return { ...mod, fetchLoyaltyStatsByAgent: vi.fn(async () => ({})) };
+vi.mock('../../src/integrations/dwhClientRoster.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/integrations/dwhClientRoster.js')>();
+  return { ...mod, fetchAgentClients: vi.fn(async () => []) };
 });
 vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/modules/audit/auditLogger.js')>();
@@ -58,14 +58,14 @@ import {
   fetchDealOwnerId,
   fetchLeadOwnerId,
 } from '../../src/integrations/salesDataCenter.js';
-import { fetchLoyaltyStatsByAgent } from '../../src/integrations/dwhLoyalty.js';
+import { fetchAgentClients } from '../../src/integrations/dwhClientRoster.js';
 import { zohoCrmRecords } from '../../src/integrations/zohoCrmRecords.js';
 import { auditFromContext } from '../../src/modules/audit/auditLogger.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
 
 const leadsMock = vi.mocked(fetchAgentLeads);
 const appStatsMock = vi.mocked(fetchAgentApplicationStats);
-const loyaltyMock = vi.mocked(fetchLoyaltyStatsByAgent);
+const clientsMock = vi.mocked(fetchAgentClients);
 const leadOwnerMock = vi.mocked(fetchLeadOwnerId);
 const dealOwnerMock = vi.mocked(fetchDealOwnerId);
 const updateRecordMock = vi.mocked(zohoCrmRecords.updateRecord);
@@ -183,50 +183,81 @@ describe('data-center app-stats — owner scope + RBAC (Home goal bar / streak)'
   });
 });
 
-describe('data-center loyalty-stats — owner scope + RBAC (Clients loyalty tier)', () => {
+describe('data-center clients — owner scope + RBAC (Clients roster + gallons)', () => {
+  const sampleClient = {
+    carrierId: '123',
+    companyName: 'Acme Trucking',
+    contact: 'Jane Doe',
+    phone: '555-0100',
+    producedCards: 6,
+    activeCards: 4,
+    moneyCode: 'MC-1',
+    dot: '12345',
+    isLocSuspended: false,
+    computedIsActive: true,
+    computedDebt: 0,
+    computedDebtDays: 0,
+    cycleGallons: 1200,
+    gallonsThisMonth: 500,
+    activeCardsThisMonth: 4,
+    transactionsThisMonth: 40,
+    gallonsPrevMonth: 450,
+    activeCardsPrevMonth: 3,
+  };
+
   it('a non-sales worker is refused', async () => {
     const token = await workerToken('Billing Clerk');
     const res = await app.inject({
       method: 'GET',
-      url: '/v1/data-center/loyalty-stats',
+      url: '/v1/data-center/clients',
       headers: { ...bearer(token), 'x-department-access': 'sales' },
     });
     expect(res.statusCode).toBe(403);
-    expect(loyaltyMock).not.toHaveBeenCalled();
+    expect(clientsMock).not.toHaveBeenCalled();
   });
 
-  it('a sales worker gets their OWN stats — never a victim via ?zoho_user_id + x-all-departments', async () => {
-    loyaltyMock.mockResolvedValue({
-      '123': {
-        gallonsThisMonth: 500,
-        activeCardsThisMonth: 4,
-        transactionsThisMonth: 40,
-        gallonsPrevMonth: 450,
-        activeCardsPrevMonth: 3,
-      },
-    });
+  it('a sales worker gets their OWN roster — never a victim via ?zoho_user_id + x-all-departments', async () => {
+    clientsMock.mockResolvedValue([sampleClient]);
     const token = await workerToken('Sales Rep');
     const res = await app.inject({
       method: 'GET',
-      url: '/v1/data-center/loyalty-stats?zoho_user_id=999',
+      url: '/v1/data-center/clients?zoho_user_id=999',
       headers: { ...bearer(token), 'x-all-departments': 'true' },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ stats: { '123': { activeCardsThisMonth: 4, gallonsThisMonth: 500 } } });
-    expect(loyaltyMock).toHaveBeenCalledWith('42');
-    expect(loyaltyMock).not.toHaveBeenCalledWith('999');
+    expect(res.json()).toMatchObject({ clients: [{ carrierId: '123', gallonsThisMonth: 500 }] });
+    // Own id + own display name (the name arm resolves the SAME carriers the roster shows).
+    expect(clientsMock).toHaveBeenCalledWith('42', 'Robiya');
+    expect(clientsMock).not.toHaveBeenCalledWith('999');
+    expect(clientsMock).not.toHaveBeenCalledWith('999', expect.anything());
   });
 
   it('an admin may target another agent via ?zoho_user_id', async () => {
-    loyaltyMock.mockResolvedValue({});
+    clientsMock.mockResolvedValue([]);
     const token = await workerToken('Administrator');
     const res = await app.inject({
       method: 'GET',
-      url: '/v1/data-center/loyalty-stats?zoho_user_id=999',
+      url: '/v1/data-center/clients?zoho_user_id=999',
       headers: bearer(token),
     });
     expect(res.statusCode).toBe(200);
-    expect(loyaltyMock).toHaveBeenCalledWith('999');
+    // Admin act-as by id → id path only (no name fallback; we don't have the target's name).
+    expect(clientsMock).toHaveBeenCalledWith('999', undefined);
+  });
+
+  it('the plain frontend call forwards the caller name so the DWH name arm can fire', async () => {
+    // Regression: the Clients tab calls with NO ?zoho_user_id. The route must pass the caller's
+    // display name so fetchAgentClients can resolve by dim_company.agent when the session id doesn't
+    // match the warehouse agent_zoho_user_id — otherwise the roster is empty / every client shows 0.
+    clientsMock.mockResolvedValue([]);
+    const token = await workerToken('Sales Rep');
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/data-center/clients',
+      headers: bearer(token),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(clientsMock).toHaveBeenCalledWith('42', 'Robiya');
   });
 });
 
