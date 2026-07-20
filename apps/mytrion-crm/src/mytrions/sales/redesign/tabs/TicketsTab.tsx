@@ -308,7 +308,7 @@ export function TicketsTab() {
             </div>
             <div ref={listRef} className="ss-scroll ss-tk-list-body" onScroll={onListScroll}>
               {feed.error && (
-                <div style={s('padding:36px 14px;text-align:center;color:var(--danger);font-size:12.5px')}>{feed.error}</div>
+                <div style={s('padding:36px 14px;text-align:center;color:var(--danger);font-size:13px')}>{feed.error}</div>
               )}
               {tkList.map((t) => {
                 const active = selectedTicket === t.id;
@@ -348,7 +348,7 @@ export function TicketsTab() {
                 );
               })}
               {ticketListEmpty && !feed.loading && !feed.error && (
-                <div style={s('padding:36px 14px;text-align:center;color:var(--muted);font-size:12.5px')}>No tickets match your filters.</div>
+                <div style={s('padding:36px 14px;text-align:center;color:var(--muted);font-size:13px')}>No tickets match your filters.</div>
               )}
             </div>
             <div className="ss-tk-list-ft">
@@ -408,7 +408,7 @@ export function TicketsTab() {
                       );
                     })}
                   {msgsLoad.error && (
-                    <div style={s('text-align:center;color:var(--danger);font-size:12.5px;padding:20px')}>{msgsLoad.error}</div>
+                    <div style={s('text-align:center;color:var(--danger);font-size:13px;padding:20px')}>{msgsLoad.error}</div>
                   )}
                   {threadMsgs.map((m, i) => {
                     const me = m.from === 'me';

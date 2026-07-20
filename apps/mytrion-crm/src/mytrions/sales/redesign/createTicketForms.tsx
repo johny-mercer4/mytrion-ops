@@ -229,7 +229,7 @@ export function TicketWizard() {
     <>
       <div style={s('margin-bottom:20px')}>
         <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.04em;text-transform:uppercase')}>Create a Ticket</div>
-        <div style={s('font-size:12.5px;color:var(--muted);margin-top:3px')}>{subhead}</div>
+        <div style={s('font-size:13px;color:var(--muted);margin-top:3px')}>{subhead}</div>
       </div>
 
       {/* stepper */}
@@ -281,7 +281,7 @@ export function TicketWizard() {
             />
           </div>
           {!dq && !dealsLoad.loading && !dealsLoad.error && deals.length > 0 && (
-            <div style={s('font-size:11.5px;color:var(--muted);margin:-6px 2px 12px')}>
+            <div style={s('font-size:12px;color:var(--muted);margin:-6px 2px 12px')}>
               {allDeals.length > deals.length
                 ? `Showing your ${deals.length} most recent deals by application date — search to find any other.`
                 : `Showing all your ${deals.length} ${deals.length === 1 ? 'deal' : 'deals'} by application date.`}
@@ -310,7 +310,7 @@ export function TicketWizard() {
                 type="button"
                 onClick={() => dealsLoad.reload()}
                 className="ss-ico-btn"
-                style={s('margin-top:14px;height:36px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12.5px;font-weight:700;cursor:pointer')}
+                style={s('margin-top:14px;height:36px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;font-weight:700;cursor:pointer')}
               >
                 Retry
               </button>
@@ -336,7 +336,7 @@ export function TicketWizard() {
                     ? "font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--accent);background:rgba(var(--accent-rgb),.12);padding:3px 8px;border-radius:var(--radius-md);border:1px solid rgba(var(--accent-rgb),.28)"
                     : chip.tone === 'app'
                       ? "font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--violet);background:color-mix(in srgb,var(--violet) 14%,transparent);padding:3px 8px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--violet) 30%,transparent)"
-                      : "font-size:10.5px;font-weight:600;color:var(--muted);background:var(--alt);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--border)";
+                      : "font-size:11px;font-weight:600;color:var(--muted);background:var(--alt);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--border)";
                 const hasPhone = Boolean(d.phone && d.phone !== '—');
                 return (
                   <button
@@ -353,14 +353,14 @@ export function TicketWizard() {
                       <div style={s('font-weight:700;font-size:13.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
                         {d.company || d.name}
                       </div>
-                      <div style={s('font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px')}>
+                      <div style={s('font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px')}>
                         {d.name !== d.company ? d.name : d.stage}
                       </div>
                     </div>
                     <div style={s('display:flex;flex-direction:column;align-items:flex-end;gap:7px;flex-shrink:0')}>
                       <span style={s(chipCss)}>{chip.text}</span>
                       {hasPhone ? (
-                        <span style={s("display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:700;letter-spacing:.02em;color:var(--text);background:var(--alt);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--border)")}>
+                        <span style={s("display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;letter-spacing:.02em;color:var(--text);background:var(--alt);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--border)")}>
                           <Icon name="calls" size={12} strokeWidth={2.2} />
                           {displayPhone(d.phone)}
                         </span>
@@ -374,7 +374,7 @@ export function TicketWizard() {
             </div>
           )}
           <div style={s('margin-top:18px')}>
-            <button type="button" onClick={back} className="ss-ico-btn" style={s('height:40px;padding:0 16px;display:inline-flex;align-items:center;gap:8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:12.5px;font-weight:700')}>
+            <button type="button" onClick={back} className="ss-ico-btn" style={s('height:40px;padding:0 16px;display:inline-flex;align-items:center;gap:8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:13px;font-weight:700')}>
               <Icon name="chevronLeft" size={15} strokeWidth={2.2} />
               Back
             </button>
@@ -387,9 +387,9 @@ export function TicketWizard() {
         <div>
           <div style={s('display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:13px 15px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);margin-bottom:16px')}>
             <div style={s('display:flex;align-items:center;gap:8px;min-width:0;flex:1;flex-wrap:wrap')}>
-              <span style={s(`display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:${dept.color};background:color-mix(in srgb, ${dept.color} 14%, transparent);padding:4px 10px;border-radius:var(--radius-md);white-space:nowrap;flex-shrink:0`)}>{dept.name}</span>
+              <span style={s(`display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:${dept.color};background:color-mix(in srgb, ${dept.color} 14%, transparent);padding:4px 10px;border-radius:var(--radius-md);white-space:nowrap;flex-shrink:0`)}>{dept.name}</span>
               <span style={s('color:var(--faint)')}>·</span>
-              <div style={s('font-size:12.5px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0')}>{cr.company}</div>
+              <div style={s('font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0')}>{cr.company}</div>
               {cr.carrierId ? (
                 <span style={s("font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--accent);background:rgba(var(--accent-rgb),.12);padding:3px 8px;border-radius:var(--radius-md)")}>CR-{cr.carrierId}</span>
               ) : cr.app ? (
@@ -480,7 +480,7 @@ export function TicketWizard() {
                               style={s('display:flex;flex-direction:column;align-items:flex-start;gap:2px')}
                             >
                               <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600")}>{c.num}</span>
-                              <span style={s('font-size:10.5px;color:var(--muted);font-weight:500')}>{c.status}</span>
+                              <span style={s('font-size:11px;color:var(--muted);font-weight:500')}>{c.status}</span>
                             </button>
                           );
                         })}
@@ -523,7 +523,7 @@ export function TicketWizard() {
             <div style={s('font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:6px')}><strong style={s('color:var(--text);font-weight:700')}>{cr.autoPrompt.title}</strong> is available as an instant action in the Automations tab — no need to file a ticket for it.</div>
             {cr.autoPrompt.desc && <div style={s('font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:20px')}>{cr.autoPrompt.desc}</div>}
             <div style={s('display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:14px')}>
-              <button type="button" onClick={() => patch({ autoPrompt: null })} className="ss-ico-btn" style={s('height:42px;padding:0 20px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>Stay Here</button>
+              <button type="button" onClick={() => patch({ autoPrompt: null })} className="ss-ico-btn" style={s('height:42px;padding:0 20px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:700;font-size:13px;cursor:pointer')}>Stay Here</button>
               <button
                 type="button"
                 onClick={() => {
@@ -532,7 +532,7 @@ export function TicketWizard() {
                   if (id) openAutomation(id);
                 }}
                 className="ss-btn-p"
-                style={s('height:42px;padding:0 20px;border-radius:var(--radius-md);border:none;background:var(--accent);color:#fff;font-weight:700;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(var(--accent-rgb),.28)')}
+                style={s('height:42px;padding:0 20px;border-radius:var(--radius-md);border:none;background:var(--accent);color:#fff;font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 6px 18px rgba(var(--accent-rgb),.28)')}
               >
                 Open {cr.autoPrompt.title.length > 28 ? 'action' : cr.autoPrompt.title} ↗
               </button>

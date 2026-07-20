@@ -11,6 +11,7 @@ import { useEffect } from 'react';
 import { useLoad, loadInbox, loadTickets } from './live';
 import { useServerCrmSocket } from './useServerCrmSocket';
 import { useInboxRead, countUnread } from './inboxRead';
+import { publishInboxReload, subscribeInboxReload } from './inboxLiveBus';
 import { setTicketDirectory } from './ticketDirectory';
 import { useTicketUnread, totalTicketUnread, bumpTicketUnread, clearTicketUnread } from './ticketUnread';
 import { getOpenTicketId, publishTicketLive } from './ticketLiveBus';
@@ -48,7 +49,8 @@ export function useSidebarBadges(
       if (m.type === 'crm_inbox_notification') {
         if (idsMatch(String(m.ownerId ?? ''), currentUserId)) {
           inboxLoad.reload();
-          pushToast?.('New message', String(m.subject ?? m.name ?? 'New notification'));
+          const subject = String(m.subject ?? m.name ?? 'New notification');
+          pushToast?.(subject, 'New inbox message');
         } else if (m.ownerId !== undefined) {
           console.debug('[inbox] crm_inbox_notification owner mismatch', {
             eventOwnerId: m.ownerId,
@@ -84,6 +86,9 @@ export function useSidebarBadges(
     resubscribe();
     // eslint-disable-next-line
   }, [idsKey]);
+
+  // Manual refresh from InboxTab → keep the sidebar unread badge in sync with the new list.
+  useEffect(() => subscribeInboxReload(() => inboxLoad.reload()), [inboxLoad.reload]);
 
   return {
     inbox: countUnread(inboxLoad.data ?? [], readSet),

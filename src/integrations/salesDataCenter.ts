@@ -52,6 +52,56 @@ export async function fetchAgentDeals(ownerId: string, limit = 2000): Promise<Cr
 }
 
 /**
+ * Applications-filled per calendar day for one agent, read from the CRM `Application_Date` field
+ * (a `date` field → values come back as 'YYYY-MM-DD'). Powers the Home daily-goal bar + streak.
+ * Owner-scoped like the other pulls; one COQL query, bucketed server-side into a day→count map.
+ */
+export interface AgentAppStats {
+  /** 'YYYY-MM-DD' → applications filled that day (only non-empty days present). */
+  days: Record<string, number>;
+  /** Total applications in the window. */
+  total: number;
+  /** Trailing window size in days. */
+  windowDays: number;
+  /** True if the 2000-row cap was hit (oldest days may be incomplete — recent days are exact). */
+  truncated: boolean;
+}
+
+const APP_STATS_WINDOW_DAYS = 90;
+const NY_TZ = 'America/New_York';
+
+/**
+ * yyyy-MM-dd for `n` NY-calendar days ago. Steps back in UTC (no DST) off today's NY date, so the
+ * `since` bound never drifts across a day boundary on a DST-transition morning.
+ */
+function nyDaysAgoIso(n: number): string {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: NY_TZ }).format(new Date());
+  const base = Date.parse(`${today}T00:00:00Z`) - n * 86_400_000;
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC' }).format(new Date(base));
+}
+
+/** The agent's per-day application-fill counts over the trailing window (by `Application_Date`). */
+export async function fetchAgentApplicationStats(
+  ownerId: string,
+  windowDays = APP_STATS_WINDOW_DAYS,
+): Promise<AgentAppStats> {
+  const uid = assertOwnerId(ownerId);
+  const since = nyDaysAgoIso(Math.max(1, Math.trunc(windowDays)));
+  // `Application_Date >= since` also excludes null dates (null is never >= a value). Mirror the prod
+  // COQL shape exactly — bare `Owner = '<uid>'` and the offset-form `limit 0, N` (a bare `limit N`
+  // and a trailing `is not null` both 400 on this org's parser).
+  const q = `select Application_Date from Deals where Owner = '${uid}' and Application_Date >= '${since}' order by Application_Date desc limit 0, 2000`;
+  const { rows, moreRecords } = await runCoql(q);
+  const days: Record<string, number> = {};
+  for (const row of rows) {
+    const raw = row.Application_Date;
+    const day = typeof raw === 'string' ? raw.slice(0, 10) : '';
+    if (day) days[day] = (days[day] ?? 0) + 1;
+  }
+  return { days, total: rows.length, windowDays, truncated: moreRecords === true };
+}
+
+/**
  * A Deal's Owner id (lookup `Owner` comes back as `{name,id}`), or null when the deal doesn't
  * exist. Backs the ticket-create ownership check: a non-admin may only file tickets on their
  * own deals. Record ids are numeric strings — reuse the owner-id assertion so a caller-supplied
@@ -60,6 +110,20 @@ export async function fetchAgentDeals(ownerId: string, limit = 2000): Promise<Cr
 export async function fetchDealOwnerId(dealId: string): Promise<string | null> {
   const id = assertOwnerId(dealId);
   const { rows } = await runCoql(`select Owner from Deals where id = '${id}' limit 0, 1`);
+  const owner = rows[0]?.Owner;
+  if (owner && typeof owner === 'object' && 'id' in owner) {
+    return String((owner as { id: unknown }).id ?? '') || null;
+  }
+  return null;
+}
+
+/**
+ * A Lead's Owner id — mirror of {@link fetchDealOwnerId} for the Lead inline-edit ownership check
+ * (a non-admin may only edit their own leads). Returns null when the lead doesn't exist.
+ */
+export async function fetchLeadOwnerId(leadId: string): Promise<string | null> {
+  const id = assertOwnerId(leadId);
+  const { rows } = await runCoql(`select Owner from Leads where id = '${id}' limit 0, 1`);
   const owner = rows[0]?.Owner;
   if (owner && typeof owner === 'object' && 'id' in owner) {
     return String((owner as { id: unknown }).id ?? '') || null;

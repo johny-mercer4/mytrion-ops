@@ -6,6 +6,7 @@ import { MYTRIONS, mytrionIdFromUrlSlug } from '../access/mytrions.config';
 import { MYTRION_MODULES } from '../mytrions/registry';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { StatusMessage } from '../components/StatusMessage';
+import { MytrionLoader } from '../components/MytrionLoader';
 import { Forbidden } from './Forbidden';
 import { NotFound } from './NotFound';
 
@@ -30,7 +31,13 @@ export function MytrionGuard() {
   // lazy-chunk load failures after a deploy (fallback offers Reload).
   return (
     <ErrorBoundary key={mytrion}>
-      <Suspense fallback={<StatusMessage>Loading {MYTRIONS[mytrion].title}…</StatusMessage>}>
+      <Suspense
+        fallback={
+          <div data-mytrion={mytrion} style={{ display: 'contents' }}>
+            <MytrionLoader appName={MYTRIONS[mytrion].title} />
+          </div>
+        }
+      >
         <Module />
       </Suspense>
     </ErrorBoundary>

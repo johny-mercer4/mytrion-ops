@@ -20,6 +20,8 @@ vi.mock('../../src/repos/retentionCaseRepo.js', async (importOriginal) => {
       list: vi.fn(async () => ({ cases: [], total: 0 })),
       findById: vi.fn(async () => undefined),
       listOpen: vi.fn(async () => []),
+      listPhases: vi.fn(async () => []),
+      listStatuses: vi.fn(async () => []),
       create: vi.fn(),
       update: vi.fn(async () => null),
       deleteById: vi.fn(async () => false),
@@ -92,32 +94,43 @@ async function workerToken(profile: string): Promise<string> {
 
 function caseDto(overrides: Partial<RetentionCaseDto> = {}): RetentionCaseDto {
   return {
-    id: 'rc_1',
+    id: '1',
     carrierId: '104882',
+    zohoDealId: null,
     companyName: 'Ironhide Logistics LLC',
     applicationId: null,
     agentName: 'Rep Riley',
-    agentZohoUserId: '777',
-    phase: 'sales',
+    phaseCode: 'phase_1_agent',
+    statusCode: 'p1_new',
     phaseChangedAt: '2026-07-06T00:00:00.000Z',
-    stage: 'inactive_no_reason',
-    status: 'open',
-    outcome: null,
-    closedAt: null,
-    inactivityReason: null,
+    transactionFrequency: 'high',
+    agentOutcome: null,
+    dissatisfactionReason: null,
     reasonNote: null,
+    assignedAgentZohoUserId: '777',
+    poolOwnerZohoUserId: null,
+    pendingClaimantZohoUserId: null,
+    assignmentCount: 1,
+    openPoolAttemptCount: 0,
     outOfReachAttempts: 0,
-    frequencyClass: 'high',
+    dealOwnerChanged: false,
+    currentDeadlineAt: null,
+    currentDeadlineType: null,
+    vacationCountdownEnd: null,
+    citiFolderEnteredAt: null,
+    citiFolderHoldUntil: null,
+    lastReviewCycleAt: null,
+    salesManagerZohoUserId: null,
     thresholdDays: 2,
     lastTransactionAt: '2026-06-20T00:00:00.000Z',
     daysInactive: 16,
     txCount90d: 44,
     gallons90d: 8200,
     activeCards: 12,
-    poolAssignment: null,
-    poolTakenBy: null,
     source: 'auto',
     lastSyncedAt: null,
+    closedAt: null,
+    isOpen: true,
     createdAt: '2026-07-06T00:00:00.000Z',
     updatedAt: '2026-07-06T00:00:00.000Z',
     ...overrides,
@@ -126,37 +139,47 @@ function caseDto(overrides: Partial<RetentionCaseDto> = {}): RetentionCaseDto {
 
 function openRow(overrides: Partial<RetentionCase> = {}): RetentionCase {
   return {
-    id: 'rc_1',
+    id: 1,
     tenantId: DEFAULT_TENANT_ID,
     carrierId: '104882',
+    zohoDealId: null,
     companyName: 'Ironhide Logistics LLC',
     applicationId: null,
     agentName: null,
-    agentZohoUserId: null,
-    phase: 'sales',
+    phaseCode: 'phase_1_agent',
+    statusCode: 'p1_new',
     phaseChangedAt: new Date('2026-07-01T00:00:00Z'),
-    stage: 'inactive_no_reason',
-    status: 'open',
-    outcome: null,
-    closedAt: null,
-    inactivityReason: null,
+    transactionFrequency: 'medium',
+    agentOutcome: null,
+    dissatisfactionReason: null,
     reasonNote: null,
+    assignedAgentZohoUserId: null,
+    poolOwnerZohoUserId: null,
+    pendingClaimantZohoUserId: null,
+    assignmentCount: 1,
+    openPoolAttemptCount: 0,
     outOfReachAttempts: 0,
-    frequencyClass: 'medium',
+    dealOwnerChanged: false,
+    currentDeadlineAt: null,
+    currentDeadlineType: null,
+    vacationCountdownEnd: null,
+    citiFolderEnteredAt: null,
+    citiFolderHoldUntil: null,
+    lastReviewCycleAt: null,
+    salesManagerZohoUserId: null,
     thresholdDays: 5,
     lastTransactionAt: new Date('2026-06-20T00:00:00Z'),
     daysInactive: 16,
     txCount90d: 18,
     gallons90d: 3200,
     activeCards: 6,
-    poolAssignment: null,
-    poolTakenBy: null,
     source: 'auto',
     lastSyncedAt: null,
+    closedAt: null,
     createdAt: new Date('2026-07-01T00:00:00Z'),
     updatedAt: new Date('2026-07-01T00:00:00Z'),
     ...overrides,
-  } as RetentionCase;
+  };
 }
 
 function candidate(overrides: Partial<RetentionCandidate> = {}): RetentionCandidate {
@@ -316,7 +339,12 @@ describe('retention routes — CRUD', () => {
     expect(res.statusCode).toBe(201);
     expect(repo.create).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ carrierId: '104882', phase: 'sales', source: 'manual' }),
+      expect.objectContaining({
+        carrierId: '104882',
+        phaseCode: 'phase_1_agent',
+        statusCode: 'p1_new',
+        source: 'manual',
+      }),
     );
     expect(auditFromContext).toHaveBeenCalledWith(
       expect.anything(),
@@ -324,12 +352,12 @@ describe('retention routes — CRUD', () => {
     );
   });
 
-  it('rejects an invalid phase value', async () => {
+  it('rejects an invalid phase_code value', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/retention/cases',
       headers: { ...API_KEY_HEADERS, 'content-type': 'application/json' },
-      payload: { carrier_id: 104882, phase: 'collections' },
+      payload: { carrier_id: 104882, phase_code: 'collections' },
     });
     expect(res.statusCode).toBe(400);
     expect(repo.create).not.toHaveBeenCalled();
@@ -346,18 +374,20 @@ describe('retention routes — CRUD', () => {
   });
 
   it('moves a case through the phase ladder', async () => {
-    repo.update.mockResolvedValueOnce(caseDto({ phase: 'open_pool' }));
+    repo.update.mockResolvedValueOnce(
+      caseDto({ phaseCode: 'phase_2_retention', statusCode: 'p2_new' }),
+    );
     const res = await app.inject({
       method: 'POST',
-      url: '/v1/retention/cases/rc_1',
+      url: '/v1/retention/cases/1',
       headers: { ...API_KEY_HEADERS, 'content-type': 'application/json' },
-      payload: { phase: 'open_pool', pool_assignment: 'available' },
+      payload: { phase_code: 'phase_2_retention', status_code: 'p2_new' },
     });
     expect(res.statusCode).toBe(200);
     expect(repo.update).toHaveBeenCalledWith(
       expect.anything(),
-      'rc_1',
-      expect.objectContaining({ phase: 'open_pool', poolAssignment: 'available' }),
+      '1',
+      expect.objectContaining({ phaseCode: 'phase_2_retention', statusCode: 'p2_new' }),
     );
   });
 
@@ -381,12 +411,12 @@ describe('retention sync — auto record generation', () => {
       candidate({ carrierId: '333', breached: false }), // inside threshold → ignored
     ]);
     repo.listOpen.mockResolvedValueOnce([
-      openRow({ id: 'rc_existing', carrierId: '222' }),
-      openRow({ id: 'rc_returned', carrierId: '444', thresholdDays: 5 }),
-      openRow({ id: 'rc_final', carrierId: '555', phase: 'citi' }),
+      openRow({ id: 22, carrierId: '222' }),
+      openRow({ id: 44, carrierId: '444', thresholdDays: 5 }),
+      openRow({ id: 55, carrierId: '555', phaseCode: 'phase_3_citi', statusCode: 'p3_hold' }),
     ]);
     lastTxMock.mockResolvedValueOnce(new Map([['444', recent]]));
-    repo.create.mockResolvedValueOnce(caseDto({ id: 'rc_new', carrierId: '111' }));
+    repo.create.mockResolvedValueOnce(caseDto({ id: '11', carrierId: '111' }));
     repo.update.mockResolvedValue(caseDto());
 
     const res = await app.inject({
@@ -408,22 +438,25 @@ describe('retention sync — auto record generation', () => {
       expect.anything(),
       expect.objectContaining({
         carrierId: '111',
-        phase: 'sales',
-        stage: 'inactive_no_reason',
+        phaseCode: 'phase_1_agent',
+        statusCode: 'p1_new',
         source: 'auto',
       }),
     );
     expect(repo.update).toHaveBeenCalledWith(
       expect.anything(),
-      'rc_existing',
+      '22',
       expect.objectContaining({ metrics: expect.anything() }),
     );
     expect(repo.update).toHaveBeenCalledWith(
       expect.anything(),
-      'rc_returned',
-      expect.objectContaining({ status: 'closed', outcome: 'returned' }),
+      '44',
+      expect.objectContaining({
+        statusCode: 'p1_returned',
+        agentOutcome: 'returned',
+      }),
     );
-    // 'citi' is final — never auto-closed; its carrier is not even activity-checked.
+    // phase_3_citi is final — never auto-closed; its carrier is not even activity-checked.
     expect(lastTxMock).toHaveBeenCalledWith(['444']);
   });
 
@@ -431,7 +464,7 @@ describe('retention sync — auto record generation', () => {
     const recent = new Date(Date.now() - 1 * 86_400_000);
     scanMock.mockResolvedValueOnce([]);
     repo.listOpen.mockResolvedValueOnce([
-      openRow({ id: 'rc_final', carrierId: '555', phase: 'citi' }),
+      openRow({ id: 55, carrierId: '555', phaseCode: 'phase_3_citi', statusCode: 'p3_hold' }),
     ]);
     lastTxMock.mockResolvedValueOnce(new Map([['555', recent]]));
     const res = await app.inject({
@@ -448,7 +481,7 @@ describe('retention sync — auto record generation', () => {
   it('does not close a case when the last transaction predates it', async () => {
     const stale = new Date('2026-06-15T00:00:00Z'); // before the case's createdAt (Jul 1)
     scanMock.mockResolvedValueOnce([]);
-    repo.listOpen.mockResolvedValueOnce([openRow({ id: 'rc_waiting', carrierId: '444' })]);
+    repo.listOpen.mockResolvedValueOnce([openRow({ id: 44, carrierId: '444' })]);
     lastTxMock.mockResolvedValueOnce(new Map([['444', stale]]));
     const res = await app.inject({
       method: 'POST',

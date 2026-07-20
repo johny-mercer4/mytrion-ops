@@ -117,7 +117,7 @@
     align-items: center;
     justify-content: center;
     background: #fff;
-    border-radius: var(--radius-md);
+    border-radius: 4px;
 }
 .oct-bpnode__abbr {
     display: flex;

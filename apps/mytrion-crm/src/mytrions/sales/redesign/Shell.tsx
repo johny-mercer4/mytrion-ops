@@ -15,6 +15,7 @@ import { ClientModal, type ClientModalTab } from './ClientModal';
 import { NAV, NAV_GROUPS, NAVLABEL, timeParts } from './salesData';
 import { useSessionUser } from './sessionUser';
 import { useSidebarBadges } from './sidebarBadges';
+import { useRetentionRealtime } from './useRetentionRealtime';
 import { getSession } from '@/api/session';
 import { useUserContext } from '@/context/UserContextProvider';
 import { useImpersonation } from '@/context/ImpersonationProvider';
@@ -111,7 +112,12 @@ export function SalesRedesign() {
   // the tab marks them read); Tickets = unread ticket messages (bumped by WS, cleared on open). Shell-
   // level (not tab-scoped) so the toast on a new inbox message fires no matter which tab is open.
   const liveBadges = useSidebarBadges(currentUserId, pushToast);
+  // Octane /v1/realtime — new retention cases (and pool/ops) push live to this agent.
+  useRetentionRealtime(currentUserId, pushToast);
   const sectionComingSoon = NAV.some((n) => n.id === section && n.comingSoon === true);
+  // Wayfinding: the top bar leads with the label the user actually clicked, then the author's
+  // descriptive title as a muted secondary — so "Data Center" no longer silently becomes "Pipeline Hub".
+  const activeLabel = NAV.find((n) => n.id === section)?.label ?? '';
   const ticketsComingSoon = NAV.some((n) => n.id === 'tickets' && n.comingSoon === true);
   const badgeCounts: Record<string, number | undefined> = {
     inbox: liveBadges.inbox || undefined,
@@ -222,7 +228,7 @@ export function SalesRedesign() {
                   onChange={(e) => setNavQuery(e.target.value)}
                   placeholder="Search tabs…"
                   aria-label="Search tabs"
-                  style={s('flex:1;min-width:0;border:none;outline:none;background:transparent;color:var(--text);font-size:12.5px;font-weight:600')}
+                  style={s('flex:1;min-width:0;border:none;outline:none;background:transparent;color:var(--text);font-size:13px;font-weight:600')}
                 />
                 {navQuery ? (
                   <button
@@ -282,15 +288,15 @@ export function SalesRedesign() {
             ))}
           </nav>
           <div style={s('padding:12px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px')}>
-            <button onClick={ctx.toggleTheme} title={navCollapsed ? 'Toggle theme' : undefined} aria-label="Toggle theme" className="ss-ico-btn" style={s(`height:38px;padding:0 ${navCollapsed ? '0' : '12px'};display:flex;align-items:center;${navCollapsed ? 'justify-content:center' : 'gap:9px'};border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase`)}>
+            <button onClick={ctx.toggleTheme} title={navCollapsed ? 'Toggle theme' : undefined} aria-label="Toggle theme" className="ss-ico-btn" style={s(`height:38px;padding:0 ${navCollapsed ? '0' : '12px'};display:flex;align-items:center;${navCollapsed ? 'justify-content:center' : 'gap:9px'};border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase`)}>
               <Icon name={theme === 'light' ? 'moon' : 'sun'} size={16} style={{ flexShrink: 0 }} />
               {!navCollapsed && <span style={s('flex:1;text-align:left')}>{theme === 'light' ? 'Dark' : 'Light'} mode</span>}
             </button>
             <div title={navCollapsed ? displayName : undefined} style={s(`display:flex;align-items:center;gap:10px;padding:8px ${navCollapsed ? '0' : '10px'};${navCollapsed ? 'justify-content:center' : ''};border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)`)}>
-              <div style={s('width:32px;height:32px;border-radius:50%;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0')}>{initials}</div>
+              <div style={s('width:32px;height:32px;border-radius:50%;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0')}>{initials}</div>
               {!navCollapsed && (
                 <div style={s('line-height:1.2;min-width:0')}>
-                  <div style={s('font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{displayName}</div>
+                  <div style={s('font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{displayName}</div>
                   <div style={s('font-size:10px;color:var(--muted);white-space:nowrap')}>{user.role}</div>
                 </div>
               )}
@@ -301,7 +307,12 @@ export function SalesRedesign() {
         {/* MAIN COLUMN */}
         <div style={s('flex:1;min-width:0;display:flex;flex-direction:column')}>
           <div style={s('flex-shrink:0;height:54px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 24px;border-bottom:1px solid var(--border);background:color-mix(in srgb, var(--bg) 60%, transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);position:relative;z-index:15')}>
-            <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0")}>{NAVLABEL[section] ?? ''}</div>
+            <div style={s('display:flex;align-items:baseline;gap:10px;min-width:0;overflow:hidden')}>
+              <span style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis")}>{activeLabel || NAVLABEL[section] || ''}</span>
+              {activeLabel && NAVLABEL[section] && NAVLABEL[section] !== activeLabel && (
+                <span style={s('font-size:12px;color:var(--muted);font-weight:500;white-space:nowrap;flex-shrink:0')}>{NAVLABEL[section]}</span>
+              )}
+            </div>
             {admin && <ViewAsPicker />}
             <div style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);margin-left:auto;flex-shrink:0")}>{T.timeFmt}</div>
           </div>
@@ -347,12 +358,12 @@ export function SalesRedesign() {
               </div>
               <div style={s('padding:20px 22px;max-height:52vh;overflow-y:auto')}>
                 <p style={s('font-size:13.5px;line-height:1.7;color:var(--text2);white-space:pre-wrap;margin:0')}>{detail.body}</p>
-                <div style={s('margin-top:16px;padding-top:14px;border-top:1px solid var(--border);font-size:11.5px;color:var(--muted)')}>
+                <div style={s('margin-top:16px;padding-top:14px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)')}>
                   <strong style={s('color:var(--text2)')}>{detail.metaLabel}</strong> {detail.meta}
                 </div>
               </div>
               <div style={s('padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end')}>
-                <button onClick={() => setDetail(null)} style={s('height:36px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>Close</button>
+                <button onClick={() => setDetail(null)} style={s('height:36px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:13px;cursor:pointer')}>Close</button>
               </div>
             </div>
           </div>
@@ -372,6 +383,7 @@ export function SalesRedesign() {
         {/* DATA CENTER — LEAD / DEAL DRILLDOWNS */}
         {lead && (
           <LeadModal
+            key={lead.id}
             lead={lead}
             onClose={() => setLead(null)}
             onCall={(phone) => {
@@ -383,6 +395,7 @@ export function SalesRedesign() {
         )}
         {deal && (
           <DealModal
+            key={deal.id}
             deal={deal}
             onClose={() => setDeal(null)}
             onCall={(phone) => {
@@ -407,8 +420,8 @@ export function SalesRedesign() {
               />
             </span>
             <div style={s('min-width:0')}>
-              <div style={s('font-size:12.5px;font-weight:700;color:var(--text)')}>{toast.title}</div>
-              <div style={s('font-size:11.5px;color:var(--muted);line-height:1.4')}>{toast.msg}</div>
+              <div style={s('font-size:13px;font-weight:700;color:var(--text)')}>{toast.title}</div>
+              <div style={s('font-size:12px;color:var(--muted);line-height:1.4')}>{toast.msg}</div>
             </div>
           </div>
         )}

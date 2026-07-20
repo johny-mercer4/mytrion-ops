@@ -1,0 +1,438 @@
+/**
+ * Retention Phase-1 touchpoints (Sales Mytrion) — DB-backed local handlers over
+ * retention_cases. Scoped to the caller's Zoho id via identityParam (admins may act-as).
+ */
+import { z } from 'zod';
+import { env } from '../../../config/env.js';
+import { RETENTION_PHASE } from '../../../db/schema/index.js';
+import { getDwhCompanyDetails } from '../../../integrations/dwhCards.js';
+import { AppError, NotFoundError, RBACError } from '../../../lib/errors.js';
+import { retentionCasePhase1Repo } from '../../../repos/retentionCasePhase1Repo.js';
+import { retentionCaseRepo } from '../../../repos/retentionCaseRepo.js';
+import type { TenantContext } from '../../../types/tenantContext.js';
+import { notifyOpenPoolOpened } from '../../retention/notify.js';
+import { resolvePhase1Transition, type Phase1Outcome } from '../../retention/phase1.js';
+import { retentionPoolClaimRepo } from '../../../repos/retentionPoolClaimRepo.js';
+import type { LocalTouchpoint } from '../types.js';
+import { idString, limit as limitSchema } from './common.js';
+
+const CHANNELS = [
+  'telegram',
+  'whatsapp',
+  'sms',
+  'ringcentral',
+  'instagram',
+  'facebook',
+  'email',
+] as const;
+
+const DISSATISFACTION = [
+  'low_discounts',
+  'payment_cycle',
+  'cs_service',
+  'trust_issues',
+  'switched_other',
+] as const;
+
+/** Agent-selectable outcomes — terminal `returned` (fuel again) is sync-only. */
+const OUTCOMES = [
+  'reached',
+  'out_of_reach',
+  'dissatisfied',
+  'vacation',
+  'no_action_2bd',
+  'escalate_retention',
+  'send_to_open_pool',
+  'start_working',
+  'ops_confirm_vacation',
+  'ops_deny_vacation',
+] as const satisfies readonly Exclude<Phase1Outcome, 'returned'>[];
+
+function isAdmin(ctx: TenantContext): boolean {
+  return ctx.role === 'admin' || ctx.bypassRbac === true || ctx.allDepartmentAccess === true;
+}
+
+function zohoFromCtx(ctx: TenantContext): string | undefined {
+  return ctx.userId.startsWith('zoho:') ? ctx.userId.slice('zoho:'.length) : undefined;
+}
+
+/** Non-admins may only act on cases assigned to them. */
+async function requireOwnedCase(ctx: TenantContext, caseId: string) {
+  const row = await retentionCaseRepo.findById(ctx, caseId);
+  if (!row) throw new NotFoundError('Retention case not found');
+  if (!isAdmin(ctx)) {
+    const self = zohoFromCtx(ctx);
+    if (!self || row.assignedAgentZohoUserId !== self) {
+      throw new RBACError('You can only act on retention cases assigned to you');
+    }
+  }
+  return row;
+}
+
+const salesDept = ['sales'] as const;
+
+export const retentionTouchpoints: LocalTouchpoint[] = [
+  {
+    kind: 'local',
+    key: 'retention.my_cases',
+    title: 'My retention cases (Phase 1)',
+    riskClass: 'read',
+    departments: salesDept,
+    identityParam: 'zohoUserId',
+    paramsSchema: z.object({
+      zohoUserId: z.string().max(120).optional(),
+      open: z.boolean().optional(),
+      phase_code: z.string().max(80).optional(),
+      limit: limitSchema(500, 200).optional(),
+    }),
+    handler: async (ctx, params) => {
+      const zohoUserId = String(params.zohoUserId ?? '');
+      if (!zohoUserId) {
+        throw new AppError('zohoUserId is required', {
+          statusCode: 400,
+          code: 'VALIDATION_ERROR',
+          expose: true,
+        });
+      }
+      return retentionCasePhase1Repo.listForAgent(ctx, zohoUserId, {
+        ...(typeof params.open === 'boolean' ? { open: params.open } : {}),
+        phaseCode:
+          typeof params.phase_code === 'string' ? params.phase_code : RETENTION_PHASE.agent,
+        ...(typeof params.limit === 'number' ? { limit: params.limit } : {}),
+      });
+    },
+  },
+
+  {
+    kind: 'local',
+    key: 'retention.case_get',
+    title: 'Retention case detail + events',
+    riskClass: 'read',
+    departments: salesDept,
+    paramsSchema: z.object({ caseId: idString }),
+    handler: async (ctx, params) => {
+      const caseId = String(params.caseId);
+      const detail = await retentionCasePhase1Repo.getWithEvents(ctx, caseId);
+      if (!detail) throw new NotFoundError('Retention case not found');
+      // Open-pool cases: any sales agent may view (to decide on claim).
+      if (detail.case.statusCode !== 'p1_open_pool' && !isAdmin(ctx)) {
+        const self = zohoFromCtx(ctx);
+        if (!self || detail.case.assignedAgentZohoUserId !== self) {
+          throw new RBACError('You can only view retention cases assigned to you');
+        }
+      }
+      // App-DB only — DWH phone is fetched lazily via retention.case_contact (don't block open).
+      return { ...detail, contactPhone: null as string | null };
+    },
+  },
+
+  {
+    kind: 'local',
+    key: 'retention.case_contact',
+    title: 'Retention case contact phone (DWH)',
+    riskClass: 'read',
+    departments: salesDept,
+    paramsSchema: z.object({ caseId: idString }),
+    handler: async (ctx, params) => {
+      const caseId = String(params.caseId);
+      const row = await retentionCaseRepo.findById(ctx, caseId);
+      if (!row) throw new NotFoundError('Retention case not found');
+      if (row.statusCode !== 'p1_open_pool' && !isAdmin(ctx)) {
+        const self = zohoFromCtx(ctx);
+        if (!self || row.assignedAgentZohoUserId !== self) {
+          throw new RBACError('You can only view retention cases assigned to you');
+        }
+      }
+      if (!env.DWH_DATABASE_URL) return { contactPhone: null as string | null };
+      try {
+        const company = await getDwhCompanyDetails(row.carrierId);
+        return { contactPhone: company?.phone ?? null };
+      } catch {
+        return { contactPhone: null as string | null };
+      }
+    },
+  },
+
+  {
+    kind: 'local',
+    key: 'retention.record_outcome',
+    title: 'Record Phase 1 agent outcome',
+    riskClass: 'write',
+    departments: salesDept,
+    identityParam: 'zohoUserId',
+    paramsSchema: z.object({
+      zohoUserId: z.string().max(120).optional(),
+      caseId: idString,
+      outcome: z.enum(OUTCOMES),
+      dissatisfaction_reason: z.enum(DISSATISFACTION).optional(),
+      reason_note: z.string().max(2000).optional(),
+    }),
+    handler: async (ctx, params) => {
+      const caseId = String(params.caseId);
+      const outcome = params.outcome as Phase1Outcome;
+      const isOpsOutcome =
+        outcome === 'ops_confirm_vacation' || outcome === 'ops_deny_vacation';
+      let row;
+      if (isOpsOutcome) {
+        row = await retentionCaseRepo.findById(ctx, caseId);
+        if (!row) throw new NotFoundError('Retention case not found');
+        const self = zohoFromCtx(ctx);
+        const opsId = env.RETENTION_OPS_MANAGER_ZOHO_USER_ID.trim();
+        if (!isAdmin(ctx) && (!self || !opsId || self !== opsId)) {
+          throw new RBACError('Only the Ops Manager (or admin) can confirm vacation');
+        }
+      } else {
+        row = await requireOwnedCase(ctx, caseId);
+      }
+      const transition = resolvePhase1Transition(row, {
+        outcome,
+        dissatisfactionReason: params.dissatisfaction_reason as
+          | (typeof DISSATISFACTION)[number]
+          | undefined,
+        reasonNote: typeof params.reason_note === 'string' ? params.reason_note : undefined,
+      });
+      const previousOwner = row.assignedAgentZohoUserId;
+      const updated = await retentionCaseRepo.update(ctx, caseId, {
+        phaseCode: transition.phaseCode,
+        statusCode: transition.statusCode,
+        agentOutcome: transition.agentOutcome,
+        ...(transition.dissatisfactionReason !== undefined
+          ? { dissatisfactionReason: transition.dissatisfactionReason }
+          : {}),
+        ...(transition.reasonNote !== undefined ? { reasonNote: transition.reasonNote } : {}),
+        ...(transition.vacationCountdownEnd !== undefined
+          ? { vacationCountdownEnd: transition.vacationCountdownEnd }
+          : {}),
+        ...(transition.currentDeadlineAt !== undefined
+          ? { currentDeadlineAt: transition.currentDeadlineAt }
+          : {}),
+        ...(transition.currentDeadlineType !== undefined
+          ? { currentDeadlineType: transition.currentDeadlineType }
+          : {}),
+        ...(transition.assignedAgentZohoUserId !== undefined
+          ? { assignedAgentZohoUserId: transition.assignedAgentZohoUserId }
+          : {}),
+        ...(transition.poolOwnerZohoUserId !== undefined
+          ? { poolOwnerZohoUserId: transition.poolOwnerZohoUserId }
+          : {}),
+        ...(transition.pendingClaimantZohoUserId !== undefined
+          ? { pendingClaimantZohoUserId: transition.pendingClaimantZohoUserId }
+          : {}),
+        ...(transition.outOfReachAttempts !== undefined
+          ? { outOfReachAttempts: transition.outOfReachAttempts }
+          : {}),
+        ...(transition.citiFolderEnteredAt !== undefined
+          ? { citiFolderEnteredAt: transition.citiFolderEnteredAt }
+          : {}),
+        ...(transition.citiFolderHoldUntil !== undefined
+          ? { citiFolderHoldUntil: transition.citiFolderHoldUntil }
+          : {}),
+        eventType: transition.eventType,
+        eventNotes: transition.eventNotes,
+        actorZohoUserId: String(params.zohoUserId ?? zohoFromCtx(ctx) ?? ''),
+      });
+      if (!updated) throw new NotFoundError('Retention case not found');
+      if (updated.statusCode === 'p1_open_pool') {
+        await notifyOpenPoolOpened(ctx, {
+          caseId: updated.id,
+          carrierId: updated.carrierId,
+          companyName: updated.companyName,
+          previousOwnerZohoUserId: previousOwner,
+        });
+      }
+      return { case: updated };
+    },
+  },
+
+  {
+    kind: 'local',
+    key: 'retention.log_attempt',
+    title: 'Log out-of-reach communication attempt',
+    riskClass: 'write',
+    departments: salesDept,
+    identityParam: 'zohoUserId',
+    paramsSchema: z.object({
+      zohoUserId: z.string().max(120).optional(),
+      caseId: idString,
+      channel: z.enum(CHANNELS),
+      notes: z.string().max(2000).optional(),
+    }),
+    handler: async (ctx, params) => {
+      const caseId = String(params.caseId);
+      await requireOwnedCase(ctx, caseId);
+      const updated = await retentionCasePhase1Repo.logCommsAttempt(ctx, caseId, {
+        channel: params.channel as (typeof CHANNELS)[number],
+        notes: typeof params.notes === 'string' ? params.notes : undefined,
+        actorZohoUserId: String(params.zohoUserId ?? zohoFromCtx(ctx) ?? ''),
+      });
+      return { case: updated };
+    },
+  },
+
+  {
+    kind: 'local',
+    key: 'retention.pool_list',
+    title: 'Sales Open Pool cases',
+    riskClass: 'read',
+    departments: salesDept,
+    paramsSchema: z.object({
+      limit: limitSchema(500, 200).optional(),
+    }),
+    handler: async (ctx, params) => {
+      return retentionCasePhase1Repo.listOpenPool(ctx, {
+        ...(typeof params.limit === 'number' ? { limit: params.limit } : {}),
+      });
+    },
+  },
+
+  {
+    kind: 'local',
+    key: 'retention.pool_claim',
+    title: 'Request Open Pool claim (owner approve / 1 BD auto)',
+    riskClass: 'write',
+    departments: salesDept,
+    identityParam: 'zohoUserId',
+    agentNameParam: 'agentName',
+    paramsSchema: z.object({
+      zohoUserId: z.string().max(120).optional(),
+      agentName: z.string().max(200).optional(),
+      caseId: idString,
+    }),
+    handler: async (ctx, params) => {
+      const zohoUserId = String(params.zohoUserId ?? '');
+      if (!zohoUserId) {
+        throw new AppError('zohoUserId is required', {
+          statusCode: 400,
+          code: 'VALIDATION_ERROR',
+          expose: true,
+        });
+      }
+      const updated = await retentionCasePhase1Repo.claimFromPool(
+        ctx,
+        String(params.caseId),
+        zohoUserId,
+        {
+          agentName: typeof params.agentName === 'string' ? params.agentName : undefined,
+        },
+      );
+      return { case: updated, pendingApproval: updated.pendingApproval };
+    },
+  },
+
+  {
+    kind: 'local',
+    key: 'retention.pool_claims_pending',
+    title: 'Pending Open Pool claims awaiting my approve',
+    riskClass: 'read',
+    departments: salesDept,
+    identityParam: 'zohoUserId',
+    paramsSchema: z.object({
+      zohoUserId: z.string().max(120).optional(),
+      limit: limitSchema(200, 100).optional(),
+    }),
+    handler: async (ctx, params) => {
+      const zohoUserId = String(params.zohoUserId ?? '');
+      if (!zohoUserId) {
+        throw new AppError('zohoUserId is required', {
+          statusCode: 400,
+          code: 'VALIDATION_ERROR',
+          expose: true,
+        });
+      }
+      return retentionPoolClaimRepo.listPendingForOwner(ctx, zohoUserId, {
+        ...(typeof params.limit === 'number' ? { limit: params.limit } : {}),
+      });
+    },
+  },
+
+  {
+    kind: 'local',
+    key: 'retention.pool_claim_approve',
+    title: 'Approve Open Pool claim request',
+    riskClass: 'write',
+    departments: salesDept,
+    identityParam: 'zohoUserId',
+    agentNameParam: 'agentName',
+    paramsSchema: z.object({
+      zohoUserId: z.string().max(120).optional(),
+      agentName: z.string().max(200).optional(),
+      caseId: idString,
+    }),
+    handler: async (ctx, params) => {
+      const zohoUserId = String(params.zohoUserId ?? zohoFromCtx(ctx) ?? '');
+      if (!zohoUserId) {
+        throw new AppError('zohoUserId is required', {
+          statusCode: 400,
+          code: 'VALIDATION_ERROR',
+          expose: true,
+        });
+      }
+      const updated = await retentionPoolClaimRepo.approveClaim(
+        ctx,
+        String(params.caseId),
+        zohoUserId,
+        {
+          asAdmin: isAdmin(ctx),
+          agentName: typeof params.agentName === 'string' ? params.agentName : undefined,
+        },
+      );
+      return { case: updated };
+    },
+  },
+
+  {
+    kind: 'local',
+    key: 'retention.pool_claim_decline',
+    title: 'Decline Open Pool claim request',
+    riskClass: 'write',
+    departments: salesDept,
+    identityParam: 'zohoUserId',
+    paramsSchema: z.object({
+      zohoUserId: z.string().max(120).optional(),
+      caseId: idString,
+    }),
+    handler: async (ctx, params) => {
+      const zohoUserId = String(params.zohoUserId ?? zohoFromCtx(ctx) ?? '');
+      if (!zohoUserId) {
+        throw new AppError('zohoUserId is required', {
+          statusCode: 400,
+          code: 'VALIDATION_ERROR',
+          expose: true,
+        });
+      }
+      const updated = await retentionPoolClaimRepo.declineClaim(
+        ctx,
+        String(params.caseId),
+        zohoUserId,
+        { asAdmin: isAdmin(ctx) },
+      );
+      return { case: updated };
+    },
+  },
+
+  {
+    kind: 'local',
+    key: 'retention.lookups',
+    title: 'Retention phases / statuses / enums',
+    riskClass: 'read',
+    departments: salesDept,
+    paramsSchema: z.object({
+      phase_code: z.string().max(80).optional(),
+    }),
+    handler: async (_ctx, params) => {
+      const phaseCode =
+        typeof params.phase_code === 'string' ? params.phase_code : undefined;
+      const [phases, statuses] = await Promise.all([
+        retentionCaseRepo.listPhases(),
+        retentionCaseRepo.listStatuses(phaseCode),
+      ]);
+      return {
+        phases,
+        statuses,
+        channels: CHANNELS,
+        dissatisfactionReasons: DISSATISFACTION,
+        outcomes: OUTCOMES,
+      };
+    },
+  },
+];

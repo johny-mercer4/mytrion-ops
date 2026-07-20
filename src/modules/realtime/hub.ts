@@ -25,13 +25,19 @@ export interface RealtimeSocket {
 const OPEN = 1; // ws.WebSocket.OPEN
 
 export const INBOX_ALL_TOPIC = 'inbox:all';
+/** Sales Open Pool live updates — any authenticated internal worker may subscribe. */
+export const RETENTION_POOL_TOPIC = 'retention:pool';
 
 const topicSubscribers = new Map<string, Set<RealtimeSocket>>();
 const socketTopics = new Map<RealtimeSocket, Set<string>>();
 
-/** A topic name is one of ours: 'inbox:all' or 'inbox:(worker|client):<id>'. */
+/** A topic name is one of ours: 'inbox:all', inbox owner topics, or retention:pool. */
 export function isValidTopic(topic: string): boolean {
-  return topic === INBOX_ALL_TOPIC || /^inbox:(worker|client):[A-Za-z0-9._:-]{1,120}$/.test(topic);
+  return (
+    topic === INBOX_ALL_TOPIC ||
+    topic === RETENTION_POOL_TOPIC ||
+    /^inbox:(worker|client):[A-Za-z0-9._:-]{1,120}$/.test(topic)
+  );
 }
 
 /** The topic that carries a given owner's inbox events. */
@@ -54,9 +60,10 @@ export function ownTopicOf(ctx: TenantContext): string | null {
   return null;
 }
 
-/** May this caller subscribe to this topic? Own feed always; anything else needs admin. */
+/** May this caller subscribe to this topic? Own feed always; pool broadcast for internals; else admin. */
 export function canSubscribe(ctx: TenantContext, topic: string): boolean {
   if (!isValidTopic(topic)) return false;
+  if (topic === RETENTION_POOL_TOPIC) return ctx.audience === 'internal';
   if (ctx.role === 'admin' || ctx.bypassRbac === true) return true;
   return topic === ownTopicOf(ctx);
 }

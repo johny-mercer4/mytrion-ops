@@ -27,11 +27,11 @@ const AV = (size = 34, fs = 13): string =>
 const COUNT_CHIP =
   "min-width:22px;height:20px;padding:0 7px;border-radius:99px;background:var(--raised);color:var(--muted);font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace";
 const SUB = 'font-size:11px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
-const FOOT = 'display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;font-size:10.5px;color:var(--faint)';
+const FOOT = 'display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;font-size:11px;color:var(--faint)';
 const LEAD_LIST_COLS =
   'display:grid;grid-template-columns:170px 170px 130px 120px 210px 140px 140px 100px;gap:10px;padding:12px 16px;min-width:fit-content';
 const HOVER_ACTION =
-  'width:96px;height:26px;border-radius:var(--radius-md);border:none;cursor:pointer;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center;gap:6px;flex-shrink:0';
+  'width:96px;height:26px;border-radius:var(--radius-md);border:none;cursor:pointer;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center;gap:6px;flex-shrink:0';
 
 function utmPill(source: string) {
   const c = utmColor(source);
@@ -69,15 +69,30 @@ function stop(e: MouseEvent): void {
 
 // ---------- Leads ----------
 
-export function LeadsView({ leads, search, view }: { leads: LeadVM[]; search: string; view: 'kanban' | 'list' }) {
+export function LeadsView({
+  leads,
+  search,
+  view,
+  statusFilter = 'all',
+  sourceFilter = 'all',
+}: {
+  leads: LeadVM[];
+  search: string;
+  view: 'kanban' | 'list';
+  statusFilter?: string;
+  sourceFilter?: string;
+}) {
   const { openLead, pushToast } = useSales();
   const [hoverField, setHoverField] = useState<string | null>(null);
   const q = search.toLowerCase();
-  const rows = q
-    ? leads.filter((l) =>
-        `${l.contact} ${l.company} ${l.source} ${l.status} ${l.phone} ${l.cell} ${l.email}`.toLowerCase().includes(q),
-      )
-    : leads;
+  const rows = leads.filter((l) => {
+    if (statusFilter !== 'all' && l.status !== statusFilter) return false;
+    if (sourceFilter !== 'all' && l.source !== sourceFilter) return false;
+    if (q && !`${l.contact} ${l.company} ${l.source} ${l.status} ${l.phone} ${l.cell} ${l.email}`.toLowerCase().includes(q)) {
+      return false;
+    }
+    return true;
+  });
 
   if (rows.length === 0) {
     return <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)')}><EmptyRow msg="No leads found." /></div>;
@@ -116,7 +131,7 @@ export function LeadsView({ leads, search, view }: { leads: LeadVM[]; search: st
               key={ld.id}
               onClick={() => openLead(ld)}
               className="ss-tab-x"
-              style={s(`${LEAD_LIST_COLS.replace('padding:12px 16px', 'padding:13px 16px')};border-top:1px solid var(--border2);align-items:center;cursor:pointer;font-size:12.5px`)}
+              style={s(`${LEAD_LIST_COLS.replace('padding:12px 16px', 'padding:13px 16px')};border-top:1px solid var(--border2);align-items:center;cursor:pointer;font-size:13px`)}
             >
               <span style={s('font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.contact}</span>
               <span style={s('color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.company}</span>
@@ -198,11 +213,11 @@ export function LeadsView({ leads, search, view }: { leads: LeadVM[]; search: st
                     <div style={s('font-size:13px;font-weight:700;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.contact}</div>
                     <span style={s(`${src.style};flex-shrink:0;white-space:nowrap`)}>{src.text}</span>
                   </div>
-                  <div style={s('font-size:11.5px;color:var(--text2);font-weight:500;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.company}</div>
+                  <div style={s('font-size:12px;color:var(--text2);font-weight:500;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.company}</div>
                   <div style={s('font-size:11px;color:var(--muted);margin-top:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{ld.email}</div>
                   <div style={s('margin-top:9px;display:flex;align-items:baseline;justify-content:space-between;gap:8px')}>
-                    <span style={s("font-size:11.5px;color:var(--text2);font-weight:600;font-family:'JetBrains Mono',monospace;white-space:nowrap")}>{ld.phone || '—'}</span>
-                    <span style={s('font-size:10.5px;color:var(--faint);white-space:nowrap')}>{ld.created}</span>
+                    <span style={s("font-size:12px;color:var(--text2);font-weight:600;font-family:'JetBrains Mono',monospace;white-space:nowrap")}>{ld.phone || '—'}</span>
+                    <span style={s('font-size:11px;color:var(--faint);white-space:nowrap')}>{ld.created}</span>
                   </div>
                 </div>
               );
@@ -217,12 +232,24 @@ export function LeadsView({ leads, search, view }: { leads: LeadVM[]; search: st
 
 // ---------- Deals ----------
 
-export function DealsView({ deals, search, view }: { deals: DealVM[]; search: string; view: 'kanban' | 'list' }) {
+export function DealsView({
+  deals,
+  search,
+  view,
+  stageFilter = 'all',
+}: {
+  deals: DealVM[];
+  search: string;
+  view: 'kanban' | 'list';
+  stageFilter?: string;
+}) {
   const { openDeal } = useSales();
   const q = search.toLowerCase();
-  const rows = q
-    ? deals.filter((d) => `${d.name} ${d.company} ${d.stage} ${d.carrierId} ${d.app}`.toLowerCase().includes(q))
-    : deals;
+  const rows = deals.filter((d) => {
+    if (stageFilter !== 'all' && d.stage !== stageFilter) return false;
+    if (q && !`${d.name} ${d.company} ${d.stage} ${d.carrierId} ${d.app}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
 
   if (view === 'list') {
     return (
@@ -231,7 +258,7 @@ export function DealsView({ deals, search, view }: { deals: DealVM[]; search: st
           <span>Deal</span><span>Stage</span><span>Carrier</span><span>App ID</span><span style={s('text-align:right')}>Created</span>
         </div>
         {rows.map((dl) => (
-          <div key={dl.id} onClick={() => openDeal(dl)} className="ss-tab-x" style={s('display:grid;grid-template-columns:1.6fr 1fr 0.9fr 0.9fr 0.8fr;gap:10px;padding:13px 16px;border-top:1px solid var(--border2);align-items:center;cursor:pointer;font-size:12.5px')}>
+          <div key={dl.id} onClick={() => openDeal(dl)} className="ss-tab-x" style={s('display:grid;grid-template-columns:1.6fr 1fr 0.9fr 0.9fr 0.8fr;gap:10px;padding:13px 16px;border-top:1px solid var(--border2);align-items:center;cursor:pointer;font-size:13px')}>
             <div style={s('display:flex;align-items:center;gap:10px;min-width:0')}><div style={s(AV())}>{dl.initials}</div><span style={s('font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{dl.name}</span></div>
             <span style={s(`color:${dealStageColor(dl.stage)};font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`)}>{dl.stage}</span>
             <span style={s("color:var(--text2);font-family:'JetBrains Mono',monospace")}>{dl.carrierId || '—'}</span>
@@ -294,7 +321,7 @@ export function RejectionsView({ rejections, search }: { rejections: RejectionVM
       {rows.map((r) => {
         const stBadge = badge(r.status, REJ_STATUS_COL[r.status] ?? 'var(--muted)');
         return (
-          <div key={r.id} style={s('display:grid;grid-template-columns:1.6fr 0.9fr 1.6fr 0.9fr 1fr;gap:10px;padding:13px 16px;border-top:1px solid var(--border2);align-items:center;font-size:12.5px')}>
+          <div key={r.id} style={s('display:grid;grid-template-columns:1.6fr 0.9fr 1.6fr 0.9fr 1fr;gap:10px;padding:13px 16px;border-top:1px solid var(--border2);align-items:center;font-size:13px')}>
             <div style={s('display:flex;align-items:center;gap:10px;min-width:0')}><div style={s(AV())}>{r.initials}</div><span style={s('font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{r.company}</span></div>
             <span style={s("font-family:'JetBrains Mono',monospace;color:var(--text2)")}>#{r.number}</span>
             <span style={s('color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')} title={r.reason}>{r.reason}</span>

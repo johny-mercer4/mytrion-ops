@@ -1,8 +1,7 @@
 /**
- * Sales Mytrion redesign — model layer. Static data + pure styling helpers ported from the
- * reference prototype (Sales Mytrion.dc.html). The mock arrays seed the UI at pixel fidelity;
- * the live-data pass swaps the six already-wired tabs onto the existing touchpoints
- * (see ../live.ts) while the design/shape stays identical.
+ * Sales Mytrion redesign — nav labels, icon map, and pure styling helpers.
+ * Live rows (clients, inbox, tickets, retention, etc.) come from APIs via live.ts /
+ * retentionData.ts / dataCenterLive.ts — not from seed arrays here.
  */
 import type { IconName } from './icons';
 
@@ -114,8 +113,8 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     id: 'soon',
     items: [
-      // Retention owns Cases + Open Pool as in-page tabs. Drop `comingSoon` to re-enable.
-      { id: 'retention', label: 'Retention', icon: 'retention', comingSoon: true },
+      // Retention owns Cases + Open Pool as in-page tabs (Phase 1 live).
+      { id: 'retention', label: 'Retention', icon: 'retention' },
       { id: 'verification', label: 'Verification Pipeline', icon: 'verification', comingSoon: true },
       // Tickets parked — drop `comingSoon` to re-enable; TicketsTab stays wired.
       { id: 'tickets', label: 'Tickets', icon: 'tickets', comingSoon: true },
@@ -162,9 +161,12 @@ const NY_TZ = 'America/New_York';
  * en-CA formats as yyyy-MM-dd directly.
  */
 export function nyDaysAgo(n: number): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: NY_TZ }).format(
-    new Date(Date.now() - n * 86_400_000),
-  );
+  // Anchor on TODAY's NY calendar date, then step back n whole days in UTC (which has no DST). A
+  // fixed 24h subtraction from `now` would skip a calendar day on spring-forward and duplicate one
+  // on fall-back, silently corrupting the streak/week counts on those two mornings a year.
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: NY_TZ }).format(new Date()); // yyyy-MM-dd
+  const base = Date.parse(`${today}T00:00:00Z`) - n * 86_400_000;
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC' }).format(new Date(base));
 }
 
 /** Today's yyyy-MM-dd on the NY calendar. */
