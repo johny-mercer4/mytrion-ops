@@ -125,6 +125,16 @@ export async function findDwhCardByNumber(cardNumber: string): Promise<DwhCardOw
     );
     return null;
   }
+  if (rows.length > 1 && rows[1]?.card_id != null && String(rows[1].card_id) !== String(row.card_id)) {
+    // Same carrier this time (the cross-carrier case returned null above), same ACTIVE number on two
+    // different card rows. The carrier binding — the security-relevant part — is unambiguous, and
+    // driver row-scoping filters on the NUMBER, so reads are unaffected; but which card_id the
+    // registration pins is arbitrary. Surfaced so ops can clean up the duplicate at the source.
+    logger.warn(
+      { cardNumber, carrierId: String(row.carrier_id), cardIds: [String(row.card_id), String(rows[1].card_id)] },
+      'findDwhCardByNumber: duplicate active card number within one carrier — binding to the first row',
+    );
+  }
   return { cardId: String(row.card_id), carrierId: String(row.carrier_id), cardNumber: String(row.card_number ?? cardNumber) };
 }
 

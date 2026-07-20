@@ -50,6 +50,20 @@ describe('findDwhCardByNumber', () => {
     expect(await findDwhCardByNumber('0000000000000000000')).toBeNull();
   });
 
+  it('binds to the first row (and does NOT fail closed) when the duplicate is within ONE carrier', async () => {
+    // Same carrier on both rows: the carrier binding — the security-relevant part — is unambiguous,
+    // so refusing here would lock a real driver out over a data-hygiene problem. A warn is logged
+    // (asserted implicitly by coverage of the branch; the log itself is ops-facing).
+    query.mockResolvedValueOnce([
+      { card_id: 'card_1', carrier_id: '5765985', card_number: CARD },
+      { card_id: 'card_9', carrier_id: '5765985', card_number: CARD },
+    ]);
+
+    const card = await findDwhCardByNumber(CARD);
+
+    expect(card).toEqual({ cardId: 'card_1', carrierId: '5765985', cardNumber: CARD });
+  });
+
   it('fails closed when the same active number resolves to TWO DIFFERENT carriers', async () => {
     // No uniqueness constraint on card_number in the replica — a bare limit-1 would bind the driver
     // to whichever row the DB happened to return. Refuse instead of guessing.

@@ -3332,3 +3332,11 @@ o'tmagan bo'lsa ham.
   concurrent race mumkin) — migration kerak bo'lsa alohida.
 
 Holat: typecheck toza, 695 test yashil.
+
+### 2026-07-20 — Self-register hardening (audit follow-up)
+
+- `findDwhCardByNumber`: bitta carrier ichida duplikat aktiv raqam → warn-log (carrier bog'lash
+  bir ma'noli, shuning uchun fail-close EMAS; card_id tanlovi arbitrar ekani ops uchun surfaced).
+- `/carrier/mini-app/driver-self-register`: verified Telegram user boshiga 3 urinish/daqiqa
+  (takeToken, `SELF_REGISTER_RATE_LIMITED` 429) — karta-raqam enumeration oracle yopildi.
+- Testlar: same-carrier duplikat birinchi qatorga bog'lanadi; 4-urinish 429 va DWH'ga yetmaydi.

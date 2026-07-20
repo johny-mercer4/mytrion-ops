@@ -39,6 +39,7 @@ import {
   TelegramChatUnreachableError,
 } from '../../integrations/telegramCarrierBot.js';
 import { buildTxnReport } from '../../modules/carrier/txnReport.js';
+import { takeToken } from '../../modules/security/rateBucket.js';
 import {
   lookupCtx,
   requireDriverCardNumber,
@@ -145,6 +146,9 @@ const txnRangeSchema = rangeSchema.extend({ live: z.boolean().optional().default
 const txnExportSchema = rangeSchema.extend({
   format: z.enum(['csv', 'xlsx', 'pdf']).default('xlsx'),
   priceMode: z.enum(['discount', 'retail']).default('discount'),
+  /** Full card number + Driver/Unit/Driver ID columns (client feedback; EFS "Show Entire Card
+   *  Number" + Match-By fields). The fields are already on every mart row. */
+  detailed: z.boolean().default(false),
 });
 const invoicesSchema = z.object({
   initData: z.string().min(1),
@@ -173,6 +177,10 @@ const driverSelfRegisterSchema = z.object({
    *  owner's driver-invite form uses — it lands in the same column. */
   driverName: z.string().trim().min(1).max(200).optional(),
 });
+
+/** Card-number sign-in attempts per verified Telegram user per minute — see the rate check in the
+ *  route. Three is generous for a human retyping a 19-digit number and useless for a scanner. */
+const SELF_REGISTER_ATTEMPTS_PER_MINUTE = 3;
 
 const createInviteSchema = z.object({
   profile: z.enum(['owner', 'driver']).default('owner'),
@@ -843,6 +851,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       cardLast4: cardNumber ? cardNumber.slice(-4) : String(carrierId),
       scopedToCard: Boolean(cardNumber),
       priceMode,
+      detailed: body.detailed,
     });
 
     // A private chat's id IS the user's id; telegramChatId is only populated when the redeem call
@@ -905,6 +914,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
         rows: result.data.length,
         scopedToCard: Boolean(cardNumber),
         priceMode,
+        detailed: body.detailed,
       },
     });
 
@@ -1125,6 +1135,16 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   app.post('/carrier/mini-app/driver-self-register', async (request, reply) => {
     const body = driverSelfRegisterSchema.parse(request.body);
     const { tgUser, telegramUserId } = verifyTelegramUser(body.initData);
+    // This is the one PUBLIC lookup that answers "is this a valid card number?" (404 vs 201/409),
+    // so it must not be usable as an enumeration oracle. Keyed on the VERIFIED Telegram identity —
+    // the HMAC check above means an attacker cannot reset the window by editing the payload.
+    if (!takeToken(`miniapp:self-register:${telegramUserId}`, SELF_REGISTER_ATTEMPTS_PER_MINUTE)) {
+      throw new AppError('Too many attempts — please wait a minute and try again.', {
+        statusCode: 429,
+        code: 'SELF_REGISTER_RATE_LIMITED',
+        expose: true,
+      });
+    }
     // Digits only. The lookup is an exact `card_number = $1` against a column of bare 19-digit
     // strings, and the number is PRINTED on the card in groups of four — the mini-app's own input
     // even re-groups it as you type. Trimming alone left the backend depending on the client to

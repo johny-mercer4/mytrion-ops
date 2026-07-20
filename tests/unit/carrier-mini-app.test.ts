@@ -1236,6 +1236,29 @@ describe('driver self-registration by card number', () => {
     expect(registrationRepo.upsert).toHaveBeenCalled();
   });
 
+  it('429s the 4th lookup attempt in a minute — the card-number oracle is rate-limited per Telegram user', async () => {
+    // Persistent (not -Once) mocks: the same verified user probes four times in a row.
+    vi.mocked(parseInitDataUser).mockReturnValue({ id: 987654, first_name: 'James' } as never);
+    registrationRepo.findByTelegramUserId.mockResolvedValue(undefined);
+    vi.mocked(findDwhCardByNumber).mockResolvedValue(null); // every probe misses
+
+    const probe = () =>
+      app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/driver-self-register',
+        headers: { 'content-type': 'application/json' },
+        payload: { initData: 'signed', cardNumber: '7083050030880417000' },
+      });
+
+    for (let i = 0; i < 3; i++) expect((await probe()).statusCode).toBe(404); // CARD_NOT_FOUND
+    const fourth = await probe();
+
+    expect(fourth.statusCode).toBe(429);
+    expect(fourth.json()).toMatchObject({ error: { code: 'SELF_REGISTER_RATE_LIMITED' } });
+    // The refused attempt never reached the DWH — the oracle is closed, not just slowed.
+    expect(vi.mocked(findDwhCardByNumber)).toHaveBeenCalledTimes(3);
+  });
+
   it('accepts the number formatted the way it is printed on the card', async () => {
     driverTg();
     registrationRepo.findByTelegramUserId.mockResolvedValueOnce(undefined);
