@@ -528,9 +528,6 @@ export function Transactions() {
                           <span className="tx-amount-value">{fmtCurrency(tx.amount)}</span>
                           <span className="tx-date-inline">{tx.time}</span>
                         </div>
-                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--text-muted)', flexShrink: 0, opacity: 0.4 }}>
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                        </svg>
                       </div>
                     ))}
                   </div>

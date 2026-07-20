@@ -29,8 +29,6 @@ const P_WARN = 'M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z';
 const P_CHECK = 'M5 13l4 4L19 7';
 const P_FILTER = 'M3 4h18M6 12h12M10 20h4';
 const P_CHEVRON = 'M19 9l-7 7-7-7';
-const P_TABLE =
-  'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4';
 
 const FILTERS: Array<{ id: string; label: string }> = [
   { id: 'all', label: 'All' },
@@ -370,18 +368,8 @@ export function DataCenter() {
 
       {/* ── Deals Table ── */}
       {!loading || deals.length > 0 ? (
-        <div className="bm-section" style={{ flex: 1 }}>
-          <div className="bm-section-hdr">
-            <div className="bm-section-title">
-              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={P_TABLE} />
-              </svg>
-              Deal Records
-            </div>
-            <span className="bm-badge bm-badge-muted">{filtered.length} records</span>
-          </div>
-
-          <div className="bm-table-wrap">
+        <div className="bm-section" style={{ flex: 1, minHeight: 0 }}>
+          <div className="bm-table-wrap" style={{ flex: 1, minHeight: 0 }}>
             <table className="bm-table" id="dc-deals-table">
               <thead>
                 <tr>
@@ -390,13 +378,14 @@ export function DataCenter() {
                   <th style={{ minWidth: '155px' }}>Stage</th>
                   <th>Application Date</th>
                   <th style={{ minWidth: '140px' }}>Payment Type</th>
+                  <th style={{ textAlign: 'right' }}>Avg Pay</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={6}>
+                    <td colSpan={7}>
                       <div className="bm-empty">
                         <svg width="36" height="36" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path
@@ -435,17 +424,21 @@ export function DataCenter() {
                       <td>
                         <span className={`bm-badge ${PAY_BADGE[deal.payType]}`}>{payMeta(deal.payType).label}</span>
                       </td>
-                      <td>
-                        <button
-                          className="bm-btn bm-btn-ghost"
-                          style={{ padding: '0.25rem 0.5rem', fontSize: '0.625rem' }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditDeal(deal);
-                          }}
-                        >
-                          Edit
-                        </button>
+                      <td
+                        style={{
+                          textAlign: 'right',
+                          fontFamily: MONO,
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          color: deal.avgDays != null ? avgDaysColor(deal.avgDays) : 'var(--text-muted)',
+                        }}
+                      >
+                        {deal.avgDays != null ? `${deal.avgDays}d` : '—'}
+                      </td>
+                      <td style={{ color: 'var(--text-muted)', width: 40 }}>
+                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ opacity: 0.5 }}>
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                        </svg>
                       </td>
                     </tr>
                   ))

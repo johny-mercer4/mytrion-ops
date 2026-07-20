@@ -102,6 +102,10 @@
     --border-dark:  rgba(200, 204, 218, 0.04);
     --color-border: rgba(200, 204, 218, 0.11);
 
+    /* ── Design parity: progress-bar track + card shadow (dark = none) ── */
+    --track:        rgba(200, 204, 218, 0.08);
+    --card-shadow:  none;
+
     /* ── Status ── */
     --success: #2ECC71;
     --error:   #EF4444;
@@ -203,6 +207,10 @@
     --border-light: rgba(88, 95, 150, 0.07);
     --border-dark:  rgba(88, 95, 150, 0.04);
     --color-border: rgba(88, 95, 150, 0.13);
+
+    /* Design parity: track + soft card shadow on white surfaces */
+    --track:        rgba(79, 88, 150, 0.13);
+    --card-shadow:  0 1px 2px rgba(20, 23, 49, 0.05), 0 6px 16px rgba(37, 99, 235, 0.07);
 
     /* Shadows — soft blue-tinted, avoid flat gray */
     --shadow-sm: 0 1px 4px rgba(37, 99, 235, 0.07), 0 1px 2px rgba(0,0,0,0.04);

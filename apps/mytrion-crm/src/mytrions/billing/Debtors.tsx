@@ -246,7 +246,6 @@ export function Debtors() {
             <div className="db-col-status">Status</div>
             <div className="db-col-age">Oldest Debt</div>
             <div className="db-col-count">Inv</div>
-            <div className="db-col-owed">Total Owed</div>
             <div className="db-col-remain">Remaining</div>
           </div>
 
@@ -275,7 +274,12 @@ export function Debtors() {
                     </div>
                     <div className="db-col-age">
                       <div className="db-age-cell">
-                        <span className={`db-age-text${debtor.isHard ? ' text-danger' : ''}`}>{debtor.age}d</span>
+                        <span
+                          className="db-age-text"
+                          style={{ color: debtor.isHard ? 'var(--danger-text)' : 'var(--warning-text)' }}
+                        >
+                          {debtor.age}d
+                        </span>
                         <div className="db-age-bar">
                           <div
                             style={{
@@ -287,7 +291,6 @@ export function Debtors() {
                       </div>
                     </div>
                     <div className="db-col-count db-count-text">{debtor.invoiceCount}</div>
-                    <div className="db-col-owed db-money-muted">{fmtCurrency(debtor.totalOwed)}</div>
                     <div className="db-col-remain db-money-bold">{fmtCurrency(debtor.totalRemaining)}</div>
                   </div>
                 </div>

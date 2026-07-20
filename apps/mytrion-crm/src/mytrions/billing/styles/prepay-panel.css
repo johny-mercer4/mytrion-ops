@@ -9,9 +9,9 @@
 .bm-root .bm-prepay-panel .pp-toolbar {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: 8px;
     flex-wrap: wrap;
-    margin: 0.75rem 0 1rem;
+    margin: 0;
 }
 
 @media (min-width: 1150px) {
@@ -38,21 +38,22 @@
 
 .bm-root .bm-prepay-panel .pp-seg {
     display: inline-flex;
-    background: var(--surface-alt);
+    background: var(--color-bg-secondary);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
-    padding: 0.2rem;
-    gap: 0.15rem;
+    box-shadow: var(--card-shadow);
+    padding: 3px;
+    gap: 2px;
 }
 
 .bm-root .bm-prepay-panel .pp-seg button {
     border: none;
     background: transparent;
     color: var(--text-secondary);
-    font-size: 0.74rem;
-    font-weight: 600;
-    padding: 0.4rem 0.85rem;
-    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 5px 12px;
+    border-radius: 2px;
     cursor: pointer;
     transition: background 0.12s, color 0.12s;
     font-family: inherit;
@@ -64,9 +65,9 @@
 }
 
 .bm-root .bm-prepay-panel .pp-seg .pp-seg-active {
-    background: var(--billing-accent);
-    color: var(--on-accent-solid);
-    box-shadow: var(--shadow-sm);
+    background: var(--accent-bg);
+    color: var(--billing-accent);
+    font-weight: 600;
 }
 
 .bm-root .bm-prepay-panel .pp-daterange {
@@ -122,6 +123,12 @@
     opacity: 0.4;
     cursor: not-allowed;
 }
+
+/* ── Prepay: design grid column ratios (0.7 2 1.2 1.2 1.2), amounts right ── */
+.bm-root .bm-prepay-panel .db-col-carrier { flex: 0.7 1 0; }
+.bm-root .bm-prepay-panel .db-col-company { flex: 2 1 0; min-width: 0; padding-right: 14px; }
+.bm-root .bm-prepay-panel .db-col-count   { flex: 1.2 1 0; text-align: right; }
+.bm-root .bm-prepay-panel .db-col-owed    { flex: 1.2 1 0; text-align: right; }
 
 /* ── Modal: daily reconciliation ledger ── */
 .bm-root .bm-prepay-panel .pl-summary {
