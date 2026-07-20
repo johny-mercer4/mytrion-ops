@@ -256,8 +256,8 @@ export function Returns() {
           ) : null}
         </div>
 
-        <button className="bm-refresh-btn" onClick={load.reload} disabled={load.loading}>
-          <svg className={load.loading ? 'spin-icon' : undefined} width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <button className="bm-refresh-btn" onClick={load.refresh} disabled={load.loading || load.refreshing}>
+          <svg className={load.loading || load.refreshing ? 'spin-icon' : undefined} width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={REFRESH_PATH} />
           </svg>
           Refresh
@@ -324,7 +324,7 @@ export function Returns() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={ERROR_PATH} />
           </svg>
           <div className="db-error-msg">{load.error}</div>
-          <button className="bm-refresh-btn" onClick={load.reload} style={{ width: 'fit-content', marginTop: '0.5rem' }}>
+          <button className="bm-refresh-btn" onClick={load.refresh} style={{ width: 'fit-content', marginTop: '0.5rem' }}>
             Try Again
           </button>
         </div>

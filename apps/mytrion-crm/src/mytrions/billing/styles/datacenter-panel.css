@@ -13,10 +13,23 @@
 .bm-root .dc-deal-row {
     cursor: pointer;
     transition: background 100ms;
+    /* Fixed height so row-windowing offsets (DC_ROW_H) stay exact — content must fit. */
+    height: 52px;
 }
 
 .bm-root .dc-deal-row:hover {
     background: var(--surface-raised) !important;
+}
+
+/* Keep every cell to one line so a long value can't grow the row and drift the window. */
+.bm-root .dc-deal-row > td {
+    white-space: nowrap;
+}
+
+.bm-root .dc-deal-row > td:first-child > div {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 260px;
 }
 
 /* ── Client list card (mobile) ── */
@@ -65,62 +78,68 @@
     flex-shrink: 0;
 }
 
-/* ── Filter tabs ── */
+/* ── Filter tabs — design segmented pill group ── */
 .bm-root .dc-filter-tabs {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    flex-wrap: wrap;
+    gap: 2px;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--card-shadow);
+    padding: 3px;
 }
 
 .bm-root .dc-filter-tab {
-    padding: 0.3rem 0.75rem;
+    padding: 5px 12px;
     border-radius: 2px;
-    border: 1px solid var(--border);
+    border: none;
     background: transparent;
-    color: var(--text-muted);
-    font-size: 0.625rem;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
     cursor: pointer;
     transition: all 100ms;
     font-family: inherit;
+    white-space: nowrap;
 }
 
 .bm-root .dc-filter-tab:hover {
-    border-color: var(--accent-border-strong);
-    color: var(--billing-accent);
+    color: var(--text-primary);
 }
 
 .bm-root .dc-filter-tab.active {
     background: var(--accent-bg);
-    border-color: var(--accent-border-strong);
     color: var(--billing-accent);
+    font-weight: 600;
 }
 
-/* ── Toolbar divider (separates toggle tabs from the stage dropdown) ── */
+/* ── Toolbar order (design): filter pills · search (flex) · stage dropdown.
+   The divider isn't in the design — hidden. ── */
+.bm-root .dc-panel .bm-toolbar .dc-filter-tabs { order: 1; }
+.bm-root .dc-panel .bm-toolbar .bm-search-bar  { order: 2; }
+.bm-root .dc-panel .bm-toolbar .dc-stage-filter { order: 3; }
+
 .bm-root .dc-toolbar-divider {
-    width: 1px;
-    align-self: stretch;
-    min-height: 22px;
-    background: var(--border);
-    margin: 0 0.125rem;
+    display: none;
 }
 
 /* ── Stage multiselect trigger ── */
 .bm-root .dc-stage-trigger {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
-    padding: 0.35rem 0.625rem;
+    gap: 7px;
+    padding: 8px 12px;
     border-radius: var(--radius-md);
     border: 1px solid var(--border);
-    background: var(--surface-alt);
-    color: var(--text-primary);
-    font-size: 0.6875rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
+    background: var(--surface);
+    box-shadow: var(--card-shadow);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
     cursor: pointer;
     transition: border-color 120ms, background 120ms, color 120ms;
     font-family: inherit;
@@ -245,9 +264,23 @@
 }
 
 .bm-root .dc-badge-loc {
-    background: var(--success-bg);
-    color: var(--success-text);
-    border: 1px solid var(--success-border);
+    background: var(--accent-bg);
+    color: var(--billing-accent);
+    border: 1px solid var(--accent-border);
+}
+
+/* ── Stage progress bar under the stage chip (design parity) ── */
+.bm-root .dc-stage-bar {
+    height: 3px;
+    margin-top: 6px;
+    background: var(--track);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.bm-root .dc-stage-bar > div {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 200ms ease;
 }
 
 .bm-root .dc-badge-deposit {

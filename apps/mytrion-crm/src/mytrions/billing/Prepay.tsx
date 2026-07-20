@@ -4,13 +4,14 @@
  * the Debtors panel / db-pagination / bm-modal-* + pl-* daily reconciliation ledger), scoped
  * under `.bm-root`. Read-only.
  *
- * Data is LIVE via three billing.prepay.* touchpoints:
- *   • billing.prepay.companies — the company roll-up for the selected date window.
- *   • billing.prepay.rmve      — lazy EFS-RMVE enrichment for the VISIBLE page only (the list's
- *                                baseline RMVE comes from FundStation draws and is blind to
- *                                removals done directly in EFS; this converges loaded/difference
- *                                to the modal's numbers without ~400 EFS calls up front).
- *   • billing.prepay.ledger    — the per-carrier daily ledger for the row→modal drill-down.
+ * Data is LIVE via three PG-backed REST routes (/v1/billing/prepay/*, see api/billing.ts):
+ *   • fetchPrepayCompanies — the company roll-up, composed in mytrion-ops (DWH companies +
+ *                            loads/draws, PG Zelle/Chase/Merchant, servercrm EFS/CMP/Maintenance).
+ *   • fetchPrepayRmve      — lazy EFS-RMVE enrichment for the VISIBLE page only (the list's
+ *                            baseline RMVE comes from FundStation draws and is blind to removals
+ *                            done directly in EFS; this converges loaded/difference to the modal's
+ *                            numbers without ~400 EFS calls up front). Proxied to servercrm.
+ *   • fetchPrepayLedger    — the per-carrier daily ledger for the row→modal drill-down (proxied).
  *
  * Date-mode segmented control (day=1d / month=30d / quarter=90d rolling windows / custom range)
  * with the widget's _ymd / computeRange / _shiftYmd helpers ported verbatim. The ledger API
@@ -22,7 +23,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { billingTouchpoint } from '@/api/billing';
+import { fetchPrepayCompanies, fetchPrepayExternals, fetchPrepayLedger, fetchPrepayRmve } from '@/api/billing';
 import type { BillingPrepayCompanies, BillingPrepayLedger } from '@/api/touchpointTypes';
 import { useLoad } from '../_shared/useLoad';
 import { fmtCurrency } from './data';
@@ -116,6 +117,21 @@ function extractRmveMap(res: unknown): Record<string, unknown> {
   if (isRecord(res) && isRecord(res.rmve)) return res.rmve;
   if (isRecord(res)) return res;
   return {};
+}
+
+interface Externals {
+  money_code?: number;
+  maintenance?: number;
+  stripe?: number;
+}
+/** /billing/prepay/externals → carrier_id → {money_code, maintenance, stripe}. Reply is
+ *  {externals:{…}} or, defensively, the bare map. */
+function extractExternalsMap(res: unknown): Record<string, Externals> {
+  const src =
+    isRecord(res) && isRecord(res.externals) ? res.externals : isRecord(res) ? res : {};
+  const out: Record<string, Externals> = {};
+  for (const [k, v] of Object.entries(src)) if (isRecord(v)) out[k] = v as Externals;
+  return out;
 }
 
 interface LedgerRow {
@@ -255,6 +271,8 @@ export function Prepay() {
 
   const [selected, setSelected] = useState<PrepayCompany | null>(null);
   const [rmveSyncing, setRmveSyncing] = useState(false);
+  const [externalsSyncing, setExternalsSyncing] = useState(false);
+  const externalsToken = useRef(0); // bumps on every list (re)fetch — stales in-flight externals
 
   // Non-reactive lazy-RMVE bookkeeping (kept off render state so patching it can't re-trigger the
   // enrichment effect — mirrors the widget's created() fields).
@@ -267,13 +285,16 @@ export function Prepay() {
   const load = useLoad<BillingPrepayCompanies>(() => {
     const r = appliedRange;
     if (!r) return Promise.resolve<BillingPrepayCompanies>({});
-    return freshRef.current
-      ? billingTouchpoint('billing.prepay.companies', { startDate: r.startDate, endDate: r.endDate, fresh: '1' })
-      : billingTouchpoint('billing.prepay.companies', { startDate: r.startDate, endDate: r.endDate });
+    // Composed in mytrion-ops (DWH + PG + servercrm externals); always fresh (no cache).
+    return fetchPrepayCompanies(r.startDate, r.endDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appliedRange?.startDate, appliedRange?.endDate, freshTick]);
 
   const loading = load.loading;
+  // While EFS-RMVE or the deferred externals batch are in flight, the loaded/payments/difference
+  // are still being computed — show a skeleton in those cells instead of interim numbers so users
+  // don't read half-calculated values as final.
+  const enriching = rmveSyncing || externalsSyncing;
 
   // Sync fetched rows into local state (kept mutable so RMVE enrichment can patch rows in place).
   useEffect(() => {
@@ -284,6 +305,7 @@ export function Prepay() {
     // patch the new rows. Explicit Refresh → the visible page's RMVE recomputes fresh too.
     rmveChecked.current = {};
     rmveToken.current += 1;
+    externalsToken.current += 1;
     listRange.current = appliedRange;
     // Carry the just-used fetch-fresh flag over to the enrichment batch, then consume it — so an
     // explicit Refresh recomputes the visible page's EFS RMVE live, while page turns use the cache.
@@ -347,18 +369,7 @@ export function Prepay() {
     setRmveSyncing(true);
     void (async () => {
       try {
-        const res = useFresh
-          ? await billingTouchpoint('billing.prepay.rmve', {
-              carrierIds: targets.join(','),
-              startDate: range.startDate,
-              endDate: range.endDate,
-              fresh: '1',
-            })
-          : await billingTouchpoint('billing.prepay.rmve', {
-              carrierIds: targets.join(','),
-              startDate: range.startDate,
-              endDate: range.endDate,
-            });
+        const res = await fetchPrepayRmve(targets.join(','), range.startDate, range.endDate, useFresh);
         if (token !== rmveToken.current) return; // list was refetched meanwhile
         const map = extractRmveMap(res);
         setCompanies((prev) => {
@@ -386,6 +397,50 @@ export function Prepay() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paginated]);
+
+  // Deferred externals (EFS money codes + Zoho Maintenance + CMP Stripe) — the slow ~7s source split
+  // out of the companies endpoint so the list shows fast. Fired ONCE per list load (account-wide,
+  // not per-page), then patched into every row: money_code/maintenance recompute `loaded`, stripe
+  // adds into `payments`. Token-guarded so a stale batch can't patch a newer list.
+  useEffect(() => {
+    if (!load.data) return;
+    const range = listRange.current;
+    if (!range) return;
+    const token = externalsToken.current;
+    let cancelled = false;
+    setExternalsSyncing(true);
+    void (async () => {
+      try {
+        const res = await fetchPrepayExternals(range.startDate, range.endDate);
+        if (token !== externalsToken.current) return; // list was refetched meanwhile
+        const map = extractExternalsMap(res);
+        setCompanies((prev) => {
+          let changed = false;
+          const next = prev.map((c) => {
+            const e = map[c.carrierId];
+            if (!e) return c;
+            const moneyCode = round2(toNum(e.money_code));
+            const maintenance = round2(toNum(e.maintenance));
+            const stripe = round2(toNum(e.stripe));
+            if (moneyCode === 0 && maintenance === 0 && stripe === 0) return c;
+            changed = true;
+            const loaded = round2(c.topUp - c.rmve + maintenance + moneyCode);
+            const payments = round2(c.payments + stripe); // base excludes stripe; add once (token-guarded)
+            return { ...c, moneyCode, maintenance, loaded, payments, difference: round2(loaded - payments) };
+          });
+          return changed ? next : prev;
+        });
+      } catch {
+        // Externals failed → keep the DWH+PG baseline (money_code/maintenance/stripe = 0).
+      } finally {
+        if (token === externalsToken.current && !cancelled) setExternalsSyncing(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load.data]);
 
   const rangeLabel = useMemo(() => {
     if (dateMode === 'custom') return customStart && customEnd ? `${customStart} → ${customEnd}` : 'custom';
@@ -517,13 +572,17 @@ export function Prepay() {
           <div className="db-kpi-title">
             Total Loaded <span className="db-kpi-badge">{rangeLabel}</span>
           </div>
-          <div className="db-kpi-value">{fmtCurrency(kpi.totalLoaded)}</div>
+          <div className="db-kpi-value">
+            {enriching ? <span className="pp-cell-skeleton pp-cell-skeleton-lg" /> : fmtCurrency(kpi.totalLoaded)}
+          </div>
         </div>
         <div className="db-kpi-card">
           <div className="db-kpi-title">
             Total Payments <span className="db-kpi-badge">{rangeLabel}</span>
           </div>
-          <div className="db-kpi-value text-info">{fmtCurrency(kpi.totalPaid)}</div>
+          <div className="db-kpi-value text-info">
+            {enriching ? <span className="pp-cell-skeleton pp-cell-skeleton-lg" /> : fmtCurrency(kpi.totalPaid)}
+          </div>
         </div>
       </div>
 
@@ -559,8 +618,11 @@ export function Prepay() {
             </div>
             <div className="db-col-owed">
               Difference
-              {rmveSyncing ? (
-                <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}> · syncing EFS…</span>
+              {rmveSyncing || externalsSyncing ? (
+                <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+                  {' · '}
+                  {externalsSyncing ? 'syncing EFS / Stripe…' : 'syncing EFS…'}
+                </span>
               ) : null}
             </div>
           </div>
@@ -578,19 +640,29 @@ export function Prepay() {
                       ) : null}
                     </div>
                     <div className="db-col-count">
-                      <div className="db-money-muted">{fmtCurrency(c.loaded)}</div>
-                      {c.moneyCode || c.maintenance ? (
-                        <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>
-                          {c.moneyCode ? <>MC {fmtCurrency(c.moneyCode)}</> : null}
-                          {c.maintenance ? <> · Maint {fmtCurrency(c.maintenance)}</> : null}
-                        </div>
-                      ) : null}
+                      {enriching ? (
+                        <span className="pp-cell-skeleton" />
+                      ) : (
+                        <>
+                          <div className="db-money-muted">{fmtCurrency(c.loaded)}</div>
+                          {c.moneyCode || c.maintenance ? (
+                            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>
+                              {c.moneyCode ? <>MC {fmtCurrency(c.moneyCode)}</> : null}
+                              {c.maintenance ? <> · Maint {fmtCurrency(c.maintenance)}</> : null}
+                            </div>
+                          ) : null}
+                        </>
+                      )}
                     </div>
                     <div className="db-col-count">
-                      <div className="db-money-muted text-info">{fmtCurrency(c.payments)}</div>
+                      {enriching ? (
+                        <span className="pp-cell-skeleton" />
+                      ) : (
+                        <div className="db-money-muted text-info">{fmtCurrency(c.payments)}</div>
+                      )}
                     </div>
-                    <div className={`db-col-owed db-money-bold ${diffClass(c.difference)}`}>
-                      {fmtCurrency(c.difference)}
+                    <div className={`db-col-owed db-money-bold ${enriching ? '' : diffClass(c.difference)}`}>
+                      {enriching ? <span className="pp-cell-skeleton" /> : fmtCurrency(c.difference)}
                     </div>
                   </div>
                 </div>
@@ -871,12 +943,7 @@ function PrepayLedgerModal({
   );
 
   const load = useLoad<BillingPrepayLedger>(
-    () =>
-      billingTouchpoint('billing.prepay.ledger', {
-        carrierId: company.carrierId,
-        startDate: detailRange.start,
-        endDate: detailRange.end,
-      }),
+    () => fetchPrepayLedger(company.carrierId, detailRange.start, detailRange.end),
     [company.carrierId, detailRange.start, detailRange.end],
   );
 

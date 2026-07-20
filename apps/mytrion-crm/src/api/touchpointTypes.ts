@@ -541,19 +541,7 @@ export interface TouchpointMap {
   'billing.debtors.list': { params: { fresh?: '0' | '1' }; result: BillingDebtorsResult };
   'billing.datacenter.avgDays': { params: { carrierId: string }; result: Record<string, unknown> };
   'billing.carrier.type': { params: { carrierId: string }; result: Record<string, unknown> };
-  // Prepay (Phase 2)
-  'billing.prepay.companies': {
-    params: { startDate: string; endDate: string; fresh?: '0' | '1' };
-    result: BillingPrepayCompanies;
-  };
-  'billing.prepay.rmve': {
-    params: { carrierIds: string; startDate: string; endDate: string; fresh?: '0' | '1' };
-    result: Record<string, unknown>;
-  };
-  'billing.prepay.ledger': {
-    params: { carrierId: string; startDate: string; endDate: string };
-    result: BillingPrepayLedger;
-  };
+  // Prepay reads migrated to PG-backed REST (/v1/billing/prepay/*, see api/billing.ts).
 
   // ---- Retention Phase 1 (Sales Mytrion — local DB handlers) ----
   'retention.my_cases': {

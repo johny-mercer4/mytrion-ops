@@ -14,7 +14,7 @@
  * `openTx` is derived from those rows, a remote map flips the open modal to read-only for free.
  * Local writes relay to peers via broadcastMapping (backend proxy keeps the servercrm key safe).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
 import { broadcastMapping, fetchTransactions, searchTransactions } from '@/api/billing';
 import { useUserContext } from '../../context/UserContextProvider';
@@ -239,7 +239,7 @@ export function Transactions() {
     setSource('all');
     setCarrierFilter('all');
     setServerExtras(null);
-    firstPage.reload();
+    firstPage.refresh();
   }
 
   const patchRow = useCallback((recordId: string, patch: Partial<TxRow>) => {
@@ -337,8 +337,8 @@ export function Transactions() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <button className="bm-refresh-btn" onClick={reload} disabled={firstPage.loading} title="Refresh">
-            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" className={firstPage.loading ? 'spin-icon' : undefined}>
+          <button className="bm-refresh-btn" onClick={reload} disabled={firstPage.loading || firstPage.refreshing} title="Refresh">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" className={firstPage.loading || firstPage.refreshing ? 'spin-icon' : undefined}>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={REFRESH_PATH} />
             </svg>
             Refresh
@@ -357,35 +357,28 @@ export function Transactions() {
           {/* Stats banner */}
           <div className="bm-summary-banner">
             <SummaryItem
-              iconBg="var(--accent-bg)"
-              iconColor="var(--billing-accent)"
-              path="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
+              color="var(--billing-accent)"
               amount={filtered.length.toLocaleString()}
               label={resultsActive ? 'Results' : 'Loaded'}
+              sub={hasMore ? `of ${totalFetched.toLocaleString()} total` : 'all loaded'}
             />
             <SummaryItem
-              iconBg="var(--success-bg)"
-              iconColor="var(--success-text)"
-              path="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              color="var(--success-text)"
               amount={fmtCurrency(totalAmount)}
-              amountColor="var(--success-text)"
               label="Total Amount"
+              sub={resultsActive ? 'filtered' : 'this page'}
             />
             <SummaryItem
-              iconBg="var(--purple-bg)"
-              iconColor="var(--purple-text)"
-              path="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
+              color="var(--purple-text)"
               amount={String(mappedCount)}
-              amountColor="var(--purple-text)"
               label="Invoice Mapped"
+              sub={filtered.length ? `${Math.round((mappedCount / filtered.length) * 100)}%` : '—'}
             />
             <SummaryItem
-              iconBg="var(--danger-bg)"
-              iconColor="var(--danger-text)"
-              path="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+              color="var(--danger-text)"
               amount={String(unmappedCount)}
-              amountColor="var(--danger-text)"
               label="Invoice Unmapped"
+              sub="needs review"
             />
           </div>
 
@@ -425,29 +418,6 @@ export function Transactions() {
                 </option>
               ))}
             </select>
-          </div>
-
-          {/* Record count line */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 0.125rem' }}>
-            <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-              {searchResults !== null ? (
-                <>
-                  <strong style={{ color: 'var(--text-secondary)' }}>{filtered.length.toLocaleString()}</strong> search results
-                </>
-              ) : (
-                <>
-                  Showing <strong style={{ color: 'var(--text-secondary)' }}>{filtered.length.toLocaleString()}</strong> of{' '}
-                  <strong style={{ color: 'var(--text-secondary)' }}>{rows.length.toLocaleString()}</strong> loaded
-                  {hasMore ? (
-                    <>
-                      {' · '}
-                      <strong style={{ color: 'var(--billing-accent)' }}>{totalFetched.toLocaleString()}</strong> total available
-                    </>
-                  ) : null}
-                </>
-              )}
-            </span>
-            {firstPage.error ? <span style={{ fontSize: '0.6875rem', color: 'var(--danger-text)' }}>{firstPage.error}</span> : null}
           </div>
 
           {/* List */}
@@ -535,9 +505,6 @@ export function Transactions() {
                           <span className="tx-amount-value">{fmtCurrency(tx.amount)}</span>
                           <span className="tx-date-inline">{tx.time}</span>
                         </div>
-                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--text-muted)', flexShrink: 0, opacity: 0.4 }}>
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                        </svg>
                       </div>
                     ))}
                   </div>
@@ -597,28 +564,19 @@ export function Transactions() {
 }
 
 interface SummaryItemProps {
-  iconBg: string;
-  iconColor: string;
-  path: string;
+  /** Accent colour for the value + the 2px left bar (a CSS colour / var). */
+  color: string;
   amount: string;
-  amountColor?: string;
   label: string;
+  sub?: string;
 }
 
-function SummaryItem({ iconBg, iconColor, path, amount, amountColor, label }: SummaryItemProps) {
+function SummaryItem({ color, amount, label, sub }: SummaryItemProps) {
   return (
-    <div className="bm-summary-item">
-      <div className="bm-summary-icon" style={{ background: iconBg, color: iconColor }}>
-        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={path} />
-        </svg>
-      </div>
-      <div>
-        <div className="bm-summary-amount" style={amountColor ? { color: amountColor } : undefined}>
-          {amount}
-        </div>
-        <div className="bm-summary-label">{label}</div>
-      </div>
+    <div className="bm-summary-item" style={{ '--stat-color': color } as CSSProperties}>
+      <div className="bm-summary-label">{label}</div>
+      <div className="bm-summary-amount">{amount}</div>
+      {sub ? <div className="bm-summary-sub">{sub}</div> : null}
     </div>
   );
 }

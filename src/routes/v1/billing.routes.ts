@@ -14,7 +14,6 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { NotFoundError } from '../../lib/errors.js';
 import { serverCrmPost } from '../../integrations/serverCrm.js';
-import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
   applyInvoicePayment,
@@ -23,8 +22,13 @@ import {
   reverseMapping,
 } from '../../modules/billing/cmpWrites.js';
 import { fuzzyResolveCarrier } from '../../modules/billing/fuzzyCarrier.js';
+import {
+  getPrepayCompanies,
+  getPrepayExternalsBatch,
+  getPrepayLedgerProxy,
+  getPrepayRmveProxy,
+} from '../../modules/billing/prepayLedger.js';
 import { toCandidateWire, toReturnWire, toTxWire } from '../../modules/billing/wire.js';
-import { resolveWritePayload } from '../../modules/customerService/fieldResolver.js';
 import { carrierMemoryRepo } from '../../repos/carrierMemoryRepo.js';
 import { paymentReturnRepo } from '../../repos/paymentReturnRepo.js';
 import { paymentTransactionRepo } from '../../repos/paymentTransactionRepo.js';
@@ -112,16 +116,6 @@ const fuzzyBody = z.object({
   email: z.string().max(200).optional(),
 });
 
-/** Data Center billing edit — exact widget allowlist (datacenter-panel.js edit modal). */
-const dealBillingBody = z
-  .object({
-    Payment_Type_Billing: z.string().max(60).nullable().optional(),
-    Billing_Cycle: z.string().max(60).nullable().optional(),
-    Billing_Verification: z.union([z.string().max(60), z.boolean()]).nullable().optional(),
-  })
-  .strict()
-  .refine((v) => Object.keys(v).length > 0, 'no billing fields supplied');
-
 const idParam = z.object({ id: z.string().regex(/^\d+$/, 'id must be a CRM record id').max(60) });
 
 export async function billingRoutes(app: FastifyInstance): Promise<void> {
@@ -173,6 +167,39 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     requireBillingAccess(request);
     const rows = await carrierMemoryRepo.list();
     return { data: rows.map((m) => ({ companyName: m.companyName, carrierId: m.carrierId })) };
+  });
+
+  // ─── Prepay (mytrion-ops-owned): companies composed here from DWH + PG +
+  //     servercrm externals; per-carrier ledger + EFS RMVE proxied to servercrm. ──
+  const prepayRange = z.object({ startDate: z.string().min(8), endDate: z.string().min(8) });
+
+  /** Prepay companies list (DWH companies + loads/draws, PG payments, servercrm externals). */
+  app.get('/billing/prepay/companies', guard, async (request) => {
+    requireBillingAccess(request);
+    const q = prepayRange.parse(request.query);
+    return getPrepayCompanies(q);
+  });
+
+  /** Deferred prepay externals (EFS money codes + Zoho Maintenance + CMP Stripe) — the slow source,
+   *  fetched in the background by the frontend after the companies list renders. */
+  app.get('/billing/prepay/externals', guard, async (request) => {
+    requireBillingAccess(request);
+    const q = prepayRange.parse(request.query);
+    return getPrepayExternalsBatch(q.startDate, q.endDate);
+  });
+
+  /** Per-carrier daily reconciliation ledger (modal) — proxied to servercrm. */
+  app.get('/billing/prepay/ledger', guard, async (request) => {
+    requireBillingAccess(request);
+    const q = prepayRange.extend({ carrierId: z.string().min(1) }).parse(request.query);
+    return getPrepayLedgerProxy(q.carrierId, q.startDate, q.endDate);
+  });
+
+  /** EFS RMVE batch for the visible page — proxied to servercrm (EFS lives server-side). */
+  app.get('/billing/prepay/rmve', guard, async (request) => {
+    requireBillingAccess(request);
+    const q = prepayRange.extend({ carrierIds: z.string().min(1), fresh: z.string().optional() }).parse(request.query);
+    return getPrepayRmveProxy(q.carrierIds, q.startDate, q.endDate, q.fresh === '1' || q.fresh === 'true');
   });
 
   /** Fuzzy carrier suggestion from a payer name / bank descriptor (DWH roster + PG memory). */
@@ -353,26 +380,6 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     if (isJunkCompanyName(b.companyName)) return { status: 'success', skipped: true };
     const { created } = await carrierMemoryRepo.insertDedup({ companyName: b.companyName, carrierId: b.carrierId, createdBy: actor(ctx) });
     return { status: 'success', created };
-  });
-
-  /** Data Center billing-fields edit on a Deal (allowlisted, casing-resolved, audited). */
-  app.post('/billing/data-center/deals/:id', guard, async (request) => {
-    const ctx = requireBillingAccess(request);
-    const { id } = idParam.parse(request.params);
-    const body = dealBillingBody.parse(request.body);
-    const resolved = await resolveWritePayload(
-      'Deals',
-      Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined)),
-    );
-    await zohoCrmRecords.updateRecord('Deals', id, resolved);
-    await auditFromContext(ctx, {
-      action: 'billing.datacenter.deal_update',
-      status: 'ok',
-      resourceType: 'crm_deal',
-      resourceId: id,
-      detail: { fields: Object.keys(resolved) },
-    });
-    return { id, updatedFields: Object.keys(resolved) };
   });
 
   /**
