@@ -271,7 +271,17 @@ export function Debtors() {
                       </span>
                     </div>
                     <div className="db-col-age">
-                      <span className={`db-age-text${debtor.isHard ? ' text-danger' : ''}`}>{debtor.age}d</span>
+                      <div className="db-age-cell">
+                        <span className={`db-age-text${debtor.isHard ? ' text-danger' : ''}`}>{debtor.age}d</span>
+                        <div className="db-age-bar">
+                          <div
+                            style={{
+                              width: `${Math.min(Math.round((debtor.age / 31) * 100), 100)}%`,
+                              background: debtor.isHard ? 'var(--danger-text)' : 'var(--warning-text)',
+                            }}
+                          />
+                        </div>
+                      </div>
                     </div>
                     <div className="db-col-count db-count-text">{debtor.invoiceCount}</div>
                     <div className="db-col-owed db-money-muted">{fmtCurrency(debtor.totalOwed)}</div>

@@ -372,12 +372,35 @@
 
 .bm-root .db-age-text {
     font-size: 0.75rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
     color: var(--text-secondary);
+    flex-shrink: 0;
+    min-width: 34px;
 }
 
 .bm-root .db-age-text.text-danger {
     color: var(--danger-text);
     font-weight: 700;
+}
+
+/* ── Oldest-debt age progress bar (design parity) ── */
+.bm-root .db-age-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.bm-root .db-age-bar {
+    flex: 1;
+    height: 5px;
+    background: var(--border-light);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.bm-root .db-age-bar > div {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 200ms ease;
 }
 
 .bm-root .db-count-text {
