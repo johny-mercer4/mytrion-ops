@@ -1,7 +1,7 @@
 /**
- * The inbox feed is still demo-seeded (no backend notification stream yet). The 7 self-service
- * sheets (balance, transactions, invoices, payment, last-used, tracking) now fetch real data via
- * `lib/api.ts` — see `ActionSheet` in App.tsx.
+ * Inbox item shape. The feed is now backend-driven (news + notifications via `lib/api.ts` →
+ * `fetchInboxFeed`); the demo seed was removed so a fresh account shows a real, empty inbox rather
+ * than fabricated rows. These types stay here because both App.tsx and InboxTab consume them.
  */
 import type { IconName } from '../components/icons';
 
@@ -32,18 +32,4 @@ export interface InboxItem {
   /** Minutes since the notification fired — ground truth for date sorting; `atKey`/`atN` are display-only. */
   minutesAgo: number;
   unread: boolean;
-}
-
-export function seedInbox(isDriver: boolean, ownCard: string, company: string): InboxItem[] {
-  if (isDriver) {
-    return [
-      { id: 'n1', category: 'notifications', icon: 'card', color: 'var(--success)', titleKey: 'inbox.cardActivated.title', bodyKey: 'inbox.cardActivated.body', bodyParams: { card: ownCard }, atKey: 'time.hour', atN: 2, minutesAgo: 120, unread: true },
-      { id: 'n2', category: 'notifications', icon: 'pin', color: null, titleKey: 'inbox.cardDelivered.title', bodyKey: 'inbox.cardDelivered.body', bodyParams: { company }, atKey: 'time.yesterday', minutesAgo: 1440, unread: false },
-    ];
-  }
-  return [
-    { id: 'n1', category: 'notifications', icon: 'doc', color: null, titleKey: 'inbox.newInvoice.title', bodyKey: 'inbox.newInvoice.body', atKey: 'time.hour', atN: 1, minutesAgo: 60, unread: true },
-    { id: 'n2', category: 'notifications', icon: 'clock', color: 'var(--destructive)', titleKey: 'inbox.paymentDue.title', bodyKey: 'inbox.paymentDue.body', atKey: 'time.hour', atN: 3, minutesAgo: 180, unread: true },
-    { id: 'n3', category: 'notifications', icon: 'check', color: 'var(--success)', titleKey: 'inbox.paymentReceived.title', bodyKey: 'inbox.paymentReceived.body', atKey: 'time.yesterday', minutesAgo: 1440, unread: false },
-  ];
 }

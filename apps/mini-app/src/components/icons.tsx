@@ -61,6 +61,7 @@ export type IconName =
   | 'sort'
   | 'checkcheck'
   | 'maximize'
+  | 'search'
   | 'copy';
 
 const ICONS: Record<IconName, LucideIcon> = {
@@ -87,6 +88,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   sort: ArrowUpDown,
   checkcheck: CheckCheck,
   maximize: Maximize2,
+  search: Search,
   copy: Copy,
 };
 

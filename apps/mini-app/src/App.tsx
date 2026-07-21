@@ -47,7 +47,7 @@ import { getStoredTheme, initTheme, setTheme, type Theme } from './lib/theme';
 import { LANGUAGES, useI18n } from './lib/i18n';
 import { LogoLockup } from './components/logo';
 import { BackChevron, Chevron, EyeToggle, Icon, SearchGlyph, type IconName } from './components/icons';
-import { seedInbox, type InboxItem } from './lib/demo';
+import { type InboxItem } from './lib/demo';
 import {
   fetchInboxFeed,
   inboxRealtimeUrl,
@@ -265,6 +265,65 @@ function Spinner({ size = 34, color = 'var(--primary)' }: { size?: number; color
         animation: 'octspin .8s linear infinite',
       }}
     />
+  );
+}
+
+/**
+ * A single calm placeholder bar, reusing the shared `octskeleton` shimmer. Content areas whose
+ * eventual shape is known get one of these instead of a centered spinner, so the layout lands in
+ * place rather than snapping in after a spin. Never paired with a spinner for the same load.
+ */
+function Skeleton({ w = '100%', h = 14, r = 8, bg = 'var(--secondary)', style }: { w?: number | string; h?: number | string; r?: number; bg?: string; style?: CSSProperties }) {
+  return <span aria-hidden style={{ display: 'block', width: w, height: h, borderRadius: r, background: bg, animation: 'octskeleton 1.3s ease-in-out infinite', ...style }} />;
+}
+
+/**
+ * Loading placeholder for a service sheet, shaped to roughly match what the fetch will paint —
+ * summary tiles for the money views, a header + fields for the editors, a list card for the rest —
+ * so the sheet doesn't reflow when the data lands.
+ */
+function SheetSkeleton({ service }: { service: string | null }) {
+  const tile = (key: number) => (
+    <div key={key} style={{ background: 'var(--secondary)', borderRadius: 14, padding: '13px 14px' }}>
+      <Skeleton w={64} h={11} bg="var(--border)" />
+      <Skeleton w={88} h={20} bg="var(--border)" style={{ marginTop: 8 }} />
+    </div>
+  );
+  const listCard = (
+    <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 14px', borderBottom: i === 4 ? 'none' : '1px solid var(--border)' }}>
+          <Skeleton w={120} h={13} bg="var(--border)" />
+          <span style={{ flex: 1 }} />
+          <Skeleton w={52} h={13} bg="var(--border)" />
+        </div>
+      ))}
+    </div>
+  );
+  if (service === 'balance') {
+    return <div aria-busy="true" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{[0, 1, 2, 3].map(tile)}</div>;
+  }
+  if (service === 'funds') {
+    return <div aria-busy="true"><Skeleton h={128} r={16} /></div>;
+  }
+  if (service === 'moneycode' || service === 'pinunit') {
+    return (
+      <div aria-busy="true">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>{[0, 1].map(tile)}</div>
+        <Skeleton h={44} r={11} style={{ marginBottom: 10 }} />
+        <Skeleton h={44} r={11} style={{ marginBottom: 10 }} />
+        <Skeleton h={46} r={12} />
+      </div>
+    );
+  }
+  // List-based sheets (status, txns, invoices, last-used, payment, card ops, tracking). The money
+  // views carry a summary strip above the list; keep it in the skeleton so the list doesn't jump up.
+  const withSummary = service === 'status' || service === 'txns' || service === 'invoices';
+  return (
+    <div aria-busy="true">
+      {withSummary && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>{[0, 1].map(tile)}</div>}
+      {listCard}
+    </div>
   );
 }
 
@@ -1157,8 +1216,8 @@ function Home({
   );
 }
 
-function SectionLabel({ children }: { children: ReactNode }) {
-  return <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.09em', textTransform: 'uppercase', color: 'var(--muted-fg)', margin: '0 2px 11px' }}>{children}</div>;
+function SectionLabel({ children, noMargin = false }: { children: ReactNode; noMargin?: boolean }) {
+  return <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.09em', textTransform: 'uppercase', color: 'var(--muted-fg)', margin: noMargin ? 0 : '0 2px 11px' }}>{children}</div>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -1307,9 +1366,19 @@ function FleetView({
       </div>
 
       {loading && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '64px 16px', color: 'var(--muted-fg)' }}>
-          <Spinner size={26} />
-          <span style={{ fontSize: 14 }}>{t('fleet.loading')}</span>
+        // Skeleton, not a spinner: the roster's shape is known, so it fills in place. Mirrors the
+        // real row (icon square, two text lines, status pill) so nothing shifts when cards land.
+        <div aria-busy="true" aria-label={t('fleet.loading')} style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 24, overflow: 'hidden' }}>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 15px', minHeight: 64, borderBottom: i === 5 ? 'none' : '1px solid var(--border)' }}>
+              <Skeleton w={44} h={44} r={13} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Skeleton w={120} h={15} />
+                <Skeleton w={90} h={12} style={{ marginTop: 7 }} />
+              </div>
+              <Skeleton w={64} h={24} r={9} />
+            </div>
+          ))}
         </div>
       )}
       {!loading && loadError && (
@@ -1576,7 +1645,6 @@ function ProfileSheet({
       .catch(() => { /* the section just stays hidden — not worth an error state in a profile sheet */ });
     return () => { cancelled = true; };
   }, [isOwner, initData]);
-  const cityLine = details ? [details.city, details.state, details.zip].filter(Boolean).join(', ') : '';
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'rgba(0,0,0,.42)', animation: 'octfade .2s ease' }} />
@@ -1602,34 +1670,28 @@ function ProfileSheet({
         </div>
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 20px calc(34px + env(safe-area-inset-bottom))' }}>
 
-        {isOwner && details && (
+        {isOwner && (
           <>
             <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 9 }}>{t('menu.company')}</div>
             <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden', marginBottom: 20 }}>
-              {/* Carrier ID — copyable, the one field an owner most often needs to quote to support. */}
-              <button type="button" className="press" onClick={() => onCopy(details.carrierId, t('toast.carrierIdCopied'))} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontFamily: "'Geist'", textAlign: 'left' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.carrierId')}</div>
-                  <div className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{details.carrierId}</div>
-                </div>
-                <Icon name="copy" size={15} strokeWidth={2} className="" />
-              </button>
-              {details.email && (
-                <div style={{ padding: '12px 14px', borderBottom: cityLine || details.address || details.phone ? '1px solid var(--border)' : 'none' }}>
-                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.email')}</div>
-                  <div className="selectable" style={{ fontSize: 14, fontWeight: 500, color: 'var(--fg)', marginTop: 2, wordBreak: 'break-all' }}>{details.email}</div>
-                </div>
-              )}
-              {details.phone && (
-                <div style={{ padding: '12px 14px', borderBottom: cityLine || details.address ? '1px solid var(--border)' : 'none' }}>
-                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.phone')}</div>
-                  <div className="selectable" style={{ fontSize: 14, fontWeight: 500, color: 'var(--fg)', marginTop: 2 }}>{details.phone}</div>
-                </div>
-              )}
-              {(details.address || cityLine) && (
-                <div style={{ padding: '12px 14px' }}>
-                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.address')}</div>
-                  <div className="selectable" style={{ fontSize: 14, fontWeight: 500, color: 'var(--fg)', marginTop: 2, lineHeight: 1.4 }}>{[details.address, cityLine].filter(Boolean).join('\n')}</div>
+              {/* Carrier ID — the only company field an owner needs here (to quote to support).
+                  Copyable once loaded; a shimmer holds the row height until the fetch lands, so the
+                  sheet does not jump. Email/phone/address were dropped per product: too much for a
+                  profile menu, and none of it is actionable from here. */}
+              {details ? (
+                <button type="button" className="press" onClick={() => onCopy(details.carrierId, t('toast.carrierIdCopied'))} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: "'Geist'", textAlign: 'left' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.carrierId')}</div>
+                    <div className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{details.carrierId}</div>
+                  </div>
+                  <Icon name="copy" size={15} strokeWidth={2} className="" />
+                </button>
+              ) : (
+                <div aria-busy="true" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.carrierId')}</div>
+                    <div style={{ width: 128, height: 16, borderRadius: 6, marginTop: 4, background: 'var(--border)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
+                  </div>
                 </div>
               )}
             </div>
@@ -1735,6 +1797,7 @@ function ActionSheet({
   onSendGeneric,
   onOverrideDone,
   overrideUntil,
+  onSwitchAction,
 }: {
   target: OpenAction;
   session: Session;
@@ -1746,11 +1809,18 @@ function ActionSheet({
   onOverrideDone: (until: number) => void;
   /** Active override window end — the sheet shows "already open" instead of a second button. */
   overrideUntil: number | null;
+  /** Diagnosis→fix jumps (e.g. funds sheet's Hold verdict → override sheet in one tap). */
+  onSwitchAction?: ((target: OpenAction) => void) | undefined;
 }) {
   const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  /** Bumped by the error-state Retry button to force the load effect to re-run the same fetch. */
+  const [attempt, setAttempt] = useState(0);
   const [data, setData] = useState<SheetData | null>(null);
+  /** Account-status card filter (owner fleets run to hundreds of cards; the list needs a search
+   *  rather than a truncated "+N more" dead end). Digits-only match on the card number. */
+  const [cardQuery, setCardQuery] = useState('');
   const [range, setRange] = useState<TxnRange>('month');
   const [invRange, setInvRange] = useState<InvoiceRange>('last_30');
   // Lazy init, and relative to TODAY: these were literal dates ('2026-06-01'/'2026-07-09'), so the
@@ -1929,7 +1999,7 @@ function ActionSheet({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target, dwhRange, invRange, from, to, txnCardSel]);
+  }, [target, dwhRange, invRange, from, to, txnCardSel, attempt]);
 
   // The card-filter chips need the fleet list; owners only, fetched once per sheet mount.
   useEffect(() => {
@@ -2052,16 +2122,19 @@ function ActionSheet({
         </div>
         <div style={{ flex: 1, overflow: 'auto', padding: '14px 20px 30px', minHeight: 150 }}>
           {loading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: '44px 0' }}>
-              <Spinner size={30} />
-              <div style={{ fontSize: 13, color: 'var(--muted-fg)' }}>{t('sheet.fetching', { what: sheetTitle.toLowerCase() })}</div>
-            </div>
+            <SheetSkeleton service={service} />
           ) : loadError ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '34px 10px', textAlign: 'center' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '34px 10px', textAlign: 'center' }}>
               <span style={{ width: 44, height: 44, borderRadius: 13, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'color-mix(in srgb, var(--destructive) 14%, transparent)', color: 'var(--destructive)' }}>
                 <CircleAlert size={22} strokeWidth={2} aria-hidden />
               </span>
               <div style={{ fontSize: 14, color: 'var(--muted-fg)', lineHeight: 1.5 }}>{loadError}</div>
+              {/* A dead-end error screen left closing the app as the only way out. The load effect
+                  keys on `attempt`, so bumping it re-runs the same fetch in place. */}
+              <button type="button" className="press" onClick={() => { haptic('tap'); setAttempt((n) => n + 1); }} style={{ display: 'flex', alignItems: 'center', gap: 7, height: 42, border: 'none', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: 'pointer', padding: '0 16px' }}>
+                <Icon name="refresh" size={15} strokeWidth={2.2} className="" />
+                {t('common.retry')}
+              </button>
             </div>
           ) : data?.kind === 'balance' ? (
             (() => {
@@ -2115,6 +2188,18 @@ function ActionSheet({
                       ⚠ {t('funds.cardIssue').replace('{status}', f.cardStatus ?? '')}
                     </div>
                   )}
+                  {/* Diagnosis → fix in ONE TAP: a held card's answer isn't a warning, it's the
+                      override button (322 "card not working" asks; the fix was always one action away). */}
+                  {cardIssue && session.isDriver && onSwitchAction && (f.cardStatus ?? '').toLowerCase().includes('hold') && (
+                    <button
+                      type="button"
+                      className="press"
+                      onClick={() => { haptic('tap'); onSwitchAction({ kind: 'generic', key: 'drv-override-card', title: t('cat.drvOverrideCard'), request: 'override-card' }); }}
+                      style={{ width: '100%', height: 46, marginTop: 12, border: 'none', borderRadius: 12, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+                    >
+                      {t('funds.fixOverride')}
+                    </button>
+                  )}
                   {state === 'ok' && !cardIssue && f.accountActive !== false && (
                     <div style={{ fontSize: 12, color: 'var(--muted-fg)', marginTop: 12, lineHeight: 1.5 }}>{t('funds.allGood')}</div>
                   )}
@@ -2125,8 +2210,15 @@ function ActionSheet({
             (() => {
               const { overview, cards } = data.v;
               const rows = cards.data ?? [];
-              const shown = rows.slice(0, 20);
-              const extra = (cards.count ?? rows.length) - shown.length;
+              const total = cards.count ?? rows.length;
+              // Owner fleets run to hundreds of cards — the list is searchable and shows every match
+              // (the sheet body scrolls), replacing the old 20-row cap + dead "+N more" footer. A
+              // driver only ever sees their own card, so search never applies to them.
+              const cardDigits = cardQuery.replace(/\D/g, '');
+              const filtered = cardDigits
+                ? rows.filter((c) => fmt(c['card_number']).replace(/\D/g, '').includes(cardDigits))
+                : rows;
+              const showSearch = !session.isDriver && rows.length > 8;
               /**
                * The banner answers "is this active?" — and for a DRIVER that must be their own CARD,
                * not the carrier account. `overview.is_active` is the company's status; a driver's card
@@ -2184,15 +2276,41 @@ function ActionSheet({
                       </div>
                     </>
                   )}
-                  <SectionLabel>{session.isDriver ? t('status.yourCard') : t('status.cards')}</SectionLabel>
-                  {shown.length === 0 ? (
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, margin: '0 2px 11px' }}>
+                    <SectionLabel noMargin>{session.isDriver ? t('status.yourCard') : t('status.cards')}</SectionLabel>
+                    {!session.isDriver && rows.length > 0 && (
+                      <span style={{ fontSize: 12, color: 'var(--muted-fg)', fontVariantNumeric: 'tabular-nums', flex: 'none' }}>{t('status.matchCount', { shown: filtered.length, total })}</span>
+                    )}
+                  </div>
+                  {showSearch && (
+                    <div style={{ position: 'relative', marginBottom: 10 }}>
+                      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted-fg)', display: 'flex', pointerEvents: 'none' }}>
+                        <Icon name="search" size={15} strokeWidth={2} className="" />
+                      </span>
+                      <input
+                        inputMode="numeric"
+                        value={cardQuery}
+                        onChange={(e) => setCardQuery(e.target.value.replace(/\D/g, '').slice(0, 19))}
+                        placeholder={t('status.searchCards')}
+                        style={{ width: '100%', height: 42, padding: '0 38px 0 34px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, fontVariantNumeric: 'tabular-nums', outline: 'none' }}
+                      />
+                      {cardQuery && (
+                        <button type="button" onClick={() => setCardQuery('')} aria-label={t('common.clear')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 26, height: 26, borderRadius: '50%', border: 'none', background: 'var(--border)', color: 'var(--muted-fg)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                          <Icon name="x" size={12} strokeWidth={2} className="" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {rows.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '20px 4px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('status.noCards')}</div>
+                  ) : filtered.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '20px 4px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('status.noMatch')}</div>
                   ) : (
                     <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
-                      {shown.map((c, i) => {
+                      {filtered.map((c, i) => {
                         const status = fmt(c['status']);
                         return (
-                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: i === filtered.length - 1 ? 'none' : '1px solid var(--border)' }}>
                             <span className="selectable" style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {tail6(fmt(c['card_number']), null)}</span>
                             <span style={{ fontSize: 12, fontWeight: 700, color: status.toLowerCase() === 'active' ? 'var(--success)' : 'var(--destructive)' }}>{status}</span>
                           </div>
@@ -2200,9 +2318,6 @@ function ActionSheet({
                       })}
                     </div>
                   )}
-                  {/* Driver-scoped views only ever show the driver's own card — a leftover count here would
-                      just be the rest of the fleet's cards, which isn't this driver's to see. */}
-                  {!session.isDriver && extra > 0 && <div style={{ fontSize: 12, color: 'var(--muted-fg)', marginTop: 9, textAlign: 'center' }}>{t('status.moreCards', { n: extra })}</div>}
                 </>
               );
             })()
@@ -2530,7 +2645,9 @@ function ActionSheet({
               const preview = v.preview;
               const available = Number(preview?.available ?? 0);
               const eligible = preview?.eligible !== false && available > 0;
-              const reasons = Array.isArray(preview?.moneycode_reasons) && preview.moneycode_reasons.length ? preview.moneycode_reasons.map(String) : ['Fuel', 'Repair', 'Other'];
+              // Fallback mirrors the CS team's B-code vocabulary (agents sent the B-1..B-14 list 47×
+              // in chat) — the picker speaks the same words support does.
+              const reasons = Array.isArray(preview?.moneycode_reasons) && preview.moneycode_reasons.length ? preview.moneycode_reasons.map(String) : ['Fuel', 'Truck Service', 'Cash Advance', 'Towing', 'Salary', 'Parking', 'Truck Scale', 'Lumper fee', 'Other'];
               const amountNum = Number(mcAmount);
               const canDraw = eligible && Number.isFinite(amountNum) && amountNum > 0 && amountNum <= available && mcUnit.trim().length > 0 && mcReason.length > 0 && !mcBusy;
               return (
@@ -2550,9 +2667,26 @@ function ActionSheet({
                   ) : (
                     <>
                       <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('mc.amount')}</div>
-                      <input inputMode="decimal" value={mcAmount} onChange={(e) => setMcAmount(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0.00" style={{ width: '100%', height: 46, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 16, fontWeight: 700, padding: '0 14px', marginBottom: 12, fontVariantNumeric: 'tabular-nums' }} />
+                      {/* Quick amounts = the sums clients actually ask for (chat data: 100/200/300/500
+                          dominate money-code requests) — most draws become two taps + unit. */}
+                      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                        {[100, 200, 300, 500].map((v) => (
+                          <button key={v} type="button" onClick={() => { haptic('tap'); setMcAmount(String(v)); }} style={{ flex: 1, height: 36, borderRadius: 10, border: 'none', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: 'pointer', fontVariantNumeric: 'tabular-nums', background: mcAmount === String(v) ? 'var(--primary)' : 'var(--secondary)', color: mcAmount === String(v) ? '#FFFFFF' : 'var(--muted-fg)' }}>{'$' + v}</button>
+                        ))}
+                      </div>
+                      {(() => {
+                        const over = mcAmount.length > 0 && Number.isFinite(amountNum) && amountNum > available;
+                        return (
+                          <>
+                            <input inputMode="decimal" value={mcAmount} onChange={(e) => setMcAmount(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0.00" style={{ width: '100%', height: 46, borderRadius: 12, border: `1px solid ${over ? 'var(--destructive)' : 'var(--border)'}`, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 16, fontWeight: 700, padding: '0 14px', marginBottom: over ? 6 : 12, fontVariantNumeric: 'tabular-nums' }} />
+                            {/* The Draw button just greyed out when the amount ran over — this says why,
+                                and names the ceiling so the fix is one tap on a quick-amount. */}
+                            {over && <div style={{ fontSize: 12.5, color: 'var(--destructive)', marginBottom: 12, lineHeight: 1.45 }}>{t('mc.max', { max: money(available) })}</div>}
+                          </>
+                        );
+                      })()}
                       <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('mc.unit')}</div>
-                      <input value={mcUnit} onChange={(e) => setMcUnit(e.target.value)} placeholder="1656" style={{ width: '100%', height: 46, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 15, padding: '0 14px', marginBottom: 12 }} />
+                      <input value={mcUnit} inputMode="numeric" onChange={(e) => setMcUnit(e.target.value)} placeholder="1656" style={{ width: '100%', height: 46, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 15, padding: '0 14px', marginBottom: 12 }} />
                       <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('mc.reason')}</div>
                       <div className="hscroll" style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
                         {reasons.map((r) => (
@@ -2602,9 +2736,9 @@ function ActionSheet({
                     </span>
                   </div>
                   <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('pu.unit')}</div>
-                  <input value={puUnit} onChange={(e) => setPuUnit(e.target.value)} placeholder="4031" style={inputStyle} />
+                  <input value={puUnit} inputMode="numeric" onChange={(e) => setPuUnit(e.target.value)} placeholder="4031" style={inputStyle} />
                   <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('pu.driverId')}</div>
-                  <input value={puDriverId} onChange={(e) => setPuDriverId(e.target.value)} placeholder="2605" style={inputStyle} />
+                  <input value={puDriverId} inputMode="numeric" onChange={(e) => setPuDriverId(e.target.value)} placeholder="2605" style={inputStyle} />
                   <button
                     type="button"
                     className="press"
@@ -2720,9 +2854,9 @@ function ActionSheet({
                     </button>
                   </div>
                   <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('co.unitDriver')}</div>
-                  <input value={coUnit} onChange={(e) => setCoUnit(e.target.value)} placeholder={t('co.unitNumber')} style={inputStyle} />
+                  <input value={coUnit} inputMode="numeric" onChange={(e) => setCoUnit(e.target.value)} placeholder={t('co.unitNumber')} style={inputStyle} />
                   <input value={coDriverName} onChange={(e) => setCoDriverName(e.target.value)} placeholder={t('co.driverName')} style={inputStyle} />
-                  <input value={coDriverId} onChange={(e) => setCoDriverId(e.target.value)} placeholder={t('co.driverId')} style={inputStyle} />
+                  <input value={coDriverId} inputMode="numeric" onChange={(e) => setCoDriverId(e.target.value)} placeholder={t('co.driverId')} style={inputStyle} />
                   <button type="button" className="press" disabled={coBusy !== null || !(coUnit.trim() || coDriverName.trim() || coDriverId.trim())} onClick={() => doOp('info', () => updateCardInfo(initData, coCard.cardId ?? '', { ...(coUnit.trim() ? { unitNumber: coUnit.trim() } : {}), ...(coDriverName.trim() ? { driverName: coDriverName.trim() } : {}), ...(coDriverId.trim() ? { driverId: coDriverId.trim() } : {}) }), t('co.infoDone'))} style={{ ...opBtn('var(--primary)', '#FFFFFF'), width: '100%', marginTop: 2 }}>
                     {coBusy === 'info' ? <Spinner size={15} color="#FFFFFF" /> : t('co.save')}
                   </button>
@@ -2870,11 +3004,6 @@ function ActionSheet({
               {exportBusy ? t('txns.sendingReport') : t('txns.exportToTelegram')}
             </div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-              {!session.isDriver && (
-                <button type="button" className="press" onClick={() => { haptic('tap'); setExportRetail((v) => !v); }} style={{ flex: 1, height: 34, borderRadius: 9, fontFamily: "'Geist'", fontWeight: 600, fontSize: 12, cursor: 'pointer', background: exportRetail ? 'var(--primary)' : 'var(--secondary)', color: exportRetail ? '#FFFFFF' : 'var(--muted-fg)', border: 'none' }}>
-                  {t('txns.retailOnly')}
-                </button>
-              )}
               <button type="button" className="press" onClick={() => { haptic('tap'); setExportDetailed((v) => !v); }} style={{ flex: 1, height: 34, borderRadius: 9, fontFamily: "'Geist'", fontWeight: 600, fontSize: 12, cursor: 'pointer', background: exportDetailed ? 'var(--primary)' : 'var(--secondary)', color: exportDetailed ? '#FFFFFF' : 'var(--muted-fg)', border: 'none' }}>
                 {t('txns.detailedCols')}
               </button>
@@ -3073,15 +3202,16 @@ export function App() {
       pinnedInit.current = true;
       setPinned(loadStoredPinned() ?? defaultPinned(session.isDriver));
     }
-    // REAL inbox: news + this user's notification slice. The demo seed remains only as the
-    // no-backend preview fallback (and for sessions whose fetch fails) — same as other sheets.
+    // REAL inbox: news + this user's notification slice. No demo seed — a fresh account with no
+    // backend rows shows an empty inbox (correct), and a failed fetch leaves whatever was already
+    // there rather than inventing fake notifications.
     let cancelled = false;
     fetchInboxFeed(initData)
       .then((feed) => {
         if (!cancelled) setInbox(feedToInbox(feed, lang, t));
       })
       .catch(() => {
-        if (!cancelled) setInbox((i) => (i.length ? i : seedInbox(session.isDriver, session.ownCard, company)));
+        /* keep the current inbox; never fabricate seed rows */
       });
     return () => {
       cancelled = true;
@@ -3467,6 +3597,7 @@ export function App() {
           onSendGeneric={sendGenericRequest}
           onOverrideDone={markOverride}
           overrideUntil={overrideUntil}
+          onSwitchAction={setOpenAction}
         />
       )}
       <Toast toast={toast} />
