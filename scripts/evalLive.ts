@@ -101,8 +101,10 @@ async function runTask(
 
   let result: AgentTurnResult | undefined;
   let costUsd = 0;
+  let durationMs = 0;
   let conversationId: string | undefined;
   for (const turn of task.turns) {
+    const turnStart = Date.now();
     result = await withTimeout(
       runAgentTurn(turn, ctx, {
         ...(task.agent ? { agent: task.agent } : {}),
@@ -112,6 +114,7 @@ async function runTask(
       TASK_TIMEOUT_MS,
       task.id,
     );
+    durationMs += Date.now() - turnStart;
     conversationId = result.conversationId;
     costUsd += result.usage.totalCost;
   }
@@ -124,6 +127,8 @@ async function runTask(
     verdict: deterministic.pass ? 'pass' : 'fail',
     failures: [...deterministic.failures],
     agentPath: result.agentPath,
+    pingPongCount: result.agentPath.length > 1 ? result.agentPath.length - 1 : 0,
+    durationMs,
     toolCalls: result.toolCalls.map((t) => t.name),
     costUsd,
   };
@@ -186,7 +191,7 @@ async function main(): Promise<void> {
         if (task.requires.includes('servercrm') && !env.SERVER_CRM_URL) {
           reports.push({
             id: task.id, category: task.category, verdict: 'skip',
-            failures: [], agentPath: [], toolCalls: [], costUsd: 0,
+            failures: [], agentPath: [], pingPongCount: 0, durationMs: 0, toolCalls: [], costUsd: 0,
             note: 'SERVER_CRM_URL not configured',
           });
           return;
@@ -194,7 +199,7 @@ async function main(): Promise<void> {
         if (capTripped) {
           reports.push({
             id: task.id, category: task.category, verdict: 'skip',
-            failures: [], agentPath: [], toolCalls: [], costUsd: 0,
+            failures: [], agentPath: [], pingPongCount: 0, durationMs: 0, toolCalls: [], costUsd: 0,
             note: `suite cost cap ($${maxCost}) reached`,
           });
           return;
@@ -205,14 +210,14 @@ async function main(): Promise<void> {
           if (spentUsd > maxCost) capTripped = true;
           reports.push(report);
           logger.info(
-            { id: task.id, verdict: report.verdict, agentPath: report.agentPath, costUsd: costUsd.toFixed(4) },
+            { id: task.id, verdict: report.verdict, pingPongCount: report.pingPongCount, durationMs: report.durationMs, agentPath: report.agentPath, costUsd: costUsd.toFixed(4) },
             'task done',
           );
         } catch (err) {
           reports.push({
             id: task.id, category: task.category, verdict: 'error',
             failures: [err instanceof Error ? err.message : String(err)],
-            agentPath: [], toolCalls: [], costUsd: 0,
+            agentPath: [], pingPongCount: 0, durationMs: 0, toolCalls: [], costUsd: 0,
           });
           logger.warn({ id: task.id, err }, 'task errored');
         }

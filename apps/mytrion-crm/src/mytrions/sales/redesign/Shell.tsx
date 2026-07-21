@@ -191,15 +191,20 @@ export function SalesRedesign() {
       >
         {/* SIDEBAR */}
         <aside style={s(`flex-shrink:0;width:${navCollapsed ? '68px' : '238px'};transition:width .18s cubic-bezier(.2,0,0,1);display:flex;flex-direction:column;background:color-mix(in srgb, var(--bg) 84%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-right:1px solid var(--border);position:relative;z-index:30`)}>
-          <div style={s(`display:flex;align-items:center;gap:11px;padding:18px ${navCollapsed ? '0' : '18px'} 16px;${navCollapsed ? 'justify-content:center' : ''}`)}>
-            <div style={s('width:36px;height:36px;border-radius:var(--radius-md);background:linear-gradient(140deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(var(--accent-rgb),.4);flex-shrink:0')}>
-              <Icon name="rocket" size={20} color="#fff" />
-            </div>
+          <div style={s(`display:flex;align-items:flex-start;gap:10px;padding:20px ${navCollapsed ? '0' : '16px'} 14px;${navCollapsed ? 'justify-content:center' : ''}`)}>
             {!navCollapsed && (
               <>
-                <div style={s('line-height:1.1;min-width:0')}>
-                  <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.08em;text-transform:uppercase")}>
-                    Sales <span style={s('color:var(--accent)')}>Mytrion</span>
+                <div style={s('line-height:1.05;min-width:0;flex:1')}>
+                  <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.1em;text-transform:uppercase;color:var(--text)")}>
+                    MY<span style={s('color:var(--accent-text)')}>TRION</span>
+                  </div>
+                  <div
+                    className="ss-brand-sub"
+                    style={s(
+                      "margin-top:5px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:12px;letter-spacing:.18em;text-transform:uppercase;line-height:1.15;background:linear-gradient(105deg,var(--accent) 0%,var(--accent-2) 55%,var(--violet) 100%);-webkit-background-clip:text;background-clip:text;color:transparent",
+                    )}
+                  >
+                    Sales
                   </div>
                 </div>
                 <button onClick={toggleNav} aria-label="Collapse sidebar" title="Collapse sidebar" className="ss-ico-btn" style={s('margin-left:auto;width:28px;height:28px;flex-shrink:0;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>

@@ -92,8 +92,10 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     tag: 'Sales',
     icon: 'sales',
     blurb: 'Self-service ops — carrier balances, cards, invoices, EFS/WEX, automations.',
-    hue: 'rocket',
+    /* Loader uses var(--accent) under data-mytrion="sales" (Sales theme, not wizard --rocket). */
+    hue: 'accent',
     department: 'sales',
+
     allDepartments: false,
     // Every rep's CRM profile is "Sales Agent" (region lives in the ROLE). Substring match so any
     // "…Sales Agent…" profile lands here — and ONLY here — so they auto-enter /m/sales on login.

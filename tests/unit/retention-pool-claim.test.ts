@@ -58,6 +58,7 @@ function baseCase(overrides: Partial<RetentionCase> = {}): RetentionCase {
     companyName: 'Ironhide',
     applicationId: null,
     agentName: 'Rep',
+    contactPhone: null,
     phaseCode: 'phase_1_agent',
     statusCode: 'p1_open_pool',
     phaseChangedAt: new Date('2026-07-01T00:00:00Z'),

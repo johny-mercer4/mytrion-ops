@@ -36,7 +36,9 @@ import {
 } from './deadlines.js';
 import { MAX_OPEN_POOL_AGENTS } from './phase1.js';
 import { notifyOpenPoolOpened, notifyOpsVacationSignoff } from './notify.js';
-import { retentionPoolClaimRepo } from '../../repos/retentionPoolClaimRepo.js';
+// Dynamic-import retentionPoolClaimRepo below — a static import cycles
+// deadlineSweep → poolClaimRepo → notify (partial) and crashes boot with
+// "does not provide an export named 'notifyClaimRequestToCs'".
 
 export interface DeadlineSweepSummary {
   scanned: number;
@@ -146,6 +148,9 @@ export async function sweepRetentionDeadlines(
       type === CLAIM_APPROVE_DEADLINE_TYPE &&
       row.statusCode === 'p1_pool_claim_pending'
     ) {
+      const { retentionPoolClaimRepo } = await import(
+        '../../repos/retentionPoolClaimRepo.js'
+      );
       const approved = await retentionPoolClaimRepo.autoApproveOverdue(ctx, row);
       if (approved) {
         summary.applied += 1;

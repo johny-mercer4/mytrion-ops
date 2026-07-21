@@ -87,6 +87,7 @@ export async function syncRetentionCases(
     if (existing) {
       await retentionCaseRepo.update(ctx, String(existing.id), {
         metrics: candidateMetrics(candidate),
+        ...(candidate.contactPhone ? { contactPhone: candidate.contactPhone } : {}),
         lastSyncedAt: now,
       });
       summary.refreshed += 1;
@@ -96,6 +97,7 @@ export async function syncRetentionCases(
         companyName: candidate.companyName ?? undefined,
         applicationId: candidate.applicationId ?? undefined,
         agentName: candidate.agentName ?? undefined,
+        contactPhone: candidate.contactPhone ?? undefined,
         assignedAgentZohoUserId: candidate.agentZohoUserId ?? undefined,
         phaseCode: RETENTION_PHASE.agent,
         statusCode: RETENTION_STATUS.p1InProgress,

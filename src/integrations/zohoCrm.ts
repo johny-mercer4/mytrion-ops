@@ -9,8 +9,8 @@
  */
 import { ZohoWrapper } from './zohoBase.js';
 
-/** COQL hard limits (skill §5): max 200 rows per page, offset ≤ 100k. */
-const MAX_COQL_ROWS = 200;
+/** COQL hard limits (Zoho CRM v8): max 2000 rows per call, offset ≤ 100k. */
+const MAX_COQL_ROWS = 2000;
 
 export interface CoqlResult {
   rows: Array<Record<string, unknown>>;

@@ -83,7 +83,7 @@ const MODAL_FIELDS: ModalField[] = [
   /* ── Widget-parity display fields — read-only in the widget or not carried by the
         live view-model (uncarried values render '—'; no new API calls invented) ── */
   { field: 'Date_Filled', label: 'Date Filled', type: 'readonly', get: (a) => a.date },
-  { field: '_dealAgent', label: 'Agent (Deal)', type: 'readonly', get: (a) => a.agent },
+  { field: '_dealAgent', label: 'Agent (Deal)', type: 'readonly', get: (a) => a.agent || 'not assigned' },
   { field: 'Address', label: 'Address', type: 'readonly', get: () => null },
   { field: 'Zip_Code', label: 'Zip Code', type: 'readonly', get: () => null },
   { field: 'Oldest_Open_Date', label: 'Oldest Open Date', type: 'readonly', get: () => null },

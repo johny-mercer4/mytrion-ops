@@ -102,7 +102,7 @@
     width: 32px;
     height: 32px;
     border-radius: var(--radius-sm);
-    background: rgba(37, 99, 235, 0.08);
+    background: color-mix(in srgb, var(--cs-accent) 8%, transparent);
     color: var(--cs-accent);
     display: flex;
     align-items: center;

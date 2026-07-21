@@ -1,5 +1,5 @@
 /**
- * Customer Service shell — sidebar + content + mobile bottom nav.
+ * Customer Service shell — gold CSMYTRION chrome, sidebar + content + mobile bottom nav.
  * Retention Cases / Open Pool Claims / CITI Folder sit alongside Citifuel Clients.
  */
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
@@ -10,7 +10,7 @@ import { useTheme } from '../../hooks/useTheme';
 import { Analytics } from './Analytics';
 import { Applications } from './Applications';
 import { CitiFuel } from './CitiFuel';
-import { CsCopilot } from './CsCopilot';
+import type { CsSectionId } from './csNav';
 import { Home } from './Home';
 import { CasesPanel } from './retention/CasesPanel';
 import { ClaimsPanel } from './retention/ClaimsPanel';
@@ -19,20 +19,8 @@ import { subscribeCsRetentionLive } from './retention/retentionLiveBus';
 import { useCsRetentionRealtime } from './retention/useCsRetentionRealtime';
 import { Toast, type ToastState } from './Toast';
 
-type SectionId =
-  | 'home'
-  | 'applications'
-  | 'retention-cases'
-  | 'open-pool-claims'
-  | 'citi-folder'
-  | 'citi-fuel'
-  | 'analytics'
-  | 'data-center'
-  | 'inbox'
-  | 'service-center';
-
 interface NavDef {
-  id: SectionId;
+  id: CsSectionId;
   label: string;
   shortLabel: string;
   iconPath: string;
@@ -126,8 +114,8 @@ const NAV_ITEMS: NavDef[] = [
 
 export function CsShell() {
   const user = useUserContext();
-  const [active, setActive] = useState<SectionId>('home');
-  const [mounted, setMounted] = useState<Partial<Record<SectionId, boolean>>>({ home: true });
+  const [active, setActive] = useState<CsSectionId>('home');
+  const [mounted, setMounted] = useState<Partial<Record<CsSectionId, boolean>>>({ home: true });
   const { theme, toggle: toggleTheme } = useTheme();
   const [claimsBadge, setClaimsBadge] = useState(0);
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -169,12 +157,12 @@ export function CsShell() {
       .join('')
       .toUpperCase() || 'CS';
 
-  function navigate(id: SectionId) {
+  const navigate = useCallback((id: CsSectionId) => {
     setActive(id);
     setMounted((m) => (m[id] ? m : { ...m, [id]: true }));
-  }
+  }, []);
 
-  const panel = (id: SectionId, node: ReactNode): ReactNode =>
+  const panel = (id: CsSectionId, node: ReactNode): ReactNode =>
     mounted[id] ? (
       <div style={{ display: active === id ? 'contents' : 'none' }}>{node}</div>
     ) : null;
@@ -184,10 +172,12 @@ export function CsShell() {
       <div className="cs-body">
         <aside className="cs-sidebar">
           <div className="cs-sidebar-brand">
-            <div className="cs-brand-word">
-              My<span>trion</span>
+            <div className="cs-brand-text">
+              <div className="cs-brand-word">
+                MY<span>TRION</span>
+              </div>
+              <div className="cs-brand-sub">Customer Service</div>
             </div>
-            <div className="cs-brand-sub">Customer Service</div>
           </div>
           <nav className="cs-sidebar-nav">
             {NAV_ITEMS.map((item) => (
@@ -207,6 +197,9 @@ export function CsShell() {
                   }
                 }}
               >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d={item.iconPath} />
+                </svg>
                 <span className="nav-label">{item.label}</span>
                 {item.disabled ? <span className="nav-soon">Soon</span> : null}
                 {item.badge && claimsBadge > 0 ? (
@@ -218,6 +211,7 @@ export function CsShell() {
 
           <div className="cs-sidebar-footer">
             <button
+              type="button"
               className="cs-theme-toggle"
               onClick={toggleTheme}
               title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
@@ -255,7 +249,7 @@ export function CsShell() {
         </aside>
 
         <main className="cs-content">
-          {panel('home', <Home />)}
+          {panel('home', <Home onNavigate={navigate} claimsBadge={claimsBadge} />)}
           {panel('applications', <Applications />)}
           {panel('retention-cases', <CasesPanel />)}
           {panel('open-pool-claims', <ClaimsPanel onBadge={setClaimsBadge} />)}
@@ -265,13 +259,13 @@ export function CsShell() {
         </main>
       </div>
 
-      <CsCopilot user={user} />
       {toast ? <Toast toast={toast} onDismiss={() => setToast(null)} /> : null}
 
       <nav className="cs-bottom-nav">
         {NAV_ITEMS.filter((i) => !i.disabled).map((item) => (
           <button
             key={item.id}
+            type="button"
             className={`bottom-nav-btn${active === item.id ? ' active' : ''}`}
             onClick={() => navigate(item.id)}
           >

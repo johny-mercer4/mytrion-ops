@@ -35,7 +35,8 @@
   --blue: #3b82f6;
   --red: #ef4444;
   --green: #10b981;
-  --yellow: #eab308;
+  /* CS Mytrion / loader accent — enterprise gold (softened) */
+  --yellow: #D4B84A;
   --dark-purple: #7e22ce;
   --light-blue: #0ea5e9;
   --rocket: #f43f5e;
@@ -167,7 +168,8 @@
   --blue: #2563eb;
   --red: #dc2626;
   --green: #059669;
-  --yellow: #ca8a04;
+  /* CS Mytrion / loader accent — enterprise gold (softened, light) */
+  --yellow: #C9A227;
   --dark-purple: #4c1d95;
   --light-blue: #38bdf8;
   --rocket: #c026d3;

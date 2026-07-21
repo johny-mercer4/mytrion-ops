@@ -970,6 +970,8 @@ export interface RetentionCaseRow {
   companyName: string | null;
   applicationId: string | null;
   agentName: string | null;
+  /** Denormalized DWH phone at sync — prefer over lazy case_contact. */
+  contactPhone?: string | null;
   phaseCode: string;
   statusCode: string;
   phaseChangedAt: string;

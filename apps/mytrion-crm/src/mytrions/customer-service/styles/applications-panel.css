@@ -4,7 +4,7 @@
      • Open table — dividers only, no card chrome
      • Uppercase micro-labels for column heads & tabs
      • Status dots instead of filled badges
-     • One saturated accent: --cs-accent (royal blue)
+     • One saturated accent: --cs-accent (CSMYTRION gold)
    ===================================================== */
 
 /* ─────────────────────────────────────────────────────────────
@@ -275,12 +275,16 @@
     white-space: nowrap;
 }
 
-/* Primary ID — accent blue, reads as a link */
+/* Primary ID — muted gold link (enterprise, not neon) */
 .cs-root .cs-app-row-id {
     font-size: 0.875rem;
     font-weight: 500;
-    color: var(--cs-accent);
+    color: var(--cs-accent-deep);
     font-variant-numeric: tabular-nums;
+}
+
+.cs-root.dark-mode .cs-app-row-id {
+    color: var(--cs-accent);
 }
 
 .cs-root .cs-app-cell-copyable:hover .cs-app-row-id {
@@ -367,7 +371,7 @@
 
 .cs-root .cs-app-row td:hover .cs-cell-check:not(.is-on) .cs-cell-check-box {
     box-shadow: inset 0 0 0 1.5px var(--cs-accent);
-    color: rgba(37, 99, 235, 0.35);
+    color: color-mix(in srgb, var(--cs-accent) 35%, transparent);
 }
 
 .cs-root .cs-cell-check.is-on .cs-cell-check-box {

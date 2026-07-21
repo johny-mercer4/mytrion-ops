@@ -116,6 +116,11 @@ export const retentionCases = pgTable(
     applicationId: text('application_id'),
     /** Denormalized deal-owner display name (sync). */
     agentName: text('agent_name'),
+    /**
+     * Denormalized DWH contact phone (deal_phone → contact_phone) at sync/ingestion —
+     * so Sales modal dial is instant without a lazy warehouse round-trip.
+     */
+    contactPhone: text('contact_phone'),
 
     phaseCode: text('phase_code')
       .notNull()

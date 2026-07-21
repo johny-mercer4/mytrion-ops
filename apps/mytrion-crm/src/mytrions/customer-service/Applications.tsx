@@ -19,7 +19,7 @@ import {
 } from './ApplicationsTable';
 import { Toast, type ToastState } from './Toast';
 import type { Application } from './data';
-import { loadApplications, useLoad } from './live';
+import { invalidateApplicationsCache, loadApplications, useLoad } from './live';
 
 /** Widget parity: search fires debounced (App ID / Carrier ID / name / phone, server-side). */
 const SEARCH_DEBOUNCE_MS = 400;
@@ -53,8 +53,11 @@ export function Applications() {
     return () => clearTimeout(t);
   }, [search]);
 
-  const pageData = useLoad(() => loadApplications(subTab, query, page), [subTab, query, page]);
-  const loading = pageData.loading;
+  const pageData = useLoad(
+    (fresh) => loadApplications(subTab, query, page, fresh),
+    [subTab, query, page],
+  );
+  const loading = pageData.loading || pageData.refreshing;
 
   const rows = useMemo(() => {
     const base = pageData.data?.rows ?? [];
@@ -83,6 +86,7 @@ export function Applications() {
     setOverrides((o) => ({ ...o, [app.id]: { ...o[app.id], [prop]: next ? 1 : 0 } }));
     try {
       const res = await toggleOnboarding(app.id, field, next);
+      invalidateApplicationsCache();
       notify(res.warning ? 'info' : 'success', res.warning ?? `${field.replace(/_/g, ' ')}: ${next ? 'Yes' : 'No'}`);
     } catch (e) {
       setOverrides((o) => ({ ...o, [app.id]: { ...o[app.id], [prop]: next ? 0 : 1 } }));
@@ -177,7 +181,7 @@ export function Applications() {
               </button>
             ) : null}
           </div>
-          <button className="cs-refresh-btn" onClick={pageData.reload} disabled={loading}>
+          <button className="cs-refresh-btn" onClick={pageData.refresh} disabled={loading}>
             <svg
               width="13"
               height="13"
@@ -311,7 +315,8 @@ export function Applications() {
           onSaved={(warning) => {
             setOpenApp(null);
             notify(warning ? 'info' : 'success', warning ?? 'Saved');
-            pageData.reload();
+            invalidateApplicationsCache();
+            pageData.refresh();
           }}
         />
       ) : null}

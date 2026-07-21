@@ -360,18 +360,28 @@ html,body{height:100%;margin:0}
     border:1px solid var(--border2);
   }
   .ss-ret-card{
-    text-align:left;padding:12px 12px 11px;border-radius:var(--radius-md);
+    text-align:left;padding:12px 12px 11px 14px;border-radius:var(--radius-md);
     border:1px solid var(--border);background:var(--surface);
     cursor:pointer;display:flex;flex-direction:column;gap:7px;
-    box-shadow:var(--shadow-sm);transition:border-color .14s,box-shadow .14s;
+    /* Inset rail — avoids double border with the column frame */
+    box-shadow:var(--shadow-sm),inset 3px 0 0 var(--ret-col,var(--accent));
+    transition:border-color .14s,box-shadow .14s;
     animation:ss-up .35s cubic-bezier(.2,0,0,1) both;
   }
   .ss-ret-card:hover{
-    border-color:rgba(var(--accent-rgb),.4);
-    box-shadow:0 0 0 1px rgba(var(--accent-rgb),.1),0 8px 20px rgba(0,0,0,.18);
+    border-color:rgba(var(--accent-rgb),.35);
+    box-shadow:var(--shadow-sm),inset 3px 0 0 var(--ret-col,var(--accent)),0 6px 16px rgba(0,0,0,.12);
   }
-  .ss-ret-card.is-overdue{border-left:3px solid var(--danger)}
-  .ss-ret-card:not(.is-overdue){border-left:3px solid var(--ret-col,var(--accent))}
+  .ss-ret-card.is-overdue{
+    box-shadow:var(--shadow-sm),inset 3px 0 0 var(--danger);
+  }
+  .ss-ret-card.is-overdue:hover{
+    box-shadow:var(--shadow-sm),inset 3px 0 0 var(--danger),0 6px 16px rgba(0,0,0,.12);
+  }
+  .ss-root.light .ss-brand-sub{
+    background:linear-gradient(105deg,#1d4ed8 0%,#2563eb 48%,#6d28d9 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
   .ss-ret-pips{font-size:10px;letter-spacing:.12em;color:var(--muted);font-family:'JetBrains Mono',monospace}
   .ss-ret-empty{
     padding:52px 28px;text-align:center;border-radius:var(--radius-md);

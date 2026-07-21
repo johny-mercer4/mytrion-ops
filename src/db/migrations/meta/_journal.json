@@ -260,6 +260,13 @@
       "when": 1784661600000,
       "tag": "0036_mytrion_calls",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1784665200000,
+      "tag": "0037_retention_contact_phone",
+      "breakpoints": true
     }
   ]
 }

@@ -119,8 +119,8 @@ export const retentionTouchpoints: LocalTouchpoint[] = [
           throw new RBACError('You can only view retention cases assigned to you');
         }
       }
-      // App-DB only — DWH phone is fetched lazily via retention.case_contact (don't block open).
-      return { ...detail, contactPhone: null as string | null };
+      // Prefer denormalized phone from sync; FE falls back to retention.case_contact if null.
+      return { ...detail, contactPhone: detail.case.contactPhone ?? null };
     },
   },
 

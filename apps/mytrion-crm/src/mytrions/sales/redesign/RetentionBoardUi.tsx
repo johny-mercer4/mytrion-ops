@@ -209,10 +209,10 @@ export function RetentionCaseCard({
         </div>
         <RetentionFreqBadge f={row.transactionFrequency} />
       </div>
-      <div style={s("font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)")}>{row.carrierId}</div>
+      <div style={s("font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text2)")}>{row.carrierId}</div>
       <div
         style={s(
-          `font-size:12px;font-weight:600;color:${breachSeverity(row) > 0 ? 'var(--warn)' : 'var(--muted)'}`,
+          `font-size:12px;font-weight:600;color:${breachSeverity(row) > 0 ? 'var(--warn)' : 'var(--text2)'}`,
         )}
       >
         {quietCaption(row)}

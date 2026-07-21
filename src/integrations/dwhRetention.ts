@@ -84,6 +84,8 @@ export interface RetentionCandidate {
   applicationId: string | null;
   agentName: string | null;
   agentZohoUserId: string | null;
+  /** Prefer deal_phone, fall back to contact_phone (same as Sales roster / getDwhCompanyDetails). */
+  contactPhone: string | null;
   dealStage: string | null;
   activeCards: number | null;
   lastTransactionAt: Date | null;
@@ -102,6 +104,8 @@ interface CandidateRow {
   application_id: number | null;
   agent: string | null;
   agent_zoho_user_id: number | null;
+  deal_phone: string | null;
+  contact_phone: string | null;
   deal_stage: string | null;
   total_active_cards: number | string | null;
   last_tx: string | Date | null;
@@ -120,12 +124,14 @@ function toCandidate(row: CandidateRow, now: Date): RetentionCandidate {
   const daysInactive = lastTransactionAt ? daysSince(lastTransactionAt, now) : 90;
   const txCount90d = Number(row.tx_days_90d ?? 0);
   const { frequencyClass, thresholdDays } = classifyFrequency(txCount90d);
+  const phone = (row.deal_phone ?? row.contact_phone)?.trim() || null;
   return {
     carrierId: String(row.carrier_id),
     companyName: row.company_name,
     applicationId: row.application_id != null ? String(row.application_id) : null,
     agentName: row.agent,
     agentZohoUserId: row.agent_zoho_user_id != null ? String(row.agent_zoho_user_id) : null,
+    contactPhone: phone,
     dealStage: row.deal_stage,
     activeCards: row.total_active_cards != null ? Number(row.total_active_cards) : null,
     lastTransactionAt,
@@ -173,6 +179,7 @@ export async function scanRetentionCandidates(
      company as (
        select distinct on (carrier_id)
               carrier_id, company_name, application_id, agent, agent_zoho_user_id,
+              deal_phone, contact_phone,
               deal_stage, total_active_cards, last_transaction_date, first_swipe_date
          from octane.dim_company
         where carrier_id is not null
@@ -189,6 +196,8 @@ export async function scanRetentionCandidates(
             c.application_id,
             c.agent,
             c.agent_zoho_user_id,
+            c.deal_phone,
+            c.contact_phone,
             c.deal_stage,
             c.total_active_cards,
             greatest(tx.last_tx_90d, c.last_transaction_date) as last_tx,

@@ -139,7 +139,7 @@ export const KANBAN_COLS: Array<{
   { id: 'out_of_reach', label: 'Out of Reach', hint: '5×5 BD attempts → Pool', color: 'var(--warn)' },
   { id: 'vacation', label: 'Vacation', hint: '14d · Ops path', color: 'var(--violet)' },
   { id: 'dissatisfied', label: 'Dissatisfied', hint: '→ Retention', color: 'var(--danger)' },
-  { id: 'closed', label: 'Closed', hint: 'Returned · Pool · handoff', color: 'var(--muted)' },
+  { id: 'closed', label: 'Closed', hint: 'Returned · Pool · handoff', color: 'var(--ok)' },
 ];
 
 /** status_code → board_column (same seed as retention_statuses). */

@@ -4213,6 +4213,34 @@ Daniel Brown (Sales Agent) lands on /main/salesmytrion, gets Forbidden on /main/
 403 on admin/finance APIs; Clients modal Cards+Activity 200 under View-as; reconcile each
 agent's Zoho display name vs DWH agent name (all-zeros Home snapshot = mismatch).
 
+## 2026-07-21 — Retention Closed green + contact phone at sync
+
+- **Kanban Closed** column accent → `var(--ok)` green.
+- **contact_phone** on `retention_cases` (migration 0037); DWH scan selects
+  deal_phone/contact_phone; sync writes on create + refresh.
+- Modal uses denormalized phone instantly; skeleton loader while resolving;
+  lazy `retention.case_contact` only for older null rows.
+
+## 2026-07-21 — Sales Mytrion brand / Retention UX
+
+- **Brand:** rocket chip removed → large **MYTRION** + gradient **Sales** wordmark.
+- **Retention nav icon:** Handshake → RefreshCw (win-back / re-engage).
+- **Loader:** sales `hue` rocket→`accent`; `data-mytrion=sales` accents match `.ss-root`
+  (cyan/violet dark, blue light) — no longer wizard `--rocket` pink.
+- **Kanban cards:** left rail via inset shadow (fixes double border with column frame).
+- **New stage modal:** hide Timeline; inactivity full-width callout + meter; remove
+  “Continue to choose stage” — call only, stage after call ends.
+
+## 2026-07-21 — CS enterprise soft-pass (gold kept, chroma down)
+
+Softened CS Mytrion for all-day ops without abandoning gold:
+- **Tokens:** light `#C9A227` / dark `#D4B84A` (was neon `#FFD60A` / bright `#EAB308`);
+  quieter softs/glows; neutral slate borders (no cool-blue clash); calmer shadows.
+- **Chrome:** solid (not neon-gradient) primary buttons; soft avatars/badges; inset
+  active-nav bar; muted App IDs; quieter home hero / card hover / focus rings.
+- **Stage hues:** slightly desaturated picklist/dot palette.
+- Loader/`data-mytrion` accents aligned.
+
 ## 2026-07-21 — CS brand text, Deal-owner agent, hide copilot
 
 - **Brand:** removed sidebar icon; larger MY/TRION wordmark; “Customer Service” gold
@@ -4290,3 +4318,12 @@ error copy; POST /carrier-invitations now owner-gated for non-admins (matches th
 suites (ringcentral-call-log, data-center-routes, LeadCallWizard, sales redesign) are green.
 App `tsc` build gate still blocked by ~24 pre-existing finance/admin TS errors — bundle built
 via vite in a clean worktree as before.
+
+## 2026-07-21 (evening) — Fix retention touchpoint 500s (circular ESM import)
+
+`retention.my_cases` / `retention.pool_list` 500'd because `tsx watch` crashed on reload:
+`deadlineSweep` statically imported `retentionPoolClaimRepo`, which imports `notify`, while
+`deadlineSweep` also imports `notify` — TDZ/partial exports →
+`does not provide an export named 'notifyClaimRequestToCs'`. Broke the cycle by
+dynamic-importing `retentionPoolClaimRepo` only inside the claim-approve branch of
+`sweepRetentionDeadlines`. API restarted cleanly; routes return 401 without key (not 500).

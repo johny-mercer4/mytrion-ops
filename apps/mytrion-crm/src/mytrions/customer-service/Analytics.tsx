@@ -21,14 +21,14 @@ const SPARK_H = 60;
 const REFRESH_PATH =
   'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-14.357-2m14.357 2H15';
 
-const PALETTE = ['#2563EB', '#16A34A', '#7C3AED', '#EA580C', '#D97706', '#DC2626', '#0D9488', '#DB2777'];
+const PALETTE = ['#EAB308', '#16A34A', '#7A52C8', '#EA580C', '#D97706', '#D14B45', '#0E93B0', '#DB2777'];
 
 function labelColor(label: string, idx: number): string {
   const s = label.toLowerCase();
   if (s.includes('closed') || s.includes('resolved')) return '#16A34A';
-  if (s.includes('open')) return '#2563EB';
+  if (s.includes('open')) return '#EAB308';
   if (s.includes('hold') || s.includes('pending')) return '#F59E0B';
-  if (s.includes('escal') || s.includes('urgent') || s.includes('high')) return '#DC2626';
+  if (s.includes('escal') || s.includes('urgent') || s.includes('high')) return '#D14B45';
   return PALETTE[idx % PALETTE.length] as string;
 }
 

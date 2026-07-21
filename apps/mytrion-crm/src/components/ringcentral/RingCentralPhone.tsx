@@ -61,6 +61,11 @@ function withStylesUri(adapterUrl: string): string {
   }
 }
 
+function forceRcFrameCursor(frame: HTMLElement): void {
+  // Adapter may set grab/move inline on the host iframe — beat it with !important.
+  frame.style.setProperty('cursor', 'pointer', 'important');
+}
+
 function teardownAdapter(): void {
   clearPendingLogoutToast();
   resetRingCentralLoginState();
@@ -101,17 +106,33 @@ export function RingCentralPhone() {
 
     let cancelled = false;
 
+    // Keep host iframe cursor on pointer (vendor re-applies grab/move on the docked pill).
+    const lockCursor = (): void => {
+      const frame = document.getElementById('rc-widget-adapter-frame');
+      if (frame) forceRcFrameCursor(frame);
+    };
+
     void (async () => {
       try {
         const cfg = await fetchRingCentralEmbedConfig();
         if (cancelled || !cfg.enabled || !cfg.adapterUrl) return;
-        if (document.getElementById(RC_ADAPTER_SCRIPT_ID)) return;
+
+        const nextSrc = withStylesUri(cfg.adapterUrl);
+        const existing = document.getElementById(RC_ADAPTER_SCRIPT_ID) as HTMLScriptElement | null;
+        // Remount when cursor CSS (stylesUri) is missing from an older adapter inject.
+        if (existing) {
+          if (existing.src.includes('stylesUri=data')) {
+            lockCursor();
+            return;
+          }
+          teardownAdapter();
+        }
 
         installRcConsoleFilter();
 
         const script = document.createElement('script');
         script.id = RC_ADAPTER_SCRIPT_ID;
-        script.src = withStylesUri(cfg.adapterUrl);
+        script.src = nextSrc;
         script.async = true;
         script.onerror = () => {
           console.warn('[ringcentral] Embeddable adapter failed to load');
@@ -150,10 +171,31 @@ export function RingCentralPhone() {
       }, LOGOUT_TOAST_GRACE_MS);
     });
 
+    lockCursor();
+    const cursorTimer = window.setInterval(lockCursor, 800);
+    const cursorObs = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        if (m.type === 'childList') {
+          for (const n of m.addedNodes) {
+            if (n instanceof HTMLElement && (n.id === 'rc-widget-adapter-frame' || n.querySelector?.('#rc-widget-adapter-frame'))) {
+              lockCursor();
+              return;
+            }
+          }
+        }
+        if (m.type === 'attributes' && m.target instanceof HTMLElement && m.target.id === 'rc-widget-adapter-frame') {
+          lockCursor();
+        }
+      }
+    });
+    cursorObs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+
     return () => {
       cancelled = true;
       clearPendingLogoutToast();
       unsubscribe();
+      window.clearInterval(cursorTimer);
+      cursorObs.disconnect();
       // Softphone stays mounted across Sales ↔ CS (allowed stays true).
     };
   }, [allowed]);
