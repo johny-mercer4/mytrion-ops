@@ -49,7 +49,10 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
   const [busy, setBusy] = useState(false);
   const [inviteUrl, setInviteUrl] = useState('');
 
-  const isOwner = profile === 'owner';
+  // Owner-LIKE: a manager is owner-equivalent — needs only a client tie, no card. Only a driver is
+  // card-bound. Every card-gating / lookup branch below keys off this, so manager == owner here.
+  const isDriver = profile === 'driver';
+  const isOwner = !isDriver;
 
   // Reset everything tied to "which client" when switching profile — a driver invite under the
   // wrong owner's carrier would be a real mistake, not just a UI nicety. Keyed off the previous
@@ -240,6 +243,15 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
               ),
             },
             {
+              value: 'manager',
+              label: (
+                <>
+                  <BuildingIcon size={13} />
+                  Manager
+                </>
+              ),
+            },
+            {
               value: 'driver',
               label: (
                 <>
@@ -251,9 +263,11 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
           ]}
         />
         <p className={s.fieldHint}>
-          {isOwner
-            ? 'Owner-operator (one card, drives it themself) or company owner (multiple drivers/cards) — auto-detected below.'
-            : 'One driver, tied to one specific card.'}
+          {profile === 'manager'
+            ? 'A colleague with owner-level company access (fleet, drivers, finances) — no card, tied to the carrier.'
+            : isOwner
+              ? 'Owner-operator (one card, drives it themself) or company owner (multiple drivers/cards) — auto-detected below.'
+              : 'One driver, tied to one specific card.'}
         </p>
       </div>
 

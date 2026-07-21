@@ -5,7 +5,8 @@
  */
 import { request } from './transport';
 
-export type CarrierProfile = 'owner' | 'driver';
+/** 'manager' has owner-equivalent access — the invite form treats owner + manager alike (no card). */
+export type CarrierProfile = 'owner' | 'manager' | 'driver';
 
 /** A client from the DWH directory (octane.intm_zoho_deals) — what invites are generated FROM. */
 export interface DwhClient {
