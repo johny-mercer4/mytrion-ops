@@ -48,6 +48,8 @@ import { ringcentralRoutes } from './routes/v1/ringcentral.routes.js';
 import { knowledgeRoutes } from './routes/v1/knowledge.routes.js';
 import { moneyCodeRoutes } from './routes/v1/moneyCode.routes.js';
 import { realtimeRoutes } from './routes/v1/realtime.routes.js';
+import { clientNewsRoutes } from './routes/v1/clientNews.routes.js';
+import { supportBotRoutes } from './routes/v1/supportBot.routes.js';
 import { retentionRoutes } from './routes/v1/retention.routes.js';
 import { scopeRoutes } from './routes/v1/scope.routes.js';
 import { approvalsRoutes } from './routes/v1/approvals.routes.js';
@@ -229,6 +231,8 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(cmpSchemaRoutes);
       await v1.register(dwhSchemaRoutes);
       await v1.register(mytrionAccessRoutes);
+      await v1.register(clientNewsRoutes);
+      await v1.register(supportBotRoutes);
       await v1.register(carrierMiniAppRoutes);
       await v1.register(carrierMiniAppActionsRoutes);
       await v1.register(retentionRoutes);
