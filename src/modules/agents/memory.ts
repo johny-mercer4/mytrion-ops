@@ -29,9 +29,10 @@ export async function distillMemories(
         {
           role: 'system',
           content:
-            'Extract up to 3 DURABLE facts worth remembering for future conversations (stable ' +
-            'business facts, standing user preferences, recurring entities). Skip anything ' +
-            'transient (one-off numbers, dates that will stale). Return JSON: ' +
+            'Extract up to 3 DURABLE facts or core state entities worth remembering for future conversations ' +
+            '(stable business facts, standing user preferences, recurring entities like explicit carriers or accounts mentioned). ' +
+            'CRITICAL: You must extract explicit names and IDs of entities discussed so they can be recalled via exact semantic match (e.g., "carrier from yesterday" -> "Carrier Acme Corp ID 1234"). ' +
+            'Skip transient details (one-off numbers, dates that will stale). Return JSON: ' +
             '{"facts": [{"content": string, "kind": "fact"|"preference"}]} — empty when nothing durable.',
         },
         { role: 'user', content: `Q: ${question.slice(0, 2000)}\n\nA: ${answer.slice(0, 4000)}` },

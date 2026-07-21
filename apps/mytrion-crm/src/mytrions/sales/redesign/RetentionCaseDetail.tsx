@@ -550,14 +550,21 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
                   for a new transaction — closed on fuel; otherwise CITI (timer-driven).
                 </div>
               )}
-              {row.statusCode === 'p1_open_pool' && (
+              {(row.statusCode === 'p1_open_pool' ||
+                row.statusCode === 'p1_pool_claim_pending') && (
                 <div
                   style={s(
-                    'padding:12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);font-size:12px;color:var(--text2);line-height:1.45',
+                    'padding:12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--warn) 35%,var(--border));background:color-mix(in srgb,var(--warn) 10%,var(--alt));font-size:12px;color:var(--text2);line-height:1.45',
                   )}
                 >
-                  <strong style={s('color:var(--text)')}>In Sales Open Pool.</strong> Another agent
-                  can claim it from the Open Pool tab (max 3 assignments).
+                  <strong style={s('color:var(--text)')}>
+                    {row.statusCode === 'p1_pool_claim_pending'
+                      ? 'Open Pool — claim pending.'
+                      : 'In Sales Open Pool.'}
+                  </strong>{' '}
+                  {row.assignedAgentZohoUserId
+                    ? 'Another agent can claim from Open Pool (max 3 assignments).'
+                    : 'This was your deal — you cannot claim it back here. Other agents request it from Open Pool; CS approval transfers Deal/Contact/Company ownership.'}
                 </div>
               )}
               {/* New stage: call-first — no timeline until a stage is chosen */}

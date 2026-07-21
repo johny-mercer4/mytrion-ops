@@ -4417,6 +4417,42 @@ CITI (`p1_returned`); open claim requests deleted so Processing cannot stick.
 **UI:** PoolTab — no Owner column; Available/Processing; reason modal (row +
 bulk); live refresh on claim WS events. ClaimsPanel shows requester + reason.
 
+## 2026-07-22 — Open Pool 3 BD unclaimed + max-3 → CITI
+
+**Unclaimed Open Pool:** every entry via `enterOpenPool` (Sales OoR×5 / Reached
+5BD, Phase 2 `no_response`, CS reject restamp) stamps `3BD_pool_claim`.
+`automation.retention.deadline-sweep` (cron `*/15`) applies overdue rows:
+unclaimed → **Retention** (10 BD); if `assignment_count ≥ 3` → **CITI** (not
+Retention). Processing (`p1_pool_claim_pending`) uses 1 BD auto-approve instead;
+reject restores a fresh 3 BD claim window.
+
+**Max 3 agents:** `enterOpenPool` short-circuits to CITI when already at cap.
+2BD New/in-progress expiry with `assignment_count ≥ 3` also → CITI (3rd agent
+failed their window). Terminal destinations remain Closed (returned / outcomes)
+or CITI.
+
+**Load:** sweeper is a bounded indexed query (`closed_at IS NULL` +
+`current_deadline_at < now`, limit ≤ 500) every 15 minutes — fine for low case
+volume; no per-case jobs. Case-sync is hourly + on-demand.
+
+## 2026-07-22 — CS Retention desk + RoundRobin + CITI Closed Lost
+
+**Claims:** Approve/Reject hardened toasts; claim-approved notify says **2 BD**.
+
+**Phase 2 handoff:** clears Sales assignee; RoundRobin from
+`RETENTION_CS_ROUND_ROBIN_ZOHO_USER_IDS` preferring Zoho `Isonline`; assigns
+Ops case as `p2_working` + soft Zoho Deal/Contact/Account Owner transfer.
+Cursor table `retention_rr_cursors` (migration `0040`).
+
+**10BD Retention:** no txn → **Open Pool** (CITI if `assignment_count ≥ 3`).
+
+**CITI entry:** Deal API field `Stage` = `Closed Lost` (org picklist; not bare
+"Lost"). Export still sets `Assignment_Stage=CITI`.
+
+**Sales lock:** Phase 2 / CITI hidden from `my_cases` open board; FE
+`isSalesLocked`; Phase 1 writes reject wrong phase. CS CasesPanel shows agent,
+phase/status, SLA, timeline via `caseGet`.
+
 ## 2026-07-22 — Sales tab go-live sign-off (Data Center / Create / Carriers / Automation)
 
 Four-area assessment (workflow) + fixes on feature/SalesProd:
@@ -4443,3 +4479,41 @@ Four-area assessment (workflow) + fixes on feature/SalesProd:
   browser.close_application/boca (by appId) and sales_mytrion.invoice_signed_url (by invoiceId)
   have NO ownership gate — an agent can act on another's app/invoice; recommend the same
   assertCarrierOwned-style gate as the carrier routes.
+
+## 2026-07-22 — CS access Admin-only + RR pool + OoB Closed Lost
+
+**CS Mytrion access:** Standard profile seed no longer grants CS; legacy
+department substring cannot open CS; `reconcileStandardNoCsGrant` clears
+historical Standard→CS defaults on seed. FE static rule: only
+`Customer Retention` (+ admin bypass). Grant CS via Mytrion Admin Profile
+Defaults / per-user override.
+
+**RoundRobin `.env`:** Manal, Ahsan, Zara, Layla, Charlotte, Isaac Zoho ids
+in `RETENTION_CS_ROUND_ROBIN_ZOHO_USER_IDS` (.env + .env.example). Restart
+API to pick up.
+
+**Out of Business (CS desk):** `p2_out_of_business` now best-effort sets Zoho
+Deal `Stage=Closed Lost` (same as CITI exclusion from future retention).
+
+## 2026-07-22 — Admin grants for Retention RoundRobin pool
+
+Per-user `worker_mytrion_access` overrides for CS Mytrion (home CS) on:
+Manal Alqassimi, Ahsan Ahmed, Zara Ashley, Layla Mei, Charlotte Birmingham,
+Isaac Leo. Standard profile default remains empty (no CS auto-grant).
+Cache invalidated per user after upsert.
+
+## 2026-07-22 — Spanish desk + CS caps + pool WS harden
+
+**Spanish → Jean Paul:** DWH `main_language` (prefer) else `dim_company.nationality=Spanish`
+→ `retention_cases.is_spanish_desk` / `preferred_language` (migration `0041`). Handoff
+bypasses RR to `RETENTION_CS_SPANISH_ZOHO_USER_ID` (Jean Paul `6227679000065094200`);
+falls through to RR if at daily cap or env unset. CS Admin grant applied for Jean Paul.
+
+**Caps:** 40 deals/day (claim/RR), 15% portfolio `p2_offer_pending` (`mark_pending`),
+two-call rule (listen + solution notes) before Saved/Refused. CS CasesPanel +
+`retention.cs_desk_quota`.
+
+**Realtime:** claim approved/declined broadcast on `retention:pool`; Sales
+`useRetentionRealtime` passes claim_* events for peer Pool refresh.
+
+**Deferred:** pre-entry funded alert, Zapier email, KPI/MOR components.

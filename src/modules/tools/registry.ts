@@ -22,6 +22,27 @@ export function registerTool<I, O>(manifest: ToolManifest<I, O>): RegisteredTool
     allowedAudiences: manifest.allowedAudiences,
     requiredScopes: manifest.requiredScopes,
     run: async (rawInput, ctx) => {
+      // AST-based argument matching: detect hallucinated extra keys before Zod strips them.
+      if (rawInput && typeof rawInput === 'object' && !Array.isArray(rawInput)) {
+        const parsed = manifest.inputSchema.safeParse(rawInput);
+        if (parsed.success && parsed.data && typeof parsed.data === 'object') {
+          const parsedKeys = Object.keys(parsed.data as Record<string, unknown>);
+          const rawKeys = Object.keys(rawInput as Record<string, unknown>);
+          const hallucinatedKeys = rawKeys.filter((k) => !parsedKeys.includes(k));
+          if (hallucinatedKeys.length > 0) {
+            const { ZodError } = await import('zod');
+            throw new ZodError([
+              {
+                code: 'unrecognized_keys',
+                keys: hallucinatedKeys,
+                path: [],
+                message: `Hallucinated arguments detected: ${hallucinatedKeys.join(', ')}. Use ONLY the exact parameters defined in the schema.`,
+              },
+            ]);
+          }
+        }
+      }
+
       const input = manifest.inputSchema.parse(rawInput);
       const output = await manifest.handler(input, ctx);
       return manifest.outputSchema.parse(output);

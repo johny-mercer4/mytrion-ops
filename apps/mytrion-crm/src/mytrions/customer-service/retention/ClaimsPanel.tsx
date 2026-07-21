@@ -1,8 +1,9 @@
 /**
  * CS Open Pool Claims — approve / reject Sales claim requests.
+ * Reject deletes the claim_request row and returns the case to the pool.
  */
 import { useEffect, useMemo, useState } from 'react';
-import type { RetentionCaseRow } from '@/api/touchpointTypes';
+import type { RetentionPendingClaimRow } from '@/api/touchpointTypes';
 import { csRetention } from '@/api/csRetention';
 import { Toast, type ToastState } from '../Toast';
 import { useLoad } from '../live';
@@ -22,7 +23,7 @@ function fmtWhen(iso: string | null): string {
   });
 }
 
-function slaLabel(c: RetentionCaseRow): string {
+function slaLabel(c: RetentionPendingClaimRow): string {
   if (!c.currentDeadlineAt) return '1 BD';
   const ms = new Date(c.currentDeadlineAt).getTime() - Date.now();
   if (ms <= 0) return 'Overdue';
@@ -32,7 +33,7 @@ function slaLabel(c: RetentionCaseRow): string {
 
 export function ClaimsPanel({ onBadge }: { onBadge?: (n: number) => void }) {
   const feed = useLoad(() => csRetention.claimsPending(100), []);
-  const [rows, setRows] = useState<RetentionCaseRow[]>([]);
+  const [rows, setRows] = useState<RetentionPendingClaimRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -74,14 +75,21 @@ export function ClaimsPanel({ onBadge }: { onBadge?: (n: number) => void }) {
         toastMsg(
           'success',
           kind === 'approve'
-            ? 'Claim approved — Zoho ownership transferred'
-            : 'Claim rejected — back to Open Pool',
+            ? 'Claim approved — Zoho ownership transferred · case → New'
+            : 'Claim rejected — request deleted · back to Open Pool',
         ),
       );
       setSelectedId(null);
       feed.reload();
     } catch (e) {
-      setToast(toastMsg('error', e instanceof Error ? e.message : 'Action failed'));
+      const msg = e instanceof Error ? e.message : 'Action failed';
+      const hint =
+        /no Zoho Deal|RETENTION_NO_DEAL|deal id/i.test(msg)
+          ? ' Case needs a Zoho Deal id from retention sync before approve.'
+          : /Owner|ZOHO_OWNER|Zoho/i.test(msg)
+            ? ' Zoho ownership update failed — retry or check CRM permissions.'
+            : '';
+      setToast(toastMsg('error', `${msg}${hint}`));
     } finally {
       setBusy(false);
     }
@@ -93,7 +101,7 @@ export function ClaimsPanel({ onBadge }: { onBadge?: (n: number) => void }) {
         <div>
           <h2 className="cs-panel-title">Open Pool Claims</h2>
           <p className="cs-panel-sub">
-            Sales request · you approve · Zoho Deal / Contact / Account Owner updates
+            Sales request · you approve · Zoho Deal / Contact / Account Owner → claimant · case New
           </p>
         </div>
         <button type="button" className="cs-btn cs-btn-ghost" onClick={() => feed.reload()}>
@@ -122,11 +130,16 @@ export function ClaimsPanel({ onBadge }: { onBadge?: (n: number) => void }) {
                   <span className="cs-muted">{c.carrierId}</span>
                 </div>
                 <div className="cs-ret-row-meta">
-                  <span>Claimant {c.pendingClaimantZohoUserId || '—'}</span>
+                  <span>{c.claimRequesterName || c.pendingClaimantZohoUserId || '—'}</span>
                   <span className={slaLabel(c) === 'Overdue' ? 'cs-danger' : 'cs-warn'}>
                     {slaLabel(c)}
                   </span>
                 </div>
+                {c.claimReason ? (
+                  <div className="cs-muted" style={{ marginTop: 4, fontSize: 12 }}>
+                    {c.claimReason.length > 80 ? `${c.claimReason.slice(0, 80)}…` : c.claimReason}
+                  </div>
+                ) : null}
               </button>
             ))
           )}
@@ -144,20 +157,22 @@ export function ClaimsPanel({ onBadge }: { onBadge?: (n: number) => void }) {
                   <dd>{selected.carrierId}</dd>
                 </div>
                 <div>
+                  <dt>Requester</dt>
+                  <dd>
+                    {selected.claimRequesterName || selected.pendingClaimantZohoUserId || '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Reason</dt>
+                  <dd style={{ whiteSpace: 'pre-wrap' }}>{selected.claimReason || '—'}</dd>
+                </div>
+                <div>
                   <dt>Days inactive</dt>
                   <dd>{selected.daysInactive ?? '—'}</dd>
                 </div>
                 <div>
-                  <dt>Previous owner</dt>
-                  <dd>{selected.poolOwnerZohoUserId || '—'}</dd>
-                </div>
-                <div>
-                  <dt>Claimant</dt>
-                  <dd>{selected.pendingClaimantZohoUserId || '—'}</dd>
-                </div>
-                <div>
                   <dt>Requested</dt>
-                  <dd>{fmtWhen(selected.updatedAt)}</dd>
+                  <dd>{fmtWhen(selected.claimRequestedAt || selected.updatedAt)}</dd>
                 </div>
                 <div>
                   <dt>SLA</dt>

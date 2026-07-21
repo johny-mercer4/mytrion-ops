@@ -8,7 +8,7 @@
  *   2. Breached carrier WITHOUT an open case → create one (phase_1_agent / p1_in_progress).
  *   3. Breached carrier WITH an open case → refresh its DWH metrics in place.
  *   4. Open case whose carrier has ANY transaction after the case opened → close as
- *      p1_returned. phase_3_citi is final — never auto-closed.
+ *      p1_returned (all phases, including CITI). Pending Open Pool claim requests deleted.
  */
 import {
   RETENTION_PHASE,
@@ -88,6 +88,12 @@ export async function syncRetentionCases(
       await retentionCaseRepo.update(ctx, String(existing.id), {
         metrics: candidateMetrics(candidate),
         ...(candidate.contactPhone ? { contactPhone: candidate.contactPhone } : {}),
+        preferredLanguage: candidate.preferredLanguage,
+        isSpanishDesk: candidate.isSpanishDesk,
+        // Backfill deal id when sync previously created the case without it.
+        ...(!existing.zohoDealId && candidate.zohoDealId
+          ? { zohoDealId: candidate.zohoDealId }
+          : {}),
         lastSyncedAt: now,
       });
       summary.refreshed += 1;
@@ -98,6 +104,9 @@ export async function syncRetentionCases(
         applicationId: candidate.applicationId ?? undefined,
         agentName: candidate.agentName ?? undefined,
         contactPhone: candidate.contactPhone ?? undefined,
+        preferredLanguage: candidate.preferredLanguage,
+        isSpanishDesk: candidate.isSpanishDesk,
+        zohoDealId: candidate.zohoDealId ?? undefined,
         assignedAgentZohoUserId: candidate.agentZohoUserId ?? undefined,
         phaseCode: RETENTION_PHASE.agent,
         statusCode: RETENTION_STATUS.p1InProgress,
@@ -116,19 +125,29 @@ export async function syncRetentionCases(
     }
   }
 
-  const returnCheck = openRows.filter((row) => row.phaseCode !== RETENTION_PHASE.citi);
-  if (returnCheck.length > 0) {
+  // Unified rule: any open phase/status closes on a post-create transaction.
+  if (openRows.length > 0) {
     const lastTxByCarrier = await fetchCarrierLastTransactions(
-      returnCheck.map((row) => row.carrierId),
+      openRows.map((row) => row.carrierId),
     );
-    for (const row of returnCheck) {
+    for (const row of openRows) {
       const lastTx = lastTxByCarrier.get(row.carrierId);
       if (!hasReturned(row, lastTx, now)) continue;
+      if (
+        row.statusCode === 'p1_pool_claim_pending' ||
+        row.pendingClaimantZohoUserId
+      ) {
+        const { deleteOpenClaimRequests } = await import(
+          '../../repos/retentionPoolClaimRepo.js'
+        );
+        await deleteOpenClaimRequests(ctx, row.id);
+      }
       await retentionCaseRepo.update(ctx, String(row.id), {
         statusCode: RETENTION_STATUS.p1Returned,
         agentOutcome: 'returned',
         eventType: 'outcome_recorded',
         eventNotes: 'Auto-closed: new transaction after case opened',
+        pendingClaimantZohoUserId: null,
         metrics: {
           lastTransactionAt: lastTx ?? null,
           daysInactive: lastTx ? daysSince(lastTx, now) : 0,

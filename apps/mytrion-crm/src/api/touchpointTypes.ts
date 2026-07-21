@@ -641,7 +641,7 @@ export interface TouchpointMap {
     result: RetentionCasesListResult;
   };
   'retention.pool_claim': {
-    params: { caseId: string };
+    params: { caseId: string; reason: string };
     result: { case: RetentionCaseRow; pendingApproval: boolean };
   };
   'retention.lookups': {
@@ -650,7 +650,7 @@ export interface TouchpointMap {
   };
   'retention.cs_claims_pending': {
     params: { limit?: number };
-    result: RetentionCasesListResult;
+    result: { cases: RetentionPendingClaimRow[]; total: number };
   };
   'retention.cs_claims_badge': {
     params: Record<string, never>;
@@ -668,6 +668,20 @@ export interface TouchpointMap {
     params: { filter?: 'new' | 'working' | 'closed' | 'all_open'; limit?: number };
     result: RetentionCasesListResult;
   };
+  'retention.cs_desk_quota': {
+    params: { zohoUserId?: string };
+    result: {
+      zohoUserId: string;
+      assignedToday: number;
+      maxPerDay: number;
+      pending: number;
+      open: number;
+      pendingRatio: number;
+      maxPendingRatio: number;
+      canClaim: boolean;
+      canMarkPending: boolean;
+    };
+  };
   'retention.cs_case_get': {
     params: { caseId: string };
     result: RetentionCaseDetailResult;
@@ -678,6 +692,7 @@ export interface TouchpointMap {
       outcome:
         | 'claim'
         | 'start_working'
+        | 'mark_pending'
         | 'saved'
         | 'refused'
         | 'out_of_business'
@@ -693,6 +708,7 @@ export interface TouchpointMap {
       channel: RetentionChannel;
       notes?: string;
       evidence_url?: string;
+      call_role?: 'listen' | 'solution';
     };
     result: { case: RetentionCaseRow };
   };
@@ -972,6 +988,8 @@ export interface RetentionCaseRow {
   agentName: string | null;
   /** Denormalized DWH phone at sync — prefer over lazy case_contact. */
   contactPhone?: string | null;
+  preferredLanguage?: string | null;
+  isSpanishDesk?: boolean;
   phaseCode: string;
   statusCode: string;
   phaseChangedAt: string;
@@ -1005,6 +1023,14 @@ export interface RetentionCaseRow {
   isOpen: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+/** CS Open Pool claims queue — case + open claim_request fields. */
+export interface RetentionPendingClaimRow extends RetentionCaseRow {
+  claimRequestId: string;
+  claimReason: string;
+  claimRequesterName: string | null;
+  claimRequestedAt: string;
 }
 
 export interface RetentionCaseEventRow {

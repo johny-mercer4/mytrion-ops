@@ -131,6 +131,10 @@ export async function transferDealOwnershipToClaimant(
 export const CITI_ASSIGNMENT_STAGE_FIELD = 'Assignment_Stage' as const;
 export const CITI_ASSIGNMENT_STAGE_VALUE = 'CITI' as const;
 
+/** Standard Deal pipeline stage API name / Closed Lost picklist value (org DWH). */
+export const DEAL_STAGE_FIELD = 'Stage' as const;
+export const DEAL_STAGE_CLOSED_LOST = 'Closed Lost' as const;
+
 /** Best-effort write of Assignment Stage → CITI on a Deal. */
 export async function setDealAssignmentStageCiti(zohoDealId: string): Promise<void> {
   const dealId = zohoDealId.trim();
@@ -138,4 +142,18 @@ export async function setDealAssignmentStageCiti(zohoDealId: string): Promise<vo
   await zohoCrmRecords.updateRecord('Deals', dealId, {
     [CITI_ASSIGNMENT_STAGE_FIELD]: CITI_ASSIGNMENT_STAGE_VALUE,
   });
+}
+
+/** Best-effort: Deal Stage → Closed Lost when a case enters CITI Folder. */
+export async function setDealStageClosedLost(zohoDealId: string | null | undefined): Promise<void> {
+  const dealId = zohoDealId?.trim();
+  if (!dealId) return;
+  try {
+    await zohoCrmRecords.updateRecord('Deals', dealId, {
+      [DEAL_STAGE_FIELD]: DEAL_STAGE_CLOSED_LOST,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn({ dealId, err: message }, 'retention zoho: Stage=Closed Lost failed (best-effort)');
+  }
 }

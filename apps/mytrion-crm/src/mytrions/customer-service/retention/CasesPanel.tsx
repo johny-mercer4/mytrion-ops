@@ -1,8 +1,12 @@
 /**
- * CS Retention Cases — Phase 2 desk (filters, claim, outcomes, attempts).
+ * CS Retention Cases — Phase 2 desk (filters, claim, outcomes, attempts, timeline).
  */
 import { useEffect, useMemo, useState } from 'react';
-import type { RetentionCaseRow, RetentionChannel } from '@/api/touchpointTypes';
+import type {
+  RetentionCaseEventRow,
+  RetentionCaseRow,
+  RetentionChannel,
+} from '@/api/touchpointTypes';
 import { csRetention } from '@/api/csRetention';
 import { Toast, type ToastState } from '../Toast';
 import { useLoad } from '../live';
@@ -28,12 +32,15 @@ const CHANNELS: RetentionChannel[] = [
 ];
 
 const OUTCOMES: Array<{
-  id: 'saved' | 'refused' | 'out_of_business' | 'no_response' | 'escalate_citi';
+  id: 'mark_pending' | 'saved' | 'refused' | 'out_of_business' | 'no_response' | 'escalate_citi';
   label: string;
   danger?: boolean;
+  needsTwoCall?: boolean;
+  needsPendingCap?: boolean;
 }> = [
-  { id: 'saved', label: 'Saved' },
-  { id: 'refused', label: 'Refused' },
+  { id: 'mark_pending', label: 'Mark pending', needsPendingCap: true },
+  { id: 'saved', label: 'Saved', needsTwoCall: true },
+  { id: 'refused', label: 'Refused', needsTwoCall: true },
   { id: 'out_of_business', label: 'Out of business' },
   { id: 'no_response', label: 'No response → Pool' },
   { id: 'escalate_citi', label: 'Escalate CITI', danger: true },
@@ -51,11 +58,66 @@ function deadlineLabel(c: RetentionCaseRow): string {
   });
 }
 
+function phaseLabel(code: string): string {
+  if (code === 'phase_2_retention') return 'Retention (Phase 2)';
+  if (code === 'phase_3_citi') return 'CITI Folder';
+  if (code === 'phase_1_agent') return 'Sales (Phase 1)';
+  return code;
+}
+
+function statusLabel(code: string): string {
+  const map: Record<string, string> = {
+    p2_new: 'New',
+    p2_working: 'Working',
+    p2_offer_pending: 'Offer pending',
+    p2_saved: 'Saved',
+    p2_refused: 'Refused',
+    p2_out_of_business: 'Out of business',
+    p2_handoff_citi: 'Handoff CITI',
+  };
+  return map[code] ?? code.replace(/^p2_/, '').replace(/_/g, ' ');
+}
+
+function fmtWhen(iso: string): string {
+  return new Date(iso).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function agentLabel(c: RetentionCaseRow): string {
+  if (c.agentName?.trim()) return c.agentName.trim();
+  if (c.assignedAgentZohoUserId) return `Agent ${c.assignedAgentZohoUserId}`;
+  return 'Unassigned';
+}
+
+function twoCallFromEvents(events: RetentionCaseEventRow[] | undefined): {
+  listen: boolean;
+  solution: boolean;
+} {
+  let listen = false;
+  let solution = false;
+  for (const ev of events ?? []) {
+    if (ev.eventType !== 'comms_attempt' || !ev.notes) continue;
+    if (/\[call_role:listen\]/i.test(ev.notes)) listen = true;
+    if (/\[call_role:solution\]/i.test(ev.notes)) solution = true;
+  }
+  return { listen, solution };
+}
+
 export function CasesPanel() {
   const [filter, setFilter] = useState<Filter>('all_open');
   const feed = useLoad(() => csRetention.cases(filter, 200), [filter]);
+  const quota = useLoad(() => csRetention.deskQuota(), []);
   const [rows, setRows] = useState<RetentionCaseRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<{
+    case: RetentionCaseRow;
+    events: RetentionCaseEventRow[];
+  } | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [channel, setChannel] = useState<RetentionChannel>('ringcentral');
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
@@ -66,16 +128,49 @@ export function CasesPanel() {
   }, [feed.data?.cases]);
 
   const reload = feed.reload;
+  const reloadQuota = quota.reload;
   useEffect(() => {
     return subscribeCsRetentionLive(() => {
       reload();
+      reloadQuota();
     });
-  }, [reload]);
+  }, [reload, reloadQuota]);
 
-  const selected = useMemo(
-    () => rows.find((r) => r.id === selectedId) ?? null,
-    [rows, selectedId],
-  );
+  useEffect(() => {
+    if (!selectedId) {
+      setDetail(null);
+      return;
+    }
+    let cancelled = false;
+    setDetailLoading(true);
+    void csRetention
+      .caseGet(selectedId)
+      .then((res) => {
+        if (!cancelled) setDetail(res);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setDetail(null);
+          setToast(toastMsg('error', e instanceof Error ? e.message : 'Failed to load case'));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setDetailLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, feed.data?.cases]);
+
+  const selected = useMemo(() => {
+    if (detail?.case && detail.case.id === selectedId) return detail.case;
+    return rows.find((r) => r.id === selectedId) ?? null;
+  }, [detail, rows, selectedId]);
+
+  const twoCall = useMemo(() => twoCallFromEvents(detail?.events), [detail?.events]);
+  const q = quota.data;
+  const canClaim = q?.canClaim !== false;
+  const canMarkPending = q?.canMarkPending !== false;
 
   const run = async (fn: () => Promise<unknown>, ok: string): Promise<void> => {
     if (busy) return;
@@ -85,6 +180,11 @@ export function CasesPanel() {
       setToast(toastMsg('success', ok));
       setNotes('');
       feed.reload();
+      quota.reload();
+      if (selectedId) {
+        const res = await csRetention.caseGet(selectedId);
+        setDetail(res);
+      }
     } catch (e) {
       setToast(toastMsg('error', e instanceof Error ? e.message : 'Failed'));
     } finally {
@@ -97,12 +197,33 @@ export function CasesPanel() {
       <div className="cs-panel-header">
         <div>
           <h2 className="cs-panel-title">Retention Cases</h2>
-          <p className="cs-panel-sub">Phase 2 desk — handed off from Sales · 10 BD watch</p>
+          <p className="cs-panel-sub">
+            Phase 2 desk — Spanish desk / RoundRobin · 10 BD · two-call · caps
+          </p>
         </div>
-        <button type="button" className="cs-btn cs-btn-ghost" onClick={() => feed.reload()}>
+        <button
+          type="button"
+          className="cs-btn cs-btn-ghost"
+          onClick={() => {
+            feed.reload();
+            quota.reload();
+          }}
+        >
           Refresh
         </button>
       </div>
+
+      {q ? (
+        <div className="cs-ret-filters" style={{ marginBottom: 8 }}>
+          <span className="cs-chip">
+            Today {q.assignedToday}/{q.maxPerDay}
+          </span>
+          <span className="cs-chip">
+            Pending {q.pending}/{q.open || 0} (
+            {Math.round(q.pendingRatio * 100)}% / {Math.round(q.maxPendingRatio * 100)}%)
+          </span>
+        </div>
+      ) : null}
 
       <div className="cs-ret-filters">
         {FILTERS.map((f) => (
@@ -137,11 +258,14 @@ export function CasesPanel() {
                 onClick={() => setSelectedId(c.id)}
               >
                 <div className="cs-ret-row-main">
-                  <strong>{c.companyName || c.carrierId}</strong>
-                  <span className="cs-muted">{c.statusCode.replace(/^p2_/, '')}</span>
+                  <strong>
+                    {c.companyName || c.carrierId}
+                    {c.isSpanishDesk ? ' · ES' : ''}
+                  </strong>
+                  <span className="cs-muted">{statusLabel(c.statusCode)}</span>
                 </div>
                 <div className="cs-ret-row-meta">
-                  <span>{c.assignedAgentZohoUserId ? `Agent ${c.assignedAgentZohoUserId}` : 'Unassigned'}</span>
+                  <span>{agentLabel(c)}</span>
                   <span>Due {deadlineLabel(c)}</span>
                 </div>
               </button>
@@ -152,17 +276,38 @@ export function CasesPanel() {
         <div className="cs-ret-detail">
           {!selected ? (
             <div className="cs-empty">Select a case</div>
+          ) : detailLoading && !detail ? (
+            <div className="cs-empty">Loading detail…</div>
           ) : (
             <>
-              <h3>{selected.companyName || selected.carrierId}</h3>
+              <h3>
+                {selected.companyName || selected.carrierId}
+                {selected.isSpanishDesk ? (
+                  <span className="cs-chip" style={{ marginLeft: 8 }}>
+                    Spanish desk
+                  </span>
+                ) : null}
+              </h3>
               <dl className="cs-ret-dl">
                 <div>
                   <dt>Carrier</dt>
                   <dd>{selected.carrierId}</dd>
                 </div>
                 <div>
-                  <dt>Status</dt>
-                  <dd>{selected.statusCode}</dd>
+                  <dt>Phase</dt>
+                  <dd>{phaseLabel(selected.phaseCode)}</dd>
+                </div>
+                <div>
+                  <dt>Status / stage</dt>
+                  <dd>{statusLabel(selected.statusCode)}</dd>
+                </div>
+                <div>
+                  <dt>Assignee</dt>
+                  <dd>{agentLabel(selected)}</dd>
+                </div>
+                <div>
+                  <dt>Language</dt>
+                  <dd>{selected.preferredLanguage ?? (selected.isSpanishDesk ? 'Spanish' : '—')}</dd>
                 </div>
                 <div>
                   <dt>Quiet days</dt>
@@ -170,11 +315,20 @@ export function CasesPanel() {
                 </div>
                 <div>
                   <dt>Deadline</dt>
-                  <dd>{deadlineLabel(selected)}</dd>
+                  <dd>
+                    {deadlineLabel(selected)}
+                    {selected.currentDeadlineType ? ` · ${selected.currentDeadlineType}` : ''}
+                  </dd>
                 </div>
                 <div>
-                  <dt>Assignments</dt>
+                  <dt>Open Pool cycle</dt>
                   <dd>{selected.assignmentCount}/3</dd>
+                </div>
+                <div>
+                  <dt>Two-call</dt>
+                  <dd>
+                    Call 1 {twoCall.listen ? '✓' : '—'} · Call 2 {twoCall.solution ? '✓' : '—'}
+                  </dd>
                 </div>
               </dl>
 
@@ -182,7 +336,8 @@ export function CasesPanel() {
                 <button
                   type="button"
                   className="cs-btn cs-btn-primary"
-                  disabled={busy}
+                  disabled={busy || !canClaim}
+                  title={!canClaim ? 'Daily 40-deal cap reached' : undefined}
                   onClick={() =>
                     void run(
                       () => csRetention.caseOutcome(selected.id, 'claim'),
@@ -190,7 +345,7 @@ export function CasesPanel() {
                     )
                   }
                 >
-                  Claim case
+                  Claim case{!canClaim ? ' (cap)' : ''}
                 </button>
               ) : null}
 
@@ -224,35 +379,102 @@ export function CasesPanel() {
                       disabled={busy}
                       onClick={() =>
                         void run(
-                          () => csRetention.logAttempt(selected.id, channel, notes || undefined),
-                          'Attempt logged',
+                          () =>
+                            csRetention.logAttempt(
+                              selected.id,
+                              channel,
+                              notes || undefined,
+                              'listen',
+                            ),
+                          'Call 1 (listen) logged',
                         )
                       }
                     >
-                      Log attempt
+                      Log Call 1 (listen)
+                    </button>
+                    <button
+                      type="button"
+                      className="cs-btn cs-btn-ghost"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(
+                          () =>
+                            csRetention.logAttempt(
+                              selected.id,
+                              channel,
+                              notes || undefined,
+                              'solution',
+                            ),
+                          'Call 2 (solution) logged',
+                        )
+                      }
+                    >
+                      Log Call 2 (solution)
                     </button>
                   </div>
 
                   <div className="cs-ret-outcomes">
-                    {OUTCOMES.map((o) => (
-                      <button
-                        key={o.id}
-                        type="button"
-                        className={`cs-btn ${o.danger ? 'cs-btn-danger' : 'cs-btn-ghost'}`}
-                        disabled={busy}
-                        onClick={() =>
-                          void run(
-                            () => csRetention.caseOutcome(selected.id, o.id),
-                            `${o.label} recorded`,
-                          )
-                        }
-                      >
-                        {o.label}
-                      </button>
-                    ))}
+                    {OUTCOMES.map((o) => {
+                      const blockedTwoCall =
+                        o.needsTwoCall && !(twoCall.listen && twoCall.solution);
+                      const blockedPending = o.needsPendingCap && !canMarkPending;
+                      const disabled = busy || blockedTwoCall || blockedPending;
+                      return (
+                        <button
+                          key={o.id}
+                          type="button"
+                          className={`cs-btn ${o.danger ? 'cs-btn-danger' : 'cs-btn-ghost'}`}
+                          disabled={disabled}
+                          title={
+                            blockedTwoCall
+                              ? 'Log Call 1 + Call 2 first'
+                              : blockedPending
+                                ? 'Pending portfolio over 15%'
+                                : undefined
+                          }
+                          onClick={() =>
+                            void run(
+                              () => csRetention.caseOutcome(selected.id, o.id),
+                              `${o.label} recorded`,
+                            )
+                          }
+                        >
+                          {o.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </>
               ) : null}
+
+              <div style={{ marginTop: 16 }}>
+                <h4 style={{ margin: '0 0 8px', fontSize: 13 }}>Timeline</h4>
+                {detail?.events?.length ? (
+                  <ul className="cs-ret-timeline" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                    {detail.events.map((ev) => (
+                      <li
+                        key={ev.id}
+                        style={{
+                          padding: '8px 0',
+                          borderTop: '1px solid var(--border, #e5e7eb)',
+                          fontSize: 12,
+                        }}
+                      >
+                        <div style={{ fontWeight: 600 }}>
+                          {ev.eventType}
+                          {ev.toStatus ? ` → ${ev.toStatus}` : ''}
+                        </div>
+                        <div className="cs-muted">{fmtWhen(ev.occurredAt)}</div>
+                        {ev.notes ? <div style={{ marginTop: 2 }}>{ev.notes}</div> : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="cs-muted" style={{ fontSize: 12 }}>
+                    No events yet
+                  </div>
+                )}
+              </div>
             </>
           )}
         </div>

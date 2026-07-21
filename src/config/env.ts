@@ -468,12 +468,15 @@ const EnvSchema = z.object({
   // Interactive browser WRITE actions (navigate/click/fill/…). Off = scrape/read-class only.
   FF_BROWSER_WRITES: flag('0'),
   // Retention Open Pool notify (Ryan Saab) + Ops Manager vacation signoff — Zoho user ids.
-  // Empty = skip inbox notify (sweep/transitions still run).
+  // Empty = skip inbox notify (sweep/transitions still run). Outbound email = Zapier.
   RETENTION_OPEN_POOL_NOTIFY_ZOHO_USER_ID: z.string().default(''),
   RETENTION_OPS_MANAGER_ZOHO_USER_ID: z.string().default(''),
-  // Optional From address for Zoho CRM Send Mail on Open Pool (must be an org-allowed sender).
-  // Empty = first address from GET /settings/emails/actions/from_addresses.
+  // Reserved for Zapier / ops identity — not used by app Zoho send_mail (disabled).
   RETENTION_NOTIFY_FROM_EMAIL: z.string().default(''),
+  // Comma-separated Zoho CRM user ids for Phase 2 Retention RoundRobin (prefer Isonline).
+  RETENTION_CS_ROUND_ROBIN_ZOHO_USER_IDS: z.string().default(''),
+  // Spanish Retention desk assignee (bypasses RoundRobin when is_spanish_desk).
+  RETENTION_CS_SPANISH_ZOHO_USER_ID: z.string().default(''),
 
   // Background jobs (pg-boss on the app Postgres, own 'pgboss' schema — self-migrating).
   FF_JOBS_ENABLED: flag('0'),

@@ -85,6 +85,26 @@ export const retentionCaseCsRepo = {
   ): Promise<RetentionCaseDto> {
     const existing = await retentionCaseRepo.findById(ctx, id);
     if (!existing) throw new NotFoundError('Retention case not found');
+
+    const {
+      assertUnderDailyCap,
+      assertPendingCap,
+      assertTwoCallComplete,
+    } = await import('../modules/retention/csCaps.js');
+
+    if (outcome === 'claim' || outcome === 'start_working') {
+      await assertUnderDailyCap(ctx, opts.actorZohoUserId);
+    }
+    if (outcome === 'mark_pending') {
+      const agent = existing.assignedAgentZohoUserId ?? opts.actorZohoUserId;
+      await assertPendingCap(ctx, agent, {
+        alreadyPending: existing.statusCode === 'p2_offer_pending',
+      });
+    }
+    if (outcome === 'saved' || outcome === 'refused') {
+      await assertTwoCallComplete(existing.id);
+    }
+
     const patch = resolvePhase2Transition(existing, outcome, {
       actorZohoUserId: opts.actorZohoUserId,
       ...(opts.agentName !== undefined ? { agentName: opts.agentName } : {}),
@@ -98,13 +118,24 @@ export const retentionCaseCsRepo = {
     };
     const updated = await retentionCaseRepo.update(ctx, id, input);
     if (!updated) throw new NotFoundError('Retention case not found');
+    const { afterRetentionPhaseSideEffects } = await import(
+      '../modules/retention/csRoundRobin.js'
+    );
+    await afterRetentionPhaseSideEffects(existing.phaseCode, updated);
+    // Out of Business → Zoho Deal Stage Closed Lost (exclude from future retention).
+    if (updated.statusCode === 'p2_out_of_business' && updated.zohoDealId) {
+      const { setDealStageClosedLost } = await import('../modules/retention/zohoOwnership.js');
+      await setDealStageClosedLost(updated.zohoDealId);
+    }
     if (updated.statusCode === 'p1_open_pool') {
       const { notifyOpenPoolOpened } = await import('../modules/retention/notify.js');
       await notifyOpenPoolOpened(ctx, {
         caseId: updated.id,
         carrierId: updated.carrierId,
         companyName: updated.companyName,
+        reason: 'phase2',
         previousOwnerZohoUserId: existing.assignedAgentZohoUserId,
+        zohoDealId: updated.zohoDealId,
       });
     }
     return updated;
@@ -119,6 +150,8 @@ export const retentionCaseCsRepo = {
       notes?: string | undefined;
       evidenceUrl?: string | undefined;
       actorZohoUserId?: string | undefined;
+      /** Two-call rule role (Call 1 listen / Call 2 solution). */
+      callRole?: 'listen' | 'solution' | undefined;
     },
   ): Promise<RetentionCaseDto> {
     const existing = await retentionCaseRepo.findById(ctx, id);
@@ -146,13 +179,17 @@ export const retentionCaseCsRepo = {
         expose: true,
       });
     }
+    const { formatCallRoleNote } = await import('../modules/retention/csCaps.js');
+    const notes = input.callRole
+      ? formatCallRoleNote(input.callRole, noteTrim)
+      : (noteTrim ?? `CS contact via ${input.channel}`);
     await appendRetentionEvent({
       caseId: existing.id,
       fromStatus: existing.statusCode,
       toStatus: existing.statusCode,
       eventType: 'comms_attempt',
       actorZohoUserId: input.actorZohoUserId,
-      notes: noteTrim ?? `CS contact via ${input.channel}`,
+      notes,
       channel: input.channel,
       evidenceUrl,
     });

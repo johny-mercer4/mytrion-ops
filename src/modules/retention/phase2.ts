@@ -1,7 +1,6 @@
 /**
  * Phase 2 (Retention desk / CS) — pure transition helpers for claim + outcomes.
  */
-import type { RetentionCase } from '../../db/schema/index.js';
 import { RETENTION_PHASE } from '../../db/schema/index.js';
 import { AppError } from '../../lib/errors.js';
 import {
@@ -10,16 +9,25 @@ import {
   stampRetentionWaitDeadline,
   type CaseTransitionPatch,
 } from './deadlines.js';
-import { MAX_OPEN_POOL_AGENTS } from './phase1.js';
 
 export type Phase2Outcome =
   | 'claim'
   | 'start_working'
+  | 'mark_pending'
   | 'saved'
   | 'refused'
   | 'out_of_business'
   | 'no_response'
   | 'escalate_citi';
+
+/** Minimal case shape for Phase 2 transitions (DTO or ORM row). */
+export interface Phase2CaseRow {
+  closedAt: Date | string | null;
+  phaseCode: string;
+  statusCode: string;
+  assignedAgentZohoUserId: string | null;
+  assignmentCount: number;
+}
 
 const PHASE2_OPEN = new Set([
   'p2_new',
@@ -28,7 +36,7 @@ const PHASE2_OPEN = new Set([
   'p2_handoff_citi',
 ]);
 
-export function assertPhase2Workable(row: RetentionCase): void {
+export function assertPhase2Workable(row: Phase2CaseRow): void {
   if (row.closedAt != null) {
     throw new AppError('Case is already closed', {
       statusCode: 409,
@@ -53,7 +61,7 @@ export function assertPhase2Workable(row: RetentionCase): void {
 }
 
 export function resolvePhase2Transition(
-  row: RetentionCase,
+  row: Phase2CaseRow,
   outcome: Phase2Outcome,
   opts: {
     actorZohoUserId?: string;
@@ -84,7 +92,18 @@ export function resolvePhase2Transition(
         currentDeadlineAt: wait.currentDeadlineAt,
         currentDeadlineType: wait.currentDeadlineType,
         eventType: 'reassigned',
-        eventNotes: opts.notes ?? 'CS claimed Phase 2 case — 10 BD wait',
+        eventNotes: opts.notes ?? `CS claimed Phase 2 case (${actor}) — 10 BD wait`,
+      };
+    }
+    case 'mark_pending': {
+      const wait = stampRetentionWaitDeadline(now);
+      return {
+        phaseCode: RETENTION_PHASE.retention,
+        statusCode: 'p2_offer_pending',
+        currentDeadlineAt: wait.currentDeadlineAt,
+        currentDeadlineType: wait.currentDeadlineType,
+        eventType: 'status_change',
+        eventNotes: opts.notes ?? 'Offer pending — solution proposed / waiting on client',
       };
     }
     case 'saved':
@@ -115,15 +134,10 @@ export function resolvePhase2Transition(
         eventNotes: opts.notes ?? 'Out of business — closed',
       };
     case 'no_response': {
-      if (row.assignmentCount >= MAX_OPEN_POOL_AGENTS) {
-        return moveToCiti({
-          now,
-          notes: opts.notes ?? 'No response + max agents — CITI',
-        });
-      }
       return enterOpenPool({
         now,
         previousOwnerZohoUserId: row.assignedAgentZohoUserId,
+        assignmentCount: row.assignmentCount,
         notes: opts.notes ?? 'No response — back to Open Pool',
       });
     }

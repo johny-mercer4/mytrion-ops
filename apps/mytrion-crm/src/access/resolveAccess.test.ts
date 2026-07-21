@@ -105,11 +105,14 @@ describe('DEFAULT_PROFILE_SEED mirror (fallback table only — server list wins 
     }
   });
 
-  it('Standard Plus gets sales + billing; Standard gets customer-service', () => {
+  it('Standard Plus gets sales + billing; Standard gets nothing; Customer Retention gets CS', () => {
     const plus = resolveAccessibleMytrions(ctx({ profile: 'Standard Plus' })).accessible;
     expect(plus).toContain('sales');
     expect(plus).toContain('billing');
-    expect(resolveAccessibleMytrions(ctx({ profile: 'Standard' })).accessible).toEqual(['customer-service']);
+    expect(resolveAccessibleMytrions(ctx({ profile: 'Standard' })).accessible).toEqual([]);
+    expect(resolveAccessibleMytrions(ctx({ profile: 'Customer Retention' })).accessible).toEqual([
+      'customer-service',
+    ]);
   });
 
   it('a server-resolved single-Mytrion list yields exactly one accessible (Landing hard-navigates)', () => {

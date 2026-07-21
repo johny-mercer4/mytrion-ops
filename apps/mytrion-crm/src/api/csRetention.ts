@@ -21,6 +21,7 @@ export const csRetention = {
   declineClaim: (caseId: string) => csTp('retention.cs_claim_decline', { caseId }),
   cases: (filter?: 'new' | 'working' | 'closed' | 'all_open', limit = 200) =>
     csTp('retention.cs_cases', { ...(filter ? { filter } : {}), limit }),
+  deskQuota: () => csTp('retention.cs_desk_quota', {}),
   caseGet: (caseId: string) => csTp('retention.cs_case_get', { caseId }),
   caseOutcome: (
     caseId: string,
@@ -31,11 +32,13 @@ export const csRetention = {
     caseId: string,
     channel: TouchpointMap['retention.cs_log_attempt']['params']['channel'],
     notes?: string,
+    callRole?: 'listen' | 'solution',
   ) =>
     csTp('retention.cs_log_attempt', {
       caseId,
       channel,
       ...(notes ? { notes } : {}),
+      ...(callRole ? { call_role: callRole } : {}),
     }),
   citiList: (limit = 200) => csTp('retention.cs_citi_list', { limit }),
   citiConfirm: (caseIds: string[]) => csTp('retention.cs_citi_confirm', { caseIds }),

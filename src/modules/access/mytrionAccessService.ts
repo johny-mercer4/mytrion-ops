@@ -201,14 +201,21 @@ async function computeAccess(input: ResolveWorkerAccessInput): Promise<ComputeRe
   }
 }
 
-/** Fail-open fallback: env-admin → all; else profile/role substring → departments → Mytrions. */
+/**
+ * Fail-open fallback: env-admin → all; else profile/role substring → departments → Mytrions.
+ * Customer Service Mytrion is NEVER granted here — Admin Profile Defaults / per-user override only.
+ */
 function legacyAccess(input: ResolveWorkerAccessInput, envAdmin: boolean): ResolvedAccess {
   if (envAdmin) {
     return { accessibleMytrions: [...MYTRION_IDS], homeMytrion: null, allDepartmentAccess: true, departments: [], viewAsUserIds: [] };
   }
-  const departments = deriveWorkerDepartments(input.profileName ?? null, input.zohoRole ?? null);
+  const departments = deriveWorkerDepartments(input.profileName ?? null, input.zohoRole ?? null).filter(
+    (d) => d !== 'customer-service',
+  );
   const deptSet = new Set(departments);
-  const accessible = MYTRION_IDS.filter((id) => deptSet.has(MYTRION_DEPARTMENT[id]));
+  const accessible = MYTRION_IDS.filter(
+    (id) => id !== 'customer-service' && deptSet.has(MYTRION_DEPARTMENT[id]),
+  );
   return {
     accessibleMytrions: accessible,
     homeMytrion: accessible.length === 1 ? (accessible[0] ?? null) : null,
@@ -294,18 +301,43 @@ export const mytrionAccessService = {
   async ensureProfileDefaultsSeeded(tenantId: string): Promise<MytrionProfileDefaultDto[]> {
     const ctx = internalCtx(tenantId);
     const existing = await mytrionProfileDefaultsRepo.list(ctx);
-    if (existing.length > 0) return existing;
-    for (const seed of DEFAULT_PROFILE_SEED) {
-      await mytrionProfileDefaultsRepo.upsert(ctx, {
-        profileName: seed.profileName,
-        allowedMytrions: seed.allowedMytrions,
-        homeMytrion: seed.homeMytrion,
-        allDepartmentAccess: seed.allDepartmentAccess,
-      });
+    if (existing.length === 0) {
+      for (const seed of DEFAULT_PROFILE_SEED) {
+        await mytrionProfileDefaultsRepo.upsert(ctx, {
+          profileName: seed.profileName,
+          allowedMytrions: seed.allowedMytrions,
+          homeMytrion: seed.homeMytrion,
+          allDepartmentAccess: seed.allDepartmentAccess,
+        });
+      }
+      this.invalidateAll();
+      return mytrionProfileDefaultsRepo.list(ctx);
     }
-    // Seeding changes what every worker resolves — drop any cached (pre-seed legacy-floor) grants.
-    this.invalidateAll();
+    // One-time product harden: strip leaked Standard → CS auto-grant on already-seeded tenants.
+    await this.reconcileStandardNoCsGrant(tenantId);
     return mytrionProfileDefaultsRepo.list(ctx);
+  },
+
+  /**
+   * Historical seed mapped Zoho profile "Standard" → CS Mytrion for every Standard user.
+   * CS is Admin-controlled now — clear that default when it is still CS-only.
+   */
+  async reconcileStandardNoCsGrant(tenantId: string): Promise<void> {
+    const ctx = internalCtx(tenantId);
+    const standard = await mytrionProfileDefaultsRepo.findByKey(ctx, profileKeyOf('Standard'));
+    if (!standard?.active) return;
+    const onlyCs =
+      standard.allowedMytrions.length === 1 && standard.allowedMytrions[0] === 'customer-service';
+    if (!onlyCs) return;
+    await mytrionProfileDefaultsRepo.upsert(ctx, {
+      profileName: standard.profileName,
+      allowedMytrions: [],
+      homeMytrion: null,
+      allDepartmentAccess: false,
+      active: standard.active,
+    });
+    this.invalidateAll();
+    logger.info({ tenantId }, 'mytrion access: cleared Standard → CS auto-grant (Admin-only CS)');
   },
 
   /** Drop a user's cached access across all identity variants (call after an override upsert). */

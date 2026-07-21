@@ -383,6 +383,42 @@ html,body{height:100%;margin:0}
     -webkit-background-clip:text;background-clip:text;color:transparent;
   }
   .ss-ret-pips{font-size:10px;letter-spacing:.12em;color:var(--muted);font-family:'JetBrains Mono',monospace}
+  .ss-ret-timer{display:flex;flex-direction:column;gap:4px;margin-top:2px}
+  .ss-ret-timer-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .ss-ret-timer-remain{
+    font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;letter-spacing:.01em;
+  }
+  .ss-ret-timer-event{
+    font-size:10px;font-weight:600;color:var(--muted);line-height:1.35;
+  }
+  .ss-ret-timer-track{
+    height:3px;border-radius:99px;background:var(--raised);overflow:hidden;
+  }
+  .ss-ret-timer-fill{
+    height:100%;border-radius:99px;transition:width .6s cubic-bezier(.2,0,0,1);
+  }
+  .ss-ret-timer.is-overdue .ss-ret-timer-event{color:var(--danger)}
+  .ss-ret-timer.is-muted .ss-ret-timer-event{color:var(--faint)}
+  .ss-ret-timer.is-compact .ss-ret-timer-event{display:none}
+  .ss-ret-card.is-locked{
+    cursor:not-allowed;opacity:.72;pointer-events:none;
+    background:color-mix(in srgb,var(--surface) 88%,var(--danger));
+  }
+  .ss-ret-card.is-locked.is-pooled{
+    background:color-mix(in srgb,var(--surface) 90%,var(--warn));
+  }
+  .ss-ret-locked-badge{
+    margin-top:2px;padding:6px 8px;border-radius:calc(var(--radius-md) - 4px);
+    font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--danger);background:color-mix(in srgb,var(--danger) 12%,transparent);
+    border:1px solid color-mix(in srgb,var(--danger) 28%,transparent);
+  }
+  .ss-ret-locked-badge.is-pooled{
+    color:var(--warn);
+    background:color-mix(in srgb,var(--warn) 14%,transparent);
+    border-color:color-mix(in srgb,var(--warn) 32%,transparent);
+  }
+  .ss-ret-list-row.is-locked{cursor:not-allowed;opacity:.65;pointer-events:none}
   .ss-ret-empty{
     padding:52px 28px;text-align:center;border-radius:var(--radius-md);
     border:1px dashed var(--border);background:color-mix(in srgb,var(--alt) 90%,transparent);

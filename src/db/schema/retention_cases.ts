@@ -99,8 +99,8 @@ export type RetentionStatusRow = typeof retentionStatuses.$inferSelect;
 
 /**
  * One row per at-risk carrier episode. `closed_at IS NULL` = open (partial unique on
- * tenant+carrier). Terminal statuses stamp `closed_at`; Citi (`phase_3_citi`) is final and
- * never auto-closed by the DWH sync.
+ * tenant+carrier). Terminal statuses stamp `closed_at`. Any open phase (incl. CITI) closes
+ * automatically when a new transaction lands after `created_at`.
  */
 export const retentionCases = pgTable(
   'retention_cases',
@@ -121,6 +121,13 @@ export const retentionCases = pgTable(
      * so Sales modal dial is instant without a lazy warehouse round-trip.
      */
     contactPhone: text('contact_phone'),
+    /** DWH preferred language label when known (e.g. Spanish from Main_Language). */
+    preferredLanguage: text('preferred_language'),
+    /**
+     * True when deal should route to Spanish Retention desk (Jean Paul):
+     * main_language=Spanish OR nationality=Spanish.
+     */
+    isSpanishDesk: boolean('is_spanish_desk').notNull().default(false),
 
     phaseCode: text('phase_code')
       .notNull()
@@ -139,7 +146,7 @@ export const retentionCases = pgTable(
 
     assignedAgentZohoUserId: text('assigned_agent_zoho_user_id'),
     /**
-     * Last deal owner when the case entered Open Pool — approves claim requests
+     * Last deal owner when the case entered Open Pool (display / notify; CS approves claims)
      * (Sales agent-to-agent transfer). Cleared when a claim is finalized.
      */
     poolOwnerZohoUserId: text('pool_owner_zoho_user_id'),
@@ -153,7 +160,7 @@ export const retentionCases = pgTable(
     dealOwnerChanged: boolean('deal_owner_changed').notNull().default(false),
 
     currentDeadlineAt: timestamp('current_deadline_at', { withTimezone: true }),
-    /** e.g. '2BD_agent_action' | '5BD_comms_attempt' | '5BD_post_contact' | '10BD_retention' */
+    /** e.g. '2BD_agent_action' | '1BD_comms_attempt' | '5BD_post_contact' | '10BD_retention' */
     currentDeadlineType: text('current_deadline_type'),
     vacationCountdownEnd: timestamp('vacation_countdown_end', { withTimezone: true }),
     citiFolderEnteredAt: timestamp('citi_folder_entered_at', { withTimezone: true }),

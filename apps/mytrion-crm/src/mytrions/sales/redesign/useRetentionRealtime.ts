@@ -31,7 +31,12 @@ export function useRetentionRealtime(
       if (!event.type.startsWith('retention.')) return;
 
       const forMe = zohoIdsMatch(event.ownerId, currentUserId);
-      const poolBroadcast = event.type === 'retention.pool.opened';
+      // Pool-topic peers need claim lifecycle refreshes (toasts stay owner-scoped below).
+      const poolBroadcast =
+        event.type === 'retention.pool.opened' ||
+        event.type === 'retention.claim_request' ||
+        event.type === 'retention.claim_approved' ||
+        event.type === 'retention.claim_declined';
       if (!forMe && !poolBroadcast) return;
 
       publishRetentionLive({

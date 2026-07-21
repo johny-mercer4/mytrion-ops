@@ -18,6 +18,8 @@ export * from './file_assets.js';
 export * from './approvals.js';
 export * from './agent_memories.js';
 export * from './retention_cases.js';
+export * from './retention_claim_requests.js';
+export * from './retention_rr_cursors.js';
 export * from './inbox_events.js';
 export * from './mytrion_profile_defaults.js';
 export * from './worker_mytrion_access.js';

@@ -5,13 +5,13 @@ import { Icon } from './icons';
 import {
   cadenceExplain,
   channelLabel,
-  deadlineCaption,
   freqLabel,
-  isOverdue,
   quietCaption,
   statusLabel,
   type RetentionCaseRow,
 } from './retentionData';
+import { RetentionStageTimer } from './RetentionBoardUi';
+import { isSalesLocked, stageTimer } from './retentionTimers';
 
 export function RetentionCaseHeader(props: {
   loading: boolean;
@@ -163,11 +163,11 @@ export function RetentionInactivityBlock({ row }: { row: RetentionCaseRow }) {
 }
 
 export function RetentionMetaGrid({ row }: { row: RetentionCaseRow }) {
-  const overdue = isOverdue(row);
+  const locked = isSalesLocked(row);
+  const timer = locked ? null : stageTimer(row);
   const cells: [string, string, string?][] = [
     ['Status', statusLabel(row.statusCode)],
     ['Frequency', freqLabel(row.transactionFrequency), cadenceExplain(row.transactionFrequency)],
-    ['Deadline', deadlineCaption(row)],
     ['90d gallons', row.gallons90d != null ? Math.round(row.gallons90d).toLocaleString() : '—'],
     ['Attempts', `${row.outOfReachAttempts}/5`],
     ['Assignment', String(row.assignmentCount)],
@@ -175,6 +175,26 @@ export function RetentionMetaGrid({ row }: { row: RetentionCaseRow }) {
   ];
   return (
     <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:10px')}>
+      <div
+        style={s(
+          'padding:10px 12px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border);grid-column:1 / -1',
+        )}
+      >
+        <div
+          style={s(
+            'font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px',
+          )}
+        >
+          Stage timer
+        </div>
+        {locked ? (
+          <div className="ss-ret-locked-badge">Handed to Retention · no Sales timer</div>
+        ) : timer ? (
+          <RetentionStageTimer timer={timer} />
+        ) : (
+          <div style={s('font-size:13px;font-weight:700;color:var(--faint)')}>No active deadline</div>
+        )}
+      </div>
       {cells.map(([label, value, hint]) => (
         <div
           key={label}
@@ -192,7 +212,7 @@ export function RetentionMetaGrid({ row }: { row: RetentionCaseRow }) {
           </div>
           <div
             style={s(
-              `font-size:13px;font-weight:700;margin-top:4px;color:${label === 'Deadline' && overdue ? 'var(--danger)' : 'var(--text)'}`,
+              'font-size:13px;font-weight:700;margin-top:4px;color:var(--text)',
             )}
           >
             {value}

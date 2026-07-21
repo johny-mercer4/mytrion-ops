@@ -29,6 +29,7 @@ const CHANNELS = [
 const P2_OUTCOMES = [
   'claim',
   'start_working',
+  'mark_pending',
   'saved',
   'refused',
   'out_of_business',
@@ -161,6 +162,40 @@ export const retentionCsTouchpoints: LocalTouchpoint[] = [
 
   {
     kind: 'local',
+    key: 'retention.cs_desk_quota',
+    title: 'CS Retention daily + pending portfolio quota',
+    riskClass: 'read',
+    departments: csDept,
+    identityParam: 'zohoUserId',
+    paramsSchema: z.object({
+      zohoUserId: z.string().max(120).optional(),
+    }),
+    handler: async (ctx, params) => {
+      const zohoUserId = requireZoho(params, ctx);
+      const { countCsAssignmentsToday, getCsPortfolioCounts, CS_MAX_DEALS_PER_DAY, CS_MAX_PENDING_RATIO } =
+        await import('../../retention/csCaps.js');
+      const [assignedToday, portfolio] = await Promise.all([
+        countCsAssignmentsToday(ctx, zohoUserId),
+        getCsPortfolioCounts(ctx, zohoUserId),
+      ]);
+      return {
+        zohoUserId,
+        assignedToday,
+        maxPerDay: CS_MAX_DEALS_PER_DAY,
+        pending: portfolio.pending,
+        open: portfolio.open,
+        pendingRatio: portfolio.pendingRatio,
+        maxPendingRatio: CS_MAX_PENDING_RATIO,
+        canClaim: assignedToday < CS_MAX_DEALS_PER_DAY,
+        canMarkPending:
+          portfolio.open === 0 ||
+          (portfolio.pending + 1) / portfolio.open <= CS_MAX_PENDING_RATIO + 1e-9,
+      };
+    },
+  },
+
+  {
+    kind: 'local',
     key: 'retention.cs_case_get',
     title: 'CS Retention case detail',
     riskClass: 'read',
@@ -223,6 +258,7 @@ export const retentionCsTouchpoints: LocalTouchpoint[] = [
       channel: z.enum(CHANNELS),
       notes: z.string().max(2000).optional(),
       evidence_url: z.string().max(1_800_000).optional(),
+      call_role: z.enum(['listen', 'solution']).optional(),
     }),
     handler: async (ctx, params) => {
       const zohoUserId = requireZoho(params, ctx);
@@ -232,6 +268,10 @@ export const retentionCsTouchpoints: LocalTouchpoint[] = [
         evidenceUrl:
           typeof params.evidence_url === 'string' ? params.evidence_url : undefined,
         actorZohoUserId: zohoUserId,
+        callRole:
+          params.call_role === 'listen' || params.call_role === 'solution'
+            ? params.call_role
+            : undefined,
       });
       return { case: updated };
     },

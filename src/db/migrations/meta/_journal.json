@@ -267,6 +267,34 @@
       "when": 1784665200000,
       "tag": "0037_retention_contact_phone",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1784668800000,
+      "tag": "0038_retention_1bd_comms_attempt",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1784672400000,
+      "tag": "0039_retention_claim_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1784676000000,
+      "tag": "0040_retention_rr_cursors",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1784679600000,
+      "tag": "0041_retention_spanish_desk",
+      "breakpoints": true
     }
   ]
 }

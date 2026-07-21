@@ -139,9 +139,18 @@ describe('seeded per-profile resolution (the landing contract)', () => {
     expect(r.homeMytrion).toBe('sales');
   });
 
-  it('Standard → customer-service, home customer-service', async () => {
+  it('Standard → no Mytrions (CS is Admin-grant only)', async () => {
     mockSeeded();
     const r = await mytrionAccessService.resolveWorkerAccess(principal({ profileName: 'Standard' }));
+    expect(r.accessibleMytrions).toEqual([]);
+    expect(r.homeMytrion).toBeNull();
+  });
+
+  it('Customer Retention → customer-service', async () => {
+    mockSeeded();
+    const r = await mytrionAccessService.resolveWorkerAccess(
+      principal({ profileName: 'Customer Retention' }),
+    );
     expect(r.accessibleMytrions).toEqual(['customer-service']);
     expect(r.homeMytrion).toBe('customer-service');
   });

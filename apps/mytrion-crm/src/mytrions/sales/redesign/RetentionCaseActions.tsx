@@ -186,7 +186,7 @@ export function RetentionCaseActions(props: {
       <div style={s('display:flex;flex-direction:column;gap:14px')}>
         <WizardChrome
           stage="Out of Reach"
-          stepLabel={`Attempt ${row.outOfReachAttempts}/5 · 5 BD each`}
+          stepLabel={`Attempt ${row.outOfReachAttempts}/5 · 1 BD each`}
         />
         <AttemptStep {...props} />
         {/* After every attempt (RC or other), stage picker includes OoR again. */}

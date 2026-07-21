@@ -2,20 +2,29 @@
  * Retention deadline sweeper — applies board timer paths when current_deadline_at is past.
  *
  * Handled deadline types:
- *   2BD_agent_action     → Retention (10 BD wait)
+ *   2BD_agent_action     → Retention (10 BD); CITI if assignment_count ≥ 3
  *   5BD_post_contact     → Open Pool (Reached watch with no fuel)
- *   3BD_pool_claim       → Retention (10 BD)  [unclaimed]
- *   3BD_new_owner        → Open Pool again, or CITI if assignment_count ≥ 3
- *   10BD_retention       → CITI
+ *   3BD_pool_claim       → Retention (10 BD) if unclaimed; CITI if assignment_count ≥ 3
+ *   3BD_new_owner        → Open Pool again, or CITI if assignment_count ≥ 3 (legacy)
+ *   10BD_retention       → Open Pool (CITI if assignment_count ≥ 3)
  *   14D_vacation         → vacation follow-up task (2 BD)
  *   2BD_vacation_followup→ awaiting Ops signoff
+ *   1BD_claim_approve    → auto-approve Open Pool claim (same as CS Approve)
  *
- * 5BD_comms_attempt is an agent SLA indicator only (no auto-transition).
+ * 1BD_comms_attempt (legacy 5BD_*) is an agent SLA indicator only (no auto-transition).
+ *
+ * Open Pool is Phase 1 status `p1_open_pool` (not its own phase). Every entry stamps
+ * `3BD_pool_claim` via enterOpenPool (Sales OoR/Reached, Phase 2 no_response / 10BD, reject).
  */
 import type { RetentionCase } from '../../db/schema/index.js';
+import { RETENTION_PHASE } from '../../db/schema/index.js';
 import { logger } from '../../lib/logger.js';
 import { retentionCaseRepo } from '../../repos/retentionCaseRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
+import {
+  afterRetentionPhaseSideEffects,
+  enrichHandoffWithRoundRobin,
+} from './csRoundRobin.js';
 import {
   awaitingOpsSignoff,
   CLAIM_APPROVE_DEADLINE_TYPE,
@@ -23,6 +32,7 @@ import {
   enterOpenPool,
   handoffToRetention,
   isAgentActionDeadline,
+  MAX_OPEN_POOL_AGENTS,
   moveToCiti,
   NEW_OWNER_DEADLINE_TYPE,
   POOL_CLAIM_DEADLINE_TYPE,
@@ -34,7 +44,6 @@ import {
   vacationFollowupTask,
   type CaseTransitionPatch,
 } from './deadlines.js';
-import { MAX_OPEN_POOL_AGENTS } from './phase1.js';
 import { notifyOpenPoolOpened, notifyOpsVacationSignoff } from './notify.js';
 // Dynamic-import retentionPoolClaimRepo below — a static import cycles
 // deadlineSweep → poolClaimRepo → notify (partial) and crashes boot with
@@ -60,6 +69,13 @@ export function resolveExpiry(row: RetentionCase, now: Date): CaseTransitionPatc
     ) {
       return null;
     }
+    // 3rd Open Pool agent already counted — fail closed to CITI, not Retention.
+    if (row.assignmentCount >= MAX_OPEN_POOL_AGENTS) {
+      return moveToCiti({
+        now,
+        notes: 'Timer: 3rd agent window ended with no action — CITI',
+      });
+    }
     return handoffToRetention({
       now,
       agentOutcome: 'no_action_2bd',
@@ -73,6 +89,7 @@ export function resolveExpiry(row: RetentionCase, now: Date): CaseTransitionPatc
       now,
       agentOutcome: 'reached',
       previousOwnerZohoUserId: row.assignedAgentZohoUserId,
+      assignmentCount: row.assignmentCount,
       notes: 'Timer: no new transaction in 5 BD after Reached — Open Pool',
     });
   }
@@ -105,14 +122,17 @@ export function resolveExpiry(row: RetentionCase, now: Date): CaseTransitionPatc
     return enterOpenPool({
       now,
       previousOwnerZohoUserId: row.assignedAgentZohoUserId,
+      assignmentCount: row.assignmentCount,
       notes: 'Timer: new owner had no transaction in 3 BD — back to Open Pool',
     });
   }
 
   if (type === RETENTION_WAIT_DEADLINE_TYPE && row.phaseCode === 'phase_2_retention') {
-    return moveToCiti({
+    return enterOpenPool({
       now,
-      notes: 'Timer: no new transaction in 10 BD Retention wait — CITI',
+      previousOwnerZohoUserId: row.assignedAgentZohoUserId,
+      assignmentCount: row.assignmentCount,
+      notes: 'Timer: no new transaction in 10 BD Retention — Open Pool (or CITI at max agents)',
     });
   }
 
@@ -161,12 +181,18 @@ export async function sweepRetentionDeadlines(
       continue;
     }
 
-    const patch = resolveExpiry(row, now);
+    let patch = resolveExpiry(row, now);
     if (!patch) {
       summary.skipped += 1;
       continue;
     }
+    if (patch.phaseCode === RETENTION_PHASE.retention) {
+      patch = await enrichHandoffWithRoundRobin(ctx, patch, {
+        isSpanishDesk: row.isSpanishDesk,
+      });
+    }
     const previousOwner = row.assignedAgentZohoUserId ?? row.poolOwnerZohoUserId;
+    const beforePhase = row.phaseCode;
     const updated = await retentionCaseRepo.update(
       ctx,
       String(row.id),
@@ -179,11 +205,22 @@ export async function sweepRetentionDeadlines(
     summary.applied += 1;
     summary.byType[type] = (summary.byType[type] ?? 0) + 1;
 
-    if (patch.statusCode === 'p1_open_pool') {
+    await afterRetentionPhaseSideEffects(beforePhase, updated);
+
+    if (updated.statusCode === 'p1_open_pool') {
+      const poolReason =
+        type === POST_CONTACT_DEADLINE_TYPE
+          ? ('reached' as const)
+          : type === NEW_OWNER_DEADLINE_TYPE
+            ? ('reclaim' as const)
+            : type === RETENTION_WAIT_DEADLINE_TYPE
+              ? ('phase2' as const)
+              : ('out_of_reach' as const);
       await notifyOpenPoolOpened(ctx, {
         caseId: String(row.id),
         carrierId: row.carrierId,
         companyName: row.companyName,
+        reason: poolReason,
         previousOwnerZohoUserId: previousOwner,
         zohoDealId: row.zohoDealId,
       });
@@ -200,7 +237,7 @@ export async function sweepRetentionDeadlines(
       {
         caseId: row.id,
         from: row.statusCode,
-        to: patch.statusCode,
+        to: updated.statusCode,
         deadline: describeDeadline(row),
       },
       'retention deadline applied',

@@ -57,6 +57,8 @@ export interface CrmUser {
   email: string | null;
   profile: string | null;
   role: string | null;
+  /** Zoho Users API `Isonline` — true when the user is currently online in CRM. */
+  isOnline: boolean;
 }
 
 interface CrmUsersApiResponse {
@@ -67,6 +69,7 @@ interface CrmUsersApiResponse {
     profile?: { name?: string } | null;
     role?: { name?: string } | null;
     status?: string;
+    Isonline?: boolean;
   }>;
   info?: { more_records?: boolean; page?: number };
 }
@@ -129,6 +132,7 @@ export class ZohoCrmWrapper extends ZohoWrapper {
           email: u.email ?? null,
           profile: u.profile?.name ?? null,
           role: u.role?.name ?? null,
+          isOnline: u.Isonline === true,
         });
       }
       if (json.info?.more_records !== true) break;
@@ -195,6 +199,7 @@ export class ZohoCrmWrapper extends ZohoWrapper {
       email: u.email ?? null,
       profile: u.profile?.name ?? null,
       role: u.role?.name ?? null,
+      isOnline: u.Isonline === true,
     };
   }
 

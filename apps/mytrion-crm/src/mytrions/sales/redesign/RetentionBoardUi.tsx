@@ -7,13 +7,17 @@ import { s } from './dc';
 import {
   breachSeverity,
   cadenceExplain,
-  deadlineCaption,
   freqLabel,
-  isOverdue,
   quietCaption,
   type RetentionBoardStats,
   type RetentionCaseRow,
 } from './retentionData';
+import {
+  isSalesLocked,
+  stageTimer,
+  type StageTimer,
+  type StageTimerTone,
+} from './retentionTimers';
 
 export function fmtGal(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return '0';
@@ -184,18 +188,90 @@ export function attemptPips(n: number): string {
   return `${'●'.repeat(filled)}${'○'.repeat(5 - filled)}`;
 }
 
+const TONE_CSS: Record<StageTimerTone, string> = {
+  ok: 'var(--ok)',
+  warn: 'var(--warn)',
+  danger: 'var(--danger)',
+  muted: 'var(--muted)',
+};
+
+export function RetentionStageTimer({
+  timer,
+  compact = false,
+}: {
+  timer: StageTimer;
+  compact?: boolean;
+}) {
+  const col = TONE_CSS[timer.tone];
+  return (
+    <div
+      className={`ss-ret-timer${timer.overdue ? ' is-overdue' : ''}${compact ? ' is-compact' : ''}`}
+      title={`${timer.event} · ${timer.remain}`}
+    >
+      <div className="ss-ret-timer-top">
+        <span className="ss-ret-timer-remain" style={{ color: col }}>
+          {timer.remain}
+        </span>
+        {timer.attempts && (
+          <span className="ss-ret-pips" title={`${timer.attempts.used}/${timer.attempts.max} attempts`}>
+            {attemptPips(timer.attempts.used)}
+          </span>
+        )}
+      </div>
+      {!compact && <div className="ss-ret-timer-event">{timer.event}</div>}
+      {timer.tone !== 'muted' && (
+        <div className="ss-ret-timer-track" aria-hidden>
+          <div
+            className="ss-ret-timer-fill"
+            style={{
+              width: `${Math.round(timer.progress * 100)}%`,
+              background: col,
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function RetentionCaseCard({
   row,
   colColor,
   onOpen,
   index = 0,
+  now,
 }: {
   row: RetentionCaseRow;
   colColor: string;
   onOpen: () => void;
   index?: number;
+  now?: Date;
 }) {
-  const overdue = isOverdue(row);
+  const locked = isSalesLocked(row);
+  const timer = locked ? null : stageTimer(row, now ?? new Date());
+  const overdue = Boolean(timer?.overdue);
+
+  if (locked) {
+    return (
+      <div
+        className="ss-ret-card is-locked"
+        style={{ ['--ret-col' as string]: colColor, animationDelay: `${Math.min(index, 8) * 0.04}s` }}
+        title="Dissatisfied — handed to Retention. Locked for Sales."
+      >
+        <div style={s('display:flex;justify-content:space-between;gap:6px;align-items:flex-start')}>
+          <div style={s('font-size:13px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis')}>
+            {row.companyName || '—'}
+          </div>
+          <RetentionFreqBadge f={row.transactionFrequency} />
+        </div>
+        <div style={s("font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text2)")}>
+          {row.carrierId}
+        </div>
+        <div className="ss-ret-locked-badge">Handed to Retention · locked</div>
+      </div>
+    );
+  }
+
   return (
     <button
       type="button"
@@ -221,13 +297,12 @@ export function RetentionCaseCard({
         <span style={s('color:var(--text2);font-family:JetBrains Mono,monospace')}>
           {row.gallons90d != null ? `${fmtGal(row.gallons90d)} gal` : '—'}
         </span>
-        <span style={s(`font-weight:700;color:${overdue ? 'var(--danger)' : 'var(--muted)'}`)}>
-          {deadlineCaption(row)}
-        </span>
       </div>
-      {row.outOfReachAttempts > 0 && (
-        <div className="ss-ret-pips" title={`${row.outOfReachAttempts}/5 Out of Reach attempts`}>
-          {attemptPips(row.outOfReachAttempts)}
+      {timer ? (
+        <RetentionStageTimer timer={timer} />
+      ) : (
+        <div className="ss-ret-timer is-muted">
+          <div className="ss-ret-timer-event">No active deadline</div>
         </div>
       )}
     </button>

@@ -353,7 +353,7 @@ export function StageStep(props: {
   reasonNote: string;
   statusPick: StatusPick;
   showOutOfReach: boolean;
-  /** Already on OoR — confirming OoR stays on the stage and refreshes the 5 BD timer. */
+  /** Already on OoR — confirming OoR stays on the stage and refreshes the 1 BD timer. */
   alreadyOutOfReach?: boolean;
   title?: string;
   setStatusPick: (v: StatusPick) => void;
@@ -369,8 +369,8 @@ export function StageStep(props: {
     row.outOfReachAttempts >= 5
       ? '5/5 → Open Pool'
       : alreadyOoR
-        ? `Stay OoR · attempt ${row.outOfReachAttempts}/5 · 5 BD`
-        : 'Channel attempts · 5×5 BD';
+        ? `Stay OoR · attempt ${row.outOfReachAttempts}/5 · 1 BD`
+        : 'Channel attempts · 5×1 BD';
 
   return (
     <section

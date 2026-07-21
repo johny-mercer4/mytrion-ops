@@ -2,15 +2,17 @@
  * Phase-1 / Open Pool workflow queries on retention_cases.
  * Kept separate from core CRUD so retentionCaseRepo stays under the file-size cap.
  */
-import { and, desc, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
+  RETENTION_PHASE,
   retentionCaseEvents,
   retentionCases,
   type CommunicationChannel,
 } from '../db/schema/index.js';
 import { AppError, NotFoundError } from '../lib/errors.js';
 import { enterOpenPool } from '../modules/retention/deadlines.js';
+import { afterRetentionPhaseSideEffects } from '../modules/retention/csRoundRobin.js';
 import { notifyOpenPoolOpened } from '../modules/retention/notify.js';
 import {
   MAX_OUT_OF_REACH_ATTEMPTS,
@@ -27,7 +29,7 @@ import {
 } from './retentionCaseRepo.js';
 
 export const retentionCasePhase1Repo = {
-  /** Cases assigned to a sales agent (Phase 1 focus + recently closed for the board). */
+  /** Cases assigned to a sales agent (Phase 1 board). Pooled deals drop off — assignee cleared. */
   async listForAgent(
     ctx: TenantContext,
     zohoUserId: string,
@@ -48,6 +50,14 @@ export const retentionCasePhase1Repo = {
       );
       if (recentOrOpen) clauses.push(recentOrOpen);
     }
+    // Sales board: open Phase 2 / CITI are CS-owned — hide until they return via Open Pool.
+    if (opts.phaseCode === undefined) {
+      const salesVisible = or(
+        eq(retentionCases.phaseCode, RETENTION_PHASE.agent),
+        sql`${retentionCases.closedAt} IS NOT NULL`,
+      );
+      if (salesVisible) clauses.push(salesVisible);
+    }
     const where = and(...clauses);
     // Single query — each extra round-trip to remote Render Postgres is ~0.5–2s from local.
     const rows = await db
@@ -59,25 +69,46 @@ export const retentionCasePhase1Repo = {
     return { cases: rows.map(toRetentionCaseDto), total: rows.length };
   },
 
+  /**
+   * Claimable Open Pool cases for Sales Mytrion.
+   * Excludes the viewer's own former deals (`pool_owner` = self) — those stay on
+   * their Cases Kanban as locked. Still includes the viewer's pending claims.
+   */
   async listOpenPool(
     ctx: TenantContext,
-    opts: { limit?: number; pendingForZohoUserId?: string } = {},
+    opts: {
+      limit?: number;
+      pendingForZohoUserId?: string;
+      /** Hide cases this agent previously owned (cannot claim own deal). */
+      excludePoolOwnerZohoUserId?: string;
+    } = {},
   ): Promise<{ cases: RetentionCaseDto[]; total: number }> {
     const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
-    const statusClause: SQL | undefined = opts.pendingForZohoUserId?.trim()
+    const pendingSelf = opts.pendingForZohoUserId?.trim();
+    const excludeOwner = opts.excludePoolOwnerZohoUserId?.trim();
+    const statusClause: SQL | undefined = pendingSelf
       ? or(
           eq(retentionCases.statusCode, 'p1_open_pool'),
           and(
             eq(retentionCases.statusCode, 'p1_pool_claim_pending'),
-            eq(retentionCases.pendingClaimantZohoUserId, opts.pendingForZohoUserId.trim()),
+            eq(retentionCases.pendingClaimantZohoUserId, pendingSelf),
           ),
         )
       : eq(retentionCases.statusCode, 'p1_open_pool');
-    const where = and(
+    const clauses: SQL[] = [
       eq(retentionCases.tenantId, ctx.tenantId),
-      statusClause,
       isNull(retentionCases.closedAt),
-    );
+    ];
+    if (statusClause) clauses.push(statusClause);
+    if (excludeOwner) {
+      // Never list the viewer's own former deals as claimable.
+      const notOwnFormerDeal = or(
+        isNull(retentionCases.poolOwnerZohoUserId),
+        ne(retentionCases.poolOwnerZohoUserId, excludeOwner),
+      );
+      if (notOwnFormerDeal) clauses.push(notOwnFormerDeal);
+    }
+    const where = and(...clauses);
     const rows = await db
       .select()
       .from(retentionCases)
@@ -114,7 +145,7 @@ export const retentionCasePhase1Repo = {
     ctx: TenantContext,
     id: string,
     newAgentZohoUserId: string,
-    opts: { agentName?: string | undefined } = {},
+    opts: { agentName?: string | undefined; reason: string },
   ): Promise<RetentionCaseDto & { pendingApproval: boolean }> {
     const { retentionPoolClaimRepo } = await import('./retentionPoolClaimRepo.js');
     return retentionPoolClaimRepo.requestClaim(ctx, id, newAgentZohoUserId, opts);
@@ -193,32 +224,45 @@ export const retentionCasePhase1Repo = {
       ? enterOpenPool({
           agentOutcome: 'out_of_reach',
           previousOwnerZohoUserId: previousOwner,
+          assignmentCount: existing.assignmentCount,
           notes: `Attempt ${attempts}/${MAX_OUT_OF_REACH_ATTEMPTS} — sent to Open Pool`,
         })
       : null;
     const nextDeadline = toPool ? null : nextCommsAttemptDeadline();
     // Stay OoR between attempts 1–4 (agent may still pick Reached / Dissatisfied / Vacation).
+    // enterOpenPool may return CITI when assignment_count is already at max.
     const rows = await db
       .update(retentionCases)
       .set({
         outOfReachAttempts: toPool ? 0 : attempts,
+        phaseCode: toPool ? pool!.phaseCode : existing.phaseCode,
         statusCode: toPool ? pool!.statusCode : 'p1_out_of_reach',
-        agentOutcome: toPool ? 'out_of_reach' : 'out_of_reach',
+        agentOutcome: toPool ? (pool!.agentOutcome ?? 'out_of_reach') : 'out_of_reach',
         assignedAgentZohoUserId: toPool ? null : existing.assignedAgentZohoUserId,
-        poolOwnerZohoUserId: toPool ? (pool!.poolOwnerZohoUserId ?? null) : existing.poolOwnerZohoUserId,
+        poolOwnerZohoUserId: toPool
+          ? (pool!.poolOwnerZohoUserId ?? null)
+          : existing.poolOwnerZohoUserId,
         pendingClaimantZohoUserId: toPool ? null : existing.pendingClaimantZohoUserId,
         currentDeadlineAt: toPool
-          ? pool!.currentDeadlineAt ?? null
+          ? (pool!.currentDeadlineAt ?? null)
           : (nextDeadline?.currentDeadlineAt ?? null),
         currentDeadlineType: toPool
-          ? pool!.currentDeadlineType ?? null
+          ? (pool!.currentDeadlineType ?? null)
           : (nextDeadline?.currentDeadlineType ?? null),
+        citiFolderEnteredAt: toPool
+          ? (pool!.citiFolderEnteredAt ?? null)
+          : existing.citiFolderEnteredAt,
+        citiFolderHoldUntil: toPool
+          ? (pool!.citiFolderHoldUntil ?? null)
+          : existing.citiFolderHoldUntil,
         updatedAt: new Date(),
       })
       .where(and(eq(retentionCases.id, existing.id), eq(retentionCases.tenantId, ctx.tenantId)))
       .returning();
     const row = firstOrThrow(rows, 'Failed to log retention attempt');
     const channelLabel = input.channel;
+    const landedInPool = toPool && row.statusCode === 'p1_open_pool';
+    const landedInCiti = toPool && row.phaseCode === 'phase_3_citi';
     await appendRetentionEvent({
       caseId: row.id,
       fromStatus: existing.statusCode,
@@ -229,19 +273,26 @@ export const retentionCasePhase1Repo = {
       evidenceUrl,
       notes:
         noteTrim ||
-        (toPool
-          ? `${channelLabel} attempt ${attempts}/${MAX_OUT_OF_REACH_ATTEMPTS} — sent to Open Pool`
-          : `${channelLabel} attempt ${attempts}/${MAX_OUT_OF_REACH_ATTEMPTS}`),
+        (landedInCiti
+          ? `${channelLabel} attempt ${attempts}/${MAX_OUT_OF_REACH_ATTEMPTS} — max agents · CITI`
+          : landedInPool
+            ? `${channelLabel} attempt ${attempts}/${MAX_OUT_OF_REACH_ATTEMPTS} — sent to Open Pool`
+            : `${channelLabel} attempt ${attempts}/${MAX_OUT_OF_REACH_ATTEMPTS}`),
     });
-    if (toPool) {
+    const dto = toRetentionCaseDto(row);
+    if (landedInCiti) {
+      await afterRetentionPhaseSideEffects(existing.phaseCode, dto);
+    }
+    if (landedInPool) {
       await notifyOpenPoolOpened(ctx, {
         caseId: String(row.id),
         carrierId: row.carrierId,
         companyName: row.companyName,
+        reason: 'out_of_reach',
         previousOwnerZohoUserId: previousOwner,
         zohoDealId: row.zohoDealId,
       });
     }
-    return toRetentionCaseDto(row);
+    return dto;
   },
 };

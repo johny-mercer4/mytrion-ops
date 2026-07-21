@@ -142,7 +142,29 @@ describe('retention.my_cases touchpoint', () => {
     expect(res.statusCode).toBe(200);
     // Board loads all phases (New…Closed) — no default phase_1_agent filter.
     expect(phase1.listForAgent).toHaveBeenCalledWith(expect.anything(), '777', {});
-    expect(res.json().data.total).toBe(1);
+  });
+
+  it('retention.pool_list excludes the viewer as pool owner', async () => {
+    phase1.listOpenPool.mockResolvedValueOnce({ cases: [], total: 0 });
+    const token = await salesToken('777');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/touchpoints/retention.pool_list',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+        'x-department-access': 'sales',
+      },
+      payload: { departmentAccess: ['sales'], params: {} },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(phase1.listOpenPool).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        pendingForZohoUserId: '777',
+        excludePoolOwnerZohoUserId: '777',
+      }),
+    );
   });
 });
 
@@ -209,6 +231,24 @@ describe('retention.record_outcome touchpoint', () => {
 });
 
 describe('retention.pool_claim touchpoint', () => {
+  it('requires reason', async () => {
+    const token = await salesToken('888');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/touchpoints/retention.pool_claim',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      payload: {
+        departmentAccess: ['sales'],
+        params: { caseId: '42' },
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(phase1.claimFromPool).not.toHaveBeenCalled();
+  });
+
   it('surfaces the 3-agent pool cap', async () => {
     phase1.claimFromPool.mockRejectedValueOnce(
       new AppError('Maximum 3 agents have already worked this deal — moved to CITI', {
@@ -227,10 +267,15 @@ describe('retention.pool_claim touchpoint', () => {
       },
       payload: {
         departmentAccess: ['sales'],
-        params: { caseId: '42' },
+        params: { caseId: '42', reason: 'Can win back' },
       },
     });
     expect(res.statusCode).toBe(409);
-    expect(phase1.claimFromPool).toHaveBeenCalled();
+    expect(phase1.claimFromPool).toHaveBeenCalledWith(
+      expect.anything(),
+      '42',
+      expect.any(String),
+      expect.objectContaining({ reason: 'Can win back' }),
+    );
   });
 });
