@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   registeredMiniAppCompanies,
@@ -36,6 +36,7 @@ export interface UpsertRegisteredMiniAppCompanyInput {
   telegramUserId: string;
   telegramChatId?: string | undefined;
   telegramUsername?: string | undefined;
+  languageCode?: string | undefined;
   carrierId?: string | undefined;
   applicationId?: string | undefined;
   companyName?: string | undefined;
@@ -188,6 +189,7 @@ export const registeredMiniAppCompanyRepo = {
       telegramUserId: input.telegramUserId,
       telegramChatId: input.telegramChatId ?? null,
       telegramUsername: input.telegramUsername ?? null,
+      languageCode: input.languageCode ?? null,
       carrierId: input.carrierId ?? null,
       applicationId: input.applicationId ?? null,
       companyName: input.companyName ?? null,
@@ -208,6 +210,9 @@ export const registeredMiniAppCompanyRepo = {
           profile: input.profile,
           telegramChatId: input.telegramChatId ?? null,
           telegramUsername: input.telegramUsername ?? null,
+          // Re-opening the link without a language_code (e.g. the dev mock) must not wipe a
+          // previously captured one — keep the stored value when the new input omits it.
+          languageCode: input.languageCode ?? sql`${registeredMiniAppCompanies.languageCode}`,
           carrierId: input.carrierId ?? null,
           applicationId: input.applicationId ?? null,
           companyName: input.companyName ?? null,

@@ -10,6 +10,12 @@ import { AppError, ConflictError, NotFoundError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { env, isProduction } from '../../config/env.js';
 import { db } from '../../db/client.js';
+import { and, desc, eq } from 'drizzle-orm';
+import { miniAppNotifications } from '../../db/schema/index.js';
+import { NOTIFICATION_TYPES } from '../../modules/notifications/registry.js';
+import { listNewsForRegistration, markNewsRead } from '../../modules/notifications/news.js';
+import { markNotificationRead, readNotificationIds } from '../../modules/notifications/service.js';
+import { miniAppTopicFor, realtimeHub } from '../../modules/realtime/hub.js';
 import { FLEET_CARD_LIMIT, getDwhCompanyDetails, listDwhCards, findDwhCardByIdAnyStatus, findDwhCardByNumber } from '../../integrations/dwhCards.js';
 import { listDwhTransactions, resolveDwhTxnRange } from '../../integrations/dwhTransactions.js';
 import { searchDwhClients } from '../../integrations/dwhClients.js';
@@ -569,6 +575,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
             ? { telegramChatId: String(request.headers['x-telegram-chat-id']) }
             : {}),
           ...(tgUser.username ? { telegramUsername: tgUser.username } : {}),
+          ...(tgUser.language_code ? { languageCode: tgUser.language_code } : {}),
           ...(invite.carrierId ? { carrierId: invite.carrierId } : {}),
           ...(invite.applicationId ? { applicationId: invite.applicationId } : {}),
           ...(invite.companyName ? { companyName: invite.companyName } : {}),
@@ -790,6 +797,106 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       cardStatus,
       efsError: balance == null ? 'BALANCE_UNAVAILABLE' : (balance.efs_error ?? null),
     };
+  });
+
+  /**
+   * Inbox feed — BOTH tabs in one call: `news` (posts Octane wrote, audience/role filtered
+   * server-side from the caller's own verified registration) and `notifications` (this
+   * user's slice of the notification outbox). A driver's slice is fail-closed to their own
+   * card, exactly mirroring the dispatcher's routing — the feed can never show more than
+   * the bot would have sent.
+   */
+  app.post('/carrier/mini-app/inbox', async (request) => {
+    const body = selfServiceSchema.parse(request.body);
+    const { registration, carrierId } = await requireRegisteredCarrierUser(body.initData);
+    const role = registration.profile === 'driver' ? 'driver' : 'owner';
+    const [news, rows] = await Promise.all([
+      listNewsForRegistration(registration),
+      db
+        .select()
+        .from(miniAppNotifications)
+        .where(
+          and(
+            eq(miniAppNotifications.tenantId, registration.tenantId),
+            eq(miniAppNotifications.carrierId, carrierId),
+            eq(miniAppNotifications.status, 'sent'),
+          ),
+        )
+        .orderBy(desc(miniAppNotifications.createdAt))
+        .limit(60),
+    ]);
+    const visible = rows
+      .filter((ev) => {
+        if (ev.telegramUserId != null) return ev.telegramUserId === registration.telegramUserId;
+        const spec = NOTIFICATION_TYPES[ev.type];
+        if (!spec || !(spec.roles as readonly string[]).includes(role)) return false;
+        if (role === 'driver') {
+          const evCard = typeof ev.payload['cardId'] === 'string' ? ev.payload['cardId'] : '';
+          return Boolean(evCard) && evCard === (registration.cardId ?? '');
+        }
+        return true;
+      })
+      .slice(0, 30);
+    // Per-user read state (server-persisted, N-3) — the unread badge now survives a reload/relaunch,
+    // exactly like news receipts. Only the visible slice is queried, so it never leaks other ids.
+    const readIds = await readNotificationIds(
+      registration.telegramUserId,
+      visible.map((ev) => ev.id),
+    );
+    const notifications = visible.map((ev) => ({
+      id: ev.id,
+      type: ev.type,
+      payload: ev.payload,
+      createdAt: ev.createdAt.toISOString(),
+      read: readIds.has(ev.id),
+    }));
+    return { news, notifications };
+  });
+
+  const newsReadSchema = selfServiceSchema.extend({ newsId: z.string().min(1).max(60) });
+
+  app.post('/carrier/mini-app/inbox/news-read', async (request) => {
+    const body = newsReadSchema.parse(request.body);
+    const { registration } = await requireRegisteredCarrierUser(body.initData);
+    await markNewsRead(registration, body.newsId);
+    return { ok: true };
+  });
+
+  const notificationReadSchema = selfServiceSchema.extend({ notificationId: z.string().min(1).max(60) });
+
+  app.post('/carrier/mini-app/inbox/notification-read', async (request) => {
+    const body = notificationReadSchema.parse(request.body);
+    const { registration } = await requireRegisteredCarrierUser(body.initData);
+    await markNotificationRead(registration.telegramUserId, body.notificationId);
+    return { ok: true };
+  });
+
+  /**
+   * Live inbox over the EXISTING realtime hub (modules/realtime/hub.ts) — the mini-app's
+   * doorway into it. The internal /v1/realtime endpoint authenticates JWT/API-key sessions;
+   * a mini-app user's identity is a signed Telegram initData instead, so this route verifies
+   * that and subscribes the socket to exactly ONE topic: their own
+   * `inbox:miniapp:<telegramUserId>`. No client protocol at all — subscribe-only, so there
+   * is nothing to validate and no way to reach anyone else's topic from here.
+   */
+  app.get('/carrier/mini-app/realtime', { websocket: true }, (socket, request) => {
+    socket.on('close', () => realtimeHub.dropSocket(socket));
+    socket.on('error', () => realtimeHub.dropSocket(socket));
+    const { initData } = request.query as { initData?: string };
+    void (async () => {
+      try {
+        const { registration } = await requireRegisteredCarrierUser(initData ?? '');
+        const topic = miniAppTopicFor(registration.telegramUserId);
+        realtimeHub.subscribe(socket, topic);
+        socket.send(JSON.stringify({ kind: 'hello', topic }));
+      } catch {
+        try {
+          socket.close(4401, 'unauthorized');
+        } catch {
+          /* already gone */
+        }
+      }
+    })();
   });
 
   /**
@@ -1280,6 +1387,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
           profile: 'driver',
           telegramUserId,
           ...(tgUser.username ? { telegramUsername: tgUser.username } : {}),
+          ...(tgUser.language_code ? { languageCode: tgUser.language_code } : {}),
           carrierId: card.carrierId,
           cardId: card.cardId,
           driverName,

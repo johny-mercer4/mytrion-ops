@@ -225,6 +225,7 @@ function registrationRow(overrides: Record<string, unknown> = {}) {
     telegramUserId: '123456',
     telegramChatId: null,
     telegramUsername: 'fleet_owner',
+    languageCode: null,
     carrierId: '5758544',
     applicationId: 'APP-9',
     companyName: 'Acme Transport LLC',

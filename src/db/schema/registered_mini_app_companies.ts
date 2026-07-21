@@ -21,6 +21,9 @@ export const registeredMiniAppCompanies = pgTable(
     telegramUserId: text('telegram_user_id').notNull(),
     telegramChatId: text('telegram_chat_id'),
     telegramUsername: text('telegram_username'),
+    /** Telegram's language_code at registration — the locale the bot renders proactive copy in
+     * (null = fall back to 'en'). Captured on redeem/self-register; the mini-app UI picks its own. */
+    languageCode: text('language_code'),
     carrierId: text('carrier_id'),
     applicationId: text('application_id'),
     companyName: text('company_name'),
