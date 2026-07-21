@@ -16,6 +16,7 @@ import {
   fuzzyCarrier,
   mapTransaction,
   saveCarrierMemory,
+  searchCarrierInvoices,
   syncCrmOnly as syncCrmOnlyApi,
   topUpTransaction,
   unmapTransaction,
@@ -222,7 +223,7 @@ export function TransactionModal({ tx, currentUserName, onClose, onPatch, onToas
     setSelectedInvoice(null);
     setIsPrepay(false);
     const [invRes, typeRes] = await Promise.allSettled([
-      billingTouchpoint('billing.invoices.search', { carrierId: cid }),
+      searchCarrierInvoices(cid),
       billingTouchpoint('billing.carrier.type', { carrierId: cid }),
     ]);
     try {
@@ -395,7 +396,7 @@ export function TransactionModal({ tx, currentUserName, onClose, onPatch, onToas
     if (!cid || draft.searching) return;
     setDraft((d) => ({ ...d, searching: true, error: '', invoiceOptions: [], selectedInvoice: null, isPrepayCarrier: false }));
     const [invRes, typeRes] = await Promise.allSettled([
-      billingTouchpoint('billing.invoices.search', { carrierId: cid }),
+      searchCarrierInvoices(cid),
       billingTouchpoint('billing.carrier.type', { carrierId: cid }),
     ]);
     try {

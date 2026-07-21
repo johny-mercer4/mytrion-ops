@@ -4,7 +4,6 @@
  * execution path.
  */
 import type { Touchpoint } from '../types.js';
-import { billingDelugeTouchpoints } from './billingDeluge.js';
 import { browserAutoTouchpoints } from './browserAuto.js';
 import { carrierDelugeTouchpoints } from './carrierDeluge.js';
 import { csDelugeTouchpoints } from './csDeluge.js';
@@ -25,7 +24,6 @@ const ALL: Touchpoint[] = [
   ...ticketsDelugeTouchpoints,
   ...financeDelugeTouchpoints,
   ...csDelugeTouchpoints,
-  ...billingDelugeTouchpoints,
   ...serverCrmAgentTouchpoints,
   ...serverCrmMiscTouchpoints,
   ...serverCrmFinanceTouchpoints,

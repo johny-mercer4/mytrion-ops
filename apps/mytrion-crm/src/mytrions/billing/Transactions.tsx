@@ -20,6 +20,7 @@ import { broadcastMapping, fetchTransactions, searchTransactions } from '@/api/b
 import { useUserContext } from '../../context/UserContextProvider';
 import { useLoad } from '../_shared/useLoad';
 import { type TxSource, dateLabel, fmtCurrency } from './data';
+import { ChaseAddModal } from './ChaseAddModal';
 import { TransactionModal } from './TransactionModal';
 import { useMappingSocket, type RemoteMappingEvent } from './useMappingSocket';
 import {
@@ -92,6 +93,7 @@ export function Transactions() {
   const [searchFetching, setSearchFetching] = useState(false);
 
   const [openId, setOpenId] = useState<string | null>(null);
+  const [showChaseAdd, setShowChaseAdd] = useState(false);
   const [toast, setToast] = useState<{ id: number; kind: ToastKind; message: string } | null>(null);
 
   const notify = useCallback((kind: ToastKind, message: string) => {
@@ -337,6 +339,16 @@ export function Transactions() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <button
+            className="bm-refresh-btn"
+            onClick={() => setShowChaseAdd(true)}
+            title="Manually add a Chase transaction"
+          >
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Add Chase
+          </button>
           <button className="bm-refresh-btn" onClick={reload} disabled={firstPage.loading || firstPage.refreshing} title="Refresh">
             <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" className={firstPage.loading || firstPage.refreshing ? 'spin-icon' : undefined}>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={REFRESH_PATH} />
@@ -548,6 +560,16 @@ export function Transactions() {
           onClose={() => setOpenId(null)}
           onPatch={(patch) => patchAndBroadcast(openTx, patch)}
           onToast={notify}
+        />
+      ) : null}
+
+      {showChaseAdd ? (
+        <ChaseAddModal
+          onClose={() => setShowChaseAdd(false)}
+          onAdded={(msg) => {
+            notify('success', msg);
+            reload();
+          }}
         />
       ) : null}
 

@@ -7,6 +7,7 @@ import { request } from './transport';
 import { callTouchpoint } from './touchpoints';
 import type {
   BillingFuzzyResult,
+  BillingInvoicesResult,
   BillingMemoryResult,
   BillingPrepayCompanies,
   BillingPrepayLedger,
@@ -45,6 +46,11 @@ export function fetchTransactions(page: number, limit: number): Promise<BillingT
 /** Full-dataset text search. */
 export function searchTransactions(query: string): Promise<BillingTransactionsPage> {
   return billingGet(`/billing/transactions/search?query=${encodeURIComponent(query)}`);
+}
+
+/** Last-365-day invoices for a carrier (the mapping picker) — CMP read via servercrm. */
+export function searchCarrierInvoices(carrierId: string): Promise<BillingInvoicesResult> {
+  return billingGet(`/billing/invoices/search?carrierId=${encodeURIComponent(carrierId)}`);
 }
 
 /** Paged returns / chargebacks queue. */
@@ -172,6 +178,26 @@ export function matchReturn(returnId: string, transactionRecordId: string): Prom
 /** Learn a company → carrier pair (auto-map memory). */
 export function saveCarrierMemory(companyName: string, carrierId: string): Promise<BillingWriteResult> {
   return billingWrite('/billing/carrier/memory', { companyName, carrierId });
+}
+
+export interface ManualChaseInput {
+  amount: number;
+  postingDate: string; // yyyy-mm-dd
+  senderName?: string | undefined;
+  description?: string | undefined;
+  reference?: string | undefined;
+  memo?: string | undefined;
+}
+
+/** Manually add a Chase transaction (Chase has no email/API feed) → lands unmapped in PG. */
+export function addManualChaseTransaction(
+  body: ManualChaseInput,
+): Promise<{ status: string; sourceRecordId?: string; message?: string }> {
+  return request('POST', '/billing/transactions/manual', { headers: BILLING_HEADERS, body }) as Promise<{
+    status: string;
+    sourceRecordId?: string;
+    message?: string;
+  }>;
 }
 
 // Data Center is now read-only (the Zoho deal-billing edit was removed) — no write here.

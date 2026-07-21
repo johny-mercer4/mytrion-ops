@@ -22,7 +22,6 @@ const WIDGET_DELUGE_FUNCTIONS = [
   'mytrionfetchbillingforminfo',
   'mytrioncardstatus',
   'mytrioncardlimits',
-  'mytrionSearchInvoices',
   'createescalationticket',
   'createticketincrm',
   'uploadticketattachment',
@@ -35,11 +34,12 @@ describe('catalog shape', () => {
   it('has unique keys and the expected size', () => {
     const keys = all.map((t) => t.key);
     expect(new Set(keys).size).toBe(keys.length);
-    // Billing kept only 1 Deluge touchpoint (invoices.search, a CMP read); the rest of the
-    // Transactions/Returns/carrier surface moved to Postgres-backed REST routes. Two waves of Sales
-    // touchpoints migrated Deluge→native (kind: 'local'): 4 dashboards + 6 CRM-backed (inbox/
-    // announcements/leads/application/trucking), dropping the deluge count 30→20.
-    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(20);
+    // Billing has ZERO Deluge touchpoints now — the whole Transactions/Returns/carrier surface,
+    // including the mapping-picker invoice search (mytrionSearchInvoices → GET /billing/invoices/
+    // search, a CMP read via servercrm), moved off Deluge. Two waves of Sales touchpoints migrated
+    // Deluge→native (kind: 'local'): 4 dashboards + 6 CRM-backed (inbox/announcements/leads/
+    // application/trucking), dropping the deluge count 30→20; billing's last one drops it to 19.
+    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(19);
     // +7 billing servercrm touchpoints (deals, debtors, avg-days, carrier-type, 3× prepay).
     expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(51);
     // BOCA + Close Application (Playwright microservice) + Zapier ticket-email webhook.
@@ -49,8 +49,9 @@ describe('catalog shape', () => {
 
   it('billing touchpoints are billing-gated and portfolio-wide (no owner scoping)', () => {
     const billing = all.filter((t) => t.key.startsWith('billing.'));
-    // 1 Deluge (invoices.search) + 7 servercrm (DWH/prepay reads); everything else is now REST.
-    expect(billing).toHaveLength(8);
+    // 7 servercrm touchpoints (DWH/prepay reads); everything else — including the invoice-search
+    // mapping picker — is now a Postgres-backed / servercrm-proxied REST route, no Deluge.
+    expect(billing).toHaveLength(7);
     for (const tp of billing) {
       expect(tp.departments, `${tp.key} must be billing-gated`).toEqual(['billing']);
       // Billing is a portfolio role: no per-agent carrier ownership gate (would wrongly

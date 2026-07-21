@@ -2,6 +2,100 @@
    Billing Mytrion — Payment Transactions Panel
    ===================================================== */
 
+/* ── Chase manual-add modal: real, clearly-editable form fields (db-search-input is
+   borderless-by-design for the search bar, so the modal needs its own input style). ── */
+.bm-root .chase-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+.bm-root .chase-intro {
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+    padding-bottom: 0.15rem;
+}
+.bm-root .chase-row-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.85rem;
+}
+@media (max-width: 540px) {
+    .bm-root .chase-row-2 { grid-template-columns: 1fr; }
+}
+.bm-root .chase-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-width: 0;
+}
+.bm-root .chase-label {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+.bm-root .chase-label .chase-req { color: var(--danger-text); font-weight: 700; }
+.bm-root .chase-label .chase-opt {
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 0.6rem;
+    color: var(--text-muted);
+}
+.bm-root .chase-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.85rem;
+    padding: 0.55rem 0.7rem;
+    outline: none;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.bm-root .chase-input::placeholder { color: var(--text-muted); }
+.bm-root .chase-input:focus {
+    border-color: var(--billing-accent);
+    box-shadow: 0 0 0 3px var(--accent-bg);
+}
+/* Amount — the hero field: mono, larger, with a $ affix. */
+.bm-root .chase-amount { position: relative; }
+.bm-root .chase-amount .chase-cur {
+    position: absolute;
+    left: 0.7rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    font-size: 1rem;
+    font-weight: 700;
+    pointer-events: none;
+}
+.bm-root .chase-amount .chase-input {
+    padding-left: 1.6rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--success-text);
+}
+.bm-root .chase-optional-head {
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 0.15rem 0 0.1rem;
+    border-top: 1px solid var(--border-light);
+    margin-top: 0.15rem;
+    padding-top: 0.7rem;
+}
+
 /* ── Panel layout (inherits .bm-panel: 22px 26px / gap 16px) ── */
 .bm-root .tx-panel {
     height: 100%;

@@ -8,13 +8,13 @@
  * ./data.ts. The deal-billing edit (a Zoho CRM write) was removed — billing fields are now managed
  * in Zoho CRM directly, so Data Center never writes to Zoho.
  *
- * Detail modal lazy-loads avg-days (billing.datacenter.avgDays) and invoices/prepay
- * (billing.invoices.search) — both DWH-sourced; Debtor Status + Recent Transactions render as
- * graceful, honest placeholders (no per-carrier billing touchpoint wired for those yet).
+ * Detail modal lazy-loads avg-days (billing.datacenter.avgDays, DWH) and the carrier's invoices
+ * (searchCarrierInvoices → GET /billing/invoices/search, a CMP read via servercrm); Debtor Status +
+ * Recent Transactions render as graceful, honest placeholders (no per-carrier source wired yet).
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
-import { billingTouchpoint } from '@/api/billing';
+import { billingTouchpoint, searchCarrierInvoices } from '@/api/billing';
 import type { BillingDealsResult, BillingInvoicesResult } from '@/api/touchpointTypes';
 import { useLoad } from '../_shared/useLoad';
 import { type Deal, type PayType, type StageSem, type Verify, payMeta, stageMeta } from './data';
@@ -515,7 +515,7 @@ function DealDetailModal({ deal, onClose }: { deal: Deal; onClose: () => void })
   const inv = useLoad<BillingInvoicesResult>(
     () =>
       deal.carrierId
-        ? billingTouchpoint('billing.invoices.search', { carrierId: deal.carrierId })
+        ? searchCarrierInvoices(deal.carrierId)
         : Promise.resolve<BillingInvoicesResult>({}),
     [deal.carrierId],
   );
