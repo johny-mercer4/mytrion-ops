@@ -4483,3 +4483,30 @@ endpoint — parked until owner decides.
   so either a mini-app approve endpoint (no webhook, recommended) or a separate approval bot token.
 
 **Migration numbering:** next hand-written migration is 0041+ (0031-0040 used after the build merge).
+
+### 2026-07-21 — Support-bot PROD PARITY: hamma servis ulandi (money code ham)
+
+Owner qarori: prod uchun to'liq parity. /v1/support-bot yangi endpointlar (hammasi
+resolveCaller RBAC + audit + rate ostida): service-request (butun ticket oilasi, billing-form
+ham), tracking, money-code/draw (FF gate; QIYMAT guruhga emas — owner'ning shaxsiy Octane-bot
+chatiga DM), card-action (activate/deactivate, last-6 bilan; resolveCardByLast6 — 0 match=404,
+ko'p match=409 "last 6 bering"), card-limits (MINIAPP_LIMIT_CHANGE_MAX cap), card-info
+(driver o'z kartasi cardLast6'siz; driverName owner-only), balance (raqamlar DM'ga),
+manual-code (to'liq PAN faqat DM'ga). Gateway: 8 yangi tool + allowedTools + prompt
+(har yozuvga bir-qatorlik confirm; sezgir narsa guruhga chiqmaydi).
+Test checklist (guruhda): owner money code (flag on) → DM'da kod; "4753 ni o'chir" →
+ambiguous bo'lsa last-6 so'raydi; driver unit change o'z kartasiga; balance → DM;
+manual code → DM; billing form → ticket id.
+
+### 2026-07-21 — Gateway: buttons-first UX (Telegram inline keyboard qatlami)
+
+Analitika asosi: klient so'rovlari qisqa/chala ("kod", "gtg?") — eng qulay UX yozish emas,
+BOSISH. Qo'shildi: telegram.ts sendButtons (inline_keyboard, ≤8 tugma 2 tadan qatorda) +
+answerCallback; getUpdates endi callback_query ham oladi; index.ts tap'ni sessiyaga
+"[button tap from <name> (id N)]: <data>" qilib uzatadi (id Telegram'dan — construction
+bo'yicha sender-verified), registered-gate tap'larga ham; tools.ts telegram_buttons tool +
+allowedTools. Prompt "Buttons-first UX": har yozuv-confirm faqat tugma (✅ Ha/❌ Yo'q),
+bo'sh tag/help/menu → rolga mos, talab-tartibli menyu (owner: money code birinchi — 2251;
+driver: kartam holati birinchi), tanlovlar (davr, ambiguous karta, ticket turi) tugmalarda.
+Test: "@bot menu" → tugmali menyu; money code oqimi to'liq tap bilan; "4753 o'chir" →
+Ha/Yo'q tugmalari.
