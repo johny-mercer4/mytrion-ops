@@ -4,6 +4,25 @@
 > Analitika/notification_system_ultraplan.md ni o'qi. Bu hujjat NIMA qilishni, mavjud kod
 > QAYERDA ekanini va buzib bo'lmaydigan invariantlarni beradi.
 
+## HOLAT (2026-07-21 — oxirgi sessiya) — keyingi promt shu yerdan davom etsin
+
+- **T1 limit poller — DEFER.** Per-card kunlik gallon limiti hech qayerda o'qilmaydi (servercrm
+  getCards={card_number,status} / `/efs`=status,unit,driver / limits GET yo'q; DWH `dim_card`da
+  gallon cap yo'q, faqat carrier `credit_limit` $). Yo'llar: configured threshold (env) YOKI
+  servercrm'ga yangi EFS-policy read endpoint. Owner qaror qilmaguncha parked.
+- **T2 receipt poller — DONE.** `pollers.ts runReceiptPoll` (listDwhTransactions/day → txn boshiga
+  bitta receipt, watermark `receipt:<carrier>`, baseline-first, dedupe txnId, narx yo'q, cap 20).
+  `notification.poll` cron ichida ketma-ket. Mini-app `notifToInbox` receipt + i18n 4 til.
+- **T3 weekly statement — SKIP (hozircha).** Blokersiz: buildTxnReport + sendDocument tayyor.
+- **T4 money code + owner confirm — DEFER.** MVP qarori: money code company owner uchun DISABLED
+  (`FF_MINIAPP_MONEY_CODE_ENABLED=0`, ship default). Qayta boshlanganda AVVAL owner-confirm
+  mexanizmini hal qil: Telegram inline tugma → bot `callback_query` kerak, lekin carrier bot token
+  agent-gateway `getUpdates` bilan poll qilinyapti va `setWebhook` uni o'chiradi. Yechim: mini-app
+  approve endpoint (webhook yo'q — TAVSIYA) yoki alohida approval bot token.
+
+**Migratsiya raqami:** endi **0041+** (0031-0040 build merge'dan keyin ishlatilgan). agent-gateway'ga
+TEGMA (boshqa sessiya, gitignore). Feature branch, savol chiqsa to'xtab yoz.
+
 ## Nima allaqachon bor (tegma, foydalanaman de)
 
 - **Outbox:** `mini_app_notifications` (+`_prefs`, +`_state` watermark) — migratsiyalar 0031-0033.

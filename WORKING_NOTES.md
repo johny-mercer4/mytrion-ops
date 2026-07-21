@@ -4439,3 +4439,47 @@ Reference: `zoho-octane` self-service Records → Money Codes.
   on Ops DB, then ServerCRM EFS-safe void which writes back to the same table).
 - Draw/preview stay `dwh.money_code` / `dwh.money_code_draw` (live EFS).
 - FE: `dataCenterMoneyCodes.tsx` — never shows `efs_money_code`.
+
+### 2026-07-21 — Notifications Phase-2: T2 receipt poller (T1 deferred)
+
+**T1 (limit poller) DEFERRED** — per-card daily gallon (ULSD) limit is readable NOWHERE:
+servercrm getCards mart = {card_number, status} only; `/cards/{c}/{card}/efs` = status/unit/driver
+(no limit); no GET for card limits (setCardLimits is write-only, GETs 404). DWH `dim_card` has no
+gallon limit; all DWH "limit" columns are carrier-level `credit_limit` ($ credit line, not per-card
+gallons). Usage gallons exist (`fuel_quantity`/`line_item_fuel_quantity`) but no cap to compare
+against. T1 needs either a configured threshold (env, v1) or a new servercrm EFS-policy read
+endpoint — parked until owner decides.
+
+**T2 (receipt poller) DONE** — `pollers.ts runReceiptPoll`:
+- Source `listDwhTransactions({carrierId, range:'day', limit:200})` (DWH fast path, `t.*`).
+- Line items collapsed → one receipt per `transaction_id` (sum `line_item_fuel_quantity`).
+- Watermark `receipt:<carrierId>` = last `transaction_date`; FIRST pass baseline-only (no blast).
+  Re-scan safe: dedupe_key `receipt:<carrier>:<txnId>` (outbox UNIQUE).
+- Payload: last6, gallons, location, city, state, cardId — **NO price** (driver rule). cardId via
+  findDwhCardByNumber (cached per card), owner hears w/o it, driver copy fail-closed.
+- Backfill guard: RECEIPT_PER_CARD_CAP=20/card/run.
+- Wired into the SINGLE `notification.poll` cron (sequential after runCardStatusPoll — no new job).
+- Mini-app: `notifToInbox` 'receipt' case + `inbox.ntfReceipt.title/body` in 4 langs (en/ru/uz/es).
+- No new env (reuses NOTIFY_POLL_CARRIERS), no migration (reuses `mini_app_notification_state`).
+- Checklist: tsc root+mini-app 0, eslint 0, 762 tests pass (no regression), i18n 4 til. Test on Mac.
+
+### 2026-07-21 — Notifications Phase-2 roadmap decision: money code OFF for MVP
+
+**Decision (owner):** for the MVP, the mini-app money code stays DISABLED for company owners.
+- Enforced by `FF_MINIAPP_MONEY_CODE_ENABLED` — ship default `0` (env.ts + .env.example); local .env
+  flipped 1->0 to match. Backend `requireMoneyCodeEnabled()` -> `MINIAPP_MONEY_CODE_DISABLED`; the
+  mini-app already degrades to a disabled sheet ("Money codes are not enabled here yet. Please send
+  a request instead.") — no dead screen. Verified live.
+
+**Phase-2 status after this session:**
+- T1 limit poller — DEFERRED. Per-card daily gallon limit is readable nowhere (servercrm getCards /
+  `/efs` / no limits GET; DWH `dim_card` no gallon cap, only carrier `credit_limit` $). Needs a
+  configured threshold (env) or a new servercrm EFS-policy read endpoint.
+- T2 receipt poller — DONE (runReceiptPoll + mini-app receipt row, i18n 4 lang).
+- T3 weekly statement — SKIPPED for now (unblocked when wanted: buildTxnReport + sendDocument exist).
+- T4 driver money code + owner confirm — DEFERRED (money code off for MVP). When revived, resolve
+  the OWNER-CONFIRM mechanism first: Telegram inline buttons need bot `callback_query`, but the
+  carrier bot token is polled by agent-gateway (`getUpdates`) and `setWebhook` disables polling —
+  so either a mini-app approve endpoint (no webhook, recommended) or a separate approval bot token.
+
+**Migration numbering:** next hand-written migration is 0041+ (0031-0040 used after the build merge).
