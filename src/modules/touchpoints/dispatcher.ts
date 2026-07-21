@@ -31,8 +31,6 @@ import type {
   TouchpointResult,
 } from './types.js';
 
-const DEFAULT_DEPARTMENTS = ['sales'] as const;
-
 /** May this caller invoke this touchpoint at all? (audience + department + risk tier) */
 export function canInvokeTouchpoint(ctx: TenantContext, tp: Touchpoint): boolean {
   if (ctx.audience !== 'internal') return false;
@@ -41,8 +39,8 @@ export function canInvokeTouchpoint(ctx: TenantContext, tp: Touchpoint): boolean
     return false;
   }
   if (isAdmin) return true;
-  const allowed = tp.departments ?? DEFAULT_DEPARTMENTS;
-  return ctx.departments.some((d) => allowed.includes(d));
+  // `departments` is required on every catalog entry (types.ts) — no sales-by-default fallback.
+  return ctx.departments.some((d) => tp.departments.includes(d));
 }
 
 /** The catalog entries this caller may see/invoke (GET /v1/touchpoints). */
@@ -58,7 +56,7 @@ function assertInvokable(ctx: TenantContext, tp: Touchpoint): void {
     throw new RBACError(
       tp.riskClass === 'destructive'
         ? `Touchpoint '${tp.key}' is restricted (destructive actions are admin-only right now)`
-        : `Touchpoint '${tp.key}' requires ${(tp.departments ?? DEFAULT_DEPARTMENTS).join('/')} department access`,
+        : `Touchpoint '${tp.key}' requires ${tp.departments.join('/')} department access`,
     );
   }
 }

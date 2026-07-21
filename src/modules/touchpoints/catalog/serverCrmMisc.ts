@@ -4,7 +4,7 @@
  */
 import { z } from 'zod';
 import type { Touchpoint } from '../types.js';
-import { carrierId, cardNumber, idString, limit, salesRange, shortText, ymdDate } from './common.js';
+import { carrierId, cardNumber, idString, limit, SALES, salesRange, shortText, ymdDate } from './common.js';
 
 export const serverCrmMiscTouchpoints: Touchpoint[] = [
   {
@@ -12,6 +12,7 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
     key: 'efs.cards',
     title: 'Live EFS card list (fraud-hold statuses)',
     riskClass: 'read',
+    departments: SALES,
     carrierParam: 'carrierId',
     method: 'POST', // servercrm models this read as a POST
     pathTemplate: '/api/efs/cards',
@@ -22,6 +23,7 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
     key: 'efs.card_info',
     title: 'Update card unit / driver info (EFS)',
     riskClass: 'write',
+    departments: SALES,
     carrierParam: 'carrierId',
     method: 'POST',
     pathTemplate: '/api/efs/card/info',
@@ -42,6 +44,7 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
     key: 'efs.card_override',
     title: 'Fraud-hold override (~30 min card unlock)',
     riskClass: 'destructive',
+    departments: SALES,
     carrierParam: 'carrierId',
     method: 'POST',
     pathTemplate: '/api/efs/card/override',
@@ -52,6 +55,7 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
     key: 'fraud.hold_release',
     title: 'Fraud hold / release request (routes to fraud team)',
     riskClass: 'destructive',
+    departments: SALES,
     carrierParam: 'carrierId',
     method: 'POST',
     pathTemplate: '/api/fraud/hold-release',
@@ -68,6 +72,7 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
     key: 'wex.application',
     title: 'WEX application status',
     riskClass: 'read',
+    departments: SALES,
     method: 'GET',
     pathTemplate: '/api/wex/application/{appId}',
     paramsSchema: z.object({ appId: idString }),
@@ -77,6 +82,7 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
     key: 'wex.applications_search',
     title: 'WEX application search',
     riskClass: 'read',
+    departments: SALES,
     method: 'GET',
     pathTemplate: '/api/wex/applications/search',
     paramsSchema: z.object({
@@ -95,6 +101,7 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
     key: 'sales.carriers_search',
     title: 'Carrier prospect search (broker snapshot)',
     riskClass: 'read',
+    departments: SALES,
     method: 'POST',
     pathTemplate: '/api/sales/carriers/search',
     // Widget fetch window is 200 or 500 — don't cap below what the UI offers.
@@ -105,6 +112,7 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
     key: 'sales_mytrion.fetch_invoices',
     title: 'Sales invoices (DWH)',
     riskClass: 'read',
+    departments: SALES,
     carrierParam: 'carrierId',
     method: 'GET',
     pathTemplate: '/api/salesMytrion/fetchInvoices',
@@ -121,6 +129,7 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
     key: 'sales_mytrion.invoice_signed_url',
     title: 'Invoice download link (2-min signed URL)',
     riskClass: 'read',
+    departments: SALES,
     method: 'GET',
     pathTemplate: '/api/salesMytrion/invoices/{invoiceId}/signed-url',
     paramsSchema: z.object({ invoiceId: idString, type: z.enum(['pdf', 'excel']).default('pdf') }),
@@ -130,6 +139,7 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
     key: 'clients.by_agent',
     title: 'Client roster by agent (with CMP debt)',
     riskClass: 'read',
+    departments: SALES,
     identityParam: 'zohoUserId',
     agentNameParam: 'agentName',
     method: 'GET',
@@ -144,6 +154,7 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
     key: 'clients.invoices',
     title: 'Client invoices (CMP, DWH fallback)',
     riskClass: 'read',
+    departments: SALES,
     carrierParam: 'carrierId',
     method: 'GET',
     pathTemplate: '/api/clients/{carrierId}/invoices',
@@ -154,6 +165,7 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
     key: 'clients.payment_transactions',
     title: 'Client payment transactions (all sources)',
     riskClass: 'read',
+    departments: SALES,
     carrierParam: 'carrierId',
     method: 'GET',
     pathTemplate: '/api/clients/{carrierId}/payment-transactions',
@@ -164,6 +176,7 @@ export const serverCrmMiscTouchpoints: Touchpoint[] = [
     key: 'clients.recent_transactions',
     title: 'Client recent fuel transactions',
     riskClass: 'read',
+    departments: SALES,
     carrierParam: 'carrierId',
     method: 'GET',
     pathTemplate: '/api/clients/{carrierId}/recent-transactions',

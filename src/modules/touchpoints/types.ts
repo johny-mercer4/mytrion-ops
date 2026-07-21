@@ -22,8 +22,12 @@ interface TouchpointBase {
   /** Human label for the discovery listing (GET /v1/touchpoints). */
   title: string;
   riskClass: TouchpointRisk;
-  /** Departments allowed besides admin/all-department access. Default: ['sales']. */
-  departments?: readonly string[];
+  /**
+   * Departments allowed besides admin/all-department access. REQUIRED and non-empty — there is
+   * deliberately no default: an untagged entry used to silently become sales-invokable, so the
+   * compiler now fails closed on any catalog entry that forgets to declare its audience.
+   */
+  departments: readonly [string, ...string[]];
   /**
    * Params key that carries a Zoho user id. The dispatcher ALWAYS overwrites it with
    * resolveZohoUserId(ctx, clientValue): non-admin callers are locked to their own
