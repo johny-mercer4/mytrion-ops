@@ -97,3 +97,26 @@ describe('server-resolved access is authoritative (verified session)', () => {
     expect(isAdmin(ctx({ profile: 'Administrator', allDepartmentAccess: false }))).toBe(false);
   });
 });
+
+describe('DEFAULT_PROFILE_SEED mirror (fallback table only — server list wins when present)', () => {
+  it('sales-family profiles land on sales only', () => {
+    for (const profile of ['Sales Plus', 'Sales Assistant', 'Referral Standard Plus']) {
+      expect(resolveAccessibleMytrions(ctx({ profile })).accessible, profile).toEqual(['sales']);
+    }
+  });
+
+  it('Standard Plus gets sales + billing; Standard gets customer-service', () => {
+    const plus = resolveAccessibleMytrions(ctx({ profile: 'Standard Plus' })).accessible;
+    expect(plus).toContain('sales');
+    expect(plus).toContain('billing');
+    expect(resolveAccessibleMytrions(ctx({ profile: 'Standard' })).accessible).toEqual(['customer-service']);
+  });
+
+  it('a server-resolved single-Mytrion list yields exactly one accessible (Landing hard-navigates)', () => {
+    const { accessible, homeMytrion } = resolveAccessibleMytrions(
+      ctx({ profile: 'Sales Agent', accessibleMytrions: ['sales'], homeMytrion: null, allDepartmentAccess: false }),
+    );
+    expect(accessible).toEqual(['sales']);
+    expect(homeMytrion).toBeNull(); // Landing's length===1 rule must not depend on home
+  });
+});
