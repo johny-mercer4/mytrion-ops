@@ -24,3 +24,4 @@ export * from './worker_mytrion_access.js';
 export * from './payment_transactions.js';
 export * from './payment_carrier_memory.js';
 export * from './payment_returns.js';
+export * from './mytrion_calls.js';
