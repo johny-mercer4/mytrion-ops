@@ -4212,3 +4212,81 @@ touchpoints catalog count 81→106) — left untouched, scoped all commits by pa
 Daniel Brown (Sales Agent) lands on /main/salesmytrion, gets Forbidden on /main/billingmytrion,
 403 on admin/finance APIs; Clients modal Cards+Activity 200 under View-as; reconcile each
 agent's Zoho display name vs DWH agent name (all-zeros Home snapshot = mismatch).
+
+## 2026-07-21 — CS brand text, Deal-owner agent, hide copilot
+
+- **Brand:** removed sidebar icon; larger MY/TRION wordmark; “Customer Service” gold
+  gradient text (`background-clip`).
+- **Agent (Deal):** map `_dealOwner` only (widget parity) — never Application `Owner`; empty →
+  `not assigned`.
+- **Copilot:** unmounted `CsCopilot` from Shell for now (file kept).
+
+## 2026-07-21 — CS apps icon + Applications load speed
+
+- **Brand / copilot icon:** sparkles mark → headset (Shell) + chat bubble (CsCopilot FAB/avatars).
+- **Apps/Clients speed:** FE + `cs.applications.list` `perPage` raised **200 → 2000** (Zoho COQL
+  max/call — fewer Deluge round-trips if the function honors `perPage`). 90s client TTL cache on
+  `loadApplications` (bypass via Refresh / invalidate after save). `MAX_COQL_ROWS` → 2000 in
+  `zohoCrm.ts` + tool docs.
+- **Note:** Deluge body for `mytrionGetApplications` lives in Zoho — if it still hardcodes
+  `LIMIT 200` loops, update that function to `LIMIT 2000` (or pass-through `perPage`) for full gain.
+
+## 2026-07-21 — CS Mytrion: CSMYTRION gold redesign (real data only)
+
+Applied `/Users/user/Desktop/CSMYTRION` visual IA to live Customer Service Mytrion:
+
+- **Tokens:** `.cs-root` remapped from royal blue → design gold (`#FFD60A` dark / `#EAB308`
+  light); surfaces/borders/shadows match design; fonts Rajdhani + Instrument Sans + JetBrains Mono.
+- **Loader:** `--yellow` + `[data-mytrion='customer-service']` accents aligned to same gold so
+  `MytrionGuard` Suspense splash matches in-app theme.
+- **Shell:** gold brand mark, MY/TRION wordmark, nav icons, gold claims badge, theme toggle + user card.
+- **Home:** design layout with live `loadHome` + quick-action navigation; **omitted** streak,
+  daily goal, CSAT, fake live-queue inject, fake leaderboard.
+- **Panels:** Retention master-detail (340px list), Apps/Claims/CITI/Citifuel/Analytics/Copilot
+  chrome on gold tokens; APIs unchanged. Data Center / Inbox / Service Center stay Soon.
+- No mock datasets added.
+
+### Enterprise Agentic AI Metrics (2026-07-21)
+
+Applied Agentic AI evaluation skills for coding agents (`.agents/skills/agentic-eval-metrics/SKILL.md`).
+- **Tool Use (Gorilla LLM standard):** Added instructions to evaluate exact AST-based JSON argument match, API resolution rates, and hallucination rates for tools like Zoho/Composio.
+- **Memory/State (MemGPT standard):** Defined checks for Context Paging Efficiency and State Recall Precision across `langgraph-checkpoint-postgres`.
+- **Agentic RAG:** Required Groundedness/Faithfulness and explicit Retrieval Decision Rate testing.
+- **Orchestrator Execution:** Established targets for tracking Ping-Pong Rates and TTFT in `evalLive.ts`.
+
+## 2026-07-21 (pm) — Sales Home fixes, call logging, post-call Lead wizard (feature/SalesProd)
+
+**Home (HomeTab/salesData/streakStore):** workday bar now 10 AM–7 PM NY via
+WORKDAY_START_HOUR/END_HOUR constants (clock was already NY). Today's Snapshot refresh now
+uses `.refresh()` (spinner + cache bypass) with a real stamped "Updated" time — the fetch was
+always working; the bug was `.reload()` leaving `refreshing` false. Activity block hidden and
+its range `activity.agent` fetch dropped (kept the cheap 'today' load for the Tasks-Done cell).
+Best Day tile now names the day (streakStore.topDayEntry).
+
+**Call logging (mytrion_calls):** new table (migration 0036, hand-authored — drizzle-kit
+generate is blocked by the pre-existing 0022/0023 snapshot collision; 0025+ are all
+hand-written) + mytrionCallRepo. The /ringcentral/call-events handler inserts one row per
+finished OUTBOUND call (best-effort): caller from the zoho: principal, phone=callee, duration,
+picked_up/missed derived (no explicit RC flag), source from the dial context
+(retention_case → lead → deal precedence). retentionCaseId now flows to the backend (added to
+payload + callEventSchema; emit no longer strips it). Verified migration green on a throwaway DB.
+
+**Post-call Lead wizard (LeadCallWizard):** shell-level host subscribes to call events; on a
+finished outbound call tagged with a leadId it opens a FORCED modal (ESC/backdrop blocked)
+requiring Status (+ dependent reason: Unqualified→Unqualified_Reason, Not Interested→
+Not_Interested_Reason) before it closes; optional note → Description. Writes via the existing
+owner-scoped PATCH. **IMPORTANT: the Zoho field is `Status`, not `Lead_Status` (no such field).
+Zoho enforces NO picklist dependency — the Status→reason pairing is UI logic.** Backend
+leadEditBody whitelist extended with Status + the two reasons (z.enums of the verbatim live
+picklist values). Deals only log (no wizard).
+
+**Data Center / Manage:** Money Codes sub-tab got its own Refresh button (it owns its loader).
+Manage panel distinguishes DWH outage (502/503) from a real "not your client" 403 in the
+error copy; POST /carrier-invitations now owner-gated for non-admins (matches the reads).
+
+**Test baseline:** 4 unit files fail from concurrent in-flight retention/CS/finance WIP
+(carrier-mini-app driver-registration, cs-routes, touchpoints-catalog/routes catalog SIZE
+51→49 + finance-filter shape) — all WIP-owned, none touch this session's areas. This session's
+suites (ringcentral-call-log, data-center-routes, LeadCallWizard, sales redesign) are green.
+App `tsc` build gate still blocked by ~24 pre-existing finance/admin TS errors — bundle built
+via vite in a clean worktree as before.
