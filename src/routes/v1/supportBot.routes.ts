@@ -18,11 +18,11 @@
 import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { AppError } from '../../lib/errors.js';
+import { AppError, RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { env, isProduction } from '../../config/env.js';
 import { db } from '../../db/client.js';
-import { registeredMiniAppCompanies, type RegisteredMiniAppCompany } from '../../db/schema/index.js';
+import { registeredMiniAppCompanies, supportBotChats, type RegisteredMiniAppCompany } from '../../db/schema/index.js';
 import { listDwhTransactions } from '../../integrations/dwhTransactions.js';
 import { sendDocument, TelegramChatUnreachableError } from '../../integrations/telegramCarrierBot.js';
 import { TXN_FETCH_LIMIT, scopeRowsToCard } from '../../modules/carrier/driverCardScope.js';
@@ -32,6 +32,7 @@ import { notifyMiniApp } from '../../modules/notifications/service.js';
 import { takeToken } from '../../modules/security/rateBucket.js';
 import { efsWrapper } from '../../wrappers/efsWrapper.js';
 import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
+import { requireContext } from './helpers.js';
 
 const callerSchema = z.object({
   /** The GROUP MEMBER who asked — the bot harness passes the Telegram sender id. */
@@ -91,6 +92,35 @@ function takeReadToken(carrierId: string): void {
 
 export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
   const guard = { onRequest: [app.sessionOrApiKey] };
+
+  /**
+   * Multi-session chat map (MULTISESSION_ARCH M-0): which group chat belongs to which
+   * carrier. The gateway caches this; adding a group here is what "onboards" a client
+   * company onto the shared bot. Admin-RBAC'd writes, internal-key reads.
+   */
+  app.get('/support-bot/chat-map', guard, async () => {
+    const rows = await db.select().from(supportBotChats).where(eq(supportBotChats.enabled, true));
+    return { chats: rows.map((r) => ({ chatId: r.chatId, carrierId: r.carrierId })) };
+  });
+
+  app.post('/support-bot/chat-map', guard, async (request, reply) => {
+    const ctx = requireContext(request);
+    if (ctx.role !== 'admin' && !ctx.bypassRbac) throw new RBACError('Mapping bot chats requires admin access');
+    const body = z.object({ chatId: z.string().min(1).max(40), carrierId: z.string().min(1).max(40) }).parse(request.body);
+    const [row] = await db
+      .insert(supportBotChats)
+      .values({ tenantId: ctx.tenantId, chatId: body.chatId, carrierId: body.carrierId, createdBy: ctx.userId })
+      .onConflictDoUpdate({ target: supportBotChats.chatId, set: { carrierId: body.carrierId, enabled: true, updatedAt: new Date() } })
+      .returning();
+    await auditFromContext(ctx, {
+      action: 'support_bot.chat_map.set',
+      status: 'ok',
+      resourceType: 'support_bot_chat',
+      resourceId: body.chatId,
+      detail: { carrierId: body.carrierId },
+    });
+    return reply.status(201).send(row);
+  });
 
   /**
    * The bot instance's access list — WHO from this carrier may use the bot, sourced from the

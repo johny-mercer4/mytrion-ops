@@ -253,6 +253,13 @@
       "when": 1784575200000,
       "tag": "0035_notification_reads",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1784578800000,
+      "tag": "0036_support_bot_chats",
+      "breakpoints": true
     }
   ]
 }
