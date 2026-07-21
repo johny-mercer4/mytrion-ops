@@ -40,3 +40,6 @@ eval-reports/
 .playwright-mcp/
 /*.png
 apps/design_handoff_octane_mini_app/
+
+# agent-gateway (v2 support-bot MVP) — kept local, not committed until MVP is done
+apps/agent-gateway/
