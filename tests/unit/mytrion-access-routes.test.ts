@@ -45,21 +45,34 @@ beforeEach(() => {
   mytrionAccessService.invalidateAll();
   pd.findByKey.mockResolvedValue(undefined);
   pd.list.mockResolvedValue([]);
-  // Echo the write back — the assertions read what the route persisted.
-  pd.upsert.mockImplementation(async (_ctx: unknown, row: Record<string, unknown>) => ({
+  // Echo the write back as a full DTO — the assertions read what the route persisted.
+  // Param/return types come from the mocked fns so this stays in lockstep with the repos.
+  pd.upsert.mockImplementation(async (...[, row]: Parameters<typeof pd.upsert>) => ({
     id: 'pd_1',
-    profileKey: String(row.profileName).toLowerCase(),
-    active: true,
+    profileName: row.profileName,
+    profileKey: row.profileName.toLowerCase(),
+    allowedMytrions: row.allowedMytrions,
+    homeMytrion: row.homeMytrion ?? null,
+    allDepartmentAccess: row.allDepartmentAccess ?? false,
+    active: row.active ?? true,
     createdAt: '',
     updatedAt: '',
-    ...row,
   }));
   wa.findByZohoUserId.mockResolvedValue(undefined);
-  wa.upsert.mockImplementation(async (_ctx: unknown, row: Record<string, unknown>) => ({
+  wa.upsert.mockImplementation(async (...[, row]: Parameters<typeof wa.upsert>) => ({
     id: 'wma_1',
+    zohoUserId: row.zohoUserId,
+    userName: row.userName ?? null,
+    email: row.email ?? null,
+    profileName: row.profileName ?? null,
+    allowedMytrions: row.allowedMytrions ?? null,
+    deniedMytrions: row.deniedMytrions ?? [],
+    homeMytrion: row.homeMytrion ?? null,
+    allDepartmentAccess: row.allDepartmentAccess ?? null,
+    viewAsUserIds: row.viewAsUserIds ?? [],
+    active: row.active ?? true,
     createdAt: '',
     updatedAt: '',
-    ...row,
   }));
 });
 

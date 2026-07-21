@@ -22,12 +22,15 @@ export function dedupedFetch<T>(
   if (running) return running as Promise<T>;
   const p = fn()
     .then((data) => {
-      cache.set(key, { data, ts: Date.now() });
+      // Identity guard on the WRITE too: invalidateDeduped() detaches an in-flight promise,
+      // and a detached fetch must not re-cache its (now stale) payload — otherwise a delete/
+      // WS-event invalidation that races a fetch is silently reverted for the whole TTL.
+      if (inflight.get(key) === p) cache.set(key, { data, ts: Date.now() });
       return data;
     })
     .finally(() => {
-      // Identity guard: an invalidate() during flight replaces/deletes the entry — only
-      // remove it if it's still ours, so a newer fetch is never detached by an old one.
+      // Same guard: only remove the entry if it's still ours, so a newer fetch is never
+      // detached by an old one resolving late.
       if (inflight.get(key) === p) inflight.delete(key);
     });
   inflight.set(key, p);

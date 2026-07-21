@@ -25,7 +25,7 @@ async function main(): Promise<void> {
   assertRuntimeSecrets();
   // Bring the schema forward before serving (no-op unless DB_MIGRATE_ON_BOOT=1).
   await runMigrationsOnBoot();
-  // Profile-default access seeding (idempotent) — fail-closed, see modules/access/bootstrap.ts.
+  // Profile-default access seeding (idempotent) — fail-open, see modules/access/bootstrap.ts.
   await seedMytrionAccessOnBoot();
   const app = await buildApp();
 

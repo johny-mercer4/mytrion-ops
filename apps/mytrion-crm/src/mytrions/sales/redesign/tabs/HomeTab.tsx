@@ -203,9 +203,11 @@ export function HomeTab() {
     (fresh) => loadActivity(activityRange as 'today' | 'week' | 'month', fresh),
     [activityRange],
   );
-  // When the visible range IS today, the range load is the daily load — one source, no drift
-  // (and no second identical activity.agent POST while the Today range is selected).
-  const daily = activityRange === 'today' ? act : dailyAct;
+  // When the visible range IS today, prefer the (identical) range load so the cell and the
+  // tiles agree — but fall back to dailyAct while it's still loading, so switching ranges
+  // never flashes the Tasks-Done cell to 0. Same touchpoint either way; loadActivity's
+  // in-flight dedupe collapses concurrent equal calls into one POST.
+  const dailyTasks = (activityRange === 'today' ? act.data?.tasks : undefined) ?? dailyAct.data?.tasks ?? 0;
 
   useEffect(() => {
     const clock = setInterval(() => setTick((t) => t + 1), 30000);
@@ -251,10 +253,10 @@ export function HomeTab() {
   const refreshSnapshot = (): void => {
     snapRefreshPending.current = true;
     snap.reload();
-    // Reload whichever hook currently feeds the Tasks-Done cell — on the Today range that's
-    // the shared range load (one POST instead of two disagreeing ones).
+    // Reload the daily cell; on the Today range also reload the tiles — the in-flight dedupe
+    // collapses the two identical activity.agent calls into one POST, and both stay in sync.
+    dailyAct.reload();
     if (activityRange === 'today') act.reload();
-    else dailyAct.reload();
     appStats.reload();
   };
 
@@ -391,7 +393,7 @@ export function HomeTab() {
         mk('card', cyan, numFmt(sf?.swipes_today ?? 0), 'Fuel Transactions', 'So far today'),
         mk('fuel', violet, numFmt(sf?.gallons_today ?? 0), 'Gallons Pumped', 'So far today'),
         mk('card', green, numFmt(sf?.new_cards_today ?? 0), 'New Cards', 'Activated today'),
-        mk('check', green, numFmt(daily.data?.tasks ?? 0), 'Tasks Done', 'Cleared from your queue'),
+        mk('check', green, numFmt(dailyTasks), 'Tasks Done', 'Cleared from your queue'),
       ],
     },
   ];
