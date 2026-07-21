@@ -15,11 +15,26 @@ import {
 } from '@/api/carrierUsers';
 import { getImpersonation } from '@/api/impersonation';
 import { getSession } from '@/api/session';
+import { ApiError } from '@/api/transport';
 import { copyToClipboard } from '@/mytrions/admin/carrierUserUtil';
 
 import { s } from './dc';
 import { Icon } from './icons';
 import { useSales } from './ctx';
+
+/**
+ * Distinguish a data-warehouse outage from a real ownership denial so the Manage panel doesn't
+ * read "no cards" when the warehouse is down. The reads are gated by assertCarrierOwned (DWH probe),
+ * which surfaces 502 DWH_ERROR / 503 DWH_UNCONFIGURED vs a 403 RBAC "not your client".
+ */
+function friendlyManageError(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.code === 'DWH_ERROR' || e.status === 502) return 'Data warehouse temporarily unavailable — try again shortly.';
+    if (e.code === 'DWH_UNCONFIGURED' || e.status === 503) return 'Card data is unavailable right now (warehouse not configured).';
+    if (e.status === 403) return "This carrier isn't in your client list.";
+  }
+  return e instanceof Error ? e.message : String(e);
+}
 
 export function ClientManagePanel({
   carrierId,
@@ -71,7 +86,7 @@ export function ClientManagePanel({
     void listCards(cid, 100, ac.signal)
       .then(setCards)
       .catch((e: unknown) => {
-        if (!ac.signal.aborted) setCardsError(e instanceof Error ? e.message : String(e));
+        if (!ac.signal.aborted) setCardsError(friendlyManageError(e));
       })
       .finally(() => {
         if (!ac.signal.aborted) setCardsBusy(false);
@@ -97,7 +112,7 @@ export function ClientManagePanel({
         setDrivers(res.drivers);
       })
       .catch((e: unknown) => {
-        if (!ac.signal.aborted) setRegsError(e instanceof Error ? e.message : String(e));
+        if (!ac.signal.aborted) setRegsError(friendlyManageError(e));
       })
       .finally(() => {
         if (!ac.signal.aborted) setRegsBusy(false);

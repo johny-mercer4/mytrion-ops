@@ -373,6 +373,9 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   app.post('/carrier-invitations', guard, async (request, reply) => {
     const ctx = requireContext(request);
     const body = createInviteSchema.parse(request.body);
+    // Owner-scope invite creation to match the Manage reads: a non-admin worker may only mint an
+    // invite for a carrier in their own roster (admins / API-key system identity skip inside the gate).
+    if (ctx.role !== 'admin' && body.carrier_id) await assertCarrierOwned(ctx, body.carrier_id);
     const fallbackAgent = inviteAgentFromContext(ctx);
     const { invite, inviteUrl } = await createCarrierInvite(ctx, {
       profile: body.profile,
