@@ -168,19 +168,24 @@ export interface DwhCompanyDetails {
  * Company contact + address for one carrier, from octane.dim_company (read-only replica).
  * Null when the carrier has no dim_company row. All fields are optional in the source, so any may
  * come back null.
+ *
+ * Phone matches Sales roster: prefer `deal_phone`, fall back to `contact_phone` (many deals only
+ * populate deal_phone).
  */
 export async function getDwhCompanyDetails(carrierId: string): Promise<DwhCompanyDetails | null> {
   const rows = await dwhQuery<{
     carrier_id: string | number | null;
     company_name: string | null;
     contact_email: string | null;
+    deal_phone: string | null;
     contact_phone: string | null;
     address: string | null;
     city: string | null;
     state: string | null;
     zip_code: string | null;
   }>(
-    `select carrier_id, company_name, contact_email, contact_phone, address, city, state, zip_code
+    `select carrier_id, company_name, contact_email, deal_phone, contact_phone,
+            address, city, state, zip_code
        from octane.dim_company
       where carrier_id = $1
       limit 1`,
@@ -193,7 +198,7 @@ export async function getDwhCompanyDetails(carrierId: string): Promise<DwhCompan
     carrierId: String(r.carrier_id ?? carrierId),
     companyName: s(r.company_name),
     email: s(r.contact_email),
-    phone: s(r.contact_phone),
+    phone: s(r.deal_phone) ?? s(r.contact_phone),
     address: s(r.address),
     city: s(r.city),
     state: s(r.state),

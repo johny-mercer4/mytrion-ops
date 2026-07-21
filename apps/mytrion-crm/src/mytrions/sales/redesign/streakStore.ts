@@ -16,17 +16,24 @@ export const DAILY_APPS_GOAL = 3;
 
 type DayMap = Record<string, number>;
 
+/** Coerce a day-map cell to a finite count (JSON/number/string-safe). */
+function dayCount(days: DayMap, key: string): number {
+  const v = days[key];
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 /** Applications filled today (NY calendar). */
 export function todayApps(days: DayMap): number {
-  return days[nyToday()] ?? 0;
+  return dayCount(days, nyToday());
 }
 
 /** Best single-day application count in the window (personal best). */
 export function topDay(days: DayMap): number {
   let best = 0;
   for (const k in days) {
-    const v = days[k];
-    if (typeof v === 'number' && v > best) best = v;
+    const n = dayCount(days, k);
+    if (n > best) best = n;
   }
   return best;
 }
@@ -34,7 +41,7 @@ export function topDay(days: DayMap): number {
 /** Applications filled over the last 7 NY-calendar days. */
 export function weekTotal(days: DayMap): number {
   let t = 0;
-  for (let i = 0; i < 7; i++) t += days[nyDaysAgo(i)] ?? 0;
+  for (let i = 0; i < 7; i++) t += dayCount(days, nyDaysAgo(i));
   return t;
 }
 
@@ -44,8 +51,8 @@ export function weekTotal(days: DayMap): number {
  */
 export function currentStreak(days: DayMap, goal: number): number {
   let streak = 0;
-  for (let i = (days[nyToday()] ?? 0) >= goal ? 0 : 1; i < 400; i++) {
-    if ((days[nyDaysAgo(i)] ?? 0) >= goal) streak++;
+  for (let i = dayCount(days, nyToday()) >= goal ? 0 : 1; i < 400; i++) {
+    if (dayCount(days, nyDaysAgo(i)) >= goal) streak++;
     else break;
   }
   return streak;
@@ -54,12 +61,12 @@ export function currentStreak(days: DayMap, goal: number): number {
 /** True when today's count strictly beats every prior day in the window (a genuine new best). */
 export function isNewBest(days: DayMap): boolean {
   const today = nyToday();
-  const todayCount = days[today] ?? 0;
+  const todayCount = dayCount(days, today);
   let bestOther = 0;
   for (const k in days) {
     if (k === today) continue;
-    const v = days[k];
-    if (typeof v === 'number' && v > bestOther) bestOther = v;
+    const n = dayCount(days, k);
+    if (n > bestOther) bestOther = n;
   }
   return todayCount > bestOther && bestOther > 0;
 }

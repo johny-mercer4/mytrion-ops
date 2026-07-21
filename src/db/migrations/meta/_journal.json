@@ -223,42 +223,70 @@
       "idx": 31,
       "version": "7",
       "when": 1784560800000,
-      "tag": "0031_mini_app_notifications",
+      "tag": "0031_retention_attempt_evidence",
       "breakpoints": true
     },
     {
       "idx": 32,
       "version": "7",
       "when": 1784564400000,
-      "tag": "0032_client_news",
+      "tag": "0032_retention_5bd_comms_attempt",
       "breakpoints": true
     },
     {
       "idx": 33,
       "version": "7",
       "when": 1784568000000,
-      "tag": "0033_notification_state",
+      "tag": "0033_retention_sales_agent_board",
       "breakpoints": true
     },
     {
       "idx": 34,
       "version": "7",
       "when": 1784571600000,
-      "tag": "0034_registration_language",
+      "tag": "0034_money_code_requests_draw_model",
       "breakpoints": true
     },
     {
       "idx": 35,
       "version": "7",
       "when": 1784575200000,
-      "tag": "0035_notification_reads",
+      "tag": "0035_mini_app_notifications",
       "breakpoints": true
     },
     {
       "idx": 36,
       "version": "7",
       "when": 1784578800000,
-      "tag": "0036_support_bot_chats",
+      "tag": "0036_client_news",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1784582400000,
+      "tag": "0037_notification_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1784586000000,
+      "tag": "0038_registration_language",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1784589600000,
+      "tag": "0039_notification_reads",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1784593200000,
+      "tag": "0040_support_bot_chats",
       "breakpoints": true
     }
   ]

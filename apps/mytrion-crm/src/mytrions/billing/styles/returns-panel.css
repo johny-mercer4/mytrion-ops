@@ -10,9 +10,9 @@
 .bm-root .bm-returns-panel .rt-toolbar {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: 8px;
     flex-wrap: wrap;
-    margin: 0.25rem 0 1rem;
+    margin: 0;
 }
 
 @media (min-width: 1150px) {
@@ -28,21 +28,22 @@
 
 .bm-root .bm-returns-panel .rt-seg {
     display: inline-flex;
-    background: var(--surface-alt);
+    background: var(--color-bg-secondary);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
-    padding: 0.2rem;
-    gap: 0.15rem;
+    box-shadow: var(--card-shadow);
+    padding: 3px;
+    gap: 2px;
 }
 
 .bm-root .bm-returns-panel .rt-seg button {
     border: none;
     background: transparent;
     color: var(--text-secondary);
-    font-size: 0.74rem;
-    font-weight: 600;
-    padding: 0.4rem 0.85rem;
-    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 5px 12px;
+    border-radius: 2px;
     cursor: pointer;
     transition: background 0.12s, color 0.12s;
     font-family: inherit;
@@ -54,9 +55,9 @@
 }
 
 .bm-root .bm-returns-panel .rt-seg .rt-seg-active {
-    background: var(--billing-accent);
-    color: var(--on-accent-solid);
-    box-shadow: var(--shadow-sm);
+    background: var(--accent-bg);
+    color: var(--billing-accent);
+    font-weight: 600;
 }
 
 /* Narrow screens: segments scroll sideways instead of clipping */
@@ -95,9 +96,47 @@
 }
 
 /* ── KPI queue cards ── */
-/* Four queues on this panel (the shared grid is 3-col). */
+/* Four queues on this panel (the shared grid is 3-col). Design: smaller
+   cards (14px 16px, 24px value, uppercase label). */
 .bm-root .bm-returns-panel .db-kpi-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.bm-root .bm-returns-panel .db-kpi-card {
+    padding: 14px 16px;
+}
+
+.bm-root .bm-returns-panel .db-kpi-value {
+    font-size: 1.5rem;
+}
+
+.bm-root .bm-returns-panel .db-kpi-title {
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+/* ── Design column ratios (Date .9 · Type .9 · Customer 1.8 · Reason 1.3 ·
+   Status 1.1 · Amount .9) + fixed Action. Desktop only, so the max-width:700px
+   mobile reflow further down still wins on phones. Header + rows share the same
+   7-child structure, so nth-child targets both. ── */
+@media (min-width: 701px) {
+    .bm-root .bm-returns-panel .db-list-header > div:nth-child(1),
+    .bm-root .bm-returns-panel .db-row-main > div:nth-child(1) { flex: 0.9 1 0; text-align: left; }
+    .bm-root .bm-returns-panel .db-list-header > div:nth-child(2),
+    .bm-root .bm-returns-panel .db-row-main > div:nth-child(2) { flex: 0.9 1 0; text-align: left; }
+    .bm-root .bm-returns-panel .db-list-header > div:nth-child(3),
+    .bm-root .bm-returns-panel .db-row-main > div:nth-child(3) { flex: 1.8 1 0; min-width: 0; text-align: left; }
+    .bm-root .bm-returns-panel .db-list-header > div:nth-child(4),
+    .bm-root .bm-returns-panel .db-row-main > div:nth-child(4) { flex: 1.3 1 0; min-width: 0; text-align: left; }
+    .bm-root .bm-returns-panel .db-list-header > div:nth-child(5),
+    .bm-root .bm-returns-panel .db-row-main > div:nth-child(5) { flex: 1.1 1 0; text-align: left; }
+    .bm-root .bm-returns-panel .db-list-header > div:nth-child(6),
+    .bm-root .bm-returns-panel .db-row-main > div:nth-child(6) { flex: 0.9 1 0; text-align: right; }
+    .bm-root .bm-returns-panel .db-list-header > div:nth-child(7),
+    .bm-root .bm-returns-panel .db-row-main > div:nth-child(7) { flex: 0 0 96px; text-align: right; }
 }
 
 @media (max-width: 1100px) {
@@ -222,30 +261,24 @@
     font-weight: 600;
 }
 
-/* ── Status pills — state language: semantic dot + tinted pill.
-   Deliberately round + dotted so nothing here reads as clickable. ── */
+/* ── Status chips — the design's single chip() style (11px/600, 3px radius,
+   normal case, no dot); tint comes from the --{sem} variants below. ── */
 .bm-root .bm-returns-panel .rt-pill {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
-    font-size: 0.66rem;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    padding: 0.2rem 0.6rem;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    color: var(--text-secondary);
-    background: var(--surface-alt);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    padding: 2px 8px;
+    border-radius: 3px;
+    border: 1px solid var(--muted-bd);
+    color: var(--mutedc);
+    background: var(--muted-bg);
     white-space: nowrap;
 }
 
 .bm-root .bm-returns-panel .rt-pill::before {
-    content: "";
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: currentColor;
-    flex-shrink: 0;
+    display: none;
 }
 
 .bm-root .bm-returns-panel .rt-pill--danger  { color: var(--danger-text);  background: var(--danger-bg);  border-color: var(--danger-border); }

@@ -5,7 +5,7 @@
 import { getDeskTicket, listDeskComments, listDeskTickets, type DeskTicket } from '@/api/desk';
 import { getImpersonation } from '@/api/impersonation';
 import { callTouchpoint } from '@/api/touchpoints';
-import { getLoyaltyStats, type LoyaltyStats } from '@/api/dataCenter';
+import { getClients, type AgentClient } from '@/api/dataCenter';
 import { ICO } from './salesData';
 import type { IconName } from './icons';
 
@@ -243,7 +243,7 @@ export async function loadActivity(range: 'today' | 'week' | 'month'): Promise<A
   };
 }
 
-// ---- Data Center / Carriers / Dashboard: clients (clients.by_agent) → RECORDS shape ----
+// ---- Data Center → Clients: the DWH roster (GET /data-center/clients) → RECORDS shape ----
 
 export interface RecordVM {
   id: string;
@@ -253,101 +253,59 @@ export interface RecordVM {
   phone: string;
   cards: number;
   active: number;
-  /** This billing-cycle gallons (from dashboard.agent_sales transactions.volume). */
+  /** This billing-cycle gallons (DWH roster query — mart_transaction_line_items, 26th→25th cycle). */
   gallons: string;
   /** Raw billing-cycle gallons (numeric) — drives the loyalty tier level. */
   cycleGallons: number;
   status: 'active' | 'attention' | 'debtor';
   mc: string;
   dot: string;
-  /** Real per-calendar-month loyalty inputs (DWH via /data-center/loyalty-stats). Zero when the
-   *  client had no transactions that month or the stats fetch failed. Drive the tier from THESE —
-   *  never the formatted `gallons` string (cycle) or `active`/`cards` (all-time). */
+  /** Real per-calendar-month loyalty inputs (DWH via /data-center/clients). Zero when the client had
+   *  no transactions that month. Drive the tier from THESE — never the formatted `gallons` string
+   *  (cycle) or `active`/`cards` (all-time). */
   gallonsThisMonth: number;
   activeCardsThisMonth: number;
   transactionsThisMonth: number;
   gallonsPrevMonth: number;
   activeCardsPrevMonth: number;
 }
-const truthy = (v: unknown): boolean =>
-  v === true || v === 1 || ['1', 'true', 't', 'yes'].includes(String(v ?? '').toLowerCase());
 
-function mapRecord(
-  c: Record<string, unknown>,
-  cycleGallonsByCarrier: Map<string, number>,
-  loyaltyStats: LoyaltyStats,
-): RecordVM {
-  const debt = n(c.computed_debt);
-  const days = n(c.computed_debt_days);
-  const suspended = truthy(c.is_loc_suspended);
-  const active = truthy(c.computed_is_active);
-  const status: RecordVM['status'] = (debt >= 1 && days >= 2) || suspended ? 'debtor' : active ? 'active' : 'attention';
-  const carrierId = String(c.carrier_id ?? '');
-  const ls = loyaltyStats[carrierId];
+/** DWH roster row → the card/list view-model. Debt/active/gallons are already computed + typed
+ *  server-side (dim_company + mart + cmp_invoice), so this is a straight field map. */
+function mapRecord(c: AgentClient): RecordVM {
+  const status: RecordVM['status'] =
+    (c.computedDebt >= 1 && c.computedDebtDays >= 2) || c.isLocSuspended
+      ? 'debtor'
+      : c.computedIsActive
+        ? 'active'
+        : 'attention';
   return {
-    id: carrierId,
-    name: String(c.company_name ?? '(unnamed)'),
-    carrier: `CR-${c.carrier_id ?? ''}`,
-    contact: String(c.deal_full_name ?? c.contact_name ?? c.agent ?? '—'),
-    phone: String(c.deal_phone ?? c.contact_phone ?? '—'),
-    cards: n(c.total_produced_cards ?? c.total_active_cards),
-    active: n(c.total_active_cards),
-    // Cycle gallons from dashboard.agent_sales `transactions` (full-cycle per-carrier volume).
-    gallons: galFmt(cycleGallonsByCarrier.get(carrierId) ?? 0),
-    cycleGallons: cycleGallonsByCarrier.get(carrierId) ?? 0,
+    id: c.carrierId,
+    name: c.companyName,
+    carrier: `CR-${c.carrierId}`,
+    contact: c.contact,
+    phone: c.phone,
+    cards: c.producedCards,
+    active: c.activeCards,
+    gallons: galFmt(c.cycleGallons),
+    cycleGallons: c.cycleGallons,
     status,
-    mc: String(c.deal_money_code ?? c.comdata_id ?? '—'),
-    dot: String(c.dot ?? '—'),
-    gallonsThisMonth: ls?.gallonsThisMonth ?? 0,
-    activeCardsThisMonth: ls?.activeCardsThisMonth ?? 0,
-    transactionsThisMonth: ls?.transactionsThisMonth ?? 0,
-    gallonsPrevMonth: ls?.gallonsPrevMonth ?? 0,
-    activeCardsPrevMonth: ls?.activeCardsPrevMonth ?? 0,
+    mc: c.moneyCode,
+    dot: c.dot,
+    gallonsThisMonth: c.gallonsThisMonth,
+    activeCardsThisMonth: c.activeCardsThisMonth,
+    transactionsThisMonth: c.transactionsThisMonth,
+    gallonsPrevMonth: c.gallonsPrevMonth,
+    activeCardsPrevMonth: c.activeCardsPrevMonth,
   };
 }
 
-/**
- * carrier_id → this-cycle gallons. `dashboard.agent_sales`'s `transactions` rows are full-cycle
- * per-carrier totals by default (same source as the Sales Dashboard TX table). Best-effort: a
- * failed fetch just means Clients cards show 0 gallons, not a broken tab.
- */
-async function loadCycleGallonsByCarrier(): Promise<Map<string, number>> {
-  const map = new Map<string, number>();
-  try {
-    const res = await callTouchpoint('dashboard.agent_sales', {});
-    if (res.success === false) return map;
-    for (const row of res.data?.transactions ?? []) {
-      const id = row.carrier_id != null ? String(row.carrier_id) : '';
-      if (!id) continue;
-      // Prefer `volume`; fall back to alternate keys some dashboard payloads use.
-      const vol = n(row.volume ?? row.gallons ?? row.total_volume);
-      map.set(id, vol);
-    }
-  } catch {
-    /* best-effort */
-  }
-  return map;
-}
-/** Best-effort: a failed loyalty-stats fetch just means clients show no tier, not a broken Clients tab.
- *  We log the failure (rather than swallow silently) so a 502 from the DWH is diagnosable — an
- *  empty `{}` here is why every client can show 0 this-month gallons / "Building". */
-async function loadLoyaltyStatsSafe(): Promise<LoyaltyStats> {
-  try {
-    return await getLoyaltyStats();
-  } catch (err) {
-    console.warn('[sales] loyalty-stats fetch failed — clients will show 0 this-month gallons:', err);
-    return {};
-  }
-}
 export async function loadRecords(): Promise<RecordVM[]> {
-  const [res, cycleGallonsByCarrier, loyaltyStats] = await Promise.all([
-    callTouchpoint('clients.by_agent', {}),
-    loadCycleGallonsByCarrier(),
-    loadLoyaltyStatsSafe(),
-  ]);
-  return (res.data ?? []).map((c) =>
-    mapRecord(c as Record<string, unknown>, cycleGallonsByCarrier, loyaltyStats),
-  );
+  // ONE DWH query (dim_company + mart_transaction_line_items + cmp_invoice) returns the whole roster:
+  // metadata + computed debt/activity overlays + cycle/this-month/prev-month gallons. Replaces the
+  // servercrm by-agent roster (dropped its live-CMP HTTP overlay) AND the separate loyalty/dashboard
+  // round-trips — one call now backs the Clients tab.
+  return (await getClients()).map(mapRecord);
 }
 
 // ---- Dashboard (dashboard.agent_sales) ----

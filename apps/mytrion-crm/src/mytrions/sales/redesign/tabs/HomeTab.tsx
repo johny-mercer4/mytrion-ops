@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { getSession } from '@/api/session';
 import { getAppStats } from '@/api/dataCenter';
+import { getImpersonation } from '@/api/impersonation';
 import { useImpersonation } from '@/context/ImpersonationProvider';
 import { s, clickable } from '../dc';
 import { Icon, type IconName } from '../icons';
@@ -29,6 +30,7 @@ import {
   type AnnVM,
   type InboxVM,
 } from '../live';
+import { subscribeInboxLive } from '../inboxLiveBus';
 import { useServerCrmSocket } from '../useServerCrmSocket';
 import { useSales } from '../ctx';
 import {
@@ -129,7 +131,7 @@ function StreakStat({
 }: {
   emoji?: string;
   icon?: IconName;
-  value: number;
+  value: number | string;
   label: string;
   tone: string;
 }) {
@@ -157,8 +159,13 @@ export function HomeTab() {
   const dailyAct = useLoad(() => loadActivity('today'), []); // snapshot "Tasks Done" (today)
   const ann = useLoad(loadAnnouncements, []);
   const inbox = useLoad(loadInbox, [currentUserId]);
-  // Real per-day applications (Zoho COQL: Deals.Application_Date, owner-scoped) — goal bar + streak.
-  const appStats = useLoad(() => getAppStats(), [currentUserId]);
+  // Real per-day applications (Zoho COQL: Deals.Application_Date = application filled, owner-scoped).
+  // Pass zoho_user_id like Deals/Desk — bare getAppStats() can resolve to no owner and show silent zeros.
+  const appStats = useLoad(() => {
+    const actAsId = getImpersonation()?.zohoUserId?.trim();
+    const selfId = getSession()?.worker.zohoUserId?.trim();
+    return getAppStats(actAsId || selfId || undefined);
+  }, [currentUserId]);
 
   // ---- local per-tab state ----
   const [activityRange, setActivityRange] = useState<string>('week');
@@ -204,18 +211,17 @@ export function HomeTab() {
     inbox.error,
   ]);
 
-  // Real-time: announcements + owner-scoped inbox reload (toast is shell-level).
+  // Real-time: announcements on this tab's socket; inbox toast/reload are shell-level
+  // (`useSidebarBadges` → toast on every tab + `inboxLiveBus` for the Home preview list).
   useServerCrmSocket({
     enabled: !!currentUserId,
+    watchKey: currentUserId,
     subscribe: { type: 'subscribe', userId: currentUserId },
     onMessage: (msg) => {
       if (msg.type === 'sales_announcement') ann.reload();
-      else if (msg.type === 'crm_inbox_notification') {
-        const ownerId = String(msg.ownerId ?? '').trim();
-        if (ownerId && ownerId === currentUserId.trim()) inbox.reload();
-      }
     },
   });
+  useEffect(() => subscribeInboxLive(() => inbox.reload()), [inbox.reload]);
 
   const refreshSnapshot = (): void => {
     snapRefreshPending.current = true;
@@ -432,16 +438,24 @@ export function HomeTab() {
           <div style={s('position:absolute;right:-40px;top:-40px;width:190px;height:190px;border-radius:50%;background:radial-gradient(circle,rgba(var(--accent-rgb),.22),transparent 70%);pointer-events:none')}></div>
           <div style={s('font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent)')}>{dateLabel}</div>
           <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:30px;letter-spacing:.01em;margin-top:8px;line-height:1.1')}>Good {timeOfDay}, <span style={s('background:linear-gradient(120deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent')}>{user.first}</span></div>
-          {/* Daily goal bar — the audit's "turn the workday bar into a goal bar"; real apps-today count. */}
+          {/* Daily goal bar — Deals.Application_Date (application filled), owner-scoped COQL. */}
           <div style={s('margin-top:18px')}>
             <div style={s('display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px')}>
               <span style={s('font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--text2)')}>Today's Goal</span>
-              <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text2)")}>{appsDone} / {DAILY_APPS_GOAL} apps</span>
+              <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text2)")}>
+                {appStats.loading && !appStats.data ? '…' : `${appsDone} / ${DAILY_APPS_GOAL} apps`}
+              </span>
             </div>
             <div style={s('position:relative;height:9px;border-radius:99px;background:var(--raised);overflow:hidden')}>
               <div style={s(`position:absolute;inset:0 auto 0 0;width:${appsGoalPct}%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .55s cubic-bezier(.2,0,0,1)`)}></div>
             </div>
-            <div style={s(`font-size:11px;margin-top:7px;font-weight:700;font-family:'JetBrains Mono',monospace;color:${goalMet ? 'var(--ok-text)' : 'var(--accent-text)'}`)}>{goalMet ? 'Goal met — nice work ✦' : `${appsToGo} more to hit your goal ✦`}</div>
+            <div style={s(`font-size:11px;margin-top:7px;font-weight:700;font-family:'JetBrains Mono',monospace;color:${appStats.error ? 'var(--danger)' : goalMet ? 'var(--ok-text)' : 'var(--accent-text)'}`)}>
+              {appStats.error
+                ? 'Could not load apps from Deals — retry refresh'
+                : goalMet
+                  ? 'Goal met — nice work ✦'
+                  : `${appsToGo} more to hit your goal ✦`}
+            </div>
           </div>
           <div style={s('display:flex;gap:10px;margin-top:18px')}>
             <button onClick={goAuto} className="ss-btn-p" style={s('height:38px;padding:0 16px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:7px')}><Icon name={ICO.bolt} size={15} strokeWidth={2.2} />Run an action</button>
@@ -471,11 +485,26 @@ export function HomeTab() {
         </div>
       </div>
 
-      {/* Habit loop — streak · personal best · momentum (client-side; begins the day it ships). */}
+      {/* Habit loop — streak · personal best · week (from Deals Application_Date COQL). */}
       <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px')}>
-        <StreakStat emoji="🔥" value={streakDays} label="day streak" tone="var(--orange)" />
-        <StreakStat emoji="⭐" value={bestDay} label="best day · apps" tone="var(--warn)" />
-        <StreakStat icon="doc" value={weekApps} label="this week · apps" tone="var(--accent)" />
+        <StreakStat
+          emoji="🔥"
+          value={appStats.loading && !appStats.data ? '—' : streakDays}
+          label="day streak"
+          tone="var(--orange)"
+        />
+        <StreakStat
+          emoji="⭐"
+          value={appStats.loading && !appStats.data ? '—' : bestDay}
+          label="best day · apps"
+          tone="var(--warn)"
+        />
+        <StreakStat
+          icon="doc"
+          value={appStats.loading && !appStats.data ? '—' : weekApps}
+          label="this week · apps"
+          tone="var(--accent)"
+        />
       </div>
 
       {celebration && (

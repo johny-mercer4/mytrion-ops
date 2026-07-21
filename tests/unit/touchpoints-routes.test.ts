@@ -71,10 +71,11 @@ describe('GET /v1/touchpoints (discovery)', () => {
     const res = await app.inject({ method: 'GET', url: '/v1/touchpoints', headers: API_KEY_HEADERS });
     expect(res.statusCode).toBe(200);
     const { touchpoints } = res.json() as { touchpoints: Array<{ key: string }> };
-    // 95 = the merged union of both branches' touchpoints (build's 81 + this branch's additions).
-    // The catalog assembler throws on any duplicate key, so a 200 here already proves all 95 are
+    // 97 = the merged union of both branches' touchpoints (build's 83 — incl. money_code.list /
+    // money_code.void added on build after this branch forked — plus this branch's additions).
+    // The catalog assembler throws on any duplicate key, so a 200 here already proves all 97 are
     // unique — this count just pins the total so a silent add/drop is caught.
-    expect(touchpoints.length).toBe(95);
+    expect(touchpoints.length).toBe(97);
     expect(touchpoints.map((t) => t.key)).toContain('dwh.carrier_balance');
   });
 

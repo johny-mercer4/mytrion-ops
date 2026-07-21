@@ -5,7 +5,7 @@
  * listener that normalizes those raw events into one {@link RingCentralCallEvent}, de-duplicates the
  * repeats Embeddable emits for a given phase, computes talk duration, tags outbound calls with the
  * Data Center lead/deal they were dialed from, forwards every event to the ops backend for the audit
- * trail, and fans out to UI subscribers (toasts / sign-in badge).
+ * trail, and fans out to UI subscribers (session warnings / retention wizard).
  *
  * Event contract: https://ringcentral.github.io/ringcentral-embeddable/docs/integration/events/
  *   rc-login-status-notify · rc-active-call-notify · rc-ringout-call-notify · rc-call-end-notify
@@ -19,6 +19,8 @@ export interface RingCentralCallEvent extends RingCentralCallEventPayload {
   peer: string;
   /** Epoch ms when we observed the event (UI-only; the backend stamps its own audit time). */
   at: number;
+  /** Retention case this outbound dial was started from (UI correlation; not required server-side). */
+  retentionCaseId?: string;
 }
 
 type Listener = (event: RingCentralCallEvent) => void;
@@ -51,19 +53,36 @@ const connectedAt = new Map<string, number>();
 let started = false;
 let loginState: boolean | null = null;
 
-/** Outbound calls are tagged with the lead/deal they were dialed from within this window. */
+/** Outbound calls are tagged with the lead/deal/case they were dialed from within this window. */
 const DIAL_CTX_TTL_MS = 30_000;
-let dialContext: { leadId?: string; dealId?: string; at: number } | null = null;
+let dialContext: {
+  leadId?: string;
+  dealId?: string;
+  retentionCaseId?: string;
+  at: number;
+} | null = null;
 
-/** Record which Data Center entity the next outbound call belongs to (call right before dialing). */
-export function setDialContext(ctx: { leadId?: string; dealId?: string }): void {
+/** Record which Data Center entity / retention case the next outbound call belongs to. */
+export function setDialContext(ctx: {
+  leadId?: string;
+  dealId?: string;
+  retentionCaseId?: string;
+}): void {
   dialContext = { ...ctx, at: Date.now() };
 }
 
-function freshDialContext(): { leadId?: string; dealId?: string } {
+function freshDialContext(): {
+  leadId?: string;
+  dealId?: string;
+  retentionCaseId?: string;
+} {
   if (!dialContext || Date.now() - dialContext.at > DIAL_CTX_TTL_MS) return {};
-  const { leadId, dealId } = dialContext;
-  return { ...(leadId ? { leadId } : {}), ...(dealId ? { dealId } : {}) };
+  const { leadId, dealId, retentionCaseId } = dialContext;
+  return {
+    ...(leadId ? { leadId } : {}),
+    ...(dealId ? { dealId } : {}),
+    ...(retentionCaseId ? { retentionCaseId } : {}),
+  };
 }
 
 function numOf(v: string | RawParty | undefined): string {
@@ -109,6 +128,7 @@ function buildCallEvent(kind: RingCentralEventKind, call: RawCall, sessionId: st
     if (start) durationMs = Math.max(0, Date.now() - start);
   }
 
+  const ctx = direction === 'Outbound' ? freshDialContext() : {};
   return {
     kind,
     at: Date.now(),
@@ -121,7 +141,7 @@ function buildCallEvent(kind: RingCentralEventKind, call: RawCall, sessionId: st
     ...(call.result ? { result: call.result } : {}),
     ...(typeof call.startTime === 'string' ? { startTime: call.startTime } : {}),
     ...(durationMs !== undefined ? { durationMs } : {}),
-    ...(direction === 'Outbound' ? freshDialContext() : {}),
+    ...ctx,
   };
 }
 
@@ -134,7 +154,8 @@ function emit(event: RingCentralCallEvent): void {
       /* ignore */
     }
   }
-  const { peer: _peer, at: _at, ...payload } = event;
+  // Strip UI-only fields before the audit POST.
+  const { peer: _peer, at: _at, retentionCaseId: _caseId, ...payload } = event;
   void postRingCentralCallEvent(payload).catch(() => {});
 }
 

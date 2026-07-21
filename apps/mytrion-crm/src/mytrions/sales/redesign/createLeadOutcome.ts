@@ -14,7 +14,7 @@ function asRecord(v: unknown): Record<string, unknown> | null {
 /** Pull the existing lead id out of a Zoho DUPLICATE_DATA payload (any nesting). */
 export function extractDuplicateLeadId(raw: unknown): string {
   const walk = (node: unknown, depth: number): string => {
-    if (depth > 4 || node == null) return '';
+    if (depth > 6 || node == null) return '';
     if (typeof node === 'string') {
       const t = node.trim();
       if (!t) return '';
@@ -36,8 +36,12 @@ export function extractDuplicateLeadId(raw: unknown): string {
     if (obj.code === 'DUPLICATE_DATA') {
       const details = asRecord(obj.details);
       if (details?.id != null && String(details.id) !== '') return String(details.id);
+      // Zoho also nests the existing record under details.duplicate_record.id (the shape returned when
+      // the create is rejected on a unique field like Email, wrapped in MULTIPLE_OR_MULTI_ERRORS).
+      const dup = asRecord(details?.duplicate_record);
+      if (dup?.id != null && String(dup.id) !== '') return String(dup.id);
     }
-    for (const key of ['response', 'data', 'details', 'Result', 'output'] as const) {
+    for (const key of ['response', 'data', 'details', 'errors', 'duplicate_record', 'Result', 'output'] as const) {
       if (key in obj) {
         const id = walk(obj[key], depth + 1);
         if (id) return id;

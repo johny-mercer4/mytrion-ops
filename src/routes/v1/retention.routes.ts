@@ -52,7 +52,7 @@ const createSchema = z.object({
   agent_name: z.string().max(200).optional(),
   assigned_agent_zoho_user_id: idString.optional(),
   phase_code: z.enum(PHASE_CODES).default('phase_1_agent'),
-  status_code: z.string().max(80).default('p1_new'),
+  status_code: z.string().max(80).default('p1_in_progress'),
   dissatisfaction_reason: z.enum(DISSATISFACTION).optional(),
   reason_note: z.string().max(2000).optional(),
 });

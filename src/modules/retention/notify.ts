@@ -1,9 +1,13 @@
 /**
  * Retention workflow notifications — persist inbox_events then push over the
  * Octane realtime hub so Sales agents see cases / pool / Ops prompts live.
+ *
+ * Open Pool (5 OoR attempts): inbox + WS for Ryan / deal owner, plus best-effort
+ * Zoho CRM Send Mail (`/{Deals}/{id}/actions/send_mail`) when a deal id + emails resolve.
  */
 import { env } from '../../config/env.js';
 import { logger } from '../../lib/logger.js';
+import { zohoCrm } from '../../integrations/zohoCrm.js';
 import {
   publishInboxEvent,
   realtimeHub,
@@ -73,6 +77,117 @@ export async function notifyCaseCreated(
   });
 }
 
+async function resolveCrmEmail(
+  zohoUserId: string,
+): Promise<{ email: string; name: string | null } | null> {
+  try {
+    const user = await zohoCrm.getUserById(zohoUserId);
+    const email = user?.email?.trim();
+    if (!email) return null;
+    return { email, name: user?.name ?? null };
+  } catch (err) {
+    logger.warn(
+      { err, zohoUserId },
+      'retention open-pool: Zoho user email lookup failed',
+    );
+    return null;
+  }
+}
+
+async function resolveFromAddress(): Promise<{ email: string; userName: string | null } | null> {
+  const configured = env.RETENTION_NOTIFY_FROM_EMAIL.trim();
+  try {
+    const addrs = await zohoCrm.listFromAddresses();
+    if (configured) {
+      const match = addrs.find((a) => a.email.toLowerCase() === configured.toLowerCase());
+      if (match) return match;
+      return { email: configured, userName: null };
+    }
+    return addrs[0] ?? null;
+  } catch (err) {
+    logger.warn({ err }, 'retention open-pool: from_addresses lookup failed');
+    return configured ? { email: configured, userName: null } : null;
+  }
+}
+
+/**
+ * Best-effort Zoho CRM Send Mail to Ryan + current deal owner when a deal enters Open Pool.
+ * Never throws — inbox notify remains the primary path if mail scopes/deal id are missing.
+ */
+async function emailOpenPoolOpened(opts: {
+  caseId: string;
+  carrierId: string;
+  companyName: string | null;
+  zohoDealId?: string | null;
+  ryanZohoUserId?: string | null;
+  previousOwnerZohoUserId?: string | null;
+}): Promise<void> {
+  const dealId = opts.zohoDealId?.trim();
+  if (!dealId || !zohoCrm.isConfigured()) {
+    logger.info(
+      { caseId: opts.caseId, hasDeal: Boolean(dealId) },
+      'retention open-pool Zoho email skipped (no deal id or CRM not configured)',
+    );
+    return;
+  }
+
+  const from = await resolveFromAddress();
+  if (!from) {
+    logger.info({ caseId: opts.caseId }, 'retention open-pool Zoho email skipped (no from address)');
+    return;
+  }
+
+  const recipients: Array<{ email: string; userName: string | null }> = [];
+  const seen = new Set<string>();
+  for (const id of [opts.ryanZohoUserId, opts.previousOwnerZohoUserId]) {
+    const trimmed = id?.trim();
+    if (!trimmed) continue;
+    const resolved = await resolveCrmEmail(trimmed);
+    if (!resolved || seen.has(resolved.email.toLowerCase())) continue;
+    seen.add(resolved.email.toLowerCase());
+    recipients.push({ email: resolved.email, userName: resolved.name });
+  }
+  if (recipients.length === 0) {
+    logger.info({ caseId: opts.caseId }, 'retention open-pool Zoho email skipped (no recipient emails)');
+    return;
+  }
+
+  const company = opts.companyName?.trim() || opts.carrierId;
+  const subject = `Sales Open Pool: ${company} (${opts.carrierId})`;
+  const content = [
+    `${company} entered the Sales Open Pool after 5 Out of Reach attempts.`,
+    ``,
+    `Carrier ID: ${opts.carrierId}`,
+    `Case ID: ${opts.caseId}`,
+    `Deal ID: ${dealId}`,
+    ``,
+    `Agents may claim from Retention → Open Pool (3 BD per claim, max 3 agents).`,
+    `Ryan Saab is notified for visibility; the previous deal owner is copied.`,
+  ].join('\n');
+
+  try {
+    await zohoCrm.sendMailOnRecord('Deals', dealId, {
+      from,
+      to: recipients,
+      subject,
+      content,
+    });
+    logger.info(
+      {
+        caseId: opts.caseId,
+        dealId,
+        recipients: recipients.map((r) => r.email),
+      },
+      'retention open-pool Zoho email sent',
+    );
+  } catch (err) {
+    logger.warn(
+      { err, caseId: opts.caseId, dealId },
+      'retention open-pool Zoho email failed (inbox notify still delivered)',
+    );
+  }
+}
+
 export async function notifyOpenPoolOpened(
   ctx: TenantContext,
   opts: {
@@ -81,6 +196,8 @@ export async function notifyOpenPoolOpened(
     companyName: string | null;
     /** Previous deal-owner Zoho id (also notified when set). */
     previousOwnerZohoUserId?: string | null;
+    /** CRM deal id — enables Zoho Send Mail on the deal. */
+    zohoDealId?: string | null;
   },
 ): Promise<void> {
   const ryanId = env.RETENTION_OPEN_POOL_NOTIFY_ZOHO_USER_ID.trim();
@@ -108,20 +225,29 @@ export async function notifyOpenPoolOpened(
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
-    return;
+  } else {
+    let i = 0;
+    for (const ownerId of targets) {
+      await persistAndPublish(ctx, {
+        ownerId,
+        type: 'retention.pool.opened',
+        title,
+        detail,
+        // One pool broadcast is enough — attach to the first inbox write.
+        broadcastPool: i === 0,
+      });
+      i += 1;
+    }
   }
-  let i = 0;
-  for (const ownerId of targets) {
-    await persistAndPublish(ctx, {
-      ownerId,
-      type: 'retention.pool.opened',
-      title,
-      detail,
-      // One pool broadcast is enough — attach to the first inbox write.
-      broadcastPool: i === 0,
-    });
-    i += 1;
-  }
+
+  await emailOpenPoolOpened({
+    caseId: opts.caseId,
+    carrierId: opts.carrierId,
+    companyName: opts.companyName,
+    ...(opts.zohoDealId != null ? { zohoDealId: opts.zohoDealId } : {}),
+    ...(ryanId ? { ryanZohoUserId: ryanId } : {}),
+    ...(prev ? { previousOwnerZohoUserId: prev } : {}),
+  });
 }
 
 export async function notifyClaimRequestToOwner(

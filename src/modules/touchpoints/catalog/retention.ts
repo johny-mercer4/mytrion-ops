@@ -94,10 +94,10 @@ export const retentionTouchpoints: LocalTouchpoint[] = [
           expose: true,
         });
       }
+      // Omit phase_code → all phases for this agent (New…Closed Kanban needs Dissatisfied/Closed).
       return retentionCasePhase1Repo.listForAgent(ctx, zohoUserId, {
         ...(typeof params.open === 'boolean' ? { open: params.open } : {}),
-        phaseCode:
-          typeof params.phase_code === 'string' ? params.phase_code : RETENTION_PHASE.agent,
+        ...(typeof params.phase_code === 'string' ? { phaseCode: params.phase_code } : {}),
         ...(typeof params.limit === 'number' ? { limit: params.limit } : {}),
       });
     },
@@ -238,6 +238,7 @@ export const retentionTouchpoints: LocalTouchpoint[] = [
           carrierId: updated.carrierId,
           companyName: updated.companyName,
           previousOwnerZohoUserId: previousOwner,
+          zohoDealId: updated.zohoDealId,
         });
       }
       return { case: updated };
@@ -247,7 +248,7 @@ export const retentionTouchpoints: LocalTouchpoint[] = [
   {
     kind: 'local',
     key: 'retention.log_attempt',
-    title: 'Log out-of-reach communication attempt',
+    title: 'Log OoR channel attempt (5 BD each, max 5)',
     riskClass: 'write',
     departments: salesDept,
     identityParam: 'zohoUserId',
@@ -256,6 +257,8 @@ export const retentionTouchpoints: LocalTouchpoint[] = [
       caseId: idString,
       channel: z.enum(CHANNELS),
       notes: z.string().max(2000).optional(),
+      /** Screenshot proof for non-RC channels (data URL or https). */
+      evidence_url: z.string().max(1_800_000).optional(),
     }),
     handler: async (ctx, params) => {
       const caseId = String(params.caseId);
@@ -263,6 +266,8 @@ export const retentionTouchpoints: LocalTouchpoint[] = [
       const updated = await retentionCasePhase1Repo.logCommsAttempt(ctx, caseId, {
         channel: params.channel as (typeof CHANNELS)[number],
         notes: typeof params.notes === 'string' ? params.notes : undefined,
+        evidenceUrl:
+          typeof params.evidence_url === 'string' ? params.evidence_url : undefined,
         actorZohoUserId: String(params.zohoUserId ?? zohoFromCtx(ctx) ?? ''),
       });
       return { case: updated };

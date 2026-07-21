@@ -4198,3 +4198,244 @@ sender-verify) — whoami, card_status, funds, txn_report, override. Hammasi myt
 setup (instance-per-carrier, env'lar, ishga tushirish, invariantlar, upstream farqlar).
 Eslatma: ~/Projects/Octane/AI/hamroh dagi asl nusxada qolgan tools/octane/octane_override.py
 va boshqalar endi dublikat — asl repo tozalanishi mumkin (yoki upstream-only qoldiriladi).
+## 2026-07-20 — Retention modal: Call, auto-Working, screenshot attempts
+
+- **Call** lives in the case modal header (RingCentral click-to-dial) for any open
+  Phase-1 case with a phone — not buried only under OoR log.
+- Removed **Start working** from the agent UI. New breach cases open as
+  `p1_in_progress` (Working) automatically; open `p1_new` rows backfilled in
+  migration `0031_retention_attempt_evidence`. Kanban “New” column removed.
+- Non-RC OoR attempts (TG/WA/SMS/IG/FB/email) **require a screenshot** (upload or
+  paste). Stored on `retention_case_events.evidence_url`; shown in the timeline.
+
+## 2026-07-20 — Retention attempt-first flow (rewrite)
+
+Correct Sales agent loop (was outcome-first — confusing):
+
+1. Case created → agent notified (inbox/WS).
+2. Open case → **1 · Contact attempt** (Call or TG/WA/…).
+3. RC call-end (dialed from modal) **forces** attempt log; RC call log = proof.
+   Other channels: screenshot **or** notes.
+4. Only then **2 · Client status** (Reached / no contact / Vacation / Dissatisfied).
+   Modal blocks close until force-log + status after an attempt.
+
+Backend: `log_attempt` allowed from Working (not only OoR); stays Working until
+status or 5 attempts → Pool.
+
+## 2026-07-20 — Retention wizard polish (icons + close on status)
+
+- Channel pills use brand SVG icons (Telegram / WhatsApp / SMS / IG / FB / Email).
+- True wizard: **Attempt → Status** (one step at a time); modal **closes after
+  status save** (or no-contact / pool).
+- Dissatisfaction reasons are radio cards with short hints (not a bare picklist).
+
+## 2026-07-20 — Remove Sales Claims review
+
+- Dropped Retention → **Claims** pane (`PoolClaimsPane`) — not a Sales review job.
+- Open Pool claim is **instant assign** again (no owner approve / pending UI).
+
+## 2026-07-20 — Fix: Data Center → Clients "Gallons · This month" = 0 for every client
+
+**Symptom:** Clients cards + ClientModal showed `Gallons · This month` = 0 (and `Cards used · This
+month` = 0) for every client, while `Gallons · Cycle` and the roster populated normally.
+
+**Diagnosis (not a rendering bug, not DWH lag):**
+- The month figures come from `GET /v1/data-center/loyalty-stats` → `fetchLoyaltyStatsByAgent`
+  (`src/integrations/dwhLoyalty.ts`), a DWH query that maps carrier→owner by the **last-12-digit
+  suffix** of the session Zoho id against `dim_company.agent_zoho_user_id`. Cycle gallons + the roster
+  come from **servercrm** (`/api/clients/by-agent`), which matches by full id **with a display-name
+  fallback** (`dim_company.agent ILIKE`) when the id resolves 0 rows.
+- Read-only DWH probe (analytics agent): July 2026 is fully loaded (max tx date = today, 3.75M gal
+  this month); the loyalty SQL returns correct non-zero figures for a properly-shaped agent id. So the
+  warehouse and the query are fine.
+- Logic: the roster populated (clients visible) but our id-suffix query returned `{}`. If the roster
+  had resolved by **id**, our suffix match would have matched too. It didn't → the roster resolved via
+  servercrm's **name** fallback → the session id is in a different id-space than the warehouse
+  `agent_zoho_user_id`, and our id-only query silently matched nothing → all clients read 0.
+
+**Fix:** give `fetchLoyaltyStatsByAgent` the same name fallback servercrm uses. Extracted the
+aggregation into `runLoyaltyQuery(predicate, bind)`; try `OWNER_BY_ID_SUFFIX` first, and if it
+resolves no carriers and a name is supplied, fall back to `OWNER_BY_NAME` = `lower(c.agent) =
+lower($1)` (exact, case-insensitive — safer than `ILIKE` for free-text `%`/`_`). The
+`/data-center/loyalty-stats` route now passes `ctx.userName` as the fallback name for the self case
+(and act-as-by-header, where `ctx.userName` is already the target); an admin targeting another agent
+by `?zoho_user_id` uses the id path only (we don't have that agent's name). Verified against the DWH:
+the name path selects the byte-for-byte identical carrier set (128/128) as the id path for a real
+agent, with non-zero this-month gallons.
+
+**Why it's safe:** the fallback name is the SAME `ctx.userName` servercrm already matched to resolve
+the roster, so it's guaranteed to hit; it's session-authoritative (no IDOR); name-scoped only as a
+fallback after the id match is empty. Tests: `data-center-routes.test.ts` updated (name arg asserted)
++ a new regression test for the plain frontend call → 26/26. (28 unrelated failures in
+carrier-mini-app / cs-routes / touchpoints-count are pre-existing from the in-progress retention work,
+confirmed by stashing this change.)
+
+## 2026-07-21 — Perf: Data Center → Clients loads faster (one DWH scan, drop dashboard.agent_sales)
+
+**Complaint:** Clients tab loads too slowly. **Measured** (read-only DWH probe, EXPLAIN ANALYZE):
+- The DWH has **NO indexes** on `octane.mart_transaction_line_items` (1.24M rows) or `dim_company` —
+  every query is a **Parallel Seq Scan** (~99k blocks / ~775 MB, ~250 ms). This is the real floor.
+- The Clients tab fired **3 calls**: `clients.by_agent` (servercrm: dim_company + live CMP debt),
+  `dashboard.agent_sales` (servercrm: **6** full mart scans, used ONLY for per-carrier cycle volume),
+  and `loyalty-stats` (our DWH) — which, post-name-fallback, ran **twice** in this env (id path → 0
+  rows still full-scans, then name path) ≈ 2 scans.
+
+**Change (source clients gallons from dim_company + mart_transaction_line_items, one pass):**
+- `src/integrations/dwhLoyalty.ts`: `fetchLoyaltyStatsByAgent` is now a **single** query — resolve the
+  agent's carriers in a cheap `dim_company`-only CTE (`(id-suffix OR name)` OR'd in one pass, no more
+  id-then-name double scan), then aggregate `mart_transaction_line_items` ONCE for **cycle (26th→25th)
+  + this-month + prev-month** gallons/cards/txns. Added `cycleGallons` to `LoyaltyCarrierStats`. Cycle
+  reconciled to the penny vs an independent sum (288,052.38 for a test agent).
+- Frontend (`live.ts`): **removed `loadCycleGallonsByCarrier` / the `dashboard.agent_sales` call** from
+  `loadRecords`; cycle gallons now come from the loyalty payload (`ls.cycleGallons`). `loadRecords` is
+  down to **2 calls** (roster + one loyalty query). `LoyaltyStat` (loyalty.ts) gained `cycleGallons`.
+- Net: Clients-tab DWH work goes from *(2 loyalty scans + 6 dashboard scans)* → **one scan**; one fewer
+  round-trip. Clients tab uses stale-while-revalidate cache, so this is the cold-load + revalidate cost.
+
+**Zoho (Leads/Deals):** already batched — `fetchAgentLeads`/`fetchAgentDeals` pull `limit 0, 2000` in
+ONE COQL query, so no change needed there.
+
+**Still the floor / not done here:**
+- The unindexed full seq scan (~250 ms) is unavoidable app-side — a covering index
+  `mart_transaction_line_items (carrier_id, transaction_date) INCLUDE (line_item_fuel_quantity,
+  card_number, transaction_id)` would let it switch to per-carrier range scans (~11k rows vs 1.2M), but
+  the **DWH is a read-only third-party replica — this must be requested from the warehouse owner**, we
+  never migrate it.
+- `SET jit=off` saves ~24–38 ms/query but I did NOT set it globally (dwh.ts) — it could slow the big
+  analytics-agent queries; leaving it as an option.
+- The roster call still goes through servercrm for **live CMP debt**. Could be sourced directly from
+  `dim_company` (fully DWH, 3→1 calls) but that trades live debt for ~3h-stale DWH debt — a product
+  decision, pending the user.
+
+Verify: backend typecheck + lint clean; `data-center-routes.test.ts` 26/26 (mock gained `cycleGallons`);
+frontend typecheck unchanged at 24 pre-existing errors (none in my files; finance/admin WIP). Shipped
+consolidated SQL validated live against the DWH.
+
+## 2026-07-21 — Phase 1 Sales Retention: correct to board
+
+Corrected Phase 1 to match the Sales board (prior attempt-first flow was wrong).
+
+**Backend**
+- Migration `0032`: rename open `1BD_comms_attempt` → `5BD_comms_attempt` (deadline *at* unchanged; next stamp is authoritative).
+- OoR attempts stamp **5 BD** each; log_attempt gated to `p1_out_of_reach` only; attempts 1–4 stay OoR; 5 → Open Pool + Ryan notify.
+- Reached 5 BD expiry → **handoff to Retention** (never Open Pool).
+- Sync closes open non-CITI cases on **any transaction after `createdAt`** (drop “back under threshold”).
+- Deal-owner / Ryan alerts: **inbox + WS only** — no Zoho/SMTP sender in-repo yet; hook documented in `notify.ts`.
+
+**Sales FE**
+- Wizard: **Call → forced stage** (OoR / Reached / Dissatisfied / Vacation); OoR then channel picklist (RC auto on call).
+- Kanban: Working / **Reached** / Out of Reach / Vacation / Exited (Dissatisfied column dropped — jumps to Phase 2).
+- Captions: `5 BD attempt ·`; Reached copy no longer mentions Open Pool.
+
+**Verify:** unit tests for phase1 / deadline-sweep / sync; `pnpm db:migrate` for 0032.
+
+**Out of scope (later):** Open Pool owner-change / 3 BD unclaimed → Retention deep rules; Retention desk / CITI UI.
+
+## 2026-07-21 — Fix: Retention Call shows "No phone on file"
+
+`retention.case_contact` used `getDwhCompanyDetails`, which only read `dim_company.contact_phone`.
+Sales roster / deals use **`deal_phone || contact_phone`** — most carriers only have `deal_phone` filled.
+Updated `getDwhCompanyDetails` to coalesce the same way. Restart API (or wait for reload) and reopen the case.
+
+## 2026-07-21 — Retention Kanban stages + New wizard
+
+- Kanban columns: **New / Reached / Out of Reach / Vacation / Dissatisfied / Closed** (dropped Working + Exited).
+- **New** = call-within-2BD inbox (`p1_new` / `p1_in_progress` / pool assigned).
+- Dissatisfied / Closed stay on the agent board: `my_cases` no longer forces `phase_1_agent`; Retention handoff keeps sales assignee.
+- Modal wizard: New → Call → Stage → per-stage workflow (progress chrome).
+
+## 2026-07-21 — Migration 0033: Sales Agent board columns
+
+- `retention_statuses`: added **`board_column`** + **`sort_order`**; labels match Kanban (New / Reached / OoR / Vacation / Dissatisfied / Closed).
+- `agent_outcome` enum: added **`reached`** (watching) vs `returned` (closed on fuel).
+- Applied locally via `pnpm db:migrate`. Open Reached rows backfilled to `agent_outcome=reached` post-migrate.
+
+## 2026-07-21 — Retention entry exclusions (debtors / pre-swipe / OoB)
+
+**OoB** = Out of Business (CRM: `Closed Lost` / stage text matching out of business).
+
+Sales Agent case scan (`scanRetentionCandidates`) now excludes:
+1. **Debtors** — Billing Mytrion rule via `public.cmp_invoice` (not stale `dim_company.is_debtor`).
+2. **Pre–Card Swiped** (Verification / WEX / funded-never-used) — requires `first_swipe_date`.
+3. **Closed Lost / OoB** — `deal_stage` filter.
+4. **Deactivated** — `is_active = 1` only.
+
+Pure helper: `isRetentionEntryEligible`. UI caption notes the exclusions.
+
+## 2026-07-21 — Phase 1 stage workflows aligned (Reached / Dissatisfied / Vacation)
+
+**Reached:** watch-only (no attempts); hourly sync closes on any fuel after open;
+`5BD_post_contact` expiry → **Open Pool** + Ryan/owner notify (was wrongly Retention).
+Entering Reached clears OoR attempt counter.
+
+**Dissatisfied:** reason list matches board; immediate handoff → Retention (10 BD), not Pool.
+
+**Vacation:** 14d countdown → 2 BD follow-up → Ops confirm (→ New) / deny (→ CITI);
+return-date note field on stage confirm; fuel still auto-closes.
+
+## 2026-07-21 — OoR stage after every attempt + Open Pool Zoho mail
+
+- After each OoR attempt (RC or other), stage picker shows again with **Out of Reach**
+  available (pre-selected); attempt 5 → Open Pool.
+- Open Pool notify: inbox/WS (Ryan + previous owner) **and** best-effort Zoho CRM
+  `send_mail` on the Deal (`RETENTION_NOTIFY_FROM_EMAIL` optional From).
+- Auto-close on any transaction after case open remains in hourly `syncRetentionCases`
+  → `p1_returned` + `closedAt`.
+
+## 2026-07-21 — Retention wizard: RC auto-attempt + stage UX
+
+- **Move to stage** button shows spinner / “Saving…”; optimistic board update before API.
+- **US phone** `formatUsPhone` (+1 (773) 909-6150) prominent in header, call CTA, call-ended banner.
+- **RC auto-log:** New→OoR after a call counts attempt 1 (channel RingCentral); OoR call-end auto-logs (no manual “Log RC” / no note). Retry only on failure.
+- Other channels: note field **red outline** when required (no screenshot).
+- Timeline headlines: `RingCentral attempt → Out of Reach` (etc.).
+
+## 2026-07-21 — RingCentral: silent call lifecycle toasts
+
+Dialing / connected / ended toasts removed from `RingCentralPhone` and dial sites.
+Backend `postRingCentralCallEvent` still runs on every event. UI warnings only for
+**session ended (logout)** and **adapter load failure** / dial-not-ready errors.
+
+## 2026-07-21 — Retention tab UI polish (metrics + kanban chrome)
+
+External CRM kanban patterns (HubSpot-style headline KPIs, column count + value aggregates,
+color-coded stage headers) applied to Sales Retention without leaving the Sales design system
+(Rajdhani / JetBrains Mono / cyan accent).
+
+- `retentionBoardStats()` — active / overdue / gal-at-risk / high-freq + per-column gallons.
+- `RetentionBoardUi.tsx` — hero, 4-up metric strip, column heads (count + gal), cards, empty.
+- Cases / Open Pool / RetentionTab wired to `.ss-ret-*` chrome; tab badges for active + pool.
+- Column hints + left rail colors align with stage SLA copy (2 BD / 5 BD / OoR attempts).
+
+## 2026-07-21 — Inbox live toast on every Sales tab
+
+Shell `useSidebarBadges` already held the ServerCRM WS; hardened so inbox push works off-Inbox:
+- Toast title fixed to **New inbox message** (subject as body) so subjects with “error” don’t
+  render as error-tone; fires for the effective user on any tab.
+- `watchKey` reconnects the shell socket on View-as user change; refs avoid stale owner match.
+- `inboxLiveBus.publishInboxLive` fans out to InboxTab + Home preview lists (shell still owns toast).
+
+## 2026-07-21 — Fix: Home goal/streak stuck at 0
+
+Home called `getAppStats()` with **no** `zoho_user_id`, unlike Deals/Desk. Failures / empty
+owner resolution rendered as silent zeros (no error UI). Backend COQL on
+`Deals.Application_Date` (application filled) was already correct — verified live for Daniel
+(29 apps / 90d; week + best non-zero).
+
+- FE always passes session / act-as `zoho_user_id`; normalizes day counts; shows load/error on
+  goal bar + streak strip.
+- Route logs owner + totals at debug.
+
+## 2026-07-21 — Data Center Money Codes (zoho-octane parity)
+
+Reference: `zoho-octane` self-service Records → Money Codes.
+
+**Correction:** list/void are **not** DWH touchpoints — the ledger is our Ops DB table
+`money_code_requests` (ServerCRM draw writes the same table via `MYTRION_OPS_DB_INTERNAL`).
+
+- Migration `0034`: draw-model columns (company_name, batch_id, unit_number, USED, …);
+  drop the old ACTIVE unique arbiter.
+- Local touchpoints: `money_code.list` (SQL, own-only) + `money_code.void` (own-only check
+  on Ops DB, then ServerCRM EFS-safe void which writes back to the same table).
+- Draw/preview stay `dwh.money_code` / `dwh.money_code_draw` (live EFS).
+- FE: `dataCenterMoneyCodes.tsx` — never shows `efs_money_code`.

@@ -1,20 +1,18 @@
+import { bigint, bigserial, date, integer, numeric, pgTable, text, timestamp, index } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
-import { bigint, bigserial, date, numeric, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 
 /**
- * Money_Code_Requests — one ACTIVE (non-voided) money code per (carrier, invoice).
+ * Money_Code_Requests — one row per invoice allocation of a physical money-code draw.
  *
- * Dedup anchor: a PARTIAL unique index on (carrier_id, invoice_id) WHERE status <> 'VOIDED'. This
- * makes "issue a code for this invoice" idempotent + race-safe at the DB level, while letting a
- * VOIDED row be superseded by a fresh issue (voided rows are excluded from the index, so re-issue
- * after an auto-void doesn't collide). At most one ISSUED row per invoice; any number of VOIDED ones.
+ * Draw model (ServerCRM / self-service parity): an invoice grants a LIMIT; agents may draw
+ * against it multiple times. A 2-billing draw can waterfall across 2 invoices → 2 rows sharing
+ * a `batch_id`, one physical EFS code = Σ money_code_amount. Primary display rows have
+ * `batch_id IS NULL` (sibling rows point `batch_id` at the primary id).
  *
- * Not tenant-scoped: carrier_id / invoice_id live in the CMP domain (BIGINT ids), so this is a global
- * operational table (like a DWH-facing log). `efs_money_code` is filled later by the EFS step;
- * `status` is ISSUED until VOIDED (then voided_at / void_reason are set).
+ * Not tenant-scoped: carrier_id / invoice_id live in the CMP domain. `efs_money_code` is set
+ * once at issue and must never be returned to the Sales UI (CMP app delivery only).
  *
- * NOTE: carrier_id / invoice_id use bigint mode:'number' — CMP ids are well within JS's safe-integer
- * range. Switch to mode:'bigint' if an id can exceed 2^53.
+ * Status: ISSUED | VOIDED | USED.
  */
 export const moneyCodeRequests = pgTable(
   'money_code_requests',
@@ -24,22 +22,39 @@ export const moneyCodeRequests = pgTable(
     invoiceId: bigint('invoice_id', { mode: 'number' }).notNull(),
     invoiceAmount: numeric('invoice_amount', { precision: 14, scale: 2 }),
     limitPct: numeric('limit_pct', { precision: 6, scale: 2 }),
+    invoiceLimit: numeric('invoice_limit', { precision: 14, scale: 2 }),
     moneyCodeAmount: numeric('money_code_amount', { precision: 14, scale: 2 }),
     billingType: text('billing_type'),
-    validUntil: date('valid_until'),
-    status: text('status').notNull().default('ISSUED'), // ISSUED | VOIDED
-    efsMoneyCode: text('efs_money_code'), // filled by the (future) EFS step
+    /** Issue + 72h instant (timestamptz). */
+    validUntil: timestamp('valid_until', { withTimezone: true }),
+    status: text('status').notNull().default('ISSUED'),
+    efsMoneyCode: text('efs_money_code'),
+    efsId: text('efs_id'),
     requestedBy: text('requested_by'),
-    email: text('email'), // company email (from DWH dim_company); nullable. Zapier sends from this.
+    email: text('email'),
+    companyName: text('company_name'),
+    batchId: bigint('batch_id', { mode: 'number' }),
+    requestedDow: text('requested_dow'),
+    requestedNyDate: date('requested_ny_date'),
+    moneycodeReason: text('moneycode_reason'),
+    unitNumber: text('unit_number'),
+    notifiedAt: timestamp('notified_at', { withTimezone: true }),
+    notifyError: text('notify_error'),
+    usedAmount: numeric('used_amount', { precision: 14, scale: 2 }),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    usedCount: integer('used_count'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    voidedAt: timestamp('voided_at', { withTimezone: true }), // set when status flips to VOIDED
+    voidedAt: timestamp('voided_at', { withTimezone: true }),
     voidReason: text('void_reason'),
   },
   (table) => ({
-    // Unique only among ACTIVE rows — a voided invoice can be issued again.
-    activeCarrierInvoiceUnq: uniqueIndex('money_code_requests_active_carrier_invoice_uniq')
+    activeByInvoice: index('ix_money_code_active_by_invoice')
       .on(table.carrierId, table.invoiceId)
       .where(sql`${table.status} <> 'VOIDED'`),
+    statusCreated: index('ix_money_code_status_created').on(table.status, table.createdAt),
+    batch: index('ix_money_code_batch')
+      .on(table.batchId)
+      .where(sql`${table.batchId} IS NOT NULL`),
   }),
 );
 

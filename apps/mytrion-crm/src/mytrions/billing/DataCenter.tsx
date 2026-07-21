@@ -3,22 +3,25 @@
  * (bm-panel / bm-summary-* / bm-toolbar / dc-filter-tabs + dc-stage-* multiselect / bm-table /
  * bm-modal-* / dc-detail-* / bm-toast), scoped under `.bm-root`.
  *
- * Data is LIVE: deals load via billingTouchpoint('billing.datacenter.deals') and map onto the
- * `Deal` view-model in ./data.ts. The single write is the deal-billing edit — three picklist
- * fields (Payment_Type_Billing / Billing_Cycle / Billing_Verification) saved through
- * updateDealBilling (POST /billing/data-center/deals/:id, allowlisted + audited); success updates
- * the row in local state and raises a toast, failures surface the server message inline + toast.
+ * Data is LIVE and READ-ONLY (fully Zoho-free): deals load via
+ * billingTouchpoint('billing.datacenter.deals') from the DWH and map onto the `Deal` view-model in
+ * ./data.ts. The deal-billing edit (a Zoho CRM write) was removed — billing fields are now managed
+ * in Zoho CRM directly, so Data Center never writes to Zoho.
  *
  * Detail modal lazy-loads avg-days (billing.datacenter.avgDays) and invoices/prepay
- * (billing.invoices.search); Debtor Status + Recent Transactions render as graceful, honest
- * placeholders (no per-carrier billing touchpoint wired for those yet).
+ * (billing.invoices.search) — both DWH-sourced; Debtor Status + Recent Transactions render as
+ * graceful, honest placeholders (no per-carrier billing touchpoint wired for those yet).
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
-import { billingTouchpoint, updateDealBilling } from '@/api/billing';
+import { billingTouchpoint } from '@/api/billing';
 import type { BillingDealsResult, BillingInvoicesResult } from '@/api/touchpointTypes';
 import { useLoad } from '../_shared/useLoad';
-import { type Deal, type PayType, type Verify, payMeta, stageMeta } from './data';
+import { type Deal, type PayType, type StageSem, type Verify, payMeta, stageMeta } from './data';
+import { useWindowedRows } from './useWindowedRows';
+
+/** Fixed rendered height of a Data Center deal row (px) — must match `.dc-deal-row { height }`. */
+const DC_ROW_H = 52;
 
 /* ── icon path constants (verbatim from the widget template) ── */
 const P_REFRESH =
@@ -26,11 +29,8 @@ const P_REFRESH =
 const P_SEARCH = 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z';
 const P_CLOSE = 'M6 18L18 6M6 6l12 12';
 const P_WARN = 'M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z';
-const P_CHECK = 'M5 13l4 4L19 7';
 const P_FILTER = 'M3 4h18M6 12h12M10 20h4';
 const P_CHEVRON = 'M19 9l-7 7-7-7';
-const P_TABLE =
-  'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4';
 
 const FILTERS: Array<{ id: string; label: string }> = [
   { id: 'all', label: 'All' },
@@ -55,20 +55,27 @@ const STAGE_OPTIONS = [
   'Closed Lost',
 ];
 
-const PAY_OPTIONS: PayType[] = ['Line of Credit', 'Prepay', 'Deposit'];
-const CYCLE_OPTIONS = ['Weekly', 'Bi-Weekly', 'Monthly', 'Bi-Monthly'];
-const VERIFY_OPTIONS: Verify[] = ['Verified', 'Pending', 'Failed'];
 
-/** stageMeta / payMeta tone → the ported bm-badge modifier class. */
-type Tone = 'good' | 'bad' | 'info' | 'neutral' | 'warn';
-const TONE_BADGE: Record<Tone, string> = {
-  good: 'bm-badge-success',
-  bad: 'bm-badge-danger',
-  info: 'bm-badge-info',
-  warn: 'bm-badge-warning',
-  neutral: 'bm-badge-muted',
+/** Design sem → the bm-badge modifier class (stage chip). */
+const SEM_BADGE: Record<StageSem, string> = {
+  muted: 'bm-badge-muted',
+  warning: 'bm-badge-warning',
+  accent: 'bm-badge-info',
+  purple: 'bm-badge-purple',
+  success: 'bm-badge-success',
+  danger: 'bm-badge-danger',
 };
-const stageBadge = (stage: string): string => TONE_BADGE[stageMeta(stage).tone];
+const stageBadge = (stage: string): string => SEM_BADGE[stageMeta(stage).sem];
+
+/** Design sem → the stage progress-bar fill colour. */
+const SEM_COLOR: Record<StageSem, string> = {
+  muted: 'var(--mutedc)',
+  warning: 'var(--warning-text)',
+  accent: 'var(--billing-accent)',
+  purple: 'var(--purple-text)',
+  success: 'var(--success-text)',
+  danger: 'var(--danger-text)',
+};
 
 /** Payment-type badge — the widget's dedicated dc-badge-* palette (loc=green, prepay=amber, deposit=purple). */
 const PAY_BADGE: Record<PayType, string> = {
@@ -133,13 +140,6 @@ function mapDeals(result: BillingDealsResult): Deal[] {
   return rows.map(toDeal);
 }
 
-/* ── toast ── */
-interface ToastState {
-  id: number;
-  type: 'success' | 'error';
-  message: string;
-}
-
 export function DataCenter() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [search, setSearch] = useState('');
@@ -147,8 +147,6 @@ export function DataCenter() {
   const [selectedStages, setSelectedStages] = useState<string[]>([]);
   const [stageOpen, setStageOpen] = useState(false);
   const [openDeal, setOpenDeal] = useState<Deal | null>(null);
-  const [editDeal, setEditDeal] = useState<Deal | null>(null);
-  const [toast, setToast] = useState<ToastState | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
 
   const load = useLoad<BillingDealsResult>(
@@ -160,13 +158,6 @@ export function DataCenter() {
   useEffect(() => {
     if (load.data) setDeals(mapDeals(load.data));
   }, [load.data]);
-
-  // Toast auto-dismiss.
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 3200);
-    return () => clearTimeout(t);
-  }, [toast]);
 
   const loading = load.loading;
 
@@ -206,6 +197,13 @@ export function DataCenter() {
         ? selectedStages[0]
         : `${selectedStages.length} Stages`;
 
+  // Row virtualization: only the visible slice is in the DOM, so switching to/from
+  // this tab (Shell toggles display:none↔contents) no longer style-recalcs thousands
+  // of <tr> nodes, and scrolling stays smooth regardless of deal count.
+  const tableWrapRef = useRef<HTMLDivElement>(null);
+  const win = useWindowedRows(tableWrapRef, filtered.length, DC_ROW_H);
+  const windowed = useMemo(() => filtered.slice(win.start, win.end), [filtered, win.start, win.end]);
+
   const stageRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!stageOpen) return;
@@ -227,12 +225,6 @@ export function DataCenter() {
     setActiveFilter('all');
     setSelectedStages([]);
     setRefreshTick((t) => t + 1);
-  }
-
-  function applyEdit(id: string, patch: { payType: PayType; cycle: string; verify: Verify }) {
-    setDeals((prev) => prev.map((d) => (d.id === id ? { ...d, ...patch } : d)));
-    setEditDeal(null);
-    setToast({ id: Date.now(), type: 'success', message: 'Deal updated successfully' });
   }
 
   return (
@@ -257,34 +249,10 @@ export function DataCenter() {
 
       {/* ── Stat Cards ── */}
       <div className="bm-summary-banner">
-        <StatItem
-          bg="var(--accent-bg)"
-          color="var(--billing-accent)"
-          value={deals.length}
-          label="Total Deals"
-          icon="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"
-        />
-        <StatItem
-          bg="var(--success-bg)"
-          color="var(--success-text)"
-          value={statCounts.loc}
-          label="Line of Credit"
-          icon="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-        />
-        <StatItem
-          bg="var(--warning-bg)"
-          color="var(--warning-text)"
-          value={statCounts.prepay}
-          label="Prepay"
-          icon="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-        />
-        <StatItem
-          bg="var(--purple-bg)"
-          color="var(--purple-text)"
-          value={statCounts.deposit}
-          label="Deposit"
-          icon="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
-        />
+        <StatItem color="var(--billing-accent)" value={deals.length} label="Total Deals" sub="in book" />
+        <StatItem color="var(--billing-accent)" value={statCounts.loc} label="Line of Credit" sub={pctOfBook(statCounts.loc, deals.length)} />
+        <StatItem color="var(--warning-text)" value={statCounts.prepay} label="Prepay" sub={pctOfBook(statCounts.prepay, deals.length)} />
+        <StatItem color="var(--purple-text)" value={statCounts.deposit} label="Deposit" sub={pctOfBook(statCounts.deposit, deals.length)} />
       </div>
 
       {/* ── Toolbar ── */}
@@ -385,18 +353,8 @@ export function DataCenter() {
 
       {/* ── Deals Table ── */}
       {!loading || deals.length > 0 ? (
-        <div className="bm-section" style={{ flex: 1 }}>
-          <div className="bm-section-hdr">
-            <div className="bm-section-title">
-              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={P_TABLE} />
-              </svg>
-              Deal Records
-            </div>
-            <span className="bm-badge bm-badge-muted">{filtered.length} records</span>
-          </div>
-
-          <div className="bm-table-wrap">
+        <div className="bm-section" style={{ flex: 1, minHeight: 0 }}>
+          <div className="bm-table-wrap" ref={tableWrapRef} style={{ flex: 1, minHeight: 0 }}>
             <table className="bm-table" id="dc-deals-table">
               <thead>
                 <tr>
@@ -405,13 +363,14 @@ export function DataCenter() {
                   <th style={{ minWidth: '155px' }}>Stage</th>
                   <th>Application Date</th>
                   <th style={{ minWidth: '140px' }}>Payment Type</th>
+                  <th style={{ textAlign: 'right' }}>Avg Pay</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={6}>
+                    <td colSpan={7}>
                       <div className="bm-empty">
                         <svg width="36" height="36" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path
@@ -427,7 +386,13 @@ export function DataCenter() {
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((deal) => (
+                  <>
+                    {win.padTop > 0 ? (
+                      <tr aria-hidden style={{ height: win.padTop }}>
+                        <td colSpan={7} style={{ padding: 0, border: 0 }} />
+                      </tr>
+                    ) : null}
+                    {windowed.map((deal) => (
                     <tr key={deal.id} className="dc-deal-row" onClick={() => setOpenDeal(deal)}>
                       <td>
                         <div style={{ fontWeight: 600, fontSize: '0.8125rem' }}>{deal.name || '—'}</div>
@@ -437,25 +402,43 @@ export function DataCenter() {
                       </td>
                       <td>
                         <span className={`bm-badge ${stageBadge(deal.stage)}`}>{deal.stage || '—'}</span>
+                        <div className="dc-stage-bar">
+                          <div
+                            style={{
+                              width: `${stageMeta(deal.stage).pct}%`,
+                              background: SEM_COLOR[stageMeta(deal.stage).sem],
+                            }}
+                          />
+                        </div>
                       </td>
                       <td style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{deal.appDate || '—'}</td>
                       <td>
                         <span className={`bm-badge ${PAY_BADGE[deal.payType]}`}>{payMeta(deal.payType).label}</span>
                       </td>
-                      <td>
-                        <button
-                          className="bm-btn bm-btn-ghost"
-                          style={{ padding: '0.25rem 0.5rem', fontSize: '0.625rem' }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditDeal(deal);
-                          }}
-                        >
-                          Edit
-                        </button>
+                      <td
+                        style={{
+                          textAlign: 'right',
+                          fontFamily: MONO,
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          color: deal.avgDays != null ? avgDaysColor(deal.avgDays) : 'var(--text-muted)',
+                        }}
+                      >
+                        {deal.avgDays != null ? `${deal.avgDays}d` : '—'}
+                      </td>
+                      <td style={{ color: 'var(--text-muted)', width: 40 }}>
+                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ opacity: 0.5 }}>
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                        </svg>
                       </td>
                     </tr>
-                  ))
+                    ))}
+                    {win.padBottom > 0 ? (
+                      <tr aria-hidden style={{ height: win.padBottom }}>
+                        <td colSpan={7} style={{ padding: 0, border: 0 }} />
+                      </tr>
+                    ) : null}
+                  </>
                 )}
               </tbody>
             </table>
@@ -463,54 +446,24 @@ export function DataCenter() {
         </div>
       ) : null}
 
-      {/* ── Deal Detail modal ── */}
-      {openDeal ? (
-        <DealDetailModal
-          deal={openDeal}
-          onClose={() => setOpenDeal(null)}
-          onEdit={(d) => {
-            setOpenDeal(null);
-            setEditDeal(d);
-          }}
-        />
-      ) : null}
-
-      {/* ── Edit modal (the single write) ── */}
-      {editDeal ? (
-        <EditDealModal
-          deal={editDeal}
-          onClose={() => setEditDeal(null)}
-          onSaved={(patch) => applyEdit(editDeal.id, patch)}
-          onError={(m) => setToast({ id: Date.now(), type: 'error', message: m })}
-        />
-      ) : null}
-
-      {/* ── Toast ── */}
-      {toast ? (
-        <div className={`bm-toast bm-toast--${toast.type}`}>
-          <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={toast.type === 'success' ? P_CHECK : P_WARN} />
-          </svg>
-          {toast.message}
-        </div>
-      ) : null}
+      {/* ── Deal Detail modal (read-only) ── */}
+      {openDeal ? <DealDetailModal deal={openDeal} onClose={() => setOpenDeal(null)} /> : null}
     </div>
   );
 }
 
 /* ═══════════ Stat card ═══════════ */
-function StatItem({ bg, color, value, label, icon }: { bg: string; color: string; value: number; label: string; icon: string }) {
+/** "X% of book" sub-line for a type count against the total (empty if no deals). */
+function pctOfBook(count: number, total: number): string {
+  return total > 0 ? `${Math.round((count / total) * 100)}% of book` : '—';
+}
+
+function StatItem({ color, value, label, sub }: { color: string; value: number; label: string; sub?: string }) {
   return (
-    <div className="bm-summary-item">
-      <div className="bm-summary-icon" style={{ background: bg, color }}>
-        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={icon} />
-        </svg>
-      </div>
-      <div>
-        <div className="bm-summary-amount">{value}</div>
-        <div className="bm-summary-label">{label}</div>
-      </div>
+    <div className="bm-summary-item" style={{ '--stat-color': color } as CSSProperties}>
+      <div className="bm-summary-label">{label}</div>
+      <div className="bm-summary-amount">{value}</div>
+      {sub ? <div className="bm-summary-sub">{sub}</div> : null}
     </div>
   );
 }
@@ -543,7 +496,7 @@ function parseAvgDays(res: Record<string, unknown> | null): number | null {
   return toNum(res.avgDays);
 }
 
-function DealDetailModal({ deal, onClose, onEdit }: { deal: Deal; onClose: () => void; onEdit: (d: Deal) => void }) {
+function DealDetailModal({ deal, onClose }: { deal: Deal; onClose: () => void }) {
   const isPrepay = deal.payType === 'Prepay';
 
   useEffect(() => {
@@ -672,9 +625,6 @@ function DealDetailModal({ deal, onClose, onEdit }: { deal: Deal; onClose: () =>
           <button className="bm-btn bm-btn-ghost" onClick={onClose}>
             Close
           </button>
-          <button className="bm-btn bm-btn-primary" onClick={() => onEdit(deal)}>
-            Edit Deal
-          </button>
         </div>
       </div>
     </div>
@@ -723,149 +673,6 @@ function DetailRow({ label, value }: { label: string; value: ReactNode }) {
     <div className="bm-field-row">
       <span className="bm-field-label">{label}</span>
       <span className="bm-field-value">{value}</span>
-    </div>
-  );
-}
-
-/* ═══════════ Edit modal (the single write) ═══════════ */
-
-function EditDealModal({
-  deal,
-  onClose,
-  onSaved,
-  onError,
-}: {
-  deal: Deal;
-  onClose: () => void;
-  onSaved: (patch: { payType: PayType; cycle: string; verify: Verify }) => void;
-  onError: (message: string) => void;
-}) {
-  const [payType, setPayType] = useState<PayType>(deal.payType);
-  const [cycle, setCycle] = useState(deal.cycle);
-  const [verify, setVerify] = useState<Verify>(deal.verify);
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  async function save() {
-    if (saving) return;
-    const changes: Parameters<typeof updateDealBilling>[1] = {};
-    if (payType !== deal.payType) changes.Payment_Type_Billing = payType || null;
-    if (cycle !== deal.cycle) changes.Billing_Cycle = cycle || null;
-    if (verify !== deal.verify) changes.Billing_Verification = verify || null;
-    if (Object.keys(changes).length === 0) {
-      onClose();
-      return;
-    }
-    setSaving(true);
-    setSaveMsg(null);
-    try {
-      await updateDealBilling(deal.id, changes);
-      // Success: hand the patch up so the parent patches the row in local state + toasts.
-      onSaved({ payType, cycle, verify });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Try again.';
-      setSaving(false);
-      setSaveMsg({ type: 'error', text: `Save failed. ${msg}` });
-      onError(`Save failed. ${msg}`);
-    }
-  }
-
-  return (
-    <div className="bm-modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="bm-modal-box" style={{ maxWidth: '560px' }}>
-        <div className="bm-modal-header">
-          <h3 className="bm-modal-title">Edit Deal</h3>
-          <button className="bm-modal-close" onClick={onClose}>
-            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={P_CLOSE} />
-            </svg>
-          </button>
-        </div>
-
-        <div className="bm-modal-body">
-          {/* Read-only info */}
-          <div className="dc-edit-section">
-            <div className="dc-edit-section-title">Deal Info</div>
-            <div className="bm-field-row">
-              <span className="bm-field-label">Deal Name</span>
-              <span className="bm-field-value">{deal.name || '—'}</span>
-            </div>
-            <div className="bm-field-row">
-              <span className="bm-field-label">Stage</span>
-              <span className={`bm-badge ${stageBadge(deal.stage)}`}>{deal.stage || '—'}</span>
-            </div>
-            <div className="bm-field-row">
-              <span className="bm-field-label">Carrier ID</span>
-              <span className="bm-field-value" style={{ fontFamily: MONO }}>{deal.carrierId || '—'}</span>
-            </div>
-            <div className="bm-field-row">
-              <span className="bm-field-label">Deal ID</span>
-              <span className="bm-field-value" style={{ fontFamily: MONO, fontSize: '0.6875rem', color: 'var(--text-muted)' }}>{deal.id}</span>
-            </div>
-          </div>
-
-          {/* Editable fields */}
-          <div className="dc-edit-section" style={{ marginTop: '1rem' }}>
-            <div className="dc-edit-section-title">Editable Fields</div>
-            <div className="dc-edit-field">
-              <label className="dc-edit-label" htmlFor="dc-edit-payment-type">Payment Type / Billing</label>
-              <select id="dc-edit-payment-type" className="dc-edit-input" value={payType} onChange={(e) => setPayType(e.target.value as PayType)}>
-                <option value="">— None —</option>
-                {PAY_OPTIONS.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            </div>
-            <div className="dc-edit-field">
-              <label className="dc-edit-label" htmlFor="dc-edit-billing-cycle">Billing Cycle</label>
-              <select id="dc-edit-billing-cycle" className="dc-edit-input" value={cycle} onChange={(e) => setCycle(e.target.value)}>
-                <option value="">— None —</option>
-                {CYCLE_OPTIONS.concat(cycle && !CYCLE_OPTIONS.includes(cycle) ? [cycle] : []).map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-            <div className="dc-edit-field">
-              <label className="dc-edit-label" htmlFor="dc-edit-billing-verification">Billing Verification</label>
-              <select id="dc-edit-billing-verification" className="dc-edit-input" value={verify} onChange={(e) => setVerify(e.target.value as Verify)}>
-                <option value="">— None —</option>
-                {VERIFY_OPTIONS.map((v) => (
-                  <option key={v} value={v}>{v}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {saveMsg ? (
-            <div className={`tx-save-msg ${saveMsg.type}`} style={{ marginTop: '0.75rem' }}>
-              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={saveMsg.type === 'success' ? P_CHECK : P_WARN} />
-              </svg>
-              {saveMsg.text}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="bm-modal-footer">
-          <button className="bm-btn bm-btn-ghost" onClick={onClose} disabled={saving}>
-            Cancel
-          </button>
-          <button className="bm-btn bm-btn-primary" onClick={save} disabled={saving} id="dc-btn-save">
-            {saving ? (
-              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ animation: 'ai-spin 0.8s linear infinite' }}>
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={P_REFRESH} />
-              </svg>
-            ) : null}
-            {saving ? 'Saving…' : 'Save Changes'}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
