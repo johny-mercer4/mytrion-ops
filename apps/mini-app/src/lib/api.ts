@@ -46,7 +46,8 @@ async function request(method: 'GET' | 'POST', path: string, body?: unknown): Pr
 }
 
 export type CompanyType = 'owner-operator' | 'fleet-manager';
-export type Profile = 'owner' | 'driver';
+/** 'manager' has owner-equivalent access — the UI treats owner + manager alike (see isOwner). */
+export type Profile = 'owner' | 'manager' | 'driver';
 
 export interface RegistrationPreview {
   id: string;
@@ -183,6 +184,21 @@ export async function createDriverInvite(
     cardId,
     driverName,
   })) as DriverInviteResult;
+}
+
+export interface ManagerInviteResult {
+  invite: { id: string };
+  inviteUrl: string;
+  expiresAt: string;
+}
+
+/** Owner (or an existing manager) issues a manager registration link for their carrier — a colleague
+ *  with owner-equivalent company access. Carrier-level; the backend binds it to the caller's own
+ *  carrier from their verified registration (never the body). */
+export async function createManagerInvite(initData: string): Promise<ManagerInviteResult> {
+  return (await request('POST', '/carrier/mini-app/manager-invites', {
+    initData,
+  })) as ManagerInviteResult;
 }
 
 // ── Self-service reads (any registered user — owner or driver) ──────────────────────────────
@@ -459,6 +475,17 @@ export async function updateCardInfo(
     ...(cardId ? { cardId } : {}),
     ...fields,
   })) as Record<string, unknown>;
+}
+
+export interface BillingFormInfo {
+  verification?: string | null;
+  billingForm?: Record<string, unknown> | null;
+  notes?: Array<{ title?: string; content?: string; createdTime?: string; createdBy?: string }>;
+}
+
+/** Billing form + verification notes on file — owner-only; the same servercrm read the CRM widget uses. */
+export async function fetchBillingForm(initData: string): Promise<BillingFormInfo> {
+  return (await request('POST', '/carrier/mini-app/billing-form', { initData })) as BillingFormInfo;
 }
 
 /** C-10 — raise a fraud hold/release request (a human on the fraud team acts on it). Owner-only. */

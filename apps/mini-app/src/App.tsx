@@ -3,6 +3,7 @@ import { Check, ChevronRight, CircleAlert, LayoutGrid } from 'lucide-react';
 import {
   ApiError,
   createDriverInvite,
+  createManagerInvite,
   driverSelfRegister,
   fetchAccountStatus,
   fetchBalance,
@@ -14,6 +15,7 @@ import {
   fetchPaymentInfo,
   fetchRegistrationPreview,
   fetchCompany,
+  fetchBillingForm,
   fetchTracking,
   renameDriver,
   sendServiceRequest,
@@ -22,6 +24,7 @@ import {
   fetchMoneyCodePreview,
   drawMoneyCode,
   fetchCardEfs,
+  sendFraudRequest,
   setCardStatus,
   setCardLimits,
   updateCardInfo,
@@ -38,6 +41,7 @@ import {
   type RegistrationView,
   type SalesInvoicesResult,
   type StatusResult,
+  type BillingFormInfo,
   type TrackingResult,
   type TransactionsResult,
   type TxnExportFormat,
@@ -74,7 +78,10 @@ type Screen = 'loading' | 'error' | 'confirm' | 'success' | 'already' | 'home' |
 
 interface Session {
   isDriver: boolean;
+  /** Owner-LIKE: true for both a company owner and a manager (owner-equivalent access). This is what
+   *  gates the owner UI. Use isManager only when the copy must distinguish the two. */
   isOwner: boolean;
+  isManager: boolean;
   isOwnerOp: boolean;
   isFleetManager: boolean;
   ownCard: string;
@@ -93,8 +100,11 @@ function cleanAgentName(agentName: string | null | undefined): string | null {
 function sessionFrom(reg: RegistrationView | null): Session {
   const companyType = reg?.companyType ?? null;
   const isDriver = reg?.profile === 'driver';
-  const isOwner = reg?.profile === 'owner';
-  const isFleetManager = reg?.profile === 'owner' && companyType === 'fleet-manager';
+  const isManager = reg?.profile === 'manager';
+  // Owner-like drives the whole owner UI — a manager is owner-equivalent.
+  const isOwner = reg?.profile === 'owner' || isManager;
+  const isFleetManager = isOwner && companyType === 'fleet-manager';
+  // A true owner-operator only — a manager is never a solo owner-operator.
   const isOwnerOp = reg?.profile === 'owner' && companyType !== 'fleet-manager';
   const ownCardNumber = reg?.cardNumber?.trim() || null;
   // Prefer the real card number's last-4; fall back to the cardId's trailing digits when unresolved.
@@ -102,6 +112,7 @@ function sessionFrom(reg: RegistrationView | null): Session {
   return {
     isDriver,
     isOwner,
+    isManager,
     isOwnerOp,
     isFleetManager,
     ownCard,
@@ -449,8 +460,13 @@ function DetailCard({ children }: { children: ReactNode }) {
 
 function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: RegistrationPreview; firstName: string; busy: boolean; onConfirm: () => void }) {
   const { t } = useI18n();
-  const isOwner = preview.profile === 'owner';
-  const ownerLabel = preview.companyType === 'fleet-manager' ? t('role.fleet') : t('role.owner');
+  const isManager = preview.profile === 'manager';
+  const isOwner = preview.profile === 'owner' || isManager;
+  const ownerLabel = isManager
+    ? t('role.manager')
+    : preview.companyType === 'fleet-manager'
+      ? t('role.fleet')
+      : t('role.owner');
   const cd = countdown(preview.expiresAt);
   return (
     <Screen center>
@@ -458,7 +474,7 @@ function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: Regis
         <LogoLockup size={40} />
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 23, fontWeight: 700, color: 'var(--fg)', letterSpacing: '-.01em' }}>{t('confirm.hi', { name: firstName })}</div>
-          <div style={{ fontSize: 14, color: 'var(--muted-fg)', marginTop: 5 }}>{isOwner ? t('confirm.owner') : t('confirm.driver')}</div>
+          <div style={{ fontSize: 14, color: 'var(--muted-fg)', marginTop: 5 }}>{isManager ? t('confirm.manager') : isOwner ? t('confirm.owner') : t('confirm.driver')}</div>
         </div>
         <DetailCard>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '15px 16px' }}>
@@ -640,7 +656,7 @@ function LoginScreen({
 
 function SuccessScreen({ session, company, onContinue }: { session: Session; company: string; onContinue: () => void }) {
   const { t } = useI18n();
-  const sub = session.isFleetManager ? t('success.fleet', { company }) : session.isDriver ? t('success.driver', { company }) : t('success.owner', { company });
+  const sub = session.isManager ? t('success.manager', { company }) : session.isFleetManager ? t('success.fleet', { company }) : session.isDriver ? t('success.driver', { company }) : t('success.owner', { company });
   return (
     <Screen center>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
@@ -1260,6 +1276,7 @@ function FleetView({
   onCreate,
   onRegenerate,
   onRename,
+  onCreateManagerInvite,
   showToast,
   askConfirm,
 }: {
@@ -1272,6 +1289,7 @@ function FleetView({
   onCreate: (cardId: string, name: string) => Promise<void>;
   onRegenerate: (cardId: string, name: string) => Promise<void>;
   onRename: (cardId: string, driverName: string) => Promise<void>;
+  onCreateManagerInvite: () => Promise<{ inviteUrl: string; expiresAt: string }>;
   showToast: (msg: string, kind?: ToastKind) => void;
   askConfirm: (cfg: ConfirmConfig) => void;
 }) {
@@ -1282,6 +1300,9 @@ function FleetView({
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Manager-invite (carrier-level): one link at a time, revealed after minting so it can be copied.
+  const [managerLink, setManagerLink] = useState<string | null>(null);
+  const [managerBusy, setManagerBusy] = useState(false);
 
   const rows = cards.map((c) => fleetRow(t, c));
   const total = cards.length;
@@ -1326,6 +1347,21 @@ function FleetView({
     showToast(toast);
   }
 
+  async function mintManager() {
+    if (managerBusy) return;
+    setManagerBusy(true);
+    try {
+      const res = await onCreateManagerInvite();
+      setManagerLink(res.inviteUrl);
+      showToast(t('manager.linkCreated'));
+    } catch {
+      haptic('error');
+      showToast(t('fleet.error'), 'error');
+    } finally {
+      setManagerBusy(false);
+    }
+  }
+
   /** `nameOverride` covers regenerate: that flow has no name input, so it must reuse the card's existing driver name instead of an (empty) draft. */
   async function run(cardId: string, fn: (id: string, name: string) => Promise<void>, nameOverride?: string) {
     const name = nameOverride ?? (drafts[cardId] ?? '').trim();
@@ -1363,6 +1399,37 @@ function FleetView({
             );
           })}
         </div>
+      </div>
+
+      {/* Manager invite — carrier-level, so it sits above the per-card roster. A colleague who
+          redeems this gets owner-equivalent company access. */}
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 16, padding: '14px 15px', marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+          <span style={{ width: 38, height: 38, flex: 'none', borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'color-mix(in srgb, var(--primary) 13%, transparent)', color: 'var(--link-accent)' }}>
+            <Icon name="userplus" size={19} strokeWidth={2} className="" />
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)' }}>{t('manager.title')}</div>
+            <div style={{ fontSize: 12.5, color: 'var(--muted-fg)', marginTop: 2, lineHeight: 1.4 }}>{t('manager.subtitle')}</div>
+          </div>
+        </div>
+        {!managerLink ? (
+          <button type="button" className="press" onClick={() => { haptic('tap'); void mintManager(); }} disabled={managerBusy} style={{ marginTop: 12, width: '100%', height: 44, border: 'none', borderRadius: 12, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: managerBusy ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: managerBusy ? 0.7 : 1 }}>
+            {managerBusy ? <Spinner size={18} color="#FFFFFF" /> : t('manager.generate')}
+          </button>
+        ) : (
+          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 44, padding: '0 6px 0 13px', background: 'var(--secondary)', borderRadius: 12 }}>
+              <span className="selectable" style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{managerLink}</span>
+              <button type="button" className="press" onClick={() => copy(managerLink, 'manager-invite')} style={{ flex: 'none', height: 32, padding: '0 13px', border: 'none', borderRadius: 9, background: copiedId === 'manager-invite' ? 'var(--success, #16a34a)' : 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+                {copiedId === 'manager-invite' ? t('card.copied') : t('manager.copy')}
+              </button>
+            </div>
+            <button type="button" onClick={() => { haptic('tap'); void mintManager(); }} disabled={managerBusy} style={{ alignSelf: 'flex-start', border: 'none', background: 'transparent', color: 'var(--link-accent)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: 'pointer', padding: '2px 0' }}>
+              {t('manager.regenerate')}
+            </button>
+          </div>
+        )}
       </div>
 
       {loading && (
@@ -1769,6 +1836,7 @@ type SheetData =
   | { kind: 'payment'; v: PaymentInfoResult }
   | { kind: 'invoices'; v: SalesInvoicesResult }
   | { kind: 'tracking'; v: TrackingResult }
+  | { kind: 'billingform'; v: BillingFormInfo }
   | { kind: 'manualcode'; v: { cardNumber: string | null } }
   | { kind: 'moneycode'; v: { disabled: boolean; preview: MoneyCodePreview | null } }
   | { kind: 'cardops'; v: { fleet: FleetCard[] } }
@@ -1785,6 +1853,30 @@ const SHEET_TTL_MS = 60_000;
 function invalidateSheetCache(...prefixes: string[]): void {
   for (const key of [...SHEET_CACHE.keys()]) {
     if (prefixes.some((p) => key.startsWith(p))) SHEET_CACHE.delete(key);
+  }
+}
+
+/**
+ * Recent unit numbers for the money-code sheet. FleetCard has no unitNumber field (units live
+ * per-card in EFS), so "select your unit" is a memory of what THIS user typed before --
+ * localStorage-backed, newest first, capped at 4. A returning driver taps instead of retyping.
+ */
+const MC_UNITS_KEY = 'octane.mcUnits';
+function loadRecentUnits(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(MC_UNITS_KEY) ?? '[]');
+    return Array.isArray(parsed) ? parsed.filter((u): u is string => typeof u === 'string').slice(0, 4) : [];
+  } catch {
+    return [];
+  }
+}
+function rememberUnit(unit: string): void {
+  if (!unit) return;
+  try {
+    const next = [unit, ...loadRecentUnits().filter((u) => u !== unit)].slice(0, 4);
+    localStorage.setItem(MC_UNITS_KEY, JSON.stringify(next));
+  } catch {
+    /* storage unavailable -- chips just will not appear */
   }
 }
 
@@ -1943,6 +2035,7 @@ function ActionSheet({
           next = { kind: 'cardops', v: { fleet: fl.fleet.filter((c) => c.cardId) } };
         }
         else if (service === 'tracking') next = { kind: 'tracking', v: await fetchTracking(initData) };
+        else if (service === 'billingform') next = { kind: 'billingform', v: await fetchBillingForm(initData) };
         // Explicit, because this was a bare `else` that swallowed every unhandled key into a tracking
         // fetch — a new ServiceKey would silently open the wrong sheet instead of failing.
         else throw new Error(`Unhandled service: ${String(service)}`);
@@ -2255,6 +2348,18 @@ function ActionSheet({
                     </span>
                     <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{bannerLabel}</span>
                   </div>
+                  {/* Same diagnosis->fix pattern as the funds sheet: a driver seeing "hold" gets the
+                      override button right here instead of a dead-end status label. */}
+                  {session.isDriver && onSwitchAction && rows.length > 0 && fmt(rows[0]?.['status']).toLowerCase().includes('hold') && (
+                    <button
+                      type="button"
+                      className="press"
+                      onClick={() => { haptic('tap'); onSwitchAction({ kind: 'generic', key: 'drv-override-card', title: t('cat.drvOverrideCard'), request: 'override-card' }); }}
+                      style={{ width: '100%', height: 46, marginBottom: 14, border: 'none', borderRadius: 12, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+                    >
+                      {t('funds.fixOverride')}
+                    </button>
+                  )}
                   {/* Carrier debt is the COMPANY's financial standing — an owner's view, never a driver's.
                       A driver asking "is my card active" must not be shown the fleet's total debt or
                       hard-debtor flag. */}
@@ -2686,6 +2791,17 @@ function ActionSheet({
                         );
                       })()}
                       <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('mc.unit')}</div>
+                      {(() => {
+                        const units = loadRecentUnits();
+                        if (units.length === 0) return null;
+                        return (
+                          <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+                            {units.map((u) => (
+                              <button key={u} type="button" onClick={() => { haptic('tap'); setMcUnit(u); }} style={{ height: 30, padding: '0 13px', borderRadius: 9, border: '1px solid var(--border)', background: mcUnit === u ? 'var(--primary)' : 'var(--secondary)', color: mcUnit === u ? '#FFFFFF' : 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, cursor: 'pointer', fontVariantNumeric: 'tabular-nums' }}>{u}</button>
+                            ))}
+                          </div>
+                        );
+                      })()}
                       <input value={mcUnit} inputMode="numeric" onChange={(e) => setMcUnit(e.target.value)} placeholder="1656" style={{ width: '100%', height: 46, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 15, padding: '0 14px', marginBottom: 12 }} />
                       <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('mc.reason')}</div>
                       <div className="hscroll" style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
@@ -2700,6 +2816,7 @@ function ActionSheet({
                           .then((res) => {
                             haptic('success');
                             invalidateSheetCache('moneycode');
+                            rememberUnit(mcUnit.trim());
                             setMcDone({ amount: res.money_code_amount != null ? Number(res.money_code_amount) : amountNum, after: res.available_after != null ? Number(res.available_after) : null });
                             setMcAmount(''); setMcUnit(''); setMcReason('');
                           })
@@ -2838,6 +2955,18 @@ function ActionSheet({
                       {coBusy === 'deact' ? <Spinner size={15} color="var(--destructive)" /> : t('co.deactivate')}
                     </button>
                   </div>
+                  {/* C-10 hold/release — a REQUEST the fraud team acts on, not a direct EFS flip
+                      (unlike activate/deactivate above); the note under the buttons says so. */}
+                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('co.holdOps')}</div>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                    <button type="button" className="press" disabled={coBusy !== null} onClick={() => doOp('hold', () => sendFraudRequest(initData, coCard.cardId ?? '', 'fraud_hold'), t('co.holdDone'))} style={opBtn('color-mix(in srgb, var(--destructive) 14%, transparent)', 'var(--destructive)')}>
+                      {coBusy === 'hold' ? <Spinner size={15} color="var(--destructive)" /> : t('co.hold')}
+                    </button>
+                    <button type="button" className="press" disabled={coBusy !== null} onClick={() => doOp('unhold', () => sendFraudRequest(initData, coCard.cardId ?? '', 'fraud_release'), t('co.unholdDone'))} style={opBtn('var(--secondary)', 'var(--fg)')}>
+                      {coBusy === 'unhold' ? <Spinner size={15} color="var(--fg)" /> : t('co.unhold')}
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', lineHeight: 1.5, marginBottom: 18 }}>{t('co.holdNote')}</div>
                   <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('co.limitOps')}</div>
                   <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
                     {(['ULSD', 'DEFD'] as const).map((l) => (
@@ -2845,6 +2974,11 @@ function ActionSheet({
                     ))}
                     {(['increase', 'decrease'] as const).map((d) => (
                       <button key={d} type="button" onClick={() => { haptic('tap'); setCoLimitDir(d); }} style={{ flex: 1, height: 34, borderRadius: 9, border: 'none', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12, cursor: 'pointer', background: coLimitDir === d ? 'var(--primary)' : 'var(--secondary)', color: coLimitDir === d ? '#FFFFFF' : 'var(--muted-fg)' }}>{d === 'increase' ? '+' : '−'}</button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                    {[50, 100].map((v) => (
+                      <button key={v} type="button" onClick={() => { haptic('tap'); setCoLimitVal(String((Number(coLimitVal) || 0) + v)); }} style={{ height: 30, padding: '0 14px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, cursor: 'pointer', fontVariantNumeric: 'tabular-nums' }}>{'+' + v}</button>
                     ))}
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
@@ -2861,6 +2995,50 @@ function ActionSheet({
                     {coBusy === 'info' ? <Spinner size={15} color="#FFFFFF" /> : t('co.save')}
                   </button>
                 </div>
+              );
+            })()
+          ) : data?.kind === 'billingform' ? (
+            (() => {
+              const bf = data.v;
+              const entries = Object.entries(bf.billingForm ?? {}).filter(([, v]) => v != null && typeof v !== 'object' && String(v).trim() !== '');
+              const notes = bf.notes ?? [];
+              if (!entries.length && !notes.length && !bf.verification) {
+                return <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('bf.empty')}</div>;
+              }
+              return (
+                <>
+                  {bf.verification && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: 'color-mix(in srgb, var(--link-accent) 10%, transparent)', borderRadius: 14, marginBottom: 14, fontSize: 13.5, color: 'var(--fg)' }}>
+                      <Icon name="shield" size={16} strokeWidth={2.2} className="" />
+                      <span>{t('bf.verification')}: <b>{fmt(bf.verification)}</b></span>
+                    </div>
+                  )}
+                  {entries.length > 0 && (
+                    <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                      {entries.map(([k, v], i) => (
+                        <div key={k} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, padding: '11px 14px', borderBottom: i === entries.length - 1 ? 'none' : '1px solid var(--border)' }}>
+                          <span style={{ fontSize: 12.5, color: 'var(--muted-fg)', flex: 'none' }}>{k}</span>
+                          <span className="selectable" style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--fg)', textAlign: 'right', minWidth: 0, overflowWrap: 'anywhere' }}>{fmt(v)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {notes.length > 0 && (
+                    <>
+                      <div style={{ height: 14 }} />
+                      <SectionLabel>{t('bf.notes')}</SectionLabel>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {notes.map((n2, i) => (
+                          <div key={i} style={{ background: 'var(--secondary)', borderRadius: 14, padding: '12px 14px' }}>
+                            {n2.title && <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--fg)', marginBottom: 3 }}>{fmt(n2.title)}</div>}
+                            {n2.content && <div className="selectable" style={{ fontSize: 13, color: 'var(--fg)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{fmt(n2.content)}</div>}
+                            <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 5 }}>{[n2.createdBy, n2.createdTime].filter(Boolean).join(' · ')}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
               );
             })()
           ) : data?.kind === 'tracking' ? (
@@ -3511,6 +3689,16 @@ export function App() {
   const createLink = (cardId: string, name: string) => submitDriverLink(cardId, name, 'toast.driverLinkCreated');
   const regenerateLink = (cardId: string, name: string) => submitDriverLink(cardId, name, 'toast.newLinkGenerated');
 
+  /** Mint a manager registration link — a colleague with owner-equivalent access. Carrier-level, so
+   *  no card; the backend binds it to this session's own carrier. Returns the link for the FleetView
+   *  to reveal + copy; throws so the caller can surface an inline error. */
+  async function createManagerLink(): Promise<{ inviteUrl: string; expiresAt: string }> {
+    if (!wa?.initData) throw new ApiError(t('auth.openInTelegram'), 'NO_INITDATA', 0);
+    const res = await createManagerInvite(wa.initData);
+    haptic('success');
+    return { inviteUrl: res.inviteUrl, expiresAt: res.expiresAt };
+  }
+
   async function renameDriverName(cardId: string, driverName: string): Promise<void> {
     if (!wa?.initData) throw new ApiError(t('auth.openInTelegram'), 'NO_INITDATA', 0);
     // Patch the row from the response, not from the input: the backend trims, and the roster should
@@ -3567,6 +3755,7 @@ export function App() {
             onCreate={createLink}
             onRegenerate={regenerateLink}
             onRename={renameDriverName}
+            onCreateManagerInvite={createManagerLink}
             showToast={showToast}
             askConfirm={askConfirm}
           />
