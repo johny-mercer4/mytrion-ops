@@ -4510,3 +4510,39 @@ bo'sh tag/help/menu → rolga mos, talab-tartibli menyu (owner: money code birin
 driver: kartam holati birinchi), tanlovlar (davr, ambiguous karta, ticket turi) tugmalarda.
 Test: "@bot menu" → tugmali menyu; money code oqimi to'liq tap bilan; "4753 o'chir" →
 Ha/Yo'q tugmalari.
+
+---
+
+## 2026-07-21 — Manager role (owner-equivalent) for carrier mini-app + CRM
+
+- **Why:** big fleets have managers who work with drivers and need company-owner-level access in
+  Octane — but they aren't the account owner. Added a third `profile` value **`manager`** that is
+  owner-EQUIVALENT in every capability gate; differs only in provenance (invited, not the owner) and
+  display. Product decisions (confirmed): full owner-teng access (incl. finances); owner + manager +
+  admin can all issue manager links; a manager can also issue driver links.
+- **No migration.** `profile` is a plain `text` column in both `carrier_invitations` and
+  `registered_mini_app_companies` (no pg enum / CHECK), so widening the TS union `'owner' | 'driver'`
+  → `'owner' | 'manager' | 'driver'` is a code-only change.
+- **Single source of "manager == owner":** `miniAppAuth.isOwnerLike(profile)` = owner || manager.
+  `requireRegisteredOwner` / `requireRegisteredOwnerUser` key off it; `telegramCtx` maps both to the
+  `fleet_manager` role. `serviceRequestAllows` normalizes manager→owner (per-service role lists stay
+  owner/driver). `inviteService` pins `companyType='fleet-manager'` for a manager invite so a DWH
+  hiccup can't null it and lock the manager out of the fleet gate (fail-closed).
+- **Notifications + news need no change:** dispatcher (`service.ts`) and news (`news.ts`) already
+  collapse `profile === 'driver' ? 'driver' : 'owner'`, so a manager inherits owner-targeted
+  deliveries automatically. Registry roles stay owner/driver (routing role, not registration profile).
+- **New endpoint:** `POST /carrier/mini-app/manager-invites` (gated by `requireRegisteredOwner`, so
+  owner OR manager; carrier bound from the caller's own registration, never the body; ttl 48h).
+- **Mini-app FE:** `isOwner` is now owner-LIKE (owner||manager) and drives the whole owner UI; added
+  `isManager` for copy that must distinguish. Manager-invite affordance sits at the top of the fleet
+  screen (fleet-manager only — matches the backend gate): generate → reveal link → copy/regenerate.
+  Confirm/success screens + i18n (EN/RU/UZ/ES) gained manager strings.
+- **CRM admin:** `CarrierUserForm` account-type toggle gained a Manager option (treated owner-like:
+  carrier tie, no card — one logic change: `isOwner = !isDriver`). `CarrierInvitations` list labels
+  manager invites. **Registered Companies screen (per follow-up):** managers now render as their own
+  tier (Manager pill, revocable — revoke was already profile-agnostic at the API); added **status
+  filter chips** (All / Active / Revoked with counts) since revoked accounts accumulate and clutter
+  the roster.
+- **Tests:** +4 in `carrier-mini-app.test.ts` (manager gets owner-only money view; manager & owner
+  can mint a manager link bound to their own carrier; driver refused at /manager-invites). Full suite
+  766 pass. Backend + mini-app + CRM(carrier files) typecheck clean; mini-app bundle rebuilt.

@@ -534,6 +534,99 @@ describe('owner-only money views', () => {
   });
 });
 
+describe('manager access — owner-equivalent, plus manager invites', () => {
+  function managerReg(overrides: Record<string, unknown> = {}) {
+    // A manager carries fleet-manager companyType (inviteService pins it) — owner-equivalent everywhere.
+    return registrationRow({ profile: 'manager', telegramUsername: 'ops_manager', ...overrides });
+  }
+
+  function managerInviteDto(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'inv_mgr',
+      profile: 'manager' as const,
+      carrierId: '5758544',
+      applicationId: 'APP-9',
+      companyName: 'Acme Transport LLC',
+      cardId: null,
+      driverName: null,
+      companyType: 'fleet-manager' as const,
+      cardCount: null,
+      agentName: 'Rep Riley',
+      agentZohoUserId: '777',
+      status: 'pending' as const,
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      createdAt: new Date().toISOString(),
+      ...overrides,
+    };
+  }
+
+  it('grants a manager the owner-only money views (invoices) — owner-equivalent', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(managerReg());
+    crm.getInvoices.mockResolvedValueOnce({ data: [{ id: '71800' }], count: 1 });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/invoices',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', range: 'last_30' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ count: 1 });
+  });
+
+  it('lets a manager mint a manager registration link (managers can grow the team)', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(managerReg());
+    inviteRepo.findById.mockResolvedValueOnce(inviteRow()); // resolveRegistrationAgent lookup
+    inviteRepo.create.mockResolvedValueOnce(managerInviteDto());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/manager-invites',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed' },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ invite: { id: 'inv_mgr' } });
+    // Bound to the CALLER's own carrier, profile manager — never taken from the body.
+    expect(inviteRepo.create.mock.calls[0]?.[1]).toMatchObject({ profile: 'manager', carrierId: '5758544' });
+  });
+
+  it('lets an owner mint a manager link too', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(registrationRow()); // owner, fleet-manager
+    inviteRepo.findById.mockResolvedValueOnce(inviteRow());
+    inviteRepo.create.mockResolvedValueOnce(managerInviteDto({ id: 'inv_mgr2' }));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/manager-invites',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed' },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(inviteRepo.create.mock.calls[0]?.[1]).toMatchObject({ profile: 'manager' });
+  });
+
+  it('refuses a driver at /manager-invites before minting anything', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(
+      registrationRow({ profile: 'driver', companyType: null, cardId: 'card_1' }),
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/manager-invites',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed' },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ error: { code: 'NOT_A_REGISTERED_OWNER' } });
+    expect(inviteRepo.create).not.toHaveBeenCalled();
+  });
+});
+
 describe('invoice delivery', () => {
   it('refuses an invoice that is not this carrier\'s — the ids are enumerable integers', async () => {
     registrationRepo.findByTelegramUserId.mockResolvedValueOnce(registrationRow());
