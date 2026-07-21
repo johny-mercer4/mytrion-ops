@@ -1092,6 +1092,8 @@ interface HomeProps {
   onOpenAction: (target: OpenAction) => void;
   onGoToServices: () => void;
   onViewFleet: () => void;
+  onCreateManagerInvite: () => Promise<{ inviteUrl: string; expiresAt: string }>;
+  onCopy: (text: string, toast: string) => void;
   onMarkAllRead: () => void;
   onReadNotif: (id: string) => void;
   overrideUntil: number | null;
@@ -1132,6 +1134,68 @@ function OverrideBanner({ until, onExpire }: { until: number; onExpire: () => vo
   );
 }
 
+/**
+ * Manager invite — a company-level access grant, shown on Home above the fleet card for a
+ * fleet-manager owner/manager (never an owner-operator: they run a single truck alone). Each tap of
+ * Generate mints a fresh, independent invite link, so a company can add as many managers as it needs.
+ */
+function ManagerInviteCard({
+  onCreate,
+  onCopy,
+}: {
+  onCreate: () => Promise<{ inviteUrl: string; expiresAt: string }>;
+  onCopy: (text: string, toast: string) => void;
+}) {
+  const { t } = useI18n();
+  const [link, setLink] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  async function mint() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await onCreate();
+      setLink(res.inviteUrl);
+      setCopied(false);
+    } catch {
+      /* the caller's onCreate surfaces its own error toast */
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 24, padding: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <span style={{ width: 48, height: 48, flex: 'none', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'color-mix(in srgb, var(--primary) 13%, transparent)', color: 'var(--link-accent)' }}>
+          <Icon name="userplus" size={22} strokeWidth={1.9} className="" />
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--fg)' }}>{t('manager.title')}</div>
+          <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3, lineHeight: 1.4 }}>{t('manager.subtitle')}</div>
+        </div>
+      </div>
+      {!link ? (
+        <button type="button" className="press" onClick={() => { haptic('tap'); void mint(); }} disabled={busy} style={{ marginTop: 14, width: '100%', height: 46, border: 'none', borderRadius: 13, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: busy ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: busy ? 0.7 : 1 }}>
+          {busy ? <Spinner size={18} color="#FFFFFF" /> : t('manager.generate')}
+        </button>
+      ) : (
+        <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 9 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 46, padding: '0 6px 0 13px', background: 'var(--secondary)', borderRadius: 13 }}>
+            <span className="selectable" style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{link}</span>
+            <button type="button" className="press" onClick={() => { onCopy(link, t('manager.linkCreated')); setCopied(true); setTimeout(() => setCopied(false), 1600); }} style={{ flex: 'none', height: 34, padding: '0 14px', border: 'none', borderRadius: 10, background: copied ? 'var(--success, #16a34a)' : 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+              {copied ? t('card.copied') : t('manager.copy')}
+            </button>
+          </div>
+          <button type="button" onClick={() => { haptic('tap'); void mint(); }} disabled={busy} style={{ alignSelf: 'flex-start', border: 'none', background: 'transparent', color: 'var(--link-accent)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: busy ? 'default' : 'pointer', padding: '2px 0', opacity: busy ? 0.6 : 1 }}>
+            {busy ? <Spinner size={14} color="var(--link-accent)" /> : t('manager.regenerate')}
+          </button>
+          <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', lineHeight: 1.4 }}>{t('manager.multiHint')}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Home({
   session,
   tab,
@@ -1146,6 +1210,8 @@ function Home({
   onOpenAction,
   onGoToServices,
   onViewFleet,
+  onCreateManagerInvite,
+  onCopy,
   onMarkAllRead,
   onReadNotif,
   overrideUntil,
@@ -1212,6 +1278,10 @@ function Home({
         </div>
       </div>
 
+      {/* Manager invite — company-level access grant, above the fleet card. Fleet-manager only
+          (an owner-operator drives their single truck alone and has no team to grant access to). */}
+      {session.isFleetManager && <ManagerInviteCard onCreate={onCreateManagerInvite} onCopy={onCopy} />}
+
       {/* manage fleet */}
       {session.isFleetManager && (
         <button type="button" className="press" onClick={onViewFleet} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, width: '100%', background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 24, padding: 18, cursor: 'pointer', fontFamily: "'Geist'" }}>
@@ -1266,6 +1336,47 @@ function fleetRow(t: (k: string) => string, c: FleetCard): RowView {
   return { ...c, expired, statusWord: meta.w, statusColor: meta.c, iconBg: 'var(--secondary)', iconColor: meta.c, iconName: meta.icon };
 }
 
+/**
+ * Infinite-scroll list — renders the first `step` items and grows by `step` whenever a bottom
+ * sentinel scrolls into view (IntersectionObserver, viewport root + rootMargin so it prefetches
+ * before the user hits the end). A fleet-manager carrier runs to hundreds of cards; rendering all
+ * at once is heavy and made "all cards" read as one endless wall. `resetKey` snaps back to the first
+ * page whenever the filter/search changes so a narrowed list doesn't start scrolled deep.
+ */
+function InfiniteCardList<T>({
+  items,
+  resetKey,
+  step = 24,
+  style,
+  renderItem,
+}: {
+  items: T[];
+  resetKey: string;
+  step?: number;
+  style?: CSSProperties;
+  renderItem: (item: T, index: number) => ReactNode;
+}) {
+  const [visible, setVisible] = useState(step);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { setVisible(step); }, [resetKey, step]);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => { if (entries[0]?.isIntersecting) setVisible((v) => v + step); },
+      { rootMargin: '320px 0px' },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [step, resetKey, visible]);
+  return (
+    <div style={style}>
+      {items.slice(0, visible).map(renderItem)}
+      {visible < items.length && <div ref={sentinelRef} style={{ height: 1 }} aria-hidden />}
+    </div>
+  );
+}
+
 function FleetView({
   cards,
   loading,
@@ -1276,7 +1387,6 @@ function FleetView({
   onCreate,
   onRegenerate,
   onRename,
-  onCreateManagerInvite,
   showToast,
   askConfirm,
 }: {
@@ -1289,7 +1399,6 @@ function FleetView({
   onCreate: (cardId: string, name: string) => Promise<void>;
   onRegenerate: (cardId: string, name: string) => Promise<void>;
   onRename: (cardId: string, driverName: string) => Promise<void>;
-  onCreateManagerInvite: () => Promise<{ inviteUrl: string; expiresAt: string }>;
   showToast: (msg: string, kind?: ToastKind) => void;
   askConfirm: (cfg: ConfirmConfig) => void;
 }) {
@@ -1300,9 +1409,6 @@ function FleetView({
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  // Manager-invite (carrier-level): one link at a time, revealed after minting so it can be copied.
-  const [managerLink, setManagerLink] = useState<string | null>(null);
-  const [managerBusy, setManagerBusy] = useState(false);
 
   const rows = cards.map((c) => fleetRow(t, c));
   const total = cards.length;
@@ -1347,21 +1453,6 @@ function FleetView({
     showToast(toast);
   }
 
-  async function mintManager() {
-    if (managerBusy) return;
-    setManagerBusy(true);
-    try {
-      const res = await onCreateManagerInvite();
-      setManagerLink(res.inviteUrl);
-      showToast(t('manager.linkCreated'));
-    } catch {
-      haptic('error');
-      showToast(t('fleet.error'), 'error');
-    } finally {
-      setManagerBusy(false);
-    }
-  }
-
   /** `nameOverride` covers regenerate: that flow has no name input, so it must reuse the card's existing driver name instead of an (empty) draft. */
   async function run(cardId: string, fn: (id: string, name: string) => Promise<void>, nameOverride?: string) {
     const name = nameOverride ?? (drafts[cardId] ?? '').trim();
@@ -1399,37 +1490,6 @@ function FleetView({
             );
           })}
         </div>
-      </div>
-
-      {/* Manager invite — carrier-level, so it sits above the per-card roster. A colleague who
-          redeems this gets owner-equivalent company access. */}
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 16, padding: '14px 15px', marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-          <span style={{ width: 38, height: 38, flex: 'none', borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'color-mix(in srgb, var(--primary) 13%, transparent)', color: 'var(--link-accent)' }}>
-            <Icon name="userplus" size={19} strokeWidth={2} className="" />
-          </span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)' }}>{t('manager.title')}</div>
-            <div style={{ fontSize: 12.5, color: 'var(--muted-fg)', marginTop: 2, lineHeight: 1.4 }}>{t('manager.subtitle')}</div>
-          </div>
-        </div>
-        {!managerLink ? (
-          <button type="button" className="press" onClick={() => { haptic('tap'); void mintManager(); }} disabled={managerBusy} style={{ marginTop: 12, width: '100%', height: 44, border: 'none', borderRadius: 12, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: managerBusy ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: managerBusy ? 0.7 : 1 }}>
-            {managerBusy ? <Spinner size={18} color="#FFFFFF" /> : t('manager.generate')}
-          </button>
-        ) : (
-          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 44, padding: '0 6px 0 13px', background: 'var(--secondary)', borderRadius: 12 }}>
-              <span className="selectable" style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{managerLink}</span>
-              <button type="button" className="press" onClick={() => copy(managerLink, 'manager-invite')} style={{ flex: 'none', height: 32, padding: '0 13px', border: 'none', borderRadius: 9, background: copiedId === 'manager-invite' ? 'var(--success, #16a34a)' : 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-                {copiedId === 'manager-invite' ? t('card.copied') : t('manager.copy')}
-              </button>
-            </div>
-            <button type="button" onClick={() => { haptic('tap'); void mintManager(); }} disabled={managerBusy} style={{ alignSelf: 'flex-start', border: 'none', background: 'transparent', color: 'var(--link-accent)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: 'pointer', padding: '2px 0' }}>
-              {t('manager.regenerate')}
-            </button>
-          </div>
-        )}
       </div>
 
       {loading && (
@@ -1475,8 +1535,11 @@ function FleetView({
       )}
 
       {!loading && !loadError && shown.length > 0 && (
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 24, overflow: 'hidden' }}>
-          {shown.map((c) => {
+        <InfiniteCardList
+          items={shown}
+          resetKey={`${filter}|${q}`}
+          style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 24, overflow: 'hidden' }}
+          renderItem={(c) => {
             const id = c.cardId ?? '';
             const expanded = expandedId === id;
             const showLink = c.status === 'pending' && !c.expired && !!c.link;
@@ -1587,8 +1650,8 @@ function FleetView({
                 )}
               </div>
             );
-          })}
-        </div>
+          }}
+        />
       )}
     </div>
   );
@@ -1913,6 +1976,8 @@ function ActionSheet({
   /** Account-status card filter (owner fleets run to hundreds of cards; the list needs a search
    *  rather than a truncated "+N more" dead end). Digits-only match on the card number. */
   const [cardQuery, setCardQuery] = useState('');
+  /** Account-status card-status filter (owner/manager): 'all' or a specific status word. */
+  const [cardStatusFilter, setCardStatusFilter] = useState<string>('all');
   const [range, setRange] = useState<TxnRange>('month');
   const [invRange, setInvRange] = useState<InvoiceRange>('last_30');
   // Lazy init, and relative to TODAY: these were literal dates ('2026-06-01'/'2026-07-09'), so the
@@ -2308,10 +2373,17 @@ function ActionSheet({
               // (the sheet body scrolls), replacing the old 20-row cap + dead "+N more" footer. A
               // driver only ever sees their own card, so search never applies to them.
               const cardDigits = cardQuery.replace(/\D/g, '');
-              const filtered = cardDigits
-                ? rows.filter((c) => fmt(c['card_number']).replace(/\D/g, '').includes(cardDigits))
-                : rows;
+              // Distinct status words present, for the owner/manager status-filter chips.
+              const statusOptions = [...new Set(rows.map((c) => fmt(c['status'])).filter(Boolean))];
+              const filtered = rows.filter((c) => {
+                if (cardDigits && !fmt(c['card_number']).replace(/\D/g, '').includes(cardDigits)) return false;
+                if (cardStatusFilter !== 'all' && fmt(c['status']) !== cardStatusFilter) return false;
+                return true;
+              });
               const showSearch = !session.isDriver && rows.length > 8;
+              // Owner + manager see the whole card number; a driver keeps their own card masked.
+              const showFullPan = !session.isDriver;
+              const showStatusFilter = !session.isDriver && statusOptions.length > 1;
               /**
                * The banner answers "is this active?" — and for a DRIVER that must be their own CARD,
                * not the carrier account. `overview.is_active` is the company's status; a driver's card
@@ -2406,22 +2478,38 @@ function ActionSheet({
                       )}
                     </div>
                   )}
+                  {showStatusFilter && (
+                    <div className="hscroll" style={{ display: 'flex', gap: 8, marginBottom: 10, paddingBottom: 2 }}>
+                      {['all', ...statusOptions].map((opt) => {
+                        const active = cardStatusFilter === opt;
+                        return (
+                          <button key={opt} type="button" onClick={() => { haptic('tap'); setCardStatusFilter(opt); }} style={{ flex: 'none', height: 34, padding: '0 13px', borderRadius: 10, fontFamily: "'Geist'", fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', border: 'none', background: active ? 'var(--primary)' : 'var(--secondary)', color: active ? '#FFFFFF' : 'var(--muted-fg)' }}>
+                            {opt === 'all' ? t('status.filterAll') : opt}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                   {rows.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '20px 4px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('status.noCards')}</div>
                   ) : filtered.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '20px 4px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('status.noMatch')}</div>
                   ) : (
-                    <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
-                      {filtered.map((c, i) => {
+                    <InfiniteCardList
+                      items={filtered}
+                      resetKey={`${cardStatusFilter}|${cardDigits}`}
+                      style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}
+                      renderItem={(c, i) => {
                         const status = fmt(c['status']);
+                        const pan = fmt(c['card_number']);
                         return (
                           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: i === filtered.length - 1 ? 'none' : '1px solid var(--border)' }}>
-                            <span className="selectable" style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {tail6(fmt(c['card_number']), null)}</span>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: status.toLowerCase() === 'active' ? 'var(--success)' : 'var(--destructive)' }}>{status}</span>
+                            <span className="selectable" style={{ flex: 1, minWidth: 0, fontSize: showFullPan ? 13 : 14, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>{showFullPan ? groupCardNumber(pan) : `•••• ${tail6(pan, null)}`}</span>
+                            <span style={{ flex: 'none', fontSize: 12, fontWeight: 700, color: status.toLowerCase() === 'active' ? 'var(--success)' : 'var(--destructive)' }}>{status}</span>
                           </div>
                         );
-                      })}
-                    </div>
+                      }}
+                    />
                   )}
                 </>
               );
@@ -2480,7 +2568,8 @@ function ActionSheet({
                           <option value="">{t('txns.allCards')}</option>
                           {(txnFleet ?? []).map((c) => (
                             <option key={c.cardId} value={c.cardId ?? ''}>
-                              {`•••• ${tail6(c.cardNumber, null) ?? ''}${c.driverName ? ` · ${c.driverName}` : ''}`}
+                              {/* Owner/manager select — show the full card number (driver never reaches this). */}
+                              {`${c.cardNumber ? groupCardNumber(c.cardNumber) : `•••• ${tail6(c.cardNumber, null) ?? ''}`}${c.driverName ? ` · ${c.driverName}` : ''}`}
                             </option>
                           ))}
                         </select>
@@ -2670,8 +2759,8 @@ function ActionSheet({
                     const lastUsed = c['last_used_date'] ?? c['last_transaction_date'] ?? c['lastUsedDate'] ?? c['last_used'];
                     return (
                       <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-                        <span className="selectable" style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {tail6(fmt(c['card_number']), null)}</span>
-                        <span style={{ fontSize: 13, color: 'var(--fg)' }}>{fmt(lastUsed).slice(0, 10)}</span>
+                        <span className="selectable" style={{ flex: 1, minWidth: 0, fontSize: session.isDriver ? 14 : 13, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>{session.isDriver ? `•••• ${tail6(fmt(c['card_number']), null)}` : groupCardNumber(fmt(c['card_number']))}</span>
+                        <span style={{ flex: 'none', fontSize: 13, color: 'var(--fg)' }}>{fmt(lastUsed).slice(0, 10)}</span>
                       </div>
                     );
                   })}
@@ -2922,7 +3011,7 @@ function ActionSheet({
                           <Icon name="card" size={14} strokeWidth={2} className="" />
                         </span>
                         <span style={{ flex: 1, minWidth: 0 }}>
-                          <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {tail6(c.cardNumber, null)}</span>
+                          <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>{c.cardNumber ? groupCardNumber(c.cardNumber) : `•••• ${tail6(c.cardNumber, null)}`}</span>
                           <span style={{ display: 'block', fontSize: 12, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.driverName ?? t('co.noDriver')}</span>
                         </span>
                         <ChevronRight size={15} strokeWidth={2} color="var(--muted-fg)" aria-hidden />
@@ -2941,7 +3030,7 @@ function ActionSheet({
                     {t('co.allCards')}
                   </button>
                   <div style={{ background: 'var(--secondary)', borderRadius: 14, padding: '13px 14px', marginBottom: 16 }}>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {tail6(coCard.cardNumber, null)}</div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>{coCard.cardNumber ? groupCardNumber(coCard.cardNumber) : `•••• ${tail6(coCard.cardNumber, null)}`}</div>
                     <div style={{ fontSize: 12.5, color: 'var(--muted-fg)', marginTop: 3 }}>
                       {coEfsLoading ? t('loading') : efsStatus ? `${t('co.efsStatus')}: ${efsStatus}` : coCard.driverName ?? ''}
                     </div>
@@ -3738,6 +3827,8 @@ export function App() {
             onOpenAction={handleOpenAction}
             onGoToServices={() => setTab('services')}
             onViewFleet={viewFleet}
+            onCreateManagerInvite={createManagerLink}
+            onCopy={(text, toast) => { try { navigator.clipboard?.writeText(text); } catch { /* ignore */ } haptic('tap'); showToast(toast); }}
             onMarkAllRead={markAllRead}
             onReadNotif={readNotif}
             overrideUntil={overrideUntil}
@@ -3755,7 +3846,6 @@ export function App() {
             onCreate={createLink}
             onRegenerate={regenerateLink}
             onRename={renameDriverName}
-            onCreateManagerInvite={createManagerLink}
             showToast={showToast}
             askConfirm={askConfirm}
           />
