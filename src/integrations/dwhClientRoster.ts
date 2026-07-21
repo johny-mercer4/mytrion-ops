@@ -35,6 +35,12 @@
  * exact same risk servercrm's name fallback already carries; the durable fix is aligning the session id
  * space with the warehouse `agent_zoho_user_id` so the id arm resolves.) Every matched value is bound
  * (`$1`/`$2`); the fragments are fixed internal literals, never caller input.
+ *
+ * `isCarrierOwned` exposes the SAME owner resolution as a targeted probe — it backs the
+ * `assertCarrierOwned` RBAC gate (modules/tools/serverCrmScope.ts), so the set of carriers an agent
+ * can act on is exactly the set this roster lists. Keep the two functions on the shared
+ * `ownerBinds`/`buildOwnedCte` path; a second, divergent ownership authority is how the
+ * "Clients modal 403s for every non-admin" P0 happened.
  */
 import { dwhQuery } from './dwh.js';
 
@@ -103,7 +109,7 @@ function str(v: unknown): string {
 }
 
 /** Last 12 digits of a Zoho id — matches across the DWH org-prefix mismatch (see warehouse_gallons.ts). */
-function zohoIdSuffix(id: string): string {
+export function zohoIdSuffix(id: string): string {
   return id.replace(/\D+/g, '').slice(-12);
 }
 
@@ -253,6 +259,21 @@ export async function fetchAgentClients(
   ownerZohoUserId: string,
   agentName?: string,
 ): Promise<AgentClientRow[]> {
+  const { binds, idBindIdx, nameBindIdx } = ownerBinds(ownerZohoUserId, agentName);
+  if (idBindIdx === null && nameBindIdx === null) return [];
+  const rows = await runClientsQuery(buildOwnedCte(idBindIdx, nameBindIdx), binds);
+  return rows.map(toClient);
+}
+
+interface OwnerBinds {
+  binds: string[];
+  idBindIdx: number | null;
+  nameBindIdx: number | null;
+}
+
+/** The owner-resolution bind list shared by the roster and the ownership probe — one identity
+ *  normalization (id → suffix, name → trimmed) so the two can never disagree on who owns what. */
+function ownerBinds(ownerZohoUserId: string, agentName?: string): OwnerBinds {
   const binds: string[] = [];
   let idBindIdx: number | null = null;
   let nameBindIdx: number | null = null;
@@ -266,7 +287,28 @@ export async function fetchAgentClients(
     binds.push(name);
     nameBindIdx = binds.length;
   }
-  if (idBindIdx === null && nameBindIdx === null) return [];
-  const rows = await runClientsQuery(buildOwnedCte(idBindIdx, nameBindIdx), binds);
-  return rows.map(toClient);
+  return { binds, idBindIdx, nameBindIdx };
+}
+
+/**
+ * Is `carrierId` in this owner's roster? EXACTLY the fetchAgentClients owner resolution (id-suffix
+ * arm, else name arm — mutually exclusive, newest dim row per carrier), probed with a carrier_id
+ * filter instead of materializing the roster (dim_company only — no mart/invoice CTEs). This is the
+ * authority behind `assertCarrierOwned`: whatever the Clients tab lists is what carrier-scoped
+ * actions may touch. False when neither identity arm is supplied.
+ */
+export async function isCarrierOwned(
+  ownerZohoUserId: string,
+  agentName: string | undefined,
+  carrierId: string | number,
+): Promise<boolean> {
+  const { binds, idBindIdx, nameBindIdx } = ownerBinds(ownerZohoUserId, agentName);
+  if (idBindIdx === null && nameBindIdx === null) return false;
+  binds.push(String(carrierId).trim());
+  const rows = await dwhQuery<{ ok: number }>(
+    `with ${buildOwnedCte(idBindIdx, nameBindIdx)}
+     select 1 as ok from owned where carrier_id::text = $${binds.length} limit 1`,
+    binds,
+  );
+  return rows.length > 0;
 }
