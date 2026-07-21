@@ -115,9 +115,22 @@ export interface UpdateResult {
   updatedFields: string[];
 }
 
-/** Editable Lead fields (exact Zoho API names). '' clears a field; DOT is numeric-or-string. */
+/** Editable Lead fields (exact Zoho API names). '' clears a field; DOT is numeric-or-string.
+ *  Status + the two reason picklists back the post-call status wizard. */
 export type LeadEditFields = Partial<
-  Record<'MC' | 'DOT' | 'Referral_Source' | 'Cell' | 'Phone' | 'Email' | 'Description', string | number | null>
+  Record<
+    | 'MC'
+    | 'DOT'
+    | 'Referral_Source'
+    | 'Cell'
+    | 'Phone'
+    | 'Email'
+    | 'Description'
+    | 'Status'
+    | 'Unqualified_Reason'
+    | 'Not_Interested_Reason',
+    string | number | null
+  >
 >;
 /** Editable Deal fields (exact Zoho API names). */
 export type DealEditFields = Partial<Record<'Email' | 'Phone' | 'Description', string | null>>;

@@ -14,6 +14,7 @@ import { NAV, NAV_GROUPS, NAVLABEL, TICKETS_ENABLED, timeParts } from './salesDa
 import { useSessionUser } from './sessionUser';
 import { useSidebarBadges } from './sidebarBadges';
 import { useRetentionRealtime } from './useRetentionRealtime';
+import { LeadCallWizardHost } from './LeadCallWizard';
 import { getSession } from '@/api/session';
 import { useUserContext } from '@/context/UserContextProvider';
 import { useImpersonation } from '@/context/ImpersonationProvider';
@@ -400,6 +401,9 @@ export function SalesRedesign() {
           />
         )}
 
+
+        {/* Forced post-call Lead status wizard — fires on any tab when an outbound lead call ends. */}
+        <LeadCallWizardHost pushToast={pushToast} />
 
         {/* TOAST */}
         {toast && (
