@@ -4095,6 +4095,43 @@ owner resolution rendered as silent zeros (no error UI). Backend COQL on
   goal bar + streak strip.
 - Route logs owner + totals at debug.
 
+## 2026-07-21 — Unify Mytrion entry loader (no double splash)
+
+Double loaders on enter: MytrionGuard Suspense + per-shell timed boot overlays
+(CS / Billing / Finance). Sales already skipped shell boot.
+
+- `MytrionLoader` API: `text` + optional `themeColor` (CSS color / `var(--hue)`).
+- Guard is the **only** entry splash; shells no longer mount a second overlay.
+- Dead CS `.cs-boot*` CSS removed.
+
+## 2026-07-21 — CS Mytrion: Retention Cases, Open Pool Claims, CITI Folder
+
+Product: CS (not deal-owner email) approves Sales Open Pool claims; Phase 2 desk + CITI Folder
+in Customer Service Mytrion (distinct from Citifuel Clients).
+
+### Backend
+- `requestClaim` → `p1_pool_claim_pending` + `1BD_claim_approve` (no instant assign).
+- CS `approveClaim` / `declineClaim` (dept `customer-service` or admin); Sales cannot approve.
+- Approve / 1BD auto: Zoho Deal Owner required; Contact + Account Owner best-effort
+  (`src/modules/retention/zohoOwnership.ts`).
+- Touchpoints: `retention.cs_claims_*`, `retention.cs_cases*`, `retention.cs_citi_*`.
+- Phase 2 outcomes in `phase2.ts` + `retentionCaseCsRepo`.
+- Profile seed: Customer Retention → CS Mytrion; migration `0035`.
+
+### Frontend
+- Sales Open Pool: **Request claim** + Pending CS row state.
+- CS Shell nav: Retention Cases / Open Pool Claims (badge + realtime) / CITI Folder.
+
+### Smoke checklist
+1. Sales Open Pool → Request claim → row shows Pending CS; case leaves claimable pool.
+2. CS Open Pool Claims → Approve → claimant owns Deal (+ Contact/Account best-effort); case
+   `p1_pool_assigned`.
+3. CS Reject → back to `p1_open_pool`.
+4. Leave pending 1 BD → sweeper auto-approves with Zoho ownership.
+5. CS Retention Cases → claim / log attempt / Saved|Refused|OoB|No response|CITI.
+6. CS CITI Folder → Confirm → Export CSV (Assignment_Stage=CITI) → Mark sent → `p3_closed`.
+7. Customer Retention profile lands on CS Mytrion after migrate / profile-defaults seed.
+
 ## 2026-07-21 — Data Center Money Codes (zoho-octane parity)
 
 Reference: `zoho-octane` self-service Records → Money Codes.
@@ -4108,3 +4145,49 @@ Reference: `zoho-octane` self-service Records → Money Codes.
   on Ops DB, then ServerCRM EFS-safe void which writes back to the same table).
 - Draw/preview stay `dwh.money_code` / `dwh.money_code_draw` (live EFS).
 - FE: `dataCenterMoneyCodes.tsx` — never shows `efs_money_code`.
+
+## 2026-07-21 — Sales Mytrion go-live hardening (feature/SalesProd, 11 commits)
+
+**P0 root cause — Clients modal Cards/Activity 403 for every non-admin:** the Clients list
+moved to the DWH roster (9d6f270, id-suffix + name-fallback ownership) but `assertCarrierOwned`
+still asked servercrm by-agent with the FULL session zoho id (id spaces diverge). Gate now
+probes the SAME `buildOwnedCte` arms via `dwhClientRoster.isCarrierOwned` (+60s cache,
+in-flight coalescing; DWH outage = 502 DWH_ERROR, never RBACError). Keep gate + list on the
+shared ownership path — a second authority is how this P0 happened.
+
+**Security:** `/carrier-users/dwh-cards` + `/carrier-registrations/for-carrier` returned card
+numbers / owner PII for ANY carrier to ANY signed-in worker — now `assertCarrierOwned`-gated
+(role 'admin' skip covers the API-key system identity).
+
+**RBAC go-live contract:** ADMIN_PROFILE_MARKERS is now EXACT-match, default
+`administrator,ceo` (substring 'manager' made "Sales Manager" a silent full admin) — check the
+Render env group doesn't still pin the old value. Profile defaults seed at boot (fail-open,
+loud log; GET /profiles self-heals). Hard rule: 1 accessible Mytrion ⇒ always auto-enter, no
+picker, no Switch link; single-Mytrion grants persist home on write. Touchpoint `departments`
+is REQUIRED (compile-time fail-closed; 51 entries tagged `SALES`). Contract pinned by
+tests/unit/sales-golive-contract.test.ts + mytrion-access-routes.test.ts + client
+Landing/TopBar tests.
+
+**Live events:** WS ownerId vs session id can differ by org prefix — owner matching is now
+suffix-normalized (`redesign/zohoIds.ts`), fixing silently-dropped inbox toasts (+ retention).
+
+**Perf:** parked-Tickets badge no longer pages the whole Desk set (≤20 req/load) —
+`TICKETS_ENABLED` gates it; `inbox.list` deduped 3→1 POSTs (`fetchDedupe.ts`, 30s TTL,
+invalidated on WS event/refresh/delete; cache writes identity-guarded against the
+invalidation race); `activity.agent` deduped on Home.
+
+**RingCentral:** rc-*-notify / [RingCentralExtensions] console spam is 100% vendor-bundle
+(zero hits in our code/history) — `rcConsoleFilter.ts` drops those exact patterns
+(log/debug/info only), installed just before adapter injection. Iframe-origin krisp lines
+can't be filtered (cross-origin). Prod auth = per-agent OAuth (no BROWSER_CREDS_ACK).
+
+**Known issues NOT from this work:** ~24 pre-existing TS errors committed with the
+SalesMytrionFull merge break the app's `tsc` build gate (vite build itself is clean — the
+served `app/` bundle was rebuilt from a clean HEAD worktree); the checkout also carries
+concurrent uncommitted retention/CS WIP with ~28 failing tests (carrier-mini-app, cs-routes,
+touchpoints catalog count 81→106) — left untouched, scoped all commits by path.
+
+**Deploy checklist:** confirm Render env doesn't override ADMIN_PROFILE_MARKERS; verify
+Daniel Brown (Sales Agent) lands on /main/salesmytrion, gets Forbidden on /main/billingmytrion,
+403 on admin/finance APIs; Clients modal Cards+Activity 200 under View-as; reconcile each
+agent's Zoho display name vs DWH agent name (all-zeros Home snapshot = mismatch).
