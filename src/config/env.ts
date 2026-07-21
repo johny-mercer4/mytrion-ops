@@ -188,11 +188,14 @@ const EnvSchema = z.object({
   // so the dashboard always serves from cache (fast) while data refreshes automatically.
   ANALYTICS_CACHE_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(120),
 
-  // --- Department RBAC: profile/role substrings that grant UNLIMITED access (all depts + all tools). ---
-  // 'ceo' matches the Zoho ROLE the frontend also treats as admin (ADMIN_ROLES in
-  // mytrions.config.ts) — the two admin predicates must stay aligned or CEO sessions
-  // get 'worker' role backend-side and 403 on admin-only routes.
-  ADMIN_PROFILE_MARKERS: z.string().default('administrator,manager,developer,ceo'),
+  // --- Department RBAC: EXACT profile/role names that grant UNLIMITED access (all depts + all tools). ---
+  // Case-insensitive full-string equality after trim (see lib/department.ts) — NOT substring:
+  // a 'manager' substring also matched "Sales Manager"/"Account Manager" and silently made
+  // sales staff admins. 'ceo' matches the Zoho ROLE the frontend also treats as admin
+  // (ADMIN_ROLES in mytrions.config.ts) — the two admin predicates must stay aligned or CEO
+  // sessions get 'worker' role backend-side and 403 on admin-only routes. Names containing a
+  // comma cannot be expressed (none exist in our Zoho org).
+  ADMIN_PROFILE_MARKERS: z.string().default('administrator,ceo'),
   // Per-user overrides matched on the caller's `user_name` (case-insensitive). Accepts CSV or a
   // bracketed list, e.g. ADMIN_USERS=[alice,bob] or ADMIN_USERS=alice,bob.
   //   ADMIN_USERS  → granted all-department access (see everything, like an admin marker).
