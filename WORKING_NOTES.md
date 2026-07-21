@@ -4327,3 +4327,119 @@ via vite in a clean worktree as before.
 `does not provide an export named 'notifyClaimRequestToCs'`. Broke the cycle by
 dynamic-importing `retentionPoolClaimRepo` only inside the claim-approve branch of
 `sweepRetentionDeadlines`. API restarted cleanly; routes return 401 without key (not 500).
+
+## 2026-07-21 (evening) — Retention stage timers on Sales board
+
+Per-stage countdown on Kanban/list/detail for the next deadline event:
+- New: 2 BD → Retention; OoR: 5×1 BD attempts (5th → Open Pool); Reached: 5 BD fuel watch → Pool;
+  Vacation: 14d calendar; Dissatisfied: no timer + card locked for Sales.
+- FE: `retentionTimers.ts` (BD-aware remain) + `RetentionStageTimer` meter; board clock ticks 30s.
+- Backend: OoR stamp back to `1BD_comms_attempt` (migration 0038 renames open `5BD_*` types).
+Open Pool UX deferred to next discussion.
+
+## 2026-07-21 (late) — Sales Phase + Open Pool closeout
+
+Sales Phase escalation is treated as covered (status machine already matched RetentionDocs):
+
+| Path | Result |
+|------|--------|
+| OoR ×5 attempts | → Open Pool + notify |
+| Reached ×5 BD no fuel | → Open Pool + notify |
+| New ×2 BD no action | → Retention (not Pool) |
+| Dissatisfied + reason | → Retention (not Pool) |
+
+**Notify gap closed:** `notifyOpenPoolOpened` / Zoho mail take `reason:
+out_of_reach | reached | reclaim | phase2` so copy is no longer always “5 OoR attempts”.
+Call sites: `logCommsAttempt`, deadlineSweep (Reached vs reclaim), `record_outcome`, Phase 2 CS.
+Touchpoint title for `retention.log_attempt` → “1 BD each”. Unit test
+`retention-open-pool-notify.test.ts` covers reason labels.
+
+**Env (Ryan + From):** `.env.example` clarified. Local `.env` currently has
+`RETENTION_OPEN_POOL_NOTIFY_ZOHO_USER_ID` and `RETENTION_NOTIFY_FROM_EMAIL` **empty** —
+inbox/mail to Ryan will skip until set (previous owner still notified when present;
+pool WS broadcast still fires). Set Ryan’s Zoho user id + allowed From in local/prod;
+no hardcoded personal email in source.
+
+**Deferred:** Open Pool claim UX polish, Phase 2/3 / CITI product, Vacation diagram gap,
+Retention-handoff emails (docs don’t require them for New/Dissatisfied).
+
+## 2026-07-21 (late) — Open Pool email via Zapier (not Zoho send_mail)
+
+`RETENTION_OPEN_POOL_NOTIFY_ZOHO_USER_ID` / `RETENTION_NOTIFY_FROM_EMAIL` are set for
+ops. App path stays inbox + realtime only; removed Zoho CRM `send_mail` from
+`notifyOpenPoolOpened` so Zapier owns outbound Ryan/owner email (avoids double-send).
+
+## 2026-07-22 — Sales Open Pool (Mytrion) ownership model
+
+Product: Open Pool = other agents may request assignment of a retention case /
+underlying Zoho Deal. CS approve transfers Deal + Contact + Account Owner to the
+claimant. Former owner sees the case locked on Cases (not in Open Pool widget).
+
+Implemented:
+- DWH scan joins `stg_zoho_deals` → `zohoDealId` on create + sync backfill
+  (`dwhRetention` / `retentionSync`).
+- `listOpenPool` excludes `pool_owner = viewer`; `pool_list` passes exclude.
+- `listForAgent` includes former owner's `p1_open_pool` / claim-pending rows
+  (Kanban Closed, locked badge — not actionable).
+- Claim approve **requires** `zoho_deal_id` then `transferDealOwnershipToClaimant`
+  (fail closed if missing).
+- PoolTab copy + client-side filter; Cases locked card for pooled former deals.
+
+## 2026-07-22 — Retention deal_id from octane.agent_deals
+
+Deal fetch for retention cases uses `octane.agent_deals` (`id` → `zoho_deal_id`),
+not `stg_zoho_deals`. Distinct on carrier_id, newest `appfilldate` then id.
+
+## 2026-07-22 — Own Open Pool deals leave Cases board
+
+Former-owner pooled cases are not listed on `retention.my_cases` (assignee
+cleared on pool entry). They disappear from the Kanban instead of a locked card.
+
+## 2026-07-22 — Open Pool claim_requests + unified auto-close
+
+Open Pool is **not** a fourth phase — it is Phase 1 status `p1_open_pool` /
+`p1_pool_claim_pending` (Processing). Sales Open Pool tab is a filtered view.
+
+**Schema:** `retention_claim_requests` (migration `0039`) — durable CS queue +
+audit; partial unique one `requested` row per case. Processing lock still on
+the case (`pending_claimant_zoho_user_id` + `p1_pool_claim_pending`).
+
+**Claim flow:**
+- Sales `pool_claim` requires `reason` → insert request + Processing + 1 BD
+  auto-approve deadline (fallback sweeper unchanged; same finalize as CS Approve).
+- CS Reject → **DELETE** request row; case → `p1_open_pool`.
+- CS Approve / auto-approve → Zoho Deal/Contact/Account Owner → claimant;
+  case → **`p1_new`** + `2BD_agent_action` (Kanban New); bump `assignment_count`.
+
+**Sync:** any new post-create transaction closes **all** open phases including
+CITI (`p1_returned`); open claim requests deleted so Processing cannot stick.
+
+**UI:** PoolTab — no Owner column; Available/Processing; reason modal (row +
+bulk); live refresh on claim WS events. ClaimsPanel shows requester + reason.
+
+## 2026-07-22 — Sales tab go-live sign-off (Data Center / Create / Carriers / Automation)
+
+Four-area assessment (workflow) + fixes on feature/SalesProd:
+- **Data Center P1 (was FAIL → now GTG):** admin View-as → Clients returned 0 for any agent
+  whose session id isn't DWH-aligned — the route dropped the display-name arm when targeting
+  another agent (only appeared to work for id-aligned accounts like Daniel). Fixed: the
+  targetingOther branch resolves the TARGET's name via resolveActAsTarget so buildOwnedCte gets
+  the id-first/name-fallback pair. Empty-state copy no longer says "match your search" with no
+  search term. (dataCenter.routes.ts, RecordsTab.tsx, +test.)
+- **Create:** salutation ("Title") was collected + passed (leads.create schema .passthrough) but
+  dropped in createLead → now written to Zoho Salutation. AttachZone enforces the advertised
+  file types (accept attr + take() allowlist; drag/paste bypassed accept). readMultipart returns
+  a clean 413 on oversize instead of a 500. All create paths verified wired + schema-validate
+  green via salesPanelSmoke. A real create/attachment WRITE test should be run in a controlled
+  env (avoid polluting live Zoho/Desk).
+- **Carriers:** widened root max-width 860→1180 (fills Shell's wrapper; NOT full-bleed — no
+  internal scroll container). Failed Create-Lead is now a "Failed — retry" button (was stuck
+  until a full re-search). Functionality PASS.
+- **Automation:** all 22 self-service actions are FULLY WIRED (no stubs / coming-soon / missing
+  touchpoints; params match; success logs via logAutomation). NOT code-fixed — governance for
+  the user to decide: (1) write-class touchpoints are invokable by non-admin sales (dispatcher
+  admin-gates only 'destructive', behind FF_TOUCHPOINT_DESTRUCTIVE_SALES which defaults ON) —
+  intentional for the self-service panel but deviates from CLAUDE.md rule #7; (2) IDOR:
+  browser.close_application/boca (by appId) and sales_mytrion.invoice_signed_url (by invoiceId)
+  have NO ownership gate — an agent can act on another's app/invoice; recommend the same
+  assertCarrierOwned-style gate as the carrier routes.
