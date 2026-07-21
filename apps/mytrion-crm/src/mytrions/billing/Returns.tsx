@@ -36,7 +36,6 @@ const CLOSE_PATH = 'M6 18L18 6M6 6l12 12';
 const REFRESH_PATH =
   'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-14.357-2m14.357 2H15';
 const ERROR_PATH = 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z';
-const CHEVRON_ROW = 'M9 5l7 7-7 7';
 const CHEVRON_LEFT = 'M15 19l-7-7 7-7';
 const CHEVRON_RIGHT = 'M9 5l7 7-7 7';
 const LINK_PATH =
@@ -82,7 +81,6 @@ export function Returns() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [cmpFilter, setCmpFilter] = useState<CmpFilter>('all');
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [pageNum, setPageNum] = useState(1);
   const [matchRet, setMatchRet] = useState<ReturnRow | null>(null);
   const [patches, setPatches] = useState<Record<string, Partial<ReturnRow>>>({});
@@ -183,10 +181,6 @@ export function Returns() {
       setPageNum(currentPage + 1);
       scrollTop();
     }
-  }
-
-  function toggleExpand(id: string): void {
-    setExpandedId((cur) => (cur === id ? null : id));
   }
 
   function applyMatch(returnRecordId: string, patch: Partial<ReturnRow>): void {
@@ -345,26 +339,10 @@ export function Returns() {
             <>
               {paginated.map((ret) => {
                 const status = rowStatus(ret);
-                const expanded = expandedId === ret.recordId;
                 return (
                   <div className="db-row-item" key={ret.recordId}>
-                    <div
-                      className={`db-row-main rt-row${ret.matched ? '' : ' rt-row--unmatched'}`}
-                      onClick={() => toggleExpand(ret.recordId)}
-                    >
-                      <div className="db-col-cycle" style={{ display: 'flex', alignItems: 'center' }}>
-                        <svg
-                          className={`rt-chevron${expanded ? ' rt-chevron-open' : ''}`}
-                          width="11"
-                          height="11"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d={CHEVRON_ROW} />
-                        </svg>
-                        <span>{formatDay(ret.returnDate)}</span>
-                      </div>
+                    <div className={`db-row-main rt-row${ret.matched ? '' : ' rt-row--unmatched'}`}>
+                      <div className="db-col-cycle">{formatDay(ret.returnDate)}</div>
                       <div className="db-col-status">
                         <span className={`db-status-badge ${typeBadgeClass(ret.returnType)}`}>
                           {typeLabel(ret.returnType)}
@@ -418,59 +396,6 @@ export function Returns() {
                       </div>
                     </div>
 
-                    {/* Expanded detail — the full story, no hovering required */}
-                    {expanded ? (
-                      <div className="rt-detail">
-                        <div>
-                          <div className="rt-detail-note-label">Processing note</div>
-                          <div className="rt-detail-note">{ret.matchNote || 'Not processed yet.'}</div>
-                        </div>
-                        <div className="rt-detail-meta">
-                          <span>
-                            Reference <b>{ret.referenceNumber || '—'}</b>
-                          </span>
-                          {ret.last4 ? (
-                            <span>
-                              Card/Acct <b>••{ret.last4}</b>
-                            </span>
-                          ) : null}
-                          <span>
-                            Type <b>{ret.returnType || '—'}</b>
-                          </span>
-                          <span>
-                            Return date <b>{formatDay(ret.returnDate)}</b>
-                          </span>
-                          <span>
-                            Matched <b>{ret.matched ? 'yes' : 'no'}</b>
-                          </span>
-                          {ret.matched && (ret.originalTransactionName || ret.originalTransactionId) ? (
-                            <span>
-                              Original tx{' '}
-                              <b style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                                #{ret.originalTransactionName || ret.originalTransactionId}
-                              </b>
-                            </span>
-                          ) : null}
-                        </div>
-                        {/* Manual match — completes what auto-matching couldn't (unmatched only) */}
-                        {!ret.matched ? (
-                          <div style={{ marginTop: '0.6rem' }}>
-                            <button
-                              className="rt-match-btn rt-match-btn--lg"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setMatchRet(ret);
-                              }}
-                            >
-                              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={LINK_PATH} />
-                              </svg>
-                              Match to transaction…
-                            </button>
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
                   </div>
                 );
               })}

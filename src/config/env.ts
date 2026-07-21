@@ -339,6 +339,10 @@ const EnvSchema = z.object({
   // --- Inbound server API key (callers present this to reach this engine) ---
   API_KEY: z.string().default(''),
 
+  // --- Billing payment-ingest webhook (Zapier → payment_transactions). A dedicated shared
+  //     secret, scoped to just the ingest endpoint (NOT the full API_KEY). ---
+  BILLING_INGEST_SECRET: z.string().default(''),
+
   // --- File storage: Cloudflare R2 (S3-compatible) ---
   R2_ACCOUNT_ID: z.string().default(''),
   R2_ACCESS_KEY_ID: z.string().default(''),
