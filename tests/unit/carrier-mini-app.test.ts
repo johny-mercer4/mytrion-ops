@@ -83,6 +83,8 @@ vi.mock('../../src/repos/registeredMiniAppCompanyRepo.js', () => ({
     findActiveOwnerByCarrier: vi.fn(),
     list: vi.fn(async () => []),
     listDriversByCarrier: vi.fn(async () => []),
+    listManagersByCarrier: vi.fn(async () => []),
+    revokeManagerByCarrier: vi.fn(),
     renameDriverByCard: vi.fn(),
     upsert: vi.fn(),
   },
@@ -638,6 +640,82 @@ describe('manager access — owner-equivalent, plus manager invites', () => {
     expect(res.statusCode).toBe(403);
     expect(res.json()).toMatchObject({ error: { code: 'NOT_A_REGISTERED_OWNER' } });
     expect(inviteRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('lists the carrier managers for an owner/manager', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(managerReg());
+    registrationRepo.listManagersByCarrier.mockResolvedValueOnce([
+      registrationRow({ id: 'rma_m1', profile: 'manager', driverName: 'Dana Ops', telegramUsername: 'dana' }),
+    ]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/managers',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ managers: [{ id: 'rma_m1', name: 'Dana Ops', telegramUsername: 'dana' }] });
+    // Scoped to the CALLER's own carrier, from their verified registration.
+    expect(registrationRepo.listManagersByCarrier.mock.calls[0]?.[1]).toBe('5758544');
+  });
+
+  it('revokes a manager scoped to the caller\'s own carrier', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(managerReg());
+    registrationRepo.revokeManagerByCarrier.mockResolvedValueOnce(
+      registrationRow({ id: 'rma_m1', profile: 'manager', status: 'revoked' }),
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/managers/revoke',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', id: 'rma_m1' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ id: 'rma_m1', status: 'revoked' });
+    // Repo is called with (carrier, id) — the carrier is the authorization, never the body.
+    expect(registrationRepo.revokeManagerByCarrier.mock.calls[0]?.[1]).toBe('5758544');
+    expect(registrationRepo.revokeManagerByCarrier.mock.calls[0]?.[2]).toBe('rma_m1');
+  });
+
+  it('404s revoking an id that is not a manager of the caller\'s carrier', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(managerReg());
+    registrationRepo.revokeManagerByCarrier.mockResolvedValueOnce(undefined); // scoped where-clause matched nothing
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/managers/revoke',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', id: 'rma_foreign' },
+    });
+
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('refuses a driver at the managers list + revoke', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValue(
+      registrationRow({ profile: 'driver', companyType: null, cardId: 'card_1' }),
+    );
+
+    const list = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/managers',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed' },
+    });
+    expect(list.statusCode).toBe(403);
+
+    const revoke = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/managers/revoke',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', id: 'rma_m1' },
+    });
+    expect(revoke.statusCode).toBe(403);
+    expect(registrationRepo.revokeManagerByCarrier).not.toHaveBeenCalled();
   });
 });
 

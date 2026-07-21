@@ -166,6 +166,54 @@ export const registeredMiniAppCompanyRepo = {
     return rows[0] ? toDto(rows[0]) : undefined;
   },
 
+  /** Active managers of one carrier — the owner/manager's team roster in the mini-app. */
+  async listManagersByCarrier(
+    ctx: TenantContext,
+    carrierId: string,
+  ): Promise<RegisteredMiniAppCompanyDto[]> {
+    const rows = await db
+      .select()
+      .from(registeredMiniAppCompanies)
+      .where(
+        and(
+          eq(registeredMiniAppCompanies.tenantId, ctx.tenantId),
+          eq(registeredMiniAppCompanies.carrierId, carrierId),
+          eq(registeredMiniAppCompanies.profile, 'manager'),
+          eq(registeredMiniAppCompanies.status, 'active'),
+        ),
+      );
+    return rows.map(toDto);
+  },
+
+  /**
+   * Revoke ONE manager of a given carrier — the mini-app owner/manager pruning their team.
+   *
+   * Scoped by (tenant, carrier, profile='manager') in the where-clause, never by id alone: the
+   * carrier comes from the caller's own verified registration, so an owner can only ever revoke a
+   * manager of their OWN carrier — a guessed foreign id matches nothing and 404s. profile='manager'
+   * makes it impossible to aim this at the account owner or a driver.
+   */
+  async revokeManagerByCarrier(
+    ctx: TenantContext,
+    carrierId: string,
+    id: string,
+  ): Promise<RegisteredMiniAppCompanyDto | undefined> {
+    const rows = await db
+      .update(registeredMiniAppCompanies)
+      .set({ status: 'revoked', revokedAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(registeredMiniAppCompanies.id, id),
+          eq(registeredMiniAppCompanies.tenantId, ctx.tenantId),
+          eq(registeredMiniAppCompanies.carrierId, carrierId),
+          eq(registeredMiniAppCompanies.profile, 'manager'),
+          eq(registeredMiniAppCompanies.status, 'active'),
+        ),
+      )
+      .returning();
+    return rows[0] ? toDto(rows[0]) : undefined;
+  },
+
   /** Soft-disable: revokes access without deleting the row, preserving registration history. */
   async revoke(ctx: TenantContext, id: string): Promise<RegisteredMiniAppCompanyDto | undefined> {
     const rows = await db

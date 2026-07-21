@@ -203,6 +203,24 @@ export async function createManagerInvite(initData: string, name: string): Promi
   })) as ManagerInviteResult;
 }
 
+export interface ManagerUser {
+  id: string;
+  name: string | null;
+  telegramUsername: string | null;
+  createdAt: string;
+}
+
+/** The carrier's registered managers — the owner/manager's team roster. */
+export async function listManagers(initData: string): Promise<ManagerUser[]> {
+  const data = (await request('POST', '/carrier/mini-app/managers', { initData })) as { managers: ManagerUser[] };
+  return data.managers;
+}
+
+/** Revoke one manager's access. Backend scopes the revoke to the caller's own carrier + managers. */
+export async function revokeManager(initData: string, id: string): Promise<{ id: string }> {
+  return (await request('POST', '/carrier/mini-app/managers/revoke', { initData, id })) as { id: string };
+}
+
 // ── Self-service reads (any registered user — owner or driver) ──────────────────────────────
 // Result shapes copied verbatim from apps/mytrion-crm/src/api/touchpointTypes.ts — same servercrm
 // endpoints, already production-verified there ("widget-observed; fields the UI actually renders").

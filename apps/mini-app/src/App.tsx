@@ -4,6 +4,9 @@ import {
   ApiError,
   createDriverInvite,
   createManagerInvite,
+  listManagers,
+  revokeManager,
+  type ManagerUser,
   driverSelfRegister,
   fetchAccountStatus,
   fetchBalance,
@@ -1148,16 +1151,24 @@ function ManagerInviteCard({
 }) {
   const { t } = useI18n();
   const [name, setName] = useState('');
-  const [done, setDone] = useState<{ link: string; name: string } | null>(null);
+  const [done, setDone] = useState<{ link: string; name: string; expiresAt: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Re-render once a second while a link is shown so the expiry countdown ticks down live.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!done) return;
+    const id = setInterval(() => setTick((x) => x + 1), 1000);
+    return () => clearInterval(id);
+  }, [done]);
+  const cd = done ? countdown(done.expiresAt) : null;
   const trimmed = name.trim();
   async function mint() {
     if (busy || !trimmed) return;
     setBusy(true);
     try {
       const res = await onCreate(trimmed);
-      setDone({ link: res.inviteUrl, name: trimmed });
+      setDone({ link: res.inviteUrl, name: trimmed, expiresAt: res.expiresAt });
       setCopied(false);
     } catch {
       /* the caller's onCreate surfaces its own error toast */
@@ -1199,16 +1210,112 @@ function ManagerInviteCard({
           <div style={{ fontSize: 13, color: 'var(--fg)', fontWeight: 600 }}>{t('manager.linkFor', { name: done.name })}</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 46, padding: '0 6px 0 13px', background: 'var(--secondary)', borderRadius: 13 }}>
             <span className="selectable" style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{done.link}</span>
-            <button type="button" className="press" onClick={() => { onCopy(done.link, t('manager.linkCreated')); setCopied(true); setTimeout(() => setCopied(false), 1600); }} style={{ flex: 'none', height: 34, padding: '0 14px', border: 'none', borderRadius: 10, background: copied ? 'var(--success, #16a34a)' : 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+            <button type="button" className="press" disabled={!!cd?.expired} onClick={() => { onCopy(done.link, t('manager.linkCreated')); setCopied(true); setTimeout(() => setCopied(false), 1600); }} style={{ flex: 'none', height: 34, padding: '0 14px', border: 'none', borderRadius: 10, background: cd?.expired ? 'var(--border)' : copied ? 'var(--success, #16a34a)' : 'var(--primary)', color: cd?.expired ? 'var(--muted-fg)' : '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: cd?.expired ? 'default' : 'pointer' }}>
               {copied ? t('card.copied') : t('manager.copy')}
             </button>
           </div>
+          {/* Live expiry timer — a manager link is short-lived (48h); the countdown shows how long the
+              colleague has to open it, and flips to an expired notice with a create-a-new-one nudge. */}
+          {cd && !cd.expired && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--link-accent)' }}>
+              <Icon name="clock" size={13} strokeWidth={2} className="" />
+              <span>{t('card.expiresIn', { time: cd.short })}</span>
+            </div>
+          )}
+          {cd?.expired && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--destructive)' }}>
+              <Icon name="clock" size={13} strokeWidth={2} className="" />
+              <span>{t('manager.expired')}</span>
+            </div>
+          )}
           <button type="button" onClick={() => { haptic('tap'); reset(); }} style={{ alignSelf: 'flex-start', border: 'none', background: 'transparent', color: 'var(--link-accent)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: 'pointer', padding: '2px 0' }}>
             {t('manager.regenerate')}
           </button>
           <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', lineHeight: 1.4 }}>{t('manager.multiHint')}</div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Registered managers roster — shown on Home under the invite card (fleet-manager only). Each row
+ * revokes with a two-tap guard (Revoke → Confirm), since there is no undo: a revoked manager loses
+ * the mini-app AND the support bot immediately. Hidden entirely until at least one manager exists —
+ * the invite card already carries the empty case.
+ */
+function ManagersList({ initData }: { initData: string }) {
+  const { t } = useI18n();
+  const [managers, setManagers] = useState<ManagerUser[] | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    listManagers(initData)
+      .then((m) => { if (!cancelled) setManagers(m); })
+      .catch(() => { if (!cancelled) setManagers([]); });
+    return () => { cancelled = true; };
+  }, [initData]);
+
+  async function revoke(id: string) {
+    setBusyId(id);
+    try {
+      await revokeManager(initData, id);
+      haptic('success');
+      setManagers((ms) => (ms ?? []).filter((m) => m.id !== id));
+    } catch {
+      haptic('error');
+    } finally {
+      setBusyId(null);
+      setConfirmId(null);
+    }
+  }
+
+  if (managers === null) {
+    return (
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 24, padding: 18 }}>
+        <Skeleton w={90} h={12} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14 }}>
+          <Skeleton w={38} h={38} r={11} />
+          <div style={{ flex: 1 }}><Skeleton w={120} h={14} /></div>
+          <Skeleton w={64} h={30} r={9} />
+        </div>
+      </div>
+    );
+  }
+  if (managers.length === 0) return null;
+
+  return (
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 24, overflow: 'hidden' }}>
+      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted-fg)', padding: '15px 16px 9px' }}>{t('managers.title')}</div>
+      {managers.map((m) => {
+        const confirming = confirmId === m.id;
+        const busy = busyId === m.id;
+        return (
+          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
+            <span style={{ width: 38, height: 38, flex: 'none', borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--secondary)', color: 'var(--fg)', fontWeight: 700, fontSize: 14 }}>
+              {(m.name ?? m.telegramUsername ?? '?').trim().charAt(0).toUpperCase()}
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.name ?? `@${m.telegramUsername ?? '—'}`}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.telegramUsername ? `@${m.telegramUsername}` : t('managers.role')}</div>
+            </div>
+            <button
+              type="button"
+              className="press"
+              disabled={busy}
+              onClick={() => {
+                haptic('tap');
+                if (confirming) { void revoke(m.id); }
+                else { setConfirmId(m.id); setTimeout(() => setConfirmId((x) => (x === m.id ? null : x)), 3500); }
+              }}
+              style={{ flex: 'none', height: 34, padding: '0 14px', border: 'none', borderRadius: 10, fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: busy ? 'default' : 'pointer', color: confirming ? '#FFFFFF' : 'var(--destructive)', background: confirming ? 'var(--destructive)' : 'color-mix(in srgb, var(--destructive) 12%, transparent)', minWidth: 76, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              {busy ? <Spinner size={15} color="#FFFFFF" /> : confirming ? t('managers.confirm') : t('managers.revoke')}
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1298,6 +1405,7 @@ function Home({
       {/* Manager invite — company-level access grant, above the fleet card. Fleet-manager only
           (an owner-operator drives their single truck alone and has no team to grant access to). */}
       {session.isFleetManager && <ManagerInviteCard onCreate={onCreateManagerInvite} onCopy={onCopy} />}
+      {session.isFleetManager && <ManagersList initData={initData} />}
 
       {/* manage fleet */}
       {session.isFleetManager && (
@@ -3347,6 +3455,7 @@ const NTF_ICON: Record<string, { icon: IconName; color: string | null }> = {
   receipt: { icon: 'list', color: null },
   statement: { icon: 'doc', color: null },
   debt: { icon: 'clock', color: 'var(--destructive)' },
+  invoice: { icon: 'doc', color: null },
   tracking: { icon: 'truck', color: null },
   balance_low: { icon: 'alert', color: 'var(--destructive)' },
   news: { icon: 'plane', color: null },
@@ -3369,6 +3478,11 @@ function notifToInbox(n: InboxNotification, lang: string, t: TFn): InboxItem {
     const place = [p['city'], p['state']].map((v) => (typeof v === 'string' ? v : '')).filter(Boolean).join(' ');
     titleText = t('inbox.ntfReceipt.title');
     bodyText = t('inbox.ntfReceipt.body', { gallons, location, place, card });
+  } else if (n.type === 'invoice') {
+    const number = typeof p['number'] === 'string' ? p['number'] : '';
+    const total = typeof p['total'] === 'string' ? p['total'] : '';
+    titleText = t('inbox.ntfInvoice.title');
+    bodyText = t('inbox.ntfInvoice.body', { number, total });
   } else if (n.type === 'news') {
     // Payload carries per-locale maps ({en,ru,…}); pick the user's language. Older rows that
     // stored a plain string still render via the localizeText string fallback.

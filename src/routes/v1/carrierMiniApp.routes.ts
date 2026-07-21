@@ -121,6 +121,10 @@ const ownerManagerInviteSchema = z.object({
   initData: z.string().min(1),
   name: z.string().trim().min(1).max(200),
 });
+const ownerManagerRevokeSchema = z.object({
+  initData: z.string().min(1),
+  id: z.string().min(1).max(120),
+});
 const ownerDriverInviteSchema = z.object({
   initData: z.string().min(1),
   cardId: z.string().min(1).max(120),
@@ -792,6 +796,46 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       inviteUrl,
       expiresAt: invite.expiresAt,
     });
+  });
+
+  /**
+   * The carrier's registered MANAGERS — the owner/manager's team roster in the mini-app. Owner-like
+   * gate (fleet-manager); the carrier comes from the caller's own registration. Active managers only.
+   */
+  app.post('/carrier/mini-app/managers', async (request) => {
+    const body = ownerFleetSchema.parse(request.body);
+    const { ctx, carrierId } = await requireRegisteredOwner(body.initData);
+    const managers = await registeredMiniAppCompanyRepo.listManagersByCarrier(ctx, carrierId);
+    return {
+      managers: managers.map((m) => ({
+        id: m.id,
+        name: m.driverName,
+        telegramUsername: m.telegramUsername,
+        createdAt: m.createdAt,
+      })),
+    };
+  });
+
+  /**
+   * Revoke one of the carrier's managers. The revoke is scoped in the repo to (tenant, carrier,
+   * profile='manager'), so an owner/manager can only ever revoke a manager of their OWN carrier — a
+   * foreign or non-manager id 404s. Their mini-app + support-bot access drops immediately.
+   */
+  app.post('/carrier/mini-app/managers/revoke', async (request) => {
+    const body = ownerManagerRevokeSchema.parse(request.body);
+    const { ctx, carrierId } = await requireRegisteredOwner(body.initData);
+    const revoked = await registeredMiniAppCompanyRepo.revokeManagerByCarrier(ctx, carrierId, body.id);
+    if (!revoked) {
+      throw new NotFoundError('That manager was not found for your company');
+    }
+    await auditFromContext(ctx, {
+      action: 'mini_app.manager.revoke',
+      status: 'ok',
+      resourceType: 'registered_mini_app_company',
+      resourceId: revoked.id,
+      detail: { carrierId },
+    });
+    return { id: revoked.id, status: revoked.status };
   });
 
   // ── Self-service reads — real servercrm/DWH data behind the mini-app's demo action sheets ────
