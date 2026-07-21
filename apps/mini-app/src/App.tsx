@@ -1092,7 +1092,7 @@ interface HomeProps {
   onOpenAction: (target: OpenAction) => void;
   onGoToServices: () => void;
   onViewFleet: () => void;
-  onCreateManagerInvite: () => Promise<{ inviteUrl: string; expiresAt: string }>;
+  onCreateManagerInvite: (name: string) => Promise<{ inviteUrl: string; expiresAt: string }>;
   onCopy: (text: string, toast: string) => void;
   onMarkAllRead: () => void;
   onReadNotif: (id: string) => void;
@@ -1143,25 +1143,32 @@ function ManagerInviteCard({
   onCreate,
   onCopy,
 }: {
-  onCreate: () => Promise<{ inviteUrl: string; expiresAt: string }>;
+  onCreate: (name: string) => Promise<{ inviteUrl: string; expiresAt: string }>;
   onCopy: (text: string, toast: string) => void;
 }) {
   const { t } = useI18n();
-  const [link, setLink] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [done, setDone] = useState<{ link: string; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const trimmed = name.trim();
   async function mint() {
-    if (busy) return;
+    if (busy || !trimmed) return;
     setBusy(true);
     try {
-      const res = await onCreate();
-      setLink(res.inviteUrl);
+      const res = await onCreate(trimmed);
+      setDone({ link: res.inviteUrl, name: trimmed });
       setCopied(false);
     } catch {
       /* the caller's onCreate surfaces its own error toast */
     } finally {
       setBusy(false);
     }
+  }
+  function reset() {
+    setDone(null);
+    setName('');
+    setCopied(false);
   }
   return (
     <div style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 24, padding: 18 }}>
@@ -1174,20 +1181,30 @@ function ManagerInviteCard({
           <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3, lineHeight: 1.4 }}>{t('manager.subtitle')}</div>
         </div>
       </div>
-      {!link ? (
-        <button type="button" className="press" onClick={() => { haptic('tap'); void mint(); }} disabled={busy} style={{ marginTop: 14, width: '100%', height: 46, border: 'none', borderRadius: 13, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: busy ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: busy ? 0.7 : 1 }}>
-          {busy ? <Spinner size={18} color="#FFFFFF" /> : t('manager.generate')}
-        </button>
+      {!done ? (
+        <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <input
+            className="selectable"
+            value={name}
+            onChange={(e) => setName(e.target.value.slice(0, 200))}
+            placeholder={t('manager.namePlaceholder')}
+            style={{ width: '100%', height: 46, padding: '0 14px', borderRadius: 13, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+          />
+          <button type="button" className="press" onClick={() => { haptic('tap'); void mint(); }} disabled={busy || !trimmed} style={{ width: '100%', height: 46, border: 'none', borderRadius: 13, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: busy || !trimmed ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: busy || !trimmed ? 0.55 : 1 }}>
+            {busy ? <Spinner size={18} color="#FFFFFF" /> : t('manager.generate')}
+          </button>
+        </div>
       ) : (
         <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 9 }}>
+          <div style={{ fontSize: 13, color: 'var(--fg)', fontWeight: 600 }}>{t('manager.linkFor', { name: done.name })}</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 46, padding: '0 6px 0 13px', background: 'var(--secondary)', borderRadius: 13 }}>
-            <span className="selectable" style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{link}</span>
-            <button type="button" className="press" onClick={() => { onCopy(link, t('manager.linkCreated')); setCopied(true); setTimeout(() => setCopied(false), 1600); }} style={{ flex: 'none', height: 34, padding: '0 14px', border: 'none', borderRadius: 10, background: copied ? 'var(--success, #16a34a)' : 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+            <span className="selectable" style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{done.link}</span>
+            <button type="button" className="press" onClick={() => { onCopy(done.link, t('manager.linkCreated')); setCopied(true); setTimeout(() => setCopied(false), 1600); }} style={{ flex: 'none', height: 34, padding: '0 14px', border: 'none', borderRadius: 10, background: copied ? 'var(--success, #16a34a)' : 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
               {copied ? t('card.copied') : t('manager.copy')}
             </button>
           </div>
-          <button type="button" onClick={() => { haptic('tap'); void mint(); }} disabled={busy} style={{ alignSelf: 'flex-start', border: 'none', background: 'transparent', color: 'var(--link-accent)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: busy ? 'default' : 'pointer', padding: '2px 0', opacity: busy ? 0.6 : 1 }}>
-            {busy ? <Spinner size={14} color="var(--link-accent)" /> : t('manager.regenerate')}
+          <button type="button" onClick={() => { haptic('tap'); reset(); }} style={{ alignSelf: 'flex-start', border: 'none', background: 'transparent', color: 'var(--link-accent)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: 'pointer', padding: '2px 0' }}>
+            {t('manager.regenerate')}
           </button>
           <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', lineHeight: 1.4 }}>{t('manager.multiHint')}</div>
         </div>
@@ -3779,11 +3796,11 @@ export function App() {
   const regenerateLink = (cardId: string, name: string) => submitDriverLink(cardId, name, 'toast.newLinkGenerated');
 
   /** Mint a manager registration link — a colleague with owner-equivalent access. Carrier-level, so
-   *  no card; the backend binds it to this session's own carrier. Returns the link for the FleetView
-   *  to reveal + copy; throws so the caller can surface an inline error. */
-  async function createManagerLink(): Promise<{ inviteUrl: string; expiresAt: string }> {
+   *  no card; the backend binds it to this session's own carrier and carries the name onto the
+   *  registration. Returns the link to reveal + copy; throws so the caller can surface an error. */
+  async function createManagerLink(name: string): Promise<{ inviteUrl: string; expiresAt: string }> {
     if (!wa?.initData) throw new ApiError(t('auth.openInTelegram'), 'NO_INITDATA', 0);
-    const res = await createManagerInvite(wa.initData);
+    const res = await createManagerInvite(wa.initData, name);
     haptic('success');
     return { inviteUrl: res.inviteUrl, expiresAt: res.expiresAt };
   }

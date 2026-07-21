@@ -584,13 +584,13 @@ describe('manager access — owner-equivalent, plus manager invites', () => {
       method: 'POST',
       url: '/v1/carrier/mini-app/manager-invites',
       headers: { 'content-type': 'application/json' },
-      payload: { initData: 'signed' },
+      payload: { initData: 'signed', name: 'Ops Manager' },
     });
 
     expect(res.statusCode).toBe(201);
     expect(res.json()).toMatchObject({ invite: { id: 'inv_mgr' } });
-    // Bound to the CALLER's own carrier, profile manager — never taken from the body.
-    expect(inviteRepo.create.mock.calls[0]?.[1]).toMatchObject({ profile: 'manager', carrierId: '5758544' });
+    // Bound to the CALLER's own carrier, profile manager, name stored as driverName — never the body carrier.
+    expect(inviteRepo.create.mock.calls[0]?.[1]).toMatchObject({ profile: 'manager', carrierId: '5758544', driverName: 'Ops Manager' });
   });
 
   it('lets an owner mint a manager link too', async () => {
@@ -602,11 +602,25 @@ describe('manager access — owner-equivalent, plus manager invites', () => {
       method: 'POST',
       url: '/v1/carrier/mini-app/manager-invites',
       headers: { 'content-type': 'application/json' },
-      payload: { initData: 'signed' },
+      payload: { initData: 'signed', name: 'Dana Ops' },
     });
 
     expect(res.statusCode).toBe(201);
-    expect(inviteRepo.create.mock.calls[0]?.[1]).toMatchObject({ profile: 'manager' });
+    expect(inviteRepo.create.mock.calls[0]?.[1]).toMatchObject({ profile: 'manager', driverName: 'Dana Ops' });
+  });
+
+  it('rejects a manager invite with no name (a manager must be labeled)', async () => {
+    registrationRepo.findByTelegramUserId.mockResolvedValueOnce(managerReg());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/manager-invites',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(inviteRepo.create).not.toHaveBeenCalled();
   });
 
   it('refuses a driver at /manager-invites before minting anything', async () => {
@@ -618,7 +632,7 @@ describe('manager access — owner-equivalent, plus manager invites', () => {
       method: 'POST',
       url: '/v1/carrier/mini-app/manager-invites',
       headers: { 'content-type': 'application/json' },
-      payload: { initData: 'signed' },
+      payload: { initData: 'signed', name: 'Ops Manager' },
     });
 
     expect(res.statusCode).toBe(403);

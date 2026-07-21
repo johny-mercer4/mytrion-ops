@@ -52,6 +52,7 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
   // Owner-LIKE: a manager is owner-equivalent — needs only a client tie, no card. Only a driver is
   // card-bound. Every card-gating / lookup branch below keys off this, so manager == owner here.
   const isDriver = profile === 'driver';
+  const isManager = profile === 'manager';
   const isOwner = !isDriver;
 
   // Reset everything tied to "which client" when switching profile — a driver invite under the
@@ -175,15 +176,20 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
     cardCount === null || cardCount === 0 ? null : cardCount === 1 ? 'owner-operator' : 'fleet-manager';
 
   const hasTie = carrierId.trim().length > 0 || applicationId.trim().length > 0;
-  const valid = isOwner ? hasTie : hasTie && cardId.trim().length > 0 && driverName.trim().length > 0;
+  // A manager needs a tie + a name (no card); a driver needs a tie + card + name; an owner just a tie.
+  const valid = isDriver
+    ? hasTie && cardId.trim().length > 0 && driverName.trim().length > 0
+    : isManager
+      ? hasTie && driverName.trim().length > 0
+      : hasTie;
 
   const blocker = !valid
     ? !hasTie
       ? 'Pick a client (or enter a carrier / application id manually).'
-      : !isOwner && !cardId.trim()
+      : isDriver && !cardId.trim()
         ? 'Pick the card this driver is for.'
-        : !isOwner && !driverName.trim()
-          ? "Enter the driver's name."
+        : (isDriver || isManager) && !driverName.trim()
+          ? isManager ? "Enter the manager's name." : "Enter the driver's name."
           : ''
     : '';
 
@@ -201,8 +207,8 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
         ...(carrierId.trim() ? { carrierId: carrierId.trim() } : {}),
         ...(applicationId.trim() ? { applicationId: applicationId.trim() } : {}),
         ...(companyName.trim() ? { companyName: companyName.trim() } : {}),
-        ...(!isOwner && cardId.trim() ? { cardId: cardId.trim() } : {}),
-        ...(!isOwner && driverName.trim() ? { driverName: driverName.trim() } : {}),
+        ...(isDriver && cardId.trim() ? { cardId: cardId.trim() } : {}),
+        ...((isDriver || isManager) && driverName.trim() ? { driverName: driverName.trim() } : {}),
         ...(agentName ? { agentName } : {}),
         ...(agentZohoUserId ? { agentZohoUserId } : {}),
         ttlHours,
@@ -452,9 +458,9 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
             )}
           </div>
         )}
-        {!isOwner && carrierId.trim() && (
+        {(isDriver || isManager) && carrierId.trim() && (
           <div className={s.field}>
-            <span className={s.fieldLabel}>Driver name</span>
+            <span className={s.fieldLabel}>{isManager ? 'Manager name' : 'Driver name'}</span>
             <input
               className={s.input}
               value={driverName}
@@ -462,10 +468,12 @@ export function CarrierUserForm({ onInviteCreated, initial }: { onInviteCreated:
               placeholder="e.g. Akmal Karimov"
               maxLength={200}
             />
-            <span className={s.fieldHint}>Who drives this card — shown on the fleet roster.</span>
+            <span className={s.fieldHint}>
+              {isManager ? 'Who this manager is — shown on the roster and to the support bot.' : 'Who drives this card — shown on the fleet roster.'}
+            </span>
           </div>
         )}
-        {!isOwner && !carrierId.trim() && (
+        {isDriver && !carrierId.trim() && (
           <p className={s.fieldHint}>Pick the client above first — the card list comes from their carrier.</p>
         )}
       </div>

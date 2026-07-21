@@ -115,6 +115,12 @@ const redeemSchema = z.object({
 
 const miniAppSessionSchema = z.object({ initData: z.string().min(1) });
 const ownerFleetSchema = z.object({ initData: z.string().min(1) });
+/** Manager invite — carrier-level, no card. `name` labels the manager on the roster and in the
+ *  support-bot allowed-user list once they register. Same 200-char bound as the driver name. */
+const ownerManagerInviteSchema = z.object({
+  initData: z.string().min(1),
+  name: z.string().trim().min(1).max(200),
+});
 const ownerDriverInviteSchema = z.object({
   initData: z.string().min(1),
   cardId: z.string().min(1).max(120),
@@ -757,13 +763,16 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    * manager through, so a manager can grow the team too (per product decision).
    */
   app.post('/carrier/mini-app/manager-invites', async (request, reply) => {
-    const body = ownerFleetSchema.parse(request.body);
+    const body = ownerManagerInviteSchema.parse(request.body);
     const { ctx, carrierId, registration } = await requireRegisteredOwner(body.initData);
     const support = await resolveRegistrationAgent(registration);
 
     const { invite, inviteUrl } = await createCarrierInvite(ctx, {
       profile: 'manager',
       carrierId,
+      // The manager's name — stored in driverName (the invite's person-name column), carried onto
+      // the registration at redeem, and surfaced in the roster + support-bot allowed-user list.
+      driverName: body.name,
       ...(registration.applicationId ? { applicationId: registration.applicationId } : {}),
       ...(registration.companyName ? { companyName: registration.companyName } : {}),
       ...(support.agentName ? { agentName: support.agentName } : {}),
@@ -776,7 +785,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       status: 'ok',
       resourceType: 'carrier_invitation',
       resourceId: invite.id,
-      detail: { carrierId, invitedBy: registration.profile },
+      detail: { carrierId, invitedBy: registration.profile, managerName: body.name },
     });
     return reply.code(201).send({
       invite: { id: invite.id },

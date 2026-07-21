@@ -454,8 +454,8 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
                   role="row"
                 >
                   <span className={s.cellStack} style={{ paddingLeft: 'var(--space-4)' }} role="cell">
-                    <span className={s.docTitle}>@{m.telegramUsername ?? m.telegramUserId}</span>
-                    <span className={s.cellSub}>Manager access</span>
+                    <span className={s.docTitle}>{m.driverName ?? `@${m.telegramUsername ?? m.telegramUserId}`}</span>
+                    <span className={s.cellSub}>Manager · owner-level access</span>
                   </span>
                   <span style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }} role="cell">
                     <span className={`${s.pill} ${s.pillNeutral}`}>
