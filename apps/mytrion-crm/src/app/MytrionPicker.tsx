@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { useUserContext } from '../context/UserContextProvider';
 import { MYTRIONS, MYTRION_URL_SLUG, COMING_SOON_PICKER_TILES, type MytrionId } from '../access/mytrions.config';
 import { TopBar } from '../components/TopBar';
@@ -26,6 +26,12 @@ const HUE_VAR: Record<string, string> = {
 export function MytrionPicker({ ids }: { ids: MytrionId[] }) {
   const ctx = useUserContext();
   const count = ids.length;
+
+  // Defensive twin of Landing's hard rule: a single-Mytrion user never sees the picker,
+  // whichever route mounted it. (0 ids stays Landing's responsibility — Forbidden.)
+  if (ids.length === 1) {
+    return <Navigate to={`/main/${MYTRION_URL_SLUG[ids[0]!]}`} replace />;
+  }
 
   return (
     <div className={styles.screen}>

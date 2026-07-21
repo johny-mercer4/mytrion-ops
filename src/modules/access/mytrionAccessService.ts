@@ -14,6 +14,7 @@
 import { deriveWorkerDepartments, resolveAllDepartmentAccess } from '../../lib/department.js';
 import { logger } from '../../lib/logger.js';
 import {
+  DEFAULT_PROFILE_SEED,
   departmentsForMytrions,
   MYTRION_DEPARTMENT,
   MYTRION_IDS,
@@ -280,6 +281,31 @@ export const mytrionAccessService = {
       result.set(input.zohoUserId, value);
     }
     return result;
+  },
+
+  /**
+   * Seed DEFAULT_PROFILE_SEED for a tenant iff it has no profile defaults yet (idempotent —
+   * a tenant with ANY rows is left alone, so admin edits are never clobbered). Called at boot
+   * (modules/access/bootstrap.ts) and by GET /admin/mytrion-access/profiles: unseeded tenants
+   * previously fell to the legacy profile-substring floor, which locks out every profile whose
+   * name doesn't contain its department ('Referral Standard Plus', 'Standard', …).
+   * Returns the tenant's (possibly just-seeded) profile defaults.
+   */
+  async ensureProfileDefaultsSeeded(tenantId: string): Promise<MytrionProfileDefaultDto[]> {
+    const ctx = internalCtx(tenantId);
+    const existing = await mytrionProfileDefaultsRepo.list(ctx);
+    if (existing.length > 0) return existing;
+    for (const seed of DEFAULT_PROFILE_SEED) {
+      await mytrionProfileDefaultsRepo.upsert(ctx, {
+        profileName: seed.profileName,
+        allowedMytrions: seed.allowedMytrions,
+        homeMytrion: seed.homeMytrion,
+        allDepartmentAccess: seed.allDepartmentAccess,
+      });
+    }
+    // Seeding changes what every worker resolves — drop any cached (pre-seed legacy-floor) grants.
+    this.invalidateAll();
+    return mytrionProfileDefaultsRepo.list(ctx);
   },
 
   /** Drop a user's cached access across all identity variants (call after an override upsert). */
