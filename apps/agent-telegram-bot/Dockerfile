@@ -1,0 +1,70 @@
+# Stage 1: Build Python dependencies
+FROM python:3.11-slim AS builder
+
+# Install uv for fast dependency resolution
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
+COPY pyproject.toml README.md ./
+COPY hamroh/ hamroh/
+
+# Create venv and install production dependencies (not dev/test)
+RUN uv venv /app/.venv && \
+    uv pip install --python /app/.venv/bin/python . --no-cache-dir
+
+# Stage 2: Runtime
+FROM python:3.11-slim
+
+# Install Node.js (needed for Claude Code CLI + npx for GitLab MCP) and
+# tini (a minimal init that reaps zombies — important since render_html
+# spawns Chromium as a subprocess; if Chromium gets orphaned we don't
+# want it lingering as a zombie under python-as-PID-1).
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl ca-certificates tini && \
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install Claude Code CLI
+RUN npm install -g @anthropic-ai/claude-code
+
+# Copy Python venv from builder
+COPY --from=builder /app/.venv /app/.venv
+ENV PATH="/app/.venv/bin:$PATH"
+
+WORKDIR /app
+
+# Headless Chromium for the render_html tool. Playwright bundles its own
+# browser binary under /root/.cache/ms-playwright; --with-deps installs
+# the shared libs Chrome needs (atk, nss, libdrm, etc.).
+RUN /app/.venv/bin/playwright install --with-deps chromium
+
+# Copy application source, prompts, and skill playbooks
+COPY hamroh/ hamroh/
+COPY prompts/system.md prompts/system.md
+COPY skills/ skills/
+
+# Plugin config — the example is always shipped; a real ``plugins.json``
+# is bundled if the operator has copied it before ``docker build``.
+# Anchoring the COPY on plugins.json.example (always present) lets the
+# trailing ``plugins.json*`` glob be a no-op when the developer hasn't
+# run ``cp plugins.json.example plugins.json`` yet, in both classic and
+# BuildKit builders.
+COPY plugins.json.example plugins.json* ./
+
+# Access policy — same pattern as plugins. The example is always shipped;
+# a real ``access.json`` is overlaid via bind mount at runtime
+# (docker-compose.yml) so /allow, /deny, /dmpolicy mutations persist
+# across restarts. The image-baked copy (if any) is the seed value.
+COPY access.json.example access.json* ./
+
+# Custom reminders — same pattern as plugins/access. The example is always
+# shipped; a real ``default-reminders.json`` is overlaid via bind mount at
+# runtime and reconciled into the DB at boot. The image-baked copy is the seed.
+COPY default-reminders.json.example default-reminders.json* ./
+
+# Data directory (mount as volume)
+VOLUME /app/data
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["python", "-m", "hamroh"]

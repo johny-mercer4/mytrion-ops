@@ -1,0 +1,70 @@
+[project]
+name = "hamroh"
+version = "0.1.0"
+description = "Python harness for running a Telegram agent powered by a Claude Code subprocess and a local MCP server."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "rustam_z" }]
+
+dependencies = [
+    "mcp>=1.2.0",
+    "uvicorn>=0.30",
+    "starlette>=0.37",
+    "aiosqlite>=0.20",
+    "pydantic>=2.7",
+    "python-dotenv>=1.0",
+    "sqlglot>=25.0",
+    "croniter>=2.0",
+    "pyyaml>=6.0",
+    "pypdf>=5.0",
+    "playwright>=1.40",
+    "python-telegram-bot[rate-limiter]>=22.8,<23",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-rerunfailures>=14",
+    "anyio>=4.4",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "lizard>=1.17",
+    "telethon>=1.36,<2",
+]
+
+[project.scripts]
+hamroh = "hamroh.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["hamroh"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# Rerun any failed test up to 3 times — the live e2e suite is timing-flaky.
+# A genuinely broken test still fails all 4 attempts; only flakes are rescued.
+addopts = "--reruns 3"
+log_cli = true
+log_cli_level = "INFO"
+# Bare message: the bot subprocess lines forwarded by the e2e harness already
+# carry their own timestamp/level/component, so a second prefix is just noise.
+log_cli_format = "%(message)s"
+markers = [
+    "e2e: real end-to-end tests against live Telegram + claude (opt-in; skip without creds)",
+    "slow: tests that sleep/wait for a while, e.g. to wait for a session reset or subprocess restart",
+    "smoke: fast critical-path subset proving the bot is alive (basic reply, DM + group)",
+]
+
+[tool.mypy]
+# croniter ships no type stubs and PyYAML's are an optional extra package;
+# silence the missing-stub errors for just those imports rather than adding
+# stub-only dev deps.
+[[tool.mypy.overrides]]
+module = ["croniter", "yaml"]
+ignore_missing_imports = true
