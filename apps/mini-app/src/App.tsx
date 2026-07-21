@@ -2229,6 +2229,22 @@ function ActionSheet({
                         ))}
                       </select>
                     </label>
+                    {/* Price mode — one control drives BOTH the on-screen figures and the export
+                        (accounting asks for both variants weekly). Owner-only: drivers are always
+                        retail — the owner's discount terms never reach a driver's screen. */}
+                    {!session.isDriver && (
+                      <label style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.price')}</span>
+                        <select
+                          value={exportRetail ? 'retail' : 'discount'}
+                          onChange={(e) => { haptic('tap'); setExportRetail(e.target.value === 'retail'); }}
+                          style={{ width: '100%', height: 42, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13.5, padding: '0 10px', boxSizing: 'border-box' }}
+                        >
+                          <option value="discount">{t('txns.priceDiscount')}</option>
+                          <option value="retail">{t('txns.priceRetail')}</option>
+                        </select>
+                      </label>
+                    )}
                     {!session.isDriver && (txnFleet?.length ?? 0) > 0 && (
                       <label style={{ flex: 1, minWidth: 0 }}>
                         <span style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.card')}</span>
@@ -2269,20 +2285,26 @@ function ActionSheet({
                       over the WHOLE window, not just the rendered page); nothing rendered them. */}
                   {rows.length > 0 && (() => {
                     const tot = data.v.totals ?? {};
-                    const spend = tot['funded_total'];
+                    // Retail mode (and EVERY driver view): re-price to funded+discount and hide the
+                    // savings tile — the discount is exactly what this variant exists to conceal.
+                    const retailView = session.isDriver || exportRetail;
                     const gal = tot['total_fuel_quantity'] ?? tot['fuel_quantity'];
-                    const saved = tot['discount_amount'];
+                    const saved = Number(tot['discount_amount'] ?? 0);
+                    const spendRaw = tot['funded_total'];
+                    const spend = spendRaw == null ? null : retailView ? Number(spendRaw) + saved : spendRaw;
                     if (spend == null) return null;
                     return (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: retailView ? '1fr' : '1fr 1fr', gap: 10, marginBottom: 12 }}>
                         <div style={{ background: 'var(--primary)', borderRadius: 14, padding: '13px 14px' }}>
-                          <div style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,.75)' }}>{t('txns.totalSpent')}</div>
+                          <div style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,.75)' }}>{t('txns.totalSpent')}{retailView ? ` · ${t('txns.priceRetail')}` : ''}</div>
                           <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(spend)}</div>
                         </div>
+                        {!retailView && (
                         <div style={{ background: 'var(--secondary)', borderRadius: 14, padding: '13px 14px' }}>
                           <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('txns.saved')}</div>
-                          <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(saved ?? 0)}</div>
+                          <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(saved)}</div>
                         </div>
+                        )}
                         {gal != null && (
                           <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--muted-fg)', textAlign: 'center', marginTop: -2 }}>
                             {t('txns.gallons', { n: fmt(gal) })}
@@ -2307,7 +2329,7 @@ function ActionSheet({
                             <div style={{ fontSize: 13.5, color: 'var(--fg)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.3 }}>{fmt(tx['location_name'])}</div>
                             <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{txnDateTime(tx['transaction_date'])} · •••• {tail6(fmt(tx['card_number']), null)}</div>
                           </div>
-                          <span className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', flex: 'none', textAlign: 'right', whiteSpace: 'nowrap' }}>{money(tx['line_item_amount'] ?? tx['funded_total'] ?? tx['net_total'])}</span>
+                          <span className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', flex: 'none', textAlign: 'right', whiteSpace: 'nowrap' }}>{money((session.isDriver || exportRetail) ? Number(tx['line_item_amount'] ?? tx['funded_total'] ?? tx['net_total'] ?? 0) + Number(tx['discount_amount'] ?? 0) : (tx['line_item_amount'] ?? tx['funded_total'] ?? tx['net_total']))}</span>
                         </div>
                       ))}
                     </div>
@@ -3107,6 +3129,8 @@ export function App() {
     else if (action === 'pinunit') setOpenAction({ kind: 'service', key: 'pinunit' });
     else if (action === 'status') setOpenAction({ kind: 'service', key: 'status' });
     else if (action === 'invoices') setOpenAction({ kind: 'service', key: 'invoices' });
+    else if (action === 'cardops') setOpenAction({ kind: 'service', key: 'cardops' });
+    else if (action === 'manualcode') setOpenAction({ kind: 'service', key: 'manualcode' });
   }, [screen]);
 
   useEffect(() => {

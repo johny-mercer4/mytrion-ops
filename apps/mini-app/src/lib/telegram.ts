@@ -100,8 +100,8 @@ export function getRegistrationId(): string | null {
  * the support bot's "you can do this yourself" links. Unknown actions are ignored (the app
  * just opens home), so an old client build never breaks on a new link.
  */
-export type StartAction = 'override' | 'moneycode' | 'funds' | 'txns' | 'pinunit' | 'status' | 'invoices';
-const START_ACTIONS: readonly StartAction[] = ['override', 'moneycode', 'funds', 'txns', 'pinunit', 'status', 'invoices'];
+export type StartAction = 'override' | 'moneycode' | 'funds' | 'txns' | 'pinunit' | 'status' | 'invoices' | 'cardops' | 'manualcode';
+const START_ACTIONS: readonly StartAction[] = ['override', 'moneycode', 'funds', 'txns', 'pinunit', 'status', 'invoices', 'cardops', 'manualcode'];
 
 export function getStartAction(): StartAction | null {
   const startParam = getTelegramWebApp()?.initDataUnsafe.start_param;
