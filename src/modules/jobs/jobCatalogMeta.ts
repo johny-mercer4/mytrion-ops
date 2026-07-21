@@ -39,7 +39,8 @@ const META: Record<string, JobMeta> = {
   },
   'automation.retention.weekly-scan': {
     title: 'Retention weekly scan',
-    description: 'Monday LLM summary of churn-risk signals and re-engagement actions for the retention team.',
+    description:
+      'DISABLED: Monday LLM churn summary. Parked until Sales Mytrion retention is complete, then CS — use case-sync + deadline-sweep only for now.',
   },
   'automation.collection.debtor-sweep': {
     title: 'Collection debtor sweep',

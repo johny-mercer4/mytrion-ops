@@ -1,0 +1,233 @@
+/* CS Retention — Claims / Phase 2 Cases / CITI Folder */
+
+.cs-root .cs-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.cs-root .cs-panel-title {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.cs-root .cs-panel-sub {
+  margin: 4px 0 0;
+  color: var(--text-muted, var(--color-text-muted));
+  font-size: 13px;
+}
+
+.cs-root .cs-ret-split {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.1fr) minmax(320px, 1fr);
+  gap: 14px;
+  min-height: 420px;
+}
+
+.cs-root .cs-ret-list {
+  border: 1px solid var(--border-color, var(--color-border));
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary, var(--surface));
+  overflow: auto;
+  max-height: calc(100vh - 220px);
+}
+
+.cs-root .cs-ret-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border: none;
+  border-bottom: 1px solid var(--border-color, var(--color-border));
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.cs-root .cs-ret-row:hover {
+  background: color-mix(in srgb, var(--cs-accent, #2563eb) 6%, transparent);
+}
+
+.cs-root .cs-ret-row.active {
+  background: color-mix(in srgb, var(--cs-accent, #2563eb) 12%, transparent);
+  border-left: 3px solid var(--cs-accent, #2563eb);
+}
+
+.cs-root .cs-ret-row-main {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.cs-root .cs-ret-row-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-muted, var(--color-text-muted));
+}
+
+.cs-root .cs-ret-detail {
+  border: 1px solid var(--border-color, var(--color-border));
+  border-radius: var(--radius-md);
+  padding: 18px 20px;
+  background: var(--color-bg-secondary, var(--surface));
+}
+
+.cs-root .cs-ret-detail h3 {
+  margin: 0 0 14px;
+  font-size: 1.15rem;
+}
+
+.cs-root .cs-ret-dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+  margin: 0 0 18px;
+}
+
+.cs-root .cs-ret-dl dt {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted, var(--color-text-muted));
+}
+
+.cs-root .cs-ret-dl dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+}
+
+.cs-root .cs-ret-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.cs-root .cs-ret-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.cs-root .cs-chip {
+  border: 1px solid var(--border-color, var(--color-border));
+  background: var(--color-bg-secondary, var(--surface));
+  color: inherit;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cs-root .cs-chip.active {
+  border-color: var(--cs-accent, #2563eb);
+  background: color-mix(in srgb, var(--cs-accent, #2563eb) 14%, transparent);
+  color: var(--cs-accent, #2563eb);
+}
+
+.cs-root .cs-ret-attempt {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color, var(--color-border));
+}
+
+.cs-root .cs-ret-attempt label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cs-root .cs-ret-attempt select,
+.cs-root .cs-ret-attempt input {
+  height: 36px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color, var(--color-border));
+  background: var(--color-bg-primary);
+  color: inherit;
+  padding: 0 10px;
+  font: inherit;
+}
+
+.cs-root .cs-ret-outcomes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cs-root .cs-ret-bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.cs-root .cs-ret-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cs-root .cs-muted {
+  color: var(--text-muted, var(--color-text-muted));
+  font-size: 12px;
+}
+
+.cs-root .cs-warn {
+  color: var(--cs-warning, #d97706);
+  font-weight: 700;
+}
+
+.cs-root .cs-danger {
+  color: var(--cs-danger, #dc2626);
+  font-weight: 700;
+}
+
+.cs-root .cs-banner-danger {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--cs-danger, #dc2626) 35%, transparent);
+  color: var(--cs-danger, #dc2626);
+  font-size: 13px;
+}
+
+.cs-root .cs-empty {
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--text-muted, var(--color-text-muted));
+  font-size: 13px;
+}
+
+.cs-root .cs-nav-badge {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--cs-danger, #dc2626);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 900px) {
+  .cs-root .cs-ret-split {
+    grid-template-columns: 1fr;
+  }
+}

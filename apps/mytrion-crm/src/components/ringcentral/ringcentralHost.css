@@ -1,0 +1,8 @@
+/**
+ * Host-page chrome for the RingCentral Embeddable iframe.
+ * Inner cursor styles: ringcentralEmbedStyles.ts (data: stylesUri).
+ */
+
+#rc-widget-adapter-frame {
+  cursor: pointer !important;
+}

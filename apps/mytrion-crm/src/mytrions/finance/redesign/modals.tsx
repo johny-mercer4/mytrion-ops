@@ -13,7 +13,6 @@ import {
   dateTimeFull,
   fmtCurrency,
   maskCard,
-  type Client,
   type ClientFuel,
   type ClientInvoice,
   type ClientPayment,

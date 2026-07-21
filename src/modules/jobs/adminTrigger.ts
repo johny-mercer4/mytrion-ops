@@ -5,6 +5,7 @@
 import { AppError } from '../../lib/errors.js';
 import {
   ALL_JOBS,
+  DISABLED_JOB_QUEUES,
   MANUAL_TRIGGERABLE_QUEUES,
   retentionCaseSyncJob,
   retentionDeadlineSweepJob,
@@ -21,6 +22,13 @@ export async function triggerCatalogJob(
   name: string,
   payload: Record<string, unknown> = {},
 ): Promise<{ jobId: string; name: string }> {
+  if (DISABLED_JOB_QUEUES.has(name)) {
+    throw new AppError(`Queue '${name}' is disabled`, {
+      statusCode: 400,
+      code: 'JOB_DISABLED',
+      expose: true,
+    });
+  }
   if (!MANUAL_TRIGGERABLE_QUEUES.has(name)) {
     throw new AppError(`Queue '${name}' cannot be triggered from Admin`, {
       statusCode: 400,

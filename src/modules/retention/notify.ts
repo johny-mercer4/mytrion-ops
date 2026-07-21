@@ -264,8 +264,64 @@ export async function notifyClaimRequestToOwner(
     ownerId: opts.ownerZohoUserId,
     type: 'retention.claim_request',
     title: `Claim request: ${opts.companyName?.trim() || opts.carrierId}`,
-    detail: `caseId=${opts.caseId} · carrier=${opts.carrierId} · claimant=${opts.claimantZohoUserId} · Approve in Retention → Claims (1 BD auto)`,
+    detail: `caseId=${opts.caseId} · carrier=${opts.carrierId} · claimant=${opts.claimantZohoUserId} · Approve in CS → Open Pool Claims (1 BD auto)`,
   });
+}
+
+/** Notify CS distribution + broadcast retention:pool when Sales requests a claim. */
+export async function notifyClaimRequestToCs(
+  ctx: TenantContext,
+  opts: {
+    caseId: string;
+    carrierId: string;
+    companyName: string | null;
+    claimantZohoUserId: string;
+    previousOwnerZohoUserId?: string | null;
+  },
+): Promise<void> {
+  const company = opts.companyName?.trim() || opts.carrierId;
+  const detail = `caseId=${opts.caseId} · carrier=${opts.carrierId} · claimant=${opts.claimantZohoUserId} · Approve in CS → Open Pool Claims (1 BD auto)`;
+  const csId =
+    env.RETENTION_OPEN_POOL_NOTIFY_ZOHO_USER_ID.trim() ||
+    env.RETENTION_OPS_MANAGER_ZOHO_USER_ID.trim();
+  if (csId) {
+    await persistAndPublish(ctx, {
+      ownerId: csId,
+      type: 'retention.claim_request',
+      title: `Open Pool claim: ${company}`,
+      detail,
+      broadcastPool: true,
+    });
+  } else {
+    const now = new Date().toISOString();
+    realtimeHub.publish(RETENTION_POOL_TOPIC, {
+      id: `claim-req-${opts.caseId}`,
+      ownerKind: 'worker',
+      ownerId: 'customer-service',
+      type: 'retention.claim_request',
+      tag: 'retention',
+      priority: 'high',
+      title: `Open Pool claim: ${company}`,
+      detail,
+      createdAt: now,
+      updatedAt: now,
+      readAt: null,
+    });
+    logger.info(
+      { caseId: opts.caseId },
+      'retention claim CS notify: no RETENTION_* notify user — pool broadcast only',
+    );
+  }
+  const prev = opts.previousOwnerZohoUserId?.trim();
+  if (prev && prev !== csId) {
+    await notifyClaimRequestToOwner(ctx, {
+      caseId: opts.caseId,
+      carrierId: opts.carrierId,
+      companyName: opts.companyName,
+      ownerZohoUserId: prev,
+      claimantZohoUserId: opts.claimantZohoUserId,
+    });
+  }
 }
 
 export async function notifyClaimApproved(
@@ -298,7 +354,7 @@ export async function notifyClaimDeclined(
     ownerId: opts.claimantZohoUserId,
     type: 'retention.claim_declined',
     title: `Claim declined: ${opts.companyName?.trim() || opts.carrierId}`,
-    detail: `caseId=${opts.caseId} · Owner declined — deal stays in Open Pool`,
+    detail: `caseId=${opts.caseId} · Claim declined — deal stays in Open Pool`,
   });
 }
 

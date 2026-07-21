@@ -2,10 +2,9 @@
  * Phase-1 / Open Pool workflow queries on retention_cases.
  * Kept separate from core CRUD so retentionCaseRepo stays under the file-size cap.
  */
-import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
-  RETENTION_PHASE,
   retentionCaseEvents,
   retentionCases,
   type CommunicationChannel,
@@ -62,12 +61,21 @@ export const retentionCasePhase1Repo = {
 
   async listOpenPool(
     ctx: TenantContext,
-    opts: { limit?: number } = {},
+    opts: { limit?: number; pendingForZohoUserId?: string } = {},
   ): Promise<{ cases: RetentionCaseDto[]; total: number }> {
     const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
+    const statusClause: SQL | undefined = opts.pendingForZohoUserId?.trim()
+      ? or(
+          eq(retentionCases.statusCode, 'p1_open_pool'),
+          and(
+            eq(retentionCases.statusCode, 'p1_pool_claim_pending'),
+            eq(retentionCases.pendingClaimantZohoUserId, opts.pendingForZohoUserId.trim()),
+          ),
+        )
+      : eq(retentionCases.statusCode, 'p1_open_pool');
     const where = and(
       eq(retentionCases.tenantId, ctx.tenantId),
-      eq(retentionCases.statusCode, 'p1_open_pool'),
+      statusClause,
       isNull(retentionCases.closedAt),
     );
     const rows = await db
@@ -101,7 +109,7 @@ export const retentionCasePhase1Repo = {
     return { case: toRetentionCaseDto(row), events: events.map(toRetentionCaseEventDto) };
   },
 
-  /** Request Open Pool claim (owner approve / 1 BD auto). See retentionPoolClaimRepo. */
+  /** Request Open Pool claim (CS approve / 1 BD auto). See retentionPoolClaimRepo. */
   async claimFromPool(
     ctx: TenantContext,
     id: string,

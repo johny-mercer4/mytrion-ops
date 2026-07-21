@@ -4,7 +4,6 @@
  */
 import { z } from 'zod';
 import { env } from '../../../config/env.js';
-import { RETENTION_PHASE } from '../../../db/schema/index.js';
 import { getDwhCompanyDetails } from '../../../integrations/dwhCards.js';
 import { AppError, NotFoundError, RBACError } from '../../../lib/errors.js';
 import { retentionCasePhase1Repo } from '../../../repos/retentionCasePhase1Repo.js';
@@ -12,7 +11,6 @@ import { retentionCaseRepo } from '../../../repos/retentionCaseRepo.js';
 import type { TenantContext } from '../../../types/tenantContext.js';
 import { notifyOpenPoolOpened } from '../../retention/notify.js';
 import { resolvePhase1Transition, type Phase1Outcome } from '../../retention/phase1.js';
-import { retentionPoolClaimRepo } from '../../../repos/retentionPoolClaimRepo.js';
 import type { LocalTouchpoint } from '../types.js';
 import { idString, limit as limitSchema } from './common.js';
 
@@ -280,12 +278,16 @@ export const retentionTouchpoints: LocalTouchpoint[] = [
     title: 'Sales Open Pool cases',
     riskClass: 'read',
     departments: salesDept,
+    identityParam: 'zohoUserId',
     paramsSchema: z.object({
+      zohoUserId: z.string().max(120).optional(),
       limit: limitSchema(500, 200).optional(),
     }),
     handler: async (ctx, params) => {
+      const zohoUserId = String(params.zohoUserId ?? zohoFromCtx(ctx) ?? '');
       return retentionCasePhase1Repo.listOpenPool(ctx, {
         ...(typeof params.limit === 'number' ? { limit: params.limit } : {}),
+        ...(zohoUserId ? { pendingForZohoUserId: zohoUserId } : {}),
       });
     },
   },
@@ -293,7 +295,7 @@ export const retentionTouchpoints: LocalTouchpoint[] = [
   {
     kind: 'local',
     key: 'retention.pool_claim',
-    title: 'Request Open Pool claim (owner approve / 1 BD auto)',
+    title: 'Request Open Pool claim (CS approve / 1 BD auto)',
     riskClass: 'write',
     departments: salesDept,
     identityParam: 'zohoUserId',
@@ -326,101 +328,10 @@ export const retentionTouchpoints: LocalTouchpoint[] = [
 
   {
     kind: 'local',
-    key: 'retention.pool_claims_pending',
-    title: 'Pending Open Pool claims awaiting my approve',
-    riskClass: 'read',
-    departments: salesDept,
-    identityParam: 'zohoUserId',
-    paramsSchema: z.object({
-      zohoUserId: z.string().max(120).optional(),
-      limit: limitSchema(200, 100).optional(),
-    }),
-    handler: async (ctx, params) => {
-      const zohoUserId = String(params.zohoUserId ?? '');
-      if (!zohoUserId) {
-        throw new AppError('zohoUserId is required', {
-          statusCode: 400,
-          code: 'VALIDATION_ERROR',
-          expose: true,
-        });
-      }
-      return retentionPoolClaimRepo.listPendingForOwner(ctx, zohoUserId, {
-        ...(typeof params.limit === 'number' ? { limit: params.limit } : {}),
-      });
-    },
-  },
-
-  {
-    kind: 'local',
-    key: 'retention.pool_claim_approve',
-    title: 'Approve Open Pool claim request',
-    riskClass: 'write',
-    departments: salesDept,
-    identityParam: 'zohoUserId',
-    agentNameParam: 'agentName',
-    paramsSchema: z.object({
-      zohoUserId: z.string().max(120).optional(),
-      agentName: z.string().max(200).optional(),
-      caseId: idString,
-    }),
-    handler: async (ctx, params) => {
-      const zohoUserId = String(params.zohoUserId ?? zohoFromCtx(ctx) ?? '');
-      if (!zohoUserId) {
-        throw new AppError('zohoUserId is required', {
-          statusCode: 400,
-          code: 'VALIDATION_ERROR',
-          expose: true,
-        });
-      }
-      const updated = await retentionPoolClaimRepo.approveClaim(
-        ctx,
-        String(params.caseId),
-        zohoUserId,
-        {
-          asAdmin: isAdmin(ctx),
-          agentName: typeof params.agentName === 'string' ? params.agentName : undefined,
-        },
-      );
-      return { case: updated };
-    },
-  },
-
-  {
-    kind: 'local',
-    key: 'retention.pool_claim_decline',
-    title: 'Decline Open Pool claim request',
-    riskClass: 'write',
-    departments: salesDept,
-    identityParam: 'zohoUserId',
-    paramsSchema: z.object({
-      zohoUserId: z.string().max(120).optional(),
-      caseId: idString,
-    }),
-    handler: async (ctx, params) => {
-      const zohoUserId = String(params.zohoUserId ?? zohoFromCtx(ctx) ?? '');
-      if (!zohoUserId) {
-        throw new AppError('zohoUserId is required', {
-          statusCode: 400,
-          code: 'VALIDATION_ERROR',
-          expose: true,
-        });
-      }
-      const updated = await retentionPoolClaimRepo.declineClaim(
-        ctx,
-        String(params.caseId),
-        zohoUserId,
-        { asAdmin: isAdmin(ctx) },
-      );
-      return { case: updated };
-    },
-  },
-
-  {
-    kind: 'local',
     key: 'retention.lookups',
     title: 'Retention phases / statuses / enums',
     riskClass: 'read',
-    departments: salesDept,
+    departments: ['sales', 'customer-service'],
     paramsSchema: z.object({
       phase_code: z.string().max(80).optional(),
     }),

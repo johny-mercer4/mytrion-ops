@@ -1,12 +1,10 @@
 /**
- * Customer Service shell — 1:1 port of the zoho-octane widget's app.js template
- * (cs-sidebar / cs-body / cs-content + mobile bottom nav + light/dark theme with the
- * widget's localStorage key). Improvements over the widget: the AI copilot is a floating
- * launcher (CsCopilot, like Sales Mytrion) rather than a nav tab, and the sidebar footer
- * carries a Switch-Mytrion link. Data Center / Inbox / Service Center are "Soon" stubs.
+ * Customer Service shell — sidebar + content + mobile bottom nav.
+ * Retention Cases / Open Pool Claims / CITI Folder sit alongside Citifuel Clients.
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 
+import { csRetention } from '../../api/csRetention';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useTheme } from '../../hooks/useTheme';
 import { Analytics } from './Analytics';
@@ -14,11 +12,19 @@ import { Applications } from './Applications';
 import { CitiFuel } from './CitiFuel';
 import { CsCopilot } from './CsCopilot';
 import { Home } from './Home';
-import { MytrionLoader } from '../../components/MytrionLoader';
+import { CasesPanel } from './retention/CasesPanel';
+import { ClaimsPanel } from './retention/ClaimsPanel';
+import { CitiFolderPanel } from './retention/CitiFolderPanel';
+import { subscribeCsRetentionLive } from './retention/retentionLiveBus';
+import { useCsRetentionRealtime } from './retention/useCsRetentionRealtime';
+import { Toast, type ToastState } from './Toast';
 
 type SectionId =
   | 'home'
   | 'applications'
+  | 'retention-cases'
+  | 'open-pool-claims'
+  | 'citi-folder'
   | 'citi-fuel'
   | 'analytics'
   | 'data-center'
@@ -31,9 +37,9 @@ interface NavDef {
   shortLabel: string;
   iconPath: string;
   disabled: boolean;
+  badge?: boolean;
 }
 
-/* Widget nav (icon paths verbatim); Data Center + AI enabled in this port. */
 const NAV_ITEMS: NavDef[] = [
   {
     id: 'home',
@@ -49,6 +55,31 @@ const NAV_ITEMS: NavDef[] = [
     shortLabel: 'Apps',
     iconPath:
       'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+    disabled: false,
+  },
+  {
+    id: 'retention-cases',
+    label: 'Retention Cases',
+    shortLabel: 'Retain',
+    iconPath:
+      'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
+    disabled: false,
+  },
+  {
+    id: 'open-pool-claims',
+    label: 'Open Pool Claims',
+    shortLabel: 'Claims',
+    iconPath:
+      'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z',
+    disabled: false,
+    badge: true,
+  },
+  {
+    id: 'citi-folder',
+    label: 'CITI Folder',
+    shortLabel: 'CITI',
+    iconPath:
+      'M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z',
     disabled: false,
   },
   {
@@ -93,27 +124,40 @@ const NAV_ITEMS: NavDef[] = [
   },
 ];
 
-
 export function CsShell() {
   const user = useUserContext();
   const [active, setActive] = useState<SectionId>('home');
-  // Widget parity: panels lazy-mount on first visit and stay mounted (state survives tab hops).
   const [mounted, setMounted] = useState<Partial<Record<SectionId, boolean>>>({ home: true });
   const { theme, toggle: toggleTheme } = useTheme();
+  const [claimsBadge, setClaimsBadge] = useState(0);
+  const [toast, setToast] = useState<ToastState | null>(null);
 
-  // Branded boot loader (Sales/Finance parity) — a short splash while the workspace opens.
-  const [booting, setBooting] = useState(true);
-
-  useEffect(() => {
-    const done = setTimeout(() => {
-      setBooting(false);
-    }, 1500);
-    return () => {
-      clearTimeout(done);
-    };
+  const onClaimsToast = useCallback((title: string, detail: string) => {
+    setToast({ id: Date.now(), kind: 'info', message: `${title}: ${detail}` });
   }, []);
 
-  // Sidebar user card (Finance-style): initials + name + role from the session identity.
+  useCsRetentionRealtime(true, onClaimsToast);
+
+  const refreshClaimsBadge = useCallback(() => {
+    void csRetention
+      .claimsBadge()
+      .then((r) => setClaimsBadge(r.count))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    refreshClaimsBadge();
+    return subscribeCsRetentionLive((p) => {
+      if (
+        p.type === 'retention.claim_request' ||
+        p.type === 'retention.claim_approved' ||
+        p.type === 'retention.claim_declined'
+      ) {
+        refreshClaimsBadge();
+      }
+    });
+  }, [refreshClaimsBadge]);
+
   const workerName = user.userName || 'Agent';
   const workerRole = user.role || user.profile || 'Customer Service';
   const workerInitials =
@@ -137,11 +181,7 @@ export function CsShell() {
 
   return (
     <div className={`cs-root${theme === 'dark' ? ' dark-mode' : ''}`}>
-      {/* ── Branded boot loader (Sales/Finance parity) ── */}
-      {booting ? <MytrionLoader appName="Customer Service" /> : null}
-
       <div className="cs-body">
-        {/* ── SIDEBAR NAV (desktop) ── */}
         <aside className="cs-sidebar">
           <div className="cs-sidebar-brand">
             <div className="cs-brand-word">
@@ -169,12 +209,14 @@ export function CsShell() {
               >
                 <span className="nav-label">{item.label}</span>
                 {item.disabled ? <span className="nav-soon">Soon</span> : null}
+                {item.badge && claimsBadge > 0 ? (
+                  <span className="cs-nav-badge">{claimsBadge > 99 ? '99+' : claimsBadge}</span>
+                ) : null}
               </div>
             ))}
           </nav>
 
           <div className="cs-sidebar-footer">
-            {/* Sales-Mytrion-style labeled theme switch (icon + "Dark/Light mode"). */}
             <button
               className="cs-theme-toggle"
               onClick={toggleTheme}
@@ -182,7 +224,6 @@ export function CsShell() {
               aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             >
               {theme !== 'dark' ? (
-                /* Moon — shown in light mode (click → dark) */
                 <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     strokeLinecap="round"
@@ -192,7 +233,6 @@ export function CsShell() {
                   />
                 </svg>
               ) : (
-                /* Sun — shown in dark mode (click → light) */
                 <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     strokeLinecap="round"
@@ -204,7 +244,6 @@ export function CsShell() {
               )}
               <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
             </button>
-            {/* Finance-style user card */}
             <div className="cs-user-card">
               <span className="cs-user-avatar">{workerInitials}</span>
               <div className="cs-user-meta">
@@ -215,31 +254,31 @@ export function CsShell() {
           </div>
         </aside>
 
-        {/* ── MAIN CONTENT ── */}
         <main className="cs-content">
           {panel('home', <Home />)}
           {panel('applications', <Applications />)}
+          {panel('retention-cases', <CasesPanel />)}
+          {panel('open-pool-claims', <ClaimsPanel onBadge={setClaimsBadge} />)}
+          {panel('citi-folder', <CitiFolderPanel />)}
           {panel('citi-fuel', <CitiFuel />)}
           {panel('analytics', <Analytics />)}
         </main>
       </div>
 
-      {/* Floating AI copilot (replaces the old AI Chat nav tab) */}
       <CsCopilot user={user} />
+      {toast ? <Toast toast={toast} onDismiss={() => setToast(null)} /> : null}
 
-      {/* ── MOBILE BOTTOM NAV ── */}
       <nav className="cs-bottom-nav">
-        {NAV_ITEMS.map((item) => (
+        {NAV_ITEMS.filter((i) => !i.disabled).map((item) => (
           <button
             key={item.id}
-            className={`bottom-nav-btn${active === item.id ? ' active' : ''}${item.disabled ? ' bottom-nav-disabled' : ''}`}
-            onClick={() => !item.disabled && navigate(item.id)}
-            disabled={item.disabled}
+            className={`bottom-nav-btn${active === item.id ? ' active' : ''}`}
+            onClick={() => navigate(item.id)}
           >
             <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.iconPath} />
             </svg>
-            <span>{item.disabled ? 'Soon' : item.shortLabel}</span>
+            <span>{item.shortLabel}</span>
           </button>
         ))}
       </nav>

@@ -246,6 +246,13 @@
       "when": 1784571600000,
       "tag": "0034_money_code_requests_draw_model",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1784575200000,
+      "tag": "0035_customer_retention_cs_mytrion",
+      "breakpoints": true
     }
   ]
 }

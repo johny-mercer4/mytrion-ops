@@ -1,9 +1,10 @@
 /**
- * Open Pool — claimable retention cases (status p1_open_pool). Agents select rows and
- * claim instantly (Phase 1 restarts; assignment_count caps at 3).
+ * Open Pool — claimable retention cases (status p1_open_pool). Agents request a claim;
+ * Customer Service approves (or 1 BD auto). Pending self-claims stay visible.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, MouseEvent } from 'react';
+import { useUserContext } from '@/context/UserContextProvider';
 import { s } from '../dc';
 import { Icon } from '../icons';
 import { useSales } from '../ctx';
@@ -22,8 +23,18 @@ type SortKey = 'carrierId' | 'companyName' | 'daysInactive' | 'gallons90d' | 'as
 const poolGrid =
   'display:grid;grid-template-columns:44px 40px 118px 1.6fr 1.1fr 1.05fr 90px 80px 1.1fr;gap:10px;align-items:center';
 
+function isPendingSelf(c: RetentionCaseRow, selfId: string | undefined): boolean {
+  return (
+    c.statusCode === 'p1_pool_claim_pending' &&
+    !!selfId &&
+    c.pendingClaimantZohoUserId === selfId
+  );
+}
+
 export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) => void }) {
   const { pushToast } = useSales();
+  const user = useUserContext();
+  const selfId = user.userId && user.userId !== 'dev-user' ? user.userId : undefined;
   const feed = useLoad(() => loadOpenPoolCases(), []);
   const [cases, setCases] = useState<RetentionCaseRow[]>([]);
   const [search, setSearch] = useState('');
@@ -42,9 +53,14 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
     if (feed.data?.cases) setCases(feed.data.cases);
   }, [feed.data?.cases]);
 
+  const claimable = useMemo(
+    () => cases.filter((c) => c.statusCode === 'p1_open_pool'),
+    [cases],
+  );
+
   useEffect(() => {
-    if (!feed.loading) onAvailableCount?.(cases.length);
-  }, [cases.length, feed.loading, onAvailableCount]);
+    if (!feed.loading) onAvailableCount?.(claimable.length);
+  }, [claimable.length, feed.loading, onAvailableCount]);
 
   const refresh = (): void => {
     setSpin(true);
@@ -62,11 +78,14 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
     [],
   );
 
-  const toggle = (id: string): void =>
+  const toggle = (id: string): void => {
+    const row = cases.find((c) => c.id === id);
+    if (!row || row.statusCode !== 'p1_open_pool') return;
     setSelected((sel) => (sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id]));
+  };
 
   const toggleAll = (): void => {
-    const ids = filtered.map((c) => c.id);
+    const ids = filtered.filter((c) => c.statusCode === 'p1_open_pool').map((c) => c.id);
     setSelected((sel) => (ids.length > 0 && ids.every((id) => sel.includes(id)) ? [] : ids));
   };
 
@@ -121,27 +140,34 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
     setSelected([]);
     feed.reload();
     if (ok > 0) {
-      pushToast('Claimed', `${ok} deal${ok !== 1 ? 's' : ''} assigned to you — Phase 1 restarted`);
+      pushToast(
+        'Claim requested',
+        `${ok} deal${ok !== 1 ? 's' : ''} awaiting Customer Service approval (1 BD auto)`,
+      );
     }
     if (errors.length > 0) {
-      pushToast('Some claims failed', errors[0] ?? 'Could not claim');
+      pushToast('Some requests failed', errors[0] ?? 'Could not request claim');
     }
   };
 
+  const selectableFiltered = filtered.filter((c) => c.statusCode === 'p1_open_pool');
   const allChecked =
-    filtered.length > 0 && filtered.every((c) => selected.includes(c.id));
+    selectableFiltered.length > 0 &&
+    selectableFiltered.every((c) => selected.includes(c.id));
   const stop = (e: MouseEvent): void => e.stopPropagation();
   const closeX = <Icon name="close" size={15} strokeWidth={2.4} />;
 
   const poolGallons = useMemo(
-    () => cases.reduce((sum, c) => sum + (c.gallons90d ?? 0), 0),
-    [cases],
+    () => claimable.reduce((sum, c) => sum + (c.gallons90d ?? 0), 0),
+    [claimable],
   );
   const avgQuietDays = useMemo(() => {
-    const days = cases.map((c) => c.daysInactive).filter((d): d is number => typeof d === 'number' && d >= 0);
+    const days = claimable
+      .map((c) => c.daysInactive)
+      .filter((d): d is number => typeof d === 'number' && d >= 0);
     if (days.length === 0) return null;
     return Math.round(days.reduce((a, b) => a + b, 0) / days.length);
-  }, [cases]);
+  }, [claimable]);
 
   return (
     <>
@@ -149,7 +175,7 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
         <div style={s('margin-bottom:14px')}>
           <RetentionHero
             title="Open Pool"
-            sub="Claim a deal instantly. Needs 10+ days inactive · max 3 agents · 3 BD per assignment."
+            sub="Request a claim — Customer Service approves (1 BD auto). Needs 10+ days inactive · max 3 agents."
             actions={
               <>
                 <button
@@ -168,7 +194,7 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
                   )}
                 >
                   <Icon name="assign" size={15} strokeWidth={2.2} />
-                  Claim{selected.length ? ` (${selected.length})` : ''}
+                  Request claim{selected.length ? ` (${selected.length})` : ''}
                 </button>
                 <button
                   type="button"
@@ -188,9 +214,9 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
               </>
             }
           >
-            {!feed.loading || cases.length > 0 ? (
+            {!feed.loading || claimable.length > 0 ? (
               <RetentionPoolMetrics
-                available={cases.length}
+                available={claimable.length}
                 selected={selected.length}
                 gallons={poolGallons}
                 avgQuietDays={avgQuietDays}
@@ -235,19 +261,44 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
                 <span>Owner</span>
               </div>
               {filtered.map((c, i) => {
+                const pending = isPendingSelf(c, selfId);
+                const claimableRow = c.statusCode === 'p1_open_pool';
                 const on = selected.includes(c.id);
                 return (
                   <div
                     key={c.id}
                     onClick={() => toggle(c.id)}
-                    style={s(`${poolGrid};padding:11px 15px;border-top:1px solid var(--border2);font-size:13px;cursor:pointer;background:${on ? 'rgba(var(--accent-rgb),.10)' : 'transparent'};border-left:3px solid ${on ? 'var(--accent)' : 'transparent'}`)}
+                    style={s(
+                      `${poolGrid};padding:11px 15px;border-top:1px solid var(--border2);font-size:13px;cursor:${claimableRow ? 'pointer' : 'default'};background:${pending ? 'rgba(var(--warn-rgb,245,158,11),.08)' : on ? 'rgba(var(--accent-rgb),.10)' : 'transparent'};border-left:3px solid ${pending ? 'var(--warn)' : on ? 'var(--accent)' : 'transparent'};opacity:${claimableRow || pending ? '1' : '.85'}`,
+                    )}
                   >
                     <span style={s('display:flex;align-items:center;justify-content:center')}>
-                      <input type="checkbox" checked={on} onClick={stop} onChange={() => toggle(c.id)} style={s('width:15px;height:15px;cursor:pointer;accent-color:var(--accent)')} />
+                      {claimableRow ? (
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onClick={stop}
+                          onChange={() => toggle(c.id)}
+                          style={s('width:15px;height:15px;cursor:pointer;accent-color:var(--accent)')}
+                        />
+                      ) : (
+                        <span style={s('width:15px;height:15px')} />
+                      )}
                     </span>
                     <span style={s("font-family:'JetBrains Mono',monospace;color:var(--muted);font-size:11px")}>{i + 1}</span>
                     <span style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px")}>{c.carrierId}</span>
-                    <span style={s('font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{c.companyName || '—'}</span>
+                    <span style={s('font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
+                      {c.companyName || '—'}
+                      {pending ? (
+                        <span
+                          style={s(
+                            'margin-left:8px;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 40%,var(--border));border-radius:999px;padding:2px 7px;vertical-align:middle',
+                          )}
+                        >
+                          Pending CS
+                        </span>
+                      ) : null}
+                    </span>
                     <span style={s('font-size:12px;color:var(--warn)')}>{quietCaption(c)}</span>
                     <span style={s('font-size:12px;color:var(--muted)')}>
                       {c.lastTransactionAt
@@ -263,7 +314,7 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
                     </span>
                     <span style={s('font-size:12px;font-weight:700')}>{c.assignmentCount}/3</span>
                     <span style={s('font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
-                      {c.agentName || '—'}
+                      {pending ? 'Awaiting CS' : c.agentName || '—'}
                     </span>
                   </div>
                 );
@@ -294,8 +345,10 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
                 <Icon name="assign" size={19} />
               </div>
               <div style={s('flex:1')}>
-                <div style={s('font-size:16px;font-weight:700')}>Claim {selected.length} deal(s)</div>
-                <div style={s('font-size:12px;color:var(--muted);margin-top:2px')}>Assign selected Open Pool deals to yourself</div>
+                <div style={s('font-size:16px;font-weight:700')}>Request claim · {selected.length}</div>
+                <div style={s('font-size:12px;color:var(--muted);margin-top:2px')}>
+                  Customer Service reviews — 1 BD auto-approve if no action
+                </div>
               </div>
               <button
                 type="button"
@@ -317,8 +370,8 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
                   style={s('width:16px;height:16px;margin-top:1px;accent-color:var(--accent);cursor:pointer')}
                 />
                 <span style={s('font-size:13px;color:var(--text2);line-height:1.5')}>
-                  I confirm claiming <strong style={s('color:var(--accent)')}>{selected.length}</strong> deal(s).
-                  Phase 1 restarts under my ownership (counts toward the 3-agent Open Pool limit).
+                  I request claim on <strong style={s('color:var(--accent)')}>{selected.length}</strong> deal(s).
+                  After CS approval, Phase 1 restarts under my ownership (counts toward the 3-agent limit).
                 </span>
               </label>
             </div>
@@ -342,7 +395,7 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
                     : 'flex:1;height:42px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:13px;cursor:not-allowed',
                 )}
               >
-                {submitting ? 'Claiming…' : 'Submit claim'}
+                {submitting ? 'Requesting…' : 'Submit request'}
               </button>
             </div>
           </div>

@@ -82,7 +82,12 @@ export const DEFAULT_PROFILE_SEED: ProfileDefaultSeed[] = [
   { profileName: 'Sales Assistant', allowedMytrions: ['sales'], homeMytrion: 'sales', allDepartmentAccess: false },
   { profileName: 'Referral Standard Plus', allowedMytrions: ['sales'], homeMytrion: 'sales', allDepartmentAccess: false },
   { profileName: 'Standard Plus', allowedMytrions: ['sales', 'billing'], homeMytrion: 'sales', allDepartmentAccess: false },
-  { profileName: 'Customer Retention', allowedMytrions: [], homeMytrion: null, allDepartmentAccess: false },
+  {
+    profileName: 'Customer Retention',
+    allowedMytrions: ['customer-service'],
+    homeMytrion: 'customer-service',
+    allDepartmentAccess: false,
+  },
   { profileName: 'Standard', allowedMytrions: ['customer-service'], homeMytrion: 'customer-service', allDepartmentAccess: false },
 ];
 

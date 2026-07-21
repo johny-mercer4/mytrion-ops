@@ -6,8 +6,6 @@
  * Boot splash removed — tabs own their own skeletons (avoids double loaders on Home).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RingCentralPhone } from '@/components/ringcentral/RingCentralPhone';
-
 import { s } from './dc';
 import { Icon } from './icons';
 import { SalesContext, type ClientRecord, type DetailVM, type SalesCtx } from './ctx';
@@ -190,8 +188,6 @@ export function SalesRedesign() {
         className={`ss-root ${theme === 'light' ? 'light' : ''}`}
         style={s('height:100vh;display:flex;flex-direction:row;background:radial-gradient(1200px 500px at 78% -8%, rgba(var(--accent-rgb),.10), transparent 60%), radial-gradient(900px 480px at 0% 108%, rgba(var(--violet-rgb),.08), transparent 55%), var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;font-size:14px;overflow:hidden;position:relative')}
       >
-        <RingCentralPhone />
-
         {/* SIDEBAR */}
         <aside style={s(`flex-shrink:0;width:${navCollapsed ? '68px' : '238px'};transition:width .18s cubic-bezier(.2,0,0,1);display:flex;flex-direction:column;background:color-mix(in srgb, var(--bg) 84%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-right:1px solid var(--border);position:relative;z-index:30`)}>
           <div style={s(`display:flex;align-items:center;gap:11px;padding:18px ${navCollapsed ? '0' : '18px'} 16px;${navCollapsed ? 'justify-content:center' : ''}`)}>

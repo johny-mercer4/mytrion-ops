@@ -644,21 +644,77 @@ export interface TouchpointMap {
     params: { caseId: string };
     result: { case: RetentionCaseRow; pendingApproval: boolean };
   };
-  'retention.pool_claims_pending': {
-    params: { limit?: number };
-    result: RetentionCasesListResult;
-  };
-  'retention.pool_claim_approve': {
-    params: { caseId: string };
-    result: { case: RetentionCaseRow };
-  };
-  'retention.pool_claim_decline': {
-    params: { caseId: string };
-    result: { case: RetentionCaseRow };
-  };
   'retention.lookups': {
     params: { phase_code?: string };
     result: RetentionLookupsResult;
+  };
+  'retention.cs_claims_pending': {
+    params: { limit?: number };
+    result: RetentionCasesListResult;
+  };
+  'retention.cs_claims_badge': {
+    params: Record<string, never>;
+    result: { count: number };
+  };
+  'retention.cs_claim_approve': {
+    params: { caseId: string };
+    result: { case: RetentionCaseRow };
+  };
+  'retention.cs_claim_decline': {
+    params: { caseId: string };
+    result: { case: RetentionCaseRow };
+  };
+  'retention.cs_cases': {
+    params: { filter?: 'new' | 'working' | 'closed' | 'all_open'; limit?: number };
+    result: RetentionCasesListResult;
+  };
+  'retention.cs_case_get': {
+    params: { caseId: string };
+    result: RetentionCaseDetailResult;
+  };
+  'retention.cs_case_outcome': {
+    params: {
+      caseId: string;
+      outcome:
+        | 'claim'
+        | 'start_working'
+        | 'saved'
+        | 'refused'
+        | 'out_of_business'
+        | 'no_response'
+        | 'escalate_citi';
+      notes?: string;
+    };
+    result: { case: RetentionCaseRow };
+  };
+  'retention.cs_log_attempt': {
+    params: {
+      caseId: string;
+      channel: RetentionChannel;
+      notes?: string;
+      evidence_url?: string;
+    };
+    result: { case: RetentionCaseRow };
+  };
+  'retention.cs_citi_list': {
+    params: { limit?: number; status_code?: string };
+    result: RetentionCasesListResult;
+  };
+  'retention.cs_citi_confirm': {
+    params: { caseIds: string[] };
+    result: { updated: RetentionCaseRow[]; skipped: number };
+  };
+  'retention.cs_citi_export': {
+    params: { caseIds: string[] };
+    result: {
+      csv: string;
+      exported: number;
+      zohoFailures: Array<{ caseId: string; error: string }>;
+    };
+  };
+  'retention.cs_citi_mark_sent': {
+    params: { caseIds: string[] };
+    result: { closed: RetentionCaseRow[]; skipped: number };
   };
 
   // ---- Finance (ServerCRM) ----

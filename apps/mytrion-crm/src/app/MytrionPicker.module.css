@@ -9,47 +9,21 @@
   z-index: 1;
 }
 
-/* Animated Ambient Background */
 .bgAmbient {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   overflow: hidden;
   z-index: -1;
   pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 50% at 50% -20%, color-mix(in srgb, var(--accent) 8%, transparent), transparent),
+    radial-gradient(ellipse 50% 40% at 80% 120%, color-mix(in srgb, var(--orange) 6%, transparent), transparent);
 }
 
-.bgOrb1, .bgOrb2 {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(120px);
-  opacity: 0.4;
-  animation: floatOrb 20s infinite ease-in-out alternate;
-}
-
-.bgOrb1 {
-  width: 600px;
-  height: 600px;
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 45%, transparent), transparent 70%);
-  top: -150px;
-  left: -150px;
-}
-
-.bgOrb2 {
-  width: 500px;
-  height: 500px;
-  background: radial-gradient(circle, color-mix(in srgb, var(--purple, #8b5cf6) 40%, transparent), transparent 70%);
-  bottom: -100px;
-  right: -100px;
-  animation-delay: -10s;
-}
-
-@keyframes floatOrb {
-  0% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(50px, 30px) scale(1.1); }
-  100% { transform: translate(-30px, -50px) scale(0.9); }
+:global([data-theme="light"]) .bgAmbient {
+  background:
+    radial-gradient(ellipse 60% 50% at 50% -20%, color-mix(in srgb, var(--accent) 5%, transparent), transparent),
+    radial-gradient(ellipse 50% 40% at 80% 120%, color-mix(in srgb, var(--orange) 4%, transparent), transparent);
 }
 
 .scroll {
@@ -63,79 +37,53 @@
 .content {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 36px 40px 56px;
-  animation: fadeUpContent 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-@keyframes fadeUpContent {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+  padding: var(--space-10) var(--space-6) var(--space-12);
 }
 
 .hero {
-  margin-bottom: 30px;
+  margin-bottom: var(--space-10);
+  text-align: center;
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .eyebrow {
-  font-family: var(--font-head);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.11em;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--accent);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-3);
 }
 
 .title {
-  font-family: var(--font-head);
-  font-size: 36px;
-  font-weight: 800;
-  margin: 0 0 12px;
+  font-family: var(--font-heading);
+  font-size: var(--text-3xl);
+  font-weight: var(--fw-bold);
+  margin: 0 0 var(--space-4);
   letter-spacing: -0.02em;
-  background: linear-gradient(135deg, var(--text-primary) 30%, color-mix(in srgb, var(--text-secondary) 80%, var(--text-primary)));
+  line-height: var(--lh-3xl);
+  color: var(--text-primary);
+}
+
+.title span {
+  background: var(--fuel);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
-  line-height: 1.2;
 }
 
 .lede {
-  font-size: 15px;
+  font-family: var(--font-body);
+  font-size: var(--text-md);
   color: var(--text-secondary);
-  margin: 0 0 20px;
-  max-width: 640px;
-  line-height: 1.6;
-}
-
-.tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.accessTag {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 6px 12px;
-  border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
-  text-transform: capitalize;
-  backdrop-filter: blur(8px);
-}
-
-.mono {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  padding: 6px 12px;
-  border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--surface-alt) 60%, transparent);
-  color: var(--text-muted);
-  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-  backdrop-filter: blur(8px);
+  margin: 0;
+  line-height: var(--lh-md);
+  max-width: 580px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .grid {
@@ -143,8 +91,12 @@
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-5);
+}
+
+.gridItem {
+  display: contents;
 }
 
 .card {
@@ -152,54 +104,38 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 16px;
-  padding: 24px;
-  background: color-mix(in srgb, var(--surface) 60%, transparent);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  gap: var(--space-4);
+  padding: var(--space-6);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: 0 4px 20px -2px color-mix(in srgb, var(--bg-primary) 50%, transparent);
   text-decoration: none;
   color: inherit;
-  transition: all 300ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    background var(--dur-base) var(--ease-standard),
+    border-color var(--dur-base) var(--ease-standard),
+    box-shadow var(--dur-base) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-out);
   overflow: hidden;
-  
-  opacity: 0;
-  transform: translateY(15px);
-  animation: cardFadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-@keyframes cardFadeUp {
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, transparent 100%);
-  z-index: 0;
 }
 
 .card:hover,
 .card:focus-visible {
-  transform: translateY(-4px) scale(1.02);
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
-  box-shadow: 0 12px 30px -4px color-mix(in srgb, var(--accent) 25%, transparent),
-              0 4px 10px -2px color-mix(in srgb, var(--bg-primary) 40%, transparent);
+  background: var(--surface-alt);
+  border-color: color-mix(in srgb, var(--card-hue, var(--accent)) 40%, transparent);
+  box-shadow:
+    0 12px 32px -8px color-mix(in srgb, var(--card-hue, var(--accent)) 18%, rgba(0, 0, 0, 0.15)),
+    0 4px 12px -4px rgba(0, 0, 0, 0.1);
+  transform: translateY(-4px);
   text-decoration: none;
   color: inherit;
-  background: color-mix(in srgb, var(--surface) 80%, transparent);
 }
 
-/* Specific dynamic hover border override injected via inline style in TSX */
-.card:hover.dynamicHover {
-  border-color: var(--card-hue);
-  box-shadow: 0 12px 30px -4px color-mix(in srgb, var(--card-hue) 30%, transparent),
-              0 4px 10px -2px color-mix(in srgb, var(--bg-primary) 40%, transparent);
+:global([data-theme="light"]) .card:hover,
+:global([data-theme="light"]) .card:focus-visible {
+  box-shadow:
+    0 12px 32px -8px color-mix(in srgb, var(--card-hue, var(--accent)) 15%, rgba(20, 30, 50, 0.1)),
+    0 4px 12px -4px rgba(20, 30, 50, 0.06);
 }
 
 .glyph {
@@ -208,16 +144,19 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
+  width: 56px;
+  height: 56px;
   border-radius: var(--radius-md);
   flex: none;
-  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    transform var(--dur-base) var(--ease-emphasized),
+    box-shadow var(--dur-base) var(--ease-standard);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--card-hue, var(--accent)) 20%, transparent);
 }
 
 .card:hover .glyph,
 .card:focus-visible .glyph {
-  transform: scale(1.08);
+  transform: scale(1.08) rotate(-3deg);
 }
 
 .cardHead {
@@ -226,58 +165,89 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-3);
   width: 100%;
 }
 
 .cardTitle {
   position: relative;
   z-index: 1;
-  font-family: var(--font-head);
-  font-size: 17px;
-  font-weight: 700;
+  font-family: var(--font-heading);
+  font-size: var(--text-xl);
+  font-weight: var(--fw-semibold);
   letter-spacing: 0.01em;
-  line-height: 1.2;
+  line-height: var(--lh-xl);
   text-decoration: none;
-  transition: color 200ms;
+  color: var(--text-secondary);
+  transition: color var(--dur-fast) var(--ease-standard);
 }
 
 .card:hover .cardTitle,
 .card:focus-visible .cardTitle {
-  text-decoration: none;
   color: var(--text-primary);
+}
+
+.cardTag {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--card-hue, var(--accent));
+  background: color-mix(in srgb, var(--card-hue, var(--accent)) 12%, transparent);
+  padding: var(--space-0_5) var(--space-2);
+  border-radius: var(--radius-full);
+  align-self: flex-start;
+  margin-top: auto;
 }
 
 .cardSoon {
   cursor: default;
-  opacity: 0.85;
+  opacity: 0.55;
+  filter: grayscale(30%);
 }
 
 .cardSoon:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--border) 60%, transparent);
-  box-shadow: 0 6px 15px -2px color-mix(in srgb, var(--bg-primary) 30%, transparent);
+  border-color: var(--border);
+  box-shadow: none;
+  background: var(--surface);
+  transform: none;
+}
+
+.cardSoon:hover .glyph {
+  transform: scale(1.03);
 }
 
 .soonBadge {
   position: relative;
   z-index: 1;
   flex: none;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.07em;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  padding: 5px 10px;
-  border-radius: 999px;
+  padding: var(--space-0_5) var(--space-2);
+  border-radius: var(--radius-full);
   color: #fff;
   white-space: nowrap;
   background: linear-gradient(
     135deg,
-    color-mix(in srgb, var(--soon-hue, var(--orange)) 92%, #fff),
-    color-mix(in srgb, var(--soon-hue, var(--orange)) 55%, var(--accent))
+    color-mix(in srgb, var(--soon-hue, var(--orange)) 80%, transparent),
+    color-mix(in srgb, var(--soon-hue, var(--orange)) 40%, transparent)
   );
-  border: 1px solid color-mix(in srgb, var(--soon-hue, var(--orange)) 45%, transparent);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--soon-hue, var(--orange)) 18%, transparent),
-    0 4px 14px -2px color-mix(in srgb, var(--soon-hue, var(--orange)) 45%, transparent);
+  border: 1px solid color-mix(in srgb, var(--soon-hue, var(--orange)) 50%, transparent);
+  box-shadow: 0 4px 14px -2px color-mix(in srgb, var(--soon-hue, var(--orange)) 40%, transparent);
+}
+
+:global([data-theme="light"]) .soonBadge {
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .glyph,
+  .cardTitle {
+    transition-duration: 0.01ms !important;
+  }
 }

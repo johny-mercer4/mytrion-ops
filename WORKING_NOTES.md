@@ -4095,6 +4095,27 @@ owner resolution rendered as silent zeros (no error UI). Backend COQL on
   goal bar + streak strip.
 - Route logs owner + totals at debug.
 
+## 2026-07-21 — Retention: disable LLM weekly-scan (Sales first)
+
+- Parked `automation.retention.weekly-scan` in `DISABLED_JOB_QUEUES`: no cron, no Admin
+  trigger, no automation worker. Boot unschedules any leftover pg-boss cron.
+- Keep deterministic Sales jobs: `case-sync` (hourly) + `deadline-sweep` (15m).
+- Re-enable LLM weekly scan only after Sales Mytrion retention is solid, then CS Mytrion.
+
+## 2026-07-21 — RingCentral: suppress false “session ended” toast
+
+- Embeddable emits `loggedIn:false` while restoring a persisted session after refresh.
+- Only emit `logout` when prior state was signed-in; reset login cache on adapter teardown;
+  debounce the toast (~2.5s) so a quick re-login cancels it.
+
+## 2026-07-21 — RingCentral: Sales + CS only, pointer cursor
+
+- Softphone moved to `WorkerLayout`, gated to `/main/salesmytrion` + `/main/csmytrion`
+  (torn down on Billing/Finance/Admin/picker).
+- Hover cursor: host `#rc-widget-adapter-frame { cursor: pointer }` + Embeddable
+  `stylesUri` as a `data:text/css` URI (`ringcentralEmbedStyles.ts`) — localhost file
+  URLs are blocked by Chrome Private Network Access from `apps.ringcentral.com`.
+
 ## 2026-07-21 — Unify Mytrion entry loader (no double splash)
 
 Double loaders on enter: MytrionGuard Suspense + per-shell timed boot overlays

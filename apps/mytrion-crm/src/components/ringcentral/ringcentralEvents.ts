@@ -181,7 +181,13 @@ function onMessage(e: MessageEvent): void {
     case 'rc-login-status-notify': {
       const isIn = Boolean(data.loggedIn);
       if (loginState === isIn) return; // ignore repeats
+
+      // Boot/restore often emits loggedIn:false before the persisted session comes back.
+      // Only surface logout when we previously knew the agent was signed in.
+      const prev = loginState;
       loginState = isIn;
+      if (!isIn && prev !== true) return;
+
       emit({
         kind: isIn ? 'login' : 'logout',
         at: Date.now(),
@@ -224,4 +230,12 @@ export function subscribeRingCentral(listener: Listener): () => void {
 /** Current known sign-in state (null until the widget first reports it). */
 export function ringCentralLoginState(): boolean | null {
   return loginState;
+}
+
+/**
+ * Clear cached login state when the Embeddable iframe is torn down so the next mount
+ * does not treat the boot-time loggedIn:false as a real session drop.
+ */
+export function resetRingCentralLoginState(): void {
+  loginState = null;
 }
