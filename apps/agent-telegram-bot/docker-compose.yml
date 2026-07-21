@@ -29,6 +29,28 @@ services:
         fi
       '
 
+  # Access poller — every 10 min, rewrite access.json from the carrier's ACTIVE mini-app
+  # registrations (scripts/sync_octane_access.py). A revoke in the mini-app drops the user
+  # here on the next tick; hamroh hot-reloads access.json, so no restart is needed. RBAC on
+  # the backend is the real gate — this just keeps the outer allowlist tidy. Mounts the repo
+  # so it runs the shipped script and writes the same ./access.json hamroh reads.
+  hamroh-access-sync:
+    image: python:3.11-slim
+    restart: on-failure
+    env_file: .env
+    environment:
+      HAMROH_ACCESS_PATH: /work/access.json
+    volumes:
+      - ./:/work
+    working_dir: /work
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      hamroh-init:
+        condition: service_completed_successfully
+    command: >
+      sh -c 'while true; do python scripts/sync_octane_access.py || echo "[access-sync] sync failed, retrying next tick"; sleep 600; done'
+
   hamroh:
     build: .
     restart: on-failure

@@ -7,7 +7,7 @@ import json
 from pydantic import BaseModel, Field
 
 from ..base import BaseTool, ToolResult
-from ._client import post_backend, sender_spoke_recently
+from ._client import err, ok, post_backend, sender_spoke_recently
 
 
 class OctaneFundsArgs(BaseModel):
@@ -25,8 +25,8 @@ class OctaneFundsTool(BaseTool[OctaneFundsArgs]):
 
     async def run(self, args: OctaneFundsArgs) -> ToolResult:
         if not await sender_spoke_recently(self.ctx.database, args.chat_id, args.telegram_user_id):
-            return ToolResult.error("refused: that user has not sent a recent message in this chat")
+            return err("refused: that user has not sent a recent message in this chat")
         status, data = await post_backend("/support-bot/funds", {"telegramUserId": str(args.telegram_user_id)})
         if status != 200:
-            return ToolResult.error(f"backend refused ({status}): {data.get('message', '')}")
-        return ToolResult.ok(json.dumps(data, ensure_ascii=False))
+            return err(f"backend refused ({status}): {data.get('message', '')}")
+        return ok(json.dumps(data, ensure_ascii=False))

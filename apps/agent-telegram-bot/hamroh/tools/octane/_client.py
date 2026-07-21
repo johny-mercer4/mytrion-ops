@@ -9,12 +9,24 @@ src/routes/v1/supportBot.routes.ts — the RBAC gate lives THERE, not here).
 from __future__ import annotations
 
 import os
-import time
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
 
-RECENT_WINDOW_SECONDS = 300
+from ...db.database import Database
+from ...db.messages import RecentMessagesQuery, fetch_recent_messages
+from ..base import ToolResult
+
+RECENT_WINDOW = timedelta(minutes=5)
+
+
+def ok(content: str) -> ToolResult:
+    return ToolResult(content=content)
+
+
+def err(content: str) -> ToolResult:
+    return ToolResult(content=content, is_error=True)
 
 
 def octane_env() -> tuple[str, str, str] | None:
@@ -33,7 +45,11 @@ async def post_backend(path: str, payload: dict[str, Any]) -> tuple[int, dict[st
     base, key, carrier = cfg
     body = {"carrierId": carrier, **payload}
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(f"{base}/v1{path}", headers={"Authorization": f"Bearer {key}"}, json=body)
+        resp = await client.post(
+            f"{base}/v1{path}",
+            headers={"Authorization": f"Bearer {key}"},
+            json=body,
+        )
     try:
         data = resp.json()
     except Exception:  # noqa: BLE001 - body may not be JSON
@@ -41,12 +57,25 @@ async def post_backend(path: str, payload: dict[str, Any]) -> tuple[int, dict[st
     return resp.status_code, data
 
 
-async def sender_spoke_recently(database: Any, chat_id: int, user_id: int) -> bool:
-    """The claimed asker must have sent a recent message in this chat — the model cannot
-    point a tool at someone who never spoke."""
-    cutoff = time.time() - RECENT_WINDOW_SECONDS
-    rows = await database.get_recent_messages(chat_id=chat_id, limit=50)
+def _recent_enough(raw_ts: object) -> bool:
+    try:
+        ts = datetime.fromisoformat(str(raw_ts))
+    except ValueError:
+        return False
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - ts <= RECENT_WINDOW
+
+
+async def sender_spoke_recently(db: Database | None, chat_id: int, user_id: int) -> bool:
+    """The claimed asker must have sent a recent INBOUND message in this chat — the model
+    cannot point a tool at someone who never spoke."""
+    if db is None:
+        return False
+    rows = await fetch_recent_messages(
+        db, RecentMessagesQuery(limit=50, include_unprocessed=True, chat_id=chat_id)
+    )
     return any(
-        getattr(m, "sender_id", None) == user_id and getattr(m, "timestamp", 0) >= cutoff
-        for m in rows
+        r.get("direction") == "in" and r.get("user_id") == user_id and _recent_enough(r.get("timestamp"))
+        for r in rows
     )

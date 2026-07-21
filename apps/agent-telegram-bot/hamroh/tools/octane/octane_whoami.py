@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from ..base import BaseTool, ToolResult
-from ._client import post_backend, sender_spoke_recently
+from ._client import err, ok, post_backend, sender_spoke_recently
 
 
 class OctaneWhoamiArgs(BaseModel):
@@ -23,8 +23,8 @@ class OctaneWhoamiTool(BaseTool[OctaneWhoamiArgs]):
 
     async def run(self, args: OctaneWhoamiArgs) -> ToolResult:
         if not await sender_spoke_recently(self.ctx.database, args.chat_id, args.telegram_user_id):
-            return ToolResult.error("refused: that user has not sent a recent message in this chat")
+            return err("refused: that user has not sent a recent message in this chat")
         status, data = await post_backend("/support-bot/whoami", {"telegramUserId": str(args.telegram_user_id)})
         if status != 200:
-            return ToolResult.error(f"not registered or refused ({status}): {data.get('message', '')}")
-        return ToolResult.ok(f"role={data.get('role')} name={data.get('name')} company={data.get('companyName')}")
+            return err(f"not registered or refused ({status}): {data.get('message', '')}")
+        return ok(f"role={data.get('role')} name={data.get('name')} company={data.get('companyName')}")

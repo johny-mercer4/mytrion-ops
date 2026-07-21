@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from ..base import BaseTool, ToolResult
-from ._client import post_backend, sender_spoke_recently
+from ._client import err, ok, post_backend, sender_spoke_recently
 
 
 class OctaneOverrideArgs(BaseModel):
@@ -24,8 +24,8 @@ class OctaneOverrideTool(BaseTool[OctaneOverrideArgs]):
 
     async def run(self, args: OctaneOverrideArgs) -> ToolResult:
         if not await sender_spoke_recently(self.ctx.database, args.chat_id, args.telegram_user_id):
-            return ToolResult.error("refused: that user has not sent a recent message in this chat")
+            return err("refused: that user has not sent a recent message in this chat")
         status, data = await post_backend("/support-bot/override", {"telegramUserId": str(args.telegram_user_id)})
         if status != 200:
-            return ToolResult.error(f"backend refused ({status}): {data.get('message', '')}")
-        return ToolResult.ok(f"Override active on card •••• {data.get('last6', '?')} for ~{data.get('minutes', 30)} minutes.")
+            return err(f"backend refused ({status}): {data.get('message', '')}")
+        return ok(f"Override active on card •••• {data.get('last6', '?')} for ~{data.get('minutes', 30)} minutes.")
