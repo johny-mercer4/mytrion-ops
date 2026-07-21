@@ -9,7 +9,8 @@
  * `ticketLiveBus` to refresh their own lists.
  */
 import { useEffect, useRef } from 'react';
-import { useLoad, loadInbox, loadTickets } from './live';
+import { useLoad, loadInbox, loadTickets, invalidateInboxCache, type TicketVM } from './live';
+import { TICKETS_ENABLED } from './salesData';
 import { useServerCrmSocket } from './useServerCrmSocket';
 import { useInboxRead, countUnread } from './inboxRead';
 import { publishInboxLive, subscribeInboxReload } from './inboxLiveBus';
@@ -19,6 +20,8 @@ import { getOpenTicketId, publishTicketLive } from './ticketLiveBus';
 // Suffix-normalized: the WS ownerId and the session id may differ by org prefix (zohoIds.ts).
 import { zohoIdsMatch } from './zohoIds';
 
+const NO_TICKETS: { tickets: TicketVM[]; scoped: boolean } = { tickets: [], scoped: true };
+
 export function useSidebarBadges(
   currentUserId: string,
   pushToast?: (title: string, msg: string) => void,
@@ -26,7 +29,13 @@ export function useSidebarBadges(
   const readSet = useInboxRead();
   const ticketCounts = useTicketUnread();
   const inboxLoad = useLoad(loadInbox, [currentUserId]);
-  const ticketLoad = useLoad(loadTickets, [currentUserId]);
+  // While Tickets is parked, don't page the whole creator-scoped Desk set (up to 20 requests)
+  // for a badge Shell force-hides anyway. Empty ticketIds keeps the WS handlers inert (the
+  // `!ids.includes(tid)` early return below) and the subscribe frame valid.
+  const ticketLoad = useLoad(
+    () => (TICKETS_ENABLED ? loadTickets() : Promise.resolve(NO_TICKETS)),
+    [currentUserId],
+  );
 
   const tickets = ticketLoad.data?.tickets ?? [];
   const ticketIds = tickets.map((t) => String(t.id));
@@ -62,6 +71,9 @@ export function useSidebarBadges(
         const eventOwner = String(m.ownerId ?? '').trim();
         const self = userIdRef.current.trim();
         if (zohoIdsMatch(eventOwner, self)) {
+          // Drop the shared 30s cache first so this reload (and the bus-triggered Home/Inbox
+          // reloads that join it) fetch the NEW message, all collapsing into one POST.
+          invalidateInboxCache();
           inboxReloadRef.current();
           const subject = String(m.subject ?? m.name ?? 'New notification').trim() || 'New notification';
           // Fixed title so subject text like "Error…" never flips the toast to an error tone.

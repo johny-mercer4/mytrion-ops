@@ -12,7 +12,7 @@ import { s } from './dc';
 import { Icon } from './icons';
 import { SalesContext, type ClientRecord, type DetailVM, type SalesCtx } from './ctx';
 import { ClientModal, type ClientModalTab } from './ClientModal';
-import { NAV, NAV_GROUPS, NAVLABEL, timeParts } from './salesData';
+import { NAV, NAV_GROUPS, NAVLABEL, TICKETS_ENABLED, timeParts } from './salesData';
 import { useSessionUser } from './sessionUser';
 import { useSidebarBadges } from './sidebarBadges';
 import { useRetentionRealtime } from './useRetentionRealtime';
@@ -118,11 +118,10 @@ export function SalesRedesign() {
   // Wayfinding: the top bar leads with the label the user actually clicked, then the author's
   // descriptive title as a muted secondary — so "Data Center" no longer silently becomes "Pipeline Hub".
   const activeLabel = NAV.find((n) => n.id === section)?.label ?? '';
-  const ticketsComingSoon = NAV.some((n) => n.id === 'tickets' && n.comingSoon === true);
   const badgeCounts: Record<string, number | undefined> = {
     inbox: liveBadges.inbox || undefined,
     // Hide the unread badge while Tickets is parked as Coming soon.
-    tickets: ticketsComingSoon ? undefined : liveBadges.tickets || undefined,
+    tickets: TICKETS_ENABLED ? liveBadges.tickets || undefined : undefined,
   };
 
   const go = useCallback((next: string) => {
@@ -135,7 +134,7 @@ export function SalesRedesign() {
   }, []);
   // Jump to Tickets and flag the ticket the tab should auto-open (e.g. after Create).
   const openTicket = useCallback((ticketId: string) => {
-    if (NAV.some((n) => n.id === 'tickets' && n.comingSoon === true)) {
+    if (!TICKETS_ENABLED) {
       pushToast('Tickets', 'Coming soon — use Data Center for leads and deals.');
       return;
     }

@@ -128,20 +128,42 @@ function StreakStat({
   value,
   label,
   tone,
+  loading,
 }: {
   emoji?: string;
   icon?: IconName;
   value: number | string;
   label: string;
   tone: string;
+  loading?: boolean;
 }) {
   return (
-    <div className="ss-card-h" style={s('display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-sm)')}>
-      <div style={s(`width:38px;height:38px;flex-shrink:0;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-size:19px;background:color-mix(in srgb,${tone} 15%,transparent);color:${tone}`)}>
+    <div
+      className="ss-card-h"
+      aria-busy={loading || undefined}
+      style={s(
+        'display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-sm)',
+      )}
+    >
+      <div
+        style={s(
+          `width:38px;height:38px;flex-shrink:0;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-size:19px;background:color-mix(in srgb,${tone} 15%,transparent);color:${tone}`,
+        )}
+      >
         {emoji ?? (icon ? <Icon name={icon} size={18} /> : null)}
       </div>
-      <div style={s('min-width:0')}>
-        <div style={s("font-family:'JetBrains Mono',monospace;font-weight:500;font-size:22px;line-height:1;color:var(--text)")}>{value}</div>
+      <div style={s('min-width:0;flex:1')}>
+        {loading ? (
+          <div className="ss-skel" style={s('width:42px;height:22px;border-radius:6px')} />
+        ) : (
+          <div
+            style={s(
+              "font-family:'JetBrains Mono',monospace;font-weight:500;font-size:22px;line-height:1;color:var(--text)",
+            )}
+          >
+            {value}
+          </div>
+        )}
         <div style={s('font-size:11px;color:var(--muted);margin-top:5px')}>{label}</div>
       </div>
     </div>
@@ -178,9 +200,12 @@ export function HomeTab() {
   const snapRefreshPending = useRef(false);
 
   const act = useLoad(
-    () => loadActivity(activityRange as 'today' | 'week' | 'month'),
+    (fresh) => loadActivity(activityRange as 'today' | 'week' | 'month', fresh),
     [activityRange],
   );
+  // When the visible range IS today, the range load is the daily load — one source, no drift
+  // (and no second identical activity.agent POST while the Today range is selected).
+  const daily = activityRange === 'today' ? act : dailyAct;
 
   useEffect(() => {
     const clock = setInterval(() => setTick((t) => t + 1), 30000);
@@ -226,7 +251,10 @@ export function HomeTab() {
   const refreshSnapshot = (): void => {
     snapRefreshPending.current = true;
     snap.reload();
-    dailyAct.reload();
+    // Reload whichever hook currently feeds the Tasks-Done cell — on the Today range that's
+    // the shared range load (one POST instead of two disagreeing ones).
+    if (activityRange === 'today') act.reload();
+    else dailyAct.reload();
     appStats.reload();
   };
 
@@ -271,6 +299,7 @@ export function HomeTab() {
   const snapSpinCss = snap.loading ? 'animation:ss-spin .9s linear infinite' : '';
 
   // ---- daily-goal habit loop — REAL data (Zoho COQL: Deals.Application_Date per day, owner-scoped) ----
+  const appsLoading = appStats.loading && !appStats.data;
   const appDays = appStats.data?.days ?? {};
   const appsDone = todayApps(appDays);
   const goalMet = appsDone >= DAILY_APPS_GOAL;
@@ -362,7 +391,7 @@ export function HomeTab() {
         mk('card', cyan, numFmt(sf?.swipes_today ?? 0), 'Fuel Transactions', 'So far today'),
         mk('fuel', violet, numFmt(sf?.gallons_today ?? 0), 'Gallons Pumped', 'So far today'),
         mk('card', green, numFmt(sf?.new_cards_today ?? 0), 'New Cards', 'Activated today'),
-        mk('check', green, numFmt(dailyAct.data?.tasks ?? 0), 'Tasks Done', 'Cleared from your queue'),
+        mk('check', green, numFmt(daily.data?.tasks ?? 0), 'Tasks Done', 'Cleared from your queue'),
       ],
     },
   ];
@@ -439,23 +468,45 @@ export function HomeTab() {
           <div style={s('font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent)')}>{dateLabel}</div>
           <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:30px;letter-spacing:.01em;margin-top:8px;line-height:1.1')}>Good {timeOfDay}, <span style={s('background:linear-gradient(120deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent')}>{user.first}</span></div>
           {/* Daily goal bar — Deals.Application_Date (application filled), owner-scoped COQL. */}
-          <div style={s('margin-top:18px')}>
-            <div style={s('display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px')}>
-              <span style={s('font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--text2)')}>Today's Goal</span>
-              <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text2)")}>
-                {appStats.loading && !appStats.data ? '…' : `${appsDone} / ${DAILY_APPS_GOAL} apps`}
+          <div style={s('margin-top:18px')} aria-busy={appsLoading || undefined}>
+            <div style={s('display:flex;justify-content:space-between;align-items:center;margin-bottom:8px')}>
+              <span style={s('font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--text2)')}>
+                Today's Goal
               </span>
+              {appsLoading ? (
+                <div className="ss-skel" style={s('width:72px;height:12px;border-radius:6px')} />
+              ) : (
+                <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text2)")}>
+                  {appsDone} / {DAILY_APPS_GOAL} apps
+                </span>
+              )}
             </div>
             <div style={s('position:relative;height:9px;border-radius:99px;background:var(--raised);overflow:hidden')}>
-              <div style={s(`position:absolute;inset:0 auto 0 0;width:${appsGoalPct}%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .55s cubic-bezier(.2,0,0,1)`)}></div>
+              {appsLoading ? (
+                <div className="ss-skel" style={s('position:absolute;inset:0;border-radius:99px')} />
+              ) : (
+                <div
+                  style={s(
+                    `position:absolute;inset:0 auto 0 0;width:${appsGoalPct}%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .55s cubic-bezier(.2,0,0,1)`,
+                  )}
+                />
+              )}
             </div>
-            <div style={s(`font-size:11px;margin-top:7px;font-weight:700;font-family:'JetBrains Mono',monospace;color:${appStats.error ? 'var(--danger)' : goalMet ? 'var(--ok-text)' : 'var(--accent-text)'}`)}>
-              {appStats.error
-                ? 'Could not load apps from Deals — retry refresh'
-                : goalMet
-                  ? 'Goal met — nice work ✦'
-                  : `${appsToGo} more to hit your goal ✦`}
-            </div>
+            {appsLoading ? (
+              <div className="ss-skel" style={s('width:180px;height:11px;border-radius:6px;margin-top:9px')} />
+            ) : (
+              <div
+                style={s(
+                  `font-size:11px;margin-top:7px;font-weight:700;font-family:'JetBrains Mono',monospace;color:${appStats.error ? 'var(--danger)' : goalMet ? 'var(--ok-text)' : 'var(--accent-text)'}`,
+                )}
+              >
+                {appStats.error
+                  ? 'Could not load apps from Deals — retry refresh'
+                  : goalMet
+                    ? 'Goal met — nice work ✦'
+                    : `${appsToGo} more to hit your goal ✦`}
+              </div>
+            )}
           </div>
           <div style={s('display:flex;gap:10px;margin-top:18px')}>
             <button onClick={goAuto} className="ss-btn-p" style={s('height:38px;padding:0 16px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:7px')}><Icon name={ICO.bolt} size={15} strokeWidth={2.2} />Run an action</button>
@@ -487,24 +538,9 @@ export function HomeTab() {
 
       {/* Habit loop — streak · personal best · week (from Deals Application_Date COQL). */}
       <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px')}>
-        <StreakStat
-          emoji="🔥"
-          value={appStats.loading && !appStats.data ? '—' : streakDays}
-          label="day streak"
-          tone="var(--orange)"
-        />
-        <StreakStat
-          emoji="⭐"
-          value={appStats.loading && !appStats.data ? '—' : bestDay}
-          label="best day · apps"
-          tone="var(--warn)"
-        />
-        <StreakStat
-          icon="doc"
-          value={appStats.loading && !appStats.data ? '—' : weekApps}
-          label="this week · apps"
-          tone="var(--accent)"
-        />
+        <StreakStat emoji="🔥" value={streakDays} label="day streak" tone="var(--orange)" loading={appsLoading} />
+        <StreakStat emoji="⭐" value={bestDay} label="best day · apps" tone="var(--warn)" loading={appsLoading} />
+        <StreakStat icon="doc" value={weekApps} label="this week · apps" tone="var(--accent)" loading={appsLoading} />
       </div>
 
       {celebration && (

@@ -134,6 +134,14 @@ export const NAV_GROUPS: NavGroup[] = [
 export const NAV: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 
 /**
+ * True when the Tickets tab is navigable (comingSoon dropped in NAV_GROUPS). Gates the
+ * shell-level full-ticket paging (sidebarBadges — up to 20 Desk pages for a badge nobody
+ * sees while parked), the badge itself, and openTicket navigation. Flip the NAV entry's
+ * comingSoon to re-enable everything at once.
+ */
+export const TICKETS_ENABLED: boolean = !NAV.some((n) => n.id === 'tickets' && n.comingSoon === true);
+
+/**
  * Top-bar titles — deliberately different from in-page H1s so chrome + content don't echo
  * the same uppercase phrase (e.g. top "New Entry" vs form "Create a Lead").
  */
