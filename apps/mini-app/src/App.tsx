@@ -42,12 +42,21 @@ import {
   type TransactionsResult,
   type TxnExportFormat,
 } from './lib/api';
-import { getRegistrationId, getTelegramWebApp, haptic, type TelegramWebAppUser } from './lib/telegram';
+import { getRegistrationId, getStartAction, getTelegramWebApp, haptic, type TelegramWebAppUser } from './lib/telegram';
 import { getStoredTheme, initTheme, setTheme, type Theme } from './lib/theme';
 import { LANGUAGES, useI18n } from './lib/i18n';
 import { LogoLockup } from './components/logo';
 import { BackChevron, Chevron, EyeToggle, Icon, SearchGlyph, type IconName } from './components/icons';
 import { seedInbox, type InboxItem } from './lib/demo';
+import {
+  fetchInboxFeed,
+  inboxRealtimeUrl,
+  markNewsRead as apiMarkNewsRead,
+  markNotificationRead as apiMarkNotificationRead,
+  type InboxFeed,
+  type InboxNotification,
+  type LocalizedNewsText,
+} from './lib/api';
 import type { CompanyDetails } from './lib/api';
 import type { OpenAction } from './lib/actionTarget';
 import { defaultPinned, findCatalogItem } from './lib/serviceCatalog';
@@ -2871,15 +2880,96 @@ function ActionSheet({
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
+
+/** Pick the best locale from a news post's per-language text (en is guaranteed). */
+function pickNewsLocale(v: LocalizedNewsText, lang: string): string {
+  return (lang === 'ru' && v.ru) || (lang === 'uz' && v.uz) || (lang === 'es' && v.es) || v.en;
+}
+
+/** A notification-payload slot: a per-locale map ({en,ru,…}) → picked locale, or a plain string. */
+function localizeText(v: unknown, lang: string): string {
+  if (v && typeof v === 'object') return pickNewsLocale(v as LocalizedNewsText, lang);
+  return String(v ?? '');
+}
+
+type TFn = (key: string, vars?: Record<string, string | number>) => string;
+
+/** Relative-time display fields from an ISO timestamp (InboxItem.atKey grammar). */
+function inboxTime(createdAt: string): { atKey: string; atN?: number; minutesAgo: number } {
+  const minutesAgo = Math.max(0, Math.round((Date.now() - Date.parse(createdAt)) / 60000));
+  if (minutesAgo < 1) return { atKey: 'time.justNow', minutesAgo };
+  if (minutesAgo < 60) return { atKey: 'time.min', atN: minutesAgo, minutesAgo };
+  if (minutesAgo < 1440) return { atKey: 'time.hour', atN: Math.round(minutesAgo / 60), minutesAgo };
+  if (minutesAgo < 2880) return { atKey: 'time.yesterday', minutesAgo };
+  return { atKey: 'time.dayN', atN: Math.round(minutesAgo / 1440), minutesAgo };
+}
+
+const NTF_ICON: Record<string, { icon: IconName; color: string | null }> = {
+  override: { icon: 'lock', color: 'var(--success)' },
+  card_status: { icon: 'card', color: null },
+  limit: { icon: 'alert', color: 'var(--destructive)' },
+  money_code: { icon: 'banknote', color: 'var(--success)' },
+  receipt: { icon: 'list', color: null },
+  statement: { icon: 'doc', color: null },
+  debt: { icon: 'clock', color: 'var(--destructive)' },
+  tracking: { icon: 'truck', color: null },
+  balance_low: { icon: 'alert', color: 'var(--destructive)' },
+  news: { icon: 'plane', color: null },
+};
+
+/** One outbox notification → an InboxItem row. Text renders CLIENT-side so it follows the
+ *  user's in-app language (the bot copy is server-rendered separately). */
+function notifToInbox(n: InboxNotification, lang: string, t: TFn): InboxItem {
+  const meta = NTF_ICON[n.type] ?? { icon: 'check' as IconName, color: null };
+  const p = n.payload;
+  const card = typeof p['last6'] === 'string' ? p['last6'] : '';
+  let titleText: string;
+  let bodyText: string;
+  if (n.type === 'override') {
+    titleText = t('inbox.ntfOverride.title');
+    bodyText = t('inbox.ntfOverride.body', { card });
+  } else if (n.type === 'news') {
+    // Payload carries per-locale maps ({en,ru,…}); pick the user's language. Older rows that
+    // stored a plain string still render via the localizeText string fallback.
+    titleText = localizeText(p['title'], lang);
+    bodyText = localizeText(p['body'], lang);
+  } else {
+    // Forward-compatible: a type this build doesn't know yet still shows as a readable row.
+    titleText = t('inbox.ntfGeneric.title');
+    bodyText = [n.type.replace(/_/g, ' '), card ? `•••• ${card}` : ''].filter(Boolean).join(' · ');
+  }
+  return { id: n.id, category: 'notifications', icon: meta.icon, color: meta.color, titleKey: '', titleText, bodyKey: '', bodyText, ...inboxTime(n.createdAt), unread: !n.read };
+}
+
+/** The whole server feed → InboxItem[] (news first by pinned/date, then notifications by date). */
+function feedToInbox(feed: InboxFeed, lang: string, t: TFn): InboxItem[] {
+  const news = feed.news.map((post): InboxItem => ({
+    id: post.id,
+    category: 'news',
+    icon: 'plane',
+    color: post.severity === 'important' ? 'var(--destructive)' : null,
+    titleKey: '',
+    titleText: pickNewsLocale(post.title, lang),
+    bodyKey: '',
+    bodyText: pickNewsLocale(post.body, lang),
+    ...inboxTime(post.publishAt),
+    unread: !post.read,
+  }));
+  const ntfs = feed.notifications.map((n) => notifToInbox(n, lang, t));
+  return [...news, ...ntfs];
+}
+
 export function App() {
   const wa = getTelegramWebApp();
+  /** The signed auth string every backend call carries — '' outside Telegram (demo preview). */
+  const initData = wa?.initData ?? '';
   const user = wa?.initDataUnsafe.user;
   const firstName = user?.first_name || 'there';
   /** Prefill only — the sign-in screen lets the driver correct it before it reaches their owner's
    *  roster. Mirrors the backend's fallback order so the prefill matches what it would have used. */
   const telegramName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim() || user?.username || '';
   const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
 
   const [screen, setScreen] = useState<Screen>('loading');
   const [errorTitle, setErrorTitle] = useState('');
@@ -2951,14 +3041,73 @@ export function App() {
   // and the "returning user, session restored straight to home" path.
   useEffect(() => {
     if (screen !== 'home') return;
-    setInbox((i) => (i.length ? i : seedInbox(session.isDriver, session.ownCard, company)));
     if (!pinnedInit.current) {
       pinnedInit.current = true;
       setPinned(loadStoredPinned() ?? defaultPinned(session.isDriver));
     }
+    // REAL inbox: news + this user's notification slice. The demo seed remains only as the
+    // no-backend preview fallback (and for sessions whose fetch fails) — same as other sheets.
+    let cancelled = false;
+    fetchInboxFeed(initData)
+      .then((feed) => {
+        if (!cancelled) setInbox(feedToInbox(feed, lang, t));
+      })
+      .catch(() => {
+        if (!cancelled) setInbox((i) => (i.length ? i : seedInbox(session.isDriver, session.ownCard, company)));
+      });
+    return () => {
+      cancelled = true;
+    };
     // only the arrival at `home` (and the role, if it wasn't known yet) should re-run this
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen, session.isDriver]);
+
+  // Live inbox: the existing realtime hub, via the initData-authenticated mini-app WS route.
+  // Push-only — a dropped socket costs nothing (rows arrive on the next inbox fetch).
+  useEffect(() => {
+    if (screen !== 'home' || !initData) return;
+    let ws: WebSocket | null = null;
+    try {
+      ws = new WebSocket(inboxRealtimeUrl(initData));
+    } catch {
+      return;
+    }
+    ws.onmessage = (e) => {
+      try {
+        const frame = JSON.parse(String(e.data)) as { kind?: string; event?: InboxNotification & { kind?: string } };
+        if (frame.kind !== 'event' || frame.event?.kind !== 'notification' || !frame.event.id) return;
+        const n = frame.event;
+        setInbox((prev) => (prev.some((x) => x.id === n.id) ? prev : [notifToInbox(n, lang, t), ...prev]));
+      } catch {
+        /* not our frame */
+      }
+    };
+    return () => {
+      try {
+        ws?.close();
+      } catch {
+        /* already closed */
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen, initData]);
+
+  /** Support-bot deep-links (?startapp=go-<action>): once the session lands on home, open the
+   *  linked sheet — registered users only (unregistered flows never reach 'home'). One-shot. */
+  const startActionDone = useRef(false);
+  useEffect(() => {
+    if (screen !== 'home' || startActionDone.current) return;
+    const action = getStartAction();
+    if (!action) return;
+    startActionDone.current = true;
+    if (action === 'override') setOpenAction({ kind: 'generic', key: 'drv-override-card', title: t('cat.drvOverrideCard'), request: 'override-card' });
+    else if (action === 'moneycode') setOpenAction({ kind: 'service', key: 'moneycode' });
+    else if (action === 'funds') setOpenAction({ kind: 'service', key: 'funds' });
+    else if (action === 'txns') setOpenAction({ kind: 'service', key: 'txns' });
+    else if (action === 'pinunit') setOpenAction({ kind: 'service', key: 'pinunit' });
+    else if (action === 'status') setOpenAction({ kind: 'service', key: 'status' });
+    else if (action === 'invoices') setOpenAction({ kind: 'service', key: 'invoices' });
+  }, [screen]);
 
   useEffect(() => {
     wa?.ready();
@@ -3134,11 +3283,20 @@ export function App() {
 
   function markAllRead() {
     haptic('tap');
+    // Persist read receipts server-side for both feeds (news = nws_, notifications = man_); the
+    // client-only 'gen-' rows have no server counterpart and stay client-side. Badge survives reload.
+    for (const n of inbox) {
+      if (!n.unread) continue;
+      if (n.id.startsWith('nws_')) void apiMarkNewsRead(initData, n.id).catch(() => {});
+      else if (n.id.startsWith('man_')) void apiMarkNotificationRead(initData, n.id).catch(() => {});
+    }
     setInbox((cur) => cur.map((n) => ({ ...n, unread: false })));
     showToast(t('toast.allRead'));
   }
 
   function readNotif(id: string) {
+    if (id.startsWith('nws_')) void apiMarkNewsRead(initData, id).catch(() => {});
+    else if (id.startsWith('man_')) void apiMarkNotificationRead(initData, id).catch(() => {});
     setInbox((cur) => cur.map((n) => (n.id === id ? { ...n, unread: false } : n)));
   }
 

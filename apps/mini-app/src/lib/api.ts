@@ -502,3 +502,52 @@ export async function drawMoneyCode(
 ): Promise<MoneyCodeDrawResult> {
   return (await request('POST', '/carrier/mini-app/money-code/draw', { initData, ...draw })) as MoneyCodeDrawResult;
 }
+
+// ── Inbox: news Octane writes + this user's notification history + the live WS feed ──────────
+export interface LocalizedNewsText {
+  en: string;
+  ru?: string;
+  uz?: string;
+  es?: string;
+}
+export interface NewsFeedItem {
+  id: string;
+  title: LocalizedNewsText;
+  body: LocalizedNewsText;
+  severity: 'info' | 'important';
+  pinned: boolean;
+  publishAt: string;
+  read: boolean;
+}
+export interface InboxNotification {
+  id: string;
+  type: string;
+  payload: Record<string, unknown>;
+  createdAt: string;
+  /** Server-persisted per-user read state (absent on older payloads → treated as unread). */
+  read?: boolean;
+}
+export interface InboxFeed {
+  news: NewsFeedItem[];
+  notifications: InboxNotification[];
+}
+
+export async function fetchInboxFeed(initData: string): Promise<InboxFeed> {
+  return (await request('POST', '/carrier/mini-app/inbox', { initData })) as InboxFeed;
+}
+
+export async function markNewsRead(initData: string, newsId: string): Promise<void> {
+  await request('POST', '/carrier/mini-app/inbox/news-read', { initData, newsId });
+}
+
+export async function markNotificationRead(initData: string, notificationId: string): Promise<void> {
+  await request('POST', '/carrier/mini-app/inbox/notification-read', { initData, notificationId });
+}
+
+/** ws(s):// URL for the live inbox feed — the backend's existing realtime hub, entered through
+ *  the initData-authenticated mini-app WS route (subscribe-only, own topic). */
+export function inboxRealtimeUrl(initData: string): string {
+  const { baseUrl } = resolveApiConfig();
+  const base = baseUrl || window.location.origin;
+  return v1Url(base, '/carrier/mini-app/realtime').replace(/^http/, 'ws') + `?initData=${encodeURIComponent(initData)}`;
+}

@@ -8,6 +8,43 @@ import type { InboxCategory, InboxItem } from '../lib/demo';
 const TABS: InboxCategory[] = ['news', 'notifications'];
 
 /** The "Inbox" tab (v2 design) — split into News / Notifications sub-tabs; no search/filter. */
+/** Client-side re-sanitize of a news body before innerHTML. The backend already whitelists
+ *  (modules/notifications/richText.ts) — this is defense in depth, same tag set. */
+const RICH_ALLOWED = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'P', 'BR', 'UL', 'OL', 'LI', 'H3', 'A', 'IMG']);
+
+function sanitizeNewsHtml(html: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const walk = (el: Element): void => {
+    for (const child of Array.from(el.children)) {
+      walk(child);
+      if (!RICH_ALLOWED.has(child.tagName)) {
+        // unwrap: keep the text/children, drop the tag itself
+        child.replaceWith(...Array.from(child.childNodes));
+        continue;
+      }
+      for (const attr of Array.from(child.attributes)) {
+        const keep =
+          (child.tagName === 'A' && attr.name === 'href' && /^(https?:|mailto:)/i.test(attr.value)) ||
+          (child.tagName === 'IMG' && attr.name === 'src' && /^https:/i.test(attr.value)) ||
+          (child.tagName === 'IMG' && attr.name === 'alt');
+        if (!keep) child.removeAttribute(attr.name);
+      }
+      if (child.tagName === 'A') {
+        child.setAttribute('target', '_blank');
+        child.setAttribute('rel', 'noopener noreferrer');
+      }
+    }
+  };
+  walk(doc.body);
+  return doc.body.innerHTML;
+}
+
+/** Rich (server-sanitized) news body — plain items keep the plain-text path. */
+function RichBody({ html, style }: { html: string; style: React.CSSProperties }) {
+  // eslint-disable-next-line react/no-danger
+  return <div className="rich-news" style={style} dangerouslySetInnerHTML={{ __html: sanitizeNewsHtml(html) }} />;
+}
+
 export function InboxTab({
   items,
   onMarkAllRead,
@@ -147,7 +184,11 @@ export function InboxTab({
                   </button>
                 </span>
               </div>
-              <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3, lineHeight: 1.45 }}>{n.bodyText ?? t(n.bodyKey, n.bodyParams)}</div>
+              {n.category === 'news' && n.bodyText ? (
+                <RichBody html={n.bodyText} style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3, lineHeight: 1.45 }} />
+              ) : (
+                <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3, lineHeight: 1.45 }}>{n.bodyText ?? t(n.bodyKey, n.bodyParams)}</div>
+              )}
             </div>
           </div>
         ))}
@@ -172,7 +213,11 @@ export function InboxTab({
             </div>
             <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--fg)', marginTop: 10 }}>{viewItem.titleText ?? t(viewItem.titleKey)}</div>
             <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)', marginTop: 4 }}>{t(viewItem.atKey, viewItem.atN !== undefined ? { n: viewItem.atN } : undefined)}</div>
-            <div style={{ fontSize: 14.5, color: 'var(--fg)', marginTop: 14, lineHeight: 1.55 }}>{viewItem.bodyText ?? t(viewItem.bodyKey, viewItem.bodyParams)}</div>
+            {viewItem.category === 'news' && viewItem.bodyText ? (
+              <RichBody html={viewItem.bodyText} style={{ fontSize: 14.5, color: 'var(--fg)', marginTop: 14, lineHeight: 1.55 }} />
+            ) : (
+              <div style={{ fontSize: 14.5, color: 'var(--fg)', marginTop: 14, lineHeight: 1.55 }}>{viewItem.bodyText ?? t(viewItem.bodyKey, viewItem.bodyParams)}</div>
+            )}
           </div>
         </>
       )}
