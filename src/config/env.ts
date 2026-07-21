@@ -31,6 +31,10 @@ const EnvSchema = z.object({
   // --- Data Warehouse (separate read Postgres; tool + metadata target) ---
   DWH_DATABASE_URL: z.string().default(''),
 
+  // --- Verification DB (credit_platform — read-only metadata/reference target for the Sales
+  // Mytrion verification pipeline; surfaced in Mytrion Admin like the DWH). Render Postgres → SSL. ---
+  VERIFICATION_DATABASE_URL: z.string().default(''),
+
   // --- AWS MySQL (external RDS/Aurora MySQL; tool target, mirrors the DWH wrapper) ---
   // Two ways to point at it (discrete fields win when AWS_MYSQL_HOST is set):
   //  1. Discrete (preferred — password passed RAW, no URL-encoding footgun):

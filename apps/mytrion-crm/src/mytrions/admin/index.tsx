@@ -5,6 +5,7 @@ import { AuditLog } from './AuditLog';
 import { CarrierUsers } from './CarrierUsers';
 import { CmpDatabase } from './CmpDatabase';
 import { DwhDatabase } from './DwhDatabase';
+import { VerificationDatabase } from './VerificationDatabase';
 import { Jobs } from './Jobs';
 import { KnowledgeBase } from './KnowledgeBase';
 import { KnowledgeBrowser } from './KnowledgeBrowser';
@@ -13,7 +14,7 @@ import { AdminToastHost } from './toast';
 import { Train } from './Train';
 import { UserManagement } from './UserManagement';
 
-type Tab = 'kb' | 'train' | 'browser' | 'scope' | 'carriers' | 'carrier-invites' | 'audit' | 'jobs' | 'cmp' | 'dwh' | 'access';
+type Tab = 'kb' | 'train' | 'browser' | 'scope' | 'carriers' | 'carrier-invites' | 'audit' | 'jobs' | 'cmp' | 'dwh' | 'verification-db' | 'access';
 
 const CARRIER_TABS: Tab[] = ['carriers', 'carrier-invites'];
 
@@ -55,6 +56,7 @@ export default function AdminMytrion() {
     { key: 'jobs', label: 'Jobs', icon: <JobsIcon />, active: tab === 'jobs', onClick: () => setTab('jobs') },
     { key: 'cmp', label: 'CMP Database', icon: <DatabaseIcon />, active: tab === 'cmp', onClick: () => setTab('cmp') },
     { key: 'dwh', label: 'Data Warehouse', icon: <WarehouseIcon />, active: tab === 'dwh', onClick: () => setTab('dwh') },
+    { key: 'verification-db', label: 'Verification DB', icon: <DatabaseIcon />, active: tab === 'verification-db', onClick: () => setTab('verification-db') },
     { key: 'scope', label: 'Octane-Scope', icon: <ScopeIcon />, active: tab === 'scope', onClick: () => setTab('scope') },
   ];
 
@@ -70,6 +72,7 @@ export default function AdminMytrion() {
       {tab === 'jobs' && <Jobs />}
       {tab === 'cmp' && <CmpDatabase />}
       {tab === 'dwh' && <DwhDatabase />}
+      {tab === 'verification-db' && <VerificationDatabase />}
       {tab === 'scope' && <OctaneScope />}
       <AdminToastHost />
     </MytrionShell>
