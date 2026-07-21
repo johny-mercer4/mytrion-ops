@@ -257,14 +257,15 @@ export function LeadCallWizardHost({ pushToast }: { pushToast: (title: string, m
     return subscribeRingCentral((ev) => {
       if (ev.kind !== 'ended') return;
       if (ev.direction && ev.direction !== 'Outbound') return;
-      if (!ev.leadId) return; // only lead calls open the wizard (deals only log)
+      const leadId = ev.leadId;
+      if (!leadId) return; // only lead calls open the wizard (deals only log)
       const actAsId = getImpersonation()?.zohoUserId;
       setPending((cur) =>
         // If a wizard is already open (e.g. a second call event for the same session), keep it.
         cur
           ? cur
           : {
-              leadId: ev.leadId!,
+              leadId,
               peer: ev.peer,
               ...(ev.result ? { result: ev.result } : {}),
               ...(ev.durationMs != null ? { durationMs: ev.durationMs } : {}),
