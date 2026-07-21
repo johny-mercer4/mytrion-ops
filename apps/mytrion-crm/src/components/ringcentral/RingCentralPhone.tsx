@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchRingCentralEmbedConfig } from '@/api/ringcentral';
+import { installRcConsoleFilter } from './rcConsoleFilter';
 import { RC_ADAPTER_SCRIPT_ID } from './ringcentralDial';
 import { subscribeRingCentral, type RingCentralCallEvent } from './ringcentralEvents';
 import { X, AlertCircle } from 'lucide-react';
@@ -54,6 +55,10 @@ export function RingCentralPhone() {
         const cfg = await fetchRingCentralEmbedConfig();
         if (cancelled || !cfg.enabled || !cfg.adapterUrl) return;
         if (document.getElementById(RC_ADAPTER_SCRIPT_ID)) return;
+
+        // Silence the vendor bundle's rc-*-notify / extension console spam. Installed only
+        // when the adapter actually loads, strictly before any adapter code runs.
+        installRcConsoleFilter();
 
         const script = document.createElement('script');
         script.id = RC_ADAPTER_SCRIPT_ID;
