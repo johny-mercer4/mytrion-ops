@@ -333,7 +333,11 @@ export async function loadRecords(): Promise<RecordVM[]> {
   // metadata + computed debt/activity overlays + cycle/this-month/prev-month gallons. Replaces the
   // servercrm by-agent roster (dropped its live-CMP HTTP overlay) AND the separate loyalty/dashboard
   // round-trips — one call now backs the Clients tab.
-  return (await getClients()).map(mapRecord);
+  // Forward the acted-as agent id under admin View-as: the /data-center/clients route targets by
+  // ?zoho_user_id (it does NOT read the x-act-as header, unlike touchpoints), so without this an
+  // admin viewing an agent resolves to their OWN empty roster. Matches loadLeads/loadDeals/loadTickets.
+  const actAsId = getImpersonation()?.zohoUserId;
+  return (await getClients(actAsId)).map(mapRecord);
 }
 
 // ---- Dashboard (dashboard.agent_sales) ----
