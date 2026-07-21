@@ -139,6 +139,12 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /** Full-dataset text search (payer / memo / txn # / exact carrier id). */
+  /** Whole-dataset aggregates for the source filter + summary tiles (independent of pagination). */
+  app.get('/billing/transactions/stats', guard, async (request) => {
+    requireBillingAccess(request);
+    return paymentTransactionRepo.stats();
+  });
+
   app.get('/billing/transactions/search', guard, async (request) => {
     requireBillingAccess(request);
     const q = txSearchQuery.parse(request.query);

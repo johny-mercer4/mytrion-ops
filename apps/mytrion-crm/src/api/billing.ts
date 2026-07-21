@@ -53,6 +53,19 @@ export function searchCarrierInvoices(carrierId: string): Promise<BillingInvoice
   return billingGet(`/billing/invoices/search?carrierId=${encodeURIComponent(carrierId)}`);
 }
 
+export interface BillingTxStats {
+  total: number;
+  mapped: number;
+  unmapped: number;
+  totalAmount: number;
+  bySource: Record<string, number>;
+}
+
+/** Whole-dataset transaction aggregates (source counts + mapped/total) — pagination-independent. */
+export function fetchTransactionStats(): Promise<BillingTxStats> {
+  return billingGet('/billing/transactions/stats');
+}
+
 /** Paged returns / chargebacks queue. */
 export function fetchReturns(page: number, limit: number): Promise<BillingReturnsPage> {
   return billingGet(`/billing/returns?page=${page}&limit=${limit}`);

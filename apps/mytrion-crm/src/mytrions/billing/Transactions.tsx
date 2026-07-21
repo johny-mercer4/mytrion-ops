@@ -16,7 +16,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
-import { broadcastMapping, fetchTransactions, searchTransactions } from '@/api/billing';
+import { broadcastMapping, fetchTransactions, fetchTransactionStats, searchTransactions } from '@/api/billing';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useLoad } from '../_shared/useLoad';
 import { type TxSource, dateLabel, fmtCurrency } from './data';
@@ -80,6 +80,12 @@ export function Transactions() {
   const firstPage = useLoad(() => fetchPage(1), []);
   const page1 = firstPage.data;
 
+  // Whole-dataset aggregates (source counts + mapped/total/$) — so the source filter and summary
+  // tiles reflect ALL transactions, not just the loaded page(s). Refreshed on reload + after a
+  // mapping change (see the patches effect below).
+  const statsLoad = useLoad(() => fetchTransactionStats(), []);
+  const stats = statsLoad.data;
+
   // Appended pages (page ≥ 2) + optimistic per-row patches, both reset when page 1 reloads.
   const [extra, setExtra] = useState<TxRow[]>([]);
   const [meta, setMeta] = useState<{ page: number; hasMore: boolean; total: number } | null>(null);
@@ -106,6 +112,13 @@ export function Transactions() {
     setMeta(null);
     setPatches({});
   }, [page1]);
+
+  // A mapping change (optimistic/remote patch) shifts the global mapped/unmapped split → refresh
+  // the whole-dataset stats so the summary tiles stay accurate. Cheap aggregate; low frequency.
+  const statsReload = statsLoad.reload;
+  useEffect(() => {
+    statsReload();
+  }, [patches, statsReload]);
 
   useEffect(() => {
     if (firstPage.error) notify('error', 'Could not load transactions. Try refreshing.');
@@ -217,6 +230,16 @@ export function Transactions() {
   const mappedCount = filtered.filter((t) => t.isInvoiceMapped).length;
   const unmappedCount = filtered.length - mappedCount;
   const resultsActive = !!search.trim() || source !== 'all' || carrierFilter !== 'all';
+
+  // Summary tiles show whole-dataset stats (ALL transactions), not just the loaded page. During an
+  // active text search the list is a specific query, so fall back to the (full-dataset) match set.
+  const searchActive = !!search.trim();
+  const g = !searchActive ? stats : null;
+  const summaryTotal = g ? g.total : filtered.length;
+  const summaryMapped = g ? g.mapped : mappedCount;
+  const summaryUnmapped = g ? g.unmapped : unmappedCount;
+  const summaryAmount = g ? Math.abs(g.totalAmount) : totalAmount;
+  const summaryDenom = g ? g.total : filtered.length;
 
   async function loadMore() {
     if (loadingMore || !hasMore) return;
@@ -370,25 +393,33 @@ export function Transactions() {
           <div className="bm-summary-banner">
             <SummaryItem
               color="var(--billing-accent)"
-              amount={filtered.length.toLocaleString()}
-              label={resultsActive ? 'Results' : 'Loaded'}
-              sub={hasMore ? `of ${totalFetched.toLocaleString()} total` : 'all loaded'}
+              amount={summaryTotal.toLocaleString()}
+              label={g ? 'Transactions' : resultsActive ? 'Results' : 'Loaded'}
+              sub={
+                g
+                  ? rows.length < g.total
+                    ? `${rows.length.toLocaleString()} loaded`
+                    : 'all loaded'
+                  : hasMore
+                    ? `of ${totalFetched.toLocaleString()} total`
+                    : 'all loaded'
+              }
             />
             <SummaryItem
               color="var(--success-text)"
-              amount={fmtCurrency(totalAmount)}
+              amount={fmtCurrency(summaryAmount)}
               label="Total Amount"
-              sub={resultsActive ? 'filtered' : 'this page'}
+              sub={g ? 'all sources' : resultsActive ? 'filtered' : 'this page'}
             />
             <SummaryItem
               color="var(--purple-text)"
-              amount={String(mappedCount)}
+              amount={String(summaryMapped)}
               label="Invoice Mapped"
-              sub={filtered.length ? `${Math.round((mappedCount / filtered.length) * 100)}%` : '—'}
+              sub={summaryDenom ? `${Math.round((summaryMapped / summaryDenom) * 100)}%` : '—'}
             />
             <SummaryItem
               color="var(--danger-text)"
-              amount={String(unmappedCount)}
+              amount={String(summaryUnmapped)}
               label="Invoice Unmapped"
               sub="needs review"
             />
@@ -414,7 +445,14 @@ export function Transactions() {
 
             <select value={source} onChange={(e) => setSource(e.target.value as 'all' | TxSource)} className="bm-select">
               {SOURCE_OPTIONS.map((f) => {
-                const count = f.id === 'all' ? rows.length : (sourceCounts[f.id] ?? 0);
+                // Whole-dataset counts (fall back to loaded counts until stats arrive).
+                const count = stats
+                  ? f.id === 'all'
+                    ? stats.total
+                    : (stats.bySource[f.id] ?? 0)
+                  : f.id === 'all'
+                    ? rows.length
+                    : (sourceCounts[f.id] ?? 0);
                 return (
                   <option key={f.id} value={f.id}>
                     {f.label} {count > 0 ? `(${count})` : ''}
