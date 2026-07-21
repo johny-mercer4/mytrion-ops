@@ -387,6 +387,9 @@ const EnvSchema = z.object({
   // C-26 unit/driver, C-10 fraud request) — carrier-scoped, rate-limited, audit-logged. Off by
   // default: enable per environment once the pilot carrier is briefed.
   FF_MINIAPP_CARD_WRITES_ENABLED: flag('0'),
+  /** Comma-separated carrier ids piloted for notification pollers (card_status diff). Empty =
+   *  the cron job no-ops — per-carrier rollout, Onzmove first (see notification ultraplan). */
+  NOTIFY_POLL_CARRIERS: z.string().default(''),
   // Mini-app C-17 money-code preview/draw (servercrm owns the limit math). Off by default.
   FF_MINIAPP_MONEY_CODE_ENABLED: flag('0'),
   // Cap on a single mini-app limit CHANGE (C-4/5). Bigger adjustments go through CS.

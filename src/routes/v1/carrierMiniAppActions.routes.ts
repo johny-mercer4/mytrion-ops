@@ -28,7 +28,7 @@ import { findDwhCardById } from '../../integrations/dwhCards.js';
 import { takeToken } from '../../modules/security/rateBucket.js';
 import { efsWrapper } from '../../wrappers/efsWrapper.js';
 import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
-import { sendPlainReply } from '../../integrations/telegramCarrierBot.js';
+import { notifyMiniApp } from '../../modules/notifications/service.js';
 import {
   requireDriverCardNumber,
   requireRegisteredCarrierUser,
@@ -159,14 +159,16 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
       detail: { carrierId, profile: registration.profile },
     });
     // Best-effort bot receipt: the ~30-min window matters at the PUMP, where the driver may close
-    // the mini-app — a chat message (with the card's last 4) outlives the WebView. Never blocks or
-    // fails the override itself; a user who hasn't opened the bot chat simply gets no message.
-    const chatId = registration.telegramChatId ?? registration.telegramUserId;
-    void sendPlainReply(
-      chatId,
-      `Card •••• ${cardNumber.slice(-6)} is overridden — you can fuel for about 30 minutes.`,
-    ).catch(() => {
-      /* chat unreachable — the in-app toast + Home countdown already told them */
+    // the mini-app — a chat message (with the card's last 6) outlives the WebView. Goes through
+    // the notification outbox (mini_app_notifications + pg-boss retries) — the first caller of
+    // the platform notification layer. Never blocks or fails the override itself.
+    void notifyMiniApp({
+      type: 'override',
+      tenantId: registration.tenantId,
+      carrierId,
+      telegramUserId: registration.telegramUserId,
+      dedupeKey: `override:${carrierId}:${cardId}:${Date.now()}`,
+      payload: { last6: cardNumber.slice(-6), cardId },
     });
     return result;
   });
@@ -338,6 +340,16 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
         resourceType: 'money_code',
         resourceId: String(carrierId),
         detail: { carrierId, amount: body.amount, unitNumber: body.unitNumber, reason: body.reason },
+      });
+      // Inbox/bot receipt for the draw — the CODE VALUE never rides along (registry rule);
+      // the message says "open the mini-app". Fire-and-forget through the outbox.
+      void notifyMiniApp({
+        type: 'money_code',
+        tenantId: registration.tenantId,
+        carrierId,
+        telegramUserId: registration.telegramUserId,
+        dedupeKey: `money_code:${carrierId}:${Date.now()}`,
+        payload: { reason: body.reason ?? '' },
       });
       return result;
     } catch (err) {

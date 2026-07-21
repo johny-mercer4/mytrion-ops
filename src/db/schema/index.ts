@@ -3,6 +3,8 @@ export * from './users.js';
 export * from './carrier_users.js';
 export * from './carrier_invitations.js';
 export * from './registered_mini_app_companies.js';
+export * from './mini_app_notifications.js';
+export * from './client_news.js';
 export * from './conversations.js';
 export * from './messages.js';
 export * from './tool_calls.js';

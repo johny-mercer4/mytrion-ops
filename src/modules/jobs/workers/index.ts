@@ -17,6 +17,9 @@ import { handleAgentRunJobs } from './agentRun.js';
 import { bulkIngestJob, handleBulkIngestJobs } from './knowledgeIngest.js';
 import { AUTOMATIONS, makeAutomationHandler } from './automations.js';
 import { runRetentionCaseSync } from './retentionCaseSync.js';
+import { notificationDispatchJob, notificationPollJob } from '../catalog.js';
+import { dispatchMiniAppNotification } from '../../notifications/service.js';
+import { runCardStatusPoll } from '../../notifications/pollers.js';
 import { runRetentionDeadlineSweep } from './retentionDeadlineSweep.js';
 import {
   decayAgentMemories,
@@ -27,6 +30,15 @@ import {
 
 export async function registerWorkers(boss: PgBoss): Promise<void> {
   await boss.work(agentRunJob.name, { batchSize: env.JOBS_CONCURRENCY }, handleAgentRunJobs);
+
+  await boss.work(notificationDispatchJob.name, { batchSize: 5 }, async (jobs) => {
+    for (const job of jobs) {
+      const payload = notificationDispatchJob.schema.parse(job.data ?? {});
+      await dispatchMiniAppNotification(payload.notificationId);
+    }
+  });
+
+  await boss.work(notificationPollJob.name, { batchSize: 1 }, async () => runCardStatusPoll());
 
   for (const spec of AUTOMATIONS) {
     const handler = makeAutomationHandler(spec);
