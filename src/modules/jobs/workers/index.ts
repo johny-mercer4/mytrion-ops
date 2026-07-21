@@ -19,7 +19,7 @@ import { AUTOMATIONS, makeAutomationHandler } from './automations.js';
 import { runRetentionCaseSync } from './retentionCaseSync.js';
 import { notificationDispatchJob, notificationPollJob } from '../catalog.js';
 import { dispatchMiniAppNotification } from '../../notifications/service.js';
-import { runCardStatusPoll } from '../../notifications/pollers.js';
+import { runCardStatusPoll, runReceiptPoll } from '../../notifications/pollers.js';
 import { runRetentionDeadlineSweep } from './retentionDeadlineSweep.js';
 import {
   decayAgentMemories,
@@ -38,7 +38,11 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
     }
   });
 
-  await boss.work(notificationPollJob.name, { batchSize: 1 }, async () => runCardStatusPoll());
+  await boss.work(notificationPollJob.name, { batchSize: 1 }, async () => {
+    // Pollers run sequentially in the one singleton cron — a new poller is a call here, not a new job.
+    await runCardStatusPoll();
+    await runReceiptPoll();
+  });
 
   for (const spec of AUTOMATIONS) {
     const handler = makeAutomationHandler(spec);

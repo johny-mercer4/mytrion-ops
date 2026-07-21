@@ -2950,6 +2950,12 @@ function notifToInbox(n: InboxNotification, lang: string, t: TFn): InboxItem {
   if (n.type === 'override') {
     titleText = t('inbox.ntfOverride.title');
     bodyText = t('inbox.ntfOverride.body', { card });
+  } else if (n.type === 'receipt') {
+    const gallons = typeof p['gallons'] === 'number' ? p['gallons'] : Number(p['gallons'] ?? 0);
+    const location = typeof p['location'] === 'string' ? p['location'] : '';
+    const place = [p['city'], p['state']].map((v) => (typeof v === 'string' ? v : '')).filter(Boolean).join(' ');
+    titleText = t('inbox.ntfReceipt.title');
+    bodyText = t('inbox.ntfReceipt.body', { gallons, location, place, card });
   } else if (n.type === 'news') {
     // Payload carries per-locale maps ({en,ru,…}); pick the user's language. Older rows that
     // stored a plain string still render via the localizeText string fallback.
