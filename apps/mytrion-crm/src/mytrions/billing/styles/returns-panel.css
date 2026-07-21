@@ -69,7 +69,6 @@
         scrollbar-width: none;
     }
     .bm-root .bm-returns-panel .rt-seg::-webkit-scrollbar { display: none; }
-    .bm-root .bm-returns-panel .rt-detail { padding-left: 1rem; }
 
     /* The shared table's fixed columns (~430px) overflow a phone. Reflow each
        row as a small card: date · type · amount on top, then customer,
@@ -198,67 +197,10 @@
     overflow: hidden;
 }
 
+/* Rows are no longer click-to-expand (accordion removed) — the only interactive
+   control is the Match button, so don't imply the whole row is clickable. */
 .bm-root .bm-returns-panel .rt-row {
-    cursor: pointer;
-}
-
-.bm-root .bm-returns-panel .rt-chevron {
-    display: inline-block;
-    transition: transform 0.15s;
-    color: var(--text-muted);
-    margin-right: 0.4rem;
-    flex-shrink: 0;
-}
-
-.bm-root .bm-returns-panel .rt-chevron-open {
-    transform: rotate(90deg);
-    color: var(--billing-accent);
-}
-
-/* ── Expanded detail strip ── */
-.bm-root .bm-returns-panel .rt-detail {
-    padding: 0.75rem 1rem 0.9rem 2.1rem;
-    background: var(--surface-alt);
-    border-top: 1px dashed var(--border);
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    animation: rt-detail-in 0.15s ease-out;
-}
-
-@keyframes rt-detail-in {
-    from { opacity: 0; transform: translateY(-3px); }
-    to   { opacity: 1; transform: translateY(0); }
-}
-
-.bm-root .bm-returns-panel .rt-detail-note {
-    font-size: 0.78rem;
-    line-height: 1.5;
-    color: var(--text-primary);
-    max-width: 72ch;
-}
-
-.bm-root .bm-returns-panel .rt-detail-note-label {
-    font-size: 0.62rem;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    margin-bottom: 0.2rem;
-}
-
-.bm-root .bm-returns-panel .rt-detail-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1.25rem;
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    font-family: 'JetBrains Mono', monospace;
-}
-
-.bm-root .bm-returns-panel .rt-detail-meta b {
-    color: var(--text-secondary);
-    font-weight: 600;
+    cursor: default;
 }
 
 /* ── Status chips — the design's single chip() style (11px/600, 3px radius,
