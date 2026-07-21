@@ -4,7 +4,12 @@
  */
 import { env } from '../../config/env.js';
 import { pg } from '../../db/client.js';
-import { ALL_JOBS, CRON_SCHEDULES, MANUAL_TRIGGERABLE_QUEUES } from './catalog.js';
+import {
+  ALL_JOBS,
+  CRON_SCHEDULES,
+  DISABLED_JOB_QUEUES,
+  MANUAL_TRIGGERABLE_QUEUES,
+} from './catalog.js';
 import {
   jobMeta,
   scheduleLabelFor,
@@ -151,7 +156,10 @@ export function listJobCatalog(opts: {
     const scheduleLabel = scheduleLabelFor({ trigger, cron, name: j.name });
     let active = false;
     let statusLabel = 'Off';
-    if (!opts.jobsEnabled) {
+    if (DISABLED_JOB_QUEUES.has(j.name)) {
+      active = false;
+      statusLabel = 'Disabled';
+    } else if (!opts.jobsEnabled) {
       active = false;
       statusLabel = 'Off — jobs disabled';
     } else if (trigger === 'cron') {
@@ -171,7 +179,7 @@ export function listJobCatalog(opts: {
       cron,
       trigger,
       triggerLabel: triggerKindLabel(trigger),
-      scheduleLabel,
+      scheduleLabel: DISABLED_JOB_QUEUES.has(j.name) ? 'Disabled (not scheduled)' : scheduleLabel,
       active,
       statusLabel,
       manualTriggerable: MANUAL_TRIGGERABLE_QUEUES.has(j.name),

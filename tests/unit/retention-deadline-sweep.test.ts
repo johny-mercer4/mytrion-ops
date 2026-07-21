@@ -24,6 +24,7 @@ function baseCase(overrides: Partial<RetentionCase> = {}): RetentionCase {
     companyName: 'Ironhide',
     applicationId: null,
     agentName: 'Rep',
+    contactPhone: null,
     phaseCode: 'phase_1_agent',
     statusCode: 'p1_new',
     phaseChangedAt: new Date('2026-07-01T00:00:00Z'),
@@ -71,6 +72,12 @@ describe('resolveExpiry', () => {
     expect(t?.currentDeadlineType).toBe(RETENTION_WAIT_DEADLINE_TYPE);
   });
 
+  it('2BD agent action with assignmentCount 3 → CITI (not Retention)', () => {
+    const t = resolveExpiry(baseCase({ assignmentCount: 3 }), now);
+    expect(t?.phaseCode).toBe('phase_3_citi');
+    expect(t?.statusCode).toBe('p3_hold');
+  });
+
   it('5BD post-contact (Reached) → Open Pool (not Retention)', () => {
     const t = resolveExpiry(
       baseCase({
@@ -95,11 +102,26 @@ describe('resolveExpiry', () => {
         statusCode: 'p1_open_pool',
         currentDeadlineType: POOL_CLAIM_DEADLINE_TYPE,
         assignedAgentZohoUserId: null,
+        assignmentCount: 1,
       }),
       now,
     );
     expect(t?.phaseCode).toBe('phase_2_retention');
     expect(t?.currentDeadlineType).toBe(RETENTION_WAIT_DEADLINE_TYPE);
+  });
+
+  it('3BD pool unclaimed with assignmentCount 3 → CITI', () => {
+    const t = resolveExpiry(
+      baseCase({
+        statusCode: 'p1_open_pool',
+        currentDeadlineType: POOL_CLAIM_DEADLINE_TYPE,
+        assignedAgentZohoUserId: null,
+        assignmentCount: 3,
+      }),
+      now,
+    );
+    expect(t?.phaseCode).toBe('phase_3_citi');
+    expect(t?.statusCode).toBe('p3_hold');
   });
 
   it('3BD new owner with assignmentCount 3 → CITI', () => {
@@ -127,16 +149,33 @@ describe('resolveExpiry', () => {
     expect(t?.statusCode).toBe('p1_open_pool');
   });
 
-  it('10BD Retention wait → CITI', () => {
+  it('10BD Retention wait → Open Pool', () => {
     const t = resolveExpiry(
       baseCase({
         phaseCode: 'phase_2_retention',
-        statusCode: 'p2_new',
+        statusCode: 'p2_working',
         currentDeadlineType: RETENTION_WAIT_DEADLINE_TYPE,
+        assignmentCount: 1,
+      }),
+      now,
+    );
+    expect(t?.phaseCode).toBe('phase_1_agent');
+    expect(t?.statusCode).toBe('p1_open_pool');
+    expect(t?.currentDeadlineType).toBe(POOL_CLAIM_DEADLINE_TYPE);
+  });
+
+  it('10BD Retention wait with assignmentCount 3 → CITI', () => {
+    const t = resolveExpiry(
+      baseCase({
+        phaseCode: 'phase_2_retention',
+        statusCode: 'p2_working',
+        currentDeadlineType: RETENTION_WAIT_DEADLINE_TYPE,
+        assignmentCount: 3,
       }),
       now,
     );
     expect(t?.phaseCode).toBe('phase_3_citi');
+    expect(t?.statusCode).toBe('p3_hold');
   });
 
   it('14D vacation → follow-up task', () => {
@@ -169,7 +208,7 @@ describe('resolveExpiry', () => {
     const t = resolveExpiry(
       baseCase({
         statusCode: 'p1_out_of_reach',
-        currentDeadlineType: '5BD_comms_attempt',
+        currentDeadlineType: '1BD_comms_attempt',
       }),
       now,
     );

@@ -4,7 +4,7 @@
  */
 import { z } from 'zod';
 import type { Touchpoint } from '../types.js';
-import { idString, shortText } from './common.js';
+import { idString, SALES, shortText } from './common.js';
 
 export const ticketsDelugeTouchpoints: Touchpoint[] = [
   {
@@ -12,6 +12,7 @@ export const ticketsDelugeTouchpoints: Touchpoint[] = [
     key: 'tickets.create_escalation',
     title: 'Create escalation ticket',
     riskClass: 'write',
+    departments: SALES,
     identityParam: 'userId',
     functionNames: ['createescalationticket'],
     unwrap: 'permissive', // success = ticketId + escalationId in the payload
@@ -28,6 +29,7 @@ export const ticketsDelugeTouchpoints: Touchpoint[] = [
     key: 'tickets.create_in_crm',
     title: 'Link a Desk ticket into CRM',
     riskClass: 'write',
+    departments: SALES,
     functionNames: ['createticketincrm'],
     unwrap: 'permissive',
     paramsSchema: z.object({
@@ -41,6 +43,7 @@ export const ticketsDelugeTouchpoints: Touchpoint[] = [
     key: 'tickets.upload_attachment',
     title: 'Attach a file to a Desk ticket',
     riskClass: 'write',
+    departments: SALES,
     functionNames: ['uploadticketattachment'],
     unwrap: 'permissive',
     paramsSchema: z.object({
@@ -56,6 +59,7 @@ export const ticketsDelugeTouchpoints: Touchpoint[] = [
     key: 'tickets.upload_escalation_attachment',
     title: 'Attach a file to an escalation request',
     riskClass: 'write',
+    departments: SALES,
     functionNames: ['uploadescalationattachment'],
     unwrap: 'permissive',
     paramsSchema: z.object({

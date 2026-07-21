@@ -15,6 +15,7 @@ import {
   COMMS_ATTEMPT_DEADLINE_TYPE,
   enterOpenPool,
   handoffToRetention,
+  MAX_OPEN_POOL_AGENTS,
   moveToCiti,
   PHASE1_DEADLINE_TYPE,
   reachedWatching,
@@ -29,6 +30,7 @@ import {
 export {
   addBusinessDays,
   COMMS_ATTEMPT_DEADLINE_TYPE,
+  MAX_OPEN_POOL_AGENTS,
   PHASE1_DEADLINE_TYPE,
   VACATION_COUNTDOWN_DAYS,
 };
@@ -37,7 +39,6 @@ export const initialPhase1Deadline = stampPhase1ActionDeadline;
 export const nextCommsAttemptDeadline = stampCommsAttemptDeadline;
 
 export const MAX_OUT_OF_REACH_ATTEMPTS = 5;
-export const MAX_OPEN_POOL_AGENTS = 3;
 
 export type Phase1Outcome =
   | 'reached'
@@ -140,7 +141,7 @@ export function resolvePhase1Transition(
         currentDeadlineAt: comms.currentDeadlineAt,
         currentDeadlineType: comms.currentDeadlineType,
         eventType: 'outcome_recorded',
-        eventNotes: 'Out of Reach — log channel attempts (5 max, 5 BD each)',
+        eventNotes: 'Out of Reach — log channel attempts (5 max, 1 BD each)',
       };
     }
 
@@ -155,6 +156,7 @@ export function resolvePhase1Transition(
         now,
         agentOutcome: 'out_of_reach',
         previousOwnerZohoUserId: row.assignedAgentZohoUserId,
+        assignmentCount: row.assignmentCount,
         notes: 'Sent to Sales Open Pool after 5 failed attempts',
       });
     }

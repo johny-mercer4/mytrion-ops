@@ -86,6 +86,8 @@ export interface TaskReport {
   verdict: TaskVerdict;
   failures: string[];
   agentPath: string[];
+  pingPongCount: number;
+  durationMs: number;
   toolCalls: string[];
   costUsd: number;
   judge?: JudgeOutcome[];

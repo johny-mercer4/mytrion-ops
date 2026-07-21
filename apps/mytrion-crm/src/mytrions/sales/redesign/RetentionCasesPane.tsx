@@ -13,13 +13,12 @@ import {
   RetentionEmpty,
   RetentionFreqBadge,
   RetentionHero,
+  RetentionStageTimer,
   attemptPips,
   fmtGal,
 } from './RetentionBoardUi';
 import {
   breachSeverity,
-  deadlineCaption,
-  isOverdue,
   KANBAN_COLS,
   kanbanColOf,
   loadMyRetentionCases,
@@ -31,17 +30,28 @@ import {
   type RetentionCaseRow,
   type RetentionKanbanCol,
 } from './retentionData';
+import { isSalesLocked, stageTimer } from './retentionTimers';
 import { subscribeRetentionLive } from './retentionLiveBus';
 import { useSales } from './ctx';
 
 type ViewMode = 'kanban' | 'list';
 
 const LIST_GRID =
-  'grid-template-columns:1.4fr 110px 90px 1.1fr 90px 100px 90px 1fr';
+  'grid-template-columns:1.4fr 110px 90px 1.1fr 90px 160px 90px 1fr';
+
+function useBoardClock(ms = 30_000): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), ms);
+    return () => window.clearInterval(id);
+  }, [ms]);
+  return now;
+}
 
 export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) => void }) {
   const { pushToast } = useSales();
   const feed = useLoad(() => loadMyRetentionCases(), []);
+  const now = useBoardClock();
   const [view, setView] = useState<ViewMode>('kanban');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [localCases, setLocalCases] = useState<RetentionCaseRow[] | null>(null);
@@ -49,6 +59,11 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
     () => (selectedId ? (localCases ?? feed.data?.cases ?? []).find((c) => c.id === selectedId) ?? null : null),
     [selectedId, localCases, feed.data?.cases],
   );
+
+  // Dissatisfied cards are locked — never keep the detail modal open on them.
+  useEffect(() => {
+    if (selectedSeed && isSalesLocked(selectedSeed)) setSelectedId(null);
+  }, [selectedSeed]);
 
   const cases = useMemo(() => {
     const src = localCases ?? feed.data?.cases ?? [];
@@ -78,6 +93,15 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
   }, [cases]);
 
   const onUpdated = (row: RetentionCaseRow): void => {
+    // Open Pool clears assignee — drop from Cases immediately (no locked card).
+    if (row.statusCode === 'p1_open_pool' || row.statusCode === 'p1_pool_claim_pending') {
+      setLocalCases((prev) => {
+        const base = prev ?? feed.data?.cases ?? [];
+        return base.filter((x) => x.id !== row.id);
+      });
+      if (selectedId === row.id) setSelectedId(null);
+      return;
+    }
     setLocalCases((prev) => {
       const base = prev ?? feed.data?.cases ?? [];
       const idx = base.findIndex((x) => x.id === row.id);
@@ -210,6 +234,7 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
                       row={c}
                       colColor={col.color}
                       index={i}
+                      now={now}
                       onOpen={() => setSelectedId(c.id)}
                     />
                   ))}
@@ -243,19 +268,50 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
                 <span>Freq</span>
                 <span>Quiet</span>
                 <span>Gallons</span>
-                <span>Deadline</span>
+                <span>Timer</span>
                 <span>Attempts</span>
                 <span>Status</span>
               </div>
               {cases.map((c) => {
-                const overdue = isOverdue(c);
+                const locked = isSalesLocked(c);
+                const timer = locked ? null : stageTimer(c, now);
+                const overdue = Boolean(timer?.overdue);
+                if (locked) {
+                  return (
+                    <div
+                      key={c.id}
+                      className="ss-ret-list-row is-locked"
+                      style={{ display: 'grid', gridTemplateColumns: '1.4fr 110px 90px 1.1fr 90px 160px 90px 1fr' }}
+                      title="Dissatisfied — handed to Retention. Locked for Sales."
+                    >
+                      <span style={s('font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
+                        {c.companyName || '—'}
+                      </span>
+                      <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted)")}>
+                        {c.carrierId}
+                      </span>
+                      <span>
+                        <RetentionFreqBadge f={c.transactionFrequency} />
+                      </span>
+                      <span style={s('font-size:12px;color:var(--muted)')}>{quietCaption(c)}</span>
+                      <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px")}>
+                        {c.gallons90d != null ? fmtGal(c.gallons90d) : '—'}
+                      </span>
+                      <span className="ss-ret-locked-badge" style={{ padding: '4px 6px' }}>
+                        → Retention
+                      </span>
+                      <span className="ss-ret-pips">—</span>
+                      <span style={s('font-size:12px;font-weight:700;color:var(--danger)')}>Dissatisfied</span>
+                    </div>
+                  );
+                }
                 return (
                   <button
                     key={c.id}
                     type="button"
                     onClick={() => setSelectedId(c.id)}
                     className={`ss-ret-list-row${overdue ? ' is-overdue' : ''}`}
-                    style={{ display: 'grid', gridTemplateColumns: '1.4fr 110px 90px 1.1fr 90px 100px 90px 1fr' }}
+                    style={{ display: 'grid', gridTemplateColumns: '1.4fr 110px 90px 1.1fr 90px 160px 90px 1fr' }}
                   >
                     <span style={s('font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
                       {c.companyName || '—'}
@@ -276,12 +332,12 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
                     <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px")}>
                       {c.gallons90d != null ? fmtGal(c.gallons90d) : '—'}
                     </span>
-                    <span
-                      style={s(
-                        `font-size:12px;font-weight:600;color:${overdue ? 'var(--danger)' : 'var(--muted)'}`,
+                    <span>
+                      {timer ? (
+                        <RetentionStageTimer timer={timer} compact />
+                      ) : (
+                        <span style={s('font-size:12px;color:var(--faint)')}>—</span>
                       )}
-                    >
-                      {deadlineCaption(c)}
                     </span>
                     <span className="ss-ret-pips">{attemptPips(c.outOfReachAttempts)}</span>
                     <span style={s('font-size:12px;font-weight:700;color:var(--text2)')}>

@@ -22,6 +22,7 @@ function baseCase(overrides: Partial<RetentionCase> = {}): RetentionCase {
     companyName: 'Ironhide',
     applicationId: null,
     agentName: 'Rep',
+    contactPhone: null,
     phaseCode: 'phase_1_agent',
     statusCode: 'p1_new',
     phaseChangedAt: new Date('2026-07-01T00:00:00Z'),
@@ -170,21 +171,22 @@ describe('resolvePhase1Transition', () => {
     ).toThrow(/closed/i);
   });
 
-  it('stamps 5BD deadline when marking out of reach', () => {
+  it('stamps 1BD deadline when marking out of reach', () => {
     const now = new Date(Date.UTC(2026, 6, 20, 12, 0, 0)); // Mon
     const t = resolvePhase1Transition(baseCase(), { outcome: 'out_of_reach', now });
     expect(t.statusCode).toBe('p1_out_of_reach');
     expect(t.currentDeadlineType).toBe(COMMS_ATTEMPT_DEADLINE_TYPE);
-    expect(t.currentDeadlineAt?.toISOString().slice(0, 10)).toBe('2026-07-27');
+    // Mon + 1 BD = Tue
+    expect(t.currentDeadlineAt?.toISOString().slice(0, 10)).toBe('2026-07-21');
   });
 
-  it('nextCommsAttemptDeadline is 5 business days', () => {
+  it('nextCommsAttemptDeadline is 1 business day', () => {
     const fri = new Date(Date.UTC(2026, 6, 17, 12, 0, 0));
     const d = nextCommsAttemptDeadline(fri);
     expect(d.currentDeadlineType).toBe(COMMS_ATTEMPT_DEADLINE_TYPE);
-    // Fri + 5 BD = next Fri
-    expect(d.currentDeadlineAt.getUTCDay()).toBe(5);
-    expect(d.currentDeadlineAt.toISOString().slice(0, 10)).toBe('2026-07-24');
+    // Fri + 1 BD = Mon
+    expect(d.currentDeadlineAt.getUTCDay()).toBe(1);
+    expect(d.currentDeadlineAt.toISOString().slice(0, 10)).toBe('2026-07-20');
   });
 
   it('allows Reached / Dissatisfied / Vacation from OoR', () => {

@@ -118,16 +118,17 @@ async function workerToken(opts: {
   });
 }
 
+// CS access is Admin / profile-default grant only — use Customer Retention (seeded → CS).
 const csAgent = () =>
   workerToken({
-    profile: 'Standard Plus',
+    profile: 'Customer Retention',
     zohoRole: 'Customer Service Agent',
     email: 'agent@octanefuel.com',
   });
 // 'director' is a CS manager marker but NOT an admin marker — exercises the marker path.
 const csDirector = () =>
   workerToken({
-    profile: 'Standard Plus',
+    profile: 'Customer Retention',
     zohoRole: 'Customer Service Director',
     email: 'director@octanefuel.com',
   });
@@ -190,7 +191,7 @@ describe('/cs/* route gates', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it('a Customer Service Agent role derives access with NO headers', async () => {
+  it('Customer Retention profile grants CS with NO headers', async () => {
     const res = await app.inject({
       method: 'GET',
       url: '/v1/cs/citifuel',
@@ -198,6 +199,21 @@ describe('/cs/* route gates', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(records.listRecords).toHaveBeenCalled();
+  });
+
+  it('Customer Service Agent role alone does NOT grant CS (Admin-controlled)', async () => {
+    const token = await workerToken({
+      profile: 'Sales Agent',
+      zohoRole: 'Customer Service Agent',
+      email: 'role-only@octanefuel.com',
+      zohoUserId: 'role-only-1',
+    });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/cs/citifuel',
+      headers: bearer(token),
+    });
+    expect(res.statusCode).toBe(403);
   });
 });
 

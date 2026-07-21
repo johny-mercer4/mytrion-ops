@@ -24,5 +24,7 @@
 }
 
 .ai {
-  color: var(--accent);
+  background: linear-gradient(135deg, #24C6DC 0%, #24C6DC 50%, #FF8008 100%);
+  -webkit-background-clip: text;
+  color: transparent;
 }

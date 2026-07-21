@@ -1,11 +1,11 @@
 import type { FastifyInstance, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
 import { RBACError } from '../../lib/errors.js';
-import { DEFAULT_PROFILE_SEED, MYTRION_IDS, type MytrionId } from '../../lib/mytrions.js';
+import { MYTRION_IDS, type MytrionId } from '../../lib/mytrions.js';
 import { listActiveUsersCached } from '../../modules/auth/actAsDirectory.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { mytrionAccessService } from '../../modules/access/mytrionAccessService.js';
-import { mytrionProfileDefaultsRepo, type MytrionProfileDefaultDto } from '../../repos/mytrionProfileDefaultsRepo.js';
+import { mytrionProfileDefaultsRepo } from '../../repos/mytrionProfileDefaultsRepo.js';
 import { workerMytrionAccessRepo } from '../../repos/workerMytrionAccessRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireContext } from './helpers.js';
@@ -35,21 +35,17 @@ const profileDefaultBody = z.object({
   active: z.boolean().optional(),
 });
 
-/** Seed the known-profile defaults on first use so the Profile Defaults screen is never empty. */
-async function seededProfileDefaults(ctx: TenantContext): Promise<MytrionProfileDefaultDto[]> {
-  const existing = await mytrionProfileDefaultsRepo.list(ctx);
-  if (existing.length > 0) return existing;
-  for (const seed of DEFAULT_PROFILE_SEED) {
-    await mytrionProfileDefaultsRepo.upsert(ctx, {
-      profileName: seed.profileName,
-      allowedMytrions: seed.allowedMytrions,
-      homeMytrion: seed.homeMytrion,
-      allDepartmentAccess: seed.allDepartmentAccess,
-    });
-  }
-  // Seeding changes what every worker resolves — drop any cached (pre-seed legacy-floor) grants.
-  mytrionAccessService.invalidateAll();
-  return mytrionProfileDefaultsRepo.list(ctx);
+/**
+ * Invariant: a grant that leaves exactly ONE accessible Mytrion always carries it as home, so
+ * Landing auto-navigates and the picker can never appear for single-Mytrion users. `??` also
+ * covers an explicit null — clearing home on a single-Mytrion grant is meaningless.
+ */
+function normalizedHome(
+  home: MytrionId | null | undefined,
+  allowed: MytrionId[] | null | undefined,
+): MytrionId | null {
+  const sole = Array.isArray(allowed) && allowed.length === 1 ? (allowed[0] ?? null) : null;
+  return home ?? sole;
 }
 
 /**
@@ -116,7 +112,7 @@ export async function mytrionAccessRoutes(app: FastifyInstance): Promise<void> {
         profileName: body.profileName ?? null,
         allowedMytrions: body.allowedMytrions === undefined ? null : body.allowedMytrions,
         deniedMytrions: body.deniedMytrions ?? [],
-        homeMytrion: body.homeMytrion ?? null,
+        homeMytrion: normalizedHome(body.homeMytrion, body.allowedMytrions),
         allDepartmentAccess: body.allDepartmentAccess === undefined ? null : body.allDepartmentAccess,
         viewAsUserIds: body.viewAsUserIds ?? [],
         active: body.active ?? true,
@@ -138,10 +134,10 @@ export async function mytrionAccessRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // Profile defaults (seeded on first read).
+  // Profile defaults (also seeded at boot — bootstrap.ts; this keeps the screen self-healing).
   app.get('/admin/mytrion-access/profiles', guard, async (request) => {
     const ctx = requireAdmin(request);
-    return { profiles: await seededProfileDefaults(ctx) };
+    return { profiles: await mytrionAccessService.ensureProfileDefaultsSeeded(ctx.tenantId) };
   });
 
   app.post<{ Params: { profileKey: string } }>(
@@ -153,7 +149,7 @@ export async function mytrionAccessRoutes(app: FastifyInstance): Promise<void> {
       const saved = await mytrionProfileDefaultsRepo.upsert(ctx, {
         profileName: body.profileName,
         allowedMytrions: body.allowedMytrions,
-        homeMytrion: body.homeMytrion ?? null,
+        homeMytrion: normalizedHome(body.homeMytrion, body.allowedMytrions),
         allDepartmentAccess: body.allDepartmentAccess ?? false,
         active: body.active ?? true,
       });

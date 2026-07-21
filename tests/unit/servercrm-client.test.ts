@@ -7,10 +7,9 @@ vi.mock('../../src/integrations/serverCrm.js', () => ({
   serverCrmPost: vi.fn(),
 }));
 
-import { assertCarrierOwned, fetchAgentRoster } from '../../src/modules/tools/serverCrmScope.js';
+import { fetchAgentRoster } from '../../src/modules/tools/serverCrmScope.js';
 import { crmPickMyClientTool } from '../../src/modules/tools/definitions/servercrm_client.js';
 import { coerceElicitation } from '../../src/modules/agents/elicitation.js';
-import { RBACError } from '../../src/lib/errors.js';
 import { makeContext } from '../fixtures/seed.js';
 
 const frank = () =>
@@ -20,8 +19,6 @@ const frank = () =>
     departments: ['sales'],
     allDepartmentAccess: false,
   });
-const admin = () => makeContext({ allDepartmentAccess: true });
-
 afterEach(() => serverCrmGet.mockReset());
 
 describe('fetchAgentRoster — boolean coercion + owner id', () => {
@@ -47,26 +44,8 @@ describe('fetchAgentRoster — boolean coercion + owner id', () => {
   });
 });
 
-describe('assertCarrierOwned — owner-scoping guard (servercrm does not enforce this)', () => {
-  it('allows a carrier in the caller’s roster', async () => {
-    serverCrmGet.mockResolvedValue({ data: [{ carrier_id: '5815958' }] });
-    await expect(assertCarrierOwned(frank(), '5815958')).resolves.toBeUndefined();
-    expect(serverCrmGet).toHaveBeenCalledWith('/api/clients/by-agent/6227679000000676062', {
-      carrierId: '5815958',
-      limit: 1,
-    });
-  });
-
-  it('DENIES a carrier not in the caller’s roster (no cross-agent access)', async () => {
-    serverCrmGet.mockResolvedValue({ data: [] }); // servercrm returns nothing for a foreign carrier
-    await expect(assertCarrierOwned(frank(), '5794015')).rejects.toBeInstanceOf(RBACError);
-  });
-
-  it('admins (allDepartmentAccess) bypass the guard without a lookup', async () => {
-    await expect(assertCarrierOwned(admin(), '5794015')).resolves.toBeUndefined();
-    expect(serverCrmGet).not.toHaveBeenCalled();
-  });
-});
+// assertCarrierOwned now resolves through the DWH roster authority, not servercrm's by-agent —
+// its coverage (arms, cache, 502-vs-RBAC, admin skip) lives in tests/unit/carrier-ownership.test.ts.
 
 describe('crm.pick_my_client — server-built picker states', () => {
   const run = (input: Record<string, unknown>) =>

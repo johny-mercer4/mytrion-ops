@@ -35,11 +35,12 @@ const META: Record<string, JobMeta> = {
   'automation.retention.deadline-sweep': {
     title: 'Retention deadline sweep',
     description:
-      'Every 15 minutes: applies overdue timers — 2BD no-action → Retention, Reached 5BD → Open Pool, pool 3BD claim, vacation follow-up / Ops signoff, 10BD Retention → CITI. Notifies Ryan Saab (inbox) on Open Pool.',
+      'Every 15 minutes: applies overdue timers — 2BD no-action → Retention (+ CS RoundRobin), Reached 5BD → Open Pool, pool 3BD claim, vacation follow-up / Ops signoff, 10BD Retention → Open Pool (CITI at max 3 agents). Notifies Ryan Saab (inbox) on Open Pool.',
   },
   'automation.retention.weekly-scan': {
     title: 'Retention weekly scan',
-    description: 'Monday LLM summary of churn-risk signals and re-engagement actions for the retention team.',
+    description:
+      'DISABLED: Monday LLM churn summary. Parked until Sales Mytrion retention is complete, then CS — use case-sync + deadline-sweep only for now.',
   },
   'automation.collection.debtor-sweep': {
     title: 'Collection debtor sweep',

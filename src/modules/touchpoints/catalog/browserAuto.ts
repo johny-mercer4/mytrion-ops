@@ -4,7 +4,7 @@
  */
 import { z } from 'zod';
 import type { Touchpoint } from '../types.js';
-import { idString } from './common.js';
+import { idString, SALES } from './common.js';
 
 const taskBody = z.object({
   appId: idString,
@@ -24,6 +24,7 @@ export const browserAutoTouchpoints: Touchpoint[] = [
     key: 'browser.boca',
     title: 'Send BOCA link (browser automation)',
     riskClass: 'write',
+    departments: SALES,
     method: 'POST',
     pathTemplate: '/wex/boca/{appId}',
     paramsSchema: taskBody,
@@ -33,6 +34,7 @@ export const browserAutoTouchpoints: Touchpoint[] = [
     key: 'browser.close_application',
     title: 'Close WEX application (browser automation)',
     riskClass: 'write',
+    departments: SALES,
     method: 'POST',
     pathTemplate: '/wex/application/{appId}/close',
     paramsSchema: taskBody,

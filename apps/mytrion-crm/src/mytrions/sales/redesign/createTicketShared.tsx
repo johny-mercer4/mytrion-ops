@@ -23,6 +23,9 @@ export const BTN_DISABLED =
   'height:46px;padding:0 28px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:13.5px;cursor:not-allowed';
 
 const MAX_BYTES = 20 * 1024 * 1024;
+/** Allowed attachment types — kept in sync with the AttachZone hint + the `accept` attr. */
+const ACCEPT = '.png,.jpg,.jpeg,.pdf,.doc,.docx,.xls,.xlsx,.csv';
+const ACCEPT_EXT = new Set(['png', 'jpg', 'jpeg', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv']);
 
 export function AttachZone({ id, file, onFile }: { id: string; file: File | null; onFile: (f: File | null) => void }) {
   const [dragging, setDragging] = useState(false);
@@ -31,6 +34,12 @@ export function AttachZone({ id, file, onFile }: { id: string; file: File | null
     if (!f) return;
     if (f.size > MAX_BYTES) {
       pushToast('File too large', 'Attachments must be 20MB or smaller.');
+      return;
+    }
+    // Enforce the advertised types (the drag/paste paths bypass the input's `accept` attr).
+    const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
+    if (!ACCEPT_EXT.has(ext)) {
+      pushToast('Unsupported file type', 'Allowed: PNG, JPG, PDF, DOC, XLS, CSV.');
       return;
     }
     onFile(f);
@@ -79,7 +88,7 @@ export function AttachZone({ id, file, onFile }: { id: string; file: File | null
         <div style={s('font-size:13px;color:var(--text2)')}><span style={s('color:var(--accent);font-weight:700')}>Click to upload</span>, drag &amp; drop, or paste</div>
         <div style={s('font-size:11px;color:var(--faint)')}>PNG, JPG, PDF, DOC, XLS, CSV · max 20MB</div>
       </label>
-      <input id={id} type="file" onChange={(e) => take(e.currentTarget.files?.[0])} style={{ display: 'none' }} />
+      <input id={id} type="file" accept={ACCEPT} onChange={(e) => take(e.currentTarget.files?.[0])} style={{ display: 'none' }} />
     </>
   );
 }

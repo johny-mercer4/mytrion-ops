@@ -8,7 +8,10 @@
 }
 
 .overlay {
-  position: absolute;
+  --loader-accent: var(--accent);
+  --loader-accent-soft: var(--accent-soft);
+  /* fixed: Guard Suspense wraps with display:contents — no positioning box. */
+  position: fixed;
   inset: 0;
   z-index: 999;
   display: flex;
@@ -16,7 +19,10 @@
   align-items: center;
   justify-content: center;
   gap: 26px;
-  background: radial-gradient(700px 400px at 50% 40%, var(--accent-soft), transparent 70%), var(--bg);
+  background:
+    radial-gradient(700px 400px at 50% 40%, var(--loader-accent-soft), transparent 70%),
+    var(--bg, var(--bg-primary));
+  color: var(--text, var(--text-primary));
 }
 
 .sweepTrack {
@@ -34,7 +40,7 @@
   left: 0;
   height: 2px;
   width: 34%;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  background: linear-gradient(90deg, transparent, var(--loader-accent), transparent);
   animation: loaderSweep 1.5s linear infinite;
 }
 
@@ -59,8 +65,8 @@
   inset: 0;
   border-radius: 50%;
   border: 2px solid transparent;
-  border-top-color: var(--accent);
-  border-right-color: var(--accent-soft);
+  border-top-color: var(--loader-accent);
+  border-right-color: var(--loader-accent-soft);
   animation: loaderSpin 1s linear infinite;
 }
 
@@ -69,7 +75,7 @@
   inset: 16px;
   border-radius: 50%;
   border: 1.5px solid transparent;
-  border-bottom-color: var(--accent-strong, var(--accent));
+  border-bottom-color: var(--loader-accent);
   animation: loaderSpin 1.4s linear infinite reverse;
 }
 
@@ -81,10 +87,11 @@
   text-transform: uppercase;
   text-align: center;
   line-height: 1;
+  color: var(--text, var(--text-primary));
 }
 
 .brandAccent {
-  color: var(--accent);
+  color: var(--loader-accent);
 }
 
 .textContainer {
@@ -97,5 +104,5 @@
   font-size: 17px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text);
+  color: var(--text, var(--text-primary));
 }

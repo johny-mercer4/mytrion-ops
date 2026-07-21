@@ -13,7 +13,8 @@ import { runCoql } from './zohoCrm.js';
 /** Selected Lead fields (validated queryable against live `/coql`). Lookups come back as `{name,id}`. */
 const LEAD_FIELDS =
   'id, Company, Full_Name, Designation, Phone, Cell, Email, Annual_Revenue, Trucks, Lead_Source, ' +
-  'Status, Rating, MC, DOT, Referral_Source, Referred_By, Registration_Time, Web_Registration_Date, ' +
+  'Status, Unqualified_Reason, Not_Interested_Reason, Rating, MC, DOT, Referral_Source, Referred_By, ' +
+  'Registration_Time, Web_Registration_Date, ' +
   'Last_Activity_Time, Modified_Time, Created_Time, utm_source, Converted__s, Description';
 
 /** Selected Deal fields (validated queryable). Account_Name/Contact_Name are lookups (`{name,id}`). */

@@ -31,8 +31,8 @@ export function RetentionCaseActions(props: {
   row: RetentionCaseRow;
   busy: boolean;
   contactPhone: string | null;
+  phoneLoading?: boolean;
   newWizardStep: NewWizardStep;
-  setNewWizardStep: (v: NewWizardStep) => void;
   /** Call ended while New — must pick a stage. */
   forceStage: boolean;
   /** Call ended while OoR — must log RC attempt. */
@@ -62,11 +62,11 @@ export function RetentionCaseActions(props: {
     row,
     busy,
     contactPhone,
+    phoneLoading = false,
     forceStage,
     pendingCall,
     onAct,
     newWizardStep,
-    setNewWizardStep,
   } = props;
   const isNew =
     row.statusCode === 'p1_new' ||
@@ -153,7 +153,8 @@ export function RetentionCaseActions(props: {
   }
 
   if (isNew) {
-    const onStageStep = newWizardStep === 'stage' || forceStage;
+    /* Stage step only after the call ends (forceStage) — no manual continue. */
+    const onStageStep = forceStage || newWizardStep === 'stage';
     return (
       <div style={s('display:flex;flex-direction:column;gap:14px')}>
         <WizardChrome
@@ -167,24 +168,13 @@ export function RetentionCaseActions(props: {
           <CallFirstBlock
             busy={busy}
             contactPhone={contactPhone}
+            phoneLoading={phoneLoading}
             onCall={props.onCall}
-            onContinue={() => setNewWizardStep('stage')}
           />
         ) : (
           <>
-            {forceStage && pendingCall && <CallEndedBanner pendingCall={pendingCall} />}
+            {pendingCall && <CallEndedBanner pendingCall={pendingCall} />}
             <StageStep {...props} showOutOfReach title="Choose stage" />
-            {!forceStage && (
-              <button
-                type="button"
-                onClick={() => setNewWizardStep('call')}
-                style={s(
-                  'align-self:flex-start;background:none;border:none;padding:0;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;text-decoration:underline',
-                )}
-              >
-                ← Back to call
-              </button>
-            )}
           </>
         )}
       </div>
@@ -196,7 +186,7 @@ export function RetentionCaseActions(props: {
       <div style={s('display:flex;flex-direction:column;gap:14px')}>
         <WizardChrome
           stage="Out of Reach"
-          stepLabel={`Attempt ${row.outOfReachAttempts}/5 · 5 BD each`}
+          stepLabel={`Attempt ${row.outOfReachAttempts}/5 · 1 BD each`}
         />
         <AttemptStep {...props} />
         {/* After every attempt (RC or other), stage picker includes OoR again. */}

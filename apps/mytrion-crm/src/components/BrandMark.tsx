@@ -15,7 +15,7 @@ export function BrandMark() {
   return (
     <span className={styles.brand}>
       <span className={styles.word}>
-        MYTRION<span className={styles.ai}> PLATFORM</span>
+        MYTRION<span className={styles.ai}> HORIZON</span>
       </span>
     </span>
   );

@@ -235,9 +235,14 @@ export function AppCell({
     case 'date':
       return <span className="cs-app-row-date">{fieldValue(app, col.field ?? 'Date_Filled') || '—'}</span>;
 
-    /* Deal agent */
-    case 'agent':
-      return <span className="cs-app-row-owner">{app.agent || '—'}</span>;
+    /* Deal agent (from related Deal Owner / `_dealOwner`) */
+    case 'agent': {
+      const unassigned = !app.agent || app.agent === 'not assigned';
+      if (unassigned) {
+        return <span className="cs-badge cs-badge-muted">not assigned</span>;
+      }
+      return <span className="cs-app-row-owner">{app.agent}</span>;
+    }
 
     /* Address summary */
     case 'address': {

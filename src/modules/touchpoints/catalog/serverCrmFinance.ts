@@ -11,6 +11,7 @@
 import { z } from 'zod';
 import type { Touchpoint } from '../types.js';
 import { carrierId, limit, looseFilters } from './common.js';
+import { fetchFinanceDebtors, fetchFinanceTransactions } from '../../../integrations/dwhFinance.js';
 
 const FINANCE = ['finance'] as const;
 
@@ -29,7 +30,17 @@ function financeList(key: string, title: string, pathTemplate: string): Touchpoi
 }
 
 export const serverCrmFinanceTouchpoints: Touchpoint[] = [
-  financeList('finance.main_transactions', 'Main transactions (list)', '/api/main-transactions'),
+  {
+    kind: 'local',
+    key: 'finance.main_transactions',
+    title: 'Main transactions (list)',
+    riskClass: 'read',
+    departments: ['finance'],
+    paramsSchema: z.object({ limit: limit(500, 100).optional() }),
+    handler: async (ctx, params) => {
+      return fetchFinanceTransactions({ limit: params.limit as number });
+    },
+  },
   financeList('finance.main_transactions_count', 'Main transactions (count)', '/api/main-transactions/count'),
   financeList('finance.smart_audits', 'Smart Balance audits (list)', '/api/smart-balance/audits'),
   financeList('finance.smart_audits_count', 'Smart Balance audits (count)', '/api/smart-balance/audits/count'),
@@ -37,7 +48,17 @@ export const serverCrmFinanceTouchpoints: Touchpoint[] = [
   financeList('finance.clients_count', 'Clients (count)', '/api/clients/count'),
   financeList('finance.payments', 'Payments (list)', '/api/payments'),
   financeList('finance.payments_count', 'Payments (count)', '/api/payments/count'),
-  financeList('finance.debtors', 'Debtors (list)', '/api/debtors'),
+  {
+    kind: 'local',
+    key: 'finance.debtors',
+    title: 'Debtors (list)',
+    riskClass: 'read',
+    departments: ['finance'],
+    paramsSchema: z.object({ limit: limit(500, 50).optional() }),
+    handler: async (ctx, params) => {
+      return fetchFinanceDebtors({ limit: params.limit as number });
+    },
+  },
   financeList('finance.debtors_count', 'Debtors (count)', '/api/debtors/count'),
   financeList('finance.analytics_fueling', 'Fueling patterns (org-wide)', '/api/analytics/fueling-patterns'),
   financeList('finance.analytics_segments_aggregate', 'Client segments (aggregate)', '/api/analytics/segments/aggregate'),

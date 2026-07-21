@@ -103,7 +103,8 @@ export const ICON_REGISTRY = {
   grid: LayoutGrid,
   carriers: Truck,
   callHub: Headset,
-  retention: Handshake,
+  /* Re-engage / win-back — clearer than handshake for Retention desk */
+  retention: RefreshCw,
   // shared KPI / activity glyphs (was salesData `ICO`)
   calls: Phone,
   notes: FileText,

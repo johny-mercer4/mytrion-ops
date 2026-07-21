@@ -84,6 +84,10 @@ export interface RetentionCandidate {
   applicationId: string | null;
   agentName: string | null;
   agentZohoUserId: string | null;
+  /** Zoho CRM Deal id from DWH (`octane.agent_deals.id`) — required for Open Pool ownership transfer. */
+  zohoDealId: string | null;
+  /** Prefer deal_phone, fall back to contact_phone (same as Sales roster / getDwhCompanyDetails). */
+  contactPhone: string | null;
   dealStage: string | null;
   activeCards: number | null;
   lastTransactionAt: Date | null;
@@ -94,6 +98,10 @@ export interface RetentionCandidate {
   thresholdDays: number;
   /** True when daysInactive exceeds the class threshold — the case-generation trigger. */
   breached: boolean;
+  /** Zoho Main_Language when set; else null. */
+  preferredLanguage: string | null;
+  /** Spanish Retention desk (Jean Paul): main_language or nationality = Spanish. */
+  isSpanishDesk: boolean;
 }
 
 interface CandidateRow {
@@ -102,11 +110,31 @@ interface CandidateRow {
   application_id: number | null;
   agent: string | null;
   agent_zoho_user_id: number | null;
+  zoho_deal_id: string | number | null;
+  deal_phone: string | null;
+  contact_phone: string | null;
   deal_stage: string | null;
   total_active_cards: number | string | null;
   last_tx: string | Date | null;
   tx_days_90d: number | string | null;
   gallons_90d: number | string | null;
+  nationality: string | null;
+  main_language: string | null;
+}
+
+/** Prefer CRM main_language; fall back to dim_company.nationality for Spanish desk. */
+export function resolveSpanishDesk(input: {
+  mainLanguage: string | null | undefined;
+  nationality: string | null | undefined;
+}): { preferredLanguage: string | null; isSpanishDesk: boolean } {
+  const lang = input.mainLanguage?.trim() || null;
+  const nat = input.nationality?.trim() || null;
+  const langSpanish = Boolean(lang && /^spanish$/i.test(lang));
+  const natSpanish = Boolean(nat && /^spanish$/i.test(nat));
+  return {
+    preferredLanguage: lang ?? (natSpanish ? 'Spanish' : null),
+    isSpanishDesk: langSpanish || natSpanish,
+  };
 }
 
 function toDate(v: string | Date | null): Date | null {
@@ -120,12 +148,23 @@ function toCandidate(row: CandidateRow, now: Date): RetentionCandidate {
   const daysInactive = lastTransactionAt ? daysSince(lastTransactionAt, now) : 90;
   const txCount90d = Number(row.tx_days_90d ?? 0);
   const { frequencyClass, thresholdDays } = classifyFrequency(txCount90d);
+  const phone = (row.deal_phone ?? row.contact_phone)?.trim() || null;
+  const dealId =
+    row.zoho_deal_id != null && String(row.zoho_deal_id).trim()
+      ? String(row.zoho_deal_id).trim()
+      : null;
+  const spanish = resolveSpanishDesk({
+    mainLanguage: row.main_language,
+    nationality: row.nationality,
+  });
   return {
     carrierId: String(row.carrier_id),
     companyName: row.company_name,
     applicationId: row.application_id != null ? String(row.application_id) : null,
     agentName: row.agent,
     agentZohoUserId: row.agent_zoho_user_id != null ? String(row.agent_zoho_user_id) : null,
+    zohoDealId: dealId,
+    contactPhone: phone,
     dealStage: row.deal_stage,
     activeCards: row.total_active_cards != null ? Number(row.total_active_cards) : null,
     lastTransactionAt,
@@ -135,6 +174,8 @@ function toCandidate(row: CandidateRow, now: Date): RetentionCandidate {
     frequencyClass,
     thresholdDays,
     breached: daysInactive > thresholdDays,
+    preferredLanguage: spanish.preferredLanguage,
+    isSpanishDesk: spanish.isSpanishDesk,
   };
 }
 
@@ -173,6 +214,7 @@ export async function scanRetentionCandidates(
      company as (
        select distinct on (carrier_id)
               carrier_id, company_name, application_id, agent, agent_zoho_user_id,
+              deal_phone, contact_phone, nationality,
               deal_stage, total_active_cards, last_transaction_date, first_swipe_date
          from octane.dim_company
         where carrier_id is not null
@@ -183,21 +225,44 @@ export async function scanRetentionCandidates(
           and coalesce(deal_stage, '') <> 'Closed Lost'
           and coalesce(deal_stage, '') not ilike '%out of business%'
         order by carrier_id, update_date desc nulls last
+     ),
+     -- Zoho Deal id per carrier from octane.agent_deals (canonical agent↔deal directory).
+     deals as (
+       select distinct on (carrier_id)
+              carrier_id, id::text as zoho_deal_id
+         from octane.agent_deals
+        where carrier_id is not null
+          and id is not null
+        order by carrier_id, appfilldate desc nulls last, id desc
+     ),
+     -- Sparse but authoritative language when CRM Main_Language is filled.
+     deal_lang as (
+       select id::text as zoho_deal_id, main_language
+         from octane.intm_zoho_deals
+        where id is not null
+          and main_language is not null
      )
      select c.carrier_id,
             c.company_name,
             c.application_id,
             c.agent,
             c.agent_zoho_user_id,
+            d.zoho_deal_id,
+            c.deal_phone,
+            c.contact_phone,
             c.deal_stage,
             c.total_active_cards,
+            c.nationality,
+            dl.main_language,
             greatest(tx.last_tx_90d, c.last_transaction_date) as last_tx,
             coalesce(tx.tx_days_90d, 0)                       as tx_days_90d,
             coalesce(tx.gallons_90d, 0)                       as gallons_90d
        from company c
        left join tx on tx.carrier_id = c.carrier_id
-       left join billing_debtors d on d.carrier_id = c.carrier_id
-      where d.carrier_id is null
+       left join deals d on d.carrier_id = c.carrier_id
+       left join deal_lang dl on dl.zoho_deal_id = d.zoho_deal_id
+       left join billing_debtors bd on bd.carrier_id = c.carrier_id
+      where bd.carrier_id is null
         and greatest(tx.last_tx_90d, c.last_transaction_date) is not null
         and greatest(tx.last_tx_90d, c.last_transaction_date) < now() - interval '2 days'
         and greatest(tx.last_tx_90d, c.last_transaction_date) >= now() - ($1 || ' days')::interval

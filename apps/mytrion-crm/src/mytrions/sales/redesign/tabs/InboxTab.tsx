@@ -15,7 +15,7 @@ import { s } from '../dc';
 import { Icon, type IconName } from '../icons';
 import { badge, iconBox, ICO } from '../salesData';
 import { useSales } from '../ctx';
-import { useLoad, loadInbox, deleteInboxMessage, type InboxVM } from '../live';
+import { useLoad, loadInbox, deleteInboxMessage, invalidateInboxCache, type InboxVM } from '../live';
 import { publishInboxReload, subscribeInboxLive } from '../inboxLiveBus';
 import { useServerCrmSocket } from '../useServerCrmSocket';
 import { useInboxRead, markInboxRead, markInboxReadMany } from '../inboxRead';
@@ -108,6 +108,8 @@ export function InboxTab() {
   const refreshInbox = (): void => {
     if (refreshSpin) return;
     setRefreshSpin(true);
+    // Bypass the shared 30s cache; the badge's bus-triggered reload joins this one POST.
+    invalidateInboxCache();
     reload();
     publishInboxReload();
     if (spinTimer.current) clearTimeout(spinTimer.current);
@@ -124,7 +126,12 @@ export function InboxTab() {
     const prev = items;
     setItems((xs) => xs.filter((x) => x.id !== i.id));
     void deleteInboxMessage(i.id)
-      .then(() => pushToast('Message removed', ''))
+      // Drop the cached list so the 30s-cached copy can't resurrect the deleted row on the
+      // next Home-preview/badge mount.
+      .then(() => {
+        invalidateInboxCache();
+        pushToast('Message removed', '');
+      })
       .catch((err: unknown) => {
         setItems(prev);
         pushToast('Delete failed', err instanceof Error ? err.message : 'Could not remove the message');

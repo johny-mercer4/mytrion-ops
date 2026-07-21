@@ -84,6 +84,18 @@ export interface AppsPage {
   moreRecords: boolean;
 }
 
+/** Deal owner from Deluge enrichment (`_dealOwner`) — never Application Owner. */
+function dealAgentName(r: CsApplicationRow): string {
+  const o = pick(r, '_dealOwner', '_dealAgent');
+  if (o == null || o === '') return 'not assigned';
+  if (typeof o === 'object') {
+    const name = lookupName(o).trim();
+    return name || 'not assigned';
+  }
+  const s = String(o).trim();
+  return s || 'not assigned';
+}
+
 function mapAppRow(r: CsApplicationRow): Application {
   return {
     id: str(r.id),
@@ -104,7 +116,7 @@ function mapAppRow(r: CsApplicationRow): Application {
     trucks: num(r.Number_of_Trucks) ?? 0,
     cards: num(pick(r, 'Cards_Requested', 'Cards_Ordered')) ?? 0,
     date: fmtDate(r.Date_Filled),
-    agent: lookupName(pick(r, 'Owner', '_dealOwner')),
+    agent: dealAgentName(r),
     notes: str(r.Customer_Service_Notes),
     cycle: str(r.Billing_Cycle),
     pay: str(r.Payment_Type_Billing) as Application['pay'],
@@ -118,21 +130,43 @@ function mapAppRow(r: CsApplicationRow): Application {
   };
 }
 
+/** Short TTL cache — tab switches / revisits skip another Deluge + COQL round-trip. */
+const APPS_CACHE_TTL_MS = 90_000;
+const appsCache = new Map<string, { at: number; data: AppsPage }>();
+
+/** One COQL page can return up to 2000 rows (Zoho v8) — avoid 200-row loop chatter. */
+export const APPLICATIONS_PAGE_SIZE = 2000;
+
+export function invalidateApplicationsCache(): void {
+  appsCache.clear();
+}
+
 export async function loadApplications(
   tab: 'apps' | 'clients',
   search: string,
   page: number,
+  fresh = false,
 ): Promise<AppsPage> {
+  const q = search.trim();
+  const cacheKey = `${tab}|${q}|${page}|${APPLICATIONS_PAGE_SIZE}`;
+  if (fresh) appsCache.delete(cacheKey);
+  else {
+    const hit = appsCache.get(cacheKey);
+    if (hit && Date.now() - hit.at < APPS_CACHE_TTL_MS) return hit.data;
+  }
+
   const res = await csTouchpoint('cs.applications.list', {
     tab,
-    ...(search.trim() ? { search: search.trim() } : {}),
+    ...(q ? { search: q } : {}),
     page,
-    perPage: 200,
+    perPage: APPLICATIONS_PAGE_SIZE,
   });
-  return {
+  const data: AppsPage = {
     rows: (res.data ?? []).map(mapAppRow),
     moreRecords: res.more_records === true,
   };
+  appsCache.set(cacheKey, { at: Date.now(), data });
+  return data;
 }
 
 // ---- Home ----

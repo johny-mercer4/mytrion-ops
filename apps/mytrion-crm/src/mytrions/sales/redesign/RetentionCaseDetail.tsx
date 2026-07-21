@@ -24,6 +24,7 @@ import {
   RetentionCaseHeader,
   RetentionDetailSkeleton,
   RetentionEventTrail,
+  RetentionInactivityBlock,
   RetentionMetaGrid,
 } from './RetentionCaseMeta';
 import {
@@ -68,7 +69,8 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
   const [attemptNote, setAttemptNote] = useState('');
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
-  const [contactPhone, setContactPhone] = useState<string | null>(null);
+  const [contactPhone, setContactPhone] = useState<string | null>(seed?.contactPhone ?? null);
+  const [phoneLoading, setPhoneLoading] = useState(!seed?.contactPhone?.trim());
   const [awaitingCallEnd, setAwaitingCallEnd] = useState(false);
   const [pendingCall, setPendingCall] = useState<PendingCallLog | null>(null);
   const [statusPick, setStatusPick] = useState<StatusPick>('');
@@ -103,6 +105,9 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
     setPendingCall(null);
     setStatusPick('');
     setNewWizardStep('call');
+    const seeded = seed?.contactPhone?.trim() || null;
+    setContactPhone(seeded);
+    setPhoneLoading(!seeded);
   }, [caseId]); // eslint-disable-line react-hooks/exhaustive-deps -- reset on case switch only
 
   useEffect(() => {
@@ -110,6 +115,12 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
     setLiveCase(detail.data.case);
     setLiveEvents(detail.data.events);
     setEventsHydrated(true);
+    const fromCase =
+      detail.data.case.contactPhone?.trim() || detail.data.contactPhone?.trim() || null;
+    if (fromCase) {
+      setContactPhone(fromCase);
+      setPhoneLoading(false);
+    }
   }, [detail.data, eventsHydrated]);
 
   useEffect(() => {
@@ -117,20 +128,31 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
     if (row?.reasonNote) setReasonNote(row.reasonNote);
   }, [row?.id, row?.dissatisfactionReason, row?.reasonNote]);
 
+  // Instant path: denormalized phone on the case. Fallback: lazy DWH for older rows.
   useEffect(() => {
+    const fromRow = row?.contactPhone?.trim() || null;
+    if (fromRow) {
+      setContactPhone(fromRow);
+      setPhoneLoading(false);
+      return;
+    }
     let off = false;
-    setContactPhone(null);
+    setPhoneLoading(true);
     void loadRetentionCaseContact(caseId)
       .then((phone) => {
-        if (!off) setContactPhone(phone);
+        if (off) return;
+        setContactPhone(phone);
+        setPhoneLoading(false);
       })
       .catch(() => {
-        if (!off) setContactPhone(null);
+        if (off) return;
+        setContactPhone(null);
+        setPhoneLoading(false);
       });
     return () => {
       off = true;
     };
-  }, [caseId]);
+  }, [caseId, row?.contactPhone]);
 
   useEffect(() => {
     if (!evidenceFile) {
@@ -343,11 +365,12 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
         events,
         'Status saved',
         callForAttempt && outcome === 'out_of_reach'
-          ? `Out of Reach · RingCentral ${updated.outOfReachAttempts}/5 · choose next stage after each attempt`
+          ? `Moved to Out of Reach · RingCentral ${updated.outOfReachAttempts}/5`
           : statusLabel(updated.statusCode),
       );
-      setStatusPick(updated.statusCode === 'p1_out_of_reach' ? 'out_of_reach' : '');
-      if (opts?.close !== false && updated.statusCode !== 'p1_out_of_reach') onClose();
+      setStatusPick('');
+      // Close after stage choice so the board card can move into the new column.
+      if (opts?.close !== false) onClose();
     } catch (e) {
       setLiveCase(row);
       onUpdated(row);
@@ -362,7 +385,7 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
     else if (statusPick === 'vacation') {
       const note = reasonNote.trim();
       void act('vacation', note ? { reasonNote: note } : undefined);
-    } else if (statusPick === 'out_of_reach') void act('out_of_reach', undefined, { close: false });
+    } else if (statusPick === 'out_of_reach') void act('out_of_reach');
   };
 
   const onDissatisfied = (e: FormEvent): void => {
@@ -464,6 +487,7 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
           companyName={row?.companyName || 'Case'}
           carrierId={row?.carrierId ?? caseId}
           phoneDisplay={phoneDisplay}
+          phoneLoading={!initialLoad && phoneLoading}
           onClose={requestClose}
         />
 
@@ -479,6 +503,7 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
 
           {row && (
             <>
+              <RetentionInactivityBlock row={row} />
               <RetentionMetaGrid row={row} />
               {row.isOpen &&
                 row.phaseCode === 'phase_1_agent' &&
@@ -487,8 +512,8 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
                     row={row}
                     busy={busy}
                     contactPhone={contactPhone}
+                    phoneLoading={phoneLoading}
                     newWizardStep={newWizardStep}
-                    setNewWizardStep={setNewWizardStep}
                     forceStage={forceStage}
                     forceAttempt={forceAttempt}
                     pendingCall={pendingCall}
@@ -525,25 +550,34 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
                   for a new transaction — closed on fuel; otherwise CITI (timer-driven).
                 </div>
               )}
-              {row.statusCode === 'p1_open_pool' && (
+              {(row.statusCode === 'p1_open_pool' ||
+                row.statusCode === 'p1_pool_claim_pending') && (
                 <div
                   style={s(
-                    'padding:12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);font-size:12px;color:var(--text2);line-height:1.45',
+                    'padding:12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--warn) 35%,var(--border));background:color-mix(in srgb,var(--warn) 10%,var(--alt));font-size:12px;color:var(--text2);line-height:1.45',
                   )}
                 >
-                  <strong style={s('color:var(--text)')}>In Sales Open Pool.</strong> Another agent
-                  can claim it from the Open Pool tab (max 3 assignments).
+                  <strong style={s('color:var(--text)')}>
+                    {row.statusCode === 'p1_pool_claim_pending'
+                      ? 'Open Pool — claim pending.'
+                      : 'In Sales Open Pool.'}
+                  </strong>{' '}
+                  {row.assignedAgentZohoUserId
+                    ? 'Another agent can claim from Open Pool (max 3 assignments).'
+                    : 'This was your deal — you cannot claim it back here. Other agents request it from Open Pool; CS approval transfers Deal/Contact/Company ownership.'}
                 </div>
               )}
-              {eventsLoading ? (
-                <div style={s('display:flex;flex-direction:column;gap:8px')} aria-busy="true">
-                  <div className="ss-skel" style={s('height:12px;width:30%')} />
-                  <div className="ss-skel" style={s('height:56px')} />
-                  <div className="ss-skel" style={s('height:56px')} />
-                </div>
-              ) : (
-                <RetentionEventTrail events={liveEvents} />
-              )}
+              {/* New stage: call-first — no timeline until a stage is chosen */}
+              {!isNewStatus(row.statusCode) &&
+                (eventsLoading ? (
+                  <div style={s('display:flex;flex-direction:column;gap:8px')} aria-busy="true">
+                    <div className="ss-skel" style={s('height:12px;width:30%')} />
+                    <div className="ss-skel" style={s('height:56px')} />
+                    <div className="ss-skel" style={s('height:56px')} />
+                  </div>
+                ) : (
+                  <RetentionEventTrail events={liveEvents} />
+                ))}
             </>
           )}
         </div>

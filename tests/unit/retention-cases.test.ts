@@ -100,6 +100,7 @@ function caseDto(overrides: Partial<RetentionCaseDto> = {}): RetentionCaseDto {
     companyName: 'Ironhide Logistics LLC',
     applicationId: null,
     agentName: 'Rep Riley',
+    contactPhone: null,
     phaseCode: 'phase_1_agent',
     statusCode: 'p1_new',
     phaseChangedAt: '2026-07-06T00:00:00.000Z',
@@ -146,6 +147,7 @@ function openRow(overrides: Partial<RetentionCase> = {}): RetentionCase {
     companyName: 'Ironhide Logistics LLC',
     applicationId: null,
     agentName: null,
+    contactPhone: null,
     phaseCode: 'phase_1_agent',
     statusCode: 'p1_new',
     phaseChangedAt: new Date('2026-07-01T00:00:00Z'),
@@ -189,6 +191,8 @@ function candidate(overrides: Partial<RetentionCandidate> = {}): RetentionCandid
     applicationId: '9001',
     agentName: 'Rep Riley',
     agentZohoUserId: '777',
+    zohoDealId: 'zdeal_104882',
+    contactPhone: '5551234567',
     dealStage: 'Card Swiped',
     activeCards: 12,
     lastTransactionAt: new Date('2026-06-20T00:00:00Z'),
@@ -198,6 +202,8 @@ function candidate(overrides: Partial<RetentionCandidate> = {}): RetentionCandid
     frequencyClass: 'high',
     thresholdDays: 2,
     breached: true,
+    preferredLanguage: null,
+    isSpanishDesk: false,
     ...overrides,
   };
 }
@@ -439,6 +445,7 @@ describe('retention sync — auto record generation', () => {
       expect.anything(),
       expect.objectContaining({
         carrierId: '111',
+        zohoDealId: 'zdeal_104882',
         phaseCode: 'phase_1_agent',
         statusCode: 'p1_in_progress',
         source: 'auto',
@@ -457,18 +464,18 @@ describe('retention sync — auto record generation', () => {
         agentOutcome: 'returned',
       }),
     );
-    // phase_3_citi is final — never auto-closed; any post-create tx closes other open cases.
-    expect(lastTxMock).toHaveBeenCalledWith(expect.arrayContaining(['222', '444']));
-    expect(lastTxMock.mock.calls[0]?.[0]).not.toContain('555');
+    // Unified auto-close: all open phases (incl. CITI) are checked for post-create txns.
+    expect(lastTxMock).toHaveBeenCalledWith(expect.arrayContaining(['222', '444', '555']));
   });
 
-  it('never closes a citi-phase case even when the client transacted', async () => {
+  it('closes a citi-phase case when the client transacted after open', async () => {
     const recent = new Date(Date.now() - 1 * 86_400_000);
     scanMock.mockResolvedValueOnce([]);
     repo.listOpen.mockResolvedValueOnce([
       openRow({ id: 55, carrierId: '555', phaseCode: 'phase_3_citi', statusCode: 'p3_hold' }),
     ]);
     lastTxMock.mockResolvedValueOnce(new Map([['555', recent]]));
+    repo.update.mockResolvedValueOnce(caseDto({ id: '55', statusCode: 'p1_returned' }));
     const res = await app.inject({
       method: 'POST',
       url: '/v1/retention/sync',
@@ -476,8 +483,15 @@ describe('retention sync — auto record generation', () => {
       payload: {},
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().summary.closedReturned).toBe(0);
-    expect(repo.update).not.toHaveBeenCalled();
+    expect(res.json().summary.closedReturned).toBe(1);
+    expect(repo.update).toHaveBeenCalledWith(
+      expect.anything(),
+      '55',
+      expect.objectContaining({
+        statusCode: 'p1_returned',
+        agentOutcome: 'returned',
+      }),
+    );
   });
 
   it('does not close a case when the last transaction predates it', async () => {

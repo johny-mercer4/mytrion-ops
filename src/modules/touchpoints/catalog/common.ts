@@ -1,6 +1,9 @@
 /** Shared zod pieces for touchpoint param schemas (widget-parity coercions). */
 import { z } from 'zod';
 
+/** The sales-panel department tag — `departments` is required on every entry (fail closed). */
+export const SALES = ['sales'] as const;
+
 /** Ids arrive as strings or numbers from the UI — normalize to trimmed strings. */
 export const idString = z
   .union([z.string().min(1).max(120), z.number()])
