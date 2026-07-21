@@ -6,16 +6,15 @@
  * Boot splash removed — tabs own their own skeletons (avoids double loaders on Home).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RingCentralPhone } from '@/components/ringcentral/RingCentralPhone';
-
 import { s } from './dc';
 import { Icon } from './icons';
 import { SalesContext, type ClientRecord, type DetailVM, type SalesCtx } from './ctx';
 import { ClientModal, type ClientModalTab } from './ClientModal';
-import { NAV, NAV_GROUPS, NAVLABEL, timeParts } from './salesData';
+import { NAV, NAV_GROUPS, NAVLABEL, TICKETS_ENABLED, timeParts } from './salesData';
 import { useSessionUser } from './sessionUser';
 import { useSidebarBadges } from './sidebarBadges';
 import { useRetentionRealtime } from './useRetentionRealtime';
+import { LeadCallWizardHost } from './LeadCallWizard';
 import { getSession } from '@/api/session';
 import { useUserContext } from '@/context/UserContextProvider';
 import { useImpersonation } from '@/context/ImpersonationProvider';
@@ -118,11 +117,10 @@ export function SalesRedesign() {
   // Wayfinding: the top bar leads with the label the user actually clicked, then the author's
   // descriptive title as a muted secondary — so "Data Center" no longer silently becomes "Pipeline Hub".
   const activeLabel = NAV.find((n) => n.id === section)?.label ?? '';
-  const ticketsComingSoon = NAV.some((n) => n.id === 'tickets' && n.comingSoon === true);
   const badgeCounts: Record<string, number | undefined> = {
     inbox: liveBadges.inbox || undefined,
     // Hide the unread badge while Tickets is parked as Coming soon.
-    tickets: ticketsComingSoon ? undefined : liveBadges.tickets || undefined,
+    tickets: TICKETS_ENABLED ? liveBadges.tickets || undefined : undefined,
   };
 
   const go = useCallback((next: string) => {
@@ -135,7 +133,7 @@ export function SalesRedesign() {
   }, []);
   // Jump to Tickets and flag the ticket the tab should auto-open (e.g. after Create).
   const openTicket = useCallback((ticketId: string) => {
-    if (NAV.some((n) => n.id === 'tickets' && n.comingSoon === true)) {
+    if (!TICKETS_ENABLED) {
       pushToast('Tickets', 'Coming soon — use Data Center for leads and deals.');
       return;
     }
@@ -191,19 +189,22 @@ export function SalesRedesign() {
         className={`ss-root ${theme === 'light' ? 'light' : ''}`}
         style={s('height:100vh;display:flex;flex-direction:row;background:radial-gradient(1200px 500px at 78% -8%, rgba(var(--accent-rgb),.10), transparent 60%), radial-gradient(900px 480px at 0% 108%, rgba(var(--violet-rgb),.08), transparent 55%), var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;font-size:14px;overflow:hidden;position:relative')}
       >
-        <RingCentralPhone />
-
         {/* SIDEBAR */}
         <aside style={s(`flex-shrink:0;width:${navCollapsed ? '68px' : '238px'};transition:width .18s cubic-bezier(.2,0,0,1);display:flex;flex-direction:column;background:color-mix(in srgb, var(--bg) 84%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-right:1px solid var(--border);position:relative;z-index:30`)}>
-          <div style={s(`display:flex;align-items:center;gap:11px;padding:18px ${navCollapsed ? '0' : '18px'} 16px;${navCollapsed ? 'justify-content:center' : ''}`)}>
-            <div style={s('width:36px;height:36px;border-radius:var(--radius-md);background:linear-gradient(140deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(var(--accent-rgb),.4);flex-shrink:0')}>
-              <Icon name="rocket" size={20} color="#fff" />
-            </div>
+          <div style={s(`display:flex;align-items:flex-start;gap:10px;padding:20px ${navCollapsed ? '0' : '16px'} 14px;${navCollapsed ? 'justify-content:center' : ''}`)}>
             {!navCollapsed && (
               <>
-                <div style={s('line-height:1.1;min-width:0')}>
-                  <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.08em;text-transform:uppercase")}>
-                    Sales <span style={s('color:var(--accent)')}>Mytrion</span>
+                <div style={s('line-height:1.05;min-width:0;flex:1')}>
+                  <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.1em;text-transform:uppercase;color:var(--text)")}>
+                    MY<span style={s('color:var(--accent-text)')}>TRION</span>
+                  </div>
+                  <div
+                    className="ss-brand-sub"
+                    style={s(
+                      "margin-top:5px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:12px;letter-spacing:.18em;text-transform:uppercase;line-height:1.15;background:linear-gradient(105deg,var(--accent) 0%,var(--accent-2) 55%,var(--violet) 100%);-webkit-background-clip:text;background-clip:text;color:transparent",
+                    )}
+                  >
+                    Sales
                   </div>
                 </div>
                 <button onClick={toggleNav} aria-label="Collapse sidebar" title="Collapse sidebar" className="ss-ico-btn" style={s('margin-left:auto;width:28px;height:28px;flex-shrink:0;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
@@ -405,6 +406,9 @@ export function SalesRedesign() {
           />
         )}
 
+
+        {/* Forced post-call Lead status wizard — fires on any tab when an outbound lead call ends. */}
+        <LeadCallWizardHost pushToast={pushToast} />
 
         {/* TOAST */}
         {toast && (

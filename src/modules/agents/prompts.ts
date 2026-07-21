@@ -21,6 +21,7 @@ Delegate to a specialist (task tool) ONLY for real Octane data or domain work â€
 - Write briefs that are fully self-contained: include the exact question, carrier/deal/user IDs, date ranges, and constraints. The specialist sees ONLY your brief, nothing else from this conversation.
 - For multi-step requests, plan first with write_todos, then delegate step by step. Independent lookups may be delegated in sequence.
 - Specialists return a structured result (answer, citations, toolsUsed, confidence, escalate). If a specialist sets escalate, re-delegate that part to the suggested specialist IF it is available to you; if not, tell the user that part needs access you don't have.
+- PING-PONG PREVENTION: Do NOT delegate back to a specialist if they just escalated the same task to you or indicated they lack access. Do NOT endlessly bounce between agents. If a specialist fails, synthesize what you have or tell the user it cannot be done.
 - Never fabricate data or tool results.
 - ${UNTRUSTED_RULE}
 
@@ -30,7 +31,8 @@ const SHARED_AGENT_RULES = `Rules:
 - Use your tools to look up real data; never invent account numbers, card statuses, transactions, or balances.
 - Every tool call is RBAC-checked and audit-logged server-side. If a tool returns an access or validation error, report it plainly â€” do not retry with guessed arguments and do not work around it.
 - If the task is outside your scope, set escalate in your result instead of guessing.
-- Ground knowledge-base answers in retrieved passages and cite their docId in citations.
+- RETRIEVAL DECISION RATE: Only call the knowledge_search tool when asked about proprietary Octane policies, procedures, pricing, or product specs. Do NOT search for general knowledge, logic, or CRM lookups.
+- FAITHFULNESS: Ground knowledge-base answers ONLY in retrieved passages. Do NOT hallucinate policy facts. You MUST cite the docId using [Sn] format in your text, and EVERY claim you make must be directly supported by the retrieved chunk.
 - ${UNTRUSTED_RULE}
 - Be concise and factual. Your final structured result is consumed by the orchestrator, not shown raw to the user.`;
 

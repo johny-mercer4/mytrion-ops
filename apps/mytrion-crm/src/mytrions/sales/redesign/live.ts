@@ -4,8 +4,10 @@
  */
 import { getDeskTicket, listDeskComments, listDeskTickets, type DeskTicket } from '@/api/desk';
 import { getImpersonation } from '@/api/impersonation';
+import { getSession } from '@/api/session';
 import { callTouchpoint } from '@/api/touchpoints';
 import { getClients, type AgentClient } from '@/api/dataCenter';
+import { dedupedFetch, invalidateDeduped } from './fetchDedupe';
 import { ICO } from './salesData';
 import type { IconName } from './icons';
 
@@ -192,20 +194,39 @@ function mapInboxType(t: string | undefined): InboxVM['type'] {
   if (x === 'critical') return 'critical';
   return 'info';
 }
-export async function loadInbox(): Promise<InboxVM[]> {
-  const res = await callTouchpoint('inbox.list', {});
-  return (res.messages ?? []).map((m) => {
-    const p = String(m.priority ?? '').toLowerCase();
-    return {
-      id: String(m.id ?? m.recordId ?? ''),
-      type: mapInboxType(m.type),
-      prio: p === 'high' || p === 'critical' ? 'high' : p === 'low' || p === 'small' ? 'small' : 'medium',
-      title: m.subject || m.name || '(no subject)',
-      desc: stripHtml(m.content ?? ''),
-      time: relTime(m.createdTime),
-      tag: m.tag ?? '',
-    };
-  });
+/** Effective CRM identity for dedupe keys — matches what the transport's x-act-as headers scope to. */
+function effUserId(): string {
+  return getImpersonation()?.zohoUserId ?? getSession()?.worker.zohoUserId ?? 'anon';
+}
+
+const INBOX_TTL_MS = 30_000;
+
+/** One shared inbox fetch for its three consumers (sidebar badge, Home preview, Inbox tab). */
+export async function loadInbox(fresh = false): Promise<InboxVM[]> {
+  return dedupedFetch(
+    `inbox:${effUserId()}`,
+    async () => {
+      const res = await callTouchpoint('inbox.list', {});
+      return (res.messages ?? []).map((m) => {
+        const p = String(m.priority ?? '').toLowerCase();
+        return {
+          id: String(m.id ?? m.recordId ?? ''),
+          type: mapInboxType(m.type),
+          prio: p === 'high' || p === 'critical' ? 'high' : p === 'low' || p === 'small' ? 'small' : 'medium',
+          title: m.subject || m.name || '(no subject)',
+          desc: stripHtml(m.content ?? ''),
+          time: relTime(m.createdTime),
+          tag: m.tag ?? '',
+        } as InboxVM;
+      });
+    },
+    { ttlMs: INBOX_TTL_MS, fresh },
+  );
+}
+
+/** Force the next loadInbox (any consumer) to hit the network — WS events, refresh, deletes. */
+export function invalidateInboxCache(): void {
+  invalidateDeduped('inbox:');
 }
 export function deleteInboxMessage(recordId: string): Promise<unknown> {
   return callTouchpoint('inbox.delete_message', { recordId });
@@ -222,7 +243,14 @@ export interface ActivityCounts {
   apps: number;
   tasks: number;
 }
-export async function loadActivity(range: 'today' | 'week' | 'month'): Promise<ActivityCounts> {
+export async function loadActivity(range: 'today' | 'week' | 'month', fresh = false): Promise<ActivityCounts> {
+  void fresh; // in-flight share only (no TTL): concurrent equal calls collapse; sequential calls refetch
+  return dedupedFetch(`activity:${effUserId()}:${range}`, async () => {
+    return fetchActivity(range);
+  });
+}
+
+async function fetchActivity(range: 'today' | 'week' | 'month'): Promise<ActivityCounts> {
   const map = { today: 'daily', week: 'weekly', month: 'monthly' } as const;
   const res = await callTouchpoint('activity.agent', { range: map[range] });
   const m = res.metrics ?? {};
@@ -305,7 +333,11 @@ export async function loadRecords(): Promise<RecordVM[]> {
   // metadata + computed debt/activity overlays + cycle/this-month/prev-month gallons. Replaces the
   // servercrm by-agent roster (dropped its live-CMP HTTP overlay) AND the separate loyalty/dashboard
   // round-trips — one call now backs the Clients tab.
-  return (await getClients()).map(mapRecord);
+  // Forward the acted-as agent id under admin View-as: the /data-center/clients route targets by
+  // ?zoho_user_id (it does NOT read the x-act-as header, unlike touchpoints), so without this an
+  // admin viewing an agent resolves to their OWN empty roster. Matches loadLeads/loadDeals/loadTickets.
+  const actAsId = getImpersonation()?.zohoUserId;
+  return (await getClients(actAsId)).map(mapRecord);
 }
 
 // ---- Dashboard (dashboard.agent_sales) ----

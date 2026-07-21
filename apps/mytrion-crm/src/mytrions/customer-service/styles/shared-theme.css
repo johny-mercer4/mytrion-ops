@@ -1,216 +1,225 @@
 /* =====================================================
    Customer Service — Theme Variables
-   Brand: Mytrion — Paper White / Royal Blue
-   Light is the default; .dark-mode (on #app-shell AND
-   body, for teleported toasts) overrides the tokens with
-   the Ink Black twin of the same design.
+   Brand: muted enterprise gold (same hue family as CSMYTRION).
+   Softened chroma / glows for all-day ops; light + dark.
    ===================================================== */
 
 .cs-root {
-    /* ── Canvas ── */
-    --color-bg-primary: #FFFFFF;
-    --color-bg-secondary: #F7F8FA;
-    --color-brand: #16181D;
-    --color-brand-hover: #000000;
+    /* ── Canvas (neutral-warm, less blue clash with gold) ── */
+    --color-bg-primary: #F5F6F8;
+    --color-bg-secondary: #EBEEF2;
+    --color-brand: #0F172A;
+    --color-brand-hover: #020617;
     --color-on-brand: #FFFFFF;
-    --color-accent: #2563EB;
+    --color-accent: #C9A227;
 
-    /* ── Customer Service accent — royal blue ── */
-    --cs-accent: #2563EB;
-    --cs-accent-hover: #1D4ED8;
-    --cs-accent-soft: rgba(37, 99, 235, 0.07);
-    --cs-accent-glow: rgba(37, 99, 235, 0.14);
-    --cs-success: #16A34A;
-    --cs-warning: #D97706;
-    --cs-danger: #DC2626;
-    --cs-purple: #9333EA;
-    --cs-orange: #EA580C;
+    /* ── Gold accent — same family, lower neon ── */
+    --cs-accent: #C9A227;
+    --cs-accent-hover: #D4AF37;
+    --cs-accent-deep: #A8841A;
+    --cs-on-accent: #1A1400;
+    --cs-accent-soft: rgba(201, 162, 39, 0.12);
+    --cs-accent-softer: rgba(201, 162, 39, 0.06);
+    --cs-accent-glow: rgba(201, 162, 39, 0.14);
+    --cs-border-gold: rgba(168, 132, 26, 0.28);
+    --cs-success: #1B8A54;
+    --cs-success-soft: rgba(27, 138, 84, 0.10);
+    --cs-warning: #A66B14;
+    --cs-warning-soft: rgba(166, 107, 20, 0.12);
+    --cs-danger: #C04540;
+    --cs-danger-soft: rgba(192, 69, 64, 0.10);
+    --cs-purple: #6B4FA8;
+    --cs-purple-soft: rgba(107, 79, 168, 0.10);
+    --cs-orange: #C25A16;
+    --cs-sky: #0C7F98;
+    --cs-sky-soft: rgba(12, 127, 152, 0.10);
 
     /* ── Chat ── */
-    --chat-user-bg: #2563EB;
-    --chat-user-text: #ffffff;
+    --chat-user-bg: #C9A227;
+    --chat-user-text: #1A1400;
 
     /* ── Text ── */
-    --color-text-primary: #16181D;
-    --color-text-muted: #8B929C;
-    --text-primary: #16181D;
-    --text-secondary: #3F444D;
-    --text-muted: #8B929C;
+    --color-text-primary: #0F172A;
+    --color-text-muted: #64748B;
+    --text-primary: #0F172A;
+    --text-secondary: #475569;
+    --text-muted: #64748B;
     --text-on-dark: #FFFFFF;
 
     /* ── Micro-type & ghost tones ── */
-    --th-color: #A6ADB7;          /* table headers, form labels, micro captions */
-    --placeholder-color: #A6ADB7;
-    --hint-color: #B7BDC6;        /* card hints, tertiary captions */
-    --ghost-color: #C9CED5;       /* em-dash placeholders */
-    --soon-color: #C3C8CF;        /* sidebar "Soon" tags */
+    --th-color: #64748B;
+    --placeholder-color: #94A3B8;
+    --hint-color: #94A3B8;
+    --ghost-color: #CBD5E1;
+    --soon-color: #94A3B8;
 
     /* ── Backward-compat aliases ── */
-    --brand-blue: #2563EB;
-    --brand-cyan: #2563EB;
-    --brand-blue-hover: #1D4ED8;
-    --brand-navy: #F7F8FA;
-    --brand-navy-mid: #F2F4F7;
-    --brand-dark: #F7F8FA;
-    --accent: #2563EB;
-    --accent-glow: rgba(37, 99, 235, 0.14);
+    --brand-blue: #C9A227;
+    --brand-cyan: #0C7F98;
+    --brand-blue-hover: #D4AF37;
+    --brand-navy: #EBEEF2;
+    --brand-navy-mid: #F1F5F9;
+    --brand-dark: #EBEEF2;
+    --accent: #C9A227;
+    --accent-glow: rgba(201, 162, 39, 0.14);
 
     /* ── Layout ── */
-    --sidebar-width: 232px;
+    --sidebar-width: 238px;
     --sidebar-collapsed: 64px;
     --header-height: 56px;
     --bottom-nav-height: 62px;
+    --sec-gap: 26px;
+    --card-pad: 22px;
+    --panel-pad: 38px;
+    --r-sm: 8px;
+    --r-md: 12px;
+    --r-lg: 16px;
+    --r-xl: 22px;
 
     /* ── Surfaces ── */
     --surface: #FFFFFF;
-    --surface-alt: #F7F8FA;
-    --surface-raised: #F2F4F7;
+    --surface-alt: #F8FAFC;
+    --surface-2: #F1F5F9;
+    --surface-3: #E2E8F0;
+    --surface-raised: rgba(15, 23, 42, 0.03);
     --sidebar-bg: #FFFFFF;
     --header-bg: #FFFFFF;
 
-    /* ── Aliases for the shared MytrionLoader (it reads --bg / --text /
-          --accent-soft / --accent-strong, which .cs-root otherwise doesn't
-          define — leaving the boot loader with no background). var() refs so
-          they follow the light/dark theme automatically. ── */
-    --bg:            var(--surface);
+    /* ── Loader aliases ── */
+    --bg:            var(--color-bg-primary);
     --text:          var(--text-primary);
     --accent-soft:   var(--cs-accent-soft);
     --accent-strong: var(--cs-accent-hover);
 
-    /* ── Borders ── */
-    --border: #E4E7EC;
-    --border-light: #EEF0F3;
-    --border-dark: #F2F4F5;
-    --color-border: #E4E7EC;
-    --border-hover: #D0D5DC;      /* card/input hover borders */
+    /* ── Borders (neutral slate — not cool blue) ── */
+    --border: rgba(15, 23, 42, 0.10);
+    --border-2: rgba(15, 23, 42, 0.06);
+    --border-light: rgba(15, 23, 42, 0.06);
+    --border-dark: rgba(15, 23, 42, 0.04);
+    --color-border: rgba(15, 23, 42, 0.10);
+    --border-hover: rgba(15, 23, 42, 0.18);
 
     /* ── Controls ── */
-    --check-border: #D6DAE0;      /* tick box outline */
-    --track-bg: #F0F2F4;          /* bar tracks, loader rings, skeleton base */
-    --skeleton-hi: #EDEFF2;       /* skeleton shimmer highlight */
+    --check-border: rgba(15, 23, 42, 0.18);
+    --track-bg: #E2E8F0;
+    --skeleton-hi: #E2E8F0;
 
     /* ── Status ── */
-    --success: #16A34A;
-    --error: #DC2626;
+    --success: #1B8A54;
+    --error: #C04540;
 
-    /* ── Shadows — barely there ── */
-    --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.04);
-    --shadow-md: 0 2px 8px rgba(16, 24, 40, 0.06);
-    --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.12), 0 2px 8px rgba(16, 24, 40, 0.06);
+    /* ── Shadows (quieter) ── */
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+    --shadow-md: 0 4px 16px rgba(15, 23, 42, 0.06), 0 1px 4px rgba(15, 23, 42, 0.04);
+    --shadow-lg: 0 18px 44px rgba(15, 23, 42, 0.10), 0 6px 14px rgba(15, 23, 42, 0.06);
 
     /* ── Modal / toast ── */
-    --modal-backdrop-bg: rgba(22, 24, 29, 0.40);
+    --modal-backdrop-bg: rgba(15, 23, 42, 0.36);
     --modal-box-bg: #FFFFFF;
-    --toast-bg: #16181D;          /* inverted sheet: dark on light theme */
+    --toast-bg: #0F172A;
     --toast-fg: #FFFFFF;
 
     /* ── Scrollbar ── */
-    --scrollbar-thumb: #D3D8DF;
+    --scrollbar-thumb: rgba(15, 23, 42, 0.18);
     --scrollbar-track: transparent;
 
-    /* ── Radii ──
-       Deliberately not redefined here: this block used to shadow the app scale with its own
-       8/10px, which is exactly how this module drifted from the rest of the CRM. The values now
-       cascade from theme.css so there is one corner radius to change. */
-
-    /* ── Tables — open, airy, divider-only ── */
+    /* ── Tables ── */
     --table-head-bg: transparent;
     --table-head-shadow: none;
     --table-row-zebra: transparent;
-    --table-row-divider: #F0F2F4;
-    --table-hover: #FAFBFC;
+    --table-row-divider: rgba(15, 23, 42, 0.06);
+    --table-hover: rgba(15, 23, 42, 0.03);
 }
 
 /* =====================================================
-   DARK MODE — Ink Black twin
-   Same geometry, same quietness; brightened accent and
-   status hues so dots/text carry on near-black.
+   DARK MODE — calmer gold on deep slate
    ===================================================== */
-.cs-root.dark-mode,
-
 .cs-root.dark-mode {
-    /* ── Canvas ── */
-    --color-bg-primary: #0E1116;
-    --color-bg-secondary: #151A21;
-    --color-brand: #E6E9ED;
-    --color-brand-hover: #FFFFFF;
-    --color-on-brand: #0E1116;
+    --color-bg-primary: #0E1219;
+    --color-bg-secondary: #141A24;
+    --color-brand: #E2E8F0;
+    --color-brand-hover: #F8FAFC;
+    --color-on-brand: #0E1219;
+    --color-accent: #D4B84A;
 
-    /* ── Accent — blue-500 reads better on ink ── */
-    --cs-accent: #3B82F6;
-    --cs-accent-hover: #60A5FA;
-    --cs-accent-soft: rgba(59, 130, 246, 0.10);
-    --cs-accent-glow: rgba(59, 130, 246, 0.22);
-    --cs-success: #22C55E;
-    --cs-warning: #F59E0B;
-    --cs-danger: #EF4444;
-    --cs-purple: #A855F7;
-    --cs-orange: #F97316;
+    /* Soft gold — same hue as #FFD60A, lower chroma */
+    --cs-accent: #D4B84A;
+    --cs-accent-hover: #E0C96A;
+    --cs-accent-deep: #C4A83A;
+    --cs-on-accent: #1A1400;
+    --cs-accent-soft: rgba(212, 184, 74, 0.12);
+    --cs-accent-softer: rgba(212, 184, 74, 0.06);
+    --cs-accent-glow: rgba(212, 184, 74, 0.14);
+    --cs-border-gold: rgba(212, 184, 74, 0.22);
+    --cs-success: #3DBF72;
+    --cs-success-soft: rgba(61, 191, 114, 0.12);
+    --cs-warning: #E0A93A;
+    --cs-warning-soft: rgba(224, 169, 58, 0.12);
+    --cs-danger: #E07068;
+    --cs-danger-soft: rgba(224, 112, 104, 0.12);
+    --cs-purple: #A78BD4;
+    --cs-purple-soft: rgba(167, 139, 212, 0.12);
+    --cs-orange: #E07A3A;
+    --cs-sky: #3AADCC;
+    --cs-sky-soft: rgba(58, 173, 204, 0.12);
 
-    --chat-user-bg: #3B82F6;
+    --chat-user-bg: #D4B84A;
+    --chat-user-text: #1A1400;
 
-    /* ── Text ── */
-    --color-text-primary: #E6E9ED;
-    --color-text-muted: #7D8590;
-    --text-primary: #E6E9ED;
-    --text-secondary: #B3BAC4;
-    --text-muted: #7D8590;
+    --color-text-primary: #E2E8F0;
+    --color-text-muted: #8494A7;
+    --text-primary: #E2E8F0;
+    --text-secondary: #A8B4C4;
+    --text-muted: #8494A7;
 
-    /* ── Micro-type & ghost tones ── */
-    --th-color: #6E7681;
-    --placeholder-color: #6E7681;
-    --hint-color: #545D69;
-    --ghost-color: #3D454F;
-    --soon-color: #4A525B;
+    --th-color: #8494A7;
+    --placeholder-color: #8494A7;
+    --hint-color: #5C6B7E;
+    --ghost-color: #3D4654;
+    --soon-color: #5C6B7E;
 
-    /* ── Aliases ── */
-    --brand-blue: #3B82F6;
-    --brand-cyan: #3B82F6;
-    --brand-blue-hover: #60A5FA;
-    --brand-navy: #151A21;
-    --brand-navy-mid: #1B222B;
-    --brand-dark: #151A21;
-    --accent: #3B82F6;
-    --accent-glow: rgba(59, 130, 246, 0.22);
+    --brand-blue: #D4B84A;
+    --brand-cyan: #3AADCC;
+    --brand-blue-hover: #E0C96A;
+    --brand-navy: #141A24;
+    --brand-navy-mid: #1C2430;
+    --brand-dark: #141A24;
+    --accent: #D4B84A;
+    --accent-glow: rgba(212, 184, 74, 0.14);
 
-    /* ── Surfaces ── */
-    --surface: #0E1116;
-    --surface-alt: #161C24;
-    --surface-raised: #1B222B;
-    --sidebar-bg: #0E1116;
-    --header-bg: #0E1116;
+    --surface: #171D28;
+    --surface-alt: #1C2430;
+    --surface-2: #1C2430;
+    --surface-3: #252E3C;
+    --surface-raised: rgba(226, 232, 240, 0.04);
+    --sidebar-bg: #0B0F16;
+    --header-bg: #0E1219;
 
-    /* ── Borders ── */
-    --border: #262D36;
-    --border-light: #1F252D;
-    --border-dark: #1A2027;
-    --color-border: #262D36;
-    --border-hover: #39424D;
+    --border: rgba(226, 232, 240, 0.08);
+    --border-2: rgba(226, 232, 240, 0.05);
+    --border-light: rgba(226, 232, 240, 0.05);
+    --border-dark: rgba(226, 232, 240, 0.03);
+    --color-border: rgba(226, 232, 240, 0.08);
+    --border-hover: rgba(226, 232, 240, 0.14);
 
-    /* ── Controls ── */
-    --check-border: #39424D;
-    --track-bg: #1E252E;
-    --skeleton-hi: #262E38;
+    --check-border: rgba(226, 232, 240, 0.14);
+    --track-bg: #252E3C;
+    --skeleton-hi: #1C2430;
 
-    /* ── Status ── */
-    --success: #22C55E;
-    --error: #EF4444;
+    --success: #3DBF72;
+    --error: #E07068;
 
-    /* ── Shadows — real depth on ink ── */
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.45);
-    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.32), 0 1px 4px rgba(0, 0, 0, 0.22);
+    --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.42), 0 6px 14px rgba(0, 0, 0, 0.28);
 
-    /* ── Modal / toast ── */
-    --modal-backdrop-bg: rgba(0, 0, 0, 0.60);
-    --modal-box-bg: #12161C;
-    --toast-bg: #E6E9ED;          /* inverted sheet: light on dark theme */
-    --toast-fg: #16181D;
+    --modal-backdrop-bg: rgba(0, 0, 0, 0.55);
+    --modal-box-bg: #171D28;
+    --toast-bg: #171D28;
+    --toast-fg: #E2E8F0;
 
-    /* ── Scrollbar ── */
-    --scrollbar-thumb: #333B45;
+    --scrollbar-thumb: rgba(226, 232, 240, 0.14);
 
-    /* ── Tables ── */
-    --table-row-divider: #1A2027;
-    --table-hover: #141920;
+    --table-row-divider: rgba(226, 232, 240, 0.05);
+    --table-hover: rgba(226, 232, 240, 0.04);
 }

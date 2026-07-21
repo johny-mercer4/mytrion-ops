@@ -3,8 +3,16 @@
  * pass (agentName → carrier roster, or a zoho user id). We bind that to the CALLER:
  *  - Administrator (allDepartmentAccess): may target any agent (optional override), else self.
  *  - Everyone else: locked to their own identity (the Zoho context on the request).
+ *
+ * The carrier-ownership GATE (`assertCarrierOwned`) resolves against the DWH roster
+ * (`dwhClientRoster.isCarrierOwned` — id-suffix arm, else name arm), the same authority that
+ * feeds the Clients tab, so "listed" and "actionable" can never diverge. servercrm's by-agent
+ * endpoint is NOT consulted for the gate: it keys on the full session id, which does not line
+ * up with the warehouse id space (see dwhClientRoster.ts header) — that divergence 403'd the
+ * Clients modal for every non-admin.
  */
-import { RBACError, ToolError } from '../../lib/errors.js';
+import { AppError, RBACError, ToolError } from '../../lib/errors.js';
+import { isCarrierOwned, zohoIdSuffix } from '../../integrations/dwhClientRoster.js';
 import { serverCrmGet } from '../../integrations/serverCrm.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
@@ -95,19 +103,76 @@ export async function fetchAgentRoster(
   return { agentName: res.agent_name ?? null, zohoUserId, carriers };
 }
 
+// Ownership is stable minute-to-minute and the Clients modal fires several carrier-gated calls
+// per open (cards + transactions + Load-more) — cache probe results, coalescing concurrent
+// lookups. Negative results are cached too: a denied carrier must not turn retries into a DWH
+// hammer. TTL matches mytrionAccessService's access-resolution cache class.
+const OWNED_TTL_MS = 60_000;
+const OWNED_CACHE_MAX = 1000;
+const ownedCache = new Map<string, { value: boolean; expiresAt: number }>();
+const ownedInflight = new Map<string, Promise<boolean>>();
+
+/** Test hook: drop all cached ownership results. */
+export function clearCarrierOwnershipCache(): void {
+  ownedCache.clear();
+  ownedInflight.clear();
+}
+
+/** Cache key on the NORMALIZED identity (id suffix + lowercased name) — the arms the SQL matches on. */
+function ownedKey(tenantId: string, ownerId: string, ownerName: string | undefined, carrierId: string): string {
+  return [tenantId, zohoIdSuffix(ownerId), (ownerName ?? '').toLowerCase(), carrierId].join('|');
+}
+
+async function carrierOwnedCached(
+  tenantId: string,
+  ownerId: string,
+  ownerName: string | undefined,
+  carrierId: string,
+): Promise<boolean> {
+  const key = ownedKey(tenantId, ownerId, ownerName, carrierId);
+  const hit = ownedCache.get(key);
+  if (hit && hit.expiresAt > Date.now()) return hit.value;
+  const pending = ownedInflight.get(key);
+  if (pending) return pending;
+  const probe = isCarrierOwned(ownerId, ownerName, carrierId)
+    .then((value) => {
+      if (ownedCache.size >= OWNED_CACHE_MAX) {
+        const oldest = ownedCache.keys().next().value;
+        if (oldest !== undefined) ownedCache.delete(oldest);
+      }
+      ownedCache.set(key, { value, expiresAt: Date.now() + OWNED_TTL_MS });
+      return value;
+    })
+    .finally(() => ownedInflight.delete(key)); // errors are never cached — next call re-probes
+  ownedInflight.set(key, probe);
+  return probe;
+}
+
 /**
  * Enforce owner-scoping on a carrier-keyed action: a non-admin caller may only touch carriers in
- * their own roster. servercrm does NOT check this — it's OUR responsibility. Admins / bypass skip.
- * Verified with a targeted by-agent lookup (carrierId filter), so it's precise and cheap.
+ * their own roster. servercrm does NOT check this — it's OUR responsibility. Admins / bypass skip
+ * (act-as contexts carry the TARGET's id + directory-verified name, so a non-admin target is
+ * checked as themselves). Ownership = the DWH roster probe (see file header). A DWH outage is a
+ * 502, never an RBAC denial — the touchpoint audit trail must record policy, not infrastructure.
  */
 export async function assertCarrierOwned(ctx: TenantContext, carrierId: number | string): Promise<void> {
   if (ctx.allDepartmentAccess || ctx.bypassRbac) return;
-  const zohoUserId = resolveZohoUserId(ctx);
-  const res = await serverCrmGet<ByAgentResponse>(
-    `/api/clients/by-agent/${encodeURIComponent(zohoUserId)}`,
-    { carrierId: String(carrierId), limit: 1 },
-  );
-  const owned = (res.data ?? []).some((c) => String(c.carrier_id) === String(carrierId));
+  const ownerId = callerZohoUserId(ctx) ?? '';
+  const ownerName = ctx.userName?.trim() || undefined;
+  if (!zohoIdSuffix(ownerId) && !ownerName) {
+    throw new ToolError('No agent identity (zoho user id or user_name) on the request for owner-scoped data');
+  }
+  let owned: boolean;
+  try {
+    owned = await carrierOwnedCached(ctx.tenantId, ownerId, ownerName, String(carrierId).trim());
+  } catch (err) {
+    throw new AppError('Ownership check unavailable (data warehouse)', {
+      statusCode: 502,
+      code: 'DWH_ERROR',
+      expose: true,
+      cause: err,
+    });
+  }
   if (!owned) {
     throw new RBACError(`Carrier ${carrierId} is not in your client list — you can only access your own clients.`);
   }

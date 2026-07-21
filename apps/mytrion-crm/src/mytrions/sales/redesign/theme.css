@@ -360,19 +360,65 @@ html,body{height:100%;margin:0}
     border:1px solid var(--border2);
   }
   .ss-ret-card{
-    text-align:left;padding:12px 12px 11px;border-radius:var(--radius-md);
+    text-align:left;padding:12px 12px 11px 14px;border-radius:var(--radius-md);
     border:1px solid var(--border);background:var(--surface);
     cursor:pointer;display:flex;flex-direction:column;gap:7px;
-    box-shadow:var(--shadow-sm);transition:border-color .14s,box-shadow .14s;
+    /* Inset rail — avoids double border with the column frame */
+    box-shadow:var(--shadow-sm),inset 3px 0 0 var(--ret-col,var(--accent));
+    transition:border-color .14s,box-shadow .14s;
     animation:ss-up .35s cubic-bezier(.2,0,0,1) both;
   }
   .ss-ret-card:hover{
-    border-color:rgba(var(--accent-rgb),.4);
-    box-shadow:0 0 0 1px rgba(var(--accent-rgb),.1),0 8px 20px rgba(0,0,0,.18);
+    border-color:rgba(var(--accent-rgb),.35);
+    box-shadow:var(--shadow-sm),inset 3px 0 0 var(--ret-col,var(--accent)),0 6px 16px rgba(0,0,0,.12);
   }
-  .ss-ret-card.is-overdue{border-left:3px solid var(--danger)}
-  .ss-ret-card:not(.is-overdue){border-left:3px solid var(--ret-col,var(--accent))}
+  .ss-ret-card.is-overdue{
+    box-shadow:var(--shadow-sm),inset 3px 0 0 var(--danger);
+  }
+  .ss-ret-card.is-overdue:hover{
+    box-shadow:var(--shadow-sm),inset 3px 0 0 var(--danger),0 6px 16px rgba(0,0,0,.12);
+  }
+  .ss-root.light .ss-brand-sub{
+    background:linear-gradient(105deg,#1d4ed8 0%,#2563eb 48%,#6d28d9 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
   .ss-ret-pips{font-size:10px;letter-spacing:.12em;color:var(--muted);font-family:'JetBrains Mono',monospace}
+  .ss-ret-timer{display:flex;flex-direction:column;gap:4px;margin-top:2px}
+  .ss-ret-timer-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .ss-ret-timer-remain{
+    font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;letter-spacing:.01em;
+  }
+  .ss-ret-timer-event{
+    font-size:10px;font-weight:600;color:var(--muted);line-height:1.35;
+  }
+  .ss-ret-timer-track{
+    height:3px;border-radius:99px;background:var(--raised);overflow:hidden;
+  }
+  .ss-ret-timer-fill{
+    height:100%;border-radius:99px;transition:width .6s cubic-bezier(.2,0,0,1);
+  }
+  .ss-ret-timer.is-overdue .ss-ret-timer-event{color:var(--danger)}
+  .ss-ret-timer.is-muted .ss-ret-timer-event{color:var(--faint)}
+  .ss-ret-timer.is-compact .ss-ret-timer-event{display:none}
+  .ss-ret-card.is-locked{
+    cursor:not-allowed;opacity:.72;pointer-events:none;
+    background:color-mix(in srgb,var(--surface) 88%,var(--danger));
+  }
+  .ss-ret-card.is-locked.is-pooled{
+    background:color-mix(in srgb,var(--surface) 90%,var(--warn));
+  }
+  .ss-ret-locked-badge{
+    margin-top:2px;padding:6px 8px;border-radius:calc(var(--radius-md) - 4px);
+    font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--danger);background:color-mix(in srgb,var(--danger) 12%,transparent);
+    border:1px solid color-mix(in srgb,var(--danger) 28%,transparent);
+  }
+  .ss-ret-locked-badge.is-pooled{
+    color:var(--warn);
+    background:color-mix(in srgb,var(--warn) 14%,transparent);
+    border-color:color-mix(in srgb,var(--warn) 32%,transparent);
+  }
+  .ss-ret-list-row.is-locked{cursor:not-allowed;opacity:.65;pointer-events:none}
   .ss-ret-empty{
     padding:52px 28px;text-align:center;border-radius:var(--radius-md);
     border:1px dashed var(--border);background:color-mix(in srgb,var(--alt) 90%,transparent);

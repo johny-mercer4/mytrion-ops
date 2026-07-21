@@ -13,6 +13,7 @@ import type {
   RetentionLookupsResult,
   RetentionPhase1Outcome,
 } from '@/api/touchpointTypes';
+import { stageTimerCaption } from './retentionTimers';
 
 export type {
   RetentionCaseRow,
@@ -107,8 +108,9 @@ export async function loadOpenPoolCases(): Promise<RetentionCasesListResult> {
 
 export async function claimOpenPoolCase(
   caseId: string,
+  reason: string,
 ): Promise<{ case: RetentionCaseRow; pendingApproval: boolean }> {
-  return callTouchpoint('retention.pool_claim', { caseId });
+  return callTouchpoint('retention.pool_claim', { caseId, reason });
 }
 
 export async function loadRetentionLookups(): Promise<RetentionLookupsResult> {
@@ -134,12 +136,12 @@ export const KANBAN_COLS: Array<{
   /** CSS color token for column rail / accent. */
   color: string;
 }> = [
-  { id: 'new', label: 'New', hint: 'Call within 2 BD', color: 'var(--accent)' },
-  { id: 'reached', label: 'Reached', hint: 'Watch fuel · 5 BD → Pool', color: 'var(--ok)' },
-  { id: 'out_of_reach', label: 'Out of Reach', hint: '5×5 BD attempts → Pool', color: 'var(--warn)' },
-  { id: 'vacation', label: 'Vacation', hint: '14d · Ops path', color: 'var(--violet)' },
-  { id: 'dissatisfied', label: 'Dissatisfied', hint: '→ Retention', color: 'var(--danger)' },
-  { id: 'closed', label: 'Closed', hint: 'Returned · Pool · handoff', color: 'var(--muted)' },
+  { id: 'new', label: 'New', hint: 'Call within 2 BD → Retention', color: 'var(--accent)' },
+  { id: 'reached', label: 'Reached', hint: 'Fuel watch · 5 BD → Pool', color: 'var(--ok)' },
+  { id: 'out_of_reach', label: 'Out of Reach', hint: '5×1 BD attempts → Pool', color: 'var(--warn)' },
+  { id: 'vacation', label: 'Vacation', hint: '14-day countdown', color: 'var(--violet)' },
+  { id: 'dissatisfied', label: 'Dissatisfied', hint: 'Locked · Retention', color: 'var(--danger)' },
+  { id: 'closed', label: 'Closed', hint: 'Returned · Open Pool · handoff', color: 'var(--ok)' },
 ];
 
 /** status_code → board_column (same seed as retention_statuses). */
@@ -275,38 +277,9 @@ export function retentionBoardStats(cases: RetentionCaseRow[]): RetentionBoardSt
   };
 }
 
+/** Compact deadline line — stage-aware BD / calendar countdown. */
 export function deadlineCaption(c: RetentionCaseRow): string {
-  if (!c.currentDeadlineAt) return '—';
-  const d = new Date(c.currentDeadlineAt);
-  if (Number.isNaN(d.getTime())) return '—';
-  const ms = d.getTime() - Date.now();
-  const days = Math.ceil(ms / 86_400_000);
-  const prefix =
-    c.currentDeadlineType === '5BD_comms_attempt' ||
-    c.currentDeadlineType === '1BD_comms_attempt'
-      ? '5 BD attempt · '
-      : c.currentDeadlineType === '2BD_agent_action'
-        ? '2 BD act · '
-        : c.currentDeadlineType === '5BD_post_contact'
-          ? '5 BD watch · '
-          : c.currentDeadlineType === '1BD_claim_approve'
-            ? '1 BD approve · '
-          : c.currentDeadlineType === '3BD_pool_claim'
-            ? '3 BD claim · '
-            : c.currentDeadlineType === '3BD_new_owner'
-              ? '3 BD owner · '
-              : c.currentDeadlineType === '10BD_retention'
-                ? '10 BD Retention · '
-                : c.currentDeadlineType === '2BD_vacation_followup'
-                  ? '2 BD follow-up · '
-                  : c.currentDeadlineType === '14D_vacation'
-                    ? 'Vacation · '
-                    : c.currentDeadlineType === '7D_citi_hold'
-                      ? 'CITI · '
-                      : '';
-  if (days < 0) return `${prefix}${Math.abs(days)}d overdue`;
-  if (days === 0) return `${prefix}Due today`;
-  return `${prefix}${days}d left`;
+  return stageTimerCaption(c);
 }
 
 /** Local timeline row so the modal paints results before a refetch. */

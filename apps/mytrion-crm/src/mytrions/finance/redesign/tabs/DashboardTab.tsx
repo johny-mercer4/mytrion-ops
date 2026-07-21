@@ -329,7 +329,7 @@ function FuelingView() {
 
       <div style={s('border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
         <div style={s('padding:15px 18px;border-bottom:1px solid var(--border);font-family:Rajdhani,sans-serif;font-weight:700;font-size:14px;letter-spacing:.05em;text-transform:uppercase')}>Top Fueling Locations</div>
-        {topLocs.map((l) => (
+        {topLocs.map((l: any) => (
           <div key={l.rank} style={s('display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--border2)')}>
             <div style={s("width:26px;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--muted)")}>{l.rank}</div>
             <div style={s('flex:1;min-width:0')}>

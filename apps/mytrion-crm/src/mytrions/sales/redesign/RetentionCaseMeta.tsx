@@ -5,19 +5,20 @@ import { Icon } from './icons';
 import {
   cadenceExplain,
   channelLabel,
-  deadlineCaption,
   freqLabel,
-  isOverdue,
   quietCaption,
   statusLabel,
   type RetentionCaseRow,
 } from './retentionData';
+import { RetentionStageTimer } from './RetentionBoardUi';
+import { isSalesLocked, stageTimer } from './retentionTimers';
 
 export function RetentionCaseHeader(props: {
   loading: boolean;
   companyName: string;
   carrierId: string;
   phoneDisplay: string;
+  phoneLoading?: boolean;
   onClose: () => void;
 }) {
   return (
@@ -30,7 +31,7 @@ export function RetentionCaseHeader(props: {
         {props.loading ? (
           <>
             <div className="ss-skel" style={s('height:18px;width:55%;margin-bottom:8px')} />
-            <div className="ss-skel" style={s('height:12px;width:30%')} />
+            <div className="ss-skel" style={s('height:12px;width:40%')} />
           </>
         ) : (
           <>
@@ -41,11 +42,17 @@ export function RetentionCaseHeader(props: {
             >
               {props.companyName}
             </div>
-            <div style={s('display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin-top:4px')}>
-              <span style={s("font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace")}>
+            <div style={s('display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:4px')}>
+              <span style={s("font-size:12px;color:var(--text2);font-family:'JetBrains Mono',monospace")}>
                 {props.carrierId}
               </span>
-              {props.phoneDisplay ? (
+              {props.phoneLoading ? (
+                <span
+                  className="ss-skel"
+                  aria-label="Loading phone"
+                  style={s('display:inline-block;height:16px;width:118px;border-radius:4px;vertical-align:middle')}
+                />
+              ) : props.phoneDisplay ? (
                 <span
                   style={s(
                     "font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;letter-spacing:.03em;color:var(--accent-text)",
@@ -53,7 +60,9 @@ export function RetentionCaseHeader(props: {
                 >
                   {props.phoneDisplay}
                 </span>
-              ) : null}
+              ) : (
+                <span style={s('font-size:11px;font-weight:600;color:var(--muted)')}>No phone on file</span>
+              )}
             </div>
           </>
         )}
@@ -87,13 +96,78 @@ export function RetentionDetailSkeleton() {
   );
 }
 
+/** Full-width inactivity callout — clearer than a dense meta cell. */
+export function RetentionInactivityBlock({ row }: { row: RetentionCaseRow }) {
+  const days = row.daysInactive ?? 0;
+  const thr = row.thresholdDays ?? 0;
+  const breached = thr > 0 && days > thr;
+  const ratio = thr > 0 ? Math.min(1, days / thr) : 0;
+  const tone = breached ? 'var(--danger)' : ratio >= 0.85 ? 'var(--warn)' : 'var(--accent-text)';
+  const bar = breached ? 'var(--danger)' : ratio >= 0.85 ? 'var(--warn)' : 'var(--accent)';
+
+  return (
+    <div
+      style={s(
+        `padding:14px 14px 13px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,${tone} 28%,var(--border));background:color-mix(in srgb,${tone} 8%,var(--alt))`,
+      )}
+    >
+      <div style={s('display:flex;align-items:center;justify-content:space-between;gap:10px')}>
+        <div
+          style={s(
+            'font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)',
+          )}
+        >
+          Inactivity
+        </div>
+        {breached ? (
+          <span
+            style={s(
+              'display:inline-flex;padding:2px 8px;border-radius:99px;background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger);font-size:10px;font-weight:800',
+            )}
+          >
+            Past cadence
+          </span>
+        ) : null}
+      </div>
+      <div style={s(`margin-top:8px;font-size:15px;font-weight:800;color:${tone};line-height:1.35`)}>
+        {days}
+        <span style={s('font-size:12px;font-weight:700;opacity:.85')}>d</span>
+        <span style={s('font-size:13px;font-weight:650;color:var(--text);margin-left:6px')}>
+          since last fuel
+        </span>
+      </div>
+      {thr > 0 ? (
+        <>
+          <div style={s('margin-top:6px;font-size:12px;color:var(--text2);line-height:1.4')}>
+            Expected every <strong style={s('color:var(--text)')}>{thr}d</strong>
+            {breached ? ` · ${days - thr}d over cadence` : null}
+          </div>
+          <div
+            style={s(
+              'margin-top:10px;height:6px;border-radius:99px;background:color-mix(in srgb,var(--border) 80%,transparent);overflow:hidden',
+            )}
+            aria-hidden
+          >
+            <div
+              style={s(
+                `height:100%;width:${Math.round(ratio * 100)}%;border-radius:99px;background:${bar};transition:width .2s ease`,
+              )}
+            />
+          </div>
+        </>
+      ) : (
+        <div style={s('margin-top:6px;font-size:12px;color:var(--text2)')}>{quietCaption(row)}</div>
+      )}
+    </div>
+  );
+}
+
 export function RetentionMetaGrid({ row }: { row: RetentionCaseRow }) {
-  const overdue = isOverdue(row);
+  const locked = isSalesLocked(row);
+  const timer = locked ? null : stageTimer(row);
   const cells: [string, string, string?][] = [
     ['Status', statusLabel(row.statusCode)],
     ['Frequency', freqLabel(row.transactionFrequency), cadenceExplain(row.transactionFrequency)],
-    ['Inactivity', quietCaption(row)],
-    ['Deadline', deadlineCaption(row)],
     ['90d gallons', row.gallons90d != null ? Math.round(row.gallons90d).toLocaleString() : '—'],
     ['Attempts', `${row.outOfReachAttempts}/5`],
     ['Assignment', String(row.assignmentCount)],
@@ -101,6 +175,26 @@ export function RetentionMetaGrid({ row }: { row: RetentionCaseRow }) {
   ];
   return (
     <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:10px')}>
+      <div
+        style={s(
+          'padding:10px 12px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border);grid-column:1 / -1',
+        )}
+      >
+        <div
+          style={s(
+            'font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px',
+          )}
+        >
+          Stage timer
+        </div>
+        {locked ? (
+          <div className="ss-ret-locked-badge">Handed to Retention · no Sales timer</div>
+        ) : timer ? (
+          <RetentionStageTimer timer={timer} />
+        ) : (
+          <div style={s('font-size:13px;font-weight:700;color:var(--faint)')}>No active deadline</div>
+        )}
+      </div>
       {cells.map(([label, value, hint]) => (
         <div
           key={label}
@@ -118,7 +212,7 @@ export function RetentionMetaGrid({ row }: { row: RetentionCaseRow }) {
           </div>
           <div
             style={s(
-              `font-size:13px;font-weight:700;margin-top:4px;color:${label === 'Deadline' && overdue ? 'var(--danger)' : 'var(--text)'}`,
+              'font-size:13px;font-weight:700;margin-top:4px;color:var(--text)',
             )}
           >
             {value}

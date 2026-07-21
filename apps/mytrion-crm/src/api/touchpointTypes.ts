@@ -641,24 +641,96 @@ export interface TouchpointMap {
     result: RetentionCasesListResult;
   };
   'retention.pool_claim': {
-    params: { caseId: string };
+    params: { caseId: string; reason: string };
     result: { case: RetentionCaseRow; pendingApproval: boolean };
-  };
-  'retention.pool_claims_pending': {
-    params: { limit?: number };
-    result: RetentionCasesListResult;
-  };
-  'retention.pool_claim_approve': {
-    params: { caseId: string };
-    result: { case: RetentionCaseRow };
-  };
-  'retention.pool_claim_decline': {
-    params: { caseId: string };
-    result: { case: RetentionCaseRow };
   };
   'retention.lookups': {
     params: { phase_code?: string };
     result: RetentionLookupsResult;
+  };
+  'retention.cs_claims_pending': {
+    params: { limit?: number };
+    result: { cases: RetentionPendingClaimRow[]; total: number };
+  };
+  'retention.cs_claims_badge': {
+    params: Record<string, never>;
+    result: { count: number };
+  };
+  'retention.cs_claim_approve': {
+    params: { caseId: string };
+    result: { case: RetentionCaseRow };
+  };
+  'retention.cs_claim_decline': {
+    params: { caseId: string };
+    result: { case: RetentionCaseRow };
+  };
+  'retention.cs_cases': {
+    params: { filter?: 'new' | 'working' | 'closed' | 'all_open'; limit?: number };
+    result: RetentionCasesListResult;
+  };
+  'retention.cs_desk_quota': {
+    params: { zohoUserId?: string };
+    result: {
+      zohoUserId: string;
+      assignedToday: number;
+      maxPerDay: number;
+      pending: number;
+      open: number;
+      pendingRatio: number;
+      maxPendingRatio: number;
+      canClaim: boolean;
+      canMarkPending: boolean;
+    };
+  };
+  'retention.cs_case_get': {
+    params: { caseId: string };
+    result: RetentionCaseDetailResult;
+  };
+  'retention.cs_case_outcome': {
+    params: {
+      caseId: string;
+      outcome:
+        | 'claim'
+        | 'start_working'
+        | 'mark_pending'
+        | 'saved'
+        | 'refused'
+        | 'out_of_business'
+        | 'no_response'
+        | 'escalate_citi';
+      notes?: string;
+    };
+    result: { case: RetentionCaseRow };
+  };
+  'retention.cs_log_attempt': {
+    params: {
+      caseId: string;
+      channel: RetentionChannel;
+      notes?: string;
+      evidence_url?: string;
+      call_role?: 'listen' | 'solution';
+    };
+    result: { case: RetentionCaseRow };
+  };
+  'retention.cs_citi_list': {
+    params: { limit?: number; status_code?: string };
+    result: RetentionCasesListResult;
+  };
+  'retention.cs_citi_confirm': {
+    params: { caseIds: string[] };
+    result: { updated: RetentionCaseRow[]; skipped: number };
+  };
+  'retention.cs_citi_export': {
+    params: { caseIds: string[] };
+    result: {
+      csv: string;
+      exported: number;
+      zohoFailures: Array<{ caseId: string; error: string }>;
+    };
+  };
+  'retention.cs_citi_mark_sent': {
+    params: { caseIds: string[] };
+    result: { closed: RetentionCaseRow[]; skipped: number };
   };
 
   // ---- Finance (ServerCRM) ----
@@ -914,6 +986,10 @@ export interface RetentionCaseRow {
   companyName: string | null;
   applicationId: string | null;
   agentName: string | null;
+  /** Denormalized DWH phone at sync — prefer over lazy case_contact. */
+  contactPhone?: string | null;
+  preferredLanguage?: string | null;
+  isSpanishDesk?: boolean;
   phaseCode: string;
   statusCode: string;
   phaseChangedAt: string;
@@ -947,6 +1023,14 @@ export interface RetentionCaseRow {
   isOpen: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+/** CS Open Pool claims queue — case + open claim_request fields. */
+export interface RetentionPendingClaimRow extends RetentionCaseRow {
+  claimRequestId: string;
+  claimReason: string;
+  claimRequesterName: string | null;
+  claimRequestedAt: string;
 }
 
 export interface RetentionCaseEventRow {

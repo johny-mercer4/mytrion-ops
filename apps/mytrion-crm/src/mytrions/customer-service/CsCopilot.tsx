@@ -1,6 +1,6 @@
 /**
  * Floating CS copilot — a fixed launcher + pop-over chat, the same UX as the Sales
- * Mytrion's floating copilot but styled with the CS "Paper White / Royal Blue" tokens.
+ * Mytrion's floating copilot but styled with CSMYTRION gold tokens.
  * Streams from the department agent via the shared useChat runtime (department
  * 'customer-service', direct-to-child agent). Replaces the old full "AI Chat" nav tab.
  */
@@ -10,8 +10,9 @@ import { agentKeyFor } from '../../access/mytrions.config';
 import type { UserContext } from '../../context/userContext';
 import { useChat } from '../../features/chat/useChat';
 
-const SPARK =
-  'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z';
+/** Chat bubble — copilot launcher (replaces sparkles). */
+const CHAT_ICON =
+  'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z';
 
 const CHIPS = [
   'Open tickets today',
@@ -66,12 +67,12 @@ export function CsCopilot({ user }: { user: UserContext }) {
       >
         <span className="cs-copilot-ring" aria-hidden="true" />
         {open ? (
-          <svg width="23" height="23" fill="none" stroke="#fff" strokeWidth={2.4} viewBox="0 0 24 24">
+          <svg width="23" height="23" fill="none" stroke="currentColor" strokeWidth={2.4} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M18 6L6 18M6 6l12 12" />
           </svg>
         ) : (
-          <svg width="24" height="24" fill="none" stroke="#fff" strokeWidth={2} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d={SPARK} />
+          <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d={CHAT_ICON} />
           </svg>
         )}
       </button>
@@ -81,8 +82,8 @@ export function CsCopilot({ user }: { user: UserContext }) {
         <div className="cs-copilot-panel" role="dialog" aria-label="Mytrion AI copilot">
           <div className="cs-copilot-head">
             <div className="cs-copilot-mark">
-              <svg width="18" height="18" fill="none" stroke="#fff" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d={SPARK} />
+              <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d={CHAT_ICON} />
               </svg>
               <span className="cs-copilot-dot" />
             </div>
@@ -106,8 +107,8 @@ export function CsCopilot({ user }: { user: UserContext }) {
             {chat.messages.length === 0 ? (
               <div className="cs-copilot-msg cs-copilot-msg-ai">
                 <span className="cs-copilot-avatar">
-                  <svg width="13" height="13" fill="none" stroke="#fff" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d={SPARK} />
+                  <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d={CHAT_ICON} />
                   </svg>
                 </span>
                 <div className="cs-copilot-bubble cs-copilot-bubble-ai">
@@ -127,8 +128,8 @@ export function CsCopilot({ user }: { user: UserContext }) {
                 >
                   {ai ? (
                     <span className="cs-copilot-avatar">
-                      <svg width="13" height="13" fill="none" stroke="#fff" strokeWidth={2} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d={SPARK} />
+                      <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d={CHAT_ICON} />
                       </svg>
                     </span>
                   ) : null}

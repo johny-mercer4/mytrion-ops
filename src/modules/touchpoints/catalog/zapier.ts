@@ -4,7 +4,7 @@
  */
 import { z } from 'zod';
 import type { Touchpoint } from '../types.js';
-import { carrierId, shortText } from './common.js';
+import { carrierId, SALES, shortText } from './common.js';
 
 export const zapierTouchpoints: Touchpoint[] = [
   {
@@ -12,6 +12,7 @@ export const zapierTouchpoints: Touchpoint[] = [
     key: 'zapier.ticket_email',
     title: 'Ticket email request (Zapier webhook)',
     riskClass: 'write',
+    departments: SALES,
     carrierParam: 'carrierId',
     method: 'POST',
     paramsSchema: z.object({

@@ -46,7 +46,7 @@ export function ClientsTab() {
       debt: Number(raw.total_remaining || raw.total_owed || 0),
       debtDays: Number(raw.max_debt_days || 0),
       creditLimit: Number(raw.credit_limit || 0),
-    }));
+    }) as any as import('../data').Client);
   }, [clientsFeed]);
 
   const all = useMemo(() => {

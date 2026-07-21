@@ -19,8 +19,8 @@ export interface RingCentralCallEvent extends RingCentralCallEventPayload {
   peer: string;
   /** Epoch ms when we observed the event (UI-only; the backend stamps its own audit time). */
   at: number;
-  /** Retention case this outbound dial was started from (UI correlation; not required server-side). */
-  retentionCaseId?: string;
+  // retentionCaseId is inherited from RingCentralCallEventPayload — it IS forwarded to the
+  // backend now (so retention calls log with source_type='retention_case').
 }
 
 type Listener = (event: RingCentralCallEvent) => void;
@@ -154,8 +154,9 @@ function emit(event: RingCentralCallEvent): void {
       /* ignore */
     }
   }
-  // Strip UI-only fields before the audit POST.
-  const { peer: _peer, at: _at, retentionCaseId: _caseId, ...payload } = event;
+  // Strip only the UI-only fields before the POST; retentionCaseId now flows to the backend
+  // so retention calls are logged against their case.
+  const { peer: _peer, at: _at, ...payload } = event;
   void postRingCentralCallEvent(payload).catch(() => {});
 }
 
@@ -181,7 +182,13 @@ function onMessage(e: MessageEvent): void {
     case 'rc-login-status-notify': {
       const isIn = Boolean(data.loggedIn);
       if (loginState === isIn) return; // ignore repeats
+
+      // Boot/restore often emits loggedIn:false before the persisted session comes back.
+      // Only surface logout when we previously knew the agent was signed in.
+      const prev = loginState;
       loginState = isIn;
+      if (!isIn && prev !== true) return;
+
       emit({
         kind: isIn ? 'login' : 'logout',
         at: Date.now(),
@@ -224,4 +231,12 @@ export function subscribeRingCentral(listener: Listener): () => void {
 /** Current known sign-in state (null until the widget first reports it). */
 export function ringCentralLoginState(): boolean | null {
   return loginState;
+}
+
+/**
+ * Clear cached login state when the Embeddable iframe is torn down so the next mount
+ * does not treat the boot-time loggedIn:false as a real session drop.
+ */
+export function resetRingCentralLoginState(): void {
+  loginState = null;
 }

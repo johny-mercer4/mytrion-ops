@@ -82,8 +82,16 @@ export const DEFAULT_PROFILE_SEED: ProfileDefaultSeed[] = [
   { profileName: 'Sales Assistant', allowedMytrions: ['sales'], homeMytrion: 'sales', allDepartmentAccess: false },
   { profileName: 'Referral Standard Plus', allowedMytrions: ['sales'], homeMytrion: 'sales', allDepartmentAccess: false },
   { profileName: 'Standard Plus', allowedMytrions: ['sales', 'billing'], homeMytrion: 'sales', allDepartmentAccess: false },
-  { profileName: 'Customer Retention', allowedMytrions: [], homeMytrion: null, allDepartmentAccess: false },
-  { profileName: 'Standard', allowedMytrions: ['customer-service'], homeMytrion: 'customer-service', allDepartmentAccess: false },
+  // CS Mytrion is Admin-grant only (Profile Defaults / per-user override) — not role substring.
+  // Customer Retention is the intentional CS-facing profile default; edit in Admin as needed.
+  {
+    profileName: 'Customer Retention',
+    allowedMytrions: ['customer-service'],
+    homeMytrion: 'customer-service',
+    allDepartmentAccess: false,
+  },
+  // Standard must NOT auto-enter CS (historical seed leaked CS to every Standard user).
+  { profileName: 'Standard', allowedMytrions: [], homeMytrion: null, allDepartmentAccess: false },
 ];
 
 /** Match key for a profile name: trim + lowercase (same normalization used everywhere). */

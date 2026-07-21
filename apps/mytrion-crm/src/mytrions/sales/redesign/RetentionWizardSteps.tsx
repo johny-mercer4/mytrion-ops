@@ -134,57 +134,57 @@ export function CallEndedBanner({ pendingCall }: { pendingCall: PendingCallLog }
 export function CallFirstBlock(props: {
   busy: boolean;
   contactPhone: string | null;
+  phoneLoading?: boolean;
   onCall: () => void;
-  onContinue: () => void;
 }) {
-  const { busy, contactPhone } = props;
+  const { busy, contactPhone, phoneLoading = false } = props;
   const phone = formatUsPhone(contactPhone) || contactPhone?.trim() || '';
+  const canCall = !busy && !phoneLoading && !!contactPhone?.trim();
   return (
     <section
       style={s(
-        'padding:14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);display:flex;flex-direction:column;gap:12px',
+        'padding:16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);display:flex;flex-direction:column;gap:14px',
       )}
     >
       <div>
-        <SectionTitle>Step 1 · Call the client</SectionTitle>
-        <div style={s('font-size:12px;color:var(--text2);line-height:1.45;margin-top:6px')}>
-          2 business days to act. Call first, then choose Out of Reach, Reached, Dissatisfied, or
-          Vacation. A RingCentral call auto-logs attempt 1 when you move to Out of Reach.
+        <SectionTitle>Call required</SectionTitle>
+        <div style={s('font-size:12px;color:var(--text2);line-height:1.5;margin-top:6px')}>
+          New cases start with a phone call only. After the call ends, you&apos;ll choose Out of
+          Reach, Reached, Dissatisfied, or Vacation. Stage selection unlocks when the call completes.
         </div>
       </div>
 
-      {phone ? (
+      {phoneLoading ? (
+        <div
+          className="ss-skel"
+          aria-label="Loading phone"
+          style={s('height:22px;width:160px;border-radius:6px')}
+        />
+      ) : phone ? (
         <div
           style={s(
-            "font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;letter-spacing:.03em;color:var(--accent-text)",
+            "font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;letter-spacing:.03em;color:var(--accent-text)",
           )}
         >
           {phone}
         </div>
-      ) : null}
+      ) : (
+        <div style={s('font-size:12px;font-weight:600;color:var(--warn)')}>
+          No phone on file — add a number on the deal before calling.
+        </div>
+      )}
 
       <button
         type="button"
-        disabled={busy || !contactPhone?.trim()}
+        disabled={!canCall}
         onClick={props.onCall}
         className="ss-btn-p"
         style={s(
-          `height:44px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:${busy || !contactPhone ? 'not-allowed' : 'pointer'};opacity:${!contactPhone ? 0.5 : 1};display:inline-flex;align-items:center;justify-content:center;gap:8px`,
+          `height:46px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:${canCall ? 'pointer' : 'not-allowed'};opacity:${canCall ? 1 : 0.5};display:inline-flex;align-items:center;justify-content:center;gap:8px`,
         )}
       >
         <Icon name="calls" size={16} color="currentColor" />
-        {phone ? `Call ${phone}` : 'No phone on file'}
-      </button>
-
-      <button
-        type="button"
-        disabled={busy}
-        onClick={props.onContinue}
-        style={s(
-          'height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-weight:700;font-size:12px;cursor:pointer',
-        )}
-      >
-        Continue to choose stage →
+        {phoneLoading ? 'Loading number…' : phone ? `Call ${phone}` : 'No phone on file'}
       </button>
     </section>
   );
@@ -353,7 +353,7 @@ export function StageStep(props: {
   reasonNote: string;
   statusPick: StatusPick;
   showOutOfReach: boolean;
-  /** Already on OoR — confirming OoR stays on the stage and refreshes the 5 BD timer. */
+  /** Already on OoR — confirming OoR stays on the stage and refreshes the 1 BD timer. */
   alreadyOutOfReach?: boolean;
   title?: string;
   setStatusPick: (v: StatusPick) => void;
@@ -369,8 +369,8 @@ export function StageStep(props: {
     row.outOfReachAttempts >= 5
       ? '5/5 → Open Pool'
       : alreadyOoR
-        ? `Stay OoR · attempt ${row.outOfReachAttempts}/5 · 5 BD`
-        : 'Channel attempts · 5×5 BD';
+        ? `Stay OoR · attempt ${row.outOfReachAttempts}/5 · 1 BD`
+        : 'Channel attempts · 5×1 BD';
 
   return (
     <section

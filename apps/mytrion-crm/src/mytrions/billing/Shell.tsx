@@ -8,7 +8,7 @@
  * (Phase 2), and the AI copilot lands as a floating launcher in Phase 3 (no nav tab, matching
  * how CS/Sales expose it).
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 
 import { useUserContext } from '../../context/UserContextProvider';
 import { useTheme } from '../../hooks/useTheme';
@@ -18,7 +18,6 @@ import { Debtors } from './Debtors';
 import { Prepay } from './Prepay';
 import { Returns } from './Returns';
 import { Transactions } from './Transactions';
-import { MytrionLoader } from '../../components/MytrionLoader';
 
 type SectionId = 'datacenter' | 'transactions' | 'debtors' | 'prepay' | 'returns';
 
@@ -81,12 +80,6 @@ export function BillingShell() {
   // Widget parity: panels lazy-mount on first visit and stay mounted (state survives tab hops).
   const [mounted, setMounted] = useState<Partial<Record<SectionId, boolean>>>({ datacenter: true });
   const { theme, toggle: toggleTheme } = useTheme();
-  const [booting, setBooting] = useState(true);
-
-  useEffect(() => {
-    const done = setTimeout(() => setBooting(false), 1400);
-    return () => clearTimeout(done);
-  }, []);
 
   // Topbar avatar: initials + name from the session identity.
   const workerName = user.userName || 'Agent';
@@ -126,8 +119,6 @@ export function BillingShell() {
 
   return (
     <div className={`bm-root${theme === 'light' ? ' light-mode' : ''}`}>
-      {booting ? <MytrionLoader appName="Billing" /> : null}
-
       {/* ═══ HEADER (design: logo · BILLING · spacer · theme · avatar) ═══ */}
       <header className="bm-header">
         <div className="bm-header-title">My<span>trion</span></div>

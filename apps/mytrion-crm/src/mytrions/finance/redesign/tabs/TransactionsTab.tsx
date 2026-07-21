@@ -42,16 +42,21 @@ export function TransactionsTab() {
 
   const rawTxFeed = useMemo(() => {
     return (txFeed || []).map((raw) => ({
-      txId: String(raw.transaction_id || raw.id || 'TX000'),
+      txId: String(raw.transaction_id || raw.txId || raw.id || 'TX000'),
       date: String(raw.date || raw.created_at || new Date().toISOString()),
-      company: String(raw.company_name || raw.deal_name || 'N/A'),
-      loc: String(raw.location || 'Unknown'),
+      company: String(raw.company_name || raw.company || raw.deal_name || 'N/A'),
+      loc: String(raw.location || raw.loc || 'Unknown'),
       state: String(raw.state || 'XX'),
       amount: Number(raw.amount || raw.total || 0),
-      gal: Number(raw.gallons || 0),
-      disc: Number(raw.discount || 0),
-      grade: String(raw.fuel_type || 'Diesel'),
-      carrier: String(raw.carrier_id || '99999'),
+      gal: Number(raw.gallons || raw.gal || 0),
+      disc: Number(raw.discount || raw.disc || 0),
+      grade: String(raw.fuel_type || raw.grade || 'Diesel'),
+      carrier: String(raw.carrier_id || raw.carrier || '99999'),
+      card: String(raw.card_number || raw.card || '••••'),
+      terms: String(raw.payment_terms || raw.terms || 'LOC') as any,
+      active: Boolean(raw.active ?? true),
+      ppu: Number(raw.ppu || 0),
+      retail: Number(raw.retail || 0),
     }));
   }, [txFeed]);
 

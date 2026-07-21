@@ -203,9 +203,9 @@
 }
 
 .cs-root .cs-btn-primary {
-    background: var(--cs-modal-accent);
-    color: #fff;
-    border-color: var(--cs-modal-accent);
+    background: var(--cs-accent);
+    color: var(--cs-on-accent);
+    border-color: transparent;
 }
 
 .cs-root .cs-btn-primary:hover:not(:disabled) {

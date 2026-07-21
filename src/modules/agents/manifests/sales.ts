@@ -35,7 +35,8 @@ const SALES_CAPABILITIES =
 
 const SALES_ESCALATION_RULE =
   'Escalate (set escalate in your result) when a request needs data or an action outside read-only ' +
-  'sales: card/account changes, money codes, fraud holds and other ticketing actions → customer-service; ' +
+  'sales. To ensure a smooth handoff, ALWAYS include a clear summary of what you have done and exactly ' +
+  'what the next agent needs to do: card/account changes, money codes, fraud holds and other ticketing actions → customer-service; ' +
   'identity/KYC or application verification → verification; invoicing, collections, or payment disputes → billing.';
 
 export const salesAgent: AgentManifest = {

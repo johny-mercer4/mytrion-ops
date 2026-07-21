@@ -11,6 +11,7 @@ import { csDelugeTouchpoints } from './csDeluge.js';
 import { financeDelugeTouchpoints } from './financeDeluge.js';
 import { moneyCodeTouchpoints } from './moneyCode.js';
 import { retentionTouchpoints } from './retention.js';
+import { retentionCsTouchpoints } from './retentionCs.js';
 import { salesDelugeTouchpoints } from './salesDeluge.js';
 import { serverCrmAgentTouchpoints } from './serverCrmAgent.js';
 import { serverCrmBillingTouchpoints } from './serverCrmBilling.js';
@@ -33,6 +34,7 @@ const ALL: Touchpoint[] = [
   ...browserAutoTouchpoints,
   ...zapierTouchpoints,
   ...retentionTouchpoints,
+  ...retentionCsTouchpoints,
   ...moneyCodeTouchpoints,
 ];
 

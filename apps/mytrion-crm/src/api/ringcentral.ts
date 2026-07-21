@@ -36,6 +36,8 @@ export interface RingCentralCallEventPayload {
   /** CRM correlation — the Data Center lead/deal this call was dialed from (outbound only). */
   leadId?: string;
   dealId?: string;
+  /** Retention-desk correlation — the retention case this call was dialed from (outbound only). */
+  retentionCaseId?: string;
 }
 
 /**

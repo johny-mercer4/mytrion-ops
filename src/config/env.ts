@@ -188,11 +188,14 @@ const EnvSchema = z.object({
   // so the dashboard always serves from cache (fast) while data refreshes automatically.
   ANALYTICS_CACHE_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(120),
 
-  // --- Department RBAC: profile/role substrings that grant UNLIMITED access (all depts + all tools). ---
-  // 'ceo' matches the Zoho ROLE the frontend also treats as admin (ADMIN_ROLES in
-  // mytrions.config.ts) — the two admin predicates must stay aligned or CEO sessions
-  // get 'worker' role backend-side and 403 on admin-only routes.
-  ADMIN_PROFILE_MARKERS: z.string().default('administrator,manager,developer,ceo'),
+  // --- Department RBAC: EXACT profile/role names that grant UNLIMITED access (all depts + all tools). ---
+  // Case-insensitive full-string equality after trim (see lib/department.ts) — NOT substring:
+  // a 'manager' substring also matched "Sales Manager"/"Account Manager" and silently made
+  // sales staff admins. 'ceo' matches the Zoho ROLE the frontend also treats as admin
+  // (ADMIN_ROLES in mytrions.config.ts) — the two admin predicates must stay aligned or CEO
+  // sessions get 'worker' role backend-side and 403 on admin-only routes. Names containing a
+  // comma cannot be expressed (none exist in our Zoho org).
+  ADMIN_PROFILE_MARKERS: z.string().default('administrator,ceo'),
   // Per-user overrides matched on the caller's `user_name` (case-insensitive). Accepts CSV or a
   // bracketed list, e.g. ADMIN_USERS=[alice,bob] or ADMIN_USERS=alice,bob.
   //   ADMIN_USERS  → granted all-department access (see everything, like an admin marker).
@@ -469,12 +472,15 @@ const EnvSchema = z.object({
   // Interactive browser WRITE actions (navigate/click/fill/…). Off = scrape/read-class only.
   FF_BROWSER_WRITES: flag('0'),
   // Retention Open Pool notify (Ryan Saab) + Ops Manager vacation signoff — Zoho user ids.
-  // Empty = skip inbox notify (sweep/transitions still run).
+  // Empty = skip inbox notify (sweep/transitions still run). Outbound email = Zapier.
   RETENTION_OPEN_POOL_NOTIFY_ZOHO_USER_ID: z.string().default(''),
   RETENTION_OPS_MANAGER_ZOHO_USER_ID: z.string().default(''),
-  // Optional From address for Zoho CRM Send Mail on Open Pool (must be an org-allowed sender).
-  // Empty = first address from GET /settings/emails/actions/from_addresses.
+  // Reserved for Zapier / ops identity — not used by app Zoho send_mail (disabled).
   RETENTION_NOTIFY_FROM_EMAIL: z.string().default(''),
+  // Comma-separated Zoho CRM user ids for Phase 2 Retention RoundRobin (prefer Isonline).
+  RETENTION_CS_ROUND_ROBIN_ZOHO_USER_IDS: z.string().default(''),
+  // Spanish Retention desk assignee (bypasses RoundRobin when is_spanish_desk).
+  RETENTION_CS_SPANISH_ZOHO_USER_ID: z.string().default(''),
 
   // Background jobs (pg-boss on the app Postgres, own 'pgboss' schema — self-migrating).
   FF_JOBS_ENABLED: flag('0'),

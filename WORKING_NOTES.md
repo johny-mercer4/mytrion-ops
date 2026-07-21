@@ -4095,6 +4095,64 @@ owner resolution rendered as silent zeros (no error UI). Backend COQL on
   goal bar + streak strip.
 - Route logs owner + totals at debug.
 
+## 2026-07-21 — Retention: disable LLM weekly-scan (Sales first)
+
+- Parked `automation.retention.weekly-scan` in `DISABLED_JOB_QUEUES`: no cron, no Admin
+  trigger, no automation worker. Boot unschedules any leftover pg-boss cron.
+- Keep deterministic Sales jobs: `case-sync` (hourly) + `deadline-sweep` (15m).
+- Re-enable LLM weekly scan only after Sales Mytrion retention is solid, then CS Mytrion.
+
+## 2026-07-21 — RingCentral: suppress false “session ended” toast
+
+- Embeddable emits `loggedIn:false` while restoring a persisted session after refresh.
+- Only emit `logout` when prior state was signed-in; reset login cache on adapter teardown;
+  debounce the toast (~2.5s) so a quick re-login cancels it.
+
+## 2026-07-21 — RingCentral: Sales + CS only, pointer cursor
+
+- Softphone moved to `WorkerLayout`, gated to `/main/salesmytrion` + `/main/csmytrion`
+  (torn down on Billing/Finance/Admin/picker).
+- Hover cursor: host `#rc-widget-adapter-frame { cursor: pointer }` + Embeddable
+  `stylesUri` as a `data:text/css` URI (`ringcentralEmbedStyles.ts`) — localhost file
+  URLs are blocked by Chrome Private Network Access from `apps.ringcentral.com`.
+
+## 2026-07-21 — Unify Mytrion entry loader (no double splash)
+
+Double loaders on enter: MytrionGuard Suspense + per-shell timed boot overlays
+(CS / Billing / Finance). Sales already skipped shell boot.
+
+- `MytrionLoader` API: `text` + optional `themeColor` (CSS color / `var(--hue)`).
+- Guard is the **only** entry splash; shells no longer mount a second overlay.
+- Dead CS `.cs-boot*` CSS removed.
+
+## 2026-07-21 — CS Mytrion: Retention Cases, Open Pool Claims, CITI Folder
+
+Product: CS (not deal-owner email) approves Sales Open Pool claims; Phase 2 desk + CITI Folder
+in Customer Service Mytrion (distinct from Citifuel Clients).
+
+### Backend
+- `requestClaim` → `p1_pool_claim_pending` + `1BD_claim_approve` (no instant assign).
+- CS `approveClaim` / `declineClaim` (dept `customer-service` or admin); Sales cannot approve.
+- Approve / 1BD auto: Zoho Deal Owner required; Contact + Account Owner best-effort
+  (`src/modules/retention/zohoOwnership.ts`).
+- Touchpoints: `retention.cs_claims_*`, `retention.cs_cases*`, `retention.cs_citi_*`.
+- Phase 2 outcomes in `phase2.ts` + `retentionCaseCsRepo`.
+- Profile seed: Customer Retention → CS Mytrion; migration `0035`.
+
+### Frontend
+- Sales Open Pool: **Request claim** + Pending CS row state.
+- CS Shell nav: Retention Cases / Open Pool Claims (badge + realtime) / CITI Folder.
+
+### Smoke checklist
+1. Sales Open Pool → Request claim → row shows Pending CS; case leaves claimable pool.
+2. CS Open Pool Claims → Approve → claimant owns Deal (+ Contact/Account best-effort); case
+   `p1_pool_assigned`.
+3. CS Reject → back to `p1_open_pool`.
+4. Leave pending 1 BD → sweeper auto-approves with Zoho ownership.
+5. CS Retention Cases → claim / log attempt / Saved|Refused|OoB|No response|CITI.
+6. CS CITI Folder → Confirm → Export CSV (Assignment_Stage=CITI) → Mark sent → `p3_closed`.
+7. Customer Retention profile lands on CS Mytrion after migrate / profile-defaults seed.
+
 ## 2026-07-21 — Data Center Money Codes (zoho-octane parity)
 
 Reference: `zoho-octane` self-service Records → Money Codes.
@@ -4108,3 +4166,354 @@ Reference: `zoho-octane` self-service Records → Money Codes.
   on Ops DB, then ServerCRM EFS-safe void which writes back to the same table).
 - Draw/preview stay `dwh.money_code` / `dwh.money_code_draw` (live EFS).
 - FE: `dataCenterMoneyCodes.tsx` — never shows `efs_money_code`.
+
+## 2026-07-21 — Sales Mytrion go-live hardening (feature/SalesProd, 11 commits)
+
+**P0 root cause — Clients modal Cards/Activity 403 for every non-admin:** the Clients list
+moved to the DWH roster (9d6f270, id-suffix + name-fallback ownership) but `assertCarrierOwned`
+still asked servercrm by-agent with the FULL session zoho id (id spaces diverge). Gate now
+probes the SAME `buildOwnedCte` arms via `dwhClientRoster.isCarrierOwned` (+60s cache,
+in-flight coalescing; DWH outage = 502 DWH_ERROR, never RBACError). Keep gate + list on the
+shared ownership path — a second authority is how this P0 happened.
+
+**Security:** `/carrier-users/dwh-cards` + `/carrier-registrations/for-carrier` returned card
+numbers / owner PII for ANY carrier to ANY signed-in worker — now `assertCarrierOwned`-gated
+(role 'admin' skip covers the API-key system identity).
+
+**RBAC go-live contract:** ADMIN_PROFILE_MARKERS is now EXACT-match, default
+`administrator,ceo` (substring 'manager' made "Sales Manager" a silent full admin) — check the
+Render env group doesn't still pin the old value. Profile defaults seed at boot (fail-open,
+loud log; GET /profiles self-heals). Hard rule: 1 accessible Mytrion ⇒ always auto-enter, no
+picker, no Switch link; single-Mytrion grants persist home on write. Touchpoint `departments`
+is REQUIRED (compile-time fail-closed; 51 entries tagged `SALES`). Contract pinned by
+tests/unit/sales-golive-contract.test.ts + mytrion-access-routes.test.ts + client
+Landing/TopBar tests.
+
+**Live events:** WS ownerId vs session id can differ by org prefix — owner matching is now
+suffix-normalized (`redesign/zohoIds.ts`), fixing silently-dropped inbox toasts (+ retention).
+
+**Perf:** parked-Tickets badge no longer pages the whole Desk set (≤20 req/load) —
+`TICKETS_ENABLED` gates it; `inbox.list` deduped 3→1 POSTs (`fetchDedupe.ts`, 30s TTL,
+invalidated on WS event/refresh/delete; cache writes identity-guarded against the
+invalidation race); `activity.agent` deduped on Home.
+
+**RingCentral:** rc-*-notify / [RingCentralExtensions] console spam is 100% vendor-bundle
+(zero hits in our code/history) — `rcConsoleFilter.ts` drops those exact patterns
+(log/debug/info only), installed just before adapter injection. Iframe-origin krisp lines
+can't be filtered (cross-origin). Prod auth = per-agent OAuth (no BROWSER_CREDS_ACK).
+
+**Known issues NOT from this work:** ~24 pre-existing TS errors committed with the
+SalesMytrionFull merge break the app's `tsc` build gate (vite build itself is clean — the
+served `app/` bundle was rebuilt from a clean HEAD worktree); the checkout also carries
+concurrent uncommitted retention/CS WIP with ~28 failing tests (carrier-mini-app, cs-routes,
+touchpoints catalog count 81→106) — left untouched, scoped all commits by path.
+
+**Deploy checklist:** confirm Render env doesn't override ADMIN_PROFILE_MARKERS; verify
+Daniel Brown (Sales Agent) lands on /main/salesmytrion, gets Forbidden on /main/billingmytrion,
+403 on admin/finance APIs; Clients modal Cards+Activity 200 under View-as; reconcile each
+agent's Zoho display name vs DWH agent name (all-zeros Home snapshot = mismatch).
+
+## 2026-07-21 — Retention Closed green + contact phone at sync
+
+- **Kanban Closed** column accent → `var(--ok)` green.
+- **contact_phone** on `retention_cases` (migration 0037); DWH scan selects
+  deal_phone/contact_phone; sync writes on create + refresh.
+- Modal uses denormalized phone instantly; skeleton loader while resolving;
+  lazy `retention.case_contact` only for older null rows.
+
+## 2026-07-21 — Sales Mytrion brand / Retention UX
+
+- **Brand:** rocket chip removed → large **MYTRION** + gradient **Sales** wordmark.
+- **Retention nav icon:** Handshake → RefreshCw (win-back / re-engage).
+- **Loader:** sales `hue` rocket→`accent`; `data-mytrion=sales` accents match `.ss-root`
+  (cyan/violet dark, blue light) — no longer wizard `--rocket` pink.
+- **Kanban cards:** left rail via inset shadow (fixes double border with column frame).
+- **New stage modal:** hide Timeline; inactivity full-width callout + meter; remove
+  “Continue to choose stage” — call only, stage after call ends.
+
+## 2026-07-21 — CS enterprise soft-pass (gold kept, chroma down)
+
+Softened CS Mytrion for all-day ops without abandoning gold:
+- **Tokens:** light `#C9A227` / dark `#D4B84A` (was neon `#FFD60A` / bright `#EAB308`);
+  quieter softs/glows; neutral slate borders (no cool-blue clash); calmer shadows.
+- **Chrome:** solid (not neon-gradient) primary buttons; soft avatars/badges; inset
+  active-nav bar; muted App IDs; quieter home hero / card hover / focus rings.
+- **Stage hues:** slightly desaturated picklist/dot palette.
+- Loader/`data-mytrion` accents aligned.
+
+## 2026-07-21 — CS brand text, Deal-owner agent, hide copilot
+
+- **Brand:** removed sidebar icon; larger MY/TRION wordmark; “Customer Service” gold
+  gradient text (`background-clip`).
+- **Agent (Deal):** map `_dealOwner` only (widget parity) — never Application `Owner`; empty →
+  `not assigned`.
+- **Copilot:** unmounted `CsCopilot` from Shell for now (file kept).
+
+## 2026-07-21 — CS apps icon + Applications load speed
+
+- **Brand / copilot icon:** sparkles mark → headset (Shell) + chat bubble (CsCopilot FAB/avatars).
+- **Apps/Clients speed:** FE + `cs.applications.list` `perPage` raised **200 → 2000** (Zoho COQL
+  max/call — fewer Deluge round-trips if the function honors `perPage`). 90s client TTL cache on
+  `loadApplications` (bypass via Refresh / invalidate after save). `MAX_COQL_ROWS` → 2000 in
+  `zohoCrm.ts` + tool docs.
+- **Note:** Deluge body for `mytrionGetApplications` lives in Zoho — if it still hardcodes
+  `LIMIT 200` loops, update that function to `LIMIT 2000` (or pass-through `perPage`) for full gain.
+
+## 2026-07-21 — CS Mytrion: CSMYTRION gold redesign (real data only)
+
+Applied `/Users/user/Desktop/CSMYTRION` visual IA to live Customer Service Mytrion:
+
+- **Tokens:** `.cs-root` remapped from royal blue → design gold (`#FFD60A` dark / `#EAB308`
+  light); surfaces/borders/shadows match design; fonts Rajdhani + Instrument Sans + JetBrains Mono.
+- **Loader:** `--yellow` + `[data-mytrion='customer-service']` accents aligned to same gold so
+  `MytrionGuard` Suspense splash matches in-app theme.
+- **Shell:** gold brand mark, MY/TRION wordmark, nav icons, gold claims badge, theme toggle + user card.
+- **Home:** design layout with live `loadHome` + quick-action navigation; **omitted** streak,
+  daily goal, CSAT, fake live-queue inject, fake leaderboard.
+- **Panels:** Retention master-detail (340px list), Apps/Claims/CITI/Citifuel/Analytics/Copilot
+  chrome on gold tokens; APIs unchanged. Data Center / Inbox / Service Center stay Soon.
+- No mock datasets added.
+
+### Enterprise Agentic AI Metrics (2026-07-21)
+
+Applied Agentic AI evaluation skills for coding agents (`.agents/skills/agentic-eval-metrics/SKILL.md`).
+- **Tool Use (Gorilla LLM standard):** Added instructions to evaluate exact AST-based JSON argument match, API resolution rates, and hallucination rates for tools like Zoho/Composio.
+- **Memory/State (MemGPT standard):** Defined checks for Context Paging Efficiency and State Recall Precision across `langgraph-checkpoint-postgres`.
+- **Agentic RAG:** Required Groundedness/Faithfulness and explicit Retrieval Decision Rate testing.
+- **Orchestrator Execution:** Established targets for tracking Ping-Pong Rates and TTFT in `evalLive.ts`.
+
+## 2026-07-21 (pm) — Sales Home fixes, call logging, post-call Lead wizard (feature/SalesProd)
+
+**Home (HomeTab/salesData/streakStore):** workday bar now 10 AM–7 PM NY via
+WORKDAY_START_HOUR/END_HOUR constants (clock was already NY). Today's Snapshot refresh now
+uses `.refresh()` (spinner + cache bypass) with a real stamped "Updated" time — the fetch was
+always working; the bug was `.reload()` leaving `refreshing` false. Activity block hidden and
+its range `activity.agent` fetch dropped (kept the cheap 'today' load for the Tasks-Done cell).
+Best Day tile now names the day (streakStore.topDayEntry).
+
+**Call logging (mytrion_calls):** new table (migration 0036, hand-authored — drizzle-kit
+generate is blocked by the pre-existing 0022/0023 snapshot collision; 0025+ are all
+hand-written) + mytrionCallRepo. The /ringcentral/call-events handler inserts one row per
+finished OUTBOUND call (best-effort): caller from the zoho: principal, phone=callee, duration,
+picked_up/missed derived (no explicit RC flag), source from the dial context
+(retention_case → lead → deal precedence). retentionCaseId now flows to the backend (added to
+payload + callEventSchema; emit no longer strips it). Verified migration green on a throwaway DB.
+
+**Post-call Lead wizard (LeadCallWizard):** shell-level host subscribes to call events; on a
+finished outbound call tagged with a leadId it opens a FORCED modal (ESC/backdrop blocked)
+requiring Status (+ dependent reason: Unqualified→Unqualified_Reason, Not Interested→
+Not_Interested_Reason) before it closes; optional note → Description. Writes via the existing
+owner-scoped PATCH. **IMPORTANT: the Zoho field is `Status`, not `Lead_Status` (no such field).
+Zoho enforces NO picklist dependency — the Status→reason pairing is UI logic.** Backend
+leadEditBody whitelist extended with Status + the two reasons (z.enums of the verbatim live
+picklist values). Deals only log (no wizard).
+
+**Data Center / Manage:** Money Codes sub-tab got its own Refresh button (it owns its loader).
+Manage panel distinguishes DWH outage (502/503) from a real "not your client" 403 in the
+error copy; POST /carrier-invitations now owner-gated for non-admins (matches the reads).
+
+**Test baseline:** 4 unit files fail from concurrent in-flight retention/CS/finance WIP
+(carrier-mini-app driver-registration, cs-routes, touchpoints-catalog/routes catalog SIZE
+51→49 + finance-filter shape) — all WIP-owned, none touch this session's areas. This session's
+suites (ringcentral-call-log, data-center-routes, LeadCallWizard, sales redesign) are green.
+App `tsc` build gate still blocked by ~24 pre-existing finance/admin TS errors — bundle built
+via vite in a clean worktree as before.
+
+## 2026-07-21 (evening) — Fix retention touchpoint 500s (circular ESM import)
+
+`retention.my_cases` / `retention.pool_list` 500'd because `tsx watch` crashed on reload:
+`deadlineSweep` statically imported `retentionPoolClaimRepo`, which imports `notify`, while
+`deadlineSweep` also imports `notify` — TDZ/partial exports →
+`does not provide an export named 'notifyClaimRequestToCs'`. Broke the cycle by
+dynamic-importing `retentionPoolClaimRepo` only inside the claim-approve branch of
+`sweepRetentionDeadlines`. API restarted cleanly; routes return 401 without key (not 500).
+
+## 2026-07-21 (evening) — Retention stage timers on Sales board
+
+Per-stage countdown on Kanban/list/detail for the next deadline event:
+- New: 2 BD → Retention; OoR: 5×1 BD attempts (5th → Open Pool); Reached: 5 BD fuel watch → Pool;
+  Vacation: 14d calendar; Dissatisfied: no timer + card locked for Sales.
+- FE: `retentionTimers.ts` (BD-aware remain) + `RetentionStageTimer` meter; board clock ticks 30s.
+- Backend: OoR stamp back to `1BD_comms_attempt` (migration 0038 renames open `5BD_*` types).
+Open Pool UX deferred to next discussion.
+
+## 2026-07-21 (late) — Sales Phase + Open Pool closeout
+
+Sales Phase escalation is treated as covered (status machine already matched RetentionDocs):
+
+| Path | Result |
+|------|--------|
+| OoR ×5 attempts | → Open Pool + notify |
+| Reached ×5 BD no fuel | → Open Pool + notify |
+| New ×2 BD no action | → Retention (not Pool) |
+| Dissatisfied + reason | → Retention (not Pool) |
+
+**Notify gap closed:** `notifyOpenPoolOpened` / Zoho mail take `reason:
+out_of_reach | reached | reclaim | phase2` so copy is no longer always “5 OoR attempts”.
+Call sites: `logCommsAttempt`, deadlineSweep (Reached vs reclaim), `record_outcome`, Phase 2 CS.
+Touchpoint title for `retention.log_attempt` → “1 BD each”. Unit test
+`retention-open-pool-notify.test.ts` covers reason labels.
+
+**Env (Ryan + From):** `.env.example` clarified. Local `.env` currently has
+`RETENTION_OPEN_POOL_NOTIFY_ZOHO_USER_ID` and `RETENTION_NOTIFY_FROM_EMAIL` **empty** —
+inbox/mail to Ryan will skip until set (previous owner still notified when present;
+pool WS broadcast still fires). Set Ryan’s Zoho user id + allowed From in local/prod;
+no hardcoded personal email in source.
+
+**Deferred:** Open Pool claim UX polish, Phase 2/3 / CITI product, Vacation diagram gap,
+Retention-handoff emails (docs don’t require them for New/Dissatisfied).
+
+## 2026-07-21 (late) — Open Pool email via Zapier (not Zoho send_mail)
+
+`RETENTION_OPEN_POOL_NOTIFY_ZOHO_USER_ID` / `RETENTION_NOTIFY_FROM_EMAIL` are set for
+ops. App path stays inbox + realtime only; removed Zoho CRM `send_mail` from
+`notifyOpenPoolOpened` so Zapier owns outbound Ryan/owner email (avoids double-send).
+
+## 2026-07-22 — Sales Open Pool (Mytrion) ownership model
+
+Product: Open Pool = other agents may request assignment of a retention case /
+underlying Zoho Deal. CS approve transfers Deal + Contact + Account Owner to the
+claimant. Former owner sees the case locked on Cases (not in Open Pool widget).
+
+Implemented:
+- DWH scan joins `stg_zoho_deals` → `zohoDealId` on create + sync backfill
+  (`dwhRetention` / `retentionSync`).
+- `listOpenPool` excludes `pool_owner = viewer`; `pool_list` passes exclude.
+- `listForAgent` includes former owner's `p1_open_pool` / claim-pending rows
+  (Kanban Closed, locked badge — not actionable).
+- Claim approve **requires** `zoho_deal_id` then `transferDealOwnershipToClaimant`
+  (fail closed if missing).
+- PoolTab copy + client-side filter; Cases locked card for pooled former deals.
+
+## 2026-07-22 — Retention deal_id from octane.agent_deals
+
+Deal fetch for retention cases uses `octane.agent_deals` (`id` → `zoho_deal_id`),
+not `stg_zoho_deals`. Distinct on carrier_id, newest `appfilldate` then id.
+
+## 2026-07-22 — Own Open Pool deals leave Cases board
+
+Former-owner pooled cases are not listed on `retention.my_cases` (assignee
+cleared on pool entry). They disappear from the Kanban instead of a locked card.
+
+## 2026-07-22 — Open Pool claim_requests + unified auto-close
+
+Open Pool is **not** a fourth phase — it is Phase 1 status `p1_open_pool` /
+`p1_pool_claim_pending` (Processing). Sales Open Pool tab is a filtered view.
+
+**Schema:** `retention_claim_requests` (migration `0039`) — durable CS queue +
+audit; partial unique one `requested` row per case. Processing lock still on
+the case (`pending_claimant_zoho_user_id` + `p1_pool_claim_pending`).
+
+**Claim flow:**
+- Sales `pool_claim` requires `reason` → insert request + Processing + 1 BD
+  auto-approve deadline (fallback sweeper unchanged; same finalize as CS Approve).
+- CS Reject → **DELETE** request row; case → `p1_open_pool`.
+- CS Approve / auto-approve → Zoho Deal/Contact/Account Owner → claimant;
+  case → **`p1_new`** + `2BD_agent_action` (Kanban New); bump `assignment_count`.
+
+**Sync:** any new post-create transaction closes **all** open phases including
+CITI (`p1_returned`); open claim requests deleted so Processing cannot stick.
+
+**UI:** PoolTab — no Owner column; Available/Processing; reason modal (row +
+bulk); live refresh on claim WS events. ClaimsPanel shows requester + reason.
+
+## 2026-07-22 — Open Pool 3 BD unclaimed + max-3 → CITI
+
+**Unclaimed Open Pool:** every entry via `enterOpenPool` (Sales OoR×5 / Reached
+5BD, Phase 2 `no_response`, CS reject restamp) stamps `3BD_pool_claim`.
+`automation.retention.deadline-sweep` (cron `*/15`) applies overdue rows:
+unclaimed → **Retention** (10 BD); if `assignment_count ≥ 3` → **CITI** (not
+Retention). Processing (`p1_pool_claim_pending`) uses 1 BD auto-approve instead;
+reject restores a fresh 3 BD claim window.
+
+**Max 3 agents:** `enterOpenPool` short-circuits to CITI when already at cap.
+2BD New/in-progress expiry with `assignment_count ≥ 3` also → CITI (3rd agent
+failed their window). Terminal destinations remain Closed (returned / outcomes)
+or CITI.
+
+**Load:** sweeper is a bounded indexed query (`closed_at IS NULL` +
+`current_deadline_at < now`, limit ≤ 500) every 15 minutes — fine for low case
+volume; no per-case jobs. Case-sync is hourly + on-demand.
+
+## 2026-07-22 — CS Retention desk + RoundRobin + CITI Closed Lost
+
+**Claims:** Approve/Reject hardened toasts; claim-approved notify says **2 BD**.
+
+**Phase 2 handoff:** clears Sales assignee; RoundRobin from
+`RETENTION_CS_ROUND_ROBIN_ZOHO_USER_IDS` preferring Zoho `Isonline`; assigns
+Ops case as `p2_working` + soft Zoho Deal/Contact/Account Owner transfer.
+Cursor table `retention_rr_cursors` (migration `0040`).
+
+**10BD Retention:** no txn → **Open Pool** (CITI if `assignment_count ≥ 3`).
+
+**CITI entry:** Deal API field `Stage` = `Closed Lost` (org picklist; not bare
+"Lost"). Export still sets `Assignment_Stage=CITI`.
+
+**Sales lock:** Phase 2 / CITI hidden from `my_cases` open board; FE
+`isSalesLocked`; Phase 1 writes reject wrong phase. CS CasesPanel shows agent,
+phase/status, SLA, timeline via `caseGet`.
+
+## 2026-07-22 — Sales tab go-live sign-off (Data Center / Create / Carriers / Automation)
+
+Four-area assessment (workflow) + fixes on feature/SalesProd:
+- **Data Center P1 (was FAIL → now GTG):** admin View-as → Clients returned 0 for any agent
+  whose session id isn't DWH-aligned — the route dropped the display-name arm when targeting
+  another agent (only appeared to work for id-aligned accounts like Daniel). Fixed: the
+  targetingOther branch resolves the TARGET's name via resolveActAsTarget so buildOwnedCte gets
+  the id-first/name-fallback pair. Empty-state copy no longer says "match your search" with no
+  search term. (dataCenter.routes.ts, RecordsTab.tsx, +test.)
+- **Create:** salutation ("Title") was collected + passed (leads.create schema .passthrough) but
+  dropped in createLead → now written to Zoho Salutation. AttachZone enforces the advertised
+  file types (accept attr + take() allowlist; drag/paste bypassed accept). readMultipart returns
+  a clean 413 on oversize instead of a 500. All create paths verified wired + schema-validate
+  green via salesPanelSmoke. A real create/attachment WRITE test should be run in a controlled
+  env (avoid polluting live Zoho/Desk).
+- **Carriers:** widened root max-width 860→1180 (fills Shell's wrapper; NOT full-bleed — no
+  internal scroll container). Failed Create-Lead is now a "Failed — retry" button (was stuck
+  until a full re-search). Functionality PASS.
+- **Automation:** all 22 self-service actions are FULLY WIRED (no stubs / coming-soon / missing
+  touchpoints; params match; success logs via logAutomation). NOT code-fixed — governance for
+  the user to decide: (1) write-class touchpoints are invokable by non-admin sales (dispatcher
+  admin-gates only 'destructive', behind FF_TOUCHPOINT_DESTRUCTIVE_SALES which defaults ON) —
+  intentional for the self-service panel but deviates from CLAUDE.md rule #7; (2) IDOR:
+  browser.close_application/boca (by appId) and sales_mytrion.invoice_signed_url (by invoiceId)
+  have NO ownership gate — an agent can act on another's app/invoice; recommend the same
+  assertCarrierOwned-style gate as the carrier routes.
+
+## 2026-07-22 — CS access Admin-only + RR pool + OoB Closed Lost
+
+**CS Mytrion access:** Standard profile seed no longer grants CS; legacy
+department substring cannot open CS; `reconcileStandardNoCsGrant` clears
+historical Standard→CS defaults on seed. FE static rule: only
+`Customer Retention` (+ admin bypass). Grant CS via Mytrion Admin Profile
+Defaults / per-user override.
+
+**RoundRobin `.env`:** Manal, Ahsan, Zara, Layla, Charlotte, Isaac Zoho ids
+in `RETENTION_CS_ROUND_ROBIN_ZOHO_USER_IDS` (.env + .env.example). Restart
+API to pick up.
+
+**Out of Business (CS desk):** `p2_out_of_business` now best-effort sets Zoho
+Deal `Stage=Closed Lost` (same as CITI exclusion from future retention).
+
+## 2026-07-22 — Admin grants for Retention RoundRobin pool
+
+Per-user `worker_mytrion_access` overrides for CS Mytrion (home CS) on:
+Manal Alqassimi, Ahsan Ahmed, Zara Ashley, Layla Mei, Charlotte Birmingham,
+Isaac Leo. Standard profile default remains empty (no CS auto-grant).
+Cache invalidated per user after upsert.
+
+## 2026-07-22 — Spanish desk + CS caps + pool WS harden
+
+**Spanish → Jean Paul:** DWH `main_language` (prefer) else `dim_company.nationality=Spanish`
+→ `retention_cases.is_spanish_desk` / `preferred_language` (migration `0041`). Handoff
+bypasses RR to `RETENTION_CS_SPANISH_ZOHO_USER_ID` (Jean Paul `6227679000065094200`);
+falls through to RR if at daily cap or env unset. CS Admin grant applied for Jean Paul.
+
+**Caps:** 40 deals/day (claim/RR), 15% portfolio `p2_offer_pending` (`mark_pending`),
+two-call rule (listen + solution notes) before Saved/Refused. CS CasesPanel +
+`retention.cs_desk_quota`.
+
+**Realtime:** claim approved/declined broadcast on `retention:pool`; Sales
+`useRetentionRealtime` passes claim_* events for peer Pool refresh.
+
+**Deferred:** pre-entry funded alert, Zapier email, KPI/MOR components.

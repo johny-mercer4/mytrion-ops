@@ -1,0 +1,16 @@
+/**
+ * Host-page chrome for the RingCentral Embeddable iframe.
+ * Vendor docked pill defaults to grab/move — force pointer on the host frame too.
+ */
+
+#rc-widget-adapter-frame,
+iframe#rc-widget-adapter-frame,
+iframe[id*="rc-widget"],
+iframe[src*="ringcentral-embeddable"] {
+  cursor: pointer !important;
+}
+
+#rc-widget-adapter-frame:hover,
+iframe#rc-widget-adapter-frame:hover {
+  cursor: pointer !important;
+}

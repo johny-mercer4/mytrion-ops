@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CRON_SCHEDULES,
+  DISABLED_JOB_QUEUES,
   MANUAL_TRIGGERABLE_QUEUES,
   retentionCaseSyncJob,
 } from '../../src/modules/jobs/catalog.js';
@@ -53,11 +54,14 @@ describe('jobs admin catalog', () => {
     expect(sync?.description.length).toBeGreaterThan(20);
 
     const weekly = catalog.find((j) => j.name === 'automation.retention.weekly-scan');
+    expect(DISABLED_JOB_QUEUES.has('automation.retention.weekly-scan')).toBe(true);
     expect(weekly).toMatchObject({
-      trigger: 'cron',
       active: false,
-      statusLabel: 'Inactive — not scheduled',
+      statusLabel: 'Disabled',
+      manualTriggerable: false,
+      scheduleLabel: 'Disabled (not scheduled)',
     });
+    expect(CRON_SCHEDULES.some((s) => s.name === 'automation.retention.weekly-scan')).toBe(false);
 
     for (const j of catalog) {
       expect(j.manualTriggerable).toBe(MANUAL_TRIGGERABLE_QUEUES.has(j.name));

@@ -46,13 +46,13 @@ export function normalizeDepartments(values?: readonly string[] | null): string[
 
 /**
  * Profile/role values that bypass ALL department RBAC (RAG grounding + tool gating) — the
- * "unlimited" operators: Developers, Managers, Admins. Configured via ADMIN_PROFILE_MARKERS
- * (CSV, default "administrator,manager,developer") so the policy can change without a deploy.
- * Matched as a case-insensitive SUBSTRING against each profile AND role value.
- *
- * Caveat: substring matching can over-match (e.g. a "manager" marker also matches a sales
- * title like "Account Manager"). If that's a concern, set ADMIN_PROFILE_MARKERS to precise
- * values for your Zoho profile/role names.
+ * "unlimited" operators. Configured via ADMIN_PROFILE_MARKERS (CSV of EXACT Zoho profile/role
+ * names, default "administrator,ceo") so the policy can change without a deploy. Matched as
+ * case-insensitive FULL-STRING equality (after trim) against each profile AND role value —
+ * substring matching is deliberately gone: a "manager" marker also matched sales titles like
+ * "Sales Manager"/"Account Manager", silently granting them every Mytrion and department API.
+ * To restore a wrongly-demoted individual without a deploy, use ADMIN_USERS (exact user_name
+ * CSV) or a per-user DB override (worker_mytrion_access.allDepartmentAccess).
  */
 function adminMarkers(): string[] {
   return env.ADMIN_PROFILE_MARKERS.split(',')
@@ -64,10 +64,7 @@ function matchesAdminMarker(value?: string | readonly string[] | null): boolean 
   if (!value) return false;
   const list = Array.isArray(value) ? value : [value as string];
   const markers = adminMarkers();
-  return list.some((v) => {
-    const lc = String(v).toLowerCase();
-    return markers.some((m) => lc.includes(m));
-  });
+  return list.some((v) => markers.includes(String(v).trim().toLowerCase()));
 }
 
 /** True if a profile (or list of profiles) carries an admin marker. */

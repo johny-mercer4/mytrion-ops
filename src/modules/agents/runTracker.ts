@@ -72,8 +72,16 @@ export class RunTracker extends BaseCallbackHandler {
     if (toolName !== 'task') return;
     try {
       const parsed = JSON.parse(input) as { subagent_type?: string };
-      if (parsed.subagent_type) this.agentPath.push(parsed.subagent_type);
-    } catch {
+      if (parsed.subagent_type) {
+        this.agentPath.push(parsed.subagent_type);
+        // Ping-pong detection (Agentic Evaluation Metrics standard)
+        // If the orchestrator has delegated more than 3 times in a single turn, it's thrashing.
+        if (this.agentPath.length >= 4) {
+          throw new Error(`Ping-pong deadlock detected: [${this.agentPath.join(' -> ')}]. The orchestrator must route correctly without endless bouncing.`);
+        }
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('Ping-pong')) throw err;
       // input not JSON — ignore; agentPath is best-effort observability.
     }
   }

@@ -45,17 +45,29 @@ async function readMultipart(
 ): Promise<{ fields: Record<string, string>; file: UploadFile | null }> {
   const fields: Record<string, string> = {};
   let file: UploadFile | null = null;
-  for await (const part of request.parts({ limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 1 } })) {
-    if (part.type === 'file') {
-      const buffer = await part.toBuffer();
-      file = {
-        name: part.filename || 'attachment',
-        mime: part.mimetype || 'application/octet-stream',
-        buffer,
-      };
-    } else {
-      fields[part.fieldname] = typeof part.value === 'string' ? part.value : String(part.value ?? '');
+  try {
+    for await (const part of request.parts({ limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 1 } })) {
+      if (part.type === 'file') {
+        const buffer = await part.toBuffer();
+        file = {
+          name: part.filename || 'attachment',
+          mime: part.mimetype || 'application/octet-stream',
+          buffer,
+        };
+      } else {
+        fields[part.fieldname] = typeof part.value === 'string' ? part.value : String(part.value ?? '');
+      }
     }
+  } catch (err) {
+    // Fastify throws when the fileSize limit is exceeded — surface a clean 413, not a raw 500.
+    if (err instanceof Error && /file too large|FST_REQ_FILE_TOO_LARGE|request file too large/i.test(err.message)) {
+      throw new AppError('Attachment exceeds the 20MB limit.', {
+        statusCode: 413,
+        code: 'ATTACHMENT_TOO_LARGE',
+        expose: true,
+      });
+    }
+    throw err;
   }
   return { fields, file };
 }

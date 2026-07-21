@@ -2,10 +2,9 @@ import './styles/index.css';
 
 import { CsShell } from './Shell';
 
-/** Customer Service Mytrion — live port of zoho-octane/app/mytrion-customer-service with
- * the widget's OWN design system (Paper White / Royal Blue, machine-scoped under .cs-root).
- * Panels: Home / Applications / Citifuel Clients / Analytics / Data Center + AI Chat;
- * Inbox and Service Center stay "Soon" stubs, exactly like the widget's nav. */
+/** Customer Service Mytrion — CSMYTRION gold design, live APIs only (no mock data).
+ * Panels: Home / Applications / Retention / Claims / CITI Folder / Citifuel / Analytics + AI Chat;
+ * Data Center / Inbox / Service Center stay "Soon". */
 export default function CustomerServiceMytrion() {
   return <CsShell />;
 }

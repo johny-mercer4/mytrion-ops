@@ -92,12 +92,16 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     tag: 'Sales',
     icon: 'sales',
     blurb: 'Self-service ops — carrier balances, cards, invoices, EFS/WEX, automations.',
-    hue: 'rocket',
+    /* Loader uses var(--accent) under data-mytrion="sales" (Sales theme, not wizard --rocket). */
+    hue: 'accent',
     department: 'sales',
+
     allDepartments: false,
     // Every rep's CRM profile is "Sales Agent" (region lives in the ROLE). Substring match so any
     // "…Sales Agent…" profile lands here — and ONLY here — so they auto-enter /m/sales on login.
-    allowedProfiles: ['Sales'],
+    // List mirrors the backend DEFAULT_PROFILE_SEED (src/lib/mytrions.ts) — the server-resolved
+    // access wins for verified sessions; this fallback only covers dev-mock/legacy paths.
+    allowedProfiles: ['Sales', 'Sales Agent', 'Sales Plus', 'Sales Assistant', 'Referral Standard Plus', 'Standard Plus'],
     profileContainsAny: ['Sales Agent'],
     allowedRoles: [],
     allowedUsernames: [],
@@ -114,7 +118,8 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     hue: 'blue',
     department: 'billing',
     allDepartments: false,
-    allowedProfiles: ['Billing'],
+    // 'Standard Plus' mirrors DEFAULT_PROFILE_SEED (sales + billing).
+    allowedProfiles: ['Billing', 'Standard Plus'],
     allowedRoles: [],
     allowedUsernames: [],
     adminBypass: true,
@@ -163,12 +168,10 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     hue: 'yellow',
     department: 'customer-service',
     allDepartments: false,
-    // The org has NO "Customer Service"/"Support" PROFILES (verified against the live user
-    // roster, 2026-07-16) — CS staff carry "Standard"/"Standard Plus" profiles and are
-    // identified by their Zoho ROLE. Roles below match all 22 CS users (20 agents + 2
-    // managers); the profile entries stay as a harmless forward-compat grant.
-    allowedProfiles: ['Customer Service', 'Support'],
-    allowedRoles: ['Customer Service Agent', 'Customer Service Manager'],
+    // CS is Admin-grant only (server accessibleMytrions). No static profile/role auto-entry —
+    // verified sessions use DB grants; legacy FE fallback must not open CS for Standard / roles.
+    allowedProfiles: ['Customer Retention'],
+    allowedRoles: [],
     allowedUsernames: [],
     adminBypass: true,
     status: 'ported',

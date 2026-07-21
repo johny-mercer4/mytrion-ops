@@ -9,8 +9,8 @@
  */
 import { ZohoWrapper } from './zohoBase.js';
 
-/** COQL hard limits (skill §5): max 200 rows per page, offset ≤ 100k. */
-const MAX_COQL_ROWS = 200;
+/** COQL hard limits (Zoho CRM v8): max 2000 rows per call, offset ≤ 100k. */
+const MAX_COQL_ROWS = 2000;
 
 export interface CoqlResult {
   rows: Array<Record<string, unknown>>;
@@ -57,6 +57,8 @@ export interface CrmUser {
   email: string | null;
   profile: string | null;
   role: string | null;
+  /** Zoho Users API `Isonline` — true when the user is currently online in CRM. */
+  isOnline: boolean;
 }
 
 interface CrmUsersApiResponse {
@@ -67,6 +69,7 @@ interface CrmUsersApiResponse {
     profile?: { name?: string } | null;
     role?: { name?: string } | null;
     status?: string;
+    Isonline?: boolean;
   }>;
   info?: { more_records?: boolean; page?: number };
 }
@@ -129,6 +132,7 @@ export class ZohoCrmWrapper extends ZohoWrapper {
           email: u.email ?? null,
           profile: u.profile?.name ?? null,
           role: u.role?.name ?? null,
+          isOnline: u.Isonline === true,
         });
       }
       if (json.info?.more_records !== true) break;
@@ -195,6 +199,7 @@ export class ZohoCrmWrapper extends ZohoWrapper {
       email: u.email ?? null,
       profile: u.profile?.name ?? null,
       role: u.role?.name ?? null,
+      isOnline: u.Isonline === true,
     };
   }
 

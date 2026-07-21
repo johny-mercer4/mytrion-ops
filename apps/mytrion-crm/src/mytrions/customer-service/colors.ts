@@ -12,7 +12,7 @@ export interface TagColor {
   border: string;
 }
 
-function tag(hex: string, bgA = 0.13, brA = 0.32): TagColor {
+function tag(hex: string, bgA = 0.10, brA = 0.24): TagColor {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
@@ -23,15 +23,15 @@ function tag(hex: string, bgA = 0.13, brA = 0.32): TagColor {
   };
 }
 
-/* 600-level hues — saturated enough to read as dots/text on white */
+/* Enterprise mid-tones — readable, lower neon than pure 600s */
 const HUE = {
-  slate: '#64748B', sky: '#0284C7', cyan: '#0891B2', teal: '#0D9488',
-  indigo: '#4F46E5', violet: '#7C3AED', fuchsia: '#C026D3', pink: '#DB2777',
-  rose: '#E11D48', red: '#DC2626', orange: '#EA580C', amber: '#D97706',
-  yellow: '#CA8A04', emerald: '#059669', green: '#16A34A',
+  slate: '#64748B', sky: '#0E7490', cyan: '#0F766E', teal: '#0F766E',
+  indigo: '#4F46E5', violet: '#6D28D9', fuchsia: '#A21CAF', pink: '#BE185D',
+  rose: '#BE123C', red: '#B91C1C', orange: '#C2410C', amber: '#B45309',
+  yellow: '#A8841A', emerald: '#047857', green: '#15803D',
 } as const;
 
-const DEFAULT_TAG: TagColor = tag('#2563EB');
+const DEFAULT_TAG: TagColor = tag('#C9A227');
 
 const PICKLIST_COLORS: Record<string, TagColor> = {
   'Interested':           tag(HUE.slate),
