@@ -48,6 +48,18 @@ vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/modules/audit/auditLogger.js')>();
   return { ...mod, audit: vi.fn(async () => undefined), auditFromContext: vi.fn(async () => undefined) };
 });
+// Admin View-as of Clients resolves the TARGET's display name for the DWH name-fallback arm.
+vi.mock('../../src/modules/auth/actAsDirectory.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/modules/auth/actAsDirectory.js')>();
+  return {
+    ...mod,
+    resolveActAsTarget: vi.fn(async (id: string) =>
+      id === '999'
+        ? { zohoUserId: '999', name: 'Frank Harrison', email: null, profile: 'Sales Agent', role: null }
+        : null,
+    ),
+  };
+});
 
 import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
@@ -232,7 +244,7 @@ describe('data-center clients — owner scope + RBAC (Clients roster + gallons)'
     expect(clientsMock).not.toHaveBeenCalledWith('999', expect.anything());
   });
 
-  it('an admin may target another agent via ?zoho_user_id', async () => {
+  it("an admin targeting another agent resolves the TARGET's name for the DWH name-fallback arm", async () => {
     clientsMock.mockResolvedValue([]);
     const token = await workerToken('Administrator');
     const res = await app.inject({
@@ -241,8 +253,9 @@ describe('data-center clients — owner scope + RBAC (Clients roster + gallons)'
       headers: bearer(token),
     });
     expect(res.statusCode).toBe(200);
-    // Admin act-as by id → id path only (no name fallback; we don't have the target's name).
-    expect(clientsMock).toHaveBeenCalledWith('999', undefined);
+    // Must pass the target's id AND their directory name — id-only silently misses agents whose
+    // session id doesn't line up with the warehouse agent_zoho_user_id.
+    expect(clientsMock).toHaveBeenCalledWith('999', 'Frank Harrison');
   });
 
   it('the plain frontend call forwards the caller name so the DWH name arm can fire', async () => {
