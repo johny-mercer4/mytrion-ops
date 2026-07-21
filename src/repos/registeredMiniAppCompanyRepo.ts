@@ -13,7 +13,7 @@ type DbClient = typeof db | TransactionClient;
 
 export interface RegisteredMiniAppCompanyDto {
   id: string;
-  profile: 'owner' | 'driver';
+  profile: 'owner' | 'manager' | 'driver';
   carrierId: string | null;
   applicationId: string | null;
   companyName: string | null;
@@ -32,7 +32,7 @@ export interface RegisteredMiniAppCompanyDto {
 
 export interface UpsertRegisteredMiniAppCompanyInput {
   invitationId: string;
-  profile: 'owner' | 'driver';
+  profile: 'owner' | 'manager' | 'driver';
   telegramUserId: string;
   telegramChatId?: string | undefined;
   telegramUsername?: string | undefined;

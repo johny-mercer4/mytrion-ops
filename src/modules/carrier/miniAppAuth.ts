@@ -35,13 +35,22 @@ export function lookupCtx(): TenantContext {
   };
 }
 
+type MiniAppProfile = 'owner' | 'manager' | 'driver';
+
+/** owner + manager share every capability gate — manager is a company-access colleague, not a
+ *  driver. This is the single predicate every owner-only check keys off, so "manager == owner"
+ *  lives in exactly one place. */
+export function isOwnerLike(profile: MiniAppProfile): boolean {
+  return profile === 'owner' || profile === 'manager';
+}
+
 /** The actual actor once a Telegram user is verified — customer audience, deny-by-default. */
-export function telegramCtx(profile: 'owner' | 'driver', telegramUserId: string): TenantContext {
+export function telegramCtx(profile: MiniAppProfile, telegramUserId: string): TenantContext {
   return {
     tenantId: DEFAULT_TENANT_ID,
     userId: `telegram:${telegramUserId}`,
     audience: 'customer',
-    role: profile === 'owner' ? 'fleet_manager' : 'driver',
+    role: isOwnerLike(profile) ? 'fleet_manager' : 'driver',
     scopes: [],
     departments: [],
     allDepartmentAccess: false,
@@ -119,18 +128,18 @@ export async function requireRegisteredOwner(
   const { registration, tgUser, telegramUserId } = await requireRegisteredMiniAppUser(initData);
   if (
     !registration ||
-    registration.profile !== 'owner' ||
+    !isOwnerLike(registration.profile) ||
     registration.companyType !== 'fleet-manager' ||
     !registration.carrierId
   ) {
-    throw new AppError('Only a fleet company owner can manage drivers', {
+    throw new AppError('Only a fleet company owner or manager can manage drivers', {
       statusCode: 403,
       code: 'NOT_A_REGISTERED_OWNER',
       expose: true,
     });
   }
   return {
-    ctx: telegramCtx('owner', telegramUserId),
+    ctx: telegramCtx(registration.profile, telegramUserId),
     registration,
     carrierId: registration.carrierId,
     tgUser,
@@ -169,7 +178,7 @@ export async function requireRegisteredOwnerUser(
   initData: string,
 ): Promise<{ registration: RegisteredMiniAppCompany; carrierId: string }> {
   const { registration } = await requireRegisteredMiniAppUser(initData);
-  if (registration.profile !== 'owner' || !registration.carrierId) {
+  if (!isOwnerLike(registration.profile) || !registration.carrierId) {
     throw new AppError('This view is only available to the company owner', {
       statusCode: 403,
       code: 'NOT_A_REGISTERED_OWNER_USER',
@@ -244,7 +253,7 @@ export async function resolveDriverExtras(
 
 export function toRegistrationView(row: {
   id: string;
-  profile: 'owner' | 'driver';
+  profile: MiniAppProfile;
   companyName: string | null;
   carrierId: string | null;
   companyType: 'owner-operator' | 'fleet-manager' | null;

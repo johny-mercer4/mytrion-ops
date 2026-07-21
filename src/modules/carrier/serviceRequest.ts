@@ -135,13 +135,18 @@ export function serviceRequestSpec(key: ServiceRequestKey): ServiceRequestSpec {
   return SERVICE_REQUESTS[key];
 }
 
-export function serviceRequestAllows(key: ServiceRequestKey, profile: 'owner' | 'driver'): boolean {
-  return SERVICE_REQUESTS[key].roles.includes(profile);
+export function serviceRequestAllows(
+  key: ServiceRequestKey,
+  profile: 'owner' | 'manager' | 'driver',
+): boolean {
+  // A manager has owner-equivalent access — the per-service role lists stay owner/driver.
+  const effective = profile === 'manager' ? 'owner' : profile;
+  return SERVICE_REQUESTS[key].roles.includes(effective);
 }
 
 export interface FileServiceRequestInput {
   key: ServiceRequestKey;
-  profile: 'owner' | 'driver';
+  profile: 'owner' | 'manager' | 'driver';
   carrierId: string;
   /** The requester's card. For a driver this is resolved SERVER-SIDE from their registration and is
    *  never caller-supplied — otherwise a driver could file an override against a colleague's card. */

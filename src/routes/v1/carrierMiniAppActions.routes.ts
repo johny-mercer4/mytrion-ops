@@ -180,7 +180,7 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
     const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData);
     takeWriteToken(carrierId);
     const { cardNumber } = await resolveActionCard(registration, carrierId, body.cardId);
-    const ctx = telegramCtx('owner', registration.telegramUserId);
+    const ctx = telegramCtx(registration.profile, registration.telegramUserId);
     const result = await efsWrapper.setCardStatus(carrierId, cardNumber, body.action);
     await auditFromContext(ctx, {
       action: `carrier.mini_app.card_${body.action}`,
@@ -209,7 +209,7 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
     const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData);
     takeWriteToken(carrierId);
     const { cardNumber } = await resolveActionCard(registration, carrierId, body.cardId);
-    const ctx = telegramCtx('owner', registration.telegramUserId);
+    const ctx = telegramCtx(registration.profile, registration.telegramUserId);
     const result = await efsWrapper.setCardLimits(carrierId, cardNumber, {
       limitId: body.limitId,
       value: body.value,
@@ -279,7 +279,7 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
     const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData);
     takeWriteToken(carrierId);
     const { cardNumber } = await resolveActionCard(registration, carrierId, body.cardId);
-    const ctx = telegramCtx('owner', registration.telegramUserId);
+    const ctx = telegramCtx(registration.profile, registration.telegramUserId);
     const result = await efsWrapper.fraudHoldRelease({
       carrierId,
       cardNumber,
@@ -326,7 +326,7 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
     const body = moneyCodeDrawSchema.parse(request.body);
     const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData);
     takeWriteToken(carrierId);
-    const ctx = telegramCtx('owner', registration.telegramUserId);
+    const ctx = telegramCtx(registration.profile, registration.telegramUserId);
     try {
       const result = await serverCrmWrapper.drawMoneyCode(carrierId, {
         amount: body.amount,

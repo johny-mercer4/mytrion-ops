@@ -195,7 +195,7 @@ const driverSelfRegisterSchema = z.object({
 const SELF_REGISTER_ATTEMPTS_PER_MINUTE = 3;
 
 const createInviteSchema = z.object({
-  profile: z.enum(['owner', 'driver']).default('owner'),
+  profile: z.enum(['owner', 'manager', 'driver']).default('owner'),
   carrier_id: z.union([z.string().max(120), z.number()]).transform(String).optional(),
   application_id: z.union([z.string().max(120), z.number()]).transform(String).optional(),
   company_name: z.string().max(300).optional(),
@@ -621,7 +621,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
 
     // Aggregate-only fleet summary (counts, no card numbers / no driver identities).
     let fleet: { cardCount: number | null; registeredDrivers: number } | undefined;
-    if (invite.profile === 'owner' && invite.companyType === 'fleet-manager' && invite.carrierId) {
+    if (invite.profile !== 'driver' && invite.companyType === 'fleet-manager' && invite.carrierId) {
       const roster = await registeredMiniAppCompanyRepo.list(ctx);
       const registeredDrivers = roster.filter(
         (r) => r.profile === 'driver' && r.carrierId === invite.carrierId,
@@ -744,6 +744,42 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     });
     return reply.code(201).send({
       invite: { id: invite.id, cardId: invite.cardId, driverName: invite.driverName },
+      inviteUrl,
+      expiresAt: invite.expiresAt,
+    });
+  });
+
+  /**
+   * Owner (or an existing manager) issues a MANAGER registration link for their carrier — a colleague
+   * who gets owner-equivalent company access (fleet, drivers, finances, reports). Carrier-level, not
+   * per-card. The carrier is taken from the caller's own verified registration, never the body, so a
+   * manager link can only ever bind to the caller's own carrier. requireRegisteredOwner already lets a
+   * manager through, so a manager can grow the team too (per product decision).
+   */
+  app.post('/carrier/mini-app/manager-invites', async (request, reply) => {
+    const body = ownerFleetSchema.parse(request.body);
+    const { ctx, carrierId, registration } = await requireRegisteredOwner(body.initData);
+    const support = await resolveRegistrationAgent(registration);
+
+    const { invite, inviteUrl } = await createCarrierInvite(ctx, {
+      profile: 'manager',
+      carrierId,
+      ...(registration.applicationId ? { applicationId: registration.applicationId } : {}),
+      ...(registration.companyName ? { companyName: registration.companyName } : {}),
+      ...(support.agentName ? { agentName: support.agentName } : {}),
+      ...(support.agentZohoUserId ? { agentZohoUserId: support.agentZohoUserId } : {}),
+      // Onboarding a colleague is less time-critical than a driver at the pump — a bit longer window.
+      ttlHours: 48,
+    });
+    await auditFromContext(ctx, {
+      action: 'mini_app.manager_invite.create',
+      status: 'ok',
+      resourceType: 'carrier_invitation',
+      resourceId: invite.id,
+      detail: { carrierId, invitedBy: registration.profile },
+    });
+    return reply.code(201).send({
+      invite: { id: invite.id },
       inviteUrl,
       expiresAt: invite.expiresAt,
     });
@@ -1295,6 +1331,34 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
       return await executeZohoFunctionWithFallback(['mytriontruckingnumberrequest'], { carrierId }, { unwrap: 'status' });
     } catch (err) {
       throw new AppError('Tracking lookup failed', { statusCode: 502, code: 'TRACKING_ERROR', expose: true, cause: err });
+    }
+  });
+
+  /**
+   * Billing form + verification notes — the same servercrm read the CRM widget uses
+   * (carrier.billing_form_info / mytrionfetchbillingforminfo). Owner-only: company-level billing
+   * data. Deluge signals "not found" as a plain string — that is a clean empty state, not an
+   * error, so it normalizes to nulls instead of a 502.
+   */
+  app.post('/carrier/mini-app/billing-form', async (request) => {
+    const body = selfServiceSchema.parse(request.body);
+    const { carrierId } = await requireRegisteredOwnerUser(body.initData);
+    try {
+      const raw = await executeZohoFunctionWithFallback(
+        ['mytrionfetchbillingforminfo', 'mytrionFetchBillingFormInfo'],
+        { carrierId },
+        { unwrap: 'permissive' },
+      );
+      if (!raw || typeof raw !== 'object') return { verification: null, billingForm: null, notes: [] };
+      const r = raw as Record<string, unknown>;
+      const deal = (r['deal'] ?? null) as Record<string, unknown> | null;
+      return {
+        verification: deal?.['billingVerification'] ?? null,
+        billingForm: (r['billingForm'] ?? null) as Record<string, unknown> | null,
+        notes: Array.isArray(r['notes']) ? r['notes'] : [],
+      };
+    } catch (err) {
+      throw new AppError('Billing form lookup failed', { statusCode: 502, code: 'BILLING_FORM_ERROR', expose: true, cause: err });
     }
   });
 

@@ -18,7 +18,7 @@ import type { CarrierCompanyType } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
 export interface CreateCarrierInviteArgs {
-  profile: 'owner' | 'driver';
+  profile: 'owner' | 'manager' | 'driver';
   carrierId?: string | undefined;
   applicationId?: string | undefined;
   companyName?: string | undefined;
@@ -162,6 +162,13 @@ export async function createCarrierInvite(
     } catch {
       // undetermined — an application-only invite or a DWH hiccup shouldn't block sending the link
     }
+  }
+
+  // A manager is by definition a fleet colleague (owner-equivalent access, granted by an
+  // owner/manager). Pin fleet-manager so a DWH hiccup can't leave companyType null — that null
+  // would make requireRegisteredOwner reject the manager once they register (fail-closed gate).
+  if (args.profile === 'manager') {
+    companyType = 'fleet-manager';
   }
 
   const invite = await carrierInvitationRepo.create(ctx, {

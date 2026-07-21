@@ -17,7 +17,8 @@ export const registeredMiniAppCompanies = pgTable(
     tenantId: text('tenant_id').notNull(),
     /** The carrier_invitations.id that was redeemed to reach this registration. */
     invitationId: text('invitation_id').notNull(),
-    profile: text('profile').$type<'owner' | 'driver'>().notNull().default('owner'),
+    /** 'manager' is owner-equivalent everywhere (see carrier_invitations.profile). Plain text. */
+    profile: text('profile').$type<'owner' | 'manager' | 'driver'>().notNull().default('owner'),
     telegramUserId: text('telegram_user_id').notNull(),
     telegramChatId: text('telegram_chat_id'),
     telegramUsername: text('telegram_username'),
