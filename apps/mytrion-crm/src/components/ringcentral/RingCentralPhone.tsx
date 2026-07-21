@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { fetchRingCentralEmbedConfig } from '@/api/ringcentral';
 import { RC_ADAPTER_SCRIPT_ID } from './ringcentralDial';
-import { X, Info, CheckCircle, AlertCircle } from 'lucide-react';
+import { subscribeRingCentral, type RingCentralCallEvent } from './ringcentralEvents';
+import { X, AlertCircle } from 'lucide-react';
 
-type ToastType = 'info' | 'success' | 'error';
+type ToastType = 'error';
 interface ToastMsg {
   id: number;
   type: ToastType;
@@ -12,6 +13,22 @@ interface ToastMsg {
 }
 
 let toastId = 0;
+
+/**
+ * UI toasts for RingCentral — call lifecycle (dialing / connected / ended) stays silent;
+ * backend audit still captures every event via {@link subscribeRingCentral}. Only surface
+ * session loss (and explicit RC errors if we add them later).
+ */
+function toastFor(e: RingCentralCallEvent): { type: ToastType; title: string; message: string } | null {
+  if (e.kind === 'logout') {
+    return {
+      type: 'error',
+      title: 'RingCentral session ended',
+      message: 'Open the phone widget and sign in again to place calls.',
+    };
+  }
+  return null;
+}
 
 export function RingCentralPhone() {
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
@@ -31,6 +48,7 @@ export function RingCentralPhone() {
   useEffect(() => {
     let cancelled = false;
 
+    // 1) Load the Embeddable adapter (no shared secrets by default — agents sign in in the widget).
     void (async () => {
       try {
         const cfg = await fetchRingCentralEmbedConfig();
@@ -42,33 +60,28 @@ export function RingCentralPhone() {
         script.src = cfg.adapterUrl;
         script.async = true;
         script.onerror = () => {
-          addToast('error', 'Phone Failed', 'Could not load RingCentral Embeddable widget.');
+          console.warn('[ringcentral] Embeddable adapter failed to load');
           script.remove();
+          if (!cancelled) {
+            addToast('error', 'RingCentral failed to load', 'Refresh the page or check your network, then try again.');
+          }
         };
         document.body.appendChild(script);
-      } catch (err) {
-        // quiet fail
+      } catch {
+        // Widget unavailable (RC disabled / not configured) — fail silently.
       }
     })();
 
-    const handleMessage = (e: MessageEvent) => {
-      const data = e.data;
-      if (!data || typeof data.type !== 'string') return;
-      
-      if (data.type === 'rc-call-ring-notify') {
-        addToast('info', 'Incoming Call', `Call ringing from: ${data.call?.from || 'Unknown'}`);
-      } else if (data.type === 'rc-call-start-notify') {
-        addToast('success', 'Call Started', `Call started with: ${data.call?.to || data.call?.from || 'Unknown'}`);
-      } else if (data.type === 'rc-call-end-notify') {
-        addToast('info', 'Call Ended', 'Call ended.');
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
+    // 2) Keep the event bridge alive (backend audit). Toast only session end / RC errors.
+    const unsubscribe = subscribeRingCentral((event) => {
+      if (cancelled) return;
+      const t = toastFor(event);
+      if (t) addToast(t.type, t.title, t.message);
+    });
 
     return () => {
       cancelled = true;
-      window.removeEventListener('message', handleMessage);
+      unsubscribe();
       const script = document.getElementById(RC_ADAPTER_SCRIPT_ID);
       if (script) script.remove();
       const frame = document.getElementById('rc-widget-adapter-frame');
@@ -91,7 +104,7 @@ export function RingCentralPhone() {
       {toasts.map((t) => (
         <div key={t.id} style={{
           background: 'var(--surface)',
-          borderLeft: `4px solid ${t.type === 'error' ? 'var(--danger)' : t.type === 'success' ? 'var(--success)' : 'var(--accent)'}`,
+          borderLeft: '4px solid var(--danger)',
           padding: '12px 16px',
           borderRadius: '6px',
           boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
@@ -101,21 +114,19 @@ export function RingCentralPhone() {
           minWidth: '280px',
           color: 'var(--text)'
         }}>
-          {t.type === 'error' && <AlertCircle size={20} color="var(--danger)" />}
-          {t.type === 'success' && <CheckCircle size={20} color="var(--success)" />}
-          {t.type === 'info' && <Info size={20} color="var(--accent)" />}
-          
+          <AlertCircle size={20} color="var(--danger)" />
+
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <div style={{ fontWeight: 600, fontSize: '14px' }}>{t.title}</div>
             <div style={{ fontSize: '13px', color: 'var(--muted)' }}>{t.message}</div>
           </div>
-          
-          <button 
-            onClick={() => removeToast(t.id)} 
-            style={{ 
-              background: 'transparent', 
-              border: 'none', 
-              color: 'var(--muted)', 
+
+          <button
+            onClick={() => removeToast(t.id)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--muted)',
               cursor: 'pointer',
               padding: '2px',
               display: 'flex'

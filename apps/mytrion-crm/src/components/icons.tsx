@@ -26,6 +26,7 @@ import {
   Home,
   Landmark,
   Layers,
+  LogOut,
   MessageCircleMore,
   Moon,
   Plus,
@@ -46,6 +47,7 @@ import {
   Activity,
   LineChart,
   LayoutGrid,
+  Timer,
 } from 'lucide-react';
 
 /**
@@ -83,6 +85,7 @@ export const WarehouseIcon = icon(Layers, 19);
 export const AccessIcon = icon(ShieldCheck, 19);
 export const UsersIcon = icon(Users, 19);
 export const HistoryIcon = icon(History, 13);
+export const JobsIcon = icon(Timer, 19);
 export const ChatIcon = icon(MessageCircleMore, 16);
 
 // ── actions + controls ──────────────────────────────────────────────────────
@@ -95,6 +98,7 @@ export const ArrowRightIcon = icon(ArrowRight, 12, 2.2);
 export const SendArrowIcon = icon(ArrowRight, 16, 2.2);
 export const CheckIcon = icon(Check, 11, 2.5);
 export const XIcon = icon(X, 10, 2.5);
+export const LogOutIcon = icon(LogOut, 13, 2.2);
 export const RefreshIcon = icon(RefreshCw, 12);
 export const CopyIcon = icon(Copy, 11);
 export const RevokeIcon = icon(ShieldOff, 11);

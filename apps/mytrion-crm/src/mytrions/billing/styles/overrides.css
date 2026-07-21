@@ -1,0 +1,579 @@
+/* Billing Mytrion — React-shell overrides.
+   Machine-scoped port lives in the sibling files; anything that needs to differ from the
+   zoho-octane source of truth (React-shell adjustments, `.bm-root` integration tweaks) goes
+   here so the ported files stay a clean mirror. Loaded last by index.css. Source of truth for
+   the base files: zoho-octane/app/billing-mytrion/css/. */
+
+/* Status text utilities — the widget only defined these scoped under .bm-prepay-panel, but the
+   Debtors/Transactions modals use bare `text-danger`/`text-success`/`text-warning`. Promote them
+   to the whole widget so amounts colour correctly outside the prepay panel. */
+.bm-root .text-danger { color: var(--danger-text); }
+.bm-root .text-success { color: var(--success-text); }
+.bm-root .text-warning { color: var(--warning-text); }
+.bm-root .text-muted { color: var(--text-muted); }
+
+/* ── Floating AI copilot (BillingCopilot) — launcher + pop-over, billing tokens.
+      Same UX as the CS/Sales copilot; the widget's AI Chat nav tab was a stub. ── */
+.bm-root .bm-copilot-fab {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 90;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    background: linear-gradient(140deg, var(--billing-accent), var(--accent-hover));
+    box-shadow: 0 8px 26px var(--billing-accent-glow);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.bm-root .bm-copilot-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2px solid var(--billing-accent);
+    animation: bm-copilot-ring 2.2s ease-out infinite;
+    pointer-events: none;
+}
+@keyframes bm-copilot-ring {
+    0% { transform: scale(1); opacity: 0.6; }
+    100% { transform: scale(1.5); opacity: 0; }
+}
+.bm-root .bm-copilot-panel {
+    position: fixed;
+    right: 24px;
+    bottom: 92px;
+    z-index: 95;
+    width: 380px;
+    max-width: calc(100vw - 40px);
+    height: 560px;
+    max-height: calc(100vh - 130px);
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+    animation: bm-copilot-pop 0.24s cubic-bezier(0.2, 0, 0, 1) both;
+}
+@keyframes bm-copilot-pop {
+    from { transform: translateY(10px) scale(0.98); opacity: 0; }
+    to { transform: translateY(0) scale(1); opacity: 1; }
+}
+.bm-root .bm-copilot-head {
+    flex-shrink: 0;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    background: linear-gradient(120deg, var(--accent-bg), transparent), var(--surface);
+    border-bottom: 1px solid var(--border);
+}
+.bm-root .bm-copilot-mark {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(140deg, var(--billing-accent), var(--accent-hover));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.bm-root .bm-copilot-dot {
+    position: absolute;
+    right: -1px;
+    bottom: -1px;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--success-text);
+    border: 2px solid var(--surface);
+}
+.bm-root .bm-copilot-head-txt { flex: 1; line-height: 1.2; min-width: 0; }
+.bm-root .bm-copilot-title { font-weight: 700; font-size: 0.9375rem; color: var(--text-primary); }
+.bm-root .bm-copilot-status { font-size: 0.65rem; color: var(--success-text); font-weight: 600; }
+.bm-root .bm-copilot-close {
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.bm-root .bm-copilot-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: var(--color-bg-primary);
+}
+.bm-root .bm-copilot-msg { display: flex; gap: 8px; align-items: flex-end; }
+.bm-root .bm-copilot-msg-user { flex-direction: row-reverse; }
+.bm-root .bm-copilot-avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(140deg, var(--billing-accent), var(--accent-hover));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.bm-root .bm-copilot-bubble {
+    max-width: 80%;
+    padding: 11px 13px;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.bm-root .bm-copilot-bubble-ai {
+    border-radius: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+}
+.bm-root .bm-copilot-bubble-user {
+    border-radius: 4px;
+    background: linear-gradient(140deg, var(--billing-accent), var(--accent-hover));
+    color: #fff;
+}
+.bm-root .bm-copilot-err { color: var(--danger-text); }
+.bm-root .bm-copilot-typing { display: flex; gap: 4px; align-items: center; }
+.bm-root .bm-copilot-typing span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    animation: bm-copilot-dot 1.2s infinite;
+}
+.bm-root .bm-copilot-typing span:nth-child(2) { animation-delay: 0.2s; }
+.bm-root .bm-copilot-typing span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bm-copilot-dot {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+    30% { transform: translateY(-4px); opacity: 1; }
+}
+.bm-root .bm-copilot-foot { flex-shrink: 0; border-top: 1px solid var(--border); background: var(--surface); }
+.bm-root .bm-copilot-chips { display: flex; gap: 7px; padding: 11px 13px 0; overflow-x: auto; }
+.bm-root .bm-copilot-chip {
+    flex-shrink: 0;
+    padding: 6px 11px;
+    border-radius: 99px;
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    color: var(--text-secondary);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.bm-root .bm-copilot-chip:disabled { opacity: 0.5; cursor: default; }
+.bm-root .bm-copilot-compose { display: flex; gap: 9px; align-items: flex-end; padding: 11px 13px 13px; }
+.bm-root .bm-copilot-input {
+    flex: 1;
+    height: 40px;
+    padding: 0 13px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+}
+.bm-root .bm-copilot-input:focus { outline: none; border-color: var(--billing-accent); }
+.bm-root .bm-copilot-send {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border-radius: var(--radius-md);
+    border: none;
+    background: linear-gradient(140deg, var(--billing-accent), var(--accent-hover));
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.bm-root .bm-copilot-send:disabled { opacity: 0.5; cursor: default; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Redesign polish — Finance-grade motion + Finance-style sidebar footer.
+   Subtle, meaning-carrying micro-animations (short fade-ups, hover-lift, pulse)
+   in the billing sky-blue palette. Pure CSS, no libraries. Panel entrances use
+   animation-fill-mode: backwards so no lingering transform traps the fixed
+   modal/copilot/boot overlays.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Header "Live" status pill + pulsing dot ── */
+.bm-root .bm-header-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.bm-root .bm-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--success-text);
+    box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2);
+    animation: bmPulseOnline 2s ease-in-out infinite;
+}
+@keyframes bmPulseOnline {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.22); }
+    50% { box-shadow: 0 0 0 5px rgba(46, 204, 113, 0.06); }
+}
+
+/* ── Finance-style sidebar footer: labeled theme switch + user card ── */
+.bm-root .bm-sidebar-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.625rem;
+    border-top: 1px solid var(--border);
+    text-align: left;
+    letter-spacing: 0;
+}
+.bm-root .bm-theme-toggle {
+    width: 100%;
+    padding: 0.5rem 0.7rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    color: var(--text-secondary);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    cursor: pointer;
+    /* No background transition — theme flip stays instant (like Finance); hover recolors border. */
+    transition: color 160ms ease, border-color 160ms ease;
+}
+.bm-root .bm-theme-toggle:hover {
+    color: var(--text-primary);
+    background: var(--surface-raised);
+    border-color: var(--billing-accent-glow);
+}
+.bm-root .bm-theme-toggle svg { flex-shrink: 0; }
+.bm-root .bm-theme-toggle span { flex: 1; text-align: left; }
+
+.bm-root .bm-user-card {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.6rem;
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    transition: border-color 160ms ease;
+}
+.bm-root .bm-user-card:hover { border-color: var(--billing-accent-glow); }
+.bm-root .bm-user-avatar {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    border-radius: var(--radius-md);
+    background: linear-gradient(140deg, var(--billing-accent), var(--accent-hover));
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+}
+.bm-root .bm-user-meta { line-height: 1.25; min-width: 0; }
+.bm-root .bm-user-name {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.bm-root .bm-user-role {
+    font-size: 0.5625rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ── Entrance motion ──
+   NOTE: we deliberately DON'T animate the whole .bm-panel. Panels are kept mounted and
+   toggled with display (keep-alive), and a CSS animation on the panel root would (a) re-fire
+   on every tab switch and (b) composite the entire subtree — for the 1600+ row Transactions
+   list that's a ~200ms main-thread stall per switch. Only the cheap stat-card row animates. */
+@keyframes bmFadeUpSm {
+    from { opacity: 0; transform: translateY(7px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* ── Perf: skip layout/paint for off-screen rows in the long lists (Transactions ~1.6k rows,
+      Debtors/Prepay hundreds). content-visibility lets the browser lay out only what's near the
+      viewport, so showing a kept-alive panel is cheap. contain-intrinsic-size reserves height so
+      the scrollbar stays stable. ── */
+.bm-root .tx-row,
+.bm-root .db-row-item,
+.bm-root .dc-deal-row,
+.bm-root .rt-row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 52px;
+}
+
+/* ── Stat cards: staggered entrance + hover-lift ── */
+.bm-root .bm-summary-banner > .bm-summary-item,
+.bm-root .db-kpi-grid > .db-kpi-card {
+    animation: bmFadeUpSm 0.4s cubic-bezier(0.2, 0, 0, 1) backwards;
+    transition: transform 0.16s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.16s ease, border-color 0.16s ease;
+}
+.bm-root .bm-summary-banner > .bm-summary-item:nth-child(2),
+.bm-root .db-kpi-grid > .db-kpi-card:nth-child(2) { animation-delay: 0.05s; }
+.bm-root .bm-summary-banner > .bm-summary-item:nth-child(3),
+.bm-root .db-kpi-grid > .db-kpi-card:nth-child(3) { animation-delay: 0.1s; }
+.bm-root .bm-summary-banner > .bm-summary-item:nth-child(4),
+.bm-root .db-kpi-grid > .db-kpi-card:nth-child(4) { animation-delay: 0.15s; }
+.bm-root .bm-summary-banner > .bm-summary-item:hover,
+.bm-root .db-kpi-grid > .db-kpi-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--billing-accent-glow);
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+}
+
+/* ── Table rows: smooth hover + a subtle nudge affordance ── */
+.bm-root .dc-deal-row,
+.bm-root .db-row-item,
+.bm-root .tx-row,
+.bm-root .rt-row {
+    transition: background 0.14s ease, transform 0.14s ease;
+}
+.bm-root .dc-deal-row:hover,
+.bm-root .tx-row:hover,
+.bm-root .rt-row:hover { transform: translateX(2px); }
+
+/* ── Buttons: gentle press feedback ── */
+.bm-root .bm-btn:active,
+.bm-root .bm-refresh-btn:active,
+.bm-root .dc-filter-tab:active { transform: translateY(1px); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Opening loader — a branded, premium splash: conic-gradient dual-arc orb with a
+   pulsing glow + glyph core, a faint grid backdrop, the MYTRION·BILLING wordmark
+   lockup, and a sweeping progress bar. Pure CSS, billing sky-blue palette.
+   ══════════════════════════════════════════════════════════════════════════ */
+.bm-root .bm-app-loader {
+    position: absolute;
+    inset: 0;
+    z-index: 300;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(130% 120% at 50% 32%, var(--color-bg-secondary) 0%, var(--color-bg-primary) 68%);
+    overflow: hidden;
+    animation: bmLoaderFade 0.3s ease both;
+}
+@keyframes bmLoaderFade { from { opacity: 0; } to { opacity: 1; } }
+
+/* Faint grid, faded out toward the edges. */
+.bm-root .bm-app-loader::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 46px 46px;
+    -webkit-mask: radial-gradient(circle at 50% 44%, #000 0%, transparent 58%);
+    mask: radial-gradient(circle at 50% 44%, #000 0%, transparent 58%);
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.bm-root .bm-app-loader-sweep {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    overflow: hidden;
+}
+.bm-root .bm-app-loader-sweep::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -60%;
+    width: 60%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, var(--billing-accent), transparent);
+    opacity: 0.85;
+    animation: scanSweep 3.6s linear infinite;
+}
+
+.bm-root .bm-boot-stage {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    animation: bmBootStageIn 0.5s cubic-bezier(0.2, 0, 0, 1) both;
+}
+@keyframes bmBootStageIn {
+    from { opacity: 0; transform: translateY(10px) scale(0.96); }
+    to { opacity: 1; transform: none; }
+}
+
+.bm-root .bm-boot-orb {
+    position: relative;
+    width: 108px;
+    height: 108px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.bm-root .bm-boot-orb-glow {
+    position: absolute;
+    inset: -26px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--billing-accent-glow) 0%, transparent 66%);
+    animation: bmBootGlow 2.6s ease-in-out infinite;
+}
+@keyframes bmBootGlow {
+    0%, 100% { opacity: 0.45; transform: scale(0.9); }
+    50% { opacity: 0.85; transform: scale(1.06); }
+}
+.bm-root .bm-boot-orb-track {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 1px solid var(--accent-bg);
+}
+.bm-root .bm-boot-orb-arc {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: conic-gradient(from 90deg, transparent 0deg, var(--billing-accent) 280deg, transparent 330deg);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+    animation: spin 1.15s linear infinite;
+}
+.bm-root .bm-boot-orb-arc2 {
+    position: absolute;
+    inset: 11px;
+    border-radius: 50%;
+    background: conic-gradient(from 0deg, transparent 0deg, var(--accent-hover) 110deg, transparent 190deg);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+    opacity: 0.75;
+    animation: spin 0.85s linear infinite reverse;
+}
+.bm-root .bm-boot-orb-core {
+    position: relative;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: linear-gradient(150deg, var(--surface), var(--surface-alt));
+    border: 1px solid var(--accent-bg-strong);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--billing-accent);
+    box-shadow: 0 10px 28px var(--billing-accent-glow);
+    animation: loaderPulse 2.4s ease-in-out infinite;
+}
+.bm-root .bm-boot-brand {
+    margin-top: 1.6rem;
+    font-family: 'Rajdhani', 'Inter', sans-serif;
+    font-weight: 700;
+    font-size: 1.4rem;
+    letter-spacing: 0.16em;
+    line-height: 1;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+}
+.bm-root .bm-boot-brand span { color: var(--billing-accent); }
+.bm-root .bm-boot-brand em {
+    font-style: normal;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.5rem;
+    font-weight: 800;
+    letter-spacing: 0.2em;
+    padding: 0.3em 0.55em;
+    border-radius: 4px;
+    color: var(--billing-accent);
+    background: var(--accent-bg);
+    border: 1px solid var(--accent-bg-strong);
+}
+.bm-root .bm-boot-tag {
+    margin-top: 0.55rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+    display: inline-flex;
+    gap: 1px;
+}
+.bm-root .bm-boot-tag .dot { animation: loaderDots 1.4s infinite; }
+.bm-root .bm-boot-tag .dot:nth-child(2) { animation-delay: 0.2s; }
+.bm-root .bm-boot-tag .dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes loaderDots { 0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
+.bm-root .bm-boot-bar {
+    margin-top: 1.5rem;
+    width: 190px;
+    height: 2px;
+    background: var(--accent-bg);
+    border-radius: 999px;
+    overflow: hidden;
+}
+.bm-root .bm-boot-bar > div {
+    height: 100%;
+    width: 38%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, transparent, var(--billing-accent), transparent);
+    animation: bmBootBar 1.5s ease-in-out infinite;
+}
+@keyframes bmBootBar {
+    0% { transform: translateX(-130%); }
+    100% { transform: translateX(400%); }
+}
+
+/* ── Reduced motion: honour the OS setting ── */
+@media (prefers-reduced-motion: reduce) {
+    .bm-root .bm-content .bm-panel,
+    .bm-root .bm-summary-banner > .bm-summary-item,
+    .bm-root .db-kpi-grid > .db-kpi-card,
+    .bm-root .bm-status-dot,
+    .bm-root .bm-boot-orb-glow,
+    .bm-root .bm-boot-orb-core,
+    .bm-root .bm-boot-tag .dot,
+    .bm-root .bm-boot-bar > div,
+    .bm-root .bm-app-loader-sweep::before { animation: none; }
+    /* Keep the ring arcs spinning even under reduced-motion — a spinner is the one place
+       continuous motion is expected feedback; everything decorative above is stilled. */
+    .bm-root .bm-summary-banner > .bm-summary-item:hover,
+    .bm-root .db-kpi-grid > .db-kpi-card:hover,
+    .bm-root .dc-deal-row:hover,
+    .bm-root .tx-row:hover,
+    .bm-root .rt-row:hover { transform: none; }
+}

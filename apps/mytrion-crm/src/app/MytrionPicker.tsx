@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useUserContext } from '../context/UserContextProvider';
 import { MYTRIONS, MYTRION_URL_SLUG, COMING_SOON_PICKER_TILES, type MytrionId } from '../access/mytrions.config';
 import { TopBar } from '../components/TopBar';
-import { CheckIcon, MytrionGlyph } from '../components/icons';
+import { MytrionGlyph } from '../components/icons';
 import styles from './MytrionPicker.module.css';
 
 const HUE_VAR: Record<string, string> = {
@@ -12,6 +12,14 @@ const HUE_VAR: Record<string, string> = {
   orange: '--orange',
   danger: '--danger',
   warning: '--warning',
+  black: '--black',
+  blue: '--blue',
+  red: '--red',
+  green: '--green',
+  yellow: '--yellow',
+  'dark-purple': '--dark-purple',
+  'light-blue': '--light-blue',
+  rocket: '--rocket',
 };
 
 /** Landing picker (design 1a): hero + a grid of the Mytrions the user may enter. */
@@ -69,10 +77,15 @@ export function MytrionPicker({ ids }: { ids: MytrionId[] }) {
               const hue = HUE_VAR[tile.hue] ?? '--accent';
               return (
                 <li key={tile.id}>
-                  <div 
-                    className={`${styles.card} ${styles.cardSoon}`} 
+                  <div
+                    className={`${styles.card} ${styles.cardSoon}`}
                     aria-disabled="true"
-                    style={{ animationDelay: `${index * 0.05}s` }}
+                    style={
+                      {
+                        animationDelay: `${index * 0.05}s`,
+                        '--soon-hue': `var(${hue})`,
+                      } as React.CSSProperties
+                    }
                   >
                     <div className={styles.cardHead}>
                       <span

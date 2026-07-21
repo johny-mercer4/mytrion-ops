@@ -84,12 +84,7 @@ export function ActAsPicker({ targets }: { targets?: AgentUser[] }) {
               autoFocus
             />
           </div>
-          {loading && (
-            <div className={styles.loadingRow} role="status">
-              <span className={styles.spinner} aria-hidden="true" />
-              Loading agents…
-            </div>
-          )}
+
           {error && <div className={styles.stateErr}>{error}</div>}
           {!loading && !error && filtered.length === 0 && (
             <div className={styles.state}>

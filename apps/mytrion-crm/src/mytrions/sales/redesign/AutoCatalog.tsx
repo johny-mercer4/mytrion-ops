@@ -6,7 +6,7 @@ import { useState, type DragEvent } from 'react';
 import { s } from './dc';
 import { Icon } from './icons';
 import { deptStyle, iconBox } from './salesData';
-import type { Automation } from './autoLive';
+import { autoIconColor, type Automation } from './autoLive';
 import {
   groupCatalog,
   loadCatalogOrder,
@@ -14,13 +14,7 @@ import {
   saveCatalogOrder,
   type AutoCategory,
 } from './autoCatalogOrder';
-
-const DEPT_COL: Record<string, string> = {
-  C: 'var(--orange)',
-  Q: 'var(--accent)',
-  V: 'var(--ok)',
-  M: 'var(--violet)',
-};
+import { AutoEmptyState } from './AutoActionResult';
 
 const catalogCard = (soon: boolean, dragging: boolean): string =>
   `text-align:left;padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${dragging ? 'var(--accent)' : 'var(--border)'};cursor:${soon ? 'default' : 'grab'};box-shadow:${dragging ? '0 12px 32px rgba(0,0,0,0.15)' : 'var(--shadow-sm)'};transform:${dragging ? 'scale(1.02)' : 'scale(1)'};position:relative;overflow:hidden;opacity:${soon ? 0.55 : dragging ? 0.95 : 1};width:100%;display:flex;flex-direction:column;gap:12px;transition:all .2s cubic-bezier(0.2, 0, 0, 1)`;
@@ -86,21 +80,17 @@ export function AutoCatalog({
 
   if (items.length === 0) {
     return (
-      <div style={s('text-align:center;padding:56px 20px;color:var(--muted)')}>
-        <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:17px;text-transform:uppercase;color:var(--text)')}>
-          No actions match your search
-        </div>
-        <div style={s('font-size:13px;margin-top:5px')}>
-          Try a code like <strong style={s('color:var(--text2)')}>C-16</strong> or a keyword like{' '}
-          <strong style={s('color:var(--text2)')}>fraud</strong>.
-        </div>
-      </div>
+      <AutoEmptyState
+        title="No actions match your search"
+        message="Try a code like C-16 or a keyword like fraud."
+        icon="search"
+      />
     );
   }
 
   return (
     <div style={s('display:flex;flex-direction:column;gap:22px')}>
-      <div style={s('font-size:11.5px;color:var(--muted)')}>
+      <div style={s('font-size:12px;color:var(--muted)')}>
         Drag blocks to set your preferred order — saved on this device.
       </div>
       {sections.map(({ category, items: sectionItems }) => (
@@ -126,7 +116,7 @@ export function AutoCatalog({
                   )}
                 >
                   <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:8px')}>
-                    <div style={s(iconBox(DEPT_COL[a.dept] ?? 'var(--accent)', 42))}>
+                    <div style={s(iconBox(autoIconColor(a), 42))}>
                       <Icon name={a.icon} size={20} strokeWidth={1.75} />
                     </div>
                     <div style={s('display:flex;align-items:center;gap:6px')}>
@@ -150,7 +140,7 @@ export function AutoCatalog({
                     <div style={s('font-size:14px;font-weight:700')}>{a.title}</div>
                     <div style={s('display:flex;gap:5px;margin-top:6px;flex-wrap:wrap')}>
                       {a.codes.map((c) => (
-                        <span key={c} style={s(deptStyle(c))}>{c}</span>
+                        <span key={c} style={s(deptStyle(c, autoIconColor(a)))}>{c}</span>
                       ))}
                     </div>
                     <div style={s('font-size:12px;color:var(--muted);margin-top:8px;line-height:1.45')}>{a.desc}</div>

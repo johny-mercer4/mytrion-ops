@@ -1,54 +1,63 @@
 /**
- * Retention — in-page tabs for Cases and Open Pool (Open Pool reuses PoolTab).
- * Nav item stays Coming soon until this surface is ready to ship.
+ * Retention — Cases (Phase 1) + Open Pool (Sales agents).
  */
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
+import { useLoad } from '../../../_shared/useLoad';
 import { s } from '../dc';
-import { Icon } from '../icons';
+import { RetentionCasesPane } from '../RetentionCasesPane';
+import { loadOpenPoolCases } from '../retentionData';
 import { PoolTab } from './PoolTab';
 
 type RetentionPane = 'cases' | 'pool';
 
 export function RetentionTab() {
   const [pane, setPane] = useState<RetentionPane>('cases');
+  const [casesCount, setCasesCount] = useState<number | null>(null);
+  const [poolCount, setPoolCount] = useState<number | null>(null);
 
-  const tabs: Array<[RetentionPane, string]> = [
-    ['cases', 'Cases'],
-    ['pool', 'Open Pool'],
+  /** Seed Open Pool badge without forcing the pool pane mount. */
+  const poolSeed = useLoad(() => loadOpenPoolCases(), []);
+  useEffect(() => {
+    if (poolSeed.data?.cases) setPoolCount(poolSeed.data.cases.length);
+  }, [poolSeed.data?.cases]);
+
+  const onCasesCount = useCallback((n: number) => setCasesCount(n), []);
+  const onPoolCount = useCallback((n: number) => setPoolCount(n), []);
+
+  const tabs: Array<[RetentionPane, string, number | null]> = [
+    ['cases', 'Cases', casesCount],
+    ['pool', 'Open Pool', poolCount],
   ];
 
   return (
     <div style={s('display:flex;flex-direction:column;gap:16px;min-height:0')}>
-      <div style={s('display:flex;gap:4px;border-bottom:1px solid var(--border)')}>
-        {tabs.map(([id, label]) => {
+      <div
+        className="ss-ret-tabs"
+        role="tablist"
+        aria-label="Retention sections"
+        style={{ alignSelf: 'flex-start' }}
+      >
+        {tabs.map(([id, label, count]) => {
           const on = pane === id;
           return (
             <button
               key={id}
               type="button"
+              role="tab"
+              aria-selected={on}
               onClick={() => setPane(id)}
-              style={s(`padding:10px 16px;border:none;background:none;border-bottom:2px solid ${on ? 'var(--accent)' : 'transparent'};color:${on ? 'var(--text)' : 'var(--muted)'};font-size:13px;font-weight:700;cursor:pointer`)}
+              className={`ss-ret-tab${on ? ' is-on' : ''}`}
             >
               {label}
+              {count != null && <span className="ss-ret-tab-count">{count}</span>}
             </button>
           );
         })}
       </div>
 
-      {pane === 'cases' && (
-        <div style={s('padding:48px 24px;text-align:center;border-radius:var(--radius-md);border:1px dashed var(--border);background:var(--alt)')}>
-          <div style={s('width:44px;height:44px;margin:0 auto 14px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)')}>
-            <Icon name="clock" size={22} />
-          </div>
-          <div style={s('font-size:15px;font-weight:700')}>Cases</div>
-          <div style={s('font-size:12.5px;color:var(--muted);margin-top:6px;max-width:320px;margin-left:auto;margin-right:auto;line-height:1.5')}>
-            Retention cases board is coming soon.
-          </div>
-        </div>
-      )}
-
-      {pane === 'pool' && <PoolTab />}
+      {pane === 'cases' && <RetentionCasesPane onOpenCount={onCasesCount} />}
+      {pane === 'pool' && <PoolTab onAvailableCount={onPoolCount} />}
     </div>
   );
 }

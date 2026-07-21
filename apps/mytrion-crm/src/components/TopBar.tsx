@@ -5,7 +5,8 @@ import { logout } from '../api/auth';
 import { useTheme } from '../hooks/useTheme';
 import { ActAsPicker } from './ActAsPicker';
 import { BrandMark } from './BrandMark';
-import { MoonIcon, SunIcon, SwitchIcon, XIcon } from './icons';
+import { MoonIcon, SunIcon, SwitchIcon } from './icons';
+import { LogOut } from 'lucide-react';
 import styles from './TopBar.module.css';
 
 function initials(name: string): string {
@@ -84,7 +85,7 @@ export function TopBar({
             onClick={logout}
             title="Sign out"
           >
-            <XIcon size={13} />
+            <LogOut size={14} strokeWidth={2.5} />
             Sign out
           </button>
         )}

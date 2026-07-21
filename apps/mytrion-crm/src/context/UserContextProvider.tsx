@@ -83,7 +83,7 @@ export function UserContextProvider({ children }: { children: ReactNode }) {
       <AuthScreen
         phase="exchanging"
         title="Signing you in"
-        body="Zoho confirmed your account — finishing the session and loading your workspace."
+        body="Zoho confirmed your account — finalizing identity."
       />
     );
   }

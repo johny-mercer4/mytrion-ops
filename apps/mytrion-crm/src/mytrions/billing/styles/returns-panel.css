@@ -1,0 +1,301 @@
+/* =====================================================
+   Billing Mytrion — Returns Panel styles
+   Workflow-first layout: clickable KPI queues, segmented
+   filters (mirrors the Prepay pp-seg pattern), one status
+   pill per row, click-to-expand detail strip.
+   ===================================================== */
+
+/* Toolbar: its own full-width row under the title so every filter fits on
+   ONE line on desktop; wraps gracefully only when space truly runs out. */
+.bm-root .bm-returns-panel .rt-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 0;
+}
+
+@media (min-width: 1150px) {
+    .bm-root .bm-returns-panel .rt-toolbar { flex-wrap: nowrap; }
+    /* Search absorbs the leftover width instead of forcing a wrap */
+    .bm-root .bm-returns-panel .rt-toolbar .db-search-wrap {
+        flex: 1 1 180px;
+        min-width: 140px;
+        margin-left: auto;
+    }
+    .bm-root .bm-returns-panel .rt-toolbar .db-search-input { width: 100%; }
+}
+
+.bm-root .bm-returns-panel .rt-seg {
+    display: inline-flex;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--card-shadow);
+    padding: 3px;
+    gap: 2px;
+}
+
+.bm-root .bm-returns-panel .rt-seg button {
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 5px 12px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+    font-family: inherit;
+    white-space: nowrap;
+}
+
+.bm-root .bm-returns-panel .rt-seg button:hover {
+    color: var(--text-primary);
+}
+
+.bm-root .bm-returns-panel .rt-seg .rt-seg-active {
+    background: var(--accent-bg);
+    color: var(--billing-accent);
+    font-weight: 600;
+}
+
+/* Narrow screens: segments scroll sideways instead of clipping */
+@media (max-width: 700px) {
+    .bm-root .bm-returns-panel .rt-seg {
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    .bm-root .bm-returns-panel .rt-seg::-webkit-scrollbar { display: none; }
+
+    /* The shared table's fixed columns (~430px) overflow a phone. Reflow each
+       row as a small card: date · type · amount on top, then customer,
+       reason, then status + action on the last line. Child order in the
+       template: 1 date, 2 type, 3 customer, 4 reason, 5 status, 6 amount,
+       7 action. */
+    .bm-root .bm-returns-panel .db-list-header { display: none; }
+    .bm-root .bm-returns-panel .db-row-main { flex-wrap: wrap; row-gap: 0.4rem; }
+    .bm-root .bm-returns-panel .db-row-main > .db-col-cycle { order: 1; flex: 0 0 auto; text-align: left; }
+    .bm-root .bm-returns-panel .db-row-main > .db-col-status:nth-child(2) { order: 2; flex: 0 0 auto; text-align: left; margin-left: 0.6rem; }
+    .bm-root .bm-returns-panel .db-row-main > .db-col-owed { order: 3; flex: 0 0 auto; margin-left: auto; }
+    .bm-root .bm-returns-panel .db-row-main > .db-col-company:nth-child(3) { order: 4; flex: 1 1 100%; padding-right: 0; }
+    .bm-root .bm-returns-panel .db-row-main > .db-col-company:nth-child(4) { order: 5; flex: 1 1 100%; padding-right: 0; }
+    .bm-root .bm-returns-panel .db-row-main > .db-col-status:nth-child(5) { order: 6; flex: 0 0 auto; text-align: left; }
+    .bm-root .bm-returns-panel .db-row-main > .rt-col-action { order: 7; flex: 0 0 auto; margin-left: auto; }
+}
+
+/* Count chip inside a segment button */
+.bm-root .bm-returns-panel .rt-seg-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.62rem;
+    opacity: 0.75;
+    margin-left: 0.3rem;
+}
+
+/* ── KPI queue cards ── */
+/* Four queues on this panel (the shared grid is 3-col). Design: smaller
+   cards (14px 16px, 24px value, uppercase label). */
+.bm-root .bm-returns-panel .db-kpi-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.bm-root .bm-returns-panel .db-kpi-card {
+    padding: 14px 16px;
+}
+
+.bm-root .bm-returns-panel .db-kpi-value {
+    font-size: 1.5rem;
+}
+
+.bm-root .bm-returns-panel .db-kpi-title {
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+/* ── Design column ratios (Date .9 · Type .9 · Customer 1.8 · Reason 1.3 ·
+   Status 1.1 · Amount .9) + fixed Action. Desktop only, so the max-width:700px
+   mobile reflow further down still wins on phones. Header + rows share the same
+   7-child structure, so nth-child targets both. ── */
+@media (min-width: 701px) {
+    .bm-root .bm-returns-panel .db-list-header > div:nth-child(1),
+    .bm-root .bm-returns-panel .db-row-main > div:nth-child(1) { flex: 0.9 1 0; text-align: left; }
+    .bm-root .bm-returns-panel .db-list-header > div:nth-child(2),
+    .bm-root .bm-returns-panel .db-row-main > div:nth-child(2) { flex: 0.9 1 0; text-align: left; }
+    .bm-root .bm-returns-panel .db-list-header > div:nth-child(3),
+    .bm-root .bm-returns-panel .db-row-main > div:nth-child(3) { flex: 1.8 1 0; min-width: 0; text-align: left; }
+    .bm-root .bm-returns-panel .db-list-header > div:nth-child(4),
+    .bm-root .bm-returns-panel .db-row-main > div:nth-child(4) { flex: 1.3 1 0; min-width: 0; text-align: left; }
+    .bm-root .bm-returns-panel .db-list-header > div:nth-child(5),
+    .bm-root .bm-returns-panel .db-row-main > div:nth-child(5) { flex: 1.1 1 0; text-align: left; }
+    .bm-root .bm-returns-panel .db-list-header > div:nth-child(6),
+    .bm-root .bm-returns-panel .db-row-main > div:nth-child(6) { flex: 0.9 1 0; text-align: right; }
+    .bm-root .bm-returns-panel .db-list-header > div:nth-child(7),
+    .bm-root .bm-returns-panel .db-row-main > div:nth-child(7) { flex: 0 0 96px; text-align: right; }
+}
+
+@media (max-width: 1100px) {
+    .bm-root .bm-returns-panel .db-kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.bm-root .bm-returns-panel .rt-kpi {
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.15s;
+    user-select: none;
+}
+
+.bm-root .bm-returns-panel .rt-kpi:hover {
+    border-color: var(--accent-border-strong);
+    transform: translateY(-1px);
+}
+
+.bm-root .bm-returns-panel .rt-kpi-active {
+    border-color: var(--billing-accent) !important;
+    box-shadow: var(--accent-ring);
+}
+
+.bm-root .bm-returns-panel .rt-kpi-sub {
+    font-size: 0.66rem;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
+}
+
+/* Long names/references truncate with an ellipsis (full value on hover)
+   instead of clipping mid-character. */
+.bm-root .bm-returns-panel .rt-ellipsis {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Narrow columns: wrap instead of ellipsis — nowrap collapses the shrunken
+   flex cell to nothing on phones. (Must come AFTER the base rule.) */
+@media (max-width: 700px) {
+    .bm-root .bm-returns-panel .rt-ellipsis { white-space: normal; }
+}
+
+/* Keep the quiet status text from visually merging into the amount column. */
+.bm-root .bm-returns-panel .db-col-status .db-cmp-quiet {
+    display: inline-block;
+    padding-right: 0.75rem;
+}
+
+/* ── Row status ── */
+.bm-root .bm-returns-panel .rt-reason {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Rows are no longer click-to-expand (accordion removed) — the only interactive
+   control is the Match button, so don't imply the whole row is clickable. */
+.bm-root .bm-returns-panel .rt-row {
+    cursor: default;
+}
+
+/* ── Status chips — the design's single chip() style (11px/600, 3px radius,
+   normal case, no dot); tint comes from the --{sem} variants below. ── */
+.bm-root .bm-returns-panel .rt-pill {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    padding: 2px 8px;
+    border-radius: 3px;
+    border: 1px solid var(--muted-bd);
+    color: var(--mutedc);
+    background: var(--muted-bg);
+    white-space: nowrap;
+}
+
+.bm-root .bm-returns-panel .rt-pill::before {
+    display: none;
+}
+
+.bm-root .bm-returns-panel .rt-pill--danger  { color: var(--danger-text);  background: var(--danger-bg);  border-color: var(--danger-border); }
+.bm-root .bm-returns-panel .rt-pill--warning { color: var(--warning-text); background: var(--warning-bg); border-color: var(--warning-border); }
+.bm-root .bm-returns-panel .rt-pill--partial { color: var(--billing-accent); background: var(--accent-bg); border-color: var(--accent-border); }
+.bm-root .bm-returns-panel .rt-pill--ok      { color: var(--success-text); background: var(--success-bg); border-color: var(--success-border); }
+
+/* ── Action column — actions are BUTTONS, live in their own column,
+   and look nothing like the status pills. ── */
+.bm-root .bm-returns-panel .rt-col-action {
+    flex: 0 0 96px;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+/* Unscoped on purpose: the match modal is teleported to <body>, outside
+   .bm-returns-panel — these must reach it there too. */
+.bm-root .rt-match-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-family: inherit;
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 0.32rem 0.7rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: var(--billing-accent);
+    background: transparent;
+    border: 1px solid var(--accent-border-strong);
+    transition: background 0.12s, color 0.12s, transform 0.12s;
+    white-space: nowrap;
+}
+
+.bm-root .rt-match-btn:hover {
+    background: var(--billing-accent);
+    color: var(--on-accent-solid);
+    transform: translateY(-1px);
+}
+
+.bm-root .rt-match-btn:active {
+    transform: translateY(0);
+}
+
+.bm-root .rt-match-btn--lg {
+    font-size: 0.75rem;
+    padding: 0.45rem 0.95rem;
+}
+
+.bm-root .rt-match-btn--solid {
+    background: var(--billing-accent);
+    color: var(--on-accent-solid);
+    border-color: transparent;
+}
+
+.bm-root .rt-match-btn--solid:hover {
+    filter: brightness(1.12);
+}
+
+.bm-root .rt-match-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.bm-root .bm-returns-panel .rt-action-none {
+    color: var(--text-muted);
+    opacity: 0.4;
+    font-size: 0.7rem;
+    padding-right: 0.5rem;
+}
+
+/* Unmatched rows are the work queue — a thin inset stripe makes them
+   scannable without turning the whole row red. */
+.bm-root .bm-returns-panel .rt-row--unmatched {
+    box-shadow: inset 3px 0 0 var(--danger-text);
+}

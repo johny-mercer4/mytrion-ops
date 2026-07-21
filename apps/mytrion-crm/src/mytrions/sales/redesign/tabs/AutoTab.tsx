@@ -1,43 +1,38 @@
 /**
- * Automations tab — catalog + runner modal (deal/card pickers, touchpoint / Desk dispatch).
+ * Automations tab — catalog + runner modal (deal/card pickers, touchpoint dispatch).
  */
 import { useEffect, useRef, useState } from 'react';
 import type { MoneyCodePreview } from '@/api/touchpointTypes';
-import { logAutomation } from '@/api/touchpoints';
-import { s, Badge } from '../dc';
+import { callTouchpoint, logAutomation } from '@/api/touchpoints';
+import { s } from '../dc';
 import { Icon } from '../icons';
 import { useSales } from '../ctx';
-import { badge, deptStyle, iconBox, nyDaysAgo, nyToday, type BadgeVM } from '../salesData';
+import { deptStyle, iconBox, nyDaysAgo, nyToday } from '../salesData';
 import { useLoad, money } from '../live';
 import {
   AUTO_LIST, LIMITTYPES, MONEY_CODE_REASONS, RUNNABLE, PHASE_MAP,
-  loadDeals, loadCards, loadMoneyCodePreview,
+  autoIconColor, loadDeals, loadCards, loadMoneyCodePreview, str,
   type Automation, type Deal, type Card, type InvRow,
   type DonePayload, type Addr, type UnitDriverForm, type MoneyCodeForm,
 } from '../autoLive';
-import { runAutomation } from '../autoRunners';
+import { runAutomation, type AutoPriority } from '../autoRunners';
 import { AutoInvoicesPanel, AutoTransactionsPanel } from '../AutoResultPanels';
+import { AutoTrackingPanel, AutoWexTasksPanel, AutoPaymentsPanel } from '../AutoRichResults';
 import { AutoCatalog } from '../AutoCatalog';
-import { AutoFloatingDrop } from '../AutoFloatingDrop';
+import { AutoDealPicklist, AutoCardPicklist, AutoMacroLoader, cardStatusBadge } from '../AutoPicklist';
+import { AutoStatusResult, isEmptyResultMessage } from '../AutoActionResult';
+import { AutoBocaCloseForm } from '../AutoBocaCloseForm';
 import { AutoWexPanel } from '../AutoWexPanel';
 import { TXN_RANGE_PRESETS, type TxnReportState } from '../txnReport';
 
 type Step = 'config' | 'running' | 'done';
 type LimitDir = 'increase' | 'decrease';
-
-const DEPT_COL: Record<string, string> = { C: 'var(--orange)', Q: 'var(--accent)', V: 'var(--ok)', M: 'var(--violet)' };
-const cardCol: Record<string, string> = { active: 'var(--ok)', fraud: 'var(--danger)', inactive: 'var(--muted)' };
 const grad = 'linear-gradient(120deg,var(--accent),var(--accent-2))';
 /** Surface (not alt) — light-mode picklists stay clean white, not grey wash. */
 const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
-const inp44 = 'width:100%;height:44px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
 const labelCss = 'font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
-const pickLabelCss = 'font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em';
-const dropMsg = 'padding:14px;font-size:12.5px;color:var(--muted);text-align:center';
-const dropErr = 'padding:14px;font-size:12.5px;color:var(--danger);text-align:center';
-const dropRow = 'padding:12px 15px;cursor:pointer;border-bottom:1px solid var(--border2);background:var(--surface)';
-const noteWarn = 'padding:14px 16px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);font-size:12.5px;color:var(--text2);line-height:1.5';
-const noteErr = 'padding:12px 14px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);font-size:12.5px;color:var(--danger);line-height:1.5';
+const noteWarn = 'padding:14px 16px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);font-size:13px;color:var(--text2);line-height:1.5';
+const noteErr = 'padding:12px 14px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--danger) 12%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);font-size:13px;color:var(--danger);line-height:1.5';
 const mono = "font-family:'JetBrains Mono',monospace";
 const invRanges = [
   { label: 'Last 7 Days', range: 'last_7' },
@@ -56,7 +51,7 @@ const txnRanges = TXN_RANGE_PRESETS.map((p) => ({ value: p.value, label: p.label
 const todayIso = () => nyToday();
 const daysAgoIso = (n: number) => nyDaysAgo(n);
 const limitBtn = (on: boolean, col: string): string =>
-  `flex:1;padding:9px;border-radius:var(--radius-md);border:1px solid ${on ? col : 'var(--border)'};background:${on ? `color-mix(in srgb,${col} 16%,transparent)` : 'var(--surface)'};color:${on ? col : 'var(--muted)'};font-size:12.5px;font-weight:700;cursor:pointer;transition:all .14s`;
+  `flex:1;padding:9px;border-radius:var(--radius-md);border:1px solid ${on ? col : 'var(--border)'};background:${on ? `color-mix(in srgb,${col} 16%,transparent)` : 'var(--surface)'};color:${on ? col : 'var(--muted)'};font-size:13px;font-weight:700;cursor:pointer;transition:all .14s`;
 const btnP = (extra: string): string => `border:none;background:${grad};color:#fff;font-weight:700;cursor:pointer;${extra}`;
 function Lbl({ t }: { t: string }) { return <div style={s(labelCss)}>{t}</div>; }
 const closeX16 = (
@@ -83,8 +78,10 @@ export function AutoTab() {
   const [autoPhase, setAutoPhase] = useState('');
   const [autoResult, setAutoResult] = useState<DonePayload | null>(null);
   const [autoAddr, setAutoAddr] = useState<Addr>({ address: '', city: '', state: '', zip: '' });
-  const [autoNote, setAutoNote] = useState('');
   const [autoDue, setAutoDue] = useState('');
+  const [autoPriority, setAutoPriority] = useState<AutoPriority>('');
+  const [autoAssignedTo, setAutoAssignedTo] = useState('');
+  const [autoOwnerLoading, setAutoOwnerLoading] = useState(false);
   const [unitDriver, setUnitDriver] = useState<UnitDriverForm>(UD0);
   const [moneyForm, setMoneyForm] = useState<MoneyCodeForm>(MC0);
   const [mcPreview, setMcPreview] = useState<MoneyCodePreview | null>(null);
@@ -127,6 +124,30 @@ export function AutoTab() {
     return () => { off = true; };
   }, [autoModal?.id, autoDeal?.carrier]);
 
+  // BOCA / Close — lock Assigned To to the WEX SF application owner (widget fetchBocaOwner).
+  useEffect(() => {
+    const needsOwner = autoModal?.id === 'boca-boe-link' || autoModal?.id === 'close-app';
+    const appId = autoDeal?.app?.trim();
+    if (!needsOwner || !appId || appId === '—') {
+      setAutoAssignedTo('');
+      setAutoOwnerLoading(false);
+      return;
+    }
+    let off = false;
+    setAutoOwnerLoading(true);
+    setAutoAssignedTo('');
+    callTouchpoint('wex.application', { appId })
+      .then((res) => {
+        if (off) return;
+        const app = (res.application ?? {}) as Record<string, unknown>;
+        const name = str(app.ownerName) || str(app['Owner.Name']) || '';
+        if (name) setAutoAssignedTo(name);
+      })
+      .catch(() => { /* non-blocking — field stays empty */ })
+      .finally(() => { if (!off) setAutoOwnerLoading(false); });
+    return () => { off = true; };
+  }, [autoModal?.id, autoDeal?.app]);
+
   const openAuto = (a: Automation): void => {
     if (a.soon) return;
     setAutoModal(a); setAutoStep('config'); setAutoDeal(null); setAutoCard(null);
@@ -134,7 +155,8 @@ export function AutoTab() {
     setAutoLimitType(LIMITTYPES[0].value); setAutoLimitValue(''); setAutoLimitDir('increase');
     setAutoProgress(0); setAutoPhase(''); setAutoResult(null); setAutoRunErr(null);
     setInvRows([]); setTxnReport(null); setUnitDriver(UD0); setMoneyForm(MC0);
-    setAutoAddr({ address: '', city: '', state: '', zip: '' }); setAutoNote(''); setAutoDue('');
+    setAutoAddr({ address: '', city: '', state: '', zip: '' });
+    setAutoDue(''); setAutoPriority(''); setAutoAssignedTo(''); setAutoOwnerLoading(false);
     // WEX search state lives in <AutoWexPanel/>, which remounts per modal open.
   };
 
@@ -147,7 +169,11 @@ export function AutoTab() {
   }, [focusAutomationId, clearFocusAutomation]);
   const closeAuto = (): void => { if (autoStep === 'running') return; clearInterval(progTimer.current); setAutoModal(null); };
   const setDealQuery = (v: string): void => { setAutoDealQuery(v); setAutoShowDrop(true); };
-  const selectDeal = (d: Deal): void => { setAutoDeal(d); setAutoShowDrop(false); setAutoDealQuery(''); setAutoCard(null); };
+  const selectDeal = (d: Deal): void => {
+    setAutoDeal(d); setAutoShowDrop(false); setAutoDealQuery(''); setAutoCard(null); setAutoCardQuery('');
+    // Card actions: open the card picklist so the micro-loader shows while cards fetch.
+    setAutoShowCardDrop(autoModal?.kind === 'card');
+  };
   const clearDeal = (): void => { setAutoDeal(null); setAutoCard(null); };
   const setCardQuery = (v: string): void => { setAutoCardQuery(v); setAutoShowCardDrop(true); };
   const selectCard = (c: Card): void => {
@@ -182,7 +208,9 @@ export function AutoTab() {
       invFrom: autoInvFrom, invTo: autoInvTo,
       txnRange: autoTxnRange, txnFrom: autoTxnFrom, txnTo: autoTxnTo,
       limitId: autoLimitType, limitValue: autoLimitValue, limitDir: autoLimitDir,
-      addr: autoAddr, note: autoNote, due: autoDue, unitDriver, moneyCode: moneyForm,
+      addr: autoAddr, note: '', due: autoDue,
+      assignedTo: autoAssignedTo, priority: autoPriority,
+      unitDriver, moneyCode: moneyForm,
       setInvRows, setTxnReport,
     })
       .then((payload) => {
@@ -235,20 +263,41 @@ export function AutoTab() {
     : autoResult?.kind === 'link' ? autoResult.label
       : `${runVerb} completed for ${autoDeal?.name ?? 'the selected client'}.`;
   const autoCardDisplay = autoCard ? `•••• ${autoCard.number.slice(-4)}` : '';
-  const autoCardBadge: BadgeVM = autoCard ? badge(autoCard.status.toUpperCase(), cardCol[autoCard.status] ?? 'var(--muted)') : { text: '', style: '' };
+  const autoCardBadge = autoCard ? cardStatusBadge(autoCard.status) : { text: '', style: '' };
   const autoResultInvoices = autoResult?.kind === 'invoices';
   const autoResultTxn = autoResult?.kind === 'transactions';
   const autoResultTable = autoResult?.kind === 'table' ? autoResult : null;
-  const autoIsResultTable = autoResultInvoices || autoResultTxn || !!autoResultTable;
-  const modalMaxW = autoStep === 'done' && (autoResultTxn || autoResultInvoices) ? '820px' : '640px';
-  const bodyTxnSplit = autoStep === 'done' && autoResultTxn;
+  const autoResultTracking = autoResult?.kind === 'tracking' ? autoResult : null;
+  const autoResultWex = autoResult?.kind === 'wex-tasks' ? autoResult : null;
+  const autoResultPayments = autoResult?.kind === 'payments' ? autoResult : null;
+  const invoicesEmpty = autoResultInvoices && invRows.length === 0;
+  const txnEmpty = autoResultTxn && !(txnReport?.transactions.length);
+  const tableEmpty = !!autoResultTable && autoResultTable.rows.length === 0;
+  const messageEmpty = autoResult?.kind === 'message' && isEmptyResultMessage(autoResult.message);
+  /** WEX/tracking/payments keep a rich panel (empty state inside) so the modal stays readable. */
+  const statusEmpty = invoicesEmpty || txnEmpty || tableEmpty || messageEmpty;
+  const autoIsRichResult = (
+    autoResultInvoices || autoResultTxn || !!autoResultTable || !!autoResultTracking || !!autoResultWex || !!autoResultPayments
+  ) && !statusEmpty;
+  const modalMaxW = autoStep === 'done' && autoIsRichResult && (autoResultTxn || autoResultInvoices) ? '820px' : '640px';
+  const bodyTxnSplit = autoStep === 'done' && autoIsRichResult && autoResultTxn;
+  const emptyTitle = invoicesEmpty ? 'No invoices found'
+    : txnEmpty ? 'No transactions found'
+      : tableEmpty ? (autoResultTable?.title ? `No ${autoResultTable.title.toLowerCase()}` : 'Nothing found')
+        : messageEmpty ? (successMsg.replace(/\.$/, '') || 'Nothing found')
+          : 'Nothing found';
+  const emptyMessage = messageEmpty ? undefined
+    : invoicesEmpty ? 'No invoices found for the selected date range.'
+      : txnEmpty ? 'No transactions in this range. Try a different window or deal.'
+        : tableEmpty ? 'Nothing matched for this carrier.'
+          : 'Try a different search or selection.';
 
   return (
     <>
       <div className="ss-fu">
         <div style={s('margin-bottom:16px')}>
           <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.04em;text-transform:uppercase')}>Self-Service Actions</div>
-          <div style={s('font-size:12.5px;color:var(--muted);margin-top:2px')}>Handle Customer Service, Billing &amp; Verification yourself — no ticket needed. <strong style={s('color:var(--text2)')}>{String(autoCatalog.length)}</strong> actions available.</div>
+          <div style={s('font-size:13px;color:var(--muted);margin-top:2px')}>Handle Customer Service, Billing &amp; Verification yourself — no ticket needed. <strong style={s('color:var(--text2)')}>{String(autoCatalog.length)}</strong> actions available.</div>
         </div>
         <div style={s('position:relative;margin-bottom:18px')}>
           <Icon name="search" size={16} style={s('position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--muted)')} />
@@ -262,12 +311,12 @@ export function AutoTab() {
         <div onClick={closeAuto} style={s('position:fixed;inset:0;z-index:115;background:rgba(3,7,14,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
           <div onClick={(e) => e.stopPropagation()} style={s(`width:100%;max-width:${modalMaxW};max-height:88vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:0 24px 48px rgba(0,0,0,0.2);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
             <div style={s('flex-shrink:0;padding:24px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:16px;background:linear-gradient(180deg,rgba(var(--accent-rgb),0.03),transparent)')}>
-              <div style={s(iconBox(DEPT_COL[b.dept] ?? 'var(--accent)', 48))}>
+              <div style={s(iconBox(autoIconColor(b), 48))}>
                 <Icon name={b.icon} size={22} strokeWidth={1.75} />
               </div>
               <div style={s('flex:1;min-width:0')}>
                 <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;letter-spacing:.03em;text-transform:uppercase;color:var(--text)')}>{b.title}</div>
-                <div style={s('display:flex;gap:6px;margin-top:6px;flex-wrap:wrap')}>{b.codes.map((c) => <span key={c} style={s(deptStyle(c))}>{c}</span>)}</div>
+                <div style={s('display:flex;gap:6px;margin-top:6px;flex-wrap:wrap')}>{b.codes.map((c) => <span key={c} style={s(deptStyle(c, autoIconColor(b)))}>{c}</span>)}</div>
                 <div style={s('font-size:13px;color:var(--muted);margin-top:8px;line-height:1.5')}>{b.desc}</div>
               </div>
               <button onClick={closeAuto} aria-label="Close" className="ss-ico-btn" style={s('width:36px;height:36px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:background .15s')}>{closeX16}</button>
@@ -283,83 +332,43 @@ export function AutoTab() {
                   {kind === 'search' && <AutoWexPanel />}
 
                   {kind === 'link' && (
-                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:12.5px;color:var(--text2);line-height:1.5')}>Opens the WEX EFS eManager credentials guide PDF in a new tab.</div>
+                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:13px;color:var(--text2);line-height:1.5')}>Opens the WEX EFS eManager credentials guide PDF in a new tab.</div>
                   )}
 
                   {needsDeal && (
-                    <div>
-                      <div style={s(pickLabelCss)}>Select Deal</div>
-                      {autoDeal ? (
-                        <div style={s('display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:var(--radius-md);background:linear-gradient(120deg,rgba(var(--accent-rgb),.08),transparent);border:1px solid var(--border)')}>
-                          <div style={s('flex:1;min-width:0')}>
-                            <div style={s('font-size:13.5px;font-weight:700')}>{autoDeal.name}</div>
-                            <div style={s(`font-size:11.5px;color:var(--muted);margin-top:4px;${mono}`)}>{autoDeal.company} · App {autoDeal.app} · {autoDeal.carrier || 'no carrier'}</div>
-                          </div>
-                          <button onClick={clearDeal} aria-label="Clear deal" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer')}>✕</button>
-                        </div>
-                      ) : (
-                        <div>
-                          <input
-                            ref={dealInputRef}
-                            value={autoDealQuery}
-                            onChange={(e) => setDealQuery(e.target.value)}
-                            onFocus={() => setAutoShowDrop(true)}
-                            placeholder="Search by name, company, app ID, carrier or phone…"
-                            className="ss-in"
-                            style={s(inp44)}
-                          />
-                          <AutoFloatingDrop open={autoShowDrop} anchorRef={dealInputRef} maxHeight={230} onClose={() => setAutoShowDrop(false)}>
-                            {dealsLoad.loading && <div style={s(dropMsg)}>Loading clients…</div>}
-                            {dealsLoad.error && <div style={s(dropErr)}>{dealsLoad.error}</div>}
-                            {!dealsLoad.loading && !dealsLoad.error && filteredDeals.map((d) => (
-                              <div key={d.id} onMouseDown={() => selectDeal(d)} className="ss-row-h" style={s(dropRow)}>
-                                <div style={s('font-size:13px;font-weight:700')}>{d.name}</div>
-                                <div style={s(`font-size:11px;color:var(--muted);margin-top:3px;${mono}`)}>{d.company} · App {d.app} · {d.phone}</div>
-                              </div>
-                            ))}
-                            {!dealsLoad.loading && !dealsLoad.error && filteredDeals.length === 0 && autoDealQuery.length > 0 && <div style={s(dropMsg)}>No matching deals</div>}
-                          </AutoFloatingDrop>
-                        </div>
-                      )}
-                    </div>
+                    <AutoDealPicklist
+                      deal={autoDeal}
+                      query={autoDealQuery}
+                      showDrop={autoShowDrop}
+                      inputRef={dealInputRef}
+                      loading={dealsLoad.loading}
+                      error={dealsLoad.error}
+                      deals={filteredDeals}
+                      onQuery={setDealQuery}
+                      onFocus={() => setAutoShowDrop(true)}
+                      onCloseDrop={() => setAutoShowDrop(false)}
+                      onSelect={selectDeal}
+                      onClear={clearDeal}
+                    />
                   )}
 
                   {needsCard && (
-                    <div>
-                      <div style={s(pickLabelCss)}>Select Card</div>
-                      {autoCard ? (
-                        <div style={s('display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
-                          <span style={s(`${mono};font-size:14px;font-weight:600;letter-spacing:.06em`)}>{autoCardDisplay}</span>
-                          <Badge vm={autoCardBadge} />
-                          <div style={s('flex:1')}></div>
-                          <button onClick={clearCard} aria-label="Clear card" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer')}>✕</button>
-                        </div>
-                      ) : (
-                        <div>
-                          <input
-                            ref={cardInputRef}
-                            value={autoCardQuery}
-                            onChange={(e) => setCardQuery(e.target.value)}
-                            onFocus={() => setAutoShowCardDrop(true)}
-                            placeholder="Search card number…"
-                            className="ss-in"
-                            style={s(inp44)}
-                          />
-                          <AutoFloatingDrop open={autoShowCardDrop} anchorRef={cardInputRef} maxHeight={220} onClose={() => setAutoShowCardDrop(false)}>
-                            {cardsLoad.loading && <div style={s(dropMsg)}>Loading cards…</div>}
-                            {cardsLoad.error && <div style={s(dropErr)}>{cardsLoad.error}</div>}
-                            {!cardsLoad.loading && !cardsLoad.error && filteredCards.map((c) => (
-                              <div key={c.id} onMouseDown={() => selectCard(c)} className="ss-row-h" style={s(`display:flex;align-items:center;gap:10px;${dropRow}`)}>
-                                <span style={s(`${mono};font-size:13px;font-weight:600`)}>{`•••• ${c.number.slice(-4)}`}</span>
-                                <Badge vm={badge(c.status.toUpperCase(), cardCol[c.status] ?? 'var(--muted)')} />
-                                <span style={s('font-size:11px;color:var(--muted);margin-left:auto')}>{`${c.driver || 'No driver'} · Unit ${c.unit || '—'}`}</span>
-                              </div>
-                            ))}
-                            {!cardsLoad.loading && !cardsLoad.error && filteredCards.length === 0 && <div style={s(dropMsg)}>No matching cards</div>}
-                          </AutoFloatingDrop>
-                        </div>
-                      )}
-                    </div>
+                    <AutoCardPicklist
+                      card={autoCard}
+                      query={autoCardQuery}
+                      showDrop={autoShowCardDrop}
+                      inputRef={cardInputRef}
+                      loading={cardsLoad.loading}
+                      error={cardsLoad.error}
+                      cards={filteredCards}
+                      displayNumber={autoCardDisplay}
+                      statusBadge={autoCardBadge}
+                      onQuery={setCardQuery}
+                      onFocus={() => setAutoShowCardDrop(true)}
+                      onCloseDrop={() => setAutoShowCardDrop(false)}
+                      onSelect={selectCard}
+                      onClear={clearCard}
+                    />
                   )}
 
                   {showUnitDriver && (
@@ -430,10 +439,14 @@ export function AutoTab() {
 
                   {kind === 'money' && hasDeal && (
                     <div style={s('display:flex;flex-direction:column;gap:14px')}>
-                      {mcPreviewLoading && <div style={s(dropMsg)}>Checking eligibility…</div>}
+                      {mcPreviewLoading && (
+                        <div role="status" aria-busy="true" style={s('padding:8px 0')}>
+                          <div className="ss-skel" style={s('width:100%;height:48px;border-radius:var(--radius-md)')} />
+                        </div>
+                      )}
                       {mcPreviewErr && <div style={s(noteErr)}>{mcPreviewErr}</div>}
                       {mcPreview && (
-                        <div style={s(`padding:14px 16px;border-radius:var(--radius-md);background:${mcPreview.eligible ? 'rgba(var(--accent-rgb),.08)' : 'color-mix(in srgb,var(--warn) 12%,transparent)'};border:1px solid ${mcPreview.eligible ? 'rgba(var(--accent-rgb),.2)' : 'color-mix(in srgb,var(--warn) 30%,transparent)'};font-size:12.5px;color:var(--text2);line-height:1.5`)}>
+                        <div style={s(`padding:14px 16px;border-radius:var(--radius-md);background:${mcPreview.eligible ? 'rgba(var(--accent-rgb),.08)' : 'color-mix(in srgb,var(--warn) 12%,transparent)'};border:1px solid ${mcPreview.eligible ? 'rgba(var(--accent-rgb),.2)' : 'color-mix(in srgb,var(--warn) 30%,transparent)'};font-size:13px;color:var(--text2);line-height:1.5`)}>
                           {mcPreview.eligible
                             ? <>Eligible — <strong style={s('color:var(--text)')}>{money(mcPreview.available)}</strong> available of a {money(mcPreview.credit_limit)} line{mcPreview.billing_cycle_label ? ` (${mcPreview.billing_cycle_label})` : ''}.</>
                             : <>Not eligible right now{mcPreview.available != null ? ` — ${money(mcPreview.available)} available` : ''}.</>}
@@ -449,24 +462,28 @@ export function AutoTab() {
                     </div>
                   )}
 
-                  {(kind === 'form' || kind === 'ticket') && hasDeal && b.id !== 'card-replacement' && (
-                    <div style={s('display:flex;flex-direction:column;gap:14px')}>
-                      {kind === 'form' && (
-                        <>
-                          <div><div style={s(labelCss)}>Due Date <span style={s('font-weight:400;text-transform:none')}>(optional)</span></div><input value={autoDue} onChange={(e) => setAutoDue(e.target.value)} type="date" className="ss-in" style={s(inp42)} /></div>
-                          <div><Lbl t="Note" /><textarea value={autoNote} onChange={(e) => setAutoNote(e.target.value)} placeholder="Add a note for the team…" className="ss-in" style={s('width:100%;min-height:74px;padding:11px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;resize:vertical')}></textarea></div>
-                        </>
-                      )}
-                      {kind === 'ticket' && b.id === 'reactivation' && (
-                        <div><Lbl t="Note" /><textarea value={autoNote} onChange={(e) => setAutoNote(e.target.value)} placeholder="Why reactivate?" className="ss-in" style={s('width:100%;min-height:74px;padding:11px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;resize:vertical')}></textarea></div>
-                      )}
-                      <div style={s(noteWarn)}>This files a Customer Service ticket with the matching type code — same outcome as the Create tab, without leaving Automations.</div>
+                  {(b.id === 'boca-boe-link' || b.id === 'close-app') && hasDeal && (
+                    <AutoBocaCloseForm
+                      mode={b.id === 'boca-boe-link' ? 'boca' : 'close'}
+                      assignedTo={autoAssignedTo}
+                      assignedToLoading={autoOwnerLoading}
+                      priority={autoPriority}
+                      due={autoDue}
+                      minDue={todayIso()}
+                      onPriority={setAutoPriority}
+                      onDue={setAutoDue}
+                    />
+                  )}
+
+                  {b.id === 'reactivation' && hasDeal && (
+                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:13px;color:var(--text2);line-height:1.5')}>
+                      Submits a reactivation email request for <strong style={s('color:var(--text)')}>{autoDeal?.name}</strong>. You will receive the answer by email.
                     </div>
                   )}
 
                   {b.id === 'card-replacement' && hasDeal && (
                     <div>
-                      <div style={s('font-size:12.5px;color:var(--text2);margin-bottom:12px')}>Confirm the shipping address for the replacement cards.</div>
+                      <div style={s('font-size:13px;color:var(--text2);margin-bottom:12px')}>Confirm the shipping address for the replacement cards.</div>
                       <div style={s('display:grid;grid-template-columns:2fr 1fr;gap:12px')}>
                         <div style={s('grid-column:1 / -1')}><Lbl t="Street Address" /><input value={autoAddr.address} onChange={(e) => setAddr('address', e.target.value)} placeholder="123 Fleet Way" className="ss-in" style={s(inp42)} /></div>
                         <div><Lbl t="City" /><input value={autoAddr.city} onChange={(e) => setAddr('city', e.target.value)} placeholder="City" className="ss-in" style={s(inp42)} /></div>
@@ -479,7 +496,7 @@ export function AutoTab() {
                   )}
 
                   {(kind === 'simple' || kind === 'wex-tasks') && hasDeal && (
-                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:12.5px;color:var(--text2);line-height:1.5')}><strong style={s('color:var(--text)')}>Ready.</strong> This will run against <strong style={s('color:var(--text)')}>{autoDeal?.name}</strong> and return an instant result.</div>
+                    <div style={s('padding:14px 16px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.2);font-size:13px;color:var(--text2);line-height:1.5')}><strong style={s('color:var(--text)')}>Ready.</strong> This will run against <strong style={s('color:var(--text)')}>{autoDeal?.name}</strong> and return an instant result.</div>
                   )}
 
                   {kind !== 'search' && (
@@ -496,67 +513,81 @@ export function AutoTab() {
               )}
 
               {autoStep === 'running' && (
-                <div style={s('padding:40px 20px;display:flex;flex-direction:column;align-items:center;text-align:center')}>
-                  <div style={s('position:relative;width:64px;height:64px;margin-bottom:24px')}>
-                    <div style={s('position:absolute;inset:0;border-radius:50%;border:3px solid var(--border);opacity:0.5')}></div>
-                    <div style={s('position:absolute;inset:0;border-radius:50%;border:3px solid transparent;border-top-color:var(--accent);animation:ss-spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite')}></div>
-                    <div style={s(`position:absolute;inset:0;display:flex;align-items:center;justify-content:center;${mono};font-size:13px;font-weight:700;color:var(--accent)`)}>{autoProgress}%</div>
-                  </div>
-                  <div style={s('font-family:Rajdhani,sans-serif;font-size:20px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;margin-bottom:6px')}>{autoPhase}</div>
-                  <div style={s('font-size:13px;color:var(--muted);max-width:280px;line-height:1.5')}>Keep this window open. Closing now loses task status.</div>
-                  <div style={s('width:100%;max-width:320px;height:6px;border-radius:99px;background:var(--raised);overflow:hidden;margin-top:24px')}>
-                    <div style={s(`height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-2));width:${autoProgress}%;transition:width .2s ease-out`)}></div>
-                  </div>
-                </div>
+                <AutoMacroLoader progress={autoProgress} phase={autoPhase} />
               )}
 
               {autoStep === 'done' && (autoRunErr ? (
-                <div style={s('text-align:center;padding:32px 10px')}>
-                  <div style={s('width:64px;height:64px;border-radius:50%;background:color-mix(in srgb,var(--danger) 12%,transparent);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;color:var(--danger);box-shadow:0 0 0 8px color-mix(in srgb,var(--danger) 4%,transparent)')}>
-                    <Icon name="alert" size={32} strokeWidth={2.2} />
-                  </div>
-                  <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;text-transform:uppercase;letter-spacing:.03em;color:var(--text)')}>{`${runVerb} Failed`}</div>
-                  <div style={s('font-size:14px;color:var(--text2);margin-top:10px;max-width:360px;margin-left:auto;margin-right:auto;line-height:1.6')}>{autoRunErr}</div>
-                  <div style={s('display:flex;justify-content:center;gap:12px;margin-top:28px')}>
-                    <button onClick={resetAuto} className="ss-btn-p" style={s(btnP('height:44px;padding:0 24px;border-radius:var(--radius-md);font-size:13.5px;box-shadow:0 4px 12px rgba(var(--accent-rgb),.2)'))}>Try again</button>
-                  </div>
-                </div>
-              ) : autoIsResultTable ? (
-                <div style={s(bodyTxnSplit ? 'flex:1;min-height:0;display:flex;flex-direction:column;gap:14px' : '')}>
+                <AutoStatusResult
+                  tone="error"
+                  title="Couldn't complete that"
+                  message={autoRunErr}
+                  onDone={closeAuto}
+                  onSecondary={resetAuto}
+                  secondaryLabel="Try again"
+                />
+              ) : statusEmpty ? (
+                <AutoStatusResult
+                  tone="empty"
+                  title={emptyTitle}
+                  message={emptyMessage}
+                  onDone={closeAuto}
+                  onSecondary={resetAuto}
+                  secondaryLabel="Run another"
+                />
+              ) : autoIsRichResult ? (
+                <div style={s(bodyTxnSplit ? 'flex:1;min-height:0;display:flex;flex-direction:column;gap:14px' : 'display:flex;flex-direction:column;gap:14px')}>
                   {autoResultInvoices && <AutoInvoicesPanel rows={invRows} />}
                   {autoResultTxn && (
                     <AutoTransactionsPanel report={txnReport} splitLayout />
                   )}
+                  {autoResultTracking && (
+                    <AutoTrackingPanel
+                      carrierId={autoResultTracking.carrierId}
+                      fedexTracking={autoResultTracking.fedexTracking}
+                      entries={autoResultTracking.entries}
+                    />
+                  )}
+                  {autoResultWex && (
+                    <AutoWexTasksPanel
+                      appId={autoResultWex.appId}
+                      summary={autoResultWex.summary}
+                      tasks={autoResultWex.tasks}
+                    />
+                  )}
+                  {autoResultPayments && (
+                    <AutoPaymentsPanel
+                      summary={autoResultPayments.summary}
+                      cmpInvoices={autoResultPayments.cmpInvoices}
+                      cmpError={autoResultPayments.cmpError}
+                    />
+                  )}
                   {autoResultTable && (
                     <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);overflow:hidden')}>
                       <div style={s('padding:11px 15px;background:var(--alt);font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)')}>{autoResultTable.title}</div>
-                      <div style={s(`display:grid;grid-template-columns:repeat(${autoResultTable.columns.length},1fr);gap:8px;padding:10px 15px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--border2)`)}>
+                      <div style={s(`display:grid;grid-template-columns:repeat(${autoResultTable.columns.length},1fr);gap:8px;padding:10px 15px;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--border2)`)}>
                         {autoResultTable.columns.map((c) => <span key={c}>{c}</span>)}
                       </div>
                       {autoResultTable.rows.map((row, i) => (
-                        <div key={i} className="ss-row-h" style={s(`display:grid;grid-template-columns:repeat(${autoResultTable.columns.length},1fr);gap:8px;padding:12px 15px;border-top:1px solid var(--border2);font-size:12.5px`)}>
+                        <div key={i} className="ss-row-h" style={s(`display:grid;grid-template-columns:repeat(${autoResultTable.columns.length},1fr);gap:8px;padding:12px 15px;border-top:1px solid var(--border2);font-size:13px`)}>
                           {row.map((cell, j) => <span key={j} style={s(j === 0 ? mono : 'color:var(--text2)')}>{cell}</span>)}
                         </div>
                       ))}
                     </div>
                   )}
-                  <div style={s(`display:flex;justify-content:flex-end;gap:10px;${bodyTxnSplit ? 'flex-shrink:0;padding-top:4px' : 'margin-top:18px'}`)}>
-                    <button onClick={resetAuto} className="ss-ico-btn" style={s('height:42px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer')}>↩ Run another</button>
-                    <button onClick={closeAuto} className="ss-btn-p" style={s(btnP('height:42px;padding:0 22px;border-radius:var(--radius-md);font-size:12.5px'))}>Done</button>
+                  <div style={s(`display:flex;justify-content:flex-end;gap:10px;${bodyTxnSplit ? 'flex-shrink:0;padding-top:4px' : 'margin-top:4px'}`)}>
+                    <button onClick={resetAuto} className="ss-auto-result-btn-sec" style={s('height:42px;padding:0 18px;font-size:13px')}>Run another</button>
+                    <button onClick={closeAuto} className="ss-btn-p" style={s(btnP('height:42px;padding:0 22px;border-radius:var(--radius-md);font-size:13px'))}>Done</button>
                   </div>
                 </div>
               ) : (
-                <div style={s('text-align:center;padding:32px 10px')}>
-                  <div style={s('width:64px;height:64px;border-radius:50%;background:color-mix(in srgb,var(--ok) 12%,transparent);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;color:var(--ok);box-shadow:0 0 0 8px color-mix(in srgb,var(--ok) 4%,transparent)')}>
-                    <Icon name="check" size={32} strokeWidth={2.5} />
-                  </div>
-                  <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;text-transform:uppercase;letter-spacing:.03em;color:var(--text)')}>{`${runVerb} complete`}</div>
-                  <div style={s('font-size:14px;color:var(--text2);margin-top:10px;max-width:360px;margin-left:auto;margin-right:auto;line-height:1.6')}>{successMsg}</div>
-                  <div style={s('display:flex;justify-content:center;gap:12px;margin-top:28px')}>
-                    <button onClick={resetAuto} className="ss-ico-btn" style={s('height:44px;padding:0 20px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:13.5px;cursor:pointer;transition:background .15s')}>Run another</button>
-                    <button onClick={closeAuto} className="ss-btn-p" style={s(btnP('height:44px;padding:0 28px;border-radius:var(--radius-md);font-size:13.5px;box-shadow:0 4px 12px rgba(var(--accent-rgb),.2)'))}>Done</button>
-                  </div>
-                </div>
+                <AutoStatusResult
+                  tone="success"
+                  title={`${runVerb} complete`}
+                  message={successMsg}
+                  onDone={closeAuto}
+                  onSecondary={resetAuto}
+                  secondaryLabel="Run another"
+                />
               ))}
             </div>
           </div>

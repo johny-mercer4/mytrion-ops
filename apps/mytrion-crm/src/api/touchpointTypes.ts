@@ -75,6 +75,8 @@ export interface SalesInvoicesResult {
 
 export interface WexTasksResult {
   wexTasks?: Array<{ sbj?: string; description?: string; createdDate?: string }>;
+  /** Current Update — Full Wex Task Field (Deluge `wexTaskField`). */
+  wexTaskField?: string;
   dealId?: string;
 }
 
@@ -127,6 +129,52 @@ export interface MoneyCodeDrawResult {
   valid_until?: string;
   company_name?: string;
   request_id?: string | number;
+}
+
+/** One physical money-code draw (batch collapsed). Code value is never returned. */
+export interface MoneyCodeRequestRow {
+  id: number | string;
+  carrier_id?: number | string;
+  company_name?: string | null;
+  money_code_amount?: number | string | null;
+  code_total?: number | string | null;
+  batch_rows?: number | string | null;
+  invoice_ids?: unknown;
+  billing_type?: string | null;
+  valid_until?: string | null;
+  status?: string | null;
+  requested_by?: string | null;
+  moneycode_reason?: string | null;
+  unit_number?: string | null;
+  created_at?: string | null;
+  voided_at?: string | null;
+  void_reason?: string | null;
+  has_code?: boolean;
+  notified_at?: string | null;
+  notify_error?: string | null;
+  [k: string]: unknown;
+}
+
+export interface MoneyCodeRequestsResult {
+  success?: boolean;
+  data?: MoneyCodeRequestRow[];
+  more_records?: boolean;
+  page?: number;
+  limit?: number;
+}
+
+export interface MoneyCodeVoidResult {
+  success?: boolean;
+  outcome?:
+    | 'voided'
+    | 'already_voided_synced'
+    | 'never_issued_voided'
+    | 'noop_not_issued'
+    | 'used_not_voided'
+    | string;
+  record?: MoneyCodeRequestRow;
+  message?: string;
+  efs?: { amount?: number | string; numUses?: number | string };
 }
 
 export interface SignedUrlResult {
@@ -318,10 +366,13 @@ export interface CarrierSearchResult {
 
 /** mytrioncreatelead — permissive: the UI inspects success/leadId/response (DUPLICATE_DATA). */
 export interface CreateLeadResult {
-  success?: boolean;
+  /** Deluge sometimes returns the string `"true"` / `"false"`. */
+  success?: boolean | string;
   leadId?: string | number;
   message?: string;
   response?: unknown;
+  code?: string;
+  details?: { id?: string | number };
 }
 
 export interface CreateEscalationResult {
@@ -367,6 +418,22 @@ export interface TouchpointMap {
       unit_number?: string;
     };
     result: MoneyCodeDrawResult;
+  };
+  /** Local Ops DB ledger (`money_code_requests`) — own draws only. */
+  'money_code.list': {
+    params: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      status?: 'ISSUED' | 'VOIDED' | 'USED';
+      carrierId?: string;
+    };
+    result: MoneyCodeRequestsResult;
+  };
+  /** Own-only void; EFS-safe path via ServerCRM, writes back to Ops DB. */
+  'money_code.void': {
+    params: { requestId: number; reason?: string };
+    result: MoneyCodeVoidResult;
   };
   'dwh.cards_last_used': {
     params: { carrierId: string; range?: string };
@@ -426,6 +493,54 @@ export interface TouchpointMap {
     };
     result: { data?: Array<Record<string, unknown>>; applications?: Array<Record<string, unknown>>; count?: number };
   };
+  'browser.boca': {
+    params: {
+      appId: string;
+      assignedTo?: string;
+      priority?: '' | 'High' | 'Normal' | 'Low';
+      dueDate?: string;
+      status?: string;
+    };
+    result: {
+      success?: boolean;
+      action?: string;
+      status?: string;
+      reason?: string;
+      message?: string;
+      error?: string;
+    };
+  };
+  'browser.close_application': {
+    params: {
+      appId: string;
+      assignedTo?: string;
+      priority?: '' | 'High' | 'Normal' | 'Low';
+      dueDate?: string;
+      status?: string;
+    };
+    result: {
+      success?: boolean;
+      action?: string;
+      status?: string;
+      reason?: string;
+      message?: string;
+      error?: string;
+    };
+  };
+  'zapier.ticket_email': {
+    params: {
+      companyName: string;
+      carrierId: string;
+      agentEmail: string;
+      ticketType: 'replacement' | 'reactivation';
+      companyAddress?: string;
+      address?: string;
+      city?: string;
+      state?: string;
+      zip?: string;
+    };
+    result: { status?: string; message?: string; error?: string };
+  };
   'sales_mytrion.fetch_invoices': {
     params: { carrierId: string; range?: string; status?: string; from?: string; to?: string };
     result: SalesInvoicesResult;
@@ -478,6 +593,102 @@ export interface TouchpointMap {
   'cs.datacenter.deals': {
     params: { lastSyncTime?: string };
     result: CsDataCenterDeals;
+  };
+  // ---- Billing (departmentAccess: ['billing'] — use api/billing.ts billingTouchpoint) ----
+  // The transaction/return WRITES (map/top-up/sync/split/unmap, carrier.saveMemory, returns.match) and
+  // the list/search/fuzzy/memory READS moved to Postgres-backed REST routes (see api/billing.ts). Only
+  // billing.invoices.search (CMP) + billing.carrier.type (Zoho) + the DWH/prepay reads remain here.
+  'billing.invoices.search': { params: { carrierId: string }; result: BillingInvoicesResult };
+  'billing.datacenter.deals': { params: { fresh?: '0' | '1' }; result: BillingDealsResult };
+  'billing.debtors.list': { params: { fresh?: '0' | '1' }; result: BillingDebtorsResult };
+  'billing.datacenter.avgDays': { params: { carrierId: string }; result: Record<string, unknown> };
+  'billing.carrier.type': { params: { carrierId: string }; result: Record<string, unknown> };
+  // Prepay reads migrated to PG-backed REST (/v1/billing/prepay/*, see api/billing.ts).
+
+  // ---- Retention Phase 1 (Sales Mytrion — local DB handlers) ----
+  'retention.my_cases': {
+    params: { open?: boolean; phase_code?: string; limit?: number };
+    result: RetentionCasesListResult;
+  };
+  'retention.case_get': {
+    params: { caseId: string };
+    result: RetentionCaseDetailResult;
+  };
+  'retention.case_contact': {
+    params: { caseId: string };
+    result: { contactPhone: string | null };
+  };
+  'retention.record_outcome': {
+    params: {
+      caseId: string;
+      outcome: RetentionPhase1Outcome;
+      dissatisfaction_reason?: RetentionDissatisfactionReason;
+      reason_note?: string;
+    };
+    result: { case: RetentionCaseRow };
+  };
+  'retention.log_attempt': {
+    params: {
+      caseId: string;
+      channel: RetentionChannel;
+      notes?: string;
+      evidence_url?: string;
+    };
+    result: { case: RetentionCaseRow };
+  };
+  'retention.pool_list': {
+    params: { limit?: number };
+    result: RetentionCasesListResult;
+  };
+  'retention.pool_claim': {
+    params: { caseId: string };
+    result: { case: RetentionCaseRow; pendingApproval: boolean };
+  };
+  'retention.pool_claims_pending': {
+    params: { limit?: number };
+    result: RetentionCasesListResult;
+  };
+  'retention.pool_claim_approve': {
+    params: { caseId: string };
+    result: { case: RetentionCaseRow };
+  };
+  'retention.pool_claim_decline': {
+    params: { caseId: string };
+    result: { case: RetentionCaseRow };
+  };
+  'retention.lookups': {
+    params: { phase_code?: string };
+    result: RetentionLookupsResult;
+  };
+
+  // ---- Finance (ServerCRM) ----
+  'finance.analytics_fueling': {
+    params: Record<string, unknown>;
+    result: FinanceAnalyticsFuelingResult;
+  };
+  'finance.debtors': {
+    params: Record<string, unknown>;
+    result: FinanceDebtorsResult;
+  };
+  'finance.main_transactions': {
+    params: Record<string, unknown>;
+    result: FinanceTransactionsResult;
+  };
+  'finance.clients': {
+    params: Record<string, unknown>;
+    result: FinanceClientsResult;
+  };
+  'finance.client_invoices': {
+    params: { carrierId: string; limit?: number };
+    result: Record<string, unknown>;
+  };
+  'finance.client_payments': {
+    params: { carrierId: string; limit?: number };
+    result: Record<string, unknown>;
+  };
+  'finance.client_recent_transactions': {
+    params: { carrierId: string; limit?: number };
+    result: Record<string, unknown>;
   };
 }
 
@@ -552,6 +763,230 @@ export interface CsDataCenterDeals {
   total_deals?: number;
   deals?: CsDataCenterDeal[];
   is_delta?: boolean;
+}
+
+// ---- Billing result shapes (loose — the panels map the raw widget payloads) ----
+
+/** Transaction source `type` as the Deluge functions expect it (BM_TX_SOURCES). */
+export type BillingTxType = 'Zelle' | 'Chase' | 'Mx_Merchant' | 'Stripe' | 'ACH' | 'Wire' | 'Check' | 'Card';
+
+/** Paged transaction fetch — the widget reads `transactions` + `hasMore`/`totals`. */
+export interface BillingTransactionsPage {
+  transactions?: Array<Record<string, unknown>>;
+  records?: Array<Record<string, unknown>>;
+  hasMore?: boolean;
+  more_records?: boolean;
+  page?: number;
+  totals?: Record<string, number | string | null>;
+  [k: string]: unknown;
+}
+
+export interface BillingInvoicesResult {
+  invoices?: Array<Record<string, unknown>>;
+  prepay?: Record<string, unknown> | null;
+  [k: string]: unknown;
+}
+
+export interface BillingFuzzyResult {
+  matches?: Array<Record<string, unknown>>;
+  carrierId?: string | number | null;
+  [k: string]: unknown;
+}
+
+export interface BillingMemoryResult {
+  data?: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+}
+
+/** Every mapping write returns {status:'success'|'partial'|'error', message?, …} (widget parity). */
+export interface BillingWriteResult {
+  status?: 'success' | 'partial' | 'error' | string;
+  message?: string;
+  paymentId?: string | number;
+  topUpId?: string | number;
+  appliedCount?: number;
+  reversed?: unknown[];
+  [k: string]: unknown;
+}
+
+/** DWH deals feed — array under `deals`/`data`, or a bare array. */
+export interface BillingDealsResult {
+  deals?: Array<Record<string, unknown>>;
+  data?: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+}
+
+export interface BillingDebtorsResult {
+  debtors?: Array<Record<string, unknown>>;
+  data?: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+}
+
+export interface BillingPrepayCompanies {
+  companies?: Array<Record<string, unknown>>;
+  data?: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+}
+
+export interface BillingPrepayLedger {
+  rows?: Array<Record<string, unknown>>;
+  data?: Array<Record<string, unknown>>;
+  totals?: Record<string, number | string | null>;
+  [k: string]: unknown;
+}
+
+export interface BillingReturnsPage {
+  returns?: Array<Record<string, unknown>>;
+  records?: Array<Record<string, unknown>>;
+  hasMore?: boolean;
+  has_more?: boolean;
+  page?: number;
+  [k: string]: unknown;
+}
+
+export interface BillingReturnCandidates {
+  status?: string;
+  records?: Array<Record<string, unknown>>;
+  mode?: string;
+  message?: string;
+  [k: string]: unknown;
+}
+
+// ---- Finance result shapes ----
+export interface FinanceDebtorsResult {
+  debtors?: Array<Record<string, unknown>>;
+  data?: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+}
+
+export interface FinanceTransactionsResult {
+  records?: Array<Record<string, unknown>>;
+  data?: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+}
+
+export interface FinanceClientsResult {
+  clients?: Array<Record<string, unknown>>;
+  data?: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+}
+
+export interface FinanceAnalyticsFuelingResult {
+  fueling?: Array<Record<string, unknown>>;
+  data?: Array<Record<string, unknown>>;
+  [k: string]: unknown;
+}
+
+// ---- Retention Phase 1 result shapes ----
+
+export type RetentionChannel =
+  | 'telegram'
+  | 'whatsapp'
+  | 'sms'
+  | 'ringcentral'
+  | 'instagram'
+  | 'facebook'
+  | 'email';
+
+export type RetentionDissatisfactionReason =
+  | 'low_discounts'
+  | 'payment_cycle'
+  | 'cs_service'
+  | 'trust_issues'
+  | 'switched_other';
+
+/** Agent-selectable outcomes — Returned is sync-only; Working starts on case create. */
+export type RetentionPhase1Outcome =
+  | 'reached'
+  | 'out_of_reach'
+  | 'dissatisfied'
+  | 'vacation'
+  | 'no_action_2bd'
+  | 'escalate_retention'
+  | 'send_to_open_pool'
+  | 'ops_confirm_vacation'
+  | 'ops_deny_vacation';
+
+export interface RetentionCaseRow {
+  id: string;
+  carrierId: string;
+  zohoDealId: string | null;
+  companyName: string | null;
+  applicationId: string | null;
+  agentName: string | null;
+  phaseCode: string;
+  statusCode: string;
+  phaseChangedAt: string;
+  transactionFrequency: 'high' | 'medium' | 'low' | null;
+  agentOutcome: string | null;
+  dissatisfactionReason: RetentionDissatisfactionReason | null;
+  reasonNote: string | null;
+  assignedAgentZohoUserId: string | null;
+  poolOwnerZohoUserId: string | null;
+  pendingClaimantZohoUserId: string | null;
+  assignmentCount: number;
+  openPoolAttemptCount: number;
+  outOfReachAttempts: number;
+  dealOwnerChanged: boolean;
+  currentDeadlineAt: string | null;
+  currentDeadlineType: string | null;
+  vacationCountdownEnd: string | null;
+  citiFolderEnteredAt: string | null;
+  citiFolderHoldUntil: string | null;
+  lastReviewCycleAt: string | null;
+  salesManagerZohoUserId: string | null;
+  thresholdDays: number | null;
+  lastTransactionAt: string | null;
+  daysInactive: number | null;
+  txCount90d: number | null;
+  gallons90d: number | null;
+  activeCards: number | null;
+  source: 'auto' | 'manual';
+  lastSyncedAt: string | null;
+  closedAt: string | null;
+  isOpen: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RetentionCaseEventRow {
+  id: string;
+  caseId: string;
+  fromStatus: string | null;
+  toStatus: string;
+  eventType: string;
+  actorZohoUserId: string | null;
+  channel: RetentionChannel | null;
+  notes: string | null;
+  evidenceUrl: string | null;
+  occurredAt: string;
+}
+
+export interface RetentionCasesListResult {
+  cases: RetentionCaseRow[];
+  total: number;
+}
+
+export interface RetentionCaseDetailResult {
+  case: RetentionCaseRow;
+  events: RetentionCaseEventRow[];
+  /** DWH dim_company contact phone — for RingCentral click-to-dial. */
+  contactPhone?: string | null;
+}
+
+export interface RetentionLookupsResult {
+  phases: Array<{ code: string; label: string; sortOrder: number }>;
+  statuses: Array<{
+    code: string;
+    phaseCode: string;
+    label: string;
+    isTerminal: boolean;
+    boardColumn: string | null;
+    sortOrder: number;
+  }>;
+  channels: RetentionChannel[];
+  dissatisfactionReasons: RetentionDissatisfactionReason[];
+  outcomes: RetentionPhase1Outcome[];
 }
 
 export type TouchpointKey = keyof TouchpointMap;

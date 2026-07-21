@@ -1,205 +1,582 @@
-import { useMemo, useState } from 'react';
-import { Banknote, CheckSquare, ListChecks, XCircle } from 'lucide-react';
+/**
+ * Payment Transactions panel — 1:1 port of the widget's transactions-panel.js (header + stats
+ * banner + toolbar + date-grouped list + pagination + detail modal) over the LIVE billing.*
+ * touchpoints. The WebSocket real-time sync (connectWebSocket / _broadcastMapping / remoteLock /
+ * _applyRemoteEvent) is deliberately OMITTED for Phase 1.
+ *
+ * The initial page loads through the shared `useLoad` hook; pagination ("load next 200"),
+ * debounced server search, per-row optimistic mapping patches, and the modal are managed with
+ * useState. Mapping/unmapping WRITES are wired through TransactionModal and mutate the in-memory
+ * list optimistically (the authoritative values return on the next reload).
+ *
+ * Phase 3b — real-time mapping sync: a reconnecting WebSocket (useMappingSocket) applies remote
+ * map/unmap/returned events to the in-memory rows (list + stat banner react in place); because
+ * `openTx` is derived from those rows, a remote map flips the open modal to read-only for free.
+ * Local writes relay to peers via broadcastMapping (backend proxy keeps the servercrm key safe).
+ */
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
-import { DetailDialog } from '@/components/mytrion/detail-dialog';
-import { SearchBar } from '@/components/mytrion/search-bar';
-import { StatCard } from '@/components/mytrion/stat-card';
-import { StatusBadge } from '@/components/mytrion/status-badge';
+import { broadcastMapping, fetchTransactions, searchTransactions } from '@/api/billing';
+import { useUserContext } from '../../context/UserContextProvider';
+import { useLoad } from '../_shared/useLoad';
+import { type TxSource, dateLabel, fmtCurrency } from './data';
+import { TransactionModal } from './TransactionModal';
+import { useMappingSocket, type RemoteMappingEvent } from './useMappingSocket';
 import {
-  TRANSACTIONS,
-  type Transaction,
-  dateFull,
-  dateLabel,
-  fmtCurrency,
-  srcLabel,
-  srcLong,
-} from './data';
+  BM_SEARCH_DEBOUNCE_MS,
+  BM_TOAST_MS,
+  BM_TX_PAGE_SIZE,
+  SOURCE_NAMES,
+  type TxRow,
+  extractRecords,
+  normalizeTx,
+  readBool,
+  readNum,
+  rebuildHaystack,
+  txSourceLabel,
+  txStatusBadgeClass,
+} from './transactionModel';
+import type { BillingTransactionsPage } from '@/api/touchpointTypes';
 
-const SOURCE_OPTIONS = ['all', 'zelle', 'chase', 'mx', 'stripe', 'ach', 'wire', 'check', 'card'];
-const selectClass =
-  'rounded-md border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground outline-none focus:border-primary/55';
+type ToastKind = 'success' | 'error';
+type PageData = BillingTransactionsPage | null | undefined;
+
+const REFRESH_PATH =
+  'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-14.357-2m14.357 2H15';
+
+const SOURCE_OPTIONS: { id: 'all' | TxSource; label: string }[] = [
+  { id: 'all', label: 'All Sources' },
+  { id: 'zelle', label: 'Zelle' },
+  { id: 'chase', label: 'Chase' },
+  { id: 'mx', label: 'MX Merchant' },
+  { id: 'stripe', label: 'Stripe' },
+];
+
+const CARRIER_OPTIONS = [
+  { id: 'all', label: 'All' },
+  { id: 'invoiceMapped', label: 'Invoice Mapped' },
+  { id: 'invoiceUnmapped', label: 'Invoice Unmapped' },
+];
+
+function fetchPage(page: number): Promise<BillingTransactionsPage> {
+  return fetchTransactions(page, BM_TX_PAGE_SIZE);
+}
+function pageHasMore(d: PageData): boolean {
+  return readBool(d?.has_more) || readBool(d?.hasMore) || readBool(d?.more_records);
+}
+function pageTotal(d: PageData, fallback: number): number {
+  const t = readNum(d?.total_fetched);
+  return t > 0 ? t : fallback;
+}
+function pageNumber(d: PageData, fallback: number): number {
+  const p = readNum(d?.page);
+  return p > 0 ? p : fallback;
+}
 
 export function Transactions() {
-  const [search, setSearch] = useState('');
-  const [source, setSource] = useState('all');
-  const [carrierFilter, setCarrierFilter] = useState('all');
-  const [openTx, setOpenTx] = useState<Transaction | null>(null);
+  const user = useUserContext();
 
-  const filtered = useMemo(() => {
-    let rows = TRANSACTIONS;
-    if (source !== 'all') rows = rows.filter((t) => t.source === source);
-    if (carrierFilter === 'mapped') rows = rows.filter((t) => t.carrierId && !t.isInvoiceMapped);
-    else if (carrierFilter === 'invoice') rows = rows.filter((t) => t.isInvoiceMapped);
-    else if (carrierFilter === 'unmapped') rows = rows.filter((t) => !t.carrierId);
-    const q = search.trim().toLowerCase();
-    if (q) {
-      rows = rows.filter((t) =>
-        `${t.sender} ${t.memo ?? ''} ${t.txn} ${t.carrierId ?? ''}`.toLowerCase().includes(q),
-      );
+  const firstPage = useLoad(() => fetchPage(1), []);
+  const page1 = firstPage.data;
+
+  // Appended pages (page ≥ 2) + optimistic per-row patches, both reset when page 1 reloads.
+  const [extra, setExtra] = useState<TxRow[]>([]);
+  const [meta, setMeta] = useState<{ page: number; hasMore: boolean; total: number } | null>(null);
+  const [patches, setPatches] = useState<Record<string, Partial<TxRow>>>({});
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  const [search, setSearch] = useState('');
+  const [source, setSource] = useState<'all' | TxSource>('all');
+  const [carrierFilter, setCarrierFilter] = useState('all');
+  const [serverExtras, setServerExtras] = useState<TxRow[] | null>(null);
+  const [searchFetching, setSearchFetching] = useState(false);
+
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ id: number; kind: ToastKind; message: string } | null>(null);
+
+  const notify = useCallback((kind: ToastKind, message: string) => {
+    setToast({ id: Date.now(), kind, message });
+  }, []);
+
+  // Fresh page-1 payload (initial load or reload) → drop appended pages, patches and page meta.
+  useEffect(() => {
+    setExtra([]);
+    setMeta(null);
+    setPatches({});
+  }, [page1]);
+
+  useEffect(() => {
+    if (firstPage.error) notify('error', 'Could not load transactions. Try refreshing.');
+  }, [firstPage.error, notify]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), BM_TOAST_MS);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // Debounced background server search (full CRM dataset), merged with local matches below.
+  useEffect(() => {
+    const q = search.trim();
+    if (!q) {
+      setServerExtras(null);
+      setSearchFetching(false);
+      return;
     }
-    return rows;
-  }, [search, source, carrierFilter]);
+    if (SOURCE_NAMES.includes(q.toLowerCase())) {
+      // Source-name queries can't match text fields server-side — local matches only.
+      setServerExtras(null);
+      return;
+    }
+    let off = false;
+    const timer = setTimeout(() => {
+      setSearchFetching(true);
+      searchTransactions(q)
+        .then((data) => {
+          if (!off) setServerExtras(extractRecords(data).map(normalizeTx));
+        })
+        .catch(() => {
+          if (!off) notify('error', 'Search failed. Try again.');
+        })
+        .finally(() => {
+          if (!off) setSearchFetching(false);
+        });
+    }, BM_SEARCH_DEBOUNCE_MS);
+    return () => {
+      off = true;
+      clearTimeout(timer);
+    };
+  }, [search, notify]);
+
+  const applyPatch = useCallback(
+    (r: TxRow): TxRow => {
+      const p = patches[r.recordId];
+      if (!p) return r;
+      const merged = { ...r, ...p };
+      return { ...merged, haystack: rebuildHaystack(merged) };
+    },
+    [patches],
+  );
+
+  // Full loaded list = page-1 records + appended pages, with optimistic patches layered on.
+  const rows = useMemo<TxRow[]>(() => {
+    const base = page1 ? extractRecords(page1).map(normalizeTx) : [];
+    return [...base, ...extra].map(applyPatch);
+  }, [page1, extra, applyPatch]);
+
+  const curPage = meta?.page ?? pageNumber(page1, 1);
+  const hasMore = meta ? meta.hasMore : pageHasMore(page1);
+  const totalFetched = meta ? meta.total : pageTotal(page1, rows.length);
+
+  const query = search.trim().toLowerCase();
+  const searchResults = useMemo<TxRow[] | null>(() => {
+    if (!query) return null;
+    const isCarrierId = /^\d+$/.test(query);
+    const local = rows.filter((t) => (isCarrierId ? (t.carrierId ?? '') === query : t.haystack.includes(query)));
+    if (!serverExtras) return local;
+    const localIds = new Set(local.map((t) => t.recordId));
+    const extras = serverExtras.map(applyPatch).filter((t) => !localIds.has(t.recordId));
+    return [...local, ...extras];
+  }, [query, rows, serverExtras, applyPatch]);
+
+  const filtered = useMemo<TxRow[]>(() => {
+    let list = searchResults ?? rows;
+    if (source !== 'all') list = list.filter((t) => t.source === source);
+    if (carrierFilter === 'invoiceMapped') list = list.filter((t) => t.isInvoiceMapped);
+    else if (carrierFilter === 'invoiceUnmapped') list = list.filter((t) => !t.isInvoiceMapped);
+    return list;
+  }, [searchResults, rows, source, carrierFilter]);
 
   const groups = useMemo(() => {
-    const map = new Map<string, Transaction[]>();
-    filtered.forEach((t) => {
-      const arr = map.get(t.postingDate) ?? [];
+    const map = new Map<string, TxRow[]>();
+    for (const t of filtered) {
+      const key = t.postingDate || 'Unknown';
+      const arr = map.get(key) ?? [];
       arr.push(t);
-      map.set(t.postingDate, arr);
-    });
-    // Newest date group first; relies on postingDate being ISO yyyy-mm-dd (lexicographic == chronological).
-    return Array.from(map.entries()).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+      map.set(key, arr);
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => (a[0] < b[0] ? 1 : -1)) // newest date first
+      .map(([date, items]) => ({ date, items, total: items.reduce((s, t) => s + t.amount, 0) }));
   }, [filtered]);
 
-  const total = filtered.reduce((s, t) => s + t.amount, 0);
-  const mapped = filtered.filter((t) => t.isInvoiceMapped).length;
-  const unmapped = filtered.filter((t) => !t.carrierId).length;
+  const sourceCounts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const t of rows) c[t.source] = (c[t.source] ?? 0) + 1;
+    return c;
+  }, [rows]);
+
+  const openTx = useMemo(() => {
+    if (!openId) return null;
+    return rows.find((r) => r.recordId === openId) ?? serverExtras?.map(applyPatch).find((r) => r.recordId === openId) ?? null;
+  }, [openId, rows, serverExtras, applyPatch]);
+
+  const totalAmount = Math.abs(filtered.reduce((s, t) => s + t.amount, 0));
+  const mappedCount = filtered.filter((t) => t.isInvoiceMapped).length;
+  const unmappedCount = filtered.length - mappedCount;
+  const resultsActive = !!search.trim() || source !== 'all' || carrierFilter !== 'all';
+
+  async function loadMore() {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const next = curPage + 1;
+      const data = await fetchPage(next);
+      const recs = extractRecords(data).map(normalizeTx);
+      const seen = new Set(rows.map((r) => r.recordId));
+      const fresh = recs.filter((r) => !seen.has(r.recordId));
+      setExtra((prev) => [...prev, ...fresh]);
+      setMeta({ page: pageNumber(data, next), hasMore: pageHasMore(data), total: pageTotal(data, rows.length + recs.length) });
+    } catch {
+      notify('error', 'Could not load more transactions.');
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  function reload() {
+    setSearch('');
+    setSource('all');
+    setCarrierFilter('all');
+    setServerExtras(null);
+    firstPage.refresh();
+  }
+
+  const patchRow = useCallback((recordId: string, patch: Partial<TxRow>) => {
+    setPatches((prev) => ({ ...prev, [recordId]: { ...prev[recordId], ...patch } }));
+  }, []);
+
+  // ── Real-time mapping sync (Phase 3b) ──
+  // Stable per-session id so the relay can echo-filter our own broadcasts.
+  const originId = useRef<string>(
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `bm-${Date.now()}-${Math.floor(Math.random() * 1e9)}`,
+  );
+
+  const onRemote = useCallback(
+    (e: RemoteMappingEvent) => {
+      const id = String(e.transactionRecordId || '');
+      if (!id) return;
+      if (e.action === 'returned') {
+        // A return reverses the CMP payment but keeps the CRM mapping — only flag it.
+        patchRow(id, { isReturned: true, returnedAt: e.mappedAt ?? '' });
+      } else if (e.action === 'unmap') {
+        patchRow(id, {
+          carrierId: null,
+          isInvoiceMapped: false,
+          mappedBy: '',
+          mappedAt: '',
+          mappingType: '',
+          cmpRef: '',
+        });
+      } else {
+        patchRow(id, {
+          carrierId: e.carrierId ?? '',
+          isInvoiceMapped: true,
+          mappedBy: e.mappedBy ?? '',
+          mappedAt: e.mappedAt ?? '',
+          mappingType: e.mappingType ?? '',
+          // UI-only placeholder so the unmap affordance shows immediately; the real CMP_Ref
+          // lives in the CRM record and comes back on the next fetch.
+          cmpRef: 'remote',
+        });
+      }
+      // Toast only when the affected tx is the one open in the modal (which is now read-only
+      // via the derived openTx state).
+      if (openId === id) {
+        const who = e.mappedBy || 'another user';
+        if (e.action === 'returned') {
+          notify('error', 'This transaction was returned / charged back (payment reversed in CMP)');
+        } else if (e.action === 'unmap') {
+          notify('success', `Updated — ${who} just unmapped this transaction`);
+        } else {
+          notify('success', `Updated — ${who} just mapped this transaction`);
+        }
+      }
+    },
+    [patchRow, openId, notify],
+  );
+  useMappingSocket(originId.current, onRemote);
+
+  // Relay a local mapping write to peers (inferred from the modal's isInvoiceMapped patch).
+  const patchAndBroadcast = useCallback(
+    (row: TxRow, patch: Partial<TxRow>) => {
+      patchRow(row.recordId, patch);
+      if (patch.isInvoiceMapped === true) {
+        broadcastMapping({
+          action: 'map',
+          transactionRecordId: row.recordId,
+          source: row.source,
+          carrierId: (patch.carrierId ?? row.carrierId) ?? '',
+          mappingType: patch.mappingType ?? '',
+          originId: originId.current,
+        });
+      } else if (patch.isInvoiceMapped === false) {
+        broadcastMapping({
+          action: 'unmap',
+          transactionRecordId: row.recordId,
+          source: row.source,
+          originId: originId.current,
+        });
+      }
+    },
+    [patchRow],
+  );
+
+  const initialLoading = firstPage.loading && rows.length === 0;
 
   return (
-    <div className="flex flex-col gap-4 p-6">
-      <div>
-        <h2 className="font-heading text-2xl font-bold">Payment Transactions</h2>
-        <p className="text-sm text-muted-foreground">{TRANSACTIONS.length} total records · live ledger</p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard icon={ListChecks} value={String(filtered.length)} label="Results" tint="primary" />
-        <StatCard icon={Banknote} value={fmtCurrency(total)} label="Total Amount" tint="good" />
-        <StatCard icon={CheckSquare} value={String(mapped)} label="Invoice Mapped" tint="primary" />
-        <StatCard icon={XCircle} value={String(unmapped)} label="Unmapped" tint="bad" />
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <SearchBar
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search sender, memo, transaction #…"
-          className="max-w-sm flex-1"
-        />
-        <select value={source} onChange={(e) => setSource(e.target.value)} className={selectClass}>
-          {SOURCE_OPTIONS.map((s) => (
-            <option key={s} value={s}>
-              {s === 'all' ? 'All Sources' : srcLong(s as Transaction['source'])}
-            </option>
-          ))}
-        </select>
-        <select value={carrierFilter} onChange={(e) => setCarrierFilter(e.target.value)} className={selectClass}>
-          <option value="all">All Carriers</option>
-          <option value="mapped">Carrier Matched</option>
-          <option value="invoice">Invoice Mapped</option>
-          <option value="unmapped">Unmapped</option>
-        </select>
-      </div>
-
-      <div className="flex flex-col gap-4">
-        {groups.length === 0 ? (
-          <div className="rounded-lg border bg-card p-10 text-center text-sm text-muted-foreground">
-            No transactions found. Try adjusting your search or filters.
+    <div className="bm-panel tx-panel">
+      {/* Header */}
+      <div className="bm-header-row">
+        <div>
+          <h2 className="bm-title">Payment Transactions</h2>
+          <div className="bm-subtitle">
+            {totalFetched > 0 ? `${totalFetched.toLocaleString()} total records` : 'Live transaction ledger'}
           </div>
-        ) : (
-          groups.map(([date, items]) => (
-            <div key={date}>
-              <div className="mb-2 flex items-center gap-2 px-0.5">
-                <span className="font-heading text-xs font-bold tracking-wide text-foreground uppercase">
-                  {dateLabel(date)}
-                </span>
-                <span className="text-[11px] text-muted-foreground">
-                  {items.length} txn · {fmtCurrency(items.reduce((s, t) => s + t.amount, 0))}
-                </span>
-                <span className="h-px flex-1 bg-border" />
-              </div>
-              <div className="overflow-hidden rounded-lg border bg-card">
-                {items.map((t) => (
-                  <button
-                    key={t.recordId}
-                    onClick={() => setOpenTx(t)}
-                    className="flex w-full items-center gap-3 border-b px-4 py-3 text-left text-sm last:border-b-0 hover:bg-muted/40"
-                  >
-                    <span className="min-w-13 flex-none rounded-md bg-secondary px-1.5 py-1 text-center font-mono text-[9px] font-extrabold tracking-wide text-secondary-foreground uppercase">
-                      {srcLabel(t.source)}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-semibold">{t.sender}</div>
-                      <div className="truncate text-[11px] text-muted-foreground">
-                        {t.memo ? `${t.memo} · ` : ''}
-                        <span className="font-mono opacity-70">#{t.txn}</span>
-                      </div>
-                    </div>
-                    {t.isInvoiceMapped ? (
-                      <StatusBadge tone="info">Invoice Mapped</StatusBadge>
-                    ) : t.carrierId ? (
-                      <StatusBadge tone="good">#{t.carrierId}</StatusBadge>
-                    ) : (
-                      <StatusBadge tone="neutral">Unmapped</StatusBadge>
-                    )}
-                    <div className="flex-none text-right">
-                      <div className="font-mono text-sm font-bold text-good">{fmtCurrency(t.amount)}</div>
-                      <div className="text-[10px] text-muted-foreground">{t.time}</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))
-        )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <button className="bm-refresh-btn" onClick={reload} disabled={firstPage.loading || firstPage.refreshing} title="Refresh">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" className={firstPage.loading || firstPage.refreshing ? 'spin-icon' : undefined}>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={REFRESH_PATH} />
+            </svg>
+            Refresh
+          </button>
+        </div>
       </div>
 
-      {openTx ? <TransactionDetail tx={openTx} onClose={() => setOpenTx(null)} /> : null}
+      {initialLoading ? (
+        <div className="bm-initial-loader">
+          <div className="bm-loader-ring" />
+          <div className="bm-loader-text">Loading transactions</div>
+          <div className="bm-loader-sub">Fetching latest payment data...</div>
+        </div>
+      ) : (
+        <>
+          {/* Stats banner */}
+          <div className="bm-summary-banner">
+            <SummaryItem
+              color="var(--billing-accent)"
+              amount={filtered.length.toLocaleString()}
+              label={resultsActive ? 'Results' : 'Loaded'}
+              sub={hasMore ? `of ${totalFetched.toLocaleString()} total` : 'all loaded'}
+            />
+            <SummaryItem
+              color="var(--success-text)"
+              amount={fmtCurrency(totalAmount)}
+              label="Total Amount"
+              sub={resultsActive ? 'filtered' : 'this page'}
+            />
+            <SummaryItem
+              color="var(--purple-text)"
+              amount={String(mappedCount)}
+              label="Invoice Mapped"
+              sub={filtered.length ? `${Math.round((mappedCount / filtered.length) * 100)}%` : '—'}
+            />
+            <SummaryItem
+              color="var(--danger-text)"
+              amount={String(unmappedCount)}
+              label="Invoice Unmapped"
+              sub="needs review"
+            />
+          </div>
+
+          {/* Toolbar */}
+          <div className="bm-toolbar">
+            <div className="bm-search-bar" style={{ flex: 1, minWidth: 140 }}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input value={search} onChange={(e) => setSearch(e.target.value)} type="text" placeholder="Search by sender, memo, transaction #…" autoComplete="off" />
+              {searchFetching ? (
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>loading all…</span>
+              ) : search ? (
+                <button onClick={() => setSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 0, display: 'flex' }}>
+                  <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              ) : null}
+            </div>
+
+            <select value={source} onChange={(e) => setSource(e.target.value as 'all' | TxSource)} className="bm-select">
+              {SOURCE_OPTIONS.map((f) => {
+                const count = f.id === 'all' ? rows.length : (sourceCounts[f.id] ?? 0);
+                return (
+                  <option key={f.id} value={f.id}>
+                    {f.label} {count > 0 ? `(${count})` : ''}
+                  </option>
+                );
+              })}
+            </select>
+
+            <select value={carrierFilter} onChange={(e) => setCarrierFilter(e.target.value)} className="bm-select">
+              {CARRIER_OPTIONS.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* List */}
+          <div className="bm-table-wrap" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {filtered.length === 0 ? (
+              <div className="bm-empty">
+                <svg width="36" height="36" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                </svg>
+                <div className="bm-empty-label">No transactions found</div>
+                <div className="bm-empty-sub">Try adjusting your search or filters.</div>
+              </div>
+            ) : (
+              <div className="tx-list-scroll">
+                {groups.map((group) => (
+                  <div key={group.date}>
+                    <div className="tx-date-sep">
+                      <span>{dateLabel(group.date)}</span>
+                      <span style={{ fontSize: '0.5625rem', fontWeight: 600, marginLeft: '0.5rem', color: 'var(--text-muted)' }}>
+                        {group.items.length} txn · {fmtCurrency(group.total)}
+                      </span>
+                    </div>
+                    {group.items.map((tx) => (
+                      <div key={tx.recordId} className="tx-row" onClick={() => setOpenId(tx.recordId)} title="Click to view details">
+                        <div className={`tx-source-badge tx-source-${tx.source}`}>{txSourceLabel(tx.source)}</div>
+                        <div className="tx-body">
+                          <div className="tx-sender">{tx.sender || tx.name}</div>
+                          <div className="tx-meta">
+                            {tx.memo ? (
+                              <span className="tx-memo" title={tx.memo}>
+                                {tx.memo}
+                              </span>
+                            ) : null}
+                            {tx.memo && tx.txn ? <span style={{ opacity: 0.3 }}>·</span> : null}
+                            {tx.txn ? (
+                              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.6rem', opacity: 0.5 }}>#{tx.txn}</span>
+                            ) : null}
+                            {(tx.source === 'mx' || tx.source === 'stripe') && tx.status ? (
+                              <span className={`bm-badge ${txStatusBadgeClass(tx.source, tx.status)}`} style={{ fontSize: '0.55rem', padding: '0.1rem 0.4rem', marginLeft: '0.25rem' }}>
+                                {tx.status}
+                              </span>
+                            ) : null}
+                            {tx.isReturned ? (
+                              <span
+                                className="bm-badge"
+                                title="This payment was returned / charged back — the money was reversed in CMP. The mapping is kept for reference."
+                                style={{ fontSize: '0.55rem', padding: '0.1rem 0.45rem', marginLeft: '0.25rem', fontWeight: 800, background: 'var(--danger-bg)', color: 'var(--danger-text)', border: '1px solid var(--danger-border)' }}
+                              >
+                                RETURNED
+                              </span>
+                            ) : null}
+                            {tx.isQuickPay ? (
+                              <span
+                                className="bm-badge"
+                                title="QuickPay payment — must be mapped manually to CMP (not auto-mapped)."
+                                style={{ fontSize: '0.55rem', padding: '0.1rem 0.45rem', marginLeft: '0.25rem', fontWeight: 700, background: 'var(--accent-bg)', color: 'var(--billing-accent)', border: '1px solid var(--accent-border-strong)' }}
+                              >
+                                QUICKPAY
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="tx-carrier-col">
+                          {tx.isInvoiceMapped ? (
+                            <span className="bm-badge tx-carrier-badge" style={{ background: 'var(--purple-bg)', color: 'var(--purple-text)', border: '1px solid var(--purple-border)' }}>
+                              <svg width="9" height="9" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                              </svg>
+                              Invoice Mapped
+                            </span>
+                          ) : tx.carrierId ? (
+                            <span className="bm-badge bm-badge-success tx-carrier-badge">
+                              <svg width="9" height="9" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+                              </svg>
+                              {tx.carrierId}
+                            </span>
+                          ) : (
+                            <span className="bm-badge bm-badge-muted tx-carrier-badge" style={{ opacity: 0.5 }}>
+                              Unmapped
+                            </span>
+                          )}
+                        </div>
+                        <div className="tx-amount-col">
+                          <span className="tx-amount-value">{fmtCurrency(tx.amount)}</span>
+                          <span className="tx-date-inline">{tx.time}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+
+                {(hasMore || loadingMore) && searchResults === null ? (
+                  <div className="tx-load-more-row">
+                    <button className="tx-load-more-btn" onClick={() => void loadMore()} disabled={loadingMore}>
+                      {loadingMore ? (
+                        <>
+                          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ animation: 'ai-spin 0.8s linear infinite' }}>
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={REFRESH_PATH} />
+                          </svg>
+                          Loading page {curPage + 1}...
+                        </>
+                      ) : (
+                        <>
+                          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                          </svg>
+                          Load next 200 transactions
+                          <span style={{ opacity: 0.55, fontSize: '0.6rem' }}> · {Math.max(totalFetched - rows.length, 0).toLocaleString()} remaining</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                ) : rows.length > 0 ? (
+                  <div className="tx-end-row">All {rows.length.toLocaleString()} transactions loaded</div>
+                ) : null}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {openTx ? (
+        <TransactionModal
+          key={openTx.recordId}
+          tx={openTx}
+          currentUserName={user.userName}
+          onClose={() => setOpenId(null)}
+          onPatch={(patch) => patchAndBroadcast(openTx, patch)}
+          onToast={notify}
+        />
+      ) : null}
+
+      {toast ? (
+        <div className={`bm-toast bm-toast--${toast.kind}`}>
+          <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={toast.kind === 'success' ? 'M5 13l4 4L19 7' : 'M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'} />
+          </svg>
+          {toast.message}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function TransactionDetail({ tx, onClose }: { tx: Transaction; onClose: () => void }) {
-  return (
-    <DetailDialog
-      open
-      onOpenChange={(o) => !o && onClose()}
-      title={tx.sender}
-      subtitle={`${srcLong(tx.source)} · ${dateFull(tx.postingDate)}`}
-      size="md"
-      badges={<StatusBadge tone="good">{fmtCurrency(tx.amount)}</StatusBadge>}
-      footer={
-        <button onClick={onClose} className="rounded-md border px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground">
-          Close
-        </button>
-      }
-    >
-      <div className="flex flex-col gap-4">
-        <section>
-          <div className="font-heading mb-2.5 text-xs font-bold tracking-wide text-primary uppercase">
-            Transaction Details
-          </div>
-          <dl className="flex flex-col gap-1.5 text-sm">
-            <Row k="Transaction #" v={<span className="font-mono">{tx.txn}</span>} />
-            {tx.memo ? <Row k="Memo" v={tx.memo} /> : null}
-            {tx.status ? <Row k="Status" v={tx.status} /> : null}
-            <Row k="Record ID" v={<span className="font-mono text-muted-foreground">{tx.recordId}</span>} />
-            <Row k="Source" v={srcLong(tx.source)} />
-            <Row k="Posting Date" v={dateFull(tx.postingDate)} />
-            <Row k="Amount" v={<span className="font-mono font-bold text-good">{fmtCurrency(tx.amount)}</span>} />
-          </dl>
-        </section>
-        <section>
-          <div className="font-heading mb-2.5 text-xs font-bold tracking-wide text-primary uppercase">
-            Carrier Assignment
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Status</span>
-            <StatusBadge tone={tx.carrierId ? 'good' : 'bad'}>
-              {tx.carrierId ? `Matched · ${tx.carrierId}` : 'Unmatched'}
-            </StatusBadge>
-          </div>
-        </section>
-      </div>
-    </DetailDialog>
-  );
+interface SummaryItemProps {
+  /** Accent colour for the value + the 2px left bar (a CSS colour / var). */
+  color: string;
+  amount: string;
+  label: string;
+  sub?: string;
 }
 
-function Row({ k, v }: { k: string; v: React.ReactNode }) {
+function SummaryItem({ color, amount, label, sub }: SummaryItemProps) {
   return (
-    <div className="flex items-center justify-between border-b py-1.5 last:border-b-0">
-      <span className="text-xs text-muted-foreground">{k}</span>
-      <span className="text-right text-[13px] font-semibold">{v}</span>
+    <div className="bm-summary-item" style={{ '--stat-color': color } as CSSProperties}>
+      <div className="bm-summary-label">{label}</div>
+      <div className="bm-summary-amount">{amount}</div>
+      {sub ? <div className="bm-summary-sub">{sub}</div> : null}
     </div>
   );
 }

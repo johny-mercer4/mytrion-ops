@@ -57,10 +57,19 @@
   border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
 }
 
-/* sign out — same base as .switch but a danger-tone hover */
+/* sign out — beautiful glass danger tone */
+.signout {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+  transition: all var(--dur-fast) var(--ease-standard);
+  padding: var(--space-1) var(--space-2);
+}
 .signout:hover {
+  background: rgba(220, 38, 38, 0.08);
   color: var(--danger);
-  border-color: var(--tint-bad-bd);
+  border-color: rgba(220, 38, 38, 0.2);
+  transform: translateY(-1px);
 }
 
 .iconBtn {

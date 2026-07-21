@@ -1,0 +1,17 @@
+/* Billing Mytrion — the zoho-octane widget's "Midnight Blue / Razor-Sharp Fintech" design
+   system, ported verbatim and machine-scoped under `.bm-root` (scripted; see the branch
+   notes) so its :root/body globals can't leak into the other Mytrions. Dark is the default;
+   `.bm-root.light-mode` overrides the tokens. Source of truth:
+   zoho-octane/app/billing-mytrion/css/. */
+@import './shared-theme.css';
+@import './shared-base.css';
+@import './shared-modal.css';
+@import './datacenter-panel.css';
+@import './transactions-panel.css';
+@import './debtors-panel.css';
+@import './prepay-panel.css';
+@import './returns-panel.css';
+@import './ai-chat-panel.css';
+@import './shared-effects.css';
+@import './shared-responsive.css';
+@import './overrides.css';

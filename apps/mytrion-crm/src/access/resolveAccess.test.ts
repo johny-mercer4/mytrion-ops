@@ -24,11 +24,29 @@ describe('resolveAccessibleMytrions', () => {
     expect(canAccess(ctx({ profile: 'Billing' }), 'sales')).toBe(false);
   });
 
-  it('admins (adminBypass) get every Mytrion, so the picker shows (not auto-enter)', () => {
+  it('admins (adminBypass) get every enterable Mytrion, so the picker shows (not auto-enter)', () => {
     const { accessible, isAdmin: admin } = resolveAccessibleMytrions(ctx({ profile: 'Administrator', role: 'CEO' }));
     expect(admin).toBe(true);
     expect(accessible).toContain('sales');
     expect(accessible.length).toBeGreaterThan(1);
+    // Coming-soon Mytrions stay on the picker grid but are not enterable.
+    expect(accessible).not.toContain('collection');
+    expect(accessible).not.toContain('verification');
+    expect(accessible).not.toContain('manager');
+    expect(accessible).not.toContain('analyst');
+  });
+
+  it('coming-soon Mytrions are never enterable (even when server-granted)', () => {
+    const granted = ctx({
+      profile: 'Administrator',
+      accessibleMytrions: ['sales', 'collection', 'verification', 'manager', 'analyst'],
+      allDepartmentAccess: true,
+    });
+    expect(resolveAccessibleMytrions(granted).accessible).toEqual(['sales']);
+    expect(canAccess(granted, 'collection')).toBe(false);
+    expect(canAccess(granted, 'verification')).toBe(false);
+    expect(canAccess(granted, 'manager')).toBe(false);
+    expect(canAccess(granted, 'analyst')).toBe(false);
   });
 
   it('an unknown profile is forbidden (0 accessible)', () => {

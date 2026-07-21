@@ -12,6 +12,7 @@ import { currentBillingCycle, msdFmtNum } from './dashFormat';
 import { DashSkeleton } from './DashSkeleton';
 import { SalesDashCharts } from './SalesDashCharts';
 import { ICO } from './salesData';
+import { useSales } from './ctx';
 import {
   cycleTotals,
   filterActivity,
@@ -54,6 +55,7 @@ export function SalesDashPanel() {
   const [selEnd, setSelEnd] = useState<number | null>(null);
   const [selAnchor, setSelAnchor] = useState<number | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const { pushToast } = useSales();
 
   const fetch = async (force: boolean): Promise<void> => {
     if (force) setRefreshing(true);
@@ -61,8 +63,13 @@ export function SalesDashPanel() {
     setError(null);
     try {
       setData(await loadSalesDashRaw({ force }));
+      // Confirm a user-initiated refresh so it's clear the numbers actually reloaded (toast tone is
+      // derived from the title: "refreshed" → success/green, "Couldn't" → error/red).
+      if (force) pushToast('Dashboard refreshed', 'Latest numbers loaded from Zoho.');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load sales data.');
+      const msg = e instanceof Error ? e.message : 'Failed to load sales data.';
+      setError(msg);
+      if (force) pushToast("Couldn't refresh", msg);
     } finally {
       setLoading(false);
       setRefreshing(false);

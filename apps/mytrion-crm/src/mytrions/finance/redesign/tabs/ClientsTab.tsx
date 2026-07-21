@@ -3,19 +3,12 @@ import { useMemo, useState } from 'react';
 import { useFinanceCtx } from '../ctx';
 import { Badge, s, Svg } from '../dc';
 import {
-  activeClientCount,
   badge,
   chipStyle,
-  CLIENTS,
-  creditLimitNum,
-  debtTotal,
-  filterClients,
   fmtCurrency,
-  fueledRecentCount,
   initials,
   kpiIcon,
   moneyC,
-  suspendedCount,
 } from '../financeData';
 import {
   EmptyState,
@@ -29,7 +22,7 @@ import {
 } from '../financeUi';
 
 export function ClientsTab() {
-  const { openClient, refreshSync, pushToast, clLoading, startAnim } = useFinanceCtx();
+  const { openClient, refreshSync, pushToast, clLoading, startAnim, clientsFeed } = useFinanceCtx();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
   const [flag, setFlag] = useState('');
@@ -39,7 +32,37 @@ export function ClientsTab() {
 
   const loading = clLoading || localLoading;
 
-  const all = useMemo(() => filterClients(search, status, flag), [search, status, flag]);
+  const rawClients = useMemo(() => {
+    return (clientsFeed || []).map((raw) => ({
+      company: String(raw.company_name || raw.deal_name || '—'),
+      carrier: String(raw.carrier_id || ''),
+      dot: String(raw.dot_number || ''),
+      city: String(raw.city || ''),
+      state: String(raw.state || ''),
+      terms: String(raw.payment_terms || 'Prepay') as any,
+      active: raw.status === 'Active' || raw.status === 'Open',
+      suspended: !!raw.suspended,
+      wex: !!raw.wex,
+      debt: Number(raw.total_remaining || raw.total_owed || 0),
+      debtDays: Number(raw.max_debt_days || 0),
+      creditLimit: Number(raw.credit_limit || 0),
+    }));
+  }, [clientsFeed]);
+
+  const all = useMemo(() => {
+    let list = rawClients;
+    if (status === 'active') list = list.filter((c) => c.active);
+    if (status === 'inactive') list = list.filter((c) => !c.active);
+    if (flag === 'suspended') list = list.filter((c) => c.suspended);
+    if (flag === 'debtor') list = list.filter((c) => c.debt > 0);
+
+    const sTerm = search.toLowerCase();
+    if (sTerm) {
+      list = list.filter((c) => c.company.toLowerCase().includes(sTerm) || c.carrier.includes(sTerm) || c.dot.includes(sTerm));
+    }
+    return list;
+  }, [search, status, flag, rawClients]);
+
   const shown = all.slice(0, visible);
 
   const refresh = () => {
@@ -54,11 +77,15 @@ export function ClientsTab() {
     }, 800);
   };
 
+  const cActiveCount = rawClients.filter((c) => c.active).length;
+  const cDebtTotal = rawClients.reduce((s, c) => s + c.debt, 0);
+  const cSuspendedCount = rawClients.filter((c) => c.suspended).length;
+
   const kpis = [
-    { label: 'Active Clients', kind: 'ok' as const, icon: ICONS.users, color: 'var(--text)', value: String(activeClientCount()) },
-    { label: 'Debt Total', kind: 'danger' as const, icon: ICONS.alert, color: 'var(--danger)', value: moneyC(debtTotal()) },
-    { label: 'LOC Suspended', kind: 'warn' as const, icon: ICONS.ban, color: 'var(--text)', value: String(suspendedCount()) },
-    { label: 'Fueled (30d)', kind: 'accent' as const, icon: ICONS.bolt, color: 'var(--text)', value: String(fueledRecentCount()) },
+    { label: 'Active Clients', kind: 'ok' as const, icon: ICONS.users, color: 'var(--text)', value: String(cActiveCount) },
+    { label: 'Debt Total', kind: 'danger' as const, icon: ICONS.alert, color: 'var(--danger)', value: moneyC(cDebtTotal) },
+    { label: 'LOC Suspended', kind: 'warn' as const, icon: ICONS.ban, color: 'var(--text)', value: String(cSuspendedCount) },
+    { label: 'Fueled (30d)', kind: 'accent' as const, icon: ICONS.bolt, color: 'var(--text)', value: String(rawClients.length) },
   ];
 
   const clearFilters = () => {
@@ -71,7 +98,7 @@ export function ClientsTab() {
   return (
     <div className="mf-fu">
       <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px')}>
-        <PageTitle title="Clients" sub={`${all.length} of ${CLIENTS.length} clients${search.trim() || status !== 'all' || flag ? ' · filtered' : ''}`} />
+        <PageTitle title="Clients" sub={`${all.length} of ${rawClients.length} clients${search.trim() || status !== 'all' || flag ? ' · filtered' : ''}`} />
         <RefreshBtn onClick={refresh} spin={spin} />
       </div>
 
@@ -124,9 +151,9 @@ export function ClientsTab() {
               const avFg = c.suspended ? 'var(--danger)' : c.active ? 'var(--accent)' : 'var(--text2)';
               const metaParts = [`#${c.carrier}`, `DOT ${c.dot}`, `${c.city}, ${c.state}`];
               if (c.debt > 0) metaParts.push(`${c.debtDays}d overdue`);
-              const amount = c.debt > 0 ? moneyC(c.debt) : moneyC(creditLimitNum(c));
+              const amount = c.debt > 0 ? moneyC(c.debt) : moneyC(c.creditLimit || 0);
               const amountColor = c.debt > 0 ? 'var(--danger)' : 'var(--muted)';
-              const amountTitle = c.debt > 0 ? `Debt: ${fmtCurrency(c.debt)}` : `Credit limit: ${fmtCurrency(creditLimitNum(c))}`;
+              const amountTitle = c.debt > 0 ? `Debt: ${fmtCurrency(c.debt)}` : `Credit limit: ${fmtCurrency(c.creditLimit || 0)}`;
 
               return (
                 <button

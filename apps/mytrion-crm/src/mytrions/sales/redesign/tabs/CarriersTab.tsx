@@ -2,15 +2,16 @@
  * Sales Mytrion — Carrier Lookup (self-service CarrierSearchPanel parity).
  * Search → client filters (status / has contact / min units) → Create Lead per row
  * with DUPLICATE_DATA → "Already exists ↗" / success → Lead #xxxxxx deep link.
+ *
+ * Fetch 200/500 re-runs the search with that limit (widget `@change="search"`).
  */
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { s, Badge } from '../dc';
 import { Icon } from '../icons';
 import { badge } from '../salesData';
 import { searchCarriers, type CarrierSearchVM } from '../live';
 import { createLeadFromCarrier } from '../carrierLead';
 import { leadShortId, zohoLeadUrl } from '../crmUrls';
-
 
 function statusColor(status: string): string {
   const x = status.toLowerCase();
@@ -69,7 +70,7 @@ function LeadAction(props: {
           `height:34px;padding:0 14px;border-radius:var(--radius-md);border:none;font-weight:700;font-size:12px;display:inline-flex;align-items:center;gap:8px;${
             busy || disabled
               ? 'background:var(--raised);color:var(--faint);cursor:not-allowed'
-              : 'background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;cursor:pointer'
+              : 'background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);cursor:pointer'
           }`,
         )}
       >
@@ -141,6 +142,8 @@ export function CarriersTab() {
   const [fetchLimit, setFetchLimit] = useState<number>(200);
   const [pageSize, setPageSize] = useState<number>(50);
   const [page, setPage] = useState(1);
+  const [totalMatches, setTotalMatches] = useState(0);
+  const [moreRecords, setMoreRecords] = useState(false);
   const [leadLoadingId, setLeadLoadingId] = useState<string | null>(null);
   const [leadResults, setLeadResults] = useState<Record<string, LeadResult>>({});
 
@@ -163,6 +166,11 @@ export function CarriersTab() {
   const pageStart = (safePage - 1) * pageSize;
   const paged = filtered.slice(pageStart, pageStart + pageSize);
 
+  // Keep page state in bounds after filters / page-size shrink the result set.
+  useEffect(() => {
+    if (page !== safePage) setPage(safePage);
+  }, [page, safePage]);
+
   const hasActiveFilters = statusFilter !== 'all' || onlyWithContact || minUnits.trim() !== '';
   const clearFilters = (): void => {
     setStatusFilter('all');
@@ -175,22 +183,36 @@ export function CarriersTab() {
   const carrierEmpty = !carrierSearching && !error && hasSearched && all.length === 0;
   const carrierHas = !carrierSearching && !error && all.length > 0;
 
-  const runCarrierSearch = async (): Promise<void> => {
+  /** `limitOverride` avoids the React setState race when Fetch 200→500 re-runs search. */
+  const runCarrierSearch = async (limitOverride?: number): Promise<void> => {
     const q = carrierQuery.trim();
     if (!q || carrierSearching) return;
+    const limit = limitOverride ?? fetchLimit;
     setCarrierSearching(true);
     setError(null);
     setHasSearched(true);
     setPage(1);
     setLeadResults({});
+    setMoreRecords(false);
     try {
-      setResults(await searchCarriers(q, fetchLimit));
+      const pageRes = await searchCarriers(q, limit);
+      setResults(pageRes.rows);
+      setTotalMatches(pageRes.total);
+      setMoreRecords(pageRes.moreRecords);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Search failed');
       setResults(null);
+      setTotalMatches(0);
+      setMoreRecords(false);
     } finally {
       setCarrierSearching(false);
     }
+  };
+
+  const onFetchLimitChange = (next: number): void => {
+    setFetchLimit(next);
+    // Widget: changing Fetch immediately re-queries with the new window.
+    if (hasSearched && carrierQuery.trim()) void runCarrierSearch(next);
   };
 
   const onCreateLead = async (c: CarrierSearchVM): Promise<void> => {
@@ -224,7 +246,7 @@ export function CarriersTab() {
         >
           Carrier Lookup
         </div>
-        <div style={s('font-size:12.5px;color:var(--muted);margin-top:2px')}>
+        <div style={s('font-size:13px;color:var(--muted);margin-top:2px')}>
           Search by DOT number, company name, or phone — then create a lead when it’s a fit.
         </div>
       </div>
@@ -262,7 +284,7 @@ export function CarriersTab() {
           disabled={carrierSearching || !carrierQuery.trim()}
           className="ss-btn-p"
           style={s(
-            'position:absolute;right:8px;top:8px;height:32px;padding:0 18px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:12.5px;cursor:pointer',
+            'position:absolute;right:8px;top:8px;height:32px;padding:0 18px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:pointer',
           )}
         >
           {carrierSearching ? 'Searching…' : 'Search'}
@@ -314,7 +336,7 @@ export function CarriersTab() {
                   setPage(1);
                 }}
                 style={s(
-                  `display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:99px;border:1px solid ${on ? 'var(--accent)' : 'var(--border)'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:11.5px;font-weight:700;cursor:pointer`,
+                  `display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:99px;border:1px solid ${on ? 'var(--accent)' : 'var(--border)'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:12px;font-weight:700;cursor:pointer`,
                 )}
               >
                 {f.label}
@@ -330,7 +352,7 @@ export function CarriersTab() {
           })}
           <label
             style={s(
-              'display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:99px;border:1px solid var(--border);font-size:11.5px;font-weight:700;color:var(--muted);cursor:pointer;user-select:none',
+              'display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:99px;border:1px solid var(--border);font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;user-select:none',
             )}
           >
             <input
@@ -356,7 +378,7 @@ export function CarriersTab() {
               placeholder="0"
               className="ss-in"
               style={s(
-                'width:72px;height:32px;padding:0 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:12.5px',
+                'width:72px;height:32px;padding:0 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px',
               )}
             />
           </div>
@@ -364,10 +386,12 @@ export function CarriersTab() {
             <span style={s('font-size:11px;color:var(--muted);font-weight:600')}>Fetch</span>
             <select
               value={fetchLimit}
-              onChange={(e) => setFetchLimit(Number(e.currentTarget.value))}
+              onChange={(e) => onFetchLimitChange(Number(e.currentTarget.value))}
+              disabled={carrierSearching}
               className="ss-in"
+              title="How many matches to load from the server (200 or 500)"
               style={s(
-                'height:32px;padding:0 8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:12.5px;cursor:pointer',
+                'height:32px;padding:0 8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px;cursor:pointer',
               )}
             >
               {FETCH_LIMITS.map((l) => (
@@ -382,17 +406,20 @@ export function CarriersTab() {
               type="button"
               onClick={clearFilters}
               style={s(
-                'padding:6px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:transparent;color:var(--muted);font-size:11.5px;font-weight:700;cursor:pointer',
+                'padding:6px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer',
               )}
             >
               Clear
             </button>
           )}
-          <span style={s('margin-left:auto;font-size:11px;color:var(--faint)')}>
+          <span style={s('margin-left:auto;font-size:11px;color:var(--faint);text-align:right')}>
             {filtered.length === 0
               ? '0 carriers'
               : `Showing ${pageStart + 1}–${Math.min(pageStart + pageSize, filtered.length)} of ${filtered.length}`}
             {filtered.length !== all.length ? ` (from ${all.length} loaded)` : ''}
+            {moreRecords && totalMatches > all.length
+              ? ` · ${all.length.toLocaleString()} of ${totalMatches.toLocaleString()} matches — refine your search to narrow`
+              : ''}
           </span>
         </div>
       )}
@@ -425,7 +452,7 @@ export function CarriersTab() {
                 <div style={s('display:flex;align-items:center;gap:14px')}>
                   <div
                     style={s(
-                      'width:52px;height:52px;border-radius:var(--radius-md);background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0',
+                      'width:52px;height:52px;border-radius:var(--radius-md);background:linear-gradient(140deg,var(--accent),var(--accent-2));color:var(--on-accent);display:flex;align-items:center;justify-content:center;flex-shrink:0',
                     )}
                   >
                     <Icon name="carriers" size={24} strokeWidth={1.8} />
@@ -434,7 +461,7 @@ export function CarriersTab() {
                     <div style={s('font-size:16px;font-weight:700')}>{c.owner}</div>
                     <div
                       style={s(
-                        "font-size:11.5px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:3px",
+                        "font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:3px",
                       )}
                     >
                       {c.address || '—'}
@@ -451,22 +478,22 @@ export function CarriersTab() {
                 <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:20px')}>
                   <div style={s('padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
                     <div style={s("font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600")}>{c.dot}</div>
-                    <div style={s('font-size:10.5px;color:var(--muted);margin-top:3px')}>DOT #</div>
+                    <div style={s('font-size:11px;color:var(--muted);margin-top:3px')}>DOT #</div>
                   </div>
                   <div style={s('padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
                     <div style={s("font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:var(--ok)")}>{c.units}</div>
-                    <div style={s('font-size:10.5px;color:var(--muted);margin-top:3px')}>Power Units</div>
+                    <div style={s('font-size:11px;color:var(--muted);margin-top:3px')}>Power Units</div>
                   </div>
                   <div style={s('padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
                     <div style={s("font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:var(--violet)")}>{c.phone}</div>
-                    <div style={s('font-size:10.5px;color:var(--muted);margin-top:3px')}>Phone</div>
+                    <div style={s('font-size:11px;color:var(--muted);margin-top:3px')}>Phone</div>
                   </div>
                   <div style={s('padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
                     <div style={s(`font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600;color:${statusColor(c.status)}`)}>{c.status}</div>
-                    <div style={s('font-size:10.5px;color:var(--muted);margin-top:3px')}>Status</div>
+                    <div style={s('font-size:11px;color:var(--muted);margin-top:3px')}>Status</div>
                   </div>
                 </div>
-                <div style={s('margin-top:16px;font-size:12.5px;color:var(--muted)')}>
+                <div style={s('margin-top:16px;font-size:13px;color:var(--muted)')}>
                   Email: <strong style={s('color:var(--text2)')}>{c.email}</strong>
                 </div>
               </div>

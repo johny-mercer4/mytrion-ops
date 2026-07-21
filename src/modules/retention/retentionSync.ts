@@ -2,19 +2,19 @@
  * Retention case auto-generation — the sync run that replaces the manual daily
  * "source file refresh + sort the Retention List" (SOP steps 1–4):
  *
- *   1. Scan the DWH for frequency-breach candidates (active, non-debtor carriers whose
- *      days-inactive exceed their high/medium/low cadence threshold).
- *   2. Breached carrier WITHOUT an open case → create one (phase 'sales': the deal owner
- *      gets the first window before Retention takes over, per the future workflow).
+ *   1. Scan the DWH for frequency-breach candidates (active, Card-Swiped, non-debtor,
+ *      not Closed Lost / OoB — see dwhRetention exclusions — whose days-inactive exceed
+ *      their high/medium/low cadence threshold).
+ *   2. Breached carrier WITHOUT an open case → create one (phase_1_agent / p1_in_progress).
  *   3. Breached carrier WITH an open case → refresh its DWH metrics in place.
- *   4. Open case whose carrier transacted again after the case opened and is back inside
- *      its threshold → close it as 'returned' (flowchart branch 1). 'citi' is final — those
- *      cases are never auto-closed.
- *
- * Callable from the admin route (manual trigger) and the nightly cron worker. The caller's
- * TenantContext scopes every repo call; the run itself never widens authority.
+ *   4. Open case whose carrier has ANY transaction after the case opened → close as
+ *      p1_returned. phase_3_citi is final — never auto-closed.
  */
-import type { RetentionCase } from '../../db/schema/index.js';
+import {
+  RETENTION_PHASE,
+  RETENTION_STATUS,
+  type RetentionCase,
+} from '../../db/schema/index.js';
 import {
   daysSince,
   fetchCarrierLastTransactions,
@@ -24,11 +24,10 @@ import {
 import { logger } from '../../lib/logger.js';
 import { retentionCaseRepo, type RetentionMetricsInput } from '../../repos/retentionCaseRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
+import { notifyCaseCreated } from './notify.js';
 
 export interface RetentionSyncOptions {
-  /** How long-dead an account may be and still enter the scan (default 45 days). */
   lookbackDays?: number | undefined;
-  /** Max candidates pulled from the DWH per run (default 500, volume-first). */
   limit?: number | undefined;
   now?: Date | undefined;
 }
@@ -43,7 +42,7 @@ export interface RetentionSyncSummary {
 
 function candidateMetrics(c: RetentionCandidate): RetentionMetricsInput {
   return {
-    frequencyClass: c.frequencyClass,
+    transactionFrequency: c.frequencyClass,
     thresholdDays: c.thresholdDays,
     lastTransactionAt: c.lastTransactionAt,
     daysInactive: c.daysInactive,
@@ -53,11 +52,10 @@ function candidateMetrics(c: RetentionCandidate): RetentionMetricsInput {
   };
 }
 
-/** "Returned" check: a transaction newer than the case AND back inside the threshold. */
-function hasReturned(row: RetentionCase, lastTx: Date | undefined, now: Date): boolean {
+/** Any fuel after case creation closes the episode (board constant). */
+function hasReturned(row: RetentionCase, lastTx: Date | undefined, _now: Date): boolean {
   if (!lastTx) return false;
-  const threshold = row.thresholdDays ?? 7;
-  return lastTx.getTime() > row.createdAt.getTime() && daysSince(lastTx, now) <= threshold;
+  return lastTx.getTime() > row.createdAt.getTime();
 }
 
 export async function syncRetentionCases(
@@ -87,31 +85,36 @@ export async function syncRetentionCases(
     breachedIds.add(candidate.carrierId);
     const existing = openByCarrier.get(candidate.carrierId);
     if (existing) {
-      await retentionCaseRepo.update(ctx, existing.id, {
+      await retentionCaseRepo.update(ctx, String(existing.id), {
         metrics: candidateMetrics(candidate),
         lastSyncedAt: now,
       });
       summary.refreshed += 1;
     } else {
-      await retentionCaseRepo.create(ctx, {
+      const created = await retentionCaseRepo.create(ctx, {
         carrierId: candidate.carrierId,
         companyName: candidate.companyName ?? undefined,
         applicationId: candidate.applicationId ?? undefined,
         agentName: candidate.agentName ?? undefined,
-        agentZohoUserId: candidate.agentZohoUserId ?? undefined,
-        phase: 'sales',
-        stage: 'inactive_no_reason',
+        assignedAgentZohoUserId: candidate.agentZohoUserId ?? undefined,
+        phaseCode: RETENTION_PHASE.agent,
+        statusCode: RETENTION_STATUS.p1InProgress,
         source: 'auto',
         metrics: candidateMetrics(candidate),
       });
       summary.created += 1;
+      await notifyCaseCreated(ctx, {
+        caseId: created.id,
+        carrierId: created.carrierId,
+        companyName: created.companyName,
+        assignedAgentZohoUserId: created.assignedAgentZohoUserId,
+        daysInactive: created.daysInactive,
+        thresholdDays: created.thresholdDays,
+      });
     }
   }
 
-  // Returned pass: open, non-final cases whose carrier no longer breaches.
-  const returnCheck = openRows.filter(
-    (row) => row.phase !== 'citi' && !breachedIds.has(row.carrierId),
-  );
+  const returnCheck = openRows.filter((row) => row.phaseCode !== RETENTION_PHASE.citi);
   if (returnCheck.length > 0) {
     const lastTxByCarrier = await fetchCarrierLastTransactions(
       returnCheck.map((row) => row.carrierId),
@@ -119,9 +122,11 @@ export async function syncRetentionCases(
     for (const row of returnCheck) {
       const lastTx = lastTxByCarrier.get(row.carrierId);
       if (!hasReturned(row, lastTx, now)) continue;
-      await retentionCaseRepo.update(ctx, row.id, {
-        status: 'closed',
-        outcome: 'returned',
+      await retentionCaseRepo.update(ctx, String(row.id), {
+        statusCode: RETENTION_STATUS.p1Returned,
+        agentOutcome: 'returned',
+        eventType: 'outcome_recorded',
+        eventNotes: 'Auto-closed: new transaction after case opened',
         metrics: {
           lastTransactionAt: lastTx ?? null,
           daysInactive: lastTx ? daysSince(lastTx, now) : 0,

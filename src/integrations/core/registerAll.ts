@@ -8,11 +8,13 @@
  */
 import { env } from '../../config/env.js';
 import { cmpDb } from '../awsMysql.js';
+import { browserAutomation } from '../browserAutomation.js';
 import { cmp } from '../cmp.js';
 import { dwh } from '../dwh.js';
 import { internalDb } from '../internalDb.js';
 import { ringcentral } from '../ringcentral.js';
 import { serverCrm } from '../serverCrm.js';
+import { zapier } from '../zapier.js';
 import { zohoCrm } from '../zohoCrm.js';
 import { zohoDesk } from '../zohoDesk.js';
 import { zohoPeople } from '../zohoPeople.js';
@@ -28,6 +30,8 @@ export function registerAllWrappers(): void {
   registerWrapper(cmpDb);
   registerWrapper(cmp);
   registerWrapper(serverCrm);
+  registerWrapper(browserAutomation);
+  registerWrapper(zapier);
   registerWrapper(zohoCrm);
   registerWrapper(zohoDesk);
   registerWrapper(zohoPeople);

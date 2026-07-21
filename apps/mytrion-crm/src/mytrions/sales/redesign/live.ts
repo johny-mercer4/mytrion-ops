@@ -1,12 +1,11 @@
 /**
- * Sales Mytrion redesign — live-data adapters. Maps the app's touchpoints + Desk routes onto the
- * exact shapes the redesign tabs render (the same objects that mock.ts used to provide), so each
- * tab swaps `import … from '../mock'` for a `useLoad(loadX)` with loading/error/empty. NO mock/
- * fake data — every array here comes from a real backend call.
+ * Sales Mytrion redesign — live-data adapters. Maps touchpoints + Desk routes onto the shapes
+ * the redesign tabs render. Every array comes from a real backend call (no seed fixtures).
  */
 import { getDeskTicket, listDeskComments, listDeskTickets, type DeskTicket } from '@/api/desk';
 import { getImpersonation } from '@/api/impersonation';
 import { callTouchpoint } from '@/api/touchpoints';
+import { getClients, type AgentClient } from '@/api/dataCenter';
 import { ICO } from './salesData';
 import type { IconName } from './icons';
 
@@ -29,7 +28,11 @@ export const galFmt = (v: unknown): string =>
   n(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
 export const money = (v: unknown): string => {
   const x = n(v);
-  return x < 0 ? `-$${Math.abs(x).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : `$${x.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+  // Avoid "$-0" / "-$0" from signed zero or sub-dollar amounts that round to 0.
+  if (x === 0 || Object.is(x, -0) || Math.abs(x) < 0.5) return '$0';
+  return x < 0
+    ? `-$${Math.abs(x).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+    : `$${x.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 };
 export function relTime(iso: string | undefined): string {
   if (!iso) return '';
@@ -62,9 +65,9 @@ function stripHtml(html: string): string {
 
 // ---- Home: snapshot (dashboard.home_snapshot) ----
 
-/** Week-over-week % change → a display string ("+6%" / "-47%" / "—") + a direction. */
+/** Week-over-week % change → a display string ("+6%" / "-47%" / "0%") + a direction. */
 export function pctChange(cur: number, prev: number): { text: string; dir: 'up' | 'down' | 'flat' } {
-  if (!prev) return cur > 0 ? { text: 'New', dir: 'up' } : { text: '—', dir: 'flat' };
+  if (!prev) return cur > 0 ? { text: 'New', dir: 'up' } : { text: '0%', dir: 'flat' };
   const pct = Math.round(((cur - prev) / prev) * 100);
   if (pct === 0) return { text: '0%', dir: 'flat' };
   return { text: `${pct > 0 ? '+' : ''}${pct}%`, dir: pct > 0 ? 'up' : 'down' };
@@ -85,7 +88,7 @@ export interface SnapshotFields {
   swipes_today: number;
   gallons_today: number;
   new_cards_today: number;
-  /** Week-over-week gallons change, e.g. "+6%" / "-47%" / "—". */
+  /** Week-over-week gallons change, e.g. "+6%" / "-47%" / "0%". */
   volume_trend: string;
   volume_trend_dir: 'up' | 'down' | 'flat';
   /** Fuel-transactions week-over-week caption, e.g. "↑ 6% vs last week". */
@@ -106,7 +109,9 @@ export async function loadSnapshot(): Promise<SnapshotFields> {
   const arrow = tx.dir === 'up' ? '↑' : tx.dir === 'down' ? '↓' : '→';
   // The arrow carries the direction, so strip the sign from the % (no "↓ -29%").
   const fuel_tx_caption =
-    tx.dir === 'flat' || tx.text === '—' ? 'Same as last week' : `${arrow} ${tx.text.replace(/[+-]/, '')} vs last week`;
+    tx.dir === 'flat' || tx.text === '0%'
+      ? 'Same as last week'
+      : `${arrow} ${tx.text.replace(/[+-]/, '')} vs last week`;
   return {
     active_clients: g('active_clients'),
     inactive_clients: g('inactive_clients'),
@@ -238,7 +243,7 @@ export async function loadActivity(range: 'today' | 'week' | 'month'): Promise<A
   };
 }
 
-// ---- Data Center / Carriers / Dashboard: clients (clients.by_agent) → RECORDS shape ----
+// ---- Data Center → Clients: the DWH roster (GET /data-center/clients) → RECORDS shape ----
 
 export interface RecordVM {
   id: string;
@@ -248,66 +253,59 @@ export interface RecordVM {
   phone: string;
   cards: number;
   active: number;
-  /** This billing-cycle gallons (from dashboard.agent_sales transactions.volume). */
+  /** This billing-cycle gallons (DWH roster query — mart_transaction_line_items, 26th→25th cycle). */
   gallons: string;
+  /** Raw billing-cycle gallons (numeric) — drives the loyalty tier level. */
+  cycleGallons: number;
   status: 'active' | 'attention' | 'debtor';
   mc: string;
   dot: string;
+  /** Real per-calendar-month loyalty inputs (DWH via /data-center/clients). Zero when the client had
+   *  no transactions that month. Drive the tier from THESE — never the formatted `gallons` string
+   *  (cycle) or `active`/`cards` (all-time). */
+  gallonsThisMonth: number;
+  activeCardsThisMonth: number;
+  transactionsThisMonth: number;
+  gallonsPrevMonth: number;
+  activeCardsPrevMonth: number;
 }
-const truthy = (v: unknown): boolean =>
-  v === true || v === 1 || ['1', 'true', 't', 'yes'].includes(String(v ?? '').toLowerCase());
 
-function mapRecord(c: Record<string, unknown>, cycleGallonsByCarrier: Map<string, number>): RecordVM {
-  const debt = n(c.computed_debt);
-  const days = n(c.computed_debt_days);
-  const suspended = truthy(c.is_loc_suspended);
-  const active = truthy(c.computed_is_active);
-  const status: RecordVM['status'] = (debt >= 1 && days >= 2) || suspended ? 'debtor' : active ? 'active' : 'attention';
-  const carrierId = String(c.carrier_id ?? '');
+/** DWH roster row → the card/list view-model. Debt/active/gallons are already computed + typed
+ *  server-side (dim_company + mart + cmp_invoice), so this is a straight field map. */
+function mapRecord(c: AgentClient): RecordVM {
+  const status: RecordVM['status'] =
+    (c.computedDebt >= 1 && c.computedDebtDays >= 2) || c.isLocSuspended
+      ? 'debtor'
+      : c.computedIsActive
+        ? 'active'
+        : 'attention';
   return {
-    id: carrierId,
-    name: String(c.company_name ?? '(unnamed)'),
-    carrier: `CR-${c.carrier_id ?? ''}`,
-    contact: String(c.deal_full_name ?? c.contact_name ?? c.agent ?? '—'),
-    phone: String(c.deal_phone ?? c.contact_phone ?? '—'),
-    cards: n(c.total_produced_cards ?? c.total_active_cards),
-    active: n(c.total_active_cards),
-    // Cycle gallons from dashboard.agent_sales `transactions` (full-cycle per-carrier volume).
-    gallons: galFmt(cycleGallonsByCarrier.get(carrierId) ?? 0),
+    id: c.carrierId,
+    name: c.companyName,
+    carrier: `CR-${c.carrierId}`,
+    contact: c.contact,
+    phone: c.phone,
+    cards: c.producedCards,
+    active: c.activeCards,
+    gallons: galFmt(c.cycleGallons),
+    cycleGallons: c.cycleGallons,
     status,
-    mc: String(c.deal_money_code ?? c.comdata_id ?? '—'),
-    dot: String(c.dot ?? '—'),
+    mc: c.moneyCode,
+    dot: c.dot,
+    gallonsThisMonth: c.gallonsThisMonth,
+    activeCardsThisMonth: c.activeCardsThisMonth,
+    transactionsThisMonth: c.transactionsThisMonth,
+    gallonsPrevMonth: c.gallonsPrevMonth,
+    activeCardsPrevMonth: c.activeCardsPrevMonth,
   };
 }
 
-/**
- * carrier_id → this-cycle gallons. `dashboard.agent_sales`'s `transactions` rows are full-cycle
- * per-carrier totals by default (same source as the Sales Dashboard TX table). Best-effort: a
- * failed fetch just means Clients cards show 0 gallons, not a broken tab.
- */
-async function loadCycleGallonsByCarrier(): Promise<Map<string, number>> {
-  const map = new Map<string, number>();
-  try {
-    const res = await callTouchpoint('dashboard.agent_sales', {});
-    if (res.success === false) return map;
-    for (const row of res.data?.transactions ?? []) {
-      const id = row.carrier_id != null ? String(row.carrier_id) : '';
-      if (!id) continue;
-      // Prefer `volume`; fall back to alternate keys some dashboard payloads use.
-      const vol = n(row.volume ?? row.gallons ?? row.total_volume);
-      map.set(id, vol);
-    }
-  } catch {
-    /* best-effort */
-  }
-  return map;
-}
 export async function loadRecords(): Promise<RecordVM[]> {
-  const [res, cycleGallonsByCarrier] = await Promise.all([
-    callTouchpoint('clients.by_agent', {}),
-    loadCycleGallonsByCarrier(),
-  ]);
-  return (res.data ?? []).map((c) => mapRecord(c as Record<string, unknown>, cycleGallonsByCarrier));
+  // ONE DWH query (dim_company + mart_transaction_line_items + cmp_invoice) returns the whole roster:
+  // metadata + computed debt/activity overlays + cycle/this-month/prev-month gallons. Replaces the
+  // servercrm by-agent roster (dropped its live-CMP HTTP overlay) AND the separate loyalty/dashboard
+  // round-trips — one call now backs the Clients tab.
+  return (await getClients()).map(mapRecord);
 }
 
 // ---- Dashboard (dashboard.agent_sales) ----
@@ -368,26 +366,54 @@ export interface CarrierSearchVM {
   addDate: string;
   changeDate: string;
 }
-export async function searchCarriers(query: string, limit = 200): Promise<CarrierSearchVM[]> {
+export interface CarrierSearchPage {
+  rows: CarrierSearchVM[];
+  /** Full match count from servercrm (may exceed rows.length). */
+  total: number;
+  /** True when the backend has more rows than this fetch window returned. */
+  moreRecords: boolean;
+}
+
+function mapCarrierSearchRow(c: {
+  id?: string | number;
+  dot_number?: string | number;
+  owner_full_name?: string;
+  phone_number?: string;
+  email?: string;
+  operating_status?: string;
+  power_units?: number | string;
+  physical_address?: string;
+  truck_size?: string | number;
+  add_date?: string;
+  change_date?: string;
+}): CarrierSearchVM {
+  const dot = c.dot_number != null && String(c.dot_number) !== '' ? String(c.dot_number) : '—';
+  const id = c.id != null && String(c.id) !== '' ? String(c.id) : `dot:${dot}`;
+  return {
+    id,
+    dot,
+    owner: String(c.owner_full_name ?? '—'),
+    phone: String(c.phone_number ?? '—'),
+    email: String(c.email ?? '—'),
+    status: String(c.operating_status ?? 'unknown'),
+    units: String(c.power_units ?? '—'),
+    unitsNum: typeof c.power_units === 'number' ? c.power_units : Number(c.power_units) || 0,
+    address: String(c.physical_address ?? ''),
+    truckSize: c.truck_size != null ? String(c.truck_size) : '',
+    addDate: c.add_date ? String(c.add_date).slice(0, 10) : '',
+    changeDate: c.change_date ? String(c.change_date).slice(0, 10) : '',
+  };
+}
+
+export async function searchCarriers(query: string, limit = 200): Promise<CarrierSearchPage> {
   const res = await callTouchpoint('sales.carriers_search', { query, limit });
-  return (res.carriers ?? []).map((c) => {
-    const dot = c.dot_number != null && String(c.dot_number) !== '' ? String(c.dot_number) : '—';
-    const id = c.id != null && String(c.id) !== '' ? String(c.id) : `dot:${dot}`;
-    return {
-      id,
-      dot,
-      owner: String(c.owner_full_name ?? '—'),
-      phone: String(c.phone_number ?? '—'),
-      email: String(c.email ?? '—'),
-      status: String(c.operating_status ?? 'unknown'),
-      units: String(c.power_units ?? '—'),
-      unitsNum: typeof c.power_units === 'number' ? c.power_units : Number(c.power_units) || 0,
-      address: String(c.physical_address ?? ''),
-      truckSize: c.truck_size != null ? String(c.truck_size) : '',
-      addDate: c.add_date ? String(c.add_date).slice(0, 10) : '',
-      changeDate: c.change_date ? String(c.change_date).slice(0, 10) : '',
-    };
-  });
+  const rows = (res.carriers ?? []).map(mapCarrierSearchRow);
+  const total = Number(res.total);
+  return {
+    rows,
+    total: Number.isFinite(total) && total > 0 ? total : rows.length,
+    moreRecords: !!res.more_records,
+  };
 }
 
 // ---- Tickets (Zoho Desk) → TICKETS / TICKET_MSGS shape ----

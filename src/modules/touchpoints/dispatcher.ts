@@ -10,8 +10,13 @@
  */
 import { env } from '../../config/env.js';
 import { AppError, NotFoundError, RBACError } from '../../lib/errors.js';
+import {
+  browserAutomationRequest,
+  BrowserAutomationHttpError,
+} from '../../integrations/browserAutomation.js';
 import { executeZohoFunctionWithFallback } from '../../integrations/zohoFunctions.js';
 import { serverCrmRequest, ServerCrmHttpError } from '../../integrations/serverCrm.js';
+import { zapier, ZapierHttpError } from '../../integrations/zapier.js';
 import {
   assertCarrierOwned,
   resolveAgentName,
@@ -19,7 +24,12 @@ import {
 } from '../tools/serverCrmScope.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { getTouchpoint, listTouchpoints } from './catalog/index.js';
-import type { ServerCrmTouchpoint, Touchpoint, TouchpointResult } from './types.js';
+import type {
+  BrowserAutoTouchpoint,
+  ServerCrmTouchpoint,
+  Touchpoint,
+  TouchpointResult,
+} from './types.js';
 
 const DEFAULT_DEPARTMENTS = ['sales'] as const;
 
@@ -80,7 +90,7 @@ function injectIdentity(
  * query (GET) or JSON body (POST). Every placeholder must resolve to a value.
  */
 export function buildServerCrmCall(
-  tp: ServerCrmTouchpoint,
+  tp: Pick<ServerCrmTouchpoint, 'pathTemplate'> | Pick<BrowserAutoTouchpoint, 'pathTemplate'>,
   params: Record<string, unknown>,
 ): { path: string; leftovers: Record<string, unknown> } {
   const leftovers = { ...params };
@@ -133,7 +143,8 @@ async function executeServerCrm(
     if (err instanceof ServerCrmHttpError) {
       // Client-ish upstream statuses pass through (the message is agent-actionable, e.g.
       // a 422 money-code "insufficient available"); auth/server failures become our 502.
-      if ([400, 404, 409, 422].includes(err.status)) {
+      // 502 included: money-code void fails closed when EFS is unreachable (retryable).
+      if ([400, 404, 409, 422, 502].includes(err.status)) {
         throw new AppError(err.bodyText || `servercrm rejected the request (${err.status})`, {
           statusCode: err.status,
           code: 'SERVER_CRM_REJECTED',
@@ -163,6 +174,109 @@ async function executeServerCrm(
   return data;
 }
 
+async function executeBrowserAuto(
+  tp: BrowserAutoTouchpoint,
+  params: Record<string, unknown>,
+): Promise<unknown> {
+  const { path, leftovers } = buildServerCrmCall(tp, params);
+  let data: unknown;
+  try {
+    data = await browserAutomationRequest('POST', path, { body: leftovers });
+  } catch (err) {
+    if (err instanceof BrowserAutomationHttpError) {
+      if ([400, 404, 409, 422].includes(err.status)) {
+        throw new AppError(err.bodyText || `browser-automation rejected the request (${err.status})`, {
+          statusCode: err.status,
+          code: 'BROWSER_AUTO_REJECTED',
+          expose: true,
+          cause: err,
+        });
+      }
+      throw new AppError('browser-automation request failed', {
+        statusCode: 502,
+        code: 'BROWSER_AUTO_ERROR',
+        expose: true,
+        cause: err,
+      });
+    }
+    throw err;
+  }
+  if (isRecord(data) && data.success === false) {
+    const message =
+      typeof data.message === 'string' && data.message
+        ? data.message
+        : typeof data.error === 'string' && data.error
+          ? data.error
+          : 'browser-automation rejected the request';
+    throw new AppError(message, { statusCode: 422, code: 'BROWSER_AUTO_REJECTED', expose: true });
+  }
+  return data;
+}
+
+async function executeZapier(params: Record<string, unknown>): Promise<unknown> {
+  let data: unknown;
+  try {
+    data = await zapier.postTicketEmail(params);
+  } catch (err) {
+    if (err instanceof ZapierHttpError) {
+      if ([400, 404, 409, 422].includes(err.status)) {
+        throw new AppError(err.bodyText || `Zapier rejected the request (${err.status})`, {
+          statusCode: err.status,
+          code: 'ZAPIER_REJECTED',
+          expose: true,
+          cause: err,
+        });
+      }
+      throw new AppError('Zapier webhook request failed', {
+        statusCode: 502,
+        code: 'ZAPIER_ERROR',
+        expose: true,
+        cause: err,
+      });
+    }
+    throw err;
+  }
+  // Zapier replies { status: "success" }. Treat an explicit non-success as failure.
+  if (isRecord(data) && data.status && String(data.status).toLowerCase() !== 'success') {
+    const message =
+      typeof data.message === 'string' && data.message
+        ? data.message
+        : typeof data.error === 'string' && data.error
+          ? data.error
+          : 'Request was not accepted.';
+    throw new AppError(message, { statusCode: 422, code: 'ZAPIER_REJECTED', expose: true });
+  }
+  return data;
+}
+
+async function executeTouchpointKind(
+  ctx: TenantContext,
+  tp: Touchpoint,
+  params: Record<string, unknown>,
+): Promise<unknown> {
+  switch (tp.kind) {
+    case 'deluge':
+      return executeZohoFunctionWithFallback(tp.functionNames, params, { unwrap: tp.unwrap });
+    case 'servercrm':
+      return executeServerCrm(tp, params);
+    case 'browserauto':
+      return executeBrowserAuto(tp, params);
+    case 'zapier':
+      return executeZapier(params);
+    case 'local':
+      return tp.handler(ctx, params);
+    default: {
+      const _exhaustive: never = tp;
+      throw new AppError(`Unsupported touchpoint kind`, {
+        statusCode: 500,
+        code: 'INTERNAL_ERROR',
+        expose: false,
+        cause: _exhaustive,
+      });
+    }
+  }
+}
+
 export async function dispatchTouchpoint(
   ctx: TenantContext,
   key: string,
@@ -186,9 +300,6 @@ export async function dispatchTouchpoint(
     await assertCarrierOwned(ctx, String(carrier));
   }
 
-  const data =
-    tp.kind === 'deluge'
-      ? await executeZohoFunctionWithFallback(tp.functionNames, params, { unwrap: tp.unwrap })
-      : await executeServerCrm(tp, params);
+  const data = await executeTouchpointKind(ctx, tp, params);
   return { key: tp.key, kind: tp.kind, data };
 }
