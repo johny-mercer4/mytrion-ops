@@ -4006,3 +4006,195 @@ Verify: retention unit tests + typecheck green. Not committed.
 - Confirmed live columns: `pool_owner_zoho_user_id`, `pending_claimant_zoho_user_id`.
 - Restarted local API (`tsx watch src/server.ts` on :3001) so inline jobs + WS use
   the new schema.
+
+### 2026-07-20 — Notification tizimi N-0: outbox + pg-boss dispatcher (poydevor)
+
+Ultraplan (Analitika/notification_system_ultraplan.md) N-0 bosqichi:
+- Schema: mini_app_notifications (outbox: dedupe_key UNIQUE = fakt boshiga bitta qator,
+  payload'da FAQAT template kirishlari — last6 qoidasi, money-code qiymati saqlanmaydi) +
+  mini_app_notification_prefs (qator yo'q = yoqiq). drizzle.config ro'yxatiga qo'shildi;
+  MIGRATSIYA HALI GENERATSIYA QILINMAGAN — esbuild darwin binary VM'da ishlamaydi,
+  Mac'da: corepack pnpm db:generate && pnpm db:migrate.
+- modules/notifications/: registry.ts (11 tur — rol-matritsa BITTA joyda), templates.ts
+  (4 til, hozircha 'en' render — registratsiyada language_code yig'ish backlog),
+  service.ts (notifyMiniApp: insert + pg-boss enqueue, jobs o'chiq bo'lsa inline fallback;
+  dispatchMiniAppNotification: idempotent 'new'-only, rol filtri, driver o'z kartasi
+  fail-closed, prefs, faqat 0-yetkazishda retry — partial fan-out hech qachon takrorlanmaydi).
+- jobs: notification.dispatch (retryLimit 4, backoff, dead-letter) + worker registratsiyasi.
+- Birinchi caller: override bot receipt endi outbox orqali (sendPlainReply import route'dan
+  olib tashlandi). Xatti-harakat ekvivalent, ortiga tarix qatori qo'shildi.
+Keyingi (N-1): card_status diff poller + money_code event, pilot flag per-carrier.
+
+### 2026-07-20 — N-2: client_news + Inbox real feed + mavjud WebSocket hub'ga ulanish
+
+Jadval nomlari saqlanib qoldi (owner qarori: rename shart emas) — mini_app_notifications /
+mini_app_notification_prefs, YANGI: client_news + client_news_reads (0032_client_news.sql,
+qo'lda, IF NOT EXISTS).
+
+- client_news: title/body per-locale jsonb (en majburiy), audience_scope 'all'|'carriers'
+  (+carrier_ids), roles owner/driver, severity info|important, pinned, publish/expires oynasi.
+  O'qish DOIM caller'ning verified registration'i orqali filtrlanadi (listNewsForRegistration) —
+  bitta klientga yozilgan post boshqasiga sizib chiqmaydi. important+carriers → notification
+  outbox orqali bot push (type 'news'); 'all' uchun bot-blast ATAYIN yo'q (digest keyin).
+- Muallif: /v1/client-news (POST admin RBAC + audit, GET list) — zoho-octane widget/skript uchun.
+- Mini-app: POST /carrier/mini-app/inbox — ikkala tab bitta chaqiriqda (news + notifications;
+  driver slice dispatcher routing'ining aynan o'zi, fail-closed); /inbox/news-read receipt.
+- Realtime: MAVJUD hub'ga ulandik — topic grammatikasiga inbox:miniapp:<telegramUserId>,
+  GET /carrier/mini-app/realtime (websocket, initData auth, subscribe-only, faqat o'z topic'i).
+  Dispatcher muvaffaqiyatli send'dan keyin hub.publish qiladi (split worker deploy'da 0 —
+  hub'ning o'z scope-note pozitsiyasi, keyingi fetch'da baribir keladi).
+- Frontend: Inbox endi real (feedToInbox: news locale-pick + notifications client-side render,
+  demo seed faqat fetch yiqilganda fallback), WS live append, news o'qilganda read-receipt.
+- Eslatmalar: (1) Mac'da corepack pnpm db:migrate (0031+0032). (2) _to_delete/ ichidagi
+  eski fayllarni o'chirish. (3) drv uchun notification unread holati client-side (localStorage
+  emas, sessiya ichida) — per-user server read state N-3 prefs UI bilan birga.
+
+### 2026-07-20 — mytrion-crm: Client News muharriri (Admin → Client News tab)
+
+- apps/mytrion-crm/src/mytrions/admin/ClientNews.tsx (+module.css, +api/clientNews.ts):
+  professional composer + feed. Rich-text: dependency'siz contentEditable + whitelist toolbar
+  (B/I/U, H3/¶, ro'yxatlar, link, clear) — UX xolos, XAVFSIZLIK server tomonda:
+  modules/notifications/richText.ts sanitizer (whitelist b/i/u/p/br/ul/ol/li/h3/a; a faqat
+  http(s)/mailto href + noopener; title'lar plain-textga stripping) create route'da qo'llanadi.
+- Composer: 4 til tab (EN majburiy, to'ldirilganlar • bilan), auditoriya All / Specific carriers
+  (ClientCombobox reuse + chip'lar), rol pillari Owner/Driver, Delivery: Inbox-only /
+  Important (bot push) / Pinned. Feed: pill'lar bilan post kartalari, EN body render.
+- Mini-app InboxTab: news body endi rich render (RichBody — DOMParser bilan client-side
+  qayta-sanitize, defense-in-depth; .rich-news tipografiyasi global.css'da). Notification'lar
+  plain-text yo'lida qoladi.
+- Eslatma: mytrion-crm'da BIZDAN OLDIN mavjud tsc xatolar bor (sonner moduli, unused importlar) —
+  root node_modules bilan tekshirilgani uchun bo'lishi mumkin; Mac'da app'ning o'z
+  node_modules'i bilan `pnpm --dir apps/mytrion-crm typecheck` haqiqiy natijani beradi.
+  ClientNews fayllari xatosiz.
+
+### 2026-07-20 — N-1: card_status diff poller + money code eventi
+
+- 0033_notification_state.sql: mini_app_notification_state (scope PK + jsonb watermark) —
+  poller restart'da qayta-notify qilmaydi; scope'ning BIRINCHI o'tishi faqat baseline yozadi
+  (mavjud kartalar bo'yicha portlatmaydi). Mac'da: corepack pnpm db:migrate.
+- pollers.ts runCardStatusPoll: NOTIFY_POLL_CARRIERS (env, bo'sh = no-op) dagi har carrier
+  uchun servercrm getCards snapshot vs watermark diff → card_status event (last6, prev,
+  status, cardId — cardId findDwhCardByNumber orqali best-effort; topilmasa owner eshitadi,
+  driver nusxasi fail-closed o'tib ketadi). Bitta carrier xatosi qolganlarini to'xtatmaydi.
+- Jobs: notification.poll (singleton, */2 daqiqa cron, overlap yo'q) + worker registratsiya.
+- money-code draw: muvaffaqiyatli draw'dan keyin type 'money_code' notification (qiymat
+  XABARDA YO'Q — registry qoidasi, "mini-app'ni oching").
+- Pilot yoqish: .env'da NOTIFY_POLL_CARRIERS=<OnzmoveCarrierId> + FF_JOBS_ENABLED=1 (worker
+  rejimiga qarab). O'chirish: bo'sh qoldirish.
+
+### 2026-07-20 — News: rasm dastagi + "Octane mobile app" e'loni
+
+- Rich-text whitelist'ga <img> qo'shildi (server richText.ts: faqat https src + alt, boshqa
+  atribut o'tmaydi; mini-app InboxTab client sanitizer'i ham mos). CRM editorda 🖼 tugma
+  (https URL bilan insertImage). CSS: max-width 100%, radius (mini-app + CRM preview).
+- scripts/post-news-octane-mobile-app.sh: hamma klientlarga (owner+driver, pinned, 4 til)
+  Octane Fuel mobil ilova e'loni — App Store artwork (mzstatic og:image), ikkala do'kon linki.
+  Ishga tushirish: BASE=... API_KEY=$OCTANE_INTERNAL_API_KEY ./scripts/post-news-octane-mobile-app.sh
+  Yoki CRM Admin → Client News editor orqali qo'lda.
+
+### 2026-07-21 — Notification audit + caveat'larni yopish (multi-lang + queue bug)
+
+Notification tizimi (N-0/N-1/N-2) auditi. Backend typecheck 0, 758 test yashil, lint toza
+(o'zgartirilgan fayllar). Caveat holati: (1) migratsiya generatsiyasi — YOPILDI (0031-0033
+qo'lda, journaled, DB'da mavjud, db:migrate yashil); (2) _to_delete/ — YO'Q (tozalangan);
+(3) drv unread server-state — N-3'ga qoldirilgan (kelasi faza, bug emas); (4) CRM tsc 25 xato —
+hammasi BIZDAN oldingi (icons/Jobs/DashboardTab…), ClientNews fayllari toza.
+
+**Caveat #2 (multi-lang) — TO'LIQ YOPILDI.** Ilgari templates.ts 4 til bor edi lekin dispatcher
+har doim 'en' render qilardi (registratsiya language_code'ni saqlamas edi). Endi:
+- `registered_mini_app_companies.language_code` ustuni (migratsiya `0034_registration_language.sql`,
+  ADD COLUMN IF NOT EXISTS, journal idx 34, DB'ga qo'llandi). `TelegramWebAppUser.language_code`
+  qo'shildi (Telegram initData'da keladi).
+- Redeem + driver self-register upsert'lari tgUser.language_code'ni yozadi; qayta-ochishda
+  bo'sh kelsa eski qiymat saqlanadi (COALESCE-keep, dev mock lang'siz ochsa yo'qotmaydi).
+- service.ts dispatch: `renderNotification(spec.templateKey, reg.languageCode, payload)`.
+  `normalizeLang()` har qanday IETF tag'ni (ru/uz-Cyrl/pt-BR) qo'llab-quvvatlanadigan tilga maplaydi,
+  fallback 'en'.
+- News per-recipient locale: outbox payload endi TO'LIQ LocalizedText map'ini saqlaydi
+  ({en,ru,uz,es}), .en emas. renderNotification (bot) va App.tsx notifToInbox (FE inbox) ikkalasi
+  ham payload slot'idan recipient tilini tanlaydi (object → locale-pick, string fallback eski
+  qatorlar uchun). Bitta outbox qatori har recipient tilida to'g'ri render bo'ladi.
+- Test: `tests/unit/notification-templates.test.ts` (6 test — normalizeLang + render locale-pick).
+
+**BUG topildi va tuzatildi (jobs).** `notification.dispatch` + `notification.poll` queue'lari
+`ALL_JOBS`'da YO'Q edi → boss.ts createQueue() ularni provizatsiya qilmasdi → FF_JOBS_ENABLED=1
+bo'lganda dispatch enqueue prod'da xato berardi (dev inline fallback buni yashirgan). Test
+`jobs-catalog: every cron schedule points at a defined queue` yiqilgani shu bugni ushladi.
+Tuzatish: ikkala job'ni ALL_JOBS'ga qo'shildi.
+
+Verified: mini-app ?dev=1&lang=ru → RU render; dev mock-init-data language_code=ru'ni qaytaradi;
+backend hot-reload toza. Local dev: `pnpm dev:all` backend+CRM; mini-app alohida `pnpm -C
+apps/mini-app dev` (:5174), ?dev=1 mock Telegram identity.
+
+### 2026-07-21 — N-3: notification read-state server-persisted + inbox 500 bug tuzatildi
+
+Caveat #4 YOPILDI. Ilgari notification unread holati faqat client-side (sessiya ichida) edi —
+reload/relaunch'da badge tiklanardi. Endi news bilan bir xil server-persisted:
+- Jadval `mini_app_notification_reads` (notification_id + telegram_user_id, unique) — client_news_reads
+  nusxasi. Notification bir necha user'ga fan-out bo'lgani uchun read holati per-user (outbox
+  qatoridagi ustun emas). Migratsiya `0035_notification_reads.sql` (journal idx 35, DB'ga qo'llandi).
+- service.ts: `markNotificationRead(tgUserId, notifId)` (idempotent, faqat caller'ning o'z receipt'i,
+  ownership risk yo'q) + `readNotificationIds(tgUserId, ids)` (badge uchun Set).
+- Inbox route: ko'rinadigan slice uchun read holatini so'raydi, har notification'ga `read` maydoni
+  qo'shadi. Yangi endpoint `POST /carrier/mini-app/inbox/notification-read`. Hub live-push ham
+  `read:false` yuboradi.
+- FE (api.ts + App.tsx): InboxNotification.read; notifToInbox `unread: !n.read`; markAllRead + readNotif
+  endi man_ id'lar uchun apiMarkNotificationRead chaqiradi (nws_ = news, man_ = notification,
+  gen- = client-only). 
+
+**BUG (blocking) topildi + tuzatildi:** listNewsForRegistration `sql\`${clientNews.publishAt} <= ${now}\``
+postgres.js driver'da RAW Date bind qila olmaydi → inbox endpoint HAR DOIM 500 berardi ("Received an
+instance of Date"). FE fetch fail'da demo seed'ga tushgani uchun "real inbox" ko'rinishda ishlab
+turgandek edi. Tuzatish: drizzle `lte(clientNews.publishAt, now)`. Notification kodida boshqa
+Date-in-sql interpolatsiya yo'q (attempts+1 lar faqat ustun).
+
+Verified E2E (jonli backend): seed registration+sent notification → inbox read:false → notification-read
+→ inbox read:true (server-persisted). Typecheck backend+mini-app 0, 758 test yashil, lint toza.
+
+### 2026-07-20 — Hamroh promo bot: mytrion tomoni (support-bot fasadi) + deep-link actions
+
+Qaror: hamroh (Telegram agent harness, ~/Projects/Octane/AI/hamroh) HOZIR mini-app targ'ibot
+boti, keyin support agent. Arxitektura: instance-per-carrier (bitta Claude sessiyasi hamma
+chatlarni ko'radi — cross-client izolyatsiya faqat alohida konteyner bilan), toollar
+carrierId'ni env'dan oladi, writes minimal.
+
+mytrion tomonida yangi: src/routes/v1/supportBot.routes.ts (/v1/support-bot/*):
+- POST /override — DRIVER-ONLY, telegramUserId → registration lookup (active + carrier ==
+  bot env carrier, fail-closed), requireDriverCardNumber bilan o'z kartasi, mini-app bilan
+  BIR XIL flag/rate/audit/notification (override receipt). Owner → 403 "mini-app'da".
+- GET /access?carrierId — active registrationlar ro'yxati; hamroh scripts/
+  sync_octane_access.py shu bilan access.json'ni yangilaydi (bitta identity manba:
+  mini-app'da revoke = botda ham yo'qoladi).
+Mini-app: ?startapp=go-<action> deep-linklar (override/moneycode/funds/txns/pinunit/status/
+invoices) — ro'yxatdan o'tgan user to'g'ri sheet'da ochadi; go-* registration-id yo'liga
+sizmaydi. Hamroh repo'da: prompts/project.md.octane (promo persona, intent→pointer jadvali,
+anti-spam qoidalar), skills/octane-promo, tools/octane/octane_override.py (model argumentiga
+ishonmaydi: sender oxirgi 5 daqiqada shu chatda yozganini DB'dan tekshiradi, qolganini
+backend qayta-verify qiladi).
+
+### 2026-07-20 — Support-bot RBAC yuzasi (mytrion, to'liq server-side)
+
+supportBot.routes.ts qayta yozildi — YAGONA gate resolveCaller(carrierId, telegramUserId):
+active registration + carrier == bot instansiyasi env carrier (fail-closed; boshqa kompaniya
+useri "not registered" bilan bir xil ko'rinadi — probing yo'q). ROL registration'dan, hech
+qachon so'rovdan emas. Endpointlar:
+- /whoami — rol/ism/kompaniya (bot muomala uchun)
+- /card-status — driver: faqat o'z kartasi qatori; owner: fleet statuslari (30 cap)
+- /funds — owner: real raqamlar (efs_balance, credit); driver: FAQAT boolean + o'z karta statusi
+- /txn-report — hisobot so'ragan odamning O'Z bot-DM'iga fayl (guruhga EMAS — fleet raqamlari
+  guruh a'zolariga ko'rinmasin); driver: o'z kartasi + retail majburiy; owner: to'liq
+- /override — driver-only, o'z kartasi, mini-app bilan bir xil flag/rate/audit/receipt
+- /access — hamroh access.json sync manbai
+Read rate: 30/daq/carrier, write: 5/daq. Hamma javob shakli rolga qarab server tomonda
+kesilgan — model/bot hech narsani kengaytira olmaydi. Hamroh toollari keyingi qadam
+(octane_override naqshi bo'yicha: sender-verify + shu endpointlar).
+
+### 2026-07-20 — Hamroh → apps/agent-telegram-bot (monorepo'ga ko'chirildi)
+
+Hamroh source apps/agent-telegram-bot/ ga nusxalandi (.git/.env/data'siz; upstream 2026-07).
+Octane qatlami: tools/octane/ endi 5 ta tool (_client.py umumiy: env cfg + backend POST +
+sender-verify) — whoami, card_status, funds, txn_report, override. Hammasi mytrion
+/v1/support-bot/* RBAC yuzasiga boradi; rol/carrier server tomonda. OCTANE.md — to'liq
+setup (instance-per-carrier, env'lar, ishga tushirish, invariantlar, upstream farqlar).
+Eslatma: ~/Projects/Octane/AI/hamroh dagi asl nusxada qolgan tools/octane/octane_override.py
+va boshqalar endi dublikat — asl repo tozalanishi mumkin (yoki upstream-only qoldiriladi).
