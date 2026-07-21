@@ -163,6 +163,11 @@ export const NAVLABEL: Record<string, string> = {
 
 const NY_TZ = 'America/New_York';
 
+/** Sales-floor workday window (New York hours). The bar, %, and endpoint labels all derive from
+ *  these — change here and the HomeTab labels follow, so the math and the text can't drift. */
+export const WORKDAY_START_HOUR = 10; // 10:00 AM ET
+export const WORKDAY_END_HOUR = 19; //  7:00 PM ET
+
 /**
  * yyyy-MM-dd for `n` days before "today" on the NY calendar — the sales floor's day, not the
  * viewer's or UTC (toISOString-based dates showed "tomorrow" for late-evening ET users).
@@ -238,20 +243,22 @@ export function timeParts(now: Date = new Date()) {
   const h = Number(p.find((x) => x.type === 'hour')?.value ?? '0') % 24;
   const min = Number(p.find((x) => x.type === 'minute')?.value ?? '0');
   const tod = h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
-  const startMin = 9 * 60;
-  const endMin = 18 * 60;
+  const startMin = WORKDAY_START_HOUR * 60;
+  const endMin = WORKDAY_END_HOUR * 60;
+  const span = endMin - startMin;
   const rawMin = h * 60 + min;
   const before = rawMin < startMin;
   const overtime = rawMin > endMin;
   const clamped = Math.max(startMin, Math.min(endMin, rawMin));
-  const pct = before ? 0 : overtime ? 100 : Math.round(((clamped - startMin) / (endMin - startMin)) * 100);
+  const pct = before ? 0 : overtime ? 100 : Math.round(((clamped - startMin) / span) * 100);
 
+  // Phase thresholds as fractions of the workday so they track the window (not fixed clock hours).
   let phase: WorkdayPhase;
   if (before) phase = 'pre';
   else if (overtime) phase = 'overtime';
-  else if (rawMin < 12 * 60) phase = 'morning';
-  else if (rawMin < 15 * 60) phase = 'midday';
-  else if (rawMin < 17 * 60) phase = 'afternoon';
+  else if (rawMin < startMin + span * 0.33) phase = 'morning';
+  else if (rawMin < startMin + span * 0.55) phase = 'midday';
+  else if (rawMin < startMin + span * 0.78) phase = 'afternoon';
   else phase = 'closing';
 
   const styleDef = WORKDAY_STYLE[phase];

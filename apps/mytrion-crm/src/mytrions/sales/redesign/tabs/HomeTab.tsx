@@ -15,7 +15,7 @@ import { getImpersonation } from '@/api/impersonation';
 import { useImpersonation } from '@/context/ImpersonationProvider';
 import { s, clickable } from '../dc';
 import { Icon, type IconName } from '../icons';
-import { ICO, iconBox, badge, deptStyle, timeParts } from '../salesData';
+import { ICO, iconBox, badge, deptStyle, timeParts, WORKDAY_START_HOUR, WORKDAY_END_HOUR } from '../salesData';
 import { useSessionUser } from '../sessionUser';
 import { markInboxRead } from '../inboxRead';
 import { CALL_TO_ACTIONS } from '../../data';
@@ -37,12 +37,13 @@ import {
   DAILY_APPS_GOAL,
   todayApps,
   topDay,
+  topDayEntry,
   weekTotal,
   currentStreak,
   isNewBest,
   claimCelebration,
 } from '../streakStore';
-import { ActivityTilesSkeleton, HomeBelowFoldSkeleton } from './HomeSkeleton';
+import { HomeBelowFoldSkeleton } from './HomeSkeleton';
 
 type AnnItem = AnnVM;
 type InboxItem = InboxVM;
@@ -59,22 +60,6 @@ interface SnapCell {
 interface SnapGroup {
   label: string;
   cells: SnapCell[];
-}
-interface ActTile {
-  icon: IconName;
-  iconStyle: string;
-  value: string;
-  label: string;
-}
-interface ActAvg {
-  value: string;
-  label: string;
-}
-interface ActRange {
-  id: string;
-  label: string;
-  style: string;
-  onClick: () => void;
 }
 interface CtaCode {
   text: string;
@@ -127,6 +112,7 @@ function StreakStat({
   icon,
   value,
   label,
+  sub,
   tone,
   loading,
 }: {
@@ -134,6 +120,8 @@ function StreakStat({
   icon?: IconName;
   value: number | string;
   label: string;
+  /** Optional second line under the label (e.g. the best-day date). */
+  sub?: string;
   tone: string;
   loading?: boolean;
 }) {
@@ -165,6 +153,9 @@ function StreakStat({
           </div>
         )}
         <div style={s('font-size:11px;color:var(--muted);margin-top:5px')}>{label}</div>
+        {sub && !loading && (
+          <div style={s("font-size:10.5px;color:var(--text2);margin-top:2px;font-family:'JetBrains Mono',monospace")}>{sub}</div>
+        )}
       </div>
     </div>
   );
@@ -190,7 +181,6 @@ export function HomeTab() {
   }, [currentUserId]);
 
   // ---- local per-tab state ----
-  const [activityRange, setActivityRange] = useState<string>('week');
   const [, setTick] = useState<number>(0); // drives the 30s clock re-render
   /** One-shot: keep a single below-fold skeleton until the first home loads settle. */
   const [homeReady, setHomeReady] = useState(false);
@@ -198,16 +188,14 @@ export function HomeTab() {
   const [celebration, setCelebration] = useState<{ emoji: string; title: string; msg: string } | null>(null);
   /** Set while a user-initiated snapshot refresh is in flight, so we can confirm it on completion. */
   const snapRefreshPending = useRef(false);
+  /** Real "fetched at" NY time for the snapshot caption — stamped when snap.data lands (NOT the live
+   *  clock, which never changed on refresh and made the refresh look dead). */
+  const [snapFetchedAt, setSnapFetchedAt] = useState<string>('');
 
-  const act = useLoad(
-    (fresh) => loadActivity(activityRange as 'today' | 'week' | 'month', fresh),
-    [activityRange],
-  );
-  // When the visible range IS today, prefer the (identical) range load so the cell and the
-  // tiles agree — but fall back to dailyAct while it's still loading, so switching ranges
-  // never flashes the Tasks-Done cell to 0. Same touchpoint either way; loadActivity's
-  // in-flight dedupe collapses concurrent equal calls into one POST.
-  const dailyTasks = (activityRange === 'today' ? act.data?.tasks : undefined) ?? dailyAct.data?.tasks ?? 0;
+  // The "Your Activity" block is hidden for now and its range fetch (loadActivity by range) is
+  // dropped to save a round-trip. Only the cheap 'today' load (dailyAct) remains, feeding the
+  // snapshot "Tasks Done" cell.
+  const dailyTasks = dailyAct.data?.tasks ?? 0;
 
   useEffect(() => {
     const clock = setInterval(() => setTick((t) => t + 1), 30000);
@@ -219,7 +207,6 @@ export function HomeTab() {
     const pending =
       (snap.loading && snap.data === null && !snap.error) ||
       (ann.loading && ann.data === null && !ann.error) ||
-      (act.loading && act.data === null && !act.error) ||
       (inbox.loading && inbox.data === null && !inbox.error);
     if (!pending) setHomeReady(true);
   }, [
@@ -230,9 +217,6 @@ export function HomeTab() {
     ann.loading,
     ann.data,
     ann.error,
-    act.loading,
-    act.data,
-    act.error,
     inbox.loading,
     inbox.data,
     inbox.error,
@@ -252,12 +236,12 @@ export function HomeTab() {
 
   const refreshSnapshot = (): void => {
     snapRefreshPending.current = true;
-    snap.reload();
-    // Reload the daily cell; on the Today range also reload the tiles — the in-flight dedupe
-    // collapses the two identical activity.agent calls into one POST, and both stay in sync.
-    dailyAct.reload();
-    if (activityRange === 'today') act.reload();
-    appStats.reload();
+    // refresh() (not reload()) flips `refreshing` true for spinner feedback AND bypasses any
+    // fetch cache — reload() leaves `refreshing` false when data is already present, which read
+    // as "nothing happened". Also drives the Tasks-Done daily cell + app-stat tiles.
+    snap.refresh();
+    dailyAct.refresh();
+    appStats.refresh();
   };
 
   const openInbox = (i: InboxItem): void => {
@@ -296,9 +280,13 @@ export function HomeTab() {
   const workdayFill = `${T.pct}%`;
   const workdayKnob = `${T.knobPct}%`;
   const workday = T.workday;
+  // Endpoint labels driven off the workday constants so they can't drift from the bar math.
+  const hourLabel = (h: number): string => `${((h + 11) % 12) + 1}:00 ${h < 12 ? 'AM' : 'PM'}`;
+  const workdayStartLabel = hourLabel(WORKDAY_START_HOUR);
+  const workdayEndLabel = hourLabel(WORKDAY_END_HOUR);
   const annData = ann.data ?? [];
   const inboxData = inbox.data ?? [];
-  const snapSpinCss = snap.loading ? 'animation:ss-spin .9s linear infinite' : '';
+  const snapSpinCss = snap.refreshing || snap.loading ? 'animation:ss-spin .9s linear infinite' : '';
 
   // ---- daily-goal habit loop — REAL data (Zoho COQL: Deals.Application_Date per day, owner-scoped) ----
   const appsLoading = appStats.loading && !appStats.data;
@@ -309,6 +297,15 @@ export function HomeTab() {
   const appsToGo = Math.max(0, DAILY_APPS_GOAL - appsDone);
   const streakDays = currentStreak(appDays, DAILY_APPS_GOAL);
   const bestDay = topDay(appDays);
+  const bestDayEntry = topDayEntry(appDays);
+  // Name the best day on the tile (parse as a NY-local calendar date, not UTC midnight).
+  const bestDayLabel = bestDayEntry
+    ? new Date(`${bestDayEntry.date}T00:00:00`).toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      })
+    : undefined;
   const weekApps = weekTotal(appDays);
 
   // Celebrate a fresh personal best / goal hit at most once per day (claimCelebration guards re-fires
@@ -332,12 +329,21 @@ export function HomeTab() {
     return () => clearTimeout(t);
   }, [celebration]);
 
-  // Confirm a user-initiated snapshot refresh once the fresh data lands. reload() is fire-and-forget
-  // and useLoad doesn't flip `loading` on reload, so watch the data reference changing instead.
+  // Stamp the real fetched-at time whenever fresh snapshot data lands (initial + refresh), and
+  // confirm a user-initiated refresh. Watch the data reference changing (useLoad doesn't flip
+  // `loading` on refresh of already-present data).
   useEffect(() => {
-    if (snapRefreshPending.current && snap.data) {
+    if (!snap.data) return;
+    const at = new Date().toLocaleTimeString('en-US', {
+      timeZone: 'America/New_York',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+    setSnapFetchedAt(at);
+    if (snapRefreshPending.current) {
       snapRefreshPending.current = false;
-      pushToast('Snapshot refreshed', `Updated ${timeFmt} ET`);
+      pushToast('Snapshot refreshed', `Updated ${at} ET`);
     }
   }, [snap.data]);
 
@@ -398,47 +404,6 @@ export function HomeTab() {
     },
   ];
 
-  const at = (icon: keyof typeof ICO, col: string, value: string | number, label: string): ActTile => ({
-    icon: ICO[icon],
-    iconStyle: `${iconBox(col, 32)};margin:0 auto`,
-    value: String(value),
-    label,
-  });
-  const ac = act.data;
-  const activityTiles: ActTile[] = [
-    at('calls', accent, ac?.calls ?? 0, 'Calls'),
-    at('notes', violet, ac?.notes ?? 0, 'Notes'),
-    at('lead', green, ac?.leads ?? 0, 'Leads +'),
-    at('inbox', accent, ac?.received ?? 0, 'Received'),
-    at('star', amber, ac?.interested ?? 0, 'Interested'),
-    at('doc', violet, ac?.apps ?? 0, 'Apps'),
-    at('check', green, ac?.tasks ?? 0, 'Tasks'),
-  ];
-  const rangeDays = activityRange === 'today' ? 1 : activityRange === 'month' ? 30 : 7;
-  const av = (v: number, l: string): ActAvg => ({
-    value: (v / rangeDays).toFixed(1).replace('.0', ''),
-    label: l,
-  });
-  const activityAverages: ActAvg[] = [
-    av(ac?.calls ?? 0, 'calls'),
-    av(ac?.notes ?? 0, 'notes'),
-    av(ac?.leads ?? 0, 'leads'),
-    av(ac?.apps ?? 0, 'apps'),
-  ];
-  const rangeDefs: [string, string][] = [
-    ['today', 'Today'],
-    ['week', 'Week'],
-    ['month', 'Month'],
-  ];
-  const activityRanges: ActRange[] = rangeDefs.map(([id, label]) => {
-    const on = activityRange === id;
-    return {
-      id,
-      label,
-      style: `padding:5px 13px;border-radius:var(--radius-md);border:none;cursor:pointer;font-size:12px;font-weight:700;background:${on ? 'var(--accent)' : 'transparent'};color:${on ? '#fff' : 'var(--muted)'};transition:all .14s`,
-      onClick: () => setActivityRange(id),
-    };
-  });
 
   const ctaCards: CtaCard[] = CALL_TO_ACTIONS.filter((a) => a.top).map((a) => ({
     name: a.name,
@@ -531,9 +496,9 @@ export function HomeTab() {
             <div style={s(`position:absolute;top:50%;left:${workdayKnob};transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:var(--surface);border:2px solid ${workday.accent};box-shadow:0 2px 8px color-mix(in srgb, ${workday.accent} 55%, transparent);transition:left .35s ease,border-color .35s ease`)}></div>
           </div>
           <div style={s('display:flex;justify-content:space-between;font-size:11px;color:var(--muted);font-weight:600')}>
-            <span>9:00 AM</span>
+            <span>{workdayStartLabel}</span>
             <span style={s(`color:${workday.accent};font-family:'JetBrains Mono',monospace;font-weight:700`)}>{workday.statusLabel}</span>
-            <span>6:00 PM</span>
+            <span>{workdayEndLabel}</span>
           </div>
         </div>
       </div>
@@ -541,7 +506,7 @@ export function HomeTab() {
       {/* Habit loop — streak · personal best · week (from Deals Application_Date COQL). */}
       <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px')}>
         <StreakStat emoji="🔥" value={streakDays} label="day streak" tone="var(--orange)" loading={appsLoading} />
-        <StreakStat emoji="⭐" value={bestDay} label="best day · apps" tone="var(--warn)" loading={appsLoading} />
+        <StreakStat emoji="⭐" value={bestDay} label="best day · apps" sub={bestDayLabel ?? ''} tone="var(--warn)" loading={appsLoading} />
         <StreakStat icon="doc" value={weekApps} label="this week · apps" tone="var(--accent)" loading={appsLoading} />
       </div>
 
@@ -586,7 +551,7 @@ export function HomeTab() {
             <div style={s('display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)')}>
               <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}>Today's Snapshot</div>
               <div style={s('display:flex;align-items:center;gap:10px')}>
-                <span style={s('font-size:11px;color:var(--muted)')}>Updated {timeFmt}</span>
+                <span style={s('font-size:11px;color:var(--muted)')}>{snap.refreshing ? 'Refreshing…' : `Updated ${snapFetchedAt || timeFmt}`}</span>
                 <button onClick={refreshSnapshot} aria-label="Refresh" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}><Icon name="refresh" size={15} style={s(snapSpinCss)} /></button>
               </div>
             </div>
@@ -614,40 +579,7 @@ export function HomeTab() {
             </div>
           </div>
 
-          {/* activity */}
-          <div style={s('margin-top:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
-            <div style={s('display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px')}>
-              <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}>Your Activity</div>
-              <div style={s('display:flex;gap:3px;padding:3px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
-                {activityRanges.map((r) => (
-                  <button key={r.id} onClick={r.onClick} style={s(r.style)}>{r.label}</button>
-                ))}
-              </div>
-            </div>
-            <div style={s('padding:18px 20px')}>
-              {act.loading && !act.data && <ActivityTilesSkeleton />}
-              {!act.loading && act.error && <StateNote tone="danger">{act.error}</StateNote>}
-              {(act.data || (!act.loading && !act.error)) && (
-                <>
-                  <div style={s(`display:grid;grid-template-columns:repeat(7,1fr);gap:11px;opacity:${act.loading ? '.55' : '1'};transition:opacity .2s`)}>
-                    {activityTiles.map((t) => (
-                      <div key={t.label} style={s('padding:13px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2);text-align:center')}>
-                        <div style={s(t.iconStyle)}><Icon name={t.icon} size={16} /></div>
-                        <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:19px;line-height:1.15;min-height:22px;margin-top:9px")}>{t.value}</div>
-                        <div style={s('font-size:11px;color:var(--muted);margin-top:2px')}>{t.label}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={s('margin-top:14px;padding:13px 16px;border-radius:var(--radius-md);background:linear-gradient(120deg,rgba(var(--accent-rgb),.08),transparent);border:1px solid var(--border2);display:flex;align-items:center;gap:16px;flex-wrap:wrap')}>
-                    <span style={s('font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)')}>Daily average</span>
-                    {activityAverages.map((a) => (
-                      <span key={a.label} style={s('font-size:12px;color:var(--text2)')}><strong style={s("font-family:'JetBrains Mono',monospace;color:var(--text)")}>{a.value}</strong> {a.label}/day</span>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+          {/* activity block hidden for now (its range fetch is disabled to save a round-trip) */}
 
           {/* CTA + inbox preview */}
           <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px')}>
