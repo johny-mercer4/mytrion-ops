@@ -43,6 +43,48 @@ const editableEmail = z.union([z.string().email().max(100), z.string().max(0)]).
  * so an unexpected key 400s; every field optional+nullable (null/'' clears it); `resolveWritePayload`
  * casing-resolves before the write so an unknown key can never silently no-op.
  */
+// Verbatim Zoho Leads picklist values (live-verified). The Zoho field is `Status` (there is no
+// `Lead_Status`). No CRM dependency exists between Status and the reason fields — the post-call
+// wizard pairs them in the UI (Unqualified→Unqualified_Reason, Not Interested→Not_Interested_Reason).
+export const LEAD_STATUS_VALUES = [
+  'Interested',
+  'Not Interested',
+  'First Call',
+  'Second Call',
+  'Third Call',
+  'Follow-up',
+  'Unqualified',
+  'Application Filled',
+  'Email Follow-Up',
+  'Unaccounted', // display "New Lead"
+] as const;
+export const LEAD_UNQUALIFIED_REASONS = [
+  'Wrong / inactive phone number',
+  'Invalid email',
+  'Not in trucking industry',
+  'Not using diesel',
+  'Local driver',
+  'Low credit score for LOC',
+  'No response',
+] as const;
+export const LEAD_NOT_INTERESTED_REASONS = [
+  'Wrong language',
+  'Wrong expectations',
+  'Small discounts',
+  'Already has another fuel card',
+  'Truck stop coverage',
+  'Uncomfortable with mobile app',
+  'Unreachable after application',
+  'Has own fueling stations',
+  'Unwilling to share personal info',
+  'Low credit score / bad financials',
+  "Didn't apply / applied accidentally",
+  'Gas only',
+  'Accidental application',
+  'Low discounts',
+  'Other',
+] as const;
+
 const leadEditBody = z
   .object({
     MC: z.string().max(255).nullable().optional(),
@@ -52,6 +94,10 @@ const leadEditBody = z
     Phone: z.string().max(30).nullable().optional(),
     Email: editableEmail,
     Description: z.string().max(32000).nullable().optional(),
+    // Post-call status wizard. Enums pin the write to real picklist values (Zoho rejects others).
+    Status: z.enum(LEAD_STATUS_VALUES).nullable().optional(),
+    Unqualified_Reason: z.enum(LEAD_UNQUALIFIED_REASONS).nullable().optional(),
+    Not_Interested_Reason: z.enum(LEAD_NOT_INTERESTED_REASONS).nullable().optional(),
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0, 'no editable fields supplied');

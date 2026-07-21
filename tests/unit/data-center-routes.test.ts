@@ -340,6 +340,34 @@ describe('data-center lead/deal edit — owner scope + allowlist (RBAC rule #9)'
     expect(updateRecordMock).not.toHaveBeenCalled();
   });
 
+  it('the post-call wizard writes Status + a dependent reason', async () => {
+    const token = await workerToken('Sales Rep');
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/v1/data-center/leads/555',
+      headers: bearer(token),
+      payload: { Status: 'Unqualified', Unqualified_Reason: 'No response' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(updateRecordMock).toHaveBeenCalledWith(
+      'Leads',
+      '555',
+      expect.objectContaining({ Status: 'Unqualified', Unqualified_Reason: 'No response' }),
+    );
+  });
+
+  it('rejects a Status value outside the real picklist (400, no write)', async () => {
+    const token = await workerToken('Sales Rep');
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/v1/data-center/leads/555',
+      headers: bearer(token),
+      payload: { Status: 'Totally Made Up' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(updateRecordMock).not.toHaveBeenCalled();
+  });
+
   it('a non-numeric record id is rejected (400)', async () => {
     const token = await workerToken('Sales Rep');
     const res = await app.inject({
