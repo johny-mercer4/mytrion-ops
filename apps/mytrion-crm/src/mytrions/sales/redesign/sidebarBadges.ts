@@ -16,11 +16,8 @@ import { publishInboxLive, subscribeInboxReload } from './inboxLiveBus';
 import { setTicketDirectory } from './ticketDirectory';
 import { useTicketUnread, totalTicketUnread, bumpTicketUnread, clearTicketUnread } from './ticketUnread';
 import { getOpenTicketId, publishTicketLive } from './ticketLiveBus';
-
-/** Trimmed string equality — a stray space/newline in either id shouldn't sink the comparison. */
-function idsMatch(a: string, b: string): boolean {
-  return !!a && !!b && a.trim() === b.trim();
-}
+// Suffix-normalized: the WS ownerId and the session id may differ by org prefix (zohoIds.ts).
+import { zohoIdsMatch } from './zohoIds';
 
 export function useSidebarBadges(
   currentUserId: string,
@@ -64,7 +61,7 @@ export function useSidebarBadges(
       if (m.type === 'crm_inbox_notification') {
         const eventOwner = String(m.ownerId ?? '').trim();
         const self = userIdRef.current.trim();
-        if (idsMatch(eventOwner, self)) {
+        if (zohoIdsMatch(eventOwner, self)) {
           inboxReloadRef.current();
           const subject = String(m.subject ?? m.name ?? 'New notification').trim() || 'New notification';
           // Fixed title so subject text like "Error…" never flips the toast to an error tone.
