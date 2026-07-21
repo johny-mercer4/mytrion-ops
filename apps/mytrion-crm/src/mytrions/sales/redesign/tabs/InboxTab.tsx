@@ -4,8 +4,8 @@
  * Alerts/Reminders) with live counts; message rows with a type icon + colored bar, priority
  * badge, tag, unread dot, per-row mark-read + delete actions; "Mark all read"; empty state.
  * DATA: live CRM inbox via loadInbox() (inbox.list); delete via deleteInboxMessage (optimistic);
- * read-state kept local in localStorage; real-time refresh over the servercrm WebSocket
- * (subscribe {type:'subscribe'} → reload on crm_inbox_notification).
+ * read-state kept local in localStorage; live toast + push are shell-owned
+ * (`useSidebarBadges`); this tab refetches via `inboxLiveBus` and keeps a socket only for Live/OFFLINE.
  */
 import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
@@ -16,7 +16,7 @@ import { Icon, type IconName } from '../icons';
 import { badge, iconBox, ICO } from '../salesData';
 import { useSales } from '../ctx';
 import { useLoad, loadInbox, deleteInboxMessage, type InboxVM } from '../live';
-import { publishInboxReload } from '../inboxLiveBus';
+import { publishInboxReload, subscribeInboxLive } from '../inboxLiveBus';
 import { useServerCrmSocket } from '../useServerCrmSocket';
 import { useInboxRead, markInboxRead, markInboxReadMany } from '../inboxRead';
 
@@ -65,19 +65,16 @@ export function InboxTab() {
     if (data) setItems(data);
   }, [data]);
 
-  // ---- real-time: refetch this tab's list when a notification is for THIS user.
-  //      Toast lives in shell `useSidebarBadges` so it fires on every tab. ----
+  // ---- real-time: Shell owns toast + WS; this tab refetches via inboxLiveBus.
+  //      Local socket is only for the Live/OFFLINE indicator. ----
   useServerCrmSocket({
     enabled: !!currentUserId,
+    watchKey: currentUserId,
     subscribe: { type: 'subscribe', userId: currentUserId },
     onOpen: () => setWsReady(true),
     onClose: () => setWsReady(false),
-    onMessage: (msg) => {
-      if (msg.type !== 'crm_inbox_notification') return;
-      const ownerId = String(msg.ownerId ?? '').trim();
-      if (ownerId && currentUserId && ownerId === currentUserId.trim()) reload();
-    },
   });
+  useEffect(() => subscribeInboxLive(() => reload()), [reload]);
 
   // ---- view-model (mirrors renderVals()) ----
   const fMatch = (i: InboxItem): boolean => {

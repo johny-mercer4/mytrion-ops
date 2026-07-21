@@ -472,6 +472,9 @@ const EnvSchema = z.object({
   // Empty = skip inbox notify (sweep/transitions still run).
   RETENTION_OPEN_POOL_NOTIFY_ZOHO_USER_ID: z.string().default(''),
   RETENTION_OPS_MANAGER_ZOHO_USER_ID: z.string().default(''),
+  // Optional From address for Zoho CRM Send Mail on Open Pool (must be an org-allowed sender).
+  // Empty = first address from GET /settings/emails/actions/from_addresses.
+  RETENTION_NOTIFY_FROM_EMAIL: z.string().default(''),
 
   // Background jobs (pg-boss on the app Postgres, own 'pgboss' schema — self-migrating).
   FF_JOBS_ENABLED: flag('0'),

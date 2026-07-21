@@ -8,7 +8,6 @@
  * `{ name, id }` objects.
  */
 import { request } from './transport';
-import type { LoyaltyStat } from '@/mytrions/sales/redesign/loyalty';
 
 // LEGACY assertion — the server now derives department access from the verified session (Zoho
 // profile/role), so this header is IGNORED for signed-in users. Kept only so the
@@ -40,8 +39,9 @@ export function listRejections(zohoUserId?: string): Promise<CrmRow[]> {
   return get('/data-center/rejections', zohoUserId);
 }
 
-/** Per-day applications-filled counts (by CRM `Application_Date`) for the caller — Home goal bar +
- *  streak. Returns an object (not a keyed array), so it bypasses the get() array-unwrapper. */
+/** Per-day applications-filled counts (by CRM `Application_Date` — "application filled") for the
+ *  caller — Home goal bar + streak. Returns an object (not a keyed array), so it bypasses the get()
+ *  array-unwrapper. Always pass `zohoUserId` from the session / act-as target (same as Deals). */
 export interface AppStats {
   /** 'YYYY-MM-DD' → applications filled that day. */
   days: Record<string, number>;
@@ -51,22 +51,62 @@ export interface AppStats {
 }
 
 export async function getAppStats(zohoUserId?: string): Promise<AppStats> {
-  return (await request('GET', '/data-center/app-stats', {
+  const res = (await request('GET', '/data-center/app-stats', {
     query: zohoUserId ? { zoho_user_id: zohoUserId } : {},
     headers: DC_HEADERS,
-  })) as AppStats;
+  })) as Partial<AppStats> | null;
+  if (!res || typeof res !== 'object' || res.days == null || typeof res.days !== 'object') {
+    throw new Error('App stats response missing days map');
+  }
+  const days: Record<string, number> = {};
+  for (const [k, v] of Object.entries(res.days)) {
+    const n = typeof v === 'number' ? v : Number(v);
+    if (k && Number.isFinite(n) && n > 0) days[k] = n;
+  }
+  return {
+    days,
+    total: typeof res.total === 'number' ? res.total : Object.values(days).reduce((a, b) => a + b, 0),
+    windowDays: typeof res.windowDays === 'number' ? res.windowDays : 90,
+    truncated: res.truncated === true,
+  };
 }
 
-/** Per-client (carrierId) loyalty stats for the caller — Data Center → Clients tier + rewards. The
- *  route wraps the map in `{ stats }`; unwrap to the raw carrierId→stat record. */
-export type LoyaltyStats = Record<string, LoyaltyStat>;
+/**
+ * One client roster row from `GET /data-center/clients` — the Data Center → Clients tab's sole source.
+ * Backed by ONE DWH query (dim_company + mart_transaction_line_items + cmp_invoice): carrier metadata,
+ * computed debt/activity overlays, and cycle / this-month / prev-month gallons + card counts. Mirrors
+ * the backend `AgentClientRow`. Debt is the DWH `cmp_invoice` snapshot (~3h refresh), not live CMP.
+ */
+export interface AgentClient {
+  carrierId: string;
+  companyName: string;
+  contact: string;
+  phone: string;
+  producedCards: number;
+  activeCards: number;
+  moneyCode: string;
+  dot: string;
+  isLocSuspended: boolean;
+  computedIsActive: boolean;
+  computedDebt: number;
+  computedDebtDays: number;
+  /** This billing-cycle (26th→25th) gallons — the "Gallons · Cycle" figure. */
+  cycleGallons: number;
+  gallonsThisMonth: number;
+  activeCardsThisMonth: number;
+  transactionsThisMonth: number;
+  gallonsPrevMonth: number;
+  activeCardsPrevMonth: number;
+}
 
-export async function getLoyaltyStats(zohoUserId?: string): Promise<LoyaltyStats> {
-  const res = (await request('GET', '/data-center/loyalty-stats', {
+/** The caller's full client roster (admins may target an agent via ?zoho_user_id). Route wraps the
+ *  array in `{ clients }`. */
+export async function getClients(zohoUserId?: string): Promise<AgentClient[]> {
+  const res = (await request('GET', '/data-center/clients', {
     query: zohoUserId ? { zoho_user_id: zohoUserId } : {},
     headers: DC_HEADERS,
-  })) as { stats?: LoyaltyStats };
-  return res.stats ?? {};
+  })) as { clients?: AgentClient[] };
+  return res.clients ?? [];
 }
 
 /** Result of an owner-scoped inline edit — the record id + the exact CRM fields that changed. */

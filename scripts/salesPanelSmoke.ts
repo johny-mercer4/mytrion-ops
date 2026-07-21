@@ -11,14 +11,35 @@ import { createId } from '@paralleldrive/cuid2';
 import { DEFAULT_TENANT_ID } from '../src/config/constants.js';
 import { dispatchTouchpoint } from '../src/modules/touchpoints/dispatcher.js';
 import { getTouchpoint } from '../src/modules/touchpoints/catalog/index.js';
+import { listActiveUsers, runCoql } from '../src/integrations/zohoCrm.js';
 import type { TenantContext } from '../src/types/tenantContext.js';
 
-const zohoUserId = process.argv[2] ?? '';
-const userName = process.argv[3] ?? 'Smoke Tester';
-if (!zohoUserId) {
-  console.error('usage: pnpm tsx scripts/salesPanelSmoke.ts <zohoUserId> [userName]');
-  process.exit(1);
+let zohoUserId = process.argv[2] ?? '';
+let userName = process.argv[3] ?? '';
+// Allow a NAME as the first arg (e.g. "Daniel Brown") — resolve it to a Zoho user id.
+if (zohoUserId && !/^\d+$/.test(zohoUserId)) {
+  userName = userName || zohoUserId;
+  zohoUserId = '';
 }
+if (!zohoUserId) {
+  if (!userName) {
+    console.error('usage: pnpm tsx scripts/salesPanelSmoke.ts <zohoUserId | "Agent Name"> [userName]');
+    process.exit(1);
+  }
+  const users = await listActiveUsers();
+  const q = userName.toLowerCase();
+  const match =
+    users.find((u) => (u.name ?? '').toLowerCase() === q) ??
+    users.find((u) => (u.name ?? '').toLowerCase().includes(q));
+  if (!match) {
+    console.error(`No active CRM user matching "${userName}"`);
+    process.exit(1);
+  }
+  zohoUserId = match.zohoUserId;
+  userName = match.name ?? userName;
+  console.log(`Resolved "${userName}" → zoho:${zohoUserId}`);
+}
+if (!userName) userName = 'Smoke Tester';
 
 const ctx: TenantContext = {
   tenantId: DEFAULT_TENANT_ID,
@@ -101,6 +122,29 @@ if (firstCarrier != null) {
   });
 } else {
   console.log('\n▶ DataCenter · client recent tx — SKIPPED (agent has no clients)');
+}
+
+// -- Automations (CRM touchpoints migrated Deluge→native) --
+let sampleAppId = '';
+try {
+  const { rows } = await runCoql(
+    `select Application_ID from Deals where Owner = '${zohoUserId}' and Application_ID is not null limit 0, 1`,
+  );
+  sampleAppId = String((rows[0] as { Application_ID?: unknown } | undefined)?.Application_ID ?? '');
+} catch {
+  /* best-effort — appId lookup is optional */
+}
+if (sampleAppId) {
+  await run('Automations · WEX application update', 'application.update', { appId: sampleAppId });
+} else {
+  console.log('\n▶ Automations · WEX application update — SKIPPED (no deal with Application_ID)');
+}
+if (firstCarrier != null) {
+  await run('Automations · trucking numbers', 'carrier.trucking_number_request', {
+    carrierId: String(firstCarrier),
+  });
+} else {
+  console.log('\n▶ Automations · trucking numbers — SKIPPED (agent has no clients)');
 }
 
 // -- Dashboard --

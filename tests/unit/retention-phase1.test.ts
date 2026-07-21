@@ -107,18 +107,22 @@ describe('resolvePhase1Transition', () => {
     expect(t.currentDeadlineType).toBe('10BD_retention');
   });
 
-  it('reached stamps 5BD post-contact watch', () => {
-    const t = resolvePhase1Transition(baseCase(), { outcome: 'reached' });
+  it('reached stamps 5BD post-contact watch (clears OoR attempts)', () => {
+    const t = resolvePhase1Transition(
+      baseCase({ statusCode: 'p1_out_of_reach', outOfReachAttempts: 2 }),
+      { outcome: 'reached' },
+    );
     expect(t.statusCode).toBe('p1_reached');
-    expect(t.agentOutcome).toBe('returned');
+    expect(t.agentOutcome).toBe('reached');
     expect(t.currentDeadlineType).toBe('5BD_post_contact');
+    expect(t.outOfReachAttempts).toBe(0);
   });
 
-  it('ops_confirm_vacation resets to Phase 1', () => {
+  it('ops_confirm_vacation resets to Phase 1 Working', () => {
     const t = resolvePhase1Transition(baseCase({ statusCode: 'p1_awaiting_ops' }), {
       outcome: 'ops_confirm_vacation',
     });
-    expect(t.statusCode).toBe('p1_new');
+    expect(t.statusCode).toBe('p1_in_progress');
     expect(t.eventType).toBe('signoff');
     expect(t.currentDeadlineType).toBe('2BD_agent_action');
   });
@@ -166,18 +170,32 @@ describe('resolvePhase1Transition', () => {
     ).toThrow(/closed/i);
   });
 
-  it('stamps 1BD deadline when marking out of reach', () => {
+  it('stamps 5BD deadline when marking out of reach', () => {
     const now = new Date(Date.UTC(2026, 6, 20, 12, 0, 0)); // Mon
     const t = resolvePhase1Transition(baseCase(), { outcome: 'out_of_reach', now });
     expect(t.statusCode).toBe('p1_out_of_reach');
     expect(t.currentDeadlineType).toBe(COMMS_ATTEMPT_DEADLINE_TYPE);
-    expect(t.currentDeadlineAt?.toISOString().slice(0, 10)).toBe('2026-07-21');
+    expect(t.currentDeadlineAt?.toISOString().slice(0, 10)).toBe('2026-07-27');
   });
 
-  it('nextCommsAttemptDeadline is 1 business day', () => {
+  it('nextCommsAttemptDeadline is 5 business days', () => {
     const fri = new Date(Date.UTC(2026, 6, 17, 12, 0, 0));
     const d = nextCommsAttemptDeadline(fri);
     expect(d.currentDeadlineType).toBe(COMMS_ATTEMPT_DEADLINE_TYPE);
-    expect(d.currentDeadlineAt.getUTCDay()).toBe(1); // Monday
+    // Fri + 5 BD = next Fri
+    expect(d.currentDeadlineAt.getUTCDay()).toBe(5);
+    expect(d.currentDeadlineAt.toISOString().slice(0, 10)).toBe('2026-07-24');
+  });
+
+  it('allows Reached / Dissatisfied / Vacation from OoR', () => {
+    const oor = baseCase({ statusCode: 'p1_out_of_reach', outOfReachAttempts: 2 });
+    expect(resolvePhase1Transition(oor, { outcome: 'reached' }).statusCode).toBe('p1_reached');
+    expect(
+      resolvePhase1Transition(oor, {
+        outcome: 'dissatisfied',
+        dissatisfactionReason: 'low_discounts',
+      }).phaseCode,
+    ).toBe('phase_2_retention');
+    expect(resolvePhase1Transition(oor, { outcome: 'vacation' }).statusCode).toBe('p1_vacation');
   });
 });

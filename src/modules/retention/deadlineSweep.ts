@@ -3,14 +3,14 @@
  *
  * Handled deadline types:
  *   2BD_agent_action     → Retention (10 BD wait)
- *   5BD_post_contact     → Open Pool (3 BD claim)
+ *   5BD_post_contact     → Open Pool (Reached watch with no fuel)
  *   3BD_pool_claim       → Retention (10 BD)  [unclaimed]
  *   3BD_new_owner        → Open Pool again, or CITI if assignment_count ≥ 3
  *   10BD_retention       → CITI
  *   14D_vacation         → vacation follow-up task (2 BD)
  *   2BD_vacation_followup→ awaiting Ops signoff
  *
- * 1BD_comms_attempt is an agent SLA indicator only (no auto-transition).
+ * 5BD_comms_attempt is an agent SLA indicator only (no auto-transition).
  */
 import type { RetentionCase } from '../../db/schema/index.js';
 import { logger } from '../../lib/logger.js';
@@ -66,9 +66,10 @@ export function resolveExpiry(row: RetentionCase, now: Date): CaseTransitionPatc
   }
 
   if (type === POST_CONTACT_DEADLINE_TYPE && row.statusCode === 'p1_reached') {
+    // Spoke / watching — no fuel in 5 BD → Sales Open Pool (Ryan + owner notified).
     return enterOpenPool({
       now,
-      agentOutcome: 'returned',
+      agentOutcome: 'reached',
       previousOwnerZohoUserId: row.assignedAgentZohoUserId,
       notes: 'Timer: no new transaction in 5 BD after Reached — Open Pool',
     });
@@ -179,6 +180,7 @@ export async function sweepRetentionDeadlines(
         carrierId: row.carrierId,
         companyName: row.companyName,
         previousOwnerZohoUserId: previousOwner,
+        zohoDealId: row.zohoDealId,
       });
     }
     if (patch.statusCode === 'p1_awaiting_ops') {

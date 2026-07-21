@@ -203,6 +203,7 @@ export interface RetentionCaseEventDto {
   actorZohoUserId: string | null;
   channel: CommunicationChannel | null;
   notes: string | null;
+  evidenceUrl: string | null;
   occurredAt: string;
 }
 
@@ -216,6 +217,7 @@ export function toRetentionCaseEventDto(row: RetentionCaseEvent): RetentionCaseE
     actorZohoUserId: row.actorZohoUserId,
     channel: row.channel,
     notes: row.notes,
+    evidenceUrl: row.evidenceUrl,
     occurredAt: row.occurredAt.toISOString(),
   };
 }
@@ -228,6 +230,7 @@ export async function appendRetentionEvent(input: {
   actorZohoUserId?: string | undefined;
   notes?: string | undefined;
   channel?: CommunicationChannel | undefined;
+  evidenceUrl?: string | undefined;
 }): Promise<void> {
   await db.insert(retentionCaseEvents).values({
     caseId: input.caseId,
@@ -236,6 +239,7 @@ export async function appendRetentionEvent(input: {
     eventType: input.eventType,
     actorZohoUserId: trimOrNull(input.actorZohoUserId),
     notes: trimOrNull(input.notes),
+    evidenceUrl: trimOrNull(input.evidenceUrl),
     ...(input.channel !== undefined ? { channel: input.channel } : {}),
   });
 }
@@ -247,7 +251,14 @@ export const retentionCaseRepo = {
   },
 
   async listStatuses(phaseCode?: string): Promise<
-    Array<{ code: string; phaseCode: string; label: string; isTerminal: boolean }>
+    Array<{
+      code: string;
+      phaseCode: string;
+      label: string;
+      isTerminal: boolean;
+      boardColumn: string | null;
+      sortOrder: number;
+    }>
   > {
     const rows = phaseCode
       ? await db.select().from(retentionStatuses).where(eq(retentionStatuses.phaseCode, phaseCode))
@@ -257,6 +268,8 @@ export const retentionCaseRepo = {
       phaseCode: r.phaseCode,
       label: r.label,
       isTerminal: r.isTerminal,
+      boardColumn: r.boardColumn ?? null,
+      sortOrder: r.sortOrder,
     }));
   },
 
@@ -327,10 +340,12 @@ export const retentionCaseRepo = {
 
   async create(ctx: TenantContext, input: CreateRetentionCaseInput): Promise<RetentionCaseDto> {
     const phaseCode = input.phaseCode ?? RETENTION_PHASE.agent;
-    const statusCode = input.statusCode ?? RETENTION_STATUS.p1New;
+    // New breach cases open in Working — no manual Start working step.
+    const statusCode = input.statusCode ?? RETENTION_STATUS.p1InProgress;
     const stampDeadline =
       phaseCode === RETENTION_PHASE.agent &&
-      statusCode === RETENTION_STATUS.p1New &&
+      (statusCode === RETENTION_STATUS.p1New ||
+        statusCode === RETENTION_STATUS.p1InProgress) &&
       !RETENTION_TERMINAL_STATUSES.has(statusCode);
     const deadline = stampDeadline ? initialPhase1Deadline() : null;
     const values: NewRetentionCase = {

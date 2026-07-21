@@ -175,6 +175,89 @@ export class ZohoCrmWrapper extends ZohoWrapper {
     const json = text ? (JSON.parse(text) as { org?: OrgInfo[] }) : {};
     return json.org?.[0] ?? {};
   }
+
+  /** Single CRM user by id (`GET /users/{id}`, scope ZohoCRM.users.READ). */
+  async getUserById(zohoUserId: string): Promise<CrmUser | null> {
+    const id = zohoUserId.trim();
+    if (!id) return null;
+    const res = await this.requestRaw('GET', `/users/${encodeURIComponent(id)}`);
+    if (res.status === 204) return null;
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(`[zoho-crm] GET /users/${id} HTTP ${res.status}: ${text.slice(0, 300)}`);
+    }
+    const json = text ? (JSON.parse(text) as CrmUsersApiResponse) : {};
+    const u = json.users?.[0];
+    if (!u?.id) return null;
+    return {
+      zohoUserId: u.id,
+      name: u.full_name ?? null,
+      email: u.email ?? null,
+      profile: u.profile?.name ?? null,
+      role: u.role?.name ?? null,
+    };
+  }
+
+  /**
+   * Allowed From addresses for Send Mail (`GET /settings/emails/actions/from_addresses`).
+   * Scope: ZohoCRM.settings.emails.READ.
+   */
+  async listFromAddresses(): Promise<Array<{ email: string; userName: string | null }>> {
+    const res = await this.requestRaw('GET', '/settings/emails/actions/from_addresses');
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(`[zoho-crm] from_addresses HTTP ${res.status}: ${text.slice(0, 300)}`);
+    }
+    const json = text
+      ? (JSON.parse(text) as {
+          from_addresses?: Array<{ email?: string; user_name?: string }>;
+        })
+      : {};
+    return (json.from_addresses ?? [])
+      .filter((a): a is { email: string; user_name?: string } => typeof a.email === 'string')
+      .map((a) => ({ email: a.email, userName: a.user_name ?? null }));
+  }
+
+  /**
+   * Send mail associated to a CRM record (`POST /{module}/{id}/actions/send_mail`).
+   * Scope: ZohoCRM.send_mail.{module}.CREATE (or send_mail.all.CREATE).
+   */
+  async sendMailOnRecord(
+    module: string,
+    recordId: string,
+    input: {
+      from: { email: string; userName?: string | null };
+      to: Array<{ email: string; userName?: string | null }>;
+      subject: string;
+      content: string;
+    },
+  ): Promise<void> {
+    const path = `/${encodeURIComponent(module)}/${encodeURIComponent(recordId)}/actions/send_mail`;
+    const body = {
+      data: [
+        {
+          from: {
+            email: input.from.email,
+            ...(input.from.userName ? { user_name: input.from.userName } : {}),
+          },
+          to: input.to.map((t) => ({
+            email: t.email,
+            ...(t.userName ? { user_name: t.userName } : {}),
+          })),
+          subject: input.subject,
+          content: input.content,
+          mail_format: 'text',
+        },
+      ],
+    };
+    const res = await this.requestRaw('POST', path, { body, timeoutMs: 30_000 });
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(
+        `[zoho-crm] send_mail ${module}/${recordId} HTTP ${res.status}: ${text.slice(0, 300)}`,
+      );
+    }
+  }
 }
 
 export const zohoCrm = new ZohoCrmWrapper();

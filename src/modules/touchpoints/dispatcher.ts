@@ -143,7 +143,8 @@ async function executeServerCrm(
     if (err instanceof ServerCrmHttpError) {
       // Client-ish upstream statuses pass through (the message is agent-actionable, e.g.
       // a 422 money-code "insufficient available"); auth/server failures become our 502.
-      if ([400, 404, 409, 422].includes(err.status)) {
+      // 502 included: money-code void fails closed when EFS is unreachable (retryable).
+      if ([400, 404, 409, 422, 502].includes(err.status)) {
         throw new AppError(err.bodyText || `servercrm rejected the request (${err.status})`, {
           statusCode: err.status,
           code: 'SERVER_CRM_REJECTED',

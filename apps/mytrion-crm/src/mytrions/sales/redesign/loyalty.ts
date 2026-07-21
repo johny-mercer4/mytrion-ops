@@ -1,8 +1,8 @@
 /**
  * Sales Mytrion loyalty tiers — pure config + math. Single source of truth for the "Loyalty Tiers v3"
  * program surfaced in Data Center → Clients. Inputs are REAL DWH monthly stats from
- * GET /v1/data-center/loyalty-stats (see api/dataCenter.getLoyaltyStats); the thresholds + rewards are
- * static program rules from the spec. No React/imports here — trivially unit-testable.
+ * GET /v1/data-center/clients (see api/dataCenter.getClients); the thresholds + rewards are static
+ * program rules from the spec. No React/imports here — trivially unit-testable.
  *
  * Track by active-card count (distinct cards with >=1 tx this calendar month):
  *   T1 Owner-Operator (1) · T2 Small Company (2–3) · T3 Fleet (4+, segmented; capped at 12 cards).
@@ -17,15 +17,6 @@ export interface Thresholds {
   bronze: number;
   silver: number;
   gold: number;
-}
-
-/** Raw per-carrier DWH stats (this + prev calendar month). Mirrors the backend LoyaltyCarrierStats. */
-export interface LoyaltyStat {
-  gallonsThisMonth: number;
-  activeCardsThisMonth: number;
-  transactionsThisMonth: number;
-  gallonsPrevMonth: number;
-  activeCardsPrevMonth: number;
 }
 
 export interface Reward {

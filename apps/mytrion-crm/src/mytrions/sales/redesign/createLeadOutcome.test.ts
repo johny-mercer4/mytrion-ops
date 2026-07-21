@@ -19,6 +19,23 @@ describe('extractDuplicateLeadId', () => {
       }),
     ).toBe('777');
   });
+
+  it('reads duplicate_record.id from a MULTIPLE_OR_MULTI_ERRORS envelope (real Email-duplicate shape)', () => {
+    // The actual HTTP 400 body Zoho returns when a Lead insert is rejected on a unique field.
+    expect(
+      extractDuplicateLeadId({
+        code: 'MULTIPLE_OR_MULTI_ERRORS',
+        details: {
+          errors: [
+            {
+              code: 'DUPLICATE_DATA',
+              details: { api_name: 'Email', duplicate_record: { id: '6227679000094509091' } },
+            },
+          ],
+        },
+      }),
+    ).toBe('6227679000094509091');
+  });
 });
 
 describe('resolveCreateLeadOutcome', () => {
@@ -61,6 +78,26 @@ describe('resolveCreateLeadOutcome', () => {
         response: JSON.stringify({ code: 'DUPLICATE_DATA', details: { id: '888' } }),
       }),
     ).toMatchObject({ ok: true, duplicate: true, leadId: '888' });
+  });
+
+  it('links the existing lead from a real MULTIPLE_OR_MULTI_ERRORS Email-duplicate row', () => {
+    expect(
+      resolveCreateLeadOutcome({
+        success: false,
+        message: 'Failed to create lead.',
+        response: {
+          code: 'MULTIPLE_OR_MULTI_ERRORS',
+          details: {
+            errors: [
+              {
+                code: 'DUPLICATE_DATA',
+                details: { api_name: 'Email', duplicate_record: { id: '6227679000094509091' } },
+              },
+            ],
+          },
+        },
+      }),
+    ).toMatchObject({ ok: true, duplicate: true, leadId: '6227679000094509091' });
   });
 
   it('does not treat a bare failure leadId as a duplicate', () => {

@@ -139,11 +139,8 @@ describe('retention.my_cases touchpoint', () => {
       payload: { departmentAccess: ['sales'], params: {} },
     });
     expect(res.statusCode).toBe(200);
-    expect(phase1.listForAgent).toHaveBeenCalledWith(
-      expect.anything(),
-      '777',
-      expect.objectContaining({ phaseCode: 'phase_1_agent' }),
-    );
+    // Board loads all phases (New…Closed) — no default phase_1_agent filter.
+    expect(phase1.listForAgent).toHaveBeenCalledWith(expect.anything(), '777', {});
     expect(res.json().data.total).toBe(1);
   });
 });
