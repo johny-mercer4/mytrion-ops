@@ -4,7 +4,6 @@
 import { RETENTION_PHASE } from '../../db/schema/index.js';
 import { AppError } from '../../lib/errors.js';
 import {
-  enterOpenPool,
   moveToCiti,
   stampRetentionWaitDeadline,
   type CaseTransitionPatch,
@@ -134,12 +133,14 @@ export function resolvePhase2Transition(
         eventNotes: opts.notes ?? 'Out of business — closed',
       };
     case 'no_response': {
-      return enterOpenPool({
-        now,
-        previousOwnerZohoUserId: row.assignedAgentZohoUserId,
-        assignmentCount: row.assignmentCount,
-        notes: opts.notes ?? 'No response — back to Open Pool',
-      });
+      throw new AppError(
+        'CS cannot send cases to Open Pool. The 10 BD Retention timer returns cases automatically.',
+        {
+          statusCode: 409,
+          code: 'RETENTION_CS_NO_POOL',
+          expose: true,
+        },
+      );
     }
     case 'escalate_citi':
       return moveToCiti({

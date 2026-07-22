@@ -12,7 +12,10 @@ import {
 } from '../db/schema/index.js';
 import { AppError, NotFoundError } from '../lib/errors.js';
 import { enterOpenPool } from '../modules/retention/deadlines.js';
-import { afterRetentionPhaseSideEffects } from '../modules/retention/csRoundRobin.js';
+import {
+  afterRetentionPhaseSideEffects,
+  scheduleRetentionPostCommit,
+} from '../modules/retention/csRoundRobin.js';
 import { notifyOpenPoolOpened } from '../modules/retention/notify.js';
 import {
   MAX_OUT_OF_REACH_ATTEMPTS,
@@ -29,17 +32,32 @@ import {
 } from './retentionCaseRepo.js';
 
 export const retentionCasePhase1Repo = {
-  /** Cases assigned to a sales agent (Phase 1 board). Pooled deals drop off — assignee cleared. */
+  /**
+   * Cases for a sales agent's board: currently assigned, plus former-owner locked
+   * cards (Open Pool / Retention / CITI) keyed by `pool_owner_zoho_user_id`.
+   */
   async listForAgent(
     ctx: TenantContext,
     zohoUserId: string,
     opts: { open?: boolean; phaseCode?: string; limit?: number } = {},
   ): Promise<{ cases: RetentionCaseDto[]; total: number }> {
     const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
-    const clauses = [
-      eq(retentionCases.tenantId, ctx.tenantId),
-      eq(retentionCases.assignedAgentZohoUserId, zohoUserId.trim()),
-    ];
+    const agent = zohoUserId.trim();
+    const formerOwnerLocked = and(
+      eq(retentionCases.poolOwnerZohoUserId, agent),
+      or(
+        eq(retentionCases.statusCode, 'p1_open_pool'),
+        eq(retentionCases.statusCode, 'p1_pool_claim_pending'),
+        eq(retentionCases.phaseCode, RETENTION_PHASE.retention),
+        eq(retentionCases.phaseCode, RETENTION_PHASE.citi),
+      ),
+    );
+    const ownership = or(
+      eq(retentionCases.assignedAgentZohoUserId, agent),
+      formerOwnerLocked,
+    );
+    const clauses: SQL[] = [eq(retentionCases.tenantId, ctx.tenantId)];
+    if (ownership) clauses.push(ownership);
     if (opts.phaseCode) clauses.push(eq(retentionCases.phaseCode, opts.phaseCode));
     if (opts.open === true) clauses.push(isNull(retentionCases.closedAt));
     if (opts.open === false) clauses.push(sql`${retentionCases.closedAt} IS NOT NULL`);
@@ -49,14 +67,6 @@ export const retentionCasePhase1Repo = {
         sql`${retentionCases.closedAt} >= now() - interval '14 days'`,
       );
       if (recentOrOpen) clauses.push(recentOrOpen);
-    }
-    // Sales board: open Phase 2 / CITI are CS-owned — hide until they return via Open Pool.
-    if (opts.phaseCode === undefined) {
-      const salesVisible = or(
-        eq(retentionCases.phaseCode, RETENTION_PHASE.agent),
-        sql`${retentionCases.closedAt} IS NOT NULL`,
-      );
-      if (salesVisible) clauses.push(salesVisible);
     }
     const where = and(...clauses);
     // Single query — each extra round-trip to remote Render Postgres is ~0.5–2s from local.
@@ -140,7 +150,7 @@ export const retentionCasePhase1Repo = {
     return { case: toRetentionCaseDto(row), events: events.map(toRetentionCaseEventDto) };
   },
 
-  /** Request Open Pool claim (CS approve / 1 BD auto). See retentionPoolClaimRepo. */
+  /** Instant Open Pool claim (Zoho + Kanban New). See retentionPoolClaimRepo.claimNow. */
   async claimFromPool(
     ctx: TenantContext,
     id: string,
@@ -148,7 +158,7 @@ export const retentionCasePhase1Repo = {
     opts: { agentName?: string | undefined; reason: string },
   ): Promise<RetentionCaseDto & { pendingApproval: boolean }> {
     const { retentionPoolClaimRepo } = await import('./retentionPoolClaimRepo.js');
-    return retentionPoolClaimRepo.requestClaim(ctx, id, newAgentZohoUserId, opts);
+    return retentionPoolClaimRepo.claimNow(ctx, id, newAgentZohoUserId, opts);
   },
 
   async logCommsAttempt(
@@ -280,17 +290,24 @@ export const retentionCasePhase1Repo = {
             : `${channelLabel} attempt ${attempts}/${MAX_OUT_OF_REACH_ATTEMPTS}`),
     });
     const dto = toRetentionCaseDto(row);
-    if (landedInCiti) {
-      await afterRetentionPhaseSideEffects(existing.phaseCode, dto);
-    }
-    if (landedInPool) {
-      await notifyOpenPoolOpened(ctx, {
-        caseId: String(row.id),
-        carrierId: row.carrierId,
-        companyName: row.companyName,
-        reason: 'out_of_reach',
-        previousOwnerZohoUserId: previousOwner,
-        zohoDealId: row.zohoDealId,
+    if (landedInCiti || landedInPool) {
+      scheduleRetentionPostCommit('retention.log_attempt', async () => {
+        if (landedInCiti) {
+          await afterRetentionPhaseSideEffects(existing.phaseCode, dto, {
+            tenantId: ctx.tenantId,
+            actorZohoUserId: input.actorZohoUserId ?? null,
+          });
+        }
+        if (landedInPool) {
+          await notifyOpenPoolOpened(ctx, {
+            caseId: String(row.id),
+            carrierId: row.carrierId,
+            companyName: row.companyName,
+            reason: 'out_of_reach',
+            previousOwnerZohoUserId: previousOwner,
+            zohoDealId: row.zohoDealId,
+          });
+        }
       });
     }
     return dto;

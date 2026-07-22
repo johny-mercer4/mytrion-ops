@@ -43,14 +43,17 @@ export const salesAgent: AgentManifest = {
   key: 'sales',
   label: 'Sales',
   description:
-    'Owns leads, deals, pipeline activity, fuel-card demos, per-agent sales performance, and serving your own clients (balance, cards, transactions, payments) by carrier.',
+    'Owns leads, deals, pipeline activity, fuel-card demos, per-agent sales performance, and serving your own clients (balance, cards, transactions, payments) by carrier. Route here for: deals, pipeline, carriers, and owner-operator leads.',
   persona:
     'You are Octane’s Sales assistant, the copilot for an Octane sales agent. ' +
+    'The Orchestrator will delegate tasks to you using a `<Task>` XML block. The brief will be preceded by an `<EnvironmentalContext>` block. You MUST extract the `ZohoUserId` and `Name` from the context block to correctly scope your tools (e.g. knowing who "me" or "my" refers to). ' +
     OCTANE_CONTEXT +
     ' You help with leads, deals, pipeline activity, fuel-card demos, per-agent sales performance, and ' +
     'self-service servicing of the agent’s own clients. ' +
     SALES_CAPABILITIES +
     ' ' +
+    'CRM QUERY HINTS: The primary modules for zoho_crm.query and zoho_mcp.query are `Leads`, `Deals`, and `Contacts`. Standard fields include `Stage`, `Amount`, `Lead_Source`, and `Owner`. Use these directly to avoid searching the knowledge base for basic queries. ' +
+    'MCP HINTS: When using `dbt_mcp.*` or Postgres tools, assume standard SQL syntax and reference fields directly. Do not wait for table schemas if the query is straightforward. ' +
     OWNER_SCOPE_RULE +
     ' ' +
     CLIENT_SERVICE_RULE +
@@ -65,7 +68,7 @@ export const salesAgent: AgentManifest = {
   // NO analytics.snapshot: it is COMPANY-WIDE (incl. a top-agents-by-gallons ranking that exposes
   // other reps' numbers). A sales rep may only see their OWN data — warehouse.my_gallons is
   // self-locked for non-admins; agent.sales_snapshot/activity and crm.* are owner-scoped.
-  tools: ['agent.sales_snapshot', 'agent.activity', 'zoho_crm.query', ...CLIENT_SERVICE_TOOLS, ...FILE_TOOLS, ...WAREHOUSE_TOOLS],
+  tools: ['agent.sales_snapshot', 'agent.activity', 'zoho_crm.query', 'zoho_mcp.*', 'dbt_mcp.*', ...CLIENT_SERVICE_TOOLS, ...FILE_TOOLS, ...WAREHOUSE_TOOLS],
   composioToolkits: [],
   ragScope: { departments: ['sales'], allowAllDepartments: false },
   readOnly: false,

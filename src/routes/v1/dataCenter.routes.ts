@@ -18,12 +18,13 @@ import {
   fetchLeadOwnerId,
 } from '../../integrations/salesDataCenter.js';
 import { fetchAgentClients } from '../../integrations/dwhClientRoster.js';
+import { listClientCards, getClientBilling } from '../../integrations/dwhCards.js';
 import { listRejectionReportTickets } from '../../integrations/zohoDesk.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { resolveWritePayload } from '../../modules/customerService/fieldResolver.js';
 import { resolveActAsTarget } from '../../modules/auth/actAsDirectory.js';
-import { resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
+import { assertCarrierOwned, resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment } from './helpers.js';
 
@@ -33,6 +34,8 @@ function requireSalesAccess(request: FastifyRequest): TenantContext {
 }
 
 const scopeQuery = z.object({ zoho_user_id: z.string().max(120).optional() });
+
+const carrierCardsQuery = z.object({ carrierId: z.string().regex(/^\d+$/, 'carrierId must be numeric').max(20) });
 
 const idParam = z.object({ id: z.string().regex(/^\d+$/, 'id must be a CRM record id').max(60) });
 
@@ -211,6 +214,39 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
     try {
       const clients = await fetchAgentClients(ownerId, ownerName);
       return { clients };
+    } catch (err) {
+      throw dwhError(err);
+    }
+  });
+
+  /**
+   * One client's fuel cards for the client modal — octane.dim_card (type/status/balance) enriched
+   * with unit/driver from the latest mart transaction per card. Owner-scoped: assertCarrierOwned
+   * gates a non-admin to carriers in their own book (admins / all-department bypass).
+   */
+  app.get('/data-center/client-cards', guard, async (request) => {
+    const ctx = requireSalesAccess(request);
+    const { carrierId } = carrierCardsQuery.parse(request.query);
+    await assertCarrierOwned(ctx, carrierId);
+    try {
+      const cards = await listClientCards(carrierId);
+      return { cards };
+    } catch (err) {
+      throw dwhError(err);
+    }
+  });
+
+  /**
+   * One client's billing terms (octane.dim_company: billing cycle, payment terms/day, credit limit,
+   * minimum balance) for the client modal's Billing tab. Owner-scoped like /client-cards.
+   */
+  app.get('/data-center/client-billing', guard, async (request) => {
+    const ctx = requireSalesAccess(request);
+    const { carrierId } = carrierCardsQuery.parse(request.query);
+    await assertCarrierOwned(ctx, carrierId);
+    try {
+      const billing = await getClientBilling(carrierId);
+      return { billing };
     } catch (err) {
       throw dwhError(err);
     }

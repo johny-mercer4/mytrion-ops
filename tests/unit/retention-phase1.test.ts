@@ -23,6 +23,8 @@ function baseCase(overrides: Partial<RetentionCase> = {}): RetentionCase {
     applicationId: null,
     agentName: 'Rep',
     contactPhone: null,
+    preferredLanguage: null,
+    isSpanishDesk: false,
     phaseCode: 'phase_1_agent',
     statusCode: 'p1_new',
     phaseChangedAt: new Date('2026-07-01T00:00:00Z'),
@@ -35,6 +37,7 @@ function baseCase(overrides: Partial<RetentionCase> = {}): RetentionCase {
     pendingClaimantZohoUserId: null,
     assignmentCount: 1,
     openPoolAttemptCount: 0,
+    retentionToPoolCount: 0,
     outOfReachAttempts: 0,
     dealOwnerChanged: false,
     currentDeadlineAt: null,
@@ -106,6 +109,9 @@ describe('resolvePhase1Transition', () => {
     expect(t.statusCode).toBe('p2_new');
     expect(t.agentOutcome).toBe('dissatisfied');
     expect(t.currentDeadlineType).toBe('10BD_retention');
+    // Sales owner stays assigned (auto CS reassignment disabled); also stamped as poolOwner.
+    expect(t.poolOwnerZohoUserId).toBe('777');
+    expect(t.assignedAgentZohoUserId).toBe('777');
   });
 
   it('reached stamps 5BD post-contact watch (clears OoR attempts)', () => {

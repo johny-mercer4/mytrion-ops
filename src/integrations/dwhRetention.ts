@@ -182,12 +182,22 @@ function toCandidate(row: CandidateRow, now: Date): RetentionCandidate {
 /**
  * Scan for frequency-breach candidates after Sales Agent entry exclusions.
  * `lookbackDays` bounds how long-dead an account may be and still enter the scan.
+ * `agentZohoUserIds` (optional) scopes the company CTE to those Sales owners — used by
+ * the Retention pilot so Daniel Brown (etc.) are not crowded out of the gallons top-N.
  */
 export async function scanRetentionCandidates(
-  opts: { lookbackDays?: number; limit?: number; now?: Date } = {},
+  opts: {
+    lookbackDays?: number;
+    limit?: number;
+    now?: Date;
+    agentZohoUserIds?: string[];
+  } = {},
 ): Promise<RetentionCandidate[]> {
   const lookbackDays = Math.min(Math.max(opts.lookbackDays ?? 45, 3), 365);
   const limit = Math.min(Math.max(opts.limit ?? 500, 1), 2000);
+  const agentIds = [...new Set((opts.agentZohoUserIds ?? []).map((id) => id.trim()).filter(Boolean))];
+  const agentFilter =
+    agentIds.length > 0 ? 'and c.agent_zoho_user_id::text = any($2::text[])' : '';
   const rows = await dwhQuery<CandidateRow>(
     `with billing_debtors as (
        -- Same rule as Billing Mytrion / Sales Clients roster (cmp_invoice, not dim.is_debtor).
@@ -237,9 +247,9 @@ export async function scanRetentionCandidates(
      ),
      -- Sparse but authoritative language when CRM Main_Language is filled.
      deal_lang as (
-       select id::text as zoho_deal_id, main_language
+       select zoho_deal_id::text as zoho_deal_id, main_language
          from octane.intm_zoho_deals
-        where id is not null
+        where zoho_deal_id is not null
           and main_language is not null
      )
      select c.carrier_id,
@@ -266,9 +276,10 @@ export async function scanRetentionCandidates(
         and greatest(tx.last_tx_90d, c.last_transaction_date) is not null
         and greatest(tx.last_tx_90d, c.last_transaction_date) < now() - interval '2 days'
         and greatest(tx.last_tx_90d, c.last_transaction_date) >= now() - ($1 || ' days')::interval
+        ${agentFilter}
       order by coalesce(tx.gallons_90d, 0) desc
       limit ${limit}`,
-    [String(lookbackDays)],
+    agentIds.length > 0 ? [String(lookbackDays), agentIds] : [String(lookbackDays)],
   );
   const now = opts.now ?? new Date();
   return rows.map((row) => toCandidate(row, now));

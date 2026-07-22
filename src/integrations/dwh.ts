@@ -32,7 +32,10 @@ export function getDwhPool(): Pool {
     // statement_timeout: the DWH periodically jams under dbt rebuild locks (observed: 40+
     // queries lock-waiting, even `limit 1` hanging). Without a cap, a UI request (e.g. the
     // admin client picker) sits pending forever; 30s turns that into a fast, retryable 502.
-    options: '-c default_transaction_read_only=on -c statement_timeout=30s',
+    // idle_in_transaction_session_timeout: release stuck sessions so the small shared pool
+    // is not pinned indefinitely.
+    options:
+      '-c default_transaction_read_only=on -c statement_timeout=30s -c idle_in_transaction_session_timeout=60s',
   });
   pool.on('error', (err) => logger.error({ err: err.message }, 'DWH pool error'));
   return pool;

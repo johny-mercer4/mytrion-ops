@@ -3,13 +3,15 @@
  * caller's Origin (never a bare "*") when it is either an exact configured origin or matches an
  * allowed suffix (e.g. Zoho widgets on `*.zappsusercontent.com`).
  */
-import { corsOrigins, corsOriginSuffixes } from '../config/env.js';
+import { corsOrigins, corsOriginSuffixes, isProduction } from '../config/env.js';
 
 export function isAllowedOrigin(origin: string | undefined): boolean {
   // No Origin header = non-browser caller (server-to-server, curl) — allow.
   if (!origin) return true;
-  // No configured origins at all = allow-all (local dev convenience).
-  if (corsOrigins.length === 0 && corsOriginSuffixes.length === 0) return true;
+  // No configured origins at all: allow-all in dev (local convenience), but fail CLOSED in
+  // production — a missing/empty allowlist there is a misconfiguration and must not silently
+  // reflect every origin.
+  if (corsOrigins.length === 0 && corsOriginSuffixes.length === 0) return !isProduction;
   if (corsOrigins.includes(origin)) return true;
   try {
     const host = new URL(origin).hostname.toLowerCase();

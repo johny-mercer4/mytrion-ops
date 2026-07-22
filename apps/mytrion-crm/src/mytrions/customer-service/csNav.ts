@@ -3,7 +3,7 @@ export type CsSectionId =
   | 'home'
   | 'applications'
   | 'retention-cases'
-  | 'open-pool-claims'
+  | 'open-pool'
   | 'citi-folder'
   | 'citi-fuel'
   | 'analytics'

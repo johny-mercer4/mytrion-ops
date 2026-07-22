@@ -33,6 +33,8 @@ export interface ClientRecord {
   /** Raw billing-cycle gallons (numeric) — drives the loyalty tier level. */
   cycleGallons: number;
   status: 'active' | 'attention' | 'debtor';
+  /** Live open-invoice debt ($) — surfaced in the client modal's Billing tab. 0 when not a debtor. */
+  owed?: number;
   mc: string;
   dot: string;
   /** Real per-calendar-month loyalty inputs (DWH) — shown as the "this month" figure. */
@@ -54,6 +56,10 @@ export interface SalesCtx {
   openDeal: (d: DealVM) => void;
   /** Jump to another tab (e.g. Home CTA → Automations). */
   go: (section: string) => void;
+  /** Jump to Dashboard and select a sub-tab (e.g. Home Money Owed → Debtors). */
+  openDash: (sub?: 'sales' | 'company' | 'debtors' | 'powerbi') => void;
+  focusDashSub: 'sales' | 'company' | 'debtors' | 'powerbi' | null;
+  clearFocusDashSub: () => void;
   /** Jump to the Tickets tab and auto-open a specific ticket (e.g. after Create). */
   openTicket: (ticketId: string) => void;
   /** The ticket the Tickets tab should auto-select on entry (consumed via clearFocusTicket). */

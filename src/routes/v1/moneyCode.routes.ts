@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { NotFoundError } from '../../lib/errors.js';
+import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { moneyCodeRequestRepo } from '../../repos/moneyCodeRequestRepo.js';
-import { requireContext } from './helpers.js';
+import { requireDepartment } from './helpers.js';
 
 const bodySchema = z.object({
   carrierId: z.coerce.number().int().positive(),
@@ -41,7 +42,7 @@ const voidBodySchema = z.object({ reason: z.string().max(500).nullish() });
 export async function moneyCodeRoutes(app: FastifyInstance): Promise<void> {
   // Issue (or return the existing active) money-code request. 201 created / 200 already-issued.
   app.post('/money-codes', { onRequest: [app.sessionOrApiKey] }, async (request, reply) => {
-    const ctx = requireContext(request);
+    const ctx = requireDepartment(request, 'billing', 'Money codes');
     const body = bodySchema.parse(request.body);
     // Light normalize: trim, store null if empty/absent. No format check (see schema note).
     const email = typeof body.email === 'string' ? body.email.trim() || null : null;
@@ -50,29 +51,65 @@ export async function moneyCodeRoutes(app: FastifyInstance): Promise<void> {
       email,
       requestedBy: body.requestedBy ?? ctx.userName,
     });
+    await auditFromContext(ctx, {
+      action: 'money_code.create',
+      status: 'ok',
+      resourceType: 'money_code_request',
+      resourceId: String(row.id),
+      detail: { carrierId: body.carrierId, invoiceId: body.invoiceId, created },
+    });
     reply.code(created ? 201 : 200);
     return { created, request: row };
   });
 
   // List records (the servercrm 72h auto-void cron reads this to find expired ISSUED codes).
   app.get('/money-codes', { onRequest: [app.sessionOrApiKey] }, async (request) => {
+    const ctx = requireDepartment(request, 'billing', 'Money codes');
     const q = listQuerySchema.parse(request.query);
-    const data = await moneyCodeRequestRepo.list({
+    // Non-admin billing workers see only their own draws (efs code fields stripped by
+    // listForAgent). The system/admin void-sweep keeps the full unscoped ledger it relies on.
+    if (ctx.role !== 'admin' && !ctx.allDepartmentAccess) {
+      const scoped = await moneyCodeRequestRepo.listForAgent({
+        requestedBy: ctx.userName ?? '',
+        page: 1,
+        limit: q.limit,
+        ...(q.status ? { status: q.status } : {}),
+      });
+      return { data: scoped.data };
+    }
+    const rows = await moneyCodeRequestRepo.list({
       status: q.status,
       generatedBefore: q.generatedBefore ? new Date(q.generatedBefore) : undefined,
       limit: q.limit,
       order: q.order,
+    });
+    // Never return the raw EFS code/id over HTTP — no HTTP caller needs them (the void sweep works
+    // off id+status; servercrm's cron reads the DB directly). Strip for admins too, matching the
+    // strip-everywhere pattern of listForAgent / the money_code.* touchpoints.
+    const data = rows.map((r) => {
+      const row: Record<string, unknown> = { ...r };
+      delete row.efsMoneyCode;
+      delete row.efsId;
+      return row;
     });
     return { data };
   });
 
   // Void one record. Idempotent: already-VOIDED is a 200 no-op. Frees (carrier, invoice) for re-issue.
   app.post('/money-codes/:id/void', { onRequest: [app.sessionOrApiKey] }, async (request) => {
+    const ctx = requireDepartment(request, 'billing', 'Money codes');
     const { id } = voidParamsSchema.parse(request.params);
     const parsed = voidBodySchema.parse(request.body ?? {});
     const reason = typeof parsed.reason === 'string' ? parsed.reason.trim() || null : null;
     const row = await moneyCodeRequestRepo.voidById(id, reason);
     if (!row) throw new NotFoundError(`Money code request ${id} not found`);
+    await auditFromContext(ctx, {
+      action: 'money_code.void',
+      status: 'ok',
+      resourceType: 'money_code_request',
+      resourceId: String(id),
+      detail: { reason },
+    });
     return { voided: true, request: row };
   });
 }

@@ -7,6 +7,8 @@ import { getImpersonation } from '@/api/impersonation';
 
 export const SALES_DASH_TTL_MS = 5 * 60 * 1000;
 export const COMPANY_DASH_TTL_MS = 5 * 60 * 1000;
+/** Agent debtors (CMP) — same TTL as other dashboards so tab switches feel instant. */
+export const DEBTORS_DASH_TTL_MS = 5 * 60 * 1000;
 
 export function dashCacheUserId(): string {
   return getImpersonation()?.zohoUserId ?? getSession()?.worker.zohoUserId ?? 'anon';

@@ -31,6 +31,10 @@ const EnvSchema = z.object({
   // --- Data Warehouse (separate read Postgres; tool + metadata target) ---
   DWH_DATABASE_URL: z.string().default(''),
 
+  // --- Verification DB (credit_platform — read-only metadata/reference target for the Sales
+  // Mytrion verification pipeline; surfaced in Mytrion Admin like the DWH). Render Postgres → SSL. ---
+  VERIFICATION_DATABASE_URL: z.string().default(''),
+
   // --- AWS MySQL (external RDS/Aurora MySQL; tool target, mirrors the DWH wrapper) ---
   // Two ways to point at it (discrete fields win when AWS_MYSQL_HOST is set):
   //  1. Discrete (preferred — password passed RAW, no URL-encoding footgun):
@@ -495,6 +499,11 @@ const EnvSchema = z.object({
   RETENTION_CS_ROUND_ROBIN_ZOHO_USER_IDS: z.string().default(''),
   // Spanish Retention desk assignee (bypasses RoundRobin when is_spanish_desk).
   RETENTION_CS_SPANISH_ZOHO_USER_ID: z.string().default(''),
+  // Pilot switch: when ON, auto-create Retention cases only for listed Sales agents
+  // (Zoho CRM user ids). Off = generate for all agents (production). Clear flag to reset.
+  FF_RETENTION_PILOT_ONLY: flag('0'),
+  // Comma-separated Zoho CRM user ids (e.g. Daniel Brown 6227679000031473048).
+  RETENTION_PILOT_AGENT_ZOHO_USER_IDS: z.string().default(''),
 
   // Background jobs (pg-boss on the app Postgres, own 'pgboss' schema — self-migrating).
   FF_JOBS_ENABLED: flag('0'),

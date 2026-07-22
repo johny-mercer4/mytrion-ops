@@ -113,6 +113,14 @@ export async function claimOpenPoolCase(
   return callTouchpoint('retention.pool_claim', { caseId, reason });
 }
 
+export async function loadOpenPoolQuota(): Promise<{
+  used: number;
+  max: number;
+  remaining: number;
+}> {
+  return callTouchpoint('retention.pool_quota', {});
+}
+
 export async function loadRetentionLookups(): Promise<RetentionLookupsResult> {
   return callTouchpoint('retention.lookups', {});
 }

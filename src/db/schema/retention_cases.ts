@@ -150,11 +150,16 @@ export const retentionCases = pgTable(
      * (Sales agent-to-agent transfer). Cleared when a claim is finalized.
      */
     poolOwnerZohoUserId: text('pool_owner_zoho_user_id'),
-    /** Claimant waiting on pool-owner approve / 1 BD auto-approve. */
+    /** Claimant waiting on CS approve / 1 BD auto-approve. */
     pendingClaimantZohoUserId: text('pending_claimant_zoho_user_id'),
     /** Caps at 3 (Open Pool rule). */
     assignmentCount: smallint('assignment_count').notNull().default(1),
     openPoolAttemptCount: smallint('open_pool_attempt_count').notNull().default(0),
+    /**
+     * Times this case returned Retention → Open Pool via 10 BD no-fuel.
+     * After 3, next 10 BD Retention expiry → CITI (not Pool).
+     */
+    retentionToPoolCount: smallint('retention_to_pool_count').notNull().default(0),
     /** Caps at 5. */
     outOfReachAttempts: smallint('out_of_reach_attempts').notNull().default(0),
     dealOwnerChanged: boolean('deal_owner_changed').notNull().default(false),
