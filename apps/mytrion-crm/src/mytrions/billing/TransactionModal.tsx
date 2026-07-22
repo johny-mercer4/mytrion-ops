@@ -21,6 +21,7 @@ import {
   topUpTransaction,
   unmapTransaction,
 } from '@/api/billing';
+import { computeAutoMapFlag, getCarrierMemoryIndex } from './autoMapFlag';
 import { dateFull, fmtCurrency, srcLabel } from './data';
 import {
   BM_SAVE_MSG_MS,
@@ -128,6 +129,7 @@ export function TransactionModal({ tx, currentUserName, onClose, onPatch, onToas
   /* ── Fuzzy suggestions ── */
   const [fuzzy, setFuzzy] = useState<FuzzyCarrier[]>([]);
   const [fuzzyLoading, setFuzzyLoading] = useState(false);
+  const [memoryIndex, setMemoryIndex] = useState<Map<string, Set<string>> | null>(null);
   /* ── Split ── */
   const [splitMode, setSplitMode] = useState(false);
   const [splits, setSplits] = useState<SplitAllocation[]>([]);
@@ -167,6 +169,19 @@ export function TransactionModal({ tx, currentUserName, onClose, onPatch, onToas
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* Carrier-memory index for the Zelle auto-map flag (loaded + cached once per session). */
+  useEffect(() => {
+    if (tx.isInvoiceMapped || tx.source !== 'zelle') return;
+    let off = false;
+    void getCarrierMemoryIndex().then((idx) => {
+      if (!off) setMemoryIndex(idx);
+    });
+    return () => {
+      off = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(
     () => () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -175,6 +190,16 @@ export function TransactionModal({ tx, currentUserName, onClose, onPatch, onToas
   );
 
   const companyName = (tx.sender || tx.name || '').trim();
+
+  /* Zelle auto-map suggestion (widget parity) — memo carrier-id or unique sender-memory match. */
+  const autoMapFlag = computeAutoMapFlag(tx, memoryIndex);
+  const autoMapCarrierId =
+    autoMapFlag && (autoMapFlag.kind === 'memo' || autoMapFlag.kind === 'memory-unique')
+      ? autoMapFlag.carrierId
+      : '';
+  useEffect(() => {
+    if (autoMapCarrierId) setCarrierInput((prev) => (prev.trim() ? prev : autoMapCarrierId));
+  }, [autoMapCarrierId]);
 
   /* ── Optimistic map / unmap (mirrors _applyMapping / _applyUnmap, minus broadcast) ── */
   function applyMapping(carrierId: string, mappingType: string): void {
@@ -657,6 +682,57 @@ export function TransactionModal({ tx, currentUserName, onClose, onPatch, onToas
 
             {editable ? (
               <>
+                {/* Zelle auto-map suggestion flag (parity with the widget — suggestion only). */}
+                {autoMapFlag ? (
+                  <div className={`tx-automap tx-automap-${autoMapFlag.kind}`}>
+                    <Icon
+                      d={
+                        autoMapFlag.kind === 'none'
+                          ? 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'
+                          : 'M13 10V3L4 14h7v7l9-11h-7z'
+                      }
+                      size={14}
+                      w={2}
+                    />
+                    <span>
+                      {autoMapFlag.kind === 'memo' ? (
+                        <>
+                          This transaction can be auto-mapped by carrier id <strong>{autoMapFlag.carrierId}</strong> —
+                          found in the memo. Carrier ID prefilled below.
+                        </>
+                      ) : autoMapFlag.kind === 'memory-unique' ? (
+                        <>
+                          <strong>Auto-Mapped</strong> — sender matches carrier memory with exactly one carrier id:{' '}
+                          <strong>{autoMapFlag.carrierId}</strong>. Suggestion only — verify and map manually. Carrier ID
+                          prefilled below.
+                        </>
+                      ) : autoMapFlag.candidates && autoMapFlag.candidates.length ? (
+                        <>
+                          <strong>Not Auto-Mapped</strong> — multiple carrier ids matched; choose manually:
+                        </>
+                      ) : (
+                        <>
+                          <strong>Not Auto-Mapped</strong> — no unique carrier id found in memo or sender memory. Map
+                          manually.
+                        </>
+                      )}
+                    </span>
+                    {autoMapFlag.kind === 'none'
+                      ? (autoMapFlag.candidates ?? []).map((c) => (
+                          <span
+                            key={c}
+                            className="bm-badge bm-badge-muted"
+                            style={{ cursor: 'pointer', fontSize: '0.6875rem', padding: '0.2rem 0.55rem' }}
+                            title={`Click to use Carrier ID ${c}`}
+                            onClick={() => setCarrierInput(c)}
+                          >
+                            {c}
+                          </span>
+                        ))
+                      : null}
+                  </div>
+                ) : null}
+
                 {/* Proposed carrier IDs (fuzzy) */}
                 <div className="tx-carrier-field-group">
                   <label className="tx-field-sublabel" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>

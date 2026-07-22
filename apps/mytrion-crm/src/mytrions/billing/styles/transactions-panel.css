@@ -993,3 +993,39 @@
         font-size: 0.5rem;
     }
 }
+
+/* ── Zelle auto-map suggestion flag (widget parity) ── */
+.bm-root .tx-automap {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    margin: 0.5rem 0 0.75rem;
+    padding: 0.6rem 0.8rem;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    flex-wrap: wrap;
+}
+
+.bm-root .tx-automap svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.bm-root .tx-automap-memo {
+    background: var(--accent-bg);
+    border: 1px solid var(--accent-border-strong);
+    color: var(--billing-accent);
+}
+
+.bm-root .tx-automap-memory-unique {
+    background: var(--success-bg);
+    border: 1px solid var(--success-border);
+    color: var(--success-text);
+}
+
+.bm-root .tx-automap-none {
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+}
