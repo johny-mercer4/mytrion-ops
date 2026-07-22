@@ -11,7 +11,9 @@ vi.hoisted(() => {
   process.env.API_KEY = 'test-secret-key';
 });
 
-const { createMock } = vi.hoisted(() => ({ createMock: vi.fn(async () => ({ id: 'mc_1' })) }));
+const { createMock } = vi.hoisted(() => ({
+  createMock: vi.fn(async (_ctx: unknown, _input: unknown) => ({ id: 'mc_1' })),
+}));
 vi.mock('../../src/repos/mytrionCallRepo.js', () => ({ mytrionCallRepo: { create: createMock } }));
 vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/modules/audit/auditLogger.js')>();
@@ -67,7 +69,7 @@ describe('mytrion_calls persistence', () => {
     const res = await post(ENDED_LEAD);
     expect(res.statusCode).toBe(202);
     expect(createMock).toHaveBeenCalledTimes(1);
-    const [, row] = createMock.mock.calls[0]!;
+    const row = createMock.mock.calls[0]![1] as Record<string, unknown>;
     expect(row).toMatchObject({
       callerZohoUserId: '6227679000031473048',
       phoneNumber: '+15551234567',
@@ -83,17 +85,20 @@ describe('mytrion_calls persistence', () => {
 
   it('marks a zero-duration, unconnected call as missed', async () => {
     await post({ ...ENDED_LEAD, durationMs: 0, result: 'No Answer' });
-    expect(createMock.mock.calls[0]![1]).toMatchObject({ callStatus: 'missed', durationSeconds: 0 });
+    expect(createMock.mock.calls[0]?.[1]).toMatchObject({ callStatus: 'missed', durationSeconds: 0 });
   });
 
   it('source precedence: retention_case wins over a co-present dealId', async () => {
     await post({ ...ENDED_LEAD, leadId: undefined, dealId: 'DEAL1', retentionCaseId: 'CASE1' });
-    expect(createMock.mock.calls[0]![1]).toMatchObject({ sourceType: 'retention_case', sourceId: 'CASE1' });
+    expect(createMock.mock.calls[0]?.[1]).toMatchObject({
+      sourceType: 'retention_case',
+      sourceId: 'CASE1',
+    });
   });
 
   it('logs a deal call as source_type deal', async () => {
     await post({ ...ENDED_LEAD, leadId: undefined, dealId: 'DEAL1' });
-    expect(createMock.mock.calls[0]![1]).toMatchObject({ sourceType: 'deal', sourceId: 'DEAL1' });
+    expect(createMock.mock.calls[0]?.[1]).toMatchObject({ sourceType: 'deal', sourceId: 'DEAL1' });
   });
 
   it('does NOT log inbound, non-ended, or source-less calls', async () => {

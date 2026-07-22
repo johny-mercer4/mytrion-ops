@@ -301,7 +301,7 @@ export const retentionCaseCsRepo = {
       previousAssigneeZohoUserId: existing.assignedAgentZohoUserId,
       tenantId: ctx.tenantId,
       actorZohoUserId: opts.actorZohoUserId,
-      actorName: opts.agentName,
+      actorName: opts.agentName ?? null,
     });
     // Out of Business → Zoho Deal Stage Closed Lost (exclude from future retention).
     if (updated.statusCode === 'p2_out_of_business' && updated.zohoDealId) {

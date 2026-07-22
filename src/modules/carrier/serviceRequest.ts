@@ -29,7 +29,8 @@ export type ServiceRequestKey =
   | 'card-replace'
   | 'card-fraud'
   | 'billing-form'
-  | 'ref-guides';
+  | 'account-reactivate'
+  | 'dispute-txn';
 
 interface ServiceRequestSpec {
   /** Desk ticket subject. Prefixed with the channel so CS can see where it came from. */
@@ -102,11 +103,21 @@ const SERVICE_REQUESTS: Record<ServiceRequestKey, ServiceRequestSpec> = {
     roles: ['owner'],
     ticketType: 'Billing',
   },
-  'ref-guides': {
-    subject: 'Reference guides',
+  // C-7 — reactivating a suspended account is tied to payment review, so it stays a human
+  // decision: this files the structured request; CS verifies and reactivates.
+  'account-reactivate': {
+    subject: 'Reactivate my account',
     dept: 'cs',
     roles: ['owner'],
-    ticketType: 'Reports Center',
+    ticketType: 'Card Management',
+  },
+  // "Dispute a transaction — for billing questions, not suspected fraud" (SelfService spec), so it
+  // routes to Billing, and a driver may flag a charge on their own card too.
+  'dispute-txn': {
+    subject: 'Dispute a transaction',
+    dept: 'billing',
+    roles: ['owner', 'driver'],
+    ticketType: 'Billing',
   },
 };
 
@@ -117,13 +128,18 @@ export function serviceRequestSpec(key: ServiceRequestKey): ServiceRequestSpec {
   return SERVICE_REQUESTS[key];
 }
 
-export function serviceRequestAllows(key: ServiceRequestKey, profile: 'owner' | 'driver'): boolean {
-  return SERVICE_REQUESTS[key].roles.includes(profile);
+export function serviceRequestAllows(
+  key: ServiceRequestKey,
+  profile: 'owner' | 'manager' | 'driver',
+): boolean {
+  // A manager has owner-equivalent access — the per-service role lists stay owner/driver.
+  const effective = profile === 'manager' ? 'owner' : profile;
+  return SERVICE_REQUESTS[key].roles.includes(effective);
 }
 
 export interface FileServiceRequestInput {
   key: ServiceRequestKey;
-  profile: 'owner' | 'driver';
+  profile: 'owner' | 'manager' | 'driver';
   carrierId: string;
   /** The requester's card. For a driver this is resolved SERVER-SIDE from their registration and is
    *  never caller-supplied — otherwise a driver could file an override against a colleague's card. */

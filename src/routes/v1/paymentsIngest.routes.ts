@@ -14,6 +14,11 @@
  * app-owned mapping/returns columns. So a Zap retry or a re-parsed email can't duplicate a row or
  * clobber a mapping an agent already made. Rows land UNMAPPED and appear in the Transactions tab
  * for mapping (fuzzy carrier suggestions come from the learned carrier memory).
+ *
+ * Pre-mapped feeds: the 3 Stripe Zaps aren't equal — one is the "Invoice payment" account (normal
+ * unmapped flow, agent maps it → CMP), the other two are already reconciled and should NOT hit the
+ * agent queue. Those two send `preMapped: true`; we then flag the row is_invoice_mapped=true in PG
+ * with NO CMP action (mapping happens only in our DB), applied only if still unmapped.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -38,7 +43,7 @@ const ingestBody = z.object({
   amount: z.preprocess((v) => {
     if (v === null || v === undefined || v === '') return undefined;
     if (typeof v === 'number') return v;
-    const n = Number(String(v).replace(/[^0-9.\-]/g, ''));
+    const n = Number(String(v).replace(/[^0-9.-]/g, ''));
     return Number.isFinite(n) ? n : undefined;
   }, z.number().optional()),
   currency: z.string().max(8).optional(),
@@ -52,6 +57,16 @@ const ingestBody = z.object({
   cardLast4: z.string().max(8).optional(),
   status: z.string().max(60).optional(),
   externalTxnId: z.string().max(160).optional(),
+  // Feeds that arrive already reconciled (the 2 non-invoice Stripe accounts) set this so the row
+  // lands is_invoice_mapped=true with NO CMP action — it never enters the agent's unmapped queue.
+  // The one "Invoice payment" Stripe Zap omits it (or sends false) → normal unmapped flow.
+  preMapped: z.preprocess((v) => {
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'string') return ['true', '1', 'yes'].includes(v.trim().toLowerCase());
+    return undefined;
+  }, z.boolean().optional()),
+  // Optional label override for the pre-mapped state (defaults to "Stripe (auto)").
+  mappingType: z.string().max(60).optional(),
 });
 
 export async function paymentsIngestRoutes(app: FastifyInstance): Promise<void> {
@@ -94,6 +109,14 @@ export async function paymentsIngestRoutes(app: FastifyInstance): Promise<void> 
     };
 
     await paymentTransactionRepo.upsertMany([row]);
+    // Pre-mapped feed (e.g. the non-invoice Stripe accounts): flag it mapped in PG only — no CMP.
+    // Applied AFTER the upsert and only if still unmapped, so it never clobbers a local mapping.
+    if (b.preMapped) {
+      await paymentTransactionRepo.markIngestMapped(b.source, b.sourceRecordId, {
+        mappingType: b.mappingType || 'Stripe (auto)',
+        mappedBy: 'Zapier (auto)',
+      });
+    }
     // Financial write audit trail. Secret-authed webhook (no session ctx) → synthetic system actor.
     await audit({
       tenantId: DEFAULT_TENANT_ID,
@@ -103,10 +126,18 @@ export async function paymentsIngestRoutes(app: FastifyInstance): Promise<void> 
       userName: 'zapier-ingest',
       resourceType: 'payment_transaction',
       resourceId: `${b.source}:${b.sourceRecordId}`,
-      detail: { source: b.source, amount: b.amount ?? null },
+      detail: { source: b.source, amount: b.amount ?? null, preMapped: !!b.preMapped },
       requestId: request.id,
     });
-    request.log.info({ source: b.source, sourceRecordId: b.sourceRecordId }, 'billing ingest: payment upserted');
-    return reply.send({ status: 'success', source: b.source, sourceRecordId: b.sourceRecordId });
+    request.log.info(
+      { source: b.source, sourceRecordId: b.sourceRecordId, preMapped: !!b.preMapped },
+      'billing ingest: payment upserted',
+    );
+    return reply.send({
+      status: 'success',
+      source: b.source,
+      sourceRecordId: b.sourceRecordId,
+      mapped: !!b.preMapped,
+    });
   });
 }

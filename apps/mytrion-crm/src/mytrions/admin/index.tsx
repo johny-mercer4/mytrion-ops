@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { AccessIcon, DatabaseIcon, HistoryIcon, JobsIcon, KnowledgeIcon, ScopeIcon, SearchIcon, TrainIcon, UsersIcon, WarehouseIcon } from '../../components/icons';
+import { AccessIcon, DatabaseIcon, DocIcon, HistoryIcon, JobsIcon, KnowledgeIcon, ScopeIcon, SearchIcon, TrainIcon, UsersIcon, WarehouseIcon } from '../../components/icons';
 import { MytrionShell, type NavItem } from '../_shared/MytrionShell';
 import { AuditLog } from './AuditLog';
 import { CarrierUsers } from './CarrierUsers';
+import { ClientNews } from './ClientNews';
 import { CmpDatabase } from './CmpDatabase';
 import { DwhDatabase } from './DwhDatabase';
 import { VerificationDatabase } from './VerificationDatabase';
@@ -17,7 +18,21 @@ import { ChatPanel } from '../../features/chat/ChatPanel';
 import { useUserContext } from '../../context/UserContextProvider';
 import { ChatIcon } from '../../components/icons';
 
-type Tab = 'kb' | 'train' | 'browser' | 'scope' | 'carriers' | 'carrier-invites' | 'audit' | 'jobs' | 'cmp' | 'dwh' | 'verification-db' | 'access' | 'horizon';
+type Tab =
+  | 'kb'
+  | 'train'
+  | 'browser'
+  | 'scope'
+  | 'carriers'
+  | 'carrier-invites'
+  | 'news'
+  | 'audit'
+  | 'jobs'
+  | 'cmp'
+  | 'dwh'
+  | 'verification-db'
+  | 'access'
+  | 'horizon';
 
 const CARRIER_TABS: Tab[] = ['carriers', 'carrier-invites'];
 
@@ -57,6 +72,7 @@ export default function AdminMytrion() {
         },
       ],
     },
+    { key: 'news', label: 'Client News', icon: <DocIcon />, active: tab === 'news', onClick: () => setTab('news') },
     { key: 'audit', label: 'Audit Log', icon: <HistoryIcon size={18} />, active: tab === 'audit', onClick: () => setTab('audit') },
     { key: 'jobs', label: 'Jobs', icon: <JobsIcon />, active: tab === 'jobs', onClick: () => setTab('jobs') },
     { key: 'cmp', label: 'CMP Database', icon: <DatabaseIcon />, active: tab === 'cmp', onClick: () => setTab('cmp') },
@@ -74,6 +90,7 @@ export default function AdminMytrion() {
       {tab === 'access' && <UserManagement />}
       {/* One element across both sub-tabs, so switching keeps the loaded lists and the form state. */}
       {CARRIER_TABS.includes(tab) && <CarrierUsers view={tab === 'carrier-invites' ? 'invitations' : 'registered'} />}
+      {tab === 'news' && <ClientNews />}
       {tab === 'audit' && <AuditLog />}
       {tab === 'jobs' && <Jobs />}
       {tab === 'cmp' && <CmpDatabase />}

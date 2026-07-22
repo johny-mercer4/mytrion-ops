@@ -12,6 +12,10 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+/** A transient network blip (dev-server restart, brief unreachability, Render cold start) surfaces
+ *  as an ApiError with code 'NETWORK'. We retry those ONCE after this delay before surfacing them. */
+const NETWORK_RETRY_MS = 700;
+
 export interface Loaded<T> {
   data: T | null;
   loading: boolean;
@@ -53,19 +57,34 @@ export function useLoad<T>(fn: (fresh: boolean) => Promise<T>, deps: unknown[]):
       setLoading(dataRef.current === null);
     }
     setError(null);
-    fn(isFresh)
-      .then((d) => {
+    const isNetworkErr = (e: unknown): boolean =>
+      !!e && typeof e === 'object' && (e as { code?: string }).code === 'NETWORK';
+    // Retry a transient NETWORK miss once before surfacing it, so a momentary drop (dev-server
+    // restart, cold start) doesn't wipe the view. Real failures (4xx/5xx or a second miss) surface.
+    void (async () => {
+      try {
+        let d: T;
+        try {
+          d = await fn(isFresh);
+        } catch (e) {
+          if (off || !isNetworkErr(e)) throw e;
+          await new Promise((r) => setTimeout(r, NETWORK_RETRY_MS));
+          if (off) return;
+          d = await fn(isFresh);
+        }
         if (off) return;
         dataRef.current = d;
         setData(d);
-      })
-      .catch((e: unknown) => !off && setError(e instanceof Error ? e.message : 'Failed to load'))
-      .finally(() => {
-        if (off) return;
-        setLoading(false);
-        setRefreshing(false);
-        freshRef.current = false;
-      });
+      } catch (e) {
+        if (!off) setError(e instanceof Error ? e.message : 'Failed to load');
+      } finally {
+        if (!off) {
+          setLoading(false);
+          setRefreshing(false);
+          freshRef.current = false;
+        }
+      }
+    })();
     return () => {
       off = true;
     };

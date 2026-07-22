@@ -8,13 +8,13 @@
  * ./data.ts. The deal-billing edit (a Zoho CRM write) was removed — billing fields are now managed
  * in Zoho CRM directly, so Data Center never writes to Zoho.
  *
- * Detail modal lazy-loads avg-days (billing.datacenter.avgDays) and invoices/prepay
- * (billing.invoices.search) — both DWH-sourced; Debtor Status + Recent Transactions render as
- * graceful, honest placeholders (no per-carrier billing touchpoint wired for those yet).
+ * Detail modal lazy-loads avg-days (billing.datacenter.avgDays, DWH) and the carrier's invoices
+ * (searchCarrierInvoices → GET /billing/invoices/search, a CMP read via servercrm); Debtor Status +
+ * Recent Transactions render as graceful, honest placeholders (no per-carrier source wired yet).
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
-import { billingTouchpoint } from '@/api/billing';
+import { billingTouchpoint, searchCarrierInvoices } from '@/api/billing';
 import type { BillingDealsResult, BillingInvoicesResult } from '@/api/touchpointTypes';
 import { useLoad } from '../_shared/useLoad';
 import { type Deal, type PayType, type StageSem, type Verify, payMeta, stageMeta } from './data';
@@ -147,11 +147,10 @@ export function DataCenter() {
   const [selectedStages, setSelectedStages] = useState<string[]>([]);
   const [stageOpen, setStageOpen] = useState(false);
   const [openDeal, setOpenDeal] = useState<Deal | null>(null);
-  const [refreshTick, setRefreshTick] = useState(0);
 
   const load = useLoad<BillingDealsResult>(
-    () => billingTouchpoint('billing.datacenter.deals', refreshTick > 0 ? { fresh: '1' } : {}),
-    [refreshTick],
+    (fresh) => billingTouchpoint('billing.datacenter.deals', fresh ? { fresh: '1' } : {}),
+    [],
   );
 
   // Sync fetched rows into local state (kept mutable so a save can patch a row in place — widget parity).
@@ -224,7 +223,7 @@ export function DataCenter() {
     setSearch('');
     setActiveFilter('all');
     setSelectedStages([]);
-    setRefreshTick((t) => t + 1);
+    load.refresh();
   }
 
   return (
@@ -238,8 +237,13 @@ export function DataCenter() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <button className="bm-refresh-btn" onClick={reload} disabled={loading} title="Refresh">
-            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" className={loading ? 'spin-icon' : undefined}>
+          <button
+            className="bm-refresh-btn"
+            onClick={reload}
+            disabled={loading || load.refreshing}
+            title="Refresh"
+          >
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" className={loading || load.refreshing ? 'spin-icon' : undefined}>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={P_REFRESH} />
             </svg>
             Refresh
@@ -339,8 +343,10 @@ export function DataCenter() {
         </div>
       ) : null}
 
-      {/* ── Error ── */}
-      {load.error ? (
+      {/* ── Error ── the full banner only when there's nothing to show; if deals are already on
+           screen, a transient refresh failure shows a small non-destructive notice instead of
+           wiping the table. */}
+      {load.error && deals.length === 0 ? (
         <div className="bm-section">
           <div className="tx-save-msg error">
             <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -348,6 +354,17 @@ export function DataCenter() {
             </svg>
             Failed to load deals. {load.error}
           </div>
+        </div>
+      ) : null}
+      {load.error && deals.length > 0 ? (
+        <div className="dc-refresh-warning" title={load.error}>
+          <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={P_WARN} />
+          </svg>
+          Couldn’t refresh — showing the last loaded deals.
+          <button className="dc-refresh-warning-retry" onClick={reload} disabled={load.refreshing}>
+            Retry
+          </button>
         </div>
       ) : null}
 
@@ -515,7 +532,7 @@ function DealDetailModal({ deal, onClose }: { deal: Deal; onClose: () => void })
   const inv = useLoad<BillingInvoicesResult>(
     () =>
       deal.carrierId
-        ? billingTouchpoint('billing.invoices.search', { carrierId: deal.carrierId })
+        ? searchCarrierInvoices(deal.carrierId)
         : Promise.resolve<BillingInvoicesResult>({}),
     [deal.carrierId],
   );

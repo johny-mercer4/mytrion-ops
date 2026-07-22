@@ -295,7 +295,7 @@ export const retentionCasePhase1Repo = {
         if (landedInCiti) {
           await afterRetentionPhaseSideEffects(existing.phaseCode, dto, {
             tenantId: ctx.tenantId,
-            actorZohoUserId: input.actorZohoUserId,
+            actorZohoUserId: input.actorZohoUserId ?? null,
           });
         }
         if (landedInPool) {

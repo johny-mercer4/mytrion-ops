@@ -27,6 +27,15 @@ export interface TxnReportMeta {
   cardLast4: string;
   /** Set for a driver export — the report then states it covers a single card. */
   scopedToCard?: boolean | undefined;
+  /**
+   * 'discount' (default) — today's report: Amount is the funded (discounted) total, Discount shown.
+   * 'retail' — EFS "Retail Price Only": Amount is re-priced to funded+discount and the Discount
+   * column is blanked (totals included). Used for accounting's "without discount" variant and
+   * FORCED for driver exports, whose reports must not reveal the owner's discount terms.
+   */
+  priceMode?: 'discount' | 'retail' | undefined;
+  /** Feedback-driven detailed layout: full card number + Driver / Unit / Driver ID columns. */
+  detailed?: boolean | undefined;
 }
 
 export interface BuiltTxnReport {
@@ -60,7 +69,13 @@ interface ColumnSpec {
   numFmt?: string;
 }
 
-const COLUMNS: ColumnSpec[] = [
+/**
+ * Column sets. `detailed` mirrors the EFS report builder's "Show Entire Card Number" + Match-By
+ * fields (Driver Name / Unit / Driver ID) — asked for verbatim in client feedback, and the fields
+ * already arrive on every mart row (driver_card_name / driver_unit / driver_id); the standard
+ * report simply dropped them. Standard stays the compact 9-column layout.
+ */
+const BASE_COLUMNS: ColumnSpec[] = [
   { header: 'Date', weight: 13, xlsxWidth: 19, align: 'left' },
   { header: 'Location', weight: 22, xlsxWidth: 26, align: 'left' },
   { header: 'City', weight: 12, xlsxWidth: 16, align: 'left' },
@@ -71,6 +86,30 @@ const COLUMNS: ColumnSpec[] = [
   { header: 'Amount', weight: 9, xlsxWidth: 12, align: 'right', numFmt: '#,##0.00' },
   { header: 'Discount', weight: 9, xlsxWidth: 12, align: 'right', numFmt: '#,##0.00' },
 ];
+
+const DETAILED_COLUMNS: ColumnSpec[] = [
+  { header: 'Date', weight: 12, xlsxWidth: 19, align: 'left' },
+  { header: 'Location', weight: 16, xlsxWidth: 24, align: 'left' },
+  { header: 'City', weight: 9, xlsxWidth: 14, align: 'left' },
+  { header: 'State', weight: 5, xlsxWidth: 8, align: 'center' },
+  // Full 19-digit PAN — wide enough that it never ellipsizes in the PDF.
+  { header: 'Card', weight: 16, xlsxWidth: 22, align: 'left' },
+  { header: 'Driver', weight: 13, xlsxWidth: 18, align: 'left' },
+  { header: 'Unit', weight: 6, xlsxWidth: 9, align: 'center' },
+  { header: 'Driver ID', weight: 7, xlsxWidth: 11, align: 'left' },
+  { header: 'Category', weight: 7, xlsxWidth: 12, align: 'left' },
+  { header: 'Qty', weight: 6, xlsxWidth: 10, align: 'right', numFmt: '#,##0.00' },
+  { header: 'Amount', weight: 8, xlsxWidth: 12, align: 'right', numFmt: '#,##0.00' },
+  { header: 'Discount', weight: 8, xlsxWidth: 12, align: 'right', numFmt: '#,##0.00' },
+];
+
+/** Which columns carry a summable total, keyed by header — renderers look totals up here instead
+ *  of hardcoding column indexes, so the two layouts share one totals path. */
+const TOTAL_BY_HEADER: Record<string, (t: Grid['totals']) => number> = {
+  Qty: (t) => t.qty,
+  Amount: (t) => t.amount,
+  Discount: (t) => t.discount,
+};
 
 const MAX_PDF_ROWS = 2_000;
 
@@ -86,9 +125,11 @@ const n = (v: unknown): number => {
   const x = typeof v === 'string' ? Number(v) : typeof v === 'number' ? v : NaN;
   return Number.isFinite(x) ? x : 0;
 };
-const last4 = (v: unknown): string => {
+/** Product rule (2026-07-20): fuel cards show their LAST 6 digits — last-4 is not unique within a
+ *  fleet (one carrier measured 11 active cards sharing a last-4). */
+const tail6 = (v: unknown): string => {
   const t = s(v);
-  return t.length >= 4 ? t.slice(-4) : t;
+  return t.length >= 6 ? t.slice(-6) : t;
 };
 
 /**
@@ -116,36 +157,54 @@ function dateCell(v: unknown): string {
 type Cell = string | number;
 
 interface Grid {
+  cols: ColumnSpec[];
   rows: Cell[][];
   totals: { qty: number; amount: number; discount: number };
 }
 
 /** Field fallbacks mirror the mini-app's Transactions sheet: the mart's `line_item_*` names, with
- *  CMP's `funded_total`/`net_total` tolerated. */
-function toGrid(txns: ReadonlyArray<Record<string, unknown>>): Grid {
+ *  CMP's `funded_total`/`net_total` tolerated.
+ *
+ *  `retail` mode: Amount becomes funded+discount (the retail price, matching how the agent widget
+ *  and EFS re-price when discounts are hidden) and the Discount column is blanked rather than
+ *  zeroed — a 0.00 would read as "there was no discount", which is not the claim being made. */
+function toGrid(
+  txns: ReadonlyArray<Record<string, unknown>>,
+  priceMode: 'discount' | 'retail',
+  detailed: boolean,
+): Grid {
+  const retail = priceMode === 'retail';
   let qty = 0;
   let amount = 0;
   let discount = 0;
   const rows = txns.map((t) => {
-    const a = n(t['line_item_amount'] ?? t['funded_total'] ?? t['net_total']);
+    const funded = n(t['line_item_amount'] ?? t['funded_total'] ?? t['net_total']);
     const d = n(t['line_item_discount_amount']);
+    const a = retail ? funded + d : funded;
     const q = n(t['line_item_fuel_quantity'] ?? t['transaction_fuel_quantity']);
     qty += q;
     amount += a;
-    discount += d;
+    if (!retail) discount += d;
+    // Detailed: the full PAN (it identifies the row for accounting; the client owns these cards)
+    // plus the driver identity fields the mart already carries on every line item.
+    const card = detailed ? s(t['card_number']) : `•••• ${tail6(t['card_number'])}`;
+    const driverCells: Cell[] = detailed
+      ? [s(t['driver_card_name'] ?? t['driver_name']), s(t['driver_unit'] ?? t['unit_number']), s(t['driver_id'])]
+      : [];
     return [
       dateCell(t['transaction_date']),
       s(t['location_name']),
       s(t['location_city']),
       s(t['location_state']),
-      `•••• ${last4(t['card_number'])}`,
+      card,
+      ...driverCells,
       s(t['line_item_category']),
       q,
       a,
-      d,
+      retail ? '' : d,
     ] as Cell[];
   });
-  return { rows, totals: { qty, amount, discount } };
+  return { cols: detailed ? DETAILED_COLUMNS : BASE_COLUMNS, rows, totals: { qty, amount, discount } };
 }
 
 /** Filename-safe slug. Also what stops a report smuggling a path separator into sendDocument. */
@@ -153,8 +212,11 @@ function safe(part: string): string {
   return (part || '').replace(/[^a-z0-9_-]+/gi, '-').slice(0, 40) || 'export';
 }
 
-const subtitle = (meta: TxnReportMeta): string =>
-  meta.scopedToCard ? `Card •••• ${meta.cardLast4} · ${meta.range}` : `All cards · ${meta.range}`;
+const subtitle = (meta: TxnReportMeta): string => {
+  const scope = meta.scopedToCard ? `Card •••• ${meta.cardLast4}` : 'All cards';
+  const price = meta.priceMode === 'retail' ? ' · Retail prices' : '';
+  return `${scope} · ${meta.range}${price}`;
+};
 
 // ── CSV ────────────────────────────────────────────────────────────────────────────────────────
 // No branding possible in CSV — it is the machine-readable option. Kept faithful to the grid.
@@ -162,10 +224,14 @@ const subtitle = (meta: TxnReportMeta): string =>
 const csvEscape = (v: string): string => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 
 function toCsv(grid: Grid): string {
-  const fmt = (c: Cell, i: number) => (typeof c === 'number' ? (COLUMNS[i]?.numFmt ? c.toFixed(2) : String(c)) : c);
+  const fmt = (c: Cell, i: number) => (typeof c === 'number' ? (grid.cols[i]?.numFmt ? c.toFixed(2) : String(c)) : c);
   const body = grid.rows.map((r) => r.map((c, i) => csvEscape(fmt(c, i))).join(','));
-  const totals = ['TOTAL', '', '', '', '', '', grid.totals.qty.toFixed(2), grid.totals.amount.toFixed(2), grid.totals.discount.toFixed(2)];
-  return [COLUMNS.map((c) => c.header).join(','), ...body, totals.join(',')].join('\r\n');
+  const totals = grid.cols.map((c, i) => {
+    if (i === 0) return 'TOTAL';
+    const total = TOTAL_BY_HEADER[c.header];
+    return total ? total(grid.totals).toFixed(2) : '';
+  });
+  return [grid.cols.map((c) => c.header).join(','), ...body, totals.join(',')].join('\r\n');
 }
 
 // ── XLSX ───────────────────────────────────────────────────────────────────────────────────────
@@ -181,7 +247,8 @@ async function toXlsx(grid: Grid, meta: TxnReportMeta): Promise<Buffer> {
     pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
   });
 
-  const lastCol = COLUMNS.length;
+  const cols = grid.cols;
+  const lastCol = cols.length;
   const colLetter = (i: number) => String.fromCharCode(64 + i);
 
   // Title block — brand ink band with the wordmark, then the report subject.
@@ -214,7 +281,7 @@ async function toXlsx(grid: Grid, meta: TxnReportMeta): Promise<Buffer> {
 
   // Header.
   const headerRow = ws.getRow(4);
-  COLUMNS.forEach((c, i) => {
+  cols.forEach((c, i) => {
     const cell = headerRow.getCell(i + 1);
     cell.value = c.header;
     cell.font = { bold: true, size: 10, color: { argb: argb('FFFFFF') } };
@@ -231,7 +298,7 @@ async function toXlsx(grid: Grid, meta: TxnReportMeta): Promise<Buffer> {
   grid.rows.forEach((r, ri) => {
     const row = ws.getRow(5 + ri);
     r.forEach((v, i) => {
-      const spec = COLUMNS[i];
+      const spec = cols[i];
       if (!spec) return;
       const cell = row.getCell(i + 1);
       cell.value = v;
@@ -253,14 +320,16 @@ async function toXlsx(grid: Grid, meta: TxnReportMeta): Promise<Buffer> {
   const lastRow = first + grid.rows.length - 1;
   const totalRow = ws.getRow(lastRow + 1);
   totalRow.getCell(1).value = 'TOTAL';
-  [7, 8, 9].forEach((i) => {
+  cols.forEach((c, idx) => {
+    if (!TOTAL_BY_HEADER[c.header]) return;
+    const i = idx + 1;
     const cell = totalRow.getCell(i);
     cell.value = grid.rows.length ? { formula: `SUM(${colLetter(i)}${first}:${colLetter(i)}${lastRow})` } : 0;
-    cell.numFmt = COLUMNS[i - 1]?.numFmt ?? '#,##0.00';
+    cell.numFmt = c.numFmt ?? '#,##0.00';
   });
   totalRow.eachCell((cell, i) => {
     cell.font = { bold: true, size: 10, color: { argb: argb(BRAND.ink) } };
-    cell.alignment = { horizontal: COLUMNS[i - 1]?.align ?? 'left', vertical: 'middle', indent: 1 };
+    cell.alignment = { horizontal: cols[i - 1]?.align ?? 'left', vertical: 'middle', indent: 1 };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb('FFFFFF') } };
     cell.border = {
       top: { style: 'medium', color: { argb: argb(BRAND.orange) } },
@@ -271,7 +340,7 @@ async function toXlsx(grid: Grid, meta: TxnReportMeta): Promise<Buffer> {
   totalRow.height = XLSX_ROW_H + 3;
 
   if (grid.rows.length) ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: lastRow, column: lastCol } };
-  COLUMNS.forEach((c, i) => {
+  cols.forEach((c, i) => {
     ws.getColumn(i + 1).width = c.xlsxWidth;
   });
 
@@ -325,14 +394,14 @@ function pdfHeader(doc: PDFKit.PDFDocument, meta: TxnReportMeta): void {
   doc.y = PDF_MARGIN + 84;
 }
 
-function pdfTableHeader(doc: PDFKit.PDFDocument, widths: number[]): void {
+function pdfTableHeader(doc: PDFKit.PDFDocument, widths: number[], cols: ColumnSpec[]): void {
   const { left } = doc.page.margins;
   const y = doc.y;
   const h = HEAD_H;
   doc.rect(left, y, widths.reduce((a, b) => a + b, 0), h).fill(hex(BRAND.ink));
   doc.font('Helvetica-Bold').fontSize(HEAD_PT).fillColor('#FFFFFF');
   let x = left;
-  COLUMNS.forEach((c, i) => {
+  cols.forEach((c, i) => {
     const w = widths[i] ?? 0;
     doc.text(pdfSafe(c.header), x + 6, y + (HEAD_H - HEAD_PT) / 2, { width: w - 12, align: c.align });
     x += w;
@@ -359,12 +428,13 @@ async function toPdf(grid: Grid, meta: TxnReportMeta): Promise<Buffer> {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
+    const cols = grid.cols;
     const usable = doc.page.width - PDF_MARGIN * 2;
-    const totalWeight = COLUMNS.reduce((a, c) => a + c.weight, 0);
-    const widths = COLUMNS.map((c) => (c.weight / totalWeight) * usable);
+    const totalWeight = cols.reduce((a, c) => a + c.weight, 0);
+    const widths = cols.map((c) => (c.weight / totalWeight) * usable);
 
     pdfHeader(doc, meta);
-    pdfTableHeader(doc, widths);
+    pdfTableHeader(doc, widths, cols);
 
     const bottom = doc.page.height - PDF_MARGIN - 24;
     grid.rows.forEach((r, ri) => {
@@ -372,14 +442,14 @@ async function toPdf(grid: Grid, meta: TxnReportMeta): Promise<Buffer> {
       if (doc.y + rowH > bottom) {
         doc.addPage();
         pdfHeader(doc, meta);
-        pdfTableHeader(doc, widths); // repeat the header on every page — a client may print this
+        pdfTableHeader(doc, widths, cols); // repeat the header on every page — a client may print this
       }
       const y = doc.y;
       if (ri % 2 === 1) doc.rect(PDF_MARGIN, y, usable, rowH).fill(hex(BRAND.zebra));
       doc.font('Helvetica').fontSize(BODY_PT).fillColor(hex(BRAND.ink));
       let x = PDF_MARGIN;
       r.forEach((v, i) => {
-        const spec = COLUMNS[i];
+        const spec = cols[i];
         if (!spec) return;
         const w = widths[i] ?? 0;
         const text = typeof v === 'number' ? v.toFixed(2) : v;
@@ -394,16 +464,20 @@ async function toPdf(grid: Grid, meta: TxnReportMeta): Promise<Buffer> {
     if (doc.y + ROW_H > bottom) {
       doc.addPage();
       pdfHeader(doc, meta);
-      pdfTableHeader(doc, widths);
+      pdfTableHeader(doc, widths, cols);
     }
     const ty = doc.y;
     doc.rect(PDF_MARGIN, ty, usable, 1.5).fill(hex(BRAND.orange));
     doc.font('Helvetica-Bold').fontSize(HEAD_PT).fillColor(hex(BRAND.ink));
-    const cells = ['TOTAL', '', '', '', '', '', grid.totals.qty.toFixed(2), grid.totals.amount.toFixed(2), grid.totals.discount.toFixed(2)];
+    const cells = cols.map((c, i) => {
+      if (i === 0) return 'TOTAL';
+      const total = TOTAL_BY_HEADER[c.header];
+      return total ? total(grid.totals).toFixed(2) : '';
+    });
     let tx = PDF_MARGIN;
     cells.forEach((v, i) => {
       const w = widths[i] ?? 0;
-      doc.text(pdfSafe(v), tx + 6, ty + (ROW_H - HEAD_PT) / 2 + 2, { width: w - 12, align: COLUMNS[i]?.align ?? 'left', lineBreak: false });
+      doc.text(pdfSafe(v), tx + 6, ty + (ROW_H - HEAD_PT) / 2 + 2, { width: w - 12, align: cols[i]?.align ?? 'left', lineBreak: false });
       tx += w;
     });
 
@@ -433,8 +507,10 @@ export async function buildTxnReport(
   format: TxnReportFormat,
   meta: TxnReportMeta,
 ): Promise<BuiltTxnReport> {
-  const grid = toGrid(txns);
-  const base = `Octane_Transactions_${safe(meta.cardLast4)}_${safe(meta.range)}`;
+  const grid = toGrid(txns, meta.priceMode ?? 'discount', meta.detailed === true);
+  const retailTag = meta.priceMode === 'retail' ? '_Retail' : '';
+  const detailTag = meta.detailed ? '_Detailed' : '';
+  const base = `Octane_Transactions_${safe(meta.cardLast4)}_${safe(meta.range)}${retailTag}${detailTag}`;
   if (format === 'csv') {
     // Leading BOM so Excel reads the UTF-8 bytes as UTF-8 rather than the local ANSI codepage.
     return { fileName: `${base}.csv`, contentType: 'text/csv; charset=utf-8', bytes: Buffer.from(`\uFEFF${toCsv(grid)}`, 'utf8') };

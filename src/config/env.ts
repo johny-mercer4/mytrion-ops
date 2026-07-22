@@ -394,6 +394,20 @@ const EnvSchema = z.object({
   // --- Feature flags ---
   FF_PARTNER_AUDIENCE_ENABLED: flag('1'),
   FF_KNOWLEDGE_INGEST_ENABLED: flag('1'),
+  // Mini-app self-service WRITE actions (C-16 override, C-1/C-3 activate/deactivate, C-4/5 limits,
+  // C-26 unit/driver, C-10 fraud request) — carrier-scoped, rate-limited, audit-logged. Off by
+  // default: enable per environment once the pilot carrier is briefed.
+  FF_MINIAPP_CARD_WRITES_ENABLED: flag('0'),
+  /** Comma-separated carrier ids piloted for notification pollers (card_status diff). Empty =
+   *  the cron job no-ops — per-carrier rollout, Onzmove first (see notification ultraplan). */
+  NOTIFY_POLL_CARRIERS: z.string().default(''),
+  // Mini-app C-17 money-code preview/draw (servercrm owns the limit math). Off by default.
+  FF_MINIAPP_MONEY_CODE_ENABLED: flag('0'),
+  /** Mini-app "add a manager" invite creation. OFF by owner decision 2026-07-22 — managers are
+   *  onboarded by Octane agents only; the roster (list/revoke) in the mini-app stays available. */
+  FF_MINIAPP_MANAGER_INVITES_ENABLED: flag('0'),
+  // Cap on a single mini-app limit CHANGE (C-4/5). Bigger adjustments go through CS.
+  MINIAPP_LIMIT_CHANGE_MAX: z.coerce.number().positive().default(1000),
   // Always-on RAG: inject RBAC-scoped pgvector passages into every chat turn.
   FF_RAG_ENABLED: flag('1'),
   // Hybrid retrieval (vector + full-text RRF fusion). Requires the content_tsv migration.

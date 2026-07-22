@@ -21,12 +21,21 @@ export function getDwhPool(): Pool {
   pool = new pg.Pool({
     connectionString: env.DWH_DATABASE_URL,
     ssl: false, // DWH is a direct, non-TLS Postgres (matches servercrm).
-    max: 10,
-    idleTimeoutMillis: 30_000,
+    // The DWH is a small, shared analytics Postgres with a low connection cap — servercrm,
+    // mytrion-ops (prod + any dev instance), and BI tools all share it. Keep this pool small (was
+    // 10) and release idle connections quickly so the sum stays under the limit; an oversized pool
+    // exhausts it ("connection slots reserved for SUPERUSER"). Tunable via DWH_POOL_MAX.
+    max: Number(process.env.DWH_POOL_MAX) || 5,
+    idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 15_000,
-    // Enforce read-only at the session level — this wrapper must never write the DWH. Also cap
-    // runaway queries: a single pathological scan must not pin the pool (max 10) indefinitely.
-    options: '-c default_transaction_read_only=on -c statement_timeout=60000 -c idle_in_transaction_session_timeout=60000',
+    // Enforce read-only at the session level — this wrapper must never write the DWH.
+    // statement_timeout: the DWH periodically jams under dbt rebuild locks (observed: 40+
+    // queries lock-waiting, even `limit 1` hanging). Without a cap, a UI request (e.g. the
+    // admin client picker) sits pending forever; 30s turns that into a fast, retryable 502.
+    // idle_in_transaction_session_timeout: release stuck sessions so the small shared pool
+    // is not pinned indefinitely.
+    options:
+      '-c default_transaction_read_only=on -c statement_timeout=30s -c idle_in_transaction_session_timeout=60s',
   });
   pool.on('error', (err) => logger.error({ err: err.message }, 'DWH pool error'));
   return pool;

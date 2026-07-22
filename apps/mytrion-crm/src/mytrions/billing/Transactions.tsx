@@ -16,10 +16,12 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
-import { broadcastMapping, fetchTransactions, searchTransactions } from '@/api/billing';
+import { broadcastMapping, fetchTransactions, fetchTransactionStats, searchTransactions } from '@/api/billing';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useLoad } from '../_shared/useLoad';
+import { computeAutoMapFlag, getCarrierMemoryIndex } from './autoMapFlag';
 import { type TxSource, dateLabel, fmtCurrency } from './data';
+import { ChaseAddModal } from './ChaseAddModal';
 import { TransactionModal } from './TransactionModal';
 import { useMappingSocket, type RemoteMappingEvent } from './useMappingSocket';
 import {
@@ -79,6 +81,24 @@ export function Transactions() {
   const firstPage = useLoad(() => fetchPage(1), []);
   const page1 = firstPage.data;
 
+  // Whole-dataset aggregates (source counts + mapped/total/$) — so the source filter and summary
+  // tiles reflect ALL transactions, not just the loaded page(s). Refreshed on reload + after a
+  // mapping change (see the patches effect below).
+  const statsLoad = useLoad(() => fetchTransactionStats(), []);
+  const stats = statsLoad.data;
+
+  // Carrier-memory index for the Zelle auto-map row badge (loaded + cached once per session).
+  const [memoryIndex, setMemoryIndex] = useState<Map<string, Set<string>> | null>(null);
+  useEffect(() => {
+    let off = false;
+    void getCarrierMemoryIndex().then((idx) => {
+      if (!off) setMemoryIndex(idx);
+    });
+    return () => {
+      off = true;
+    };
+  }, []);
+
   // Appended pages (page ≥ 2) + optimistic per-row patches, both reset when page 1 reloads.
   const [extra, setExtra] = useState<TxRow[]>([]);
   const [meta, setMeta] = useState<{ page: number; hasMore: boolean; total: number } | null>(null);
@@ -92,6 +112,7 @@ export function Transactions() {
   const [searchFetching, setSearchFetching] = useState(false);
 
   const [openId, setOpenId] = useState<string | null>(null);
+  const [showChaseAdd, setShowChaseAdd] = useState(false);
   const [toast, setToast] = useState<{ id: number; kind: ToastKind; message: string } | null>(null);
 
   const notify = useCallback((kind: ToastKind, message: string) => {
@@ -104,6 +125,13 @@ export function Transactions() {
     setMeta(null);
     setPatches({});
   }, [page1]);
+
+  // A mapping change (optimistic/remote patch) shifts the global mapped/unmapped split → refresh
+  // the whole-dataset stats so the summary tiles stay accurate. Cheap aggregate; low frequency.
+  const statsReload = statsLoad.reload;
+  useEffect(() => {
+    statsReload();
+  }, [patches, statsReload]);
 
   useEffect(() => {
     if (firstPage.error) notify('error', 'Could not load transactions. Try refreshing.');
@@ -215,6 +243,16 @@ export function Transactions() {
   const mappedCount = filtered.filter((t) => t.isInvoiceMapped).length;
   const unmappedCount = filtered.length - mappedCount;
   const resultsActive = !!search.trim() || source !== 'all' || carrierFilter !== 'all';
+
+  // Summary tiles show whole-dataset stats (ALL transactions), not just the loaded page. During an
+  // active text search the list is a specific query, so fall back to the (full-dataset) match set.
+  const searchActive = !!search.trim();
+  const g = !searchActive ? stats : null;
+  const summaryTotal = g ? g.total : filtered.length;
+  const summaryMapped = g ? g.mapped : mappedCount;
+  const summaryUnmapped = g ? g.unmapped : unmappedCount;
+  const summaryAmount = g ? Math.abs(g.totalAmount) : totalAmount;
+  const summaryDenom = g ? g.total : filtered.length;
 
   async function loadMore() {
     if (loadingMore || !hasMore) return;
@@ -337,6 +375,16 @@ export function Transactions() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <button
+            className="bm-refresh-btn"
+            onClick={() => setShowChaseAdd(true)}
+            title="Manually add a Chase transaction"
+          >
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Add Chase
+          </button>
           <button className="bm-refresh-btn" onClick={reload} disabled={firstPage.loading || firstPage.refreshing} title="Refresh">
             <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" className={firstPage.loading || firstPage.refreshing ? 'spin-icon' : undefined}>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={REFRESH_PATH} />
@@ -358,25 +406,33 @@ export function Transactions() {
           <div className="bm-summary-banner">
             <SummaryItem
               color="var(--billing-accent)"
-              amount={filtered.length.toLocaleString()}
-              label={resultsActive ? 'Results' : 'Loaded'}
-              sub={hasMore ? `of ${totalFetched.toLocaleString()} total` : 'all loaded'}
+              amount={summaryTotal.toLocaleString()}
+              label={g ? 'Transactions' : resultsActive ? 'Results' : 'Loaded'}
+              sub={
+                g
+                  ? rows.length < g.total
+                    ? `${rows.length.toLocaleString()} loaded`
+                    : 'all loaded'
+                  : hasMore
+                    ? `of ${totalFetched.toLocaleString()} total`
+                    : 'all loaded'
+              }
             />
             <SummaryItem
               color="var(--success-text)"
-              amount={fmtCurrency(totalAmount)}
+              amount={fmtCurrency(summaryAmount)}
               label="Total Amount"
-              sub={resultsActive ? 'filtered' : 'this page'}
+              sub={g ? 'all sources' : resultsActive ? 'filtered' : 'this page'}
             />
             <SummaryItem
               color="var(--purple-text)"
-              amount={String(mappedCount)}
+              amount={String(summaryMapped)}
               label="Invoice Mapped"
-              sub={filtered.length ? `${Math.round((mappedCount / filtered.length) * 100)}%` : '—'}
+              sub={summaryDenom ? `${Math.round((summaryMapped / summaryDenom) * 100)}%` : '—'}
             />
             <SummaryItem
               color="var(--danger-text)"
-              amount={String(unmappedCount)}
+              amount={String(summaryUnmapped)}
               label="Invoice Unmapped"
               sub="needs review"
             />
@@ -402,7 +458,14 @@ export function Transactions() {
 
             <select value={source} onChange={(e) => setSource(e.target.value as 'all' | TxSource)} className="bm-select">
               {SOURCE_OPTIONS.map((f) => {
-                const count = f.id === 'all' ? rows.length : (sourceCounts[f.id] ?? 0);
+                // Whole-dataset counts (fall back to loaded counts until stats arrive).
+                const count = stats
+                  ? f.id === 'all'
+                    ? stats.total
+                    : (stats.bySource[f.id] ?? 0)
+                  : f.id === 'all'
+                    ? rows.length
+                    : (sourceCounts[f.id] ?? 0);
                 return (
                   <option key={f.id} value={f.id}>
                     {f.label} {count > 0 ? `(${count})` : ''}
@@ -444,7 +507,13 @@ export function Transactions() {
                       <div key={tx.recordId} className="tx-row" onClick={() => setOpenId(tx.recordId)} title="Click to view details">
                         <div className={`tx-source-badge tx-source-${tx.source}`}>{txSourceLabel(tx.source)}</div>
                         <div className="tx-body">
-                          <div className="tx-sender">{tx.sender || tx.name}</div>
+                          <div className="tx-sender">
+                            {/* Card payments (Stripe) carry no payer name — build the widget-style
+                                "Payment - $500.00 - succeeded" label instead of showing a blank. */}
+                            {tx.sender ||
+                              tx.name ||
+                              `Payment - ${fmtCurrency(tx.amount)}${tx.status ? ` - ${tx.status}` : ''}`}
+                          </div>
                           <div className="tx-meta">
                             {tx.memo ? (
                               <span className="tx-memo" title={tx.memo}>
@@ -455,7 +524,7 @@ export function Transactions() {
                             {tx.txn ? (
                               <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.6rem', opacity: 0.5 }}>#{tx.txn}</span>
                             ) : null}
-                            {(tx.source === 'mx' || tx.source === 'stripe') && tx.status ? (
+                            {(tx.source === 'mx' || tx.source === 'stripe') && tx.status && (tx.sender || tx.name) ? (
                               <span className={`bm-badge ${txStatusBadgeClass(tx.source, tx.status)}`} style={{ fontSize: '0.55rem', padding: '0.1rem 0.4rem', marginLeft: '0.25rem' }}>
                                 {tx.status}
                               </span>
@@ -478,6 +547,20 @@ export function Transactions() {
                                 QUICKPAY
                               </span>
                             ) : null}
+                            {/* Zelle auto-map suggestion badge (parity with the widget) — only when
+                                there IS a positive suggestion; the "why not" reasons show in the modal. */}
+                            {(() => {
+                              const amf = computeAutoMapFlag(tx, memoryIndex);
+                              return amf && amf.kind !== 'none' ? (
+                                <span
+                                  className="bm-badge"
+                                  title="A carrier id suggestion is available — open to review and map."
+                                  style={{ fontSize: '0.55rem', padding: '0.1rem 0.45rem', marginLeft: '0.25rem', fontWeight: 700, letterSpacing: '0.03em', background: 'var(--success-bg)', color: 'var(--success-text)', border: '1px solid var(--success-border)' }}
+                                >
+                                  AUTO-MAP
+                                </span>
+                              ) : null;
+                            })()}
                           </div>
                         </div>
                         <div className="tx-carrier-col">
@@ -548,6 +631,16 @@ export function Transactions() {
           onClose={() => setOpenId(null)}
           onPatch={(patch) => patchAndBroadcast(openTx, patch)}
           onToast={notify}
+        />
+      ) : null}
+
+      {showChaseAdd ? (
+        <ChaseAddModal
+          onClose={() => setShowChaseAdd(false)}
+          onAdded={(msg) => {
+            notify('success', msg);
+            reload();
+          }}
         />
       ) : null}
 

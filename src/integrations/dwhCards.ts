@@ -5,6 +5,7 @@
  * driver's `card_id` FROM when binding a `carrier_users` driver account. Read-only.
  */
 import { dwhQuery } from './dwh.js';
+import { logger } from '../lib/logger.js';
 
 export interface DwhCard {
   cardId: string | null;
@@ -150,6 +151,20 @@ export async function findDwhCardById(carrierId: string, cardId: string): Promis
   return rows[0] ? toDto(rows[0]) : null;
 }
 
+/** Same exact lookup WITHOUT the active-only clause — for READ paths only (the owner's
+ *  transaction-history filter): a deactivated card's past transactions are still the owner's to
+ *  report on. Every WRITE path keeps using findDwhCardById (active-only) above. */
+export async function findDwhCardByIdAnyStatus(carrierId: string, cardId: string): Promise<DwhCard | null> {
+  const rows = await dwhQuery<CardRow>(
+    `select card_id, card_number, card_type, status, balance
+       from octane.stg_cmp_card
+      where carrier_id = $1 and card_id = $2
+      limit 1`,
+    [carrierId, cardId],
+  );
+  return rows[0] ? toDto(rows[0]) : null;
+}
+
 export async function isActiveCardOfCarrier(carrierId: string, cardId: string): Promise<boolean> {
   return (await findDwhCardById(carrierId, cardId)) !== null;
 }
@@ -163,15 +178,36 @@ export interface DwhCardOwner {
 }
 
 export async function findDwhCardByNumber(cardNumber: string): Promise<DwhCardOwner | null> {
+  // `limit 2`, not `limit 1`: `card_number` has no uniqueness constraint on this read-only replica,
+  // and this lookup is what binds a self-registering driver to a carrier by card possession alone.
+  // If the same active number resolves to TWO DIFFERENT carriers, a bare `limit 1` (no ORDER BY)
+  // would bind the driver to an arbitrary one — so fail closed instead of guessing.
   const rows = await dwhQuery<{ card_id: string | number | null; carrier_id: string | number | null; card_number: string | null }>(
     `select card_id, carrier_id, card_number
        from octane.stg_cmp_card
       where is_active = true and card_number = $1
-      limit 1`,
+      limit 2`,
     [cardNumber],
   );
   const row = rows[0];
   if (!row || row.card_id == null || row.carrier_id == null) return null;
+  if (rows.length > 1 && rows[1]?.carrier_id != null && String(rows[1].carrier_id) !== String(row.carrier_id)) {
+    logger.warn(
+      { cardNumber, carriers: [String(row.carrier_id), String(rows[1].carrier_id)] },
+      'findDwhCardByNumber: card number resolves to multiple carriers — refusing to bind',
+    );
+    return null;
+  }
+  if (rows.length > 1 && rows[1]?.card_id != null && String(rows[1].card_id) !== String(row.card_id)) {
+    // Same carrier this time (the cross-carrier case returned null above), same ACTIVE number on two
+    // different card rows. The carrier binding — the security-relevant part — is unambiguous, and
+    // driver row-scoping filters on the NUMBER, so reads are unaffected; but which card_id the
+    // registration pins is arbitrary. Surfaced so ops can clean up the duplicate at the source.
+    logger.warn(
+      { cardNumber, carrierId: String(row.carrier_id), cardIds: [String(row.card_id), String(rows[1].card_id)] },
+      'findDwhCardByNumber: duplicate active card number within one carrier — binding to the first row',
+    );
+  }
   return { cardId: String(row.card_id), carrierId: String(row.carrier_id), cardNumber: String(row.card_number ?? cardNumber) };
 }
 
@@ -258,7 +294,8 @@ export async function getClientBilling(carrierId: string): Promise<ClientBilling
   );
   const r = rows[0];
   if (!r) return null;
-  const s = (v: string | number | null): string | null => (v != null && String(v).trim() ? String(v).trim() : null);
+  const s = (v: string | number | null): string | null =>
+    v != null && String(v).trim() ? String(v).trim() : null;
   return {
     billingCycle: s(r.billing_cycle),
     billingCycleTag: s(r.billing_cycle_tag),
@@ -266,5 +303,41 @@ export async function getClientBilling(carrierId: string): Promise<ClientBilling
     paymentDay: s(r.payment_day),
     creditLimit: s(r.credit_limit),
     minimumRequiredBalance: s(r.minimum_required_balance),
+  };
+}
+
+/**
+ * Any-status variant of findDwhCardByNumber — for MERGE/READ paths where a deactivated card
+ * must still resolve its stable card_id (EFS-first fleet merge; owner card-ops on an inactive
+ * card — "activate it" being the whole point). Same fail-closed ambiguity guard: 0 or 2+
+ * conflicting rows resolve to null, never a guess.
+ */
+export async function findDwhCardByNumberAnyStatus(
+  cardNumber: string,
+): Promise<DwhCardOwner | null> {
+  const rows = await dwhQuery<{
+    card_id: string | number | null;
+    carrier_id: string | number | null;
+    card_number: string | null;
+  }>(
+    `select card_id, carrier_id, card_number
+       from octane.stg_cmp_card
+      where card_number = $1
+      limit 2`,
+    [cardNumber],
+  );
+  const row = rows[0];
+  if (!row || row.card_id == null || row.carrier_id == null) return null;
+  if (
+    rows.length > 1 &&
+    rows[1]?.carrier_id != null &&
+    String(rows[1].carrier_id) !== String(row.carrier_id)
+  ) {
+    return null;
+  }
+  return {
+    cardId: String(row.card_id),
+    carrierId: String(row.carrier_id),
+    cardNumber: String(row.card_number ?? ''),
   };
 }

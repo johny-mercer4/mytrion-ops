@@ -4,6 +4,7 @@
  */
 import {
   ArrowUpDown,
+  Banknote,
   Check,
   CheckCheck,
   ChevronLeft,
@@ -49,6 +50,7 @@ export type IconName =
   | 'x'
   | 'userplus'
   | 'dollar'
+  | 'banknote'
   | 'key'
   | 'alert'
   | 'headset'
@@ -59,6 +61,7 @@ export type IconName =
   | 'sort'
   | 'checkcheck'
   | 'maximize'
+  | 'search'
   | 'copy';
 
 const ICONS: Record<IconName, LucideIcon> = {
@@ -74,6 +77,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   x: X,
   userplus: UserPlus,
   dollar: DollarSign,
+  banknote: Banknote,
   key: KeyRound,
   alert: TriangleAlert,
   headset: Headset,
@@ -84,6 +88,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   sort: ArrowUpDown,
   checkcheck: CheckCheck,
   maximize: Maximize2,
+  search: Search,
   copy: Copy,
 };
 
