@@ -6,12 +6,28 @@
 import { callTouchpoint } from '@/api/touchpoints';
 import type { MoneyCodePreview, WexApplicationResult } from '@/api/touchpointTypes';
 import { loadDeals as loadCrmDeals } from './dataCenterLive';
+import type { IconName } from './icons';
 
 // ---------- types ----------
 
 export interface Automation {
-  id: string; title: string; codes: readonly string[]; dept: string; icon: string; desc: string;
+  id: string; title: string; codes: readonly string[]; dept: string; icon: IconName; desc: string;
+  /**
+   * Icon accent — a `.ss-root` CSS var so it tracks light/dark themes
+   * (e.g. `var(--ok)`, `var(--violet)`). Unique per action for scanability.
+   */
+  color: string;
   top?: boolean; kind?: string; verb?: string; limits?: boolean; soon?: boolean;
+}
+
+/** Fallback when an action has no `color` (shouldn't happen for catalog entries). */
+export function autoIconColor(a: Pick<Automation, 'color' | 'dept'>): string {
+  if (a.color) return a.color;
+  if (a.dept === 'C') return 'var(--orange)';
+  if (a.dept === 'Q') return 'var(--accent)';
+  if (a.dept === 'V') return 'var(--ok)';
+  if (a.dept === 'M') return 'var(--violet)';
+  return 'var(--accent)';
 }
 export interface Deal {
   id: string;
@@ -28,64 +44,106 @@ export interface WexResult { company: string; appId: string; contact: string; st
 export interface InvRow { id: string; inv: string; date: string; amount: string; status: string; }
 /** Lightweight on-screen txn list row (full report lives in TxnReportState). */
 export interface TxnRow { date: string; card: string; driver: string; gallons: string; amount: string; }
+export interface TrackingEntry {
+  id: string;
+  trackingNumber: string;
+  startDate: string;
+  cardsOrdered: string;
+}
+export interface WexTaskEntry {
+  id: string;
+  subject: string;
+  description: string;
+  createdDate: string;
+}
+export interface PaymentsSummary {
+  invoiceCount: string;
+  totalBilled: string;
+  totalPaid: string;
+  openBalance: string;
+  paymentCount: string;
+  paymentsTotal: string;
+}
+export interface CmpInvoiceRow {
+  id: string;
+  invoiceNumber: string;
+  status: string;
+  total: string;
+  paid: string;
+  remaining: string;
+}
 export type DonePayload =
   | { kind: 'invoices' }
   | { kind: 'transactions' }
   | { kind: 'message'; message: string }
   | { kind: 'table'; title: string; columns: string[]; rows: string[][] }
-  | { kind: 'link'; label: string; url: string };
+  | { kind: 'link'; label: string; url: string }
+  | { kind: 'tracking'; carrierId: string; fedexTracking: string; entries: TrackingEntry[] }
+  | { kind: 'wex-tasks'; appId: string; summary: string; tasks: WexTaskEntry[] }
+  // Two backends fetched in PARALLEL and merged (widget parity — DWH payment-info + live CMP
+  // invoices). Either half may be missing (allSettled) without failing the whole action.
+  | { kind: 'payments'; carrierId: string; summary: PaymentsSummary | null; cmpInvoices: CmpInvoiceRow[]; cmpError?: string | undefined };
+
+/** parcelsapp status page — same target as zoho-octane `trackingUrl()`. */
+export function trackingStatusUrl(trackingNumber: string): string {
+  const n = trackingNumber.trim();
+  if (!n || n === '—') return '';
+  return `https://parcelsapp.com/en/tracking/${encodeURIComponent(n)}`;
+}
 
 export interface Addr { address: string; city: string; state: string; zip: string; }
 export interface UnitDriverForm { unitNumber: string; driverName: string; driverId: string; }
 export interface MoneyCodeForm { amount: string; reason: string; unitNumber: string; }
 
 // ---------- static config (self-service catalog) ----------
-// Icon paths match zoho-octane app/js/automations-catalog.js (Heroicons stroke set).
+// Semantic icon names → ready-made lucide glyphs via <Icon> (see ./icons). Mirrors the
+// zoho-octane automations-catalog action set.
 
 const ICO = {
-  clipboardCheck: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
-  package: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
-  card: 'M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z',
-  invoice: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8',
-  doc: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
-  chart: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
-  edit: 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z',
-  refresh: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15',
-  money: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
-  checkCircle: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
-  ban: 'M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636',
-  arrows: 'M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l-4-4m4 4l4-4',
-  cash: 'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z',
-  lock: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z',
-  key: 'M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z',
-  gear: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z',
-  link: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1',
-  closeDoc: 'M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
-} as const;
+  clipboardCheck: 'clipboardCheck',
+  package: 'package',
+  card: 'card',
+  invoice: 'invoice',
+  doc: 'doc',
+  chart: 'chart',
+  edit: 'edit',
+  refresh: 'refresh',
+  money: 'money',
+  checkCircle: 'checkCircle',
+  ban: 'ban',
+  arrows: 'arrows',
+  cash: 'cash',
+  lock: 'lock',
+  key: 'key',
+  gear: 'gear',
+  link: 'link',
+  closeDoc: 'closeDoc',
+} satisfies Record<string, IconName>;
 
 export const AUTO_LIST: readonly Automation[] = [
-  { id: 'invoices', title: 'Request Invoices', codes: ['C-20', 'Q-1'], dept: 'Q', icon: ICO.invoice, desc: 'Fetch carrier invoices by date range and download PDF / Excel from WorkDrive.', top: true, kind: 'invoices' },
-  { id: 'transactions', title: 'Transactions Report', codes: ['C-15'], dept: 'Q', icon: ICO.chart, desc: 'Pull a full fuel-transaction report for any carrier across a custom date window.', top: true, kind: 'transactions' },
-  { id: 'payments', title: 'Check Payment Information', codes: ['C-18', 'Q-2'], dept: 'Q', icon: ICO.card, desc: 'View invoices and payments for a carrier over the last 90 days.', kind: 'simple', verb: 'Check Payments' },
-  { id: 'billing-form', title: 'Billing Forms', codes: ['Q-9'], dept: 'Q', icon: ICO.doc, desc: 'View submitted billing forms and verification notes for a deal.', kind: 'simple', verb: 'Fetch Billing Form' },
-  { id: 'balance', title: 'Balance Check', codes: ['C-8', 'Q-8'], dept: 'Q', icon: ICO.money, desc: 'Check the current available balance and credit line for a carrier account.', kind: 'simple', verb: 'Check Balance' },
-  { id: 'account-status', title: 'Account Status Check', codes: ['Q-7', 'C-28'], dept: 'Q', icon: ICO.clipboardCheck, desc: 'Combined check across EFS balance, outstanding debt, and card counts.', kind: 'simple', verb: 'Check Status' },
-  { id: 'tracking', title: 'Tracking Number Request', codes: ['C-22'], dept: 'C', icon: ICO.package, desc: 'Check card-order tracking numbers and shipment status for a carrier.', kind: 'simple', verb: 'Get Tracking' },
-  { id: 'card-last-used', title: 'Card Last Used Check', codes: ['C-24'], dept: 'C', icon: ICO.card, desc: 'See when each card on the account was last used.', kind: 'simple', verb: 'Check Last Used' },
-  { id: 'card-activation', title: 'Card Activation', codes: ['C-1'], dept: 'C', icon: ICO.checkCircle, desc: 'Activate an EFS card and optionally attach driver name, unit and driver ID.', kind: 'card', verb: 'Activate Card' },
-  { id: 'card-deactivation', title: 'Card Deactivation', codes: ['C-3'], dept: 'C', icon: ICO.ban, desc: 'Deactivate an EFS card immediately.', kind: 'card', verb: 'Deactivate Card' },
-  { id: 'limits-change', title: 'Increase / Decrease Limits', codes: ['C-4', 'C-5'], dept: 'C', icon: ICO.arrows, desc: 'Increase or decrease a product limit (ULSD, DEF, RFR, DSL) on any card.', kind: 'card', verb: 'Update Limit', limits: true },
-  { id: 'unit-driver', title: 'Unit / Driver Change', codes: ['C-26'], dept: 'C', icon: ICO.edit, desc: 'Update the driver name, unit number and driver ID prompts on a card.', kind: 'card', verb: 'Submit Change' },
-  { id: 'fraud-hold-release', title: 'Fraud Hold / Release', codes: ['C-10'], dept: 'C', icon: ICO.lock, desc: 'Clear a fraud hold on a card once the swipe pattern is confirmed legitimate.', kind: 'card', verb: 'Release Hold' },
-  { id: 'override-card', title: 'Override the Card', codes: ['C-16'], dept: 'C', icon: ICO.gear, desc: 'Grant a fraud-held card a ~30 minute active window without lifting the hold.', kind: 'card', verb: 'Override Card' },
-  { id: 'card-replacement', title: 'Card Replacement', codes: ['C-6'], dept: 'C', icon: ICO.card, desc: 'Ship replacement cards to a confirmed address (routes a CS ticket).', kind: 'ticket', verb: 'Request Replacement' },
-  { id: 'reactivation', title: 'Account Reactivation', codes: ['C-7'], dept: 'C', icon: ICO.refresh, desc: 'File a reactivation request for a suspended / inactive account.', kind: 'ticket', verb: 'Request Reactivation' },
-  { id: 'money-code', title: 'Money Code', codes: ['C-17'], dept: 'C', icon: ICO.cash, desc: 'Preview eligibility then draw an emergency EFS money code for a stranded driver.', kind: 'money', verb: 'Draw Money Code' },
-  { id: 'boca-boe-link', title: 'BOCA Link Request', codes: ['C-27'], dept: 'C', icon: ICO.link, desc: 'Request a BOCA onboarding link for a WEX application (routes a CS ticket).', kind: 'form', verb: 'Send BOCA' },
-  { id: 'close-app', title: 'Close Application', codes: ['C-14'], dept: 'C', icon: ICO.closeDoc, desc: 'Close a WEX application that is no longer moving forward (routes a CS ticket).', kind: 'form', verb: 'Close Application' },
-  { id: 'wex-tasks', title: 'Application Update — WEX Tasks', codes: ['C-2', 'C-19'], dept: 'C', icon: ICO.clipboardCheck, desc: 'View latest application updates and WEX task responses for a deal.', kind: 'wex-tasks', verb: 'Get WEX Tasks' },
-  { id: 'wex-apps', title: 'WEX Applications', codes: ['C-29'], dept: 'C', icon: ICO.invoice, desc: 'Search WEX applications by application ID, last name, or MC.', kind: 'search' },
-  { id: 'efs-login', title: 'EFS Login', codes: ['C-12'], dept: 'C', icon: ICO.key, desc: 'Open the WEX EFS eManager credentials guide (PDF).', kind: 'link', verb: 'Open Guide' },
+  { id: 'invoices', title: 'Request Invoices', codes: ['C-20', 'Q-1'], dept: 'Q', icon: ICO.invoice, color: 'var(--accent)', desc: 'Fetch carrier invoices by date range and download PDF / Excel from WorkDrive.', top: true, kind: 'invoices' },
+  // C-15 is a CS code — lives under Customer Service (not Billing).
+  { id: 'transactions', title: 'Transactions Report', codes: ['C-15'], dept: 'C', icon: ICO.chart, color: 'var(--cyan)', desc: 'Pull a full fuel-transaction report for any carrier across a custom date window.', top: true, kind: 'transactions' },
+  { id: 'payments', title: 'Check Payment Information', codes: ['C-18', 'Q-2'], dept: 'Q', icon: ICO.card, color: 'var(--ok)', desc: 'View invoices and payments for a carrier over the last 90 days.', kind: 'simple', verb: 'Check Payments' },
+  { id: 'billing-form', title: 'Billing Forms', codes: ['Q-9'], dept: 'Q', icon: ICO.doc, color: 'var(--violet)', desc: 'View submitted billing forms and verification notes for a deal.', kind: 'simple', verb: 'Fetch Billing Form' },
+  { id: 'balance', title: 'Balance Check', codes: ['C-8', 'Q-8'], dept: 'Q', icon: ICO.money, color: 'var(--orange)', desc: 'Check the current available balance and credit line for a carrier account.', kind: 'simple', verb: 'Check Balance' },
+  { id: 'account-status', title: 'Account Status Check', codes: ['Q-7', 'C-28'], dept: 'Q', icon: ICO.clipboardCheck, color: 'var(--warn)', desc: 'Combined check across EFS balance, outstanding debt, and card counts.', kind: 'simple', verb: 'Check Status' },
+  { id: 'tracking', title: 'Tracking Number Request', codes: ['C-22'], dept: 'C', icon: ICO.package, color: 'var(--accent-2)', desc: 'Check card-order tracking numbers and shipment status for a carrier.', kind: 'simple', verb: 'Get Tracking' },
+  { id: 'card-last-used', title: 'Card Last Used Check', codes: ['C-24'], dept: 'C', icon: ICO.card, color: 'var(--accent)', desc: 'See when each card on the account was last used.', kind: 'simple', verb: 'Check Last Used' },
+  { id: 'card-activation', title: 'Card Activation', codes: ['C-1'], dept: 'C', icon: ICO.checkCircle, color: 'var(--ok)', desc: 'Activate an EFS card and optionally attach driver name, unit and driver ID.', kind: 'card', verb: 'Activate Card' },
+  { id: 'card-deactivation', title: 'Card Deactivation', codes: ['C-3'], dept: 'C', icon: ICO.ban, color: 'var(--danger)', desc: 'Deactivate an EFS card immediately.', kind: 'card', verb: 'Deactivate Card' },
+  { id: 'limits-change', title: 'Increase / Decrease Limits', codes: ['C-4', 'C-5'], dept: 'C', icon: ICO.arrows, color: 'var(--orange)', desc: 'Increase or decrease a product limit (ULSD, DEF, RFR, DSL) on any card.', kind: 'card', verb: 'Update Limit', limits: true },
+  { id: 'unit-driver', title: 'Unit / Driver Change', codes: ['C-26'], dept: 'C', icon: ICO.edit, color: 'var(--violet)', desc: 'Update the driver name, unit number and driver ID prompts on a card.', kind: 'card', verb: 'Submit Change' },
+  { id: 'fraud-hold-release', title: 'Fraud Hold / Release', codes: ['C-10'], dept: 'C', icon: ICO.lock, color: 'var(--warn)', desc: 'Clear a fraud hold on a card once the swipe pattern is confirmed legitimate.', kind: 'card', verb: 'Release Hold' },
+  { id: 'override-card', title: 'Override the Card', codes: ['C-16'], dept: 'C', icon: ICO.gear, color: 'var(--cyan)', desc: 'Grant a fraud-held card a ~30 minute active window without lifting the hold.', kind: 'card', verb: 'Override Card' },
+  { id: 'card-replacement', title: 'Card Replacement', codes: ['C-6'], dept: 'C', icon: ICO.card, color: 'var(--accent-2)', desc: 'Ship replacement cards to a confirmed address via the Zapier email request.', kind: 'ticket', verb: 'Request Replacement' },
+  { id: 'reactivation', title: 'Account Reactivation', codes: ['C-7'], dept: 'C', icon: ICO.refresh, color: 'var(--ok)', desc: 'Request reactivation for a suspended / inactive account via Zapier email.', kind: 'ticket', verb: 'Request Reactivation' },
+  { id: 'money-code', title: 'Money Code', codes: ['C-17'], dept: 'C', icon: ICO.cash, color: 'var(--orange)', desc: 'Preview eligibility then draw an emergency EFS money code for a stranded driver.', kind: 'money', verb: 'Draw Money Code' },
+  { id: 'boca-boe-link', title: 'BOCA Link Request', codes: ['C-27'], dept: 'C', icon: ICO.link, color: 'var(--violet)', desc: 'Send a BOCA onboarding task in WEX via browser automation.', kind: 'form', verb: 'Send BOCA' },
+  { id: 'close-app', title: 'Close Application', codes: ['C-14'], dept: 'C', icon: ICO.closeDoc, color: 'var(--danger)', desc: 'Close a WEX application via browser automation when it is no longer moving forward.', kind: 'form', verb: 'Close Application' },
+  { id: 'wex-tasks', title: 'Application Update — WEX Tasks', codes: ['C-2', 'C-19'], dept: 'C', icon: ICO.clipboardCheck, color: 'var(--accent)', desc: 'View latest application updates and WEX task responses for a deal.', kind: 'wex-tasks', verb: 'Get WEX Tasks' },
+  { id: 'wex-apps', title: 'WEX Applications', codes: ['C-29'], dept: 'C', icon: ICO.invoice, color: 'var(--cyan)', desc: 'Search WEX applications by applicant fields (name, company, MC, DOT, email, phone, or app ID).', kind: 'search' },
+  { id: 'efs-login', title: 'EFS Login', codes: ['C-12'], dept: 'C', icon: ICO.key, color: 'var(--warn)', desc: 'Open the WEX EFS eManager credentials guide (PDF).', kind: 'link', verb: 'Open Guide' },
 ];
 
 /** EFS limit product codes (widget parity). */

@@ -1,9 +1,8 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { completeZohoCallbackIfPresent } from '../api/auth';
+import { completeZohoCallbackIfPresent, refreshWorkerFromMe } from '../api/auth';
 import { getSession } from '../api/session';
+import { AuthScreen } from '../app/AuthScreen';
 import { LoginGate } from '../app/LoginGate';
-import { FuelMark } from '../components/BrandMark';
-import screen from '../app/Screen.module.css';
 import { contextFromWorker, devMockContext, type UserContext } from './userContext';
 
 const Ctx = createContext<UserContext | null>(null);
@@ -65,14 +64,27 @@ export function UserContextProvider({ children }: { children: ReactNode }) {
     };
   }, [state.phase]);
 
+  // Once resumed from a stored session, refresh access from /auth/me in the background so an admin's
+  // access edit takes effect on this load (not only after a full re-login). Non-blocking; the UI is
+  // already rendered with the stored context and only re-renders if the resolved access changed.
+  useEffect(() => {
+    if (state.phase !== 'authed' || !getSession()) return;
+    let cancelled = false;
+    void refreshWorkerFromMe().then((changed) => {
+      if (!cancelled && changed) setState(syncBootState());
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [state.phase]);
+
   if (state.phase === 'loading') {
     return (
-      <div className={screen.screen}>
-        <div className={screen.card}>
-          <FuelMark size={42} />
-          <p className={screen.body}>Signing you in…</p>
-        </div>
-      </div>
+      <AuthScreen
+        phase="exchanging"
+        title="Signing you in"
+        body="Zoho confirmed your account — finalizing identity."
+      />
     );
   }
   if (state.phase === 'anon') return <LoginGate initialError={state.error} />;

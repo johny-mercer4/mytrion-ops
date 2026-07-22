@@ -219,6 +219,8 @@ RBAC-enforced RAG; tool calling comes after confirmation.
   BUCKET/ENDPOINT/PUBLIC_BASE_URL/REGION`), Browserbase (`BROWSERBASE_API_KEY/PROJECT_ID/BASE_URL`).
 - 37 tests pass (new: chat RAG grounding). typecheck/lint/build clean.
 
+---
+
 ### DB live + new platform env (later, 2026-06-04)
 
 - Switched `DATABASE_URL` to the **external** Mytrion OPS Render host (off-Render reachable).
@@ -1925,16 +1927,13 @@ payments, tracking, billing-form, card-last-used, wex-tasks, card-deactivation, 
 - Writes: card activate (`dwh.card_activate` + optional `efs.card_info`), deactivate, limits,
   unit/driver, fraud release, override, money-code **draw** (preview on deal select → amount /
   reason / unit → `dwh.money_code_draw`).
-- Ticket-style (widget used Zapier / browser-automation): card-replacement, reactivation, BOCA,
-  close-app → `createDeskTicket` with matching C-* types (Ops-native path).
+- Ticket-style writes initially stubbed via Desk (later replaced — see 2026-07-18: real Zapier +
+  browser-automation touchpoints for card-replacement, reactivation, BOCA, close-app).
 - EFS login → opens credentials PDF + logs usage.
 - Tiny catalog fix: `dwh.money_code_draw` accepts optional `unit_number` (ServerCRM already did).
-- Deal picker enriched with Zoho Deal ids from CRM (needed for Desk ticket creates) + app-only
-  deals for BOCA / close / wex-tasks.
+- Deal picker enriched with Zoho Deal ids from CRM + app-only deals for BOCA / close / wex-tasks.
 
-**Remaining gaps (blocked without new backends):** live Photon address autocomplete; direct Zapier
-email webhook / browser-automation BOCA+close (Desk ticket is the substitute); money-code unit is
-forwarded only after the catalog schema allow-list (done).
+**Remaining gaps:** live Photon address autocomplete for card replacement (optional UX polish).
 
 ## 2026-07-14 — Automations export parity (txn PDF/Excel + invoice downloads)
 

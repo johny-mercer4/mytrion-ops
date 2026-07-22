@@ -14,6 +14,7 @@ import { Composio } from '@composio/core';
 import { LangchainProvider } from '@composio/langchain';
 import { env } from '../config/env.js';
 import type { TenantContext } from '../types/tenantContext.js';
+import { BaseWrapper } from './core/base.js';
 
 let client: Composio<LangchainProvider> | null = null;
 
@@ -67,3 +68,40 @@ export async function listConnections(): Promise<ConnectionStatus[]> {
     connectedAccountId: a.id,
   }));
 }
+
+/**
+ * Composio wrapper — registered with the health registry via a LAZY handle only
+ * (core/registerAll.ts) so this module (and the SDK import above) never loads at boot.
+ * Remote execution keeps its own audit/gating in modules/agents/tools/composio.ts, since it
+ * runs OUTSIDE toolDispatcher.
+ */
+export class ComposioWrapper extends BaseWrapper {
+  readonly name = 'composio';
+  readonly kind = 'sdk' as const;
+
+  isConfigured(): boolean {
+    return env.FF_COMPOSIO_ENABLED && Boolean(env.COMPOSIO_API_KEY);
+  }
+
+  protected override async probe(): Promise<void> {
+    await listConnections();
+  }
+
+  getClient(): Composio<LangchainProvider> {
+    return getComposio();
+  }
+
+  isAllowed(ctx: TenantContext): boolean {
+    return isComposioAllowed(ctx);
+  }
+
+  authorize(toolkitSlug: string): Promise<{ redirectUrl?: string; id: string }> {
+    return authorizeToolkit(toolkitSlug);
+  }
+
+  connections(): Promise<ConnectionStatus[]> {
+    return listConnections();
+  }
+}
+
+export const composio = new ComposioWrapper();

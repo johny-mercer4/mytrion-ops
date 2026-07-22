@@ -10,13 +10,12 @@ export function FuelMark({ size = 30 }: { size?: number }) {
   );
 }
 
-/** Brand lockup: fuel mark + MYTRION AI wordmark (Rajdhani, "AI" in accent). */
-export function BrandMark({ markSize = 30 }: { markSize?: number }) {
+/** Brand lockup: MYTRION PLATFORM wordmark. */
+export function BrandMark() {
   return (
     <span className={styles.brand}>
-      <FuelMark size={markSize} />
       <span className={styles.word}>
-        MYTRION<span className={styles.ai}> AI</span>
+        MYTRION<span className={styles.ai}> HORIZON</span>
       </span>
     </span>
   );

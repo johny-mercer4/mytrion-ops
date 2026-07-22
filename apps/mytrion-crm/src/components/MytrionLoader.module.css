@@ -1,0 +1,108 @@
+@keyframes loaderSweep {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+
+@keyframes loaderSpin {
+  to { transform: rotate(360deg); }
+}
+
+.overlay {
+  --loader-accent: var(--accent);
+  --loader-accent-soft: var(--accent-soft);
+  /* fixed: Guard Suspense wraps with display:contents — no positioning box. */
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+  background:
+    radial-gradient(700px 400px at 50% 40%, var(--loader-accent-soft), transparent 70%),
+    var(--bg, var(--bg-primary));
+  color: var(--text, var(--text-primary));
+}
+
+.sweepTrack {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  overflow: hidden;
+}
+
+.sweep {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 2px;
+  width: 34%;
+  background: linear-gradient(90deg, transparent, var(--loader-accent), transparent);
+  animation: loaderSweep 1.5s linear infinite;
+}
+
+.ringContainer {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ringBorder {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+}
+
+.ringSpin1 {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: var(--loader-accent);
+  border-right-color: var(--loader-accent-soft);
+  animation: loaderSpin 1s linear infinite;
+}
+
+.ringSpin2 {
+  position: absolute;
+  inset: 16px;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  border-bottom-color: var(--loader-accent);
+  animation: loaderSpin 1.4s linear infinite reverse;
+}
+
+.brand {
+  font-family: Rajdhani, sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+  line-height: 1;
+  color: var(--text, var(--text-primary));
+}
+
+.brandAccent {
+  color: var(--loader-accent);
+}
+
+.textContainer {
+  text-align: center;
+}
+
+.loadingText {
+  font-family: Rajdhani, sans-serif;
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text, var(--text-primary));
+}

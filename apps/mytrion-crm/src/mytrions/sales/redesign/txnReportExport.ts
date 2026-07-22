@@ -46,11 +46,23 @@ function dateOnly(v: string): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
+/**
+ * Literal-first, matching dateOnly: take HH:mm straight from the source string so a row's date
+ * and time come from the SAME clock (viewer-local getHours could disagree with the ISO day by a
+ * calendar day near midnight). Fallback formats in NY time — the app's canonical timezone.
+ */
 function timeOnly(v: string): string {
   if (!v) return '';
+  const m = String(v).match(/T(\d{2}):(\d{2})/);
+  if (m) return `${m[1]}:${m[2]}`;
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return '';
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(d);
 }
 
 function efsSummary(transactions: TxnGrouped[], showDiscount: boolean) {
@@ -234,7 +246,7 @@ function efsDetailRows(list: TxnGrouped[], o: TxnExportOptions): unknown[][] {
 }
 
 function safeFilePart(s: string): string {
-  return String(s ?? '').replace(/[^\w.\-]+/g, '_').replace(/^_+|_+$/g, '');
+  return String(s ?? '').replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '');
 }
 
 function buildGroupedAoa(list: TxnGrouped[], opts: TxnExportOptions): unknown[][] {

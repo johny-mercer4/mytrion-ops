@@ -1,224 +1,322 @@
+/**
+ * Analytics panel — 1:1 port of the widget's analytics-panel.js template (cs-an-* : KPI
+ * grid, SVG spark trend, donut-by-status, leaderboard) over the DONE live-data layer.
+ * Sub-tabs (Tickets/Calls/Maintenance) map to the loadAnalytics() blocks; the leaderboard
+ * renders only on the backend /cs/context manager verdict (server also enforces it).
+ */
 import { useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, Headset, RefreshCw, Ticket, Wrench } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-import { ANALYTICS, type BreakdownItem } from './data';
+import type { AnalyticsBlock, KpiStat, VolumeDay } from './data';
+import { RANGE_LABELS, getCsContext, loadAnalytics, useLoad, type RangeId } from './live';
 
 type SubTab = 'tickets' | 'calls' | 'maintenance';
 
-const SUB_TABS: { id: SubTab; label: string; icon: typeof Ticket }[] = [
-  { id: 'tickets', label: 'Tickets', icon: Ticket },
-  { id: 'calls', label: 'Calls', icon: Headset },
-  { id: 'maintenance', label: 'Maintenance', icon: Wrench },
+const SUB_TABS: { id: SubTab; label: string; icon: string }[] = [
+  { id: 'tickets', label: 'Tickets', icon: 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z' },
+  { id: 'calls', label: 'Calls', icon: 'M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z' },
+  { id: 'maintenance', label: 'Maintenance', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
 ];
 
-const RANGE_OPTIONS = ['This Month', 'Last Month', 'Last 30 Days', 'This Quarter'];
+const SPARK_H = 60;
+const REFRESH_PATH =
+  'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-14.357-2m14.357 2H15';
 
-const BREAKDOWN_BAR_CLASS: Record<BreakdownItem['tone'], string> = {
-  good: 'bg-good',
-  warn: 'bg-warn',
-  bad: 'bg-bad',
-  info: 'bg-primary',
-  neutral: 'bg-muted-foreground',
-  purple: 'bg-brand-purple',
-  sky: 'bg-primary',
-  teal: 'bg-good',
-  amber: 'bg-warn',
-};
+const PALETTE = ['#EAB308', '#16A34A', '#7A52C8', '#EA580C', '#D97706', '#D14B45', '#0E93B0', '#DB2777'];
 
-const BREAKDOWN_TEXT_CLASS: Record<BreakdownItem['tone'], string> = {
-  good: 'text-good',
-  warn: 'text-warn',
-  bad: 'text-bad',
-  info: 'text-primary',
-  neutral: 'text-muted-foreground',
-  purple: 'text-brand-purple',
-  sky: 'text-primary',
-  teal: 'text-good',
-  amber: 'text-warn',
-};
+function labelColor(label: string, idx: number): string {
+  const s = label.toLowerCase();
+  if (s.includes('closed') || s.includes('resolved')) return '#16A34A';
+  if (s.includes('open')) return '#EAB308';
+  if (s.includes('hold') || s.includes('pending')) return '#F59E0B';
+  if (s.includes('escal') || s.includes('urgent') || s.includes('high')) return '#D14B45';
+  return PALETTE[idx % PALETTE.length] as string;
+}
+
+function sparkPoints(vol: VolumeDay[]): string {
+  if (!vol.length) return '';
+  const max = Math.max(1, ...vol.map((d) => d.value));
+  const step = vol.length > 1 ? 400 / (vol.length - 1) : 0;
+  return vol
+    .map((d, i) => {
+      const x = i * step;
+      const y = SPARK_H - 2 - (d.value / max) * (SPARK_H - 8);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+}
+
+function areaPath(vol: VolumeDay[]): string {
+  if (!vol.length) return '';
+  const pts = sparkPoints(vol).split(' ');
+  const last = (pts[pts.length - 1] ?? '0,0').split(',');
+  const first = (pts[0] ?? '0,0').split(',');
+  return `M ${pts.join(' L ')} L ${last[0]},${SPARK_H} L ${first[0]},${SPARK_H} Z`;
+}
+
+function donutBackground(items: AnalyticsBlock['breakdown']): string {
+  const total = items.reduce((s, x) => s + x.value, 0);
+  if (!total) return 'var(--surface-raised)';
+  let acc = 0;
+  const stops = items.map((x, idx) => {
+    const start = (acc / total) * 360;
+    acc += x.value;
+    return `${labelColor(x.label, idx)} ${start.toFixed(1)}deg ${((acc / total) * 360).toFixed(1)}deg`;
+  });
+  return `conic-gradient(${stops.join(', ')})`;
+}
+
+function deltaChip(delta: KpiStat['delta']): { cls: string; text: string } | null {
+  if (!delta) return null;
+  const d = delta.current - delta.prev;
+  const up = d > 0;
+  const good = up === delta.higherIsBetter;
+  const cls = d === 0 ? 'cs-an-flat' : good ? 'cs-an-up' : 'cs-an-down';
+  const text = d === 0 ? '±0' : `${up ? '▲ ' : '▼ '}${Math.abs(d).toLocaleString()}`;
+  return { cls, text };
+}
+
+function agentInitials(name: string): string {
+  if (!name || name.startsWith('#')) return '?';
+  return name.trim().split(/\s+/).map((w) => w[0] ?? '').join('').slice(0, 2).toUpperCase();
+}
+
+const KPI_ICON_CLASS = ['', 'cs-an-icon-warn', 'cs-an-icon-success', 'cs-an-icon-purple'];
 
 export function Analytics() {
   const [subTab, setSubTab] = useState<SubTab>('tickets');
-  const [range, setRange] = useState('This Month');
-  const block = ANALYTICS[subTab];
-  const maxVolume = useMemo(() => Math.max(...block.volume.map((v) => v.value)), [block]);
-  const maxBreakdown = useMemo(() => Math.max(...block.breakdown.map((b) => b.value)), [block]);
-  const maxLead = useMemo(() => Math.max(...block.leaderboard.map((r) => r.col1)), [block]);
+  const [range, setRange] = useState<RangeId>('this_month');
+
+  const ctx = useLoad(getCsContext, []);
+  const analytics = useLoad(() => loadAnalytics(range, ctx.data), [range, ctx.data?.isManager ?? null]);
+
+  const isManager = ctx.data?.isManager === true;
+  const block: AnalyticsBlock = analytics.data?.[subTab] ?? {
+    kpis: [],
+    volume: [],
+    breakdown: [],
+    leaderboardCols: ['', '', ''],
+    leaderboard: [],
+  };
+  const loading = analytics.loading || ctx.loading;
+  const donutTotal = useMemo(() => block.breakdown.reduce((s, b) => s + b.value, 0), [block]);
+  const maxLead = useMemo(() => Math.max(1, ...block.leaderboard.map((r) => r.col1)), [block]);
+  const peak = useMemo(
+    () =>
+      block.volume.reduce(
+        (best, d) => (d.value > best.value ? { value: d.value, label: d.label } : best),
+        { value: 0, label: '' },
+      ),
+    [block],
+  );
+
+  const tabCount = (id: SubTab): string => {
+    const b = analytics.data?.[id];
+    const total = b?.kpis?.[0]?.value;
+    return total ?? '0';
+  };
 
   return (
-    <div className="flex flex-col gap-4 p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="cs-panel cs-an-panel">
+      {/* ═══ HEADER ═══ */}
+      <div className="cs-header-row">
         <div>
-          <h2 className="font-heading text-2xl font-bold">Analytics</h2>
-          <p className="text-sm text-muted-foreground">All agents · {range}</p>
+          <h2 className="cs-title">Analytics</h2>
+          <div className="cs-subtitle">
+            {isManager ? 'All agents' : 'Your performance'}
+            <span className="cs-an-range-chip">{RANGE_LABELS[range]}</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="cs-an-header-controls">
           <select
+            className="cs-an-range-select"
             value={range}
-            onChange={(e) => setRange(e.target.value)}
-            className="rounded-md border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground outline-none focus:border-primary/55"
+            onChange={(e) => setRange(e.target.value as RangeId)}
+            disabled={loading}
           >
-            {RANGE_OPTIONS.map((r) => (
+            {(Object.keys(RANGE_LABELS) as RangeId[]).map((r) => (
               <option key={r} value={r}>
-                {r}
+                {RANGE_LABELS[r]}
               </option>
             ))}
           </select>
-          <Button variant="outline" size="sm">
-            <RefreshCw className="size-3.5" />
+          <button className="cs-refresh-btn" onClick={analytics.reload} disabled={loading}>
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" className={loading ? 'spin-icon' : undefined}>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={REFRESH_PATH} />
+            </svg>
             Refresh
-          </Button>
+          </button>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5">
-        {SUB_TABS.map((t) => {
-          const active = t.id === subTab;
-          const Icon = t.icon;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setSubTab(t.id)}
-              className={cn(
-                'flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors',
-                active
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border bg-card text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <Icon className="size-3.5" />
-              {t.label}
-              <span className="ml-1 opacity-70">{ANALYTICS[t.id].leaderboard.reduce((s, r) => s + r.col1, 0)}</span>
-            </button>
-          );
-        })}
-      </div>
+      {analytics.error ? <div className="cs-an-error-card">Failed to load analytics: {analytics.error}</div> : null}
+      {analytics.data?.unmatched ? (
+        <div className="cs-an-error-card">
+          Your account could not be matched to a Desk agent — ticket/call analytics are unavailable.
+        </div>
+      ) : null}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {block.kpis.map((k) => (
-          <div key={k.label} className="rounded-lg border bg-card p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="font-heading text-2xl leading-none font-bold">{k.value}</div>
-              {k.delta ? <DeltaPill prev={k.delta.prev} current={k.delta.current} higherIsBetter={k.delta.higherIsBetter} /> : null}
-            </div>
-            <div className="mt-1.5 text-[10.5px] tracking-wide text-muted-foreground uppercase">{k.label}</div>
-            {k.hint ? <div className="mt-0.5 text-[10.5px] text-muted-foreground">{k.hint}</div> : null}
-          </div>
+      {/* ═══ DATA TABS ═══ */}
+      <div className="cs-an-datatabs">
+        {SUB_TABS.map((t) => (
+          <button
+            key={t.id}
+            className={`cs-an-datatab${subTab === t.id ? ' active' : ''}`}
+            onClick={() => setSubTab(t.id)}
+          >
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={t.icon} />
+            </svg>
+            {t.label}
+            <span className="cs-an-datatab-count">{tabCount(t.id)}</span>
+          </button>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="rounded-lg border bg-card p-4 shadow-sm">
-          <h3 className="font-heading mb-3 text-xs font-bold tracking-wide text-muted-foreground uppercase">
-            Volume
-          </h3>
-          <div className="flex h-40 items-end gap-1.5">
-            {block.volume.map((v) => (
-              <div key={v.label} className="flex flex-1 flex-col items-center gap-1.5" title={`${v.label}: ${v.value}`}>
-                <div className="flex h-32 w-full items-end">
-                  <div
-                    className={cn('w-full rounded-t-sm', v.partial ? 'bg-primary/35' : 'bg-primary')}
-                    style={{ height: `${(v.value / maxVolume) * 100}%` }}
-                  />
+      {/* ═══ KPI CARDS ═══ */}
+      <div className="cs-an-kpi-grid">
+        {loading && block.kpis.length === 0
+          ? Array.from({ length: 4 }, (_, i) => <div key={i} className="cs-skeleton" style={{ height: 96, borderRadius: 12 }} />)
+          : block.kpis.map((k, idx) => {
+              const chip = deltaChip(k.delta);
+              return (
+                <div key={k.label} className={`cs-an-kpi-card${idx === 0 ? ' cs-an-kpi-primary' : ''}`}>
+                  <div className={`cs-an-kpi-icon-wrap ${KPI_ICON_CLASS[idx] ?? ''}`}>
+                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={SUB_TABS.find((t) => t.id === subTab)?.icon ?? ''} />
+                    </svg>
+                  </div>
+                  <div className="cs-an-kpi-value">{k.value}</div>
+                  <div className="cs-an-kpi-footer">
+                    <span className="cs-an-kpi-label">{k.label}</span>
+                    {chip ? <span className={`cs-an-delta-chip ${chip.cls}`}>{chip.text}</span> : null}
+                  </div>
+                  {k.hint ? <div className="cs-an-kpi-hint">{k.hint}</div> : null}
                 </div>
-                <span className="text-[8.5px] text-muted-foreground">{v.label.slice(-2)}</span>
+              );
+            })}
+      </div>
+
+      {/* ═══ CHARTS ═══ */}
+      <div className="cs-an-charts-grid">
+        {/* Daily Trend */}
+        <div className="cs-an-chart-card cs-an-chart-wide">
+          <div className="cs-an-chart-head">Daily Trend</div>
+          {block.volume.length ? (
+            <div className="cs-an-spark-wrap">
+              <div className="cs-an-trend-peak">
+                <span className="cs-an-trend-peak-val">{peak.value.toLocaleString()}</span>
+                <span className="cs-an-trend-peak-lbl">peak{peak.label ? ` · ${peak.label}` : ''}</span>
               </div>
-            ))}
-          </div>
+              <svg className="cs-an-spark-svg" viewBox={`0 0 400 ${SPARK_H}`} preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="csAnGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--cs-accent)" stopOpacity="0.22" />
+                    <stop offset="100%" stopColor="var(--cs-accent)" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <line className="cs-an-spark-baseline" x1="0" y1={SPARK_H - 1} x2="400" y2={SPARK_H - 1} />
+                <path d={areaPath(block.volume)} fill="url(#csAnGrad)" />
+                <polyline className="cs-an-spark-line" points={sparkPoints(block.volume)} fill="none" />
+              </svg>
+              <div className="cs-an-spark-labels">
+                <span>{block.volume[0]?.label}</span>
+                <span>{block.volume[block.volume.length - 1]?.label}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="cs-an-nodata">{loading ? 'Loading…' : 'No data for this period'}</div>
+          )}
         </div>
 
-        <div className="rounded-lg border bg-card p-4 shadow-sm">
-          <h3 className="font-heading mb-3 text-xs font-bold tracking-wide text-muted-foreground uppercase">
-            Breakdown
-          </h3>
-          <div className="flex flex-col gap-3">
-            {block.breakdown.map((b) => (
-              <div key={b.label}>
-                <div className="mb-1 flex items-center justify-between text-xs">
-                  <span className="font-semibold">{b.label}</span>
-                  <span className={cn('font-mono', BREAKDOWN_TEXT_CLASS[b.tone])}>{b.value}</span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className={cn('h-full rounded-full', BREAKDOWN_BAR_CLASS[b.tone])}
-                    style={{ width: `${(b.value / maxBreakdown) * 100}%` }}
-                  />
+        {/* Breakdown donut */}
+        <div className="cs-an-chart-card">
+          <div className="cs-an-chart-head">Breakdown</div>
+          {block.breakdown.length ? (
+            <div className="cs-an-donut-wrap">
+              <div className="cs-an-donut" style={{ background: donutBackground(block.breakdown) }}>
+                <div className="cs-an-donut-hole">
+                  <div className="cs-an-donut-total">{donutTotal.toLocaleString()}</div>
+                  <div className="cs-an-donut-sublabel">total</div>
                 </div>
               </div>
-            ))}
-          </div>
+              <div className="cs-an-legend">
+                {block.breakdown.map((s, idx) => (
+                  <div key={s.label} className="cs-an-legend-row">
+                    <span className="cs-an-legend-dot" style={{ background: labelColor(s.label, idx) }} />
+                    <span className="cs-an-legend-name">{s.label}</span>
+                    <span className="cs-an-legend-val">{s.value.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="cs-an-nodata">{loading ? 'Loading…' : 'No data'}</div>
+          )}
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border bg-card">
-        <div className="flex items-center justify-between border-b px-4 py-3">
-          <div className="font-heading text-sm font-bold">Agent Leaderboard</div>
-        </div>
-        {/* min-w keeps the 5-column grid from squishing on phones; overflow-x-auto on the
-            wrapper above makes it swipeable instead of clipping the trailing columns. */}
-        <div className="min-w-140">
-          <div className="grid grid-cols-[40px_1.6fr_1fr_1fr_1fr] gap-3 border-b bg-muted/40 px-4 py-2.5 text-[10px] font-bold tracking-wide text-muted-foreground uppercase">
-            <span>#</span>
-            <span>Agent</span>
-            <span>{block.leaderboardCols[0]}</span>
-            <span>{block.leaderboardCols[1]}</span>
-            <span>{block.leaderboardCols[2]}</span>
+      {/* ═══ LEADERBOARD (manager tier only — backend also enforces) ═══ */}
+      {isManager ? (
+        <div className="cs-an-lb-section">
+          <div className="cs-an-section-head">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Agent Leaderboard
+            <span className="cs-an-section-hint">this period</span>
           </div>
-          {block.leaderboard.map((row, i) => {
-            const rank = i + 1;
-            const initials = row.agent
-              .split(' ')
-              .map((n) => n[0])
-              .join('')
-              .slice(0, 2)
-              .toUpperCase();
-            return (
-              <div
-                key={row.agent}
-                className={cn(
-                  'grid grid-cols-[40px_1.6fr_1fr_1fr_1fr] items-center gap-3 border-b px-4 py-3 text-sm last:border-b-0',
-                  rank === 1 ? 'bg-primary/8' : undefined,
+          <div className="cs-table-wrap">
+            <table className="cs-table cs-an-lb-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Agent</th>
+                  <th style={{ textAlign: 'right' }}>{block.leaderboardCols[0]}</th>
+                  <th style={{ textAlign: 'right' }}>{block.leaderboardCols[1]}</th>
+                  <th style={{ textAlign: 'right' }}>{block.leaderboardCols[2]}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {block.leaderboard.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="cs-empty">
+                      {loading ? 'Loading…' : 'No agent activity in this range.'}
+                    </td>
+                  </tr>
+                ) : (
+                  block.leaderboard.map((a, idx) => (
+                    <tr key={`${a.agent}-${idx}`} className="cs-an-lb-row">
+                      <td>
+                        <span className={`cs-an-rank${idx < 3 ? ' cs-an-rank-top' : ''}`}>
+                          {String(idx + 1).padStart(2, '0')}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="cs-an-agent-cell">
+                          <div className="cs-an-avatar">{agentInitials(a.agent)}</div>
+                          <div className="cs-an-agent-info">
+                            <div className="cs-an-agent-name">{a.agent}</div>
+                            <div className="cs-an-agent-bar-wrap">
+                              <div className="cs-an-agent-bar" style={{ width: `${Math.round((a.col1 / maxLead) * 100)}%` }} />
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td style={{ textAlign: 'right', fontWeight: 700 }}>
+                        <strong className="cs-an-lb-num">{a.col1.toLocaleString()}</strong>
+                      </td>
+                      <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>
+                        {typeof a.col2 === 'number' ? a.col2.toLocaleString() : a.col2}
+                      </td>
+                      <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{a.col3 || '—'}</td>
+                    </tr>
+                  ))
                 )}
-              >
-                <span className={cn('font-mono font-bold', rank === 1 ? 'text-primary' : 'text-muted-foreground')}>
-                  {rank}
-                </span>
-                <span className="flex items-center gap-2">
-                  <span className="flex size-6 flex-none items-center justify-center rounded-full bg-secondary text-[10px] font-bold text-secondary-foreground">
-                    {initials}
-                  </span>
-                  <span className="truncate font-semibold">{row.agent}</span>
-                </span>
-                <span className="font-mono text-xs" style={{ opacity: 0.4 + 0.6 * (row.col1 / maxLead) }}>
-                  {row.col1}
-                </span>
-                <span className="font-mono text-xs text-muted-foreground">{row.col2}</span>
-                <span className="font-mono text-xs text-muted-foreground">{row.col3}</span>
-              </div>
-            );
-          })}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      ) : null}
     </div>
-  );
-}
-
-function DeltaPill({ prev, current, higherIsBetter }: { prev: number; current: number; higherIsBetter: boolean }) {
-  const up = current >= prev;
-  const good = up === higherIsBetter;
-  const pct = prev === 0 ? 0 : Math.abs(((current - prev) / prev) * 100);
-  return (
-    <span
-      className={cn(
-        'flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold',
-        good ? 'bg-good/12 text-good' : 'bg-bad/12 text-bad',
-      )}
-    >
-      {up ? <ArrowUp className="size-2.5" /> : <ArrowDown className="size-2.5" />}
-      {pct.toFixed(0)}%
-    </span>
   );
 }

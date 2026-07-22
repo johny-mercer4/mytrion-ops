@@ -9,7 +9,8 @@ import { hexA, type CycleDef, type DetailNode } from './model';
 import { OCT_STAGES } from './stages';
 import { OCT_AFTER_CENTER, OCT_AFTER_W } from './after';
 import { computeRoadLayout } from './layout';
-import { SCENE_DARK, SCENE_LIGHT, useDocumentTheme } from './scopeTheme';
+import { useTheme } from '../../../hooks/useTheme';
+import { SCENE_DARK, SCENE_LIGHT } from './scopeTheme';
 import { RoadScene } from './RoadScene';
 import { AfterHub } from './AfterHub';
 import { StageModal } from './StageModal';
@@ -41,7 +42,7 @@ export function OctaneScope() {
   const stateRef = useRef({ lc, zoom, activeIndex, layout, isOpen: false });
   stateRef.current = { lc, zoom, activeIndex, layout, isOpen: openStage !== null || openCycle !== null };
 
-  const theme = useDocumentTheme();
+  const { theme } = useTheme();
   const dark = theme !== 'light';
   const t = dark ? SCENE_DARK : SCENE_LIGHT;
 

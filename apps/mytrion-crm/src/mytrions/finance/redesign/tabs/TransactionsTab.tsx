@@ -4,7 +4,6 @@ import { useFinanceCtx } from '../ctx';
 import { s, Svg } from '../dc';
 import {
   chipStyle,
-  filterTransactions,
   fmtCurrency,
   galC,
   kpiIcon,
@@ -32,14 +31,57 @@ const TX_PRESETS = [
 ] as const;
 
 export function TransactionsTab() {
-  const { openTx, refreshSync, pushToast } = useFinanceCtx();
+  const { openTx, refreshSync, pushToast, txLoading, startAnim, txFeed } = useFinanceCtx();
   const [search, setSearch] = useState('');
   const [preset, setPreset] = useState('month');
   const [visible, setVisible] = useState(8);
-  const [loading, setLoading] = useState(false);
+  const [localLoading, setLocalLoading] = useState(false);
   const [spin, setSpin] = useState(false);
 
-  const all = useMemo(() => filterTransactions(search, preset), [search, preset]);
+  const loading = txLoading || localLoading;
+
+  const rawTxFeed = useMemo(() => {
+    return (txFeed || []).map((raw) => ({
+      txId: String(raw.transaction_id || raw.txId || raw.id || 'TX000'),
+      date: String(raw.date || raw.created_at || new Date().toISOString()),
+      company: String(raw.company_name || raw.company || raw.deal_name || 'N/A'),
+      loc: String(raw.location || raw.loc || 'Unknown'),
+      state: String(raw.state || 'XX'),
+      amount: Number(raw.amount || raw.total || 0),
+      gal: Number(raw.gallons || raw.gal || 0),
+      disc: Number(raw.discount || raw.disc || 0),
+      grade: String(raw.fuel_type || raw.grade || 'Diesel'),
+      carrier: String(raw.carrier_id || raw.carrier || '99999'),
+      card: String(raw.card_number || raw.card || '••••'),
+      terms: String(raw.payment_terms || raw.terms || 'LOC') as any,
+      active: Boolean(raw.active ?? true),
+      ppu: Number(raw.ppu || 0),
+      retail: Number(raw.retail || 0),
+    }));
+  }, [txFeed]);
+
+  const all = useMemo(() => {
+    let list = rawTxFeed;
+    if (preset === 'week') {
+      const ms = 7 * 86400000;
+      const now = Date.now();
+      list = list.filter((t) => now - new Date(t.date).getTime() < ms);
+    } else if (preset === 'month') {
+      const ms = 30 * 86400000;
+      const now = Date.now();
+      list = list.filter((t) => now - new Date(t.date).getTime() < ms);
+    } else if (preset === 'quarter') {
+      const ms = 90 * 86400000;
+      const now = Date.now();
+      list = list.filter((t) => now - new Date(t.date).getTime() < ms);
+    }
+    const sTerm = search.toLowerCase();
+    if (sTerm) {
+      list = list.filter((t) => t.company.toLowerCase().includes(sTerm) || t.carrier.includes(sTerm) || t.txId.toLowerCase().includes(sTerm));
+    }
+    return list;
+  }, [search, preset, rawTxFeed]);
+
   const shown = all.slice(0, visible);
   const txUnique = new Set(all.map((t) => t.txId)).size;
   const txSumAmt = all.reduce((s, t) => s + t.amount, 0);
@@ -49,12 +91,13 @@ export function TransactionsTab() {
 
   const refresh = () => {
     setSpin(true);
-    setLoading(true);
+    setLocalLoading(true);
     refreshSync();
     setTimeout(() => {
       setSpin(false);
-      setLoading(false);
-      pushToast('Transactions refreshed', 'Latest line items loaded.');
+      setLocalLoading(false);
+      pushToast('Transactions refreshed', 'Latest line items loaded.', 'success');
+      startAnim();
     }, 800);
   };
 
@@ -81,7 +124,20 @@ export function TransactionsTab() {
       <div style={s('display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:12px')}>
         <span style={s('font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-right:2px')}>Period</span>
         {TX_PRESETS.map(([id, label]) => (
-          <button key={id} type="button" className="mf-chip" onClick={() => { setPreset(id); setVisible(8); }} style={s(chipStyle(preset === id))}>
+          <button
+            key={id}
+            type="button"
+            className="mf-chip"
+            data-active={preset === id ? 'true' : 'false'}
+            onClick={() => {
+              setPreset(id);
+              setVisible(8);
+              setLocalLoading(true);
+              setTimeout(() => setLocalLoading(false), 450);
+              startAnim();
+            }}
+            style={s(chipStyle(preset === id))}
+          >
             {label}
           </button>
         ))}
@@ -107,7 +163,7 @@ export function TransactionsTab() {
                 onClick={() => openTx(t)}
                 style={s('display:flex;align-items:center;gap:13px;padding:13px 16px;border-bottom:1px solid var(--border2);cursor:pointer;width:100%;border-left:none;border-right:none;border-top:none;background:transparent;text-align:left')}
               >
-                <div style={s('width:38px;height:38px;border-radius:10px;background:var(--accent-s);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
+                <div style={s('width:38px;height:38px;border-radius:var(--radius-md);background:var(--accent-s);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
                   <Svg d={ICONS.card} size={16} />
                 </div>
                 <div style={s('flex:1;min-width:0')}>
@@ -117,8 +173,8 @@ export function TransactionsTab() {
                   </div>
                 </div>
                 <div style={s('display:flex;align-items:center;gap:8px;flex-shrink:0')}>
-                  <span style={s('font-size:9.5px;font-weight:700;padding:3px 7px;border-radius:6px;background:var(--muted-s);color:var(--text2)')}>{t.grade}</span>
-                  <span style={s("font-size:9.5px;font-weight:700;padding:3px 7px;border-radius:6px;background:var(--orange-s);color:var(--orange);font-family:'JetBrains Mono',monospace")}>{galC(t.gal)} gal</span>
+                  <span style={s('font-size:9.5px;font-weight:700;padding:3px 7px;border-radius:var(--radius-md);background:var(--muted-s);color:var(--text2)')}>{t.grade}</span>
+                  <span style={s("font-size:9.5px;font-weight:700;padding:3px 7px;border-radius:var(--radius-md);background:var(--orange-s);color:var(--orange);font-family:'JetBrains Mono',monospace")}>{galC(t.gal)} gal</span>
                   <div style={s("font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;color:var(--accent);min-width:74px;text-align:right")}>{fmtCurrency(t.amount).replace('.00', '')}</div>
                 </div>
               </button>

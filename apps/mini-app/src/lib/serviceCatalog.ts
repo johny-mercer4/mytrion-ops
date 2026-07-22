@@ -11,12 +11,21 @@
  */
 import type { IconName } from '../components/icons';
 import type { ServiceKey } from './demo';
+import type { ServiceRequestKey } from './api';
 
 export interface CatalogItem {
   key: string;
   labelKey: string;
   icon: IconName;
   action: ServiceKey | 'generic' | null;
+  /**
+   * Set on a `generic` item to make it file a REAL Zoho Desk ticket instead of the placeholder.
+   *
+   * Without it, `generic` still runs sendGenericRequest(): a local inbox row reading "Request sent"
+   * and no network call whatsoever. The backend map (modules/carrier/serviceRequest.ts) decides who
+   * may file each key, so adding one here does not by itself grant a role access.
+   */
+  request?: ServiceRequestKey;
 }
 
 export interface CatalogGroup {
@@ -29,13 +38,17 @@ const DRIVER_CATALOG: CatalogGroup[] = [
     groupLabelKey: 'svcgrp.yourCard',
     items: [
       { key: 'drv-status', labelKey: 'cat.drvStatus', icon: 'shield', action: 'status' },
-      { key: 'drv-balance', labelKey: 'cat.drvBalance', icon: 'wallet', action: 'balance' },
       { key: 'drv-txns', labelKey: 'cat.drvTxns', icon: 'list', action: 'txns' },
-      { key: 'drv-override-card', labelKey: 'cat.drvOverrideCard', icon: 'lock', action: 'generic' },
-      { key: 'drv-money-code', labelKey: 'cat.drvMoneyCode', icon: 'dollar', action: 'generic' },
+      // Both of these read data the backend ALREADY scopes to the driver's own card, so neither
+      // needed a new endpoint — they were simply missing from the catalog. `last-used` was wired end
+      // to end (route, client, renderer) and unreachable for want of this line; the manual entry code
+      // is the card number the session already carries, which is why it can render with no fetch.
+      { key: 'drv-last-used', labelKey: 'cat.drvLastUsed', icon: 'clock', action: 'lastused' },
+      { key: 'drv-reveal-code', labelKey: 'cat.drvRevealCode', icon: 'key', action: 'manualcode' },
+      { key: 'drv-override-card', labelKey: 'cat.drvOverrideCard', icon: 'lock', action: 'generic', request: 'override-card' },
+      { key: 'drv-money-code', labelKey: 'cat.drvMoneyCode', icon: 'dollar', action: 'generic', request: 'money-code' },
       { key: 'drv-hold-unhold', labelKey: 'cat.drvHoldUnhold', icon: 'clock', action: null },
       { key: 'drv-change-pin', labelKey: 'cat.drvChangePin', icon: 'key', action: null },
-      { key: 'drv-reveal-code', labelKey: 'cat.drvRevealCode', icon: 'key', action: null },
     ],
   },
 ];
@@ -48,7 +61,7 @@ const OWNER_CATALOG: CatalogGroup[] = [
       { key: 'fin-invoice-view', labelKey: 'cat.finInvoiceView', icon: 'doc', action: 'invoices' },
       { key: 'fin-payment-status', labelKey: 'cat.finPaymentStatus', icon: 'card', action: 'payment' },
       { key: 'fin-txn-reports', labelKey: 'cat.finTxnReports', icon: 'list', action: 'txns' },
-      { key: 'fin-money-code', labelKey: 'cat.finMoneyCode', icon: 'dollar', action: 'generic' },
+      { key: 'fin-money-code', labelKey: 'cat.finMoneyCode', icon: 'dollar', action: 'generic', request: 'money-code' },
       { key: 'fin-credit-increase', labelKey: 'cat.finCreditIncrease', icon: 'dollar', action: null },
       { key: 'fin-update-payment-method', labelKey: 'cat.finUpdatePaymentMethod', icon: 'card', action: null },
       { key: 'fin-autopay', labelKey: 'cat.finAutopay', icon: 'refresh', action: null },
@@ -59,12 +72,12 @@ const OWNER_CATALOG: CatalogGroup[] = [
   {
     groupLabelKey: 'svcgrp.cardMgmt',
     items: [
-      { key: 'card-activate', labelKey: 'cat.cardActivate', icon: 'card', action: 'generic' },
+      { key: 'card-activate', labelKey: 'cat.cardActivate', icon: 'card', action: 'generic', request: 'card-activate' },
       { key: 'card-status', labelKey: 'cat.cardStatus', icon: 'shield', action: 'status' },
-      { key: 'card-limit', labelKey: 'cat.cardLimit', icon: 'list', action: 'generic' },
+      { key: 'card-limit', labelKey: 'cat.cardLimit', icon: 'list', action: 'generic', request: 'card-limit' },
       { key: 'card-track', labelKey: 'cat.cardTrack', icon: 'pin', action: 'tracking' },
-      { key: 'card-replace', labelKey: 'cat.cardReplace', icon: 'refresh', action: 'generic' },
-      { key: 'card-fraud', labelKey: 'cat.cardFraud', icon: 'alert', action: 'generic' },
+      { key: 'card-replace', labelKey: 'cat.cardReplace', icon: 'refresh', action: 'generic', request: 'card-replace' },
+      { key: 'card-fraud', labelKey: 'cat.cardFraud', icon: 'alert', action: 'generic', request: 'card-fraud' },
       { key: 'card-hold-unhold', labelKey: 'cat.cardHoldUnhold', icon: 'clock', action: null },
       { key: 'card-change-pin', labelKey: 'cat.cardChangePin', icon: 'key', action: null },
       { key: 'card-order-extra', labelKey: 'cat.cardOrderExtra', icon: 'card', action: null },
@@ -82,8 +95,8 @@ const OWNER_CATALOG: CatalogGroup[] = [
     groupLabelKey: 'svcgrp.documents',
     items: [
       { key: 'doc-invoices', labelKey: 'cat.docInvoices', icon: 'doc', action: 'invoices' },
-      { key: 'doc-billing-form', labelKey: 'cat.docBillingForm', icon: 'doc', action: 'generic' },
-      { key: 'doc-ref-guides', labelKey: 'cat.docRefGuides', icon: 'doc', action: 'generic' },
+      { key: 'doc-billing-form', labelKey: 'cat.docBillingForm', icon: 'doc', action: 'generic', request: 'billing-form' },
+      { key: 'doc-ref-guides', labelKey: 'cat.docRefGuides', icon: 'doc', action: 'generic', request: 'ref-guides' },
       { key: 'doc-maintenance-invoices', labelKey: 'cat.docMaintenanceInvoices', icon: 'doc', action: null },
       { key: 'doc-referral-terms', labelKey: 'cat.docReferralTerms', icon: 'doc', action: null },
     ],
@@ -104,7 +117,7 @@ export function getCatalog(isDriver: boolean): CatalogGroup[] {
 }
 
 export function defaultPinned(isDriver: boolean): string[] {
-  return isDriver ? ['drv-status', 'drv-balance', 'drv-txns'] : ['fin-balance', 'card-status', 'fin-invoice-view', 'fin-txn-reports'];
+  return isDriver ? ['drv-status', 'drv-txns'] : ['fin-balance', 'card-status', 'fin-invoice-view', 'fin-txn-reports'];
 }
 
 export function findCatalogItem(key: string, isDriver: boolean): { item: CatalogItem; groupLabelKey: string } | undefined {

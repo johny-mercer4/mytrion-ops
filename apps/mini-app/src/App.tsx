@@ -1,44 +1,57 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { Check, CircleAlert, LayoutGrid } from 'lucide-react';
 import {
   ApiError,
   createDriverInvite,
+  driverSelfRegister,
+  fetchAccountStatus,
+  fetchBalance,
   fetchFleet,
+  fetchInvoices,
+  fetchLastUsed,
   fetchMiniAppSession,
+  fetchPaymentInfo,
   fetchRegistrationPreview,
+  fetchCompany,
+  fetchTracking,
+  renameDriver,
+  sendServiceRequest,
+  fetchTransactions,
   redeemRegistration,
+  sendInvoice,
+  sendTransactionsReport,
+  type CarrierBalance,
   type FleetCard,
+  type LastUsedResult,
+  type PaymentInfoResult,
   type RegistrationPreview,
   type RegistrationView,
+  type SalesInvoicesResult,
+  type StatusResult,
+  type TrackingResult,
+  type TransactionsResult,
+  type TxnExportFormat,
 } from './lib/api';
 import { getRegistrationId, getTelegramWebApp, haptic, type TelegramWebAppUser } from './lib/telegram';
 import { getStoredTheme, initTheme, setTheme, type Theme } from './lib/theme';
 import { LANGUAGES, useI18n } from './lib/i18n';
 import { LogoLockup } from './components/logo';
 import { BackChevron, Chevron, EyeToggle, Icon, SearchGlyph, type IconName } from './components/icons';
-import {
-  BALANCE_TILES,
-  HERO,
-  INVOICE_DOCS,
-  PAYMENT_ROWS,
-  STATUS_TILES,
-  TRACKING,
-  TXN_ALL,
-  seedInbox,
-  statusCards,
-  type InboxItem,
-} from './lib/demo';
-import { downloadInvoicePdf } from './lib/pdf';
+import { seedInbox, type InboxItem } from './lib/demo';
+import type { CompanyDetails } from './lib/api';
 import type { OpenAction } from './lib/actionTarget';
 import { defaultPinned, findCatalogItem } from './lib/serviceCatalog';
 import { ConfirmDialog, type ConfirmConfig } from './components/ConfirmDialog';
 import { Toast, type ToastKind, type ToastState } from './components/Toast';
-import { TabBar, type HomeTab } from './screens/TabBar';
+import { TabBar, TABS as HOME_TABS, type HomeTab } from './screens/TabBar';
 import { ServicesTab } from './screens/ServicesTab';
 import { InboxTab } from './screens/InboxTab';
+import { SlideIn } from './components/SlideIn';
+import { useSlideDirection } from './lib/useSlideDirection';
 
 const CTA_SHADOW = '0 4px 14px color-mix(in srgb, var(--primary) 34%, transparent)';
 
-type Screen = 'loading' | 'error' | 'confirm' | 'success' | 'already' | 'home' | 'fleet';
+type Screen = 'loading' | 'error' | 'confirm' | 'success' | 'already' | 'home' | 'fleet' | 'login';
 
 interface Session {
   isDriver: boolean;
@@ -46,6 +59,11 @@ interface Session {
   isOwnerOp: boolean;
   isFleetManager: boolean;
   ownCard: string;
+  /** Driver's real full fuel-card number (from the backend session), null when unresolved. */
+  ownCardNumber: string | null;
+  /** The carrier this session belongs to — identity, unlike companyName which is display text and
+   *  is routinely null. Anything cached per account must key on this. */
+  carrierId: string | null;
 }
 
 function cleanAgentName(agentName: string | null | undefined): string | null {
@@ -59,13 +77,17 @@ function sessionFrom(reg: RegistrationView | null): Session {
   const isOwner = reg?.profile === 'owner';
   const isFleetManager = reg?.profile === 'owner' && companyType === 'fleet-manager';
   const isOwnerOp = reg?.profile === 'owner' && companyType !== 'fleet-manager';
-  const ownCard = (reg?.cardId ?? '7549').slice(-4);
+  const ownCardNumber = reg?.cardNumber?.trim() || null;
+  // Prefer the real card number's last-4; fall back to the cardId's trailing digits when unresolved.
+  const ownCard = (ownCardNumber ?? reg?.cardId ?? '7549').slice(-4);
   return {
     isDriver,
     isOwner,
     isOwnerOp,
     isFleetManager,
     ownCard,
+    ownCardNumber,
+    carrierId: reg?.carrierId ?? null,
   };
 }
 
@@ -78,6 +100,67 @@ function last4(cardNumber: string | null, cardId: string | null): string {
   const n = cardNumber?.trim();
   if (n && n.length >= 4) return n.slice(-4);
   return cardId ?? '——';
+}
+
+/** Same formatting rules as the sales admin's automation runners (apps/mytrion-crm/.../specs.ts) — servercrm figures are `number | string | null`, never pre-formatted. */
+function fmt(v: unknown): string {
+  if (v === null || v === undefined || v === '') return '—';
+  if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(2);
+  return String(v);
+}
+/**
+ * 'YYYY-MM-DD HH:MM' for a transaction. The clock time is what tells two fuel-ups at the same stop
+ * on the same day apart, so it is shown rather than sliced off. The backend sends the mart's
+ * `timestamp without time zone` through JSON as "2026-07-16T12:14:00" — no zone, so it is displayed
+ * verbatim rather than passed through `new Date()`, which would re-interpret it in the phone's
+ * timezone and shift the clock.
+ */
+/** 'YYYY-MM-DD' for a date input's value, in the device's own timezone. */
+function isoDay(d: Date): string {
+  const pad = (x: number) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function txnDateTime(v: unknown): string {
+  const t = fmt(v);
+  return t === '—' ? t : t.replace('T', ' ').slice(0, 16);
+}
+
+/**
+ * Money always carries both decimal places. With only `maximumFractionDigits` the trailing zeros
+ * were dropped, so a screen could show "$1,000" next to "$1,497.94", and a transaction list ran
+ * "$327.37 / $324.1 / $14" — the ragged column a client reads as a bug in the numbers themselves.
+ */
+function money(v: unknown): string {
+  const n = typeof v === 'string' ? Number(v) : typeof v === 'number' ? v : NaN;
+  return Number.isFinite(n)
+    ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : fmt(v);
+}
+
+/**
+ * Translate a raw invoice status into a localized label + a tone.
+ *
+ * servercrm returns PAID / PENDING / PARTIALLY_PAID / CANCELLED (uppercase, English). The list used
+ * to print those verbatim in every locale. Normalized to the underscore-and-case-insensitive forms
+ * the upstream actually sends; an unrecognized value falls back to its raw text rather than a blank.
+ */
+function invoiceStatus(raw: unknown, t: (k: string) => string): { label: string; tone: string } {
+  const key = String(raw ?? '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+  switch (key) {
+    case 'PAID':
+      return { label: t('invoice.paid'), tone: 'success' };
+    case 'PENDING':
+    case 'UNPAID':
+      return { label: t('invoice.pending'), tone: 'muted-fg' };
+    case 'PARTIALLY_PAID':
+      return { label: t('invoice.partiallyPaid'), tone: 'muted-fg' };
+    case 'CANCELLED':
+    case 'CANCELED':
+      return { label: t('invoice.cancelled'), tone: 'destructive' };
+    default:
+      return { label: fmt(raw), tone: 'muted-fg' };
+  }
 }
 
 /** Countdown from an ISO deadline: {expired, short:"17h"/"45m"}. */
@@ -152,7 +235,9 @@ function Spinner({ size = 34 }: { size?: number }) {
         width: size,
         height: size,
         borderRadius: '50%',
-        border: '3px solid var(--secondary)',
+        // Theme-adaptive track (faint in both light + dark) with a solid primary arc on top, so the
+        // spinner reads clearly against the dark-default background — --secondary was too low-contrast.
+        border: '3px solid color-mix(in srgb, var(--primary) 22%, transparent)',
         borderTopColor: 'var(--primary)',
         animation: 'octspin .8s linear infinite',
       }}
@@ -264,10 +349,7 @@ function ErrorScreen({
             animation: 'octpop .35s ease',
           }}
         >
-          <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
-            <path d="M12 7.5v6" stroke="var(--destructive)" strokeWidth="2.6" strokeLinecap="round" />
-            <circle cx="12" cy="17" r="1.5" fill="var(--destructive)" />
-          </svg>
+          <CircleAlert size={30} strokeWidth={2.2} color="var(--destructive)" aria-hidden />
         </div>
         <div style={{ textAlign: 'center', maxWidth: 300 }}>
           <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--fg)', marginBottom: 8 }}>{title ?? t('error.title')}</div>
@@ -288,7 +370,6 @@ function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: Regis
   const isOwner = preview.profile === 'owner';
   const ownerLabel = preview.companyType === 'fleet-manager' ? t('role.fleet') : t('role.owner');
   const cd = countdown(preview.expiresAt);
-  const agent = cleanAgentName(preview.agentName);
   return (
     <Screen center>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22, width: '100%', maxWidth: 342, animation: 'octfade .3s ease' }}>
@@ -309,15 +390,6 @@ function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: Regis
               {isOwner ? ownerLabel : t('role.driver')}
             </span>
           </div>
-          {agent && (
-            <>
-              <div style={{ height: 1, background: 'var(--border)', margin: '0 16px' }} />
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '15px 16px' }}>
-                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('confirm.agentLabel')}</span>
-                <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', textAlign: 'right' }}>{agent}</span>
-              </div>
-            </>
-          )}
         </DetailCard>
         <CtaButton onClick={onConfirm} disabled={busy}>
           {busy ? <Spinner size={20} /> : t('confirm.cta')}
@@ -329,7 +401,156 @@ function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: Regis
           </div>
         )}
         <div style={{ fontSize: 12, color: 'var(--muted-fg)', textAlign: 'center', lineHeight: 1.5 }}>{t('confirm.footnote')}</div>
-        <SupportCard agentName={preview.agentName} />
+        {/* Generic support only during registration — the sales agent's name (who generated the link)
+            was on the confirm screen and its own row above; both are removed. */}
+        <SupportCard />
+      </div>
+    </Screen>
+  );
+}
+
+/**
+ * Onboarding entry when there's no invite link + no prior registration: choose Driver or Company.
+ * Driver self-registers by fuel-card number (the number is on the physical card); Company accounts
+ * are invite-only, so that branch just points to the registration link.
+ */
+function LoginScreen({
+  firstName,
+  defaultName,
+  onDriverRegister,
+}: {
+  firstName: string;
+  /** The Telegram profile name, used to prefill — not to decide. See `name` below. */
+  defaultName: string;
+  onDriverRegister: (cardNumber: string, driverName: string) => Promise<void>;
+}) {
+  const { t } = useI18n();
+  const [role, setRole] = useState<'choose' | 'driver' | 'company'>('choose');
+  const [card, setCard] = useState('');
+  /**
+   * Prefilled from Telegram, but the driver's to correct. This name is what their OWNER sees beside
+   * this card in the fleet roster and what support reads on a ticket — and a Telegram display name
+   * is whatever the person happened to set: a nickname, an emoji, the phone's default. It was being
+   * taken silently.
+   */
+  const [name, setName] = useState(defaultName);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function submit() {
+    const value = card.replace(/\s/g, '');
+    if (value.length < 4) {
+      setError(t('login.cardInvalid'));
+      return;
+    }
+    const who = name.trim();
+    if (!who) {
+      setError(t('login.nameRequired'));
+      return;
+    }
+    setBusy(true);
+    setError('');
+    haptic('tap');
+    try {
+      await onDriverRegister(value, who);
+    } catch (e) {
+      haptic('error');
+      setError(e instanceof ApiError ? e.message : t('error.reason'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Screen center>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22, width: '100%', maxWidth: 342, animation: 'octfade .3s ease' }}>
+        <LogoLockup size={40} />
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 23, fontWeight: 700, color: 'var(--fg)', letterSpacing: '-.01em' }}>{t('confirm.hi', { name: firstName })}</div>
+          <div style={{ fontSize: 14, color: 'var(--muted-fg)', marginTop: 5 }}>{t('login.subtitle')}</div>
+        </div>
+
+        {role === 'choose' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
+            {([
+              { key: 'driver', icon: 'truck' as const, label: t('login.driver'), sub: t('login.driverSub'), primary: true },
+              { key: 'company', icon: 'users' as const, label: t('login.company'), sub: t('login.companySub'), primary: false },
+            ] as const).map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                className="press"
+                onClick={() => { haptic('tap'); setRole(opt.key); }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 14,
+                  textAlign: 'left',
+                  padding: '15px 16px',
+                  border: opt.primary ? 'none' : '1px solid var(--border)',
+                  borderRadius: 16,
+                  background: opt.primary ? 'var(--primary)' : 'var(--card)',
+                  boxShadow: opt.primary ? CTA_SHADOW : 'var(--card-shadow)',
+                  color: opt.primary ? '#FFFFFF' : 'var(--fg)',
+                  cursor: 'pointer',
+                }}
+              >
+                <span style={{ width: 42, height: 42, flex: 'none', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: opt.primary ? 'rgba(255,255,255,.18)' : 'var(--secondary)', color: opt.primary ? '#FFFFFF' : 'var(--link-accent)' }}>
+                  <Icon name={opt.icon} size={22} strokeWidth={1.9} className="" />
+                </span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 16, fontWeight: 700 }}>{opt.label}</span>
+                  <span style={{ display: 'block', fontSize: 12.5, fontWeight: 500, marginTop: 2, color: opt.primary ? 'rgba(255,255,255,.8)' : 'var(--muted-fg)' }}>{opt.sub}</span>
+                </span>
+                {opt.primary ? <Chevron style={{ color: 'rgba(255,255,255,.85)' }} /> : <Chevron />}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {role === 'driver' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
+            <label style={{ width: '100%' }}>
+              <span style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 7 }}>{t('login.cardPrompt')}</span>
+              <input
+                value={card}
+                inputMode="numeric"
+                autoComplete="off"
+                onChange={(e) => setCard(groupCardNumber(e.target.value.replace(/\D/g, '').slice(0, 19)))}
+                placeholder={t('login.cardPlaceholder')}
+                style={{ width: '100%', minWidth: 0, height: 50, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 16, fontVariantNumeric: 'tabular-nums', letterSpacing: '.04em', padding: '0 14px', boxSizing: 'border-box' }}
+              />
+            </label>
+            <label style={{ width: '100%' }}>
+              <span style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 7 }}>{t('login.namePrompt')}</span>
+              <input
+                value={name}
+                autoComplete="name"
+                onChange={(e) => setName(e.target.value.slice(0, 200))}
+                placeholder={t('login.namePlaceholder')}
+                style={{ width: '100%', minWidth: 0, height: 50, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 16, padding: '0 14px', boxSizing: 'border-box' }}
+              />
+              <span style={{ display: 'block', fontSize: 12, color: 'var(--muted-fg)', marginTop: 6, lineHeight: 1.45 }}>{t('login.nameHint')}</span>
+            </label>
+            {error && <div style={{ fontSize: 13, color: 'var(--destructive)', lineHeight: 1.45 }}>{error}</div>}
+            <CtaButton onClick={() => void submit()} disabled={busy}>
+              {busy ? <Spinner size={20} /> : t('login.continue')}
+            </CtaButton>
+            <button type="button" className="press" onClick={() => { setRole('choose'); setError(''); }} style={{ border: 'none', background: 'transparent', color: 'var(--muted-fg)', fontFamily: "'Geist'", fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: 6 }}>
+              {t('common.back')}
+            </button>
+          </div>
+        )}
+
+        {role === 'company' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, width: '100%', alignItems: 'center' }}>
+            <div style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--muted-fg)', textAlign: 'center', padding: '14px 16px', background: 'var(--secondary)', borderRadius: 14 }}>{t('login.companyInfo')}</div>
+            <button type="button" className="press" onClick={() => setRole('choose')} style={{ border: 'none', background: 'transparent', color: 'var(--muted-fg)', fontFamily: "'Geist'", fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: 6 }}>
+              {t('common.back')}
+            </button>
+          </div>
+        )}
       </div>
     </Screen>
   );
@@ -387,14 +608,22 @@ function AlreadyScreen({
 function AppHeader({ user, onOpenProfile }: { user: TelegramWebAppUser | undefined; onOpenProfile: () => void }) {
   return (
     <div style={{ flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'calc(13px + env(safe-area-inset-top)) 18px 13px', background: 'var(--card)', borderBottom: '1px solid var(--border)' }}>
-      <LogoLockup size={28} />
+      <LogoLockup size={34} />
       <button
         type="button"
         onClick={onOpenProfile}
         aria-label="Profile"
-        style={{ width: 37, height: 37, borderRadius: '50%', border: 'none', cursor: 'pointer', overflow: 'hidden', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 0 2px var(--card),0 0 0 3px var(--border)', background: user?.photo_url ? undefined : 'var(--primary)' }}
+        /**
+         * 44×44 tap target (Apple HIG / WCAG 2.5.5 minimum; the avatar alone was 37), with the
+         * visible avatar kept at 38 inside it. The button itself is a transparent box — growing the
+         * avatar to 44 would have made it the tallest thing in the header and pushed the whole bar
+         * down 7px, so the extra reach overhangs into the header's padding instead.
+         */
+        style={{ width: 44, height: 44, margin: '-3px -3px -3px 0', border: 'none', background: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}
       >
-        {user?.photo_url ? <img src={user.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initialsOf(user)}
+        <span style={{ width: 38, height: 38, borderRadius: '50%', overflow: 'hidden', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 0 2px var(--card),0 0 0 3px var(--border)', background: user?.photo_url ? undefined : 'var(--primary)' }}>
+          {user?.photo_url ? <img src={user.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initialsOf(user)}
+        </span>
       </button>
     </div>
   );
@@ -403,48 +632,231 @@ function AppHeader({ user, onOpenProfile }: { user: TelegramWebAppUser | undefin
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // Home
 
-/** '5412 7734 90' + first 2 digits of last4, space, full last4 — a fabricated PAN, not a real one. */
-function fullCardNumber(ownCard: string): string {
-  const last4 = ownCard || '7549';
-  return '5412 7734 90' + last4.slice(0, 2) + ' ' + last4;
+/** Group a raw digit string into 4s for readability (real EFS PANs are 19 digits → 5 groups). */
+function groupCardNumber(n: string): string {
+  const digits = n.replace(/\D/g, '');
+  return digits.replace(/(.{4})/g, '$1 ').trim() || n;
 }
 
-function OwnerHero({ onOpenDetails }: { onOpenDetails: () => void }) {
-  const { t } = useI18n();
+/** Masked PAN in the physical-card style: all-but-last-4 as asterisks + the real last 4. */
+/**
+ * The hero card mimics the PHYSICAL card, which prints the masked number as asterisks — so this one
+ * does too. The transaction rows and the exported report deliberately keep `•••• 7549`: those are
+ * app and document chrome, not a picture of the card in the driver's hand.
+ *
+ * Not length-faithful: an EFS PAN is 19 digits, and masking to its real 4-4-4-4-3 grouping splits
+ * the last four across groups as `•••7 549`, which reads as if the last four were "549".
+ */
+function maskedCardNumber(n: string): string {
+  const digits = n.replace(/\D/g, '');
+  const last4 = digits.slice(-4) || n.slice(-4);
+  return `${'*'.repeat(Math.max(digits.length - last4.length, 8))} ${last4}`;
+}
+
+/** Smooth an array of anchor points into a flowing SVG path (midpoint-quadratic smoothing). */
+function smoothWavePath(pts: Array<{ x: number; y: number }>): string {
+  if (pts.length < 2) return '';
+  let d = `M ${pts[0]!.x},${pts[0]!.y}`;
+  for (let i = 1; i < pts.length; i++) {
+    const prev = pts[i - 1]!;
+    const cur = pts[i]!;
+    const mx = (prev.x + cur.x) / 2;
+    const my = (prev.y + cur.y) / 2;
+    d += ` Q ${prev.x},${prev.y} ${mx},${my}`;
+  }
+  const last = pts[pts.length - 1]!;
+  d += ` L ${last.x},${last.y}`;
+  return d;
+}
+
+/**
+ * The fuel-card's signature ribbon: a dense bundle of thin lines flowing through a
+ * yellow→orange→red gradient (matches the physical Octane card). The bundle is drawn by
+ * interpolating each line between a TOP and BOTTOM edge curve — the two edges have different
+ * shapes, so the lines fan apart and converge organically (flatter yellow left, a pronounced hump
+ * on the orange-red right) instead of reading as rigidly-parallel stripes.
+ */
+/** Faint topographic contour lines flowing across the whole card (matches the physical card's
+ * etched background). Many gently-offset copies of one wave, very low-opacity white. */
+function CardContours() {
+  const base = [
+    { x: -20, y: 96 },
+    { x: 70, y: 70 },
+    { x: 150, y: 100 },
+    { x: 230, y: 74 },
+    { x: 310, y: 58 },
+    { x: 380, y: 86 },
+    { x: 420, y: 80 },
+  ];
   return (
-    <div style={{ position: 'relative', background: '#1E1F23', borderRadius: 24, overflow: 'hidden', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <svg aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.12, pointerEvents: 'none' }} viewBox="0 0 400 230" preserveAspectRatio="none" fill="none" stroke="#FFFFFF" strokeWidth={1}>
-        <path d="M-10 30 Q 90 12, 200 32 T 410 24" />
-        <path d="M-10 62 Q 96 40, 204 60 T 410 52" />
-        <path d="M-10 94 Q 102 72, 208 92 T 410 84" />
-        <path d="M-10 126 Q 96 104, 204 124 T 410 116" />
-        <path d="M-10 158 Q 90 136, 200 156 T 410 148" />
-        <path d="M-10 190 Q 96 168, 204 188 T 410 180" />
-        <path d="M-10 222 Q 102 200, 208 220 T 410 212" />
-      </svg>
-      <svg aria-hidden style={{ position: 'absolute', left: 0, right: 0, bottom: 0, width: '100%', height: 40, opacity: 0.45, pointerEvents: 'none' }} viewBox="0 0 400 40" preserveAspectRatio="none" fill="none">
-        <path d="M0 30 C 60 14, 110 14, 160 26 C 215 39, 270 20, 320 18 C 355 17, 380 24, 400 26" stroke="#FFD023" strokeWidth={7} strokeLinecap="round" />
-        <path d="M0 35 C 60 19, 110 19, 160 31 C 215 44, 270 25, 320 23 C 355 22, 380 29, 400 31" stroke="#FF9E1B" strokeWidth={6} strokeLinecap="round" />
-        <path d="M0 40 C 60 24, 110 24, 160 36 C 215 49, 270 30, 320 28 C 355 27, 380 34, 400 36" stroke="#F4581C" strokeWidth={6} strokeLinecap="round" />
-      </svg>
-      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 56, background: 'linear-gradient(to top, rgba(15,16,20,.82), rgba(15,16,20,0))' }} />
-      <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ width: 44, height: 44, background: 'rgba(255,255,255,.12)', borderRadius: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF' }}>
-          <Icon name="wallet" size={23} strokeWidth={1.7} className="" />
-        </div>
-        <button type="button" className="press" onClick={onOpenDetails} style={{ background: 'rgba(255,255,255,.14)', border: 'none', borderRadius: 12, padding: '9px 14px', fontSize: 13, fontWeight: 600, color: '#FFFFFF', cursor: 'pointer' }}>
+    // opacity 0.09 -> 0.045 and a thinner stroke: these were set to survive under the amber ribbon.
+    // Without it they are the card's only texture, and at the old weight they compete with the
+    // figures instead of sitting behind them.
+    <svg aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.045 }} viewBox="0 0 400 200" preserveAspectRatio="none" fill="none" stroke="#FFFFFF" strokeWidth={0.55}>
+      {Array.from({ length: 26 }, (_, i) => (
+        <path key={i} d={smoothWavePath(base.map((p) => ({ x: p.x, y: p.y - 96 + i * 8.5 })))} />
+      ))}
+    </svg>
+  );
+}
+
+
+const BALANCE_KEY = 'octane.lastBalance';
+
+/**
+ * Last-known balance, so coming back to Home paints the number instead of "—".
+ *
+ * The balance endpoint reaches live EFS through servercrm and takes 1.9–3.3s (measured), and Home
+ * unmounts whenever you visit Services or Inbox — so every return trip re-ran that wait. The cached
+ * value is only ever the FIRST paint: the fetch below still runs and overwrites it, so a stale
+ * figure is on screen for one request, not for a session.
+ *
+ * Scoped by CARRIER ID, not company name. The name is display text and is routinely null — an
+ * invite created without one, or any registration whose companyName never got filled. Two empty
+ * names compared equal, so the scope collapsed and the cache hit across accounts: measured, after
+ * re-registering from carrier 5794015 to 5791860 the hero showed KBUFF TRUCKING's $2,000 balance and
+ * $70,547 credit line under EL PROSSIAH LLC for ~2s before the fetch landed. A name is also not
+ * identity — it can repeat and it can change. The carrier id is both always present and the thing
+ * that actually distinguishes one carrier's money from another's.
+ */
+/**
+ * The carrier balance, painted from cache first and refreshed in the background.
+ *
+ * Shared by both heroes on purpose: the endpoint takes 1.9–3.3s (it reaches live EFS through
+ * servercrm) and Home unmounts on every trip to Services or Inbox, so both cards need the same
+ * cache-then-refresh behaviour. Two copies of it would drift.
+ *
+ * Returns null only until the FIRST ever response — that is the one state worth a skeleton.
+ */
+interface BalanceState {
+  balance: CarrierBalance | null;
+  /** The fetch failed AND there is no cached figure to fall back on — the card has nothing true to
+   *  show and must say so rather than skeleton forever. */
+  failed: boolean;
+  retry: () => void;
+}
+
+function useCarrierBalance(initData: string, carrierId: string | null): BalanceState {
+  const [balance, setBalance] = useState<CarrierBalance | null>(() => readCachedBalance(carrierId));
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    setFailed(false);
+    fetchBalance(initData)
+      .then((v) => {
+        if (cancelled) return;
+        setBalance(v);
+        writeCachedBalance(carrierId, v);
+      })
+      .catch(() => {
+        // Previously swallowed. The card then sat on its skeleton forever, telling the driver it was
+        // loading something that had already failed — measured against a real outage: the balance
+        // endpoint 502'd and the hero span animated indefinitely. A cached figure for THIS carrier
+        // is still theirs and worth showing; with nothing cached, the card has to admit it.
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initData, carrierId, attempt]);
+  return { balance, failed, retry: () => setAttempt((n) => n + 1) };
+}
+
+function readCachedBalance(carrierId: string | null): CarrierBalance | null {
+  // No carrier resolved yet — there is nothing to key on, so a hit would be a guess.
+  if (!carrierId) return null;
+  try {
+    const raw = localStorage.getItem(BALANCE_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as { carrierId?: string; balance?: CarrierBalance };
+    return v.carrierId === carrierId && v.balance ? v.balance : null;
+  } catch {
+    return null; // unparseable or storage blocked — just fetch
+  }
+}
+
+function writeCachedBalance(carrierId: string | null, balance: CarrierBalance): void {
+  if (!carrierId) return;
+  try {
+    localStorage.setItem(BALANCE_KEY, JSON.stringify({ carrierId, balance }));
+  } catch {
+    /* storage can be unavailable (private mode / quota) — the cache is an optimisation, not state */
+  }
+}
+
+function OwnerHero({ initData, company, carrierId, onOpenDetails }: { initData: string; company: string; carrierId: string | null; onOpenDetails: () => void }) {
+  const { t } = useI18n();
+  const { balance, failed: balanceFailed, retry: retryBalance } = useCarrierBalance(initData, carrierId);
+  const creditLimit = balance?.credit_limit != null ? Number(balance.credit_limit) : null;
+  const creditRemaining = balance?.credit_remaining != null ? Number(balance.credit_remaining) : null;
+  // 100 was the fallback when there is no balance, which painted a FULL bar — i.e. "all your
+  // credit is available" — while the number above it was still loading or had failed outright.
+  // null means the bar has nothing true to draw and is not drawn.
+  const pct = creditLimit && creditRemaining != null && creditLimit > 0 ? Math.max(0, Math.min(100, (creditRemaining / creditLimit) * 100)) : null;
+  const eyebrow = { fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' } as const;
+  return (
+    /* Deliberately NOT the fuel-card shell DriverHero uses. That card shows a PAN and depicts the
+       plastic, so the plastic's proportion belongs on it. This one shows a company name and a
+       balance — an account panel, not a card. Constraining it to the card ratio invented 52px of
+       void between the only two things it displays, so its height comes from its content. */
+    <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '15px 17px', display: 'flex', flexDirection: 'column' }}>
+      {/* Contours only. The amber ribbon is out for now, and the scrims went with it: they existed
+          solely to keep text legible on top of it, and the shell is already near-black. */}
+      <CardContours />
+
+      {/* Top row: company left, Details button right */}
+      <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+        <span style={{ minWidth: 0, flex: 1, fontSize: 15, fontWeight: 700, color: '#FFFFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company || ''}</span>
+        <button type="button" className="press" onClick={onOpenDetails} style={{ height: 30, flex: 'none', background: 'rgba(255,255,255,.16)', border: 'none', borderRadius: 9, padding: '0 12px', fontSize: 12.5, fontWeight: 600, color: '#FFFFFF', cursor: 'pointer' }}>
           {t('common.details')}
         </button>
       </div>
-      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.09em', textTransform: 'uppercase', color: 'rgba(255,255,255,.7)' }}>{t('home.efsBalance')}</div>
-        <div style={{ fontSize: 14, color: '#A6ABB6' }}>{t('common.balance')}</div>
-        <div className="selectable" style={{ fontSize: 32, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>{HERO.balance}</div>
+
+      {/* Bottom block: balance amount + credit bar + credit-available (compact) */}
+      {/* The separation from the header is this padding now, not surplus the aspect ratio had to
+          dump somewhere. 10px was what the ratio left behind and reads cramped under a 30px
+          header row; 22 is the breathing room the old 64px void was accidentally providing. */}
+      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 9, paddingTop: 22 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={eyebrow}>{t('home.efsBalance')}</span>
+          {balance ? (
+            <span className="selectable" style={{ fontSize: 32, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02, letterSpacing: '-.01em' }}>
+              {money(balance.efs_balance ?? balance.balance)}
+            </span>
+          ) : (
+            /* Only the very first open lands here — after that the cache paints a real number. A
+               shimmer reads as "loading"; a bare "—" reads as "your balance is unknown". */
+            balanceFailed ? (
+              /* A skeleton here would claim the number is still coming. It isn't — the fetch failed,
+                 and without a retry the only way out is closing the app. */
+              <button
+                type="button"
+                className="press"
+                onClick={retryBalance}
+                style={{ alignSelf: 'flex-start', marginTop: 7, display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'rgba(255,255,255,.14)', color: '#FFFFFF', borderRadius: 9, padding: '7px 12px', fontFamily: "'Geist'", fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+              >
+                <Icon name="refresh" size={14} strokeWidth={2.2} className="" />
+                {t('home.balanceRetry')}
+              </button>
+            ) : (
+            <span aria-label={t('home.efsBalance')} style={{ display: 'block', width: 168, height: 33, borderRadius: 9, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
+            )
+          )}
+        </div>
+        {pct != null && (
+          <div style={{ display: 'flex', height: 5, borderRadius: 3, overflow: 'hidden', background: 'rgba(255,255,255,.18)' }}>
+            <div style={{ width: `${pct}%`, background: 'var(--primary)', borderRadius: 3 }} />
+          </div>
+        )}
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: 'rgba(255,255,255,.88)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {creditLimit != null && creditRemaining != null
+            ? t('home.creditAvailable', { amt: money(creditRemaining) })
+            : balance
+              ? (balance.efs_error ?? t('home.balanceNote'))
+              : '\u00A0'}
+        </div>
       </div>
-      <div style={{ position: 'relative', display: 'flex', height: 6, borderRadius: 3, overflow: 'hidden', background: 'rgba(255,255,255,.14)' }}>
-        <div style={{ width: `${HERO.pct}%`, background: 'var(--primary)', borderRadius: 3 }} />
-      </div>
-      <div style={{ position: 'relative', fontSize: 13, fontWeight: 600, color: '#FFFFFF', paddingBottom: 6, textShadow: '0 1px 4px rgba(0,0,0,.85)' }}>{HERO.sub}</div>
     </div>
   );
 }
@@ -454,57 +866,59 @@ function DriverHero({
   company,
   fullName,
   revealed,
-  copied,
   onToggleReveal,
-  onCopy,
 }: {
   session: Session;
   company: string;
   fullName: string;
   revealed: boolean;
-  copied: boolean;
   onToggleReveal: () => void;
-  onCopy: () => void;
 }) {
   const { t } = useI18n();
-  const display = revealed ? fullCardNumber(session.ownCard) : `•••• ${session.ownCard}`;
+  // No invented fallback: if the DWH has not resolved the real PAN there is nothing truthful to
+  // show, so the number skeletons rather than displaying a fiction the Copy button would hand out.
+  const realFull = session.ownCardNumber;
+  const display = realFull ? (revealed ? groupCardNumber(realFull) : maskedCardNumber(realFull)) : null;
   return (
     <>
-      <div style={{ position: 'relative', background: '#1E1F23', borderRadius: 24, overflow: 'hidden', padding: 18, height: 190, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-        <svg aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.13 }} viewBox="0 0 400 190" preserveAspectRatio="none" fill="none" stroke="#FFFFFF" strokeWidth={1}>
-          <path d="M-10 24 Q 90 8, 200 26 T 410 20" />
-          <path d="M-10 50 Q 96 30, 204 48 T 410 42" />
-          <path d="M-10 76 Q 102 54, 208 72 T 410 66" />
-          <path d="M-10 102 Q 96 82, 204 100 T 410 94" />
-          <path d="M-10 128 Q 90 108, 200 126 T 410 120" />
-          <path d="M-10 154 Q 96 134, 204 152 T 410 146" />
-          <path d="M-10 180 Q 102 160, 208 178 T 410 172" />
-        </svg>
-        <svg aria-hidden style={{ position: 'absolute', left: 0, right: 0, top: 44, width: '100%' }} viewBox="0 0 400 84" preserveAspectRatio="none" fill="none">
-          <path d="M0 54 C 50 16, 86 14, 125 42 C 164 70, 207 32, 250 27 C 296 22, 336 46, 400 34" stroke="#FFD023" strokeWidth={11} strokeLinecap="round" />
-          <path d="M0 61 C 50 24, 88 22, 127 49 C 166 75, 209 40, 252 35 C 298 30, 338 53, 400 42" stroke="#FF9E1B" strokeWidth={9} strokeLinecap="round" />
-          <path d="M0 68 C 50 32, 90 30, 129 55 C 168 80, 211 48, 254 43 C 300 38, 340 60, 400 50" stroke="#F4581C" strokeWidth={8} strokeLinecap="round" />
-        </svg>
-        <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#FFFFFF', ['--logo-ring' as string]: '#FFFFFF' }}>
-            <LogoLockup size={24} />
+      {/* No balance, and no fixed card ratio. The only balance available is the CARRIER's EFS pool
+          (getCarrierBalance is carrier-scoped; stg_cmp_card.balance is 0.00 for every card), so
+          showing it here put company money on a driver's screen. With it gone the card has just two
+          rows — a 1.586 ratio spread them apart with space-between and left a large void down the
+          middle. Height comes from the content now, with one comfortable gap, so it reads as a tidy
+          card. Styling (contours, dark fill, radius) is unchanged. */}
+      <div style={{ position: 'relative', background: '#161719', borderRadius: 20, overflow: 'hidden', padding: '17px 17px 18px', display: 'flex', flexDirection: 'column', gap: 40 }}>
+        <CardContours />
+
+        {/* Top band: driver name left, company + reveal right — the toggle rides at the card's top
+            corner the way a payment app puts it, and where the owner card already puts Details. */}
+        <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{fullName}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, flex: 'none', maxWidth: '58%' }}>
+            {company && (
+              <span style={{ fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,.9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company}</span>
+            )}
+            <button type="button" className="press" aria-label={revealed ? 'Hide card details' : 'Show card details'} onClick={onToggleReveal} style={{ width: 30, height: 30, flex: 'none', border: 'none', borderRadius: 9, background: 'rgba(255,255,255,.15)', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <EyeToggle revealed={revealed} size={15} />
+            </button>
           </div>
-          <span style={{ fontSize: 13, color: '#C6CAD4' }}>{company}</span>
         </div>
-        <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
-          <span style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', textShadow: '0 1px 3px rgba(0,0,0,.5)' }}>{fullName}</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="selectable" style={{ fontSize: 15.5, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', textShadow: '0 1px 3px rgba(0,0,0,.5)' }}>{display}</span>
-            <button type="button" className="press" onClick={onToggleReveal} style={{ width: 26, height: 26, border: 'none', borderRadius: 8, background: 'rgba(255,255,255,.16)', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: 'none' }}>
-              <EyeToggle revealed={revealed} />
-            </button>
-            <button type="button" className="press" onClick={onCopy} style={{ height: 26, padding: '0 10px', border: 'none', borderRadius: 8, background: 'rgba(255,255,255,.16)', color: '#FFFFFF', fontSize: 12, fontWeight: 600, cursor: 'pointer', flex: 'none' }}>
-              {copied ? t('card.copied') : t('card.copy')}
-            </button>
-          </span>
+
+        {/* Card number + standing at the bottom, the way a real card sets its number in the lower
+            third. The number stays `selectable` so it can still be picked up by hand. */}
+        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' }}>{t('card.numberLabel')}</span>
+          {display ? (
+            <span className={revealed ? 'selectable' : ''} style={{ fontSize: 20, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.03em', whiteSpace: 'nowrap' }}>{display}</span>
+          ) : (
+            <span aria-label={t('card.numberLabel')} style={{ display: 'block', width: 196, height: 21, borderRadius: 6, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--success)', flex: 'none' }} />
+            <span style={{ fontSize: 12.5, fontWeight: 500, color: 'rgba(255,255,255,.72)' }}>{t('home.cardStanding')}</span>
+          </div>
         </div>
       </div>
-      <div style={{ fontSize: 13, color: 'var(--muted-fg)', margin: '-6px 4px 0' }}>{t('home.cardStanding')}</div>
     </>
   );
 }
@@ -514,12 +928,11 @@ interface HomeProps {
   tab: HomeTab;
   company: string;
   fullName: string;
+  initData: string;
   pinned: string[];
   inbox: InboxItem[];
   cardRevealed: boolean;
-  cardCopied: boolean;
   onToggleCardReveal: () => void;
-  onCopyCardNumber: () => void;
   onTogglePin: (key: string) => void;
   onOpenAction: (target: OpenAction) => void;
   onGoToServices: () => void;
@@ -533,12 +946,11 @@ function Home({
   tab,
   company,
   fullName,
+  initData,
   pinned,
   inbox,
   cardRevealed,
-  cardCopied,
   onToggleCardReveal,
-  onCopyCardNumber,
   onTogglePin,
   onOpenAction,
   onGoToServices,
@@ -547,33 +959,30 @@ function Home({
   onReadNotif,
 }: HomeProps) {
   const { t } = useI18n();
+  const slideDir = useSlideDirection(tab, HOME_TABS);
 
-  if (tab === 'services') return <ServicesTab isDriver={session.isDriver} pinned={pinned} onTogglePin={onTogglePin} onOpen={onOpenAction} />;
-  if (tab === 'inbox') return <InboxTab items={inbox} onMarkAllRead={onMarkAllRead} onRead={onReadNotif} />;
+  if (tab === 'services') return <SlideIn key={tab} dir={slideDir}><ServicesTab isDriver={session.isDriver} pinned={pinned} onTogglePin={onTogglePin} onOpen={onOpenAction} /></SlideIn>;
+  if (tab === 'inbox') return <SlideIn key={tab} dir={slideDir}><InboxTab items={inbox} onMarkAllRead={onMarkAllRead} onRead={onReadNotif} /></SlideIn>;
 
   const pinnedItems = pinned.map((key) => findCatalogItem(key, session.isDriver)).filter((x): x is NonNullable<typeof x> => !!x);
 
   return (
+    <SlideIn key={tab} dir={slideDir}>
     <div style={{ padding: '16px 16px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {session.isDriver ? (
-        <DriverHero session={session} company={company} fullName={fullName} revealed={cardRevealed} copied={cardCopied} onToggleReveal={onToggleCardReveal} onCopy={onCopyCardNumber} />
+        <DriverHero session={session} company={company} fullName={fullName} revealed={cardRevealed} onToggleReveal={onToggleCardReveal} />
       ) : (
-        <OwnerHero onOpenDetails={() => onOpenAction({ kind: 'service', key: 'status' })} />
+        <OwnerHero initData={initData} company={company} carrierId={session.carrierId} onOpenDetails={() => onOpenAction({ kind: 'service', key: 'status' })} />
       )}
 
       {/* quick actions */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 24, padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 40, height: 40, background: 'var(--secondary)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fg)' }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-              <rect x="4" y="4" width="6" height="6" rx="1.5" />
-              <rect x="14" y="4" width="6" height="6" rx="1.5" />
-              <rect x="4" y="14" width="6" height="6" rx="1.5" />
-              <rect x="14" y="14" width="6" height="6" rx="1.5" />
-            </svg>
+            <LayoutGrid size={20} strokeWidth={2} fill="currentColor" aria-hidden />
           </div>
           <div style={{ flex: 1, fontSize: 16, fontWeight: 700, color: 'var(--fg)' }}>{t('home.quickActions')}</div>
-          <button type="button" className="press" onClick={onGoToServices} style={{ background: 'var(--secondary)', border: 'none', borderRadius: 12, padding: '9px 14px', fontSize: 13, fontWeight: 600, color: 'var(--fg)', cursor: 'pointer' }}>
+          <button type="button" className="press" onClick={onGoToServices} style={{ height: 40, background: 'var(--secondary)', border: 'none', borderRadius: 12, padding: '0 16px', fontSize: 14, fontWeight: 600, color: 'var(--fg)', cursor: 'pointer' }}>
             {t('home.edit')}
           </button>
         </div>
@@ -585,7 +994,7 @@ function Home({
               type="button"
               className="press"
               onClick={() => {
-                if (item.action === 'generic') onOpenAction({ kind: 'generic', key: item.key, title: t(item.labelKey) });
+                if (item.action === 'generic') onOpenAction({ kind: 'generic', key: item.key, title: t(item.labelKey), ...(item.request ? { request: item.request } : {}) });
                 else if (item.action) onOpenAction({ kind: 'service', key: item.action });
               }}
               style={{ textAlign: 'left', background: 'transparent', border: 'none', borderTop: '1px solid var(--border)', padding: '12px 0', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, width: '100%', fontFamily: "'Geist'" }}
@@ -619,6 +1028,7 @@ function Home({
         </button>
       )}
     </div>
+    </SlideIn>
   );
 }
 
@@ -665,6 +1075,7 @@ function FleetView({
   onRetry,
   onCreate,
   onRegenerate,
+  onRename,
   showToast,
   askConfirm,
 }: {
@@ -676,6 +1087,7 @@ function FleetView({
   onRetry: () => void;
   onCreate: (cardId: string, name: string) => Promise<void>;
   onRegenerate: (cardId: string, name: string) => Promise<void>;
+  onRename: (cardId: string, driverName: string) => Promise<void>;
   showToast: (msg: string, kind?: ToastKind) => void;
   askConfirm: (cfg: ConfirmConfig) => void;
 }) {
@@ -700,7 +1112,7 @@ function FleetView({
   const shown = rows.filter((r) => {
     if (filter !== 'all' && r.status !== filter) return false;
     if (q) {
-      const hay = `${last4(r.cardNumber, r.cardId)} ${(r.driverName ?? 'unassigned')} ${r.cardType ?? ''}`.toLowerCase();
+      const hay = `${last4(r.cardNumber, r.cardId)} ${(r.driverName ?? 'unassigned')}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -716,6 +1128,18 @@ function FleetView({
     setCopiedId(id);
     showToast(t('toast.linkCopied'));
     setTimeout(() => setCopiedId((x) => (x === id ? null : x)), 1600);
+  }
+
+  /** Copy arbitrary text (card number, carrier id) with a caller-chosen toast — the copy() above is
+   *  bound to the invite-link row's copied-state highlight, which these don't have. */
+  function copyText(text: string, toast: string) {
+    try {
+      navigator.clipboard?.writeText(text);
+    } catch {
+      /* ignore */
+    }
+    haptic('tap');
+    showToast(toast);
   }
 
   /** `nameOverride` covers regenerate: that flow has no name input, so it must reuse the card's existing driver name instead of an (empty) draft. */
@@ -744,13 +1168,13 @@ function FleetView({
           <SearchGlyph />
           <input className="selectable" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('fleet.search')} style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14 }} />
         </div>
-        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', marginBottom: 14, paddingBottom: 2 }}>
+        <div className="hscroll" style={{ display: 'flex', gap: 8, marginBottom: 14, paddingBottom: 2 }}>
           {FILTERS.map((f) => {
             const active = filter === f;
             return (
-              <button key={f} type="button" onClick={() => { haptic('tap'); setFilter(f); }} style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none', height: 34, padding: '0 13px', borderRadius: 10, fontFamily: "'Geist'", fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', border: 'none', background: active ? 'var(--primary)' : 'var(--secondary)', color: active ? '#FFFFFF' : 'var(--muted-fg)' }}>
+              <button key={f} type="button" onClick={() => { haptic('tap'); setFilter(f); }} style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none', height: 40, padding: '0 14px', borderRadius: 11, fontFamily: "'Geist'", fontSize: 14, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', border: 'none', background: active ? 'var(--primary)' : 'var(--secondary)', color: active ? '#FFFFFF' : 'var(--muted-fg)' }}>
                 <span>{t(FILTER_LABEL[f])}</span>
-                <span style={{ fontSize: 11, fontWeight: 700, opacity: active ? 1 : 0.65 }}>{counts[f]}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, opacity: active ? 1 : 0.65 }}>{counts[f]}</span>
               </button>
             );
           })}
@@ -758,22 +1182,28 @@ function FleetView({
       </div>
 
       {loading && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 4px', color: 'var(--muted-fg)' }}>
-          <Spinner size={22} />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '64px 16px', color: 'var(--muted-fg)' }}>
+          <Spinner size={26} />
           <span style={{ fontSize: 14 }}>{t('fleet.loading')}</span>
         </div>
       )}
       {!loading && loadError && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 12, padding: '20px 4px' }}>
-          <div style={{ color: 'var(--destructive)', fontSize: 14 }}>{loadError}</div>
-          <button type="button" className="press" onClick={onRetry} style={{ height: 38, border: 'none', borderRadius: 10, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: 'pointer', padding: '0 14px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 14, padding: '20px 4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ width: 36, height: 36, borderRadius: 10, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'color-mix(in srgb, var(--destructive) 14%, transparent)', color: 'var(--destructive)' }}>
+              <CircleAlert size={18} strokeWidth={2} aria-hidden />
+            </span>
+            <span style={{ fontSize: 14, color: 'var(--fg)', lineHeight: 1.4 }}>{loadError}</span>
+          </div>
+          <button type="button" className="press" onClick={onRetry} style={{ height: 42, border: 'none', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: 'pointer', padding: '0 16px' }}>
             {t('common.retry')}
           </button>
         </div>
       )}
       {!loading && actionError && (
-        <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 12, background: 'color-mix(in srgb, var(--destructive) 10%, transparent)', color: 'var(--destructive)', fontSize: 13, lineHeight: 1.45 }}>
-          {actionError}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: '12px 14px', borderRadius: 12, background: 'color-mix(in srgb, var(--destructive) 10%, transparent)', color: 'var(--destructive)', fontSize: 13, lineHeight: 1.45 }}>
+          <CircleAlert size={16} strokeWidth={2} style={{ flex: 'none' }} aria-hidden />
+          <span>{actionError}</span>
         </div>
       )}
       {!loading && !loadError && total > 0 && shown.length === 0 && (
@@ -799,7 +1229,6 @@ function FleetView({
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span className="selectable" style={{ fontWeight: 700, fontSize: 15, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em' }}>•••• {last4(c.cardNumber, c.cardId)}</span>
-                      {c.cardType && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.05em', color: 'var(--muted-fg)', background: 'var(--secondary)', padding: '2px 6px', borderRadius: 6 }}>{c.cardType}</span>}
                     </div>
                     <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.driverName ?? t('card.unassigned')}</div>
                   </div>
@@ -809,6 +1238,19 @@ function FleetView({
 
                 {expanded && (
                   <div style={{ padding: '0 15px 16px', animation: 'octfade .2s ease' }}>
+                    {/* Full card number, copyable — the collapsed row only shows the last 4. Owner-only
+                        screen, so the full PAN is theirs to see and hand to a driver. */}
+                    {c.cardNumber && (
+                      <button
+                        type="button"
+                        className="press"
+                        onClick={() => copyText(groupCardNumber(c.cardNumber ?? ''), t('toast.cardCopied'))}
+                        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, padding: '11px 13px', border: '1px solid var(--border)', borderRadius: 12, background: 'var(--background)', cursor: 'pointer', fontFamily: "'Geist'" }}
+                      >
+                        <span className="selectable" style={{ flex: 1, textAlign: 'left', fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em' }}>{groupCardNumber(c.cardNumber)}</span>
+                        <Icon name="copy" size={16} strokeWidth={2} className="" />
+                      </button>
+                    )}
                     {c.status === 'open' && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
                         <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('card.name')}</label>
@@ -829,7 +1271,7 @@ function FleetView({
                         <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('card.linkFor', { name: c.driverName ?? '' })}</div>
                         <div style={{ display: 'flex', alignItems: 'stretch', gap: 8 }}>
                           <div className="selectable" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', padding: '0 12px', height: 46, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--background)', fontSize: 12.5, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.link}</div>
-                          <button type="button" className="press" onClick={() => copy(c.link!, id)} style={{ height: 46, border: 'none', borderRadius: 12, fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: 'pointer', padding: '0 16px', flex: 'none', background: copiedId === id ? 'var(--success)' : 'var(--primary)', color: '#FFFFFF' }}>
+                          <button type="button" className="press" onClick={() => copy(c.link!, id)} style={{ height: 46, border: 'none', borderRadius: 12, fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: 'pointer', padding: '0 16px', flex: 'none', background: copiedId === id ? 'var(--success)' : 'var(--primary)', color: '#FFFFFF' }}>
                             {copiedId === id ? t('card.copied') : t('card.copy')}
                           </button>
                         </div>
@@ -870,6 +1312,16 @@ function FleetView({
                         <div style={{ fontSize: 13, color: 'var(--fg)' }}>{t('card.registeredInfo', { name: c.driverName ?? '' })}</div>
                       </div>
                     )}
+                    {/* Rename, for a card that HAS a driver. A self-registering driver types their own
+                        name, and a pending invite carries whatever was typed when it was issued —
+                        either can be wrong, and this roster is what the owner reads. */}
+                    {c.cardId && (c.status === 'registered' || c.status === 'pending') && (
+                      <RenameDriver
+                        cardId={c.cardId}
+                        currentName={c.driverName ?? ''}
+                        onRename={onRename}
+                      />
+                    )}
                   </div>
                 )}
               </div>
@@ -881,31 +1333,108 @@ function FleetView({
   );
 }
 
+/** Inline driver rename on a fleet card. Collapsed to a link until tapped — the roster is read far
+ *  more often than it is corrected, so an always-open input would be noise on every row. */
+function RenameDriver({
+  cardId,
+  currentName,
+  onRename,
+}: {
+  cardId: string;
+  currentName: string;
+  onRename: (cardId: string, driverName: string) => Promise<void>;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(currentName);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function save() {
+    const next = value.trim();
+    if (!next) {
+      setError(t('card.renameRequired'));
+      return;
+    }
+    if (next === currentName) {
+      setOpen(false);
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await onRename(cardId, next);
+      haptic('success');
+      setOpen(false);
+    } catch (e) {
+      haptic('error');
+      setError(e instanceof ApiError ? e.message : t('error.reason'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="press"
+        onClick={() => { haptic('tap'); setValue(currentName); setError(''); setOpen(true); }}
+        style={{ marginTop: 10, border: 'none', background: 'transparent', color: 'var(--link-accent)', fontFamily: "'Geist'", fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: '6px 0' }}
+      >
+        {t('card.renameCta')}
+      </button>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 12 }}>
+      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('card.name')}</label>
+      <input
+        value={value}
+        autoComplete="name"
+        onChange={(e) => setValue(e.target.value.slice(0, 200))}
+        placeholder={t('login.namePlaceholder')}
+        style={{ width: '100%', minWidth: 0, height: 46, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 15, padding: '0 13px', boxSizing: 'border-box' }}
+      />
+      {error && <div style={{ fontSize: 12.5, color: 'var(--destructive)', lineHeight: 1.45 }}>{error}</div>}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" className="press" onClick={() => void save()} disabled={busy} style={{ flex: 1, height: 44, border: 'none', borderRadius: 12, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}>
+          {busy ? <Spinner size={17} /> : t('card.renameSave')}
+        </button>
+        <button type="button" className="press" onClick={() => setOpen(false)} disabled={busy} style={{ flex: 'none', height: 44, padding: '0 16px', border: '1px solid var(--border)', borderRadius: 12, background: 'transparent', color: 'var(--muted-fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+          {t('common.back')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // Profile bottom sheet
 
 function ProfileSheet({
   user,
   company,
-  roleLabel,
-  agentName,
+  initData,
+  isOwner,
+  onCopy,
   theme,
   onTheme,
   onClose,
-  onContactSupport,
 }: {
   user: TelegramWebAppUser | undefined;
   company: string;
-  roleLabel: string;
-  agentName?: string | null | undefined;
+  initData: string;
+  isOwner: boolean;
+  onCopy: (text: string, toast: string) => void;
   theme: Theme;
   onTheme: (t: Theme) => void;
   onClose: () => void;
-  onContactSupport: () => void;
 }) {
   const { t, lang, setLang } = useI18n();
   const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'Octane user';
-  const agent = cleanAgentName(agentName);
+  const [details, setDetails] = useState<CompanyDetails | null>(null);
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -913,6 +1442,16 @@ function ProfileSheet({
       document.body.style.overflow = prev;
     };
   }, []);
+  // Company details are owner-only upstream — a driver's profile has no carrier profile to show.
+  useEffect(() => {
+    if (!isOwner || !initData) return;
+    let cancelled = false;
+    fetchCompany(initData)
+      .then((d) => { if (!cancelled) setDetails(d); })
+      .catch(() => { /* the section just stays hidden — not worth an error state in a profile sheet */ });
+    return () => { cancelled = true; };
+  }, [isOwner, initData]);
+  const cityLine = details ? [details.city, details.state, details.zip].filter(Boolean).join(', ') : '';
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'rgba(0,0,0,.42)', animation: 'octfade .2s ease' }} />
@@ -923,16 +1462,49 @@ function ProfileSheet({
             {user?.photo_url ? <img src={user.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initialsOf(user)}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)' }}>{fullName}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fullName}</div>
             <div style={{ fontSize: 13, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company}</div>
           </div>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--owner-badge-fg)', padding: '5px 10px', borderRadius: 8, background: 'var(--owner-badge-bg)', flex: 'none' }}>{roleLabel}</span>
         </div>
+
+        {isOwner && details && (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 9 }}>{t('menu.company')}</div>
+            <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden', marginBottom: 20 }}>
+              {/* Carrier ID — copyable, the one field an owner most often needs to quote to support. */}
+              <button type="button" className="press" onClick={() => onCopy(details.carrierId, t('toast.carrierIdCopied'))} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontFamily: "'Geist'", textAlign: 'left' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.carrierId')}</div>
+                  <div className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{details.carrierId}</div>
+                </div>
+                <Icon name="copy" size={15} strokeWidth={2} className="" />
+              </button>
+              {details.email && (
+                <div style={{ padding: '12px 14px', borderBottom: cityLine || details.address || details.phone ? '1px solid var(--border)' : 'none' }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.email')}</div>
+                  <div className="selectable" style={{ fontSize: 14, fontWeight: 500, color: 'var(--fg)', marginTop: 2, wordBreak: 'break-all' }}>{details.email}</div>
+                </div>
+              )}
+              {details.phone && (
+                <div style={{ padding: '12px 14px', borderBottom: cityLine || details.address ? '1px solid var(--border)' : 'none' }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.phone')}</div>
+                  <div className="selectable" style={{ fontSize: 14, fontWeight: 500, color: 'var(--fg)', marginTop: 2 }}>{details.phone}</div>
+                </div>
+              )}
+              {(details.address || cityLine) && (
+                <div style={{ padding: '12px 14px' }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.address')}</div>
+                  <div className="selectable" style={{ fontSize: 14, fontWeight: 500, color: 'var(--fg)', marginTop: 2, lineHeight: 1.4 }}>{[details.address, cityLine].filter(Boolean).join('\n')}</div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 9 }}>{t('menu.theme')}</div>
         <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--secondary)', borderRadius: 12, marginBottom: 20 }}>
           {(['light', 'dark'] as Theme[]).map((opt) => (
-            <button key={opt} type="button" onClick={() => onTheme(opt)} style={{ flex: 1, height: 38, border: 'none', borderRadius: 8, fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: 'pointer', background: theme === opt ? 'var(--primary)' : 'transparent', color: theme === opt ? '#FFFFFF' : 'var(--muted-fg)' }}>
+            <button key={opt} type="button" onClick={() => onTheme(opt)} style={{ flex: 1, height: 42, border: 'none', borderRadius: 9, fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: 'pointer', background: theme === opt ? 'var(--primary)' : 'transparent', color: theme === opt ? '#FFFFFF' : 'var(--muted-fg)' }}>
               {t(opt === 'light' ? 'menu.light' : 'menu.dark')}
             </button>
           ))}
@@ -945,61 +1517,185 @@ function ProfileSheet({
             return (
               <button key={l.code} type="button" onClick={() => { haptic('tap'); setLang(l.code); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, height: 46, padding: '0 14px', borderRadius: 10, fontFamily: "'Geist'", fontSize: 14, color: 'var(--fg)', cursor: 'pointer', fontWeight: active ? 600 : 500, background: active ? 'var(--secondary)' : 'transparent', border: active ? '1px solid var(--primary)' : '1px solid var(--border)' }}>
                 <span>{l.label}</span>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ opacity: active ? 1 : 0, flex: 'none' }}><path d="M20 6L9 17l-5-5" stroke="var(--link-accent)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                <Check size={14} strokeWidth={2.6} color="var(--link-accent)" style={{ opacity: active ? 1 : 0, flex: 'none' }} aria-hidden />
               </button>
             );
           })}
         </div>
-
-        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 9 }}>{t('svcgrp.support')}</div>
-        <button type="button" className="press" onClick={onContactSupport} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', padding: '12px 14px', background: 'var(--secondary)', border: 'none', borderRadius: 14, cursor: 'pointer', fontFamily: "'Geist'" }}>
-          <span style={{ width: 40, height: 40, borderRadius: 12, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card)', color: 'var(--link-accent)' }}>
-            <Icon name="headset" size={20} strokeWidth={1.8} className="" />
-          </span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--fg)' }}>{agent ?? t('support.rowFallbackName')}</div>
-            <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 1 }}>{agent ? t('support.rowMessageTelegram') : t('support.rowContactGeneric')}</div>
-          </div>
-          <span style={{ flex: 'none', color: 'var(--link-accent)', display: 'flex' }}>
-            <Icon name="plane" size={20} strokeWidth={1.8} className="" />
-          </span>
-        </button>
       </div>
     </>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// Service action sheet (self-service — demo data until EFS integrations land)
+// Service action sheet
+
+// Driver row-scoping is the BACKEND's job — /carrier/mini-app/{transactions,last-used,status} filter
+// to the driver's own card by full number before responding. Do not re-add a client-side filter: it
+// can only hide rows the device already received, and matching on last-4 (what this used to do) is
+// wrong anyway — last-4 is not unique within a carrier.
+
+/** Transaction period vocabulary — mirrors servercrm's DWH range param + the zoho-octane
+ * self-service transactions presets (Today / This Week / … / This Year), plus a custom from-to. */
+type TxnRange = 'day' | 'week' | 'month' | 'quarter' | 'half_year' | 'year' | 'custom';
+const TXN_RANGES: ReadonlyArray<{ value: TxnRange; key: string }> = [
+  { value: 'day', key: 'txns.day' },
+  { value: 'week', key: 'txns.week' },
+  { value: 'month', key: 'txns.month' },
+  { value: 'quarter', key: 'txns.quarter' },
+  { value: 'half_year', key: 'txns.halfYear' },
+  { value: 'year', key: 'txns.year' },
+  { value: 'custom', key: 'txns.custom' },
+];
+
+/**
+ * Invoice periods. NOT the transaction presets: invoices come from salesMytrion, whose vocabulary is
+ * last_7 | last_30 | last_90 | last_365 | custom | all_time. servercrm falls back to last_30 on an
+ * unknown preset *silently*, so feeding it 'month' would look wired and quietly do nothing.
+ */
+type InvoiceRange = 'last_7' | 'last_30' | 'last_90' | 'last_365' | 'all_time';
+const INVOICE_RANGES: ReadonlyArray<{ value: InvoiceRange; key: string }> = [
+  { value: 'last_7', key: 'inv.last7' },
+  { value: 'last_30', key: 'inv.last30' },
+  { value: 'last_90', key: 'inv.last90' },
+  { value: 'last_365', key: 'inv.last365' },
+  { value: 'all_time', key: 'inv.allTime' },
+];
+
+type SheetData =
+  | { kind: 'balance'; v: CarrierBalance }
+  | { kind: 'status'; v: StatusResult }
+  | { kind: 'txns'; v: TransactionsResult }
+  | { kind: 'lastused'; v: LastUsedResult }
+  | { kind: 'payment'; v: PaymentInfoResult }
+  | { kind: 'invoices'; v: SalesInvoicesResult }
+  | { kind: 'tracking'; v: TrackingResult }
+  | { kind: 'manualcode'; v: { cardNumber: string | null } };
 
 function ActionSheet({
   target,
   session,
-  company,
-  fullName,
+  initData,
   onClose,
   showToast,
   onSendGeneric,
 }: {
   target: OpenAction;
   session: Session;
-  company: string;
-  fullName: string;
+  initData: string;
   onClose: () => void;
   showToast: (msg: string, kind?: ToastKind) => void;
   onSendGeneric: (title: string) => void;
 }) {
   const { t } = useI18n();
   const [loading, setLoading] = useState(true);
-  const [viewInvoice, setViewInvoice] = useState<string | null>(null);
-  const [range, setRange] = useState<'7d' | '30d' | 'custom'>('30d');
-  const [from, setFrom] = useState('2026-06-01');
-  const [to, setTo] = useState('2026-07-09');
+  const [loadError, setLoadError] = useState('');
+  const [data, setData] = useState<SheetData | null>(null);
+  const [range, setRange] = useState<TxnRange>('month');
+  const [invRange, setInvRange] = useState<InvoiceRange>('last_30');
+  // Lazy init, and relative to TODAY: these were literal dates ('2026-06-01'/'2026-07-09'), so the
+  // custom range opened on a window that had already gone stale — by this writing it ended 8 days
+  // in the past. Last 30 days is the neutral default; the presets cover the calendar shapes.
+  const [from, setFrom] = useState(() => isoDay(new Date(Date.now() - 30 * 864e5)));
+  const [to, setTo] = useState(() => isoDay(new Date()));
   const [genericSent, setGenericSent] = useState(false);
+  const [genericBusy, setGenericBusy] = useState(false);
+  const [genericError, setGenericError] = useState('');
+  const [genericTicketId, setGenericTicketId] = useState('');
+  const [genericComment, setGenericComment] = useState('');
+  const [invoiceBusyId, setInvoiceBusyId] = useState<string | null>(null);
+  /** Phase 2 of the transactions read is in flight — rows are already shown, freshest are pending. */
+  const [liveRefreshing, setLiveRefreshing] = useState(false);
+  /** Which export format is currently being built + sent to Telegram, if any. */
+  const [exportBusy, setExportBusy] = useState<TxnExportFormat | null>(null);
+
+  const service = target.kind === 'service' ? target.key : null;
+  // A driver's status sheet is about their CARD, not the account — the generic svc.status title says
+  // "Account status", which is the owner's framing.
+  const sheetTitle =
+    target.kind === 'generic'
+      ? target.title
+      : service === 'status' && session.isDriver
+        ? t('svc.statusDriver')
+        : t(`svc.${service}`);
+  const dwhRange = range;
+
   useEffect(() => {
-    const id = setTimeout(() => setLoading(false), 850);
-    return () => clearTimeout(id);
-  }, []);
+    if (!service) {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setLoadError('');
+    setLiveRefreshing(false);
+    async function load() {
+      try {
+        const txnOpts = dwhRange === 'custom' ? { range: 'custom', from, to } : { range: dwhRange };
+        let next: SheetData;
+        if (service === 'balance') next = { kind: 'balance', v: await fetchBalance(initData) };
+        else if (service === 'status') next = { kind: 'status', v: await fetchAccountStatus(initData) };
+        else if (service === 'txns') next = { kind: 'txns', v: await fetchTransactions(initData, txnOpts, false) };
+        else if (service === 'lastused') next = { kind: 'lastused', v: await fetchLastUsed(initData) };
+        else if (service === 'payment') next = { kind: 'payment', v: await fetchPaymentInfo(initData) };
+        else if (service === 'invoices') next = { kind: 'invoices', v: await fetchInvoices(initData, { range: invRange }) };
+        // No fetch: the manual entry code IS the card number the session already holds. Sending a
+        // request would only ask the backend to hand back what it put in the session at sign-in.
+        else if (service === 'manualcode') next = { kind: 'manualcode', v: { cardNumber: session.ownCardNumber } };
+        else if (service === 'tracking') next = { kind: 'tracking', v: await fetchTracking(initData) };
+        // Explicit, because this was a bare `else` that swallowed every unhandled key into a tracking
+        // fetch — a new ServiceKey would silently open the wrong sheet instead of failing.
+        else throw new Error(`Unhandled service: ${String(service)}`);
+        if (cancelled) return;
+        setData(next);
+        setLoading(false);
+
+        // Phase 2 — only transactions have a live tail worth waiting for. The list is already on
+        // screen; this folds in anything the DWH mart hasn't picked up yet (its refresh lags ~3h)
+        // by asking the backend for the EFS-merged truth. Seconds, so it must never block phase 1.
+        if (next.kind === 'txns' && next.v.live?.pending) {
+          setLiveRefreshing(true);
+          try {
+            const merged = await fetchTransactions(initData, txnOpts, true);
+            if (!cancelled) setData({ kind: 'txns', v: merged });
+          } catch (e) {
+            // The fast rows are real and already rendered — a failed upgrade is not worth an error
+            // screen. Drop the indicator and leave them be.
+            console.warn('[ActionSheet] live refresh failed; keeping DWH rows', e);
+          } finally {
+            if (!cancelled) setLiveRefreshing(false);
+          }
+        }
+      } catch (e) {
+        // Backend errors here (crmGet's upstream passthrough, DB failures) are DTO/validation
+        // text meant for API integrators, not the end user — never surface e.message directly.
+        //
+        // But the STATUS is reliable, and it decides the only thing the user cares about: will
+        // pulling down help? Every failure used to say "Pull down to try again", including 4xx —
+        // which fail identically forever. A driver whose account data the upstream rejects (seen
+        // live: HTTP 400 "carrierId must be a positive integer") was told to retry a call that
+        // could never succeed, and would pull until they gave up.
+        if (!cancelled) {
+          console.error('[ActionSheet] load failed', e);
+          const status = e instanceof ApiError ? e.status : -1;
+          setLoadError(
+            status === 0
+              ? t('sheet.loadErrorOffline')
+              : status >= 400 && status < 500
+                ? t('sheet.loadErrorAccount')
+                : t('sheet.loadError'),
+          );
+          setLoading(false);
+        }
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target, dwhRange, invRange, from, to]);
+
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -1008,23 +1704,84 @@ function ActionSheet({
     };
   }, []);
 
-  const service = target.kind === 'service' ? target.key : null;
-  const sheetTitle = target.kind === 'generic' ? target.title : t(`svc.${service}`);
-  const roleForCards = session.isFleetManager ? 'fleet' : session.isOwnerOp ? 'ownerOp' : 'driver';
-  const cards = statusCards(roleForCards as 'fleet' | 'ownerOp' | 'driver', session.ownCard);
-  let txns = TXN_ALL.filter((r) => (range === '7d' ? r.iso >= '2026-07-02' : range === 'custom' ? r.iso >= from && r.iso <= to : true));
-  if (session.isDriver) txns = txns.map((r) => ({ ...r, card: session.ownCard }));
-  const invoiceIds = Object.keys(INVOICE_DOCS).reverse();
-
-  function exportCsv() {
+  /**
+   * The report is built server-side and delivered by the bot as a Telegram document — a WebView
+   * can't reliably save a file, and the rows are re-queried on the backend anyway, so nothing from
+   * this screen is uploaded. `rows` is only consulted to keep the empty case instant.
+   */
+  async function doExport(rows: Array<Record<string, unknown>>, format: TxnExportFormat) {
     haptic('tap');
-    showToast(t('toast.csvExportStarted'));
+    if (!rows.length) {
+      showToast(t('txns.empty'), 'error');
+      return;
+    }
+    if (exportBusy) return;
+    setExportBusy(format);
+    try {
+      const opts = range === 'custom' ? { range: 'custom', from, to } : { range };
+      await sendTransactionsReport(initData, opts, format);
+      haptic('success');
+      showToast(t('toast.reportSentToTelegram'));
+    } catch (e) {
+      // The backend distinguishes "you never opened the bot chat" from a genuine failure — that one
+      // is actionable by the user, so it's worth its own message rather than a generic error.
+      const code = e instanceof ApiError ? e.code : '';
+      haptic('error');
+      showToast(code === 'TELEGRAM_CHAT_UNREACHABLE' ? t('toast.openBotFirst') : t('sheet.loadError'), 'error');
+    } finally {
+      setExportBusy(null);
+    }
   }
 
-  function sendGeneric() {
-    haptic('success');
-    setGenericSent(true);
-    onSendGeneric(sheetTitle);
+  /**
+   * Files a real Desk ticket when the catalog item carries a `request` key; otherwise falls back to
+   * the placeholder that only ever wrote a local inbox row.
+   *
+   * The success state is set from the RESPONSE, never optimistically — showing "Request sent" for a
+   * ticket that failed to create is the exact fake this replaces.
+   */
+  async function sendGeneric() {
+    const requestKey = target.kind === 'generic' ? target.request : undefined;
+    if (!requestKey) {
+      haptic('success');
+      setGenericSent(true);
+      onSendGeneric(sheetTitle);
+      return;
+    }
+    if (genericBusy) return;
+    setGenericBusy(true);
+    setGenericError('');
+    try {
+      const res = await sendServiceRequest(initData, requestKey, genericComment.trim() || undefined);
+      haptic('success');
+      setGenericTicketId(res.ticketId);
+      setGenericSent(true);
+      onSendGeneric(sheetTitle);
+    } catch (e) {
+      haptic('error');
+      setGenericError(e instanceof Error ? e.message : t('generic.sendFailed'));
+    } finally {
+      setGenericBusy(false);
+    }
+  }
+
+  async function openInvoice(id: string) {
+    haptic('tap');
+    if (invoiceBusyId) return;
+    setInvoiceBusyId(id);
+    try {
+      await sendInvoice(initData, id);
+      haptic('success');
+      showToast(t('toast.invoiceSentToTelegram'));
+    } catch (e) {
+      // "You never opened the bot chat" is the one failure the user can act on, so it keeps its own
+      // message rather than being flattened into a generic error.
+      const code = e instanceof ApiError ? e.code : '';
+      haptic('error');
+      showToast(code === 'TELEGRAM_CHAT_UNREACHABLE' ? t('toast.openBotFirst') : t('toast.invoiceDownloadFailed'), 'error');
+    } finally {
+      setInvoiceBusyId(null);
+    }
   }
 
   return (
@@ -1046,134 +1803,395 @@ function ActionSheet({
               <Spinner size={30} />
               <div style={{ fontSize: 13, color: 'var(--muted-fg)' }}>{t('sheet.fetching', { what: sheetTitle.toLowerCase() })}</div>
             </div>
-          ) : service === 'balance' ? (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                {BALANCE_TILES.map((tile) => (
-                  <div key={tile.label} style={{ background: tile.accent ? 'var(--primary)' : 'var(--secondary)', borderRadius: 14, padding: '13px 14px' }}>
-                    <div style={{ fontSize: 12, fontWeight: 500, color: tile.accent ? 'rgba(255,255,255,.75)' : 'var(--muted-fg)' }}>{tile.label}</div>
-                    <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: tile.accent ? '#FFFFFF' : 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tile.value}</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--muted-fg)', marginTop: 14, lineHeight: 1.5 }}>{t('balance.locNote')}</div>
-            </>
-          ) : service === 'status' ? (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: 'color-mix(in srgb, var(--success) 13%, transparent)', borderRadius: 14, marginBottom: 14 }}>
-                <span style={{ width: 30, height: 30, borderRadius: 10, background: 'color-mix(in srgb, var(--success) 20%, transparent)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><Icon name="check" size={17} strokeWidth={2.4} className="" /></span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{t('status.active')}</span>
-              </div>
-              <SectionLabel>{t('status.debt')}</SectionLabel>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
-                {STATUS_TILES.map((tile) => (
-                  <div key={tile.label} style={{ background: 'var(--secondary)', borderRadius: 14, padding: '12px 14px' }}>
-                    <div style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted-fg)' }}>{tile.label}</div>
-                    <div className="selectable" style={{ fontSize: 18, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tile.value}</div>
-                  </div>
-                ))}
-              </div>
-              <SectionLabel>{t('status.cards')}</SectionLabel>
-              <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
-                {cards.map((c) => (
-                  <div key={c.num} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
-                    <span className="selectable" style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {c.num}</span>
-                    <span style={{ fontSize: 12, color: 'var(--muted-fg)' }}>{c.last}</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: c.status === 'Active' ? 'var(--success)' : 'var(--destructive)' }}>{c.status}</span>
-                  </div>
-                ))}
-              </div>
-              {session.isFleetManager && <div style={{ fontSize: 12, color: 'var(--muted-fg)', marginTop: 9, textAlign: 'center' }}>+ 21 more cards</div>}
-            </>
-          ) : service === 'txns' ? (
-            <>
-              <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--secondary)', borderRadius: 12, marginBottom: 12 }}>
-                {(['7d', '30d', 'custom'] as const).map((r) => (
-                  <button key={r} type="button" onClick={() => setRange(r)} style={{ flex: 1, height: 34, border: 'none', borderRadius: 8, fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: 'pointer', background: range === r ? 'var(--primary)' : 'transparent', color: range === r ? '#FFFFFF' : 'var(--muted-fg)' }}>
-                    {r === '7d' ? t('txns.7d') : r === '30d' ? t('txns.30d') : t('txns.custom')}
-                  </button>
-                ))}
-              </div>
-              {range === 'custom' && (
-                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                  <label style={{ flex: 1 }}>
-                    <span style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.from')}</span>
-                    <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: '100%', height: 42, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 13, padding: '0 11px' }} />
-                  </label>
-                  <label style={{ flex: 1 }}>
-                    <span style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.to')}</span>
-                    <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ width: '100%', height: 42, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 13, padding: '0 11px' }} />
-                  </label>
-                </div>
-              )}
-              {txns.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('txns.empty')}</div>
-              ) : (
-                <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
-                  {txns.map((tx, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13.5, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tx.location}</div>
-                        <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2 }}>{tx.date} · •••• {tx.card}</div>
+          ) : loadError ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '34px 10px', textAlign: 'center' }}>
+              <span style={{ width: 44, height: 44, borderRadius: 13, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'color-mix(in srgb, var(--destructive) 14%, transparent)', color: 'var(--destructive)' }}>
+                <CircleAlert size={22} strokeWidth={2} aria-hidden />
+              </span>
+              <div style={{ fontSize: 14, color: 'var(--muted-fg)', lineHeight: 1.5 }}>{loadError}</div>
+            </div>
+          ) : data?.kind === 'balance' ? (
+            (() => {
+              const b = data.v;
+              const tiles: Array<{ label: string; value: string; accent?: boolean }> = [
+                { label: t('svc.balance'), value: money(b.efs_balance ?? b.balance) },
+              ];
+              if (b.credit_limit != null) tiles.push({ label: t('balance.creditLimit'), value: money(b.credit_limit) });
+              if (b.credit_used != null) tiles.push({ label: t('balance.creditUsed'), value: money(b.credit_used) });
+              if (b.credit_remaining != null) tiles.push({ label: t('balance.available'), value: money(b.credit_remaining), accent: true });
+              return (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    {tiles.map((tile) => (
+                      <div key={tile.label} style={{ background: tile.accent ? 'var(--primary)' : 'var(--secondary)', borderRadius: 14, padding: '13px 14px' }}>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: tile.accent ? 'rgba(255,255,255,.75)' : 'var(--muted-fg)' }}>{tile.label}</div>
+                        <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: tile.accent ? '#FFFFFF' : 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tile.value}</div>
                       </div>
-                      <span className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', flex: 'none' }}>{tx.amount}</span>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 12, color: b.efs_error ? 'var(--destructive)' : 'var(--muted-fg)', marginTop: 14, lineHeight: 1.5 }}>
+                    {b.efs_error ? `⚠ ${b.efs_error}` : [b.account_type ?? b.payment_terms, b.billing_cycle].filter(Boolean).join(' · ') || t('balance.locNote')}
+                  </div>
+                </>
+              );
+            })()
+          ) : data?.kind === 'status' ? (
+            (() => {
+              const { overview, cards } = data.v;
+              const rows = cards.data ?? [];
+              const shown = rows.slice(0, 20);
+              const extra = (cards.count ?? rows.length) - shown.length;
+              /**
+               * The banner answers "is this active?" — and for a DRIVER that must be their own CARD,
+               * not the carrier account. `overview.is_active` is the company's status; a driver's card
+               * can be Inactive while the company is fine, and the reverse. It also read as a false
+               * green "Active" whenever the card list came back empty, because `undefined !== false`
+               * fell through to the success branch — the exact "status not right" being reported.
+               *
+               * For a driver: derive from their own card's status, and show a neutral "unknown" when no
+               * card resolved rather than claiming Active. For an owner: keep the account-level flag.
+               */
+              const state: 'active' | 'inactive' | 'unknown' = session.isDriver
+                ? rows.length === 0
+                  ? 'unknown'
+                  : fmt(rows[0]?.['status']).toLowerCase() === 'active'
+                    ? 'active'
+                    : 'inactive'
+                : overview.is_active === false
+                  ? 'inactive'
+                  : 'active';
+              const tone = state === 'inactive' ? 'destructive' : state === 'unknown' ? 'muted-fg' : 'success';
+              // Card-specific wording for a driver — the account labels say "Account active", which is
+              // not what a driver is asking about.
+              const bannerLabel =
+                state === 'unknown'
+                  ? t('status.unknown')
+                  : session.isDriver
+                    ? t(state === 'inactive' ? 'status.cardInactive' : 'status.cardActive')
+                    : t(state === 'inactive' ? 'status.inactive' : 'status.active');
+              return (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: `color-mix(in srgb, var(--${tone}) 13%, transparent)`, borderRadius: 14, marginBottom: 14 }}>
+                    <span style={{ width: 30, height: 30, borderRadius: 10, background: `color-mix(in srgb, var(--${tone}) 20%, transparent)`, color: `var(--${tone})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                      <Icon name={state === 'inactive' ? 'x' : state === 'unknown' ? 'alert' : 'check'} size={17} strokeWidth={2.4} className="" />
+                    </span>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{bannerLabel}</span>
+                  </div>
+                  {/* Carrier debt is the COMPANY's financial standing — an owner's view, never a driver's.
+                      A driver asking "is my card active" must not be shown the fleet's total debt or
+                      hard-debtor flag. */}
+                  {!session.isDriver && (
+                    <>
+                      <SectionLabel>{t('status.debt')}</SectionLabel>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
+                        {[
+                          { label: t('status.totalDebt'), value: money(overview.cmp_debt?.total_debt ?? 0) },
+                          { label: t('status.openInvoices'), value: fmt(overview.cmp_debt?.invoice_count ?? 0) },
+                          { label: t('status.maxDays'), value: fmt(overview.cmp_debt?.max_debt_days ?? 0) },
+                          { label: t('status.hardDebtor'), value: overview.cmp_debt?.is_hard_debtor ? t('status.yes') : t('status.no') },
+                        ].map((tile) => (
+                          <div key={tile.label} style={{ background: 'var(--secondary)', borderRadius: 14, padding: '12px 14px' }}>
+                            <div style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted-fg)' }}>{tile.label}</div>
+                            <div className="selectable" style={{ fontSize: 18, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tile.value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  <SectionLabel>{session.isDriver ? t('status.yourCard') : t('status.cards')}</SectionLabel>
+                  {shown.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '20px 4px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('status.noCards')}</div>
+                  ) : (
+                    <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                      {shown.map((c, i) => {
+                        const status = fmt(c['status']);
+                        return (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
+                            <span className="selectable" style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {last4(fmt(c['card_number']), null)}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: status.toLowerCase() === 'active' ? 'var(--success)' : 'var(--destructive)' }}>{status}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {/* Driver-scoped views only ever show the driver's own card — a leftover count here would
+                      just be the rest of the fleet's cards, which isn't this driver's to see. */}
+                  {!session.isDriver && extra > 0 && <div style={{ fontSize: 12, color: 'var(--muted-fg)', marginTop: 9, textAlign: 'center' }}>{t('status.moreCards', { n: extra })}</div>}
+                </>
+              );
+            })()
+          ) : data?.kind === 'txns' ? (
+            (() => {
+              const rows = data.v.data ?? [];
+              return (
+                <>
+                  {/* Horizontal-scroll period chips — too many presets to fit a fixed row on mobile. */}
+                  <div className="hscroll" style={{ display: 'flex', gap: 7, marginBottom: 12, paddingBottom: 2 }}>
+                    {TXN_RANGES.map((r) => (
+                      <button
+                        key={r.value}
+                        type="button"
+                        onClick={() => setRange(r.value)}
+                        style={{
+                          flex: 'none',
+                          height: 36,
+                          padding: '0 14px',
+                          border: 'none',
+                          borderRadius: 10,
+                          fontFamily: "'Geist'",
+                          fontWeight: 700,
+                          fontSize: 13,
+                          whiteSpace: 'nowrap',
+                          cursor: 'pointer',
+                          background: range === r.value ? 'var(--primary)' : 'var(--secondary)',
+                          color: range === r.value ? '#FFFFFF' : 'var(--muted-fg)',
+                        }}
+                      >
+                        {t(r.key)}
+                      </button>
+                    ))}
+                  </div>
+                  {range === 'custom' && (
+                    /* Stack From/To vertically — side-by-side native date inputs overflow/merge on narrow mobile. */
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
+                      <label>
+                        <span style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.from')}</span>
+                        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: '100%', minWidth: 0, height: 44, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, padding: '0 12px', boxSizing: 'border-box' }} />
+                      </label>
+                      <label>
+                        <span style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.to')}</span>
+                        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ width: '100%', minWidth: 0, height: 44, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, padding: '0 12px', boxSizing: 'border-box' }} />
+                      </label>
+                    </div>
+                  )}
+                  {/* Period summary — a payment app always answers "what did this period cost?" before
+                      the line items. The backend has sent these totals all along (they are computed
+                      over the WHOLE window, not just the rendered page); nothing rendered them. */}
+                  {rows.length > 0 && (() => {
+                    const tot = data.v.totals ?? {};
+                    const spend = tot['funded_total'];
+                    const gal = tot['total_fuel_quantity'] ?? tot['fuel_quantity'];
+                    const saved = tot['discount_amount'];
+                    if (spend == null) return null;
+                    return (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                        <div style={{ background: 'var(--primary)', borderRadius: 14, padding: '13px 14px' }}>
+                          <div style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,.75)' }}>{t('txns.totalSpent')}</div>
+                          <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(spend)}</div>
+                        </div>
+                        <div style={{ background: 'var(--secondary)', borderRadius: 14, padding: '13px 14px' }}>
+                          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('txns.saved')}</div>
+                          <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(saved ?? 0)}</div>
+                        </div>
+                        {gal != null && (
+                          <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--muted-fg)', textAlign: 'center', marginTop: -2 }}>
+                            {t('txns.gallons', { n: fmt(gal) })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  {liveRefreshing && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, marginBottom: 10, fontSize: 12, color: 'var(--muted-fg)' }}>
+                      <Spinner size={12} />
+                      {t('txns.checkingLive')}
+                    </div>
+                  )}
+                  {rows.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('txns.empty')}</div>
+                  ) : (
+                    <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                      {rows.map((tx, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13.5, color: 'var(--fg)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.3 }}>{fmt(tx['location_name'])}</div>
+                            <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{txnDateTime(tx['transaction_date'])} · •••• {last4(fmt(tx['card_number']), null)}</div>
+                          </div>
+                          <span className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', flex: 'none', textAlign: 'right', whiteSpace: 'nowrap' }}>{money(tx['line_item_amount'] ?? tx['funded_total'] ?? tx['net_total'])}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              );
+            })()
+          ) : data?.kind === 'invoices' ? (
+            (() => {
+              const rows = data.v.data ?? [];
+              const sum = data.v.summary ?? {};
+              // Use the backend's sum_open_balance, never billed-minus-paid. servercrm computes it as
+              // SUM(GREATEST(total_amount - total_paid, 0)) FILTER (status IN PENDING, PARTIALLY_PAID)
+              // — so it counts only what is actually owed, and clamps at zero. Subtracting here got
+              // both wrong: it showed -$16.60 for a carrier that had OVERPAID, and it counted PAID and
+              // CANCELLED invoices as if they were open.
+              const openBalance = Number(sum['sum_open_balance'] ?? 0);
+              return (
+                <>
+                  <div className="hscroll" style={{ display: 'flex', gap: 7, marginBottom: 12, paddingBottom: 2 }}>
+                    {INVOICE_RANGES.map((r) => (
+                      <button
+                        key={r.value}
+                        type="button"
+                        onClick={() => setInvRange(r.value)}
+                        style={{ flex: 'none', height: 36, padding: '0 14px', border: 'none', borderRadius: 10, fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', cursor: 'pointer', background: invRange === r.value ? 'var(--primary)' : 'var(--secondary)', color: invRange === r.value ? '#FFFFFF' : 'var(--muted-fg)' }}
+                      >
+                        {t(r.key)}
+                      </button>
+                    ))}
+                  </div>
+                  {/* The backend has sent this summary all along; nothing read it. Billed vs still
+                      open is the pair an owner opens invoices for — the list answers "which" after. */}
+                  {sum['sum_total_amount'] != null && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                      <div style={{ background: 'var(--primary)', borderRadius: 14, padding: '13px 14px' }}>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,.75)' }}>{t('inv.billed')}</div>
+                        <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(sum['sum_total_amount'])}</div>
+                      </div>
+                      <div style={{ background: 'var(--secondary)', borderRadius: 14, padding: '13px 14px' }}>
+                        {/* "2 open / $0.26" read as a bug next to "Billed $18,051.53" — but it is
+                            true: two invoices were short by 19c and 7c. The tile names the money and
+                            the line below carries the counts, so neither has to explain the other. */}
+                        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('inv.outstanding')}</div>
+                        <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(openBalance)}</div>
+                      </div>
+                      <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--muted-fg)', textAlign: 'center', marginTop: -2 }}>
+                        {t('inv.summaryLine', { total: fmt(sum['total_invoices'] ?? rows.length), paid: fmt(sum['paid_count'] ?? 0) })}
+                        {Number(sum['open_count'] ?? 0) > 0 && ` · ${t('inv.openCount', { n: fmt(sum['open_count']) })}`}
+                        {Number(sum['cancelled_count'] ?? 0) > 0 && ` · ${t('inv.cancelledCount', { n: fmt(sum['cancelled_count']) })}`}
+                      </div>
+                    </div>
+                  )}
+                  {rows.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('invoice.empty')}</div>
+                  ) : (
+                    <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                {rows.map((inv, i) => {
+                  const id = String(inv['invoice_id'] ?? inv['id'] ?? '');
+                  const label = String(inv['invoice_ref'] ?? inv['invoice_number'] ?? id);
+                  const busy = invoiceBusyId === id;
+                  const st = invoiceStatus(inv['status'], t);
+                  return (
+                    <div key={id || i} onClick={() => !busy && void openInvoice(id)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '12px 14px', borderBottom: '1px solid var(--border)', cursor: busy ? 'default' : 'pointer' }}>
+                      <span style={{ width: 34, height: 34, borderRadius: 10, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card)', color: 'var(--muted-fg)' }}><Icon name="doc" size={17} strokeWidth={2} className="" /></span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{t('invoice.num', { n: label })}</div>
+                        {/* The status used to render raw — PAID / PENDING / PARTIALLY_PAID / CANCELLED, in
+                            English uppercase, in every locale. invoiceStatus() maps it to a translated
+                            label and a tone. */}
+                        <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span>{money(inv['total_amount'] ?? inv['amount'])}</span>
+                          <span style={{ color: `var(--${st.tone})`, fontWeight: 600 }}>· {st.label}</span>
+                        </div>
+                      </div>
+                      {busy ? <Spinner size={16} /> : (
+                        <span style={{ borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, padding: '7px 12px', flex: 'none' }}>{t('invoice.download')}</span>
+                      )}
+                    </div>
+                  );
+                })}
+                    </div>
+                  )}
+                </>
+              );
+            })()
+          ) : data?.kind === 'payment' ? (
+            (() => {
+              const p = data.v;
+              const totals = p.invoices?.totals ?? {};
+              const rows = [
+                { label: t('payment.invoiceCount'), value: fmt(p.invoices?.count ?? 0) },
+                { label: t('payment.totalBilled'), value: money(totals['total_billed']) },
+                { label: t('payment.totalPaid'), value: money(totals['total_paid']) },
+                { label: t('payment.openBalance'), value: money(totals['open_balance']) },
+                { label: t('payment.paymentCount'), value: fmt(p.payments?.count ?? 0) },
+                { label: t('payment.paymentTotal'), value: money(p.payments?.total_amount) },
+              ];
+              return (
+                <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                  {rows.map((r) => (
+                    <div key={r.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '13px 14px', borderBottom: '1px solid var(--border)' }}>
+                      <span style={{ fontSize: 13, color: 'var(--muted-fg)' }}>{r.label}</span>
+                      <span className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{r.value}</span>
                     </div>
                   ))}
                 </div>
-              )}
-              <button type="button" className="press" onClick={exportCsv} style={{ width: '100%', height: 46, marginTop: 14, border: 'none', borderRadius: 12, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>{t('common.export')}</button>
-            </>
-          ) : service === 'invoices' ? (
-            <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
-              {invoiceIds.map((k) => {
-                const d = INVOICE_DOCS[k]!;
-                return (
-                  <div key={k} onClick={() => { haptic('tap'); setViewInvoice(k); }} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '12px 14px', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}>
-                    <span style={{ width: 34, height: 34, borderRadius: 10, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card)', color: 'var(--muted-fg)' }}><Icon name="doc" size={17} strokeWidth={2} className="" /></span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{t('invoice.num', { n: k })}</div>
-                      <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2 }}>{d.date} · {d.total} · {d.paid ? t('invoice.paid') : t('invoice.due')}</div>
-                    </div>
-                    <span style={{ borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, padding: '7px 12px', flex: 'none' }}>{t('common.view')}</span>
-                  </div>
-                );
-              })}
-            </div>
-          ) : service === 'payment' ? (
-            <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
-              {PAYMENT_ROWS.map((p) => (
-                <div key={p.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '13px 14px', borderBottom: '1px solid var(--border)' }}>
-                  <span style={{ fontSize: 13, color: 'var(--muted-fg)' }}>{p.label}</span>
-                  <span className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{p.value}</span>
-                </div>
-              ))}
-            </div>
-          ) : service === 'lastused' ? (
-            <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
-              {cards.map((c, i) => (
-                <div key={c.num} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-                  <span className="selectable" style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {c.num}</span>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 13, color: 'var(--fg)' }}>{c.last}, 2026</div>
-                    <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 1 }}>{t('time.dayN', { n: i === 0 ? 1 : i === 1 ? 2 : 9 })}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : service === 'tracking' ? (
+              );
+            })()
+          ) : data?.kind === 'lastused' ? (
             (() => {
-              const tr = TRACKING(session.ownCard, session.isDriver);
+              const rows = data.v.data ?? [];
+              return rows.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('status.noCards')}</div>
+              ) : (
+                <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                  {rows.map((c, i) => {
+                    const lastUsed = c['last_used_date'] ?? c['last_transaction_date'] ?? c['lastUsedDate'] ?? c['last_used'];
+                    return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
+                        <span className="selectable" style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {last4(fmt(c['card_number']), null)}</span>
+                        <span style={{ fontSize: 13, color: 'var(--fg)' }}>{fmt(lastUsed).slice(0, 10)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()
+          ) : data?.kind === 'manualcode' ? (
+            (() => {
+              const pan = data.v.cardNumber;
+              if (!pan) {
+                return <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('manualcode.unavailable')}</div>;
+              }
+              // Shown revealed, unlike the home hero. The hero sits on screen unprompted, so it masks
+              // by default; getting here took a deliberate tap on an item that says "Reveal", and the
+              // driver is reading it to type into a pump keypad. Masking it behind a second tap would
+              // add friction to the one job this item exists for.
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '6px 0 4px' }}>
+                  <span style={{ width: 54, height: 54, borderRadius: 16, background: 'var(--secondary)', color: 'var(--link-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                    <Icon name="key" size={26} strokeWidth={2} className="" />
+                  </span>
+                  <span
+                    className="selectable"
+                    style={{ fontSize: 22, fontWeight: 700, letterSpacing: '.04em', color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.35, wordBreak: 'break-all' }}
+                  >
+                    {groupCardNumber(pan)}
+                  </span>
+                  <span style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 12, maxWidth: 280, lineHeight: 1.5 }}>{t('manualcode.hint')}</span>
+                </div>
+              );
+            })()
+          ) : data?.kind === 'tracking' ? (
+            (() => {
+              const tr = data.v;
+              const info = tr.trackingInfo ?? [];
+              if (info.length === 0 && !tr.fedexTracking) {
+                return <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('track.empty')}</div>;
+              }
               return (
                 <>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '6px 0 4px' }}>
                     <span style={{ width: 54, height: 54, borderRadius: 16, background: 'var(--secondary)', color: 'var(--link-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}><Icon name="pin" size={26} strokeWidth={2} className="" /></span>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)' }}>{tr.status}</div>
-                    <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3 }}>{t('track.cardLabel')} •••• {tr.card} · {tr.eta}</div>
+                    {tr.fedexTracking && (
+                      <>
+                        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('track.number')}</div>
+                        <div className="selectable" style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tr.fedexTracking}</div>
+                      </>
+                    )}
                   </div>
-                  <div style={{ background: 'var(--secondary)', borderRadius: 14, padding: '13px 14px', marginTop: 14 }}>
-                    <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('track.number')}</div>
-                    <div className="selectable" style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tr.number}</div>
-                  </div>
+                  {info.length > 0 && (
+                    <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden', marginTop: 14 }}>
+                      {info.map((r, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div className="selectable" style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--fg)' }}>{fmt(r.trackingNumber)}</div>
+                            <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2 }}>{fmt(r.startDate)}</div>
+                          </div>
+                          <span style={{ fontSize: 12, color: 'var(--muted-fg)', flex: 'none' }}>{t('track.cardsOrdered', { n: fmt(r.cardsOrdered) })}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
               );
             })()
@@ -1186,94 +2204,71 @@ function ActionSheet({
               </div>
               <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--fg)' }}>{t('generic.sentTitle')}</div>
               <div style={{ fontSize: 13, color: 'var(--muted-fg)', lineHeight: 1.5, maxWidth: 260 }}>{t('generic.sentBody')}</div>
+              {/* A real ticket id, so the driver can quote it to support — and so "sent" is checkable
+                  rather than something the screen merely claims. */}
+              {genericTicketId && (
+                <div className="selectable" style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg)', background: 'var(--secondary)', borderRadius: 10, padding: '8px 14px', fontVariantNumeric: 'tabular-nums' }}>
+                  {t('generic.ticketNo', { id: genericTicketId })}
+                </div>
+              )}
             </div>
           ) : (
             <>
               <div style={{ fontSize: 14, color: 'var(--fg)', lineHeight: 1.5, marginBottom: 6 }}>{t('generic.notSentBody1')}</div>
               <div style={{ fontSize: 13, color: 'var(--muted-fg)', lineHeight: 1.5, marginBottom: 16 }}>{t('generic.notSentBody2')}</div>
-              <button type="button" className="press" onClick={sendGeneric} style={{ width: '100%', height: 50, border: 'none', borderRadius: 14, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>
-                {t('generic.sendButton')}
+              {/* Only for requests that actually reach a human. A driver's card is resolved
+                  server-side, but an owner has a fleet — the ticket would otherwise say "replace a
+                  lost card" and name no card, leaving support to ask before they can start. */}
+              {target.kind === 'generic' && target.request && (
+                <textarea
+                  value={genericComment}
+                  onChange={(e) => setGenericComment(e.target.value.slice(0, 2000))}
+                  placeholder={t('generic.commentPlaceholder')}
+                  rows={3}
+                  style={{ width: '100%', boxSizing: 'border-box', resize: 'none', border: '1px solid var(--border)', borderRadius: 14, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 15, lineHeight: 1.5, padding: '12px 14px', marginBottom: 12 }}
+                />
+              )}
+              {genericError && (
+                <div style={{ fontSize: 13, color: 'var(--danger)', lineHeight: 1.5, marginBottom: 12 }}>{genericError}</div>
+              )}
+              <button type="button" className="press" onClick={sendGeneric} disabled={genericBusy} style={{ width: '100%', height: 50, border: 'none', borderRadius: 14, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 15, cursor: genericBusy ? 'default' : 'pointer', opacity: genericBusy ? 0.6 : 1 }}>
+                {genericBusy ? t('generic.sending') : t('generic.sendButton')}
               </button>
             </>
           )}
         </div>
+        {/* Export bar — pinned, not the tail of the list. It used to live at the bottom of the
+            scroll area, so reaching it meant scrolling past every transaction; a client pulling a
+            year would never find it. As a sibling of the scroll container it stays put. */}
+        {data?.kind === 'txns' && (data.v.data ?? []).length > 0 && (
+          <div style={{ flex: 'none', borderTop: '1px solid var(--border)', background: 'var(--card)', padding: '12px 20px calc(14px + env(safe-area-inset-bottom))' }}>
+            {/* Indeterminate by necessity: the work is a server-side build plus a Telegram upload
+                behind our own API, so there are no progress events to report. The bar says
+                "working"; it does not claim a percentage it cannot know. */}
+            <div style={{ height: 2, borderRadius: 2, overflow: 'hidden', background: exportBusy ? 'var(--secondary)' : 'transparent', marginBottom: 9 }}>
+              {exportBusy && <div style={{ width: '40%', height: '100%', borderRadius: 2, background: 'var(--primary)', animation: 'octbar 1.1s ease-in-out infinite' }} />}
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-fg)', marginBottom: 7 }}>
+              {exportBusy ? t('txns.sendingReport') : t('txns.exportToTelegram')}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {(['xlsx', 'pdf', 'csv'] as const).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  className="press"
+                  disabled={exportBusy !== null}
+                  onClick={() => void doExport(data.v.data ?? [], f)}
+                  style={{ flex: 1, height: 42, border: 'none', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: exportBusy ? 'default' : 'pointer', opacity: exportBusy && exportBusy !== f ? 0.45 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  {exportBusy === f ? <Spinner size={16} /> : f === 'xlsx' ? 'Excel' : f === 'pdf' ? 'PDF' : 'CSV'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-
-      {viewInvoice && <InvoiceView id={viewInvoice} billToName={fullName} billToCompany={company} onClose={() => setViewInvoice(null)} showToast={showToast} />}
     </>
-  );
-}
-
-function InvoiceView({
-  id,
-  billToName,
-  billToCompany,
-  onClose,
-  showToast,
-}: {
-  id: string;
-  billToName: string;
-  billToCompany: string;
-  onClose: () => void;
-  showToast: (msg: string, kind?: ToastKind) => void;
-}) {
-  const { t } = useI18n();
-  const doc = INVOICE_DOCS[id]!;
-
-  function download() {
-    haptic('tap');
-    try {
-      downloadInvoicePdf(id, doc, billToName || billToCompany, billToCompany);
-      showToast(t('toast.invoiceDownloaded'));
-    } catch {
-      haptic('error');
-      showToast(t('toast.invoiceDownloadFailed'), 'error');
-    }
-  }
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 46, display: 'flex', flexDirection: 'column', background: '#33363c', animation: 'octfade .2s ease' }}>
-      <div style={{ flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '16px 12px 10px', background: '#212327' }}>
-        <button type="button" className="press" onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: 4, border: 'none', background: 'transparent', color: '#cdd2da', fontFamily: "'Geist'", fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: '6px 8px 6px 4px' }}><BackChevron />{t('common.back')}</button>
-        <span className="selectable" style={{ fontSize: 13, fontWeight: 600, color: '#eef1f5', fontVariantNumeric: 'tabular-nums' }}>{id}.pdf</span>
-        <button type="button" className="press" onClick={download} style={{ border: 'none', borderRadius: 10, background: '#2451FF', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, padding: '9px 14px', cursor: 'pointer' }}>{t('common.download')}</button>
-      </div>
-      <div style={{ flex: 1, overflow: 'auto', padding: '18px 16px 30px' }}>
-        <div style={{ position: 'relative', width: '100%', maxWidth: 342, margin: '0 auto', background: '#fff', borderRadius: 6, boxShadow: '0 12px 40px rgba(0,0,0,.45)', padding: '24px 22px', color: '#141414', fontFamily: "'Inter Tight'" }}>
-          <div style={{ position: 'absolute', top: 330, left: '50%', transform: 'translateX(-50%) rotate(-14deg)', border: '3px solid #FF6A00', color: '#FF6A00', borderRadius: 9, padding: '5px 16px', fontSize: 30, fontWeight: 800, letterSpacing: '.1em', opacity: 0.22, pointerEvents: 'none' }}>{doc.paid ? 'PAID' : 'DUE'}</div>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-            <div style={{ ['--logo-ring' as string]: '#0b0b0c', color: '#141414' }}><LogoLockup size={21} /></div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 19, fontWeight: 800, color: '#FF6A00', letterSpacing: '.02em' }}>INVOICE</div>
-              <div className="selectable" style={{ fontSize: 12, fontWeight: 700, color: '#141414', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>#{id}</div>
-            </div>
-          </div>
-          <div style={{ fontSize: 9.5, color: '#8a8f98', lineHeight: 1.55, marginTop: 8 }}>TSS Technology LLC · 7901 4th St N, Ste 300, St. Petersburg, FL 33702<br />Phone: 953867683 · billing@octanefuel.com</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 14px', background: 'color-mix(in srgb, #FFD200 13%, #fff)', border: '1px solid color-mix(in srgb, #FF8A00 24%, #fff)', borderRadius: 8, padding: '10px 12px', marginTop: 12, fontSize: 11.5 }}>
-            {([['START PERIOD', doc.start], ['END PERIOD', doc.end], ['DATE', doc.date], ['DUE DATE', doc.due], ['CUSTOMER ID', doc.customerId]] as const).map(([k, v]) => (
-              <div key={k}><span style={{ color: '#A35A00', fontWeight: 800, fontSize: 8.5, letterSpacing: '.07em' }}>{k}</span><div style={{ fontWeight: 600, marginTop: 1 }}>{v}</div></div>
-            ))}
-          </div>
-          <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.09em', color: '#FF6A00' }}>BILL TO</div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#141414', marginTop: 3 }}>{billToName || billToCompany}</div>
-            <div style={{ fontSize: 11, color: '#5c616b', marginTop: 1 }}>{billToCompany}</div>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', background: 'linear-gradient(135deg,#FFD200,#FFB000)', borderRadius: 6, padding: '7px 12px', marginTop: 14, fontSize: 9.5, fontWeight: 800, letterSpacing: '.08em', color: '#17130F' }}><span>DESCRIPTION</span><span>AMOUNT</span></div>
-          {doc.rows.map((r, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12.5, padding: '8px 12px 7px', borderBottom: '1px solid #f6edd6' }}>
-              <span style={{ color: '#3a3f47' }}>{r.d}</span>
-              <span className="selectable" style={{ color: '#141414', fontWeight: 600, fontVariantNumeric: 'tabular-nums', flex: 'none' }}>{r.a}</span>
-            </div>
-          ))}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg,#FFC93C,#FF7A16)', borderRadius: 6, padding: '10px 12px', marginTop: 10 }}>
-            <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.04em', color: '#17130F' }}>TOTAL DUE</span>
-            <span className="selectable" style={{ fontSize: 17, fontWeight: 800, color: '#17130F', fontVariantNumeric: 'tabular-nums' }}>{doc.total}</span>
-          </div>
-          <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid #f3e8cd', fontSize: 10, color: '#8a8f98', textAlign: 'center', lineHeight: 1.55 }}>Questions? TSS Technology LLC · 953867683 · billing@octanefuel.com<br /><span style={{ color: '#FF6A00', fontWeight: 800 }}>Thank You For Your Business!</span></div>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -1283,6 +2278,9 @@ export function App() {
   const wa = getTelegramWebApp();
   const user = wa?.initDataUnsafe.user;
   const firstName = user?.first_name || 'there';
+  /** Prefill only — the sign-in screen lets the driver correct it before it reaches their owner's
+   *  roster. Mirrors the backend's fallback order so the prefill matches what it would have used. */
+  const telegramName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim() || user?.username || '';
   const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();
   const { t } = useI18n();
 
@@ -1299,7 +2297,6 @@ export function App() {
   const [pinned, setPinned] = useState<string[]>([]);
   const [inbox, setInbox] = useState<InboxItem[]>([]);
   const [cardRevealed, setCardRevealed] = useState(false);
-  const [cardCopied, setCardCopied] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [confirmCfg, setConfirmCfg] = useState<ConfirmConfig | null>(null);
   const pinnedInit = useRef(false);
@@ -1315,7 +2312,6 @@ export function App() {
   const session = sessionFrom(registration);
   const company = registration?.companyName ?? preview?.companyName ?? '';
   const supportAgentName = registration?.agentName ?? preview?.agentName ?? null;
-  const roleLabel = t(session.isFleetManager ? 'role.fleet' : session.isOwner ? 'role.owner' : 'role.driver');
 
   function showError(reason: string, title = t('error.title')) {
     setErrorTitle(title);
@@ -1340,7 +2336,7 @@ export function App() {
   // and the "returning user, session restored straight to home" path.
   useEffect(() => {
     if (screen !== 'home') return;
-    setInbox((i) => (i.length ? i : seedInbox(session.isDriver)));
+    setInbox((i) => (i.length ? i : seedInbox(session.isDriver, session.ownCard, company)));
     if (!pinnedInit.current) {
       pinnedInit.current = true;
       setPinned(loadStoredPinned() ?? defaultPinned(session.isDriver));
@@ -1360,8 +2356,13 @@ export function App() {
         setRegistration(res.registration);
         setScreen('home');
       } catch (e) {
+        // Not-registered isn't an error — it's the onboarding entry point (choose Driver / Company).
+        if (e instanceof ApiError && e.code === 'MINI_APP_NOT_REGISTERED') {
+          setScreen('login');
+          return;
+        }
         if (e instanceof ApiError) {
-          showError(e.message, e.code === 'MINI_APP_NOT_REGISTERED' ? t('auth.title') : t('error.title'));
+          showError(e.message);
           return;
         }
         showError(t('error.reason'));
@@ -1374,7 +2375,8 @@ export function App() {
       return;
     }
     if (!id) {
-      showError(t('auth.needLink'), t('auth.title'));
+      // Outside Telegram (no initData) or no link — still offer the login/role choice.
+      setScreen('login');
       return;
     }
     fetchRegistrationPreview(id)
@@ -1417,9 +2419,11 @@ export function App() {
   }, []);
 
   function chooseTheme(next: Theme) {
+    if (next === theme) return;
     haptic('tap');
     setTheme(next);
     setThemeState(next);
+    showToast(t(next === 'dark' ? 'toast.themeDark' : 'toast.themeLight'));
   }
 
   function confirm() {
@@ -1446,6 +2450,14 @@ export function App() {
         showError(e instanceof ApiError ? e.message : t('error.reason'));
       })
       .finally(() => setBusy(false));
+  }
+
+  async function submitDriverCard(cardNumber: string, driverName: string): Promise<void> {
+    if (!wa?.initData) throw new ApiError(t('auth.openInTelegram'), 'NO_INITDATA', 0);
+    const res = await driverSelfRegister(wa.initData, cardNumber, driverName);
+    setRegistration(res.registration);
+    haptic('success');
+    setScreen('home');
   }
 
   function goHome() {
@@ -1476,18 +2488,6 @@ export function App() {
     setCardRevealed((v) => !v);
   }
 
-  function copyCardNumber() {
-    const full = fullCardNumber(session.ownCard).replace(/\s/g, '');
-    try {
-      navigator.clipboard?.writeText(full);
-    } catch {
-      // ignore
-    }
-    haptic('success');
-    setCardCopied(true);
-    showToast(t('toast.cardNumberCopied'));
-    setTimeout(() => setCardCopied(false), 1600);
-  }
 
   function markAllRead() {
     haptic('tap');
@@ -1501,20 +2501,9 @@ export function App() {
 
   function sendGenericRequest(title: string) {
     setInbox((cur) => [
-      { id: 'gen-' + Date.now(), icon: 'plane', color: null, titleKey: '', titleText: t('inbox.genericReceived.title', { title }), bodyKey: '', bodyText: t('inbox.genericReceived.body'), atKey: 'time.justNow', unread: true },
+      { id: 'gen-' + Date.now(), category: 'notifications', icon: 'plane', color: null, titleKey: '', titleText: t('inbox.genericReceived.title', { title }), bodyKey: '', bodyText: t('inbox.genericReceived.body'), atKey: 'time.justNow', minutesAgo: 0, unread: true },
       ...cur,
     ]);
-  }
-
-  function contactSupport() {
-    haptic('tap');
-    const agent = cleanAgentName(supportAgentName);
-    try {
-      window.open('https://t.me/octane_support_ai_bot', '_blank', 'noopener');
-    } catch {
-      // ignore
-    }
-    showToast(agent ? t('toast.supportOpenNamed', { agent }) : t('toast.supportOpenGeneric'));
   }
 
   function loadFleet(force = false) {
@@ -1529,7 +2518,8 @@ export function App() {
       })
       .catch((e) => {
         fleetLoaded.current = false;
-        setFleetLoadError(e instanceof ApiError ? e.message : t('fleet.error'));
+        console.error('[FleetView] load failed', e);
+        setFleetLoadError(t('fleet.error'));
       })
       .finally(() => setFleetLoading(false));
   }
@@ -1553,11 +2543,22 @@ export function App() {
       showToast(t(successKey));
     } catch (e) {
       haptic('error');
-      setFleetActionError(e instanceof ApiError ? e.message : t('fleet.error'));
+      console.error('[FleetView] action failed', e);
+      setFleetActionError(t('fleet.error'));
     }
   }
   const createLink = (cardId: string, name: string) => submitDriverLink(cardId, name, 'toast.driverLinkCreated');
   const regenerateLink = (cardId: string, name: string) => submitDriverLink(cardId, name, 'toast.newLinkGenerated');
+
+  async function renameDriverName(cardId: string, driverName: string): Promise<void> {
+    if (!wa?.initData) throw new ApiError(t('auth.openInTelegram'), 'NO_INITDATA', 0);
+    // Patch the row from the response, not from the input: the backend trims, and the roster should
+    // show exactly what was stored. Throws on failure so the inline form keeps the error and the
+    // name on screen stays the one that is really saved.
+    const res = await renameDriver(wa.initData, cardId, driverName);
+    setFleetCards((cs) => cs.map((c) => (c.cardId === cardId ? { ...c, driverName: res.driverName } : c)));
+    showToast(t('toast.driverRenamed'), 'success');
+  }
 
   const signedIn = screen === 'home' || screen === 'fleet';
 
@@ -1565,9 +2566,11 @@ export function App() {
     <div className="app-root" style={{ height: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--background)', overflow: 'hidden' }}>
       {signedIn && <AppHeader user={user} onOpenProfile={() => { haptic('tap'); setProfileOpen(true); }} />}
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+      {/* x-axis clipped so the tab slide-in offset (SlideIn/octslide) never spawns a horizontal scrollbar. */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowX: 'hidden', overflowY: 'auto' }}>
         {screen === 'loading' && <LoadingScreen />}
         {screen === 'error' && <ErrorScreen title={errorTitle} reason={errorReason} agentName={supportAgentName} />}
+        {screen === 'login' && <LoginScreen firstName={firstName} defaultName={telegramName} onDriverRegister={submitDriverCard} />}
         {screen === 'confirm' && preview && <ConfirmScreen preview={preview} firstName={firstName} busy={busy} onConfirm={confirm} />}
         {screen === 'success' && <SuccessScreen session={session} company={company} onContinue={goHome} />}
         {screen === 'already' && <AlreadyScreen company={company} agentName={supportAgentName} onContinue={goHome} />}
@@ -1577,12 +2580,11 @@ export function App() {
             tab={tab}
             company={company}
             fullName={fullName}
+            initData={wa?.initData ?? ''}
             pinned={pinned}
             inbox={inbox}
             cardRevealed={cardRevealed}
-            cardCopied={cardCopied}
             onToggleCardReveal={toggleCardReveal}
-            onCopyCardNumber={copyCardNumber}
             onTogglePin={togglePin}
             onOpenAction={handleOpenAction}
             onGoToServices={() => setTab('services')}
@@ -1601,32 +2603,32 @@ export function App() {
             onRetry={() => loadFleet(true)}
             onCreate={createLink}
             onRegenerate={regenerateLink}
+            onRename={renameDriverName}
             showToast={showToast}
             askConfirm={askConfirm}
           />
         )}
       </div>
 
-      {screen === 'home' && <TabBar active={tab} unreadCount={inbox.filter((n) => n.unread).length} onSelect={setTab} />}
+      {screen === 'home' && <TabBar active={tab} unreadCount={inbox.filter((n) => n.unread).length} onSelect={(next) => { if (next !== tab) haptic('tap'); setTab(next); }} />}
 
       {profileOpen && (
         <ProfileSheet
           user={user}
           company={company}
-          roleLabel={roleLabel}
-          agentName={supportAgentName}
+          initData={wa?.initData ?? ''}
+          isOwner={session.isOwner}
+          onCopy={(text, toast) => { try { navigator.clipboard?.writeText(text); } catch { /* ignore */ } haptic('tap'); showToast(toast); }}
           theme={theme}
           onTheme={chooseTheme}
           onClose={() => setProfileOpen(false)}
-          onContactSupport={contactSupport}
         />
       )}
       {openAction && (
         <ActionSheet
           target={openAction}
           session={session}
-          company={company}
-          fullName={fullName}
+          initData={wa?.initData ?? ''}
           onClose={() => setOpenAction(null)}
           showToast={showToast}
           onSendGeneric={sendGenericRequest}

@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   carrierInvitations,
@@ -145,6 +145,33 @@ export const carrierInvitationRepo = {
     return rows.map(toDto);
   },
 
+  /** Every invitation for this tenant, newest first — the admin's "pending invitations" table. */
+  async list(ctx: TenantContext): Promise<CarrierInvitationDto[]> {
+    const rows = await db
+      .select()
+      .from(carrierInvitations)
+      .where(eq(carrierInvitations.tenantId, ctx.tenantId))
+      .orderBy(desc(carrierInvitations.createdAt));
+    return rows.map(toDto);
+  },
+
+  /** Cancel a still-pending invite (one-shot, mirrors markRedeemed's guarded update). A no-op
+   * (returns undefined) if it's already redeemed/cancelled — cancelling a used link makes no sense. */
+  async cancel(ctx: TenantContext, id: string, client: DbClient = db): Promise<CarrierInvitationDto | undefined> {
+    const rows = await client
+      .update(carrierInvitations)
+      .set({ status: 'cancelled', updatedAt: new Date() })
+      .where(
+        and(
+          eq(carrierInvitations.id, id),
+          eq(carrierInvitations.tenantId, ctx.tenantId),
+          eq(carrierInvitations.status, 'pending'),
+        ),
+      )
+      .returning();
+    return rows[0] ? toDto(rows[0]) : undefined;
+  },
+
   async findById(
     ctx: TenantContext,
     id: string,
@@ -155,6 +182,35 @@ export const carrierInvitationRepo = {
       .from(carrierInvitations)
       .where(and(eq(carrierInvitations.id, id), eq(carrierInvitations.tenantId, ctx.tenantId)))
       .limit(1);
+    return rows[0];
+  },
+
+  /**
+   * Rename the driver on a still-pending invite for one card — the fleet roster shows that name
+   * before the driver ever opens the link, so a typo needs fixing there too.
+   *
+   * Keyed by (tenant, carrier, card) like the registered-driver rename, so the where-clause is the
+   * authorization; `status: 'pending'` keeps a redeemed invite's historical name intact.
+   */
+  async renameDriverByCard(
+    ctx: TenantContext,
+    carrierId: string,
+    cardId: string,
+    driverName: string,
+  ): Promise<CarrierInvitation | undefined> {
+    const rows = await db
+      .update(carrierInvitations)
+      .set({ driverName, updatedAt: new Date() })
+      .where(
+        and(
+          eq(carrierInvitations.tenantId, ctx.tenantId),
+          eq(carrierInvitations.carrierId, carrierId),
+          eq(carrierInvitations.cardId, cardId),
+          eq(carrierInvitations.profile, 'driver'),
+          eq(carrierInvitations.status, 'pending'),
+        ),
+      )
+      .returning();
     return rows[0];
   },
 

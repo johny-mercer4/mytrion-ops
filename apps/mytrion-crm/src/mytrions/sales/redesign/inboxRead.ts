@@ -5,14 +5,22 @@
  * localStorage-backed read set (`mytrion-inbox-read`) driving `unreadCount`.
  */
 import { useSyncExternalStore } from 'react';
+import { getImpersonation } from '@/api/impersonation';
+import { getSession } from '@/api/session';
 
-// Same key the InboxTab has always used, so prior read state carries over.
-const KEY = 'octane.sales.redesign.inbox.read';
+// User-scoped key: read state must not bleed across accounts on a shared machine, nor between
+// an admin's own view and a View-as target. (The old un-suffixed key is simply abandoned.)
+const KEY_BASE = 'octane.sales.redesign.inbox.read';
 type ReadSet = Record<string, boolean>;
 
-function load(): ReadSet {
+function storageKey(): string {
+  const uid = getImpersonation()?.zohoUserId ?? getSession()?.worker.zohoUserId ?? 'anon';
+  return `${KEY_BASE}:${uid}`;
+}
+
+function load(key: string): ReadSet {
   try {
-    const ids = JSON.parse(localStorage.getItem(KEY) ?? '[]') as string[];
+    const ids = JSON.parse(localStorage.getItem(key) ?? '[]') as string[];
     const r: ReadSet = {};
     for (const id of Array.isArray(ids) ? ids : []) r[String(id)] = true;
     return r;
@@ -21,14 +29,25 @@ function load(): ReadSet {
   }
 }
 
-let read: ReadSet = load();
+let activeKey = storageKey();
+let read: ReadSet = load(activeKey);
 const listeners = new Set<() => void>();
+
+// Sign-in / View-as switches change the storage key mid-session — swap to that user's set.
+// Consumers re-render on those switches (session/impersonation context), so no notify needed.
+function ensureKey(): void {
+  const key = storageKey();
+  if (key !== activeKey) {
+    activeKey = key;
+    read = load(key);
+  }
+}
 
 function commit(next: ReadSet): void {
   read = next;
   try {
     // Persist as an array, capped, matching the original format.
-    localStorage.setItem(KEY, JSON.stringify(Object.keys(next).filter((k) => next[k]).slice(-1000)));
+    localStorage.setItem(activeKey, JSON.stringify(Object.keys(next).filter((k) => next[k]).slice(-1000)));
   } catch {
     /* storage disabled */
   }
@@ -37,12 +56,14 @@ function commit(next: ReadSet): void {
 
 /** Mark one message read. */
 export function markInboxRead(id: string): void {
+  ensureKey();
   if (!id || read[id]) return;
   commit({ ...read, [id]: true });
 }
 
 /** Mark many messages read (e.g. "Mark all read"). No-op if all already read. */
 export function markInboxReadMany(ids: string[]): void {
+  ensureKey();
   const next = { ...read };
   let changed = false;
   for (const id of ids) {
@@ -61,6 +82,7 @@ function subscribe(l: () => void): () => void {
   };
 }
 function snapshot(): ReadSet {
+  ensureKey();
   return read;
 }
 

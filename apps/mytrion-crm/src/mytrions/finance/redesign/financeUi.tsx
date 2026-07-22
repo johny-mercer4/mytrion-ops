@@ -44,7 +44,7 @@ export function RefreshBtn({ onClick, spin, label = 'Refresh' }: { onClick: () =
       type="button"
       onClick={onClick}
       className="mf-ico"
-      style={s('height:34px;padding:0 13px;border-radius:9px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:11.5px;font-weight:700;display:flex;align-items:center;gap:7px')}
+      style={s('height:34px;padding:0 13px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:11.5px;font-weight:700;display:flex;align-items:center;gap:7px')}
     >
       <Svg d={ICONS.refresh} size={13} {...(spin ? { style: { animation: 'mf-spin .8s linear infinite' } } : {})} />
       {label}
@@ -64,7 +64,7 @@ export function SearchField({
   maxWidth?: number;
 }) {
   return (
-    <div style={s(`display:flex;align-items:center;gap:8px;flex:1;min-width:220px;max-width:${maxWidth}px;height:38px;padding:0 12px;border-radius:10px;background:var(--surface);border:1px solid var(--border)`)}>
+    <div style={s(`display:flex;align-items:center;gap:8px;flex:1;min-width:220px;max-width:${maxWidth}px;height:38px;padding:0 12px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)`)}>
       <Svg d={ICONS.search} size={14} stroke="var(--muted)" />
       <input
         className="mf-in"
@@ -83,7 +83,7 @@ export function ClearFiltersBtn({ onClick }: { onClick: () => void }) {
       type="button"
       onClick={onClick}
       className="mf-chip"
-      style={s('display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:11.5px;font-weight:600;cursor:pointer')}
+      style={s('display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:11.5px;font-weight:600;cursor:pointer')}
     >
       <Svg d={ICONS.close} size={11} strokeWidth={2.4} />
       Clear
@@ -105,7 +105,7 @@ export function HorizontalKpi({
   color?: string;
 }) {
   return (
-    <div className="mf-card" style={s('padding:15px;border-radius:14px;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;gap:12px')}>
+    <div className="mf-card" style={s('padding:15px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;gap:12px')}>
       <div style={s(iconStyle)}>
         <Svg d={icon} size={17} />
       </div>
@@ -124,7 +124,7 @@ export function LoadMore({ onClick, meta }: { onClick: () => void; meta: string 
         type="button"
         onClick={onClick}
         className="mf-chip"
-        style={s('height:34px;padding:0 18px;border-radius:9px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:7px')}
+        style={s('height:34px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:7px')}
       >
         <Svg d={ICONS.load} size={12} strokeWidth={2.2} />
         Load more
@@ -140,7 +140,7 @@ export function EmptyState({ msg, onClear }: { msg: string; onClear?: () => void
       <Svg d={ICONS.search} size={42} strokeWidth={1.4} style={{ opacity: 0.5, marginBottom: 12, display: 'inline-block' }} />
       <div style={s('font-size:13px')}>{msg}</div>
       {onClear ? (
-        <button type="button" onClick={onClear} className="mf-chip" style={s('margin-top:12px;height:32px;padding:0 14px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:11.5px;font-weight:600;cursor:pointer')}>
+        <button type="button" onClick={onClear} className="mf-chip" style={s('margin-top:12px;height:32px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:11.5px;font-weight:600;cursor:pointer')}>
           Clear filters
         </button>
       ) : null}
@@ -163,7 +163,7 @@ export function ChipRow({
     <div style={s('display:flex;align-items:center;gap:7px;flex-wrap:wrap')}>
       <span style={s('font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-right:2px')}>{label}</span>
       {options.map((o) => (
-        <button key={o.id} type="button" className="mf-chip" onClick={() => onSelect(o.id)} style={s(chipStyle(active === o.id))}>
+        <button key={o.id} type="button" className="mf-chip" data-active={active === o.id ? 'true' : 'false'} onClick={() => onSelect(o.id)} style={s(chipStyle(active === o.id))}>
           {o.label}
         </button>
       ))}
@@ -173,7 +173,7 @@ export function ChipRow({
 
 export function Panel({ children }: { children: ReactNode }) {
   return (
-    <div style={s('border-radius:16px;background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>{children}</div>
+    <div style={s('border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>{children}</div>
   );
 }
 
@@ -187,11 +187,21 @@ export function SkelRows({ n = 5, h = 58 }: { n?: number; h?: number }) {
   );
 }
 
+export function SkelBlock({ heights, pad = 8 }: { heights: number[]; pad?: number }) {
+  return (
+    <div style={s(`padding:${pad}px`)}>
+      {heights.map((h, i) => (
+        <div key={i} className="mf-skel" style={s(`height:${h}px;margin-bottom:${i < heights.length - 1 ? 8 : 0}px`)} />
+      ))}
+    </div>
+  );
+}
+
 export function KvGroup({ title, rows }: { title: string; rows: { k: string; v: string; mono?: string }[] }) {
   return (
     <div>
       <div style={s('font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:10px')}>{title}</div>
-      <div style={s('display:flex;flex-direction:column;gap:1px;border-radius:11px;overflow:hidden;border:1px solid var(--border)')}>
+      <div style={s('display:flex;flex-direction:column;gap:1px;border-radius:var(--radius-md);overflow:hidden;border:1px solid var(--border)')}>
         {rows.map((r) => (
           <div key={r.k} style={s('display:flex;justify-content:space-between;gap:12px;padding:10px 13px;background:var(--alt)')}>
             <span style={s('font-size:11.5px;color:var(--muted)')}>{r.k}</span>

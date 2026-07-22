@@ -1,0 +1,252 @@
+/* CS Retention — Claims / Phase 2 Cases / CITI Folder (CSMYTRION gold) */
+
+.cs-root .cs-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.cs-root .cs-panel-title {
+  margin: 0;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.cs-root .cs-panel-sub {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.cs-root .cs-ret-split {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: var(--sec-gap);
+  min-height: 420px;
+  align-items: stretch;
+}
+
+.cs-root .cs-ret-list {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  overflow: auto;
+  max-height: calc(100vh - 220px);
+  box-shadow: var(--shadow-sm);
+}
+
+.cs-root .cs-ret-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  border: none;
+  border-bottom: 1px solid var(--border-2);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 140ms;
+}
+
+.cs-root .cs-ret-row:hover {
+  background: var(--cs-accent-softer);
+}
+
+.cs-root .cs-ret-row.active {
+  background: var(--cs-accent-soft);
+  border-left: 3px solid var(--cs-accent);
+  padding-left: 13px;
+}
+
+.cs-root .cs-ret-row-main {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.cs-root .cs-ret-row-main strong {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.cs-root .cs-ret-row-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.cs-root .cs-ret-detail {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: var(--card-pad);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.cs-root .cs-ret-detail h3 {
+  margin: 0 0 14px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.cs-root .cs-ret-dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+  margin: 0 0 18px;
+}
+
+.cs-root .cs-ret-dl dt {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cs-root .cs-ret-dl dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.cs-root .cs-ret-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.cs-root .cs-ret-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.cs-root .cs-chip {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 140ms, background 140ms, color 140ms;
+}
+
+.cs-root .cs-chip:hover {
+  border-color: var(--cs-border-gold);
+}
+
+.cs-root .cs-chip.active {
+  border-color: var(--cs-accent);
+  background: var(--cs-accent-soft);
+  color: var(--cs-accent);
+}
+
+.cs-root .cs-ret-attempt {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0;
+  padding: 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+}
+
+.cs-root .cs-ret-attempt label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cs-root .cs-ret-attempt select,
+.cs-root .cs-ret-attempt input {
+  height: 36px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--color-bg-primary);
+  color: inherit;
+  padding: 0 10px;
+  font: inherit;
+}
+
+.cs-root .cs-ret-attempt select:focus,
+.cs-root .cs-ret-attempt input:focus {
+  outline: none;
+  border-color: var(--cs-accent);
+  box-shadow: 0 0 0 3px var(--cs-accent-glow);
+}
+
+.cs-root .cs-ret-outcomes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cs-root .cs-ret-bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.cs-root .cs-ret-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cs-root .cs-muted {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.cs-root .cs-warn {
+  color: var(--cs-warning);
+  font-weight: 700;
+}
+
+.cs-root .cs-danger {
+  color: var(--cs-danger);
+  font-weight: 700;
+}
+
+.cs-root .cs-banner-danger {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--cs-danger-soft);
+  background: var(--cs-danger-soft);
+  color: var(--cs-danger);
+  font-size: 13px;
+}
+
+.cs-root .cs-empty {
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .cs-root .cs-ret-split {
+    grid-template-columns: 1fr;
+  }
+}

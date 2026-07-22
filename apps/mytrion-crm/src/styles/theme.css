@@ -31,6 +31,15 @@
   --danger: #f4716f;
   --purple: #a78bfa;
   --orange: #fb8a3c;
+  --black: #ffffff;
+  --blue: #3b82f6;
+  --red: #ef4444;
+  --green: #10b981;
+  /* CS Mytrion / loader accent — enterprise gold (softened) */
+  --yellow: #D4B84A;
+  --dark-purple: #7e22ce;
+  --light-blue: #0ea5e9;
+  --rocket: #f43f5e;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
   --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.42), 0 2px 6px rgba(0, 0, 0, 0.32);
   --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.58), 0 6px 16px rgba(0, 0, 0, 0.42);
@@ -48,10 +57,15 @@
   --tint-neutral-bd: var(--border);
 
   /* ── Radii ───────────────────────────────────────────────────────────────── */
-  --radius-xs: 3px;
-  --radius-sm: 5px;
-  --radius-md: 9px;
-  --radius-lg: 13px;
+  /* One corner across the app: a button, an input, a card, a table and a modal all round at 6px.
+     The four steps are kept as names rather than collapsed into one token so call sites don't all
+     have to change, and so the ramp can be reintroduced by editing this block alone. */
+  --radius-xs: 6px;
+  --radius-sm: 6px;
+  --radius-md: 6px;
+  --radius-lg: 6px;
+  /* Not part of the flattening — this is what makes pills, avatars and status dots round rather
+     than 6px rectangles. */
   --radius-full: 999px;
 
   /* ── Type scale (size + line-height + weight) ──────────────────────────────── */
@@ -116,9 +130,9 @@
   --z-tooltip: 4000;
 
   /* ── Fonts ─────────────────────────────────────────────────────────────────── */
-  --font-head: 'Rajdhani', system-ui, sans-serif;
-  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-head: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'Satoshi', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, monospace;
 
   /* ── Brand gradients: Gem on AI surfaces, FuelMark in the masthead ─────────── */
   --gem: linear-gradient(135deg, #4285f4 0%, #9b72cb 52%, #d96570 100%);
@@ -150,6 +164,15 @@
   --danger: #d14545;
   --purple: #6d52d6;
   --orange: #d9641a;
+  --black: #09090b;
+  --blue: #2563eb;
+  --red: #dc2626;
+  --green: #059669;
+  /* CS Mytrion / loader accent — enterprise gold (softened, light) */
+  --yellow: #C9A227;
+  --dark-purple: #4c1d95;
+  --light-blue: #38bdf8;
+  --rocket: #c026d3;
   --shadow-sm: 0 1px 2px rgba(20, 30, 50, 0.06);
   --shadow-md: 0 8px 22px rgba(20, 30, 50, 0.08), 0 2px 6px rgba(20, 30, 50, 0.05);
   --shadow-lg: 0 20px 48px rgba(20, 30, 50, 0.14), 0 6px 16px rgba(20, 30, 50, 0.08);

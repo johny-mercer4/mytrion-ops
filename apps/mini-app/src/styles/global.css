@@ -40,8 +40,6 @@
   --success: #2bd866;
 
   /* Role badge (profile sheet "Owner"/"Fleet manager" pill). */
-  --owner-badge-bg: #17255e;
-  --owner-badge-fg: #4d79ff;
 
   /* Card elevation. Dark cards already read as their own surface against the near-black page
      (#161922 on #0B0C10), so borderless is fine there; on light, white-on-off-white has almost no
@@ -78,8 +76,6 @@
   --destructive: #d92b2e;
   --success: #1dab53;
 
-  --owner-badge-bg: #dce4ff;
-  --owner-badge-fg: #2451ff;
 
   /* Soft elevation to lift white cards off the off-white page — dark mode gets none (see above). */
   --card-shadow: 0 1px 3px rgba(17, 19, 24, 0.07);
@@ -105,8 +101,6 @@
   --color-brand-amber: var(--brand-amber);
   --color-brand-orange: var(--brand-orange);
   --color-link-accent: var(--link-accent);
-  --color-owner-badge-bg: var(--owner-badge-bg);
-  --color-owner-badge-fg: var(--owner-badge-fg);
 
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
@@ -123,6 +117,15 @@
 
 * {
   box-sizing: border-box;
+}
+
+/* --ring was themed (white on dark, black on light) and mapped to --color-ring below, but no rule
+   ever applied it — every input/button/tab fell back to the platform's default focus outline
+   (orange in Telegram's WebView), clashing with the theme. Inset, not outline: several containers
+   (fleet rows, sheets) clip with overflow:hidden, and an outer outline would get cut off there. */
+:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--ring);
 }
 
 /* Fixed to the viewport, not min-height: the app-root's internal flex column (sticky header +
@@ -200,6 +203,23 @@ input,
     transform: translateY(0);
   }
 }
+/* Tab switches (bottom bar, inbox sub-tabs): the entering panel slides in from the direction of
+   travel — see components/SlideIn.tsx. --slide-dir (+1/-1/0) picks the side. Opacity ramps in over
+   the first stretch then holds, so the tail reads as a moving panel (a slide) rather than a fade.
+   The scroll container clips the x-axis, so the offset never spawns a horizontal scrollbar. */
+@keyframes octslide {
+  from {
+    transform: translateX(calc(var(--slide-dir, 0) * 34px));
+    opacity: 0;
+  }
+  45% {
+    opacity: 1;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
 @keyframes octpop {
   from {
     transform: scale(0.6);
@@ -255,4 +275,38 @@ input,
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Indeterminate progress sliver — used by the transactions sheet's export bar while a report is
+   being built and pushed to Telegram. No real progress events exist for that work, so the bar
+   reports activity, not completion. */
+@keyframes octbar {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
+/* Skeleton shimmer — the balance hero's first-ever paint, before any cached figure exists. */
+@keyframes octskeleton {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/**
+ * A horizontally-scrolling strip with no visible scrollbar — the period/filter chip rows.
+ *
+ * A class, not an inline style: `scrollbar-width` alone leaves the bar visible on WebKit versions
+ * without it, and the ::-webkit-scrollbar pseudo-element cannot be expressed inline at all. Two of
+ * the three strips set the inline property and the Fleet one set nothing, so a scrollbar sat under
+ * the chips there. `overscroll-behavior-x: contain` stops a swipe past the last chip from
+ * back-navigating the Telegram WebView.
+ */
+.hscroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.hscroll::-webkit-scrollbar {
+  display: none;
 }

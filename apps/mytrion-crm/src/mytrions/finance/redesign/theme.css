@@ -34,7 +34,7 @@ html,body{height:100%;margin:0}
   color-scheme:light;
 }
 .mf-root ::-webkit-scrollbar{width:9px;height:9px}
-.mf-root ::-webkit-scrollbar-thumb{background:var(--border);border-radius:9px}
+.mf-root ::-webkit-scrollbar-thumb{background:var(--border);border-radius:var(--radius-md)}
 .mf-root ::-webkit-scrollbar-thumb:hover{background:var(--muted)}
 .mf-root *{scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 @keyframes mf-spin{to{transform:rotate(360deg)}}
@@ -48,7 +48,7 @@ html,body{height:100%;margin:0}
 @keyframes mf-slidein{from{transform:translateX(120%);opacity:0}to{transform:translateX(0);opacity:1}}
 @keyframes mf-ring{0%{transform:scale(.7);opacity:.7}100%{transform:scale(1.9);opacity:0}}
 .mf-fu{animation:mf-up .42s cubic-bezier(.2,0,0,1) both}
-.mf-skel{background:linear-gradient(90deg,var(--raised) 25%,rgba(255,255,255,.07) 37%,var(--raised) 63%);background-size:900px 100%;animation:mf-shimmer 1.4s infinite linear;border-radius:8px}
+.mf-skel{background:linear-gradient(90deg,var(--raised) 25%,rgba(255,255,255,.07) 37%,var(--raised) 63%);background-size:900px 100%;animation:mf-shimmer 1.4s infinite linear;border-radius:var(--radius-md)}
 .light .mf-skel{background:linear-gradient(90deg,rgba(6,30,22,.05) 25%,rgba(6,30,22,.1) 37%,rgba(6,30,22,.05) 63%);background-size:900px 100%;animation:mf-shimmer 1.4s infinite linear}
 .mf-nav{transition:background .15s,color .15s,border-color .15s}
 .mf-nav:hover{color:var(--text)!important;background:var(--raised)!important}
@@ -64,9 +64,10 @@ html,body{height:100%;margin:0}
 .mf-ico{transition:background .14s,color .14s,border-color .14s,transform .14s}
 .mf-ico:hover{background:rgba(var(--accent-rgb),.13)!important;color:var(--accent)!important;border-color:rgba(var(--accent-rgb),.4)!important}
 .mf-chip{transition:background .13s,color .13s,border-color .13s}
-.mf-chip:hover{color:var(--text)!important;border-color:var(--border)!important;background:var(--raised)!important}
-.mf-in{transition:border-color .15s,box-shadow .15s;background-color:var(--surface)}
+.mf-chip:hover:not([data-active="true"]){color:var(--text)!important;border-color:var(--border)!important;background:var(--raised)!important}
+.mf-in{transition:border-color .15s,box-shadow .15s}
 .mf-in:focus{outline:none;border-color:rgba(var(--accent-rgb),.7)!important;box-shadow:0 0 0 3px rgba(var(--accent-rgb),.16)!important}
+.mf-flash{animation:mf-flash 2.4s ease-out both}
 .mf-scroll{overflow-y:auto}
 .mf-root input,.mf-root textarea,.mf-root button,.mf-root select{font-family:inherit}
 .mf-bar{transition:height .6s cubic-bezier(.2,0,0,1)}

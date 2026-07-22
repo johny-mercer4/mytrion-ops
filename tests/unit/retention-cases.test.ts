@@ -20,6 +20,8 @@ vi.mock('../../src/repos/retentionCaseRepo.js', async (importOriginal) => {
       list: vi.fn(async () => ({ cases: [], total: 0 })),
       findById: vi.fn(async () => undefined),
       listOpen: vi.fn(async () => []),
+      listPhases: vi.fn(async () => []),
+      listStatuses: vi.fn(async () => []),
       create: vi.fn(),
       update: vi.fn(async () => null),
       deleteById: vi.fn(async () => false),
@@ -45,6 +47,7 @@ vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
 
 import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
+import { env } from '../../src/config/env.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
 import { auditFromContext } from '../../src/modules/audit/auditLogger.js';
 import {
@@ -91,32 +94,44 @@ async function workerToken(profile: string): Promise<string> {
 
 function caseDto(overrides: Partial<RetentionCaseDto> = {}): RetentionCaseDto {
   return {
-    id: 'rc_1',
+    id: '1',
     carrierId: '104882',
+    zohoDealId: null,
     companyName: 'Ironhide Logistics LLC',
     applicationId: null,
     agentName: 'Rep Riley',
-    agentZohoUserId: '777',
-    phase: 'sales',
+    contactPhone: null,
+    phaseCode: 'phase_1_agent',
+    statusCode: 'p1_new',
     phaseChangedAt: '2026-07-06T00:00:00.000Z',
-    stage: 'inactive_no_reason',
-    status: 'open',
-    outcome: null,
-    closedAt: null,
-    inactivityReason: null,
+    transactionFrequency: 'high',
+    agentOutcome: null,
+    dissatisfactionReason: null,
     reasonNote: null,
+    assignedAgentZohoUserId: '777',
+    poolOwnerZohoUserId: null,
+    pendingClaimantZohoUserId: null,
+    assignmentCount: 1,
+    openPoolAttemptCount: 0,
     outOfReachAttempts: 0,
-    frequencyClass: 'high',
+    dealOwnerChanged: false,
+    currentDeadlineAt: null,
+    currentDeadlineType: null,
+    vacationCountdownEnd: null,
+    citiFolderEnteredAt: null,
+    citiFolderHoldUntil: null,
+    lastReviewCycleAt: null,
+    salesManagerZohoUserId: null,
     thresholdDays: 2,
     lastTransactionAt: '2026-06-20T00:00:00.000Z',
     daysInactive: 16,
     txCount90d: 44,
     gallons90d: 8200,
     activeCards: 12,
-    poolAssignment: null,
-    poolTakenBy: null,
     source: 'auto',
     lastSyncedAt: null,
+    closedAt: null,
+    isOpen: true,
     createdAt: '2026-07-06T00:00:00.000Z',
     updatedAt: '2026-07-06T00:00:00.000Z',
     ...overrides,
@@ -125,37 +140,48 @@ function caseDto(overrides: Partial<RetentionCaseDto> = {}): RetentionCaseDto {
 
 function openRow(overrides: Partial<RetentionCase> = {}): RetentionCase {
   return {
-    id: 'rc_1',
+    id: 1,
     tenantId: DEFAULT_TENANT_ID,
     carrierId: '104882',
+    zohoDealId: null,
     companyName: 'Ironhide Logistics LLC',
     applicationId: null,
     agentName: null,
-    agentZohoUserId: null,
-    phase: 'sales',
+    contactPhone: null,
+    phaseCode: 'phase_1_agent',
+    statusCode: 'p1_new',
     phaseChangedAt: new Date('2026-07-01T00:00:00Z'),
-    stage: 'inactive_no_reason',
-    status: 'open',
-    outcome: null,
-    closedAt: null,
-    inactivityReason: null,
+    transactionFrequency: 'medium',
+    agentOutcome: null,
+    dissatisfactionReason: null,
     reasonNote: null,
+    assignedAgentZohoUserId: null,
+    poolOwnerZohoUserId: null,
+    pendingClaimantZohoUserId: null,
+    assignmentCount: 1,
+    openPoolAttemptCount: 0,
     outOfReachAttempts: 0,
-    frequencyClass: 'medium',
+    dealOwnerChanged: false,
+    currentDeadlineAt: null,
+    currentDeadlineType: null,
+    vacationCountdownEnd: null,
+    citiFolderEnteredAt: null,
+    citiFolderHoldUntil: null,
+    lastReviewCycleAt: null,
+    salesManagerZohoUserId: null,
     thresholdDays: 5,
     lastTransactionAt: new Date('2026-06-20T00:00:00Z'),
     daysInactive: 16,
     txCount90d: 18,
     gallons90d: 3200,
     activeCards: 6,
-    poolAssignment: null,
-    poolTakenBy: null,
     source: 'auto',
     lastSyncedAt: null,
+    closedAt: null,
     createdAt: new Date('2026-07-01T00:00:00Z'),
     updatedAt: new Date('2026-07-01T00:00:00Z'),
     ...overrides,
-  } as RetentionCase;
+  };
 }
 
 function candidate(overrides: Partial<RetentionCandidate> = {}): RetentionCandidate {
@@ -165,6 +191,9 @@ function candidate(overrides: Partial<RetentionCandidate> = {}): RetentionCandid
     applicationId: '9001',
     agentName: 'Rep Riley',
     agentZohoUserId: '777',
+    zohoDealId: 'zdeal_104882',
+    contactPhone: '5551234567',
+    dealStage: 'Card Swiped',
     activeCards: 12,
     lastTransactionAt: new Date('2026-06-20T00:00:00Z'),
     daysInactive: 16,
@@ -173,6 +202,8 @@ function candidate(overrides: Partial<RetentionCandidate> = {}): RetentionCandid
     frequencyClass: 'high',
     thresholdDays: 2,
     breached: true,
+    preferredLanguage: null,
+    isSpanishDesk: false,
     ...overrides,
   };
 }
@@ -213,14 +244,50 @@ describe('retention routes — department/admin gates', () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it('allows a worker session that carries the retention department', async () => {
+  it('IGNORES a verified session asserting retention via x-department-access (elevation regression)', async () => {
     const token = await workerToken('Sales Rep');
     const res = await app.inject({
       method: 'GET',
       url: '/v1/retention/cases',
       headers: { authorization: `Bearer ${token}`, 'x-department-access': 'retention' },
     });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('IGNORES a verified session asserting x-all-departments (elevation regression)', async () => {
+    const token = await workerToken('Sales Rep');
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/retention/cases',
+      headers: { authorization: `Bearer ${token}`, 'x-all-departments': 'true' },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('allows a retention-profile worker with NO headers (profile-derived access)', async () => {
+    const token = await workerToken('Retention Specialist');
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/retention/cases',
+      headers: { authorization: `Bearer ${token}` },
+    });
     expect(res.statusCode).toBe(200);
+  });
+
+  it('FF_SESSION_DEPT_AUTHORITATIVE=0 restores the legacy header trust (rollback)', async () => {
+    const saved = env.FF_SESSION_DEPT_AUTHORITATIVE;
+    env.FF_SESSION_DEPT_AUTHORITATIVE = false;
+    try {
+      const token = await workerToken('Sales Rep');
+      const res = await app.inject({
+        method: 'GET',
+        url: '/v1/retention/cases',
+        headers: { authorization: `Bearer ${token}`, 'x-department-access': 'retention' },
+      });
+      expect(res.statusCode).toBe(200);
+    } finally {
+      env.FF_SESSION_DEPT_AUTHORITATIVE = saved;
+    }
   });
 
   it('denies a carrier-client (customer) session even with the header', async () => {
@@ -279,7 +346,12 @@ describe('retention routes — CRUD', () => {
     expect(res.statusCode).toBe(201);
     expect(repo.create).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ carrierId: '104882', phase: 'sales', source: 'manual' }),
+      expect.objectContaining({
+        carrierId: '104882',
+        phaseCode: 'phase_1_agent',
+        statusCode: 'p1_in_progress',
+        source: 'manual',
+      }),
     );
     expect(auditFromContext).toHaveBeenCalledWith(
       expect.anything(),
@@ -287,12 +359,12 @@ describe('retention routes — CRUD', () => {
     );
   });
 
-  it('rejects an invalid phase value', async () => {
+  it('rejects an invalid phase_code value', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/retention/cases',
       headers: { ...API_KEY_HEADERS, 'content-type': 'application/json' },
-      payload: { carrier_id: 104882, phase: 'collections' },
+      payload: { carrier_id: 104882, phase_code: 'collections' },
     });
     expect(res.statusCode).toBe(400);
     expect(repo.create).not.toHaveBeenCalled();
@@ -309,18 +381,20 @@ describe('retention routes — CRUD', () => {
   });
 
   it('moves a case through the phase ladder', async () => {
-    repo.update.mockResolvedValueOnce(caseDto({ phase: 'open_pool' }));
+    repo.update.mockResolvedValueOnce(
+      caseDto({ phaseCode: 'phase_2_retention', statusCode: 'p2_new' }),
+    );
     const res = await app.inject({
       method: 'POST',
-      url: '/v1/retention/cases/rc_1',
+      url: '/v1/retention/cases/1',
       headers: { ...API_KEY_HEADERS, 'content-type': 'application/json' },
-      payload: { phase: 'open_pool', pool_assignment: 'available' },
+      payload: { phase_code: 'phase_2_retention', status_code: 'p2_new' },
     });
     expect(res.statusCode).toBe(200);
     expect(repo.update).toHaveBeenCalledWith(
       expect.anything(),
-      'rc_1',
-      expect.objectContaining({ phase: 'open_pool', poolAssignment: 'available' }),
+      '1',
+      expect.objectContaining({ phaseCode: 'phase_2_retention', statusCode: 'p2_new' }),
     );
   });
 
@@ -344,12 +418,12 @@ describe('retention sync — auto record generation', () => {
       candidate({ carrierId: '333', breached: false }), // inside threshold → ignored
     ]);
     repo.listOpen.mockResolvedValueOnce([
-      openRow({ id: 'rc_existing', carrierId: '222' }),
-      openRow({ id: 'rc_returned', carrierId: '444', thresholdDays: 5 }),
-      openRow({ id: 'rc_final', carrierId: '555', phase: 'citi' }),
+      openRow({ id: 22, carrierId: '222' }),
+      openRow({ id: 44, carrierId: '444', thresholdDays: 5 }),
+      openRow({ id: 55, carrierId: '555', phaseCode: 'phase_3_citi', statusCode: 'p3_hold' }),
     ]);
     lastTxMock.mockResolvedValueOnce(new Map([['444', recent]]));
-    repo.create.mockResolvedValueOnce(caseDto({ id: 'rc_new', carrierId: '111' }));
+    repo.create.mockResolvedValueOnce(caseDto({ id: '11', carrierId: '111' }));
     repo.update.mockResolvedValue(caseDto());
 
     const res = await app.inject({
@@ -371,32 +445,37 @@ describe('retention sync — auto record generation', () => {
       expect.anything(),
       expect.objectContaining({
         carrierId: '111',
-        phase: 'sales',
-        stage: 'inactive_no_reason',
+        zohoDealId: 'zdeal_104882',
+        phaseCode: 'phase_1_agent',
+        statusCode: 'p1_in_progress',
         source: 'auto',
       }),
     );
     expect(repo.update).toHaveBeenCalledWith(
       expect.anything(),
-      'rc_existing',
+      '22',
       expect.objectContaining({ metrics: expect.anything() }),
     );
     expect(repo.update).toHaveBeenCalledWith(
       expect.anything(),
-      'rc_returned',
-      expect.objectContaining({ status: 'closed', outcome: 'returned' }),
+      '44',
+      expect.objectContaining({
+        statusCode: 'p1_returned',
+        agentOutcome: 'returned',
+      }),
     );
-    // 'citi' is final — never auto-closed; its carrier is not even activity-checked.
-    expect(lastTxMock).toHaveBeenCalledWith(['444']);
+    // Unified auto-close: all open phases (incl. CITI) are checked for post-create txns.
+    expect(lastTxMock).toHaveBeenCalledWith(expect.arrayContaining(['222', '444', '555']));
   });
 
-  it('never closes a citi-phase case even when the client transacted', async () => {
+  it('closes a citi-phase case when the client transacted after open', async () => {
     const recent = new Date(Date.now() - 1 * 86_400_000);
     scanMock.mockResolvedValueOnce([]);
     repo.listOpen.mockResolvedValueOnce([
-      openRow({ id: 'rc_final', carrierId: '555', phase: 'citi' }),
+      openRow({ id: 55, carrierId: '555', phaseCode: 'phase_3_citi', statusCode: 'p3_hold' }),
     ]);
     lastTxMock.mockResolvedValueOnce(new Map([['555', recent]]));
+    repo.update.mockResolvedValueOnce(caseDto({ id: '55', statusCode: 'p1_returned' }));
     const res = await app.inject({
       method: 'POST',
       url: '/v1/retention/sync',
@@ -404,14 +483,21 @@ describe('retention sync — auto record generation', () => {
       payload: {},
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().summary.closedReturned).toBe(0);
-    expect(repo.update).not.toHaveBeenCalled();
+    expect(res.json().summary.closedReturned).toBe(1);
+    expect(repo.update).toHaveBeenCalledWith(
+      expect.anything(),
+      '55',
+      expect.objectContaining({
+        statusCode: 'p1_returned',
+        agentOutcome: 'returned',
+      }),
+    );
   });
 
   it('does not close a case when the last transaction predates it', async () => {
     const stale = new Date('2026-06-15T00:00:00Z'); // before the case's createdAt (Jul 1)
     scanMock.mockResolvedValueOnce([]);
-    repo.listOpen.mockResolvedValueOnce([openRow({ id: 'rc_waiting', carrierId: '444' })]);
+    repo.listOpen.mockResolvedValueOnce([openRow({ id: 44, carrierId: '444' })]);
     lastTxMock.mockResolvedValueOnce(new Map([['444', stale]]));
     const res = await app.inject({
       method: 'POST',
@@ -437,5 +523,65 @@ describe('frequency classification (pure)', () => {
     const now = new Date('2026-07-08T12:00:00Z');
     expect(daysSince(new Date('2026-07-05T13:00:00Z'), now)).toBe(2);
     expect(daysSince(new Date('2026-07-09T00:00:00Z'), now)).toBe(0);
+  });
+});
+
+describe('retention entry exclusions (pure)', () => {
+  const swipe = new Date('2026-06-01T00:00:00Z');
+
+  it('allows Card Swiped active non-debtors', async () => {
+    const { isRetentionEntryEligible } = await import('../../src/integrations/dwhRetention.js');
+    expect(
+      isRetentionEntryEligible({
+        firstSwipeDate: swipe,
+        dealStage: 'Card Swiped',
+        isActive: true,
+        isBillingDebtor: false,
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  it('excludes debtors, pre-swipe, Closed Lost / OoB, deactivated', async () => {
+    const { isRetentionEntryEligible } = await import('../../src/integrations/dwhRetention.js');
+    expect(
+      isRetentionEntryEligible({
+        firstSwipeDate: swipe,
+        dealStage: 'Card Swiped',
+        isActive: true,
+        isBillingDebtor: true,
+      }).reason,
+    ).toBe('debtor');
+    expect(
+      isRetentionEntryEligible({
+        firstSwipeDate: null,
+        dealStage: 'Card Funded',
+        isActive: true,
+        isBillingDebtor: false,
+      }).reason,
+    ).toBe('pre_card_swiped');
+    expect(
+      isRetentionEntryEligible({
+        firstSwipeDate: swipe,
+        dealStage: 'Closed Lost',
+        isActive: true,
+        isBillingDebtor: false,
+      }).reason,
+    ).toBe('out_of_business');
+    expect(
+      isRetentionEntryEligible({
+        firstSwipeDate: swipe,
+        dealStage: 'Out of Business',
+        isActive: true,
+        isBillingDebtor: false,
+      }).reason,
+    ).toBe('out_of_business');
+    expect(
+      isRetentionEntryEligible({
+        firstSwipeDate: swipe,
+        dealStage: 'Card Swiped',
+        isActive: false,
+        isBillingDebtor: false,
+      }).reason,
+    ).toBe('deactivated');
   });
 });

@@ -1,0 +1,73 @@
+/* =====================================================
+   Customer Service — Responsive Styles
+   Breakpoints: 768px · 640px · 480px · 380px
+   ===================================================== */
+
+/* ═══════════════════════════════════════════════
+   §1  SIDEBAR — collapse to mobile bottom nav (≤ 768px)
+   ═══════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+    .cs-root .cs-sidebar {
+        display: none;
+    }
+
+    .cs-root .cs-bottom-nav {
+        display: flex;
+        align-items: stretch;
+    }
+
+    .cs-root .cs-content {
+        padding-bottom: var(--bottom-nav-height);
+    }
+
+    .cs-root .cs-panel {
+        padding-bottom: calc(var(--bottom-nav-height) + 1.25rem);
+    }
+
+    .cs-root .cs-ai-panel {
+        padding-bottom: var(--bottom-nav-height);
+    }
+}
+
+/* ═══════════════════════════════════════════════
+   §2  PANEL CONTENT  (≤ 640px)
+   ═══════════════════════════════════════════════ */
+
+@media (max-width: 640px) {
+    .cs-root .cs-panel {
+        padding: 1.25rem 1rem;
+        gap: 1rem;
+    }
+
+    .cs-root .cs-title {
+        font-size: 1.375rem;
+    }
+
+    .cs-root .cs-summary-banner {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.625rem;
+    }
+
+    .cs-root .cs-summary-amount {
+        font-size: 1.375rem;
+    }
+
+    .cs-root .cs-table-wrap {
+        overflow-x: auto;
+    }
+}
+
+/* ═══════════════════════════════════════════════
+   §4  BOTTOM NAV  (≤ 380px)
+   ═══════════════════════════════════════════════ */
+
+@media (max-width: 380px) {
+    .cs-root .bottom-nav-btn span {
+        display: none;
+    }
+
+    .cs-root {
+        --bottom-nav-height: 52px;
+    }
+}

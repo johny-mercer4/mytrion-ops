@@ -31,10 +31,12 @@ const voidParamsSchema = z.object({ id: z.coerce.number().int().positive() });
 const voidBodySchema = z.object({ reason: z.string().max(500).nullish() });
 
 /**
- * Money codes service. Auth: API_KEY on all routes.
- *  - POST  /money-codes            issue (or fetch the existing ACTIVE) request — idempotent on (carrier, invoice)
+ * Money codes service (Ops DB ledger). Auth: session or API key.
+ * Agent Data Center list/void go through local touchpoints (`money_code.list` /
+ * `money_code.void`); these HTTP routes remain for insert + void-sweep tooling.
+ *  - POST  /money-codes            insert a draw row
  *  - GET   /money-codes            list for the void sweep (status / generatedBefore / limit / order)
- *  - POST  /money-codes/:id/void   mark one record voided (idempotent no-op if already voided)
+ *  - POST  /money-codes/:id/void   mark one record (batch) voided — DB only, no EFS
  */
 export async function moneyCodeRoutes(app: FastifyInstance): Promise<void> {
   // Issue (or return the existing active) money-code request. 201 created / 200 already-issued.

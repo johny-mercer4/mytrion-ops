@@ -29,6 +29,10 @@ export interface RequestOptions {
   impersonate?: boolean;
   /** Extra request headers (e.g. `x-department-access` to assert the caller's department scope). */
   headers?: Record<string, string> | undefined;
+  /** Abort an in-flight request — for search-as-you-type, where a stale reply must not win. An
+   * aborted fetch surfaces as an ApiError('NETWORK'), so callers check `signal.aborted` before
+   * treating the rejection as a real failure. */
+  signal?: AbortSignal | undefined;
 }
 
 /** Session Bearer (else dev API key). No impersonation headers — the base principal. */
@@ -107,7 +111,10 @@ function buildUrl(path: string, query?: RequestOptions['query']): string {
   if (query) {
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(query)) {
-      if (v !== undefined && v !== null && v !== '') qs.append(k, String(v));
+      // Keep numeric 0 (Desk search pages with from=0). Only skip null/undefined/''.
+      if (v === undefined || v === null) continue;
+      if (typeof v === 'string' && v === '') continue;
+      qs.append(k, String(v));
     }
     const s = qs.toString();
     if (s) url += `?${s}`;
@@ -173,7 +180,7 @@ export async function requestBlob(path: string, opts: { headers?: Record<string,
 }
 
 export async function request(
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   path: string,
   opts: RequestOptions = {},
 ): Promise<unknown> {
@@ -186,6 +193,7 @@ export async function request(
       method,
       headers,
       credentials: 'same-origin',
+      ...(opts.signal ? { signal: opts.signal } : {}),
       ...(method !== 'GET' ? { body: JSON.stringify(opts.body ?? {}) } : {}),
     });
   };

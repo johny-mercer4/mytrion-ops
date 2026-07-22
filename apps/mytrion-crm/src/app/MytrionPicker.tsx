@@ -1,80 +1,88 @@
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { useUserContext } from '../context/UserContextProvider';
-import { MYTRIONS, type MytrionId } from '../access/mytrions.config';
+import { MYTRIONS, MYTRION_URL_SLUG, COMING_SOON_PICKER_TILES, type MytrionId } from '../access/mytrions.config';
 import { TopBar } from '../components/TopBar';
-import { ArrowRightIcon, CheckIcon, MytrionGlyph } from '../components/icons';
+import { MytrionGlyph } from '../components/icons';
 import styles from './MytrionPicker.module.css';
 
-const HUE_VAR: Record<string, string> = {
-  accent: '--accent',
-  success: '--success',
-  purple: '--purple',
-  orange: '--orange',
-  danger: '--danger',
-};
-
-/** Landing picker (design 1a): hero + a grid of the Mytrions the user may enter. */
+/** Landing picker: hero + a grid of the Mytrions the user may enter. */
 export function MytrionPicker({ ids }: { ids: MytrionId[] }) {
   const ctx = useUserContext();
   const count = ids.length;
 
+  if (ids.length === 1) {
+    return <Navigate to={`/main/${MYTRION_URL_SLUG[ids[0]!]}`} replace />;
+  }
+
   return (
     <div className={styles.screen}>
       <TopBar showIdentity />
+      <div className={styles.bgAmbient} aria-hidden="true" />
       <div className={styles.scroll}>
-        <div className={styles.content}>
+        <main className={styles.content}>
           <header className={styles.hero}>
             <div className={styles.eyebrow}>Choose your workspace</div>
-            <h1 className={styles.title}>Welcome back, {ctx.userName.split(' ')[0] || ctx.userName}</h1>
+            <h1 className={styles.title}>
+              Welcome back, <span>{ctx.userName.split(' ')[0] || ctx.userName}</span>
+            </h1>
             <p className={styles.lede}>
               You have access to {count} Mytrion{count === 1 ? '' : 's'}. Each is scoped to a
-              department's data and grounded in its own knowledge base. Pick one to enter — you can
+              department&rsquo;s data and grounded in its own knowledge base. Pick one to enter &mdash; you can
               switch any time.
             </p>
-            <div className={styles.tags}>
-              <span className={styles.accessTag}>
-                <CheckIcon size={11} />
-                {ctx.profile} · access
-              </span>
-              <span className={styles.mono}>role: {ctx.role || '—'}</span>
-              <span className={styles.mono}>uid: {ctx.userId}</span>
-            </div>
           </header>
 
-          <ul className={styles.grid}>
+          <ul className={styles.grid} role="list" aria-label="Available workspaces">
             {ids.map((id) => {
               const m = MYTRIONS[id];
-              const hue = HUE_VAR[m.hue] ?? '--accent';
+              const hue = m.hue;
               return (
-                <li key={id}>
-                  <Link className={styles.card} to={`/m/${id}`}>
-                    <div className={styles.cardTop}>
-                      <span
-                        className={styles.glyph}
-                        style={{ background: `color-mix(in srgb, var(${hue}) 14%, transparent)`, color: `var(${hue})` }}
-                      >
-                        <MytrionGlyph name={m.icon} size={22} />
-                      </span>
-                      <span className={`${styles.badge} ${m.status === 'ported' ? styles.ported : styles.new}`}>
-                        {m.status === 'ported' ? 'Ported' : 'New'}
-                      </span>
-                    </div>
-                    <div>
-                      <div className={styles.cardTitle}>{m.title.replace(/ Mytrion$/, '')}</div>
-                      <div className={styles.cardDept}>
-                        {m.allDepartments ? `${m.department} · all departments` : m.department}
-                      </div>
-                    </div>
-                    <p className={styles.blurb}>{m.blurb}</p>
-                    <span className={styles.enter}>
-                      Enter <ArrowRightIcon size={12} />
+                <li key={id} className={styles.gridItem}>
+                  <Link
+                    className={styles.card}
+                    to={`/main/${MYTRION_URL_SLUG[id]}`}
+                    style={{ '--card-hue': `var(--${hue})` } as React.CSSProperties}
+                    data-od-id={`mytrion-card-${id}`}
+                  >
+                    <span
+                      className={styles.glyph}
+                      style={{ background: `color-mix(in srgb, var(--${hue}) 15%, transparent)`, color: `var(--${hue})` }}
+                      aria-hidden="true"
+                    >
+                      <MytrionGlyph name={m.icon} size={24} />
                     </span>
+                    <div className={styles.cardTitle}>{m.title.replace(/ Mytrion$/, '')}</div>
+                    <span className={styles.cardTag}>{m.tag}</span>
                   </Link>
                 </li>
               );
             })}
+            {COMING_SOON_PICKER_TILES.map((tile) => {
+              const hue = tile.hue;
+              return (
+                <li key={tile.id} className={styles.gridItem}>
+                  <div
+                    className={`${styles.card} ${styles.cardSoon}`}
+                    aria-disabled="true"
+                    style={{ '--soon-hue': `var(--${hue})` } as React.CSSProperties}
+                  >
+                    <div className={styles.cardHead}>
+                      <span
+                        className={styles.glyph}
+                        style={{ background: `color-mix(in srgb, var(--${hue}) 12%, transparent)`, color: `var(--${hue})` }}
+                        aria-hidden="true"
+                      >
+                        <MytrionGlyph name={tile.icon} size={24} />
+                      </span>
+                      <span className={styles.soonBadge}>Coming soon</span>
+                    </div>
+                    <div className={styles.cardTitle}>{tile.title.replace(/ Mytrion$/, '')}</div>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
-        </div>
+        </main>
       </div>
     </div>
   );

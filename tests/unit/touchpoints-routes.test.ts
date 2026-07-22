@@ -71,7 +71,7 @@ describe('GET /v1/touchpoints (discovery)', () => {
     const res = await app.inject({ method: 'GET', url: '/v1/touchpoints', headers: API_KEY_HEADERS });
     expect(res.statusCode).toBe(200);
     const { touchpoints } = res.json() as { touchpoints: Array<{ key: string }> };
-    expect(touchpoints.length).toBe(69);
+    expect(touchpoints.length).toBe(106);
     expect(touchpoints.map((t) => t.key)).toContain('dwh.carrier_balance');
   });
 
@@ -171,6 +171,34 @@ describe('POST /v1/touchpoints/:key', () => {
       payload: { params: { carrierId: '9', cardNumber: '7083051234', action: 'DELETE' } },
     });
     expect(invalid.statusCode).toBe(400);
+    expect(executeFallbackMock).not.toHaveBeenCalled();
+  });
+
+  it('accepts GET for a read touchpoint (clients.by_agent) — proxy/redirect safety', async () => {
+    serverCrmRequestMock.mockResolvedValueOnce({ success: true, data: [] });
+    const token = await salesToken();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/touchpoints/clients.by_agent?department_access=sales',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toMatchObject({ key: 'clients.by_agent' });
+    expect(serverCrmRequestMock).toHaveBeenCalledWith(
+      'GET',
+      expect.stringMatching(/\/api\/clients\/by-agent\//),
+      expect.anything(),
+    );
+  });
+
+  it('rejects GET for a write/destructive touchpoint', async () => {
+    const token = await salesToken();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/touchpoints/cards.status',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(405);
     expect(executeFallbackMock).not.toHaveBeenCalled();
   });
 });

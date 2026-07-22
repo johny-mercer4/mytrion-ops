@@ -1,6 +1,7 @@
 import type { FastifyRequest } from 'fastify';
-import { normalizeDepartments } from '../../lib/department.js';
-import { AuthError } from '../../lib/errors.js';
+import { env } from '../../config/env.js';
+import { normalizeDepartments, type KnownDepartment } from '../../lib/department.js';
+import { AuthError, RBACError } from '../../lib/errors.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
 /** Narrow request.ctx to non-null after the `authenticate` guard has run. */
@@ -15,30 +16,79 @@ export interface DepartmentAccessBody {
   allDepartments?: boolean | undefined;
 }
 
+/** What the caller ASSERTED via headers/body — trusted only for unverified (API-key) callers. */
+function claimedAccess(
+  request: FastifyRequest,
+  body?: DepartmentAccessBody,
+): { departments: string[]; allDepartments: boolean } {
+  const headerVal = request.headers['x-department-access'];
+  const headerDepts =
+    typeof headerVal === 'string'
+      ? headerVal.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
+  return {
+    departments: normalizeDepartments([...headerDepts, ...(body?.departmentAccess ?? [])]),
+    allDepartments:
+      request.headers['x-all-departments'] === 'true' || body?.allDepartments === true,
+  };
+}
+
 /**
- * Merge the caller's department-access param into the context so RAG retrieval + tool
- * gating are scoped. Sources (unioned): existing ctx, `x-department-access` header (CSV),
- * `x-all-departments: true` header, and an optional request body. The caller is trusted to
- * supply the allowed departments ("the param from my end").
+ * Merge department access into the context so RAG retrieval + tool gating are scoped.
+ *
+ * VERIFIED sessions (Zoho OAuth worker tokens) are session-authoritative: the caller's
+ * `x-department-access` / `x-all-departments` headers and body fields are IGNORED —
+ * `allDepartmentAccess` and the department grant are DB-resolved in contextFromClaims
+ * (mytrionAccessService) and already sit on `ctx`. This closes the header self-elevation path
+ * that previously let any authenticated user claim all-department access.
+ * FF_SESSION_DEPT_AUTHORITATIVE=0 is the emergency rollback to the legacy header trust.
+ *
+ * UNVERIFIED callers (static API key / server-to-server) keep the legacy behavior: the
+ * caller is trusted to supply the allowed departments ("the param from my end"), unioned
+ * from ctx + headers + body.
  */
 export function withDepartmentAccess(
   ctx: TenantContext,
   request: FastifyRequest,
   body?: DepartmentAccessBody,
 ): TenantContext {
-  const headerVal = request.headers['x-department-access'];
-  const headerDepts =
-    typeof headerVal === 'string'
-      ? headerVal.split(',').map((s) => s.trim()).filter(Boolean)
-      : [];
-  const departments = normalizeDepartments([
-    ...ctx.departments,
-    ...headerDepts,
-    ...(body?.departmentAccess ?? []),
-  ]);
-  const allDepartmentAccess =
-    ctx.allDepartmentAccess ||
-    request.headers['x-all-departments'] === 'true' ||
-    body?.allDepartments === true;
+  if (env.FF_SESSION_DEPT_AUTHORITATIVE && ctx.sessionVerified) {
+    if (ctx.audience === 'customer' || ctx.allDepartmentAccess) return ctx;
+    // ctx.departments is the DB-resolved grant (authoritative). Ignore any claimed header/body
+    // access; log if a verified session tried to assert access it wasn't granted.
+    const claimed = claimedAccess(request, body);
+    const ungranted = claimed.departments.filter((d) => !ctx.departments.includes(d));
+    if (claimed.allDepartments || ungranted.length > 0) {
+      request.log.warn(
+        { userId: ctx.userId, claimed, granted: ctx.departments },
+        'verified session department claims ignored (DB-authoritative access)',
+      );
+    }
+    return ctx;
+  }
+  const claimed = claimedAccess(request, body);
+  const departments = normalizeDepartments([...ctx.departments, ...claimed.departments]);
+  const allDepartmentAccess = ctx.allDepartmentAccess || claimed.allDepartments;
   return { ...ctx, departments, allDepartmentAccess };
+}
+
+/**
+ * Shared department gate for the "direct" internal routes (Desk, Data Center, RingCentral,
+ * Retention): internal audience only, then admin / bypass / all-department / department-member.
+ */
+export function requireDepartment(
+  request: FastifyRequest,
+  department: KnownDepartment,
+  resourceLabel: string,
+): TenantContext {
+  const base = requireContext(request);
+  if (base.audience !== 'internal') throw new RBACError(`${resourceLabel} is internal-only`);
+  const ctx = withDepartmentAccess(base, request);
+  const ok =
+    ctx.role === 'admin' ||
+    ctx.bypassRbac === true ||
+    ctx.allDepartmentAccess ||
+    ctx.departments.includes(department);
+  if (!ok) throw new RBACError(`${resourceLabel} requires ${department} department access`);
+  return ctx;
 }

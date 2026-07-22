@@ -1,13 +1,15 @@
 # Mytrion external app — architecture & handoff spec
 
-This is the skeleton + contract for the **Mytrion** external React app. It replaces the old single
-Zoho-SDK chat widget with a multi-department app where **Zoho is a thin shim** that redirects here
-with the user's identity in the URL. Hand this file to the design agent (Claude Design) to flesh out
-each Mytrion's UI.
+This is the architecture doc for the **Mytrion** external React app. It replaced the old single
+Zoho-SDK chat widget with a multi-department app. Identity has since moved a second time: from
+URL params (the original shim contract, kept below for history) to a **verified Zoho OAuth
+session** — workers sign in with their own Zoho account and the backend mints a Bearer session.
 
-> Status: **scaffold complete, builds clean** (`pnpm -C apps/mytrion-crm build`). Per-Mytrion bodies are stubs
-> (shared shell + scoped chat + a "panels to build" checklist). The deployment wiring and the
-> per-Mytrion panels are the remaining work.
+> Status: **live app.** Sales is a full multi-tab workspace (`mytrions/sales/redesign/` — Home /
+> Inbox / Tickets / Open Pool / Data Center / Create / Automations / Dashboard / Carriers, wired
+> to Desk/CRM/servercrm + WebSockets); Finance is redesigned; other Mytrions range from scoped
+> chat shells to in-progress panels. Deployment (root mount + SPA fallback + committed `app/`
+> build) is wired. See README.md for the current quick-start.
 
 ---
 
@@ -24,55 +26,35 @@ We always receive four values: `userId`, `profile`, `role`, `userName`.
 
 ---
 
-## 2. URL contract (Zoho shim → this app)
+## 2. Identity — Zoho OAuth session (supersedes the URL contract)
 
-```
-https://<host>/m/:mytrion?uid=<userId>&profile=<profile>&role=<role>&uname=<userName>[&ts=<epochMs>&sig=<hmacHex>]
-```
+> The original URL contract (`/m/:mytrion?uid=…&profile=…&role=…&uname=…` populated by a Zoho
+> shim) is **retired**. URL params no longer carry identity; `/m/billing` etc. are plain in-app
+> routes. The §8 "advisory params" decision is superseded by this section.
 
-- `:mytrion` — destination slug (`admin|sales|billing|finance|retention|verification|customer-service|manager`).
-  **Optional**: if the shim can't pick one, target `/` and the app resolves the landing (picker / auto-enter).
-- `uid, profile, role, uname` — always present, URL-encoded.
-- `ts, sig` — optional trust params (see §8 trust model). Currently **advisory** (captured, forwarded, not verified client-side).
-
-On load, `UserContextProvider` parses these **once**, then **strips them from the address bar**
-(`history.replaceState`) so identity isn't bookmarked/re-shared. `/m/billing` is the clean canonical
-in-app URL; cross-Mytrion navigation is client-side (no re-redirect through Zoho).
-
-### The Zoho shim (you create this in CRM — pseudo/Deluge)
-
-A widget or button whose HTML reads the user and redirects. Sketch:
-
-```javascript
-// In a Zoho widget that DOES have the SDK (or a Deluge button that has the user in context):
-ZOHO.embeddedApp.on("PageLoad", function () {
-  ZOHO.CRM.CONFIG.getCurrentUser().then(function (res) {
-    var u = res.users[0];
-    var base = "https://octane-ops-ai.onrender.com/m/" + pickMytrion(u);  // or "/" to let the app decide
-    var qs =
-      "uid=" + encodeURIComponent(u.id) +
-      "&profile=" + encodeURIComponent(u.profile.name) +
-      "&role=" + encodeURIComponent(u.role.name) +
-      "&uname=" + encodeURIComponent(u.full_name);
-    window.open(base + "?" + qs, "_blank");   // or location.href to navigate in place
-  });
-  ZOHO.embeddedApp.init();
-});
-```
-
-`pickMytrion(u)` can map profile→slug, or just omit the slug and let this app's picker resolve it.
-The shim is the **only** place any Zoho SDK code now lives.
+- `api/auth.ts` — `beginZohoLogin()` redirects to the backend's Zoho OAuth start (authorization-
+  code flow, `FF_ZOHO_OAUTH_ENABLED` server-side); `completeZohoCallbackIfPresent()` finishes the
+  exchange. The **backend** talks to Zoho and reads the CRM user — the browser never sees Zoho
+  credentials.
+- `api/session.ts` — the minted Bearer session (`octane.session.v1` in localStorage):
+  `{ accessToken, refreshToken, worker }` where `worker` is the VERIFIED identity
+  (zohoUserId / userName / profile / role). `api/transport.ts` attaches the Bearer and
+  auto-refreshes on 401.
+- Admin **View-as** (`api/impersonation.ts`): only `x-act-as-zoho-user-id` is sent; the backend
+  verifies the target against the CRM directory, gates it to admins, and audits it.
 
 ---
 
 ## 3. Context ingestion — `apps/mytrion-crm/src/context/`
 
-- `userContext.ts` — `readUserContext(search)` → `{ok, context}|{ok:false,error}`. Requires all four
-  values; in `import.meta.env.DEV` falls back to a mock admin so `vite dev` works standalone.
-- `UserContextProvider.tsx` — reads once, strips params, provides `UserContext`; `useUserContext()`
-  hook for any component. Missing/invalid → renders the "open from CRM" fallback.
+- `userContext.ts` — `contextFromWorker(session.worker)` maps the verified session onto
+  `UserContext`; the only non-session path is the explicit dev bypass (`VITE_DEV_MOCK_AUTH=1`,
+  mock admin) so `vite dev` can run standalone.
+- `UserContextProvider.tsx` — no session → renders `LoginGate` (sign-in screen); with a session
+  provides `UserContext` via `useUserContext()`.
 
-`UserContext = { userId, profile, role, userName, ts?, sig?, trusted }`.
+`UserContext = { userId, profile, role, userName, trusted }` (`trusted` is false only for the
+dev mock).
 
 ---
 
@@ -117,9 +99,11 @@ the build code-splits one chunk per Mytrion).
 
 ## 6. Per-Mytrion structure — `apps/mytrion-crm/src/mytrions/<id>/`
 
-Every Mytrion is `mytrions/<id>/index.tsx` with a **default export** that renders `<MytrionScaffold id=…>`
-(shared `MytrionShell` chrome + the scoped `ChatPanel` + a "panels to build" checklist). Uniform shape;
-the design agent adds panels per Mytrion.
+Every Mytrion is `mytrions/<id>/index.tsx` with a **default export**. Two shapes exist today:
+- **Bespoke workspaces** — Sales (`sales/index.tsx` re-exports `sales/redesign/`: Shell + nine
+  tabs + live data layer + WebSocket badges) and Finance's redesign. These own their whole UI.
+- **Scaffold Mytrions** — `<MytrionScaffold id=…>` (shared `MytrionShell` chrome + the scoped
+  `ChatPanel`), the starting shape for departments whose panels aren't built yet.
 
 **Shared (do not duplicate):** `features/chat/*` (the AI chat surface), `components/*` (Card/Badge/
 StatusMessage/KeyValueList), `api/*` (transport + stream). A Mytrion that's "chat + dept scope" is
@@ -160,55 +144,46 @@ templates/reactivity. Existing widgets live in `~/Desktop/Octane-Project/zoho-oc
 
 ---
 
-## 8. Trust & auth (decided + open)
+## 8. Trust & auth (decided)
 
-- **URL params are advisory (DECIDED).** They drive UI/routing only and are spoofable. The security
-  boundary is the backend (`x-api-key` + server-side `department_access` RBAC). Spoofing `profile=`
-  only reaches a Mytrion **shell**, not data the backend won't release. `ts`/`sig` are captured and
-  can be forwarded (`x-octane-sig`/`x-octane-ts`) for future HMAC verification; the browser never
-  holds the secret.
-- **OPEN — same-origin auth to `/v1`:** in prod the browser sends no `x-api-key`. The backend must
-  accept same-origin widget requests without it (e.g. Origin/Referer check, a widget-scoped route
-  prefix, or a short session minted when the app loads). Decide before launch.
-
----
-
-## 9. Deployment (remaining wiring — not done in the skeleton)
-
-The app builds to `apps/mytrion-crm/app/` (vite `base: './'`, so assets are relative and work at any mount point).
-**`apps/mytrion-crm/app` was intentionally left at the previous committed build** so the current `/widget` deploy
-isn't broken mid-pivot. To go live:
-
-1. **Decide the mount point.** URL contract uses **root** `/m/:mytrion`. Either:
-   - serve the app at **root `/`** (recommended; matches the contract), or
-   - keep it at `/widget` and set a router `basename="/widget"` + adjust the shim URL.
-2. **SPA fallback (required).** Deep-links like `/m/billing` have no file on disk — the server must
-   serve `index.html` for any non-`/v1`, non-asset path. Update the static host
-   (`src/plugins/widgetStatic.ts`) or add a catch-all that returns the app's `index.html`.
-3. **Rebuild + vendor:** `pnpm -C apps/mytrion-crm build` (writes `apps/mytrion-crm/app/`), then commit `apps/mytrion-crm/app` so the
-   Dockerfile ships it (see the repo's `render-builds-from-dockerfile` note: the Docker runtime stage
-   copies `apps/mytrion-crm/app`).
-4. Confirm `Dockerfile` still `COPY --from=build /app/apps/mytrion-crm/app ./apps/mytrion-crm/app`.
+- **The Bearer session is the boundary (DECIDED — supersedes the "advisory URL params" model).**
+  Identity comes from the verified Zoho OAuth session (§2); the backend re-derives role and
+  department access from the verified Zoho profile/role on EVERY request
+  (session-authoritative RBAC). Client-supplied identity/department headers are ignored for
+  signed-in users — `x-department-access` assertions in the api clients are legacy no-ops kept
+  only for the rollback flag.
+- **Act-as is admin-only and audited** — the target's authority is looked up server-side in the
+  CRM directory, never taken from headers.
+- The old "same-origin auth without a key" open question is resolved by the session: prod sends
+  the Bearer token; the static `x-api-key` remains a dev/server-to-server path only.
 
 ---
 
-## 10. Open decisions (confirm before/while building)
+## 9. Deployment (wired)
 
-1. **Mount point**: root `/` vs `/widget` + basename (§9.1). Recommend root.
-2. **Same-origin `/v1` auth** without shipping the key (§8). Backend owner decides.
-3. **Admin/Manager/Finance scope**: are managers/finance **hierarchical** (retrieve across all
+The app builds to `apps/mytrion-crm/app/` (vite `base: './'`, relative assets), which is
+**committed** — the Docker runtime stage copies it and the backend serves it same-origin with an
+SPA fallback for `/m/:mytrion` deep links. Ship a UI change by rebuilding
+(`pnpm -C apps/mytrion-crm build`) and committing `apps/mytrion-crm/app/`. Client export helpers
+(jsPDF + pdf/excel/download utils) are vendored under `public/vendor/mytrion/` and ride along in
+the build — no runtime CDN loads.
+
+---
+
+## 10. Open decisions (remaining)
+
+1. **Admin/Manager/Finance scope**: are managers/finance **hierarchical** (retrieve across all
    departments like admin, `allDepartments:true`) or own-slug only? Sets their `department_scope`.
    (Manager's `allDepartments` is currently `false`.)
-4. **New Mytrions** (retention/verification/manager) ship as **stubs** now; real panels later.
+2. **Scaffold Mytrions** (retention/verification/manager/…): which gets a bespoke workspace next,
+   following the Sales redesign's shape.
 
 ---
 
-## 11. Claude Design — next steps
+## 11. History — original porting plan
 
-1. Fill real profile/role/user names in `mytrions.config.ts`.
-2. Build per-Mytrion panels following the porting map (§6), reusing the existing widgets' logic.
-3. Wire deployment (§9): mount point + SPA fallback + rebuild + vendor `apps/mytrion-crm/app`.
-4. (If chosen) implement HMAC verify on the backend for `sig`/`ts` (§8).
+The porting map in §6 and the file map below describe the original skeleton handoff; they remain
+as background for porting the remaining Mytrions.
 
 **File map of the skeleton**
 

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useSessionUser } from '../../sales/redesign/sessionUser';
-import { FinanceContext } from './ctx';
+import { FinanceContext, type ToastType } from './ctx';
 import { s, Svg } from './dc';
-import { NAV, NAV_LABEL, navBtnStyle, relTime, suspendedCount, topDebtors, type DashSub, type FinanceSection } from './financeData';
+import { NAV, NAV_LABEL, navBtnStyle, relTime, type DashSub, type FinanceSection } from './financeData';
+import { buildLiveItem, seedLiveFeed, type LiveFeedItem } from './financeLive';
 import { ICONS } from './financeUi';
 import { ClientModal, TxModal } from './modals';
 import { DashboardTab } from './tabs/DashboardTab';
@@ -11,6 +12,9 @@ import { ClientsTab } from './tabs/ClientsTab';
 import { HomeTab } from './tabs/HomeTab';
 import { TransactionsTab } from './tabs/TransactionsTab';
 import type { ClientDrillTab } from './financeData';
+import { useTheme } from '../../../hooks/useTheme';
+import { useLoad } from '../../_shared/useLoad';
+import { financeTouchpoint } from '../../../api/finance';
 import type { Client, TransactionLine } from '../data';
 import './theme.css';
 
@@ -18,47 +22,132 @@ const SUN = 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.
 const MOON = 'M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z';
 const DOLLAR = 'M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6';
 
+const TOAST_ICON: Record<ToastType, string> = {
+  success: ICONS.check,
+  error: ICONS.alert,
+  warning: ICONS.alert,
+  info: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+};
+
+const TOAST_KIND: Record<ToastType, 'ok' | 'danger' | 'warn' | 'accent'> = {
+  success: 'ok',
+  error: 'danger',
+  warning: 'warn',
+  info: 'accent',
+};
+
+function toastIconStyle(type: ToastType): string {
+  const k = TOAST_KIND[type];
+  const m = {
+    ok: ['var(--ok-s)', 'var(--ok)'],
+    danger: ['var(--danger-s)', 'var(--danger)'],
+    warn: ['var(--warn-s)', 'var(--warn)'],
+    accent: ['var(--accent-s)', 'var(--accent)'],
+  }[k];
+  return `width:34px;height:34px;border-radius:var(--radius-md);background:${m[0]};color:${m[1]};display:flex;align-items:center;justify-content:center;flex-shrink:0`;
+}
+
 export function FinanceRedesign() {
   const user = useSessionUser();
-  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+
+  const dashDebtorsRes = useLoad(() => financeTouchpoint('finance.debtors', {}), []);
+  const txFeedRes = useLoad(() => financeTouchpoint('finance.main_transactions', {}), []);
+  const fuelingMetricsRes = useLoad(() => financeTouchpoint('finance.analytics_fueling', {}), []);
+  const clientsRes = useLoad(() => financeTouchpoint('finance.clients', {}), []);
+
+  const mainRef = useRef<HTMLElement>(null);
+  const sectionTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const liveIntervalRef = useRef<ReturnType<typeof setInterval>>();
+
+  const { theme, toggle: toggleTheme } = useTheme();
   const [section, setSection] = useState<FinanceSection>('home');
-  const [dashSub, setDashSub] = useState<DashSub>('debtors');
-  const [booting, setBooting] = useState(true);
-  const [bootPct, setBootPct] = useState(8);
+  const [dashSub, setDashSubState] = useState<DashSub>('debtors');
   const [, tick] = useState(0);
   const [lastSync, setLastSync] = useState(() => new Date());
-  const [toast, setToast] = useState<{ title: string; msg: string } | null>(null);
+  const [toast, setToast] = useState<{ title: string; msg: string; type: ToastType } | null>(null);
   const [txSel, setTxSel] = useState<TransactionLine | null>(null);
   const [clientSel, setClientSel] = useState<Client | null>(null);
   const [clientTab, setClientTab] = useState<ClientDrillTab>('invoices');
   const [drillLoading, setDrillLoading] = useState(false);
 
+  const [panelKey, setPanelKey] = useState(0);
+  const [homeLoading, setHomeLoading] = useState(true);
+  const [txLoading, setTxLoading] = useState(true);
+  const [clLoading, setClLoading] = useState(true);
+  const [dashLoading, setDashLoading] = useState(true);
+  const [liveFeed, setLiveFeed] = useState<LiveFeedItem[]>(() => seedLiveFeed());
+  const [liveNew, setLiveNew] = useState(0);
+
+  const startAnim = useCallback(() => setPanelKey((k) => k + 1), []);
+
+  const settleSection = useCallback((id: FinanceSection) => {
+    clearTimeout(sectionTimerRef.current);
+    const ms = id === 'dashboard' ? 750 : 700;
+    if (id === 'home') {
+      setHomeLoading(true);
+      sectionTimerRef.current = setTimeout(() => setHomeLoading(false), ms);
+    } else if (id === 'transactions') {
+      setTxLoading(true);
+      sectionTimerRef.current = setTimeout(() => setTxLoading(false), ms);
+    } else if (id === 'clients') {
+      setClLoading(true);
+      sectionTimerRef.current = setTimeout(() => setClLoading(false), ms);
+    } else if (id === 'dashboard') {
+      setDashLoading(true);
+      sectionTimerRef.current = setTimeout(() => setDashLoading(false), ms);
+    }
+  }, []);
+
+  const tickLive = useCallback(() => {
+    // Live feed currently not connected to real WebSocket.
+    setLiveNew((n) => n + 1);
+    setLastSync(new Date());
+  }, []);
+
   useEffect(() => {
-    const bootInterval = setInterval(() => {
-      setBootPct((p) => Math.min(100, p + 10 + Math.random() * 17));
-    }, 150);
-    const bootDone = setTimeout(() => {
-      clearInterval(bootInterval);
-      setBooting(false);
-      setBootPct(100);
-    }, 1650);
+    // No second boot splash — MytrionGuard Suspense owns the entry loader.
+    startAnim();
+    settleSection('home');
+    liveIntervalRef.current = setInterval(tickLive, 5600);
     const clock = setInterval(() => tick((n) => n + 1), 20_000);
     return () => {
-      clearInterval(bootInterval);
-      clearTimeout(bootDone);
       clearInterval(clock);
+      clearInterval(liveIntervalRef.current);
+      clearTimeout(sectionTimerRef.current);
+      clearTimeout(toastTimerRef.current);
     };
+  }, [settleSection, startAnim, tickLive]);
+
+  const pushToast = useCallback((title: string, msg: string, type: ToastType = 'success') => {
+    setToast({ title, msg, type });
+    clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 3400);
   }, []);
 
-  const pushToast = useCallback((title: string, msg: string) => {
-    setToast({ title, msg });
-    setTimeout(() => setToast(null), 3400);
-  }, []);
+  const resetLiveNew = useCallback(() => setLiveNew(0), []);
 
-  const go = useCallback((next: FinanceSection) => {
-    setSection(next);
-    setTxSel(null);
-  }, []);
+  const go = useCallback(
+    (next: FinanceSection) => {
+      setSection(next);
+      setTxSel(null);
+      mainRef.current?.scrollTo({ top: 0 });
+      startAnim();
+      settleSection(next);
+    },
+    [settleSection, startAnim],
+  );
+
+  const setDashSub = useCallback(
+    (sub: DashSub) => {
+      setDashSubState(sub);
+      setDashLoading(true);
+      clearTimeout(sectionTimerRef.current);
+      sectionTimerRef.current = setTimeout(() => setDashLoading(false), 650);
+      startAnim();
+    },
+    [startAnim],
+  );
 
   const openTx = useCallback((tx: TransactionLine) => setTxSel(tx), []);
   const openClient = useCallback((client: Client, tab: ClientDrillTab = 'invoices') => {
@@ -72,23 +161,61 @@ export function FinanceRedesign() {
   const ctx = useMemo(
     () => ({
       theme,
-      toggleTheme: () => setTheme((t) => (t === 'light' ? 'dark' : 'light')),
+      toggleTheme,
       section,
       go,
       dashSub,
       setDashSub,
+      panelKey,
+      startAnim,
+      homeLoading,
+      txLoading,
+      clLoading,
+      dashLoading,
+      liveFeed,
+      liveNew,
+      resetLiveNew,
       pushToast,
       openTx,
       openClient,
       lastSync,
       refreshSync,
+      dashDebtors: Array.isArray((dashDebtorsRes.data as any)?.debtors) ? (dashDebtorsRes.data as any).debtors : Array.isArray((dashDebtorsRes.data as any)?.data) ? (dashDebtorsRes.data as any).data : Array.isArray(dashDebtorsRes.data) ? dashDebtorsRes.data : [],
+      dashPayments: Array.isArray((txFeedRes.data as any)?.records) ? (txFeedRes.data as any).records : Array.isArray((txFeedRes.data as any)?.data) ? (txFeedRes.data as any).data : Array.isArray(txFeedRes.data) ? txFeedRes.data : [],
+      txFeed: Array.isArray((txFeedRes.data as any)?.records) ? (txFeedRes.data as any).records : Array.isArray((txFeedRes.data as any)?.data) ? (txFeedRes.data as any).data : Array.isArray(txFeedRes.data) ? txFeedRes.data : [],
+      clientsFeed: Array.isArray((clientsRes.data as any)?.records) ? (clientsRes.data as any).records : Array.isArray((clientsRes.data as any)?.data) ? (clientsRes.data as any).data : Array.isArray(clientsRes.data) ? clientsRes.data : [],
+      fuelingMetrics: fuelingMetricsRes.data || {},
     }),
-    [theme, section, go, dashSub, pushToast, openTx, openClient, lastSync, refreshSync],
+    [
+      theme,
+      section,
+      go,
+      dashSub,
+      setDashSub,
+      panelKey,
+      startAnim,
+      homeLoading,
+      txLoading,
+      clLoading,
+      dashLoading,
+      liveFeed,
+      liveNew,
+      resetLiveNew,
+      pushToast,
+      openTx,
+      openClient,
+      lastSync,
+      refreshSync,
+      dashDebtorsRes.data,
+      txFeedRes.data,
+      clientsRes.data,
+      fuelingMetricsRes.data,
+    ],
   );
 
   const timeFmt = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  const debtorBadge = topDebtors().length;
-  const suspendedBadge = suspendedCount();
+  const debtorBadge = Array.isArray(ctx.dashDebtors) ? ctx.dashDebtors.length : 0;
+  const suspendedBadge = Array.isArray(ctx.clientsFeed) ? ctx.clientsFeed.filter((c: any) => c.suspended).length : 0;
 
   return (
     <FinanceContext.Provider value={ctx}>
@@ -96,36 +223,9 @@ export function FinanceRedesign() {
         className={`mf-root ${theme === 'light' ? 'light' : ''}`}
         style={s('height:100vh;display:flex;flex-direction:row;background:radial-gradient(1200px 520px at 82% -10%, rgba(var(--accent-rgb),.11), transparent 60%), radial-gradient(900px 480px at -5% 110%, rgba(var(--teal-rgb),.07), transparent 55%), var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;font-size:14px;overflow:hidden;position:relative')}
       >
-        {booting && (
-          <div style={s('position:absolute;inset:0;z-index:300;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;background:radial-gradient(700px 420px at 50% 42%, rgba(var(--accent-rgb),.10), transparent 70%), var(--bg)')}>
-            <div style={s('position:absolute;top:0;left:0;right:0;height:2px;overflow:hidden')}>
-              <div style={s('position:absolute;top:0;left:0;height:2px;width:32%;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:mf-sweep 1.5s linear infinite')} />
-            </div>
-            <div style={s('position:relative;width:118px;height:118px;display:flex;align-items:center;justify-content:center')}>
-              <div style={s('position:absolute;inset:0;border-radius:50%;border:2px solid var(--border)')} />
-              <div style={s('position:absolute;inset:0;border-radius:50%;border:2px solid transparent;border-top-color:var(--accent);border-right-color:rgba(var(--accent-rgb),.5);animation:mf-spin 1s linear infinite')} />
-              <div style={s('position:absolute;inset:15px;border-radius:50%;border:1.5px solid transparent;border-bottom-color:var(--accent-2);animation:mf-spin 1.5s linear infinite reverse')} />
-              <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:14px;letter-spacing:.13em;text-transform:uppercase;text-align:center;line-height:1.05")}>
-                My<span style={s('color:var(--accent)')}>trion</span>
-                <br />
-                <span style={s('font-size:9px;letter-spacing:.28em;color:var(--muted)')}>FINANCE</span>
-              </div>
-            </div>
-            <div style={s('text-align:center')}>
-              <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:17px;letter-spacing:.09em;text-transform:uppercase')}>Connecting to Finance</div>
-              <div style={s('font-size:12.5px;color:var(--muted);margin-top:5px')}>
-                Securing your workspace<span style={{ animation: 'mf-pulse 1.2s infinite' }}>…</span>
-              </div>
-            </div>
-            <div style={s('width:220px;height:3px;border-radius:99px;background:var(--raised);overflow:hidden')}>
-              <div style={s(`height:100%;width:${bootPct}%;background:linear-gradient(90deg,var(--accent),var(--accent-2));border-radius:99px;transition:width .18s ease`)} />
-            </div>
-          </div>
-        )}
-
         <aside style={s('flex-shrink:0;width:236px;display:flex;flex-direction:column;background:color-mix(in srgb, var(--bg) 82%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-right:1px solid var(--border);position:relative;z-index:30')}>
           <div style={s('display:flex;align-items:center;gap:11px;padding:18px 18px 15px')}>
-            <div style={s('width:37px;height:37px;border-radius:11px;background:linear-gradient(140deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;box-shadow:0 5px 16px rgba(var(--accent-rgb),.42);flex-shrink:0')}>
+            <div style={s('width:37px;height:37px;border-radius:var(--radius-md);background:linear-gradient(140deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;box-shadow:0 5px 16px rgba(var(--accent-rgb),.42);flex-shrink:0')}>
               <Svg d={DOLLAR} size={20} stroke="#04150F" strokeWidth={2.4} />
             </div>
             <div style={s('line-height:1.12;min-width:0')}>
@@ -165,11 +265,11 @@ export function FinanceRedesign() {
             })}
           </nav>
           <div style={s('padding:12px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px')}>
-            <button type="button" onClick={ctx.toggleTheme} className="mf-ico" style={s('height:38px;padding:0 12px;display:flex;align-items:center;gap:9px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase')}>
+            <button type="button" onClick={ctx.toggleTheme} className="mf-ico" style={s('height:38px;padding:0 12px;display:flex;align-items:center;gap:9px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase')}>
               <Svg d={theme === 'light' ? MOON : SUN} size={16} />
               <span style={s('flex:1;text-align:left')}>{theme === 'light' ? 'Dark' : 'Light'} mode</span>
             </button>
-            <div style={s('display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:12px;background:var(--surface);border:1px solid var(--border)')}>
+            <div style={s('display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
               <div style={s('width:33px;height:33px;border-radius:50%;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#04150F;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0')}>
                 {user.initials}
               </div>
@@ -197,12 +297,12 @@ export function FinanceRedesign() {
               <div style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text2)")}>{timeFmt}</div>
             </div>
           </div>
-          <main className="mf-scroll" style={s('flex:1;min-height:0;position:relative')}>
+          <main ref={mainRef} className="mf-scroll" style={s('flex:1;min-height:0;position:relative')}>
             <div style={s('max-width:1200px;margin:0 auto;padding:22px 24px 96px')}>
-              {section === 'home' && <HomeTab />}
-              {section === 'transactions' && <TransactionsTab />}
-              {section === 'clients' && <ClientsTab />}
-              {section === 'dashboard' && <DashboardTab />}
+              {section === 'home' && <HomeTab key={panelKey} />}
+              {section === 'transactions' && <TransactionsTab key={panelKey} />}
+              {section === 'clients' && <ClientsTab key={panelKey} />}
+              {section === 'dashboard' && <DashboardTab key={panelKey} />}
             </div>
           </main>
         </div>
@@ -223,9 +323,9 @@ export function FinanceRedesign() {
         ) : null}
 
         {toast ? (
-          <div style={s('position:fixed;right:22px;bottom:22px;z-index:400;display:flex;align-items:flex-start;gap:12px;min-width:280px;max-width:380px;padding:14px 15px;border-radius:13px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);animation:mf-slidein .3s cubic-bezier(.2,0,0,1) both')}>
-            <div style={s('width:34px;height:34px;border-radius:10px;background:var(--ok-s);color:var(--ok);display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
-              <Svg d={ICONS.check} size={17} strokeWidth={2.4} />
+          <div style={s('position:fixed;right:22px;bottom:22px;z-index:400;display:flex;align-items:flex-start;gap:12px;min-width:280px;max-width:380px;padding:14px 15px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);animation:mf-slidein .3s cubic-bezier(.2,0,0,1) both')}>
+            <div style={s(toastIconStyle(toast.type))}>
+              <Svg d={TOAST_ICON[toast.type]} size={17} strokeWidth={2.4} />
             </div>
             <div style={s('flex:1;min-width:0')}>
               <div style={s('font-size:13px;font-weight:700;color:var(--text)')}>{toast.title}</div>
@@ -236,7 +336,7 @@ export function FinanceRedesign() {
               onClick={() => setToast(null)}
               aria-label="Dismiss"
               className="mf-ico"
-              style={s('width:24px;height:24px;border-radius:7px;border:none;background:transparent;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0')}
+              style={s('width:24px;height:24px;border-radius:var(--radius-md);border:none;background:transparent;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0')}
             >
               <Svg d={ICONS.close} size={13} strokeWidth={2.2} />
             </button>

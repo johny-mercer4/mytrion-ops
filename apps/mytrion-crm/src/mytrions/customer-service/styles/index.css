@@ -1,0 +1,18 @@
+/* Customer Service Mytrion — the zoho-octane widget's "Paper White / Royal Blue" design
+   system, ported verbatim and machine-scoped under `.cs-root` (scripted; see the branch
+   notes) so its :root/body globals can't leak into the other Mytrions. Source of truth:
+   zoho-octane/app/mytrion-customer-service/css/. */
+@import './shared-theme.css';
+@import './shared-base.css';
+@import './shared-modal.css';
+@import './home-panel.css';
+@import './inbox-panel.css';
+@import './applications-panel.css';
+@import './service-center-panel.css';
+@import './citi-fuel-panel.css';
+@import './retention-panel.css';
+@import './datacenter-panel.css';
+@import './analytics-panel.css';
+@import './shared-effects.css';
+@import './shared-responsive.css';
+@import './overrides.css';

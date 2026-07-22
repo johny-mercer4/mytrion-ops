@@ -9,6 +9,145 @@
   color: var(--text-primary);
 }
 
+/* ── Zoho auth (login + OAuth callback) ─────────────────────────────────────── */
+.authScreen {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(900px 420px at 50% -10%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%),
+    radial-gradient(620px 280px at 80% 110%, color-mix(in srgb, var(--orange) 10%, transparent), transparent 65%),
+    var(--bg-primary);
+}
+
+.authGlow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--text-primary) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--text-primary) 4%, transparent) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 40%, #000 20%, transparent 75%);
+  opacity: 0.55;
+}
+
+.authCard {
+  position: relative;
+  z-index: 1;
+  width: min(420px, 100%);
+  gap: 14px;
+  padding: 40px 36px 32px;
+  background: rgba(30, 41, 59, 0.6); /* Translucent background */
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  animation: authIn 220ms var(--ease-out, ease-out);
+}
+
+@keyframes authIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+
+
+.authEyebrow {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.authProgress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  border: 1px solid var(--border-light);
+}
+
+.authSpinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border-top-color: var(--accent);
+  animation: authSpin 0.75s linear infinite;
+  flex: none;
+}
+
+@keyframes authSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.authSteps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+}
+
+.authStepIdle,
+.authStepActive,
+.authStepDone {
+  position: relative;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+.authStepIdle::before,
+.authStepActive::before,
+.authStepDone::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.45em;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.authStepActive {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.authStepActive::before {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.authStepDone {
+  color: var(--text-secondary);
+}
+.authStepDone::before {
+  background: var(--success);
+}
+
 .card {
   display: flex;
   flex-direction: column;
@@ -27,7 +166,8 @@
   font-family: var(--font-head);
   font-size: 22px;
   font-weight: 700;
-  margin: 6px 0 0;
+  margin: 0;
+  letter-spacing: 0.01em;
 }
 
 .body {
@@ -35,6 +175,7 @@
   font-size: 13.5px;
   line-height: 1.6;
   color: var(--text-secondary);
+  max-width: 34ch;
 }
 
 .link {
@@ -49,31 +190,67 @@
 }
 
 .button {
-  margin-top: 8px;
-  padding: 11px 20px;
-  font-family: var(--font-head);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 6px;
+  min-width: 220px;
+  height: 42px;
+  padding: 0 22px;
+  font-family: var(--font-body);
   font-size: 14px;
   font-weight: 600;
-  color: #fff;
+  color: var(--on-accent);
   background: var(--accent);
-  border: none;
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: opacity 0.12s ease;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 28%, transparent);
+  transition:
+    background 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease,
+    opacity 140ms ease;
 }
-.button:hover {
-  opacity: 0.9;
+.button:hover:not(:disabled) {
+  background: var(--accent-strong);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 36%, transparent);
+}
+.button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-glow);
 }
 .button:disabled {
-  opacity: 0.55;
-  cursor: default;
+  opacity: 0.72;
+  cursor: wait;
+  box-shadow: none;
+}
+
+.buttonSpin {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--on-accent) 35%, transparent);
+  border-top-color: var(--on-accent);
+  animation: authSpin 0.7s linear infinite;
+  flex: none;
 }
 
 .error {
-  margin: 0;
-  font-size: 13px;
+  margin: 4px 0 0;
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 12.5px;
   line-height: 1.5;
-  color: var(--danger, #d64545);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 32%, var(--border));
+  border-radius: var(--radius-md);
+  text-align: left;
 }
 
 .form {
@@ -97,4 +274,14 @@
 .input:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .authCard {
+    animation: none;
+  }
+  .authSpinner,
+  .buttonSpin {
+    animation: none;
+  }
 }

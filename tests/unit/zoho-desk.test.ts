@@ -2,13 +2,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }));
 
-vi.mock('../../src/integrations/wrapper.js', () => ({
+vi.mock('../../src/integrations/zohoAuth.js', () => ({
   authHeaders: async () => ({ Authorization: 'Zoho-oauthtoken test', orgId: '123' }),
   baseUrl: () => 'https://desk.zoho.com/api/v1',
+  invalidateZohoToken: () => {},
 }));
 vi.stubGlobal('fetch', fetchMock);
 
-import { listDepartments, listTickets } from '../../src/integrations/zohoDesk.js';
+import {
+  getTicketAttachments,
+  listDepartments,
+  listTickets,
+  uploadTicketAttachment,
+} from '../../src/integrations/zohoDesk.js';
 import { zohoDeskSearchTicketsTool } from '../../src/modules/tools/definitions/zoho_desk_search_tickets.js';
 import { makeContext } from '../fixtures/seed.js';
 
@@ -95,6 +101,35 @@ describe('zohoDesk.listDepartments', () => {
     await listDepartments(999);
     const url = fetchMock.mock.calls[0]?.[0] as URL;
     expect(url.searchParams.get('limit')).toBe('200');
+  });
+});
+
+describe('zohoDesk.getTicketAttachments', () => {
+  it("lists a ticket's Attachments-tab entries (not comment/thread attachments)", async () => {
+    fetchMock.mockResolvedValue(
+      deskResponse([
+        { id: 'att_1', name: 'invoice.pdf', size: 2048, creatorId: '55', createdTime: '2026-07-01T00:00:00Z' },
+      ]),
+    );
+    const out = await getTicketAttachments('tk_1');
+    expect(out).toEqual([
+      { id: 'att_1', name: 'invoice.pdf', size: 2048, creatorId: '55', createdTime: '2026-07-01T00:00:00Z' },
+    ]);
+    const url = fetchMock.mock.calls[0]?.[0] as URL;
+    expect(url.pathname).toBe('/api/v1/tickets/tk_1/attachments');
+  });
+});
+
+describe('zohoDesk.uploadTicketAttachment', () => {
+  it('uploads straight to the ticket (POST /tickets/{id}/attachments), not a comment', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, text: async () => JSON.stringify({ id: 'att_9' }) });
+    const out = await uploadTicketAttachment('tk_1', Buffer.from('hi'), 'note.txt', 'text/plain', true);
+    expect(out).toEqual({ id: 'att_9' });
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(url.pathname).toBe('/api/v1/tickets/tk_1/attachments');
+    expect(url.searchParams.get('isPublic')).toBe('true');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeInstanceOf(FormData);
   });
 });
 

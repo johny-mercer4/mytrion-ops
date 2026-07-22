@@ -8,11 +8,18 @@ import type { UserContext } from '../context/userContext';
 import {
   ADMIN_PROFILES,
   ADMIN_ROLES,
+  COMING_SOON_MYTRION_IDS,
   MYTRIONS,
   MYTRION_ORDER,
   type MytrionAccessRule,
   type MytrionId,
 } from './mytrions.config';
+
+const COMING_SOON = new Set<MytrionId>(COMING_SOON_MYTRION_IDS);
+
+function isEnterable(id: MytrionId): boolean {
+  return !COMING_SOON.has(id);
+}
 
 const eq = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
 const inList = (value: string, list: string[]): boolean => Boolean(value) && list.some((x) => eq(x, value));
@@ -25,6 +32,9 @@ const containsAny = (value: string, list: string[] | undefined): boolean => {
 
 /** True if the user's profile/role marks them as an admin. */
 export function isAdmin(ctx: UserContext): boolean {
+  // Verified sessions carry the DB-resolved flag; trust it. Fall back to the static markers only
+  // for the dev mock / legacy sessions with no server-resolved access.
+  if (ctx.allDepartmentAccess !== undefined) return ctx.allDepartmentAccess;
   return inList(ctx.profile, ADMIN_PROFILES) || inList(ctx.role, ADMIN_ROLES);
 }
 
@@ -42,17 +52,33 @@ export function ruleAllows(ctx: UserContext, rule: MytrionAccessRule, admin: boo
 export interface AccessResult {
   accessible: MytrionId[];
   isAdmin: boolean;
+  /** Auto-route landing target for a verified session (else null → picker / single-accessible). */
+  homeMytrion: MytrionId | null;
 }
 
-/** The Mytrions this user may enter, in display order. */
+/**
+ * The Mytrions this user may enter, in display order. Verified sessions use the server-resolved
+ * list (DB-authoritative, kept in display order); the static table is the dev-mock/legacy fallback.
+ */
 export function resolveAccessibleMytrions(ctx: UserContext): AccessResult {
   const admin = isAdmin(ctx);
-  const accessible = MYTRION_ORDER.filter((id) => ruleAllows(ctx, MYTRIONS[id], admin));
-  return { accessible, isAdmin: admin };
+  if (ctx.accessibleMytrions) {
+    const granted = new Set(ctx.accessibleMytrions);
+    const accessible = MYTRION_ORDER.filter((id) => granted.has(id) && isEnterable(id));
+    const home =
+      ctx.homeMytrion && accessible.includes(ctx.homeMytrion) ? ctx.homeMytrion : null;
+    return { accessible, isAdmin: admin, homeMytrion: home };
+  }
+  const accessible = MYTRION_ORDER.filter(
+    (id) => isEnterable(id) && ruleAllows(ctx, MYTRIONS[id], admin),
+  );
+  return { accessible, isAdmin: admin, homeMytrion: null };
 }
 
 /** Single-Mytrion gate used by the route guard. */
 export function canAccess(ctx: UserContext, id: MytrionId): boolean {
+  if (!isEnterable(id)) return false;
+  if (ctx.accessibleMytrions) return ctx.accessibleMytrions.includes(id);
   const rule = MYTRIONS[id];
   return rule ? ruleAllows(ctx, rule) : false;
 }

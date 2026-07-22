@@ -7,6 +7,7 @@
  */
 import { env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
+import { HttpWrapper } from './core/base.js';
 import { createTokenProvider, type TokenProvider } from './tokenCache.js';
 
 export type CmpEnvironment = 'sandbox' | 'production';
@@ -113,3 +114,46 @@ export function clearCmpTokenCache(): void {
   for (const provider of providers.values()) provider.clear();
   providers.clear();
 }
+
+/**
+ * CMP wrapper class over the auth helpers above (still auth-only — no CMP tool calls exist
+ * yet). Requests made through `request()` inherit fetchWithTimeout and force-refresh the
+ * bearer once after a 401.
+ */
+export class CmpWrapper extends HttpWrapper {
+  readonly name = 'cmp';
+
+  isConfigured(): boolean {
+    const e = activeCmpEnvironment();
+    return e === 'production'
+      ? Boolean(env.CMP_PRODUCTION_URL && env.CMP_PRODUCTION_LOGIN && env.CMP_PRODUCTION_PASSWORD)
+      : Boolean(env.CMP_SANDBOX_URL && env.CMP_SANDBOX_LOGIN && env.CMP_SANDBOX_PASSWORD);
+  }
+
+  protected baseUrl(): string {
+    return cmpBaseUrl();
+  }
+
+  protected authHeaders(): Promise<Record<string, string>> {
+    return cmpAuthHeaders();
+  }
+
+  protected override async onUnauthorized(): Promise<boolean> {
+    await forceRefreshCmpToken();
+    return true;
+  }
+
+  getToken(environment?: CmpEnvironment): Promise<string> {
+    return getCmpToken(environment);
+  }
+
+  forceRefreshToken(environment?: CmpEnvironment): Promise<string> {
+    return forceRefreshCmpToken(environment);
+  }
+
+  clearTokenCache(): void {
+    clearCmpTokenCache();
+  }
+}
+
+export const cmp = new CmpWrapper();

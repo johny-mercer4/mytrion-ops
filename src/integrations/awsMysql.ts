@@ -18,6 +18,7 @@ import type { Pool, PoolOptions, RowDataPacket } from 'mysql2/promise';
 import type { PoolConnection } from 'mysql2';
 import { env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
+import { SqlWrapper } from './core/sqlBase.js';
 
 let pool: Pool | null = null;
 
@@ -69,19 +70,51 @@ export function getAwsMysqlPool(): Pool {
   return pool;
 }
 
-/** Run a query against AWS MySQL and return its rows. Params use positional `?` placeholders. */
+export class CmpDatabaseWrapper extends SqlWrapper {
+  readonly name = 'cmp_mysql';
+  readonly placeholderStyle = '?' as const;
+
+  get readOnly(): boolean {
+    return env.AWS_MYSQL_READONLY;
+  }
+
+  isConfigured(): boolean {
+    return Boolean(env.AWS_MYSQL_HOST || env.AWS_MYSQL_DATABASE_URL);
+  }
+
+  protected override async probe(): Promise<void> {
+    await this.query('SELECT 1');
+  }
+
+  /** Run a query and return its rows. Params use positional `?` placeholders (NOT `$1`). */
+  async query<T extends object = Record<string, unknown>>(
+    sql: string,
+    params: readonly unknown[] = [],
+  ): Promise<T[]> {
+    const [rows] = await getAwsMysqlPool().query<(T & RowDataPacket)[]>(sql, params as unknown[]);
+    return rows;
+  }
+
+  /** Close the pool (graceful shutdown / tests). */
+  async close(): Promise<void> {
+    if (pool) {
+      await pool.end();
+      pool = null;
+    }
+  }
+}
+
+export const cmpDb = new CmpDatabaseWrapper();
+
+/** @deprecated Import { cmpDb } and call cmpDb.query — kept as a facade during migration. */
 export async function awsMysqlQuery<T extends RowDataPacket = RowDataPacket>(
   sql: string,
   params: readonly unknown[] = [],
 ): Promise<T[]> {
-  const [rows] = await getAwsMysqlPool().query<T[]>(sql, params as unknown[]);
-  return rows;
+  return cmpDb.query<T>(sql, params);
 }
 
-/** Close the pool (graceful shutdown / tests). */
-export async function closeAwsMysqlPool(): Promise<void> {
-  if (pool) {
-    await pool.end();
-    pool = null;
-  }
+/** @deprecated Import { cmpDb } and call cmpDb.close — kept as a facade during migration. */
+export function closeAwsMysqlPool(): Promise<void> {
+  return cmpDb.close();
 }

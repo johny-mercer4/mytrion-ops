@@ -1,9 +1,8 @@
 /**
  * Automations run dispatch — one handler per AUTO_LIST id. Keeps AutoTab under the file-size
- * cap; pure async logic over touchpoints + Desk ticket creates (Ops-native path for the widget's
- * Zapier / browser-automation flows).
+ * cap. Outbound paths match the Zoho self-service widget: Deluge / servercrm touchpoints,
+ * browser-automation (BOCA / close-app), and Zapier (replacement / reactivation).
  */
-import { createDeskTicket } from '@/api/desk';
 import { getSession } from '@/api/session';
 import { callTouchpoint } from '@/api/touchpoints';
 import { money } from './live';
@@ -18,14 +17,18 @@ import {
   type Addr,
   type Automation,
   type Card,
+  type CmpInvoiceRow,
   type Deal,
   type DonePayload,
   type InvRow,
   type MoneyCodeForm,
+  type PaymentsSummary,
   type UnitDriverForm,
 } from './autoLive';
 import { fetchTxnReport, type TxnReportState } from './txnReport';
 import { deliverBlob } from './txnExportLibs';
+
+export type AutoPriority = '' | 'High' | 'Normal' | 'Low';
 
 export interface RunInput {
   action: Automation;
@@ -44,6 +47,9 @@ export interface RunInput {
   addr: Addr;
   note: string;
   due: string;
+  /** BOCA / Close Application — WEX SF application owner (locked in the UI). */
+  assignedTo: string;
+  priority: AutoPriority;
   unitDriver: UnitDriverForm;
   moneyCode: MoneyCodeForm;
   setInvRows: (rows: InvRow[]) => void;
@@ -68,33 +74,56 @@ function requireApp(deal: Deal | null): string {
   return a;
 }
 
-function requireDealId(deal: Deal | null): string {
-  const id = deal?.dealId?.trim();
-  if (!id) throw new Error('No Zoho Deal id for this client — open Create to file the ticket manually.');
-  return id;
+function requireAgentEmail(): string {
+  const email = getSession()?.worker.email?.trim() ?? '';
+  if (!email) throw new Error('Your session has no email — the request reply needs one.');
+  return email;
 }
 
-async function fileCsTicket(
+function browserTaskMessage(
+  label: string,
+  appId: string,
+  res: { action?: string; status?: string; reason?: string },
+): DonePayload {
+  const skipped = res.action === 'skipped';
+  const parts = [
+    skipped
+      ? `${label} skipped — application status does not require it (${res.status || 'unknown'}).`
+      : `${label} task sent for Application ${appId}.`,
+  ];
+  if (res.status) parts.push(`WEX Status: ${res.status}`);
+  if (res.reason) parts.push(`Note: ${res.reason}`);
+  return { kind: 'message', message: parts.join(' ') };
+}
+
+async function submitZapierTicket(
   deal: Deal,
-  ticketType: string,
-  subject: string,
-  description: string,
-  cardNumber?: string,
+  ticketType: 'replacement' | 'reactivation',
+  addr?: Addr,
 ): Promise<DonePayload> {
-  const res = await createDeskTicket({
-    department: 'cs',
+  const carrierId = requireCarrier(deal);
+  const companyName = deal.name;
+  const agentEmail = requireAgentEmail();
+  // Widget: replacement uses the confirmed street line; reactivation joins deal address fields.
+  const companyAddress = ticketType === 'replacement' && addr
+    ? addr.address.trim()
+    : '';
+  await callTouchpoint('zapier.ticket_email', {
+    companyName,
+    carrierId,
+    agentEmail,
     ticketType,
-    dealId: requireDealId(deal),
-    subject,
-    description,
-    carrierId: deal.carrier || undefined,
-    applicationId: deal.app && deal.app !== '—' ? deal.app : undefined,
-    cardNumber,
-    accountName: deal.name,
-    contactName: deal.company !== deal.name ? deal.company : undefined,
-    phone: deal.phone !== '—' ? deal.phone : undefined,
+    companyAddress,
+    ...(ticketType === 'replacement' && addr
+      ? {
+          address: addr.address.trim(),
+          city: addr.city.trim(),
+          state: addr.state.trim(),
+          zip: addr.zip.trim(),
+        }
+      : {}),
   });
-  return { kind: 'message', message: `Request filed as Desk ticket #${res.ticketId}. The team will follow up.` };
+  return { kind: 'message', message: 'Request received. You will receive the answer in the email.' };
 }
 
 export async function runAutomation(input: RunInput): Promise<DonePayload> {
@@ -142,34 +171,45 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
       return { kind: 'transactions' };
     }
     case 'payments': {
+      // Widget parity: DWH payment-info (summary/totals) + live CMP invoices are fetched in
+      // PARALLEL and merged — NOT a fallback chain. Either half may fail independently.
       const cid = requireCarrier(deal);
-      try {
-        const p = await callTouchpoint('dwh.payment_info', { carrierId: cid, days: 90 });
+      const [infoRes, cmpRes] = await Promise.allSettled([
+        callTouchpoint('dwh.payment_info', { carrierId: cid, days: 90 }),
+        callTouchpoint('carrier.check_payment', { carrierId: cid }),
+      ]);
+      let summary: PaymentsSummary | null = null;
+      if (infoRes.status === 'fulfilled') {
+        const p = infoRes.value;
         const totals = p.invoices?.totals ?? {};
-        return {
-          kind: 'table',
-          title: 'Payments (90 days)',
-          columns: ['Metric', 'Value'],
-          rows: [
-            ['Invoice count', str(p.invoices?.count ?? 0)],
-            ['Total billed', money(totals.total_billed)],
-            ['Total paid', money(totals.total_paid)],
-            ['Open balance', money(totals.open_balance)],
-            ['Payment count', str(p.payments?.count ?? 0)],
-            ['Payments total', money(p.payments?.total_amount)],
-          ],
-        };
-      } catch {
-        const list = await callTouchpoint('carrier.check_payment', { carrierId: cid });
-        return {
-          kind: 'table',
-          title: 'CMP invoices',
-          columns: ['Invoice #', 'Status', 'Total', 'Paid', 'Remaining'],
-          rows: (list.invoices ?? []).map((inv) => [
-            str(inv.invoiceNumber), str(inv.status), money(inv.totalAmount), money(inv.totalPaid), money(inv.remainingAmount),
-          ]),
+        summary = {
+          invoiceCount: str(p.invoices?.count ?? 0),
+          totalBilled: money(totals.total_billed),
+          totalPaid: money(totals.total_paid),
+          openBalance: money(totals.open_balance),
+          paymentCount: str(p.payments?.count ?? 0),
+          paymentsTotal: money(p.payments?.total_amount),
         };
       }
+      let cmpInvoices: CmpInvoiceRow[] = [];
+      let cmpError: string | undefined;
+      if (cmpRes.status === 'fulfilled') {
+        cmpInvoices = (cmpRes.value.invoices ?? []).map((inv, i) => ({
+          id: str(inv.id) || `cmp-${i}`,
+          invoiceNumber: str(inv.invoiceNumber) || `#${i + 1}`,
+          status: str(inv.status) || '—',
+          total: money(inv.totalAmount),
+          paid: money(inv.totalPaid),
+          remaining: money(inv.remainingAmount),
+        }));
+      } else {
+        cmpError = cmpRes.reason instanceof Error ? cmpRes.reason.message : 'CMP invoice check failed.';
+      }
+      if (!summary && cmpInvoices.length === 0) {
+        // Both sources genuinely failed — surface the primary's error, not a silent empty.
+        if (infoRes.status === 'rejected') throw infoRes.reason;
+      }
+      return { kind: 'payments', carrierId: cid, summary, cmpInvoices, cmpError };
     }
     case 'billing-form': {
       const cid = requireCarrier(deal);
@@ -200,17 +240,19 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
       };
     }
     case 'tracking': {
-      const t = await callTouchpoint('carrier.trucking_number_request', { carrierId: requireCarrier(deal) });
-      const info = t.trackingInfo ?? [];
-      if (info.length === 0 && !t.fedexTracking) {
+      const carrierId = requireCarrier(deal);
+      const t = await callTouchpoint('carrier.trucking_number_request', { carrierId });
+      const fedexTracking = str(t.fedexTracking);
+      const entries = (t.trackingInfo ?? []).map((r, i) => ({
+        id: `${str(r.trackingNumber) || 'tracking'}-${i}`,
+        trackingNumber: str(r.trackingNumber) || '—',
+        startDate: str(r.startDate),
+        cardsOrdered: r.cardsOrdered == null || r.cardsOrdered === '' ? '—' : str(r.cardsOrdered),
+      }));
+      if (entries.length === 0 && !fedexTracking) {
         return { kind: 'message', message: 'No card shipments / tracking numbers found for this carrier.' };
       }
-      return {
-        kind: 'table',
-        title: `Card shipments${t.fedexTracking ? ` — FedEx ${t.fedexTracking}` : ''}`,
-        columns: ['Tracking #', 'Ship date', 'Cards ordered'],
-        rows: info.map((r) => [str(r.trackingNumber), str(r.startDate), str(r.cardsOrdered)]),
-      };
+      return { kind: 'tracking', carrierId, fedexTracking, entries };
     }
     case 'card-last-used': {
       const res = await callTouchpoint('dwh.cards_last_used', { carrierId: requireCarrier(deal), range: 'all_time' });
@@ -324,60 +366,52 @@ export async function runAutomation(input: RunInput): Promise<DonePayload> {
       if (!a.address.trim() || !a.city.trim() || !a.state.trim() || !a.zip.trim()) {
         throw new Error('Confirm the full shipping address before submitting.');
       }
-      const desc = [
-        `Card replacement request for ${deal.name} (carrier ${deal.carrier || 'n/a'}).`,
-        `Ship to: ${a.address}, ${a.city}, ${a.state} ${a.zip}`,
-        input.note.trim() ? `Note: ${input.note.trim()}` : '',
-      ].filter(Boolean).join('\n');
-      return fileCsTicket(deal, 'C-6 | Card Replacement', `Card Replacement — ${deal.name}`, desc);
+      return submitZapierTicket(deal, 'replacement', a);
     }
     case 'reactivation': {
       if (!deal) throw new Error('Select a deal first.');
-      const desc = [
-        `Account reactivation request for ${deal.name} (carrier ${deal.carrier || 'n/a'}).`,
-        input.note.trim() ? `Note: ${input.note.trim()}` : '',
-      ].filter(Boolean).join('\n');
-      return fileCsTicket(deal, 'C-7 | Account Reactivation', `Account Reactivation — ${deal.name}`, desc);
+      return submitZapierTicket(deal, 'reactivation');
     }
     case 'boca-boe-link': {
       if (!deal) throw new Error('Select a deal first.');
       const appId = requireApp(deal);
-      const desc = [
-        `BOCA link request for application ${appId} (${deal.name}).`,
-        input.due ? `Due: ${input.due}` : '',
-        input.note.trim() ? `Note: ${input.note.trim()}` : '',
-      ].filter(Boolean).join('\n');
-      return fileCsTicket(deal, 'C-27 | Boca Sent', `BOCA Link — App ${appId}`, desc);
+      const res = await callTouchpoint('browser.boca', {
+        appId,
+        assignedTo: input.assignedTo.trim(),
+        priority: input.priority,
+        dueDate: input.due.trim(),
+        status: 'Not Started',
+      });
+      return browserTaskMessage('BOCA', appId, res);
     }
     case 'close-app': {
       if (!deal) throw new Error('Select a deal first.');
       const appId = requireApp(deal);
-      const desc = [
-        `Close WEX application ${appId} (${deal.name}).`,
-        input.due ? `Due: ${input.due}` : '',
-        input.note.trim() ? `Note: ${input.note.trim()}` : '',
-      ].filter(Boolean).join('\n');
-      return fileCsTicket(deal, 'C-14 | Close the account on WEX', `Close Application — App ${appId}`, desc);
+      const res = await callTouchpoint('browser.close_application', {
+        appId,
+        assignedTo: input.assignedTo.trim(),
+        priority: input.priority,
+        dueDate: input.due.trim(),
+        status: 'Not Started',
+      });
+      return browserTaskMessage('Close Application', appId, res);
     }
     case 'wex-tasks': {
+      // Deluge `mytrionapplicationupdate` only (zoho-octane fetchWexTasks) — not the WEX SF app snapshot.
       const appId = requireApp(deal);
-      const [tasks, app] = await Promise.allSettled([
-        callTouchpoint('application.update', { appId }),
-        callTouchpoint('wex.application', { appId }),
-      ]);
-      const rows: string[][] = [];
-      if (app.status === 'fulfilled') {
-        rows.push(['Status', str(app.value.status)]);
-        rows.push(['Group', str(app.value.statusGroup)]);
-        rows.push(['Last modified', str(app.value.lastModified)]);
-      }
-      if (tasks.status === 'fulfilled') {
-        for (const t of (tasks.value.wexTasks ?? []).slice(0, 8)) {
-          rows.push([str(t.createdDate), `${str(t.sbj)} — ${str(t.description)}`.slice(0, 180)]);
-        }
-      }
-      if (rows.length === 0) throw new Error('Both WEX lookups failed.');
-      return { kind: 'table', title: `WEX tasks — App ${appId}`, columns: ['When / Field', 'Detail'], rows };
+      const payload = await callTouchpoint('application.update', { appId });
+      const tasks = (payload.wexTasks ?? []).map((task, index) => ({
+        id: `${str(task.createdDate) || 'task'}-${index}`,
+        subject: str(task.sbj) || 'New WEX Task Received',
+        description: str(task.description) || 'No description provided.',
+        createdDate: str(task.createdDate),
+      }));
+      return {
+        kind: 'wex-tasks',
+        appId,
+        summary: str(payload.wexTaskField),
+        tasks,
+      };
     }
     case 'efs-login':
       return { kind: 'link', label: 'Open the WEX EFS eManager credentials guide (PDF)', url: EFS_LOGIN_URL };

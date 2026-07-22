@@ -13,7 +13,6 @@ import {
   dateTimeFull,
   fmtCurrency,
   maskCard,
-  type Client,
   type ClientFuel,
   type ClientInvoice,
   type ClientPayment,
@@ -41,7 +40,7 @@ export function TxModal({ tx, onClose }: { tx: TransactionLine; onClose: () => v
 
   return (
     <div onClick={onClose} style={s('position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.62);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px;animation:mf-up .2s ease both')}>
-      <div onClick={(e) => e.stopPropagation()} style={s('width:100%;max-width:560px;max-height:88vh;overflow-y:auto;border-radius:16px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);animation:mf-pop .26s cubic-bezier(.2,0,0,1) both')}>
+      <div onClick={(e) => e.stopPropagation()} style={s('width:100%;max-width:560px;max-height:88vh;overflow-y:auto;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);animation:mf-pop .26s cubic-bezier(.2,0,0,1) both')}>
         <div style={s('display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:2')}>
           <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:17px;letter-spacing:.02em')}>{tx.company}</div>
           <CloseBtn onClose={onClose} />
@@ -49,7 +48,7 @@ export function TxModal({ tx, onClose }: { tx: TransactionLine; onClose: () => v
         <div style={s('padding:18px 20px')}>
           <div style={s('display:flex;align-items:baseline;gap:10px;margin-bottom:18px')}>
             <div style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:30px;color:var(--accent)")}>{fmtCurrency(tx.amount)}</div>
-            <span style={s("font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;background:var(--orange-s);color:var(--orange);font-family:'JetBrains Mono',monospace")}>{galC(tx.gal)} gal</span>
+            <span style={s("font-size:10px;font-weight:700;padding:3px 8px;border-radius:var(--radius-md);background:var(--orange-s);color:var(--orange);font-family:'JetBrains Mono',monospace")}>{galC(tx.gal)} gal</span>
           </div>
           <KvGroup title="Transaction" rows={rows1} />
           <div style={s('height:16px')} />
@@ -67,18 +66,22 @@ export function ClientModal({
   drillLoading,
   onClose,
 }: {
-  client: Client;
+  client: any;
   tab: ClientDrillTab;
   setTab: (t: ClientDrillTab) => void;
   drillLoading: boolean;
   onClose: () => void;
 }) {
-  const billed = client.invoices.reduce((s, i) => s + i.total, 0);
-  const paid = client.invoices.reduce((s, i) => s + i.paid, 0);
-  const openBal = client.invoices.reduce((s, i) => s + i.open, 0);
+  const invoices = Array.isArray(client.invoices) ? client.invoices : [];
+  const payments = Array.isArray(client.payments) ? client.payments : [];
+  const fuel = Array.isArray(client.fuel) ? client.fuel : [];
+
+  const billed = invoices.reduce((s: number, i: any) => s + (i.total || 0), 0);
+  const paid = invoices.reduce((s: number, i: any) => s + (i.paid || 0), 0);
+  const openBal = invoices.reduce((s: number, i: any) => s + (i.open || 0), 0);
   const badges = [
     badge(client.active ? 'Active' : 'Inactive', client.active ? 'ok' : 'muted'),
-    badge(client.terms, 'blue'),
+    badge(client.terms || 'Prepay', 'blue'),
   ];
   if (client.suspended) badges.push(badge('LOC SUSPENDED', 'danger'));
   if (client.wex) badges.push(badge('WEX FUNDED', 'violet'));
@@ -91,9 +94,9 @@ export function ClientModal({
   ];
 
   const tabs: { id: ClientDrillTab; label: string; count: number }[] = [
-    { id: 'invoices', label: 'Invoices', count: client.invoices.length },
-    { id: 'payments', label: 'Payments', count: client.payments.length },
-    { id: 'fuel', label: 'Recent Fuel', count: client.fuel.length },
+    { id: 'invoices', label: 'Invoices', count: invoices.length },
+    { id: 'payments', label: 'Payments', count: payments.length },
+    { id: 'fuel', label: 'Recent Fuel', count: fuel.length },
     { id: 'info', label: 'Info', count: 0 },
   ];
 
@@ -102,16 +105,16 @@ export function ClientModal({
 
   return (
     <div onClick={onClose} style={s('position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.62);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px;animation:mf-up .2s ease both')}>
-      <div onClick={(e) => e.stopPropagation()} style={s('width:100%;max-width:760px;max-height:90vh;display:flex;flex-direction:column;border-radius:16px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);animation:mf-pop .26s cubic-bezier(.2,0,0,1) both;overflow:hidden')}>
+      <div onClick={(e) => e.stopPropagation()} style={s('width:100%;max-width:760px;max-height:90vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);animation:mf-pop .26s cubic-bezier(.2,0,0,1) both;overflow:hidden')}>
         <div style={s('padding:18px 20px 14px;border-bottom:1px solid var(--border)')}>
           <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:12px')}>
             <div style={s('display:flex;align-items:center;gap:13px;min-width:0')}>
-              <div style={s(`width:46px;height:46px;border-radius:12px;background:${avBg};color:${avFg};display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0`)}>
-                {initials(client.company)}
+              <div style={s(`width:46px;height:46px;border-radius:var(--radius-md);background:${avBg};color:${avFg};display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0`)}>
+                {initials(client.company || 'C')}
               </div>
               <div style={s('min-width:0')}>
                 <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:18px;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{client.company}</div>
-                <div style={s("font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px")}>#{client.carrier} · DOT {client.dot}</div>
+                <div style={s("font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px")}>#{client.carrier} · DOT {client.dot || 'N/A'}</div>
               </div>
             </div>
             <CloseBtn onClose={onClose} />
@@ -170,26 +173,26 @@ export function ClientModal({
   );
 }
 
-function ClientInfo({ client }: { client: Client }) {
+function ClientInfo({ client }: { client: any }) {
   const mono = "font-family:'JetBrains Mono',monospace";
   const groups = [
     {
       label: 'Company',
       rows: [
         { k: 'Carrier ID', v: client.carrier, mono },
-        { k: 'DOT', v: client.dot, mono },
-        { k: 'Email', v: client.email, mono: '' },
-        { k: 'Phone', v: client.phone, mono },
-        { k: 'Address', v: `${client.city}, ${client.state}`, mono: '' },
+        { k: 'DOT', v: client.dot || 'N/A', mono },
+        { k: 'Email', v: client.email || 'N/A', mono: '' },
+        { k: 'Phone', v: client.phone || 'N/A', mono },
+        { k: 'Address', v: `${client.city || ''}, ${client.state || ''}`, mono: '' },
       ],
     },
     {
       label: 'Credit & Sales',
       rows: [
-        { k: 'Credit Limit', v: client.credit === 'WEX' ? 'WEX' : fmtCurrency(parseFloat(client.credit.replace(/,/g, '')) || 0), mono: '' },
-        { k: 'Payment Terms', v: client.terms, mono: '' },
-        { k: 'Agent', v: client.agent, mono: '' },
-        { k: 'Deal Stage', v: client.stage, mono: '' },
+        { k: 'Credit Limit', v: client.credit === 'WEX' ? 'WEX' : fmtCurrency(client.creditLimit || 0), mono: '' },
+        { k: 'Payment Terms', v: client.terms || 'Prepay', mono: '' },
+        { k: 'Agent', v: client.agent || 'System', mono: '' },
+        { k: 'Deal Stage', v: client.stage || 'N/A', mono: '' },
       ],
     },
   ];
@@ -202,23 +205,27 @@ function ClientInfo({ client }: { client: Client }) {
   );
 }
 
-function ClientTable({ tab, client }: { tab: ClientDrillTab; client: Client }) {
+function ClientTable({ tab, client }: { tab: ClientDrillTab; client: any }) {
+  const invoices = Array.isArray(client.invoices) ? client.invoices : [];
+  const payments = Array.isArray(client.payments) ? client.payments : [];
+  const fuel = Array.isArray(client.fuel) ? client.fuel : [];
+
   if (tab === 'invoices') {
-    return client.invoices.length ? (
-      <DrillRows rows={client.invoices.map((iv) => invoiceRow(iv))} />
+    return invoices.length ? (
+      <DrillRows rows={invoices.map((iv: any) => invoiceRow(iv))} />
     ) : (
       <Empty msg="No invoices on file." />
     );
   }
   if (tab === 'payments') {
-    return client.payments.length ? (
-      <DrillRows rows={client.payments.map((p) => paymentRow(p))} />
+    return payments.length ? (
+      <DrillRows rows={payments.map((p: any) => paymentRow(p))} />
     ) : (
       <Empty msg="No payment transactions found." />
     );
   }
-  return client.fuel.length ? (
-    <DrillRows rows={client.fuel.map((f) => fuelRow(f))} />
+  return fuel.length ? (
+    <DrillRows rows={fuel.map((f: any) => fuelRow(f))} />
   ) : (
     <Empty msg="No recent fueling." />
   );
@@ -280,7 +287,7 @@ function DrillRows({
   return (
     <div style={s('display:flex;flex-direction:column;gap:7px')}>
       {rows.map((r, i) => (
-        <div key={i} style={s('display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:10px;background:var(--alt);border:1px solid var(--border2)')}>
+        <div key={i} style={s('display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
           {r.badge ? <span style={s(r.badgeStyle ?? '')}>{r.badge}</span> : null}
           <div style={s('flex:1;min-width:0')}>
             <div style={s('font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{r.title}</div>
@@ -296,7 +303,7 @@ function DrillRows({
 
 function CloseBtn({ onClose }: { onClose: () => void }) {
   return (
-    <button type="button" onClick={onClose} aria-label="Close" className="mf-ico" style={s('width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
+    <button type="button" onClick={onClose} aria-label="Close" className="mf-ico" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
       <Svg d={ICONS.close} size={15} strokeWidth={2.2} />
     </button>
   );

@@ -2,10 +2,10 @@
  * Design-canvas helpers for the Sales Mytrion redesign. The reference prototype uses
  * inline CSS-var STRING styles ("display:flex;color:var(--accent)") throughout; `s()` parses
  * those verbatim into React.CSSProperties so the port keeps pixel fidelity with zero
- * hand-conversion. `Svg` renders a stroked-icon path; `Chip`/`Badge` render the reference's
- * badge shapes. Everything lives under the `.ss-root` theme scope (see theme.css).
+ * hand-conversion. `Chip`/`Badge` render the reference's badge shapes; icons come from
+ * `<Icon>` (see ./icons). Everything lives under the `.ss-root` theme scope (see theme.css).
  */
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 
 const CACHE = new Map<string, CSSProperties>();
 
@@ -46,45 +46,33 @@ export function s(css: string | undefined): CSSProperties {
   return frozen;
 }
 
-/** A stroked (outline) SVG icon from a path `d`. Supports multi-subpath icons
- * (space-separated movetos after `z`) by splitting into separate <path> nodes. */
-export function Svg({
-  d,
-  size = 18,
-  stroke = 'currentColor',
-  strokeWidth = 2,
-  fill = 'none',
-  style,
-}: {
-  d: string;
-  size?: number;
-  stroke?: string;
-  strokeWidth?: number;
-  fill?: string;
-  style?: CSSProperties;
-}) {
-  const parts = d.includes('z M') || d.includes('zM')
-    ? d.split(/\s*(?=M)/).map((p) => p.trim()).filter(Boolean)
-    : [d];
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill={fill}
-      stroke={stroke}
-      strokeWidth={strokeWidth}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      style={style}
-      aria-hidden="true"
-    >
-      {parts.map((pathD, i) => (
-        <path key={i} d={pathD} />
-      ))}
-    </svg>
-  );
+/**
+ * a11y props that make a styled, non-semantic element (a click-through card/row) behave like a
+ * button for keyboard users: focusable, announced as a button, and activated by Enter/Space. Pairs
+ * with the global :focus-visible ring in theme.css. Use where a real <button> would fight the card
+ * layout — spread onto the element and drop its inline onClick (this provides it).
+ */
+export function clickable(onActivate: () => void): {
+  role: 'button';
+  tabIndex: 0;
+  onClick: () => void;
+  onKeyDown: (e: KeyboardEvent) => void;
+} {
+  return {
+    role: 'button',
+    tabIndex: 0,
+    onClick: onActivate,
+    onKeyDown: (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onActivate();
+      }
+    },
+  };
 }
+
+// Icons now come from ready-made lucide-react glyphs via `<Icon name=… />` (see ./icons).
+// The old path-`d` `Svg`/`SvgPaths` renderers were removed in that migration.
 
 /** Render a raw SVG string (the reference stores a few icons as full markup). Safe: the
  * strings are our own literals from the design, never user input. */

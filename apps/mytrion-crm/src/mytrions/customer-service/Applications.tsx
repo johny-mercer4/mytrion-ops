@@ -1,154 +1,327 @@
-import { useMemo, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+/**
+ * Applications panel — 1:1 port of the widget's applications-panel.js template
+ * (cs-panel / cs-header-row / cs-app-tabs / cs-app-table / cs-app-pagination / modal /
+ * toast) over the DONE live-data layer: debounced server search, page state, optimistic
+ * per-row onboarding toggles with revert-on-error, reload-after-save.
+ */
+import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 
-import { SearchBar } from '@/components/mytrion/search-bar';
-import { SegmentedFilter } from '@/components/mytrion/segmented-filter';
-import { StatusBadge } from '@/components/mytrion/status-badge';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { toggleOnboarding, type OnboardingField } from '@/api/cs';
 import { ApplicationModal } from './ApplicationModal';
-import { Toast, type ToastState } from './Toast';
+import { copyWithToast } from './copyToast';
 import {
-  APPLICATIONS,
-  type Application,
-  bizMeta,
-  creditTone,
-  fullName,
-  isClient,
-  stageMeta,
-} from './data';
+  AppCell,
+  CHECK_PROP,
+  columnsFor,
+  isOnboardingField,
+  type AppColumn,
+  type SubTab,
+} from './ApplicationsTable';
+import { Toast, type ToastState } from './Toast';
+import type { Application } from './data';
+import { invalidateApplicationsCache, loadApplications, useLoad } from './live';
 
-type SubTab = 'apps' | 'clients';
+/** Widget parity: search fires debounced (App ID / Carrier ID / name / phone, server-side). */
+const SEARCH_DEBOUNCE_MS = 400;
 
-const SEGMENTS: (keyof Pick<Application, 'ta' | 'efs' | 'lmt' | 'mob' | 'chn'>)[] = ['ta', 'efs', 'lmt', 'mob', 'chn'];
+const TABS: { id: SubTab; label: string }[] = [
+  { id: 'apps', label: 'Apps in Process' },
+  { id: 'clients', label: 'Clients' },
+];
+
+const REFRESH_PATH =
+  'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-14.357-2m14.357 2H15';
+
+/* ─── Panel ──────────────────────────────────────────────────────────────── */
 
 export function Applications() {
   const [subTab, setSubTab] = useState<SubTab>('apps');
   const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
   const [openApp, setOpenApp] = useState<Application | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [pendingToggle, setPendingToggle] = useState<string | null>(null);
+  // Optimistic per-row overrides layered over the loaded page (tick-boxes update in place).
+  const [overrides, setOverrides] = useState<Record<string, Partial<Application>>>({});
 
-  const apps = useMemo(() => APPLICATIONS.filter((a) => !isClient(a)), []);
-  const clients = useMemo(() => APPLICATIONS.filter((a) => isClient(a)), []);
-  const source = subTab === 'apps' ? apps : clients;
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setQuery(search);
+      setPage(1);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [search]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return source;
-    return source.filter((a) =>
-      `${a.appId} ${a.carrierId} ${a.company} ${a.agent}`.toLowerCase().includes(q),
-    );
-  }, [source, search]);
+  const pageData = useLoad(
+    (fresh) => loadApplications(subTab, query, page, fresh),
+    [subTab, query, page],
+  );
+  const loading = pageData.loading || pageData.refreshing;
 
-  function editToast() {
-    setToast({ id: Date.now(), kind: 'info', message: 'Read-only preview — Editing is available in the live Zoho workspace.' });
+  const rows = useMemo(() => {
+    const base = pageData.data?.rows ?? [];
+    return base.map((a) => {
+      const o = overrides[a.id];
+      return o ? { ...a, ...o } : a;
+    });
+  }, [pageData.data, overrides]);
+
+  const hasMore = pageData.data?.moreRecords === true;
+  const columns = columnsFor(subTab);
+  const openRow = openApp ? (rows.find((r) => r.id === openApp.id) ?? openApp) : null;
+
+  function notify(kind: ToastState['kind'], message: string) {
+    setToast({ id: Date.now(), kind, message });
+  }
+
+  // Widget parity: load failures surface as an error toast.
+  useEffect(() => {
+    if (pageData.error) setToast({ id: Date.now(), kind: 'error', message: `Load failed: ${pageData.error}` });
+  }, [pageData.error]);
+
+  async function onToggle(app: Application, field: OnboardingField, next: boolean) {
+    const prop = CHECK_PROP[field];
+    setPendingToggle(field);
+    setOverrides((o) => ({ ...o, [app.id]: { ...o[app.id], [prop]: next ? 1 : 0 } }));
+    try {
+      const res = await toggleOnboarding(app.id, field, next);
+      invalidateApplicationsCache();
+      notify(res.warning ? 'info' : 'success', res.warning ?? `${field.replace(/_/g, ' ')}: ${next ? 'Yes' : 'No'}`);
+    } catch (e) {
+      setOverrides((o) => ({ ...o, [app.id]: { ...o[app.id], [prop]: next ? 0 : 1 } }));
+      notify('error', `Failed to save: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setPendingToggle(null);
+    }
+  }
+
+  function switchTab(id: SubTab) {
+    if (loading || subTab === id) return;
+    setSubTab(id);
+    setPage(1);
+  }
+
+  function goToPage(n: number) {
+    if (n < 1 || loading) return;
+    setPage(n);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /* Cell-level click: tick boxes toggle in place, ID cells copy, everything else opens the modal. */
+  function onCellClick(col: AppColumn, app: Application, ev: MouseEvent<HTMLTableCellElement>) {
+    if (col.key === 'check') {
+      if (isOnboardingField(col.field)) {
+        const on = app[CHECK_PROP[col.field]] === 1;
+        void onToggle(app, col.field, !on);
+      }
+      return;
+    }
+    if (col.key === 'app_id' || (col.key === 'id' && subTab !== 'clients')) {
+      if (app.appId) {
+        copyWithToast(app.appId, ev);
+        return;
+      }
+    }
+    if (col.key === 'id' && subTab === 'clients') {
+      if (app.carrierId) {
+        copyWithToast(app.carrierId, ev);
+        return;
+      }
+    }
+    setOpenApp(app);
   }
 
   return (
-    <div className="flex flex-col gap-4 p-6">
-      <div className="flex items-start justify-between gap-3">
+    <div className="cs-panel cs-applications-panel">
+      {/* ── Header: title left · search + refresh right ── */}
+      <div className="cs-header-row">
         <div>
-          <h2 className="font-heading text-2xl font-bold">Applications</h2>
-          <p className="text-sm text-muted-foreground">
-            {source.length} {subTab === 'clients' ? 'clients' : 'applications in process'}
-          </p>
-        </div>
-        <Button variant="outline" size="sm">
-          <RefreshCw className="size-3.5" />
-          Refresh
-        </Button>
-      </div>
-
-      <SegmentedFilter
-        options={[
-          { id: 'apps', label: 'Apps in Process', count: apps.length },
-          { id: 'clients', label: 'Clients', count: clients.length },
-        ]}
-        value={subTab}
-        onChange={(id) => setSubTab(id as SubTab)}
-      />
-
-      <SearchBar
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search App ID, Carrier ID, company, agent…"
-        className="max-w-sm"
-      />
-
-      <div className="overflow-x-auto rounded-lg border bg-card">
-        {/* min-w keeps the 8-column grid from squishing on phones; overflow-x-auto on the
-            wrapper above makes it swipeable instead of clipping the trailing columns. */}
-        <div className="min-w-230">
-          <div className="grid grid-cols-[1fr_1.8fr_1.1fr_1.2fr_1.2fr_0.8fr_1fr_1fr] gap-3 border-b bg-muted/40 px-4 py-2.5 text-[10px] font-bold tracking-wide text-muted-foreground uppercase">
-            <span>{subTab === 'clients' ? 'Carrier ID' : 'App ID'}</span>
-            <span>Company</span>
-            <span>Business</span>
-            <span>Stage</span>
-            <span>Onboarding</span>
-            <span>Credit</span>
-            <span>Agent</span>
-            <span className="text-right">Date Filled</span>
+          <h2 className="cs-title">Applications</h2>
+          <div className="cs-subtitle">
+            {rows.length} on page · Page {page}
+            {loading ? <span style={{ color: 'var(--cs-accent)', marginLeft: '0.5rem' }}>Loading…</span> : null}
           </div>
-          {filtered.length === 0 ? (
-            <div className="p-10 text-center text-sm text-muted-foreground">
-              No {subTab === 'clients' ? 'clients' : 'applications'} found. Try adjusting your search.
-            </div>
-          ) : (
-            filtered.map((a) => {
-              const st = stageMeta(a.stage);
-              const bz = bizMeta(a.biz);
-              const credit = creditTone(a.credit);
-              return (
-                <button
-                  key={a.id}
-                  onClick={() => setOpenApp(a)}
-                  className="grid w-full grid-cols-[1fr_1.8fr_1.1fr_1.2fr_1.2fr_0.8fr_1fr_1fr] items-center gap-3 border-b px-4 py-3 text-left text-sm last:border-b-0 hover:bg-muted/40"
-                >
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {subTab === 'clients' ? a.carrierId : a.appId}
-                  </span>
-                  <span className="min-w-0">
-                    <div className="truncate font-semibold">{a.company}</div>
-                    <div className="truncate text-[11px] text-muted-foreground">{fullName(a)}</div>
-                  </span>
-                  <span>
-                    <StatusBadge tone={bz.tone}>{a.biz}</StatusBadge>
-                  </span>
-                  <span>
-                    <StatusBadge tone={st.tone}>{a.stage}</StatusBadge>
-                  </span>
-                  <span className="flex items-center gap-1">
-                    {SEGMENTS.map((seg) => (
-                      <span
-                        key={seg}
-                        className={cn('size-2 rounded-full', a[seg] ? 'bg-primary' : 'bg-muted')}
-                        title={seg.toUpperCase()}
-                      />
-                    ))}
-                  </span>
-                  <span className={cn('font-mono text-xs', credit === 'good' ? 'text-good' : credit === 'warn' ? 'text-warn' : credit === 'bad' ? 'text-bad' : 'text-muted-foreground')}>
-                    {a.credit ?? '—'}
-                  </span>
-                  <span className="truncate text-xs text-muted-foreground">{a.agent}</span>
-                  <span className="text-right text-xs text-muted-foreground">{a.date}</span>
-                </button>
-              );
-            })
-          )}
+        </div>
+        <div className="cs-app-header-tools">
+          <div className={`cs-app-search${search ? ' has-value' : ''}`}>
+            <svg
+              className="cs-app-search-icon"
+              width="15"
+              height="15"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by App ID, Carrier ID, Name or Phone…"
+            />
+            {search ? (
+              <button
+                type="button"
+                className="cs-app-search-clear"
+                aria-label="Clear search"
+                title="Clear search"
+                onClick={() => setSearch('')}
+              >
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            ) : null}
+          </div>
+          <button className="cs-refresh-btn" onClick={pageData.refresh} disabled={loading}>
+            <svg
+              width="13"
+              height="13"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              className={loading ? 'spin-icon' : undefined}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={REFRESH_PATH} />
+            </svg>
+            Refresh
+          </button>
         </div>
       </div>
 
-      {openApp ? (
+      {/* ── Sub-tabs (Apps in Process / Clients) ── */}
+      <div className="cs-app-toolbar">
+        <div className="cs-app-tabs">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              className={`cs-app-tab${subTab === tab.id ? ' active' : ''}`}
+              disabled={loading}
+              onClick={() => switchTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Skeleton ── */}
+      {loading ? (
+        <div className="cs-table-wrap">
+          {Array.from({ length: 10 }, (_, i) => (
+            <div key={i} className="cs-skeleton" style={{ height: 36, borderRadius: 4, marginBottom: 2 }} />
+          ))}
+        </div>
+      ) : rows.length === 0 ? (
+        /* ── Empty state (outside scroll container so it stays centered) ── */
+        <div className="cs-app-empty">
+          <svg
+            width="36"
+            height="36"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            style={{ color: 'var(--text-muted)', marginBottom: '0.75rem' }}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="1.5"
+              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+            />
+          </svg>
+          <div style={{ fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+            No applications found
+          </div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            Try adjusting your search or switch tabs
+          </div>
+        </div>
+      ) : (
+        /* ── Table ── */
+        <div className="cs-table-wrap cs-app-table-wrap">
+          <table className="cs-table cs-app-table">
+            <thead>
+              <tr>
+                {columns.map((col, i) => (
+                  <th key={i} style={col.thStyle}>
+                    {col.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((app) => (
+                <tr
+                  key={app.id}
+                  className="cs-app-row"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      setOpenApp(app);
+                    }
+                  }}
+                >
+                  {columns.map((col, i) => (
+                    <td
+                      key={i}
+                      className={col.key === 'id' || col.key === 'app_id' ? 'cs-app-cell-copyable' : undefined}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onCellClick(col, app, e);
+                      }}
+                    >
+                      <AppCell col={col} app={app} subTab={subTab} pendingToggle={pendingToggle} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Pagination ── */}
+      {page > 1 || hasMore ? (
+        <div className="cs-app-pagination">
+          <button className="cs-btn cs-btn-ghost" disabled={page <= 1 || loading} onClick={() => goToPage(page - 1)}>
+            ← Prev
+          </button>
+          <span className="cs-page-indicator">
+            Page <strong>{page}</strong>
+            {!hasMore ? <span style={{ color: 'var(--text-muted)' }}> · last</span> : null}
+          </span>
+          <button className="cs-btn cs-btn-ghost" disabled={!hasMore || loading} onClick={() => goToPage(page + 1)}>
+            Next →
+          </button>
+        </div>
+      ) : null}
+
+      {/* ── Record modal (view + per-field edit) ── */}
+      {openRow ? (
         <ApplicationModal
-          app={openApp}
+          app={openRow}
+          subTab={subTab}
           onClose={() => setOpenApp(null)}
-          onEdit={() => {
-            editToast();
+          onSaved={(warning) => {
             setOpenApp(null);
+            notify(warning ? 'info' : 'success', warning ?? 'Saved');
+            invalidateApplicationsCache();
+            pageData.refresh();
           }}
         />
       ) : null}
 
+      {/* ── Toast ── */}
       {toast ? <Toast toast={toast} onDismiss={() => setToast(null)} /> : null}
     </div>
   );

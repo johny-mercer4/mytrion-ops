@@ -148,6 +148,7 @@ export async function dispatchTool(
   } catch (err) {
     const durationMs = Date.now() - start;
     const message = errorMessage(err);
+    const isHallucination = err instanceof ZodError;
     await recordToolCall(ctx, {
       ...baseEntry(toolName, args, tool.riskClass, opts, ctx),
       status: 'error',
@@ -159,9 +160,9 @@ export async function dispatchTool(
       status: 'error',
       toolName,
       ...(opts.agentRunId !== undefined ? { agentRunId: opts.agentRunId } : {}),
-      detail: { error: message },
+      detail: { error: message, ...(isHallucination ? { hallucination: true } : { resolutionError: true }) },
     });
-    if (err instanceof ZodError) {
+    if (isHallucination) {
       throw new ValidationError(`Invalid arguments for ${toolName}`, { details: err.flatten() });
     }
     throw new ToolError(`Tool ${toolName} failed: ${message}`, { cause: err });

@@ -164,7 +164,7 @@ export function Train({ onTrained }: { onTrained?: () => void }) {
       <div className={s.head}>
         <div>
           <h2 className={s.h2}>Train Agents</h2>
-          <p className={s.sub}>Upload sources (or paste text), tag a scope, and embed them into the knowledge base.</p>
+
         </div>
       </div>
 

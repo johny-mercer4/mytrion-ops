@@ -1,75 +1,85 @@
 /**
- * Retention setup (/v1/retention) — CRUD over the single retention_cases entity plus the
- * on-demand auto-generation trigger. Reads and case-work writes require the 'retention'
- * department (or admin / all-department access; the caller may pass departments per
- * request via x-department-access, matching the platform's RBAC model). Destructive ops
- * (delete) and the DWH sync trigger are admin-only. Every write is audited. Mutations
- * ship POST aliases only (Zoho-proxy-safe), matching the carrier-users convention.
+ * Retention setup (/v1/retention) — CRUD over retention_cases (v2 workflow) plus lookup
+ * lists and the on-demand DWH sync trigger. Reads and case-work writes require the
+ * 'retention' department (or admin / all-department access). Delete + sync are admin-only.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AppError, NotFoundError, RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import { notifyCaseCreated } from '../../modules/retention/notify.js';
 import { syncRetentionCases } from '../../modules/retention/retentionSync.js';
 import { env } from '../../config/env.js';
 import { retentionCaseRepo, toRetentionCaseDto } from '../../repos/retentionCaseRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { requireContext, withDepartmentAccess } from './helpers.js';
+import { requireContext, requireDepartment } from './helpers.js';
 
 const idString = z.union([z.string().max(120), z.number()]).transform(String);
 
-const PHASES = ['sales', 'retention', 'open_pool', 'citi'] as const;
-const STAGES = [
-  'inactive_no_reason',
-  'inactive_reason_noted',
+const PHASE_CODES = ['phase_1_agent', 'phase_2_retention', 'phase_3_citi'] as const;
+const AGENT_OUTCOMES = [
   'out_of_reach',
-  'pending',
-  'assigned_to_agent',
-] as const;
-const OUTCOMES = [
   'returned',
-  'saved',
-  'refused_offer',
-  'out_of_business',
-  'no_response',
-  'lost',
+  'dissatisfied',
+  'vacation',
+  'no_action_2bd',
 ] as const;
-const POOL_ASSIGNMENTS = ['available', 'requested', 'assigned', 'rejected'] as const;
+const DISSATISFACTION = [
+  'low_discounts',
+  'payment_cycle',
+  'cs_service',
+  'trust_issues',
+  'switched_other',
+] as const;
 
 const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   offset: z.coerce.number().int().min(0).optional(),
-  phase: z.enum(PHASES).optional(),
-  status: z.enum(['open', 'closed']).optional(),
-  stage: z.enum(STAGES).optional(),
+  phase_code: z.string().max(80).optional(),
+  status_code: z.string().max(80).optional(),
+  open: z
+    .enum(['true', 'false', '1', '0'])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === 'true' || v === '1')),
   carrier_id: z.string().max(120).optional(),
 });
 
 const createSchema = z.object({
   carrier_id: idString,
+  zoho_deal_id: idString.optional(),
   company_name: z.string().max(300).optional(),
   application_id: idString.optional(),
   agent_name: z.string().max(200).optional(),
-  agent_zoho_user_id: idString.optional(),
-  phase: z.enum(PHASES).default('sales'),
-  stage: z.enum(STAGES).default('inactive_no_reason'),
-  inactivity_reason: z.string().max(200).optional(),
+  assigned_agent_zoho_user_id: idString.optional(),
+  phase_code: z.enum(PHASE_CODES).default('phase_1_agent'),
+  status_code: z.string().max(80).default('p1_in_progress'),
+  dissatisfaction_reason: z.enum(DISSATISFACTION).optional(),
   reason_note: z.string().max(2000).optional(),
 });
 
 const updateSchema = z
   .object({
-    phase: z.enum(PHASES).optional(),
-    stage: z.enum(STAGES).optional(),
-    status: z.enum(['open', 'closed']).optional(),
-    outcome: z.enum(OUTCOMES).nullable().optional(),
-    inactivity_reason: z.string().max(200).nullable().optional(),
+    phase_code: z.enum(PHASE_CODES).optional(),
+    status_code: z.string().max(80).optional(),
+    agent_outcome: z.enum(AGENT_OUTCOMES).nullable().optional(),
+    dissatisfaction_reason: z.enum(DISSATISFACTION).nullable().optional(),
     reason_note: z.string().max(2000).nullable().optional(),
-    out_of_reach_attempts: z.coerce.number().int().min(0).max(100).optional(),
-    pool_assignment: z.enum(POOL_ASSIGNMENTS).nullable().optional(),
-    pool_taken_by: z.string().max(200).nullable().optional(),
+    assigned_agent_zoho_user_id: idString.nullable().optional(),
+    assignment_count: z.coerce.number().int().min(1).max(3).optional(),
+    open_pool_attempt_count: z.coerce.number().int().min(0).max(20).optional(),
+    out_of_reach_attempts: z.coerce.number().int().min(0).max(5).optional(),
+    deal_owner_changed: z.boolean().optional(),
+    current_deadline_at: z.string().datetime().nullable().optional(),
+    current_deadline_type: z.string().max(80).nullable().optional(),
+    vacation_countdown_end: z.string().datetime().nullable().optional(),
+    citi_folder_entered_at: z.string().datetime().nullable().optional(),
+    citi_folder_hold_until: z.string().datetime().nullable().optional(),
+    last_review_cycle_at: z.string().datetime().nullable().optional(),
+    sales_manager_zoho_user_id: idString.nullable().optional(),
     agent_name: z.string().max(200).nullable().optional(),
-    agent_zoho_user_id: idString.nullable().optional(),
+    zoho_deal_id: idString.nullable().optional(),
+    event_type: z.string().max(80).optional(),
+    event_notes: z.string().max(2000).optional(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), {
     message: 'Provide at least one field to update',
@@ -80,27 +90,10 @@ const syncSchema = z.object({
   limit: z.coerce.number().int().min(1).max(2000).optional(),
 });
 
-/**
- * Case-work gate: retention department, all-department access, or admin. The
- * x-department-access header is only trusted for INTERNAL callers — a customer session
- * must never be able to claim a department and read internal case data.
- */
 function requireRetentionAccess(request: FastifyRequest): TenantContext {
-  const base = requireContext(request);
-  if (base.audience !== 'internal') {
-    throw new RBACError('Retention cases are internal-only');
-  }
-  const ctx = withDepartmentAccess(base, request);
-  const allowed =
-    ctx.role === 'admin' ||
-    ctx.bypassRbac === true ||
-    ctx.allDepartmentAccess ||
-    ctx.departments.includes('retention');
-  if (!allowed) throw new RBACError('Retention cases require retention department access');
-  return ctx;
+  return requireDepartment(request, 'retention', 'Retention cases');
 }
 
-/** Destructive/system gate: admin or the static API key only. */
 function requireAdmin(request: FastifyRequest): TenantContext {
   const ctx = requireContext(request);
   if (ctx.role !== 'admin' && !ctx.bypassRbac) {
@@ -109,8 +102,29 @@ function requireAdmin(request: FastifyRequest): TenantContext {
   return ctx;
 }
 
+function actorZohoUserId(ctx: TenantContext): string | undefined {
+  return ctx.userId.startsWith('zoho:') ? ctx.userId.slice('zoho:'.length) : undefined;
+}
+
+function parseOptionalDate(v: string | null | undefined): Date | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  return new Date(v);
+}
+
 export async function retentionRoutes(app: FastifyInstance): Promise<void> {
   const guard = { onRequest: [app.sessionOrApiKey] };
+
+  app.get('/retention/phases', guard, async (request) => {
+    requireRetentionAccess(request);
+    return { phases: await retentionCaseRepo.listPhases() };
+  });
+
+  app.get('/retention/statuses', guard, async (request) => {
+    requireRetentionAccess(request);
+    const q = z.object({ phase_code: z.string().max(80).optional() }).parse(request.query);
+    return { statuses: await retentionCaseRepo.listStatuses(q.phase_code) };
+  });
 
   app.get('/retention/cases', guard, async (request) => {
     const ctx = requireRetentionAccess(request);
@@ -118,9 +132,9 @@ export async function retentionRoutes(app: FastifyInstance): Promise<void> {
     return retentionCaseRepo.list(ctx, {
       ...(query.limit !== undefined ? { limit: query.limit } : {}),
       ...(query.offset !== undefined ? { offset: query.offset } : {}),
-      ...(query.phase ? { phase: query.phase } : {}),
-      ...(query.status ? { status: query.status } : {}),
-      ...(query.stage ? { stage: query.stage } : {}),
+      ...(query.phase_code ? { phaseCode: query.phase_code } : {}),
+      ...(query.status_code ? { statusCode: query.status_code } : {}),
+      ...(query.open !== undefined ? { open: query.open } : {}),
       ...(query.carrier_id ? { carrierId: query.carrier_id } : {}),
     });
   });
@@ -133,55 +147,96 @@ export async function retentionRoutes(app: FastifyInstance): Promise<void> {
     return { case: toRetentionCaseDto(row) };
   });
 
-  /** Manual case creation (auto-generation is the primary path — see /retention/sync). */
   app.post('/retention/cases', guard, async (request, reply) => {
     const ctx = requireRetentionAccess(request);
     const body = createSchema.parse(request.body);
     const created = await retentionCaseRepo.create(ctx, {
       carrierId: body.carrier_id,
+      zohoDealId: body.zoho_deal_id,
       companyName: body.company_name,
       applicationId: body.application_id,
       agentName: body.agent_name,
-      agentZohoUserId: body.agent_zoho_user_id,
-      phase: body.phase,
-      stage: body.stage,
-      inactivityReason: body.inactivity_reason,
+      assignedAgentZohoUserId: body.assigned_agent_zoho_user_id,
+      phaseCode: body.phase_code,
+      statusCode: body.status_code,
+      dissatisfactionReason: body.dissatisfaction_reason,
       reasonNote: body.reason_note,
       source: 'manual',
+      actorZohoUserId: actorZohoUserId(ctx),
+    });
+    await notifyCaseCreated(ctx, {
+      caseId: created.id,
+      carrierId: created.carrierId,
+      companyName: created.companyName,
+      assignedAgentZohoUserId: created.assignedAgentZohoUserId,
+      daysInactive: created.daysInactive,
+      thresholdDays: created.thresholdDays,
     });
     await auditFromContext(ctx, {
       action: 'retention.case.create',
       status: 'ok',
       resourceType: 'retention_case',
       resourceId: created.id,
-      detail: { carrierId: created.carrierId, phase: created.phase, stage: created.stage },
+      detail: {
+        carrierId: created.carrierId,
+        phaseCode: created.phaseCode,
+        statusCode: created.statusCode,
+      },
     });
     return reply.code(201).send({ case: created });
   });
 
-  /** Partial update — phase/stage moves, reasons, outcomes, open-pool state. */
   app.post('/retention/cases/:id', guard, async (request) => {
     const ctx = requireRetentionAccess(request);
     const { id } = request.params as { id: string };
     const body = updateSchema.parse(request.body);
     const updated = await retentionCaseRepo.update(ctx, id, {
-      ...(body.phase !== undefined ? { phase: body.phase } : {}),
-      ...(body.stage !== undefined ? { stage: body.stage } : {}),
-      ...(body.status !== undefined ? { status: body.status } : {}),
-      ...(body.outcome !== undefined ? { outcome: body.outcome } : {}),
-      ...(body.inactivity_reason !== undefined
-        ? { inactivityReason: body.inactivity_reason }
+      ...(body.phase_code !== undefined ? { phaseCode: body.phase_code } : {}),
+      ...(body.status_code !== undefined ? { statusCode: body.status_code } : {}),
+      ...(body.agent_outcome !== undefined ? { agentOutcome: body.agent_outcome } : {}),
+      ...(body.dissatisfaction_reason !== undefined
+        ? { dissatisfactionReason: body.dissatisfaction_reason }
         : {}),
       ...(body.reason_note !== undefined ? { reasonNote: body.reason_note } : {}),
+      ...(body.assigned_agent_zoho_user_id !== undefined
+        ? { assignedAgentZohoUserId: body.assigned_agent_zoho_user_id }
+        : {}),
+      ...(body.assignment_count !== undefined ? { assignmentCount: body.assignment_count } : {}),
+      ...(body.open_pool_attempt_count !== undefined
+        ? { openPoolAttemptCount: body.open_pool_attempt_count }
+        : {}),
       ...(body.out_of_reach_attempts !== undefined
         ? { outOfReachAttempts: body.out_of_reach_attempts }
         : {}),
-      ...(body.pool_assignment !== undefined ? { poolAssignment: body.pool_assignment } : {}),
-      ...(body.pool_taken_by !== undefined ? { poolTakenBy: body.pool_taken_by } : {}),
-      ...(body.agent_name !== undefined ? { agentName: body.agent_name } : {}),
-      ...(body.agent_zoho_user_id !== undefined
-        ? { agentZohoUserId: body.agent_zoho_user_id }
+      ...(body.deal_owner_changed !== undefined
+        ? { dealOwnerChanged: body.deal_owner_changed }
         : {}),
+      ...(body.current_deadline_at !== undefined
+        ? { currentDeadlineAt: parseOptionalDate(body.current_deadline_at) }
+        : {}),
+      ...(body.current_deadline_type !== undefined
+        ? { currentDeadlineType: body.current_deadline_type }
+        : {}),
+      ...(body.vacation_countdown_end !== undefined
+        ? { vacationCountdownEnd: parseOptionalDate(body.vacation_countdown_end) }
+        : {}),
+      ...(body.citi_folder_entered_at !== undefined
+        ? { citiFolderEnteredAt: parseOptionalDate(body.citi_folder_entered_at) }
+        : {}),
+      ...(body.citi_folder_hold_until !== undefined
+        ? { citiFolderHoldUntil: parseOptionalDate(body.citi_folder_hold_until) }
+        : {}),
+      ...(body.last_review_cycle_at !== undefined
+        ? { lastReviewCycleAt: parseOptionalDate(body.last_review_cycle_at) }
+        : {}),
+      ...(body.sales_manager_zoho_user_id !== undefined
+        ? { salesManagerZohoUserId: body.sales_manager_zoho_user_id }
+        : {}),
+      ...(body.agent_name !== undefined ? { agentName: body.agent_name } : {}),
+      ...(body.zoho_deal_id !== undefined ? { zohoDealId: body.zoho_deal_id } : {}),
+      ...(body.event_type !== undefined ? { eventType: body.event_type } : {}),
+      ...(body.event_notes !== undefined ? { eventNotes: body.event_notes } : {}),
+      actorZohoUserId: actorZohoUserId(ctx),
     });
     if (!updated) throw new NotFoundError('Retention case not found');
     await auditFromContext(ctx, {
@@ -210,10 +265,6 @@ export async function retentionRoutes(app: FastifyInstance): Promise<void> {
     return { deleted: true, id };
   });
 
-  /**
-   * Run auto-generation now (the nightly cron runs the same sync). Scans the DWH for
-   * frequency breaches, creates/refreshes cases, and closes returned clients.
-   */
   app.post('/retention/sync', guard, async (request) => {
     const ctx = requireAdmin(request);
     if (!env.DWH_DATABASE_URL) {

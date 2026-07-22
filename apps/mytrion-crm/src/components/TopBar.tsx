@@ -1,11 +1,12 @@
 import { Link } from 'react-router-dom';
 import { useUserContext } from '../context/UserContextProvider';
-import { isAdmin } from '../access/resolveAccess';
+import { isAdmin, resolveAccessibleMytrions } from '../access/resolveAccess';
 import { logout } from '../api/auth';
 import { useTheme } from '../hooks/useTheme';
 import { ActAsPicker } from './ActAsPicker';
 import { BrandMark } from './BrandMark';
-import { MoonIcon, SunIcon, SwitchIcon, XIcon } from './icons';
+import { MoonIcon, SunIcon, SwitchIcon } from './icons';
+import { LogOut } from 'lucide-react';
 import styles from './TopBar.module.css';
 
 function initials(name: string): string {
@@ -31,6 +32,15 @@ export function TopBar({
   const user = useUserContext();
   const { theme, toggle } = useTheme();
 
+  // Admins can view-as anyone (ActAsPicker fetches the roster). A granted non-admin is handed their
+  // scoped target list so the SAME picker only offers the users they're permitted to view as.
+  const admin = isAdmin(user);
+  const viewAsTargets = user.viewAsTargets ?? [];
+  const canViewAs = admin || viewAsTargets.length > 0;
+  // "Switch Mytrion" only means something with somewhere else to go — single-Mytrion users
+  // (e.g. Sales agents) must not be offered a route back to the picker.
+  const canSwitch = resolveAccessibleMytrions(user).accessible.length > 1;
+
   return (
     <header className={styles.bar}>
       <div className={styles.left}>
@@ -39,9 +49,22 @@ export function TopBar({
       </div>
 
       <div className={styles.right}>
-        {isAdmin(user) && <ActAsPicker />}
-        {showSwitch && (
-          <Link to="/" className={styles.switch}>
+        {canViewAs &&
+          (admin ? (
+            <ActAsPicker />
+          ) : (
+            <ActAsPicker
+              targets={viewAsTargets.map((t) => ({
+                zohoUserId: t.zohoUserId,
+                name: t.name,
+                email: null,
+                profile: null,
+                role: null,
+              }))}
+            />
+          ))}
+        {showSwitch && canSwitch && (
+          <Link to="/main" className={styles.switch}>
             <SwitchIcon size={13} />
             Switch Mytrion
           </Link>
@@ -65,7 +88,7 @@ export function TopBar({
             onClick={logout}
             title="Sign out"
           >
-            <XIcon size={13} />
+            <LogOut size={14} strokeWidth={2.5} />
             Sign out
           </button>
         )}

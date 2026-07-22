@@ -4,7 +4,7 @@ import { useI18n } from '../lib/i18n';
 
 export type HomeTab = 'home' | 'services' | 'inbox';
 
-const TABS: HomeTab[] = ['home', 'services', 'inbox'];
+export const TABS: HomeTab[] = ['home', 'services', 'inbox'];
 
 /**
  * Bottom tab bar (v2 design) — only shown while the signed-in Home screen is active. A single
@@ -42,29 +42,31 @@ export function TabBar({ active, unreadCount, onSelect }: { active: HomeTab; unr
               <TabBarIcon kind={tab} active={isActive} />
               {tab === 'inbox' && unreadCount > 0 && (
                 <span
+                  aria-label={t('inbox.new', { n: unreadCount })}
                   style={{
                     position: 'absolute',
-                    top: -2,
-                    right: -10,
-                    minWidth: 16,
-                    height: 16,
-                    padding: '0 4px',
-                    borderRadius: 8,
-                    background: 'var(--destructive)',
+                    top: -5,
+                    left: '50%',
+                    marginLeft: 4,
+                    minWidth: 17,
+                    height: 17,
+                    padding: '0 5px',
+                    borderRadius: 9,
+                    background: 'var(--primary)',
                     color: '#FFFFFF',
-                    fontSize: 10,
+                    fontSize: 10.5,
                     fontWeight: 700,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
+                    lineHeight: '17px',
+                    textAlign: 'center',
+                    fontVariantNumeric: 'tabular-nums',
                     boxShadow: '0 0 0 2px var(--card)',
                   }}
                 >
-                  {unreadCount}
+                  {unreadCount > 99 ? '99+' : unreadCount}
                 </span>
               )}
             </span>
-            <span style={{ fontSize: 11, fontWeight: isActive ? 700 : 500 }}>{t(`tab.${tab}`)}</span>
+            <span style={{ fontSize: 12, fontWeight: isActive ? 700 : 500, whiteSpace: 'nowrap' }}>{t(`tab.${tab}`)}</span>
           </button>
         );
       })}

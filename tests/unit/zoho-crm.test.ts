@@ -3,9 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }));
 
 // Auth + base URL are the wrapper's job; mock them so we exercise zohoCrm's request/parse logic.
-vi.mock('../../src/integrations/wrapper.js', () => ({
+vi.mock('../../src/integrations/zohoAuth.js', () => ({
   authHeaders: async () => ({ Authorization: 'Zoho-oauthtoken test' }),
   baseUrl: () => 'https://www.zohoapis.com/crm/v8',
+  invalidateZohoToken: () => {},
 }));
 vi.stubGlobal('fetch', fetchMock);
 
@@ -46,8 +47,8 @@ describe('zohoCrm.runCoql', () => {
 
     expect(out).toEqual({ rows: [{ id: '1', Email: 'a@b.com' }], count: 1, moreRecords: true });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://www.zohoapis.com/crm/v8/coql');
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(String(url)).toBe('https://www.zohoapis.com/crm/v8/coql');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body as string)).toEqual({ select_query: 'select id, Email from Contacts limit 0, 1' });
     expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json');
@@ -79,7 +80,7 @@ describe('zohoCrm.getOrg', () => {
     });
     const org = await getOrg();
     expect(org).toEqual({ id: '999', company_name: 'Octane' });
-    expect((fetchMock.mock.calls[0]?.[0] as string)).toBe('https://www.zohoapis.com/crm/v8/org');
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe('https://www.zohoapis.com/crm/v8/org');
   });
 
   it('returns {} when no org is present', async () => {

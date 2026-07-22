@@ -13,6 +13,9 @@ export interface NavItem {
   icon: ReactNode;
   active?: boolean;
   onClick?: () => void;
+  /** Nested items, revealed while this item (or one of them) is active. Opt-in: an item without
+   * children renders exactly as before, so the other Mytrions are unaffected. */
+  children?: NavItem[];
 }
 
 /**
@@ -38,27 +41,65 @@ export function MytrionShell({
   const items: NavItem[] = nav ?? [{ key: 'home', label: 'Home', icon: <HomeIcon />, active: true }];
 
   return (
-    <div className={styles.shell}>
+    <div className={styles.shell} data-mytrion={id}>
       <TopBar contextBadge={m.tag} showSwitch />
       <div className={styles.body}>
-        <nav className={styles.sidebar}>
+        <nav className={styles.sidebar} aria-label={`${m.title} navigation`}>
           <div className={styles.navGroup}>
-            {items.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                title={item.label}
-                aria-label={item.label}
-                className={`${styles.navBtn} ${item.active && !chatView ? styles.navActive : ''}`}
-                onClick={() => {
-                  setChatView(false);
-                  item.onClick?.();
-                }}
-              >
-                <span className={styles.navIcon}>{item.icon}</span>
-                <span className={styles.navLabel}>{item.label}</span>
-              </button>
-            ))}
+            {items.map((item) => {
+              const select = (i: NavItem) => () => {
+                setChatView(false);
+                i.onClick?.();
+              };
+              const hasChildren = Boolean(item.children?.length);
+              // A parent stays open while it or any of its children is the current view — the
+              // sub-items are where the work happens, so collapsing them under the user is wrong.
+              const open = hasChildren && (item.active || Boolean(item.children?.some((c) => c.active)));
+              // Exactly one row may read as selected. A parent with children isn't a destination —
+              // clicking it lands on a child — so it gets the quieter "you are in here" treatment
+              // and the child keeps the accent. Leaf items are unchanged.
+              const selected = Boolean(item.active) && !chatView && !hasChildren;
+              return (
+                <div key={item.key}>
+                  <button
+                    type="button"
+                    title={item.label}
+                    aria-label={item.label}
+                    {...(hasChildren ? { 'aria-expanded': open } : {})}
+                    {...(selected ? { 'aria-current': 'page' as const } : {})}
+                    className={`${styles.navBtn} ${selected ? styles.navActive : ''} ${
+                      open && !chatView ? styles.navOpen : ''
+                    }`}
+                    onClick={select(item)}
+                  >
+                    <span className={styles.navIcon}>{item.icon}</span>
+                    <span className={styles.navLabel}>{item.label}</span>
+                  </button>
+                  {open && (
+                    <div className={styles.navSub}>
+                      {item.children?.map((child) => {
+                        const childSelected = Boolean(child.active) && !chatView;
+                        return (
+                          <button
+                            key={child.key}
+                            type="button"
+                            title={child.label}
+                            aria-label={child.label}
+                            {...(childSelected ? { 'aria-current': 'page' as const } : {})}
+                            className={`${styles.navBtn} ${styles.navSubBtn} ${
+                              childSelected ? styles.navSubActive : ''
+                            }`}
+                            onClick={select(child)}
+                          >
+                            <span className={styles.navLabel}>{child.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <div className={styles.navGroup}>

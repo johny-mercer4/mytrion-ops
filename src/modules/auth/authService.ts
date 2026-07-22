@@ -2,6 +2,7 @@ import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import type { User } from '../../db/schema/index.js';
 import { AppError, AuthError } from '../../lib/errors.js';
 import { normalizeDepartments } from '../../lib/department.js';
+import { mytrionAccessService } from '../access/mytrionAccessService.js';
 import { userRepo } from '../../repos/userRepo.js';
 import type { Audience, Role, TenantContext } from '../../types/tenantContext.js';
 import { signAccessToken, signRefreshToken, verifyToken, type TokenClaims } from './jwt.js';
@@ -50,24 +51,40 @@ export function toPublicUser(user: User): PublicUser {
 /**
  * Build the request security context from verified token claims. scopes are
  * recomputed from role here (never trusted from the token).
+ *
+ * Async because a Zoho-worker session's department grant + allDepartmentAccess are now resolved
+ * from the DB-backed access rules (mytrionAccessService) — the SINGLE authoritative point. The
+ * resolver is TTL-cached, never throws (fails open to the legacy profile derivation), and can
+ * never lower an env-marker admin, so this stays safe on the hot auth path.
  */
-export function contextFromClaims(claims: TokenClaims, requestId: string): TenantContext {
+export async function contextFromClaims(
+  claims: TokenClaims,
+  requestId: string,
+): Promise<TenantContext> {
   // Zoho-worker session: identity is VERIFIED (from the signed token). The internal role is
   // RE-DERIVED from the embedded worker identity — never trusted from claims.role — so a role
   // policy change (or a stale pre-fix 'admin' token) takes effect for live sessions on deploy.
-  // allDepartmentAccess uses the same predicate, so role and bypass can't diverge. The
-  // department VIEW is applied per request in buildCallerContext.
+  // departments + allDepartmentAccess come from the DB access resolver (admin edits take effect
+  // within the resolver TTL, no re-login). The department VIEW is intersected per request in
+  // buildCallerContext.
   if (claims.worker) {
     const w = claims.worker;
     const role = workerRoleFor({ userName: w.userName, profile: w.profile, zohoRole: w.zohoRole });
+    const access = await mytrionAccessService.resolveWorkerAccess({
+      tenantId: claims.tenantId,
+      zohoUserId: w.zohoUserId,
+      profileName: w.profile ?? null,
+      zohoRole: w.zohoRole ?? null,
+      userName: w.userName ?? null,
+    });
     const ctx: TenantContext = {
       tenantId: claims.tenantId,
       userId: claims.userId,
       audience: claims.audience,
       role,
       scopes: scopesForRole(role),
-      departments: [],
-      allDepartmentAccess: role === 'admin',
+      departments: access.departments,
+      allDepartmentAccess: access.allDepartmentAccess,
       sessionVerified: true,
       requestId,
     };
@@ -75,6 +92,7 @@ export function contextFromClaims(claims: TokenClaims, requestId: string): Tenan
     if (w.email) ctx.email = w.email;
     if (w.profile) ctx.profiles = [w.profile];
     if (w.zohoRole) ctx.callerRole = w.zohoRole;
+    if (access.viewAsUserIds?.length) ctx.viewAsUserIds = access.viewAsUserIds;
     return ctx;
   }
   // Carrier-client session (login/password from carrier_users): locked down server-side
@@ -111,16 +129,20 @@ export function contextFromClaims(claims: TokenClaims, requestId: string): Tenan
     ctx.profiles = [c.clientProfile === 'driver' ? 'Driver' : 'Owner'];
     return ctx;
   }
+  // Email/password (users-table) session. This IS a verified session token (we signed it), so mark
+  // it sessionVerified — otherwise withDepartmentAccess would treat it as an untrusted caller and
+  // honor client-supplied x-all-departments/x-department-access, letting a non-admin user
+  // self-elevate. Verified ⇒ those claims are ignored; a non-admin gets global-only (departments []),
+  // an admin keeps all-department access. Only the static API_KEY (systemContext) stays unverified.
   return {
     tenantId: claims.tenantId,
     userId: claims.userId,
     audience: claims.audience,
     role: claims.role,
     scopes: scopesForRole(claims.role),
-    // Department access is supplied per request by the caller (see routes/v1/helpers).
-    // Admins are elevated by default ("managers can access almost everything").
     departments: [],
     allDepartmentAccess: claims.role === 'admin',
+    sessionVerified: true,
     requestId,
   };
 }
@@ -208,7 +230,7 @@ export const authService = {
         expose: true,
       });
     }
-    const ctx = contextFromClaims(claims, 'refresh');
+    const ctx = await contextFromClaims(claims, 'refresh');
     const user = await userRepo.findById(ctx, claims.userId);
     if (!user || user.status !== 'active') {
       throw new AuthError('Account is no longer active');

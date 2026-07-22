@@ -1,8 +1,10 @@
 import { buildApp } from './app.js';
 import { assertRuntimeSecrets, env } from './config/env.js';
 import { closeDb } from './db/client.js';
+import { closeCmpTunnel } from './integrations/cmpTunnel.js';
 import { runMigrationsOnBoot } from './db/migrate.js';
 import { logger } from './lib/logger.js';
+import { seedMytrionAccessOnBoot } from './modules/access/bootstrap.js';
 import { jobsEnabled, startJobs, stopJobs } from './modules/jobs/boss.js';
 
 // Last-resort guards (incident 2026-07-13: Render Postgres went into recovery and a background
@@ -23,6 +25,8 @@ async function main(): Promise<void> {
   assertRuntimeSecrets();
   // Bring the schema forward before serving (no-op unless DB_MIGRATE_ON_BOOT=1).
   await runMigrationsOnBoot();
+  // Profile-default access seeding (idempotent) — fail-open, see modules/access/bootstrap.ts.
+  await seedMytrionAccessOnBoot();
   const app = await buildApp();
 
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
@@ -44,6 +48,7 @@ async function main(): Promise<void> {
       // then stop accepting HTTP, then release the DB pool.
       await stopJobs();
       await app.close();
+      closeCmpTunnel();
       await closeDb();
     } catch (err) {
       logger.error({ err }, 'error during shutdown');

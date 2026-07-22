@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 import { s } from './dc';
 
 const panelBase =
-  'position:fixed;z-index:200;border-radius:12px;background:var(--surface);border:1px solid var(--border);box-shadow:0 8px 28px rgba(15,23,42,.12),0 2px 8px rgba(15,23,42,.06);overflow:hidden;max-height:min(230px,42vh)';
+  'position:fixed;z-index:200;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:0 8px 28px rgba(15,23,42,.12),0 2px 8px rgba(15,23,42,.06);overflow:hidden;max-height:min(230px,42vh)';
 
 export function AutoFloatingDrop({
   open,
@@ -72,14 +72,18 @@ export function AutoFloatingDrop({
 
   if (!open || !box || typeof document === 'undefined') return null;
 
+  // Portal into `.ss-root` so theme CSS vars (--surface, --ok, shimmer) resolve.
+  // Body portals lose tokens → white skeleton blocks + unstyled badges.
+  const host = document.querySelector('.ss-root') ?? document.body;
+
   const style = box.flip
     ? `${panelBase};left:${box.left}px;width:${box.width}px;bottom:${window.innerHeight - box.top}px;top:auto;max-height:${maxHeight}px;overflow-y:auto`
     : `${panelBase};left:${box.left}px;width:${box.width}px;top:${box.top}px;max-height:${maxHeight}px;overflow-y:auto`;
 
   return createPortal(
-    <div className="ss-scroll" style={s(style)} role="listbox">
+    <div className="ss-scroll ss-float-drop" style={s(style)} role="listbox">
       {children}
     </div>,
-    document.body,
+    host,
   );
 }

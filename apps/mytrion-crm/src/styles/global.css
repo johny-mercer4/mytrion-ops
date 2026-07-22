@@ -50,6 +50,8 @@
   --font-sans: var(--font-body);
   --font-heading: var(--font-head);
   --font-mono: var(--font-mono);
+  /* skeleton sheen (see @keyframes shimmer) */
+  --animate-shimmer: shimmer 1.4s ease-in-out infinite;
 }
 
 /* Per-Mytrion accent — set data-mytrion="<id>" on a module root to swap --accent* to that
@@ -58,7 +60,8 @@
 [data-mytrion='admin'] { --accent: #38bef0; --accent-strong: #2cb6ec; --on-accent: #04131c; --accent-soft: rgba(56, 190, 240, 0.12); --accent-glow: rgba(56, 190, 240, 0.26); }
 [data-theme='light'] [data-mytrion='admin'] { --accent: #0c8fc7; --accent-strong: #0e9ad6; --on-accent: #fff; --accent-soft: rgba(12, 143, 199, 0.1); --accent-glow: rgba(12, 143, 199, 0.2); }
 
-[data-mytrion='sales'] { --accent: #4d9dff; --accent-strong: #7bb6ff; --on-accent: #04122e; --accent-soft: rgba(77, 157, 255, 0.13); --accent-glow: rgba(77, 157, 255, 0.28); }
+/* Match Sales redesign theme.css (.ss-root / .ss-root.light) — not wizard --rocket */
+[data-mytrion='sales'] { --accent: #4cc2f5; --accent-strong: #7c5cff; --on-accent: #04131c; --accent-soft: rgba(76, 194, 245, 0.14); --accent-glow: rgba(76, 194, 245, 0.26); }
 [data-theme='light'] [data-mytrion='sales'] { --accent: #2563eb; --accent-strong: #1d4ed8; --on-accent: #fff; --accent-soft: rgba(37, 99, 235, 0.1); --accent-glow: rgba(37, 99, 235, 0.2); }
 
 [data-mytrion='billing'] { --accent: #8b5cf6; --accent-strong: #a482f8; --on-accent: #160a2e; --accent-soft: rgba(139, 92, 246, 0.13); --accent-glow: rgba(139, 92, 246, 0.28); }
@@ -70,11 +73,8 @@
 [data-mytrion='finance'] { --accent: #10b981; --accent-strong: #34d399; --on-accent: #04231a; --accent-soft: rgba(16, 185, 129, 0.13); --accent-glow: rgba(16, 185, 129, 0.28); }
 [data-theme='light'] [data-mytrion='finance'] { --accent: #0e9e6e; --accent-strong: #0b8a5f; --on-accent: #fff; --accent-soft: rgba(14, 158, 110, 0.1); --accent-glow: rgba(14, 158, 110, 0.2); }
 
-[data-mytrion='customer-service'] { --accent: #e0a83e; --accent-strong: #f2c86a; --on-accent: #241a06; --accent-soft: rgba(224, 168, 62, 0.14); --accent-glow: rgba(224, 168, 62, 0.28); }
-[data-theme='light'] [data-mytrion='customer-service'] { --accent: #b4770f; --accent-strong: #ce9022; --on-accent: #fff; --accent-soft: rgba(180, 119, 15, 0.1); --accent-glow: rgba(180, 119, 15, 0.2); }
-
-[data-mytrion='retention'] { --accent: #e85dc0; --accent-strong: #f08fd4; --on-accent: #2a0a22; --accent-soft: rgba(232, 93, 192, 0.13); --accent-glow: rgba(232, 93, 192, 0.28); }
-[data-theme='light'] [data-mytrion='retention'] { --accent: #c0269e; --accent-strong: #db3ab5; --on-accent: #fff; --accent-soft: rgba(192, 38, 158, 0.1); --accent-glow: rgba(192, 38, 158, 0.2); }
+[data-mytrion='customer-service'] { --accent: #D4B84A; --accent-strong: #E0C96A; --on-accent: #1A1400; --accent-soft: rgba(212, 184, 74, 0.12); --accent-glow: rgba(212, 184, 74, 0.14); }
+[data-theme='light'] [data-mytrion='customer-service'] { --accent: #C9A227; --accent-strong: #D4AF37; --on-accent: #1A1400; --accent-soft: rgba(201, 162, 39, 0.12); --accent-glow: rgba(201, 162, 39, 0.14); }
 
 [data-mytrion='verification'] { --accent: #6d7cff; --accent-strong: #94a0ff; --on-accent: #0a0c2e; --accent-soft: rgba(109, 124, 255, 0.14); --accent-glow: rgba(109, 124, 255, 0.28); }
 [data-theme='light'] [data-mytrion='verification'] { --accent: #4f46e5; --accent-strong: #4338ca; --on-accent: #fff; --accent-soft: rgba(79, 70, 229, 0.1); --accent-glow: rgba(79, 70, 229, 0.2); }
@@ -136,6 +136,16 @@ button {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+/* Skeleton sheen — the bar is a 200%-wide gradient and this slides it across. Paired with
+   `--animate-shimmer` in the theme block so it's `animate-shimmer`, not an arbitrary value. */
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
   }
 }
 @keyframes thinkBounce {

@@ -49,14 +49,19 @@ for port in $API_PORT $WEB_PORT; do
   fi
 done
 
-# ── 4. Run both; stop both on exit ───────────────────────────────────────────
+# ── 4. Run tunnel + both servers; stop all on exit ───────────────────────────
 cleanup() {
   echo ""
   echo "[dev] shutting down…"
-  kill "$BACK_PID" "$FRONT_PID" 2>/dev/null || true
-  wait "$BACK_PID" "$FRONT_PID" 2>/dev/null || true
+  kill "${BACK_PID:-}" "${FRONT_PID:-}" "${TUNNEL_PID:-}" 2>/dev/null || true
+  wait "${BACK_PID:-}" "${FRONT_PID:-}" "${TUNNEL_PID:-}" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
+
+# CMP MySQL tunnel (auto-reconnect; a no-op if MYSQL_SSH_* / the key aren't set, so DWH-only
+# setups are unaffected). Keeps Admin → CMP Database working without a manual ssh.
+bash scripts/db-tunnel.sh &
+TUNNEL_PID=$!
 
 $PNPM dev &
 BACK_PID=$!

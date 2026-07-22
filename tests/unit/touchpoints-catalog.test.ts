@@ -8,29 +8,25 @@ import { getTouchpoint, listTouchpoints } from '../../src/modules/touchpoints/ca
 
 const all = listTouchpoints();
 
-/** The widget's 21 unique Deluge functions (SELF_SERVICE_API_TOUCHPOINTS golden list). */
+/**
+ * Legacy widget Deluge functions still served via `kind: 'deluge'`. Migrated to native TypeScript
+ * handlers (kind: 'local') and therefore intentionally ABSENT from this list:
+ *   - dashboards → src/integrations/salesDashboards.ts (mytrionhomesnapshot, mytrionAgentSalesDashboard,
+ *     mytriondbdebtorsinfo, mytrioncompanydashboard);
+ *   - CRM-backed → src/integrations/salesCrmActions.ts (mytrionfetchannouncements, mytrionfetchinbox,
+ *     mytriondeleteinboxmessage, mytrioncreatelead, mytrionapplicationupdate, mytriontruckingnumberrequest).
+ */
 const WIDGET_DELUGE_FUNCTIONS = [
   'mytrionCallback',
-  'mytrionapplicationupdate',
-  'mytriontruckingnumberrequest',
   'mytrionCheckPayment',
   'mytrionfetchbillingforminfo',
   'mytrioncardstatus',
   'mytrioncardlimits',
-  'mytrionSearchInvoices',
-  'mytrionAgentSalesDashboard',
-  'mytrioncompanydashboard',
-  'mytriondbdebtorsinfo',
-  'mytrionhomesnapshot',
-  'mytrionfetchannouncements',
-  'mytrioncreatelead',
   'createescalationticket',
   'createticketincrm',
   'uploadticketattachment',
   'uploadescalationattachment',
   'createmaintenance',
-  'mytrionfetchinbox',
-  'mytriondeleteinboxmessage',
   'mytriondatacenterleads',
 ] as const;
 
@@ -38,8 +34,33 @@ describe('catalog shape', () => {
   it('has unique keys and the expected size', () => {
     const keys = all.map((t) => t.key);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(25);
-    expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(44);
+    // Billing has ZERO Deluge touchpoints now — the whole Transactions/Returns/carrier surface,
+    // including the mapping-picker invoice search (mytrionSearchInvoices → GET /billing/invoices/
+    // search, a CMP read via servercrm), moved off Deluge. Two waves of Sales touchpoints migrated
+    // Deluge→native (kind: 'local'): 4 dashboards + 6 CRM-backed (inbox/announcements/leads/
+    // application/trucking), dropping the deluge count 30→20; billing's last one drops it to 19.
+    expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(19);
+    // servercrm reads incl. 7 billing (deals, debtors, avg-days, carrier-type, 3× prepay); count
+    // reflects the build merge (retention work moved some CS touchpoints to kind:'local').
+    expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(49);
+    // BOCA + Close Application (Playwright microservice) + Zapier ticket-email webhook.
+    expect(all.filter((t) => t.kind === 'browserauto')).toHaveLength(2);
+    expect(all.filter((t) => t.kind === 'zapier')).toHaveLength(1);
+  });
+
+  it('billing touchpoints are billing-gated and portfolio-wide (no owner scoping)', () => {
+    const billing = all.filter((t) => t.key.startsWith('billing.'));
+    // 7 servercrm touchpoints (DWH/prepay reads); everything else — including the invoice-search
+    // mapping picker — is now a Postgres-backed / servercrm-proxied REST route, no Deluge.
+    expect(billing).toHaveLength(7);
+    for (const tp of billing) {
+      expect(tp.departments, `${tp.key} must be billing-gated`).toEqual(['billing']);
+      // Billing is a portfolio role: no per-agent carrier ownership gate (would wrongly
+      // block agents from carriers not on their personal roster).
+      expect(tp.carrierParam, `${tp.key} must NOT be owner-scoped`).toBeUndefined();
+    }
+    // Money-adjacent mapping writes are 'write' (billing's core job), never 'destructive'.
+    expect(billing.some((t) => t.riskClass === 'destructive')).toBe(false);
   });
 
   it('finance touchpoints are finance-department scoped and cover the widget surface', () => {
@@ -95,6 +116,7 @@ describe('catalog shape', () => {
       'dwh.money_code_draw',
       'efs.card_override',
       'fraud.hold_release',
+      'money_code.void',
     ]);
   });
 

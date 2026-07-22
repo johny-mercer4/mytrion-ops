@@ -1,0 +1,572 @@
+/* SPA-hosting overrides on top of the ported widget CSS (the only hand-written file in
+   styles/ — everything else is machine-scoped from zoho-octane). */
+
+/* The module renders inside the app router's full page — pin the shell to the viewport. */
+.cs-root {
+    height: 100vh;
+    width: 100%;
+    position: relative;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Smooth theme cross-fade (Finance feel): surfaces + text + borders transition
+   when .dark-mode flips, so the whole UI animates between light and dark rather
+   than snapping. Kept to color properties so it never fights layout/hover.
+   ══════════════════════════════════════════════════════════════════════════ */
+.cs-root,
+.cs-root .cs-sidebar,
+.cs-root .cs-sidebar-brand,
+.cs-root .cs-sidebar-footer,
+.cs-root .cs-content,
+.cs-root .cs-panel,
+.cs-root .cs-header-row,
+.cs-root .cs-home-stat-card,
+.cs-root .cs-citi-stat-card,
+.cs-root .cs-an-kpi-card,
+.cs-root .cs-an-chart-card,
+.cs-root .cs-table,
+.cs-root .cs-table th,
+.cs-root .cs-table td,
+.cs-root .cs-modal-box,
+.cs-root .cs-modal-header,
+.cs-root .cs-modal-footer,
+.cs-root .cs-form-input,
+.cs-root .cs-user-card,
+.cs-root .cs-theme-toggle {
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+    .cs-root .cs-boot { animation: none; }
+    .cs-root .cs-boot-ring-spin,
+    .cs-root .cs-boot-ring-spin2,
+    .cs-root .cs-boot-sweep span,
+    .cs-root .cs-boot-dots { animation: none; }
+}
+
+/* ── Finance-style user card at the bottom of the sidebar ── */
+.cs-root .cs-user-card {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.55rem 0.625rem;
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    border: 1px solid var(--border);
+}
+/* User card / theme toggle chrome live in shared-base (CSMYTRION gold). */
+.cs-root .cs-user-avatar {
+    color: var(--cs-on-accent);
+}
+.cs-root .cs-sidebar-footer-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+/* ── Analytics polish ──────────────────────────────────────────────────────
+   The panel renders 2 chart cards (Trend + Breakdown), so give the 3-col grid a
+   2:1 split instead of leaving an empty third column. Richer trend chart + KPI
+   accents stay within the widget's design language. */
+.cs-root .cs-an-charts-grid {
+    grid-template-columns: 2fr 1fr;
+}
+@media (max-width: 900px) {
+    .cs-root .cs-an-charts-grid {
+        grid-template-columns: 1fr;
+    }
+}
+.cs-root .cs-an-chart-card {
+    transition: border-color 160ms, box-shadow 160ms, transform 160ms;
+}
+.cs-root .cs-an-chart-card:hover {
+    transform: translateY(-1px);
+}
+
+/* KPI cards: a hairline accent bar on the primary card + smoother lift. */
+.cs-root .cs-an-kpi-card {
+    position: relative;
+    transition: border-color 160ms, box-shadow 160ms, transform 160ms;
+}
+.cs-root .cs-an-kpi-card:hover {
+    transform: translateY(-1px);
+}
+.cs-root .cs-an-kpi-primary::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 3px;
+    border-radius: var(--radius-lg, 12px) var(--radius-lg, 12px) 0 0;
+    background: linear-gradient(90deg, var(--cs-accent), var(--cs-accent-hover));
+}
+.cs-root .cs-an-kpi-hint {
+    font-size: 0.625rem;
+    color: var(--text-muted);
+    margin-top: 0.15rem;
+}
+
+/* Taller trend chart with a soft baseline + animated draw + hover point. */
+.cs-root .cs-an-spark-wrap {
+    min-height: 132px;
+}
+.cs-root .cs-an-spark-svg {
+    min-height: 108px;
+    overflow: visible;
+}
+.cs-root .cs-an-spark-baseline {
+    stroke: var(--border);
+    stroke-width: 1;
+    stroke-dasharray: 3 4;
+    vector-effect: non-scaling-stroke;
+}
+.cs-root .cs-an-spark-line {
+    stroke: var(--cs-accent);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+}
+.cs-root .cs-an-spark-dot {
+    fill: var(--cs-accent);
+    stroke: var(--surface);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+}
+.cs-root .cs-an-trend-peak {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    margin-bottom: 0.35rem;
+}
+.cs-root .cs-an-trend-peak-val {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+}
+.cs-root .cs-an-trend-peak-lbl {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+}
+
+/* ── Floating AI copilot (CsCopilot) — launcher + pop-over, CS Paper White tokens.
+      Same UX as the Sales Mytrion copilot; replaces the old full AI Chat tab. ── */
+.cs-root .cs-copilot-fab {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 90;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    background: linear-gradient(140deg, var(--cs-accent-hover), var(--cs-accent-deep));
+    color: var(--cs-on-accent);
+    box-shadow: 0 8px 26px var(--cs-accent-glow);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cs-root .cs-copilot-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2px solid var(--cs-accent);
+    animation: cs-copilot-ring 2.2s ease-out infinite;
+    pointer-events: none;
+}
+
+@keyframes cs-copilot-ring {
+    0% { transform: scale(1); opacity: 0.6; }
+    100% { transform: scale(1.5); opacity: 0; }
+}
+
+.cs-root .cs-copilot-panel {
+    position: fixed;
+    right: 24px;
+    bottom: 92px;
+    z-index: 95;
+    width: 380px;
+    max-width: calc(100vw - 40px);
+    height: 560px;
+    max-height: calc(100vh - 130px);
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: 0 24px 60px rgba(16, 24, 40, 0.22);
+    animation: cs-copilot-pop 0.24s cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@keyframes cs-copilot-pop {
+    from { transform: translateY(10px) scale(0.98); opacity: 0; }
+    to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.cs-root .cs-copilot-head {
+    flex-shrink: 0;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    background: linear-gradient(120deg, var(--cs-accent-soft), transparent), var(--surface);
+    border-bottom: 1px solid var(--border);
+}
+
+.cs-root .cs-copilot-mark {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(140deg, var(--cs-accent-hover), var(--cs-accent-deep));
+    color: var(--cs-on-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.cs-root .cs-copilot-dot {
+    position: absolute;
+    right: -1px;
+    bottom: -1px;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--cs-success);
+    border: 2px solid var(--surface);
+}
+
+.cs-root .cs-copilot-head-txt { flex: 1; line-height: 1.2; min-width: 0; }
+.cs-root .cs-copilot-title { font-weight: 700; font-size: 0.9375rem; color: var(--text-primary); }
+.cs-root .cs-copilot-status { font-size: 0.65rem; color: var(--cs-success); font-weight: 600; }
+
+.cs-root .cs-copilot-close {
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.cs-root .cs-copilot-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: var(--color-bg-primary);
+}
+
+.cs-root .cs-copilot-msg { display: flex; gap: 8px; align-items: flex-end; }
+.cs-root .cs-copilot-msg-user { flex-direction: row-reverse; }
+
+.cs-root .cs-copilot-avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(140deg, var(--cs-accent-hover), var(--cs-accent-deep));
+    color: var(--cs-on-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.cs-root .cs-copilot-bubble {
+    max-width: 80%;
+    padding: 11px 13px;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.cs-root .cs-copilot-bubble-ai {
+    border-radius: 14px 14px 14px 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+}
+
+.cs-root .cs-copilot-bubble-user {
+    border-radius: 14px 14px 4px 14px;
+    background: linear-gradient(140deg, var(--cs-accent), var(--cs-accent-hover));
+    color: #fff;
+}
+
+.cs-root .cs-copilot-err { color: var(--cs-danger); }
+
+.cs-root .cs-copilot-typing { display: flex; gap: 4px; align-items: center; }
+.cs-root .cs-copilot-typing span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    animation: cs-copilot-dot 1.2s infinite;
+}
+.cs-root .cs-copilot-typing span:nth-child(2) { animation-delay: 0.2s; }
+.cs-root .cs-copilot-typing span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes cs-copilot-dot {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+    30% { transform: translateY(-4px); opacity: 1; }
+}
+
+.cs-root .cs-copilot-foot { flex-shrink: 0; border-top: 1px solid var(--border); background: var(--surface); }
+.cs-root .cs-copilot-chips { display: flex; gap: 7px; padding: 11px 13px 0; overflow-x: auto; }
+.cs-root .cs-copilot-chip {
+    flex-shrink: 0;
+    padding: 6px 11px;
+    border-radius: 99px;
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    color: var(--text-secondary);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.cs-root .cs-copilot-chip:disabled { opacity: 0.5; cursor: default; }
+
+.cs-root .cs-copilot-compose { display: flex; gap: 9px; align-items: flex-end; padding: 11px 13px 13px; }
+.cs-root .cs-copilot-input {
+    flex: 1;
+    height: 40px;
+    padding: 0 13px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+}
+.cs-root .cs-copilot-input:focus { outline: none; border-color: var(--cs-accent); }
+.cs-root .cs-copilot-send {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border-radius: var(--radius-md);
+    border: none;
+    background: linear-gradient(140deg, var(--cs-accent), var(--cs-accent-hover));
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.cs-root .cs-copilot-send:disabled { opacity: 0.5; cursor: default; }
+
+/* Sidebar footer gains a "Switch Mytrion" affordance (the widget had no app switcher). */
+.cs-root .cs-switch-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.6875rem;
+    transition: color 0.15s ease;
+}
+
+.cs-root .cs-switch-link:hover {
+    color: var(--cs-accent);
+}
+
+/* ── Wide modals (Applications / Citifuel edit forms): 3-column grid on roomy
+      viewports so the tall sectioned forms fit without scrolling; the modal box
+      uses the available height and only its BODY scrolls as a safety net. ── */
+.cs-root .cs-modal-box.cs-modal-wide {
+    max-height: min(88vh, 780px);
+}
+@media (min-width: 780px) {
+    .cs-root .cs-modal-wide .cs-form-grid {
+        grid-template-columns: 1fr 1fr 1fr;
+    }
+}
+/* Textareas + explicitly-wide fields still span the full row. */
+.cs-root .cs-modal-wide .cs-form-field-wide {
+    grid-column: 1 / -1;
+}
+/* Tighter vertical rhythm inside modal forms trims height further. */
+.cs-root .cs-modal-wide .cs-form-grid {
+    gap: 0.85rem 1.1rem;
+}
+.cs-root .cs-modal-wide .cs-citi-section-title {
+    margin-top: 0.75rem;
+}
+
+/* Click-to-copy ID badge in the record modal header (App ID / Carrier ID). */
+.cs-root .cs-modal-id-copy {
+    margin-left: 0.5rem;
+    padding: 0.125rem 0.5rem;
+    border: 1px solid var(--cs-border-gold);
+    border-radius: 999px;
+    background: var(--cs-accent-soft);
+    color: var(--cs-accent-deep);
+    font-family: var(--font-mono, 'JetBrains Mono', monospace);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    vertical-align: middle;
+}
+.cs-root.dark-mode .cs-modal-id-copy {
+    color: var(--cs-accent);
+}
+.cs-root .cs-modal-id-copy:hover {
+    border-color: var(--cs-border-gold);
+    background: var(--cs-accent-softer);
+}
+.cs-root .cs-modal-id-copy:active {
+    transform: translateY(1px);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Motion & interaction polish — same feel as Finance Mytrion (pure CSS, no
+   libraries): fade-up entrances, staggered cards, hover-lift, press + focus
+   feedback, row affordance. Style-only; the widget skeleton is untouched.
+   ══════════════════════════════════════════════════════════════════════════ */
+@keyframes csFadeUp {
+    from { opacity: 0; transform: translateY(11px); }
+    to { opacity: 1; transform: none; }
+}
+@keyframes csFadeUpSm {
+    from { opacity: 0; transform: translateY(7px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* Each panel fades up when it first mounts (widget lazy-mounts on first visit).
+   NOTE: fill-mode is `backwards`, not `both`, on purpose — a lingering `both`
+   fill leaves an identity-matrix transform on the panel, which establishes a
+   containing block and traps position:fixed descendants (the modal backdrop
+   would anchor to the panel instead of the viewport → off-centre modals).
+   `backwards` reverts transform to a real `none` once the entrance finishes. */
+.cs-root .cs-content .cs-panel {
+    animation: csFadeUp 0.42s cubic-bezier(0.2, 0, 0, 1) backwards;
+}
+
+/* Cards enter with a short stagger so a dashboard "assembles" instead of popping. */
+.cs-root .cs-home-stats > *,
+.cs-root .cs-home-perf-strip > *,
+.cs-root .cs-citi-summary > *,
+.cs-root .cs-an-kpi-grid > *,
+.cs-root .cs-an-charts-grid > * {
+    animation: csFadeUpSm 0.4s cubic-bezier(0.2, 0, 0, 1) both;
+}
+.cs-root .cs-home-stats > *:nth-child(2),
+.cs-root .cs-citi-summary > *:nth-child(2),
+.cs-root .cs-an-kpi-grid > *:nth-child(2) { animation-delay: 0.05s; }
+.cs-root .cs-home-stats > *:nth-child(3),
+.cs-root .cs-citi-summary > *:nth-child(3),
+.cs-root .cs-an-kpi-grid > *:nth-child(3) { animation-delay: 0.1s; }
+.cs-root .cs-home-stats > *:nth-child(4),
+.cs-root .cs-citi-summary > *:nth-child(4),
+.cs-root .cs-an-kpi-grid > *:nth-child(4) { animation-delay: 0.15s; }
+.cs-root .cs-an-charts-grid > *:nth-child(2) { animation-delay: 0.08s; }
+
+/* Hover-lift on all card surfaces (Finance .mf-card feel). */
+.cs-root .cs-home-stat-card,
+.cs-root .cs-citi-stat-card,
+.cs-root .cs-home-perf-item {
+    transition: transform 0.17s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.17s, border-color 0.17s;
+}
+.cs-root .cs-home-stat-card:hover,
+.cs-root .cs-citi-stat-card:hover {
+    transform: translateY(-1px);
+    border-color: var(--border-hover);
+    box-shadow: var(--shadow-md);
+}
+
+/* Table rows: smooth hover tint + a nudge affordance (Finance .mf-row). */
+.cs-root .cs-table tbody tr {
+    transition: background 0.13s ease, box-shadow 0.13s ease;
+    cursor: pointer;
+}
+.cs-root .cs-table tbody tr:hover {
+    background: var(--surface-alt);
+}
+.cs-root .cs-app-row {
+    transition: background 0.13s ease;
+}
+
+/* Buttons: brightness + press feedback (Finance .mf-btn). */
+.cs-root .cs-refresh-btn,
+.cs-root .cs-btn,
+.cs-root .cs-an-datatab,
+.cs-root .cs-app-tab {
+    transition: filter 0.15s, transform 0.08s, background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.cs-root .cs-refresh-btn:active,
+.cs-root .cs-btn:active {
+    transform: translateY(1px);
+}
+.cs-root .cs-btn-primary:hover {
+    filter: brightness(1.04);
+    box-shadow: var(--shadow-sm);
+}
+
+/* Inputs: quiet accent focus ring */
+.cs-root .cs-form-input:focus {
+    outline: none;
+    border-color: var(--cs-accent-deep);
+    box-shadow: 0 0 0 3px var(--cs-accent-soft);
+}
+
+/* Search inputs sit inside a wrapper that owns the focus ring (:focus-within),
+   so the bare input only clears its own outline — adding a second border/glow
+   here would double up the ring. */
+.cs-root .cs-citi-search-bar input:focus,
+.cs-root .cs-app-search input:focus {
+    outline: none;
+}
+
+/* Flash a row/card that just updated (optional utility, Finance .mf-flash). */
+@keyframes csFlash {
+    0% { background: var(--cs-accent-soft); }
+    100% { background: transparent; }
+}
+.cs-root .cs-flash {
+    animation: csFlash 2.2s ease-out both;
+}
+
+/* Donut/spark draw-in so charts feel alive on load. */
+@keyframes csDonutIn {
+    from { transform: scale(0.92); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+.cs-root .cs-an-donut {
+    animation: csDonutIn 0.5s cubic-bezier(0.2, 0, 0, 1) both;
+}
+@keyframes csDrawLine {
+    from { stroke-dashoffset: 480; }
+    to { stroke-dashoffset: 0; }
+}
+.cs-root .cs-an-spark-line {
+    stroke-dasharray: 480;
+    animation: csDrawLine 0.9s cubic-bezier(0.3, 0, 0.2, 1) both;
+}
+
+/* Accessibility: honor reduced-motion — kill entrance/draw animations, keep
+   instant states (skill rule #1/#7). */
+@media (prefers-reduced-motion: reduce) {
+    .cs-root .cs-content .cs-panel,
+    .cs-root .cs-home-stats > *,
+    .cs-root .cs-home-perf-strip > *,
+    .cs-root .cs-citi-summary > *,
+    .cs-root .cs-an-kpi-grid > *,
+    .cs-root .cs-an-charts-grid > *,
+    .cs-root .cs-an-donut,
+    .cs-root .cs-an-spark-line {
+        animation: none !important;
+        stroke-dasharray: none !important;
+    }
+}

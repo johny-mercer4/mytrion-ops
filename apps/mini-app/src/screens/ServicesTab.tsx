@@ -1,3 +1,4 @@
+import { Pin } from 'lucide-react';
 import { useState, type ReactElement } from 'react';
 import { Icon, SearchGlyph } from '../components/icons';
 import { useI18n } from '../lib/i18n';
@@ -21,19 +22,23 @@ export function ServicesTab({
   const q = search.trim().toLowerCase();
 
   const groups = getCatalog(isDriver)
-    .map((g) => ({ ...g, items: g.items.filter((it) => !q || t(it.labelKey).toLowerCase().includes(q)) }))
+    .map((g) => ({
+      ...g,
+      items: g.items
+        .filter((it) => !q || t(it.labelKey).toLowerCase().includes(q))
+        .slice()
+        .sort((a, b) => Number(pinned.includes(b.key)) - Number(pinned.includes(a.key))),
+    }))
     .filter((g) => g.items.length > 0);
 
   function openItem(item: CatalogItem) {
     if (!item.action) return;
-    if (item.action === 'generic') onOpen({ kind: 'generic', key: item.key, title: t(item.labelKey) });
+    if (item.action === 'generic') onOpen({ kind: 'generic', key: item.key, title: t(item.labelKey), ...(item.request ? { request: item.request } : {}) });
     else onOpen({ kind: 'service', key: item.action });
   }
 
   return (
     <div style={{ padding: '16px 16px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--fg)', margin: '4px 2px 0' }}>{t('services.title')}</div>
-      <div style={{ fontSize: 13, color: 'var(--muted-fg)', margin: '-10px 2px 0', lineHeight: 1.45 }}>{t('services.intro')}</div>
       <div style={{ position: 'sticky', top: 0, zIndex: 4, margin: '0 -16px', padding: '8px 16px 12px', background: 'var(--background)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, height: 46, padding: '0 14px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 13 }}>
           <SearchGlyph />
@@ -57,8 +62,8 @@ export function ServicesTab({
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 12,
-                    padding: '13px 0',
+                    gap: 14,
+                    padding: '16px 0',
                     borderTop: '1px solid var(--border)',
                     cursor: soon ? 'default' : 'pointer',
                   }}
@@ -66,7 +71,7 @@ export function ServicesTab({
                   <span style={{ width: 38, height: 38, borderRadius: 11, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--secondary)', color: soon ? 'var(--muted-fg)' : 'var(--fg)' }}>
                     <Icon name={it.icon} size={19} strokeWidth={1.7} className="" />
                   </span>
-                  <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: soon ? 'var(--muted-fg)' : 'var(--fg)' }}>{t(it.labelKey)}</span>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, lineHeight: 1.4, color: soon ? 'var(--muted-fg)' : 'var(--fg)' }}>{t(it.labelKey)}</span>
                   {soon && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--muted-fg)', background: 'var(--secondary)', padding: '4px 8px', borderRadius: 7, flex: 'none' }}>{t('services.soon')}</span>}
                   {!soon && (
                     <button
@@ -76,25 +81,54 @@ export function ServicesTab({
                         e.stopPropagation();
                         onTogglePin(it.key);
                       }}
+                      aria-label={t(isPinned ? 'pin.pinned' : 'pin.pin')}
+                      aria-pressed={isPinned}
+                      title={t(isPinned ? 'pin.pinned' : 'pin.pin')}
+                      /**
+                       * Icon-only, and a FIXED square. The label used to carry "Pin"/"Pinned" text,
+                       * which cost the row ~50px and — because "Pinned" is 24px wider than "Pin" —
+                       * meant pinning a service made its OWN label wrap harder: measured, the pinned
+                       * row's label got 123px against 147px for the others, taking it from two lines
+                       * to three. A constant-width control cannot reflow the row it sits in, and the
+                       * fill + colour already carry the state that the word was repeating.
+                       *
+                       * Hit area and visual size are set independently. The box is 44×44 — Apple's
+                       * HIG and WCAG 2.5.5 both put the minimum tap target there, and the previous
+                       * 40 was under it. The chip inside is 32 and only filled once pinned, so the
+                       * control reads LIGHTER than the 40px filled square it replaces while being
+                       * easier to hit. Negative margins let the extra 6px overhang the row instead
+                       * of growing it: at a natural 44 the row would gain 6px of height and take
+                       * another 4px from a label that already wraps.
+                       */
                       style={{
                         flex: 'none',
+                        width: 44,
+                        height: 44,
+                        margin: '-3px -4px -3px 0',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
                         border: 'none',
-                        borderRadius: 8,
-                        padding: '7px 12px',
-                        fontSize: 12,
-                        fontWeight: 700,
+                        background: 'none',
+                        padding: 0,
                         cursor: 'pointer',
-                        background: isPinned ? 'var(--primary)' : 'var(--secondary)',
-                        color: isPinned ? '#FFFFFF' : 'var(--fg)',
+                        color: isPinned ? '#FFFFFF' : 'var(--muted-fg)',
                       }}
                     >
-                      {t(isPinned ? 'pin.pinned' : 'pin.pin')}
+                      <span
+                        style={{
+                          width: 32,
+                          height: 32,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: 9,
+                          background: isPinned ? 'var(--primary)' : 'transparent',
+                        }}
+                      >
+                        <Pin size={16} strokeWidth={2.2} fill={isPinned ? 'currentColor' : 'none'} aria-hidden />
+                      </span>
                     </button>
-                  )}
-                  {!soon && (
-                    <svg width="8" height="13" viewBox="0 0 8 13" style={{ flex: 'none' }}>
-                      <path d="M1.5 1.5L6 6.5l-4.5 5" stroke="var(--muted-fg)" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
                   )}
                 </div>
               );

@@ -4,17 +4,19 @@
  * Alerts/Reminders) with live counts; message rows with a type icon + colored bar, priority
  * badge, tag, unread dot, per-row mark-read + delete actions; "Mark all read"; empty state.
  * DATA: live CRM inbox via loadInbox() (inbox.list); delete via deleteInboxMessage (optimistic);
- * read-state kept local in localStorage; real-time refresh over the servercrm WebSocket
- * (subscribe {type:'subscribe'} → reload on crm_inbox_notification).
+ * read-state kept local in localStorage; live toast + push are shell-owned
+ * (`useSidebarBadges`); this tab refetches via `inboxLiveBus` and keeps a socket only for Live/OFFLINE.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { getSession } from '@/api/session';
 import { useImpersonation } from '@/context/ImpersonationProvider';
-import { s, Svg } from '../dc';
+import { s } from '../dc';
+import { Icon, type IconName } from '../icons';
 import { badge, iconBox, ICO } from '../salesData';
 import { useSales } from '../ctx';
-import { useLoad, loadInbox, deleteInboxMessage, type InboxVM } from '../live';
+import { useLoad, loadInbox, deleteInboxMessage, invalidateInboxCache, type InboxVM } from '../live';
+import { publishInboxReload, subscribeInboxLive } from '../inboxLiveBus';
 import { useServerCrmSocket } from '../useServerCrmSocket';
 import { useInboxRead, markInboxRead, markInboxReadMany } from '../inboxRead';
 
@@ -23,7 +25,7 @@ type IType = InboxItem['type'];
 type FilterId = 'all' | 'unread' | 'task' | 'alert' | 'reminder';
 
 // type → icon path / bar color (reference iconOf/colOf)
-const iconOf: Record<IType, string> = {
+const iconOf: Record<IType, IconName> = {
   critical: ICO.warn, task: ICO.check, warning: ICO.warn, reminder: ICO.clock, info: ICO.bell,
 };
 const colOf: Record<IType, string> = {
@@ -45,32 +47,34 @@ export function InboxTab() {
   const read = useInboxRead();
   const [items, setItems] = useState<InboxItem[]>([]);
   const [wsReady, setWsReady] = useState(false);
+  const [refreshSpin, setRefreshSpin] = useState(false);
+  const spinTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => () => {
+    if (spinTimer.current) clearTimeout(spinTimer.current);
+  }, []);
 
   // The effective CRM user this inbox belongs to (the acted-as agent for an admin, else the
   // signed-in worker) — the same id the fetch is scoped to and that WS events must match.
   const currentUserId = String(actingAs?.zohoUserId ?? getSession()?.worker.zohoUserId ?? '');
 
   // ---- live data (inbox.list) mirrored into local state for optimistic delete ----
-  const { data, loading, error, reload } = useLoad(loadInbox, []);
+  // Keyed on currentUserId so View-as swaps refetch the acted-as agent's inbox.
+  const { data, loading, error, reload } = useLoad(loadInbox, [currentUserId]);
   useEffect(() => {
     if (data) setItems(data);
   }, [data]);
 
-  // ---- real-time: only react to a notification addressed to THIS user (ownerId === currentUserId),
-  //      exactly like the reference self-service InboxPanel._handleWsMessage — toast + refetch. ----
+  // ---- real-time: Shell owns toast + WS; this tab refetches via inboxLiveBus.
+  //      Local socket is only for the Live/OFFLINE indicator. ----
   useServerCrmSocket({
-    subscribe: { type: 'subscribe' },
+    enabled: !!currentUserId,
+    watchKey: currentUserId,
+    subscribe: { type: 'subscribe', userId: currentUserId },
     onOpen: () => setWsReady(true),
     onClose: () => setWsReady(false),
-    onMessage: (msg) => {
-      if (msg.type !== 'crm_inbox_notification') return;
-      const ownerId = String(msg.ownerId ?? '');
-      if (ownerId && currentUserId && ownerId === currentUserId) {
-        pushToast('New message', String(msg.subject ?? msg.name ?? 'New notification'));
-        reload();
-      }
-    },
   });
+  useEffect(() => subscribeInboxLive(() => reload()), [reload]);
 
   // ---- view-model (mirrors renderVals()) ----
   const fMatch = (i: InboxItem): boolean => {
@@ -101,17 +105,37 @@ export function InboxTab() {
     markInboxReadMany(items.map((i) => i.id));
     pushToast('All caught up', 'Marked everything as read');
   };
+  const refreshInbox = (): void => {
+    if (refreshSpin) return;
+    setRefreshSpin(true);
+    // Bypass the shared 30s cache; the badge's bus-triggered reload joins this one POST.
+    invalidateInboxCache();
+    reload();
+    publishInboxReload();
+    if (spinTimer.current) clearTimeout(spinTimer.current);
+    spinTimer.current = setTimeout(() => setRefreshSpin(false), 900);
+  };
+  const refreshSpinCss = refreshSpin ? 'animation:ss-spin .9s linear infinite' : '';
   const markReadOnly = (i: InboxItem, e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     markInboxRead(i.id);
   };
   const deleteInbox = (i: InboxItem, e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
+    // Optimistic remove with rollback — a failed delete puts the row back where it was.
+    const prev = items;
     setItems((xs) => xs.filter((x) => x.id !== i.id));
-    pushToast('Message removed', '');
-    void deleteInboxMessage(i.id).catch((err: unknown) => {
-      pushToast('Delete failed', err instanceof Error ? err.message : 'Could not remove the message');
-    });
+    void deleteInboxMessage(i.id)
+      // Drop the cached list so the 30s-cached copy can't resurrect the deleted row on the
+      // next Home-preview/badge mount.
+      .then(() => {
+        invalidateInboxCache();
+        pushToast('Message removed', '');
+      })
+      .catch((err: unknown) => {
+        setItems(prev);
+        pushToast('Delete failed', err instanceof Error ? err.message : 'Could not remove the message');
+      });
   };
   const openInbox = (i: InboxItem) => {
     markInboxRead(i.id);
@@ -131,14 +155,25 @@ export function InboxTab() {
       <div style={s('display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px')}>
         <div>
           <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.04em;text-transform:uppercase')}>Inbox</div>
-          <div style={s('font-size:12.5px;color:var(--muted);margin-top:2px')}>Reminders, alerts &amp; tasks assigned to you</div>
+          <div style={s('font-size:13px;color:var(--muted);margin-top:2px')}>Reminders, alerts &amp; tasks assigned to you</div>
         </div>
         <div style={s('display:flex;align-items:center;gap:9px')}>
           <span style={s(`display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:${wsReady ? 'var(--ok)' : 'var(--muted)'}`)}>
             <span style={s(`width:7px;height:7px;border-radius:50%;background:${wsReady ? 'var(--ok)' : 'var(--muted)'};box-shadow:0 0 0 3px color-mix(in srgb,${wsReady ? 'var(--ok)' : 'var(--muted)'} 22%,transparent)`)}></span>{wsReady ? 'LIVE' : 'OFFLINE'}
           </span>
+          <button
+            type="button"
+            onClick={refreshInbox}
+            disabled={refreshSpin}
+            aria-label="Refresh inbox"
+            title="Fetch latest messages"
+            className="ss-ico-btn"
+            style={s('width:34px;height:34px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}
+          >
+            <Icon name="refresh" size={15} style={s(refreshSpinCss)} />
+          </button>
           {inboxUnreadHas && (
-            <button onClick={markAllRead} className="ss-ico-btn" style={s('height:34px;padding:0 13px;border-radius:9px;border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:12px;font-weight:700;cursor:pointer')}>Mark all read</button>
+            <button onClick={markAllRead} className="ss-ico-btn" style={s('height:34px;padding:0 13px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:12px;font-weight:700;cursor:pointer')}>Mark all read</button>
           )}
         </div>
       </div>
@@ -155,7 +190,18 @@ export function InboxTab() {
         })}
       </div>
       {isInitialLoading && (
-        <div style={s('text-align:center;padding:64px 20px;color:var(--muted);font-size:13px')}>Loading…</div>
+        <div style={s('display:flex;flex-direction:column;gap:11px;padding:8px 0')}>
+          {[1, 2, 3].map((sk) => (
+            <div key={sk} style={s('display:flex;gap:13px;padding:15px 16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}>
+              <div className="ss-skel" style={s('width:38px;height:38px;border-radius:var(--radius-md);flex-shrink:0')} />
+              <div style={s('flex:1;display:flex;flex-direction:column;gap:8px')}>
+                <div className="ss-skel" style={s('width:52%;height:14px')} />
+                <div className="ss-skel" style={s('width:88%;height:12px')} />
+                <div className="ss-skel" style={s('width:34%;height:11px')} />
+              </div>
+            </div>
+          ))}
+        </div>
       )}
       {hasError && (
         <div style={s('text-align:center;padding:64px 20px;color:var(--danger);font-size:13px')}>{error}</div>
@@ -165,13 +211,13 @@ export function InboxTab() {
           {filtered.map((i) => {
             const unread = !read[i.id];
             const barColor = colOf[i.type];
-            const rowStyle = `display:flex;gap:13px;padding:15px 16px;border-radius:14px;background:var(--surface);border:1px solid ${unread ? 'rgba(var(--accent-rgb),.25)' : 'var(--border)'};cursor:pointer;box-shadow:var(--shadow-sm);position:relative;overflow:hidden`;
+            const rowStyle = `display:flex;gap:13px;padding:15px 16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${unread ? 'rgba(var(--accent-rgb),.25)' : 'var(--border)'};cursor:pointer;box-shadow:var(--shadow-sm);position:relative;overflow:hidden`;
             const prioBadge = badge(i.prio.toUpperCase(), prioCol[i.prio] || 'var(--muted)');
             return (
               <div key={i.id} onClick={() => openInbox(i)} className="ss-card-h" style={s(rowStyle)}>
                 <div style={s('position:absolute;left:0;top:0;bottom:0;width:3px;background:' + barColor)}></div>
                 {unread && (<div style={s('position:absolute;left:11px;top:14px;width:7px;height:7px;border-radius:50%;background:var(--accent)')}></div>)}
-                <div style={s(iconBox(colOf[i.type], 38) + ';margin-left:6px')}><Svg d={iconOf[i.type]} size={16} /></div>
+                <div style={s(iconBox(colOf[i.type], 38) + ';margin-left:6px')}><Icon name={iconOf[i.type]} size={16} /></div>
                 <div style={s('flex:1;min-width:0')}>
                   <div style={s('font-size:13.5px;font-weight:700;line-height:1.3')}>{i.title}</div>
                   <div style={s('font-size:12px;color:var(--muted);margin-top:4px;line-height:1.45;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical')}>{i.desc}</div>
@@ -183,12 +229,12 @@ export function InboxTab() {
                 </div>
                 <div style={s('display:flex;flex-direction:column;gap:6px;flex-shrink:0')}>
                   {unread && (
-                    <button onClick={(e) => markReadOnly(i, e)} aria-label="Mark read" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
-                      <Svg d="M5 13l4 4L19 7" size={14} strokeWidth={2.4} />
+                    <button onClick={(e) => markReadOnly(i, e)} aria-label="Mark read" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
+                      <Icon name="check" size={14} strokeWidth={2.4} />
                     </button>
                   )}
-                  <button onClick={(e) => deleteInbox(i, e)} aria-label="Delete" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                  <button onClick={(e) => deleteInbox(i, e)} aria-label="Delete" className="ss-ico-btn" style={s('width:28px;height:28px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}>
+                    <Icon name="close" size={14} strokeWidth={2.2} />
                   </button>
                 </div>
               </div>
@@ -199,7 +245,7 @@ export function InboxTab() {
       {inboxEmpty && (
         <div style={s('text-align:center;padding:64px 20px;color:var(--muted)')}>
           <div style={s('width:72px;height:72px;border-radius:50%;background:var(--raised);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;color:var(--ok)')}>
-            <Svg d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" size={34} strokeWidth={1.6} />
+            <Icon name="check" size={34} strokeWidth={1.6} />
           </div>
           <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:18px;text-transform:uppercase;letter-spacing:.05em;color:var(--text)')}>All caught up!</div>
           <div style={s('font-size:13px;margin-top:5px')}>No {inboxEmptyLabel}notifications right now.</div>

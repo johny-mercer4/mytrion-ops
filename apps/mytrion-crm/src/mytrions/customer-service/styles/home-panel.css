@@ -1,0 +1,472 @@
+/* =====================================================
+   Customer Service — Home Panel (CSMYTRION gold)
+   ===================================================== */
+
+.cs-root .cs-home-hero {
+    position: relative;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-xl);
+    padding: 26px 28px;
+    box-shadow: var(--shadow-sm);
+}
+
+.cs-root .cs-home-hero-glow {
+    position: absolute;
+    top: -70px;
+    right: -30px;
+    width: 220px;
+    height: 220px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--cs-accent-softer), transparent 72%);
+    pointer-events: none;
+    opacity: 0.85;
+}
+
+.cs-root .cs-home-hero-inner {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 22px;
+    flex-wrap: wrap;
+}
+
+.cs-root .cs-home-welcome-left {
+    display: flex;
+    align-items: center;
+    gap: 17px;
+}
+
+.cs-root .cs-home-welcome-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--cs-accent-soft);
+    color: var(--cs-accent-deep);
+    border: 1px solid var(--cs-border-gold);
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 21px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.cs-root.dark-mode .cs-home-welcome-avatar {
+    color: var(--cs-accent);
+}
+
+.cs-root .cs-home-welcome-greeting {
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 26px;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+    line-height: 1.15;
+}
+
+.cs-root .cs-home-welcome-sub {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: 3px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.cs-root .cs-home-live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--cs-success);
+    box-shadow: 0 0 0 3px var(--cs-success-soft);
+    animation: csPulse 1.8s infinite;
+    flex-shrink: 0;
+}
+
+.cs-root .cs-home-live-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    color: var(--cs-success);
+    text-transform: lowercase;
+    font-weight: 600;
+}
+
+@keyframes csPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+
+.cs-root .cs-home-section-label {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    margin: 0 0 14px;
+}
+
+.cs-root .cs-home-qa-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}
+
+.cs-root .cs-home-qa-card {
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    cursor: pointer;
+    transition: border-color 160ms, transform 160ms, box-shadow 160ms;
+    box-shadow: var(--shadow-sm);
+    font-family: inherit;
+    color: inherit;
+}
+
+.cs-root .cs-home-qa-card:hover {
+    border-color: var(--cs-border-gold);
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-md);
+}
+
+.cs-root .cs-home-qa-chip {
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--cs-accent);
+}
+
+.cs-root .cs-home-qa-chip svg {
+    width: 19px;
+    height: 19px;
+}
+
+.cs-root .cs-home-qa-label {
+    display: block;
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.cs-root .cs-home-qa-sub {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 3px;
+}
+
+.cs-root .cs-home-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}
+
+.cs-root .cs-home-stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 20px;
+    box-shadow: var(--shadow-sm);
+    transition: border-color 160ms, box-shadow 160ms;
+}
+
+.cs-root .cs-home-stat-card:hover {
+    border-color: var(--cs-border-gold);
+    box-shadow: var(--shadow-md);
+}
+
+.cs-root .cs-home-stat-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.cs-root .cs-home-stat-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cs-root .cs-home-stat-value {
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 38px;
+    line-height: 1;
+    color: var(--text-primary);
+    margin-top: 15px;
+    font-variant-numeric: tabular-nums;
+    min-height: 38px;
+}
+
+.cs-root .cs-home-stat-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-secondary);
+    font-weight: 600;
+    margin-top: 7px;
+}
+
+.cs-root .cs-home-stat-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.cs-root .cs-home-stat-meter {
+    margin-top: 14px;
+    height: 5px;
+    border-radius: 999px;
+    background: var(--surface-3);
+    overflow: hidden;
+}
+
+.cs-root .cs-home-stat-meter > div {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 0.35s;
+}
+
+.cs-root .cs-home-stat-skeleton {
+    display: inline-block;
+    height: 28px;
+    width: 48px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, var(--track-bg), var(--skeleton-hi), var(--track-bg));
+    background-size: 200% 100%;
+    animation: csShimmer 1.2s ease infinite;
+}
+
+@keyframes csShimmer {
+    0% { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
+}
+
+.cs-root .cs-home-perf-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}
+
+.cs-root .cs-home-perf-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 16px 18px;
+    box-shadow: var(--shadow-sm);
+}
+
+.cs-root .cs-home-perf-value {
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 26px;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+.cs-root .cs-home-perf-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-top: 5px;
+}
+
+.cs-root .cs-home-split {
+    display: grid;
+    grid-template-columns: 1.55fr 1fr;
+    gap: var(--sec-gap);
+    align-items: start;
+}
+
+.cs-root .cs-home-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+    padding: 0 0 8px;
+}
+
+.cs-root .cs-home-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 20px 14px;
+}
+
+.cs-root .cs-home-card-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 17px;
+    color: var(--text-primary);
+}
+
+.cs-root .cs-home-card-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.cs-root .cs-home-priority-list {
+    padding: 0 20px 12px;
+}
+
+.cs-root .cs-home-priority-row {
+    margin-top: 13px;
+}
+
+.cs-root .cs-home-priority-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    margin-bottom: 6px;
+    color: var(--text-secondary);
+}
+
+.cs-root .cs-home-mono {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.cs-root .cs-home-priority-track {
+    height: 6px;
+    border-radius: 999px;
+    background: var(--surface-3);
+    overflow: hidden;
+}
+
+.cs-root .cs-home-priority-track > div {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 0.4s;
+}
+
+.cs-root .cs-home-activity-item {
+    display: flex;
+    gap: 13px;
+    padding: 13px 20px;
+    border-top: 1px solid var(--border-2);
+    align-items: flex-start;
+}
+
+.cs-root .cs-home-activity-dot {
+    margin-top: 5px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.cs-root .cs-home-activity-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.cs-root .cs-home-activity-text {
+    font-size: 13px;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.cs-root .cs-home-activity-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 1px;
+}
+
+.cs-root .cs-home-activity-time {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+    white-space: nowrap;
+}
+
+.cs-root .cs-home-empty {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+}
+
+.cs-root .cs-home-error {
+    margin-top: 0.75rem;
+    font-size: 0.75rem;
+    color: var(--cs-warning);
+    text-align: center;
+}
+
+.cs-root .cs-refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 15px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    color: var(--cs-accent);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 150ms, background 150ms;
+}
+
+.cs-root .cs-refresh-btn:hover:not(:disabled) {
+    border-color: var(--cs-border-gold);
+    background: var(--cs-accent-softer);
+}
+
+.cs-root .cs-refresh-btn:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+@media (max-width: 1100px) {
+    .cs-root .cs-home-qa-grid,
+    .cs-root .cs-home-stats,
+    .cs-root .cs-home-perf-strip {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .cs-root .cs-home-split {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 640px) {
+    .cs-root .cs-home-qa-grid,
+    .cs-root .cs-home-stats,
+    .cs-root .cs-home-perf-strip {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cs-root .cs-home-live-dot { animation: none; }
+    .cs-root .cs-home-qa-card:hover { transform: none; }
+}
