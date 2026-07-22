@@ -4570,3 +4570,21 @@ Phase 1 of the Sales-side verification bridge. Un-parked the "Verification Pipel
 FF_VERIFICATION_PIPELINE_LIVE, join `requests.carrier_id → dim_company.carrier_id` 97.8% / fallback
 application_id/dot; expose only stage status + decision + LOC terms, never PII); limit-change request
 submission (Credit/Card/Weekly → new `limit_change_requests` table mig 0042 + touchpoint).
+
+## 2026-07-22 — Fix React #321 (duplicate React) + rebuild served bundle
+
+Reported from a deployed build (`index--dvCpMb7.js`, not in the repo): React error #321 (invalid
+hook call) crashing on `useSessionUser → useImpersonation → useContext`, plus a benign
+`/v1/ringcentral/embed-config` 404.
+- **#321 root cause:** the crash stack split the reconciler (`renderWithHooks`) and the hooks
+  dispatcher (`useContext`) across two chunks = **two React copies in the bundle**. A sibling app
+  (`web/`) ships its own `react-dom`, so a build environment that resolves React from two physical
+  locations duplicates it. Fix: `resolve.dedupe: ['react','react-dom']` in
+  `apps/mytrion-crm/vite.config.ts` — pins one copy in *any* build env.
+- **Verified new build:** `react-dom` now in exactly ONE chunk (`index-By1ddpst.js`, = the entry) →
+  #321 structurally impossible; VerificationTab + ringcentral call present; verification nav
+  un-parked. Rebuilt `apps/mytrion-crm/app/` (vite build, emptyOutDir) and committed.
+- **ringcentral 404 is NOT a crash:** `RingCentralPhone.tsx` already swallows the fetch failure
+  (fail-silent), and the route is registered *unconditionally* at `app.ts:252`. A 404 only means the
+  **backend** serving the client predates the route — resolved by deploying the backend from this
+  branch. No frontend change needed for it.
