@@ -102,7 +102,9 @@ const OWNER_CATALOG: CatalogGroup[] = [
       // updates unit / driver ID (the pump PIN) / driver name on ANY owner card, and
       // /card/fraud-request (C-10) files the hold/release request. The card-ops sheet carries
       // both flows, so these open it instead of dead-ending on a "soon" chip.
-      { key: 'card-hold-unhold', labelKey: 'cat.cardHoldUnhold', icon: 'clock', action: 'cardops' },
+      // Hold/Unhold built but held back from prod (owner decision 2026-07-22) — "soon" until the
+      // servercrm HOLD/UNHOLD release; the cardops sheet + backend schema are gated the same way.
+      { key: 'card-hold-unhold', labelKey: 'cat.cardHoldUnhold', icon: 'clock', action: null },
       { key: 'card-change-pin', labelKey: 'cat.cardChangePin', icon: 'key', action: 'cardops' },
       // card-order-extra removed — owner decision 2026-07-22: no EFS API for ordering new fleet
       // cards exists, and a bare ticket item is not worth a catalog slot; clients ask their rep.

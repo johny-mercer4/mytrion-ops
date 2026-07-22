@@ -3278,7 +3278,7 @@ function ActionSheet({
                     // BUG FIX (feedback 2026-07-22): the status under the card number kept showing
                     // the OLD state after activate/deactivate/hold — the sheet cache was cleared but
                     // the open sheet's own EFS snapshot never re-fetched.
-                    if ((op === 'act' || op === 'deact' || op === 'hold' || op === 'unhold') && coCard?.cardId) {
+                    if ((op === 'act' || op === 'deact') && coCard?.cardId) {
                       fetchCardEfs(initData, coCard.cardId).then(setCoEfs).catch(() => undefined);
                     }
                   })
@@ -3341,18 +3341,9 @@ function ActionSheet({
                       {coBusy === 'deact' ? <Spinner size={15} color="var(--destructive)" /> : t('co.deactivate')}
                     </button>
                   </div>
-                  {/* C-10 hold/release — a REQUEST the fraud team acts on, not a direct EFS flip
-                      (unlike activate/deactivate above); the note under the buttons says so. */}
-                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('co.holdOps')}</div>
-                  <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
-                    <button type="button" className="press" disabled={coBusy !== null} onClick={() => doOp('hold', () => setCardStatus(initData, coCard.cardId ?? '', 'hold'), t('co.holdDone'))} style={opBtn('color-mix(in srgb, var(--destructive) 14%, transparent)', 'var(--destructive)')}>
-                      {coBusy === 'hold' ? <Spinner size={15} color="var(--destructive)" /> : t('co.hold')}
-                    </button>
-                    <button type="button" className="press" disabled={coBusy !== null} onClick={() => doOp('unhold', () => setCardStatus(initData, coCard.cardId ?? '', 'unhold'), t('co.unholdDone'))} style={opBtn('var(--secondary)', 'var(--fg)')}>
-                      {coBusy === 'unhold' ? <Spinner size={15} color="var(--fg)" /> : t('co.unhold')}
-                    </button>
-                  </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', lineHeight: 1.5, marginBottom: 18 }}>{t('co.holdNote')}</div>
+                  {/* Hold / Unhold (direct EFS flip) is BUILT but held back from prod (owner decision
+                      2026-07-22) — ships together with the servercrm HOLD/UNHOLD release. The catalog
+                      entry shows "soon"; the backend schema no longer accepts the actions either. */}
                   <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('co.limitOps')}</div>
                   <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
                     {(['ULSD', 'DEFD'] as const).map((l) => (

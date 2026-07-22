@@ -47,9 +47,10 @@ const mcVoidSchema = initDataSchema.extend({
 
 const setStatusSchema = initDataSchema.extend({
   cardId: z.string().min(1).max(120),
-  // hold/unhold added 2026-07-22 (full-parity): a DIRECT EFS flip via servercrm — distinct from
-  // /card/fraud-request, which files a human-actioned fraud-team request.
-  action: z.enum(['activate', 'deactivate', 'hold', 'unhold']),
+  // hold/unhold (direct EFS flip) is BUILT but held back from prod (owner decision 2026-07-22):
+  // it ships together with the servercrm HOLD/UNHOLD release. Until then the schema gates it
+  // server-side. Fraud-team hold REQUESTS still go through /card/fraud-request.
+  action: z.enum(['activate', 'deactivate']),
 });
 const limitsSchema = initDataSchema.extend({
   cardId: z.string().min(1).max(120),

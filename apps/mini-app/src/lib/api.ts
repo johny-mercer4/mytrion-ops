@@ -485,7 +485,7 @@ export async function overrideCard(initData: string, cardId?: string): Promise<R
 export async function setCardStatus(
   initData: string,
   cardId: string,
-  action: 'activate' | 'deactivate' | 'hold' | 'unhold',
+  action: 'activate' | 'deactivate',
 ): Promise<Record<string, unknown>> {
   return (await request('POST', '/carrier/mini-app/card/set-status', { initData, cardId, action })) as Record<
     string,
