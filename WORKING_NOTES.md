@@ -4517,3 +4517,56 @@ two-call rule (listen + solution notes) before Saved/Refused. CS CasesPanel +
 `useRetentionRealtime` passes claim_* events for peer Pool refresh.
 
 **Deferred:** pre-entry funded alert, Zapier email, KPI/MOR components.
+
+## 2026-07-22 — CS Mytrion collapsible sidebar
+
+Branch `hotfix/MytrionOverall`: Customer Service shell gets a Sales-style
+collapse control (panel icon) next to the brand; collapsed rail is icons-only
+(`--sidebar-collapsed`), persisted as `cs.nav.collapsed`. Badges/soon dots
+remain visible on the icon rail.
+
+## 2026-07-22 — Sales Dashboard Debtors tab live
+
+**Debtors (Dashboard → Debtors):** removed Soon stub; agents see their book via
+`dashboard.debtors` (CMP `/api/agent/cmp/debtors` + Zoho deal enrich). Client rules
+match Billing: PENDING/PARTIALLY_PAID invoices with remaining ≥ $1, age ≥ 2 days,
+hard debt at 15+ days (`dashDebtorsData`). UI: search, status chips, KPI strip,
+expandable invoice cards, skeleton/refresh/toasts, 5-min localStorage cache
+(`DEBTORS_DASH_TTL_MS`, keyed by act-as user). Files: `DashTab.tsx`,
+`DebtorsDashPanel.tsx`, `dashDebtorsData.ts`, `dashCache.ts`, `DashSkeleton.tsx`.
+
+## 2026-07-22 — Home Money Owed uses Billing debtor floors
+
+Home snapshot “Money Owed” now matches Dashboard → Debtors / Billing rules
+(pending·partial, remaining ≥ $1, age ≥ 2d, hard ≥ 15d):
+- Backend `summarizeCmpDebtors` recomputes `fetchHomeSnapshot` +
+  `fetchDebtorsInfo` totals from invoice rows.
+- FE `loadSnapshot` overlays `loadDebtorsHomeSummary` (shared 5-min cache;
+  Refresh forces). Card click → Dashboard → Debtors via `openDash`.
+
+## 2026-07-22 — Verification Pipeline tab (Sales Mytrion, hotfix/MytrionOverall)
+
+Phase 1 of the Sales-side verification bridge. Un-parked the "Verification Pipeline" tab.
+- **List:** the agent's DWH deal-clients (`octane.agent_deals`, freshest `appfilldate` first),
+  owner-scoped via the roster authority (`dwhClientRoster.buildOwnedCte` — made reusable with a
+  column-list param + exported `ownerBinds`; id-suffix-first / display-name-fallback), enriched from
+  `octane.dim_company`, classified `in_pipeline | active | closed` (Card Swiped / first_swipe_date ⇒
+  active). Admin View-as resolves the target's name so the name arm fires.
+- **Detail:** in-pipeline → 9-stage vertical timeline (Pre Stop Factors → … → Post Stop Factors) +
+  decision badge (Prepaid / LOC w/ score+limit+cycle / Not accepted / Undecided); active → current
+  terms read-only.
+- **Pipeline data = MOCK via a provider seam** (`modules/verificationPipeline/provider.ts`,
+  deterministic per client, no DB), shaped exactly like the real `credit_platform` model
+  (`kxd.<stage>_reports.status` + `kxd.decision_reports` / `requests.result.summary`) so a future
+  live provider swaps in behind a flag. **No credit_platform querying this phase** (per direction).
+- Files: `src/modules/verificationPipeline/{types,provider,service}.ts`,
+  `src/routes/v1/verificationPipeline.routes.ts` (GET /v1/verification/clients + /pipeline, mirrors
+  dataCenter owner-scoping), `apps/.../api/verification.ts`, `apps/.../tabs/VerificationTab.tsx`.
+- Verified live: 187 deals for View-as Daniel (freshest-first), pipeline route → 9 mock stages;
+  `verification-pipeline.test.ts` (6) green; roster/data-center tests unaffected by the buildOwnedCte
+  change. (3 pre-existing WIP test files still fail: carrier-mini-app, touchpoints-catalog/routes.)
+
+**Follow-ups (documented, not built):** live `credit_platform` provider (swap behind
+FF_VERIFICATION_PIPELINE_LIVE, join `requests.carrier_id → dim_company.carrier_id` 97.8% / fallback
+application_id/dot; expose only stage status + decision + LOC terms, never PII); limit-change request
+submission (Credit/Card/Weekly → new `limit_change_requests` table mig 0042 + touchpoint).
