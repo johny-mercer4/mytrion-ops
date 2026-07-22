@@ -10,7 +10,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { AppError } from '../../lib/errors.js';
 import { env } from '../../config/env.js';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
-import { findDwhCardById } from '../../integrations/dwhCards.js';
+import { findDwhCardByIdAnyStatus } from '../../integrations/dwhCards.js';
 import { searchDwhOperators } from '../../integrations/dwhOperators.js';
 import { registeredMiniAppCompanyRepo } from '../../repos/registeredMiniAppCompanyRepo.js';
 import {
@@ -217,9 +217,12 @@ export async function requireDriverCardNumber(registration: RegisteredMiniAppCom
 export async function resolveDriverCardNumber(carrierId: string | null, cardId: string | null): Promise<string | null> {
   if (!carrierId || !cardId || !env.DWH_DATABASE_URL) return null;
   try {
-    // Exact lookup — listDwhCards caps at 100 while real carriers run to 510 active cards, so a
-    // membership scan over the listing would miss cards that sort past the cap.
-    return (await findDwhCardById(carrierId, cardId))?.cardNumber ?? null;
+    // ANY-status lookup (not active-only): the card number is used to SCOPE the driver's own reads
+    // (transactions, last-used, status). A deactivated/inactive card must still resolve so the driver
+    // keeps seeing THEIR history — item: "show all transactions regardless of Active/Inactive." Still
+    // their own cardId (from registration), so no cross-card leak; write gates enforce status
+    // separately (override checks fraud-hold live via servercrm).
+    return (await findDwhCardByIdAnyStatus(carrierId, cardId))?.cardNumber ?? null;
   } catch {
     return null;
   }

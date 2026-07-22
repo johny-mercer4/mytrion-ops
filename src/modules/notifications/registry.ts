@@ -32,6 +32,8 @@ export const NOTIFICATION_TYPES = {
   approval: { roles: ['owner', 'driver'], templateKey: 'approval' },
   /** Debt/payment reminder before hard-debtor. Owner only. */
   debt: { roles: ['owner'], templateKey: 'debt' },
+  /** A NEW invoice landed on the account — company finances, owner only. */
+  invoice: { roles: ['owner'], templateKey: 'invoice' },
   /** Card shipment tracking updates. Owner only. */
   tracking: { roles: ['owner'], templateKey: 'tracking' },
   /** Prepay EFS balance under threshold. Owner only (drivers get the boolean funds view). */

@@ -17,9 +17,10 @@ import { handleAgentRunJobs } from './agentRun.js';
 import { bulkIngestJob, handleBulkIngestJobs } from './knowledgeIngest.js';
 import { AUTOMATIONS, makeAutomationHandler } from './automations.js';
 import { runRetentionCaseSync } from './retentionCaseSync.js';
-import { notificationDispatchJob, notificationPollJob } from '../catalog.js';
+import { notificationDispatchJob, notificationPollJob, statementWeeklyJob } from '../catalog.js';
 import { dispatchMiniAppNotification } from '../../notifications/service.js';
-import { runCardStatusPoll, runReceiptPoll } from '../../notifications/pollers.js';
+import { runCardStatusPoll, runInvoicePoll, runReceiptPoll } from '../../notifications/pollers.js';
+import { runWeeklyStatements } from '../../carrier/accountingBundle.js';
 import { runRetentionDeadlineSweep } from './retentionDeadlineSweep.js';
 import {
   decayAgentMemories,
@@ -42,6 +43,11 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
     // Pollers run sequentially in the one singleton cron — a new poller is a call here, not a new job.
     await runCardStatusPoll();
     await runReceiptPoll();
+    await runInvoicePoll();
+  });
+
+  await boss.work(statementWeeklyJob.name, { batchSize: 1 }, async () => {
+    await runWeeklyStatements();
   });
 
   for (const spec of AUTOMATIONS) {

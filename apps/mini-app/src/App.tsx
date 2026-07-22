@@ -24,16 +24,19 @@ import {
   sendServiceRequest,
   fetchTransactions,
   overrideCard,
+  fetchMoneyCodeHistory,
   fetchMoneyCodePreview,
   drawMoneyCode,
   fetchCardEfs,
-  sendFraudRequest,
+  sendAccountingBundleReport,
   setCardStatus,
   setCardLimits,
   updateCardInfo,
   type MoneyCodePreview,
   redeemRegistration,
   sendInvoice,
+  sendMoneyCodeReport,
+  voidMoneyCodeDraw,
   sendTransactionsReport,
   type CarrierBalance,
   type CardFundsResult,
@@ -45,6 +48,7 @@ import {
   type SalesInvoicesResult,
   type StatusResult,
   type BillingFormInfo,
+  type MoneyCodeDrawRow,
   type TrackingResult,
   type TransactionsResult,
   type TxnExportFormat,
@@ -1344,7 +1348,7 @@ function Home({
   const { t } = useI18n();
   const slideDir = useSlideDirection(tab, HOME_TABS);
 
-  if (tab === 'services') return <SlideIn key={tab} dir={slideDir}><ServicesTab isDriver={session.isDriver} pinned={pinned} onTogglePin={onTogglePin} onOpen={onOpenAction} /></SlideIn>;
+  if (tab === 'services') return <SlideIn key={tab} dir={slideDir}><ServicesTab isDriver={session.isDriver} isFleetManager={session.isFleetManager} pinned={pinned} onTogglePin={onTogglePin} onOpen={onOpenAction} /></SlideIn>;
   if (tab === 'inbox') return <SlideIn key={tab} dir={slideDir}><InboxTab items={inbox} onMarkAllRead={onMarkAllRead} onRead={onReadNotif} /></SlideIn>;
 
   // Drop `soon` items (action === null): they cannot be opened, so a stale pin for one — e.g. a
@@ -1402,9 +1406,12 @@ function Home({
         </div>
       </div>
 
-      {/* Manager invite — company-level access grant, above the fleet card. Fleet-manager only
-          (an owner-operator drives their single truck alone and has no team to grant access to). */}
-      {session.isFleetManager && <ManagerInviteCard onCreate={onCreateManagerInvite} onCopy={onCopy} />}
+      {/* Manager INVITE is disabled (owner decision 2026-07-22): managers are onboarded by Octane
+          agents, and the backend route is flag-gated off (MANAGER_INVITES_DISABLED) — hiding the
+          card here is UX, not the gate. The ROSTER (list + revoke) stays: seeing and removing
+          who has company access is an owner's right regardless of who created the access.
+          Flip MANAGER_INVITE_UI back to true together with FF_MINIAPP_MANAGER_INVITES_ENABLED. */}
+      {MANAGER_INVITE_UI && session.isFleetManager && <ManagerInviteCard onCreate={onCreateManagerInvite} onCopy={onCopy} />}
       {session.isFleetManager && <ManagersList initData={initData} />}
 
       {/* manage fleet */}
@@ -1548,7 +1555,8 @@ function FleetView({
   const shown = rows.filter((r) => {
     if (filter !== 'all' && r.status !== filter) return false;
     if (q) {
-      const hay = `${tail6(r.cardNumber, r.cardId)} ${(r.driverName ?? 'unassigned')}`.toLowerCase();
+      // Feedback 2026-07-22: owners search by unit number and driver ID too, not just card/driver.
+      const hay = `${tail6(r.cardNumber, r.cardId)} ${(r.driverName ?? 'unassigned')} ${r.unitNumber ?? ''} ${r.efsDriverId ?? ''}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -2025,8 +2033,8 @@ type SheetData =
   | { kind: 'invoices'; v: SalesInvoicesResult }
   | { kind: 'tracking'; v: TrackingResult }
   | { kind: 'billingform'; v: BillingFormInfo }
-  | { kind: 'manualcode'; v: { cardNumber: string | null } }
-  | { kind: 'moneycode'; v: { disabled: boolean; preview: MoneyCodePreview | null } }
+  | { kind: 'manualcode'; v: { cardNumber: string | null; unitNumber: string | null; driverId: string | null } }
+  | { kind: 'moneycode'; v: { disabled: boolean; preview: MoneyCodePreview | null; history: MoneyCodeDrawRow[] } }
   | { kind: 'cardops'; v: { fleet: FleetCard[] } }
   | { kind: 'pinunit'; v: Record<string, unknown> | null };
 
@@ -2036,6 +2044,9 @@ type SheetData =
  * Mutations (money-code draw, card ops, pin/unit save) delete the keys they invalidate, so a
  * write is never followed by a stale read. Module-level on purpose: it must outlive the sheet.
  */
+/** Manager-invite UI kill switch (owner decision 2026-07-22) — backend route is ALSO gated. */
+const MANAGER_INVITE_UI = false;
+
 const SHEET_CACHE = new Map<string, { at: number; data: SheetData }>();
 const SHEET_TTL_MS = 60_000;
 function invalidateSheetCache(...prefixes: string[]): void {
@@ -2112,14 +2123,21 @@ function ActionSheet({
   const [to, setTo] = useState(() => isoDay(new Date()));
   const [genericSent, setGenericSent] = useState(false);
   const [genericBusy, setGenericBusy] = useState(false);
+  /** Driver override gate: live EFS status of the driver's own card. undefined=loading, null=unknown
+   *  (fail-open — backend still 409s a non-fraud card), string=the status word. Override is only for
+   *  a fraud-held card, so an ACTIVE card shows an explanation instead of the button. */
+  const [ovrCardStatus, setOvrCardStatus] = useState<string | null | undefined>(undefined);
   const [genericError, setGenericError] = useState('');
   const [genericTicketId, setGenericTicketId] = useState('');
   const [genericComment, setGenericComment] = useState('');
   const [invoiceBusyId, setInvoiceBusyId] = useState<string | null>(null);
+  /** Feedback #3: the owner picks the invoice file format once; every tap then delivers that. */
+  const [invFormat, setInvFormat] = useState<'pdf' | 'xlsx' | 'csv'>('pdf');
   /** Phase 2 of the transactions read is in flight — rows are already shown, freshest are pending. */
   const [liveRefreshing, setLiveRefreshing] = useState(false);
   /** Which export format is currently being built + sent to Telegram, if any. */
   const [exportBusy, setExportBusy] = useState<TxnExportFormat | null>(null);
+  const [bundleBusy, setBundleBusy] = useState<'bundle' | 'efs' | null>(null);
   /** Owner's card filter on the txns sheet — null = company level (all cards), else one card
    *  ("driver-level report"; 41 chat asks). Drivers never see the picker: they are server-pinned. */
   const [txnCardSel, setTxnCardSel] = useState<{ cardId: string; last6: string } | null>(null);
@@ -2135,6 +2153,9 @@ function ActionSheet({
   const [mcReason, setMcReason] = useState('');
   const [mcBusy, setMcBusy] = useState(false);
   const [mcDone, setMcDone] = useState<{ amount: number; after: number | null } | null>(null);
+  /** Void is destructive and irreversible — two-tap arm/confirm, same pattern as manager revoke. */
+  const [mcVoidArm, setMcVoidArm] = useState<number | null>(null);
+  const [mcVoidBusy, setMcVoidBusy] = useState<number | null>(null);
   // ── PIN/Unit sheet: driver o'z unit/driverId'sini tahrirlaydi ──
   const [puUnit, setPuUnit] = useState('');
   const [puDriverId, setPuDriverId] = useState('');
@@ -2157,6 +2178,20 @@ function ActionSheet({
   const [coDriverId, setCoDriverId] = useState('');
 
   const service = target.kind === 'service' ? target.key : null;
+  // Driver override gate (item 5): fetch the driver's own card status so the sheet can offer the
+  // override ONLY when the card is fraud-held (an active card gets an explanation, not a button).
+  const isDriverOverride = target.kind === 'generic' && target.request === 'override-card' && session.isDriver;
+  useEffect(() => {
+    if (!isDriverOverride) return;
+    let cancelled = false;
+    setOvrCardStatus(undefined);
+    fetchCardEfs(initData)
+      .then((efs) => { if (!cancelled) setOvrCardStatus(efs['status'] == null ? null : String(efs['status'])); })
+      .catch(() => { if (!cancelled) setOvrCardStatus(null); });
+    return () => { cancelled = true; };
+  }, [isDriverOverride, initData]);
+  const ovrEligible = ovrCardStatus == null || /fraud/i.test(ovrCardStatus);
+
   // A driver's status sheet is about their CARD, not the account — the generic svc.status title says
   // "Account status", which is the owner's framing.
   const sheetTitle =
@@ -2198,19 +2233,37 @@ function ActionSheet({
         else if (service === 'lastused') next = { kind: 'lastused', v: await fetchLastUsed(initData) };
         else if (service === 'payment') next = { kind: 'payment', v: await fetchPaymentInfo(initData) };
         else if (service === 'invoices') next = { kind: 'invoices', v: await fetchInvoices(initData, { range: invRange }) };
-        // No fetch: the manual entry code IS the card number the session already holds. Sending a
-        // request would only ask the backend to hand back what it put in the session at sign-in.
-        else if (service === 'manualcode') next = { kind: 'manualcode', v: { cardNumber: session.ownCardNumber } };
+        // Manual card usage: the full card number the session already holds, PLUS the unit number
+        // and driver ID from the live EFS card (what a pump keypad asks for). EFS is best-effort —
+        // a hiccup still shows the card number (the one field that must never be missing here).
+        else if (service === 'manualcode') {
+          const efs = session.isDriver
+            ? await fetchCardEfs(initData).catch(() => ({} as Record<string, unknown>))
+            : ({} as Record<string, unknown>);
+          const str = (v: unknown): string | null => (v == null || v === '' ? null : String(v));
+          next = {
+            kind: 'manualcode',
+            v: {
+              cardNumber: session.ownCardNumber ?? str(efs['card_number']),
+              unitNumber: str(efs['unit_number']),
+              driverId: str(efs['driver_id']),
+            },
+          };
+        }
         // Static content — the in-network chains list. No fetch: this is the exact list support
         // pasted into chats 814 times (9-group analysis); shipping it in-app is the whole point.
         // C-17 preview. A 503 (flag off) is NOT a load error — the sheet degrades to filing the
         // same money-code ticket, so the owner is never stranded on a dead screen.
         else if (service === 'moneycode') {
           try {
-            next = { kind: 'moneycode', v: { disabled: false, preview: await fetchMoneyCodePreview(initData) } };
+            const [preview, hist] = await Promise.all([
+              fetchMoneyCodePreview(initData),
+              fetchMoneyCodeHistory(initData).catch(() => ({ draws: [] as MoneyCodeDrawRow[] })),
+            ]);
+            next = { kind: 'moneycode', v: { disabled: false, preview, history: hist.draws } };
           } catch (e) {
             if (e instanceof ApiError && e.code === 'MINIAPP_MONEY_CODE_DISABLED') {
-              next = { kind: 'moneycode', v: { disabled: true, preview: null } };
+              next = { kind: 'moneycode', v: { disabled: true, preview: null, history: [] } };
             } else throw e;
           }
         }
@@ -2339,6 +2392,37 @@ function ActionSheet({
     }
   }
 
+  /** Owner accounting shortcuts — the weekly ritual ("fuel and EFS report, both retail and with
+   *  discount, pdf and xlsx") as one tap, or the EFS money-code report alone. Same delivery
+   *  contract as doExport: the files land in the bot chat. */
+  async function doBundle(kind: 'bundle' | 'efs') {
+    haptic('tap');
+    if (exportBusy || bundleBusy) return;
+    setBundleBusy(kind);
+    try {
+      const opts = range === 'custom' ? { range: 'custom', from, to } : { range };
+      if (kind === 'bundle') await sendAccountingBundleReport(initData, opts);
+      else await sendMoneyCodeReport(initData, opts, 'xlsx');
+      haptic('success');
+      showToast(t('toast.reportSentToTelegram'));
+    } catch (e) {
+      const code = e instanceof ApiError ? e.code : '';
+      haptic('error');
+      showToast(
+        code === 'TELEGRAM_CHAT_UNREACHABLE'
+          ? t('toast.openBotFirst')
+          : code === 'MC_REPORT_EMPTY' || code === 'BUNDLE_EMPTY'
+            ? t('txns.bundleEmpty')
+            : e instanceof ApiError
+              ? e.message
+              : t('sheet.loadError'),
+        'error',
+      );
+    } finally {
+      setBundleBusy(null);
+    }
+  }
+
   /**
    * Files a real Desk ticket when the catalog item carries a `request` key; otherwise falls back to
    * the placeholder that only ever wrote a local inbox row.
@@ -2376,7 +2460,7 @@ function ActionSheet({
     if (invoiceBusyId) return;
     setInvoiceBusyId(id);
     try {
-      await sendInvoice(initData, id);
+      await sendInvoice(initData, id, invFormat);
       haptic('success');
       showToast(t('toast.invoiceSentToTelegram'));
     } catch (e) {
@@ -2560,6 +2644,22 @@ function ActionSheet({
                   {/* Carrier debt is the COMPANY's financial standing — an owner's view, never a driver's.
                       A driver asking "is my card active" must not be shown the fleet's total debt or
                       hard-debtor flag. */}
+                  {/* Feedback #10: the money answers first — available, weekly limit, due date. */}
+                  {!session.isDriver && data.v.billing && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+                      {[
+                        { label: t('status.availableBalance'), value: money(data.v.billing.availableBalance ?? 0) },
+                        { label: t('status.weeklyLimit'), value: money(data.v.billing.weeklyLimit ?? 0) },
+                        ...(data.v.billing.dueDate ? [{ label: t('status.dueBy'), value: fmt(data.v.billing.dueDate) }] : []),
+                        { label: t('status.totalDebt'), value: money(overview.cmp_debt?.total_debt ?? 0) },
+                      ].map((tile) => (
+                        <div key={tile.label} style={{ background: 'var(--secondary)', borderRadius: 14, padding: '12px 14px' }}>
+                          <div style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted-fg)' }}>{tile.label}</div>
+                          <div className="selectable" style={{ fontSize: 18, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tile.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {!session.isDriver && (
                     <>
                       <SectionLabel>{t('status.debt')}</SectionLabel>
@@ -2627,9 +2727,13 @@ function ActionSheet({
                       renderItem={(c, i) => {
                         const status = fmt(c['status']);
                         const pan = fmt(c['card_number']);
+                        const unit = fmt(c['unit_number']);
                         return (
                           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: i === filtered.length - 1 ? 'none' : '1px solid var(--border)' }}>
-                            <span className="selectable" style={{ flex: 1, minWidth: 0, fontSize: showFullPan ? 13 : 14, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>{showFullPan ? groupCardNumber(pan) : `•••• ${tail6(pan, null)}`}</span>
+                            <span style={{ flex: 1, minWidth: 0 }}>
+                              <span className="selectable" style={{ display: 'block', fontSize: showFullPan ? 13 : 14, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>{showFullPan ? groupCardNumber(pan) : `•••• ${tail6(pan, null)}`}</span>
+                              {unit && <span style={{ display: 'block', fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2 }}>Unit {unit}</span>}
+                            </span>
                             <span style={{ flex: 'none', fontSize: 12, fontWeight: 700, color: status.toLowerCase() === 'active' ? 'var(--success)' : 'var(--destructive)' }}>{status}</span>
                           </div>
                         );
@@ -2817,6 +2921,15 @@ function ActionSheet({
                       </div>
                     </div>
                   )}
+                  {rows.length > 0 && (
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                      {(['pdf', 'xlsx', 'csv'] as const).map((f) => (
+                        <button key={f} type="button" onClick={() => { haptic('tap'); setInvFormat(f); }} style={{ flex: 1, height: 32, borderRadius: 9, border: 'none', fontFamily: "'Geist'", fontWeight: 700, fontSize: 12, cursor: 'pointer', background: invFormat === f ? 'var(--primary)' : 'var(--secondary)', color: invFormat === f ? '#FFFFFF' : 'var(--muted-fg)' }}>
+                          {f === 'pdf' ? 'PDF' : f === 'xlsx' ? 'Excel' : 'CSV'}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {rows.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('invoice.empty')}</div>
                   ) : (
@@ -2902,17 +3015,29 @@ function ActionSheet({
               // by default; getting here took a deliberate tap on an item that says "Reveal", and the
               // driver is reading it to type into a pump keypad. Masking it behind a second tap would
               // add friction to the one job this item exists for.
+              const details: Array<[string, string]> = [
+                [t('manualcode.card'), groupCardNumber(pan)],
+                ...(data.v.unitNumber ? [[t('manualcode.unit'), data.v.unitNumber] as [string, string]] : []),
+                ...(data.v.driverId ? [[t('manualcode.driverId'), data.v.driverId] as [string, string]] : []),
+              ];
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '6px 0 4px' }}>
-                  <span style={{ width: 54, height: 54, borderRadius: 16, background: 'var(--secondary)', color: 'var(--link-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
-                    <Icon name="key" size={26} strokeWidth={2} className="" />
-                  </span>
-                  <span
-                    className="selectable"
-                    style={{ fontSize: 22, fontWeight: 700, letterSpacing: '.04em', color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.35, wordBreak: 'break-all' }}
-                  >
-                    {groupCardNumber(pan)}
-                  </span>
+                <div style={{ display: 'flex', flexDirection: 'column', padding: '2px 0 4px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: 16 }}>
+                    <span style={{ width: 54, height: 54, borderRadius: 16, background: 'var(--secondary)', color: 'var(--link-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+                      <Icon name="card" size={26} strokeWidth={2} className="" />
+                    </span>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--fg)' }}>{t('manualcode.title')}</span>
+                    <span style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 4, maxWidth: 300, lineHeight: 1.5 }}>{t('manualcode.note')}</span>
+                  </div>
+                  {/* The fields a pump keypad asks for when the card won't swipe. */}
+                  <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden', marginBottom: 12 }}>
+                    {details.map(([label, value], i) => (
+                      <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: i === details.length - 1 ? 'none' : '1px solid var(--border)' }}>
+                        <span style={{ flex: 'none', fontSize: 12.5, color: 'var(--muted-fg)' }}>{label}</span>
+                        <span className="selectable" style={{ flex: 1, textAlign: 'right', fontSize: 14, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>{value}</span>
+                      </div>
+                    ))}
+                  </div>
                   <button
                     type="button"
                     className="press"
@@ -2921,12 +3046,12 @@ function ActionSheet({
                       haptic('tap');
                       showToast(t('toast.cardCopied'));
                     }}
-                    style={{ display: 'flex', alignItems: 'center', gap: 7, height: 38, padding: '0 16px', marginTop: 14, border: 'none', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, height: 44, border: 'none', borderRadius: 12, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: 'pointer', marginBottom: 14 }}
                   >
-                    <Icon name="copy" size={14} strokeWidth={2} className="" />
+                    <Icon name="copy" size={15} strokeWidth={2} className="" />
                     {t('manualcode.copy')}
                   </button>
-                  <span style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 12, maxWidth: 280, lineHeight: 1.5 }}>{t('manualcode.hint')}</span>
+                  <div style={{ fontSize: 12.5, color: 'var(--muted-fg)', lineHeight: 1.55 }}>{t('manualcode.instructions')}</div>
                 </div>
               );
             })()
@@ -3041,6 +3166,43 @@ function ActionSheet({
                       </button>
                     </>
                   )}
+                  {/* Draw history — the journal rows (code values stripped server-side). Void is the
+                      agent widget's C-24 safe-void, carrier-scoped for an owner. */}
+                  {data.v.history.length > 0 && (
+                    <>
+                      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', margin: '18px 0 8px' }}>{t('mc.history')}</div>
+                      <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                        {data.v.history.map((d, hi) => (
+                          <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: hi === data.v.history.length - 1 ? 'none' : '1px solid var(--border)' }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>
+                                {money(d.amount)} · <span style={{ color: d.status === 'ISSUED' ? 'var(--success)' : d.status === 'VOIDED' ? 'var(--destructive)' : 'var(--muted-fg)', fontWeight: 600 }}>{d.status}</span>
+                              </div>
+                              <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2 }}>{d.date}{d.unit ? ` · Unit ${d.unit}` : ''}{d.reason ? ` · ${d.reason}` : ''}</div>
+                            </div>
+                            {d.status === 'ISSUED' && (
+                              <button
+                                type="button"
+                                disabled={mcVoidBusy !== null}
+                                onClick={() => {
+                                  haptic('tap');
+                                  if (mcVoidArm !== d.id) { setMcVoidArm(d.id); return; }
+                                  setMcVoidBusy(d.id);
+                                  voidMoneyCodeDraw(initData, d.id)
+                                    .then(() => { haptic('success'); showToast(t('mc.voided')); invalidateSheetCache('moneycode'); onClose(); })
+                                    .catch((e) => { haptic('error'); showToast(e instanceof ApiError ? e.message : t('sheet.loadError'), 'error'); })
+                                    .finally(() => { setMcVoidBusy(null); setMcVoidArm(null); });
+                                }}
+                                style={{ height: 30, padding: '0 12px', borderRadius: 9, border: 'none', background: mcVoidArm === d.id ? 'var(--destructive)' : 'color-mix(in srgb, var(--destructive) 14%, transparent)', color: mcVoidArm === d.id ? '#FFFFFF' : 'var(--destructive)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 12, cursor: 'pointer', flex: 'none' }}
+                              >
+                                {mcVoidBusy === d.id ? <Spinner size={13} color="#FFFFFF" /> : mcVoidArm === d.id ? t('mc.voidConfirm') : t('mc.void')}
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
               );
             })()
@@ -3109,7 +3271,17 @@ function ActionSheet({
                 haptic('tap');
                 setCoBusy(op);
                 fn()
-                  .then(() => { haptic('success'); showToast(doneMsg); invalidateSheetCache('cardops', 'pinunit', 'status'); })
+                  .then(() => {
+                    haptic('success');
+                    showToast(doneMsg);
+                    invalidateSheetCache('cardops', 'pinunit', 'status');
+                    // BUG FIX (feedback 2026-07-22): the status under the card number kept showing
+                    // the OLD state after activate/deactivate/hold — the sheet cache was cleared but
+                    // the open sheet's own EFS snapshot never re-fetched.
+                    if ((op === 'act' || op === 'deact' || op === 'hold' || op === 'unhold') && coCard?.cardId) {
+                      fetchCardEfs(initData, coCard.cardId).then(setCoEfs).catch(() => undefined);
+                    }
+                  })
                   .catch((e) => {
                     haptic('error');
                     const code = e instanceof ApiError ? e.code : '';
@@ -3173,10 +3345,10 @@ function ActionSheet({
                       (unlike activate/deactivate above); the note under the buttons says so. */}
                   <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('co.holdOps')}</div>
                   <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
-                    <button type="button" className="press" disabled={coBusy !== null} onClick={() => doOp('hold', () => sendFraudRequest(initData, coCard.cardId ?? '', 'fraud_hold'), t('co.holdDone'))} style={opBtn('color-mix(in srgb, var(--destructive) 14%, transparent)', 'var(--destructive)')}>
+                    <button type="button" className="press" disabled={coBusy !== null} onClick={() => doOp('hold', () => setCardStatus(initData, coCard.cardId ?? '', 'hold'), t('co.holdDone'))} style={opBtn('color-mix(in srgb, var(--destructive) 14%, transparent)', 'var(--destructive)')}>
                       {coBusy === 'hold' ? <Spinner size={15} color="var(--destructive)" /> : t('co.hold')}
                     </button>
-                    <button type="button" className="press" disabled={coBusy !== null} onClick={() => doOp('unhold', () => sendFraudRequest(initData, coCard.cardId ?? '', 'fraud_release'), t('co.unholdDone'))} style={opBtn('var(--secondary)', 'var(--fg)')}>
+                    <button type="button" className="press" disabled={coBusy !== null} onClick={() => doOp('unhold', () => setCardStatus(initData, coCard.cardId ?? '', 'unhold'), t('co.unholdDone'))} style={opBtn('var(--secondary)', 'var(--fg)')}>
                       {coBusy === 'unhold' ? <Spinner size={15} color="var(--fg)" /> : t('co.unhold')}
                     </button>
                   </div>
@@ -3270,6 +3442,11 @@ function ActionSheet({
                       <>
                         <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('track.number')}</div>
                         <div className="selectable" style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tr.fedexTracking}</div>
+                        {/* Feedback #9: the number alone answers nothing — one tap must show the
+                            live delivery state. FedEx's own tracker is that state. */}
+                        <a href={`https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(tr.fedexTracking)}`} target="_blank" rel="noreferrer" style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 7, background: 'var(--primary)', color: '#FFFFFF', borderRadius: 10, padding: '9px 14px', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>
+                          {t('track.fedex')}
+                        </a>
                       </>
                     )}
                   </div>
@@ -3329,7 +3506,20 @@ function ActionSheet({
                   {t('ovrbn.active')} · {Math.max(1, Math.ceil((overrideUntil - Date.now()) / 60000))} min
                 </div>
               )}
-              {target.kind === 'generic' && target.request === 'override-card' && session.isDriver && !(overrideUntil != null && overrideUntil > Date.now()) && (
+              {/* Override only for a fraud-held card. Loading its status, then either the button
+                  (fraud-held / status unknown → backend still nets it) or an explanation (active). */}
+              {isDriverOverride && ovrCardStatus === undefined && !(overrideUntil != null && overrideUntil > Date.now()) && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--muted-fg)', fontSize: 13, padding: '4px 0 14px' }}>
+                  <Spinner size={14} /> {t('ovr.checking')}
+                </div>
+              )}
+              {isDriverOverride && ovrCardStatus !== undefined && !ovrEligible && !(overrideUntil != null && overrideUntil > Date.now()) && (
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: 'var(--secondary)', borderRadius: 12, padding: '13px 14px', marginBottom: 14, fontSize: 13, color: 'var(--fg)', lineHeight: 1.5 }}>
+                  <span style={{ flex: 'none', color: 'var(--success)', display: 'flex', marginTop: 1 }}><Check size={16} strokeWidth={2.4} aria-hidden /></span>
+                  <span>{t('ovr.notHeld')}</span>
+                </div>
+              )}
+              {target.kind === 'generic' && target.request === 'override-card' && session.isDriver && ovrEligible && ovrCardStatus !== undefined && !(overrideUntil != null && overrideUntil > Date.now()) && (
                 <button
                   type="button"
                   className="press"
@@ -3395,11 +3585,16 @@ function ActionSheet({
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-fg)', marginBottom: 7 }}>
               {exportBusy ? t('txns.sendingReport') : t('txns.exportToTelegram')}
             </div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-              <button type="button" className="press" onClick={() => { haptic('tap'); setExportDetailed((v) => !v); }} style={{ flex: 1, height: 34, borderRadius: 9, fontFamily: "'Geist'", fontWeight: 600, fontSize: 12, cursor: 'pointer', background: exportDetailed ? 'var(--primary)' : 'var(--secondary)', color: exportDetailed ? '#FFFFFF' : 'var(--muted-fg)', border: 'none' }}>
-                {t('txns.detailedCols')}
-              </button>
-            </div>
+            {/* Detailed columns = full card number + Driver / Unit / Driver ID. Owner/manager only:
+                a driver's view is already one driver + one card, so the breakdown is redundant (and
+                the driver already never sees other cards' numbers). */}
+            {!session.isDriver && (
+              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                <button type="button" className="press" onClick={() => { haptic('tap'); setExportDetailed((v) => !v); }} style={{ flex: 1, height: 34, borderRadius: 9, fontFamily: "'Geist'", fontWeight: 600, fontSize: 12, cursor: 'pointer', background: exportDetailed ? 'var(--primary)' : 'var(--secondary)', color: exportDetailed ? '#FFFFFF' : 'var(--muted-fg)', border: 'none' }}>
+                  {t('txns.detailedCols')}
+                </button>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8 }}>
               {(['xlsx', 'pdf', 'csv'] as const).map((f) => (
                 <button
@@ -3414,6 +3609,25 @@ function ActionSheet({
                 </button>
               ))}
             </div>
+            {/* Owner accounting shortcuts: the weekly "fuel and EFS report, both retail and with
+                discount, pdf and xlsx" ritual as one tap, and the EFS half alone. Never shown to a
+                driver — both endpoints are owner-only anyway. */}
+            {!session.isDriver && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                {([['bundle', t('txns.bundle')], ['efs', t('txns.efsReport')]] as const).map(([k, label]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    className="press"
+                    disabled={exportBusy !== null || bundleBusy !== null}
+                    onClick={() => void doBundle(k)}
+                    style={{ flex: 1, height: 42, border: 'none', borderRadius: 11, background: k === 'bundle' ? 'var(--primary)' : 'var(--secondary)', color: k === 'bundle' ? '#FFFFFF' : 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: bundleBusy ? 'default' : 'pointer', opacity: bundleBusy && bundleBusy !== k ? 0.45 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    {bundleBusy === k ? <Spinner size={16} color={k === 'bundle' ? '#FFFFFF' : 'var(--fg)'} /> : label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

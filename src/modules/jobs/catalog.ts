@@ -83,6 +83,15 @@ export const notificationDispatchJob = defineJob({
   queue: { retryLimit: 4, retryDelay: 60, retryBackoff: true, expireInSeconds: 300, deadLetter: DEAD_LETTER_QUEUE },
 });
 
+/** Phase-2 T3 — weekly accounting bundle + statement notification (Monday, JOBS_CRON_TZ).
+ *  retryLimit 0 on purpose: the document sends are not idempotent — a retry would re-send files
+ *  (the statement TEXT is deduped by the outbox key, the files are not). */
+export const statementWeeklyJob = defineJob({
+  name: 'notification.statement-weekly',
+  schema: z.object({}),
+  queue: { policy: 'singleton', retryLimit: 0, expireInSeconds: 600, deadLetter: DEAD_LETTER_QUEUE },
+});
+
 /** On-demand async agent run (POST /v1/agent/tasks). */
 export const agentRunJob = defineJob({
   name: 'agent.run',
@@ -212,6 +221,7 @@ export const CRON_SCHEDULES: Array<{ name: string; cron: string }> = [
   { name: approvalsExpiryJob.name, cron: '15 * * * *' }, // hourly
   { name: memoryDecayJob.name, cron: '45 3 * * *' }, // nightly
   { name: notificationPollJob.name, cron: '*/2 * * * *' }, // card_status diff (no-op w/o pilot carriers)
+  { name: statementWeeklyJob.name, cron: '0 7 * * 1' }, // weekly accounting bundle (no-op w/o pilot carriers)
 ];
 
 /** Queues an admin may trigger from Mytrion Admin (empty / optional payload only). */

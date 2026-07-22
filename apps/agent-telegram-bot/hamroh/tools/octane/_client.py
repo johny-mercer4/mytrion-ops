@@ -20,6 +20,27 @@ from ..base import ToolResult
 
 RECENT_WINDOW = timedelta(minutes=5)
 
+#: Shared pooled HTTP client. A per-call ``AsyncClient`` paid a fresh TCP+TLS
+#: handshake on every backend call — with 2-3 serial octane calls per service
+#: ask that was 100-300 ms of pure connection setup per turn.
+_http: httpx.AsyncClient | None = None
+
+
+def _client() -> httpx.AsyncClient:
+    """Return the shared backend client, (re)creating it if missing or closed."""
+    global _http  # noqa: PLW0603 - module-level connection pool by design
+    if _http is None or _http.is_closed:
+        _http = httpx.AsyncClient(timeout=30)
+    return _http
+
+
+async def close_client() -> None:
+    """Close the pooled client (shutdown hook / test teardown)."""
+    global _http  # noqa: PLW0603
+    if _http is not None and not _http.is_closed:
+        await _http.aclose()
+    _http = None
+
 
 def ok(content: str) -> ToolResult:
     return ToolResult(content=content)
@@ -38,18 +59,19 @@ def octane_env() -> tuple[str, str, str] | None:
     return base, key, carrier
 
 
-async def post_backend(path: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+async def post_backend(
+    path: str, payload: dict[str, Any]
+) -> tuple[int, dict[str, Any]]:
     cfg = octane_env()
     if cfg is None:
         return 0, {"message": "Octane integration is not configured on this instance"}
     base, key, carrier = cfg
     body = {"carrierId": carrier, **payload}
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"{base}/v1{path}",
-            headers={"Authorization": f"Bearer {key}"},
-            json=body,
-        )
+    resp = await _client().post(
+        f"{base}/v1{path}",
+        headers={"Authorization": f"Bearer {key}"},
+        json=body,
+    )
     try:
         data = resp.json()
     except Exception:  # noqa: BLE001 - body may not be JSON
@@ -67,7 +89,9 @@ def _recent_enough(raw_ts: object) -> bool:
     return datetime.now(timezone.utc) - ts <= RECENT_WINDOW
 
 
-async def sender_spoke_recently(db: Database | None, chat_id: int, user_id: int) -> bool:
+async def sender_spoke_recently(
+    db: Database | None, chat_id: int, user_id: int
+) -> bool:
     """The claimed asker must have sent a recent INBOUND message in this chat — the model
     cannot point a tool at someone who never spoke."""
     if db is None:
@@ -76,6 +100,8 @@ async def sender_spoke_recently(db: Database | None, chat_id: int, user_id: int)
         db, RecentMessagesQuery(limit=50, include_unprocessed=True, chat_id=chat_id)
     )
     return any(
-        r.get("direction") == "in" and r.get("user_id") == user_id and _recent_enough(r.get("timestamp"))
+        r.get("direction") == "in"
+        and r.get("user_id") == user_id
+        and _recent_enough(r.get("timestamp"))
         for r in rows
     )

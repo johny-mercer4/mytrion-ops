@@ -205,3 +205,24 @@ export async function getDwhCompanyDetails(carrierId: string): Promise<DwhCompan
     zip: s(r.zip_code),
   };
 }
+
+
+/**
+ * Any-status variant of findDwhCardByNumber — for MERGE/READ paths where a deactivated card
+ * must still resolve its stable card_id (EFS-first fleet merge; owner card-ops on an inactive
+ * card — "activate it" being the whole point). Same fail-closed ambiguity guard: 0 or 2+
+ * conflicting rows resolve to null, never a guess.
+ */
+export async function findDwhCardByNumberAnyStatus(cardNumber: string): Promise<DwhCardOwner | null> {
+  const rows = await dwhQuery<{ card_id: string | number | null; carrier_id: string | number | null; card_number: string | null }>(
+    `select card_id, carrier_id, card_number
+       from octane.stg_cmp_card
+      where card_number = $1
+      limit 2`,
+    [cardNumber],
+  );
+  const row = rows[0];
+  if (!row || row.card_id == null || row.carrier_id == null) return null;
+  if (rows.length > 1 && rows[1]?.carrier_id != null && String(rows[1].carrier_id) !== String(row.carrier_id)) return null;
+  return { cardId: String(row.card_id), carrierId: String(row.carrier_id), cardNumber: String(row.card_number ?? '') };
+}

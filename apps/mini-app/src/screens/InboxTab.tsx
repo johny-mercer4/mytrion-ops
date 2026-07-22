@@ -40,7 +40,7 @@ function sanitizeNewsHtml(html: string): string {
 }
 
 /** Rich (server-sanitized) news body — plain items keep the plain-text path. */
-function RichBody({ html, style }: { html: string; style: React.CSSProperties }) {
+export function RichBody({ html, style }: { html: string; style: React.CSSProperties }) {
   // eslint-disable-next-line react/no-danger
   return <div className="rich-news" style={style} dangerouslySetInnerHTML={{ __html: sanitizeNewsHtml(html) }} />;
 }

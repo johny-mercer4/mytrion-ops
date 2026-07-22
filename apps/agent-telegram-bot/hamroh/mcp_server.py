@@ -84,6 +84,32 @@ class _CallRecord:
     duration_ms: int
 
 
+#: In-flight audit writes. Strong refs so a scheduled write can never be
+#: garbage-collected before it lands; drained on shutdown.
+_audit_tasks: set[asyncio.Task[None]] = set()
+
+
+def _audit_soon(db_logger: Any, record: _CallRecord) -> None:
+    """Schedule the audit write WITHOUT blocking the tool round-trip.
+
+    The insert used to be awaited inside the tool wrapper, sitting in-band on
+    every tool call between the tool finishing and the model seeing the
+    result. The write still always happens (see ``drain_audit``) — it just no
+    longer adds a WAL commit to the hot path.
+    """
+    if db_logger is None:
+        return
+    task = asyncio.create_task(_audit(db_logger, record))
+    _audit_tasks.add(task)
+    task.add_done_callback(_audit_tasks.discard)
+
+
+async def drain_audit() -> None:
+    """Await every in-flight audit write (shutdown: no entry may be lost)."""
+    if _audit_tasks:
+        await asyncio.gather(*_audit_tasks, return_exceptions=True)
+
+
 async def _audit(db_logger: Any, record: _CallRecord) -> None:
     """Write a best-effort audit log entry; never raises into the caller."""
     if db_logger is None:
@@ -142,7 +168,7 @@ def _make_wrapper(tool: BaseTool, db_logger):
             tool.ctx.heartbeat.beat()
             duration_ms = int((time.perf_counter() - start) * 1000)
             record = _CallRecord(tool, kwargs, result, err, duration_ms)
-            await _audit(db_logger, record)
+            _audit_soon(db_logger, record)
         return _to_return_value(result)
 
     wrapper.__name__ = tool.name
@@ -279,6 +305,7 @@ class McpServer:
         raise RuntimeError("MCP server failed to start within 2s")
 
     async def stop(self) -> None:
+        await drain_audit()
         if self._server is not None:
             self._server.should_exit = True
         if self._task is not None:

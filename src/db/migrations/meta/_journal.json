@@ -288,6 +288,13 @@
       "when": 1784593200000,
       "tag": "0040_support_bot_chats",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1784593200001,
+      "tag": "0041_support_bot_messages",
+      "breakpoints": true
     }
   ]
 }

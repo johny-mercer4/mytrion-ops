@@ -24,7 +24,7 @@ import { notifyMiniApp } from './service.js';
  *  fleet day can't turn into a notification storm. Excess is skipped (dedupe still covers re-runs). */
 const RECEIPT_PER_CARD_CAP = 20;
 
-function pilotCarriers(): string[] {
+export function pilotCarriers(): string[] {
   return env.NOTIFY_POLL_CARRIERS.split(',')
     .map((s) => s.trim())
     .filter(Boolean);
@@ -181,4 +181,65 @@ export async function runReceiptPoll(): Promise<{ carriers: number; receipts: nu
     }
   }
   return { carriers: carriers.length, receipts };
+}
+
+/**
+ * invoice poller — one OWNER notification per NEW invoice on the account (the gap that surfaced
+ * it: a pending invoice landed for a pilot carrier and neither the Inbox nor the bot said a
+ * word — the `debt`/`invoice` types existed in the registry with no producer). Source is the
+ * same DWH cmp_invoice replica the mini-app's Invoices sheet reads (serverCrmWrapper.getInvoices,
+ * last_30 window). Watermark `invoice:<carrierId>` stores the ids already seen; the FIRST run of
+ * a scope only records the baseline — a fresh pilot never blasts a notification per historical
+ * invoice. The outbox dedupe_key is the invoice id, so window overlap and re-runs cannot
+ * re-send. Cancelled invoices are skipped. Owner-only by registry (company finances — the same
+ * rule as /invoices itself, which requires an owner session).
+ */
+export async function runInvoicePoll(): Promise<{ carriers: number; invoices: number }> {
+  const carriers = pilotCarriers();
+  let invoices = 0;
+  for (const carrierId of carriers) {
+    try {
+      const scope = `invoice:${carrierId}`;
+      const prev = await getWatermark(scope);
+      const res = await serverCrmWrapper.getInvoices(carrierId, { range: 'last_30' });
+      const byId = new Map<string, Record<string, unknown>>();
+      for (const inv of res.data ?? []) {
+        const id = String(inv['invoice_id'] ?? inv['id'] ?? '');
+        if (id) byId.set(id, inv);
+      }
+      if (byId.size === 0) continue;
+      const prevIds = Array.isArray(prev?.['ids']) ? (prev['ids'] as unknown[]).map(String) : null;
+      // First pass for this scope: baseline only — never notify over existing history.
+      if (!prevIds) {
+        await setWatermark(scope, { ids: [...byId.keys()] });
+        continue;
+      }
+      const prevSet = new Set(prevIds);
+      for (const [id, inv] of byId) {
+        if (prevSet.has(id)) continue;
+        const status = String(inv['status'] ?? '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+        if (status === 'CANCELLED' || status === 'CANCELED') continue;
+        const number = String(inv['invoice_ref'] ?? inv['invoice_number'] ?? id);
+        const amount = Number(inv['total_amount'] ?? inv['amount'] ?? 0) || 0;
+        await notifyMiniApp({
+          type: 'invoice',
+          tenantId: DEFAULT_TENANT_ID,
+          carrierId,
+          dedupeKey: `invoice:${carrierId}:${id}`,
+          payload: {
+            number,
+            total: amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' }),
+          },
+        });
+        invoices += 1;
+      }
+      // Union so ids that scroll out of the 30-day window can never re-notify if the window
+      // wobbles; capped so the watermark row cannot grow without bound.
+      await setWatermark(scope, { ids: [...new Set([...prevIds, ...byId.keys()])].slice(-500) });
+    } catch (err) {
+      // One carrier's upstream hiccup must not starve the rest of the pilot.
+      logger.warn({ err, carrierId }, 'invoice poll failed for carrier');
+    }
+  }
+  return { carriers: carriers.length, invoices };
 }

@@ -159,10 +159,16 @@ class TelegramDispatcher(OwnerCommandsMixin):
         # limits and honours 429 retry_after, so a long multi-chunk reply
         # can't trip flood control and abort the turn via the tool-error
         # breaker.
+        # concurrent_updates: without it PTB awaits each handler to completion
+        # before taking the next update, so one chat's awaited pre-engine work
+        # (attachment download, SQLite commits) head-of-line blocks every
+        # other chat's messages. The engine keeps its own per-turn ordering;
+        # the debouncer batches per chat, so cross-task interleaving is safe.
         self.application: Application = (
             Application.builder()
             .token(config.telegram_bot_token)
             .rate_limiter(AIORateLimiter())
+            .concurrent_updates(True)
             .build()
         )
         self._wire_handlers()
@@ -237,20 +243,24 @@ class TelegramDispatcher(OwnerCommandsMixin):
         if not await self._check_rate_limit(cm, chat_type):
             return
 
+        # Fire typing indicator NOW — before the attachment download (a 20MB
+        # document takes seconds), persistence, debounce, XML format and
+        # worker.send, so the user never waits silently through the hot path
+        # before Telegram renders "typing...". Fire-and-forget inside
+        # prime_typing.
+        if self.engine is not None:
+            self.engine.prime_typing(cm.chat_id)
+
         await self._attach_attachment_markers(update, cm)
         await self._persist_inbound(cm)
         await self._forward_to_engine(cm, received_at)
 
     async def _forward_to_engine(self, cm: ChatMessage, received_at: float) -> None:
-        """Prime the typing indicator, log the hot-path latency, and hand the
-        message to the engine. No-op (with an error log) if no engine is wired."""
+        """Log the hot-path latency and hand the message to the engine.
+        No-op (with an error log) if no engine is wired."""
         if self.engine is None:
             log.error("dispatcher received message before engine was attached")
             return
-        # Fire typing indicator NOW — before debounce + XML format + worker.send,
-        # so the user doesn't wait silently through the whole hot path before
-        # Telegram renders "typing...". Fire-and-forget inside prime_typing.
-        self.engine.prime_typing(cm.chat_id)
         log.info(
             "hot-path stage=submit chat=%s msg=%s t_ms=%d",
             cm.chat_id,

@@ -63,6 +63,12 @@ const T: Record<string, Record<Lang, string>> = {
     uz: "🔔 {driverName} favqulodda money code so'rayapti ({amount}). Tasdiqlash uchun mini-app'ni oching.",
     es: '🔔 {driverName} solicita un money code de emergencia ({amount}). Abra la mini-app para aprobar.',
   },
+  invoice: {
+    en: '🧾 New invoice {number} — {total}. Open Invoices in the mini-app to view or download it.',
+    ru: '🧾 Новый инвойс {number} — {total}. Откройте Invoices в мини-приложении, чтобы посмотреть или скачать.',
+    uz: "🧾 Yangi invoice {number} — {total}. Ko'rish yoki yuklab olish uchun mini-app'da Invoices'ni oching.",
+    es: '🧾 Nueva factura {number} — {total}. Ábrala en Invoices de la mini-app.',
+  },
   debt: {
     en: '⚠️ {count} invoice(s) overdue — {total}. Please review Invoices in the mini-app.',
     ru: '⚠️ Просрочено счетов: {count} — {total}. Откройте Invoices в мини-приложении.',

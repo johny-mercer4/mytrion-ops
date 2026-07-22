@@ -44,6 +44,9 @@ vi.mock('../../src/wrappers/efsWrapper.js', () => ({
     getCards: vi.fn(),
     getCardEfsInfo: vi.fn(),
     overrideCard: vi.fn(),
+    // Fraud-only override gate — resolves (= card is fraud-held) by default so the RBAC/pinning
+    // tests keep exercising their own concern; the gate's REJECT path has its own test below.
+    assertCardFraudHeld: vi.fn(),
     setCardStatus: vi.fn(),
     setCardLimits: vi.fn(),
     updateCardInfo: vi.fn(),
@@ -112,8 +115,9 @@ vi.mock('../../src/integrations/telegramCarrierBot.js', async (importOriginal) =
 
 import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
+import { AppError } from '../../src/lib/errors.js';
 import { carrierInvitationRepo } from '../../src/repos/carrierInvitationRepo.js';
-import { registeredMiniAppCompanyRepo } from '../../src/repos/registeredMiniAppCompanyRepo.js';
+import { registeredMiniAppCompanyRepo, type RegisteredMiniAppCompanyDto } from '../../src/repos/registeredMiniAppCompanyRepo.js';
 import { listDwhCards, findDwhCardById, findDwhCardByNumber, isActiveCardOfCarrier } from '../../src/integrations/dwhCards.js';
 import { listDwhTransactions, resolveDwhTxnRange } from '../../src/integrations/dwhTransactions.js';
 import { sendDocument, TelegramChatUnreachableError, parseInitDataUser, signTelegramInitData, verifyTelegramInitData } from '../../src/integrations/telegramCarrierBot.js';
@@ -218,6 +222,9 @@ function inviteRow(overrides: Record<string, unknown> = {}) {
 }
 
 function registrationRow(overrides: Record<string, unknown> = {}) {
+  // Default shape is the DOMAIN row (Date fields) — what findByTelegramUserId resolves. The
+  // manager-list/revoke mocks resolve DTOs (ISO-string dates); those call sites override the
+  // date fields (see dtoDates) rather than this helper guessing per consumer.
   const now = new Date();
   return {
     id: 'rma_1',
@@ -241,6 +248,19 @@ function registrationRow(overrides: Record<string, unknown> = {}) {
     revokedAt: null,
     createdAt: now,
     updatedAt: now,
+    ...overrides,
+  };
+}
+
+/** DTO-shaped registration (repo toDto stringifies dates) — for mocks whose method returns a
+ *  RegisteredMiniAppCompanyDto rather than the domain row registrationRow models. */
+function registrationDto(
+  overrides: Partial<RegisteredMiniAppCompanyDto> = {},
+): RegisteredMiniAppCompanyDto {
+  const { createdAt, updatedAt: _updatedAt, ...rest } = registrationRow();
+  return {
+    ...rest,
+    createdAt: createdAt.toISOString(),
     ...overrides,
   };
 }
@@ -645,7 +665,7 @@ describe('manager access — owner-equivalent, plus manager invites', () => {
   it('lists the carrier managers for an owner/manager', async () => {
     registrationRepo.findByTelegramUserId.mockResolvedValueOnce(managerReg());
     registrationRepo.listManagersByCarrier.mockResolvedValueOnce([
-      registrationRow({ id: 'rma_m1', profile: 'manager', driverName: 'Dana Ops', telegramUsername: 'dana' }),
+      registrationDto({ id: 'rma_m1', profile: 'manager', driverName: 'Dana Ops', telegramUsername: 'dana' }),
     ]);
 
     const res = await app.inject({
@@ -664,7 +684,7 @@ describe('manager access — owner-equivalent, plus manager invites', () => {
   it('revokes a manager scoped to the caller\'s own carrier', async () => {
     registrationRepo.findByTelegramUserId.mockResolvedValueOnce(managerReg());
     registrationRepo.revokeManagerByCarrier.mockResolvedValueOnce(
-      registrationRow({ id: 'rma_m1', profile: 'manager', status: 'revoked' }),
+      registrationDto({ id: 'rma_m1', profile: 'manager', status: 'revoked' }),
     );
 
     const res = await app.inject({
@@ -2013,6 +2033,35 @@ describe('mini-app write actions — RBAC + gate order', () => {
       expect(efs.overrideCard).toHaveBeenCalledWith(CARRIER, 'DRIVER_OWN_PAN');
       // The colleague's card the driver tried to name is never resolved, let alone acted on.
       expect(findDwhCardById).not.toHaveBeenCalledWith(CARRIER, 'card_belonging_to_a_colleague');
+    });
+
+    it('refuses the override when the card is not fraud-held (409, EFS never touched)', async () => {
+      registrationRepo.findByTelegramUserId.mockResolvedValue(driverRow({ cardId: 'card_own' }));
+      vi.mocked(findDwhCardById).mockResolvedValue({
+        cardId: 'card_own',
+        cardNumber: 'DRIVER_OWN_PAN',
+        cardType: 'FUEL',
+        status: 'Active',
+        balance: '0',
+      });
+      vi.mocked(efs.assertCardFraudHeld).mockRejectedValue(
+        new AppError('Override is only available for fraud-held cards (current status: Active)', {
+          statusCode: 409,
+          code: 'OVERRIDE_NOT_FRAUD_HELD',
+          expose: true,
+        }),
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/carrier/mini-app/card/override',
+        headers: { 'content-type': 'application/json' },
+        payload: { initData: 'signed' },
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toMatchObject({ error: { code: 'OVERRIDE_NOT_FRAUD_HELD' } });
+      expect(efs.overrideCard).not.toHaveBeenCalled();
     });
   });
 

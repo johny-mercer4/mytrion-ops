@@ -6,7 +6,7 @@
 import type { IconName } from '../components/icons';
 
 /** The 7 canonical self-service sheets. */
-export type ServiceKey = 'balance' | 'funds' | 'status' | 'txns' | 'invoices' | 'payment' | 'lastused' | 'tracking' | 'manualcode' | 'moneycode' | 'cardops' | 'pinunit';
+export type ServiceKey = 'balance' | 'funds' | 'status' | 'txns' | 'invoices' | 'payment' | 'lastused' | 'tracking' | 'manualcode' | 'moneycode' | 'cardops' | 'pinunit' | 'billingform';
 
 export type InboxCategory = 'news' | 'notifications';
 

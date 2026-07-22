@@ -300,6 +300,7 @@ source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
     { name = "croniter" },
+    { name = "httpx" },
     { name = "mcp" },
     { name = "playwright" },
     { name = "pydantic" },
@@ -329,6 +330,7 @@ requires-dist = [
     { name = "aiosqlite", specifier = ">=0.20" },
     { name = "anyio", marker = "extra == 'dev'", specifier = ">=4.4" },
     { name = "croniter", specifier = ">=2.0" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "lizard", marker = "extra == 'dev'", specifier = ">=1.17" },
     { name = "mcp", specifier = ">=1.2.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },

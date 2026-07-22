@@ -1,0 +1,21 @@
+services:
+  gateway:
+    build: .
+    container_name: octane-agent-gateway
+    env_file: .env
+    environment:
+      # Inside the container "localhost" is the container itself — the mytrion backend runs on
+      # the HOST (Mac), so override the .env value. On Linux hosts add the extra_hosts below.
+      OCTANE_API_BASE: http://host.docker.internal:3001
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    ports:
+      # Web monitor (turn log + token accounting) — open http://localhost:8787
+      - "8787:8787"
+    volumes:
+      - ./data:/app/data
+      # The SDK keeps session transcripts under $HOME/.claude — without this volume every
+      # rebuild orphans sessions.json's ids (the bot's first post-rebuild turns then retry
+      # fresh; with it, conversations survive rebuilds).
+      - ./data/claude-home:/root/.claude

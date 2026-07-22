@@ -29,7 +29,6 @@ export type ServiceRequestKey =
   | 'card-replace'
   | 'card-fraud'
   | 'billing-form'
-  | 'ref-guides'
   | 'account-reactivate'
   | 'dispute-txn';
 
@@ -103,12 +102,6 @@ const SERVICE_REQUESTS: Record<ServiceRequestKey, ServiceRequestSpec> = {
     dept: 'billing',
     roles: ['owner'],
     ticketType: 'Billing',
-  },
-  'ref-guides': {
-    subject: 'Reference guides',
-    dept: 'cs',
-    roles: ['owner'],
-    ticketType: 'Reports Center',
   },
   // C-7 — reactivating a suspended account is tied to payment review, so it stays a human
   // decision: this files the structured request; CS verifies and reactivates.

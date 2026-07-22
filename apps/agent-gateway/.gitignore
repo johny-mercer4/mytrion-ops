@@ -1,0 +1,6 @@
+# Secrets + runtime — never committed. Source, prompts, .claude/skills and configs ARE tracked.
+.env
+node_modules/
+data/
+stress-report.json
+*.log

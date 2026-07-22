@@ -190,15 +190,25 @@ async def deliver_bookkeeping(ctx: ToolContext, sent: OutboundDelivery) -> None:
     )
 
 
-async def bot_identity(bot: Any) -> tuple[int, str | None, str]:
-    """The bot's ``(user_id, username, first_name)`` via ``get_me``.
+#: ``get_me`` result, cached after the first success. PTB does NOT cache the
+#: HTTP call itself, so uncached this was ~50-150 ms of HTTPS per outbound
+#: chunk. The identity cannot change within a process lifetime.
+_bot_identity: tuple[int, str | None, str] | None = None
 
-    Falls back to ``(0, None, "bot")`` on failure so a transient
-    ``get_me`` glitch never tanks the delivery being recorded.
+
+async def bot_identity(bot: Any) -> tuple[int, str | None, str]:
+    """The bot's ``(user_id, username, first_name)`` via ``get_me``, cached.
+
+    Falls back to ``(0, None, "bot")`` on failure (fallback is not cached) so a
+    transient ``get_me`` glitch never tanks the delivery being recorded.
     """
+    global _bot_identity  # noqa: PLW0603 - process-lifetime cache by design
+    if _bot_identity is not None:
+        return _bot_identity
     try:
         me = await bot.get_me()
-        return me.id, me.username, me.first_name
+        _bot_identity = (me.id, me.username, me.first_name)
+        return _bot_identity
     except Exception:
         return 0, None, "bot"
 

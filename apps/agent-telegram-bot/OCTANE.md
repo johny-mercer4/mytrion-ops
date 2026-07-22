@@ -1,3 +1,9 @@
+> **DEPRECATED (2026-07-22).** hamroh v1 is retired for Octane. The live bot is
+> `apps/agent-gateway` (Claude Agent SDK, per-chat sessions). This folder stays only as the
+> source of the skills/prompts that were ported. Do NOT run it: it shares the bot token with
+> the gateway, and two getUpdates pollers on one token spam the client group with 409-Conflict
+> tracebacks (observed live). The token in `.env` is commented out for this reason.
+
 # agent-telegram-bot — Octane integratsiyasi
 
 Hamroh (https://github.com/Rustam-Z/hamroh) asosidagi agentic Telegram bot, mytrion

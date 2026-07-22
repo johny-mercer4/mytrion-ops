@@ -25,7 +25,10 @@ export function getDwhPool(): Pool {
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 15_000,
     // Enforce read-only at the session level — this wrapper must never write the DWH.
-    options: '-c default_transaction_read_only=on',
+    // statement_timeout: the DWH periodically jams under dbt rebuild locks (observed: 40+
+    // queries lock-waiting, even `limit 1` hanging). Without a cap, a UI request (e.g. the
+    // admin client picker) sits pending forever; 30s turns that into a fast, retryable 502.
+    options: '-c default_transaction_read_only=on -c statement_timeout=30s',
   });
   pool.on('error', (err) => logger.error({ err: err.message }, 'DWH pool error'));
   return pool;

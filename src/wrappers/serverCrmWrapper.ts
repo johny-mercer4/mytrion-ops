@@ -110,8 +110,8 @@ export const serverCrmWrapper = {
 
   /** A time-limited signed URL for one invoice's PDF. Not itself carrier-scoped upstream — callers
    * must verify ownership (e.g. via getInvoices) before minting one. */
-  getInvoiceSignedUrl(invoiceId: string) {
-    return crmGet(`/api/salesMytrion/invoices/${encodeURIComponent(invoiceId)}/signed-url`, { type: 'pdf' });
+  getInvoiceSignedUrl(invoiceId: string, type: 'pdf' | 'xlsx' | 'csv' = 'pdf') {
+    return crmGet(`/api/salesMytrion/invoices/${encodeURIComponent(invoiceId)}/signed-url`, { type });
   },
 
   /** C-17 step 1 — the drawable money-code window for a carrier: `{ eligible, available, drawn,
@@ -135,6 +135,16 @@ export const serverCrmWrapper = {
       moneycode_reason: opts.reason,
       unit_number: opts.unitNumber,
       ...(opts.requestedBy ? { requestedBy: opts.requestedBy } : {}),
+    });
+  },
+
+  /** C-24 safe-void — servercrm's EFS-safe decision tree; it updates money_code_requests itself.
+   * The response never carries the code value. */
+  voidMoneyCode(opts: { requestId: number; requestedBy: string; reason?: string | undefined }) {
+    return crmPost('/api/agent/dwh/money-code/void', {
+      requestId: opts.requestId,
+      requestedBy: opts.requestedBy,
+      ...(opts.reason ? { reason: opts.reason } : {}),
     });
   },
 };

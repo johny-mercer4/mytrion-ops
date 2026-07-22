@@ -119,9 +119,9 @@ class TelegramSendMessageTool(BaseTool[SendMessageArgs]):
     ) -> None:
         """Log + persist each delivered chunk as its own transcript row.
 
-        ``record_outbound`` internally handles the bot-identity lookup; PTB
-        caches the ``get_me`` result after the first call, so the N-1
-        follow-ups cost a dict read.
+        ``record_outbound`` internally handles the bot-identity lookup;
+        ``base.bot_identity`` caches it after the first success (PTB itself
+        does not cache ``get_me``), so follow-ups cost a tuple read.
         """
         log_outbound(
             ChatRef(args.chat_id, self.ctx.chat_titles),

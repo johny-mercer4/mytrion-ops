@@ -143,6 +143,10 @@ export interface FleetCard {
   /** Pending only — the generated link + its 24h deadline; "expired" is derived from expiresAt. */
   link?: string | null;
   expiresAt?: string | null;
+  /** Live EFS extras (EFS-first fleet, 2026-07-22): status incl. inactive, unit, driver id. */
+  efsStatus?: string | null;
+  unitNumber?: string | null;
+  efsDriverId?: string | null;
 }
 
 export interface FleetResponse {
@@ -265,6 +269,8 @@ export interface EfsCardsResult {
 export interface StatusResult {
   overview: CarrierOverview;
   cards: EfsCardsResult;
+  /** Owner only (feedback #10): available balance, weekly limit, next unpaid due date. */
+  billing?: { availableBalance?: number | string | null; weeklyLimit?: number | string | null; dueDate?: string | null } | null;
 }
 
 export interface TransactionsResult {
@@ -366,8 +372,8 @@ export async function fetchInvoiceSignedUrl(initData: string, invoiceId: string)
  * way: a Telegram WebApp cannot reliably save a file, and the signed URL expires — in the chat the
  * document persists and can be forwarded.
  */
-export async function sendInvoice(initData: string, invoiceId: string): Promise<{ sent?: boolean; fileName?: string }> {
-  return (await request('POST', '/carrier/mini-app/invoices/send', { initData, invoiceId })) as {
+export async function sendInvoice(initData: string, invoiceId: string, format: 'pdf' | 'xlsx' | 'csv' = 'pdf'): Promise<{ sent?: boolean; fileName?: string }> {
+  return (await request('POST', '/carrier/mini-app/invoices/send', { initData, invoiceId, format })) as {
     sent?: boolean;
     fileName?: string;
   };
@@ -385,7 +391,6 @@ export type ServiceRequestKey =
   | 'card-replace'
   | 'card-fraud'
   | 'billing-form'
-  | 'ref-guides'
   | 'account-reactivate'
   | 'dispute-txn';
 
@@ -437,6 +442,24 @@ export async function sendTransactionsReport(
   })) as TxnExportSent;
 }
 
+/** Accounting bundle — fuel (both price modes) + EFS money-code reports, Excel+PDF, delivered to
+ * the bot chat in one tap. Owner-only server-side. */
+export async function sendAccountingBundleReport(
+  initData: string,
+  range: { range?: string; from?: string; to?: string },
+): Promise<TxnExportSent> {
+  return (await request('POST', '/carrier/mini-app/transactions/export-bundle', { initData, ...range })) as TxnExportSent;
+}
+
+/** EFS money-code report alone (owner-only). The code values are never in the file. */
+export async function sendMoneyCodeReport(
+  initData: string,
+  range: { range?: string; from?: string; to?: string },
+  format: TxnExportFormat = 'xlsx',
+): Promise<TxnExportSent> {
+  return (await request('POST', '/carrier/mini-app/money-code-report', { initData, ...range, format })) as TxnExportSent;
+}
+
 // ── Self-service WRITE actions (wired to the agent widget's automations; see backend
 //    carrierMiniAppActions.routes.ts). All are feature-flagged server-side: a 503 with code
 //    MINIAPP_WRITES_DISABLED / MINIAPP_MONEY_CODE_DISABLED means "fall back to a service request".
@@ -462,7 +485,7 @@ export async function overrideCard(initData: string, cardId?: string): Promise<R
 export async function setCardStatus(
   initData: string,
   cardId: string,
-  action: 'activate' | 'deactivate',
+  action: 'activate' | 'deactivate' | 'hold' | 'unhold',
 ): Promise<Record<string, unknown>> {
   return (await request('POST', '/carrier/mini-app/card/set-status', { initData, cardId, action })) as Record<
     string,
@@ -506,6 +529,28 @@ export interface BillingFormInfo {
 /** Billing form + verification notes on file — owner-only; the same servercrm read the CRM widget uses. */
 export async function fetchBillingForm(initData: string): Promise<BillingFormInfo> {
   return (await request('POST', '/carrier/mini-app/billing-form', { initData })) as BillingFormInfo;
+}
+
+export interface MoneyCodeDrawRow {
+  id: number;
+  date: string;
+  amount: number;
+  used: number;
+  status: string;
+  reason: string;
+  unit: string;
+  requestedBy: string;
+  validUntil: string;
+}
+
+/** Money-code draw history (code values never present). Owner-only. */
+export async function fetchMoneyCodeHistory(initData: string, range = 'month'): Promise<{ draws: MoneyCodeDrawRow[] }> {
+  return (await request('POST', '/carrier/mini-app/money-code/history', { initData, range })) as { draws: MoneyCodeDrawRow[] };
+}
+
+/** C-24 safe-void of one of the carrier's own draws. Owner-only; FF money-code gated. */
+export async function voidMoneyCodeDraw(initData: string, requestId: number, reason?: string): Promise<Record<string, unknown>> {
+  return (await request('POST', '/carrier/mini-app/money-code/void', { initData, requestId, ...(reason ? { reason } : {}) })) as Record<string, unknown>;
 }
 
 /** C-10 — raise a fraud hold/release request (a human on the fraud team acts on it). Owner-only. */

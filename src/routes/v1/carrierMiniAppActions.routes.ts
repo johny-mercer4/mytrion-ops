@@ -24,10 +24,11 @@ import { z } from 'zod';
 import { AppError, NotFoundError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { env, isProduction } from '../../config/env.js';
-import { findDwhCardById } from '../../integrations/dwhCards.js';
+import { findDwhCardByIdAnyStatus } from '../../integrations/dwhCards.js';
 import { takeToken } from '../../modules/security/rateBucket.js';
 import { efsWrapper } from '../../wrappers/efsWrapper.js';
 import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
+import { moneyCodeRequestRepo } from '../../repos/moneyCodeRequestRepo.js';
 import { notifyMiniApp } from '../../modules/notifications/service.js';
 import {
   requireDriverCardNumber,
@@ -39,9 +40,16 @@ import type { RegisteredMiniAppCompany } from '../../db/schema/index.js';
 
 const initDataSchema = z.object({ initData: z.string().min(1) });
 const cardSchema = initDataSchema.extend({ cardId: z.string().min(1).max(120).optional() });
+const mcVoidSchema = initDataSchema.extend({
+  requestId: z.coerce.number().int().positive(),
+  reason: z.string().max(500).optional(),
+});
+
 const setStatusSchema = initDataSchema.extend({
   cardId: z.string().min(1).max(120),
-  action: z.enum(['activate', 'deactivate']),
+  // hold/unhold added 2026-07-22 (full-parity): a DIRECT EFS flip via servercrm — distinct from
+  // /card/fraud-request, which files a human-actioned fraud-team request.
+  action: z.enum(['activate', 'deactivate', 'hold', 'unhold']),
 });
 const limitsSchema = initDataSchema.extend({
   cardId: z.string().min(1).max(120),
@@ -113,7 +121,10 @@ async function resolveActionCard(
       expose: true,
     });
   }
-  const card = await findDwhCardById(carrierId, cardId).catch(() => null);
+  // Any-status on purpose (2026-07-22): "activate this card" is an action ON an inactive card —
+  // the active-only lookup made exactly that impossible. Ownership (same carrier) is the gate;
+  // EFS enforces state rules on the write itself.
+  const card = await findDwhCardByIdAnyStatus(carrierId, cardId).catch(() => null);
   if (!card?.cardNumber) {
     throw new NotFoundError('That card was not found on your account');
   }
@@ -147,10 +158,13 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
     // DEV ONLY — same explicit opt-in gate as the mock-init-data route: lets the full override UX
     // (button → toast → Home countdown → bot receipt → audit row) be clicked through locally
     // without a real fraud-held card. Impossible in production BY CONSTRUCTION (isProduction).
-    const result =
-      !isProduction && env.FF_DEV_MOCK_TELEGRAM_ENABLED
-        ? { success: true, cardNumber, previousStatus: 'Hold', override: true, message: 'DEV MOCK — EFS not called' }
-        : await efsWrapper.overrideCard(carrierId, cardNumber);
+    const mock = !isProduction && env.FF_DEV_MOCK_TELEGRAM_ENABLED;
+    // Fraud-only gate: the override exists to unlock a FRAUD-held card for one fueling; on any
+    // other status it must refuse (409 OVERRIDE_NOT_FRAUD_HELD) rather than touch the card.
+    if (!mock) await efsWrapper.assertCardFraudHeld(carrierId, cardNumber);
+    const result = mock
+      ? { success: true, cardNumber, previousStatus: 'Hold', override: true, message: 'DEV MOCK — EFS not called' }
+      : await efsWrapper.overrideCard(carrierId, cardNumber);
     await auditFromContext(ctx, {
       action: 'carrier.mini_app.card_override',
       status: 'ok',
@@ -319,6 +333,37 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
     const body = initDataSchema.parse(request.body);
     const { carrierId } = await requireRegisteredOwnerUser(body.initData);
     return serverCrmWrapper.getMoneyCodePreview(carrierId);
+  });
+
+  /**
+   * C-24 safe-void — EXISTING servercrm logic reused verbatim (/api/agent/dwh/money-code/void,
+   * the EFS-safe decision tree that writes back to money_code_requests). New here is only the
+   * ownership rule: an owner may void any draw on THEIR OWN carrier (carrier-scoped), unlike
+   * agents who are own-draws-only — the carrier owns the liability either way.
+   */
+  app.post('/carrier/mini-app/money-code/void', async (request) => {
+    requireMoneyCodeEnabled();
+    const body = mcVoidSchema.parse(request.body);
+    const { registration, carrierId } = await requireRegisteredOwnerUser(body.initData);
+    takeWriteToken(carrierId);
+    const row = await moneyCodeRequestRepo.findById(body.requestId);
+    if (!row || String(row.carrierId) !== String(carrierId)) {
+      throw new NotFoundError('That money code was not found on your account');
+    }
+    const ctx = telegramCtx(registration.profile, registration.telegramUserId);
+    const result = await serverCrmWrapper.voidMoneyCode({
+      requestId: body.requestId,
+      requestedBy: row.requestedBy ?? `mini-app:telegram:${registration.telegramUserId}`,
+      ...(body.reason ? { reason: body.reason } : {}),
+    });
+    await auditFromContext(ctx, {
+      action: 'carrier.mini_app.money_code_void',
+      status: 'ok',
+      resourceType: 'money_code_request',
+      resourceId: String(body.requestId),
+      detail: { carrierId },
+    });
+    return result;
   });
 
   app.post('/carrier/mini-app/money-code/draw', async (request) => {

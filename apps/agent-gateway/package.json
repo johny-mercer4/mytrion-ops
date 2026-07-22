@@ -1,0 +1,22 @@
+{
+  "name": "octane-agent-gateway",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Octane support bot v2 \u2014 Claude Agent SDK gateway. Per-chat sessions, RBAC via mytrion /v1/support-bot. MVP: one group (long-poll).",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.216",
+    "dotenv": "^16.4.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
