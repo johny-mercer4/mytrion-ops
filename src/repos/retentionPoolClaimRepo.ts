@@ -1,10 +1,8 @@
 /**
- * Sales Open Pool claim — request → prior Sales owner approve/decline (or 1 BD auto-approve).
- * Durable queue: retention_claim_requests. Processing lock: p1_pool_claim_pending.
- * On approve: Zoho Deal/Contact/Account Owner → claiming Sales agent, case → p1_new (2 BD).
- * Retention/CS never receive Zoho ownership — only the case moves to the CS desk.
+ * Sales Open Pool — instant claim (Case + Zoho Deal/Contact/Company → claimant).
+ * Audit rows in retention_claim_requests: approved (claimed) / expired (unclaimed exit).
  */
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   CLAIM_REQUEST_STATUS,
@@ -12,23 +10,18 @@ import {
   retentionCases,
   retentionClaimRequests,
   type RetentionCase,
-  type RetentionClaimRequest,
 } from '../db/schema/index.js';
-import { AppError, NotFoundError, RBACError } from '../lib/errors.js';
+import { AppError, NotFoundError } from '../lib/errors.js';
 import {
   MIN_INACTIVE_DAYS_FOR_POOL_CLAIM,
   moveToCiti,
   patchToUpdateInput,
-  stampClaimApproveDeadline,
   stampPhase1ActionDeadline,
   stampPoolClaimDeadline,
 } from '../modules/retention/deadlines.js';
-import {
-  notifyClaimApproved,
-  notifyClaimDeclined,
-  notifyClaimRequestToPriorOwner,
-} from '../modules/retention/notify.js';
+import { assertUnderOpenPoolDailyCap } from '../modules/retention/openPoolCaps.js';
 import { MAX_OPEN_POOL_AGENTS } from '../modules/retention/phase1.js';
+import { OWNERSHIP_TRANSFER_REASON } from '../db/schema/retention_ownership_transfers.js';
 import {
   setDealStageClosedLost,
   transferDealOwnershipToClaimant,
@@ -44,27 +37,6 @@ import {
 
 const trim = (v: string): string => v.trim();
 
-function isAdminCtx(ctx: TenantContext): boolean {
-  return ctx.role === 'admin' || ctx.bypassRbac === true || ctx.allDepartmentAccess === true;
-}
-
-/** Prior Sales owner (or admin) may approve/decline Open Pool claims on their deals. */
-function assertPriorOwnerApprover(
-  ctx: TenantContext,
-  existing: RetentionCase,
-  actorZohoUserId: string,
-  opts: { asAdmin?: boolean } = {},
-): void {
-  if (opts.asAdmin || isAdminCtx(ctx)) return;
-  const owner = existing.poolOwnerZohoUserId?.trim();
-  const actor = trim(actorZohoUserId);
-  if (!owner || owner !== actor) {
-    throw new RBACError(
-      'Only the prior Sales owner can approve or decline this Open Pool claim',
-    );
-  }
-}
-
 async function loadCase(ctx: TenantContext, id: string): Promise<RetentionCase> {
   const numericId = Number(id);
   if (!Number.isFinite(numericId)) throw new NotFoundError('Retention case not found');
@@ -78,25 +50,7 @@ async function loadCase(ctx: TenantContext, id: string): Promise<RetentionCase> 
   return row;
 }
 
-async function loadOpenRequest(
-  ctx: TenantContext,
-  caseId: number,
-): Promise<RetentionClaimRequest | null> {
-  const found = await db
-    .select()
-    .from(retentionClaimRequests)
-    .where(
-      and(
-        eq(retentionClaimRequests.tenantId, ctx.tenantId),
-        eq(retentionClaimRequests.retentionCaseId, caseId),
-        eq(retentionClaimRequests.status, CLAIM_REQUEST_STATUS.requested),
-      ),
-    )
-    .limit(1);
-  return found[0] ?? null;
-}
-
-/** Delete open request(s) for a case (reject / sync abandon). */
+/** Delete legacy open request(s) for a case. */
 export async function deleteOpenClaimRequests(
   ctx: TenantContext,
   caseId: number,
@@ -114,7 +68,7 @@ export async function deleteOpenClaimRequests(
   return deleted.length;
 }
 
-/** Finalize after prior-owner approve / auto-approve → Kanban New (2 BD Phase 1 restart). */
+/** Finalize → Kanban New (2 BD Phase 1 restart). */
 async function finalizeClaim(
   ctx: TenantContext,
   existing: RetentionCase,
@@ -157,8 +111,21 @@ async function finalizeClaim(
       currentDeadlineType: deadline.currentDeadlineType,
       updatedAt: new Date(),
     })
-    .where(and(eq(retentionCases.id, existing.id), eq(retentionCases.tenantId, ctx.tenantId)))
+    .where(
+      and(
+        eq(retentionCases.id, existing.id),
+        eq(retentionCases.tenantId, ctx.tenantId),
+        inArray(retentionCases.statusCode, ['p1_open_pool', 'p1_pool_claim_pending']),
+      ),
+    )
     .returning();
+  if (rows.length === 0) {
+    throw new AppError('Case is no longer available in the Open Pool', {
+      statusCode: 409,
+      code: 'RETENTION_NOT_IN_POOL',
+      expose: true,
+    });
+  }
   const row = firstOrThrow(rows, 'Failed to finalize pool claim');
   await appendRetentionEvent({
     caseId: row.id,
@@ -168,78 +135,34 @@ async function finalizeClaim(
     actorZohoUserId: opts.actorZohoUserId ?? claimantZohoUserId,
     notes:
       opts.notes ??
-      `Claim approved — New · assignment ${nextCount}/${MAX_OPEN_POOL_AGENTS} · 2 BD to act`,
+      `Open Pool claimed — New · assignment ${nextCount}/${MAX_OPEN_POOL_AGENTS} · 2 BD to act`,
   });
   return toRetentionCaseDto(row);
 }
 
-async function transferZohoThenFinalize(
-  ctx: TenantContext,
-  existing: RetentionCase,
-  claimant: string,
-  opts: {
-    agentName?: string | undefined;
-    actorZohoUserId?: string | undefined;
-    notes?: string;
-    markRequestApproved?: boolean;
-  },
-): Promise<RetentionCaseDto> {
-  const dealId = existing.zohoDealId?.trim();
-  if (!dealId) {
-    throw new AppError(
-      'Case has no Zoho Deal id — cannot approve claim until retention sync backfills deal_id',
-      {
-        statusCode: 409,
-        code: 'RETENTION_NO_DEAL',
-        expose: true,
-      },
-    );
-  }
-  const ownership = await transferDealOwnershipToClaimant(dealId, claimant);
-  if (ownership.warnings.length > 0) {
-    await appendRetentionEvent({
-      caseId: existing.id,
-      fromStatus: existing.statusCode,
-      toStatus: existing.statusCode,
-      eventType: 'note',
-      actorZohoUserId: opts.actorZohoUserId ?? claimant,
-      notes: `Zoho ownership partial: ${ownership.warnings.join('; ')}`,
-    });
-  }
+export type PoolActivityKind = 'claimed' | 'unclaimed';
 
-  if (opts.markRequestApproved !== false) {
-    const now = new Date();
-    await db
-      .update(retentionClaimRequests)
-      .set({
-        status: CLAIM_REQUEST_STATUS.approved,
-        resolvedAt: now,
-        resolvedByZohoUserId: opts.actorZohoUserId ?? claimant,
-      })
-      .where(
-        and(
-          eq(retentionClaimRequests.tenantId, ctx.tenantId),
-          eq(retentionClaimRequests.retentionCaseId, existing.id),
-          eq(retentionClaimRequests.status, CLAIM_REQUEST_STATUS.requested),
-        ),
-      );
-  }
-
-  return finalizeClaim(ctx, existing, claimant, opts);
-}
-
-export interface PendingClaimRow extends RetentionCaseDto {
-  claimRequestId: string;
-  claimReason: string;
-  claimRequesterName: string | null;
-  claimRequestedAt: string;
+export interface PoolActivityRow {
+  id: string;
+  kind: PoolActivityKind;
+  status: string;
+  caseId: string;
+  carrierId: string;
+  zohoDealId: string | null;
+  companyName: string | null;
+  requesterZohoUserId: string;
+  requesterName: string | null;
+  reason: string;
+  outcomeNote: string | null;
+  requestedAt: string;
+  resolvedAt: string | null;
 }
 
 export const retentionPoolClaimRepo = {
   /**
-   * Request claim from Open Pool — inserts claim_request + Processing lock for prior owner (1 BD auto).
+   * Instant Open Pool claim — Zoho ownership + case → p1_new in one step.
    */
-  async requestClaim(
+  async claimNow(
     ctx: TenantContext,
     id: string,
     claimantZohoUserId: string,
@@ -261,6 +184,9 @@ export const retentionPoolClaimRepo = {
       });
     }
 
+    const claimant = trim(claimantZohoUserId);
+    await assertUnderOpenPoolDailyCap(ctx, claimant);
+
     const existing = await loadCase(ctx, id);
     if (existing.closedAt != null) {
       throw new AppError('Case is already closed', {
@@ -272,7 +198,7 @@ export const retentionPoolClaimRepo = {
     if (existing.statusCode !== 'p1_open_pool') {
       throw new AppError(
         existing.statusCode === 'p1_pool_claim_pending'
-          ? 'Case is already Processing — another claim is pending'
+          ? 'Case is locked — try again shortly'
           : 'Case is not available in the Open Pool',
         {
           statusCode: 409,
@@ -294,7 +220,7 @@ export const retentionPoolClaimRepo = {
         String(existing.id),
         patchToUpdateInput(
           moveToCiti({ notes: 'Max Open Pool agents reached — CITI' }),
-          trim(claimantZohoUserId),
+          claimant,
         ),
       );
       await setDealStageClosedLost(existing.zohoDealId);
@@ -303,7 +229,6 @@ export const retentionPoolClaimRepo = {
         { statusCode: 409, code: 'RETENTION_POOL_CAP', expose: true },
       );
     }
-    const claimant = trim(claimantZohoUserId);
     const owner = existing.poolOwnerZohoUserId?.trim() || null;
     if (owner && owner === claimant) {
       throw new AppError('You already own this deal — no claim needed', {
@@ -313,116 +238,236 @@ export const retentionPoolClaimRepo = {
       });
     }
 
-    const openReq = await loadOpenRequest(ctx, existing.id);
-    if (openReq) {
-      throw new AppError('A claim request is already pending for this case', {
-        statusCode: 409,
-        code: 'RETENTION_CLAIM_PENDING',
-        expose: true,
-      });
+    const dealId = existing.zohoDealId?.trim();
+    if (!dealId) {
+      throw new AppError(
+        'Case has no Zoho Deal id — cannot claim until retention sync backfills deal_id',
+        {
+          statusCode: 409,
+          code: 'RETENTION_NO_DEAL',
+          expose: true,
+        },
+      );
     }
 
-    const requesterName = opts.agentName?.trim() || null;
-    try {
-      await db.insert(retentionClaimRequests).values({
-        tenantId: ctx.tenantId,
-        retentionCaseId: existing.id,
-        carrierId: existing.carrierId,
-        zohoDealId: existing.zohoDealId,
-        requesterZohoUserId: claimant,
-        requesterName,
-        reason,
-        status: CLAIM_REQUEST_STATUS.requested,
-      });
-    } catch {
-      throw new AppError('A claim request is already pending for this case', {
-        statusCode: 409,
-        code: 'RETENTION_CLAIM_PENDING',
-        expose: true,
-      });
-    }
-
-    const approve = stampClaimApproveDeadline();
-    const rows = await db
+    // Soft lock so concurrent claimants see Processing briefly while Zoho runs.
+    const lockRows = await db
       .update(retentionCases)
       .set({
         statusCode: 'p1_pool_claim_pending',
         pendingClaimantZohoUserId: claimant,
-        agentName: requesterName || existing.agentName,
-        currentDeadlineAt: approve.currentDeadlineAt,
-        currentDeadlineType: approve.currentDeadlineType,
         updatedAt: new Date(),
       })
-      .where(and(eq(retentionCases.id, existing.id), eq(retentionCases.tenantId, ctx.tenantId)))
+      .where(
+        and(
+          eq(retentionCases.id, existing.id),
+          eq(retentionCases.tenantId, ctx.tenantId),
+          eq(retentionCases.statusCode, 'p1_open_pool'),
+        ),
+      )
       .returning();
-    const row = firstOrThrow(rows, 'Failed to request pool claim');
-    await appendRetentionEvent({
-      caseId: row.id,
-      fromStatus: existing.statusCode,
-      toStatus: row.statusCode,
-      eventType: 'status_change',
-      actorZohoUserId: claimant,
-      notes: `Claim requested — ${reason.slice(0, 400)} · awaiting prior Sales owner (1 BD auto) · assignment would be ${existing.assignmentCount + 1}/${MAX_OPEN_POOL_AGENTS}`,
-    });
-    await notifyClaimRequestToPriorOwner(ctx, {
-      caseId: String(row.id),
-      carrierId: row.carrierId,
-      companyName: row.companyName,
-      claimantZohoUserId: claimant,
-      previousOwnerZohoUserId: owner,
+    if (lockRows.length === 0) {
+      throw new AppError('Case is no longer available in the Open Pool', {
+        statusCode: 409,
+        code: 'RETENTION_NOT_IN_POOL',
+        expose: true,
+      });
+    }
+
+    try {
+      const ownership = await transferDealOwnershipToClaimant(dealId, claimant, {
+        tenantId: ctx.tenantId,
+        reason: OWNERSHIP_TRANSFER_REASON.openPoolClaim,
+        retentionCaseId: existing.id,
+        carrierId: existing.carrierId,
+        companyName: existing.companyName,
+        actorZohoUserId: claimant,
+        actorName: opts.agentName?.trim() || null,
+        toOwnerName: opts.agentName?.trim() || null,
+      });
+      if (ownership.warnings.length > 0) {
+        await appendRetentionEvent({
+          caseId: existing.id,
+          fromStatus: 'p1_open_pool',
+          toStatus: 'p1_pool_claim_pending',
+          eventType: 'note',
+          actorZohoUserId: claimant,
+          notes: `Zoho ownership partial: ${ownership.warnings.join('; ')}`,
+        });
+      }
+    } catch (err) {
+      const pool = stampPoolClaimDeadline();
+      await db
+        .update(retentionCases)
+        .set({
+          statusCode: 'p1_open_pool',
+          pendingClaimantZohoUserId: null,
+          currentDeadlineAt: pool.currentDeadlineAt,
+          currentDeadlineType: pool.currentDeadlineType,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(retentionCases.id, existing.id), eq(retentionCases.tenantId, ctx.tenantId)));
+      throw err;
+    }
+
+    const now = new Date();
+    const requesterName = opts.agentName?.trim() || null;
+    const previousOwnerZohoUserId = existing.poolOwnerZohoUserId?.trim() || null;
+    // agentName on the case is the last assigned Sales name when it entered the pool.
+    const previousOwnerName =
+      previousOwnerZohoUserId != null ? existing.agentName?.trim() || null : null;
+    const fromLabel = previousOwnerName || previousOwnerZohoUserId || 'unassigned';
+    const toLabel = requesterName || claimant;
+    await db.insert(retentionClaimRequests).values({
+      tenantId: ctx.tenantId,
+      retentionCaseId: existing.id,
+      carrierId: existing.carrierId,
+      zohoDealId: existing.zohoDealId,
+      requesterZohoUserId: claimant,
+      requesterName,
+      previousOwnerZohoUserId,
+      previousOwnerName,
       reason,
+      status: CLAIM_REQUEST_STATUS.approved,
+      requestedAt: now,
+      resolvedAt: now,
+      resolvedByZohoUserId: claimant,
     });
-    return { ...toRetentionCaseDto(row), pendingApproval: true };
-  },
 
-  async approveClaim(
-    ctx: TenantContext,
-    id: string,
-    actorZohoUserId: string,
-    opts: { asAdmin?: boolean; agentName?: string | undefined } = {},
-  ): Promise<RetentionCaseDto> {
-    const existing = await loadCase(ctx, id);
-    if (existing.statusCode !== 'p1_pool_claim_pending' || !existing.pendingClaimantZohoUserId) {
-      throw new AppError('No pending claim to approve', {
-        statusCode: 409,
-        code: 'RETENTION_NO_PENDING_CLAIM',
-        expose: true,
-      });
-    }
-    const actor = trim(actorZohoUserId);
-    assertPriorOwnerApprover(ctx, existing, actor, opts);
-    const claimant = existing.pendingClaimantZohoUserId;
-    const dto = await transferZohoThenFinalize(ctx, existing, claimant, {
+    await appendRetentionEvent({
+      caseId: existing.id,
+      fromStatus: 'p1_open_pool',
+      toStatus: 'p1_pool_claim_pending',
+      eventType: 'note',
+      actorZohoUserId: claimant,
+      notes: `Open Pool claim — ${toLabel} took carrier ${existing.carrierId} from ${fromLabel}`,
+    });
+
+    const locked = {
+      ...existing,
+      statusCode: 'p1_pool_claim_pending',
+      pendingClaimantZohoUserId: claimant,
+    };
+    const dto = await finalizeClaim(ctx, locked, claimant, {
       agentName: opts.agentName,
-      actorZohoUserId: actor,
-      notes: `Prior owner approved claim — New · assignment ${existing.assignmentCount + 1}/${MAX_OPEN_POOL_AGENTS} · 2 BD to act`,
+      actorZohoUserId: claimant,
+      notes: `Open Pool claimed — ${reason.slice(0, 200)} · New · assignment ${existing.assignmentCount + 1}/${MAX_OPEN_POOL_AGENTS} · 2 BD to act`,
     });
-    await notifyClaimApproved(ctx, {
-      caseId: dto.id,
-      carrierId: dto.carrierId,
-      companyName: dto.companyName,
-      claimantZohoUserId: claimant,
-    });
-    return dto;
+    return { ...dto, pendingApproval: false };
   },
 
-  async declineClaim(
+  /** @deprecated Use claimNow — kept as alias for callers. */
+  async requestClaim(
     ctx: TenantContext,
     id: string,
-    actorZohoUserId: string,
-    opts: { asAdmin?: boolean } = {},
-  ): Promise<RetentionCaseDto> {
-    const existing = await loadCase(ctx, id);
-    if (existing.statusCode !== 'p1_pool_claim_pending' || !existing.pendingClaimantZohoUserId) {
-      throw new AppError('No pending claim to decline', {
-        statusCode: 409,
-        code: 'RETENTION_NO_PENDING_CLAIM',
-        expose: true,
-      });
-    }
-    const actor = trim(actorZohoUserId);
-    assertPriorOwnerApprover(ctx, existing, actor, opts);
-    const claimant = existing.pendingClaimantZohoUserId;
+    claimantZohoUserId: string,
+    opts: { agentName?: string | undefined; reason: string },
+  ): Promise<RetentionCaseDto & { pendingApproval: boolean }> {
+    return this.claimNow(ctx, id, claimantZohoUserId, opts);
+  },
+
+  /**
+   * Log unclaimed Open Pool exit (3BD → Retention / max agents → CITI).
+   * `requesterZohoUserId` = last pool owner when known.
+   */
+  async logUnclaimedExit(
+    ctx: TenantContext,
+    existing: RetentionCase,
+    opts: {
+      outcomeNote: string;
+      reason?: string;
+    },
+  ): Promise<void> {
+    const owner =
+      existing.poolOwnerZohoUserId?.trim() ||
+      existing.assignedAgentZohoUserId?.trim() ||
+      'system';
+    const now = new Date();
+    await db.insert(retentionClaimRequests).values({
+      tenantId: ctx.tenantId,
+      retentionCaseId: existing.id,
+      carrierId: existing.carrierId,
+      zohoDealId: existing.zohoDealId,
+      requesterZohoUserId: owner,
+      requesterName: existing.agentName,
+      reason: opts.reason ?? 'Unclaimed — left Open Pool',
+      status: CLAIM_REQUEST_STATUS.expired,
+      outcomeNote: opts.outcomeNote,
+      requestedAt: now,
+      resolvedAt: now,
+      resolvedByZohoUserId: 'system:pool-expiry',
+    });
+  },
+
+  /** CS Open Pool Activity — claimed + unclaimed audit rows. */
+  async listPoolActivity(
+    ctx: TenantContext,
+    opts: { limit?: number; status?: 'approved' | 'expired' | 'all' } = {},
+  ): Promise<{ rows: PoolActivityRow[]; total: number }> {
+    const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
+    const statuses =
+      opts.status === 'approved'
+        ? [CLAIM_REQUEST_STATUS.approved]
+        : opts.status === 'expired'
+          ? [CLAIM_REQUEST_STATUS.expired]
+          : [CLAIM_REQUEST_STATUS.approved, CLAIM_REQUEST_STATUS.expired];
+
+    const rows = await db
+      .select({
+        id: retentionClaimRequests.id,
+        status: retentionClaimRequests.status,
+        caseId: retentionClaimRequests.retentionCaseId,
+        carrierId: retentionClaimRequests.carrierId,
+        zohoDealId: retentionClaimRequests.zohoDealId,
+        companyName: retentionCases.companyName,
+        requesterZohoUserId: retentionClaimRequests.requesterZohoUserId,
+        requesterName: retentionClaimRequests.requesterName,
+        reason: retentionClaimRequests.reason,
+        outcomeNote: retentionClaimRequests.outcomeNote,
+        requestedAt: retentionClaimRequests.requestedAt,
+        resolvedAt: retentionClaimRequests.resolvedAt,
+      })
+      .from(retentionClaimRequests)
+      .leftJoin(
+        retentionCases,
+        and(
+          eq(retentionCases.id, retentionClaimRequests.retentionCaseId),
+          eq(retentionCases.tenantId, retentionClaimRequests.tenantId),
+        ),
+      )
+      .where(
+        and(
+          eq(retentionClaimRequests.tenantId, ctx.tenantId),
+          inArray(retentionClaimRequests.status, statuses),
+        ),
+      )
+      .orderBy(desc(retentionClaimRequests.requestedAt))
+      .limit(limit);
+
+    const mapped: PoolActivityRow[] = rows.map((r) => ({
+      id: String(r.id),
+      kind: r.status === CLAIM_REQUEST_STATUS.expired ? 'unclaimed' : 'claimed',
+      status: r.status,
+      caseId: String(r.caseId),
+      carrierId: r.carrierId,
+      zohoDealId: r.zohoDealId,
+      companyName: r.companyName,
+      requesterZohoUserId: r.requesterZohoUserId,
+      requesterName: r.requesterName,
+      reason: r.reason,
+      outcomeNote: r.outcomeNote,
+      requestedAt: r.requestedAt.toISOString(),
+      resolvedAt: r.resolvedAt?.toISOString() ?? null,
+    }));
+    return { rows: mapped, total: mapped.length };
+  },
+
+  /** Unlock legacy pending rows back to Open Pool (migrate / ops). */
+  async resetPendingToPool(
+    ctx: TenantContext,
+    existing: RetentionCase,
+  ): Promise<RetentionCaseDto | null> {
+    if (existing.statusCode !== 'p1_pool_claim_pending') return null;
     await deleteOpenClaimRequests(ctx, existing.id);
     const pool = stampPoolClaimDeadline();
     const rows = await db
@@ -436,100 +481,16 @@ export const retentionPoolClaimRepo = {
       })
       .where(and(eq(retentionCases.id, existing.id), eq(retentionCases.tenantId, ctx.tenantId)))
       .returning();
-    const row = firstOrThrow(rows, 'Failed to decline pool claim');
+    const row = rows[0];
+    if (!row) return null;
     await appendRetentionEvent({
       caseId: row.id,
       fromStatus: existing.statusCode,
       toStatus: row.statusCode,
       eventType: 'status_change',
-      actorZohoUserId: actor,
-      notes: 'Prior owner declined claim — request deleted · back to Open Pool',
-    });
-    await notifyClaimDeclined(ctx, {
-      caseId: String(row.id),
-      carrierId: row.carrierId,
-      companyName: row.companyName,
-      claimantZohoUserId: claimant,
+      actorZohoUserId: 'system:pool-reset',
+      notes: 'Pending claim cleared — back to Open Pool (instant-claim migrate)',
     });
     return toRetentionCaseDto(row);
-  },
-
-  /** Auto-approve overdue pending claims (deadline sweeper) — same path as owner approve. */
-  async autoApproveOverdue(
-    ctx: TenantContext,
-    existing: RetentionCase,
-  ): Promise<RetentionCaseDto | null> {
-    if (
-      existing.statusCode !== 'p1_pool_claim_pending' ||
-      !existing.pendingClaimantZohoUserId
-    ) {
-      return null;
-    }
-    const claimant = existing.pendingClaimantZohoUserId;
-    const dto = await transferZohoThenFinalize(ctx, existing, claimant, {
-      actorZohoUserId: 'system:claim-auto-approve',
-      notes: `Auto-approved after 1 BD — New · assignment ${existing.assignmentCount + 1}/${MAX_OPEN_POOL_AGENTS} · 2 BD to act`,
-    });
-    await notifyClaimApproved(ctx, {
-      caseId: dto.id,
-      carrierId: dto.carrierId,
-      companyName: dto.companyName,
-      claimantZohoUserId: claimant,
-    });
-    return dto;
-  },
-
-  /**
-   * Pending claims on deals this Sales agent previously owned (owner approve queue).
-   */
-  async listPendingForOwner(
-    ctx: TenantContext,
-    ownerZohoUserId: string,
-    opts: { limit?: number } = {},
-  ): Promise<{ cases: PendingClaimRow[]; total: number }> {
-    const limit = Math.min(Math.max(opts.limit ?? 100, 1), 200);
-    const owner = trim(ownerZohoUserId);
-    const rows = await db
-      .select({
-        case: retentionCases,
-        claimId: retentionClaimRequests.id,
-        claimReason: retentionClaimRequests.reason,
-        claimRequesterName: retentionClaimRequests.requesterName,
-        claimRequestedAt: retentionClaimRequests.requestedAt,
-      })
-      .from(retentionCases)
-      .innerJoin(
-        retentionClaimRequests,
-        and(
-          eq(retentionClaimRequests.retentionCaseId, retentionCases.id),
-          eq(retentionClaimRequests.tenantId, retentionCases.tenantId),
-          eq(retentionClaimRequests.status, CLAIM_REQUEST_STATUS.requested),
-        ),
-      )
-      .where(
-        and(
-          eq(retentionCases.tenantId, ctx.tenantId),
-          eq(retentionCases.statusCode, 'p1_pool_claim_pending'),
-          eq(retentionCases.poolOwnerZohoUserId, owner),
-          isNull(retentionCases.closedAt),
-        ),
-      )
-      .orderBy(desc(retentionClaimRequests.requestedAt))
-      .limit(limit);
-
-    const cases: PendingClaimRow[] = rows.map((r) => ({
-      ...toRetentionCaseDto(r.case),
-      claimRequestId: String(r.claimId),
-      claimReason: r.claimReason,
-      claimRequesterName: r.claimRequesterName,
-      claimRequestedAt: r.claimRequestedAt.toISOString(),
-    }));
-    return { cases, total: cases.length };
-  },
-
-  /** Count pending claims for a prior owner (Sales badge). */
-  async countPendingForOwner(ctx: TenantContext, ownerZohoUserId: string): Promise<number> {
-    const { total } = await this.listPendingForOwner(ctx, ownerZohoUserId, { limit: 200 });
-    return total;
   },
 };

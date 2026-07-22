@@ -13,8 +13,11 @@ import { OctaneScope } from './scope/OctaneScope';
 import { AdminToastHost } from './toast';
 import { Train } from './Train';
 import { UserManagement } from './UserManagement';
+import { ChatPanel } from '../../features/chat/ChatPanel';
+import { useUserContext } from '../../context/UserContextProvider';
+import { ChatIcon } from '../../components/icons';
 
-type Tab = 'kb' | 'train' | 'browser' | 'scope' | 'carriers' | 'carrier-invites' | 'audit' | 'jobs' | 'cmp' | 'dwh' | 'verification-db' | 'access';
+type Tab = 'kb' | 'train' | 'browser' | 'scope' | 'carriers' | 'carrier-invites' | 'audit' | 'jobs' | 'cmp' | 'dwh' | 'verification-db' | 'access' | 'horizon';
 
 const CARRIER_TABS: Tab[] = ['carriers', 'carrier-invites'];
 
@@ -23,8 +26,10 @@ export default function AdminMytrion() {
   const [tab, setTab] = useState<Tab>('kb');
   // Bumped after a successful Train run so the Knowledge Base remounts with fresh data.
   const [kbRefreshKey, setKbRefreshKey] = useState(0);
+  const user = useUserContext();
 
   const nav: NavItem[] = [
+    { key: 'horizon', label: 'Horizon AI', icon: <ChatIcon />, active: tab === 'horizon', onClick: () => setTab('horizon') },
     { key: 'kb', label: 'Knowledge Base', icon: <KnowledgeIcon />, active: tab === 'kb', onClick: () => setTab('kb') },
     { key: 'train', label: 'Train', icon: <TrainIcon />, active: tab === 'train', onClick: () => setTab('train') },
     { key: 'browser', label: 'Knowledge Browser', icon: <SearchIcon />, active: tab === 'browser', onClick: () => setTab('browser') },
@@ -61,7 +66,8 @@ export default function AdminMytrion() {
   ];
 
   return (
-    <MytrionShell id="admin" nav={nav}>
+    <MytrionShell id="admin" nav={nav} disableDockChat>
+      {tab === 'horizon' && <ChatPanel context={user} variant="full" />}
       {tab === 'kb' && <KnowledgeBase key={kbRefreshKey} onAddSource={() => setTab('train')} />}
       {tab === 'train' && <Train onTrained={() => setKbRefreshKey((k) => k + 1)} />}
       {tab === 'browser' && <KnowledgeBrowser />}

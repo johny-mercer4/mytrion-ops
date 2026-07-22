@@ -1,8 +1,10 @@
 /**
  * Retention Phase 1 stage wizard:
- *   New → Call → choose stage → stage workflow (OoR attempts / Reached watch / …)
+ *   New → Call → choose stage → stage workflow (Out of Reach attempts / Reached watch / …)
  */
 import type { FormEvent } from 'react';
+import { isAdmin } from '@/access/resolveAccess';
+import { useUserContext } from '@/context/UserContextProvider';
 import { s } from './dc';
 import {
   AttemptStep,
@@ -21,6 +23,12 @@ import type {
   RetentionDissatisfactionReason,
   RetentionPhase1Outcome,
 } from './retentionData';
+
+function canShowOpsControls(profile: string, role: string, admin: boolean): boolean {
+  if (admin) return true;
+  const hay = `${profile} ${role}`.toLowerCase();
+  return hay.includes('ops');
+}
 
 export type { PendingCallLog, StatusPick };
 
@@ -68,6 +76,8 @@ export function RetentionCaseActions(props: {
     onAct,
     newWizardStep,
   } = props;
+  const user = useUserContext();
+  const showOps = canShowOpsControls(user.profile ?? '', user.role ?? '', isAdmin(user));
   const isNew =
     row.statusCode === 'p1_new' ||
     row.statusCode === 'p1_in_progress' ||
@@ -108,22 +118,30 @@ export function RetentionCaseActions(props: {
     return (
       <div style={s('display:flex;flex-direction:column;gap:12px')}>
         <WizardChrome stage="Vacation" stepLabel="Ops confirm" />
-        <div style={s('font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)')}>
-          Ops Manager — vacation confirm
-        </div>
-        <div style={s('display:flex;flex-wrap:wrap;gap:8px')}>
-          <ToneBtn
-            label="Confirm on vacation → New"
-            busy={busy}
-            onClick={() => void onAct('ops_confirm_vacation')}
-          />
-          <ToneBtn
-            label="Not on vacation / OoR → CITI"
-            busy={busy}
-            tone="danger"
-            onClick={() => void onAct('ops_deny_vacation')}
-          />
-        </div>
+        {showOps ? (
+          <>
+            <div style={s('font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)')}>
+              Ops — vacation confirm
+            </div>
+            <div style={s('display:flex;flex-wrap:wrap;gap:8px')}>
+              <ToneBtn
+                label="Confirm on vacation → New"
+                busy={busy}
+                onClick={() => void onAct('ops_confirm_vacation')}
+              />
+              <ToneBtn
+                label="Not on vacation → CITI"
+                busy={busy}
+                tone="danger"
+                onClick={() => void onAct('ops_deny_vacation')}
+              />
+            </div>
+          </>
+        ) : (
+          <InfoBanner title="Waiting on Ops.">
+            Ops will confirm vacation (back to New) or deny (→ CITI). Any new fuel closes the case.
+          </InfoBanner>
+        )}
       </div>
     );
   }

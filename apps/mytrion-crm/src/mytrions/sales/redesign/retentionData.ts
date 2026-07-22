@@ -113,24 +113,12 @@ export async function claimOpenPoolCase(
   return callTouchpoint('retention.pool_claim', { caseId, reason });
 }
 
-/** Pending claims on deals this agent previously owned (approve queue). */
-export async function loadOwnerPendingClaims(limit = 100) {
-  return callTouchpoint('retention.owner_claims_pending', { limit });
-}
-
-export async function loadOwnerClaimsBadge(): Promise<number> {
-  const res = await callTouchpoint('retention.owner_claims_badge', {});
-  return res.count;
-}
-
-export async function approveOwnerPoolClaim(caseId: string): Promise<RetentionCaseRow> {
-  const res = await callTouchpoint('retention.owner_claim_approve', { caseId });
-  return res.case;
-}
-
-export async function declineOwnerPoolClaim(caseId: string): Promise<RetentionCaseRow> {
-  const res = await callTouchpoint('retention.owner_claim_decline', { caseId });
-  return res.case;
+export async function loadOpenPoolQuota(): Promise<{
+  used: number;
+  max: number;
+  remaining: number;
+}> {
+  return callTouchpoint('retention.pool_quota', {});
 }
 
 export async function loadRetentionLookups(): Promise<RetentionLookupsResult> {

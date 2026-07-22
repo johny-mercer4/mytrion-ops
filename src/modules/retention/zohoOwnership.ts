@@ -3,10 +3,18 @@
  *
  * Invariant: Deal Owner update is required (fail closed). Contact / Account Owner updates
  * are best-effort — logged on failure; local claim finalize still proceeds if Deal succeeded.
+ *
+ * Every transfer (success / partial / failed) writes an append-only row to
+ * `retention_ownership_transfers` when audit context is provided — survives case delete.
  */
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import { AppError } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
+import {
+  OWNERSHIP_TRANSFER_RESULT,
+  type OwnershipTransferReason,
+} from '../../db/schema/retention_ownership_transfers.js';
+import { insertOwnershipTransfer } from '../../repos/retentionOwnershipTransferRepo.js';
 
 export interface OwnershipTransferResult {
   dealId: string;
@@ -16,6 +24,21 @@ export interface OwnershipTransferResult {
   contactUpdated: boolean;
   accountUpdated: boolean;
   warnings: string[];
+  fromOwnerZohoUserId: string | null;
+  fromOwnerName: string | null;
+}
+
+/** Context for durable ownership transfer audit (optional but preferred). */
+export interface OwnershipTransferAudit {
+  tenantId: string;
+  reason: OwnershipTransferReason | string;
+  retentionCaseId?: number | null;
+  carrierId?: string | null;
+  companyName?: string | null;
+  actorZohoUserId?: string | null;
+  actorName?: string | null;
+  /** Display name for the new owner when known (CS / claimant). */
+  toOwnerName?: string | null;
 }
 
 function lookupId(value: unknown): string | null {
@@ -32,8 +55,57 @@ function lookupId(value: unknown): string | null {
   return null;
 }
 
+function lookupName(value: unknown): string | null {
+  if (value == null || typeof value !== 'object') return null;
+  const name = (value as { name?: unknown }).name;
+  if (typeof name === 'string' && name.trim()) return name.trim();
+  return null;
+}
+
 function ownerPayload(zohoUserId: string): { Owner: { id: string } } {
   return { Owner: { id: zohoUserId.trim() } };
+}
+
+async function persistTransferLog(
+  audit: OwnershipTransferAudit | null | undefined,
+  row: {
+    zohoDealId: string;
+    zohoContactId: string | null;
+    zohoAccountId: string | null;
+    toOwnerZohoUserId: string;
+    fromOwnerZohoUserId: string | null;
+    fromOwnerName: string | null;
+    dealUpdated: boolean;
+    contactUpdated: boolean;
+    accountUpdated: boolean;
+    warnings: string[];
+    errorMessage?: string | null;
+    result: 'success' | 'partial' | 'failed';
+  },
+): Promise<void> {
+  if (!audit?.tenantId) return;
+  await insertOwnershipTransfer({
+    tenantId: audit.tenantId,
+    retentionCaseId: audit.retentionCaseId ?? null,
+    carrierId: audit.carrierId ?? null,
+    companyName: audit.companyName ?? null,
+    zohoDealId: row.zohoDealId,
+    zohoContactId: row.zohoContactId,
+    zohoAccountId: row.zohoAccountId,
+    reason: audit.reason,
+    result: row.result,
+    fromOwnerZohoUserId: row.fromOwnerZohoUserId,
+    fromOwnerName: row.fromOwnerName,
+    toOwnerZohoUserId: row.toOwnerZohoUserId,
+    toOwnerName: audit.toOwnerName ?? null,
+    actorZohoUserId: audit.actorZohoUserId ?? null,
+    actorName: audit.actorName ?? null,
+    dealUpdated: row.dealUpdated,
+    contactUpdated: row.contactUpdated,
+    accountUpdated: row.accountUpdated,
+    warnings: row.warnings,
+    errorMessage: row.errorMessage ?? null,
+  });
 }
 
 /**
@@ -42,6 +114,7 @@ function ownerPayload(zohoUserId: string): { Owner: { id: string } } {
 export async function transferDealOwnershipToClaimant(
   zohoDealId: string,
   claimantZohoUserId: string,
+  audit?: OwnershipTransferAudit | null,
 ): Promise<OwnershipTransferResult> {
   const dealId = zohoDealId.trim();
   const claimant = claimantZohoUserId.trim();
@@ -71,6 +144,8 @@ export async function transferDealOwnershipToClaimant(
 
   const contactId = lookupId(deal.Contact_Name);
   const accountId = lookupId(deal.Account_Name);
+  const fromOwnerZohoUserId = lookupId(deal.Owner);
+  const fromOwnerName = lookupName(deal.Owner);
   const warnings: string[] = [];
 
   try {
@@ -78,6 +153,20 @@ export async function transferDealOwnershipToClaimant(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logger.error({ dealId, claimant, err: message }, 'retention zoho ownership: Deal Owner failed');
+    await persistTransferLog(audit, {
+      zohoDealId: dealId,
+      zohoContactId: contactId,
+      zohoAccountId: accountId,
+      toOwnerZohoUserId: claimant,
+      fromOwnerZohoUserId,
+      fromOwnerName,
+      dealUpdated: false,
+      contactUpdated: false,
+      accountUpdated: false,
+      warnings: [],
+      errorMessage: message,
+      result: OWNERSHIP_TRANSFER_RESULT.failed,
+    });
     throw new AppError(`Failed to update Deal Owner in Zoho: ${message}`, {
       statusCode: 502,
       code: 'RETENTION_ZOHO_OWNER_DEAL',
@@ -116,7 +205,7 @@ export async function transferDealOwnershipToClaimant(
     }
   }
 
-  return {
+  const result: OwnershipTransferResult = {
     dealId,
     contactId,
     accountId,
@@ -124,7 +213,28 @@ export async function transferDealOwnershipToClaimant(
     contactUpdated,
     accountUpdated,
     warnings,
+    fromOwnerZohoUserId,
+    fromOwnerName,
   };
+
+  await persistTransferLog(audit, {
+    zohoDealId: dealId,
+    zohoContactId: contactId,
+    zohoAccountId: accountId,
+    toOwnerZohoUserId: claimant,
+    fromOwnerZohoUserId,
+    fromOwnerName,
+    dealUpdated: true,
+    contactUpdated,
+    accountUpdated,
+    warnings,
+    result:
+      warnings.length > 0
+        ? OWNERSHIP_TRANSFER_RESULT.partial
+        : OWNERSHIP_TRANSFER_RESULT.success,
+  });
+
+  return result;
 }
 
 /** Zoho Deal field for CITI handoff stage (confirm against live CRM metadata if writes fail). */

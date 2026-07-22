@@ -4697,3 +4697,50 @@ SIP play-rejected console noise filtered (browser autoplay).
 View-as is scoped per Mytrion (no /main picker, no cross-Mytrion leak).
 Retention outcome/attempt returns after DB write; Zoho + notify post-commit.
 CS RR uses warm Zoho Users cache (no blocking Users call on save).
+
+## 2026-07-23 — Revert Sales Open Pool ownership plan
+
+Stepped back: CS again approves Open Pool claims; Zoho Deal/Contact/Company
+transfers on Retention handoff; CS Claims tab + No-response→Pool restored.
+Sales Claims (prior-owner) pane removed.
+
+## 2026-07-23 — View-as any user + instant Open Pool
+
+Admin View-as lists all CRM users (search); mounted on CS + Billing shells.
+Open Pool claims assign instantly (Zoho + Kanban New); CS sees Claimed/Unclaimed
+activity logs; CS No-response→Pool removed (10 BD timer kept); Sales daily cap = 2.
+Migration 0042 backfills pending claims to Open Pool.
+
+## 2026-07-23 — Sales Cases + Open Pool polish + CS readonly Pool
+
+OoR = Out of Reach (agent UI wording). Migration 0043 adds `previous_owner_*` on
+claim requests + `retention_to_pool_count` on cases. Instant claim stamps previous
+owner + timeline note. Retention 10 BD → Open Pool up to 3 times, then CITI
+(separate from assignment_count agent cycles). Sales Cases: carrier/company search,
+Out of Reach attempt UX (note required for messengers), Ops confirm/deny hidden
+unless Ops/admin, hide agent names / “In Open Pool” · “With Retention” badges.
+Sales Open Pool: no Prior agent column, Claim/Claiming… loaders, short quota copy.
+CS: Activity tab removed; readonly Open Pool list + timeline; Retention Cases desk
+unchanged. `retention.cs_pool_activity` kept backend-only.
+
+## 2026-07-23 — CS desk scope + Open Pool / View-as polish
+
+Sales Cases hero: “Retention workflow” kicker + larger stage copy.
+CS View-as: sidebar placement, menu opens upward.
+CS Open Pool: metrics, badges, empty state, card list + timeline.
+CS Retention Cases list/detail: non-admin sees only assigned cases; admin sees all.
+Open Pool browse stays shared (unassigned) for CS readonly visibility.
+
+## 2026-07-23 — Durable Zoho ownership transfer log
+
+Added `retention_ownership_transfers` (migration 0044): append-only from→to Zoho
+owner log for Retention handoff + Open Pool claim (success/partial/failed). No FK
+to `retention_cases` so rows survive hard-delete. Wired in
+`transferDealOwnershipToClaimant` when audit context is passed. Applied via
+`pnpm db:migrate` against Render app Postgres.
+
+## 2026-07-23 — Disable Retention auto-assign
+
+`RETENTION_AUTO_ASSIGN_ENABLED = false` in `csRoundRobin.ts` — Spanish desk +
+RoundRobin skipped; handoff keeps the Sales agent (no unassign, no Zoho Owner
+transfer to CS). Flip the constant to re-enable CS auto-assign.

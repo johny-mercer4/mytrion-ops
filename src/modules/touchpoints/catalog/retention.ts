@@ -8,7 +8,6 @@ import { getDwhCompanyDetails } from '../../../integrations/dwhCards.js';
 import { AppError, NotFoundError, RBACError } from '../../../lib/errors.js';
 import { retentionCasePhase1Repo } from '../../../repos/retentionCasePhase1Repo.js';
 import { retentionCaseRepo } from '../../../repos/retentionCaseRepo.js';
-import { retentionPoolClaimRepo } from '../../../repos/retentionPoolClaimRepo.js';
 import type { TenantContext } from '../../../types/tenantContext.js';
 import {
   afterRetentionPhaseSideEffects,
@@ -270,6 +269,8 @@ export const retentionTouchpoints: LocalTouchpoint[] = [
       scheduleRetentionPostCommit('retention.record_outcome', async () => {
         await afterRetentionPhaseSideEffects(beforePhase, updated, {
           previousAssigneeZohoUserId: previousOwner,
+          tenantId: ctx.tenantId,
+          actorZohoUserId: String(params.zohoUserId ?? zohoFromCtx(ctx) ?? ''),
         });
         if (updated.statusCode === 'p1_open_pool') {
           await notifyOpenPoolOpened(ctx, {
@@ -344,7 +345,7 @@ export const retentionTouchpoints: LocalTouchpoint[] = [
   {
     kind: 'local',
     key: 'retention.pool_claim',
-    title: 'Request Open Pool claim (prior owner approve / 1 BD auto)',
+    title: 'Claim Open Pool deal (instant Zoho + Kanban New)',
     riskClass: 'write',
     departments: salesDept,
     identityParam: 'zohoUserId',
@@ -373,40 +374,14 @@ export const retentionTouchpoints: LocalTouchpoint[] = [
           agentName: typeof params.agentName === 'string' ? params.agentName : undefined,
         },
       );
-      return { case: updated, pendingApproval: updated.pendingApproval };
+      return { case: updated, pendingApproval: false };
     },
   },
 
   {
     kind: 'local',
-    key: 'retention.owner_claims_pending',
-    title: 'Open Pool claims on my former deals (approve queue)',
-    riskClass: 'read',
-    departments: salesDept,
-    identityParam: 'zohoUserId',
-    paramsSchema: z.object({
-      zohoUserId: z.string().max(120).optional(),
-      limit: limitSchema(200, 100).optional(),
-    }),
-    handler: async (ctx, params) => {
-      const zohoUserId = String(params.zohoUserId ?? zohoFromCtx(ctx) ?? '');
-      if (!zohoUserId) {
-        throw new AppError('zohoUserId is required', {
-          statusCode: 400,
-          code: 'VALIDATION_ERROR',
-          expose: true,
-        });
-      }
-      return retentionPoolClaimRepo.listPendingForOwner(ctx, zohoUserId, {
-        ...(typeof params.limit === 'number' ? { limit: params.limit } : {}),
-      });
-    },
-  },
-
-  {
-    kind: 'local',
-    key: 'retention.owner_claims_badge',
-    title: 'Count of Open Pool claims awaiting my approval',
+    key: 'retention.pool_quota',
+    title: 'Open Pool daily claim quota (2/day)',
     riskClass: 'read',
     departments: salesDept,
     identityParam: 'zohoUserId',
@@ -422,73 +397,8 @@ export const retentionTouchpoints: LocalTouchpoint[] = [
           expose: true,
         });
       }
-      const count = await retentionPoolClaimRepo.countPendingForOwner(ctx, zohoUserId);
-      return { count };
-    },
-  },
-
-  {
-    kind: 'local',
-    key: 'retention.owner_claim_approve',
-    title: 'Prior owner approve Open Pool claim',
-    riskClass: 'write',
-    departments: salesDept,
-    identityParam: 'zohoUserId',
-    agentNameParam: 'agentName',
-    paramsSchema: z.object({
-      zohoUserId: z.string().max(120).optional(),
-      agentName: z.string().max(200).optional(),
-      caseId: idString,
-    }),
-    handler: async (ctx, params) => {
-      const zohoUserId = String(params.zohoUserId ?? zohoFromCtx(ctx) ?? '');
-      if (!zohoUserId) {
-        throw new AppError('zohoUserId is required', {
-          statusCode: 400,
-          code: 'VALIDATION_ERROR',
-          expose: true,
-        });
-      }
-      const updated = await retentionPoolClaimRepo.approveClaim(
-        ctx,
-        String(params.caseId),
-        zohoUserId,
-        {
-          asAdmin: isAdmin(ctx),
-          agentName: typeof params.agentName === 'string' ? params.agentName : undefined,
-        },
-      );
-      return { case: updated };
-    },
-  },
-
-  {
-    kind: 'local',
-    key: 'retention.owner_claim_decline',
-    title: 'Prior owner decline Open Pool claim',
-    riskClass: 'write',
-    departments: salesDept,
-    identityParam: 'zohoUserId',
-    paramsSchema: z.object({
-      zohoUserId: z.string().max(120).optional(),
-      caseId: idString,
-    }),
-    handler: async (ctx, params) => {
-      const zohoUserId = String(params.zohoUserId ?? zohoFromCtx(ctx) ?? '');
-      if (!zohoUserId) {
-        throw new AppError('zohoUserId is required', {
-          statusCode: 400,
-          code: 'VALIDATION_ERROR',
-          expose: true,
-        });
-      }
-      const updated = await retentionPoolClaimRepo.declineClaim(
-        ctx,
-        String(params.caseId),
-        zohoUserId,
-        { asAdmin: isAdmin(ctx) },
-      );
-      return { case: updated };
+      const { getOpenPoolDailyQuota } = await import('../../retention/openPoolCaps.js');
+      return getOpenPoolDailyQuota(ctx, zohoUserId);
     },
   },
 

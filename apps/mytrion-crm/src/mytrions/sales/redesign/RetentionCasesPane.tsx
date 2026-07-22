@@ -53,6 +53,7 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
   const feed = useLoad(() => loadMyRetentionCases(), []);
   const now = useBoardClock();
   const [view, setView] = useState<ViewMode>('kanban');
+  const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [localCases, setLocalCases] = useState<RetentionCaseRow[] | null>(null);
   const selectedSeed = useMemo(
@@ -67,10 +68,21 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
 
   const cases = useMemo(() => {
     const src = localCases ?? feed.data?.cases ?? [];
+    const q = search.trim().toLowerCase();
+    const filtered = q
+      ? src.filter((c) =>
+          `${c.carrierId} ${c.companyName ?? ''}`.toLowerCase().includes(q),
+        )
+      : src;
+    return sortCasesPriority(filtered);
+  }, [localCases, feed.data?.cases, search]);
+
+  const allCases = useMemo(() => {
+    const src = localCases ?? feed.data?.cases ?? [];
     return sortCasesPriority(src);
   }, [localCases, feed.data?.cases]);
 
-  const stats = useMemo(() => retentionBoardStats(cases), [cases]);
+  const stats = useMemo(() => retentionBoardStats(allCases), [allCases]);
 
   useEffect(() => {
     onOpenCount?.(stats.openActive);
@@ -175,8 +187,10 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
   return (
     <div style={s('display:flex;flex-direction:column;gap:14px;min-height:0')}>
       <RetentionHero
+        kicker="Retention workflow"
         title="My cases"
-        sub="New → call → stage · excludes debtors, pre–Card Swiped, Closed Lost / OoB"
+        sub="New → call → stage · Out of Reach = up to 5 attempts → Open Pool"
+        subSize="lg"
         actions={
           <>
             {viewToggle}
@@ -186,6 +200,19 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
       >
         {!initialLoad && <RetentionCasesMetrics stats={stats} />}
       </RetentionHero>
+
+      {!initialLoad && (
+        <div className="ss-pool-search" style={s('max-width:360px')}>
+          <Icon name="search" size={15} />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search carrier or company…"
+            className="ss-in"
+            aria-label="Search carrier or company"
+          />
+        </div>
+      )}
 
       {feed.error && (
         <div
@@ -201,8 +228,12 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
 
       {!initialLoad && !feed.error && cases.length === 0 && (
         <RetentionEmpty
-          title="No retention cases"
-          body="When a client goes longer without fueling than their usual cadence (expected every 2 / 5 / 7 days), a case appears here automatically."
+          title={search.trim() ? 'No matching cases' : 'No retention cases'}
+          body={
+            search.trim()
+              ? 'Try another carrier ID or company name.'
+              : 'When a client goes quiet longer than usual, a case appears here automatically.'
+          }
         />
       )}
 
@@ -272,14 +303,12 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
                 const overdue = Boolean(timer?.overdue);
                 if (locked) {
                   const statusTxt = pooled
-                    ? c.statusCode === 'p1_pool_claim_pending'
-                      ? 'Open Pool · pending'
-                      : 'Open Pool'
+                    ? 'In Open Pool'
                     : c.phaseCode === 'phase_3_citi'
                       ? 'CITI'
                       : c.agentOutcome === 'dissatisfied' || c.statusCode === 'p1_dissatisfied'
                         ? 'Dissatisfied'
-                        : 'Retention';
+                        : 'With Retention';
                   return (
                     <div
                       key={c.id}
@@ -287,8 +316,8 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
                       style={{ display: 'grid', gridTemplateColumns: '1.4fr 110px 90px 1.1fr 90px 160px 90px 1fr' }}
                       title={
                         pooled
-                          ? 'Sent to Open Pool — locked for you'
-                          : 'Handed off — locked for Sales'
+                          ? 'In Open Pool — locked for you'
+                          : 'With Retention — locked for Sales'
                       }
                     >
                       <span style={s('font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
@@ -308,7 +337,7 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
                         className={`ss-ret-locked-badge${pooled ? ' is-pooled' : ''}`}
                         style={{ padding: '4px 6px' }}
                       >
-                        {pooled ? '→ Open Pool' : c.phaseCode === 'phase_3_citi' ? '→ CITI' : '→ Retention'}
+                        {pooled ? 'In Open Pool' : c.phaseCode === 'phase_3_citi' ? '→ CITI' : 'With Retention'}
                       </span>
                       <span className="ss-ret-pips">—</span>
                       <span

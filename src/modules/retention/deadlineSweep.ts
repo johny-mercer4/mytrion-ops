@@ -9,12 +9,12 @@
  *   10BD_retention       → Open Pool (CITI if assignment_count ≥ 3)
  *   14D_vacation         → vacation follow-up task (2 BD)
  *   2BD_vacation_followup→ awaiting Ops signoff
- *   1BD_claim_approve    → auto-approve Open Pool claim (same as CS Approve)
+ *   1BD_claim_approve    → legacy pending unlock → Open Pool (instant-claim era)
  *
  * 1BD_comms_attempt (legacy 5BD_*) is an agent SLA indicator only (no auto-transition).
  *
  * Open Pool is Phase 1 status `p1_open_pool` (not its own phase). Every entry stamps
- * `3BD_pool_claim` via enterOpenPool (Sales OoR/Reached, Phase 2 no_response / 10BD, reject).
+ * `3BD_pool_claim` via enterOpenPool (Sales OoR/Reached, Phase 2 10BD).
  */
 import type { RetentionCase } from '../../db/schema/index.js';
 import { RETENTION_PHASE } from '../../db/schema/index.js';
@@ -33,6 +33,7 @@ import {
   handoffToRetention,
   isAgentActionDeadline,
   MAX_OPEN_POOL_AGENTS,
+  MAX_RETENTION_TO_POOL,
   moveToCiti,
   NEW_OWNER_DEADLINE_TYPE,
   POOL_CLAIM_DEADLINE_TYPE,
@@ -80,6 +81,7 @@ export function resolveExpiry(row: RetentionCase, now: Date): CaseTransitionPatc
       now,
       agentOutcome: 'no_action_2bd',
       previousOwnerZohoUserId: row.assignedAgentZohoUserId ?? row.poolOwnerZohoUserId,
+      previousOwnerName: row.agentName,
       notes: 'Timer: no action in 2 BD — auto-transfer to Retention (10 BD)',
     });
   }
@@ -95,7 +97,7 @@ export function resolveExpiry(row: RetentionCase, now: Date): CaseTransitionPatc
     });
   }
 
-  // Claim approve is handled in the sweeper loop (finalizeClaim), not as a patch.
+  // Legacy pending-claim deadline — unlocked in the sweeper loop (not a patch).
   if (type === CLAIM_APPROVE_DEADLINE_TYPE) {
     return null;
   }
@@ -110,6 +112,7 @@ export function resolveExpiry(row: RetentionCase, now: Date): CaseTransitionPatc
     return handoffToRetention({
       now,
       previousOwnerZohoUserId: row.poolOwnerZohoUserId ?? row.assignedAgentZohoUserId,
+      previousOwnerName: row.agentName,
       notes: 'Timer: Open Pool not claimed in 3 BD — Retention (10 BD)',
     });
   }
@@ -130,13 +133,26 @@ export function resolveExpiry(row: RetentionCase, now: Date): CaseTransitionPatc
   }
 
   if (type === RETENTION_WAIT_DEADLINE_TYPE && row.phaseCode === 'phase_2_retention') {
-    return enterOpenPool({
+    // Retention → Pool cycles are independent of assignment_count (agent cycles).
+    if ((row.retentionToPoolCount ?? 0) >= MAX_RETENTION_TO_POOL) {
+      return moveToCiti({
+        now,
+        notes: `Timer: Retention returned to Open Pool ${MAX_RETENTION_TO_POOL} times — CITI`,
+      });
+    }
+    const pool = enterOpenPool({
       now,
       // Prefer original Sales owner (stamped on handoff) over current CS assignee.
       previousOwnerZohoUserId: row.poolOwnerZohoUserId ?? row.assignedAgentZohoUserId,
       assignmentCount: row.assignmentCount,
       notes: 'Timer: no new transaction in 10 BD Retention — Open Pool (or CITI at max agents)',
     });
+    if (pool.statusCode !== 'p1_open_pool') return pool;
+    return {
+      ...pool,
+      retentionToPoolCount: (row.retentionToPoolCount ?? 0) + 1,
+      eventNotes: `Timer: no new transaction in 10 BD Retention — Open Pool (${(row.retentionToPoolCount ?? 0) + 1}/${MAX_RETENTION_TO_POOL} Retention returns)`,
+    };
   }
 
   if (type === VACATION_COUNTDOWN_TYPE && row.statusCode === 'p1_vacation') {
@@ -174,8 +190,8 @@ export async function sweepRetentionDeadlines(
       const { retentionPoolClaimRepo } = await import(
         '../../repos/retentionPoolClaimRepo.js'
       );
-      const approved = await retentionPoolClaimRepo.autoApproveOverdue(ctx, row);
-      if (approved) {
+      const reset = await retentionPoolClaimRepo.resetPendingToPool(ctx, row);
+      if (reset) {
         summary.applied += 1;
         summary.byType[type] = (summary.byType[type] ?? 0) + 1;
       } else {
@@ -196,6 +212,8 @@ export async function sweepRetentionDeadlines(
     }
     const previousOwner = row.assignedAgentZohoUserId ?? row.poolOwnerZohoUserId;
     const beforePhase = row.phaseCode;
+    const leavingOpenPool =
+      row.statusCode === 'p1_open_pool' && type === POOL_CLAIM_DEADLINE_TYPE;
     const updated = await retentionCaseRepo.update(
       ctx,
       String(row.id),
@@ -208,8 +226,30 @@ export async function sweepRetentionDeadlines(
     summary.applied += 1;
     summary.byType[type] = (summary.byType[type] ?? 0) + 1;
 
+    if (leavingOpenPool) {
+      const { retentionPoolClaimRepo } = await import(
+        '../../repos/retentionPoolClaimRepo.js'
+      );
+      const toCiti = updated.phaseCode === RETENTION_PHASE.citi;
+      try {
+        await retentionPoolClaimRepo.logUnclaimedExit(ctx, row, {
+          outcomeNote: toCiti ? 'max_agents_to_citi' : '3bd_unclaimed_to_retention',
+          reason: toCiti
+            ? 'Unclaimed — left Open Pool to CITI'
+            : 'Unclaimed — left Open Pool to Retention',
+        });
+      } catch (err) {
+        logger.warn(
+          { caseId: row.id, err: err instanceof Error ? err.message : String(err) },
+          'retention sweep: failed to log unclaimed Open Pool exit',
+        );
+      }
+    }
+
     await afterRetentionPhaseSideEffects(beforePhase, updated, {
       previousAssigneeZohoUserId: row.assignedAgentZohoUserId,
+      tenantId: ctx.tenantId,
+      actorZohoUserId: 'system:deadline-sweep',
     });
 
     if (updated.statusCode === 'p1_open_pool') {

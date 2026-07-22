@@ -117,11 +117,16 @@ export function RetentionPoolMetrics({
 export function RetentionHero({
   title,
   sub,
+  kicker,
+  subSize = 'sm',
   actions,
   children,
 }: {
   title: string;
   sub: string;
+  /** Small label above the title (e.g. “Retention workflow”). */
+  kicker?: string;
+  subSize?: 'sm' | 'lg';
   actions?: ReactNode;
   children?: ReactNode;
 }) {
@@ -129,8 +134,9 @@ export function RetentionHero({
     <div className="ss-ret-hero">
       <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap')}>
         <div style={s('min-width:0')}>
+          {kicker ? <div className="ss-ret-hero-kicker">{kicker}</div> : null}
           <div className="ss-ret-hero-title">{title}</div>
-          <div className="ss-ret-hero-sub">{sub}</div>
+          <div className={`ss-ret-hero-sub${subSize === 'lg' ? ' is-lg' : ''}`}>{sub}</div>
         </div>
         {actions ? <div style={s('display:flex;align-items:center;gap:8px;flex-shrink:0')}>{actions}</div> : null}
       </div>
@@ -255,19 +261,15 @@ export function RetentionCaseCard({
 
   if (locked) {
     const lockTitle = pooled
-      ? row.statusCode === 'p1_pool_claim_pending'
-        ? 'Open Pool — claim pending. Approve or decline under Claims.'
-        : 'Sent to Open Pool. Locked for you (cannot claim your own deal).'
+      ? 'In Open Pool. Locked for you (cannot claim your own deal).'
       : row.phaseCode === 'phase_3_citi'
         ? 'Moved to CITI. Locked for Sales.'
-        : 'Handed to Retention. Locked for Sales.';
+        : 'With Retention. Locked for Sales.';
     const lockBadge = pooled
-      ? row.statusCode === 'p1_pool_claim_pending'
-        ? 'Awaiting your approval'
-        : 'Open Pool · locked'
+      ? 'In Open Pool'
       : row.phaseCode === 'phase_3_citi'
-        ? 'CITI · locked'
-        : 'Retention · locked';
+        ? '→ CITI'
+        : 'With Retention';
     return (
       <div
         className={`ss-ret-card is-locked${pooled ? ' is-pooled' : ''}`}

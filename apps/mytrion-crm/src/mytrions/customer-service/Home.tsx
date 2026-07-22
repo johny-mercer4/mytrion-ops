@@ -90,7 +90,7 @@ export function Home({ onNavigate }: HomeProps) {
     {
       id: 'open-pool',
       label: 'Open Pool',
-      sub: 'View-only · Sales owns approvals',
+      sub: 'Readonly Sales pool',
       icon: ICONS.shield,
       chip: 'var(--cs-accent-soft)',
     },

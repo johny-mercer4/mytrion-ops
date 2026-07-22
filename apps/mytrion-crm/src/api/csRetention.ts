@@ -1,5 +1,5 @@
 /**
- * Customer Service Retention touchpoints — Phase 2 desk, CITI Folder, Open Pool (read-only).
+ * Customer Service Retention touchpoints — Open Pool activity, Phase 2 desk, CITI Folder.
  * Pins departmentAccess to customer-service (mirrors api/cs.ts).
  */
 import { callTouchpoint } from './touchpoints';
@@ -15,7 +15,9 @@ function csTp<K extends keyof TouchpointMap>(
 }
 
 export const csRetention = {
-  poolList: (limit = 200) => csTp('retention.cs_pool_list', { limit }),
+  poolActivity: (
+    opts: { limit?: number; status?: 'approved' | 'expired' | 'all' } = {},
+  ) => csTp('retention.cs_pool_activity', opts),
   cases: (
     opts:
       | TouchpointMap['retention.cs_cases']['params']['filter']

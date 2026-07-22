@@ -200,6 +200,11 @@ export const retentionCaseCsRepo = {
       phase?: CsDeskPhase;
       status?: CsDeskStatus;
       limit?: number;
+      /**
+       * When set, restrict to this assignee (CS agent desk).
+       * Open Pool (`sales` + `open_pool`) stays shared — no assignee filter.
+       */
+      assignedAgentZohoUserId?: string;
     } = {},
   ): Promise<{ cases: RetentionCaseDto[]; total: number }> {
     const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
@@ -210,9 +215,15 @@ export const retentionCaseCsRepo = {
             status: opts.status ?? 'open',
           }
         : legacyToPhaseStatus(opts.filter ?? 'all_open');
+    const isOpenPool =
+      resolved.phase === 'sales' && resolved.status === 'open_pool';
+    const assignee = opts.assignedAgentZohoUserId?.trim();
     const clauses = [
       eq(retentionCases.tenantId, ctx.tenantId),
       ...deskQueryClauses(resolved.phase, resolved.status),
+      ...(assignee && !isOpenPool
+        ? [eq(retentionCases.assignedAgentZohoUserId, assignee)]
+        : []),
     ];
     const where = and(...clauses);
     const rows = await db
@@ -288,6 +299,9 @@ export const retentionCaseCsRepo = {
     );
     await afterRetentionPhaseSideEffects(existing.phaseCode, updated, {
       previousAssigneeZohoUserId: existing.assignedAgentZohoUserId,
+      tenantId: ctx.tenantId,
+      actorZohoUserId: opts.actorZohoUserId,
+      actorName: opts.agentName,
     });
     // Out of Business → Zoho Deal Stage Closed Lost (exclude from future retention).
     if (updated.statusCode === 'p2_out_of_business' && updated.zohoDealId) {

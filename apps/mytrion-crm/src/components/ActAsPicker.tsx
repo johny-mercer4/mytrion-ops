@@ -9,7 +9,14 @@ import styles from './ActAsPicker.module.css';
  * does not apply on `/main` or other Mytrions. Admins (no `targets`) pick via listAgents; a granted
  * NON-admin gets an explicit `targets` list. When acting, shows a banner with Exit.
  */
-export function ActAsPicker({ targets }: { targets?: AgentUser[] }) {
+export function ActAsPicker({
+  targets,
+  placement = 'default',
+}: {
+  targets?: AgentUser[];
+  /** `sidebar` — full-width trigger; menu opens upward (CS / Billing footers). */
+  placement?: 'default' | 'sidebar';
+}) {
   const { actingAs, setActingAs } = useImpersonation();
   const scoped = targets !== undefined; // non-admin: a fixed, granted target list
   const [open, setOpen] = useState(false);
@@ -17,14 +24,16 @@ export function ActAsPicker({ targets }: { targets?: AgentUser[] }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState('');
-  const [showAll, setShowAll] = useState(false);
   const loadedRef = useRef(false);
+  const wrapClass =
+    placement === 'sidebar' ? `${styles.wrap} ${styles.wrapSidebar}` : styles.wrap;
 
-  const load = useCallback(async (all: boolean) => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setAgents(await listAgents(all));
+      // All active CRM users — search filters client-side (no Sales-only default).
+      setAgents(await listAgents(true));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load agents.');
     } finally {
@@ -36,13 +45,13 @@ export function ActAsPicker({ targets }: { targets?: AgentUser[] }) {
     if (scoped) return; // targets supplied (non-admin) — nothing to fetch
     if (open && !loadedRef.current) {
       loadedRef.current = true;
-      void load(false);
+      void load();
     }
   }, [open, load, scoped]);
 
   if (actingAs) {
     return (
-      <div className={styles.banner}>
+      <div className={`${styles.banner}${placement === 'sidebar' ? ` ${styles.bannerSidebar}` : ''}`}>
         <span className={styles.dot} aria-hidden="true" />
         Acting as <strong className={styles.who}>{actingAs.name}</strong>
         <button type="button" className={styles.exit} onClick={() => setActingAs(null)} title="Exit — back to admin">
@@ -59,13 +68,17 @@ export function ActAsPicker({ targets }: { targets?: AgentUser[] }) {
     : agents;
 
   return (
-    <div className={styles.wrap}>
+    <div className={wrapClass}>
       <button type="button" className={styles.trigger} onClick={() => setOpen((o) => !o)}>
         <ViewAsIcon size={13} />
         View as
       </button>
       {open && (
-        <div className={styles.menu} role="listbox" aria-busy={loading}>
+        <div
+          className={`${styles.menu}${placement === 'sidebar' ? ` ${styles.menuUp}` : ''}`}
+          role="listbox"
+          aria-busy={loading}
+        >
           <div className={styles.searchRow}>
             {loading ? (
               <span className={styles.searchSpin} aria-hidden="true">
@@ -76,7 +89,7 @@ export function ActAsPicker({ targets }: { targets?: AgentUser[] }) {
             )}
             <input
               className={styles.search}
-              placeholder={loading ? 'Loading agents…' : 'Search sales agents…'}
+              placeholder={loading ? 'Loading users…' : 'Search users…'}
               value={q}
               onChange={(e) => setQ(e.target.value)}
               disabled={loading}
@@ -87,19 +100,7 @@ export function ActAsPicker({ targets }: { targets?: AgentUser[] }) {
           {error && <div className={styles.stateErr}>{error}</div>}
           {!loading && !error && filtered.length === 0 && (
             <div className={styles.state}>
-              {scoped ? 'No users available to view as.' : `No ${showAll ? '' : 'sales '}agents found.`}
-              {!showAll && !scoped && (
-                <button
-                  type="button"
-                  className={styles.link}
-                  onClick={() => {
-                    setShowAll(true);
-                    void load(true);
-                  }}
-                >
-                  Show all users
-                </button>
-              )}
+              {scoped ? 'No users available to view as.' : 'No users found.'}
             </div>
           )}
           {!loading && (

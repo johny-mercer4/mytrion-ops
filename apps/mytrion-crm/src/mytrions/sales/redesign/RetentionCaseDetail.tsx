@@ -433,7 +433,7 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
   const onLogOtherChannel = async (): Promise<void> => {
     if (busy || !row || forceAttempt) return;
     if (row.statusCode !== 'p1_out_of_reach') {
-      pushToast('Mark Out of Reach first', 'Channel attempts start after OoR stage');
+      pushToast('Mark Out of Reach first', 'Channel attempts start after Out of Reach stage');
       return;
     }
     if (channel === 'ringcentral') {
@@ -578,8 +578,8 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
                       : 'In Sales Open Pool.'}
                   </strong>{' '}
                   {row.statusCode === 'p1_pool_claim_pending'
-                    ? 'Review under Retention → Claims. Approve transfers Deal/Contact/Company to the requester (1 BD auto).'
-                    : 'This was your deal — you cannot claim it back here. Other agents request it from Open Pool; you approve under Claims.'}
+                    ? 'A claim is being finalized. Refresh shortly.'
+                    : 'This was your deal — you cannot claim it back here. Other agents can claim it from Open Pool (instant assign).'}
                 </div>
               )}
               {/* New: no timeline. Other stages: reserved slot (skeleton → trail) — no jump. */}

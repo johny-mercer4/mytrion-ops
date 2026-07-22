@@ -178,7 +178,7 @@ const SALES_STATUS: StatusChip[] = [
     label: 'Open Pool',
     hint: 'Unclaimed Sales pool — 3 BD',
     explain:
-      'Unassigned Sales pool. Claim needs CS approve (1 BD auto-approve). Unclaimed 3 BD → Retention.',
+      'Sales Open Pool (readonly here). Agents claim instantly in Sales. Unclaimed 3 BD → Retention; max 3 agent cycles → CITI.',
     Icon: Users,
     tone: 'orange',
   },

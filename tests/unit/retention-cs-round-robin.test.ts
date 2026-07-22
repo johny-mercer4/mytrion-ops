@@ -136,34 +136,26 @@ describe('afterRetentionPhaseSideEffects', () => {
       phaseCode: 'phase_3_citi',
       assignedAgentZohoUserId: null,
       zohoDealId: 'deal-9',
+      carrierId: 'c9',
+      companyName: null,
+      agentName: null,
     });
     expect(setStage).toHaveBeenCalledWith('deal-9');
   });
 
-  it('does not transfer Zoho when CS claims an unassigned Phase 2 case', async () => {
-    await afterRetentionPhaseSideEffects(
-      'phase_2_retention',
-      {
-        id: '10',
-        phaseCode: 'phase_2_retention',
-        assignedAgentZohoUserId: 'cs-new',
-        zohoDealId: 'deal-10',
-      },
-      { previousAssigneeZohoUserId: null },
-    );
-    expect(transferOwner).not.toHaveBeenCalled();
-  });
-
-  it('does not transfer Zoho on Sales → Retention handoff assign', async () => {
+  it('skips Zoho Owner transfer while Retention auto-assign is disabled', async () => {
     await afterRetentionPhaseSideEffects(
       'phase_1_agent',
       {
         id: '11',
         phaseCode: 'phase_2_retention',
-        assignedAgentZohoUserId: 'cs-rr',
+        assignedAgentZohoUserId: 'sales-keep',
         zohoDealId: 'deal-11',
+        carrierId: 'c11',
+        companyName: 'Acme',
+        agentName: 'Sales Keep',
       },
-      { previousAssigneeZohoUserId: 'sales-1' },
+      { tenantId: DEFAULT_TENANT_ID },
     );
     expect(transferOwner).not.toHaveBeenCalled();
   });

@@ -37,12 +37,12 @@ export async function recentHistorySummary(
 
 export interface TurnBriefInput {
   message: string;
-  userName?: string;
-  zohoUserId?: string;
-  profile?: string;
-  role?: string;
+  userName?: string | undefined;
+  zohoUserId?: string | undefined;
+  profile?: string | undefined;
+  role?: string | undefined;
   departments: string[];
-  historySummary?: string;
+  historySummary?: string | undefined;
   clientContext?: {
     profile: string;
     carrierId?: string;

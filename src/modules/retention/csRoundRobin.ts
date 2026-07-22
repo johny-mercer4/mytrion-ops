@@ -11,7 +11,13 @@ import { listActiveUsers, type CrmUser } from '../../integrations/zohoCrm.js';
 import { logger } from '../../lib/logger.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import type { RetentionCaseDto } from '../../repos/retentionCaseRepo.js';
-import { setDealStageClosedLost } from './zohoOwnership.js';
+import { DEFAULT_TENANT_ID } from '../../config/constants.js';
+import { OWNERSHIP_TRANSFER_REASON } from '../../db/schema/retention_ownership_transfers.js';
+import {
+  transferDealOwnershipToClaimant,
+  setDealStageClosedLost,
+  type OwnershipTransferAudit,
+} from './zohoOwnership.js';
 import type { CaseTransitionPatch } from './deadlines.js';
 import { assertUnderDailyCap, CS_MAX_DEALS_PER_DAY } from './csCaps.js';
 
@@ -165,6 +171,12 @@ export interface HandoffCaseHint {
   isSpanishDesk?: boolean | null | undefined;
 }
 
+/**
+ * Temporary kill-switch for Retention auto-assign (Spanish desk + RoundRobin).
+ * When false: leave the Sales assignee as-is and skip Zoho Owner transfer to CS.
+ */
+export const RETENTION_AUTO_ASSIGN_ENABLED = false;
+
 /** Enrich a Retention handoff patch with Spanish desk or RoundRobin CS assignee → p2_working. */
 export async function enrichHandoffWithRoundRobin(
   ctx: TenantContext,
@@ -172,6 +184,17 @@ export async function enrichHandoffWithRoundRobin(
   caseHint: HandoffCaseHint = {},
 ): Promise<CaseTransitionPatch> {
   if (patch.phaseCode !== RETENTION_PHASE.retention) return patch;
+
+  if (!RETENTION_AUTO_ASSIGN_ENABLED) {
+    logger.info(
+      {
+        caseHint,
+        assignedAgentZohoUserId: patch.assignedAgentZohoUserId,
+      },
+      'retention auto-assign disabled — keeping current agent (no CS reassignment)',
+    );
+    return patch;
+  }
 
   if (caseHint.isSpanishDesk) {
     const spanishId = spanishDeskUserId();
@@ -222,23 +245,80 @@ export async function enrichHandoffWithRoundRobin(
   };
 }
 
+/** Soft Zoho ownership transfer for Retention handoff (does not block Ops assign). */
+export async function transferOwnershipSoft(
+  zohoDealId: string | null | undefined,
+  claimantZohoUserId: string,
+  audit?: OwnershipTransferAudit | null,
+): Promise<void> {
+  const dealId = zohoDealId?.trim();
+  if (!dealId) {
+    logger.warn(
+      { claimantZohoUserId },
+      'retention CS handoff: no zohoDealId — Ops assigned, Zoho Owner skipped',
+    );
+    return;
+  }
+  try {
+    const result = await transferDealOwnershipToClaimant(dealId, claimantZohoUserId, audit);
+    if (result.warnings.length > 0) {
+      logger.warn(
+        { dealId, warnings: result.warnings },
+        'retention CS handoff: Zoho ownership partial',
+      );
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn(
+      { dealId, claimantZohoUserId, err: message },
+      'retention CS handoff: Zoho ownership failed (Ops assign kept)',
+    );
+  }
+}
+
 /**
- * Side effects after a case transition lands.
- * Retention handoff / CS desk claim update the case assignee only — Deal/Contact/Company
- * stay with the Sales agent. Zoho ownership transfers solely on Open Pool claim approve
- * (`transferZohoThenFinalize` in retentionPoolClaimRepo).
- * Entered CITI → Deal Stage Closed Lost.
+ * Side effects after a case transition lands:
+ * - entered Retention with assignee → Zoho Owner to CS
+ * - entered CITI → Deal Stage Closed Lost
  */
 export async function afterRetentionPhaseSideEffects(
   beforePhase: string,
   after: Pick<
     RetentionCaseDto,
-    'phaseCode' | 'assignedAgentZohoUserId' | 'zohoDealId' | 'id'
+    | 'phaseCode'
+    | 'assignedAgentZohoUserId'
+    | 'zohoDealId'
+    | 'id'
+    | 'carrierId'
+    | 'companyName'
+    | 'agentName'
   >,
-  _opts: {
+  opts: {
     previousAssigneeZohoUserId?: string | null;
+    tenantId?: string;
+    actorZohoUserId?: string | null;
+    actorName?: string | null;
   } = {},
 ): Promise<void> {
+  if (
+    RETENTION_AUTO_ASSIGN_ENABLED &&
+    after.phaseCode === RETENTION_PHASE.retention &&
+    beforePhase !== RETENTION_PHASE.retention &&
+    after.assignedAgentZohoUserId
+  ) {
+    const caseId = Number(after.id);
+    const audit: OwnershipTransferAudit = {
+      tenantId: opts.tenantId?.trim() || DEFAULT_TENANT_ID,
+      reason: OWNERSHIP_TRANSFER_REASON.retentionHandoff,
+      retentionCaseId: Number.isFinite(caseId) ? caseId : null,
+      carrierId: after.carrierId,
+      companyName: after.companyName,
+      actorZohoUserId: opts.actorZohoUserId ?? null,
+      actorName: opts.actorName ?? null,
+      toOwnerName: after.agentName,
+    };
+    await transferOwnershipSoft(after.zohoDealId, after.assignedAgentZohoUserId, audit);
+  }
   if (after.phaseCode === RETENTION_PHASE.citi && beforePhase !== RETENTION_PHASE.citi) {
     await setDealStageClosedLost(after.zohoDealId);
   }

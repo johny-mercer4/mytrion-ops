@@ -20,10 +20,12 @@ export function ChatPanel({
   context,
   department,
   agentKey = null,
+  variant = 'dock',
 }: {
   context: UserContext;
   department?: string | string[] | null;
   agentKey?: AgentKey | null;
+  variant?: 'dock' | 'full';
 }) {
   const chat = useChat(context, department ?? null, agentKey);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -40,7 +42,7 @@ export function ChatPanel({
   })();
 
   return (
-    <div className={styles.dock}>
+    <div className={variant === 'full' ? styles.full : styles.dock}>
       <div className={styles.header}>
         <div className={styles.title}>
           <Gem size={26} />

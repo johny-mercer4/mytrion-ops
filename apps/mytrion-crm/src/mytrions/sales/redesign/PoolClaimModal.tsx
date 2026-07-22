@@ -1,5 +1,5 @@
 /**
- * Open Pool claim request modal — reason + confirm before prior-owner approval.
+ * Open Pool claim modal — reason + confirm; assigns instantly (Zoho + Kanban New).
  */
 import type { ChangeEvent, MouseEvent } from 'react';
 import { s } from './dc';
@@ -50,11 +50,11 @@ export function PoolClaimModal({
           <div style={s('flex:1;min-width:0')}>
             <div id="ss-pool-claim-title" className="ss-pool-modal-title">
               {mode === 'single'
-                ? `Request claim · ${singleSummary?.companyName || singleSummary?.carrierId || 'deal'}`
-                : `Request claim · ${claimIds.length} deals`}
+                ? `Claim · ${singleSummary?.companyName || singleSummary?.carrierId || 'deal'}`
+                : `Claim · ${claimIds.length} deals`}
             </div>
             <div className="ss-pool-modal-sub">
-              Reason required · prior owner reviews — auto-approves in 1 BD if no response
+              Reason required · instant assign · max 2/day
             </div>
           </div>
           <button
@@ -96,7 +96,7 @@ export function PoolClaimModal({
               onChange={(e) => onReason(e.target.value)}
               maxLength={2000}
               rows={3}
-              placeholder="Brief reason for the prior owner…"
+              placeholder="Brief reason for the claim…"
               className="ss-in ss-pool-reason"
             />
           </div>
@@ -108,12 +108,17 @@ export function PoolClaimModal({
               onChange={(e: ChangeEvent<HTMLInputElement>) => onConfirm(e.target.checked)}
             />
             <span>
-              I understand: after prior-owner approval this lands in my Kanban{' '}
-              <strong className="ss-pool-accent">New</strong> under my ownership and counts
-              toward the 3-agent Open Pool limit.
+              Assigns to my Kanban <strong className="ss-pool-accent">New</strong> now · counts
+              toward cycle 3 and my 2 claims/day.
             </span>
           </label>
         </div>
+
+        {submitting ? (
+          <div className="ss-ret-modal-saving" role="status" aria-live="polite">
+            Claiming…
+          </div>
+        ) : null}
 
         <div className="ss-pool-modal-foot">
           <button
@@ -130,7 +135,7 @@ export function PoolClaimModal({
             onClick={onSubmit}
             className={canSubmit ? 'ss-btn-p ss-pool-btn-primary' : 'ss-pool-btn-disabled'}
           >
-            {submitting ? 'Requesting…' : 'Submit request'}
+            {submitting ? 'Claiming…' : 'Claim'}
           </button>
         </div>
       </div>

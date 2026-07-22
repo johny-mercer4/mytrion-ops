@@ -1,9 +1,12 @@
 /**
  * Customer Service shell — gold CSMYTRION chrome, sidebar + content + mobile bottom nav.
- * Retention Cases / Open Pool (read-only) / CITI Folder sit alongside Citifuel Clients.
+ * Retention Cases / Open Pool Activity / CITI Folder sit alongside Citifuel Clients.
  */
 import { useCallback, useState, type ReactNode } from 'react';
 
+import { isAdmin } from '../../access/resolveAccess';
+import { ActAsPicker } from '../../components/ActAsPicker';
+import { useImpersonation } from '../../context/ImpersonationProvider';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useTheme } from '../../hooks/useTheme';
 import { Analytics } from './Analytics';
@@ -12,8 +15,8 @@ import { CitiFuel } from './CitiFuel';
 import type { CsSectionId } from './csNav';
 import { Home } from './Home';
 import { CasesPanel } from './retention/CasesPanel';
+import { OpenPoolReadonlyPanel } from './retention/OpenPoolReadonlyPanel';
 import { CitiFolderPanel } from './retention/CitiFolderPanel';
-import { OpenPoolPanel } from './retention/OpenPoolPanel';
 import { useCsRetentionRealtime } from './retention/useCsRetentionRealtime';
 import { Toast, type ToastState } from './Toast';
 
@@ -110,6 +113,9 @@ const NAV_ITEMS: NavDef[] = [
 
 export function CsShell() {
   const user = useUserContext();
+  const admin = isAdmin(user);
+  const { actingAs } = useImpersonation();
+  const actAsKey = actingAs?.zohoUserId ?? 'self';
   const [active, setActive] = useState<CsSectionId>('home');
   const [mounted, setMounted] = useState<Partial<Record<CsSectionId, boolean>>>({ home: true });
   const { theme, toggle: toggleTheme } = useTheme();
@@ -134,11 +140,11 @@ export function CsShell() {
     });
   }, []);
 
-  const onRetentionToast = useCallback((title: string, detail: string) => {
+  const onPoolToast = useCallback((title: string, detail: string) => {
     setToast({ id: Date.now(), kind: 'info', message: `${title}: ${detail}` });
   }, []);
 
-  useCsRetentionRealtime(true, onRetentionToast);
+  useCsRetentionRealtime(true, onPoolToast);
 
   const workerName = user.userName || 'Agent';
   const workerRole = user.role || user.profile || 'Customer Service';
@@ -208,7 +214,7 @@ export function CsShell() {
             {NAV_ITEMS.map((item) => (
               <div
                 key={item.id}
-                className={`cs-nav-item${active === item.id ? ' active' : ''}${item.disabled ? ' cs-nav-disabled' : ''}${item.id === 'citi-folder' ? ' is-citi-folder' : ''}`}
+                className={`cs-nav-item${active === item.id ? ' active' : ''}${item.disabled ? ' cs-nav-disabled' : ''}`}
                 role="button"
                 tabIndex={item.disabled ? -1 : 0}
                 aria-label={item.label}
@@ -265,6 +271,11 @@ export function CsShell() {
               )}
               <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
             </button>
+            {admin && !navCollapsed ? (
+              <div className="cs-view-as">
+                <ActAsPicker placement="sidebar" />
+              </div>
+            ) : null}
             <div className="cs-user-card" title={navCollapsed ? workerName : undefined}>
               <span className="cs-user-avatar">{workerInitials}</span>
               <div className="cs-user-meta">
@@ -275,11 +286,11 @@ export function CsShell() {
           </div>
         </aside>
 
-        <main className="cs-content">
+        <main className="cs-content" key={actAsKey}>
           {panel('home', <Home onNavigate={navigate} />)}
           {panel('applications', <Applications />)}
           {panel('retention-cases', <CasesPanel />)}
-          {panel('open-pool', <OpenPoolPanel />)}
+          {panel('open-pool', <OpenPoolReadonlyPanel />)}
           {panel('citi-folder', <CitiFolderPanel />)}
           {panel('citi-fuel', <CitiFuel />)}
           {panel('analytics', <Analytics />)}

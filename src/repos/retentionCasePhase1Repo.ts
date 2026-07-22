@@ -150,7 +150,7 @@ export const retentionCasePhase1Repo = {
     return { case: toRetentionCaseDto(row), events: events.map(toRetentionCaseEventDto) };
   },
 
-  /** Request Open Pool claim (CS approve / 1 BD auto). See retentionPoolClaimRepo. */
+  /** Instant Open Pool claim (Zoho + Kanban New). See retentionPoolClaimRepo.claimNow. */
   async claimFromPool(
     ctx: TenantContext,
     id: string,
@@ -158,7 +158,7 @@ export const retentionCasePhase1Repo = {
     opts: { agentName?: string | undefined; reason: string },
   ): Promise<RetentionCaseDto & { pendingApproval: boolean }> {
     const { retentionPoolClaimRepo } = await import('./retentionPoolClaimRepo.js');
-    return retentionPoolClaimRepo.requestClaim(ctx, id, newAgentZohoUserId, opts);
+    return retentionPoolClaimRepo.claimNow(ctx, id, newAgentZohoUserId, opts);
   },
 
   async logCommsAttempt(
@@ -293,7 +293,10 @@ export const retentionCasePhase1Repo = {
     if (landedInCiti || landedInPool) {
       scheduleRetentionPostCommit('retention.log_attempt', async () => {
         if (landedInCiti) {
-          await afterRetentionPhaseSideEffects(existing.phaseCode, dto);
+          await afterRetentionPhaseSideEffects(existing.phaseCode, dto, {
+            tenantId: ctx.tenantId,
+            actorZohoUserId: input.actorZohoUserId,
+          });
         }
         if (landedInPool) {
           await notifyOpenPoolOpened(ctx, {

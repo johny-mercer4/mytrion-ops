@@ -171,14 +171,13 @@ export function RetentionMetaGrid({ row }: { row: RetentionCaseRow }) {
     ['Frequency', freqLabel(row.transactionFrequency), cadenceExplain(row.transactionFrequency)],
     ['90d gallons', row.gallons90d != null ? Math.round(row.gallons90d).toLocaleString() : '—'],
     ['Attempts', `${row.outOfReachAttempts}/5`],
-    ['Assignment', String(row.assignmentCount)],
-    ['Agent', row.agentName || '—'],
+    ['Cycle', `${row.assignmentCount}/3`],
   ];
   const lockedLabel = pooled
-    ? 'Open Pool · no Sales actions'
+    ? 'In Open Pool'
     : row.phaseCode === 'phase_3_citi'
-      ? 'CITI · no Sales timer'
-      : 'Retention · no Sales timer';
+      ? '→ CITI'
+      : 'With Retention';
   return (
     <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:10px')}>
       <div

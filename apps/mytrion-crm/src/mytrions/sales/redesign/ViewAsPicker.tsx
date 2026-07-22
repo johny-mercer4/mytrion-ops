@@ -35,7 +35,8 @@ export function ViewAsPicker() {
     setLoading(true);
     setError(null);
     try {
-      setAgents(await listAgents(false));
+      // All active CRM users — search filters client-side (no Sales-only default).
+      setAgents(await listAgents(true));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load agents.');
     } finally {
@@ -121,8 +122,8 @@ export function ViewAsPicker() {
             onKeyDown={(e) => {
               if (e.key === 'Escape') setOpen(false);
             }}
-            placeholder={loading ? 'Loading agents…' : 'Search agents…'}
-            aria-label="Search agents to view as"
+            placeholder={loading ? 'Loading users…' : 'Search users…'}
+            aria-label="Search users to view as"
             autoComplete="off"
             style={s('flex:1;min-width:0;border:none;background:none;outline:none;color:var(--text);font-size:13px')}
           />
@@ -138,7 +139,7 @@ export function ViewAsPicker() {
             {error && <div style={s('padding:10px 12px;font-size:12px;color:var(--danger)')}>{error}</div>}
 
             {!error && !loading && filtered.length === 0 && (
-              <div style={s('padding:10px 12px;font-size:12px;color:var(--muted)')}>No agents found.</div>
+              <div style={s('padding:10px 12px;font-size:12px;color:var(--muted)')}>No users found.</div>
             )}
             {filtered.map((a) => (
               <button

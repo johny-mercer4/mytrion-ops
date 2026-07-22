@@ -211,8 +211,8 @@ export function AttemptStep(props: {
   const brand =
     props.channel !== 'ringcentral' ? CHANNEL_BRAND[props.channel] : null;
   const phone = formatUsPhone(contactPhone) || contactPhone?.trim() || '';
-  const noteRequired = !props.evidenceFile;
-  const noteMissing = noteRequired && !props.attemptNote.trim();
+  // Messenger / email: note required; screenshot optional (encourage both).
+  const noteMissing = !props.attemptNote.trim();
 
   return (
     <section
@@ -221,10 +221,10 @@ export function AttemptStep(props: {
       )}
     >
       <div>
-        <SectionTitle>Log a channel attempt</SectionTitle>
+        <SectionTitle>Log attempt — call or messenger + short note</SectionTitle>
         <div style={s('font-size:12px;color:var(--text2);line-height:1.45;margin-top:6px')}>
-          RingCentral calls log automatically ({row.outOfReachAttempts}/5). Other channels need a
-          note or screenshot. At 5 → Open Pool.
+          Attempt {row.outOfReachAttempts}/5. RingCentral logs on call end. Other channels need a
+          short note (screenshot optional). At 5 → Open Pool.
         </div>
       </div>
 
@@ -308,16 +308,16 @@ export function AttemptStep(props: {
           <input
             value={props.attemptNote}
             onChange={(e) => props.setAttemptNote(e.target.value)}
-            placeholder={noteRequired ? 'Result note (required)…' : 'Result note (optional with screenshot)…'}
+            placeholder="Short note (required)…"
             className="ss-in"
-            aria-required={noteRequired}
+            aria-required
             style={s(
               `height:34px;padding:0 10px;border-radius:var(--radius-md);border:1px solid ${noteMissing ? 'var(--danger)' : 'var(--border)'};background:var(--surface);color:var(--text);font-size:12px;box-shadow:${noteMissing ? '0 0 0 1px color-mix(in srgb,var(--danger) 35%,transparent)' : 'none'}`,
             )}
           />
           {noteMissing && (
             <div style={s('font-size:11px;font-weight:700;color:var(--danger);margin-top:-6px')}>
-              Note required when there’s no screenshot
+              Note required for messenger / email attempts
             </div>
           )}
           <ScreenshotField
@@ -327,11 +327,7 @@ export function AttemptStep(props: {
           />
           <button
             type="button"
-            disabled={
-              busy ||
-              props.channel === 'ringcentral' ||
-              (!props.evidenceFile && !props.attemptNote.trim())
-            }
+            disabled={busy || props.channel === 'ringcentral' || noteMissing}
             onClick={() => void props.onLogOtherChannel()}
             style={s(
               `height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-weight:700;font-size:12px;cursor:${busy ? 'wait' : 'pointer'};opacity:${busy ? 0.7 : 1}`,
@@ -368,7 +364,7 @@ export function StageStep(props: {
     row.outOfReachAttempts >= 5
       ? '5/5 → Open Pool'
       : alreadyOoR
-        ? `Stay OoR · attempt ${row.outOfReachAttempts}/5 · 1 BD`
+        ? `Stay Out of Reach · attempt ${row.outOfReachAttempts}/5 · 1 BD`
         : 'Channel attempts · 5×1 BD';
 
   return (
@@ -384,7 +380,7 @@ export function StageStep(props: {
             ? 'After each attempt, pick a stage. Out of Reach stays available until attempt 5 → Open Pool.'
             : showOutOfReach
               ? 'Pick one stage. The card moves to that column on the board.'
-              : 'Reached, Dissatisfied, or Vacation — or keep logging OoR attempts above.'}
+              : 'Reached, Dissatisfied, or Vacation — or keep logging Out of Reach attempts above.'}
         </div>
       </div>
 

@@ -233,7 +233,8 @@ export function CasesPanel() {
         <div>
           <h2 className="cs-panel-title">Retention Cases</h2>
           <p className="cs-panel-sub">
-            Browse by phase · filter by status · set Retention outcomes when assigned
+            Your assigned desk · browse by phase · set outcomes when working a case. Admins see all
+            records.
           </p>
         </div>
         <button

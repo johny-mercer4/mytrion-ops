@@ -83,14 +83,6 @@ export function resolvePhase2Transition(
           expose: true,
         });
       }
-      const owner = row.assignedAgentZohoUserId?.trim() || null;
-      if (owner && owner !== actor) {
-        throw new AppError('Case is already assigned to another CS agent', {
-          statusCode: 409,
-          code: 'RETENTION_ALREADY_ASSIGNED',
-          expose: true,
-        });
-      }
       const wait = stampRetentionWaitDeadline(now);
       return {
         phaseCode: RETENTION_PHASE.retention,
@@ -141,7 +133,6 @@ export function resolvePhase2Transition(
         eventNotes: opts.notes ?? 'Out of business — closed',
       };
     case 'no_response': {
-      // CS must not send cases to Open Pool — only the 10BD system timer may.
       throw new AppError(
         'CS cannot send cases to Open Pool. The 10 BD Retention timer returns cases automatically.',
         {
