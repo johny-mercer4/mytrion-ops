@@ -494,7 +494,13 @@ export function Transactions() {
                       <div key={tx.recordId} className="tx-row" onClick={() => setOpenId(tx.recordId)} title="Click to view details">
                         <div className={`tx-source-badge tx-source-${tx.source}`}>{txSourceLabel(tx.source)}</div>
                         <div className="tx-body">
-                          <div className="tx-sender">{tx.sender || tx.name}</div>
+                          <div className="tx-sender">
+                            {/* Card payments (Stripe) carry no payer name — build the widget-style
+                                "Payment - $500.00 - succeeded" label instead of showing a blank. */}
+                            {tx.sender ||
+                              tx.name ||
+                              `Payment - ${fmtCurrency(tx.amount)}${tx.status ? ` - ${tx.status}` : ''}`}
+                          </div>
                           <div className="tx-meta">
                             {tx.memo ? (
                               <span className="tx-memo" title={tx.memo}>
@@ -505,7 +511,7 @@ export function Transactions() {
                             {tx.txn ? (
                               <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.6rem', opacity: 0.5 }}>#{tx.txn}</span>
                             ) : null}
-                            {(tx.source === 'mx' || tx.source === 'stripe') && tx.status ? (
+                            {(tx.source === 'mx' || tx.source === 'stripe') && tx.status && (tx.sender || tx.name) ? (
                               <span className={`bm-badge ${txStatusBadgeClass(tx.source, tx.status)}`} style={{ fontSize: '0.55rem', padding: '0.1rem 0.4rem', marginLeft: '0.25rem' }}>
                                 {tx.status}
                               </span>
