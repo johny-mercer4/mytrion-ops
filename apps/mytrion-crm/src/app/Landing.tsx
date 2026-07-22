@@ -6,8 +6,9 @@ import { Forbidden } from './Forbidden';
 import { MytrionPicker } from './MytrionPicker';
 
 /**
- * Entry resolver: 0 accessible → 403; a granted home Mytrion (e.g. Sales Agent → Sales) or a
- * single accessible one → auto-enter; otherwise (admins / multi-access, no home) → the picker.
+ * Entry resolver: 0 accessible → 403; exactly one accessible → ALWAYS auto-enter (hard rule —
+ * home state can never surface the picker for a single-Mytrion user); a granted home Mytrion
+ * (e.g. Sales Agent → Sales) → auto-enter; otherwise (admins / multi-access, no home) → the picker.
  */
 export function Landing() {
   const ctx = useUserContext();
@@ -16,10 +17,12 @@ export function Landing() {
   if (accessible.length === 0) {
     return <Forbidden reason={`No Mytrion is assigned to ${ctx.userName} (profile: ${ctx.profile}).`} />;
   }
-  // Auto-route to the configured home when it's actually accessible, else when there's just one.
-  const target = homeMytrion && accessible.includes(homeMytrion) ? homeMytrion : accessible.length === 1 ? accessible[0] : null;
-  if (target) {
-    return <Navigate to={`/main/${MYTRION_URL_SLUG[target]}`} replace />;
+  if (accessible.length === 1) {
+    return <Navigate to={`/main/${MYTRION_URL_SLUG[accessible[0]!]}`} replace />;
   }
+  if (homeMytrion && accessible.includes(homeMytrion)) {
+    return <Navigate to={`/main/${MYTRION_URL_SLUG[homeMytrion]}`} replace />;
+  }
+  // Provably ids.length >= 2 here — the picker never renders for a single-Mytrion user.
   return <MytrionPicker ids={accessible} />;
 }

@@ -17,6 +17,24 @@ export const CHECKPOINT_SCHEMA = 'langgraph';
 let saver: PostgresSaver | null = null;
 let setupPromise: Promise<void> | null = null;
 
+class PagedPostgresSaver extends PostgresSaver {
+  // @ts-expect-error - Override getTuple to implement Context Paging (MemGPT standard)
+  async getTuple(config: unknown) {
+    const tuple = await super.getTuple(config as any);
+    if (tuple?.checkpoint?.channel_values?.messages) {
+      const msgs = tuple.checkpoint.channel_values.messages;
+      if (Array.isArray(msgs) && msgs.length > 20) {
+        // Keep the first message (system/initial brief) + last 19 messages
+        tuple.checkpoint.channel_values.messages = [
+          msgs[0],
+          ...msgs.slice(-19),
+        ];
+      }
+    }
+    return tuple;
+  }
+}
+
 function makeSaver(): PostgresSaver {
   // Own small pg pool (the checkpointer requires `pg`; the app pool is postgres.js) — max 5
   // keeps the combined footprint inside the managed-Postgres connection ceiling.
@@ -25,7 +43,7 @@ function makeSaver(): PostgresSaver {
     max: 5,
     ssl: dbSslOption(databaseUrl),
   });
-  return new PostgresSaver(pool, undefined, { schema: CHECKPOINT_SCHEMA });
+  return new PagedPostgresSaver(pool, undefined, { schema: CHECKPOINT_SCHEMA });
 }
 
 /** The process-wide checkpointer, or undefined when the flag is off. */

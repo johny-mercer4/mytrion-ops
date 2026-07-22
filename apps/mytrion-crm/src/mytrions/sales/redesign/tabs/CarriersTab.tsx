@@ -118,15 +118,19 @@ function LeadAction(props: {
       </a>
     );
   }
+  // Failed → a clickable Retry (a transient error shouldn't strand the row until a full re-search).
   return (
-    <span
-      title={result.message}
+    <button
+      type="button"
+      onClick={onCreate}
+      disabled={busy}
+      title={`${result.message} — click to retry`}
       style={s(
-        'display:inline-flex;align-items:center;height:34px;padding:0 12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--danger) 40%,var(--border));color:var(--danger);font-weight:700;font-size:12px',
+        `display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--danger) 40%,var(--border));background:color-mix(in srgb,var(--danger) 8%,transparent);color:var(--danger);font-weight:700;font-size:12px;cursor:${busy ? 'wait' : 'pointer'}`,
       )}
     >
-      Failed
-    </span>
+      {busy ? 'Retrying…' : 'Failed — retry'}
+    </button>
   );
 }
 
@@ -216,7 +220,8 @@ export function CarriersTab() {
   };
 
   const onCreateLead = async (c: CarrierSearchVM): Promise<void> => {
-    if (leadLoadingId || leadResults[c.id]) return;
+    // Block while a create is in flight or already succeeded; a FAILED result may be retried.
+    if (leadLoadingId || leadResults[c.id]?.ok) return;
     setLeadLoadingId(c.id);
     try {
       const outcome = await createLeadFromCarrier(c);
@@ -237,7 +242,7 @@ export function CarriersTab() {
   };
 
   return (
-    <div className="ss-fu" style={s('max-width:860px;margin:0 auto')}>
+    <div className="ss-fu" style={s('max-width:1180px;margin:0 auto')}>
       <div style={s('margin-bottom:16px')}>
         <div
           style={s(

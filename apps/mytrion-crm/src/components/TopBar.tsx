@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useUserContext } from '../context/UserContextProvider';
-import { isAdmin } from '../access/resolveAccess';
+import { isAdmin, resolveAccessibleMytrions } from '../access/resolveAccess';
 import { logout } from '../api/auth';
 import { useTheme } from '../hooks/useTheme';
 import { ActAsPicker } from './ActAsPicker';
@@ -37,6 +37,9 @@ export function TopBar({
   const admin = isAdmin(user);
   const viewAsTargets = user.viewAsTargets ?? [];
   const canViewAs = admin || viewAsTargets.length > 0;
+  // "Switch Mytrion" only means something with somewhere else to go — single-Mytrion users
+  // (e.g. Sales agents) must not be offered a route back to the picker.
+  const canSwitch = resolveAccessibleMytrions(user).accessible.length > 1;
 
   return (
     <header className={styles.bar}>
@@ -60,7 +63,7 @@ export function TopBar({
               }))}
             />
           ))}
-        {showSwitch && (
+        {showSwitch && canSwitch && (
           <Link to="/main" className={styles.switch}>
             <SwitchIcon size={13} />
             Switch Mytrion

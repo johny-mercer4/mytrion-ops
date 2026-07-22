@@ -18,12 +18,20 @@ export function addBusinessDays(from: Date, days: number): Date {
 }
 
 export const PHASE1_DEADLINE_TYPE = '2BD_agent_action' as const;
-export const COMMS_ATTEMPT_DEADLINE_TYPE = '5BD_comms_attempt' as const;
+/** Per Out-of-Reach channel attempt SLA (1 business day). Legacy rows may still say 5BD_*. */
+export const COMMS_ATTEMPT_DEADLINE_TYPE = '1BD_comms_attempt' as const;
 export const POST_CONTACT_DEADLINE_TYPE = '5BD_post_contact' as const;
 export const POOL_CLAIM_DEADLINE_TYPE = '3BD_pool_claim' as const;
 /** Owner has 1 BD to approve an Open Pool claim request (else auto-approve). */
 export const CLAIM_APPROVE_DEADLINE_TYPE = '1BD_claim_approve' as const;
 export const NEW_OWNER_DEADLINE_TYPE = '3BD_new_owner' as const;
+/**
+ * Max agents who may work a deal through Open Pool. When the count is already at
+ * cap, further Open Pool entry / unclaimed expiry / agent-window failure → CITI
+ * (not Retention). Kept here so `enterOpenPool` can short-circuit without
+ * importing phase1 (phase1 imports deadlines).
+ */
+export const MAX_OPEN_POOL_AGENTS = 3;
 /** Doc: claim approval requires 10+ days of inactivity. */
 export const MIN_INACTIVE_DAYS_FOR_POOL_CLAIM = 10;
 export const RETENTION_WAIT_DEADLINE_TYPE = '10BD_retention' as const;
@@ -44,6 +52,7 @@ export interface CaseTransitionPatch {
   statusCode: string;
   agentOutcome?: AgentOutcome | null;
   assignedAgentZohoUserId?: string | null;
+  agentName?: string | null;
   poolOwnerZohoUserId?: string | null;
   pendingClaimantZohoUserId?: string | null;
   assignmentCount?: number;
@@ -82,7 +91,7 @@ export function stampPhase1ActionDeadline(now: Date = new Date()): DeadlineStamp
 }
 
 export function stampCommsAttemptDeadline(now: Date = new Date()): DeadlineStamp {
-  return stampBusinessDays(5, COMMS_ATTEMPT_DEADLINE_TYPE, now);
+  return stampBusinessDays(1, COMMS_ATTEMPT_DEADLINE_TYPE, now);
 }
 
 export function stampPostContactDeadline(now: Date = new Date()): DeadlineStamp {
@@ -112,7 +121,11 @@ export function stampVacationFollowupDeadline(now: Date = new Date()): DeadlineS
   return stampBusinessDays(2, VACATION_FOLLOWUP_DEADLINE_TYPE, now);
 }
 
-/** Phase 2 Retention desk — wait 10 BD for a new transaction. */
+/**
+ * Phase 2 Retention desk — wait 10 BD for a new transaction.
+ * Clears Sales assignee; RoundRobin CS assign + Zoho ownership applied by callers
+ * via `enrichHandoffWithRoundRobin` / `afterRetentionPhaseSideEffects`.
+ */
 export function handoffToRetention(
   opts: {
     agentOutcome?: AgentOutcome | null;
@@ -126,7 +139,8 @@ export function handoffToRetention(
     phaseCode: RETENTION_PHASE.retention,
     statusCode: 'p2_new',
     agentOutcome: opts.agentOutcome ?? null,
-    // Keep sales assignee so Dissatisfied / Closed still appear on the agent Kanban.
+    assignedAgentZohoUserId: null,
+    agentName: null,
     currentDeadlineAt: wait.currentDeadlineAt,
     currentDeadlineType: wait.currentDeadlineType,
     vacationCountdownEnd: null,
@@ -139,16 +153,30 @@ export function stampClaimApproveDeadline(now: Date = new Date()): DeadlineStamp
   return stampBusinessDays(1, CLAIM_APPROVE_DEADLINE_TYPE, now);
 }
 
-/** Sales Open Pool — 3 BD to claim; clears assignee; keeps previous owner for approve. */
+/**
+ * Sales Open Pool — stamps `3BD_pool_claim` (claim window). Clears assignee; keeps
+ * previous owner for notify. If `assignmentCount` is already at max agents, skip the
+ * pool and go straight to CITI (all 3 windows failed).
+ */
 export function enterOpenPool(
   opts: {
     notes?: string;
     agentOutcome?: AgentOutcome | null;
     now?: Date;
     previousOwnerZohoUserId?: string | null;
+    /** Current assignment_count on the case (original owner counts as 1). */
+    assignmentCount?: number;
   } = {},
 ): CaseTransitionPatch {
   const now = opts.now ?? new Date();
+  if ((opts.assignmentCount ?? 0) >= MAX_OPEN_POOL_AGENTS) {
+    return moveToCiti({
+      now,
+      notes:
+        opts.notes ??
+        `Max ${MAX_OPEN_POOL_AGENTS} Open Pool agents reached — CITI (not Retention)`,
+    });
+  }
   const claim = stampPoolClaimDeadline(now);
   const prev = opts.previousOwnerZohoUserId?.trim() || null;
   return {
@@ -166,7 +194,7 @@ export function enterOpenPool(
   };
 }
 
-/** CITI folder — final hold; never auto-closed by DWH sync. */
+/** CITI folder — terminal hold until closed (e.g. new txn auto-close) or manual exit. */
 export function moveToCiti(
   opts: { notes?: string; now?: Date } = {},
 ): CaseTransitionPatch {
@@ -260,6 +288,7 @@ export function patchToUpdateInput(
   statusCode: string;
   agentOutcome?: AgentOutcome | null;
   assignedAgentZohoUserId?: string | null;
+  agentName?: string | null;
   assignmentCount?: number;
   openPoolAttemptCount?: number;
   outOfReachAttempts?: number;
@@ -281,6 +310,7 @@ export function patchToUpdateInput(
     ...(patch.assignedAgentZohoUserId !== undefined
       ? { assignedAgentZohoUserId: patch.assignedAgentZohoUserId }
       : {}),
+    ...(patch.agentName !== undefined ? { agentName: patch.agentName } : {}),
     ...(patch.poolOwnerZohoUserId !== undefined
       ? { poolOwnerZohoUserId: patch.poolOwnerZohoUserId }
       : {}),
@@ -325,7 +355,8 @@ export function describeDeadline(row: Pick<RetentionCase, 'currentDeadlineType'>
     case PHASE1_DEADLINE_TYPE:
       return '2 BD agent action';
     case COMMS_ATTEMPT_DEADLINE_TYPE:
-      return '5 BD comms attempt';
+    case '5BD_comms_attempt':
+      return '1 BD comms attempt';
     case POST_CONTACT_DEADLINE_TYPE:
       return '5 BD post-contact';
     case POOL_CLAIM_DEADLINE_TYPE:

@@ -32,6 +32,9 @@ export interface RetentionCaseDto {
   companyName: string | null;
   applicationId: string | null;
   agentName: string | null;
+  contactPhone: string | null;
+  preferredLanguage: string | null;
+  isSpanishDesk: boolean;
   phaseCode: string;
   statusCode: string;
   phaseChangedAt: string;
@@ -84,6 +87,9 @@ export interface CreateRetentionCaseInput {
   companyName?: string | undefined;
   applicationId?: string | undefined;
   agentName?: string | undefined;
+  contactPhone?: string | undefined;
+  preferredLanguage?: string | null | undefined;
+  isSpanishDesk?: boolean | undefined;
   phaseCode?: string | undefined;
   statusCode?: string | undefined;
   assignedAgentZohoUserId?: string | undefined;
@@ -115,6 +121,9 @@ export interface UpdateRetentionCaseInput {
   lastReviewCycleAt?: Date | null | undefined;
   salesManagerZohoUserId?: string | null | undefined;
   agentName?: string | null | undefined;
+  contactPhone?: string | null | undefined;
+  preferredLanguage?: string | null | undefined;
+  isSpanishDesk?: boolean | undefined;
   zohoDealId?: string | null | undefined;
   metrics?: RetentionMetricsInput | undefined;
   lastSyncedAt?: Date | undefined;
@@ -144,6 +153,9 @@ export function toRetentionCaseDto(row: RetentionCase): RetentionCaseDto {
     companyName: row.companyName,
     applicationId: row.applicationId,
     agentName: row.agentName,
+    contactPhone: row.contactPhone,
+    preferredLanguage: row.preferredLanguage,
+    isSpanishDesk: row.isSpanishDesk,
     phaseCode: row.phaseCode,
     statusCode: row.statusCode,
     phaseChangedAt: row.phaseChangedAt.toISOString(),
@@ -355,6 +367,9 @@ export const retentionCaseRepo = {
       companyName: trimOrNull(input.companyName),
       applicationId: trimOrNull(input.applicationId),
       agentName: trimOrNull(input.agentName),
+      contactPhone: trimOrNull(input.contactPhone),
+      preferredLanguage: trimOrNull(input.preferredLanguage),
+      isSpanishDesk: input.isSpanishDesk ?? false,
       phaseCode,
       statusCode,
       assignedAgentZohoUserId: trimOrNull(input.assignedAgentZohoUserId),
@@ -448,6 +463,11 @@ export const retentionCaseRepo = {
       set.salesManagerZohoUserId = trimOrNull(patch.salesManagerZohoUserId);
     }
     if (patch.agentName !== undefined) set.agentName = trimOrNull(patch.agentName);
+    if (patch.contactPhone !== undefined) set.contactPhone = trimOrNull(patch.contactPhone);
+    if (patch.preferredLanguage !== undefined) {
+      set.preferredLanguage = trimOrNull(patch.preferredLanguage);
+    }
+    if (patch.isSpanishDesk !== undefined) set.isSpanishDesk = patch.isSpanishDesk;
     if (patch.zohoDealId !== undefined) set.zohoDealId = trimOrNull(patch.zohoDealId);
     if (patch.metrics) Object.assign(set, metricsToSet(patch.metrics));
     if (patch.lastSyncedAt !== undefined) set.lastSyncedAt = patch.lastSyncedAt;

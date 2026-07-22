@@ -8,10 +8,8 @@ import {
   publishRetentionLive,
 } from './retentionLiveBus';
 import { useOctaneRealtime } from './useOctaneRealtime';
-
-function idsMatch(a: string, b: string): boolean {
-  return !!a && !!b && a.trim() === b.trim();
-}
+// Suffix-normalized: event ownerId / session id / View-as id may differ by org prefix (zohoIds.ts).
+import { zohoIdsMatch } from './zohoIds';
 
 export function useRetentionRealtime(
   currentUserId: string,
@@ -21,7 +19,7 @@ export function useRetentionRealtime(
   // When View-as differs from the signed-in worker, subscribe to the acted-as feed too.
   const extraTopics = [
     'retention:pool',
-    ...(currentUserId && sessionZoho && !idsMatch(currentUserId, sessionZoho)
+    ...(currentUserId && sessionZoho && !zohoIdsMatch(currentUserId, sessionZoho)
       ? [`inbox:worker:${currentUserId.trim()}`]
       : []),
   ];
@@ -32,8 +30,13 @@ export function useRetentionRealtime(
     onInboxEvent: (event) => {
       if (!event.type.startsWith('retention.')) return;
 
-      const forMe = idsMatch(event.ownerId, currentUserId);
-      const poolBroadcast = event.type === 'retention.pool.opened';
+      const forMe = zohoIdsMatch(event.ownerId, currentUserId);
+      // Pool-topic peers need claim lifecycle refreshes (toasts stay owner-scoped below).
+      const poolBroadcast =
+        event.type === 'retention.pool.opened' ||
+        event.type === 'retention.claim_request' ||
+        event.type === 'retention.claim_approved' ||
+        event.type === 'retention.claim_declined';
       if (!forMe && !poolBroadcast) return;
 
       publishRetentionLive({

@@ -350,7 +350,7 @@ export function RecordsTab() {
       {dcSub === 'clients' && (
         <>
           {clientTotal > 0 && <TierDistribution counts={tierCounts} total={clientTotal} />}
-          <Gate loading={recsLoad.loading} error={recsLoad.data ? null : recsLoad.error} empty={clients.length === 0} emptyMsg="No clients match your search.">
+          <Gate loading={recsLoad.loading} error={recsLoad.data ? null : recsLoad.error} empty={clients.length === 0} emptyMsg={q ? 'No clients match your search.' : 'No clients in this book yet.'}>
           <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:14px')}>
             {clients.map((c) => (
               <div key={c.id} onClick={c.onClick} className="ss-card-h" style={s('padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>

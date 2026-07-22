@@ -1,11 +1,11 @@
 /* =====================================================
    Customer Service — Base Styles, Reset & App Shell
-   Paper White redesign: sidebar-led layout, open tables,
-   sentence-case titles, one royal-blue accent.
+   CSMYTRION gold: sidebar-led layout, open tables,
+   Rajdhani display + Instrument Sans UI.
    ===================================================== */
 
-/* === Font Imports === */
-@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* === Font Imports — CSMYTRION: Rajdhani + Instrument Sans + JetBrains Mono === */
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@400;500;600&family=Rajdhani:wght@500;600;700&display=swap');
 
 /* === Reset === */
 .cs-root *,
@@ -31,22 +31,12 @@
 }
 
 .cs-root h1,
-
-
 .cs-root h2,
-
-
 .cs-root h3,
-
-
 .cs-root h4,
-
-
 .cs-root h5,
-
-
 .cs-root h6 {
-    font-family: 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;
+    font-family: 'Rajdhani', 'Instrument Sans', sans-serif;
     font-weight: 700;
     letter-spacing: -0.01em;
     color: var(--color-text-primary);
@@ -109,69 +99,109 @@
     overflow: hidden;
 }
 
-/* ── Brand block (top of sidebar) ── */
+/* ── Brand block (top of sidebar) — wordmark only, no icon ── */
 .cs-root .cs-sidebar-brand {
-    padding: 1.5rem 1.5rem 1.25rem;
+    padding: 24px 18px 18px;
+    display: flex;
+    align-items: flex-start;
     user-select: none;
 }
 
+.cs-root .cs-brand-text {
+    min-width: 0;
+}
+
 .cs-root .cs-brand-word {
-    font-size: 1rem;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 22px;
     font-weight: 700;
-    letter-spacing: 0.14em;
+    letter-spacing: 0.11em;
     text-transform: uppercase;
     color: var(--text-primary);
-    line-height: 1.2;
+    line-height: 1;
 }
 
 .cs-root .cs-brand-word span {
-    color: var(--cs-accent);
+    color: var(--cs-accent-deep);
 }
 
 .cs-root .cs-brand-sub {
-    margin-top: 0.2rem;
-    font-size: 0.5938rem;
-    font-weight: 600;
-    letter-spacing: 0.22em;
+    margin-top: 5px;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
-    color: var(--text-muted);
+    line-height: 1.15;
+    /* Light: deep readable ambers */
+    background: linear-gradient(105deg, #92400E 0%, #A8841A 50%, #854D0E 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
 }
 
+.cs-root.dark-mode .cs-brand-sub {
+    background: linear-gradient(
+        105deg,
+        var(--cs-accent-deep) 0%,
+        var(--cs-accent) 55%,
+        var(--cs-accent-hover) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+}
+
+.cs-root.dark-mode .cs-brand-word span {
+    color: var(--cs-accent);
+}
 .cs-root .cs-sidebar-nav {
     flex: 1;
-    padding: 0.75rem 0;
+    padding: 6px 0;
     overflow-y: auto;
 }
 
 .cs-root .cs-nav-item {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
-    padding: 0.6875rem 1.5rem;
+    gap: 10px;
+    padding: 10px 16px;
+    margin: 0 8px;
+    border-radius: var(--r-md);
     cursor: pointer;
-    border-left: 3px solid transparent;
-    transition: background 120ms, border-color 120ms, color 120ms;
+    border-left: none;
+    transition: background 150ms, color 150ms;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: 13.5px;
     font-weight: 500;
     user-select: none;
 }
 
+.cs-root .cs-nav-item svg {
+    width: 17px;
+    height: 17px;
+    flex-shrink: 0;
+}
+
 .cs-root .cs-nav-item:hover {
     color: var(--text-primary);
-    background: var(--surface-alt);
+    background: var(--surface-2);
 }
 
 .cs-root .cs-nav-item.active {
-    background: var(--cs-accent-soft);
-    border-left-color: var(--cs-accent);
-    color: var(--cs-accent);
+    background: var(--cs-accent-softer);
+    color: var(--cs-accent-deep);
     font-weight: 600;
+    box-shadow: inset 3px 0 0 0 var(--cs-accent);
+}
+
+.cs-root.dark-mode .cs-nav-item.active {
+    color: var(--cs-accent);
 }
 
 .cs-root .cs-nav-item.cs-nav-disabled {
     cursor: not-allowed;
     color: var(--text-muted);
+    opacity: 0.75;
 }
 
 .cs-root .cs-nav-item.cs-nav-disabled:hover {
@@ -187,42 +217,109 @@
 }
 
 .cs-root .cs-nav-item .nav-soon {
-    font-size: 0.5625rem;
-    font-weight: 600;
-    letter-spacing: 0.14em;
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: var(--soon-color);
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
+.cs-root .cs-nav-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--cs-accent-soft);
+    color: var(--cs-accent-deep);
+    border: 1px solid var(--cs-border-gold);
+    border-radius: 999px;
+}
+
+.cs-root.dark-mode .cs-nav-badge {
+    color: var(--cs-accent);
 }
 
 .cs-root .cs-sidebar-footer {
-    padding: 0.75rem 1.5rem;
-    font-size: 0.6875rem;
-    color: var(--text-muted);
-    border-top: 1px solid var(--border-light);
-    letter-spacing: 0.04em;
+    padding: 12px;
+    border-top: 1px solid var(--border-2);
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
+    flex-direction: column;
+    gap: 10px;
 }
 
 /* ── Theme toggle (sidebar footer) ── */
 .cs-root .cs-theme-toggle {
-    background: none;
-    border: none;
-    padding: 0.375rem;
-    border-radius: var(--radius-md);
-    color: var(--text-muted);
-    cursor: pointer;
     display: flex;
     align-items: center;
+    gap: 8px;
     justify-content: center;
-    transition: color 120ms, background 120ms;
+    padding: 9px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-2);
+    border-radius: var(--r-md);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    transition: color 150ms, border-color 150ms, background 150ms;
+    width: 100%;
 }
 
 .cs-root .cs-theme-toggle:hover {
     color: var(--text-primary);
-    background: var(--surface-alt);
+    border-color: var(--border);
+}
+
+.cs-root .cs-user-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 4px 2px;
+}
+
+.cs-root .cs-user-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--cs-accent-soft);
+    color: var(--cs-accent-deep);
+    border: 1px solid var(--cs-border-gold);
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.cs-root.dark-mode .cs-user-avatar {
+    color: var(--cs-accent);
+}
+
+.cs-root .cs-user-meta {
+    min-width: 0;
+}
+
+.cs-root .cs-user-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cs-root .cs-user-role {
+    font-size: 11px;
+    color: var(--text-muted);
 }
 
 /* =====================================================
@@ -239,10 +336,10 @@
    PANEL BASE
    ===================================================== */
 .cs-root .cs-panel {
-    padding: 2.25rem 2.5rem 2rem;
+    padding: var(--panel-pad);
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--sec-gap);
     min-height: 100%;
 }
 
@@ -255,12 +352,13 @@
 }
 
 .cs-root .cs-title {
-    font-size: 1.75rem;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 30px;
     font-weight: 700;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.01em;
     color: var(--text-primary);
     margin: 0 0 0.25rem;
-    line-height: 1.15;
+    line-height: 1.1;
 }
 
 .cs-root .cs-subtitle {
@@ -429,8 +527,8 @@
 }
 
 .cs-root .cs-badge-info {
-    background: rgba(37, 99, 235, 0.08);
-    color: #1D4ED8;
+    background: var(--cs-accent-soft);
+    color: var(--cs-accent-deep);
 }
 
 .cs-root .cs-badge-muted {
@@ -452,7 +550,7 @@
 .cs-root.dark-mode .cs-badge-success { background: rgba(34, 197, 94, 0.12);  color: #4ADE80; }
 .cs-root.dark-mode .cs-badge-warning { background: rgba(245, 158, 11, 0.12); color: #FBBF24; }
 .cs-root.dark-mode .cs-badge-danger { background: rgba(239, 68, 68, 0.12);  color: #F87171; }
-.cs-root.dark-mode .cs-badge-info { background: rgba(59, 130, 246, 0.12); color: #93B4FD; }
+.cs-root.dark-mode .cs-badge-info { background: var(--cs-accent-soft); color: var(--cs-accent-hover); }
 .cs-root.dark-mode .cs-badge-muted { background: #1E252E;                  color: #8B949E; }
 .cs-root.dark-mode .cs-badge-purple { background: rgba(168, 85, 247, 0.12); color: #C084FC; }
 .cs-root.dark-mode .cs-badge-orange { background: rgba(249, 115, 22, 0.12); color: #FB923C; }

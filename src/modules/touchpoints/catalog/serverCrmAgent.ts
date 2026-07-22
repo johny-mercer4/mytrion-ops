@@ -5,7 +5,7 @@
  */
 import { z } from 'zod';
 import type { Touchpoint } from '../types.js';
-import { carrierId, cardNumber, dwhRange, idString, limit, shortText, ymdDate } from './common.js';
+import { carrierId, cardNumber, dwhRange, idString, limit, SALES, shortText, ymdDate } from './common.js';
 
 const carrierOnly = z.object({ carrierId });
 
@@ -15,6 +15,7 @@ export const serverCrmAgentTouchpoints: Touchpoint[] = [
     key: 'dwh.carrier_balance',
     title: 'Carrier balance (LOC / prepay, live EFS)',
     riskClass: 'read',
+    departments: SALES,
     carrierParam: 'carrierId',
     method: 'GET',
     pathTemplate: '/api/agent/dwh/carrier-balance/{carrierId}',
@@ -25,6 +26,7 @@ export const serverCrmAgentTouchpoints: Touchpoint[] = [
     key: 'dwh.carrier_overview',
     title: 'Carrier overview (balance + debt + cards)',
     riskClass: 'read',
+    departments: SALES,
     carrierParam: 'carrierId',
     method: 'GET',
     pathTemplate: '/api/agent/dwh/carrier-overview/{carrierId}',
@@ -35,6 +37,7 @@ export const serverCrmAgentTouchpoints: Touchpoint[] = [
     key: 'dwh.money_code',
     title: 'Money code preview (limit / drawn / available)',
     riskClass: 'read',
+    departments: SALES,
     carrierParam: 'carrierId',
     method: 'GET',
     pathTemplate: '/api/agent/dwh/money-code/{carrierId}',
@@ -45,6 +48,7 @@ export const serverCrmAgentTouchpoints: Touchpoint[] = [
     key: 'dwh.money_code_draw',
     title: 'Draw a money code',
     riskClass: 'destructive',
+    departments: SALES,
     carrierParam: 'carrierId',
     agentNameParam: 'requestedBy',
     method: 'POST',
@@ -63,6 +67,7 @@ export const serverCrmAgentTouchpoints: Touchpoint[] = [
     key: 'dwh.cards',
     title: 'Carrier cards (DWH)',
     riskClass: 'read',
+    departments: SALES,
     carrierParam: 'carrierId',
     method: 'GET',
     pathTemplate: '/api/agent/dwh/cards/{carrierId}',
@@ -73,6 +78,7 @@ export const serverCrmAgentTouchpoints: Touchpoint[] = [
     key: 'dwh.card_efs',
     title: 'Single card live EFS lookup',
     riskClass: 'read',
+    departments: SALES,
     carrierParam: 'carrierId',
     method: 'GET',
     pathTemplate: '/api/agent/dwh/cards/{carrierId}/{cardNumber}/efs',
@@ -83,6 +89,7 @@ export const serverCrmAgentTouchpoints: Touchpoint[] = [
     key: 'dwh.card_activate',
     title: 'Activate a card (EFS echo-back)',
     riskClass: 'write',
+    departments: SALES,
     carrierParam: 'carrierId',
     method: 'POST',
     pathTemplate: '/api/agent/dwh/cards/{carrierId}/{cardNumber}/activate',
@@ -93,6 +100,7 @@ export const serverCrmAgentTouchpoints: Touchpoint[] = [
     key: 'dwh.cards_last_used',
     title: 'Cards last-used report',
     riskClass: 'read',
+    departments: SALES,
     carrierParam: 'carrierId',
     method: 'GET',
     pathTemplate: '/api/agent/dwh/cards/{carrierId}/last-used',
@@ -103,6 +111,7 @@ export const serverCrmAgentTouchpoints: Touchpoint[] = [
     key: 'dwh.transactions',
     title: 'Transactions (DWH line items)',
     riskClass: 'read',
+    departments: SALES,
     carrierParam: 'carrierId',
     method: 'GET',
     pathTemplate: '/api/agent/dwh/transactions/{carrierId}',
@@ -119,6 +128,7 @@ export const serverCrmAgentTouchpoints: Touchpoint[] = [
     key: 'dwh.transaction_invoices',
     title: 'Transaction → invoice refs',
     riskClass: 'read',
+    departments: SALES,
     carrierParam: 'carrierId',
     method: 'GET',
     pathTemplate: '/api/agent/dwh/transactions/{carrierId}/invoices',
@@ -134,6 +144,7 @@ export const serverCrmAgentTouchpoints: Touchpoint[] = [
     key: 'dwh.payment_info',
     title: 'Payment info (invoices + payments window)',
     riskClass: 'read',
+    departments: SALES,
     carrierParam: 'carrierId',
     method: 'GET',
     pathTemplate: '/api/agent/dwh/payment-info/{carrierId}',
@@ -144,6 +155,7 @@ export const serverCrmAgentTouchpoints: Touchpoint[] = [
     key: 'activity.agent',
     title: 'Agent activity KPIs',
     riskClass: 'read',
+    departments: SALES,
     identityParam: 'zohoUserId',
     agentNameParam: 'agentName',
     method: 'GET',
@@ -159,6 +171,7 @@ export const serverCrmAgentTouchpoints: Touchpoint[] = [
     key: 'activity.leaderboard',
     title: 'Agent activity leaderboard',
     riskClass: 'read',
+    departments: SALES,
     agentNameParam: 'agentName',
     method: 'GET',
     pathTemplate: '/api/agent/activity/leaderboard',

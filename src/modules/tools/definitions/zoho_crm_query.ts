@@ -7,8 +7,8 @@ const inputSchema = z.object({
    * A read-only COQL SELECT, e.g.
    *   select id, Last_Name, Email from Contacts where Lead_Source = 'Web' limit 0, 50
    * COQL REQUIRES a WHERE clause — to match all rows use `where id is not null`. Use the exact
-   * module/field API names from the business-context knowledge base. Max 200 rows per page;
-   * paginate with the LIMIT offset (`limit 200, 200`).
+   * module/field API names from the business-context knowledge base. Max 2000 rows per page;
+   * paginate with the LIMIT offset (`limit 0, 2000` then `limit 2000, 2000`, …).
    */
   select_query: z.string().min(1).max(4000),
 });
@@ -29,7 +29,7 @@ export const zohoCrmQueryTool: ToolManifest<z.infer<typeof inputSchema>, z.infer
   name: 'zoho_crm.query',
   description:
     'Run a read-only COQL query against Zoho CRM and return matching records. COQL grammar: ' +
-    'SELECT <fields> FROM <Module> WHERE <conditions> [ORDER BY …] [LIMIT offset, count] (max 200 ' +
+    'SELECT <fields> FROM <Module> WHERE <conditions> [ORDER BY …] [LIMIT offset, count] (max 2000 ' +
     'rows/page). A WHERE clause is REQUIRED — use `where id is not null` to match all rows. Use the ' +
     'exact module and field API names for our org from the knowledge base. Internal use only.',
   inputSchema,

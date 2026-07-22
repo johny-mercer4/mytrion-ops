@@ -12,7 +12,6 @@ import { ClientsTab } from './tabs/ClientsTab';
 import { HomeTab } from './tabs/HomeTab';
 import { TransactionsTab } from './tabs/TransactionsTab';
 import type { ClientDrillTab } from './financeData';
-import { MytrionLoader } from '../../../components/MytrionLoader';
 import { useTheme } from '../../../hooks/useTheme';
 import { useLoad } from '../../_shared/useLoad';
 import { financeTouchpoint } from '../../../api/finance';
@@ -64,7 +63,6 @@ export function FinanceRedesign() {
   const { theme, toggle: toggleTheme } = useTheme();
   const [section, setSection] = useState<FinanceSection>('home');
   const [dashSub, setDashSubState] = useState<DashSub>('debtors');
-  const [booting, setBooting] = useState(true);
   const [, tick] = useState(0);
   const [lastSync, setLastSync] = useState(() => new Date());
   const [toast, setToast] = useState<{ title: string; msg: string; type: ToastType } | null>(null);
@@ -108,15 +106,12 @@ export function FinanceRedesign() {
   }, []);
 
   useEffect(() => {
-    const bootDone = setTimeout(() => {
-      setBooting(false);
-      startAnim();
-      settleSection('home');
-      liveIntervalRef.current = setInterval(tickLive, 5600);
-    }, 1650);
+    // No second boot splash — MytrionGuard Suspense owns the entry loader.
+    startAnim();
+    settleSection('home');
+    liveIntervalRef.current = setInterval(tickLive, 5600);
     const clock = setInterval(() => tick((n) => n + 1), 20_000);
     return () => {
-      clearTimeout(bootDone);
       clearInterval(clock);
       clearInterval(liveIntervalRef.current);
       clearTimeout(sectionTimerRef.current);
@@ -228,8 +223,6 @@ export function FinanceRedesign() {
         className={`mf-root ${theme === 'light' ? 'light' : ''}`}
         style={s('height:100vh;display:flex;flex-direction:row;background:radial-gradient(1200px 520px at 82% -10%, rgba(var(--accent-rgb),.11), transparent 60%), radial-gradient(900px 480px at -5% 110%, rgba(var(--teal-rgb),.07), transparent 55%), var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;font-size:14px;overflow:hidden;position:relative')}
       >
-        {booting && <MytrionLoader appName="Finance" />}
-
         <aside style={s('flex-shrink:0;width:236px;display:flex;flex-direction:column;background:color-mix(in srgb, var(--bg) 82%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-right:1px solid var(--border);position:relative;z-index:30')}>
           <div style={s('display:flex;align-items:center;gap:11px;padding:18px 18px 15px')}>
             <div style={s('width:37px;height:37px;border-radius:var(--radius-md);background:linear-gradient(140deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;box-shadow:0 5px 16px rgba(var(--accent-rgb),.42);flex-shrink:0')}>

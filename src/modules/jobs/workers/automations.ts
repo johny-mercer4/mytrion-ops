@@ -35,16 +35,7 @@ export const AUTOMATIONS: AutomationSpec[] = [
       'days overdue each is. Finish with the 3 accounts that most urgently need follow-up today.',
     notify: true,
   },
-  {
-    queue: 'automation.retention.weekly-scan',
-    agent: 'retention',
-    departments: ['retention'],
-    prompt:
-      'Weekly retention scan: using the knowledge base and available CRM data, summarize churn ' +
-      'risk signals to watch this week and list the standard re-engagement actions for dormant ' +
-      'clients. Note anything the retention team should prioritize.',
-    notify: true,
-  },
+  // automation.retention.weekly-scan — disabled (DISABLED_JOB_QUEUES). Sales retention first, no LLM.
   {
     queue: 'automation.verification.recheck-reminders',
     agent: 'verification',

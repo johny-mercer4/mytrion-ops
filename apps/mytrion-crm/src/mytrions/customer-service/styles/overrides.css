@@ -1,123 +1,11 @@
 /* SPA-hosting overrides on top of the ported widget CSS (the only hand-written file in
    styles/ — everything else is machine-scoped from zoho-octane). */
 
-/* The module renders inside the app router's full page — pin the shell to the viewport.
-   position:relative anchors the absolute boot-loader overlay to the shell. */
+/* The module renders inside the app router's full page — pin the shell to the viewport. */
 .cs-root {
     height: 100vh;
     width: 100%;
     position: relative;
-}
-
-/* ══════════════════════════════════════════════════════════════════════════
-   Branded boot loader (Sales/Finance parity) — full-screen splash on open.
-   ══════════════════════════════════════════════════════════════════════════ */
-@keyframes csBootSweep { 0% { transform: translateX(-130%); } 100% { transform: translateX(340%); } }
-@keyframes csBootSpin { to { transform: rotate(360deg); } }
-@keyframes csBootPulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
-@keyframes csBootFadeOut { to { opacity: 0; visibility: hidden; } }
-
-.cs-root .cs-boot {
-    position: absolute;
-    inset: 0;
-    z-index: 300;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 26px;
-    background: radial-gradient(700px 420px at 50% 42%, var(--cs-accent-glow), transparent 70%), var(--color-bg-primary);
-}
-.cs-root .cs-boot-sweep {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 2px;
-    overflow: hidden;
-}
-.cs-root .cs-boot-sweep span {
-    position: absolute;
-    top: 0;
-    left: 0;
-    height: 2px;
-    width: 32%;
-    background: linear-gradient(90deg, transparent, var(--cs-accent), transparent);
-    animation: csBootSweep 1.5s linear infinite;
-}
-.cs-root .cs-boot-ring {
-    position: relative;
-    width: 118px;
-    height: 118px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-.cs-root .cs-boot-ring-track,
-.cs-root .cs-boot-ring-spin,
-.cs-root .cs-boot-ring-spin2 {
-    position: absolute;
-    border-radius: 50%;
-}
-.cs-root .cs-boot-ring-track {
-    inset: 0;
-    border: 2px solid var(--border);
-}
-.cs-root .cs-boot-ring-spin {
-    inset: 0;
-    border: 2px solid transparent;
-    border-top-color: var(--cs-accent);
-    border-right-color: var(--cs-accent-glow);
-    animation: csBootSpin 1s linear infinite;
-}
-.cs-root .cs-boot-ring-spin2 {
-    inset: 15px;
-    border: 1.5px solid transparent;
-    border-bottom-color: var(--cs-accent-hover);
-    animation: csBootSpin 1.5s linear infinite reverse;
-}
-.cs-root .cs-boot-brand {
-    font-weight: 700;
-    font-size: 12px;
-    letter-spacing: 0.11em;
-    text-transform: uppercase;
-    text-align: center;
-    line-height: 1.1;
-    color: var(--text-primary);
-}
-.cs-root .cs-boot-brand > span { color: var(--cs-accent); }
-.cs-root .cs-boot-brand-sub {
-    font-size: 7px !important;
-    letter-spacing: 0.2em;
-    color: var(--text-muted) !important;
-}
-.cs-root .cs-boot-title {
-    font-weight: 700;
-    font-size: 13px;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    text-align: center;
-    color: var(--text-primary);
-}
-.cs-root .cs-boot-sub {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 4px;
-    text-align: center;
-}
-.cs-root .cs-boot-dots { animation: csBootPulse 1.2s infinite; }
-.cs-root .cs-boot-bar {
-    width: 220px;
-    height: 3px;
-    border-radius: 99px;
-    background: var(--surface-alt);
-    overflow: hidden;
-}
-.cs-root .cs-boot-bar-fill {
-    height: 100%;
-    background: linear-gradient(90deg, var(--cs-accent), var(--cs-accent-hover));
-    border-radius: 99px;
-    transition: width 0.18s ease;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -165,72 +53,9 @@
     background: var(--surface);
     border: 1px solid var(--border);
 }
+/* User card / theme toggle chrome live in shared-base (CSMYTRION gold). */
 .cs-root .cs-user-avatar {
-    width: 33px;
-    height: 33px;
-    flex-shrink: 0;
-    border-radius: 50%;
-    background: linear-gradient(140deg, var(--cs-accent), var(--cs-accent-hover));
-    color: #fff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.75rem;
-    font-weight: 800;
-}
-.cs-root .cs-user-meta { line-height: 1.25; min-width: 0; }
-.cs-root .cs-user-name {
-    font-size: 0.78rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.cs-root .cs-user-role {
-    font-size: 0.625rem;
-    color: var(--text-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-transform: none;
-    letter-spacing: 0;
-}
-
-/* ── Sidebar footer: labeled theme switch (Sales-Mytrion style) + meta row ── */
-.cs-root .cs-sidebar-footer {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.625rem;
-}
-.cs-root .cs-theme-toggle {
-    width: 100%;
-    padding: 0.5rem 0.75rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md, 8px);
-    background: var(--surface);
-    color: var(--text-secondary);
-    font-size: 0.6875rem;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: color 160ms, background 160ms, border-color 160ms;
-}
-.cs-root .cs-theme-toggle:hover {
-    color: var(--text-primary);
-    background: var(--surface-alt);
-    border-color: var(--border-hover);
-}
-.cs-root .cs-theme-toggle svg {
-    flex-shrink: 0;
-}
-.cs-root .cs-theme-toggle span {
-    flex: 1;
-    text-align: left;
+    color: var(--cs-on-accent);
 }
 .cs-root .cs-sidebar-footer-meta {
     display: flex;
@@ -336,7 +161,8 @@
     border-radius: 50%;
     border: none;
     cursor: pointer;
-    background: linear-gradient(140deg, var(--cs-accent), var(--cs-accent-hover));
+    background: linear-gradient(140deg, var(--cs-accent-hover), var(--cs-accent-deep));
+    color: var(--cs-on-accent);
     box-shadow: 0 8px 26px var(--cs-accent-glow);
     display: flex;
     align-items: center;
@@ -396,7 +222,8 @@
     width: 36px;
     height: 36px;
     border-radius: var(--radius-md);
-    background: linear-gradient(140deg, var(--cs-accent), var(--cs-accent-hover));
+    background: linear-gradient(140deg, var(--cs-accent-hover), var(--cs-accent-deep));
+    color: var(--cs-on-accent);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -450,7 +277,8 @@
     width: 26px;
     height: 26px;
     border-radius: var(--radius-md);
-    background: linear-gradient(140deg, var(--cs-accent), var(--cs-accent-hover));
+    background: linear-gradient(140deg, var(--cs-accent-hover), var(--cs-accent-deep));
+    color: var(--cs-on-accent);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -579,10 +407,10 @@
 .cs-root .cs-modal-id-copy {
     margin-left: 0.5rem;
     padding: 0.125rem 0.5rem;
-    border: 1px solid transparent;
+    border: 1px solid var(--cs-border-gold);
     border-radius: 999px;
     background: var(--cs-accent-soft);
-    color: var(--cs-accent);
+    color: var(--cs-accent-deep);
     font-family: var(--font-mono, 'JetBrains Mono', monospace);
     font-size: 0.75rem;
     font-weight: 600;
@@ -591,9 +419,12 @@
     transition: background 0.15s, border-color 0.15s, transform 0.1s;
     vertical-align: middle;
 }
+.cs-root.dark-mode .cs-modal-id-copy {
+    color: var(--cs-accent);
+}
 .cs-root .cs-modal-id-copy:hover {
-    border-color: var(--cs-accent-glow);
-    background: var(--cs-accent-glow);
+    border-color: var(--cs-border-gold);
+    background: var(--cs-accent-softer);
 }
 .cs-root .cs-modal-id-copy:active {
     transform: translateY(1px);
@@ -650,9 +481,9 @@
 }
 .cs-root .cs-home-stat-card:hover,
 .cs-root .cs-citi-stat-card:hover {
-    transform: translateY(-2px);
-    border-color: var(--cs-accent-glow);
-    box-shadow: 0 8px 24px rgba(37, 99, 235, 0.1);
+    transform: translateY(-1px);
+    border-color: var(--border-hover);
+    box-shadow: var(--shadow-md);
 }
 
 /* Table rows: smooth hover tint + a nudge affordance (Finance .mf-row). */
@@ -679,15 +510,15 @@
     transform: translateY(1px);
 }
 .cs-root .cs-btn-primary:hover {
-    filter: brightness(1.06);
-    box-shadow: 0 6px 16px var(--cs-accent-glow);
+    filter: brightness(1.04);
+    box-shadow: var(--shadow-sm);
 }
 
-/* Inputs: accent focus ring (Finance .mf-in). */
+/* Inputs: quiet accent focus ring */
 .cs-root .cs-form-input:focus {
     outline: none;
-    border-color: var(--cs-accent);
-    box-shadow: 0 0 0 3px var(--cs-accent-glow);
+    border-color: var(--cs-accent-deep);
+    box-shadow: 0 0 0 3px var(--cs-accent-soft);
 }
 
 /* Search inputs sit inside a wrapper that owns the focus ring (:focus-within),

@@ -89,6 +89,10 @@ export const debtorSweepJob = defineJob({
   queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 600, deadLetter: DEAD_LETTER_QUEUE },
 });
 
+/**
+ * LLM Monday summary — parked while Sales Mytrion Phase-1 retention is finished first,
+ * then CS. Kept in ALL_JOBS for Admin visibility; see DISABLED_JOB_QUEUES.
+ */
 export const retentionScanJob = defineJob({
   name: 'automation.retention.weekly-scan',
   schema: emptyPayload,
@@ -169,17 +173,24 @@ export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
   deadLetterJob,
 ];
 
+/**
+ * Intentionally parked queues — not cron-scheduled, not Admin-triggerable, no worker.
+ * Boot unschedules any leftover pg-boss cron for these names.
+ */
+export const DISABLED_JOB_QUEUES = new Set<string>([
+  // Finish Sales Mytrion retention (deterministic case-sync + deadline-sweep), then CS; LLM later.
+  retentionScanJob.name,
+]);
+
 /** Department automations that run LLM agent turns — the scheduler gates these on the orchestrator flag. */
 export const DEPARTMENT_AUTOMATION_QUEUES = new Set<string>([
   debtorSweepJob.name,
-  retentionScanJob.name,
   verificationRecheckJob.name,
 ]);
 
 /** Cron schedule per automation queue (tz = JOBS_CRON_TZ). */
 export const CRON_SCHEDULES: Array<{ name: string; cron: string }> = [
   { name: debtorSweepJob.name, cron: '0 8 * * 1-5' }, // weekday mornings
-  { name: retentionScanJob.name, cron: '0 9 * * 1' }, // Monday morning
   // Every hour: DWH → retention cases (incl. auto-close Returned). Singleton so runs never
   // overlap; Admin can also enqueue on demand for a manual / backfill pass.
   { name: retentionCaseSyncJob.name, cron: '0 * * * *' },
@@ -194,7 +205,6 @@ export const CRON_SCHEDULES: Array<{ name: string; cron: string }> = [
 /** Queues an admin may trigger from Mytrion Admin (empty / optional payload only). */
 export const MANUAL_TRIGGERABLE_QUEUES = new Set<string>([
   debtorSweepJob.name,
-  retentionScanJob.name,
   retentionCaseSyncJob.name,
   retentionDeadlineSweepJob.name,
   verificationRecheckJob.name,

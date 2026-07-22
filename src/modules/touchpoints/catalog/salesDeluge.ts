@@ -18,7 +18,7 @@ import {
   fetchInbox,
 } from '../../../integrations/salesCrmActions.js';
 import type { Touchpoint } from '../types.js';
-import { idString, shortText, ymdDate } from './common.js';
+import { idString, SALES, shortText, ymdDate } from './common.js';
 
 const userKeyed = z.object({ userId: idString.optional() });
 
@@ -28,6 +28,7 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
     key: 'user.callback',
     title: 'Mytrion user context (profile, carriers, applications)',
     riskClass: 'read',
+    departments: SALES,
     identityParam: 'userId',
     functionNames: ['mytrionCallback'],
     unwrap: 'status',
@@ -40,6 +41,7 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
     key: 'application.update',
     title: 'WEX application tasks fetch',
     riskClass: 'read',
+    departments: SALES,
     paramsSchema: z.object({ appId: idString }),
     handler: (_ctx, params) => fetchApplicationUpdate(String(params.appId)),
   },
@@ -48,6 +50,7 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
     key: 'leads.create',
     title: 'Create Lead in CRM',
     riskClass: 'write',
+    departments: SALES,
     identityParam: 'userId',
     paramsSchema: z.object({
       userId: idString.optional(),
@@ -78,6 +81,7 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
     key: 'dashboard.company',
     title: 'Company-wide dashboard',
     riskClass: 'read',
+    departments: SALES,
     identityParam: 'userId',
     paramsSchema: userKeyed,
     handler: async (ctx) => fetchCompanyDashboard(ctx.userName?.trim() ?? ''),
@@ -87,6 +91,7 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
     key: 'dashboard.debtors',
     title: 'Debtors dashboard',
     riskClass: 'read',
+    departments: SALES,
     identityParam: 'userId',
     paramsSchema: userKeyed,
     handler: async (ctx, params) => fetchDebtorsInfo(String(params.userId ?? ''), ctx.userName?.trim() ?? ''),
@@ -96,6 +101,7 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
     key: 'dashboard.agent_sales',
     title: 'Agent sales dashboard',
     riskClass: 'read',
+    departments: SALES,
     identityParam: 'userId',
     paramsSchema: z.object({
       userId: idString.optional(),
@@ -109,6 +115,7 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
     key: 'dashboard.home_snapshot',
     title: 'Home page snapshot',
     riskClass: 'read',
+    departments: SALES,
     identityParam: 'userId',
     paramsSchema: userKeyed,
     handler: async (ctx, params) => fetchHomeSnapshot(String(params.userId ?? ''), ctx.userName?.trim() ?? ''),
@@ -120,6 +127,7 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
     key: 'inbox.announcements',
     title: 'Announcements feed',
     riskClass: 'read',
+    departments: SALES,
     paramsSchema: z.object({}),
     handler: () => fetchAnnouncements(),
   },
@@ -128,6 +136,7 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
     key: 'inbox.list',
     title: 'CRM inbox messages',
     riskClass: 'read',
+    departments: SALES,
     identityParam: 'userId',
     paramsSchema: userKeyed,
     handler: (_ctx, params) => fetchInbox(String(params.userId ?? '')),
@@ -137,6 +146,7 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
     key: 'inbox.delete_message',
     title: 'Delete a CRM inbox message',
     riskClass: 'write',
+    departments: SALES,
     paramsSchema: z.object({ recordId: idString }),
     handler: (_ctx, params) => deleteInboxMessage(String(params.recordId)),
   },
@@ -145,6 +155,7 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
     key: 'leads.datacenter',
     title: 'Data Center leads (converted / unconverted)',
     riskClass: 'read',
+    departments: SALES,
     identityParam: 'userId',
     functionNames: ['mytriondatacenterleads'],
     unwrap: 'permissive',

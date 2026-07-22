@@ -38,11 +38,12 @@ export const csDelugeTouchpoints: Touchpoint[] = [
     functionNames: ['mytrionGetApplications'],
     unwrap: 'status',
     // The Deluge signature takes page/perPage as STRINGS (widget parity).
+    // perPage up to 2000 — Zoho COQL max per call (avoids 200-row loop round-trips).
     paramsSchema: z.object({
       tab: z.enum(['apps', 'clients']).default('apps'),
       search: z.string().max(300).optional().default(''),
       page: limit(10_000, 1).transform(String),
-      perPage: limit(200, 200).transform(String),
+      perPage: limit(2000, 2000).transform(String),
     }),
   },
   {

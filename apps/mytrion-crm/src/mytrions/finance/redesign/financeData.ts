@@ -1,9 +1,3 @@
-import {
-  activeClientCount,
-  fmtCurrency,
-  suspendedCount,
-} from '../data';
-
 export type FinanceSection = 'home' | 'transactions' | 'clients' | 'dashboard';
 export type DashSub = 'debtors' | 'payments' | 'fueling';
 export type ClientDrillTab = 'invoices' | 'payments' | 'fuel' | 'info';

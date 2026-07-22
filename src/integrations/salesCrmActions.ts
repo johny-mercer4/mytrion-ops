@@ -192,6 +192,10 @@ export async function createLead(userId: string, payload: Row): Promise<Row> {
   if (changeDate) leadData.Status_Last_Change = changeDate;
   const operatingStatus = p('operatingStatus');
   if (operatingStatus) leadData.Description = operatingStatus;
+  // Salutation (the "Title" dropdown) is collected by CreateLeadForm and passed through the
+  // touchpoint schema — persist it to the standard Zoho Leads Salutation field (was dropped).
+  const salutation = p('salutation');
+  if (salutation) leadData.Salutation = salutation;
 
   try {
     const res = await zohoCrmRecords.insertRecordDetailed('Leads', leadData, ['workflow']);

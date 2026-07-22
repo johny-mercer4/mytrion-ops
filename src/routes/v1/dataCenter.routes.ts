@@ -22,6 +22,7 @@ import { listRejectionReportTickets } from '../../integrations/zohoDesk.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { resolveWritePayload } from '../../modules/customerService/fieldResolver.js';
+import { resolveActAsTarget } from '../../modules/auth/actAsDirectory.js';
 import { resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment } from './helpers.js';
@@ -43,6 +44,48 @@ const editableEmail = z.union([z.string().email().max(100), z.string().max(0)]).
  * so an unexpected key 400s; every field optional+nullable (null/'' clears it); `resolveWritePayload`
  * casing-resolves before the write so an unknown key can never silently no-op.
  */
+// Verbatim Zoho Leads picklist values (live-verified). The Zoho field is `Status` (there is no
+// `Lead_Status`). No CRM dependency exists between Status and the reason fields — the post-call
+// wizard pairs them in the UI (Unqualified→Unqualified_Reason, Not Interested→Not_Interested_Reason).
+export const LEAD_STATUS_VALUES = [
+  'Interested',
+  'Not Interested',
+  'First Call',
+  'Second Call',
+  'Third Call',
+  'Follow-up',
+  'Unqualified',
+  'Application Filled',
+  'Email Follow-Up',
+  'Unaccounted', // display "New Lead"
+] as const;
+export const LEAD_UNQUALIFIED_REASONS = [
+  'Wrong / inactive phone number',
+  'Invalid email',
+  'Not in trucking industry',
+  'Not using diesel',
+  'Local driver',
+  'Low credit score for LOC',
+  'No response',
+] as const;
+export const LEAD_NOT_INTERESTED_REASONS = [
+  'Wrong language',
+  'Wrong expectations',
+  'Small discounts',
+  'Already has another fuel card',
+  'Truck stop coverage',
+  'Uncomfortable with mobile app',
+  'Unreachable after application',
+  'Has own fueling stations',
+  'Unwilling to share personal info',
+  'Low credit score / bad financials',
+  "Didn't apply / applied accidentally",
+  'Gas only',
+  'Accidental application',
+  'Low discounts',
+  'Other',
+] as const;
+
 const leadEditBody = z
   .object({
     MC: z.string().max(255).nullable().optional(),
@@ -52,6 +95,10 @@ const leadEditBody = z
     Phone: z.string().max(30).nullable().optional(),
     Email: editableEmail,
     Description: z.string().max(32000).nullable().optional(),
+    // Post-call status wizard. Enums pin the write to real picklist values (Zoho rejects others).
+    Status: z.enum(LEAD_STATUS_VALUES).nullable().optional(),
+    Unqualified_Reason: z.enum(LEAD_UNQUALIFIED_REASONS).nullable().optional(),
+    Not_Interested_Reason: z.enum(LEAD_NOT_INTERESTED_REASONS).nullable().optional(),
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0, 'no editable fields supplied');
@@ -141,17 +188,26 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
    * cmp_invoice). This is the sole source the Clients tab needs: it replaced the servercrm by-agent
    * roster (+ its live-CMP overlay) and the separate loyalty query. Owner-scoped like Leads/Deals.
    *
-   * Owner→carrier matching mirrors servercrm's by-agent (id-suffix OR display name), so we return the
-   * SAME carriers. The name arm needs the caller's display name: pass it for the self case (and an
-   * act-as-by-header session, where ctx.userName is already the target). An admin targeting ANOTHER
-   * agent via ?zoho_user_id uses the id path only — we don't have that agent's name.
+   * Owner→carrier matching mirrors servercrm's by-agent (id-suffix first, display-name fallback), so
+   * we return the SAME carriers. The name arm needs the owner's display name: for the self case use
+   * ctx.userName; for an admin targeting ANOTHER agent via ?zoho_user_id, resolve that TARGET's name
+   * from the CRM directory (resolveActAsTarget) — the id arm alone misses agents whose session id
+   * doesn't align with the warehouse agent_zoho_user_id.
    */
   app.get('/data-center/clients', guard, async (request) => {
     const ctx = requireSalesAccess(request);
     const q = scopeQuery.parse(request.query);
     const ownerId = resolveZohoUserId(ctx, q.zoho_user_id);
     const targetingOther = ctx.allDepartmentAccess && Boolean(q.zoho_user_id?.trim());
-    const ownerName = targetingOther ? undefined : ctx.userName?.trim() || undefined;
+    // The DWH roster resolves owners id-suffix-FIRST, display-name-FALLBACK — and the session/CRM
+    // id space frequently does NOT line up with dim_company.agent_zoho_user_id, so the id arm alone
+    // silently returns 0 for many agents (see dwhClientRoster.ts header + the dwh-agent-name-fallback
+    // note). When an admin targets another agent (this GET does not honor the x-act-as header), we
+    // must supply that TARGET's name so the name-fallback arm can fire — NOT ctx.userName (the
+    // admin's own name). Self path uses ctx.userName as before.
+    const ownerName = targetingOther
+      ? (await resolveActAsTarget(q.zoho_user_id!.trim()))?.name?.trim() || undefined
+      : ctx.userName?.trim() || undefined;
     try {
       const clients = await fetchAgentClients(ownerId, ownerName);
       return { clients };

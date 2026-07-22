@@ -38,6 +38,17 @@ export function topDay(days: DayMap): number {
   return best;
 }
 
+/** The best day AND its date key (yyyy-MM-dd) — for a "best day · N apps (Tue, Jul 15)" label.
+ *  Null when there are no days. On a tie the earliest-encountered max day wins (stable). */
+export function topDayEntry(days: DayMap): { date: string; count: number } | null {
+  let best: { date: string; count: number } | null = null;
+  for (const k in days) {
+    const n = dayCount(days, k);
+    if (n > 0 && (!best || n > best.count)) best = { date: k, count: n };
+  }
+  return best;
+}
+
 /** Applications filled over the last 7 NY-calendar days. */
 export function weekTotal(days: DayMap): number {
   let t = 0;

@@ -47,6 +47,7 @@ import { buildTxnReport } from '../../modules/carrier/txnReport.js';
 import type { RegisteredMiniAppCompany } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { RBACError } from '../../lib/errors.js';
+import { assertCarrierOwned } from '../../modules/tools/serverCrmScope.js';
 import { requireContext } from './helpers.js';
 
 /** Tenant-scoping only — no admin authority. Repos key off ctx.tenantId; audit reads the rest. */
@@ -372,6 +373,9 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   app.post('/carrier-invitations', guard, async (request, reply) => {
     const ctx = requireContext(request);
     const body = createInviteSchema.parse(request.body);
+    // Owner-scope invite creation to match the Manage reads: a non-admin worker may only mint an
+    // invite for a carrier in their own roster (admins / API-key system identity skip inside the gate).
+    if (ctx.role !== 'admin' && body.carrier_id) await assertCarrierOwned(ctx, body.carrier_id);
     const fallbackAgent = inviteAgentFromContext(ctx);
     const { invite, inviteUrl } = await createCarrierInvite(ctx, {
       profile: body.profile,
@@ -444,7 +448,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
    * driver registration link (Admin + Sales client Manage). Auth-gated; no admin role required.
    */
   app.get('/carrier-users/dwh-cards', guard, async (request) => {
-    requireContext(request);
+    const ctx = requireContext(request);
     if (!env.DWH_DATABASE_URL) {
       throw new AppError('The data warehouse is not configured (DWH_DATABASE_URL)', {
         statusCode: 503,
@@ -455,6 +459,10 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     const q = z
       .object({ carrier_id: z.string().min(1).max(120), limit: z.coerce.number().int().min(1).max(200).optional() })
       .parse(request.query);
+    // IDOR guard: this returns the carrier's card numbers — a non-admin worker may only read
+    // carriers in their own roster. role 'admin' also covers the API-key system identity
+    // (allDepartmentAccess=false there, so the gate's own skip would not fire).
+    if (ctx.role !== 'admin') await assertCarrierOwned(ctx, q.carrier_id);
     try {
       const cards = await listDwhCards(q.carrier_id, q.limit);
       return { cards };
@@ -486,6 +494,8 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   app.get('/carrier-registrations/for-carrier', guard, async (request) => {
     const ctx = requireContext(request);
     const q = z.object({ carrier_id: z.string().min(1) }).parse(request.query);
+    // Same IDOR guard as /carrier-users/dwh-cards — owner/driver PII is roster-scoped.
+    if (ctx.role !== 'admin') await assertCarrierOwned(ctx, q.carrier_id);
     const owner = (await registeredMiniAppCompanyRepo.findActiveOwnerByCarrier(ctx, q.carrier_id)) ?? null;
     const drivers = await registeredMiniAppCompanyRepo.listDriversByCarrier(ctx, q.carrier_id);
     return { owner, drivers };

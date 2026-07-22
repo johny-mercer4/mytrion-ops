@@ -15,6 +15,8 @@ import { z } from 'zod';
 import { ringcentral } from '../../integrations/ringcentral.js';
 import { NotFoundError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
+import { mytrionCallRepo } from '../../repos/mytrionCallRepo.js';
+import type { MytrionCallSourceType } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment } from './helpers.js';
 
@@ -39,7 +41,24 @@ const callEventSchema = z.object({
   durationMs: z.number().int().nonnegative().max(86_400_000).optional(),
   leadId: z.string().max(64).optional(),
   dealId: z.string().max(64).optional(),
+  retentionCaseId: z.string().max(64).optional(),
 });
+
+type CallEventBody = z.infer<typeof callEventSchema>;
+
+/** Map a finished outbound call's dial context to its source record. Lead first, then deal, then
+ *  retention case (a retention call to a deal carries both — the case is the more specific owner). */
+function callSource(body: CallEventBody): { sourceType: MytrionCallSourceType; sourceId: string } | null {
+  if (body.retentionCaseId) return { sourceType: 'retention_case', sourceId: body.retentionCaseId };
+  if (body.leadId) return { sourceType: 'lead', sourceId: body.leadId };
+  if (body.dealId) return { sourceType: 'deal', sourceId: body.dealId };
+  return null;
+}
+
+/** Zoho user id of the caller from the session principal (`zoho:<id>`), else the raw userId. */
+function callerZohoUserId(ctx: TenantContext): string {
+  return ctx.userId.startsWith('zoho:') ? ctx.userId.slice('zoho:'.length) : ctx.userId;
+}
 
 export async function ringcentralRoutes(app: FastifyInstance): Promise<void> {
   const guard = { onRequest: [app.sessionOrApiKey] };
@@ -83,6 +102,36 @@ export async function ringcentralRoutes(app: FastifyInstance): Promise<void> {
       ...(body.sessionId ? { resourceId: body.sessionId } : {}),
       detail: { ...body },
     });
+
+    // Persist one mytrion_calls row per FINISHED OUTBOUND call (the only ones agents initiate).
+    // Best-effort: a logging failure must never fail the event POST (the client swallows errors).
+    if (body.kind === 'ended' && body.direction === 'Outbound') {
+      const source = callSource(body);
+      if (source) {
+        try {
+          const durationMs = body.durationMs ?? 0;
+          // No explicit answered flag in RC events — derive: talk time or a "connected" result.
+          const pickedUp = durationMs > 0 || /connect/i.test(body.result ?? '');
+          await mytrionCallRepo.create(ctx, {
+            callerZohoUserId: callerZohoUserId(ctx),
+            phoneNumber: body.to ?? null,
+            ...(body.startTime && !Number.isNaN(Date.parse(body.startTime))
+              ? { callTime: new Date(body.startTime) }
+              : {}),
+            durationSeconds: Math.round(durationMs / 1000),
+            callStatus: pickedUp ? 'picked_up' : 'missed',
+            sourceType: source.sourceType,
+            sourceId: source.sourceId,
+            sessionId: body.sessionId ?? null,
+            direction: body.direction,
+            result: body.result ?? null,
+          });
+        } catch (err) {
+          request.log.warn({ err }, 'mytrion_calls insert failed (call event still audited)');
+        }
+      }
+    }
+
     reply.code(202);
     return { ok: true };
   });

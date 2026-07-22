@@ -28,7 +28,7 @@
 
 .cs-root .cs-sc-category-card:hover {
     border-color: var(--cs-accent);
-    background: rgba(37, 99, 235, 0.05);
+    background: color-mix(in srgb, var(--cs-accent) 5%, transparent);
 }
 
 .cs-root .cs-sc-category-icon {

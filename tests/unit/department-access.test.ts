@@ -50,10 +50,14 @@ describe('department normalization (ingest + query must not drift)', () => {
 });
 
 describe('Administrator profile bypass (RAG + tools share one flag)', () => {
-  it('detects an Administrator profile (case-insensitive, substring, list or string)', () => {
+  it('detects an Administrator profile (case-insensitive EXACT match, list or string)', () => {
     expect(isAdministratorProfile('Administrator')).toBe(true);
-    expect(isAdministratorProfile('System Administrator')).toBe(true);
+    expect(isAdministratorProfile(' administrator ')).toBe(true);
     expect(isAdministratorProfile(['Standard', 'administrator'])).toBe(true);
+    // Exact matching — names merely CONTAINING a marker no longer grant unlimited access
+    // ("Sales Manager" was silently becoming an admin under the old substring policy).
+    expect(isAdministratorProfile('System Administrator')).toBe(false);
+    expect(isAdministratorProfile('Sales Manager')).toBe(false);
     expect(isAdministratorProfile('Standard')).toBe(false);
     expect(isAdministratorProfile(undefined)).toBe(false);
     expect(isAdministratorProfile([])).toBe(false);
