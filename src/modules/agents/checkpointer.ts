@@ -11,6 +11,7 @@ import pg from 'pg';
 import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 import { databaseUrl, env } from '../../config/env.js';
 import { dbSslOption } from '../../db/client.js';
+import { SystemMessage } from '@langchain/core/messages';
 
 export const CHECKPOINT_SCHEMA = 'langgraph';
 
@@ -23,15 +24,53 @@ class PagedPostgresSaver extends PostgresSaver {
     const tuple = await super.getTuple(config as any);
     if (tuple?.checkpoint?.channel_values?.messages) {
       const msgs = tuple.checkpoint.channel_values.messages;
+      const summary = tuple.checkpoint.channel_values.memorySummary;
       if (Array.isArray(msgs) && msgs.length > 20) {
-        // Keep the first message (system/initial brief) + last 19 messages
+        // Keep the first message (system/initial brief) + last 19 messages + inject summary
         tuple.checkpoint.channel_values.messages = [
           msgs[0],
+          ...(summary ? [new SystemMessage(`<MemorySummary>\n${summary}\n</MemorySummary>`)] : []),
           ...msgs.slice(-19),
+        ];
+      } else if (summary && Array.isArray(msgs) && msgs.length > 1) {
+        tuple.checkpoint.channel_values.messages = [
+          msgs[0],
+          new SystemMessage(`<MemorySummary>\n${summary}\n</MemorySummary>`),
+          ...msgs.slice(1),
         ];
       }
     }
     return tuple;
+  }
+
+  // @ts-expect-error - Override put to intercept and summarize evicted messages
+  async put(config: any, checkpoint: any, metadata: any, newVersions: any) {
+    if (checkpoint?.channel_values?.messages) {
+      const msgs = checkpoint.channel_values.messages;
+      if (Array.isArray(msgs) && msgs.length > 20) {
+        const evicted = msgs.slice(1, -19);
+        try {
+          const { resolveOrchestratorModel } = await import('./models.js');
+          const model = resolveOrchestratorModel();
+          const contentToSummarize = evicted
+            .map((m: any) => {
+              const role = m.getType ? m.getType() : m.type || 'unknown';
+              const content = m.content || m.data?.content || '';
+              return `${role}: ${typeof content === 'string' ? content : JSON.stringify(content)}`;
+            })
+            .join('\n\n');
+          const prevSummary = checkpoint.channel_values.memorySummary || '';
+          const res = await model.invoke([
+            new SystemMessage('You are a memory condensation module. Summarize the following evicted conversation messages into a highly concise running summary. Retain the most critical entities, facts, state variables, and task progression. Combine this logically with the previous summary if provided.'),
+            { role: 'user', content: `Previous Summary:\n${prevSummary}\n\nNew Evicted Messages:\n${contentToSummarize}` }
+          ]);
+          checkpoint.channel_values.memorySummary = typeof res.content === 'string' ? res.content : JSON.stringify(res.content);
+        } catch (err) {
+          console.error("Failed to summarize memory", err);
+        }
+      }
+    }
+    return super.put(config, checkpoint, metadata, newVersions);
   }
 }
 

@@ -109,6 +109,44 @@ export async function getClients(zohoUserId?: string): Promise<AgentClient[]> {
   return res.clients ?? [];
 }
 
+/** One client's fuel cards (octane.dim_card + latest-transaction driver/unit). Owner-scoped server-side. */
+export interface ClientCardDetail {
+  cardId: string | null;
+  cardNumber: string | null;
+  cardType: string | null;
+  status: string | null;
+  balance: string | null;
+  unit: string | null;
+  driverId: string | null;
+  driverName: string | null;
+}
+
+export async function getClientCards(carrierId: string): Promise<ClientCardDetail[]> {
+  const res = (await request('GET', '/data-center/client-cards', {
+    query: { carrierId },
+    headers: DC_HEADERS,
+  })) as { cards?: ClientCardDetail[] };
+  return res.cards ?? [];
+}
+
+/** One client's billing terms (octane.dim_company). Owner-scoped server-side. Null when no row. */
+export interface ClientBilling {
+  billingCycle: string | null;
+  billingCycleTag: string | null;
+  paymentTerms: string | null;
+  paymentDay: string | null;
+  creditLimit: string | null;
+  minimumRequiredBalance: string | null;
+}
+
+export async function getClientBilling(carrierId: string): Promise<ClientBilling | null> {
+  const res = (await request('GET', '/data-center/client-billing', {
+    query: { carrierId },
+    headers: DC_HEADERS,
+  })) as { billing?: ClientBilling | null };
+  return res.billing ?? null;
+}
+
 /** Result of an owner-scoped inline edit — the record id + the exact CRM fields that changed. */
 export interface UpdateResult {
   id: string;

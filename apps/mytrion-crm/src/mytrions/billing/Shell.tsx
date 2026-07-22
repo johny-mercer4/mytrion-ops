@@ -10,6 +10,9 @@
  */
 import { useMemo, useState, type ReactNode } from 'react';
 
+import { isAdmin } from '../../access/resolveAccess';
+import { ActAsPicker } from '../../components/ActAsPicker';
+import { useImpersonation } from '../../context/ImpersonationProvider';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useTheme } from '../../hooks/useTheme';
 import { BillingCopilot } from './BillingCopilot';
@@ -76,6 +79,9 @@ const NAV_ITEMS: NavDef[] = [
 
 export function BillingShell() {
   const user = useUserContext();
+  const admin = isAdmin(user);
+  const { actingAs } = useImpersonation();
+  const actAsKey = actingAs?.zohoUserId ?? 'self';
   const [active, setActive] = useState<SectionId>('datacenter');
   // Widget parity: panels lazy-mount on first visit and stay mounted (state survives tab hops).
   const [mounted, setMounted] = useState<Partial<Record<SectionId, boolean>>>({ datacenter: true });
@@ -98,9 +104,7 @@ export function BillingShell() {
     setMounted((m) => (m[id] ? m : { ...m, [id]: true }));
   }
 
-  // Stable element instances — panels are kept mounted (keep-alive) and take no props, so
-  // memoizing the elements lets React skip re-rendering them when the shell re-renders on a tab
-  // switch. Without this, every tab change re-ran the ~1.6k-row Transactions render (~200ms stall).
+  // Remount panels when View-as changes so data refetches under the new identity.
   const els = useMemo(
     () => ({
       datacenter: <DataCenter />,
@@ -109,7 +113,8 @@ export function BillingShell() {
       prepay: <Prepay />,
       returns: <Returns />,
     }),
-    [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [actAsKey],
   );
 
   const panel = (id: SectionId, node: ReactNode): ReactNode =>
@@ -124,6 +129,11 @@ export function BillingShell() {
         <div className="bm-header-title">My<span>trion</span></div>
         <span className="bm-header-badge">BILLING</span>
         <div style={{ flex: 1 }} />
+        {admin ? (
+          <div style={{ marginRight: 10 }}>
+            <ActAsPicker />
+          </div>
+        ) : null}
         <button
           className="bm-header-theme"
           onClick={toggleTheme}

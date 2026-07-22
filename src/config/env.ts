@@ -31,6 +31,10 @@ const EnvSchema = z.object({
   // --- Data Warehouse (separate read Postgres; tool + metadata target) ---
   DWH_DATABASE_URL: z.string().default(''),
 
+  // --- Verification DB (credit_platform — read-only metadata/reference target for the Sales
+  // Mytrion verification pipeline; surfaced in Mytrion Admin like the DWH). Render Postgres → SSL. ---
+  VERIFICATION_DATABASE_URL: z.string().default(''),
+
   // --- AWS MySQL (external RDS/Aurora MySQL; tool target, mirrors the DWH wrapper) ---
   // Two ways to point at it (discrete fields win when AWS_MYSQL_HOST is set):
   //  1. Discrete (preferred — password passed RAW, no URL-encoding footgun):
@@ -390,6 +394,20 @@ const EnvSchema = z.object({
   // --- Feature flags ---
   FF_PARTNER_AUDIENCE_ENABLED: flag('1'),
   FF_KNOWLEDGE_INGEST_ENABLED: flag('1'),
+  // Mini-app self-service WRITE actions (C-16 override, C-1/C-3 activate/deactivate, C-4/5 limits,
+  // C-26 unit/driver, C-10 fraud request) — carrier-scoped, rate-limited, audit-logged. Off by
+  // default: enable per environment once the pilot carrier is briefed.
+  FF_MINIAPP_CARD_WRITES_ENABLED: flag('0'),
+  /** Comma-separated carrier ids piloted for notification pollers (card_status diff). Empty =
+   *  the cron job no-ops — per-carrier rollout, Onzmove first (see notification ultraplan). */
+  NOTIFY_POLL_CARRIERS: z.string().default(''),
+  // Mini-app C-17 money-code preview/draw (servercrm owns the limit math). Off by default.
+  FF_MINIAPP_MONEY_CODE_ENABLED: flag('0'),
+  /** Mini-app "add a manager" invite creation. OFF by owner decision 2026-07-22 — managers are
+   *  onboarded by Octane agents only; the roster (list/revoke) in the mini-app stays available. */
+  FF_MINIAPP_MANAGER_INVITES_ENABLED: flag('0'),
+  // Cap on a single mini-app limit CHANGE (C-4/5). Bigger adjustments go through CS.
+  MINIAPP_LIMIT_CHANGE_MAX: z.coerce.number().positive().default(1000),
   // Always-on RAG: inject RBAC-scoped pgvector passages into every chat turn.
   FF_RAG_ENABLED: flag('1'),
   // Hybrid retrieval (vector + full-text RRF fusion). Requires the content_tsv migration.
@@ -481,6 +499,11 @@ const EnvSchema = z.object({
   RETENTION_CS_ROUND_ROBIN_ZOHO_USER_IDS: z.string().default(''),
   // Spanish Retention desk assignee (bypasses RoundRobin when is_spanish_desk).
   RETENTION_CS_SPANISH_ZOHO_USER_ID: z.string().default(''),
+  // Pilot switch: when ON, auto-create Retention cases only for listed Sales agents
+  // (Zoho CRM user ids). Off = generate for all agents (production). Clear flag to reset.
+  FF_RETENTION_PILOT_ONLY: flag('0'),
+  // Comma-separated Zoho CRM user ids (e.g. Daniel Brown 6227679000031473048).
+  RETENTION_PILOT_AGENT_ZOHO_USER_IDS: z.string().default(''),
 
   // Background jobs (pg-boss on the app Postgres, own 'pgboss' schema — self-migrating).
   FF_JOBS_ENABLED: flag('0'),

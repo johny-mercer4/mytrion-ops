@@ -2,6 +2,7 @@
  * Client modal drilldowns — DWH cards + fuel activity (all_time, Load-more via growing limit).
  */
 import { callTouchpoint } from '@/api/touchpoints';
+import { getClientCards, getClientBilling, type ClientBilling } from '@/api/dataCenter';
 
 const n = (v: unknown): number => (typeof v === 'number' ? v : Number(v ?? 0) || 0);
 const galFmt = (v: unknown): string => n(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
@@ -34,17 +35,39 @@ export interface ClientCardVM {
   num: string;
   status: string;
   tone: string;
+  cardType: string | null;
+  unit: string | null;
+  driverId: string | null;
+  driverName: string | null;
 }
 
-/** A carrier's cards from the DWH (card_number + Active/Inactive/Unknown status only). */
+/** A carrier's cards from the DWH (octane.dim_card): masked number + Active/Inactive/Unknown status
+ *  + card type, and the unit / driver id / driver name from each card's latest transaction. */
 export async function loadClientCards(carrierId: string): Promise<ClientCardVM[]> {
   if (!carrierId) return [];
-  const res = await callTouchpoint('dwh.cards', { carrierId });
-  return (res.data ?? []).map((c) => {
+  const cards = await getClientCards(carrierId);
+  return cards.map((c) => {
     const up = String(c.status ?? '').trim().toUpperCase();
     const tone = up === 'ACTIVE' ? 'var(--ok)' : up === 'INACTIVE' ? 'var(--muted)' : 'var(--warn)';
-    return { num: maskCard(c.card_number), status: up || 'UNKNOWN', tone };
+    return {
+      num: maskCard(c.cardNumber),
+      status: up || 'UNKNOWN',
+      tone,
+      cardType: c.cardType,
+      unit: c.unit,
+      driverId: c.driverId,
+      driverName: c.driverName,
+    };
   });
+}
+
+export type ClientBillingVM = ClientBilling;
+
+/** A client's billing terms from octane.dim_company (billing cycle, payment terms/day, credit
+ *  limit, minimum balance). Null when the carrier has no dim_company row. */
+export async function loadClientBilling(carrierId: string): Promise<ClientBillingVM | null> {
+  if (!carrierId) return null;
+  return getClientBilling(carrierId);
 }
 
 export interface ClientActivityVM {

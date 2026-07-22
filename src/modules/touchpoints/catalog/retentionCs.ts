@@ -1,12 +1,16 @@
 /**
- * Customer Service Retention touchpoints — Open Pool claims, Phase 2 desk, CITI Folder.
+ * Customer Service Retention touchpoints — Open Pool activity logs, Phase 2 desk, CITI Folder.
  */
 import { z } from 'zod';
-import { AppError } from '../../../lib/errors.js';
+import { AppError, RBACError } from '../../../lib/errors.js';
 import {
-  countPendingPoolClaims,
+  CS_DESK_FILTERS,
+  CS_DESK_PHASES,
+  CS_DESK_STATUSES,
   retentionCaseCsRepo,
-  type CsPhase2Filter,
+  type CsDeskFilter,
+  type CsDeskPhase,
+  type CsDeskStatus,
 } from '../../../repos/retentionCaseCsRepo.js';
 import { retentionPoolClaimRepo } from '../../../repos/retentionPoolClaimRepo.js';
 import type { TenantContext } from '../../../types/tenantContext.js';
@@ -33,18 +37,15 @@ const P2_OUTCOMES = [
   'saved',
   'refused',
   'out_of_business',
-  'no_response',
   'escalate_citi',
-] as const satisfies readonly Phase2Outcome[];
-
-const P2_FILTERS = ['new', 'working', 'closed', 'all_open'] as const satisfies readonly CsPhase2Filter[];
-
-function isAdmin(ctx: TenantContext): boolean {
-  return ctx.role === 'admin' || ctx.bypassRbac === true || ctx.allDepartmentAccess === true;
-}
+] as const satisfies readonly Exclude<Phase2Outcome, 'no_response'>[];
 
 function zohoFromCtx(ctx: TenantContext): string | undefined {
   return ctx.userId.startsWith('zoho:') ? ctx.userId.slice('zoho:'.length) : undefined;
+}
+
+function isAdmin(ctx: TenantContext): boolean {
+  return ctx.role === 'admin' || ctx.bypassRbac === true || ctx.allDepartmentAccess === true;
 }
 
 function requireZoho(params: Record<string, unknown>, ctx: TenantContext): string {
@@ -59,103 +60,60 @@ function requireZoho(params: Record<string, unknown>, ctx: TenantContext): strin
   return zohoUserId;
 }
 
+/**
+ * Non-admins only see cases assigned to them (Open Pool stays shared).
+ * Returns `null` for admin (no filter). Missing Zoho id → empty desk (fail closed).
+ */
+function assigneeScope(ctx: TenantContext): string | null {
+  if (isAdmin(ctx)) return null;
+  return zohoFromCtx(ctx) ?? '';
+}
+
 export const retentionCsTouchpoints: LocalTouchpoint[] = [
   {
     kind: 'local',
-    key: 'retention.cs_claims_pending',
-    title: 'CS Open Pool claims awaiting approve',
+    key: 'retention.cs_pool_activity',
+    title: 'CS Open Pool activity (claimed + unclaimed logs)',
     riskClass: 'read',
     departments: csDept,
     paramsSchema: z.object({
-      limit: limitSchema(200, 100).optional(),
+      limit: limitSchema(500, 100).optional(),
+      status: z.enum(['approved', 'expired', 'all']).optional(),
     }),
     handler: async (ctx, params) => {
-      return retentionPoolClaimRepo.listPendingClaims(ctx, {
+      return retentionPoolClaimRepo.listPoolActivity(ctx, {
         ...(typeof params.limit === 'number' ? { limit: params.limit } : {}),
+        ...(typeof params.status === 'string'
+          ? { status: params.status as 'approved' | 'expired' | 'all' }
+          : {}),
       });
     },
   },
 
   {
     kind: 'local',
-    key: 'retention.cs_claims_badge',
-    title: 'CS pending Open Pool claim count',
-    riskClass: 'read',
-    departments: csDept,
-    paramsSchema: z.object({}),
-    handler: async (ctx) => {
-      const count = await countPendingPoolClaims(ctx);
-      return { count };
-    },
-  },
-
-  {
-    kind: 'local',
-    key: 'retention.cs_claim_approve',
-    title: 'CS approve Open Pool claim',
-    riskClass: 'write',
-    departments: csDept,
-    identityParam: 'zohoUserId',
-    agentNameParam: 'agentName',
-    paramsSchema: z.object({
-      zohoUserId: z.string().max(120).optional(),
-      agentName: z.string().max(200).optional(),
-      caseId: idString,
-    }),
-    handler: async (ctx, params) => {
-      const zohoUserId = requireZoho(params, ctx);
-      const updated = await retentionPoolClaimRepo.approveClaim(
-        ctx,
-        String(params.caseId),
-        zohoUserId,
-        {
-          asAdmin: isAdmin(ctx),
-          agentName: typeof params.agentName === 'string' ? params.agentName : undefined,
-        },
-      );
-      return { case: updated };
-    },
-  },
-
-  {
-    kind: 'local',
-    key: 'retention.cs_claim_decline',
-    title: 'CS decline Open Pool claim',
-    riskClass: 'write',
-    departments: csDept,
-    identityParam: 'zohoUserId',
-    paramsSchema: z.object({
-      zohoUserId: z.string().max(120).optional(),
-      caseId: idString,
-    }),
-    handler: async (ctx, params) => {
-      const zohoUserId = requireZoho(params, ctx);
-      const updated = await retentionPoolClaimRepo.declineClaim(
-        ctx,
-        String(params.caseId),
-        zohoUserId,
-        { asAdmin: isAdmin(ctx) },
-      );
-      return { case: updated };
-    },
-  },
-
-  {
-    kind: 'local',
     key: 'retention.cs_cases',
-    title: 'CS Phase 2 Retention cases',
+    title: 'CS Retention cases (all phases)',
     riskClass: 'read',
     departments: csDept,
     paramsSchema: z.object({
-      filter: z.enum(P2_FILTERS).optional(),
+      filter: z.enum(CS_DESK_FILTERS).optional(),
+      phase: z.enum(CS_DESK_PHASES).optional(),
+      status: z.enum(CS_DESK_STATUSES).optional(),
       limit: limitSchema(500, 200).optional(),
     }),
     handler: async (ctx, params) => {
-      return retentionCaseCsRepo.listPhase2(ctx, {
+      const mine = assigneeScope(ctx);
+      // Non-admin without Zoho identity — empty list (not all records).
+      if (mine === '') return { cases: [], total: 0 };
+      return retentionCaseCsRepo.listForCs(ctx, {
         ...(typeof params.filter === 'string'
-          ? { filter: params.filter as CsPhase2Filter }
+          ? { filter: params.filter as CsDeskFilter }
           : {}),
+        ...(typeof params.phase === 'string' ? { phase: params.phase as CsDeskPhase } : {}),
+        ...(typeof params.status === 'string' ? { status: params.status as CsDeskStatus } : {}),
         ...(typeof params.limit === 'number' ? { limit: params.limit } : {}),
+        ...(mine != null ? { assignedAgentZohoUserId: mine } : {}),
       });
     },
   },
@@ -172,8 +130,13 @@ export const retentionCsTouchpoints: LocalTouchpoint[] = [
     }),
     handler: async (ctx, params) => {
       const zohoUserId = requireZoho(params, ctx);
-      const { countCsAssignmentsToday, getCsPortfolioCounts, CS_MAX_DEALS_PER_DAY, CS_MAX_PENDING_RATIO } =
-        await import('../../retention/csCaps.js');
+      const {
+        countCsAssignmentsToday,
+        getCsPortfolioCounts,
+        canAddPending,
+        CS_MAX_DEALS_PER_DAY,
+        CS_MAX_PENDING_RATIO,
+      } = await import('../../retention/csCaps.js');
       const [assignedToday, portfolio] = await Promise.all([
         countCsAssignmentsToday(ctx, zohoUserId),
         getCsPortfolioCounts(ctx, zohoUserId),
@@ -187,9 +150,7 @@ export const retentionCsTouchpoints: LocalTouchpoint[] = [
         pendingRatio: portfolio.pendingRatio,
         maxPendingRatio: CS_MAX_PENDING_RATIO,
         canClaim: assignedToday < CS_MAX_DEALS_PER_DAY,
-        canMarkPending:
-          portfolio.open === 0 ||
-          (portfolio.pending + 1) / portfolio.open <= CS_MAX_PENDING_RATIO + 1e-9,
+        canMarkPending: canAddPending(portfolio.pending, portfolio.open),
       };
     },
   },
@@ -209,6 +170,17 @@ export const retentionCsTouchpoints: LocalTouchpoint[] = [
           code: 'NOT_FOUND',
           expose: true,
         });
+      }
+      const mine = assigneeScope(ctx);
+      const inOpenPool =
+        detail.case.statusCode === 'p1_open_pool' ||
+        detail.case.statusCode === 'p1_pool_claim_pending';
+      if (
+        mine != null &&
+        !inOpenPool &&
+        (mine === '' || detail.case.assignedAgentZohoUserId?.trim() !== mine)
+      ) {
+        throw new RBACError('You can only view retention cases assigned to you');
       }
       return detail;
     },

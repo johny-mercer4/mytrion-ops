@@ -39,6 +39,27 @@ export function CompanySkeleton() {
   );
 }
 
+export function DebtorsSkeleton() {
+  return (
+    <div style={s('display:flex;flex-direction:column;gap:14px')}>
+      <div style={s('display:flex;justify-content:space-between;gap:12px')}>
+        <div className="ss-skel" style={s('height:42px;width:42%')} />
+        <div className="ss-skel" style={s('height:34px;width:96px')} />
+      </div>
+      <div className="ss-skel" style={s('height:38px;width:100%')} />
+      <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:10px')}>
+        <div className="ss-skel" style={s('height:72px')} />
+        <div className="ss-skel" style={s('height:72px')} />
+        <div className="ss-skel" style={s('height:72px')} />
+        <div className="ss-skel" style={s('height:72px')} />
+      </div>
+      {Array.from({ length: 4 }, (_, i) => (
+        <div key={i} className="ss-skel" style={s('height:108px')} />
+      ))}
+    </div>
+  );
+}
+
 export function ComingSoonPanel({
   title,
   blurb,

@@ -8,11 +8,13 @@ import type { OpenAction } from '../lib/actionTarget';
 /** The "Services" tab (v2 design) — full catalog, grouped, searchable, with per-item pin toggles. */
 export function ServicesTab({
   isDriver,
+  isFleetManager,
   pinned,
   onTogglePin,
   onOpen,
 }: {
   isDriver: boolean;
+  isFleetManager: boolean;
   pinned: string[];
   onTogglePin: (key: string) => void;
   onOpen: (target: OpenAction) => void;
@@ -21,7 +23,7 @@ export function ServicesTab({
   const [search, setSearch] = useState('');
   const q = search.trim().toLowerCase();
 
-  const groups = getCatalog(isDriver)
+  const groups = getCatalog(isDriver, isFleetManager)
     .map((g) => ({
       ...g,
       items: g.items

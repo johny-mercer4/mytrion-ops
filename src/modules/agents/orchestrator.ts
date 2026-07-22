@@ -8,6 +8,7 @@
 import { createDeepAgent, type SubAgent } from 'deepagents';
 import type { StructuredTool } from '@langchain/core/tools';
 import { logger } from '../../lib/logger.js';
+import { env } from '../../config/env.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { agentRegistry } from './agentRegistry.js';
 import { narrowContext } from './authority.js';
@@ -35,7 +36,7 @@ async function childTools(manifest: AgentManifest, callerCtx: TenantContext): Pr
   if (manifest.browser) {
     tools.push(...(await buildBrowserTools(narrowed, { readOnly: manifest.readOnly })));
   }
-  if (manifest.composioToolkits.length > 0) {
+  if (env.FF_COMPOSIO_ENABLED && manifest.composioToolkits.length > 0) {
     try {
       // Read-only agents (manager) get read Composio tools only, regardless of FF_COMPOSIO_WRITES —
       // Composio executes remotely, so binding-time stripping is the only enforcement point.

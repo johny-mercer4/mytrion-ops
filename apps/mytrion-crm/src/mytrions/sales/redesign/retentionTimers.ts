@@ -142,21 +142,31 @@ function toneOf(overdue: boolean, progress: number): StageTimerTone {
   return 'ok';
 }
 
-/** Dissatisfied / Phase 2 Retention / CITI — Sales cannot act until Open Pool return. */
+/** Open Pool / Retention / CITI — former owner sees a locked card, cannot act. */
 export function isSalesLocked(c: RetentionCaseRow): boolean {
   return (
     c.agentOutcome === 'dissatisfied' ||
     c.statusCode === 'p1_dissatisfied' ||
+    c.statusCode === 'p1_open_pool' ||
+    c.statusCode === 'p1_pool_claim_pending' ||
     c.phaseCode === 'phase_2_retention' ||
     c.phaseCode === 'phase_3_citi'
   );
 }
 
+/** Former-owner Open Pool card (warn styling vs Retention danger). */
+export function isSalesPooled(c: RetentionCaseRow): boolean {
+  return c.statusCode === 'p1_open_pool' || c.statusCode === 'p1_pool_claim_pending';
+}
+
 /**
  * Live stage timer for the next deadline event. Returns null when no clock applies
- * (Dissatisfied handoff, awaiting Ops with cleared deadline, etc.).
+ * (closed/returned, Dissatisfied handoff, awaiting Ops with cleared deadline, etc.).
  */
 export function stageTimer(c: RetentionCaseRow, now: Date = new Date()): StageTimer | null {
+  // Terminal / closed — never show an active SLA (stale 2BD_agent_action used to leak
+  // "Due today · → Retention" on Returned cards after fuel auto-close).
+  if (!c.isOpen || c.statusCode === 'p1_returned') return null;
   if (isSalesLocked(c)) return null;
 
   // Awaiting Ops — human gate, no countdown.
@@ -213,13 +223,14 @@ export function stageTimer(c: RetentionCaseRow, now: Date = new Date()): StageTi
   } else if (type === '2BD_vacation_followup' || status === 'p1_vacation_followup') {
     event = 'Vacation follow-up call';
   } else if (type === '1BD_claim_approve') {
-    event = 'Claim approval · else auto-approve';
+    // Legacy pending-claim deadline — instant claim no longer uses this.
+    event = 'Open Pool (legacy claim window)';
   } else if (type === '3BD_pool_claim') {
-    event = 'Open Pool claim window';
+    event = 'Open Pool · 3 BD to claim';
   } else if (type === '3BD_new_owner') {
     event = 'New owner fuel watch · else → Pool';
   } else if (type === '10BD_retention') {
-    event = 'Retention watch';
+    event = 'Retention watch · else → Pool';
   }
 
   return {
@@ -234,7 +245,11 @@ export function stageTimer(c: RetentionCaseRow, now: Date = new Date()): StageTi
 
 /** Compact caption used in list / meta (keeps prior callers working). */
 export function stageTimerCaption(c: RetentionCaseRow, now: Date = new Date()): string {
-  if (isSalesLocked(c)) return '→ Retention';
+  if (isSalesPooled(c)) return 'In Open Pool';
+  if (isSalesLocked(c)) {
+    if (c.phaseCode === 'phase_3_citi') return '→ CITI';
+    return 'With Retention';
+  }
   const t = stageTimer(c, now);
   if (!t) return '—';
   if (t.tone === 'muted') return t.remain;

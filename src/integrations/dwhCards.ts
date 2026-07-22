@@ -5,6 +5,7 @@
  * driver's `card_id` FROM when binding a `carrier_users` driver account. Read-only.
  */
 import { dwhQuery } from './dwh.js';
+import { logger } from '../lib/logger.js';
 
 export interface DwhCard {
   cardId: string | null;
@@ -69,6 +70,65 @@ export async function listDwhCards(carrierId: string, limit = 100): Promise<DwhC
   return rows.map(toDto);
 }
 
+/** A carrier's card enriched with the driver/unit off its latest transaction (Sales client modal). */
+export interface ClientCardDetail {
+  cardId: string | null;
+  cardNumber: string | null;
+  cardType: string | null;
+  status: string | null;
+  balance: string | null;
+  unit: string | null;
+  driverId: string | null;
+  driverName: string | null;
+}
+
+/**
+ * A carrier's fuel cards for the Sales client modal. Card facts (type/status/balance) come from the
+ * synced card dimension `octane.dim_card`; driver identity does NOT live on the card, so each card is
+ * enriched with the unit/driver from its most-recent `octane.mart_transaction_line_items` row (one
+ * pass over the carrier's mart rows, `distinct on (card_number)` newest-first). Read-only.
+ */
+export async function listClientCards(carrierId: string, limit = FLEET_CARD_LIMIT): Promise<ClientCardDetail[]> {
+  const capped = Math.min(Math.max(limit, 1), FLEET_CARD_LIMIT);
+  const rows = await dwhQuery<{
+    card_id: string | number | null;
+    card_number: string | null;
+    card_type: string | null;
+    status: string | null;
+    balance: string | number | null;
+    driver_unit: string | null;
+    driver_id: string | number | null;
+    driver_card_name: string | null;
+  }>(
+    `with latest as (
+       select distinct on (card_number)
+              card_number, driver_unit, driver_id, driver_card_name
+         from octane.mart_transaction_line_items
+        where carrier_id = $1 and card_number is not null
+        order by card_number, transaction_date desc nulls last, transaction_id desc
+     )
+     select c.card_id, c.card_number, c.card_type, c.status, c.balance,
+            l.driver_unit, l.driver_id, l.driver_card_name
+       from octane.dim_card c
+       left join latest l on l.card_number = c.card_number
+      where c.carrier_id = $1
+      order by c.card_id desc
+      limit ${capped}`,
+    [carrierId],
+  );
+  const s = (v: string | number | null): string | null => (v != null && String(v).trim() ? String(v).trim() : null);
+  return rows.map((r) => ({
+    cardId: r.card_id != null ? String(r.card_id) : null,
+    cardNumber: r.card_number,
+    cardType: r.card_type,
+    status: r.status,
+    balance: r.balance != null ? String(r.balance) : null,
+    unit: s(r.driver_unit),
+    driverId: s(r.driver_id),
+    driverName: s(r.driver_card_name),
+  }));
+}
+
 /**
  * Is this card an active card of this carrier? An exact lookup, not a scan.
  *
@@ -91,6 +151,20 @@ export async function findDwhCardById(carrierId: string, cardId: string): Promis
   return rows[0] ? toDto(rows[0]) : null;
 }
 
+/** Same exact lookup WITHOUT the active-only clause — for READ paths only (the owner's
+ *  transaction-history filter): a deactivated card's past transactions are still the owner's to
+ *  report on. Every WRITE path keeps using findDwhCardById (active-only) above. */
+export async function findDwhCardByIdAnyStatus(carrierId: string, cardId: string): Promise<DwhCard | null> {
+  const rows = await dwhQuery<CardRow>(
+    `select card_id, card_number, card_type, status, balance
+       from octane.stg_cmp_card
+      where carrier_id = $1 and card_id = $2
+      limit 1`,
+    [carrierId, cardId],
+  );
+  return rows[0] ? toDto(rows[0]) : null;
+}
+
 export async function isActiveCardOfCarrier(carrierId: string, cardId: string): Promise<boolean> {
   return (await findDwhCardById(carrierId, cardId)) !== null;
 }
@@ -104,15 +178,36 @@ export interface DwhCardOwner {
 }
 
 export async function findDwhCardByNumber(cardNumber: string): Promise<DwhCardOwner | null> {
+  // `limit 2`, not `limit 1`: `card_number` has no uniqueness constraint on this read-only replica,
+  // and this lookup is what binds a self-registering driver to a carrier by card possession alone.
+  // If the same active number resolves to TWO DIFFERENT carriers, a bare `limit 1` (no ORDER BY)
+  // would bind the driver to an arbitrary one — so fail closed instead of guessing.
   const rows = await dwhQuery<{ card_id: string | number | null; carrier_id: string | number | null; card_number: string | null }>(
     `select card_id, carrier_id, card_number
        from octane.stg_cmp_card
       where is_active = true and card_number = $1
-      limit 1`,
+      limit 2`,
     [cardNumber],
   );
   const row = rows[0];
   if (!row || row.card_id == null || row.carrier_id == null) return null;
+  if (rows.length > 1 && rows[1]?.carrier_id != null && String(rows[1].carrier_id) !== String(row.carrier_id)) {
+    logger.warn(
+      { cardNumber, carriers: [String(row.carrier_id), String(rows[1].carrier_id)] },
+      'findDwhCardByNumber: card number resolves to multiple carriers — refusing to bind',
+    );
+    return null;
+  }
+  if (rows.length > 1 && rows[1]?.card_id != null && String(rows[1].card_id) !== String(row.card_id)) {
+    // Same carrier this time (the cross-carrier case returned null above), same ACTIVE number on two
+    // different card rows. The carrier binding — the security-relevant part — is unambiguous, and
+    // driver row-scoping filters on the NUMBER, so reads are unaffected; but which card_id the
+    // registration pins is arbitrary. Surfaced so ops can clean up the duplicate at the source.
+    logger.warn(
+      { cardNumber, carrierId: String(row.carrier_id), cardIds: [String(row.card_id), String(rows[1].card_id)] },
+      'findDwhCardByNumber: duplicate active card number within one carrier — binding to the first row',
+    );
+  }
   return { cardId: String(row.card_id), carrierId: String(row.carrier_id), cardNumber: String(row.card_number ?? cardNumber) };
 }
 
@@ -167,5 +262,82 @@ export async function getDwhCompanyDetails(carrierId: string): Promise<DwhCompan
     city: s(r.city),
     state: s(r.state),
     zip: s(r.zip_code),
+  };
+}
+
+/** A client's billing terms from octane.dim_company — the fields the Sales Billing tab surfaces.
+ *  Sparse by nature (prepaid clients have no credit_limit/terms), so any field may be null. */
+export interface ClientBillingTerms {
+  billingCycle: string | null;
+  billingCycleTag: string | null;
+  paymentTerms: string | null;
+  paymentDay: string | null;
+  creditLimit: string | null;
+  minimumRequiredBalance: string | null;
+}
+
+export async function getClientBilling(carrierId: string): Promise<ClientBillingTerms | null> {
+  const rows = await dwhQuery<{
+    billing_cycle: string | null;
+    billing_cycle_tag: string | null;
+    payment_terms: string | null;
+    payment_day: string | null;
+    credit_limit: string | number | null;
+    minimum_required_balance: string | number | null;
+  }>(
+    `select billing_cycle, billing_cycle_tag, payment_terms, payment_day,
+            credit_limit, minimum_required_balance
+       from octane.dim_company
+      where carrier_id = $1
+      limit 1`,
+    [carrierId],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  const s = (v: string | number | null): string | null =>
+    v != null && String(v).trim() ? String(v).trim() : null;
+  return {
+    billingCycle: s(r.billing_cycle),
+    billingCycleTag: s(r.billing_cycle_tag),
+    paymentTerms: s(r.payment_terms),
+    paymentDay: s(r.payment_day),
+    creditLimit: s(r.credit_limit),
+    minimumRequiredBalance: s(r.minimum_required_balance),
+  };
+}
+
+/**
+ * Any-status variant of findDwhCardByNumber — for MERGE/READ paths where a deactivated card
+ * must still resolve its stable card_id (EFS-first fleet merge; owner card-ops on an inactive
+ * card — "activate it" being the whole point). Same fail-closed ambiguity guard: 0 or 2+
+ * conflicting rows resolve to null, never a guess.
+ */
+export async function findDwhCardByNumberAnyStatus(
+  cardNumber: string,
+): Promise<DwhCardOwner | null> {
+  const rows = await dwhQuery<{
+    card_id: string | number | null;
+    carrier_id: string | number | null;
+    card_number: string | null;
+  }>(
+    `select card_id, carrier_id, card_number
+       from octane.stg_cmp_card
+      where card_number = $1
+      limit 2`,
+    [cardNumber],
+  );
+  const row = rows[0];
+  if (!row || row.card_id == null || row.carrier_id == null) return null;
+  if (
+    rows.length > 1 &&
+    rows[1]?.carrier_id != null &&
+    String(rows[1].carrier_id) !== String(row.carrier_id)
+  ) {
+    return null;
+  }
+  return {
+    cardId: String(row.card_id),
+    carrierId: String(row.carrier_id),
+    cardNumber: String(row.card_number ?? ''),
   };
 }

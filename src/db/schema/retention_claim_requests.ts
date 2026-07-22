@@ -1,6 +1,7 @@
 /**
- * Open Pool claim requests — durable CS approval queue.
- * Case Processing lock still uses retention_cases.status = p1_pool_claim_pending.
+ * Open Pool claim audit — instant claims land as `approved`;
+ * unclaimed pool exits (3BD → Retention/CITI) land as `expired`.
+ * Legacy `requested` may exist briefly during migrate backfill.
  */
 import {
   bigint,
@@ -18,6 +19,7 @@ export const CLAIM_REQUEST_STATUS = {
   requested: 'requested',
   rejected: 'rejected',
   approved: 'approved',
+  expired: 'expired',
 } as const;
 
 export type ClaimRequestStatus =
@@ -35,8 +37,13 @@ export const retentionClaimRequests = pgTable(
     zohoDealId: text('zoho_deal_id'),
     requesterZohoUserId: text('requester_zoho_user_id').notNull(),
     requesterName: text('requester_name'),
+    /** Former pool owner when claim was taken (Sales agent who lost the deal). */
+    previousOwnerZohoUserId: text('previous_owner_zoho_user_id'),
+    previousOwnerName: text('previous_owner_name'),
     reason: text('reason').notNull(),
     status: text('status').notNull().default('requested'),
+    /** e.g. 3bd_unclaimed_to_retention | max_agents_to_citi | migrate_zoho_failed */
+    outcomeNote: text('outcome_note'),
     requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
     resolvedByZohoUserId: text('resolved_by_zoho_user_id'),
@@ -47,7 +54,11 @@ export const retentionClaimRequests = pgTable(
       table.status,
     ),
     caseIdx: index('retention_claim_requests_case_idx').on(table.retentionCaseId),
-    /** One open (requested) claim per case. */
+    tenantRequestedAtIdx: index('retention_claim_requests_tenant_requested_at_idx').on(
+      table.tenantId,
+      table.requestedAt,
+    ),
+    /** One open (requested) claim per case — legacy pending only. */
     oneOpenPerCase: uniqueIndex('retention_claim_requests_one_open_per_case')
       .on(table.retentionCaseId)
       .where(sql`${table.status} = 'requested'`),

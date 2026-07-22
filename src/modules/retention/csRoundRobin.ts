@@ -11,9 +11,12 @@ import { listActiveUsers, type CrmUser } from '../../integrations/zohoCrm.js';
 import { logger } from '../../lib/logger.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import type { RetentionCaseDto } from '../../repos/retentionCaseRepo.js';
+import { DEFAULT_TENANT_ID } from '../../config/constants.js';
+import { OWNERSHIP_TRANSFER_REASON } from '../../db/schema/retention_ownership_transfers.js';
 import {
   transferDealOwnershipToClaimant,
   setDealStageClosedLost,
+  type OwnershipTransferAudit,
 } from './zohoOwnership.js';
 import type { CaseTransitionPatch } from './deadlines.js';
 import { assertUnderDailyCap, CS_MAX_DEALS_PER_DAY } from './csCaps.js';
@@ -56,12 +59,26 @@ async function saveCursor(tenantId: string, zohoUserId: string): Promise<void> {
     });
 }
 
+/** Short TTL so Dissatisfied/handoff doesn't call Zoho Users on every save. */
+const USERS_CACHE_TTL_MS = 60_000;
+let usersCache: { at: number; users: CrmUser[] } | null = null;
+
+async function listActiveUsersCached(): Promise<CrmUser[]> {
+  const now = Date.now();
+  if (usersCache && now - usersCache.at < USERS_CACHE_TTL_MS) {
+    return usersCache.users;
+  }
+  const users = await listActiveUsers();
+  usersCache = { at: now, users };
+  return users;
+}
+
 async function resolveUserName(
   zohoUserId: string,
   users?: CrmUser[],
 ): Promise<string | null> {
   try {
-    const list = users ?? (await listActiveUsers());
+    const list = users ?? (await listActiveUsersCached());
     return list.find((u) => u.zohoUserId === zohoUserId)?.name ?? null;
   } catch {
     return null;
@@ -75,7 +92,12 @@ async function resolveUserName(
  */
 export async function pickCsRoundRobinAssignee(
   ctx: TenantContext,
-  opts: { users?: CrmUser[]; skipZohoUserIds?: string[] } = {},
+  opts: {
+    users?: CrmUser[];
+    skipZohoUserIds?: string[];
+    /** Skip Zoho Users fetch — use warm cache / allowlist only (Sales save hot path). */
+    fast?: boolean;
+  } = {},
 ): Promise<CsRoundRobinPick | null> {
   const allow = parseAllowlist();
   if (allow.length === 0) {
@@ -84,12 +106,27 @@ export async function pickCsRoundRobinAssignee(
   }
   const skip = new Set(opts.skipZohoUserIds ?? []);
   let users: CrmUser[];
-  try {
-    users = opts.users ?? (await listActiveUsers());
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.error({ err: message }, 'retention CS RoundRobin: listActiveUsers failed');
+  if (opts.users) {
+    users = opts.users;
+  } else if (usersCache) {
+    users = usersCache.users;
+  } else if (opts.fast) {
+    // Do not block Dissatisfied/handoff on Zoho; warm cache in background.
     users = [];
+    void listActiveUsersCached().catch((err) => {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'retention CS RoundRobin: background listActiveUsers failed',
+      );
+    });
+  } else {
+    try {
+      users = await listActiveUsersCached();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err: message }, 'retention CS RoundRobin: listActiveUsers failed');
+      users = [];
+    }
   }
 
   const byId = new Map(users.map((u) => [u.zohoUserId, u]));
@@ -134,6 +171,12 @@ export interface HandoffCaseHint {
   isSpanishDesk?: boolean | null | undefined;
 }
 
+/**
+ * Temporary kill-switch for Retention auto-assign (Spanish desk + RoundRobin).
+ * When false: leave the Sales assignee as-is and skip Zoho Owner transfer to CS.
+ */
+export const RETENTION_AUTO_ASSIGN_ENABLED = false;
+
 /** Enrich a Retention handoff patch with Spanish desk or RoundRobin CS assignee → p2_working. */
 export async function enrichHandoffWithRoundRobin(
   ctx: TenantContext,
@@ -142,12 +185,24 @@ export async function enrichHandoffWithRoundRobin(
 ): Promise<CaseTransitionPatch> {
   if (patch.phaseCode !== RETENTION_PHASE.retention) return patch;
 
+  if (!RETENTION_AUTO_ASSIGN_ENABLED) {
+    logger.info(
+      {
+        caseHint,
+        assignedAgentZohoUserId: patch.assignedAgentZohoUserId,
+      },
+      'retention auto-assign disabled — keeping current agent (no CS reassignment)',
+    );
+    return patch;
+  }
+
   if (caseHint.isSpanishDesk) {
     const spanishId = spanishDeskUserId();
     if (spanishId) {
       try {
         await assertUnderDailyCap(ctx, spanishId);
-        const name = await resolveUserName(spanishId);
+        // Name from warm cache only — do not await Zoho Users on the handoff hot path.
+        const name = (await resolveUserName(spanishId, usersCache?.users)) ?? 'Jean Paul';
         return {
           ...patch,
           statusCode: 'p2_working',
@@ -155,7 +210,7 @@ export async function enrichHandoffWithRoundRobin(
           agentName: name,
           eventNotes:
             (patch.eventNotes ?? 'Handed to Retention') +
-            ` · Spanish desk ${name?.trim() || 'Jean Paul'} (${spanishId})`,
+            ` · Spanish desk ${name.trim()} (${spanishId})`,
         };
       } catch (err) {
         logger.warn(
@@ -170,7 +225,7 @@ export async function enrichHandoffWithRoundRobin(
     }
   }
 
-  const pick = await pickCsRoundRobinAssignee(ctx);
+  const pick = await pickCsRoundRobinAssignee(ctx, { fast: true });
   if (!pick) {
     return {
       ...patch,
@@ -194,6 +249,7 @@ export async function enrichHandoffWithRoundRobin(
 export async function transferOwnershipSoft(
   zohoDealId: string | null | undefined,
   claimantZohoUserId: string,
+  audit?: OwnershipTransferAudit | null,
 ): Promise<void> {
   const dealId = zohoDealId?.trim();
   if (!dealId) {
@@ -204,7 +260,7 @@ export async function transferOwnershipSoft(
     return;
   }
   try {
-    const result = await transferDealOwnershipToClaimant(dealId, claimantZohoUserId);
+    const result = await transferDealOwnershipToClaimant(dealId, claimantZohoUserId, audit);
     if (result.warnings.length > 0) {
       logger.warn(
         { dealId, warnings: result.warnings },
@@ -229,17 +285,57 @@ export async function afterRetentionPhaseSideEffects(
   beforePhase: string,
   after: Pick<
     RetentionCaseDto,
-    'phaseCode' | 'assignedAgentZohoUserId' | 'zohoDealId' | 'id'
+    | 'phaseCode'
+    | 'assignedAgentZohoUserId'
+    | 'zohoDealId'
+    | 'id'
+    | 'carrierId'
+    | 'companyName'
+    | 'agentName'
   >,
+  opts: {
+    previousAssigneeZohoUserId?: string | null;
+    tenantId?: string;
+    actorZohoUserId?: string | null;
+    actorName?: string | null;
+  } = {},
 ): Promise<void> {
   if (
+    RETENTION_AUTO_ASSIGN_ENABLED &&
     after.phaseCode === RETENTION_PHASE.retention &&
     beforePhase !== RETENTION_PHASE.retention &&
     after.assignedAgentZohoUserId
   ) {
-    await transferOwnershipSoft(after.zohoDealId, after.assignedAgentZohoUserId);
+    const caseId = Number(after.id);
+    const audit: OwnershipTransferAudit = {
+      tenantId: opts.tenantId?.trim() || DEFAULT_TENANT_ID,
+      reason: OWNERSHIP_TRANSFER_REASON.retentionHandoff,
+      retentionCaseId: Number.isFinite(caseId) ? caseId : null,
+      carrierId: after.carrierId,
+      companyName: after.companyName,
+      actorZohoUserId: opts.actorZohoUserId ?? null,
+      actorName: opts.actorName ?? null,
+      toOwnerName: after.agentName,
+    };
+    await transferOwnershipSoft(after.zohoDealId, after.assignedAgentZohoUserId, audit);
   }
   if (after.phaseCode === RETENTION_PHASE.citi && beforePhase !== RETENTION_PHASE.citi) {
     await setDealStageClosedLost(after.zohoDealId);
   }
+}
+
+/**
+ * Run Zoho / notify work after the HTTP response — keeps Sales modal updates snappy.
+ * Failures are logged; DB transition already committed.
+ */
+export function scheduleRetentionPostCommit(
+  label: string,
+  work: () => Promise<void>,
+): void {
+  void work().catch((err) => {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      `${label} post-commit failed`,
+    );
+  });
 }

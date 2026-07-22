@@ -41,6 +41,15 @@ export interface TxPage {
   hasMore: boolean;
 }
 
+/** Whole-dataset aggregates (independent of pagination) for the source filter + summary tiles. */
+export interface TxStats {
+  total: number;
+  mapped: number;
+  unmapped: number;
+  totalAmount: number;
+  bySource: Record<string, number>;
+}
+
 /** Mapping-column patch applied after a successful CMP write. */
 export interface MappingPatch {
   carrierId?: string | null;
@@ -83,21 +92,39 @@ export const paymentTransactionRepo = {
     const conds = buildFilters(opts);
     const where = conds.length ? and(...conds) : undefined;
 
-    const rows = await db
-      .select()
-      .from(paymentTransactions)
-      .where(where)
-      .orderBy(NEWEST_FIRST)
-      .limit(limit)
-      .offset(offset);
-
-    const totalRes = await db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(paymentTransactions)
-      .where(where);
+    // Page + total run concurrently — they're independent, so this is one round-trip's wall time,
+    // not two (matters most from a dev laptop where every query crosses to the remote DB).
+    const [rows, totalRes] = await Promise.all([
+      db.select().from(paymentTransactions).where(where).orderBy(NEWEST_FIRST).limit(limit).offset(offset),
+      db.select({ n: sql<number>`count(*)::int` }).from(paymentTransactions).where(where),
+    ]);
     const total = totalRes[0]?.n ?? 0;
 
     return { rows, page, limit, total, hasMore: offset + rows.length < total };
+  },
+
+  /** Whole-dataset counts/sum grouped by source + mapped flag (one query) — powers the source
+   *  filter and summary tiles so they reflect ALL transactions, not just the loaded page. */
+  async stats(): Promise<TxStats> {
+    const grouped = await db
+      .select({
+        source: paymentTransactions.source,
+        mapped: paymentTransactions.isInvoiceMapped,
+        n: sql<number>`count(*)::int`,
+        amt: sql<string>`coalesce(sum(${paymentTransactions.amount}), 0)::text`,
+      })
+      .from(paymentTransactions)
+      .groupBy(paymentTransactions.source, paymentTransactions.isInvoiceMapped);
+
+    const out: TxStats = { total: 0, mapped: 0, unmapped: 0, totalAmount: 0, bySource: {} };
+    for (const r of grouped) {
+      out.total += r.n;
+      out.bySource[r.source] = (out.bySource[r.source] ?? 0) + r.n;
+      if (r.mapped) out.mapped += r.n;
+      else out.unmapped += r.n;
+      out.totalAmount += Number(r.amt) || 0;
+    }
+    return out;
   },
 
   /** Free-text search across payer/memo/txn fields + exact carrier id. Capped, newest first. */
@@ -205,6 +232,37 @@ export const paymentTransactionRepo = {
       .update(paymentTransactions)
       .set(set)
       .where(eq(paymentTransactions.id, id))
+      .returning();
+    return rows[0];
+  },
+
+  /**
+   * Flag a just-ingested row as mapped WITHOUT any CMP action — for feeds that arrive already
+   * reconciled (e.g. the pre-mapped Stripe accounts that need no invoice payment, so they should
+   * skip the agent's unmapped queue). Flips ONLY when the row is still unmapped, so a Zap retry
+   * never re-stamps mapped_at and a mapping an agent made in the app is never clobbered.
+   */
+  async markIngestMapped(
+    source: string,
+    sourceRecordId: string,
+    opts: { mappingType?: string; mappedBy?: string } = {},
+  ): Promise<PaymentTransaction | undefined> {
+    const rows = await db
+      .update(paymentTransactions)
+      .set({
+        isInvoiceMapped: true,
+        mappingType: opts.mappingType ?? 'Stripe (auto)',
+        mappedBy: opts.mappedBy ?? 'Zapier (auto)',
+        mappedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(paymentTransactions.source, source),
+          eq(paymentTransactions.sourceRecordId, sourceRecordId),
+          eq(paymentTransactions.isInvoiceMapped, false),
+        ),
+      )
       .returning();
     return rows[0];
   },

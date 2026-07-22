@@ -1,15 +1,22 @@
 /**
- * Debtors dashboard — self-service Client Invoices block parity
- * (search, Hard only, summary strip, expandable invoice cards).
+ * Debtors dashboard — agent book of overdue clients (Billing rules, CMP live).
+ * Search · status chips · KPI strip · expandable invoice cards.
  */
-import { useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { getImpersonation } from '@/api/impersonation';
+import { formatCachedAt } from './dashCache';
 import { s } from './dc';
-import { useLoad } from './live';
+import { DebtorsSkeleton } from './DashSkeleton';
+import { useSales } from './ctx';
 import {
+  DEBT_MIN_DAYS,
+  HARD_DEBT_DAYS,
   debtorsSummary,
   filterDebtors,
   loadDebtorsRaw,
   type DebtorCard,
+  type DebtorStatusFilter,
+  type DebtorsRaw,
 } from './dashDebtorsData';
 import { dbtFormatDate, dbtFormatMoney, dbtFormatPeriod, dbtFormatStatus } from './dashFormat';
 
@@ -21,25 +28,38 @@ function statusTone(status: string): string {
   return 'var(--muted)';
 }
 
+const STATUS_CHIPS: Array<{ id: DebtorStatusFilter; label: string }> = [
+  { id: 'all', label: 'All' },
+  { id: 'pending', label: 'Pending' },
+  { id: 'partial', label: 'Partial' },
+  { id: 'hard', label: 'Hard 15d+' },
+];
+
 function DebtorRow({
   debtor,
   open,
   onToggle,
+  index,
 }: {
   debtor: DebtorCard;
   open: boolean;
   onToggle: () => void;
+  index: number;
 }): ReactNode {
   const title = debtor.companyName || debtor.dealName || '—';
   return (
     <div
-      style={s(
-        `padding:16px 18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${
-          debtor.isHardDebtor
-            ? 'color-mix(in srgb,var(--danger) 35%,var(--border))'
-            : 'var(--border)'
-        };box-shadow:var(--shadow-sm)`,
-      )}
+      className="ss-card-h ss-fu"
+      style={{
+        ...s(
+          `padding:16px 18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${
+            debtor.isHardDebtor
+              ? 'color-mix(in srgb,var(--danger) 35%,var(--border))'
+              : 'var(--border)'
+          };box-shadow:var(--shadow-sm);cursor:default`,
+        ),
+        animationDelay: `${Math.min(index, 8) * 40}ms`,
+      }}
     >
       <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:16px')}>
         <div style={s('min-width:0;flex:1')}>
@@ -100,21 +120,36 @@ function DebtorRow({
       <button
         type="button"
         onClick={onToggle}
+        aria-expanded={open}
         style={s(
-          'margin-top:14px;width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border2);background:var(--alt);color:var(--text2);font-size:13px;font-weight:700;cursor:pointer',
+          'margin-top:14px;width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border2);background:var(--alt);color:var(--text2);font-size:13px;font-weight:700;cursor:pointer;transition:background .14s,border-color .14s',
         )}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.borderColor = 'color-mix(in srgb, var(--accent) 40%, var(--border2))';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.borderColor = 'var(--border2)';
+        }}
       >
         <span>
-          {debtor.invoiceCount} invoice{debtor.invoiceCount === 1 ? '' : 's'}
+          {open ? 'Hide' : 'Show'} {debtor.invoiceCount} invoice
+          {debtor.invoiceCount === 1 ? '' : 's'}
         </span>
-        <span style={s(`transition:transform .15s;transform:rotate(${open ? 180 : 0}deg)`)}>▾</span>
+        <span style={s(`transition:transform .18s cubic-bezier(.2,0,0,1);transform:rotate(${open ? 180 : 0}deg);display:inline-block`)}>
+          ▾
+        </span>
       </button>
 
-      {open && (
-        <div style={s('margin-top:8px;display:flex;flex-direction:column;gap:6px')}>
+      {open ? (
+        <div
+          style={s(
+            'margin-top:8px;display:flex;flex-direction:column;gap:6px;animation:ss-fadein .22s cubic-bezier(.2,0,0,1) both',
+          )}
+        >
           {debtor.invoices.map((inv) => (
             <div
               key={inv.invoiceId || `${inv.createDate}-${inv.remaining}`}
+              className="ss-card-h"
               style={s(
                 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border2);background:var(--surface);flex-wrap:wrap',
               )}
@@ -134,7 +169,7 @@ function DebtorRow({
                 {inv.debtDays > 0 ? (
                   <span
                     style={s(
-                      `font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:800;color:${inv.debtDays >= 15 ? 'var(--danger)' : 'var(--orange)'}`,
+                      `font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:800;color:${inv.debtDays >= HARD_DEBT_DAYS ? 'var(--danger)' : 'var(--orange)'}`,
                     )}
                   >
                     {inv.debtDays}d
@@ -155,57 +190,100 @@ function DebtorRow({
             </div>
           ))}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
 
 export function DebtorsDashPanel() {
-  const load = useLoad(loadDebtorsRaw, []);
+  const actAsKey = getImpersonation()?.zohoUserId ?? 'self';
+  const { pushToast } = useSales();
+  const [data, setData] = useState<DebtorsRaw | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [hardOnly, setHardOnly] = useState(false);
+  const [status, setStatus] = useState<DebtorStatusFilter>('all');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  if (load.loading && !load.data) {
-    return <div style={s('text-align:center;padding:56px 20px;color:var(--muted);font-size:13px')}>Loading debtors…</div>;
-  }
-  if (load.error && !load.data) {
+  const fetch = async (force: boolean): Promise<void> => {
+    if (force) setRefreshing(true);
+    else setLoading(true);
+    setError(null);
+    try {
+      setData(await loadDebtorsRaw({ force }));
+      if (force) pushToast('Debtors refreshed', 'Latest overdue balances loaded.');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to load debtors.';
+      setError(msg);
+      if (force) pushToast("Couldn't refresh", msg);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    setExpanded({});
+    void fetch(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actAsKey]);
+
+  const baseList = useMemo(
+    () => (data ? filterDebtors(data.debtors, '', 'all') : []),
+    [data],
+  );
+  const visible = useMemo(
+    () => (data ? filterDebtors(data.debtors, search, status) : []),
+    [data, search, status],
+  );
+  const summary = useMemo(() => debtorsSummary(baseList), [baseList]);
+  const cachedLabel = data?.cachedAt ? formatCachedAt(new Date(data.cachedAt)) : '';
+
+  if (loading && !data) return <DebtorsSkeleton />;
+  if (error && !data) {
     return (
       <div style={s('text-align:center;padding:56px 20px;color:var(--danger);font-size:13px')}>
-        {load.error}
+        {error}
         <div style={s('margin-top:12px')}>
-          <button type="button" onClick={load.reload} style={s('padding:8px 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;cursor:pointer')}>
+          <button
+            type="button"
+            onClick={() => void fetch(true)}
+            style={s(
+              'padding:8px 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;cursor:pointer',
+            )}
+          >
             Retry
           </button>
         </div>
       </div>
     );
   }
-  const raw = load.data;
-  if (!raw) return null;
-
-  const filtered = filterDebtors(raw.debtors, search);
-  const visible = hardOnly ? filtered.filter((d) => d.isHardDebtor) : filtered;
-  const summary = debtorsSummary(filtered);
+  if (!data) return null;
 
   return (
-    <div style={s('display:flex;flex-direction:column;gap:14px')}>
-      <div style={s('display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap')}>
+    <div className="ss-fu" style={s('display:flex;flex-direction:column;gap:14px')}>
+      <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap')}>
         <div>
-          <div style={s('font-size:15px;font-weight:800')}>Client Invoices</div>
+          <div style={s('font-size:15px;font-weight:800')}>Your debtors</div>
           <div style={s('font-size:12px;color:var(--muted);margin-top:2px')}>
-            Outstanding balances · 2+ days overdue
+            Pending / partial invoices · {DEBT_MIN_DAYS}+ days overdue · Hard at {HARD_DEBT_DAYS}d
+            {cachedLabel ? (
+              <span style={s('margin-left:8px;color:var(--faint)')}>
+                · {data.fromCache ? 'Cached' : 'Updated'} {cachedLabel} ET
+              </span>
+            ) : null}
           </div>
         </div>
         <button
           type="button"
-          onClick={load.reload}
-          disabled={load.loading}
+          onClick={() => void fetch(true)}
+          disabled={refreshing}
           style={s(
-            'height:34px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;font-size:12px;cursor:pointer;color:var(--text2)',
+            `height:34px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;font-size:12px;cursor:${refreshing ? 'wait' : 'pointer'};color:var(--text2);opacity:${refreshing ? 0.7 : 1};transition:opacity .14s,border-color .14s`,
           )}
         >
-          {load.loading ? 'Refreshing…' : 'Refresh'}
+          {refreshing ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
 
@@ -214,8 +292,9 @@ export function DebtorsDashPanel() {
           <input
             value={search}
             onChange={(e) => setSearch(e.currentTarget.value)}
-            placeholder="Search by Carrier ID, deal, or company…"
+            placeholder="Search carrier ID, company, deal, or stage…"
             className="ss-in"
+            aria-label="Search debtors"
             style={s(
               'width:100%;height:38px;padding:0 36px 0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px',
             )}
@@ -224,6 +303,7 @@ export function DebtorsDashPanel() {
             <button
               type="button"
               onClick={() => setSearch('')}
+              aria-label="Clear search"
               style={s(
                 'position:absolute;right:8px;top:50%;transform:translateY(-50%);border:none;background:transparent;color:var(--muted);cursor:pointer;font-weight:700',
               )}
@@ -232,70 +312,109 @@ export function DebtorsDashPanel() {
             </button>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={() => setHardOnly((v) => !v)}
-          style={s(
-            `display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 14px;border-radius:99px;border:1px solid ${hardOnly ? 'var(--danger)' : 'var(--border)'};background:${hardOnly ? 'color-mix(in srgb,var(--danger) 12%,transparent)' : 'var(--surface)'};color:${hardOnly ? 'var(--danger)' : 'var(--muted)'};font-size:12px;font-weight:800;cursor:pointer`,
-          )}
+        <div
+          role="group"
+          aria-label="Debtor status filter"
+          style={s('display:inline-flex;gap:4px;padding:4px;border-radius:99px;background:var(--alt);border:1px solid var(--border)')}
         >
-          Hard only
-          {summary.hardCount ? (
-            <span style={s('font-family:JetBrains Mono,monospace;font-size:11px')}>{summary.hardCount}</span>
-          ) : null}
-        </button>
+          {STATUS_CHIPS.map((chip) => {
+            const on = status === chip.id;
+            const count =
+              chip.id === 'all'
+                ? summary.debtorCount
+                : chip.id === 'pending'
+                  ? summary.pendingCount
+                  : chip.id === 'partial'
+                    ? summary.partialCount
+                    : summary.hardCount;
+            return (
+              <button
+                key={chip.id}
+                type="button"
+                onClick={() => setStatus(chip.id)}
+                style={s(
+                  `display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 12px;border-radius:99px;border:1px solid ${
+                    on
+                      ? chip.id === 'hard'
+                        ? 'var(--danger)'
+                        : 'color-mix(in srgb,var(--accent) 45%,var(--border))'
+                      : 'transparent'
+                  };background:${
+                    on
+                      ? chip.id === 'hard'
+                        ? 'color-mix(in srgb,var(--danger) 12%,transparent)'
+                        : 'color-mix(in srgb,var(--accent) 12%,transparent)'
+                      : 'transparent'
+                  };color:${
+                    on ? (chip.id === 'hard' ? 'var(--danger)' : 'var(--accent)') : 'var(--muted)'
+                  };font-size:12px;font-weight:800;cursor:pointer;transition:background .14s,color .14s,border-color .14s`,
+                )}
+              >
+                {chip.label}
+                <span style={s("font-family:'JetBrains Mono',monospace;font-size:10.5px;opacity:.85")}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {filtered.length > 0 && (
+      {baseList.length > 0 ? (
         <div
-          style={s(
-            'display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:14px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)',
-          )}
+          className="ss-ret-metrics"
+          style={s('padding:14px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)')}
         >
           {[
-            { label: 'Total Outstanding', val: dbtFormatMoney(summary.totalRemaining), col: 'var(--danger)' },
-            { label: 'Pending', val: String(summary.pendingCount), col: 'var(--text)' },
-            { label: 'Partial', val: String(summary.partialCount), col: 'var(--text)' },
-            { label: 'Hard (15+ days)', val: String(summary.hardCount), col: 'var(--danger)' },
+            { label: 'Outstanding', val: dbtFormatMoney(summary.totalRemaining), tone: 'is-danger' },
+            { label: 'Debtors', val: String(summary.debtorCount), tone: '' },
+            { label: 'Partial', val: String(summary.partialCount), tone: '' },
+            { label: 'Hard 15d+', val: String(summary.hardCount), tone: 'is-danger' },
           ].map((c) => (
-            <div key={c.label}>
-              <div style={s(`font-family:'JetBrains Mono',monospace;font-weight:700;font-size:18px;color:${c.col}`)}>
-                {c.val}
-              </div>
-              <div style={s('font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-top:3px')}>
-                {c.label}
-              </div>
+            <div key={c.label} className="ss-ret-metric ss-fu">
+              <div className={`ss-ret-metric-val ${c.tone}`.trim()}>{c.val}</div>
+              <div className="ss-ret-metric-lbl">{c.label}</div>
             </div>
           ))}
         </div>
-      )}
+      ) : null}
 
-      {filtered.length === 0 && !search && !hardOnly && (
-        <div style={s('text-align:center;padding:48px 20px;color:var(--muted)')}>
+      {baseList.length === 0 ? (
+        <div
+          style={s(
+            'text-align:center;padding:48px 20px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface)',
+          )}
+        >
           <div style={s('font-size:14px;font-weight:700;color:var(--ok)')}>No outstanding balances</div>
-          <div style={s('font-size:13px;margin-top:4px')}>No clients are 2+ days overdue.</div>
+          <div style={s('font-size:13px;margin-top:4px;color:var(--muted)')}>
+            None of your clients have invoices {DEBT_MIN_DAYS}+ days overdue.
+          </div>
         </div>
-      )}
-      {filtered.length > 0 && visible.length === 0 && (
+      ) : null}
+
+      {baseList.length > 0 && visible.length === 0 ? (
         <div style={s('text-align:center;padding:40px 20px;color:var(--muted);font-size:13px')}>
-          {hardOnly
-            ? 'No hard debtors right now — nothing 15+ days overdue.'
-            : 'No debtors match the current search.'}
+          {search
+            ? 'No debtors match this search.'
+            : status === 'hard'
+              ? 'No hard debtors right now — nothing 15+ days overdue.'
+              : 'No debtors in this filter.'}
         </div>
-      )}
+      ) : null}
 
       <div style={s('display:flex;flex-direction:column;gap:10px')}>
-        {visible.map((d) => (
+        {visible.map((d, i) => (
           <DebtorRow
             key={d.id}
             debtor={d}
+            index={i}
             open={!!expanded[d.id]}
             onToggle={() => setExpanded((prev) => ({ ...prev, [d.id]: !prev[d.id] }))}
           />
         ))}
       </div>
 
-      {filtered.length > 0 && (
+      {baseList.length > 0 ? (
         <div
           style={s(
             'display:flex;align-items:center;justify-content:center;gap:28px;padding:16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt)',
@@ -303,10 +422,13 @@ export function DebtorsDashPanel() {
         >
           <div style={s('text-align:center')}>
             <div style={s("font-family:'JetBrains Mono',monospace;font-weight:700;font-size:20px")}>
-              {filtered.length}
+              {visible.length}
+              {visible.length !== baseList.length ? (
+                <span style={s('font-size:13px;color:var(--muted);font-weight:600')}> / {baseList.length}</span>
+              ) : null}
             </div>
             <div style={s('font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)')}>
-              Active Debtors
+              Showing
             </div>
           </div>
           <div style={s('width:1px;height:36px;background:var(--border)')} />
@@ -319,11 +441,11 @@ export function DebtorsDashPanel() {
               {dbtFormatMoney(summary.largestDebt)}
             </div>
             <div style={s('font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)')}>
-              Largest Debt
+              Largest debt
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

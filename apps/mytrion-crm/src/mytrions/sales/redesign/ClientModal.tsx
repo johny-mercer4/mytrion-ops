@@ -1,14 +1,16 @@
 /**
  * Client drilldown modal — Overview / Cards / Activity / Manage (registration links).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { ClientManagePanel } from './ClientManagePanel';
 import {
   loadClientCards,
   loadClientActivity,
+  loadClientBilling,
   CLIENT_ACTIVITY_PAGE,
   type ClientActivityVM,
+  type ClientBillingVM,
 } from './clientDrilldown';
 import type { ClientRecord } from './ctx';
 import { s } from './dc';
@@ -25,7 +27,79 @@ import {
   type TierResult,
 } from './loyalty';
 
-export type ClientModalTab = 'overview' | 'loyalty' | 'cards' | 'activity' | 'manage';
+export type ClientModalTab = 'overview' | 'loyalty' | 'cards' | 'activity' | 'billing' | 'manage';
+
+// ---- Billing & Account tab ----
+function BillingField({ label, value, soon }: { label: string; value?: string; soon?: boolean }) {
+  return (
+    <div style={s('padding:15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
+      <div style={s('font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>{label}</div>
+      {soon ? (
+        <div style={s('margin-top:7px')}>
+          <span style={s('font-size:10px;font-weight:700;padding:3px 8px;border-radius:99px;background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)')}>Coming soon</span>
+        </div>
+      ) : (
+        <div style={s("font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600;margin-top:6px")}>{value ?? '—'}</div>
+      )}
+    </div>
+  );
+}
+
+function BillingSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div>
+      <div style={s('font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:10px')}>{title}</div>
+      <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>{children}</div>
+    </div>
+  );
+}
+
+/** Per-client billing/account view. DWH-backed fields (billing cycle, terms, credit limit, min
+ *  balance, debt, status) render live; fields not yet in the DWH (fees, payment method, discounts,
+ *  bonus, notes, scheduled dates) show a "Coming soon" chip until Accounting/CMP wires them in. */
+function BillingPanel({ data, loading, error, statusLabel, owed }: {
+  data: ClientBillingVM | null;
+  loading: boolean;
+  error: string | null;
+  statusLabel: string;
+  owed: number;
+}) {
+  if (loading) return <div style={s('font-size:13px;color:var(--muted);padding:8px 2px')}>Loading billing…</div>;
+  if (error) return <div style={s('font-size:13px;color:var(--danger);padding:8px 2px')}>Couldn't load billing — {error}</div>;
+  const b = data;
+  const dash = (v?: string | null): string => (v && String(v).trim() ? String(v) : '—');
+  const money = (v?: string | number | null): string =>
+    v != null && String(v).trim() !== '' && Number.isFinite(Number(v)) ? `$${Math.round(Number(v)).toLocaleString('en-US')}` : '—';
+  const cyc = b?.billingCycle ? `${b.billingCycle}${b.billingCycleTag ? ` · ${b.billingCycleTag}` : ''}` : null;
+  return (
+    <div style={s('display:flex;flex-direction:column;gap:18px')}>
+      <BillingSection title="Client Profile">
+        <BillingField label="Billing cycle" value={dash(cyc)} />
+        <BillingField label="Payment terms" value={dash(b?.paymentTerms)} />
+        <BillingField label="Fee status" soon />
+        <BillingField label="Payment method" soon />
+      </BillingSection>
+      <BillingSection title="Discount & Bonus">
+        <BillingField label="TA discount" soon />
+        <BillingField label="Additional discounts" soon />
+        <BillingField label="Bonus eligibility" soon />
+        <BillingField label="Account notes" soon />
+      </BillingSection>
+      <BillingSection title="Billing Summary">
+        <BillingField label="Credit limit" value={money(b?.creditLimit)} />
+        <BillingField label="Min. required balance" value={money(b?.minimumRequiredBalance)} />
+        <BillingField label="Payment day" value={dash(b?.paymentDay)} />
+        <BillingField label="Account status" value={statusLabel} />
+        <BillingField label="Current debt" value={owed >= 1 ? money(owed) : '$0'} />
+        <BillingField label="Last / upcoming payment" soon />
+      </BillingSection>
+      <div style={s('font-size:11.5px;color:var(--muted);line-height:1.5')}>
+        Fee, payment-method, discount, bonus, and scheduled-payment fields aren't in the data warehouse
+        yet — they light up once Accounting/CMP wires them in.
+      </div>
+    </div>
+  );
+}
 
 const REC_STATUS: Record<ClientRecord['status'], [string, string]> = {
   active: ['Active', 'var(--ok)'],
@@ -64,6 +138,7 @@ export function ClientModal({
   const tier = resolveTier(client.active, client.gallonsThisMonth > 0 ? client.gallonsThisMonth : client.cycleGallons);
   const rewards = tierRewards(tier.level);
   const cardsL = useLoad(() => loadClientCards(client.id), [client.id]);
+  const billingL = useLoad(() => loadClientBilling(client.id), [client.id]);
   const [actRows, setActRows] = useState<ClientActivityVM[]>([]);
   const [actLimit, setActLimit] = useState(CLIENT_ACTIVITY_PAGE);
   const [actHasMore, setActHasMore] = useState(false);
@@ -116,6 +191,7 @@ export function ClientModal({
     ['loyalty', 'Loyalty'],
     ['cards', 'Cards'],
     ['activity', 'Activity'],
+    ['billing', 'Billing'],
     ['manage', 'Manage'],
   ];
   const tile = 'padding:15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)';
@@ -229,12 +305,31 @@ export function ClientModal({
                 <div style={s('font-size:13px;color:var(--muted);padding:8px 2px')}>No cards on file for this carrier.</div>
               )}
               {(cardsL.data ?? []).map((card, i) => (
-                <div key={`${card.num}-${i}`} style={s('display:flex;align-items:center;gap:12px;padding:13px 15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
-                  <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600")}>{card.num}</span>
-                  <span style={s(`font-size:10px;font-weight:700;padding:3px 8px;border-radius:99px;background:color-mix(in srgb,${card.tone} 16%,transparent);color:${card.tone}`)}>{card.status}</span>
+                <div key={`${card.num}-${i}`} style={s('display:flex;flex-direction:column;gap:8px;padding:13px 15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
+                  <div style={s('display:flex;align-items:center;gap:12px')}>
+                    <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600")}>{card.num}</span>
+                    {card.cardType && <span style={s('font-size:11px;color:var(--muted)')}>{card.cardType}</span>}
+                    <span style={s(`margin-left:auto;font-size:10px;font-weight:700;padding:3px 8px;border-radius:99px;background:color-mix(in srgb,${card.tone} 16%,transparent);color:${card.tone}`)}>{card.status}</span>
+                  </div>
+                  {(card.unit || card.driverName || card.driverId) && (
+                    <div style={s('display:flex;flex-wrap:wrap;gap:14px;font-size:11.5px;color:var(--text2)')}>
+                      {card.unit && <span><span style={s('color:var(--muted)')}>Unit</span> {card.unit}</span>}
+                      {card.driverName && <span><span style={s('color:var(--muted)')}>Driver</span> {card.driverName}</span>}
+                      {card.driverId && <span><span style={s('color:var(--muted)')}>Driver ID</span> {card.driverId}</span>}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
+          )}
+          {clientTab === 'billing' && (
+            <BillingPanel
+              data={billingL.data ?? null}
+              loading={billingL.loading}
+              error={billingL.error}
+              statusLabel={statusBadge.text}
+              owed={client.owed ?? 0}
+            />
           )}
           {clientTab === 'activity' && (
             <div style={s('display:flex;flex-direction:column;gap:0')}>

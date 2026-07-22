@@ -1,10 +1,10 @@
 /**
- * Open Pool claim_requests → CS approve/decline + Zoho ownership → p1_new.
+ * Open Pool instant claim → Zoho ownership + p1_new; unclaimed audit; daily cap.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import type { RetentionCase } from '../../src/db/schema/index.js';
-import { AppError, RBACError } from '../../src/lib/errors.js';
+import { AppError } from '../../src/lib/errors.js';
 import type { TenantContext } from '../../src/types/tenantContext.js';
 
 vi.mock('../../src/db/client.js', () => ({
@@ -23,10 +23,11 @@ vi.mock('../../src/integrations/zohoCrmRecords.js', () => ({
   },
 }));
 
-vi.mock('../../src/modules/retention/notify.js', () => ({
-  notifyClaimRequestToCs: vi.fn(async () => undefined),
-  notifyClaimApproved: vi.fn(async () => undefined),
-  notifyClaimDeclined: vi.fn(async () => undefined),
+vi.mock('../../src/modules/retention/openPoolCaps.js', () => ({
+  OPEN_POOL_MAX_CLAIMS_PER_DAY: 2,
+  assertUnderOpenPoolDailyCap: vi.fn(async () => ({ used: 0, remaining: 2 })),
+  countOpenPoolClaimsToday: vi.fn(async () => 0),
+  getOpenPoolDailyQuota: vi.fn(async () => ({ used: 0, max: 2, remaining: 2 })),
 }));
 
 vi.mock('../../src/repos/retentionCaseRepo.js', async (importOriginal) => {
@@ -42,14 +43,13 @@ vi.mock('../../src/repos/retentionCaseRepo.js', async (importOriginal) => {
 
 import { db } from '../../src/db/client.js';
 import { zohoCrmRecords } from '../../src/integrations/zohoCrmRecords.js';
-import { notifyClaimRequestToCs } from '../../src/modules/retention/notify.js';
-import { CLAIM_APPROVE_DEADLINE_TYPE } from '../../src/modules/retention/deadlines.js';
+import { assertUnderOpenPoolDailyCap } from '../../src/modules/retention/openPoolCaps.js';
 import { retentionPoolClaimRepo } from '../../src/repos/retentionPoolClaimRepo.js';
 import { appendRetentionEvent } from '../../src/repos/retentionCaseRepo.js';
 
 const dbMock = vi.mocked(db, true);
 const zoho = vi.mocked(zohoCrmRecords, true);
-const notifyCs = vi.mocked(notifyClaimRequestToCs);
+const assertCap = vi.mocked(assertUnderOpenPoolDailyCap);
 
 function baseCase(overrides: Partial<RetentionCase> = {}): RetentionCase {
   return {
@@ -61,6 +61,8 @@ function baseCase(overrides: Partial<RetentionCase> = {}): RetentionCase {
     applicationId: null,
     agentName: 'Rep',
     contactPhone: null,
+    preferredLanguage: null,
+    isSpanishDesk: false,
     phaseCode: 'phase_1_agent',
     statusCode: 'p1_open_pool',
     phaseChangedAt: new Date('2026-07-01T00:00:00Z'),
@@ -73,6 +75,7 @@ function baseCase(overrides: Partial<RetentionCase> = {}): RetentionCase {
     pendingClaimantZohoUserId: null,
     assignmentCount: 1,
     openPoolAttemptCount: 1,
+    retentionToPoolCount: 0,
     outOfReachAttempts: 5,
     dealOwnerChanged: false,
     currentDeadlineAt: new Date('2026-07-10T00:00:00Z'),
@@ -100,7 +103,7 @@ function baseCase(overrides: Partial<RetentionCase> = {}): RetentionCase {
 function ctx(depts: string[], role: TenantContext['role'] = 'worker'): TenantContext {
   return {
     tenantId: DEFAULT_TENANT_ID,
-    userId: 'zoho:cs-1',
+    userId: 'zoho:sales-1',
     audience: 'internal',
     role,
     scopes: ['*'],
@@ -110,7 +113,6 @@ function ctx(depts: string[], role: TenantContext['role'] = 'worker'): TenantCon
   };
 }
 
-/** Sequential select().from().where().limit() results (loadCase / loadOpenRequest). */
 function mockSelectLimits(...batches: unknown[][]): void {
   let i = 0;
   dbMock.select.mockImplementation(() => {
@@ -123,7 +125,7 @@ function mockSelectLimits(...batches: unknown[][]): void {
             limit: vi.fn().mockResolvedValue(rows),
           }),
         }),
-        innerJoin: vi.fn().mockReturnValue({
+        leftJoin: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
             orderBy: vi.fn().mockReturnValue({
               limit: vi.fn().mockResolvedValue(rows),
@@ -135,14 +137,19 @@ function mockSelectLimits(...batches: unknown[][]): void {
   });
 }
 
-function mockUpdateReturning(row: RetentionCase): void {
-  dbMock.update.mockReturnValue({
-    set: vi.fn().mockReturnValue({
-      where: vi.fn().mockReturnValue({
-        returning: vi.fn().mockResolvedValue([row]),
+/** Sequential update().set().where().returning() results. */
+function mockUpdateSequence(...rows: RetentionCase[]): void {
+  let i = 0;
+  dbMock.update.mockImplementation(() => {
+    const row = rows[i++] ?? rows[rows.length - 1]!;
+    return {
+      set: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([row]),
+        }),
       }),
-    }),
-  } as never);
+    } as never;
+  });
 }
 
 function mockInsertOk(): void {
@@ -151,75 +158,11 @@ function mockInsertOk(): void {
   } as never);
 }
 
-function mockDeleteReturning(n = 1): void {
-  dbMock.delete.mockReturnValue({
-    where: vi.fn().mockReturnValue({
-      returning: vi.fn().mockResolvedValue(Array.from({ length: n }, (_, k) => ({ id: k + 1 }))),
-    }),
-  } as never);
-}
-
-describe('retentionPoolClaimRepo.requestClaim', () => {
+describe('retentionPoolClaimRepo.claimNow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockInsertOk();
-  });
-
-  it('inserts claim_request + Processing lock with reason', async () => {
-    const open = baseCase();
-    const pending = baseCase({
-      statusCode: 'p1_pool_claim_pending',
-      pendingClaimantZohoUserId: 'claimant-9',
-      currentDeadlineType: CLAIM_APPROVE_DEADLINE_TYPE,
-    });
-    mockSelectLimits([open], []);
-    mockUpdateReturning(pending);
-
-    const out = await retentionPoolClaimRepo.requestClaim(ctx(['sales']), '42', 'claimant-9', {
-      agentName: 'Alice',
-      reason: 'Strong relationship — can re-engage',
-    });
-
-    expect(out.pendingApproval).toBe(true);
-    expect(out.statusCode).toBe('p1_pool_claim_pending');
-    expect(out.pendingClaimantZohoUserId).toBe('claimant-9');
-    expect(dbMock.insert).toHaveBeenCalled();
-    expect(notifyCs).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ reason: 'Strong relationship — can re-engage' }),
-    );
-    expect(zoho.updateRecord).not.toHaveBeenCalled();
-    expect(appendRetentionEvent).toHaveBeenCalled();
-  });
-
-  it('rejects missing reason', async () => {
-    mockSelectLimits([baseCase()]);
-    await expect(
-      retentionPoolClaimRepo.requestClaim(ctx(['sales']), '42', 'claimant-9', {
-        reason: '   ',
-      }),
-    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
-    expect(dbMock.insert).not.toHaveBeenCalled();
-  });
-
-  it('409 when a claim is already Processing', async () => {
-    mockSelectLimits([
-      baseCase({
-        statusCode: 'p1_pool_claim_pending',
-        pendingClaimantZohoUserId: 'other',
-      }),
-    ]);
-    await expect(
-      retentionPoolClaimRepo.requestClaim(ctx(['sales']), '42', 'claimant-9', {
-        reason: 'Want this',
-      }),
-    ).rejects.toMatchObject({ code: 'RETENTION_NOT_IN_POOL' });
-  });
-});
-
-describe('retentionPoolClaimRepo.approveClaim / declineClaim', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+    assertCap.mockResolvedValue({ used: 0, remaining: 2 });
     zoho.getRecord.mockResolvedValue({
       id: 'deal-1',
       Contact_Name: { id: 'c1' },
@@ -228,8 +171,9 @@ describe('retentionPoolClaimRepo.approveClaim / declineClaim', () => {
     zoho.updateRecord.mockResolvedValue('ok');
   });
 
-  it('CS approve → Zoho owners + p1_new (2 BD)', async () => {
-    const pending = baseCase({
+  it('claims instantly → Zoho owners + p1_new + approved audit', async () => {
+    const open = baseCase();
+    const locked = baseCase({
       statusCode: 'p1_pool_claim_pending',
       pendingClaimantZohoUserId: 'claimant-9',
     });
@@ -240,81 +184,117 @@ describe('retentionPoolClaimRepo.approveClaim / declineClaim', () => {
       assignmentCount: 2,
       currentDeadlineType: '2BD_agent_action',
     });
-    mockSelectLimits([pending]);
-    mockUpdateReturning(assigned);
+    mockSelectLimits([open]);
+    mockUpdateSequence(locked, assigned);
 
-    const out = await retentionPoolClaimRepo.approveClaim(ctx(['customer-service']), '42', 'cs-1');
+    const out = await retentionPoolClaimRepo.claimNow(ctx(['sales']), '42', 'claimant-9', {
+      agentName: 'Alice',
+      reason: 'Strong relationship — can re-engage',
+    });
+
+    expect(out.pendingApproval).toBe(false);
     expect(out.statusCode).toBe('p1_new');
+    expect(dbMock.insert).toHaveBeenCalled();
     expect(zoho.updateRecord).toHaveBeenCalledWith('Deals', 'deal-1', {
       Owner: { id: 'claimant-9' },
     });
-    expect(zoho.updateRecord).toHaveBeenCalledWith('Contacts', 'c1', {
-      Owner: { id: 'claimant-9' },
-    });
-    expect(zoho.updateRecord).toHaveBeenCalledWith('Accounts', 'a1', {
-      Owner: { id: 'claimant-9' },
-    });
+    expect(appendRetentionEvent).toHaveBeenCalled();
   });
 
-  it('rejects non-CS approver', async () => {
+  it('rejects missing reason', async () => {
+    await expect(
+      retentionPoolClaimRepo.claimNow(ctx(['sales']), '42', 'claimant-9', {
+        reason: '   ',
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('409 when case already Processing', async () => {
     mockSelectLimits([
       baseCase({
         statusCode: 'p1_pool_claim_pending',
-        pendingClaimantZohoUserId: 'claimant-9',
+        pendingClaimantZohoUserId: 'other',
       }),
     ]);
     await expect(
-      retentionPoolClaimRepo.approveClaim(ctx(['sales']), '42', 'sales-1'),
-    ).rejects.toBeInstanceOf(RBACError);
+      retentionPoolClaimRepo.claimNow(ctx(['sales']), '42', 'claimant-9', {
+        reason: 'Want this',
+      }),
+    ).rejects.toMatchObject({ code: 'RETENTION_NOT_IN_POOL' });
   });
 
-  it('CS reject deletes request + restores pool', async () => {
-    const pending = baseCase({
+  it('409 claiming own former deal', async () => {
+    mockSelectLimits([baseCase({ poolOwnerZohoUserId: 'claimant-9' })]);
+    await expect(
+      retentionPoolClaimRepo.claimNow(ctx(['sales']), '42', 'claimant-9', {
+        reason: 'Mine again',
+      }),
+    ).rejects.toMatchObject({ code: 'RETENTION_CLAIM_SELF' });
+  });
+
+  it('fails closed when Deal Owner update fails and unlocks pool', async () => {
+    const open = baseCase();
+    const locked = baseCase({
       statusCode: 'p1_pool_claim_pending',
       pendingClaimantZohoUserId: 'claimant-9',
     });
-    const open = baseCase({
-      statusCode: 'p1_open_pool',
-      pendingClaimantZohoUserId: null,
-    });
-    mockSelectLimits([pending]);
-    mockDeleteReturning(1);
-    mockUpdateReturning(open);
-
-    const out = await retentionPoolClaimRepo.declineClaim(ctx(['customer-service']), '42', 'cs-1');
-    expect(out.statusCode).toBe('p1_open_pool');
-    expect(dbMock.delete).toHaveBeenCalled();
-    expect(zoho.updateRecord).not.toHaveBeenCalled();
-  });
-
-  it('fails closed when Deal Owner update fails', async () => {
-    mockSelectLimits([
-      baseCase({
-        statusCode: 'p1_pool_claim_pending',
-        pendingClaimantZohoUserId: 'claimant-9',
-      }),
-    ]);
+    const unlocked = baseCase({ statusCode: 'p1_open_pool' });
+    mockSelectLimits([open]);
+    mockUpdateSequence(locked, unlocked);
     zoho.updateRecord.mockRejectedValueOnce(new Error('Zoho boom'));
     await expect(
-      retentionPoolClaimRepo.approveClaim(ctx(['customer-service']), '42', 'cs-1'),
+      retentionPoolClaimRepo.claimNow(ctx(['sales']), '42', 'claimant-9', {
+        reason: 'Try claim',
+      }),
     ).rejects.toBeInstanceOf(AppError);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('enforces daily Open Pool cap', async () => {
+    assertCap.mockRejectedValueOnce(
+      new AppError('Daily Open Pool cap reached (2 claims/day). Try again tomorrow.', {
+        statusCode: 429,
+        code: 'RETENTION_OPEN_POOL_DAILY_CAP',
+        expose: true,
+      }),
+    );
+    await expect(
+      retentionPoolClaimRepo.claimNow(ctx(['sales']), '42', 'claimant-9', {
+        reason: 'One more',
+      }),
+    ).rejects.toMatchObject({ code: 'RETENTION_OPEN_POOL_DAILY_CAP' });
+  });
+});
+
+describe('retentionPoolClaimRepo.logUnclaimedExit', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockInsertOk();
+  });
+
+  it('inserts expired audit row for pool owner', async () => {
+    await retentionPoolClaimRepo.logUnclaimedExit(ctx(['customer-service']), baseCase(), {
+      outcomeNote: '3bd_unclaimed_to_retention',
+    });
+    expect(dbMock.insert).toHaveBeenCalled();
   });
 });
 
 describe('phase2 transitions', () => {
-  it('no_response with cap moves to CITI', async () => {
+  it('no_response is rejected (CS cannot send to Open Pool)', async () => {
     const { resolvePhase2Transition } = await import('../../src/modules/retention/phase2.js');
-    const t = resolvePhase2Transition(
-      baseCase({
-        phaseCode: 'phase_2_retention',
-        statusCode: 'p2_working',
-        assignmentCount: 3,
-        assignedAgentZohoUserId: 'cs-1',
-      }),
-      'no_response',
-    );
-    expect(t.phaseCode).toBe('phase_3_citi');
-    expect(t.statusCode).toBe('p3_hold');
+    expect(() =>
+      resolvePhase2Transition(
+        baseCase({
+          phaseCode: 'phase_2_retention',
+          statusCode: 'p2_working',
+          assignmentCount: 1,
+          assignedAgentZohoUserId: 'cs-1',
+        }),
+        'no_response',
+      ),
+    ).toThrow(/cannot send cases to Open Pool/i);
   });
 
   it('claim assigns CS worker', async () => {

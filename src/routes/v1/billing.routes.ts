@@ -1,15 +1,15 @@
 /**
- * Billing Mytrion — REST writes (/v1/billing/*).
+ * Billing Mytrion — REST reads + writes (/v1/billing/*).
  *
- * The Data Center deal-billing edit is a DIRECT Zoho CRM record update (the widget's
- * datacenter-panel.js edit modal calls ZOHO.CRM.API.updateRecord, not a Deluge function), so it
- * lives here as a route — not a touchpoint — where the servercrm/CRM key stays server-side, the
- * field allowlist + casing resolution run, and the write is audited. Mirrors the CS
- * /cs/data-center/deals/:id route but gated to the `billing` department.
- *
- * The Transactions mapping writes (map/unmap/top-up/sync/split) ARE Deluge functions and go
- * through the billing.* touchpoints instead (see catalog/billingDeluge.ts).
+ * The Transactions/Returns/carrier surface is Postgres-backed: list/search/returns/memory reads hit
+ * the repos directly; the mapping writes (map/unmap/top-up/sync/split, returns.match) update the PG
+ * row-of-record and move money through CMP via the servercrm /api/billing/cmp/* endpoints. The
+ * mapping-picker invoice list and the prepay ledger/RMVE/externals are CMP/EFS reads proxied to
+ * servercrm. No billing Deluge functions remain — the last one (mytrionSearchInvoices) is now the
+ * GET /billing/invoices/search route below. Identity for writes is the verified session, never the
+ * client; every write is audited.
  */
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { NotFoundError } from '../../lib/errors.js';
@@ -21,6 +21,7 @@ import {
   resolveCompanyId,
   reverseMapping,
 } from '../../modules/billing/cmpWrites.js';
+import { searchCarrierInvoices } from '../../modules/billing/cmpReads.js';
 import { fuzzyResolveCarrier } from '../../modules/billing/fuzzyCarrier.js';
 import {
   getPrepayCompanies,
@@ -32,6 +33,7 @@ import { toCandidateWire, toReturnWire, toTxWire } from '../../modules/billing/w
 import { carrierMemoryRepo } from '../../repos/carrierMemoryRepo.js';
 import { paymentReturnRepo } from '../../repos/paymentReturnRepo.js';
 import { paymentTransactionRepo } from '../../repos/paymentTransactionRepo.js';
+import type { NewPaymentTransaction } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment } from './helpers.js';
 
@@ -116,8 +118,6 @@ const fuzzyBody = z.object({
   email: z.string().max(200).optional(),
 });
 
-const idParam = z.object({ id: z.string().regex(/^\d+$/, 'id must be a CRM record id').max(60) });
-
 export async function billingRoutes(app: FastifyInstance): Promise<void> {
   const guard = { onRequest: [app.sessionOrApiKey] };
 
@@ -139,6 +139,12 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /** Full-dataset text search (payer / memo / txn # / exact carrier id). */
+  /** Whole-dataset aggregates for the source filter + summary tiles (independent of pagination). */
+  app.get('/billing/transactions/stats', guard, async (request) => {
+    requireBillingAccess(request);
+    return paymentTransactionRepo.stats();
+  });
+
   app.get('/billing/transactions/search', guard, async (request) => {
     requireBillingAccess(request);
     const q = txSearchQuery.parse(request.query);
@@ -210,6 +216,14 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     return { status: 'success', ...result };
   });
 
+  /** Last-365-day invoices for a carrier (the mapping picker) — CMP read via servercrm. Replaces the
+   *  last billing Deluge touchpoint (mytrionSearchInvoices). */
+  app.get('/billing/invoices/search', guard, async (request) => {
+    requireBillingAccess(request);
+    const q = z.object({ carrierId: z.string().min(1) }).parse(request.query);
+    return searchCarrierInvoices(q.carrierId);
+  });
+
   // ─── Writes (PG row-of-record + CMP money movement via servercrm) ────────────────────────
   // Each: validate → CMP call(s) via servercrm → on success stamp the PG mapping → audit → return
   // the widget-compatible {status:'success'|'partial'|'error'}. Identity (mapped_by/matched_by) is
@@ -273,6 +287,49 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     await paymentTransactionRepo.applyMapping(id, { carrierId: b.carrierId, isInvoiceMapped: true, mappingType, mappedBy: actor(ctx), mappedAt: new Date() });
     await auditFromContext(ctx, { action: 'billing.transactions.sync', status: 'ok', resourceType: 'payment_transaction', resourceId: String(id), detail: { carrierId: b.carrierId, mappingType } });
     return { status: 'success' };
+  });
+
+  /** Manually add a Chase transaction (Chase has no email/API feed like MX/Zelle/Stripe, so agents
+   *  key it in from the bank statement). Lands UNMAPPED — same lifecycle as an ingested payment. */
+  const manualChaseBody = z.object({
+    amount: z.coerce.number(),
+    postingDate: z.string().min(8).max(40), // yyyy-mm-dd (Chase "Posting Date")
+    senderName: z.string().max(200).optional(),
+    description: z.string().max(2000).optional(),
+    reference: z.string().max(120).optional(), // Chase transaction id / check number, if any
+    memo: z.string().max(1000).optional(),
+  });
+
+  app.post('/billing/transactions/manual', guard, async (request) => {
+    const ctx = requireBillingAccess(request);
+    const b = manualChaseBody.parse(request.body);
+    const occurred = new Date(b.postingDate);
+    // A provided reference is the idempotency key (re-add = no dup); otherwise mint a unique id.
+    const ref = b.reference?.trim();
+    const sourceRecordId = ref ? `chase:${ref}` : `chase-manual:${randomUUID()}`;
+    const row: NewPaymentTransaction = {
+      source: 'chase',
+      sourceModule: 'manual',
+      sourceRecordId,
+      amount: paymentTransactionRepo.money(b.amount) ?? null,
+      currency: 'USD',
+      occurredAt: Number.isNaN(occurred.getTime()) ? null : occurred,
+      name: b.senderName ?? null,
+      senderName: b.senderName ?? null,
+      description: b.description ?? null,
+      memo: b.memo ?? null,
+      externalTxnId: ref || null,
+      raw: { manualEntry: true, enteredBy: actor(ctx), ...b },
+    };
+    await paymentTransactionRepo.upsertMany([row]);
+    await auditFromContext(ctx, {
+      action: 'billing.transactions.manual-add',
+      status: 'ok',
+      resourceType: 'payment_transaction',
+      resourceId: sourceRecordId,
+      detail: { source: 'chase', amount: b.amount, senderName: b.senderName ?? null },
+    });
+    return { status: 'success', sourceRecordId };
   });
 
   /** Split a payment across invoices/prepay (sequential CMP; stop-on-first-failure → partial). */

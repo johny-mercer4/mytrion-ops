@@ -188,6 +188,8 @@ export interface TelegramWebAppUser {
   username?: string;
   first_name?: string;
   last_name?: string;
+  /** IETF tag from Telegram (e.g. 'en', 'ru', 'uz', 'es', 'pt-BR') — used to localize bot copy. */
+  language_code?: string;
 }
 
 /** Parse the JSON-encoded `user` field out of already-verified initData fields. */

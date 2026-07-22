@@ -143,11 +143,12 @@ export function CarrierInvitations({
                 <span className={s.cellStack} role="cell">
                   <span className={s.docTitle}>{inv.companyName ?? '(unnamed company)'}</span>
                   {inv.profile === 'driver' && <span className={s.cellSub}>driver · card {inv.cardId ?? '?'}</span>}
+                  {inv.profile === 'manager' && <span className={s.cellSub}>manager · owner-level access</span>}
                 </span>
                 <span role="cell">
                   <span className={`${s.pill} ${s.pillNeutral}`}>
-                    {inv.profile === 'owner' ? <BuildingIcon size={11} /> : <PersonIcon size={11} />}
-                    {inv.profile === 'owner' ? 'Owner' : 'Driver'}
+                    {inv.profile === 'driver' ? <PersonIcon size={11} /> : <BuildingIcon size={11} />}
+                    {inv.profile === 'owner' ? 'Owner' : inv.profile === 'manager' ? 'Manager' : 'Driver'}
                   </span>
                 </span>
                 <span className={s.mono} role="cell">

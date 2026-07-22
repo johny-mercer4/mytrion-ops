@@ -17,6 +17,21 @@ import type { TenantContext } from '../../types/tenantContext.js';
 export const CS_MAX_DEALS_PER_DAY = 40;
 export const CS_MAX_PENDING_RATIO = 0.15;
 
+/**
+ * Max Offer-out slots for an open portfolio size.
+ * Floor of 1 when open ≥ 1 so small desks can mark the first offer
+ * (strict 15% would block until 7 open cases).
+ */
+export function maxPendingAllowed(open: number): number {
+  if (open <= 0) return 0;
+  return Math.max(1, Math.floor(open * CS_MAX_PENDING_RATIO + 1e-9));
+}
+
+/** True if adding one more Offer-out stays within the portfolio cap. */
+export function canAddPending(pending: number, open: number): boolean {
+  return pending + 1 <= maxPendingAllowed(open);
+}
+
 export type CsCallRole = 'listen' | 'solution';
 
 const CALL_ROLE_RE = /\[call_role:(listen|solution)\]/i;
@@ -129,7 +144,8 @@ export async function getCsPortfolioCounts(
 }
 
 /**
- * Before moving another case into p2_offer_pending, ensure pending/open would stay ≤ 15%.
+ * Before moving another case into p2_offer_pending, ensure Offer-out stays in cap.
+ * Small portfolios get at least 1 slot (`maxPendingAllowed`). open=0 → blocked.
  * `alreadyPending` = case is already pending (idempotent re-mark).
  */
 export async function assertPendingCap(
@@ -139,13 +155,12 @@ export async function assertPendingCap(
 ): Promise<CsPortfolioCounts> {
   const counts = await getCsPortfolioCounts(ctx, zohoUserId);
   if (opts.alreadyPending) return counts;
-  const nextPending = counts.pending + 1;
-  const open = Math.max(counts.open, 1);
-  // If case is open but not yet counted as this agent's (unassigned mark), use open+1.
-  const denom = counts.open > 0 ? counts.open : open;
-  if (nextPending / denom > CS_MAX_PENDING_RATIO + 1e-9) {
+  if (!canAddPending(counts.pending, counts.open)) {
+    const max = maxPendingAllowed(counts.open);
     throw new AppError(
-      `Pending portfolio cap reached (max ${Math.round(CS_MAX_PENDING_RATIO * 100)}% in Offer pending).`,
+      counts.open === 0
+        ? 'Claim / open a Retention case before marking Offer out.'
+        : `Offer-out cap reached (${counts.pending}/${max} allowed · ~${Math.round(CS_MAX_PENDING_RATIO * 100)}% of open, min 1).`,
       {
         statusCode: 409,
         code: 'RETENTION_PENDING_CAP',

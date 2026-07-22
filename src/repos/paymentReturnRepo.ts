@@ -50,15 +50,11 @@ export const paymentReturnRepo = {
     }
     const where = conds.length ? and(...conds) : undefined;
 
-    const rows = await db
-      .select()
-      .from(paymentReturns)
-      .where(where)
-      .orderBy(NEWEST_FIRST)
-      .limit(limit)
-      .offset(offset);
-
-    const totalRes = await db.select({ n: sql<number>`count(*)::int` }).from(paymentReturns).where(where);
+    // Page + total run concurrently — independent queries, so one round-trip's wall time not two.
+    const [rows, totalRes] = await Promise.all([
+      db.select().from(paymentReturns).where(where).orderBy(NEWEST_FIRST).limit(limit).offset(offset),
+      db.select({ n: sql<number>`count(*)::int` }).from(paymentReturns).where(where),
+    ]);
     const total = totalRes[0]?.n ?? 0;
 
     return { rows, page, limit, total, hasMore: offset + rows.length < total };

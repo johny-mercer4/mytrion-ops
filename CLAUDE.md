@@ -5,6 +5,31 @@
 Octane internal AI assistant. TypeScript backend. Multi-tenant-lite (internal + partner audiences).
 Borrows architecture patterns from Mytrion but is a clean, standalone codebase.
 
+## Telegram agent apps — DO NOT confuse the two
+
+There are **two** Telegram agent apps under `apps/`. When asked to "run the bot / gateway", the
+answer is almost always `agent-gateway` — not `agent-telegram-bot`.
+
+- **`apps/agent-gateway`** ← THE Octane support bot ("support bot v2", Claude Agent SDK, Node/tsx).
+  Own `Dockerfile` + `docker-compose.yml` (`container_name: octane-agent-gateway`). Run it with
+  `cd apps/agent-gateway && docker compose up -d --build`, logs `docker logs -f octane-agent-gateway`.
+  Talks to the backend via `OCTANE_API_BASE` (`http://host.docker.internal:3001` inside the container).
+- **`apps/agent-telegram-bot`** — upstream **hamroh** framework (Python/uv, `python -m hamroh`). Not
+  the product bot; do not launch it for Octane work.
+- **Only one poller per bot token.** Both apps' `.env` carry the *same* `TELEGRAM_BOT_TOKEN`, so
+  running both at once = Telegram `Conflict` (409). Kill one before starting the other.
+  *(Session 2026-07-22: launched hamroh by mistake — wrong bot + token clash with the gateway.)*
+
+## Local run stack (what "the app" needs to be up)
+
+1. **Postgres on `localhost:5433`** — the app DB (`MYTRION_OPS_DATABASE_URL`). Provided by the **root**
+   `docker-compose.yml` (`octane-postgres`, pgvector/pg16): `docker compose up -d postgres`. If it's
+   down, the backend boots fine but every DB-backed route (e.g. `/v1/support-bot/whoami`) fails with
+   `ECONNREFUSED ::1:5433` — this is the "Backend issue" the bot reports, NOT the server being off.
+2. **Backend API + CRM web** — `pnpm dev:all` (API `:3001` health `/health`, web `:5173`). `dev:all`
+   also starts the CMP **MySQL** SSH tunnel on `:3307` — that is unrelated to the `:5433` app DB.
+3. **Gateway** — see above.
+
 ## Hard rules
 
 1. Never import code from Mytrion. Reference structure only.
