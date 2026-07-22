@@ -47,14 +47,20 @@ export async function registerWidgetStatic(app: FastifyInstance): Promise<void> 
   }
 
   await app.register(async (scope) => {
-    // Make /widget embeddable in the (cross-origin) Zoho CRM iframe. To tighten later, set a scoped
-    // CSP frame-ancestors listing your exact Zoho data-center domain instead of removing XFO outright.
+    // Embeddable in the (cross-origin) Zoho CRM iframe. X-Frame-Options can't express an allowlist,
+    // so we drop it and set a scoped CSP frame-ancestors instead: the portal may be framed ONLY by
+    // Zoho (US DC crm.zoho.com + the Zoho widget content/static sandbox domains) — never by an
+    // arbitrary site (anti-clickjacking). If your org moves data centers, widen this allowlist.
+    const FRAME_ANCESTORS =
+      "frame-ancestors 'self' https://*.zoho.com https://*.zohostatic.com https://*.zappsusercontent.com";
     scope.addHook('onSend', async (_req, reply) => {
       reply.removeHeader('X-Frame-Options');
       reply.header('Cross-Origin-Resource-Policy', 'cross-origin');
+      reply.header('Content-Security-Policy', FRAME_ANCESTORS);
       if (!reply.raw.headersSent) {
         reply.raw.removeHeader('X-Frame-Options');
         reply.raw.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        reply.raw.setHeader('Content-Security-Policy', FRAME_ANCESTORS);
       }
     });
     await scope.register(fastifyStatic, {
