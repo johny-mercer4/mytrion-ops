@@ -204,7 +204,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { id: string } }>('/knowledge/docs/:id/delete', writeGuard, deleteOne);
 
   // Freshness attest: resets last_verified_at so retrieval stops demoting the doc as stale.
-  app.post<{ Params: { id: string } }>('/knowledge/docs/:id/verify', guard, async (request) => {
+  app.post<{ Params: { id: string } }>('/knowledge/docs/:id/verify', writeGuard, async (request) => {
     const ctx = withDepartmentAccess(requireContext(request), request);
     const verified = await knowledgeRepo.markVerified(ctx, request.params.id);
     if (!verified) throw new NotFoundError('Document not found');

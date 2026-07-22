@@ -77,11 +77,20 @@ export async function moneyCodeRoutes(app: FastifyInstance): Promise<void> {
       });
       return { data: scoped.data };
     }
-    const data = await moneyCodeRequestRepo.list({
+    const rows = await moneyCodeRequestRepo.list({
       status: q.status,
       generatedBefore: q.generatedBefore ? new Date(q.generatedBefore) : undefined,
       limit: q.limit,
       order: q.order,
+    });
+    // Never return the raw EFS code/id over HTTP — no HTTP caller needs them (the void sweep works
+    // off id+status; servercrm's cron reads the DB directly). Strip for admins too, matching the
+    // strip-everywhere pattern of listForAgent / the money_code.* touchpoints.
+    const data = rows.map((r) => {
+      const row: Record<string, unknown> = { ...r };
+      delete row.efsMoneyCode;
+      delete row.efsId;
+      return row;
     });
     return { data };
   });

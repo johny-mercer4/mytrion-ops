@@ -58,18 +58,28 @@ import { tasksRoutes } from './routes/v1/tasks.routes.js';
 import { toolsRoutes } from './routes/v1/tools.routes.js';
 import { touchpointsRoutes } from './routes/v1/touchpoints.routes.js';
 
+// Redact auth-bearing request headers from Fastify's request logger (defense-in-depth: the default
+// serializer doesn't dump headers, but if request-header logging is ever enabled these must not leak).
+const LOG_REDACT_PATHS = [
+  'req.headers.authorization',
+  'req.headers.cookie',
+  'req.headers["x-api-key"]',
+  'req.headers["x-ingest-secret"]',
+];
+
 function loggerOption() {
   if (isTest) return false;
   if (isDev) {
     return {
       level: env.LOG_LEVEL,
+      redact: LOG_REDACT_PATHS,
       transport: {
         target: 'pino-pretty',
         options: { colorize: true, translateTime: 'SYS:standard', ignore: 'pid,hostname' },
       },
     };
   }
-  return { level: env.LOG_LEVEL };
+  return { level: env.LOG_LEVEL, redact: LOG_REDACT_PATHS };
 }
 
 async function registerDocs(app: FastifyInstance): Promise<void> {
