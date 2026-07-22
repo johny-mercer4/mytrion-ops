@@ -38,6 +38,9 @@ export async function recentHistorySummary(
 export interface TurnBriefInput {
   message: string;
   userName?: string;
+  zohoUserId?: string;
+  profile?: string;
+  role?: string;
   departments: string[];
   historySummary?: string;
 }
@@ -48,6 +51,9 @@ export function buildTurnBrief(input: TurnBriefInput): string {
   const parts = [
     `[context] date: ${today}` +
       (input.userName ? `; user: ${input.userName}` : '') +
+      (input.zohoUserId ? `; zohoUserId: ${input.zohoUserId}` : '') +
+      (input.profile ? `; profile: ${input.profile}` : '') +
+      (input.role ? `; role: ${input.role}` : '') +
       (input.departments.length > 0 ? `; departments: ${input.departments.join(', ')}` : ''),
   ];
   if (input.historySummary) {

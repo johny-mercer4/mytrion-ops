@@ -1,13 +1,15 @@
 /**
  * Sales Mytrion — Dashboard shell.
- * Tabs: Sales · Company · Debtors (soon, non-clickable) · Power BI.
+ * Tabs: Sales · Company · Debtors · Power BI.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ICO, timeParts } from '../salesData';
 import { s } from '../dc';
 import { Icon, type IconName } from '../icons';
+import { useSales } from '../ctx';
 import { SalesDashPanel } from '../SalesDashPanel';
 import { CompanyDashPanel } from '../CompanyDashPanel';
+import { DebtorsDashPanel } from '../DebtorsDashPanel';
 
 type DashId = 'sales' | 'company' | 'debtors' | 'powerbi';
 
@@ -30,13 +32,20 @@ function PowerBiPanel() {
 }
 
 export function DashTab() {
-  const [dashSub, setDashSub] = useState<DashId>('sales');
+  const { focusDashSub, clearFocusDashSub } = useSales();
+  const [dashSub, setDashSub] = useState<DashId>(focusDashSub ?? 'sales');
   const todayDate = timeParts().dateLabel;
 
-  const tabs: { id: DashId; label: string; soon?: boolean }[] = [
+  useEffect(() => {
+    if (!focusDashSub) return;
+    setDashSub(focusDashSub);
+    clearFocusDashSub();
+  }, [focusDashSub, clearFocusDashSub]);
+
+  const tabs: { id: DashId; label: string }[] = [
     { id: 'sales', label: 'Sales' },
     { id: 'company', label: 'Company' },
-    { id: 'debtors', label: 'Debtors', soon: true },
+    { id: 'debtors', label: 'Debtors' },
     { id: 'powerbi', label: 'Power BI' },
   ];
 
@@ -62,39 +71,25 @@ export function DashTab() {
       >
         {tabs.map((t) => {
           const on = dashSub === t.id;
-          const soon = t.soon === true;
           return (
             <button
               key={t.id}
               type="button"
               role="tab"
               aria-selected={on}
-              disabled={soon}
-              title={soon ? `${t.label} — coming soon` : undefined}
-              onClick={soon ? undefined : () => setDashSub(t.id)}
+              onClick={() => setDashSub(t.id)}
               style={s(
                 `display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:10px;border:1px solid ${
                   on ? 'color-mix(in srgb,var(--accent) 45%,var(--border))' : 'transparent'
                 };background:${on ? 'color-mix(in srgb,var(--accent) 12%,transparent)' : 'transparent'};color:${
-                  soon ? 'var(--faint)' : on ? 'var(--accent)' : 'var(--muted)'
-                };font-size:13px;font-weight:700;cursor:${soon ? 'default' : 'pointer'};opacity:${
-                  soon ? 0.55 : 1
-                };white-space:nowrap;transition:background .14s,color .14s,border-color .14s`,
+                  on ? 'var(--accent)' : 'var(--muted)'
+                };font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .14s,color .14s,border-color .14s`,
               )}
             >
               <span style={s(`opacity:${on ? 1 : 0.75};display:flex`)}>
                 <Icon name={TAB_ICONS[t.id]} size={15} />
               </span>
               {t.label}
-              {soon ? (
-                <span
-                  style={s(
-                    'padding:2px 7px;border-radius:99px;background:color-mix(in srgb,var(--orange) 16%,transparent);color:var(--orange);font-size:9.5px;font-weight:800;letter-spacing:.03em;text-transform:uppercase',
-                  )}
-                >
-                  Soon
-                </span>
-              ) : null}
             </button>
           );
         })}
@@ -102,6 +97,7 @@ export function DashTab() {
 
       {dashSub === 'sales' && <SalesDashPanel />}
       {dashSub === 'company' && <CompanyDashPanel />}
+      {dashSub === 'debtors' && <DebtorsDashPanel />}
       {dashSub === 'powerbi' && <PowerBiPanel />}
     </div>
   );

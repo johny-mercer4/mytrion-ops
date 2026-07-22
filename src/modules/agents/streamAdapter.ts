@@ -17,7 +17,7 @@ import { isAgentKey } from './types.js';
 
 export interface StreamOutcome {
   finalText: string;
-  toolCalls: Array<{ name: string; status: 'ok' | 'error' }>;
+  toolCalls: Array<{ name: string; status: 'ok' | 'error'; args?: any }>;
   agentPath: string[];
   /**
    * Set by orchestratorService from the run's ElicitationHolder when a tool asked the user to
@@ -130,13 +130,13 @@ export async function consumeAgentStream(
           break;
         }
         if (event.name === 'write_todos' || UI_TOOL_NAMES.has(event.name)) break;
-        toolCalls.push({ name: event.name, status: 'ok' });
+        toolCalls.push({ name: event.name, status: 'ok', args: event.data?.input });
         sink?.send('tool_result', { name: event.name, status: 'ok' });
         break;
       }
       case 'on_tool_error': {
         if (event.name === 'task' || event.name === 'write_todos') break;
-        toolCalls.push({ name: event.name, status: 'error' });
+        toolCalls.push({ name: event.name, status: 'error', args: event.data?.input });
         sink?.send('tool_result', { name: event.name, status: 'error' });
         break;
       }

@@ -16,11 +16,25 @@ export const CATEGORY_THRESHOLDS: Record<TaskCategory, number> = {
   refusal: 0.75,
   delegation: 0.75,
   'tool-selection': 0.75,
+  'web-navigation': 0.5,
 };
 
 /** LangChain normalizes registry tool names ('crm.pick_my_client' → 'crm__pick_my_client'). */
 function canonical(name: string): string {
   return name.replace(/__/g, '.');
+}
+
+function matchesSubset(actual: any, subset: any): boolean {
+  if (subset === undefined || subset === null) return true;
+  if (typeof actual !== 'object' || actual === null) return false;
+  for (const [k, v] of Object.entries(subset)) {
+    if (typeof v === 'object' && v !== null) {
+      if (!matchesSubset(actual[k], v)) return false;
+    } else {
+      if (actual[k] !== v) return false;
+    }
+  }
+  return true;
 }
 
 export interface DeterministicVerdict {
@@ -73,6 +87,20 @@ export function checkDeterministic(
     failures.push(
       `expected ≤${e.maxToolCalls} tool calls, got ${result.toolCalls.length} (${calledTools.join(', ')})`,
     );
+  }
+  if (e.expectedToolCalls) {
+    for (const exp of e.expectedToolCalls) {
+      const expName = canonical(exp.name);
+      const match = result.toolCalls.find((t) => {
+        if (canonical(t.name) !== expName) return false;
+        if (!exp.argsSubset) return true;
+        const actualArgs = typeof t.args === 'string' ? JSON.parse(t.args) : (t.args || {});
+        return matchesSubset(actualArgs, exp.argsSubset);
+      });
+      if (!match) {
+        failures.push(`expected tool call '${expName}' with args ${JSON.stringify(exp.argsSubset || {})} was not found`);
+      }
+    }
   }
 
   return { pass: failures.length === 0, failures };

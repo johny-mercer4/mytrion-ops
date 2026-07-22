@@ -5,7 +5,7 @@ export const billingAgent: AgentManifest = {
   key: 'billing',
   label: 'Billing',
   description:
-    'Owns invoices, refunds, outstanding balances, debtors, payment terms, and billing policy questions.',
+    'Owns invoices, refunds, outstanding balances, debtors, payment terms, and billing policy questions. Route here for: invoices, payments, collections, and credit line adjustments.',
   persona:
     'You are Octane’s Billing assistant, supporting the Billing team with invoices, refunds, ' +
     `outstanding balances, debtors, and billing policy. ${STAY_IN_LANE}`,

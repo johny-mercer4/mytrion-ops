@@ -119,6 +119,25 @@ export function CsShell() {
   const { theme, toggle: toggleTheme } = useTheme();
   const [claimsBadge, setClaimsBadge] = useState(0);
   const [toast, setToast] = useState<ToastState | null>(null);
+  // Icons-only rail — persisted like Sales (`ss.nav.collapsed`).
+  const [navCollapsed, setNavCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('cs.nav.collapsed') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleNav = useCallback(() => {
+    setNavCollapsed((c) => {
+      const next = !c;
+      try {
+        localStorage.setItem('cs.nav.collapsed', next ? '1' : '0');
+      } catch {
+        /* storage disabled — in-memory toggle still works */
+      }
+      return next;
+    });
+  }, []);
 
   const onClaimsToast = useCallback((title: string, detail: string) => {
     setToast({ id: Date.now(), kind: 'info', message: `${title}: ${detail}` });
@@ -168,16 +187,47 @@ export function CsShell() {
     ) : null;
 
   return (
-    <div className={`cs-root${theme === 'dark' ? ' dark-mode' : ''}`}>
+    <div
+      className={`cs-root${theme === 'dark' ? ' dark-mode' : ''}${navCollapsed ? ' cs-nav-collapsed' : ''}`}
+    >
       <div className="cs-body">
-        <aside className="cs-sidebar">
+        <aside className="cs-sidebar" aria-expanded={!navCollapsed}>
           <div className="cs-sidebar-brand">
-            <div className="cs-brand-text">
-              <div className="cs-brand-word">
-                MY<span>TRION</span>
-              </div>
-              <div className="cs-brand-sub">Customer Service</div>
-            </div>
+            {!navCollapsed ? (
+              <>
+                <div className="cs-brand-text">
+                  <div className="cs-brand-word">
+                    MY<span>TRION</span>
+                  </div>
+                  <div className="cs-brand-sub">Customer Service</div>
+                </div>
+                <button
+                  type="button"
+                  className="cs-nav-collapse-btn"
+                  onClick={toggleNav}
+                  aria-label="Collapse sidebar"
+                  title="Collapse sidebar"
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <path d="M9 3v18" />
+                  </svg>
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="cs-nav-collapse-btn"
+                onClick={toggleNav}
+                aria-label="Expand sidebar"
+                title="Expand sidebar"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M9 3v18" />
+                </svg>
+              </button>
+            )}
           </div>
           <nav className="cs-sidebar-nav">
             {NAV_ITEMS.map((item) => (
@@ -197,12 +247,22 @@ export function CsShell() {
                   }
                 }}
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d={item.iconPath} />
-                </svg>
+                <span className="cs-nav-icon-wrap">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d={item.iconPath} />
+                  </svg>
+                  {navCollapsed && item.badge && claimsBadge > 0 ? (
+                    <span className="cs-nav-badge cs-nav-badge--dot">
+                      {claimsBadge > 99 ? '99+' : claimsBadge}
+                    </span>
+                  ) : null}
+                  {navCollapsed && item.disabled ? (
+                    <span className="cs-nav-soon-dot" aria-hidden="true" />
+                  ) : null}
+                </span>
                 <span className="nav-label">{item.label}</span>
-                {item.disabled ? <span className="nav-soon">Soon</span> : null}
-                {item.badge && claimsBadge > 0 ? (
+                {!navCollapsed && item.disabled ? <span className="nav-soon">Soon</span> : null}
+                {!navCollapsed && item.badge && claimsBadge > 0 ? (
                   <span className="cs-nav-badge">{claimsBadge > 99 ? '99+' : claimsBadge}</span>
                 ) : null}
               </div>
@@ -238,7 +298,7 @@ export function CsShell() {
               )}
               <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
             </button>
-            <div className="cs-user-card">
+            <div className="cs-user-card" title={navCollapsed ? workerName : undefined}>
               <span className="cs-user-avatar">{workerInitials}</span>
               <div className="cs-user-meta">
                 <div className="cs-user-name">{workerName}</div>

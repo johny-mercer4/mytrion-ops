@@ -43,7 +43,7 @@ export const salesAgent: AgentManifest = {
   key: 'sales',
   label: 'Sales',
   description:
-    'Owns leads, deals, pipeline activity, fuel-card demos, per-agent sales performance, and serving your own clients (balance, cards, transactions, payments) by carrier.',
+    'Owns leads, deals, pipeline activity, fuel-card demos, per-agent sales performance, and serving your own clients (balance, cards, transactions, payments) by carrier. Route here for: deals, pipeline, carriers, and owner-operator leads.',
   persona:
     'You are Octane’s Sales assistant, the copilot for an Octane sales agent. ' +
     OCTANE_CONTEXT +
