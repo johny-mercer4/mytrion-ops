@@ -16,7 +16,7 @@
  * This mirrors the mini-app's invariants exactly — one rule set, two doorways.
  */
 import type { FastifyInstance } from 'fastify';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNotNull, ne } from 'drizzle-orm';
 import { z } from 'zod';
 import { AppError, RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
@@ -205,6 +205,71 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
       detail: { carrierId: body.carrierId },
     });
     return reply.status(201).send(row);
+  });
+
+  /**
+   * AUTO-BIND (owner decision 2026-07-22): when the bot lands in a NEW group, the first message
+   * from an ACTIVE owner/manager registration binds that chat to the sender's carrier — no env
+   * var, no admin step. Trust anchor: the sender's Telegram id is sender-verified by Telegram
+   * and forwarded by the TRUSTED bot process (internal key), then matched against
+   * registered_mini_app_companies. A stranger's group can never bind (404), drivers can't bind,
+   * and an already-ENABLED mapping is never re-pointed (bound:false echo — re-pointing stays an
+   * admin action via the POST above).
+   */
+  app.post('/support-bot/chat-map/auto-bind', guard, async (request, reply) => {
+    const body = z
+      .object({ chatId: z.string().min(1).max(40), telegramUserId: z.string().min(1).max(40) })
+      .parse(request.body);
+    const existing = await db
+      .select()
+      .from(supportBotChats)
+      .where(eq(supportBotChats.chatId, body.chatId))
+      .limit(1);
+    if (existing[0]?.enabled) {
+      return { carrierId: existing[0].carrierId, bound: false, companyName: null };
+    }
+    const regs = await db
+      .select()
+      .from(registeredMiniAppCompanies)
+      .where(
+        and(
+          eq(registeredMiniAppCompanies.telegramUserId, body.telegramUserId),
+          eq(registeredMiniAppCompanies.status, 'active'),
+          ne(registeredMiniAppCompanies.profile, 'driver'),
+          isNotNull(registeredMiniAppCompanies.carrierId),
+        ),
+      )
+      .limit(1);
+    const reg = regs[0];
+    if (!reg?.carrierId) {
+      throw new AppError('No active owner registration for this sender.', {
+        statusCode: 404,
+        code: 'SUPPORT_BOT_AUTO_BIND_NO_OWNER',
+        expose: true,
+      });
+    }
+    const [row] = await db
+      .insert(supportBotChats)
+      .values({
+        tenantId: reg.tenantId,
+        chatId: body.chatId,
+        carrierId: reg.carrierId,
+        createdBy: `auto:tg:${body.telegramUserId}`,
+      })
+      .onConflictDoUpdate({
+        target: supportBotChats.chatId,
+        set: { carrierId: reg.carrierId, enabled: true, updatedAt: new Date() },
+      })
+      .returning();
+    const ctx = requireContext(request);
+    await auditFromContext(ctx, {
+      action: 'support_bot.chat_map.auto_bind',
+      status: 'ok',
+      resourceType: 'support_bot_chat',
+      resourceId: body.chatId,
+      detail: { carrierId: reg.carrierId, boundBy: body.telegramUserId },
+    });
+    return reply.status(201).send({ carrierId: row?.carrierId ?? reg.carrierId, bound: true, companyName: reg.companyName ?? null });
   });
 
   /**

@@ -12,6 +12,7 @@ import { noteEngaged, shouldEngage } from './filter.js';
 import { recordTurn, startMonitor } from './monitor.js';
 import { logMessage } from './messageLog.js';
 import { isRegistered } from './access.js';
+import { carrierFor, chatMapSize, tryAutoBind } from './chatMap.js';
 
 /**
  * One-time signpost for a TAGGED but unregistered user. Gate 2 used to be pure silence, which
@@ -51,9 +52,10 @@ function stampElapsed(text: string, startedAt: number): string {
   return elapsed > REPORT_ELAPSED_OVER_MS ? `${text}\n\n⏱ ${fmtElapsed(elapsed)}` : text;
 }
 
-function allowed(chatId: number): boolean {
-  // MVP: exactly one group. Multi-chat: replace with the mytrion /support-bot/chat-map cache.
-  return config.groupChatId !== '' && String(chatId) === config.groupChatId;
+/** One-time announcement when an owner's message auto-binds a fresh group. */
+function bindAnnounceText(companyName: string | null): string {
+  const co = companyName ? ` — ${companyName}` : '';
+  return `✅ Guruh ulandi${co}. Endi shu yerda savol berishingiz mumkin: karta status, Money Code, hisobotlar. / Group connected${co}. Card status, Money Code, reports — just ask.`;
 }
 
 function formatPrompt(m: TgMessage): string {
@@ -96,7 +98,7 @@ function logTurn(
 }
 
 async function main(): Promise<void> {
-  console.log(`octane-agent-gateway up · model=${config.model} · group=${config.groupChatId || '(unset!)'}`);
+  console.log(`octane-agent-gateway up · model=${config.model} · mapped chats=${await chatMapSize()}${config.groupChatId ? ' + env fallback' : ''}`);
   startMonitor();
   let offset = 0;
   for (;;) {
@@ -108,9 +110,10 @@ async function main(): Promise<void> {
         // as a structured line — the tapper's id comes from Telegram itself (sender-verified by
         // construction), so tools may act on it like any spoken message.
         const cb = u.callback_query;
-        if (cb?.message && allowed(cb.message.chat.id)) {
+        const cbCarrier = cb?.message ? await carrierFor(cb.message.chat.id) : null;
+        if (cb?.message && cbCarrier) {
           void answerCallback(cb.id);
-          if (!(await isRegistered(cb.from.id))) continue;
+          if (!(await isRegistered(cbCarrier, cb.from.id))) continue;
           const chatId = cb.message.chat.id;
           noteSender(chatId, cb.from.id);
           noteEngaged(chatId, cb.from.id);
@@ -120,7 +123,7 @@ async function main(): Promise<void> {
           const cbAt = Date.now();
           logMessage({ ts: new Date().toISOString(), chatId, userId: cb.from.id, name, dir: 'in', text: `[tap] ${cb.data ?? ''}`, engaged: true });
           const cbStats = logTurn('button', chatId, cb.from.id, name, `[tap] ${cb.data ?? ''}`, cbAt, cbReply);
-          enqueueTurn(chatId, config.carrierId, `[button tap from ${name} (id ${cb.from.id})]: ${cb.data ?? ''}`, async (text) => {
+          enqueueTurn(chatId, cbCarrier, `[button tap from ${name} (id ${cb.from.id})]: ${cb.data ?? ''}`, async (text) => {
             const finalText = stampElapsed(text, cbAt);
             cbReply.text = finalText;
             noteEngaged(chatId, cb.from.id);
@@ -130,12 +133,31 @@ async function main(): Promise<void> {
           continue;
         }
         const m = u.message;
-        if (!m || m.from?.is_bot || !allowed(m.chat.id)) continue;
+        if (!m || m.from?.is_bot) continue;
         if (!m.text && !m.caption && !m.photo) continue;
+        let carrier = await carrierFor(m.chat.id);
+        if (!carrier) {
+          // Unmapped chat. AUTO-BIND: in a group, any message from a registered active owner
+          // binds the chat to their carrier (server-verified) — announce once, then serve this
+          // very message. Private chats and strangers' groups stay invisible (zero tokens).
+          const uid = m.from?.id ?? 0;
+          const isGroup = m.chat.type === 'group' || m.chat.type === 'supergroup';
+          if (uid !== 0 && isGroup) {
+            const boundNow = await tryAutoBind(m.chat.id, uid);
+            if (boundNow) {
+              carrier = boundNow.carrierId;
+              await sendMessage(m.chat.id, bindAnnounceText(boundNow.companyName), m.message_id).catch(() => undefined);
+              logMessage({ ts: new Date().toISOString(), chatId: m.chat.id, userId: 0, name: 'bot', dir: 'out', text: '[auto-bind announcement]' });
+            } else {
+              carrier = await carrierFor(m.chat.id); // already-bound race: map may have refreshed
+            }
+          }
+          if (!carrier) continue;
+        }
         // Full history, PRE-gate — ordinary chatter is data too (the whole 54k-message analysis
         // came from exactly this kind of log). `engaged` is patched on below when a message
         // actually reaches the model.
-        const willEngage = shouldEngage(m, config.botUsername) && (await isRegistered(m.from?.id ?? 0));
+        const willEngage = shouldEngage(m, config.botUsername) && (await isRegistered(carrier, m.from?.id ?? 0));
         logMessage({
           ts: new Date().toISOString(),
           chatId: m.chat.id,
@@ -151,12 +173,12 @@ async function main(): Promise<void> {
         // Photo cache runs BEFORE gate 1 (drivers post the photo first, tag next message) but
         // still only for REGISTERED users — an outsider's image never enters the cache. The
         // photo message itself costs zero LLM tokens either way.
-        if (m.photo && (await isRegistered(m.from?.id ?? 0))) notePhoto(m.chat.id, m.from?.id ?? 0, m.photo);
+        if (m.photo && (await isRegistered(carrier, m.from?.id ?? 0))) notePhoto(m.chat.id, m.from?.id ?? 0, m.photo);
         // Caveman gate 1: only @mentions / replies-to-bot / follow-ups reach further.
         if (!shouldEngage(m, config.botUsername)) continue;
         // Caveman gate 2: only REGISTERED mini-app users get any tokens at all. A tagged
         // unregistered user gets the static registration signpost instead of silence.
-        if (!(await isRegistered(m.from?.id ?? 0))) {
+        if (!(await isRegistered(carrier, m.from?.id ?? 0))) {
           const uid = m.from?.id ?? 0;
           if (uid !== 0 && Date.now() - (regNudge.get(uid) ?? 0) > REG_NUDGE_TTL_MS) {
             regNudge.set(uid, Date.now());
@@ -171,7 +193,7 @@ async function main(): Promise<void> {
         const mReply = { text: '' };
         const mAt = Date.now();
         const mStats = logTurn('message', m.chat.id, m.from?.id ?? 0, mName, mQuestion, mAt, mReply);
-        enqueueTurn(m.chat.id, config.carrierId, formatPrompt(m), async (text) => {
+        enqueueTurn(m.chat.id, carrier, formatPrompt(m), async (text) => {
           const finalText = stampElapsed(text, mAt);
           mReply.text = finalText;
           noteEngaged(m.chat.id, m.from?.id ?? 0);
