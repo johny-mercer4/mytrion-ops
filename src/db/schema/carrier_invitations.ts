@@ -31,7 +31,10 @@ export const carrierInvitations = pgTable(
       .primaryKey()
       .$defaultFn(() => createId()),
     tenantId: text('tenant_id').notNull(),
-    profile: text('profile').$type<'owner' | 'driver'>().notNull().default('owner'),
+    /** 'manager' is owner-equivalent in every capability gate (fleet, drivers, finances, reports) —
+     *  a colleague an owner/manager grants company access to. It differs from 'owner' only in
+     *  provenance (invited, doesn't "own" the account) and display. Plain text, no DB enum. */
+    profile: text('profile').$type<'owner' | 'manager' | 'driver'>().notNull().default('owner'),
     carrierId: text('carrier_id'),
     applicationId: text('application_id'),
     companyName: text('company_name'),

@@ -3280,6 +3280,146 @@ for true ticketdashboard search parity.
 - Sales: GET /carrier-registrations/for-carrier; Driver picks available card number
 
 
+### 2026-07-20 — Mini-app: wire C-code automations (Faza 1 backend)
+
+Telegram-guruh tahlili (Analitika/) asosida agent widgetining avtomatlashtirilgan bloklarini
+mini-app'ga ulash — backend qismi:
+
+- **modules/carrier/miniAppAuth.ts (yangi)** — carrierMiniApp.routes.ts'dagi auth/scoping
+  helperlar (verifyTelegramUser, requireRegistered*, requireDriverCardNumber, resolveDriver*)
+  ko'chirildi, endi ikkala route fayl bitta gate to'plamini ishlatadi.
+- **routes/v1/carrierMiniAppActions.routes.ts (yangi)** — C-16 override, C-1/C-3 set-status,
+  C-4/5 limits (delta MINIAPP_LIMIT_CHANGE_MAX bilan cheklangan), C-26 card/info, C-10
+  fraud-request, C-17 money-code preview/draw, + /card/efs diagnostika o'qishi. Hammasi:
+  DWH orqali karta egaligi tekshiruvi (owner cardId → findDwhCardById; driver → o'z kartasi,
+  fail-closed), carrier-boshiga 5/min rate-limit, audit, FF_MINIAPP_* flaglar (default OFF).
+- **wrappers**: efsWrapper += setCardStatus/setCardLimits/fraudHoldRelease;
+  serverCrmWrapper += getMoneyCodePreview/drawMoneyCode (widget bilan bir xil body).
+- **C-15**: txnReport priceMode ('discount'|'retail') — retail: Amount=funded+discount,
+  Discount ustuni bo'sh; export route driverni har doim retail'ga majburlaydi
+  ("driverga discount kursatish shart emas" — BILLAD chat talabi). Caption ham mos.
+- **serviceRequest**: 'account-reactivate' (C-7) ticket spec (owner).
+- **apps/mini-app/lib/api.ts** — barcha yangi endpointlar uchun typed client funksiyalar.
+
+Qolgan (keyingi sessiya): App.tsx sheet UI'lari + i18n kalitlari + serviceCatalog'ni real
+actionlarga o'tkazish; RBAC cross-tenant testlar (rule 9) yozish.
+
+## 2026-07-20 (davomi) — RBAC testlar + driver self-register owner'dan decouple
+
+**T2 — RBAC/security testlar (carrierMiniAppActions.routes.ts):** tests/unit/carrier-mini-app.test.ts
++16 test. Gate tartibi: feature-flag(503) → auth/role(403) → rate-limit(429) → card-egaligi(404).
+Har biri rejection kodi + wrapper chaqirilmagani. Baseline fix: carrier-mini-app mock'ida
+findActiveOwnerByCarrier stub yo'q edi (build branchdan) — 11 test qulagan, tuzatildi.
+
+**Driver self-register owner-gate'dan decouple (mahsuliy talab):** 60 kartali kompaniyada
+60 link generatsiya og'ir → har driver o'z card# bilan self-register qiladi, owner ro'yxatdan
+o'tmagan bo'lsa ham.
+- `CreateCarrierInviteArgs.allowWithoutOwner?` qo'shildi (inviteService.ts). Faqat card-possession
+  self-register uzatadi; admin/owner-issued invite'lar hali DRIVER_NEEDS_OWNER talab qiladi.
+- `findDwhCardByNumber` (dwhCards.ts): `limit 1`→`limit 2` + ambiguity guard — bir card# ikki
+  carrier'ga chiqsa fail-closed (null + warn log), noto'g'ri carrier'ga bog'lamaydi. `is_active=true`
+  allaqachon faqat AKTIV kartalar login qilishini ta'minlaydi.
+- Testlar: self-register owner'siz 201 + findActiveOwnerByCarrier chaqirilmaydi; yangi
+  tests/unit/dwh-cards.test.ts (is_active + ambiguity, 6 test).
+
+**Audit natijasi (mini-app user mgmt):**
+- Admin "Registered companies" (CarrierUsers.tsx) driverlarni owner ostiga ALLAQACHON nest qiladi
+  + driver Revoke tugmasi bor. Screenshot'da driver ko'rinmasligi = ma'lumot yo'q (driver yo'q).
+- Ochiq risk (keyingi): one-driver-per-card DB unique constraint yo'q (faqat pre-insert query,
+  concurrent race mumkin) — migration kerak bo'lsa alohida.
+
+Holat: typecheck toza, 695 test yashil.
+
+### 2026-07-20 — Self-register hardening (audit follow-up)
+
+- `findDwhCardByNumber`: bitta carrier ichida duplikat aktiv raqam → warn-log (carrier bog'lash
+  bir ma'noli, shuning uchun fail-close EMAS; card_id tanlovi arbitrar ekani ops uchun surfaced).
+- `/carrier/mini-app/driver-self-register`: verified Telegram user boshiga 3 urinish/daqiqa
+  (takeToken, `SELF_REGISTER_RATE_LIMITED` 429) — karta-raqam enumeration oracle yopildi.
+- Testlar: same-carrier duplikat birinchi qatorga bog'lanadi; 4-urinish 429 va DWH'ga yetmaydi.
+
+### 2026-07-20 — Txn report detailed + stations/dispute/override UI (SelfService filtri)
+
+- txnReport: `detailed` rejim — to'liq PAN + Driver/Unit/Driver ID ustunlari (12 ustun, uch
+  renderer dinamik ustunlarga o'tkazildi, totals endi header bo'yicha). Route/api `detailed` param.
+- Stations sheet (statik, 814 so'rov): yangi ServiceKey, katalogda unpark (owner+driver), 4 tilda.
+- Dispute-txn: real Billing ticket (owner+driver), katalogda unpark.
+- Export panel: "Chegirmasiz" (owner-only ko'rinadi) + "Batafsil" toggle'lari.
+- Driver override: generic sheet ustida bir-bosishlik real C-16 tugmasi; flag o'chiq bo'lsa
+  ticket-fallback saqlangan (503 → xabar).
+
+### 2026-07-20 — Owner write-action UI (T3 yakuni)
+
+- `moneycode` sheet (C-17): preview (available/drawn) → summa+unit+sabab (sabablar backenddan)
+  → draw → muvaffaqiyat ekrani (kod QIYMATI hech qachon ko'rsatilmaydi — widget qoidasi).
+  Flag o'chiq (503) → xuddi shu sheet ichida money-code TICKET fallback formasi.
+- `cardops` sheet (C-1/C-3/C-4-5/C-26): fleet'dan karta tanlash → per-card EFS holat →
+  Activate/Deactivate · kunlik limit (ULSD/DEF, +/− delta) · Unit/Driver/ID saqlash.
+  MINIAPP_WRITES_DISABLED → katalog so'roviga yo'naltiruvchi toast.
+- Katalog: fin-money-code → 'moneycode'; card-activate/card-limit → 'cardops'.
+- Stations sheet OLIB TASHLANDI (owner qarori: mobil appda bor) — katalogda yana 'soon'.
+- i18n: mc.*/co.* to'plami 4 tilda; 2 noto'g'ri kalit tuzatildi.
+
+### 2026-07-20 — Override sheet tozalash + driver PIN/Unit info sheet
+
+- Driver override sheet: ticket-forma va uning intro matni YASHIRILDI — faqat direkt tugma;
+  MINIAPP_WRITES_DISABLED bo'lsa forma fallback sifatida ochiladi (ovrFallback). ovr.hint qo'shildi.
+- drv-change-pin unpark → 'pinunit' READ sheet (analitika: 62 PIN so'rovi, deyarli hammasi
+  "PIN nima/ishlamayapti"): o'z kartasining EFS'dan unit/driver_id/driver_name + PIN yo'riqnomasi
+  (Driver ID yoki last-4; bo'lmasa Override/so'rov) + "unitni owner o'zgartiradi" izohi. 4 tilda.
+
+### 2026-07-20 — Override UX yakuniy: bitta tugma + Home timer + bot xabari
+
+- Override sheet: ticket forma/tugma/intro BUTUNLAY yashirildi (driver) — bitta tugma. Ticket
+  fallback olib tashlandi (owner qarori: agent widgetda ham override direct, ticket ochilmaydi);
+  flag o'chiq → faqat xabar.
+- Home (driver): muvaffaqiyatli override'dan keyin yashil countdown-karta (~30 daq, sekundlab),
+  localStorage orqali app qayta ochilganda ham saqlanadi; tugagach o'zi yo'qoladi.
+- Backend override: muvaffaqiyatdan keyin best-effort bot xabari (karta last-4 bilan) — pump
+  oldida WebView yopilsa ham chat xabari qoladi. Hech qachon override'ni bloklamaydi.
+
+### 2026-07-20 — Product rule: fuel karta LAST 6 raqam bilan ko'rsatiladi (last-4 emas)
+
+- App.tsx: last4() -> tail6() (barcha •••• ko'rinishlar), maskedCardNumber ham 6 xonaga.
+- txnReport: tail6 (Card ustuni), meta.cardLast4 endi 6 xona saqlaydi (nom tarixiy, izohda).
+- Export caption + override bot xabari: slice(-6).
+Sabab: last-4 fleet ichida unikal emas (bitta carrier'da 11 karta bir xil last-4 — DWH o'lchovi).
+
+### 2026-07-20 — PIN/Unit endi EDITABLE + sheet cache + copy + driver funds check
+
+- pinunit sheet endi TAHRIRLANADI: driver o'z unit/driverId'sini o'zgartiradi (C-26 orqali,
+  updateCardInfo cardId'siz — o'z kartasiga pinned). Dirty-check Save, saqlangach
+  cardops/pinunit/status cache invalidatsiyasi. Hintlar 4 tilda yangilandi ("unitni owner
+  o'zgartiradi" → o'zi o'zgartira olishi; UZ ikki string birinchi urinishda anchor xato ketgan,
+  keyin tuzatildi).
+- SHEET_CACHE (60s TTL): barcha service sheetlar cache-first ochiladi (cacheId = service +
+  ko'rinishni o'zgartiruvchi paramlar); txns fast-phase cache'dan chiqsa ham live-merge davom
+  etadi. invalidateSheetCache(prefix...) yozuvlardan keyin chaqiriladi.
+- manualcode: copy tugmasi (clipboard + toast). svc.manualcode va boshqa yetishmagan kalitlar
+  4 tilga qo'shildi (missing-key scanner bilan tekshirilgan).
+- YANGI: driver "available balance" tekshiruvi — /carrier/mini-app/card/funds (owner ham
+  chaqira oladi). Har karta carrier'ning umumiy EFS pool'iga bog'langani uchun javob FAQAT
+  boolean: hasFunds (efs_balance>0), accountActive, driver uchun o'z kartasi statusi. Summa
+  ATAYIN qaytarilmaydi — kompaniya puli owner'ning ishi (owner'da to'liq /balance bor).
+  EFS outage → hasFunds null = "hozir tekshirib bo'lmadi" (hech qachon "pul yo'q" emas).
+  UI: drv-funds katalog itemi (driver ro'yxatida birinchi, default-pinned), uch holatli sheet
+  (✓ yashil / ✗ qizil / … neytral) + karta-status va account-inactive ogohlantirishlari. 4 tilda.
+
+### 2026-07-20 — Txn report: owner uchun karta filtri (company ↔ driver level)
+
+Telegram tahlili (txn_report_tahlili.md): 41 ta "bitta unit/driver/karta kesimida report"
+so'rovi. Yechim: owner txns sheet'ida chip-qator — "All cards" (company level) yoki bitta karta
+(driver level); tanlov ro'yxatga HAM exportga HAM ta'sir qiladi.
+
+- Backend: txnRangeSchema/txnExportSchema += optional cardId (opaque). resolveOwnerCardFilter():
+  faqat owner, findDwhCardById bilan O'Z carrier'i ichida resolve (fail-closed 404 CARD_NOT_FOUND).
+  Driver'da body.cardId e'tiborga olinmaydi — scope'i requireDriverCardNumber'ligicha (hech qachon
+  kengaymaydi). Fast (SQL) va live (scopeTransactionsToCard) fazalar bir xil filtrda.
+- Frontend: txnFleet lazy fetch (owner, sheet ochilganda bir marta), chip-qator •••• last6 + ism;
+  1 kartali fleet'da yashirin. cacheId va live-upgrade cache kalitiga cardId qo'shildi; doExport
+  ham o'tkazadi. i18n: txns.allCards ×4.
+- Test (Mac'da): owner cardId → faqat shu karta qatorlari; begona/noto'g'ri cardId → 404;
+  driver + cardId body → o'z kartasi (ignor).
 ## 2026-07-18 — UI/UX Redesign
 - Seeded the skills for modern web guidance. Any future agent must consult the `modern-web-guidance` skill before modifying UI/UX.
 - Emphasized glassmorphism, dynamic thematics, and removal of double loading indicators.
@@ -3867,6 +4007,197 @@ Verify: retention unit tests + typecheck green. Not committed.
 - Restarted local API (`tsx watch src/server.ts` on :3001) so inline jobs + WS use
   the new schema.
 
+### 2026-07-20 — Notification tizimi N-0: outbox + pg-boss dispatcher (poydevor)
+
+Ultraplan (Analitika/notification_system_ultraplan.md) N-0 bosqichi:
+- Schema: mini_app_notifications (outbox: dedupe_key UNIQUE = fakt boshiga bitta qator,
+  payload'da FAQAT template kirishlari — last6 qoidasi, money-code qiymati saqlanmaydi) +
+  mini_app_notification_prefs (qator yo'q = yoqiq). drizzle.config ro'yxatiga qo'shildi;
+  MIGRATSIYA HALI GENERATSIYA QILINMAGAN — esbuild darwin binary VM'da ishlamaydi,
+  Mac'da: corepack pnpm db:generate && pnpm db:migrate.
+- modules/notifications/: registry.ts (11 tur — rol-matritsa BITTA joyda), templates.ts
+  (4 til, hozircha 'en' render — registratsiyada language_code yig'ish backlog),
+  service.ts (notifyMiniApp: insert + pg-boss enqueue, jobs o'chiq bo'lsa inline fallback;
+  dispatchMiniAppNotification: idempotent 'new'-only, rol filtri, driver o'z kartasi
+  fail-closed, prefs, faqat 0-yetkazishda retry — partial fan-out hech qachon takrorlanmaydi).
+- jobs: notification.dispatch (retryLimit 4, backoff, dead-letter) + worker registratsiyasi.
+- Birinchi caller: override bot receipt endi outbox orqali (sendPlainReply import route'dan
+  olib tashlandi). Xatti-harakat ekvivalent, ortiga tarix qatori qo'shildi.
+Keyingi (N-1): card_status diff poller + money_code event, pilot flag per-carrier.
+
+### 2026-07-20 — N-2: client_news + Inbox real feed + mavjud WebSocket hub'ga ulanish
+
+Jadval nomlari saqlanib qoldi (owner qarori: rename shart emas) — mini_app_notifications /
+mini_app_notification_prefs, YANGI: client_news + client_news_reads (0032_client_news.sql,
+qo'lda, IF NOT EXISTS).
+
+- client_news: title/body per-locale jsonb (en majburiy), audience_scope 'all'|'carriers'
+  (+carrier_ids), roles owner/driver, severity info|important, pinned, publish/expires oynasi.
+  O'qish DOIM caller'ning verified registration'i orqali filtrlanadi (listNewsForRegistration) —
+  bitta klientga yozilgan post boshqasiga sizib chiqmaydi. important+carriers → notification
+  outbox orqali bot push (type 'news'); 'all' uchun bot-blast ATAYIN yo'q (digest keyin).
+- Muallif: /v1/client-news (POST admin RBAC + audit, GET list) — zoho-octane widget/skript uchun.
+- Mini-app: POST /carrier/mini-app/inbox — ikkala tab bitta chaqiriqda (news + notifications;
+  driver slice dispatcher routing'ining aynan o'zi, fail-closed); /inbox/news-read receipt.
+- Realtime: MAVJUD hub'ga ulandik — topic grammatikasiga inbox:miniapp:<telegramUserId>,
+  GET /carrier/mini-app/realtime (websocket, initData auth, subscribe-only, faqat o'z topic'i).
+  Dispatcher muvaffaqiyatli send'dan keyin hub.publish qiladi (split worker deploy'da 0 —
+  hub'ning o'z scope-note pozitsiyasi, keyingi fetch'da baribir keladi).
+- Frontend: Inbox endi real (feedToInbox: news locale-pick + notifications client-side render,
+  demo seed faqat fetch yiqilganda fallback), WS live append, news o'qilganda read-receipt.
+- Eslatmalar: (1) Mac'da corepack pnpm db:migrate (0031+0032). (2) _to_delete/ ichidagi
+  eski fayllarni o'chirish. (3) drv uchun notification unread holati client-side (localStorage
+  emas, sessiya ichida) — per-user server read state N-3 prefs UI bilan birga.
+
+### 2026-07-20 — mytrion-crm: Client News muharriri (Admin → Client News tab)
+
+- apps/mytrion-crm/src/mytrions/admin/ClientNews.tsx (+module.css, +api/clientNews.ts):
+  professional composer + feed. Rich-text: dependency'siz contentEditable + whitelist toolbar
+  (B/I/U, H3/¶, ro'yxatlar, link, clear) — UX xolos, XAVFSIZLIK server tomonda:
+  modules/notifications/richText.ts sanitizer (whitelist b/i/u/p/br/ul/ol/li/h3/a; a faqat
+  http(s)/mailto href + noopener; title'lar plain-textga stripping) create route'da qo'llanadi.
+- Composer: 4 til tab (EN majburiy, to'ldirilganlar • bilan), auditoriya All / Specific carriers
+  (ClientCombobox reuse + chip'lar), rol pillari Owner/Driver, Delivery: Inbox-only /
+  Important (bot push) / Pinned. Feed: pill'lar bilan post kartalari, EN body render.
+- Mini-app InboxTab: news body endi rich render (RichBody — DOMParser bilan client-side
+  qayta-sanitize, defense-in-depth; .rich-news tipografiyasi global.css'da). Notification'lar
+  plain-text yo'lida qoladi.
+- Eslatma: mytrion-crm'da BIZDAN OLDIN mavjud tsc xatolar bor (sonner moduli, unused importlar) —
+  root node_modules bilan tekshirilgani uchun bo'lishi mumkin; Mac'da app'ning o'z
+  node_modules'i bilan `pnpm --dir apps/mytrion-crm typecheck` haqiqiy natijani beradi.
+  ClientNews fayllari xatosiz.
+
+### 2026-07-20 — N-1: card_status diff poller + money code eventi
+
+- 0033_notification_state.sql: mini_app_notification_state (scope PK + jsonb watermark) —
+  poller restart'da qayta-notify qilmaydi; scope'ning BIRINCHI o'tishi faqat baseline yozadi
+  (mavjud kartalar bo'yicha portlatmaydi). Mac'da: corepack pnpm db:migrate.
+- pollers.ts runCardStatusPoll: NOTIFY_POLL_CARRIERS (env, bo'sh = no-op) dagi har carrier
+  uchun servercrm getCards snapshot vs watermark diff → card_status event (last6, prev,
+  status, cardId — cardId findDwhCardByNumber orqali best-effort; topilmasa owner eshitadi,
+  driver nusxasi fail-closed o'tib ketadi). Bitta carrier xatosi qolganlarini to'xtatmaydi.
+- Jobs: notification.poll (singleton, */2 daqiqa cron, overlap yo'q) + worker registratsiya.
+- money-code draw: muvaffaqiyatli draw'dan keyin type 'money_code' notification (qiymat
+  XABARDA YO'Q — registry qoidasi, "mini-app'ni oching").
+- Pilot yoqish: .env'da NOTIFY_POLL_CARRIERS=<OnzmoveCarrierId> + FF_JOBS_ENABLED=1 (worker
+  rejimiga qarab). O'chirish: bo'sh qoldirish.
+
+### 2026-07-20 — News: rasm dastagi + "Octane mobile app" e'loni
+
+- Rich-text whitelist'ga <img> qo'shildi (server richText.ts: faqat https src + alt, boshqa
+  atribut o'tmaydi; mini-app InboxTab client sanitizer'i ham mos). CRM editorda 🖼 tugma
+  (https URL bilan insertImage). CSS: max-width 100%, radius (mini-app + CRM preview).
+- scripts/post-news-octane-mobile-app.sh: hamma klientlarga (owner+driver, pinned, 4 til)
+  Octane Fuel mobil ilova e'loni — App Store artwork (mzstatic og:image), ikkala do'kon linki.
+  Ishga tushirish: BASE=... API_KEY=$OCTANE_INTERNAL_API_KEY ./scripts/post-news-octane-mobile-app.sh
+  Yoki CRM Admin → Client News editor orqali qo'lda.
+
+### 2026-07-21 — Notification audit + caveat'larni yopish (multi-lang + queue bug)
+
+Notification tizimi (N-0/N-1/N-2) auditi. Backend typecheck 0, 758 test yashil, lint toza
+(o'zgartirilgan fayllar). Caveat holati: (1) migratsiya generatsiyasi — YOPILDI (0031-0033
+qo'lda, journaled, DB'da mavjud, db:migrate yashil); (2) _to_delete/ — YO'Q (tozalangan);
+(3) drv unread server-state — N-3'ga qoldirilgan (kelasi faza, bug emas); (4) CRM tsc 25 xato —
+hammasi BIZDAN oldingi (icons/Jobs/DashboardTab…), ClientNews fayllari toza.
+
+**Caveat #2 (multi-lang) — TO'LIQ YOPILDI.** Ilgari templates.ts 4 til bor edi lekin dispatcher
+har doim 'en' render qilardi (registratsiya language_code'ni saqlamas edi). Endi:
+- `registered_mini_app_companies.language_code` ustuni (migratsiya `0034_registration_language.sql`,
+  ADD COLUMN IF NOT EXISTS, journal idx 34, DB'ga qo'llandi). `TelegramWebAppUser.language_code`
+  qo'shildi (Telegram initData'da keladi).
+- Redeem + driver self-register upsert'lari tgUser.language_code'ni yozadi; qayta-ochishda
+  bo'sh kelsa eski qiymat saqlanadi (COALESCE-keep, dev mock lang'siz ochsa yo'qotmaydi).
+- service.ts dispatch: `renderNotification(spec.templateKey, reg.languageCode, payload)`.
+  `normalizeLang()` har qanday IETF tag'ni (ru/uz-Cyrl/pt-BR) qo'llab-quvvatlanadigan tilga maplaydi,
+  fallback 'en'.
+- News per-recipient locale: outbox payload endi TO'LIQ LocalizedText map'ini saqlaydi
+  ({en,ru,uz,es}), .en emas. renderNotification (bot) va App.tsx notifToInbox (FE inbox) ikkalasi
+  ham payload slot'idan recipient tilini tanlaydi (object → locale-pick, string fallback eski
+  qatorlar uchun). Bitta outbox qatori har recipient tilida to'g'ri render bo'ladi.
+- Test: `tests/unit/notification-templates.test.ts` (6 test — normalizeLang + render locale-pick).
+
+**BUG topildi va tuzatildi (jobs).** `notification.dispatch` + `notification.poll` queue'lari
+`ALL_JOBS`'da YO'Q edi → boss.ts createQueue() ularni provizatsiya qilmasdi → FF_JOBS_ENABLED=1
+bo'lganda dispatch enqueue prod'da xato berardi (dev inline fallback buni yashirgan). Test
+`jobs-catalog: every cron schedule points at a defined queue` yiqilgani shu bugni ushladi.
+Tuzatish: ikkala job'ni ALL_JOBS'ga qo'shildi.
+
+Verified: mini-app ?dev=1&lang=ru → RU render; dev mock-init-data language_code=ru'ni qaytaradi;
+backend hot-reload toza. Local dev: `pnpm dev:all` backend+CRM; mini-app alohida `pnpm -C
+apps/mini-app dev` (:5174), ?dev=1 mock Telegram identity.
+
+### 2026-07-21 — N-3: notification read-state server-persisted + inbox 500 bug tuzatildi
+
+Caveat #4 YOPILDI. Ilgari notification unread holati faqat client-side (sessiya ichida) edi —
+reload/relaunch'da badge tiklanardi. Endi news bilan bir xil server-persisted:
+- Jadval `mini_app_notification_reads` (notification_id + telegram_user_id, unique) — client_news_reads
+  nusxasi. Notification bir necha user'ga fan-out bo'lgani uchun read holati per-user (outbox
+  qatoridagi ustun emas). Migratsiya `0035_notification_reads.sql` (journal idx 35, DB'ga qo'llandi).
+- service.ts: `markNotificationRead(tgUserId, notifId)` (idempotent, faqat caller'ning o'z receipt'i,
+  ownership risk yo'q) + `readNotificationIds(tgUserId, ids)` (badge uchun Set).
+- Inbox route: ko'rinadigan slice uchun read holatini so'raydi, har notification'ga `read` maydoni
+  qo'shadi. Yangi endpoint `POST /carrier/mini-app/inbox/notification-read`. Hub live-push ham
+  `read:false` yuboradi.
+- FE (api.ts + App.tsx): InboxNotification.read; notifToInbox `unread: !n.read`; markAllRead + readNotif
+  endi man_ id'lar uchun apiMarkNotificationRead chaqiradi (nws_ = news, man_ = notification,
+  gen- = client-only). 
+
+**BUG (blocking) topildi + tuzatildi:** listNewsForRegistration `sql\`${clientNews.publishAt} <= ${now}\``
+postgres.js driver'da RAW Date bind qila olmaydi → inbox endpoint HAR DOIM 500 berardi ("Received an
+instance of Date"). FE fetch fail'da demo seed'ga tushgani uchun "real inbox" ko'rinishda ishlab
+turgandek edi. Tuzatish: drizzle `lte(clientNews.publishAt, now)`. Notification kodida boshqa
+Date-in-sql interpolatsiya yo'q (attempts+1 lar faqat ustun).
+
+Verified E2E (jonli backend): seed registration+sent notification → inbox read:false → notification-read
+→ inbox read:true (server-persisted). Typecheck backend+mini-app 0, 758 test yashil, lint toza.
+
+### 2026-07-20 — Hamroh promo bot: mytrion tomoni (support-bot fasadi) + deep-link actions
+
+Qaror: hamroh (Telegram agent harness, ~/Projects/Octane/AI/hamroh) HOZIR mini-app targ'ibot
+boti, keyin support agent. Arxitektura: instance-per-carrier (bitta Claude sessiyasi hamma
+chatlarni ko'radi — cross-client izolyatsiya faqat alohida konteyner bilan), toollar
+carrierId'ni env'dan oladi, writes minimal.
+
+mytrion tomonida yangi: src/routes/v1/supportBot.routes.ts (/v1/support-bot/*):
+- POST /override — DRIVER-ONLY, telegramUserId → registration lookup (active + carrier ==
+  bot env carrier, fail-closed), requireDriverCardNumber bilan o'z kartasi, mini-app bilan
+  BIR XIL flag/rate/audit/notification (override receipt). Owner → 403 "mini-app'da".
+- GET /access?carrierId — active registrationlar ro'yxati; hamroh scripts/
+  sync_octane_access.py shu bilan access.json'ni yangilaydi (bitta identity manba:
+  mini-app'da revoke = botda ham yo'qoladi).
+Mini-app: ?startapp=go-<action> deep-linklar (override/moneycode/funds/txns/pinunit/status/
+invoices) — ro'yxatdan o'tgan user to'g'ri sheet'da ochadi; go-* registration-id yo'liga
+sizmaydi. Hamroh repo'da: prompts/project.md.octane (promo persona, intent→pointer jadvali,
+anti-spam qoidalar), skills/octane-promo, tools/octane/octane_override.py (model argumentiga
+ishonmaydi: sender oxirgi 5 daqiqada shu chatda yozganini DB'dan tekshiradi, qolganini
+backend qayta-verify qiladi).
+
+### 2026-07-20 — Support-bot RBAC yuzasi (mytrion, to'liq server-side)
+
+supportBot.routes.ts qayta yozildi — YAGONA gate resolveCaller(carrierId, telegramUserId):
+active registration + carrier == bot instansiyasi env carrier (fail-closed; boshqa kompaniya
+useri "not registered" bilan bir xil ko'rinadi — probing yo'q). ROL registration'dan, hech
+qachon so'rovdan emas. Endpointlar:
+- /whoami — rol/ism/kompaniya (bot muomala uchun)
+- /card-status — driver: faqat o'z kartasi qatori; owner: fleet statuslari (30 cap)
+- /funds — owner: real raqamlar (efs_balance, credit); driver: FAQAT boolean + o'z karta statusi
+- /txn-report — hisobot so'ragan odamning O'Z bot-DM'iga fayl (guruhga EMAS — fleet raqamlari
+  guruh a'zolariga ko'rinmasin); driver: o'z kartasi + retail majburiy; owner: to'liq
+- /override — driver-only, o'z kartasi, mini-app bilan bir xil flag/rate/audit/receipt
+- /access — hamroh access.json sync manbai
+Read rate: 30/daq/carrier, write: 5/daq. Hamma javob shakli rolga qarab server tomonda
+kesilgan — model/bot hech narsani kengaytira olmaydi. Hamroh toollari keyingi qadam
+(octane_override naqshi bo'yicha: sender-verify + shu endpointlar).
+
+### 2026-07-20 — Hamroh → apps/agent-telegram-bot (monorepo'ga ko'chirildi)
+
+Hamroh source apps/agent-telegram-bot/ ga nusxalandi (.git/.env/data'siz; upstream 2026-07).
+Octane qatlami: tools/octane/ endi 5 ta tool (_client.py umumiy: env cfg + backend POST +
+sender-verify) — whoami, card_status, funds, txn_report, override. Hammasi mytrion
+/v1/support-bot/* RBAC yuzasiga boradi; rol/carrier server tomonda. OCTANE.md — to'liq
+setup (instance-per-carrier, env'lar, ishga tushirish, invariantlar, upstream farqlar).
+Eslatma: ~/Projects/Octane/AI/hamroh dagi asl nusxada qolgan tools/octane/octane_override.py
+va boshqalar endi dublikat — asl repo tozalanishi mumkin (yoki upstream-only qoldiriladi).
 ## 2026-07-20 — Retention modal: Call, auto-Working, screenshot attempts
 
 - **Call** lives in the case modal header (RingCentral click-to-dial) for any open
@@ -4517,3 +4848,109 @@ two-call rule (listen + solution notes) before Saved/Refused. CS CasesPanel +
 `useRetentionRealtime` passes claim_* events for peer Pool refresh.
 
 **Deferred:** pre-entry funded alert, Zapier email, KPI/MOR components.
+### 2026-07-21 — Notifications Phase-2: T2 receipt poller (T1 deferred)
+
+**T1 (limit poller) DEFERRED** — per-card daily gallon (ULSD) limit is readable NOWHERE:
+servercrm getCards mart = {card_number, status} only; `/cards/{c}/{card}/efs` = status/unit/driver
+(no limit); no GET for card limits (setCardLimits is write-only, GETs 404). DWH `dim_card` has no
+gallon limit; all DWH "limit" columns are carrier-level `credit_limit` ($ credit line, not per-card
+gallons). Usage gallons exist (`fuel_quantity`/`line_item_fuel_quantity`) but no cap to compare
+against. T1 needs either a configured threshold (env, v1) or a new servercrm EFS-policy read
+endpoint — parked until owner decides.
+
+**T2 (receipt poller) DONE** — `pollers.ts runReceiptPoll`:
+- Source `listDwhTransactions({carrierId, range:'day', limit:200})` (DWH fast path, `t.*`).
+- Line items collapsed → one receipt per `transaction_id` (sum `line_item_fuel_quantity`).
+- Watermark `receipt:<carrierId>` = last `transaction_date`; FIRST pass baseline-only (no blast).
+  Re-scan safe: dedupe_key `receipt:<carrier>:<txnId>` (outbox UNIQUE).
+- Payload: last6, gallons, location, city, state, cardId — **NO price** (driver rule). cardId via
+  findDwhCardByNumber (cached per card), owner hears w/o it, driver copy fail-closed.
+- Backfill guard: RECEIPT_PER_CARD_CAP=20/card/run.
+- Wired into the SINGLE `notification.poll` cron (sequential after runCardStatusPoll — no new job).
+- Mini-app: `notifToInbox` 'receipt' case + `inbox.ntfReceipt.title/body` in 4 langs (en/ru/uz/es).
+- No new env (reuses NOTIFY_POLL_CARRIERS), no migration (reuses `mini_app_notification_state`).
+- Checklist: tsc root+mini-app 0, eslint 0, 762 tests pass (no regression), i18n 4 til. Test on Mac.
+
+### 2026-07-21 — Notifications Phase-2 roadmap decision: money code OFF for MVP
+
+**Decision (owner):** for the MVP, the mini-app money code stays DISABLED for company owners.
+- Enforced by `FF_MINIAPP_MONEY_CODE_ENABLED` — ship default `0` (env.ts + .env.example); local .env
+  flipped 1->0 to match. Backend `requireMoneyCodeEnabled()` -> `MINIAPP_MONEY_CODE_DISABLED`; the
+  mini-app already degrades to a disabled sheet ("Money codes are not enabled here yet. Please send
+  a request instead.") — no dead screen. Verified live.
+
+**Phase-2 status after this session:**
+- T1 limit poller — DEFERRED. Per-card daily gallon limit is readable nowhere (servercrm getCards /
+  `/efs` / no limits GET; DWH `dim_card` no gallon cap, only carrier `credit_limit` $). Needs a
+  configured threshold (env) or a new servercrm EFS-policy read endpoint.
+- T2 receipt poller — DONE (runReceiptPoll + mini-app receipt row, i18n 4 lang).
+- T3 weekly statement — SKIPPED for now (unblocked when wanted: buildTxnReport + sendDocument exist).
+- T4 driver money code + owner confirm — DEFERRED (money code off for MVP). When revived, resolve
+  the OWNER-CONFIRM mechanism first: Telegram inline buttons need bot `callback_query`, but the
+  carrier bot token is polled by agent-gateway (`getUpdates`) and `setWebhook` disables polling —
+  so either a mini-app approve endpoint (no webhook, recommended) or a separate approval bot token.
+
+**Migration numbering:** next hand-written migration is 0041+ (0031-0040 used after the build merge).
+
+### 2026-07-21 — Support-bot PROD PARITY: hamma servis ulandi (money code ham)
+
+Owner qarori: prod uchun to'liq parity. /v1/support-bot yangi endpointlar (hammasi
+resolveCaller RBAC + audit + rate ostida): service-request (butun ticket oilasi, billing-form
+ham), tracking, money-code/draw (FF gate; QIYMAT guruhga emas — owner'ning shaxsiy Octane-bot
+chatiga DM), card-action (activate/deactivate, last-6 bilan; resolveCardByLast6 — 0 match=404,
+ko'p match=409 "last 6 bering"), card-limits (MINIAPP_LIMIT_CHANGE_MAX cap), card-info
+(driver o'z kartasi cardLast6'siz; driverName owner-only), balance (raqamlar DM'ga),
+manual-code (to'liq PAN faqat DM'ga). Gateway: 8 yangi tool + allowedTools + prompt
+(har yozuvga bir-qatorlik confirm; sezgir narsa guruhga chiqmaydi).
+Test checklist (guruhda): owner money code (flag on) → DM'da kod; "4753 ni o'chir" →
+ambiguous bo'lsa last-6 so'raydi; driver unit change o'z kartasiga; balance → DM;
+manual code → DM; billing form → ticket id.
+
+### 2026-07-21 — Gateway: buttons-first UX (Telegram inline keyboard qatlami)
+
+Analitika asosi: klient so'rovlari qisqa/chala ("kod", "gtg?") — eng qulay UX yozish emas,
+BOSISH. Qo'shildi: telegram.ts sendButtons (inline_keyboard, ≤8 tugma 2 tadan qatorda) +
+answerCallback; getUpdates endi callback_query ham oladi; index.ts tap'ni sessiyaga
+"[button tap from <name> (id N)]: <data>" qilib uzatadi (id Telegram'dan — construction
+bo'yicha sender-verified), registered-gate tap'larga ham; tools.ts telegram_buttons tool +
+allowedTools. Prompt "Buttons-first UX": har yozuv-confirm faqat tugma (✅ Ha/❌ Yo'q),
+bo'sh tag/help/menu → rolga mos, talab-tartibli menyu (owner: money code birinchi — 2251;
+driver: kartam holati birinchi), tanlovlar (davr, ambiguous karta, ticket turi) tugmalarda.
+Test: "@bot menu" → tugmali menyu; money code oqimi to'liq tap bilan; "4753 o'chir" →
+Ha/Yo'q tugmalari.
+
+---
+
+## 2026-07-21 — Manager role (owner-equivalent) for carrier mini-app + CRM
+
+- **Why:** big fleets have managers who work with drivers and need company-owner-level access in
+  Octane — but they aren't the account owner. Added a third `profile` value **`manager`** that is
+  owner-EQUIVALENT in every capability gate; differs only in provenance (invited, not the owner) and
+  display. Product decisions (confirmed): full owner-teng access (incl. finances); owner + manager +
+  admin can all issue manager links; a manager can also issue driver links.
+- **No migration.** `profile` is a plain `text` column in both `carrier_invitations` and
+  `registered_mini_app_companies` (no pg enum / CHECK), so widening the TS union `'owner' | 'driver'`
+  → `'owner' | 'manager' | 'driver'` is a code-only change.
+- **Single source of "manager == owner":** `miniAppAuth.isOwnerLike(profile)` = owner || manager.
+  `requireRegisteredOwner` / `requireRegisteredOwnerUser` key off it; `telegramCtx` maps both to the
+  `fleet_manager` role. `serviceRequestAllows` normalizes manager→owner (per-service role lists stay
+  owner/driver). `inviteService` pins `companyType='fleet-manager'` for a manager invite so a DWH
+  hiccup can't null it and lock the manager out of the fleet gate (fail-closed).
+- **Notifications + news need no change:** dispatcher (`service.ts`) and news (`news.ts`) already
+  collapse `profile === 'driver' ? 'driver' : 'owner'`, so a manager inherits owner-targeted
+  deliveries automatically. Registry roles stay owner/driver (routing role, not registration profile).
+- **New endpoint:** `POST /carrier/mini-app/manager-invites` (gated by `requireRegisteredOwner`, so
+  owner OR manager; carrier bound from the caller's own registration, never the body; ttl 48h).
+- **Mini-app FE:** `isOwner` is now owner-LIKE (owner||manager) and drives the whole owner UI; added
+  `isManager` for copy that must distinguish. Manager-invite affordance sits at the top of the fleet
+  screen (fleet-manager only — matches the backend gate): generate → reveal link → copy/regenerate.
+  Confirm/success screens + i18n (EN/RU/UZ/ES) gained manager strings.
+- **CRM admin:** `CarrierUserForm` account-type toggle gained a Manager option (treated owner-like:
+  carrier tie, no card — one logic change: `isOwner = !isDriver`). `CarrierInvitations` list labels
+  manager invites. **Registered Companies screen (per follow-up):** managers now render as their own
+  tier (Manager pill, revocable — revoke was already profile-agnostic at the API); added **status
+  filter chips** (All / Active / Revoked with counts) since revoked accounts accumulate and clutter
+  the roster.
+- **Tests:** +4 in `carrier-mini-app.test.ts` (manager gets owner-only money view; manager & owner
+  can mint a manager link bound to their own carrier; driver refused at /manager-invites). Full suite
+  766 pass. Backend + mini-app + CRM(carrier files) typecheck clean; mini-app bundle rebuilt.

@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Check, CircleAlert, LayoutGrid } from 'lucide-react';
+import { Check, ChevronRight, CircleAlert, LayoutGrid } from 'lucide-react';
 import {
   ApiError,
   createDriverInvite,
+  createManagerInvite,
+  listManagers,
+  revokeManager,
+  type ManagerUser,
   driverSelfRegister,
   fetchAccountStatus,
   fetchBalance,
+  fetchCardFunds,
   fetchFleet,
   fetchInvoices,
   fetchLastUsed,
@@ -13,14 +18,28 @@ import {
   fetchPaymentInfo,
   fetchRegistrationPreview,
   fetchCompany,
+  fetchBillingForm,
   fetchTracking,
   renameDriver,
   sendServiceRequest,
   fetchTransactions,
+  overrideCard,
+  fetchMoneyCodeHistory,
+  fetchMoneyCodePreview,
+  drawMoneyCode,
+  fetchCardEfs,
+  sendAccountingBundleReport,
+  setCardStatus,
+  setCardLimits,
+  updateCardInfo,
+  type MoneyCodePreview,
   redeemRegistration,
   sendInvoice,
+  sendMoneyCodeReport,
+  voidMoneyCodeDraw,
   sendTransactionsReport,
   type CarrierBalance,
+  type CardFundsResult,
   type FleetCard,
   type LastUsedResult,
   type PaymentInfoResult,
@@ -28,16 +47,27 @@ import {
   type RegistrationView,
   type SalesInvoicesResult,
   type StatusResult,
+  type BillingFormInfo,
+  type MoneyCodeDrawRow,
   type TrackingResult,
   type TransactionsResult,
   type TxnExportFormat,
 } from './lib/api';
-import { getRegistrationId, getTelegramWebApp, haptic, type TelegramWebAppUser } from './lib/telegram';
+import { getRegistrationId, getStartAction, getTelegramWebApp, haptic, type TelegramWebAppUser } from './lib/telegram';
 import { getStoredTheme, initTheme, setTheme, type Theme } from './lib/theme';
 import { LANGUAGES, useI18n } from './lib/i18n';
 import { LogoLockup } from './components/logo';
 import { BackChevron, Chevron, EyeToggle, Icon, SearchGlyph, type IconName } from './components/icons';
-import { seedInbox, type InboxItem } from './lib/demo';
+import { type InboxItem } from './lib/demo';
+import {
+  fetchInboxFeed,
+  inboxRealtimeUrl,
+  markNewsRead as apiMarkNewsRead,
+  markNotificationRead as apiMarkNotificationRead,
+  type InboxFeed,
+  type InboxNotification,
+  type LocalizedNewsText,
+} from './lib/api';
 import type { CompanyDetails } from './lib/api';
 import type { OpenAction } from './lib/actionTarget';
 import { defaultPinned, findCatalogItem } from './lib/serviceCatalog';
@@ -55,7 +85,10 @@ type Screen = 'loading' | 'error' | 'confirm' | 'success' | 'already' | 'home' |
 
 interface Session {
   isDriver: boolean;
+  /** Owner-LIKE: true for both a company owner and a manager (owner-equivalent access). This is what
+   *  gates the owner UI. Use isManager only when the copy must distinguish the two. */
   isOwner: boolean;
+  isManager: boolean;
   isOwnerOp: boolean;
   isFleetManager: boolean;
   ownCard: string;
@@ -74,15 +107,19 @@ function cleanAgentName(agentName: string | null | undefined): string | null {
 function sessionFrom(reg: RegistrationView | null): Session {
   const companyType = reg?.companyType ?? null;
   const isDriver = reg?.profile === 'driver';
-  const isOwner = reg?.profile === 'owner';
-  const isFleetManager = reg?.profile === 'owner' && companyType === 'fleet-manager';
+  const isManager = reg?.profile === 'manager';
+  // Owner-like drives the whole owner UI — a manager is owner-equivalent.
+  const isOwner = reg?.profile === 'owner' || isManager;
+  const isFleetManager = isOwner && companyType === 'fleet-manager';
+  // A true owner-operator only — a manager is never a solo owner-operator.
   const isOwnerOp = reg?.profile === 'owner' && companyType !== 'fleet-manager';
   const ownCardNumber = reg?.cardNumber?.trim() || null;
   // Prefer the real card number's last-4; fall back to the cardId's trailing digits when unresolved.
-  const ownCard = (ownCardNumber ?? reg?.cardId ?? '7549').slice(-4);
+  const ownCard = (ownCardNumber ?? reg?.cardId ?? '417593').slice(-6);
   return {
     isDriver,
     isOwner,
+    isManager,
     isOwnerOp,
     isFleetManager,
     ownCard,
@@ -96,10 +133,12 @@ function initialsOf(user: TelegramWebAppUser | undefined): string {
   return s || user?.username?.[0]?.toUpperCase() || 'OC';
 }
 
-function last4(cardNumber: string | null, cardId: string | null): string {
-  const n = cardNumber?.trim();
-  if (n && n.length >= 4) return n.slice(-4);
-  return cardId ?? '——';
+/** Product rule (2026-07-20): fuel cards are identified by their LAST 6 digits everywhere —
+ *  last-4 collides too often within a fleet (one carrier measured 11 cards sharing a last-4). */
+function tail6(cardNumber: string | null, cardId: string | null): string {
+  const t = (cardNumber ?? '').replace(/\D/g, '');
+  if (t.length >= 6) return t.slice(-6);
+  return t || (cardId ?? '').slice(-6) || '——';
 }
 
 /** Same formatting rules as the sales admin's automation runners (apps/mytrion-crm/.../specs.ts) — servercrm figures are `number | string | null`, never pre-formatted. */
@@ -228,20 +267,81 @@ function CtaButton({ children, onClick, disabled, style }: { children: ReactNode
   );
 }
 
-function Spinner({ size = 34 }: { size?: number }) {
+function Spinner({ size = 34, color = 'var(--primary)' }: { size?: number; color?: string }) {
   return (
     <div
       style={{
         width: size,
         height: size,
         borderRadius: '50%',
-        // Theme-adaptive track (faint in both light + dark) with a solid primary arc on top, so the
-        // spinner reads clearly against the dark-default background — --secondary was too low-contrast.
-        border: '3px solid color-mix(in srgb, var(--primary) 22%, transparent)',
-        borderTopColor: 'var(--primary)',
+        // Theme-adaptive track (faint in both light + dark) with a solid arc on top. `color`
+        // defaults to --primary for spinners on the page background; inside a filled CTA (primary
+        // background) it must be passed '#FFFFFF' — a primary arc on a primary button is invisible,
+        // which read as the loading button "losing its color" in dark mode.
+        border: `3px solid color-mix(in srgb, ${color} 22%, transparent)`,
+        borderTopColor: color,
         animation: 'octspin .8s linear infinite',
       }}
     />
+  );
+}
+
+/**
+ * A single calm placeholder bar, reusing the shared `octskeleton` shimmer. Content areas whose
+ * eventual shape is known get one of these instead of a centered spinner, so the layout lands in
+ * place rather than snapping in after a spin. Never paired with a spinner for the same load.
+ */
+function Skeleton({ w = '100%', h = 14, r = 8, bg = 'var(--secondary)', style }: { w?: number | string; h?: number | string; r?: number; bg?: string; style?: CSSProperties }) {
+  return <span aria-hidden style={{ display: 'block', width: w, height: h, borderRadius: r, background: bg, animation: 'octskeleton 1.3s ease-in-out infinite', ...style }} />;
+}
+
+/**
+ * Loading placeholder for a service sheet, shaped to roughly match what the fetch will paint —
+ * summary tiles for the money views, a header + fields for the editors, a list card for the rest —
+ * so the sheet doesn't reflow when the data lands.
+ */
+function SheetSkeleton({ service }: { service: string | null }) {
+  const tile = (key: number) => (
+    <div key={key} style={{ background: 'var(--secondary)', borderRadius: 14, padding: '13px 14px' }}>
+      <Skeleton w={64} h={11} bg="var(--border)" />
+      <Skeleton w={88} h={20} bg="var(--border)" style={{ marginTop: 8 }} />
+    </div>
+  );
+  const listCard = (
+    <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 14px', borderBottom: i === 4 ? 'none' : '1px solid var(--border)' }}>
+          <Skeleton w={120} h={13} bg="var(--border)" />
+          <span style={{ flex: 1 }} />
+          <Skeleton w={52} h={13} bg="var(--border)" />
+        </div>
+      ))}
+    </div>
+  );
+  if (service === 'balance') {
+    return <div aria-busy="true" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{[0, 1, 2, 3].map(tile)}</div>;
+  }
+  if (service === 'funds') {
+    return <div aria-busy="true"><Skeleton h={128} r={16} /></div>;
+  }
+  if (service === 'moneycode' || service === 'pinunit') {
+    return (
+      <div aria-busy="true">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>{[0, 1].map(tile)}</div>
+        <Skeleton h={44} r={11} style={{ marginBottom: 10 }} />
+        <Skeleton h={44} r={11} style={{ marginBottom: 10 }} />
+        <Skeleton h={46} r={12} />
+      </div>
+    );
+  }
+  // List-based sheets (status, txns, invoices, last-used, payment, card ops, tracking). The money
+  // views carry a summary strip above the list; keep it in the skeleton so the list doesn't jump up.
+  const withSummary = service === 'status' || service === 'txns' || service === 'invoices';
+  return (
+    <div aria-busy="true">
+      {withSummary && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>{[0, 1].map(tile)}</div>}
+      {listCard}
+    </div>
   );
 }
 
@@ -367,8 +467,13 @@ function DetailCard({ children }: { children: ReactNode }) {
 
 function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: RegistrationPreview; firstName: string; busy: boolean; onConfirm: () => void }) {
   const { t } = useI18n();
-  const isOwner = preview.profile === 'owner';
-  const ownerLabel = preview.companyType === 'fleet-manager' ? t('role.fleet') : t('role.owner');
+  const isManager = preview.profile === 'manager';
+  const isOwner = preview.profile === 'owner' || isManager;
+  const ownerLabel = isManager
+    ? t('role.manager')
+    : preview.companyType === 'fleet-manager'
+      ? t('role.fleet')
+      : t('role.owner');
   const cd = countdown(preview.expiresAt);
   return (
     <Screen center>
@@ -376,7 +481,7 @@ function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: Regis
         <LogoLockup size={40} />
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 23, fontWeight: 700, color: 'var(--fg)', letterSpacing: '-.01em' }}>{t('confirm.hi', { name: firstName })}</div>
-          <div style={{ fontSize: 14, color: 'var(--muted-fg)', marginTop: 5 }}>{isOwner ? t('confirm.owner') : t('confirm.driver')}</div>
+          <div style={{ fontSize: 14, color: 'var(--muted-fg)', marginTop: 5 }}>{isManager ? t('confirm.manager') : isOwner ? t('confirm.owner') : t('confirm.driver')}</div>
         </div>
         <DetailCard>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '15px 16px' }}>
@@ -392,7 +497,7 @@ function ConfirmScreen({ preview, firstName, busy, onConfirm }: { preview: Regis
           </div>
         </DetailCard>
         <CtaButton onClick={onConfirm} disabled={busy}>
-          {busy ? <Spinner size={20} /> : t('confirm.cta')}
+          {busy ? <Spinner size={20} color="#FFFFFF" /> : t('confirm.cta')}
         </CtaButton>
         {!cd.expired && cd.short && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 13px', borderRadius: 9, background: 'color-mix(in srgb, var(--primary) 14%, transparent)', color: 'var(--link-accent)', fontSize: 12, fontWeight: 600 }}>
@@ -535,7 +640,7 @@ function LoginScreen({
             </label>
             {error && <div style={{ fontSize: 13, color: 'var(--destructive)', lineHeight: 1.45 }}>{error}</div>}
             <CtaButton onClick={() => void submit()} disabled={busy}>
-              {busy ? <Spinner size={20} /> : t('login.continue')}
+              {busy ? <Spinner size={20} color="#FFFFFF" /> : t('login.continue')}
             </CtaButton>
             <button type="button" className="press" onClick={() => { setRole('choose'); setError(''); }} style={{ border: 'none', background: 'transparent', color: 'var(--muted-fg)', fontFamily: "'Geist'", fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: 6 }}>
               {t('common.back')}
@@ -558,7 +663,7 @@ function LoginScreen({
 
 function SuccessScreen({ session, company, onContinue }: { session: Session; company: string; onContinue: () => void }) {
   const { t } = useI18n();
-  const sub = session.isFleetManager ? t('success.fleet', { company }) : session.isDriver ? t('success.driver', { company }) : t('success.owner', { company });
+  const sub = session.isManager ? t('success.manager', { company }) : session.isFleetManager ? t('success.fleet', { company }) : session.isDriver ? t('success.driver', { company }) : t('success.owner', { company });
   return (
     <Screen center>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
@@ -647,10 +752,13 @@ function groupCardNumber(n: string): string {
  * Not length-faithful: an EFS PAN is 19 digits, and masking to its real 4-4-4-4-3 grouping splits
  * the last four across groups as `•••7 549`, which reads as if the last four were "549".
  */
+/** HOME HERO EXCEPTION to the last-6 rule: the big card visual masks to last-4 — it's aesthetic,
+ *  not an identifier (the eye toggle reveals the full number right there). Everywhere a card is
+ *  IDENTIFIED among others (lists, reports, bot messages) stays last-6 via tail6(). */
 function maskedCardNumber(n: string): string {
   const digits = n.replace(/\D/g, '');
-  const last4 = digits.slice(-4) || n.slice(-4);
-  return `${'*'.repeat(Math.max(digits.length - last4.length, 8))} ${last4}`;
+  const tail = digits.slice(-4) || n.slice(-4);
+  return `${'*'.repeat(Math.max(digits.length - tail.length, 8))} ${tail}`;
 }
 
 /** Smooth an array of anchor points into a flowing SVG path (midpoint-quadratic smoothing). */
@@ -861,20 +969,55 @@ function OwnerHero({ initData, company, carrierId, onOpenDetails }: { initData: 
   );
 }
 
+/** Home-hero funds/status snapshot — module-level so tab switches don't refetch a live EFS read
+ *  the sheet cache (SHEET_CACHE) can't share (it lives inside ActionSheet's keying). Same 60s TTL. */
+let heroFundsCache: { at: number; v: CardFundsResult } | null = null;
+
 function DriverHero({
   session,
   company,
   fullName,
+  initData,
   revealed,
   onToggleReveal,
+  onOpenFunds,
 }: {
   session: Session;
   company: string;
   fullName: string;
+  initData: string;
   revealed: boolean;
   onToggleReveal: () => void;
+  onOpenFunds?: (() => void) | undefined;
 }) {
   const { t } = useI18n();
+  // Live standing for the bottom band: the driver's own card status + boolean funds (never the
+  // figure — see /card/funds). Best-effort: until (or unless) it loads, the band shows the static
+  // good-standing line it always showed, so the hero never blocks on EFS.
+  const [funds, setFunds] = useState<CardFundsResult | null>(() =>
+    heroFundsCache && Date.now() - heroFundsCache.at < SHEET_TTL_MS ? heroFundsCache.v : null,
+  );
+  useEffect(() => {
+    if (heroFundsCache && Date.now() - heroFundsCache.at < SHEET_TTL_MS) return;
+    let cancelled = false;
+    fetchCardFunds(initData)
+      .then((v) => {
+        heroFundsCache = { at: Date.now(), v };
+        if (!cancelled) setFunds(v);
+      })
+      .catch(() => {}); // hero keeps its static line — a funds hiccup must not mark the card bad
+    return () => {
+      cancelled = true;
+    };
+  }, [initData]);
+  const cardStatus = (funds?.cardStatus ?? '').trim();
+  const acctDown = funds?.accountActive === false;
+  const cardOk = !acctDown && (cardStatus === '' || cardStatus.toLowerCase() === 'active');
+  const standingText = acctDown
+    ? t('home.acctInactive')
+    : cardOk
+      ? t('home.cardStanding')
+      : `${cardStatus} · ${t('home.cardAttention')}`;
   // No invented fallback: if the DWH has not resolved the real PAN there is nothing truthful to
   // show, so the number skeletons rather than displaying a fiction the Copy button would hand out.
   const realFull = session.ownCardNumber;
@@ -908,14 +1051,33 @@ function DriverHero({
             third. The number stays `selectable` so it can still be picked up by hand. */}
         <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.62)', textTransform: 'uppercase' }}>{t('card.numberLabel')}</span>
-          {display ? (
+          {/* No skeleton shimmer here: a driver's card number is what they typed at sign-in and what
+              the session already carries, so it is present on first paint — a shimmer only ever
+              flashed for a frame. If the PAN genuinely hasn't resolved yet, render nothing rather
+              than a loading placeholder for data that init already has. */}
+          {display && (
             <span className={revealed ? 'selectable' : ''} style={{ fontSize: 20, fontWeight: 800, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', letterSpacing: '.03em', whiteSpace: 'nowrap' }}>{display}</span>
-          ) : (
-            <span aria-label={t('card.numberLabel')} style={{ display: 'block', width: 196, height: 21, borderRadius: 6, background: 'rgba(255,255,255,.13)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8 }}>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--success)', flex: 'none' }} />
-            <span style={{ fontSize: 12.5, fontWeight: 500, color: 'rgba(255,255,255,.72)' }}>{t('home.cardStanding')}</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 8 }}>
+            {/* Chip, matching the funds pill — the pair reads as one status row instead of a faint
+                caption next to a bright pill. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, padding: '5px 10px', borderRadius: 999, background: cardOk ? 'rgba(74,222,128,.16)' : 'rgba(248,113,113,.18)' }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: cardOk ? '#4ADE80' : '#FCA5A5', flex: 'none' }} />
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: cardOk ? '#4ADE80' : '#FCA5A5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{standingText}</span>
+            </div>
+            {/* Funds pill — boolean only, tappable into the full funds sheet. Hidden while unknown
+                (loading or EFS outage): an absent pill reads as "nothing to report", a red one as
+                "you will be declined" — only show the latter when it is actually true. */}
+            {funds?.hasFunds != null && (
+              <button
+                type="button"
+                className="press"
+                onClick={onOpenFunds}
+                style={{ border: 'none', cursor: onOpenFunds ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 999, flex: 'none', background: funds.hasFunds ? 'rgba(74,222,128,.16)' : 'rgba(248,113,113,.18)', color: funds.hasFunds ? '#4ADE80' : '#FCA5A5', fontFamily: "'Geist'", fontSize: 11.5, fontWeight: 700 }}
+              >
+                {funds.hasFunds ? `✓ ${t('home.fundsOk')}` : `✗ ${t('home.fundsNo')}`}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -937,8 +1099,229 @@ interface HomeProps {
   onOpenAction: (target: OpenAction) => void;
   onGoToServices: () => void;
   onViewFleet: () => void;
+  onCreateManagerInvite: (name: string) => Promise<{ inviteUrl: string; expiresAt: string }>;
+  onCopy: (text: string, toast: string) => void;
   onMarkAllRead: () => void;
   onReadNotif: (id: string) => void;
+  overrideUntil: number | null;
+  onOverrideExpire: () => void;
+}
+
+/** Live ~30-minute countdown card shown on Home after a successful C-16 override — the driver's
+ *  proof-at-a-glance that the card is open, without reopening the sheet. Ticks every second;
+ *  calls onExpire (which clears the persisted timestamp) when the window closes. */
+function OverrideBanner({ until, onExpire }: { until: number; onExpire: () => void }) {
+  const { t } = useI18n();
+  const [, force] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => force((x) => x + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const leftMs = until - Date.now();
+  useEffect(() => {
+    if (leftMs <= 0) onExpire();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leftMs <= 0]);
+  if (leftMs <= 0) return null;
+  const mm = Math.floor(leftMs / 60000);
+  const ss = Math.floor((leftMs % 60000) / 1000);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'color-mix(in srgb, var(--success) 13%, var(--card))', border: '1px solid color-mix(in srgb, var(--success) 35%, transparent)', borderRadius: 16, padding: '13px 15px', margin: '0 0 14px' }}>
+      <span style={{ width: 38, height: 38, borderRadius: 12, background: 'color-mix(in srgb, var(--success) 18%, transparent)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+        <Icon name="lock" size={18} strokeWidth={2} className="" />
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--fg)' }}>{t('ovrbn.active')}</span>
+        <span style={{ display: 'block', fontSize: 12.5, color: 'var(--muted-fg)', marginTop: 2 }}>{t('ovrbn.left')}</span>
+      </span>
+      <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--success)', fontVariantNumeric: 'tabular-nums', flex: 'none' }}>
+        {mm}:{String(ss).padStart(2, '0')}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Manager invite — a company-level access grant, shown on Home above the fleet card for a
+ * fleet-manager owner/manager (never an owner-operator: they run a single truck alone). Each tap of
+ * Generate mints a fresh, independent invite link, so a company can add as many managers as it needs.
+ */
+function ManagerInviteCard({
+  onCreate,
+  onCopy,
+}: {
+  onCreate: (name: string) => Promise<{ inviteUrl: string; expiresAt: string }>;
+  onCopy: (text: string, toast: string) => void;
+}) {
+  const { t } = useI18n();
+  const [name, setName] = useState('');
+  const [done, setDone] = useState<{ link: string; name: string; expiresAt: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  // Re-render once a second while a link is shown so the expiry countdown ticks down live.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!done) return;
+    const id = setInterval(() => setTick((x) => x + 1), 1000);
+    return () => clearInterval(id);
+  }, [done]);
+  const cd = done ? countdown(done.expiresAt) : null;
+  const trimmed = name.trim();
+  async function mint() {
+    if (busy || !trimmed) return;
+    setBusy(true);
+    try {
+      const res = await onCreate(trimmed);
+      setDone({ link: res.inviteUrl, name: trimmed, expiresAt: res.expiresAt });
+      setCopied(false);
+    } catch {
+      /* the caller's onCreate surfaces its own error toast */
+    } finally {
+      setBusy(false);
+    }
+  }
+  function reset() {
+    setDone(null);
+    setName('');
+    setCopied(false);
+  }
+  return (
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 24, padding: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <span style={{ width: 48, height: 48, flex: 'none', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'color-mix(in srgb, var(--primary) 13%, transparent)', color: 'var(--link-accent)' }}>
+          <Icon name="userplus" size={22} strokeWidth={1.9} className="" />
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--fg)' }}>{t('manager.title')}</div>
+          <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3, lineHeight: 1.4 }}>{t('manager.subtitle')}</div>
+        </div>
+      </div>
+      {!done ? (
+        <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <input
+            className="selectable"
+            value={name}
+            onChange={(e) => setName(e.target.value.slice(0, 200))}
+            placeholder={t('manager.namePlaceholder')}
+            style={{ width: '100%', height: 46, padding: '0 14px', borderRadius: 13, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+          />
+          <button type="button" className="press" onClick={() => { haptic('tap'); void mint(); }} disabled={busy || !trimmed} style={{ width: '100%', height: 46, border: 'none', borderRadius: 13, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: busy || !trimmed ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: busy || !trimmed ? 0.55 : 1 }}>
+            {busy ? <Spinner size={18} color="#FFFFFF" /> : t('manager.generate')}
+          </button>
+        </div>
+      ) : (
+        <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 9 }}>
+          <div style={{ fontSize: 13, color: 'var(--fg)', fontWeight: 600 }}>{t('manager.linkFor', { name: done.name })}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 46, padding: '0 6px 0 13px', background: 'var(--secondary)', borderRadius: 13 }}>
+            <span className="selectable" style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{done.link}</span>
+            <button type="button" className="press" disabled={!!cd?.expired} onClick={() => { onCopy(done.link, t('manager.linkCreated')); setCopied(true); setTimeout(() => setCopied(false), 1600); }} style={{ flex: 'none', height: 34, padding: '0 14px', border: 'none', borderRadius: 10, background: cd?.expired ? 'var(--border)' : copied ? 'var(--success, #16a34a)' : 'var(--primary)', color: cd?.expired ? 'var(--muted-fg)' : '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: cd?.expired ? 'default' : 'pointer' }}>
+              {copied ? t('card.copied') : t('manager.copy')}
+            </button>
+          </div>
+          {/* Live expiry timer — a manager link is short-lived (48h); the countdown shows how long the
+              colleague has to open it, and flips to an expired notice with a create-a-new-one nudge. */}
+          {cd && !cd.expired && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--link-accent)' }}>
+              <Icon name="clock" size={13} strokeWidth={2} className="" />
+              <span>{t('card.expiresIn', { time: cd.short })}</span>
+            </div>
+          )}
+          {cd?.expired && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--destructive)' }}>
+              <Icon name="clock" size={13} strokeWidth={2} className="" />
+              <span>{t('manager.expired')}</span>
+            </div>
+          )}
+          <button type="button" onClick={() => { haptic('tap'); reset(); }} style={{ alignSelf: 'flex-start', border: 'none', background: 'transparent', color: 'var(--link-accent)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: 'pointer', padding: '2px 0' }}>
+            {t('manager.regenerate')}
+          </button>
+          <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', lineHeight: 1.4 }}>{t('manager.multiHint')}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Registered managers roster — shown on Home under the invite card (fleet-manager only). Each row
+ * revokes with a two-tap guard (Revoke → Confirm), since there is no undo: a revoked manager loses
+ * the mini-app AND the support bot immediately. Hidden entirely until at least one manager exists —
+ * the invite card already carries the empty case.
+ */
+function ManagersList({ initData }: { initData: string }) {
+  const { t } = useI18n();
+  const [managers, setManagers] = useState<ManagerUser[] | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    listManagers(initData)
+      .then((m) => { if (!cancelled) setManagers(m); })
+      .catch(() => { if (!cancelled) setManagers([]); });
+    return () => { cancelled = true; };
+  }, [initData]);
+
+  async function revoke(id: string) {
+    setBusyId(id);
+    try {
+      await revokeManager(initData, id);
+      haptic('success');
+      setManagers((ms) => (ms ?? []).filter((m) => m.id !== id));
+    } catch {
+      haptic('error');
+    } finally {
+      setBusyId(null);
+      setConfirmId(null);
+    }
+  }
+
+  if (managers === null) {
+    return (
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 24, padding: 18 }}>
+        <Skeleton w={90} h={12} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14 }}>
+          <Skeleton w={38} h={38} r={11} />
+          <div style={{ flex: 1 }}><Skeleton w={120} h={14} /></div>
+          <Skeleton w={64} h={30} r={9} />
+        </div>
+      </div>
+    );
+  }
+  if (managers.length === 0) return null;
+
+  return (
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 24, overflow: 'hidden' }}>
+      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted-fg)', padding: '15px 16px 9px' }}>{t('managers.title')}</div>
+      {managers.map((m) => {
+        const confirming = confirmId === m.id;
+        const busy = busyId === m.id;
+        return (
+          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
+            <span style={{ width: 38, height: 38, flex: 'none', borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--secondary)', color: 'var(--fg)', fontWeight: 700, fontSize: 14 }}>
+              {(m.name ?? m.telegramUsername ?? '?').trim().charAt(0).toUpperCase()}
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.name ?? `@${m.telegramUsername ?? '—'}`}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.telegramUsername ? `@${m.telegramUsername}` : t('managers.role')}</div>
+            </div>
+            <button
+              type="button"
+              className="press"
+              disabled={busy}
+              onClick={() => {
+                haptic('tap');
+                if (confirming) { void revoke(m.id); }
+                else { setConfirmId(m.id); setTimeout(() => setConfirmId((x) => (x === m.id ? null : x)), 3500); }
+              }}
+              style={{ flex: 'none', height: 34, padding: '0 14px', border: 'none', borderRadius: 10, fontFamily: "'Geist'", fontWeight: 600, fontSize: 13, cursor: busy ? 'default' : 'pointer', color: confirming ? '#FFFFFF' : 'var(--destructive)', background: confirming ? 'var(--destructive)' : 'color-mix(in srgb, var(--destructive) 12%, transparent)', minWidth: 76, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              {busy ? <Spinner size={15} color="#FFFFFF" /> : confirming ? t('managers.confirm') : t('managers.revoke')}
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function Home({
@@ -955,22 +1338,33 @@ function Home({
   onOpenAction,
   onGoToServices,
   onViewFleet,
+  onCreateManagerInvite,
+  onCopy,
   onMarkAllRead,
   onReadNotif,
+  overrideUntil,
+  onOverrideExpire,
 }: HomeProps) {
   const { t } = useI18n();
   const slideDir = useSlideDirection(tab, HOME_TABS);
 
-  if (tab === 'services') return <SlideIn key={tab} dir={slideDir}><ServicesTab isDriver={session.isDriver} pinned={pinned} onTogglePin={onTogglePin} onOpen={onOpenAction} /></SlideIn>;
+  if (tab === 'services') return <SlideIn key={tab} dir={slideDir}><ServicesTab isDriver={session.isDriver} isFleetManager={session.isFleetManager} pinned={pinned} onTogglePin={onTogglePin} onOpen={onOpenAction} /></SlideIn>;
   if (tab === 'inbox') return <SlideIn key={tab} dir={slideDir}><InboxTab items={inbox} onMarkAllRead={onMarkAllRead} onRead={onReadNotif} /></SlideIn>;
 
-  const pinnedItems = pinned.map((key) => findCatalogItem(key, session.isDriver)).filter((x): x is NonNullable<typeof x> => !!x);
+  // Drop `soon` items (action === null): they cannot be opened, so a stale pin for one — e.g. a
+  // driver who pinned money code before it became owner-gated — must not render as a dead home row.
+  const pinnedItems = pinned
+    .map((key) => findCatalogItem(key, session.isDriver))
+    .filter((x): x is NonNullable<typeof x> => !!x && x.item.action !== null);
 
   return (
     <SlideIn key={tab} dir={slideDir}>
     <div style={{ padding: '16px 16px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {session.isDriver ? (
-        <DriverHero session={session} company={company} fullName={fullName} revealed={cardRevealed} onToggleReveal={onToggleCardReveal} />
+        <>
+          {overrideUntil != null && overrideUntil > Date.now() && <OverrideBanner until={overrideUntil} onExpire={onOverrideExpire} />}
+          <DriverHero session={session} company={company} fullName={fullName} initData={initData} revealed={cardRevealed} onToggleReveal={onToggleCardReveal} onOpenFunds={() => onOpenAction({ kind: 'service', key: 'funds' })} />
+        </>
       ) : (
         <OwnerHero initData={initData} company={company} carrierId={session.carrierId} onOpenDetails={() => onOpenAction({ kind: 'service', key: 'status' })} />
       )}
@@ -1012,6 +1406,14 @@ function Home({
         </div>
       </div>
 
+      {/* Manager INVITE is disabled (owner decision 2026-07-22): managers are onboarded by Octane
+          agents, and the backend route is flag-gated off (MANAGER_INVITES_DISABLED) — hiding the
+          card here is UX, not the gate. The ROSTER (list + revoke) stays: seeing and removing
+          who has company access is an owner's right regardless of who created the access.
+          Flip MANAGER_INVITE_UI back to true together with FF_MINIAPP_MANAGER_INVITES_ENABLED. */}
+      {MANAGER_INVITE_UI && session.isFleetManager && <ManagerInviteCard onCreate={onCreateManagerInvite} onCopy={onCopy} />}
+      {session.isFleetManager && <ManagersList initData={initData} />}
+
       {/* manage fleet */}
       {session.isFleetManager && (
         <button type="button" className="press" onClick={onViewFleet} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, width: '100%', background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 24, padding: 18, cursor: 'pointer', fontFamily: "'Geist'" }}>
@@ -1032,8 +1434,8 @@ function Home({
   );
 }
 
-function SectionLabel({ children }: { children: ReactNode }) {
-  return <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.09em', textTransform: 'uppercase', color: 'var(--muted-fg)', margin: '0 2px 11px' }}>{children}</div>;
+function SectionLabel({ children, noMargin = false }: { children: ReactNode; noMargin?: boolean }) {
+  return <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.09em', textTransform: 'uppercase', color: 'var(--muted-fg)', margin: noMargin ? 0 : '0 2px 11px' }}>{children}</div>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -1064,6 +1466,47 @@ function fleetRow(t: (k: string) => string, c: FleetCard): RowView {
           ? { w: t('card.pending'), c: 'var(--link-accent)', icon: 'plane' as IconName }
           : { w: t('card.open'), c: 'var(--muted-fg)', icon: 'userplus' as IconName };
   return { ...c, expired, statusWord: meta.w, statusColor: meta.c, iconBg: 'var(--secondary)', iconColor: meta.c, iconName: meta.icon };
+}
+
+/**
+ * Infinite-scroll list — renders the first `step` items and grows by `step` whenever a bottom
+ * sentinel scrolls into view (IntersectionObserver, viewport root + rootMargin so it prefetches
+ * before the user hits the end). A fleet-manager carrier runs to hundreds of cards; rendering all
+ * at once is heavy and made "all cards" read as one endless wall. `resetKey` snaps back to the first
+ * page whenever the filter/search changes so a narrowed list doesn't start scrolled deep.
+ */
+function InfiniteCardList<T>({
+  items,
+  resetKey,
+  step = 24,
+  style,
+  renderItem,
+}: {
+  items: T[];
+  resetKey: string;
+  step?: number;
+  style?: CSSProperties;
+  renderItem: (item: T, index: number) => ReactNode;
+}) {
+  const [visible, setVisible] = useState(step);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { setVisible(step); }, [resetKey, step]);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => { if (entries[0]?.isIntersecting) setVisible((v) => v + step); },
+      { rootMargin: '320px 0px' },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [step, resetKey, visible]);
+  return (
+    <div style={style}>
+      {items.slice(0, visible).map(renderItem)}
+      {visible < items.length && <div ref={sentinelRef} style={{ height: 1 }} aria-hidden />}
+    </div>
+  );
 }
 
 function FleetView({
@@ -1112,7 +1555,8 @@ function FleetView({
   const shown = rows.filter((r) => {
     if (filter !== 'all' && r.status !== filter) return false;
     if (q) {
-      const hay = `${last4(r.cardNumber, r.cardId)} ${(r.driverName ?? 'unassigned')}`.toLowerCase();
+      // Feedback 2026-07-22: owners search by unit number and driver ID too, not just card/driver.
+      const hay = `${tail6(r.cardNumber, r.cardId)} ${(r.driverName ?? 'unassigned')} ${r.unitNumber ?? ''} ${r.efsDriverId ?? ''}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -1182,9 +1626,19 @@ function FleetView({
       </div>
 
       {loading && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '64px 16px', color: 'var(--muted-fg)' }}>
-          <Spinner size={26} />
-          <span style={{ fontSize: 14 }}>{t('fleet.loading')}</span>
+        // Skeleton, not a spinner: the roster's shape is known, so it fills in place. Mirrors the
+        // real row (icon square, two text lines, status pill) so nothing shifts when cards land.
+        <div aria-busy="true" aria-label={t('fleet.loading')} style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 24, overflow: 'hidden' }}>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 15px', minHeight: 64, borderBottom: i === 5 ? 'none' : '1px solid var(--border)' }}>
+              <Skeleton w={44} h={44} r={13} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Skeleton w={120} h={15} />
+                <Skeleton w={90} h={12} style={{ marginTop: 7 }} />
+              </div>
+              <Skeleton w={64} h={24} r={9} />
+            </div>
+          ))}
         </div>
       )}
       {!loading && loadError && (
@@ -1214,8 +1668,11 @@ function FleetView({
       )}
 
       {!loading && !loadError && shown.length > 0 && (
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 24, overflow: 'hidden' }}>
-          {shown.map((c) => {
+        <InfiniteCardList
+          items={shown}
+          resetKey={`${filter}|${q}`}
+          style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)', borderRadius: 24, overflow: 'hidden' }}
+          renderItem={(c) => {
             const id = c.cardId ?? '';
             const expanded = expandedId === id;
             const showLink = c.status === 'pending' && !c.expired && !!c.link;
@@ -1228,7 +1685,7 @@ function FleetView({
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span className="selectable" style={{ fontWeight: 700, fontSize: 15, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em' }}>•••• {last4(c.cardNumber, c.cardId)}</span>
+                      <span className="selectable" style={{ fontWeight: 700, fontSize: 15, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em' }}>•••• {tail6(c.cardNumber, c.cardId)}</span>
                     </div>
                     <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.driverName ?? t('card.unassigned')}</div>
                   </div>
@@ -1262,7 +1719,7 @@ function FleetView({
                           onClick={() => void run(id, onCreate)}
                           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, border: 'none', borderRadius: 12, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: 'pointer', opacity: busy || !(drafts[id] ?? '').trim() ? 0.6 : 1 }}
                         >
-                          {busy ? <Spinner size={18} /> : t('card.create')}
+                          {busy ? <Spinner size={18} color="#FFFFFF" /> : t('card.create')}
                         </button>
                       </div>
                     )}
@@ -1302,7 +1759,7 @@ function FleetView({
                           }
                           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, border: 'none', borderRadius: 12, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: 'pointer', opacity: busy ? 0.6 : 1 }}
                         >
-                          {busy ? <Spinner size={18} /> : t('card.regenerate')}
+                          {busy ? <Spinner size={18} color="#FFFFFF" /> : t('card.regenerate')}
                         </button>
                       </div>
                     )}
@@ -1326,8 +1783,8 @@ function FleetView({
                 )}
               </div>
             );
-          })}
-        </div>
+          }}
+        />
       )}
     </div>
   );
@@ -1400,7 +1857,7 @@ function RenameDriver({
       {error && <div style={{ fontSize: 12.5, color: 'var(--destructive)', lineHeight: 1.45 }}>{error}</div>}
       <div style={{ display: 'flex', gap: 8 }}>
         <button type="button" className="press" onClick={() => void save()} disabled={busy} style={{ flex: 1, height: 44, border: 'none', borderRadius: 12, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}>
-          {busy ? <Spinner size={17} /> : t('card.renameSave')}
+          {busy ? <Spinner size={17} color="#FFFFFF" /> : t('card.renameSave')}
         </button>
         <button type="button" className="press" onClick={() => setOpen(false)} disabled={busy} style={{ flex: 'none', height: 44, padding: '0 16px', border: '1px solid var(--border)', borderRadius: 12, background: 'transparent', color: 'var(--muted-fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
           {t('common.back')}
@@ -1451,50 +1908,53 @@ function ProfileSheet({
       .catch(() => { /* the section just stays hidden — not worth an error state in a profile sheet */ });
     return () => { cancelled = true; };
   }, [isOwner, initData]);
-  const cityLine = details ? [details.city, details.state, details.zip].filter(Boolean).join(', ') : '';
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'rgba(0,0,0,.42)', animation: 'octfade .2s ease' }} />
-      <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 41, background: 'var(--card)', borderRadius: '24px 24px 0 0', padding: '10px 20px calc(34px + env(safe-area-inset-bottom))', boxShadow: '0 -8px 40px rgba(0,0,0,.28)', animation: 'octsheet .28s cubic-bezier(.32,.72,0,1)' }}>
-        <div style={{ width: 38, height: 4, borderRadius: 2, background: 'var(--border)', margin: '0 auto 18px' }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 22 }}>
-          <div style={{ width: 52, height: 52, borderRadius: '50%', overflow: 'hidden', background: user?.photo_url ? undefined : 'var(--primary)', color: '#FFFFFF', fontWeight: 700, fontSize: 19, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
-            {user?.photo_url ? <img src={user.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initialsOf(user)}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fullName}</div>
-            <div style={{ fontSize: 13, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company}</div>
+      {/* Same sheet skeleton as ActionSheet: capped height, fixed header with an explicit close
+          button, scrollable body. Without the cap, an owner's sheet (company block + theme + 4
+          languages) outgrew short viewports — Telegram Desktop especially — pushing the handle
+          off-screen and burying the tap-to-close backdrop entirely, with no way back. */}
+      <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 41, maxHeight: '84%', display: 'flex', flexDirection: 'column', background: 'var(--card)', borderRadius: '24px 24px 0 0', boxShadow: '0 -8px 40px rgba(0,0,0,.28)', animation: 'octsheet .28s cubic-bezier(.32,.72,0,1)' }}>
+        <div style={{ flex: 'none', padding: '10px 20px 0' }}>
+          <div style={{ width: 38, height: 4, borderRadius: 2, background: 'var(--border)', margin: '0 auto 18px' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 22 }}>
+            <div style={{ width: 52, height: 52, borderRadius: '50%', overflow: 'hidden', background: user?.photo_url ? undefined : 'var(--primary)', color: '#FFFFFF', fontWeight: 700, fontSize: 19, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+              {user?.photo_url ? <img src={user.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initialsOf(user)}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fullName}</div>
+              <div style={{ fontSize: 13, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company}</div>
+            </div>
+            <button type="button" onClick={onClose} style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: 'var(--secondary)', color: 'var(--muted-fg)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: 'none' }}>
+              <Icon name="x" size={14} strokeWidth={1.8} className="" />
+            </button>
           </div>
         </div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 20px calc(34px + env(safe-area-inset-bottom))' }}>
 
-        {isOwner && details && (
+        {isOwner && (
           <>
             <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 9 }}>{t('menu.company')}</div>
             <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden', marginBottom: 20 }}>
-              {/* Carrier ID — copyable, the one field an owner most often needs to quote to support. */}
-              <button type="button" className="press" onClick={() => onCopy(details.carrierId, t('toast.carrierIdCopied'))} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontFamily: "'Geist'", textAlign: 'left' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.carrierId')}</div>
-                  <div className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{details.carrierId}</div>
-                </div>
-                <Icon name="copy" size={15} strokeWidth={2} className="" />
-              </button>
-              {details.email && (
-                <div style={{ padding: '12px 14px', borderBottom: cityLine || details.address || details.phone ? '1px solid var(--border)' : 'none' }}>
-                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.email')}</div>
-                  <div className="selectable" style={{ fontSize: 14, fontWeight: 500, color: 'var(--fg)', marginTop: 2, wordBreak: 'break-all' }}>{details.email}</div>
-                </div>
-              )}
-              {details.phone && (
-                <div style={{ padding: '12px 14px', borderBottom: cityLine || details.address ? '1px solid var(--border)' : 'none' }}>
-                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.phone')}</div>
-                  <div className="selectable" style={{ fontSize: 14, fontWeight: 500, color: 'var(--fg)', marginTop: 2 }}>{details.phone}</div>
-                </div>
-              )}
-              {(details.address || cityLine) && (
-                <div style={{ padding: '12px 14px' }}>
-                  <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.address')}</div>
-                  <div className="selectable" style={{ fontSize: 14, fontWeight: 500, color: 'var(--fg)', marginTop: 2, lineHeight: 1.4 }}>{[details.address, cityLine].filter(Boolean).join('\n')}</div>
+              {/* Carrier ID — the only company field an owner needs here (to quote to support).
+                  Copyable once loaded; a shimmer holds the row height until the fetch lands, so the
+                  sheet does not jump. Email/phone/address were dropped per product: too much for a
+                  profile menu, and none of it is actionable from here. */}
+              {details ? (
+                <button type="button" className="press" onClick={() => onCopy(details.carrierId, t('toast.carrierIdCopied'))} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: "'Geist'", textAlign: 'left' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.carrierId')}</div>
+                    <div className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{details.carrierId}</div>
+                  </div>
+                  <Icon name="copy" size={15} strokeWidth={2} className="" />
+                </button>
+              ) : (
+                <div aria-busy="true" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('company.carrierId')}</div>
+                    <div style={{ width: 128, height: 16, borderRadius: 6, marginTop: 4, background: 'var(--border)', animation: 'octskeleton 1.3s ease-in-out infinite' }} />
+                  </div>
                 </div>
               )}
             </div>
@@ -1521,6 +1981,7 @@ function ProfileSheet({
               </button>
             );
           })}
+        </div>
         </div>
       </div>
     </>
@@ -1564,13 +2025,59 @@ const INVOICE_RANGES: ReadonlyArray<{ value: InvoiceRange; key: string }> = [
 
 type SheetData =
   | { kind: 'balance'; v: CarrierBalance }
+  | { kind: 'funds'; v: CardFundsResult }
   | { kind: 'status'; v: StatusResult }
   | { kind: 'txns'; v: TransactionsResult }
   | { kind: 'lastused'; v: LastUsedResult }
   | { kind: 'payment'; v: PaymentInfoResult }
   | { kind: 'invoices'; v: SalesInvoicesResult }
   | { kind: 'tracking'; v: TrackingResult }
-  | { kind: 'manualcode'; v: { cardNumber: string | null } };
+  | { kind: 'billingform'; v: BillingFormInfo }
+  | { kind: 'manualcode'; v: { cardNumber: string | null; unitNumber: string | null; driverId: string | null } }
+  | { kind: 'moneycode'; v: { disabled: boolean; preview: MoneyCodePreview | null; history: MoneyCodeDrawRow[] } }
+  | { kind: 'cardops'; v: { fleet: FleetCard[] } }
+  | { kind: 'pinunit'; v: Record<string, unknown> | null };
+
+/**
+ * 60-second sheet cache. Every sheet open used to refetch from scratch — on the Telegram WebView
+ * that is a visible spinner every single time, for data that rarely changes inside a minute.
+ * Mutations (money-code draw, card ops, pin/unit save) delete the keys they invalidate, so a
+ * write is never followed by a stale read. Module-level on purpose: it must outlive the sheet.
+ */
+/** Manager-invite UI kill switch (owner decision 2026-07-22) — backend route is ALSO gated. */
+const MANAGER_INVITE_UI = false;
+
+const SHEET_CACHE = new Map<string, { at: number; data: SheetData }>();
+const SHEET_TTL_MS = 60_000;
+function invalidateSheetCache(...prefixes: string[]): void {
+  for (const key of [...SHEET_CACHE.keys()]) {
+    if (prefixes.some((p) => key.startsWith(p))) SHEET_CACHE.delete(key);
+  }
+}
+
+/**
+ * Recent unit numbers for the money-code sheet. FleetCard has no unitNumber field (units live
+ * per-card in EFS), so "select your unit" is a memory of what THIS user typed before --
+ * localStorage-backed, newest first, capped at 4. A returning driver taps instead of retyping.
+ */
+const MC_UNITS_KEY = 'octane.mcUnits';
+function loadRecentUnits(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(MC_UNITS_KEY) ?? '[]');
+    return Array.isArray(parsed) ? parsed.filter((u): u is string => typeof u === 'string').slice(0, 4) : [];
+  } catch {
+    return [];
+  }
+}
+function rememberUnit(unit: string): void {
+  if (!unit) return;
+  try {
+    const next = [unit, ...loadRecentUnits().filter((u) => u !== unit)].slice(0, 4);
+    localStorage.setItem(MC_UNITS_KEY, JSON.stringify(next));
+  } catch {
+    /* storage unavailable -- chips just will not appear */
+  }
+}
 
 function ActionSheet({
   target,
@@ -1579,6 +2086,9 @@ function ActionSheet({
   onClose,
   showToast,
   onSendGeneric,
+  onOverrideDone,
+  overrideUntil,
+  onSwitchAction,
 }: {
   target: OpenAction;
   session: Session;
@@ -1586,11 +2096,24 @@ function ActionSheet({
   onClose: () => void;
   showToast: (msg: string, kind?: ToastKind) => void;
   onSendGeneric: (title: string) => void;
+  /** Successful C-16 override → App shows the Home countdown card until this timestamp. */
+  onOverrideDone: (until: number) => void;
+  /** Active override window end — the sheet shows "already open" instead of a second button. */
+  overrideUntil: number | null;
+  /** Diagnosis→fix jumps (e.g. funds sheet's Hold verdict → override sheet in one tap). */
+  onSwitchAction?: ((target: OpenAction) => void) | undefined;
 }) {
   const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  /** Bumped by the error-state Retry button to force the load effect to re-run the same fetch. */
+  const [attempt, setAttempt] = useState(0);
   const [data, setData] = useState<SheetData | null>(null);
+  /** Account-status card filter (owner fleets run to hundreds of cards; the list needs a search
+   *  rather than a truncated "+N more" dead end). Digits-only match on the card number. */
+  const [cardQuery, setCardQuery] = useState('');
+  /** Account-status card-status filter (owner/manager): 'all' or a specific status word. */
+  const [cardStatusFilter, setCardStatusFilter] = useState<string>('all');
   const [range, setRange] = useState<TxnRange>('month');
   const [invRange, setInvRange] = useState<InvoiceRange>('last_30');
   // Lazy init, and relative to TODAY: these were literal dates ('2026-06-01'/'2026-07-09'), so the
@@ -1600,16 +2123,75 @@ function ActionSheet({
   const [to, setTo] = useState(() => isoDay(new Date()));
   const [genericSent, setGenericSent] = useState(false);
   const [genericBusy, setGenericBusy] = useState(false);
+  /** Driver override gate: live EFS status of the driver's own card. undefined=loading, null=unknown
+   *  (fail-open — backend still 409s a non-fraud card), string=the status word. Override is only for
+   *  a fraud-held card, so an ACTIVE card shows an explanation instead of the button. */
+  const [ovrCardStatus, setOvrCardStatus] = useState<string | null | undefined>(undefined);
   const [genericError, setGenericError] = useState('');
   const [genericTicketId, setGenericTicketId] = useState('');
   const [genericComment, setGenericComment] = useState('');
   const [invoiceBusyId, setInvoiceBusyId] = useState<string | null>(null);
+  /** Feedback #3: the owner picks the invoice file format once; every tap then delivers that. */
+  const [invFormat, setInvFormat] = useState<'pdf' | 'xlsx' | 'csv'>('pdf');
   /** Phase 2 of the transactions read is in flight — rows are already shown, freshest are pending. */
   const [liveRefreshing, setLiveRefreshing] = useState(false);
   /** Which export format is currently being built + sent to Telegram, if any. */
   const [exportBusy, setExportBusy] = useState<TxnExportFormat | null>(null);
+  const [bundleBusy, setBundleBusy] = useState<'bundle' | 'efs' | null>(null);
+  /** Owner's card filter on the txns sheet — null = company level (all cards), else one card
+   *  ("driver-level report"; 41 chat asks). Drivers never see the picker: they are server-pinned. */
+  const [txnCardSel, setTxnCardSel] = useState<{ cardId: string; last6: string } | null>(null);
+  const [txnFleet, setTxnFleet] = useState<FleetCard[] | null>(null);
+  /** "Without discount" (retail) report variant — accounting asks for both weekly. Owner-only in
+   *  the UI; the backend forces retail for drivers regardless. */
+  const [exportRetail, setExportRetail] = useState(false);
+  /** Detailed columns: full card number + Driver / Unit / Driver ID (client feedback). */
+  const [exportDetailed, setExportDetailed] = useState(false);
+  // ── Money-code draw form (C-17) ──
+  const [mcAmount, setMcAmount] = useState('');
+  const [mcUnit, setMcUnit] = useState('');
+  const [mcReason, setMcReason] = useState('');
+  const [mcBusy, setMcBusy] = useState(false);
+  const [mcDone, setMcDone] = useState<{ amount: number; after: number | null } | null>(null);
+  /** Void is destructive and irreversible — two-tap arm/confirm, same pattern as manager revoke. */
+  const [mcVoidArm, setMcVoidArm] = useState<number | null>(null);
+  const [mcVoidBusy, setMcVoidBusy] = useState<number | null>(null);
+  // ── PIN/Unit sheet: driver o'z unit/driverId'sini tahrirlaydi ──
+  const [puUnit, setPuUnit] = useState('');
+  const [puDriverId, setPuDriverId] = useState('');
+  const [puBusy, setPuBusy] = useState(false);
+  useEffect(() => {
+    if (data?.kind !== 'pinunit' || !data.v) return;
+    setPuUnit(String(data.v['unit_number'] ?? ''));
+    setPuDriverId(String(data.v['driver_id'] ?? ''));
+  }, [data]);
+  // ── Card-ops sheet (C-1/C-3/C-4-5/C-26) ──
+  const [coCard, setCoCard] = useState<FleetCard | null>(null);
+  const [coEfs, setCoEfs] = useState<Record<string, unknown> | null>(null);
+  const [coEfsLoading, setCoEfsLoading] = useState(false);
+  const [coBusy, setCoBusy] = useState<string | null>(null);
+  const [coLimitId, setCoLimitId] = useState<'ULSD' | 'DEFD'>('ULSD');
+  const [coLimitVal, setCoLimitVal] = useState('');
+  const [coLimitDir, setCoLimitDir] = useState<'increase' | 'decrease'>('increase');
+  const [coUnit, setCoUnit] = useState('');
+  const [coDriverName, setCoDriverName] = useState('');
+  const [coDriverId, setCoDriverId] = useState('');
 
   const service = target.kind === 'service' ? target.key : null;
+  // Driver override gate (item 5): fetch the driver's own card status so the sheet can offer the
+  // override ONLY when the card is fraud-held (an active card gets an explanation, not a button).
+  const isDriverOverride = target.kind === 'generic' && target.request === 'override-card' && session.isDriver;
+  useEffect(() => {
+    if (!isDriverOverride) return;
+    let cancelled = false;
+    setOvrCardStatus(undefined);
+    fetchCardEfs(initData)
+      .then((efs) => { if (!cancelled) setOvrCardStatus(efs['status'] == null ? null : String(efs['status'])); })
+      .catch(() => { if (!cancelled) setOvrCardStatus(null); });
+    return () => { cancelled = true; };
+  }, [isDriverOverride, initData]);
+  const ovrEligible = ovrCardStatus == null || /fraud/i.test(ovrCardStatus);
+
   // A driver's status sheet is about their CARD, not the account — the generic svc.status title says
   // "Account status", which is the owner's framing.
   const sheetTitle =
@@ -1631,22 +2213,77 @@ function ActionSheet({
     setLiveRefreshing(false);
     async function load() {
       try {
-        const txnOpts = dwhRange === 'custom' ? { range: 'custom', from, to } : { range: dwhRange };
+        const cardFilter = txnCardSel && !session.isDriver ? { cardId: txnCardSel.cardId } : {};
+        const txnOpts = dwhRange === 'custom' ? { range: 'custom', from, to, ...cardFilter } : { range: dwhRange, ...cardFilter };
+        // Params that change WHAT a sheet shows are part of its cache identity.
+        const cacheId = `${service}|${service === 'txns' ? `${dwhRange}|${from}|${to}|${txnCardSel?.cardId ?? ''}` : ''}|${service === 'invoices' ? invRange : ''}`;
+        const hit = SHEET_CACHE.get(cacheId);
+        if (hit && Date.now() - hit.at < SHEET_TTL_MS) {
+          if (cancelled) return;
+          setData(hit.data);
+          setLoading(false);
+          // A cached fast-phase txns list still upgrades to the live EFS merge below.
+          if (!(hit.data.kind === 'txns' && hit.data.v.live?.pending)) return;
+        }
         let next: SheetData;
         if (service === 'balance') next = { kind: 'balance', v: await fetchBalance(initData) };
+        else if (service === 'funds') next = { kind: 'funds', v: await fetchCardFunds(initData) };
         else if (service === 'status') next = { kind: 'status', v: await fetchAccountStatus(initData) };
         else if (service === 'txns') next = { kind: 'txns', v: await fetchTransactions(initData, txnOpts, false) };
         else if (service === 'lastused') next = { kind: 'lastused', v: await fetchLastUsed(initData) };
         else if (service === 'payment') next = { kind: 'payment', v: await fetchPaymentInfo(initData) };
         else if (service === 'invoices') next = { kind: 'invoices', v: await fetchInvoices(initData, { range: invRange }) };
-        // No fetch: the manual entry code IS the card number the session already holds. Sending a
-        // request would only ask the backend to hand back what it put in the session at sign-in.
-        else if (service === 'manualcode') next = { kind: 'manualcode', v: { cardNumber: session.ownCardNumber } };
+        // Manual card usage: the full card number the session already holds, PLUS the unit number
+        // and driver ID from the live EFS card (what a pump keypad asks for). EFS is best-effort —
+        // a hiccup still shows the card number (the one field that must never be missing here).
+        else if (service === 'manualcode') {
+          const efs = session.isDriver
+            ? await fetchCardEfs(initData).catch(() => ({} as Record<string, unknown>))
+            : ({} as Record<string, unknown>);
+          const str = (v: unknown): string | null => (v == null || v === '' ? null : String(v));
+          next = {
+            kind: 'manualcode',
+            v: {
+              cardNumber: session.ownCardNumber ?? str(efs['card_number']),
+              unitNumber: str(efs['unit_number']),
+              driverId: str(efs['driver_id']),
+            },
+          };
+        }
+        // Static content — the in-network chains list. No fetch: this is the exact list support
+        // pasted into chats 814 times (9-group analysis); shipping it in-app is the whole point.
+        // C-17 preview. A 503 (flag off) is NOT a load error — the sheet degrades to filing the
+        // same money-code ticket, so the owner is never stranded on a dead screen.
+        else if (service === 'moneycode') {
+          try {
+            const [preview, hist] = await Promise.all([
+              fetchMoneyCodePreview(initData),
+              fetchMoneyCodeHistory(initData).catch(() => ({ draws: [] as MoneyCodeDrawRow[] })),
+            ]);
+            next = { kind: 'moneycode', v: { disabled: false, preview, history: hist.draws } };
+          } catch (e) {
+            if (e instanceof ApiError && e.code === 'MINIAPP_MONEY_CODE_DISABLED') {
+              next = { kind: 'moneycode', v: { disabled: true, preview: null, history: [] } };
+            } else throw e;
+          }
+        }
+        // Driver PIN/Unit INFO — analytics: 62 PIN asks, nearly all "what IS my pin / it doesn't
+        // work", answered by support with the Driver ID or last-4. So this is a READ of the
+        // driver's own card EFS facts + that guidance, not a write. Best-effort: the sheet still
+        // renders its guidance if the EFS read fails.
+        else if (service === 'pinunit') next = { kind: 'pinunit', v: await fetchCardEfs(initData).catch(() => null) };
+        // Card ops (C-1/C-3/C-4-5/C-26): the picker is the owner's own fleet list.
+        else if (service === 'cardops') {
+          const fl = await fetchFleet(initData);
+          next = { kind: 'cardops', v: { fleet: fl.fleet.filter((c) => c.cardId) } };
+        }
         else if (service === 'tracking') next = { kind: 'tracking', v: await fetchTracking(initData) };
+        else if (service === 'billingform') next = { kind: 'billingform', v: await fetchBillingForm(initData) };
         // Explicit, because this was a bare `else` that swallowed every unhandled key into a tracking
         // fetch — a new ServiceKey would silently open the wrong sheet instead of failing.
         else throw new Error(`Unhandled service: ${String(service)}`);
         if (cancelled) return;
+        SHEET_CACHE.set(cacheId, { at: Date.now(), data: next });
         setData(next);
         setLoading(false);
 
@@ -1657,7 +2294,11 @@ function ActionSheet({
           setLiveRefreshing(true);
           try {
             const merged = await fetchTransactions(initData, txnOpts, true);
-            if (!cancelled) setData({ kind: 'txns', v: merged });
+            if (!cancelled) {
+              const upgraded: SheetData = { kind: 'txns', v: merged };
+              SHEET_CACHE.set(`txns|${dwhRange}|${from}|${to}|${txnCardSel?.cardId ?? ''}|`, { at: Date.now(), data: upgraded });
+              setData(upgraded);
+            }
           } catch (e) {
             // The fast rows are real and already rendered — a failed upgrade is not worth an error
             // screen. Drop the indicator and leave them be.
@@ -1694,7 +2335,24 @@ function ActionSheet({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target, dwhRange, invRange, from, to]);
+  }, [target, dwhRange, invRange, from, to, txnCardSel, attempt]);
+
+  // The card-filter chips need the fleet list; owners only, fetched once per sheet mount.
+  useEffect(() => {
+    if (service !== 'txns' || session.isDriver || txnFleet !== null) return;
+    let cancelled = false;
+    fetchFleet(initData)
+      .then((f) => {
+        if (!cancelled) setTxnFleet(f.fleet.filter((c) => c.cardId));
+      })
+      .catch(() => {
+        if (!cancelled) setTxnFleet([]); // no chips — the sheet still works at company level
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [service, initData]);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -1718,8 +2376,9 @@ function ActionSheet({
     if (exportBusy) return;
     setExportBusy(format);
     try {
-      const opts = range === 'custom' ? { range: 'custom', from, to } : { range };
-      await sendTransactionsReport(initData, opts, format);
+      const cardFilter = txnCardSel && !session.isDriver ? { cardId: txnCardSel.cardId } : {};
+      const opts = range === 'custom' ? { range: 'custom', from, to, ...cardFilter } : { range, ...cardFilter };
+      await sendTransactionsReport(initData, opts, format, exportRetail ? 'retail' : 'discount', exportDetailed);
       haptic('success');
       showToast(t('toast.reportSentToTelegram'));
     } catch (e) {
@@ -1730,6 +2389,37 @@ function ActionSheet({
       showToast(code === 'TELEGRAM_CHAT_UNREACHABLE' ? t('toast.openBotFirst') : t('sheet.loadError'), 'error');
     } finally {
       setExportBusy(null);
+    }
+  }
+
+  /** Owner accounting shortcuts — the weekly ritual ("fuel and EFS report, both retail and with
+   *  discount, pdf and xlsx") as one tap, or the EFS money-code report alone. Same delivery
+   *  contract as doExport: the files land in the bot chat. */
+  async function doBundle(kind: 'bundle' | 'efs') {
+    haptic('tap');
+    if (exportBusy || bundleBusy) return;
+    setBundleBusy(kind);
+    try {
+      const opts = range === 'custom' ? { range: 'custom', from, to } : { range };
+      if (kind === 'bundle') await sendAccountingBundleReport(initData, opts);
+      else await sendMoneyCodeReport(initData, opts, 'xlsx');
+      haptic('success');
+      showToast(t('toast.reportSentToTelegram'));
+    } catch (e) {
+      const code = e instanceof ApiError ? e.code : '';
+      haptic('error');
+      showToast(
+        code === 'TELEGRAM_CHAT_UNREACHABLE'
+          ? t('toast.openBotFirst')
+          : code === 'MC_REPORT_EMPTY' || code === 'BUNDLE_EMPTY'
+            ? t('txns.bundleEmpty')
+            : e instanceof ApiError
+              ? e.message
+              : t('sheet.loadError'),
+        'error',
+      );
+    } finally {
+      setBundleBusy(null);
     }
   }
 
@@ -1770,7 +2460,7 @@ function ActionSheet({
     if (invoiceBusyId) return;
     setInvoiceBusyId(id);
     try {
-      await sendInvoice(initData, id);
+      await sendInvoice(initData, id, invFormat);
       haptic('success');
       showToast(t('toast.invoiceSentToTelegram'));
     } catch (e) {
@@ -1799,16 +2489,19 @@ function ActionSheet({
         </div>
         <div style={{ flex: 1, overflow: 'auto', padding: '14px 20px 30px', minHeight: 150 }}>
           {loading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: '44px 0' }}>
-              <Spinner size={30} />
-              <div style={{ fontSize: 13, color: 'var(--muted-fg)' }}>{t('sheet.fetching', { what: sheetTitle.toLowerCase() })}</div>
-            </div>
+            <SheetSkeleton service={service} />
           ) : loadError ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '34px 10px', textAlign: 'center' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '34px 10px', textAlign: 'center' }}>
               <span style={{ width: 44, height: 44, borderRadius: 13, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'color-mix(in srgb, var(--destructive) 14%, transparent)', color: 'var(--destructive)' }}>
                 <CircleAlert size={22} strokeWidth={2} aria-hidden />
               </span>
               <div style={{ fontSize: 14, color: 'var(--muted-fg)', lineHeight: 1.5 }}>{loadError}</div>
+              {/* A dead-end error screen left closing the app as the only way out. The load effect
+                  keys on `attempt`, so bumping it re-runs the same fetch in place. */}
+              <button type="button" className="press" onClick={() => { haptic('tap'); setAttempt((n) => n + 1); }} style={{ display: 'flex', alignItems: 'center', gap: 7, height: 42, border: 'none', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, cursor: 'pointer', padding: '0 16px' }}>
+                <Icon name="refresh" size={15} strokeWidth={2.2} className="" />
+                {t('common.retry')}
+              </button>
             </div>
           ) : data?.kind === 'balance' ? (
             (() => {
@@ -1835,12 +2528,71 @@ function ActionSheet({
                 </>
               );
             })()
+          ) : data?.kind === 'funds' ? (
+            (() => {
+              const f = data.v;
+              // Three-state on purpose: an EFS outage (hasFunds null) must read as "can't check right
+              // now", never as "no money" — a driver at the pump acts on this screen immediately.
+              const state: 'ok' | 'no' | 'unknown' = f.hasFunds === true ? 'ok' : f.hasFunds === false ? 'no' : 'unknown';
+              const tone = state === 'ok' ? 'var(--success)' : state === 'no' ? 'var(--destructive)' : 'var(--muted-fg)';
+              const cardIssue = f.cardStatus != null && f.cardStatus.toLowerCase() !== 'active';
+              return (
+                <>
+                  <div style={{ background: 'var(--secondary)', borderRadius: 16, padding: '22px 16px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 34, lineHeight: 1 }}>{state === 'ok' ? '✓' : state === 'no' ? '✗' : '…'}</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: tone, marginTop: 8 }}>
+                      {t(state === 'ok' ? 'funds.ok' : state === 'no' ? 'funds.no' : 'funds.unknown')}
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 6, lineHeight: 1.5 }}>
+                      {t(state === 'ok' ? 'funds.okSub' : state === 'no' ? 'funds.noSub' : 'funds.unknownSub')}
+                    </div>
+                  </div>
+                  {f.accountActive === false && (
+                    <div style={{ fontSize: 13, color: 'var(--destructive)', marginTop: 12, lineHeight: 1.5 }}>⚠ {t('funds.accountInactive')}</div>
+                  )}
+                  {cardIssue && (
+                    <div style={{ fontSize: 13, color: 'var(--destructive)', marginTop: 12, lineHeight: 1.5 }}>
+                      ⚠ {t('funds.cardIssue').replace('{status}', f.cardStatus ?? '')}
+                    </div>
+                  )}
+                  {/* Diagnosis → fix in ONE TAP: a held card's answer isn't a warning, it's the
+                      override button (322 "card not working" asks; the fix was always one action away). */}
+                  {cardIssue && session.isDriver && onSwitchAction && (f.cardStatus ?? '').toLowerCase().includes('hold') && (
+                    <button
+                      type="button"
+                      className="press"
+                      onClick={() => { haptic('tap'); onSwitchAction({ kind: 'generic', key: 'drv-override-card', title: t('cat.drvOverrideCard'), request: 'override-card' }); }}
+                      style={{ width: '100%', height: 46, marginTop: 12, border: 'none', borderRadius: 12, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+                    >
+                      {t('funds.fixOverride')}
+                    </button>
+                  )}
+                  {state === 'ok' && !cardIssue && f.accountActive !== false && (
+                    <div style={{ fontSize: 12, color: 'var(--muted-fg)', marginTop: 12, lineHeight: 1.5 }}>{t('funds.allGood')}</div>
+                  )}
+                </>
+              );
+            })()
           ) : data?.kind === 'status' ? (
             (() => {
               const { overview, cards } = data.v;
               const rows = cards.data ?? [];
-              const shown = rows.slice(0, 20);
-              const extra = (cards.count ?? rows.length) - shown.length;
+              const total = cards.count ?? rows.length;
+              // Owner fleets run to hundreds of cards — the list is searchable and shows every match
+              // (the sheet body scrolls), replacing the old 20-row cap + dead "+N more" footer. A
+              // driver only ever sees their own card, so search never applies to them.
+              const cardDigits = cardQuery.replace(/\D/g, '');
+              // Distinct status words present, for the owner/manager status-filter chips.
+              const statusOptions = [...new Set(rows.map((c) => fmt(c['status'])).filter(Boolean))];
+              const filtered = rows.filter((c) => {
+                if (cardDigits && !fmt(c['card_number']).replace(/\D/g, '').includes(cardDigits)) return false;
+                if (cardStatusFilter !== 'all' && fmt(c['status']) !== cardStatusFilter) return false;
+                return true;
+              });
+              const showSearch = !session.isDriver && rows.length > 8;
+              // Owner + manager see the whole card number; a driver keeps their own card masked.
+              const showFullPan = !session.isDriver;
+              const showStatusFilter = !session.isDriver && statusOptions.length > 1;
               /**
                * The banner answers "is this active?" — and for a DRIVER that must be their own CARD,
                * not the carrier account. `overview.is_active` is the company's status; a driver's card
@@ -1877,9 +2629,37 @@ function ActionSheet({
                     </span>
                     <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{bannerLabel}</span>
                   </div>
+                  {/* Same diagnosis->fix pattern as the funds sheet: a driver seeing "hold" gets the
+                      override button right here instead of a dead-end status label. */}
+                  {session.isDriver && onSwitchAction && rows.length > 0 && fmt(rows[0]?.['status']).toLowerCase().includes('hold') && (
+                    <button
+                      type="button"
+                      className="press"
+                      onClick={() => { haptic('tap'); onSwitchAction({ kind: 'generic', key: 'drv-override-card', title: t('cat.drvOverrideCard'), request: 'override-card' }); }}
+                      style={{ width: '100%', height: 46, marginBottom: 14, border: 'none', borderRadius: 12, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+                    >
+                      {t('funds.fixOverride')}
+                    </button>
+                  )}
                   {/* Carrier debt is the COMPANY's financial standing — an owner's view, never a driver's.
                       A driver asking "is my card active" must not be shown the fleet's total debt or
                       hard-debtor flag. */}
+                  {/* Feedback #10: the money answers first — available, weekly limit, due date. */}
+                  {!session.isDriver && data.v.billing && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+                      {[
+                        { label: t('status.availableBalance'), value: money(data.v.billing.availableBalance ?? 0) },
+                        { label: t('status.weeklyLimit'), value: money(data.v.billing.weeklyLimit ?? 0) },
+                        ...(data.v.billing.dueDate ? [{ label: t('status.dueBy'), value: fmt(data.v.billing.dueDate) }] : []),
+                        { label: t('status.totalDebt'), value: money(overview.cmp_debt?.total_debt ?? 0) },
+                      ].map((tile) => (
+                        <div key={tile.label} style={{ background: 'var(--secondary)', borderRadius: 14, padding: '12px 14px' }}>
+                          <div style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted-fg)' }}>{tile.label}</div>
+                          <div className="selectable" style={{ fontSize: 18, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tile.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {!session.isDriver && (
                     <>
                       <SectionLabel>{t('status.debt')}</SectionLabel>
@@ -1898,25 +2678,68 @@ function ActionSheet({
                       </div>
                     </>
                   )}
-                  <SectionLabel>{session.isDriver ? t('status.yourCard') : t('status.cards')}</SectionLabel>
-                  {shown.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '20px 4px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('status.noCards')}</div>
-                  ) : (
-                    <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
-                      {shown.map((c, i) => {
-                        const status = fmt(c['status']);
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, margin: '0 2px 11px' }}>
+                    <SectionLabel noMargin>{session.isDriver ? t('status.yourCard') : t('status.cards')}</SectionLabel>
+                    {!session.isDriver && rows.length > 0 && (
+                      <span style={{ fontSize: 12, color: 'var(--muted-fg)', fontVariantNumeric: 'tabular-nums', flex: 'none' }}>{t('status.matchCount', { shown: filtered.length, total })}</span>
+                    )}
+                  </div>
+                  {showSearch && (
+                    <div style={{ position: 'relative', marginBottom: 10 }}>
+                      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted-fg)', display: 'flex', pointerEvents: 'none' }}>
+                        <Icon name="search" size={15} strokeWidth={2} className="" />
+                      </span>
+                      <input
+                        inputMode="numeric"
+                        value={cardQuery}
+                        onChange={(e) => setCardQuery(e.target.value.replace(/\D/g, '').slice(0, 19))}
+                        placeholder={t('status.searchCards')}
+                        style={{ width: '100%', height: 42, padding: '0 38px 0 34px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, fontVariantNumeric: 'tabular-nums', outline: 'none' }}
+                      />
+                      {cardQuery && (
+                        <button type="button" onClick={() => setCardQuery('')} aria-label={t('common.clear')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 26, height: 26, borderRadius: '50%', border: 'none', background: 'var(--border)', color: 'var(--muted-fg)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                          <Icon name="x" size={12} strokeWidth={2} className="" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {showStatusFilter && (
+                    <div className="hscroll" style={{ display: 'flex', gap: 8, marginBottom: 10, paddingBottom: 2 }}>
+                      {['all', ...statusOptions].map((opt) => {
+                        const active = cardStatusFilter === opt;
                         return (
-                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
-                            <span className="selectable" style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {last4(fmt(c['card_number']), null)}</span>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: status.toLowerCase() === 'active' ? 'var(--success)' : 'var(--destructive)' }}>{status}</span>
-                          </div>
+                          <button key={opt} type="button" onClick={() => { haptic('tap'); setCardStatusFilter(opt); }} style={{ flex: 'none', height: 34, padding: '0 13px', borderRadius: 10, fontFamily: "'Geist'", fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', border: 'none', background: active ? 'var(--primary)' : 'var(--secondary)', color: active ? '#FFFFFF' : 'var(--muted-fg)' }}>
+                            {opt === 'all' ? t('status.filterAll') : opt}
+                          </button>
                         );
                       })}
                     </div>
                   )}
-                  {/* Driver-scoped views only ever show the driver's own card — a leftover count here would
-                      just be the rest of the fleet's cards, which isn't this driver's to see. */}
-                  {!session.isDriver && extra > 0 && <div style={{ fontSize: 12, color: 'var(--muted-fg)', marginTop: 9, textAlign: 'center' }}>{t('status.moreCards', { n: extra })}</div>}
+                  {rows.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '20px 4px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('status.noCards')}</div>
+                  ) : filtered.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '20px 4px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('status.noMatch')}</div>
+                  ) : (
+                    <InfiniteCardList
+                      items={filtered}
+                      resetKey={`${cardStatusFilter}|${cardDigits}`}
+                      style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}
+                      renderItem={(c, i) => {
+                        const status = fmt(c['status']);
+                        const pan = fmt(c['card_number']);
+                        const unit = fmt(c['unit_number']);
+                        return (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: i === filtered.length - 1 ? 'none' : '1px solid var(--border)' }}>
+                            <span style={{ flex: 1, minWidth: 0 }}>
+                              <span className="selectable" style={{ display: 'block', fontSize: showFullPan ? 13 : 14, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>{showFullPan ? groupCardNumber(pan) : `•••• ${tail6(pan, null)}`}</span>
+                              {unit && <span style={{ display: 'block', fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2 }}>Unit {unit}</span>}
+                            </span>
+                            <span style={{ flex: 'none', fontSize: 12, fontWeight: 700, color: status.toLowerCase() === 'active' ? 'var(--success)' : 'var(--destructive)' }}>{status}</span>
+                          </div>
+                        );
+                      }}
+                    />
+                  )}
                 </>
               );
             })()
@@ -1925,31 +2748,62 @@ function ActionSheet({
               const rows = data.v.data ?? [];
               return (
                 <>
-                  {/* Horizontal-scroll period chips — too many presets to fit a fixed row on mobile. */}
-                  <div className="hscroll" style={{ display: 'flex', gap: 7, marginBottom: 12, paddingBottom: 2 }}>
-                    {TXN_RANGES.map((r) => (
-                      <button
-                        key={r.value}
-                        type="button"
-                        onClick={() => setRange(r.value)}
-                        style={{
-                          flex: 'none',
-                          height: 36,
-                          padding: '0 14px',
-                          border: 'none',
-                          borderRadius: 10,
-                          fontFamily: "'Geist'",
-                          fontWeight: 700,
-                          fontSize: 13,
-                          whiteSpace: 'nowrap',
-                          cursor: 'pointer',
-                          background: range === r.value ? 'var(--primary)' : 'var(--secondary)',
-                          color: range === r.value ? '#FFFFFF' : 'var(--muted-fg)',
-                        }}
+                  {/* ONE filter row, two labeled dropdowns: Period + Card. Replaced the two
+                      horizontal chip rows — stacked scrolling "tabs" read as clutter on mobile
+                      (user feedback), while native selects are one tap, show the current choice
+                      at rest, and never overflow. Card select is owner-only (drivers are pinned
+                      server-side) and waits for the fleet list. */}
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                    <label style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.period')}</span>
+                      <select
+                        value={range}
+                        onChange={(e) => { haptic('tap'); setRange(e.target.value as TxnRange); }}
+                        style={{ width: '100%', height: 42, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13.5, padding: '0 10px', boxSizing: 'border-box' }}
                       >
-                        {t(r.key)}
-                      </button>
-                    ))}
+                        {TXN_RANGES.map((r) => (
+                          <option key={r.value} value={r.value}>{t(r.key)}</option>
+                        ))}
+                      </select>
+                    </label>
+                    {/* Price mode — one control drives BOTH the on-screen figures and the export
+                        (accounting asks for both variants weekly). Owner-only: drivers are always
+                        retail — the owner's discount terms never reach a driver's screen. */}
+                    {!session.isDriver && (
+                      <label style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.price')}</span>
+                        <select
+                          value={exportRetail ? 'retail' : 'discount'}
+                          onChange={(e) => { haptic('tap'); setExportRetail(e.target.value === 'retail'); }}
+                          style={{ width: '100%', height: 42, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13.5, padding: '0 10px', boxSizing: 'border-box' }}
+                        >
+                          <option value="discount">{t('txns.priceDiscount')}</option>
+                          <option value="retail">{t('txns.priceRetail')}</option>
+                        </select>
+                      </label>
+                    )}
+                    {!session.isDriver && (txnFleet?.length ?? 0) > 0 && (
+                      <label style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.card')}</span>
+                        <select
+                          value={txnCardSel?.cardId ?? ''}
+                          onChange={(e) => {
+                            haptic('tap');
+                            const c = (txnFleet ?? []).find((x) => x.cardId === e.target.value);
+                            setTxnCardSel(c?.cardId ? { cardId: c.cardId, last6: tail6(c.cardNumber, null) ?? '' } : null);
+                          }}
+                          style={{ width: '100%', height: 42, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13.5, padding: '0 10px', boxSizing: 'border-box' }}
+                        >
+                          <option value="">{t('txns.allCards')}</option>
+                          {(txnFleet ?? []).map((c) => (
+                            <option key={c.cardId} value={c.cardId ?? ''}>
+                              {/* Owner/manager select — show the full card number (driver never reaches this). */}
+                              {`${c.cardNumber ? groupCardNumber(c.cardNumber) : `•••• ${tail6(c.cardNumber, null) ?? ''}`}${c.driverName ? ` · ${c.driverName}` : ''}`}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                   </div>
                   {range === 'custom' && (
                     /* Stack From/To vertically — side-by-side native date inputs overflow/merge on narrow mobile. */
@@ -1969,20 +2823,26 @@ function ActionSheet({
                       over the WHOLE window, not just the rendered page); nothing rendered them. */}
                   {rows.length > 0 && (() => {
                     const tot = data.v.totals ?? {};
-                    const spend = tot['funded_total'];
+                    // Retail mode (and EVERY driver view): re-price to funded+discount and hide the
+                    // savings tile — the discount is exactly what this variant exists to conceal.
+                    const retailView = session.isDriver || exportRetail;
                     const gal = tot['total_fuel_quantity'] ?? tot['fuel_quantity'];
-                    const saved = tot['discount_amount'];
+                    const saved = Number(tot['discount_amount'] ?? 0);
+                    const spendRaw = tot['funded_total'];
+                    const spend = spendRaw == null ? null : retailView ? Number(spendRaw) + saved : spendRaw;
                     if (spend == null) return null;
                     return (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: retailView ? '1fr' : '1fr 1fr', gap: 10, marginBottom: 12 }}>
                         <div style={{ background: 'var(--primary)', borderRadius: 14, padding: '13px 14px' }}>
-                          <div style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,.75)' }}>{t('txns.totalSpent')}</div>
+                          <div style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,.75)' }}>{t('txns.totalSpent')}{retailView ? ` · ${t('txns.priceRetail')}` : ''}</div>
                           <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(spend)}</div>
                         </div>
+                        {!retailView && (
                         <div style={{ background: 'var(--secondary)', borderRadius: 14, padding: '13px 14px' }}>
                           <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('txns.saved')}</div>
-                          <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(saved ?? 0)}</div>
+                          <div className="selectable" style={{ fontSize: 19, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{money(saved)}</div>
                         </div>
+                        )}
                         {gal != null && (
                           <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--muted-fg)', textAlign: 'center', marginTop: -2 }}>
                             {t('txns.gallons', { n: fmt(gal) })}
@@ -2005,9 +2865,9 @@ function ActionSheet({
                         <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 13.5, color: 'var(--fg)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.3 }}>{fmt(tx['location_name'])}</div>
-                            <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{txnDateTime(tx['transaction_date'])} · •••• {last4(fmt(tx['card_number']), null)}</div>
+                            <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{txnDateTime(tx['transaction_date'])} · •••• {tail6(fmt(tx['card_number']), null)}</div>
                           </div>
-                          <span className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', flex: 'none', textAlign: 'right', whiteSpace: 'nowrap' }}>{money(tx['line_item_amount'] ?? tx['funded_total'] ?? tx['net_total'])}</span>
+                          <span className="selectable" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', flex: 'none', textAlign: 'right', whiteSpace: 'nowrap' }}>{money((session.isDriver || exportRetail) ? Number(tx['line_item_amount'] ?? tx['funded_total'] ?? tx['net_total'] ?? 0) + Number(tx['discount_amount'] ?? 0) : (tx['line_item_amount'] ?? tx['funded_total'] ?? tx['net_total']))}</span>
                         </div>
                       ))}
                     </div>
@@ -2059,6 +2919,15 @@ function ActionSheet({
                         {Number(sum['open_count'] ?? 0) > 0 && ` · ${t('inv.openCount', { n: fmt(sum['open_count']) })}`}
                         {Number(sum['cancelled_count'] ?? 0) > 0 && ` · ${t('inv.cancelledCount', { n: fmt(sum['cancelled_count']) })}`}
                       </div>
+                    </div>
+                  )}
+                  {rows.length > 0 && (
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                      {(['pdf', 'xlsx', 'csv'] as const).map((f) => (
+                        <button key={f} type="button" onClick={() => { haptic('tap'); setInvFormat(f); }} style={{ flex: 1, height: 32, borderRadius: 9, border: 'none', fontFamily: "'Geist'", fontWeight: 700, fontSize: 12, cursor: 'pointer', background: invFormat === f ? 'var(--primary)' : 'var(--secondary)', color: invFormat === f ? '#FFFFFF' : 'var(--muted-fg)' }}>
+                          {f === 'pdf' ? 'PDF' : f === 'xlsx' ? 'Excel' : 'CSV'}
+                        </button>
+                      ))}
                     </div>
                   )}
                   {rows.length === 0 ? (
@@ -2128,8 +2997,8 @@ function ActionSheet({
                     const lastUsed = c['last_used_date'] ?? c['last_transaction_date'] ?? c['lastUsedDate'] ?? c['last_used'];
                     return (
                       <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-                        <span className="selectable" style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>•••• {last4(fmt(c['card_number']), null)}</span>
-                        <span style={{ fontSize: 13, color: 'var(--fg)' }}>{fmt(lastUsed).slice(0, 10)}</span>
+                        <span className="selectable" style={{ flex: 1, minWidth: 0, fontSize: session.isDriver ? 14 : 13, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>{session.isDriver ? `•••• ${tail6(fmt(c['card_number']), null)}` : groupCardNumber(fmt(c['card_number']))}</span>
+                        <span style={{ flex: 'none', fontSize: 13, color: 'var(--fg)' }}>{fmt(lastUsed).slice(0, 10)}</span>
                       </div>
                     );
                   })}
@@ -2146,19 +3015,407 @@ function ActionSheet({
               // by default; getting here took a deliberate tap on an item that says "Reveal", and the
               // driver is reading it to type into a pump keypad. Masking it behind a second tap would
               // add friction to the one job this item exists for.
+              const details: Array<[string, string]> = [
+                [t('manualcode.card'), groupCardNumber(pan)],
+                ...(data.v.unitNumber ? [[t('manualcode.unit'), data.v.unitNumber] as [string, string]] : []),
+                ...(data.v.driverId ? [[t('manualcode.driverId'), data.v.driverId] as [string, string]] : []),
+              ];
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '6px 0 4px' }}>
-                  <span style={{ width: 54, height: 54, borderRadius: 16, background: 'var(--secondary)', color: 'var(--link-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
-                    <Icon name="key" size={26} strokeWidth={2} className="" />
-                  </span>
-                  <span
-                    className="selectable"
-                    style={{ fontSize: 22, fontWeight: 700, letterSpacing: '.04em', color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.35, wordBreak: 'break-all' }}
+                <div style={{ display: 'flex', flexDirection: 'column', padding: '2px 0 4px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: 16 }}>
+                    <span style={{ width: 54, height: 54, borderRadius: 16, background: 'var(--secondary)', color: 'var(--link-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+                      <Icon name="card" size={26} strokeWidth={2} className="" />
+                    </span>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--fg)' }}>{t('manualcode.title')}</span>
+                    <span style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 4, maxWidth: 300, lineHeight: 1.5 }}>{t('manualcode.note')}</span>
+                  </div>
+                  {/* The fields a pump keypad asks for when the card won't swipe. */}
+                  <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden', marginBottom: 12 }}>
+                    {details.map(([label, value], i) => (
+                      <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: i === details.length - 1 ? 'none' : '1px solid var(--border)' }}>
+                        <span style={{ flex: 'none', fontSize: 12.5, color: 'var(--muted-fg)' }}>{label}</span>
+                        <span className="selectable" style={{ flex: 1, textAlign: 'right', fontSize: 14, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="press"
+                    onClick={() => {
+                      try { navigator.clipboard?.writeText(pan); } catch { /* clipboard unavailable */ }
+                      haptic('tap');
+                      showToast(t('toast.cardCopied'));
+                    }}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, height: 44, border: 'none', borderRadius: 12, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: 'pointer', marginBottom: 14 }}
                   >
-                    {groupCardNumber(pan)}
-                  </span>
-                  <span style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 12, maxWidth: 280, lineHeight: 1.5 }}>{t('manualcode.hint')}</span>
+                    <Icon name="copy" size={15} strokeWidth={2} className="" />
+                    {t('manualcode.copy')}
+                  </button>
+                  <div style={{ fontSize: 12.5, color: 'var(--muted-fg)', lineHeight: 1.55 }}>{t('manualcode.instructions')}</div>
                 </div>
+              );
+            })()
+          ) : data?.kind === 'moneycode' ? (
+            (() => {
+              const v = data.v;
+              const money = (x: unknown) => `$${Number(x ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+              if (mcDone) {
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '18px 0 8px' }}>
+                    <span style={{ width: 54, height: 54, borderRadius: '50%', background: 'color-mix(in srgb, var(--success) 15%, transparent)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                      <Check size={26} strokeWidth={2.4} aria-hidden />
+                    </span>
+                    <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--fg)' }}>{t('mc.doneTitle', { amount: money(mcDone.amount) })}</div>
+                    {/* The CODE VALUE is deliberately never shown here — same rule as the agent
+                        widget: issuance/delivery happen upstream, nobody reads codes off a screen. */}
+                    <div style={{ fontSize: 13.5, color: 'var(--muted-fg)', marginTop: 8, maxWidth: 300, lineHeight: 1.55 }}>{t('mc.doneBody')}</div>
+                    {mcDone.after != null && (
+                      <div style={{ fontSize: 12.5, color: 'var(--muted-fg)', marginTop: 10 }}>{t('mc.afterLeft', { amount: money(mcDone.after) })}</div>
+                    )}
+                  </div>
+                );
+              }
+              if (v.disabled) {
+                return (
+                  <div style={{ padding: '4px 0' }}>
+                    <div style={{ fontSize: 13.5, color: 'var(--muted-fg)', lineHeight: 1.55, marginBottom: 14 }}>{t('mc.disabled')}</div>
+                    <textarea value={genericComment} onChange={(e) => setGenericComment(e.target.value)} placeholder={t('generic.commentPlaceholder')} rows={3} style={{ width: '100%', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, padding: '10px 12px', resize: 'none', marginBottom: 12 }} />
+                    <button type="button" className="press" disabled={genericBusy} onClick={() => { haptic('tap'); setGenericBusy(true); sendServiceRequest(initData, 'money-code', genericComment.trim() || undefined).then(() => { haptic('success'); showToast(t('generic.sentTitle')); onSendGeneric(sheetTitle); onClose(); }).catch(() => { haptic('error'); showToast(t('sheet.loadError'), 'error'); }).finally(() => setGenericBusy(false)); }} style={{ width: '100%', height: 48, border: 'none', borderRadius: 12, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {genericBusy ? <Spinner size={16} color="#FFFFFF" /> : t('mc.sendRequest')}
+                    </button>
+                  </div>
+                );
+              }
+              const preview = v.preview;
+              const available = Number(preview?.available ?? 0);
+              const eligible = preview?.eligible !== false && available > 0;
+              // Fallback mirrors the CS team's B-code vocabulary (agents sent the B-1..B-14 list 47×
+              // in chat) — the picker speaks the same words support does.
+              const reasons = Array.isArray(preview?.moneycode_reasons) && preview.moneycode_reasons.length ? preview.moneycode_reasons.map(String) : ['Fuel', 'Truck Service', 'Cash Advance', 'Towing', 'Salary', 'Parking', 'Truck Scale', 'Lumper fee', 'Other'];
+              const amountNum = Number(mcAmount);
+              const canDraw = eligible && Number.isFinite(amountNum) && amountNum > 0 && amountNum <= available && mcUnit.trim().length > 0 && mcReason.length > 0 && !mcBusy;
+              return (
+                <div style={{ padding: '2px 0' }}>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                    <div style={{ flex: 1, background: 'var(--secondary)', borderRadius: 14, padding: '12px 14px' }}>
+                      <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('mc.available')}</div>
+                      <div style={{ fontSize: 19, fontWeight: 800, color: eligible ? 'var(--fg)' : 'var(--muted-fg)', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{money(available)}</div>
+                    </div>
+                    <div style={{ flex: 1, background: 'var(--secondary)', borderRadius: 14, padding: '12px 14px' }}>
+                      <div style={{ fontSize: 11.5, color: 'var(--muted-fg)' }}>{t('mc.drawn')}</div>
+                      <div style={{ fontSize: 19, fontWeight: 800, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{money(preview?.drawn)}</div>
+                    </div>
+                  </div>
+                  {!eligible ? (
+                    <div style={{ fontSize: 13.5, color: 'var(--muted-fg)', lineHeight: 1.55 }}>{t('mc.notEligible')}</div>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('mc.amount')}</div>
+                      {/* Quick amounts = the sums clients actually ask for (chat data: 100/200/300/500
+                          dominate money-code requests) — most draws become two taps + unit. */}
+                      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                        {[100, 200, 300, 500].map((v) => (
+                          <button key={v} type="button" onClick={() => { haptic('tap'); setMcAmount(String(v)); }} style={{ flex: 1, height: 36, borderRadius: 10, border: 'none', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: 'pointer', fontVariantNumeric: 'tabular-nums', background: mcAmount === String(v) ? 'var(--primary)' : 'var(--secondary)', color: mcAmount === String(v) ? '#FFFFFF' : 'var(--muted-fg)' }}>{'$' + v}</button>
+                        ))}
+                      </div>
+                      {(() => {
+                        const over = mcAmount.length > 0 && Number.isFinite(amountNum) && amountNum > available;
+                        return (
+                          <>
+                            <input inputMode="decimal" value={mcAmount} onChange={(e) => setMcAmount(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0.00" style={{ width: '100%', height: 46, borderRadius: 12, border: `1px solid ${over ? 'var(--destructive)' : 'var(--border)'}`, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 16, fontWeight: 700, padding: '0 14px', marginBottom: over ? 6 : 12, fontVariantNumeric: 'tabular-nums' }} />
+                            {/* The Draw button just greyed out when the amount ran over — this says why,
+                                and names the ceiling so the fix is one tap on a quick-amount. */}
+                            {over && <div style={{ fontSize: 12.5, color: 'var(--destructive)', marginBottom: 12, lineHeight: 1.45 }}>{t('mc.max', { max: money(available) })}</div>}
+                          </>
+                        );
+                      })()}
+                      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('mc.unit')}</div>
+                      {(() => {
+                        const units = loadRecentUnits();
+                        if (units.length === 0) return null;
+                        return (
+                          <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+                            {units.map((u) => (
+                              <button key={u} type="button" onClick={() => { haptic('tap'); setMcUnit(u); }} style={{ height: 30, padding: '0 13px', borderRadius: 9, border: '1px solid var(--border)', background: mcUnit === u ? 'var(--primary)' : 'var(--secondary)', color: mcUnit === u ? '#FFFFFF' : 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, cursor: 'pointer', fontVariantNumeric: 'tabular-nums' }}>{u}</button>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                      <input value={mcUnit} inputMode="numeric" onChange={(e) => setMcUnit(e.target.value)} placeholder="1656" style={{ width: '100%', height: 46, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 15, padding: '0 14px', marginBottom: 12 }} />
+                      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('mc.reason')}</div>
+                      <div className="hscroll" style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+                        {reasons.map((r) => (
+                          <button key={r} type="button" onClick={() => { haptic('tap'); setMcReason(r); }} style={{ flex: 'none', height: 34, padding: '0 14px', borderRadius: 17, border: 'none', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, cursor: 'pointer', background: mcReason === r ? 'var(--primary)' : 'var(--secondary)', color: mcReason === r ? '#FFFFFF' : 'var(--muted-fg)', whiteSpace: 'nowrap' }}>{r}</button>
+                        ))}
+                      </div>
+                      <button type="button" className="press" disabled={!canDraw} onClick={() => {
+                        haptic('tap');
+                        setMcBusy(true);
+                        drawMoneyCode(initData, { amount: amountNum, unitNumber: mcUnit.trim(), reason: mcReason })
+                          .then((res) => {
+                            haptic('success');
+                            invalidateSheetCache('moneycode');
+                            rememberUnit(mcUnit.trim());
+                            setMcDone({ amount: res.money_code_amount != null ? Number(res.money_code_amount) : amountNum, after: res.available_after != null ? Number(res.available_after) : null });
+                            setMcAmount(''); setMcUnit(''); setMcReason('');
+                          })
+                          .catch((e) => { haptic('error'); showToast(e instanceof ApiError ? e.message : t('sheet.loadError'), 'error'); })
+                          .finally(() => setMcBusy(false));
+                      }} style={{ width: '100%', height: 48, border: 'none', borderRadius: 12, background: canDraw ? 'var(--primary)' : 'var(--secondary)', color: canDraw ? '#FFFFFF' : 'var(--muted-fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: canDraw ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {mcBusy ? <Spinner size={16} color="#FFFFFF" /> : t('mc.draw')}
+                      </button>
+                    </>
+                  )}
+                  {/* Draw history — the journal rows (code values stripped server-side). Void is the
+                      agent widget's C-24 safe-void, carrier-scoped for an owner. */}
+                  {data.v.history.length > 0 && (
+                    <>
+                      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', margin: '18px 0 8px' }}>{t('mc.history')}</div>
+                      <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                        {data.v.history.map((d, hi) => (
+                          <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: hi === data.v.history.length - 1 ? 'none' : '1px solid var(--border)' }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>
+                                {money(d.amount)} · <span style={{ color: d.status === 'ISSUED' ? 'var(--success)' : d.status === 'VOIDED' ? 'var(--destructive)' : 'var(--muted-fg)', fontWeight: 600 }}>{d.status}</span>
+                              </div>
+                              <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 2 }}>{d.date}{d.unit ? ` · Unit ${d.unit}` : ''}{d.reason ? ` · ${d.reason}` : ''}</div>
+                            </div>
+                            {d.status === 'ISSUED' && (
+                              <button
+                                type="button"
+                                disabled={mcVoidBusy !== null}
+                                onClick={() => {
+                                  haptic('tap');
+                                  if (mcVoidArm !== d.id) { setMcVoidArm(d.id); return; }
+                                  setMcVoidBusy(d.id);
+                                  voidMoneyCodeDraw(initData, d.id)
+                                    .then(() => { haptic('success'); showToast(t('mc.voided')); invalidateSheetCache('moneycode'); onClose(); })
+                                    .catch((e) => { haptic('error'); showToast(e instanceof ApiError ? e.message : t('sheet.loadError'), 'error'); })
+                                    .finally(() => { setMcVoidBusy(null); setMcVoidArm(null); });
+                                }}
+                                style={{ height: 30, padding: '0 12px', borderRadius: 9, border: 'none', background: mcVoidArm === d.id ? 'var(--destructive)' : 'color-mix(in srgb, var(--destructive) 14%, transparent)', color: mcVoidArm === d.id ? '#FFFFFF' : 'var(--destructive)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 12, cursor: 'pointer', flex: 'none' }}
+                              >
+                                {mcVoidBusy === d.id ? <Spinner size={13} color="#FFFFFF" /> : mcVoidArm === d.id ? t('mc.voidConfirm') : t('mc.void')}
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })()
+          ) : data?.kind === 'pinunit' ? (
+            (() => {
+              const efs = data.v;
+              // The driver's NAME is not self-editable (owner changes it via card ops), so it must
+              // not sit among the inputs looking like a disabled field — it is the sheet's header:
+              // whose card this is, above what the driver can actually change.
+              const driverName = String(efs?.['driver_name'] ?? '').trim();
+              const dirty =
+                puUnit.trim() !== String(efs?.['unit_number'] ?? '').trim() ||
+                puDriverId.trim() !== String(efs?.['driver_id'] ?? '').trim();
+              const inputStyle = { width: '100%', height: 44, borderRadius: 11, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 15, fontWeight: 600, padding: '0 12px', marginBottom: 10, fontVariantNumeric: 'tabular-nums' } as const;
+              return (
+                <div style={{ padding: '2px 0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--secondary)', borderRadius: 14, padding: '14px 14px', marginBottom: 14 }}>
+                    <span style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--card)', color: 'var(--link-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                      <Icon name="card" size={18} strokeWidth={2} className="" />
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span className="selectable" style={{ display: 'block', fontSize: 15.5, fontWeight: 700, color: 'var(--fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{driverName || t('pu.driverName')}</span>
+                      <span style={{ display: 'block', fontSize: 12.5, color: 'var(--muted-fg)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>•••• {tail6(session.ownCardNumber, null)}</span>
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('pu.unit')}</div>
+                  <input value={puUnit} inputMode="numeric" onChange={(e) => setPuUnit(e.target.value)} placeholder="4031" style={inputStyle} />
+                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('pu.driverId')}</div>
+                  <input value={puDriverId} inputMode="numeric" onChange={(e) => setPuDriverId(e.target.value)} placeholder="2605" style={inputStyle} />
+                  <button
+                    type="button"
+                    className="press"
+                    disabled={puBusy || !dirty || !(puUnit.trim() || puDriverId.trim())}
+                    onClick={() => {
+                      haptic('tap');
+                      setPuBusy(true);
+                      updateCardInfo(initData, undefined, {
+                        ...(puUnit.trim() ? { unitNumber: puUnit.trim() } : {}),
+                        ...(puDriverId.trim() ? { driverId: puDriverId.trim() } : {}),
+                      })
+                        .then(() => {
+                          haptic('success');
+                          invalidateSheetCache('pinunit', 'cardops', 'status');
+                          showToast(t('pu.saved'));
+                        })
+                        .catch((e) => {
+                          haptic('error');
+                          const code = e instanceof ApiError ? e.code : '';
+                          showToast(code === 'MINIAPP_WRITES_DISABLED' ? t('co.writesDisabled') : e instanceof ApiError ? e.message : t('sheet.loadError'), 'error');
+                        })
+                        .finally(() => setPuBusy(false));
+                    }}
+                    style={{ width: '100%', height: 46, border: 'none', borderRadius: 12, marginBottom: 14, background: dirty ? 'var(--primary)' : 'var(--secondary)', color: dirty ? '#FFFFFF' : 'var(--muted-fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: dirty ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    {puBusy ? <Spinner size={15} color="#FFFFFF" /> : t('pu.save')}
+                  </button>
+                  <div style={{ fontSize: 13.5, color: 'var(--fg)', lineHeight: 1.6, marginBottom: 10 }}>{t('pu.pinHint')}</div>
+                  <div style={{ fontSize: 12.5, color: 'var(--muted-fg)', lineHeight: 1.55 }}>{t('pu.unitHint')}</div>
+                </div>
+              );
+            })()
+          ) : data?.kind === 'cardops' ? (
+            (() => {
+              const doOp = (op: string, fn: () => Promise<unknown>, doneMsg: string) => {
+                if (coBusy) return;
+                haptic('tap');
+                setCoBusy(op);
+                fn()
+                  .then(() => {
+                    haptic('success');
+                    showToast(doneMsg);
+                    invalidateSheetCache('cardops', 'pinunit', 'status');
+                    // BUG FIX (feedback 2026-07-22): the status under the card number kept showing
+                    // the OLD state after activate/deactivate/hold — the sheet cache was cleared but
+                    // the open sheet's own EFS snapshot never re-fetched.
+                    if ((op === 'act' || op === 'deact') && coCard?.cardId) {
+                      fetchCardEfs(initData, coCard.cardId).then(setCoEfs).catch(() => undefined);
+                    }
+                  })
+                  .catch((e) => {
+                    haptic('error');
+                    const code = e instanceof ApiError ? e.code : '';
+                    showToast(code === 'MINIAPP_WRITES_DISABLED' ? t('co.writesDisabled') : e instanceof ApiError ? e.message : t('sheet.loadError'), 'error');
+                  })
+                  .finally(() => setCoBusy(null));
+              };
+              if (!coCard) {
+                const cards = data.v.fleet;
+                if (!cards.length) return <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('co.noCards')}</div>;
+                return (
+                  <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                    {cards.map((c, i) => (
+                      <button key={c.cardId ?? i} type="button" className="row-press" onClick={() => {
+                        haptic('tap');
+                        setCoCard(c); setCoEfs(null); setCoEfsLoading(true);
+                        setCoUnit(''); setCoDriverName(c.driverName ?? ''); setCoDriverId('');
+                        fetchCardEfs(initData, c.cardId ?? undefined)
+                          .then((efs) => { setCoEfs(efs); const u = efs['unit_number']; const dn = efs['driver_name']; const di = efs['driver_id']; if (u != null) setCoUnit(String(u)); if (dn != null && !c.driverName) setCoDriverName(String(dn)); if (di != null) setCoDriverId(String(di)); })
+                          .catch(() => setCoEfs(null))
+                          .finally(() => setCoEfsLoading(false));
+                      }} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', border: 'none', borderBottom: i === cards.length - 1 ? 'none' : '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontFamily: "'Geist'", textAlign: 'left' }}>
+                        <span style={{ width: 30, height: 30, borderRadius: 9, background: 'var(--card)', color: 'var(--link-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                          <Icon name="card" size={14} strokeWidth={2} className="" />
+                        </span>
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>{c.cardNumber ? groupCardNumber(c.cardNumber) : `•••• ${tail6(c.cardNumber, null)}`}</span>
+                          <span style={{ display: 'block', fontSize: 12, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.driverName ?? t('co.noDriver')}</span>
+                        </span>
+                        <ChevronRight size={15} strokeWidth={2} color="var(--muted-fg)" aria-hidden />
+                      </button>
+                    ))}
+                  </div>
+                );
+              }
+              const efsStatus = coEfs ? String(coEfs['status'] ?? coEfs['card_status'] ?? '') : '';
+              const inputStyle = { width: '100%', height: 44, borderRadius: 11, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, padding: '0 12px', marginBottom: 10 } as const;
+              const opBtn = (bg: string, fg: string) => ({ flex: 1, height: 44, border: 'none', borderRadius: 11, background: bg, color: fg, fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' } as const);
+              return (
+                <div style={{ padding: '2px 0' }}>
+                  <button type="button" className="press" onClick={() => { haptic('tap'); setCoCard(null); setCoEfs(null); }} style={{ display: 'flex', alignItems: 'center', gap: 5, border: 'none', background: 'transparent', color: 'var(--muted-fg)', fontFamily: "'Geist'", fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: '2px 8px 10px 0' }}>
+                    <ChevronRight size={14} strokeWidth={2.4} style={{ transform: 'rotate(180deg)' }} aria-hidden />
+                    {t('co.allCards')}
+                  </button>
+                  <div style={{ background: 'var(--secondary)', borderRadius: 14, padding: '13px 14px', marginBottom: 16 }}>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>{coCard.cardNumber ? groupCardNumber(coCard.cardNumber) : `•••• ${tail6(coCard.cardNumber, null)}`}</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--muted-fg)', marginTop: 3 }}>
+                      {coEfsLoading ? t('loading') : efsStatus ? `${t('co.efsStatus')}: ${efsStatus}` : coCard.driverName ?? ''}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('co.statusOps')}</div>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+                    <button type="button" className="press" disabled={coBusy !== null} onClick={() => doOp('act', () => setCardStatus(initData, coCard.cardId ?? '', 'activate'), t('co.activated'))} style={opBtn('var(--primary)', '#FFFFFF')}>
+                      {coBusy === 'act' ? <Spinner size={15} color="#FFFFFF" /> : t('co.activate')}
+                    </button>
+                    <button type="button" className="press" disabled={coBusy !== null} onClick={() => doOp('deact', () => setCardStatus(initData, coCard.cardId ?? '', 'deactivate'), t('co.deactivated'))} style={opBtn('color-mix(in srgb, var(--destructive) 14%, transparent)', 'var(--destructive)')}>
+                      {coBusy === 'deact' ? <Spinner size={15} color="var(--destructive)" /> : t('co.deactivate')}
+                    </button>
+                  </div>
+                  {/* Hold / Unhold (direct EFS flip) is BUILT but held back from prod (owner decision
+                      2026-07-22) — ships together with the servercrm HOLD/UNHOLD release. The catalog
+                      entry shows "soon"; the backend schema no longer accepts the actions either. */}
+                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('co.limitOps')}</div>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                    {(['ULSD', 'DEFD'] as const).map((l) => (
+                      <button key={l} type="button" onClick={() => { haptic('tap'); setCoLimitId(l); }} style={{ flex: 1, height: 34, borderRadius: 9, border: 'none', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12, cursor: 'pointer', background: coLimitId === l ? 'var(--primary)' : 'var(--secondary)', color: coLimitId === l ? '#FFFFFF' : 'var(--muted-fg)' }}>{l === 'ULSD' ? t('co.diesel') : 'DEF'}</button>
+                    ))}
+                    {(['increase', 'decrease'] as const).map((d) => (
+                      <button key={d} type="button" onClick={() => { haptic('tap'); setCoLimitDir(d); }} style={{ flex: 1, height: 34, borderRadius: 9, border: 'none', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12, cursor: 'pointer', background: coLimitDir === d ? 'var(--primary)' : 'var(--secondary)', color: coLimitDir === d ? '#FFFFFF' : 'var(--muted-fg)' }}>{d === 'increase' ? '+' : '−'}</button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                    {[50, 100].map((v) => (
+                      <button key={v} type="button" onClick={() => { haptic('tap'); setCoLimitVal(String((Number(coLimitVal) || 0) + v)); }} style={{ height: 30, padding: '0 14px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, cursor: 'pointer', fontVariantNumeric: 'tabular-nums' }}>{'+' + v}</button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+                    <input inputMode="numeric" value={coLimitVal} onChange={(e) => setCoLimitVal(e.target.value.replace(/[^0-9]/g, ''))} placeholder={t('co.gallons')} style={{ ...inputStyle, flex: 1, width: 'auto', marginBottom: 0 }} />
+                    <button type="button" className="press" disabled={coBusy !== null || !Number(coLimitVal)} onClick={() => doOp('lim', () => setCardLimits(initData, coCard.cardId ?? '', { limitId: coLimitId, value: Number(coLimitVal), action: coLimitDir }), t('co.limitDone'))} style={{ ...opBtn('var(--primary)', '#FFFFFF'), flex: 'none', width: 110, opacity: Number(coLimitVal) ? 1 : 0.5 }}>
+                      {coBusy === 'lim' ? <Spinner size={15} color="#FFFFFF" /> : t('co.apply')}
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('co.unitDriver')}</div>
+                  <input value={coUnit} inputMode="numeric" onChange={(e) => setCoUnit(e.target.value)} placeholder={t('co.unitNumber')} style={inputStyle} />
+                  <input value={coDriverName} onChange={(e) => setCoDriverName(e.target.value)} placeholder={t('co.driverName')} style={inputStyle} />
+                  <input value={coDriverId} inputMode="numeric" onChange={(e) => setCoDriverId(e.target.value)} placeholder={t('co.driverId')} style={inputStyle} />
+                  <button type="button" className="press" disabled={coBusy !== null || !(coUnit.trim() || coDriverName.trim() || coDriverId.trim())} onClick={() => doOp('info', () => updateCardInfo(initData, coCard.cardId ?? '', { ...(coUnit.trim() ? { unitNumber: coUnit.trim() } : {}), ...(coDriverName.trim() ? { driverName: coDriverName.trim() } : {}), ...(coDriverId.trim() ? { driverId: coDriverId.trim() } : {}) }), t('co.infoDone'))} style={{ ...opBtn('var(--primary)', '#FFFFFF'), width: '100%', marginTop: 2 }}>
+                    {coBusy === 'info' ? <Spinner size={15} color="#FFFFFF" /> : t('co.save')}
+                  </button>
+                </div>
+              );
+            })()
+          ) : data?.kind === 'billingform' ? (
+            (() => {
+              const bf = data.v;
+              const entries = Object.entries(bf.billingForm ?? {}).filter(([, v]) => v != null && typeof v !== 'object' && String(v).trim() !== '');
+              const notes = bf.notes ?? [];
+              if (!entries.length && !notes.length && !bf.verification) {
+                return <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('bf.empty')}</div>;
+              }
+              return (
+                <>
+                  {bf.verification && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: 'color-mix(in srgb, var(--link-accent) 10%, transparent)', borderRadius: 14, marginBottom: 14, fontSize: 13.5, color: 'var(--fg)' }}>
+                      <Icon name="shield" size={16} strokeWidth={2.2} className="" />
+                      <span>{t('bf.verification')}: <b>{fmt(bf.verification)}</b></span>
+                    </div>
+                  )}
+                  {entries.length > 0 && (
+                    <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                      {entries.map(([k, v], i) => (
+                        <div key={k} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, padding: '11px 14px', borderBottom: i === entries.length - 1 ? 'none' : '1px solid var(--border)' }}>
+                          <span style={{ fontSize: 12.5, color: 'var(--muted-fg)', flex: 'none' }}>{k}</span>
+                          <span className="selectable" style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--fg)', textAlign: 'right', minWidth: 0, overflowWrap: 'anywhere' }}>{fmt(v)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {notes.length > 0 && (
+                    <>
+                      <div style={{ height: 14 }} />
+                      <SectionLabel>{t('bf.notes')}</SectionLabel>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {notes.map((n2, i) => (
+                          <div key={i} style={{ background: 'var(--secondary)', borderRadius: 14, padding: '12px 14px' }}>
+                            {n2.title && <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--fg)', marginBottom: 3 }}>{fmt(n2.title)}</div>}
+                            {n2.content && <div className="selectable" style={{ fontSize: 13, color: 'var(--fg)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{fmt(n2.content)}</div>}
+                            <div style={{ fontSize: 11.5, color: 'var(--muted-fg)', marginTop: 5 }}>{[n2.createdBy, n2.createdTime].filter(Boolean).join(' · ')}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
               );
             })()
           ) : data?.kind === 'tracking' ? (
@@ -2176,6 +3433,11 @@ function ActionSheet({
                       <>
                         <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)' }}>{t('track.number')}</div>
                         <div className="selectable" style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{tr.fedexTracking}</div>
+                        {/* Feedback #9: the number alone answers nothing — one tap must show the
+                            live delivery state. FedEx's own tracker is that state. */}
+                        <a href={`https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(tr.fedexTracking)}`} target="_blank" rel="noreferrer" style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 7, background: 'var(--primary)', color: '#FFFFFF', borderRadius: 10, padding: '9px 14px', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>
+                          {t('track.fedex')}
+                        </a>
                       </>
                     )}
                   </div>
@@ -2214,12 +3476,73 @@ function ActionSheet({
             </div>
           ) : (
             <>
-              <div style={{ fontSize: 14, color: 'var(--fg)', lineHeight: 1.5, marginBottom: 6 }}>{t('generic.notSentBody1')}</div>
-              <div style={{ fontSize: 13, color: 'var(--muted-fg)', lineHeight: 1.5, marginBottom: 16 }}>{t('generic.notSentBody2')}</div>
+              {!(target.kind === 'generic' && target.request === 'override-card' && session.isDriver) && (
+                <>
+                  <div style={{ fontSize: 14, color: 'var(--fg)', lineHeight: 1.5, marginBottom: 6 }}>{t('generic.notSentBody1')}</div>
+                  <div style={{ fontSize: 13, color: 'var(--muted-fg)', lineHeight: 1.5, marginBottom: 16 }}>{t('generic.notSentBody2')}</div>
+                </>
+              )}
               {/* Only for requests that actually reach a human. A driver's card is resolved
                   server-side, but an owner has a fleet — the ticket would otherwise say "replace a
                   lost card" and name no card, leaving support to ask before they can start. */}
-              {target.kind === 'generic' && target.request && (
+              {/* Driver override is WIRED (C-16): one tap, own card, EFS auto-reverts in ~30min.
+                  The ticket form below stays hidden while this works — it appears only when the
+                  direct path is refused (flag off), so the driver is never stranded either way. */}
+              {target.kind === 'generic' && target.request === 'override-card' && session.isDriver && (
+                <div style={{ fontSize: 13.5, color: 'var(--muted-fg)', lineHeight: 1.55, marginBottom: 14 }}>{t('ovr.hint')}</div>
+              )}
+              {target.kind === 'generic' && target.request === 'override-card' && session.isDriver && overrideUntil != null && overrideUntil > Date.now() && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'color-mix(in srgb, var(--success) 13%, transparent)', borderRadius: 12, padding: '12px 14px', fontSize: 13.5, fontWeight: 600, color: 'var(--success)' }}>
+                  <Check size={16} strokeWidth={2.6} aria-hidden />
+                  {t('ovrbn.active')} · {Math.max(1, Math.ceil((overrideUntil - Date.now()) / 60000))} min
+                </div>
+              )}
+              {/* Override only for a fraud-held card. Loading its status, then either the button
+                  (fraud-held / status unknown → backend still nets it) or an explanation (active). */}
+              {isDriverOverride && ovrCardStatus === undefined && !(overrideUntil != null && overrideUntil > Date.now()) && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--muted-fg)', fontSize: 13, padding: '4px 0 14px' }}>
+                  <Spinner size={14} /> {t('ovr.checking')}
+                </div>
+              )}
+              {isDriverOverride && ovrCardStatus !== undefined && !ovrEligible && !(overrideUntil != null && overrideUntil > Date.now()) && (
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: 'var(--secondary)', borderRadius: 12, padding: '13px 14px', marginBottom: 14, fontSize: 13, color: 'var(--fg)', lineHeight: 1.5 }}>
+                  <span style={{ flex: 'none', color: 'var(--success)', display: 'flex', marginTop: 1 }}><Check size={16} strokeWidth={2.4} aria-hidden /></span>
+                  <span>{t('ovr.notHeld')}</span>
+                </div>
+              )}
+              {target.kind === 'generic' && target.request === 'override-card' && session.isDriver && ovrEligible && ovrCardStatus !== undefined && !(overrideUntil != null && overrideUntil > Date.now()) && (
+                <button
+                  type="button"
+                  className="press"
+                  disabled={genericBusy}
+                  onClick={() => {
+                    haptic('tap');
+                    setGenericBusy(true);
+                    overrideCard(initData)
+                      .then(() => {
+                        haptic('success');
+                        showToast(t('ovr.done'));
+                        // Home shows a live ~30-min countdown card for the window EFS just opened.
+                        onOverrideDone(Date.now() + 30 * 60 * 1000);
+                        setGenericBusy(false);
+                        onClose();
+                      })
+                      .catch((e) => {
+                        // No ticket fallback ON PURPOSE: override is a direct EFS action in the
+                        // agent widget too (C-16) — nobody files a ticket for it. Flag off or a
+                        // real failure both surface as a message; support handles it live in chat.
+                        haptic('error');
+                        const code = e instanceof ApiError ? e.code : '';
+                        showToast(code === 'MINIAPP_WRITES_DISABLED' ? t('ovr.disabled') : e instanceof ApiError ? e.message : t('ovr.fail'), 'error');
+                        setGenericBusy(false);
+                      });
+                  }}
+                  style={{ width: '100%', height: 48, border: 'none', borderRadius: 12, marginBottom: 14, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+                >
+                  {genericBusy ? <Spinner size={16} color="#FFFFFF" /> : t('ovr.now')}
+                </button>
+              )}
+              {target.kind === 'generic' && target.request && !(target.request === 'override-card' && session.isDriver) && (
                 <textarea
                   value={genericComment}
                   onChange={(e) => setGenericComment(e.target.value.slice(0, 2000))}
@@ -2231,9 +3554,11 @@ function ActionSheet({
               {genericError && (
                 <div style={{ fontSize: 13, color: 'var(--danger)', lineHeight: 1.5, marginBottom: 12 }}>{genericError}</div>
               )}
-              <button type="button" className="press" onClick={sendGeneric} disabled={genericBusy} style={{ width: '100%', height: 50, border: 'none', borderRadius: 14, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 15, cursor: genericBusy ? 'default' : 'pointer', opacity: genericBusy ? 0.6 : 1 }}>
-                {genericBusy ? t('generic.sending') : t('generic.sendButton')}
-              </button>
+              {!(target.kind === 'generic' && target.request === 'override-card' && session.isDriver) && (
+                <button type="button" className="press" onClick={sendGeneric} disabled={genericBusy} style={{ width: '100%', height: 50, border: 'none', borderRadius: 14, background: 'var(--primary)', color: '#FFFFFF', fontFamily: "'Geist'", fontWeight: 600, fontSize: 15, cursor: genericBusy ? 'default' : 'pointer', opacity: genericBusy ? 0.6 : 1 }}>
+                  {genericBusy ? t('generic.sending') : t('generic.sendButton')}
+                </button>
+              )}
             </>
           )}
         </div>
@@ -2251,6 +3576,16 @@ function ActionSheet({
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-fg)', marginBottom: 7 }}>
               {exportBusy ? t('txns.sendingReport') : t('txns.exportToTelegram')}
             </div>
+            {/* Detailed columns = full card number + Driver / Unit / Driver ID. Owner/manager only:
+                a driver's view is already one driver + one card, so the breakdown is redundant (and
+                the driver already never sees other cards' numbers). */}
+            {!session.isDriver && (
+              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                <button type="button" className="press" onClick={() => { haptic('tap'); setExportDetailed((v) => !v); }} style={{ flex: 1, height: 34, borderRadius: 9, fontFamily: "'Geist'", fontWeight: 600, fontSize: 12, cursor: 'pointer', background: exportDetailed ? 'var(--primary)' : 'var(--secondary)', color: exportDetailed ? '#FFFFFF' : 'var(--muted-fg)', border: 'none' }}>
+                  {t('txns.detailedCols')}
+                </button>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8 }}>
               {(['xlsx', 'pdf', 'csv'] as const).map((f) => (
                 <button
@@ -2265,6 +3600,25 @@ function ActionSheet({
                 </button>
               ))}
             </div>
+            {/* Owner accounting shortcuts: the weekly "fuel and EFS report, both retail and with
+                discount, pdf and xlsx" ritual as one tap, and the EFS half alone. Never shown to a
+                driver — both endpoints are owner-only anyway. */}
+            {!session.isDriver && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                {([['bundle', t('txns.bundle')], ['efs', t('txns.efsReport')]] as const).map(([k, label]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    className="press"
+                    disabled={exportBusy !== null || bundleBusy !== null}
+                    onClick={() => void doBundle(k)}
+                    style={{ flex: 1, height: 42, border: 'none', borderRadius: 11, background: k === 'bundle' ? 'var(--primary)' : 'var(--secondary)', color: k === 'bundle' ? '#FFFFFF' : 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: bundleBusy ? 'default' : 'pointer', opacity: bundleBusy && bundleBusy !== k ? 0.45 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    {bundleBusy === k ? <Spinner size={16} color={k === 'bundle' ? '#FFFFFF' : 'var(--fg)'} /> : label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -2274,15 +3628,108 @@ function ActionSheet({
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
+
+/** Pick the best locale from a news post's per-language text (en is guaranteed). */
+function pickNewsLocale(v: LocalizedNewsText, lang: string): string {
+  return (lang === 'ru' && v.ru) || (lang === 'uz' && v.uz) || (lang === 'es' && v.es) || v.en;
+}
+
+/** A notification-payload slot: a per-locale map ({en,ru,…}) → picked locale, or a plain string. */
+function localizeText(v: unknown, lang: string): string {
+  if (v && typeof v === 'object') return pickNewsLocale(v as LocalizedNewsText, lang);
+  return String(v ?? '');
+}
+
+type TFn = (key: string, vars?: Record<string, string | number>) => string;
+
+/** Relative-time display fields from an ISO timestamp (InboxItem.atKey grammar). */
+function inboxTime(createdAt: string): { atKey: string; atN?: number; minutesAgo: number } {
+  const minutesAgo = Math.max(0, Math.round((Date.now() - Date.parse(createdAt)) / 60000));
+  if (minutesAgo < 1) return { atKey: 'time.justNow', minutesAgo };
+  if (minutesAgo < 60) return { atKey: 'time.min', atN: minutesAgo, minutesAgo };
+  if (minutesAgo < 1440) return { atKey: 'time.hour', atN: Math.round(minutesAgo / 60), minutesAgo };
+  if (minutesAgo < 2880) return { atKey: 'time.yesterday', minutesAgo };
+  return { atKey: 'time.dayN', atN: Math.round(minutesAgo / 1440), minutesAgo };
+}
+
+const NTF_ICON: Record<string, { icon: IconName; color: string | null }> = {
+  override: { icon: 'lock', color: 'var(--success)' },
+  card_status: { icon: 'card', color: null },
+  limit: { icon: 'alert', color: 'var(--destructive)' },
+  money_code: { icon: 'banknote', color: 'var(--success)' },
+  receipt: { icon: 'list', color: null },
+  statement: { icon: 'doc', color: null },
+  debt: { icon: 'clock', color: 'var(--destructive)' },
+  invoice: { icon: 'doc', color: null },
+  tracking: { icon: 'truck', color: null },
+  balance_low: { icon: 'alert', color: 'var(--destructive)' },
+  news: { icon: 'plane', color: null },
+};
+
+/** One outbox notification → an InboxItem row. Text renders CLIENT-side so it follows the
+ *  user's in-app language (the bot copy is server-rendered separately). */
+function notifToInbox(n: InboxNotification, lang: string, t: TFn): InboxItem {
+  const meta = NTF_ICON[n.type] ?? { icon: 'check' as IconName, color: null };
+  const p = n.payload;
+  const card = typeof p['last6'] === 'string' ? p['last6'] : '';
+  let titleText: string;
+  let bodyText: string;
+  if (n.type === 'override') {
+    titleText = t('inbox.ntfOverride.title');
+    bodyText = t('inbox.ntfOverride.body', { card });
+  } else if (n.type === 'receipt') {
+    const gallons = typeof p['gallons'] === 'number' ? p['gallons'] : Number(p['gallons'] ?? 0);
+    const location = typeof p['location'] === 'string' ? p['location'] : '';
+    const place = [p['city'], p['state']].map((v) => (typeof v === 'string' ? v : '')).filter(Boolean).join(' ');
+    titleText = t('inbox.ntfReceipt.title');
+    bodyText = t('inbox.ntfReceipt.body', { gallons, location, place, card });
+  } else if (n.type === 'invoice') {
+    const number = typeof p['number'] === 'string' ? p['number'] : '';
+    const total = typeof p['total'] === 'string' ? p['total'] : '';
+    titleText = t('inbox.ntfInvoice.title');
+    bodyText = t('inbox.ntfInvoice.body', { number, total });
+  } else if (n.type === 'news') {
+    // Payload carries per-locale maps ({en,ru,…}); pick the user's language. Older rows that
+    // stored a plain string still render via the localizeText string fallback.
+    titleText = localizeText(p['title'], lang);
+    bodyText = localizeText(p['body'], lang);
+  } else {
+    // Forward-compatible: a type this build doesn't know yet still shows as a readable row.
+    titleText = t('inbox.ntfGeneric.title');
+    bodyText = [n.type.replace(/_/g, ' '), card ? `•••• ${card}` : ''].filter(Boolean).join(' · ');
+  }
+  return { id: n.id, category: 'notifications', icon: meta.icon, color: meta.color, titleKey: '', titleText, bodyKey: '', bodyText, ...inboxTime(n.createdAt), unread: !n.read };
+}
+
+/** The whole server feed → InboxItem[] (news first by pinned/date, then notifications by date). */
+function feedToInbox(feed: InboxFeed, lang: string, t: TFn): InboxItem[] {
+  const news = feed.news.map((post): InboxItem => ({
+    id: post.id,
+    category: 'news',
+    icon: 'plane',
+    color: post.severity === 'important' ? 'var(--destructive)' : null,
+    titleKey: '',
+    titleText: pickNewsLocale(post.title, lang),
+    bodyKey: '',
+    bodyText: pickNewsLocale(post.body, lang),
+    ...inboxTime(post.publishAt),
+    unread: !post.read,
+  }));
+  const ntfs = feed.notifications.map((n) => notifToInbox(n, lang, t));
+  return [...news, ...ntfs];
+}
+
 export function App() {
   const wa = getTelegramWebApp();
+  /** The signed auth string every backend call carries — '' outside Telegram (demo preview). */
+  const initData = wa?.initData ?? '';
   const user = wa?.initDataUnsafe.user;
   const firstName = user?.first_name || 'there';
   /** Prefill only — the sign-in screen lets the driver correct it before it reaches their owner's
    *  roster. Mirrors the backend's fallback order so the prefill matches what it would have used. */
   const telegramName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim() || user?.username || '';
   const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
 
   const [screen, setScreen] = useState<Screen>('loading');
   const [errorTitle, setErrorTitle] = useState('');
@@ -2298,6 +3745,24 @@ export function App() {
   const [inbox, setInbox] = useState<InboxItem[]>([]);
   const [cardRevealed, setCardRevealed] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
+  /** Successful C-16 override window end (ms epoch) — survives an app reopen via localStorage so
+   *  the Home countdown card doesn't vanish if the driver closes Telegram at the pump. */
+  const [overrideUntil, setOverrideUntil] = useState<number | null>(() => {
+    try {
+      const v = Number(localStorage.getItem('octane.overrideUntil'));
+      return Number.isFinite(v) && v > Date.now() ? v : null;
+    } catch {
+      return null;
+    }
+  });
+  function markOverride(until: number) {
+    setOverrideUntil(until);
+    try { localStorage.setItem('octane.overrideUntil', String(until)); } catch { /* persist best-effort */ }
+  }
+  function clearOverride() {
+    setOverrideUntil(null);
+    try { localStorage.removeItem('octane.overrideUntil'); } catch { /* ignore */ }
+  }
   const [confirmCfg, setConfirmCfg] = useState<ConfirmConfig | null>(null);
   const pinnedInit = useRef(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -2336,14 +3801,76 @@ export function App() {
   // and the "returning user, session restored straight to home" path.
   useEffect(() => {
     if (screen !== 'home') return;
-    setInbox((i) => (i.length ? i : seedInbox(session.isDriver, session.ownCard, company)));
     if (!pinnedInit.current) {
       pinnedInit.current = true;
       setPinned(loadStoredPinned() ?? defaultPinned(session.isDriver));
     }
+    // REAL inbox: news + this user's notification slice. No demo seed — a fresh account with no
+    // backend rows shows an empty inbox (correct), and a failed fetch leaves whatever was already
+    // there rather than inventing fake notifications.
+    let cancelled = false;
+    fetchInboxFeed(initData)
+      .then((feed) => {
+        if (!cancelled) setInbox(feedToInbox(feed, lang, t));
+      })
+      .catch(() => {
+        /* keep the current inbox; never fabricate seed rows */
+      });
+    return () => {
+      cancelled = true;
+    };
     // only the arrival at `home` (and the role, if it wasn't known yet) should re-run this
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen, session.isDriver]);
+
+  // Live inbox: the existing realtime hub, via the initData-authenticated mini-app WS route.
+  // Push-only — a dropped socket costs nothing (rows arrive on the next inbox fetch).
+  useEffect(() => {
+    if (screen !== 'home' || !initData) return;
+    let ws: WebSocket | null = null;
+    try {
+      ws = new WebSocket(inboxRealtimeUrl(initData));
+    } catch {
+      return;
+    }
+    ws.onmessage = (e) => {
+      try {
+        const frame = JSON.parse(String(e.data)) as { kind?: string; event?: InboxNotification & { kind?: string } };
+        if (frame.kind !== 'event' || frame.event?.kind !== 'notification' || !frame.event.id) return;
+        const n = frame.event;
+        setInbox((prev) => (prev.some((x) => x.id === n.id) ? prev : [notifToInbox(n, lang, t), ...prev]));
+      } catch {
+        /* not our frame */
+      }
+    };
+    return () => {
+      try {
+        ws?.close();
+      } catch {
+        /* already closed */
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen, initData]);
+
+  /** Support-bot deep-links (?startapp=go-<action>): once the session lands on home, open the
+   *  linked sheet — registered users only (unregistered flows never reach 'home'). One-shot. */
+  const startActionDone = useRef(false);
+  useEffect(() => {
+    if (screen !== 'home' || startActionDone.current) return;
+    const action = getStartAction();
+    if (!action) return;
+    startActionDone.current = true;
+    if (action === 'override') setOpenAction({ kind: 'generic', key: 'drv-override-card', title: t('cat.drvOverrideCard'), request: 'override-card' });
+    else if (action === 'moneycode') setOpenAction({ kind: 'service', key: 'moneycode' });
+    else if (action === 'funds') setOpenAction({ kind: 'service', key: 'funds' });
+    else if (action === 'txns') setOpenAction({ kind: 'service', key: 'txns' });
+    else if (action === 'pinunit') setOpenAction({ kind: 'service', key: 'pinunit' });
+    else if (action === 'status') setOpenAction({ kind: 'service', key: 'status' });
+    else if (action === 'invoices') setOpenAction({ kind: 'service', key: 'invoices' });
+    else if (action === 'cardops') setOpenAction({ kind: 'service', key: 'cardops' });
+    else if (action === 'manualcode') setOpenAction({ kind: 'service', key: 'manualcode' });
+  }, [screen]);
 
   useEffect(() => {
     wa?.ready();
@@ -2418,6 +3945,34 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Telegram's native header Back arrow mirrors the app's layered navigation: visible whenever a
+  // layer is open, and one tap closes the TOP-MOST layer only (confirm dialog → action sheet →
+  // profile sheet → fleet sub-screen). Before this, sheets and the fleet screen had no system-level
+  // way back — only their own on-screen buttons, which the profile sheet lacked entirely.
+  useEffect(() => {
+    const bb = wa?.BackButton;
+    if (!bb) return undefined;
+    const layered = Boolean(confirmCfg) || openAction !== null || profileOpen || screen === 'fleet';
+    if (!layered) {
+      bb.hide();
+      return undefined;
+    }
+    const onBack = () => {
+      haptic('tap');
+      if (confirmCfg) setConfirmCfg(null);
+      else if (openAction !== null) setOpenAction(null);
+      else if (profileOpen) setProfileOpen(false);
+      else goHome();
+    };
+    bb.onClick(onBack);
+    bb.show();
+    return () => {
+      bb.offClick(onBack);
+    };
+    // wa/goHome are stable for the app's lifetime; the layers are what drive show/hide.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmCfg, openAction, profileOpen, screen]);
+
   function chooseTheme(next: Theme) {
     if (next === theme) return;
     haptic('tap');
@@ -2491,11 +4046,20 @@ export function App() {
 
   function markAllRead() {
     haptic('tap');
+    // Persist read receipts server-side for both feeds (news = nws_, notifications = man_); the
+    // client-only 'gen-' rows have no server counterpart and stay client-side. Badge survives reload.
+    for (const n of inbox) {
+      if (!n.unread) continue;
+      if (n.id.startsWith('nws_')) void apiMarkNewsRead(initData, n.id).catch(() => {});
+      else if (n.id.startsWith('man_')) void apiMarkNotificationRead(initData, n.id).catch(() => {});
+    }
     setInbox((cur) => cur.map((n) => ({ ...n, unread: false })));
     showToast(t('toast.allRead'));
   }
 
   function readNotif(id: string) {
+    if (id.startsWith('nws_')) void apiMarkNewsRead(initData, id).catch(() => {});
+    else if (id.startsWith('man_')) void apiMarkNotificationRead(initData, id).catch(() => {});
     setInbox((cur) => cur.map((n) => (n.id === id ? { ...n, unread: false } : n)));
   }
 
@@ -2550,6 +4114,16 @@ export function App() {
   const createLink = (cardId: string, name: string) => submitDriverLink(cardId, name, 'toast.driverLinkCreated');
   const regenerateLink = (cardId: string, name: string) => submitDriverLink(cardId, name, 'toast.newLinkGenerated');
 
+  /** Mint a manager registration link — a colleague with owner-equivalent access. Carrier-level, so
+   *  no card; the backend binds it to this session's own carrier and carries the name onto the
+   *  registration. Returns the link to reveal + copy; throws so the caller can surface an error. */
+  async function createManagerLink(name: string): Promise<{ inviteUrl: string; expiresAt: string }> {
+    if (!wa?.initData) throw new ApiError(t('auth.openInTelegram'), 'NO_INITDATA', 0);
+    const res = await createManagerInvite(wa.initData, name);
+    haptic('success');
+    return { inviteUrl: res.inviteUrl, expiresAt: res.expiresAt };
+  }
+
   async function renameDriverName(cardId: string, driverName: string): Promise<void> {
     if (!wa?.initData) throw new ApiError(t('auth.openInTelegram'), 'NO_INITDATA', 0);
     // Patch the row from the response, not from the input: the backend trims, and the roster should
@@ -2589,8 +4163,12 @@ export function App() {
             onOpenAction={handleOpenAction}
             onGoToServices={() => setTab('services')}
             onViewFleet={viewFleet}
+            onCreateManagerInvite={createManagerLink}
+            onCopy={(text, toast) => { try { navigator.clipboard?.writeText(text); } catch { /* ignore */ } haptic('tap'); showToast(toast); }}
             onMarkAllRead={markAllRead}
             onReadNotif={readNotif}
+            overrideUntil={overrideUntil}
+            onOverrideExpire={clearOverride}
           />
         )}
         {screen === 'fleet' && (
@@ -2632,6 +4210,9 @@ export function App() {
           onClose={() => setOpenAction(null)}
           showToast={showToast}
           onSendGeneric={sendGenericRequest}
+          onOverrideDone={markOverride}
+          overrideUntil={overrideUntil}
+          onSwitchAction={setOpenAction}
         />
       )}
       <Toast toast={toast} />

@@ -18,7 +18,7 @@ import type { CarrierCompanyType } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
 export interface CreateCarrierInviteArgs {
-  profile: 'owner' | 'driver';
+  profile: 'owner' | 'manager' | 'driver';
   carrierId?: string | undefined;
   applicationId?: string | undefined;
   companyName?: string | undefined;
@@ -30,6 +30,15 @@ export interface CreateCarrierInviteArgs {
   agentZohoUserId?: string | undefined;
   /** Invite lifetime in hours (owner-issued driver links are 24h; default is the repo's 7 days). */
   ttlHours?: number | undefined;
+  /**
+   * Skip the "an active owner must exist for this carrier" precondition on driver invites.
+   *
+   * Set ONLY by the card-possession self-register path: a driver who physically holds a fuel card
+   * that the DWH resolves to a carrier has proven carrier membership on their own — they do not
+   * depend on the owner having onboarded first. Owner-/admin-issued driver invites leave this unset
+   * so they still nest under a registered owner.
+   */
+  allowWithoutOwner?: boolean | undefined;
 }
 
 /** Build the Telegram deep link. ?startapp= (direct open) once BotFather is configured, else ?start=. */
@@ -110,17 +119,20 @@ export async function createCarrierInvite(
         expose: true,
       });
     }
-    // Drivers nest under the owner — no owner registration means no driver link.
-    const owner = await registeredMiniAppCompanyRepo.findActiveOwnerByCarrier(ctx, carrierId);
-    if (!owner) {
-      throw new AppError(
-        'Create and register the owner user first — drivers can only be invited under an active owner',
-        {
-          statusCode: 400,
-          code: 'DRIVER_NEEDS_OWNER',
-          expose: true,
-        },
-      );
+    // Drivers nest under the owner — no owner registration means no driver link — UNLESS the caller
+    // has already proven carrier membership another way (card possession, see allowWithoutOwner).
+    if (!args.allowWithoutOwner) {
+      const owner = await registeredMiniAppCompanyRepo.findActiveOwnerByCarrier(ctx, carrierId);
+      if (!owner) {
+        throw new AppError(
+          'Create and register the owner user first — drivers can only be invited under an active owner',
+          {
+            statusCode: 400,
+            code: 'DRIVER_NEEDS_OWNER',
+            expose: true,
+          },
+        );
+      }
     }
     if (!cardId) {
       throw new AppError('A driver invite needs the card it belongs to', {
@@ -150,6 +162,13 @@ export async function createCarrierInvite(
     } catch {
       // undetermined — an application-only invite or a DWH hiccup shouldn't block sending the link
     }
+  }
+
+  // A manager is by definition a fleet colleague (owner-equivalent access, granted by an
+  // owner/manager). Pin fleet-manager so a DWH hiccup can't leave companyType null — that null
+  // would make requireRegisteredOwner reject the manager once they register (fail-closed gate).
+  if (args.profile === 'manager') {
+    companyType = 'fleet-manager';
   }
 
   const invite = await carrierInvitationRepo.create(ctx, {

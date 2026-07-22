@@ -19,6 +19,15 @@ export interface TelegramHapticFeedback {
   notificationOccurred: (type: 'error' | 'success' | 'warning') => void;
 }
 
+/** Telegram's native header back arrow — shown/hidden by the app to mirror its own layered
+ *  navigation (sheets, sub-screens). Present on every client that supports Mini Apps ≥6.1. */
+export interface TelegramBackButton {
+  show: () => void;
+  hide: () => void;
+  onClick: (handler: () => void) => void;
+  offClick: (handler: () => void) => void;
+}
+
 export interface TelegramWebApp {
   initData: string;
   initDataUnsafe: { start_param?: string; user?: TelegramWebAppUser };
@@ -30,6 +39,7 @@ export interface TelegramWebApp {
   setBackgroundColor?: (color: string) => void;
   setBottomBarColor?: (color: string) => void;
   HapticFeedback?: TelegramHapticFeedback;
+  BackButton?: TelegramBackButton;
 }
 
 declare global {
@@ -79,6 +89,23 @@ export function haptic(kind: 'success' | 'error' | 'tap'): void {
  */
 export function getRegistrationId(): string | null {
   const startParam = getTelegramWebApp()?.initDataUnsafe.start_param;
-  if (startParam) return startParam;
+  // 'go-*' params are ACTION deep-links for already-registered users (see getStartAction) —
+  // never a registration id, so they must not leak into the invite-redeem path.
+  if (startParam && !startParam.startsWith('go-')) return startParam;
   return new URLSearchParams(window.location.search).get('token');
+}
+
+/**
+ * Action deep-link: `?startapp=go-<action>` opens a registered user's app ON that screen —
+ * the support bot's "you can do this yourself" links. Unknown actions are ignored (the app
+ * just opens home), so an old client build never breaks on a new link.
+ */
+export type StartAction = 'override' | 'moneycode' | 'funds' | 'txns' | 'pinunit' | 'status' | 'invoices' | 'cardops' | 'manualcode';
+const START_ACTIONS: readonly StartAction[] = ['override', 'moneycode', 'funds', 'txns', 'pinunit', 'status', 'invoices', 'cardops', 'manualcode'];
+
+export function getStartAction(): StartAction | null {
+  const startParam = getTelegramWebApp()?.initDataUnsafe.start_param;
+  if (!startParam?.startsWith('go-')) return null;
+  const action = startParam.slice(3);
+  return (START_ACTIONS as readonly string[]).includes(action) ? (action as StartAction) : null;
 }

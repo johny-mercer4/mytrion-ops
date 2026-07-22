@@ -36,13 +36,20 @@ export function isValidTopic(topic: string): boolean {
   return (
     topic === INBOX_ALL_TOPIC ||
     topic === RETENTION_POOL_TOPIC ||
-    /^inbox:(worker|client):[A-Za-z0-9._:-]{1,120}$/.test(topic)
+    /^inbox:(worker|client|miniapp):[A-Za-z0-9._:-]{1,120}$/.test(topic)
   );
 }
 
 /** The topic that carries a given owner's inbox events. */
 export function inboxTopicFor(ownerKind: 'worker' | 'client', ownerId: string): string {
   return `inbox:${ownerKind}:${ownerId}`;
+}
+
+/** A mini-app (Telegram) user's live feed — subscribed by the initData-authenticated WS in
+ *  carrierMiniApp.routes, published by the notification dispatcher and news posting. Internal
+ *  TenantContext callers can only reach these topics as admin (canSubscribe falls through). */
+export function miniAppTopicFor(telegramUserId: string): string {
+  return `inbox:miniapp:${telegramUserId}`;
 }
 
 /**

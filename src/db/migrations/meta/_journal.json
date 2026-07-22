@@ -295,6 +295,55 @@
       "when": 1784679600000,
       "tag": "0041_retention_spanish_desk",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1784575200000,
+      "tag": "0042_mini_app_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1784578800000,
+      "tag": "0043_client_news",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1784582400000,
+      "tag": "0044_notification_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1784586000000,
+      "tag": "0045_registration_language",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1784589600000,
+      "tag": "0046_notification_reads",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1784593200000,
+      "tag": "0047_support_bot_chats",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1784593200001,
+      "tag": "0048_support_bot_messages",
+      "breakpoints": true
     }
   ]
 }
