@@ -33,6 +33,8 @@ export interface ClientRecord {
   /** Raw billing-cycle gallons (numeric) — drives the loyalty tier level. */
   cycleGallons: number;
   status: 'active' | 'attention' | 'debtor';
+  /** Live open-invoice debt ($) — surfaced in the client modal's Billing tab. 0 when not a debtor. */
+  owed?: number;
   mc: string;
   dot: string;
   /** Real per-calendar-month loyalty inputs (DWH) — shown as the "this month" figure. */
