@@ -6,7 +6,7 @@
  * RBAC: portfolio role — departments:['billing'], and deliberately NO carrierParam. avg-days /
  * carrier-type take a carrierId in the query, but it comes from a deal/transaction the billing
  * agent is already viewing across the whole book, so owner-scoping (assertCarrierOwned) must NOT
- * apply here (see billingDeluge.ts for the same rationale).
+ * apply here (billing is a portfolio role).
  */
 import { z } from 'zod';
 import type { Touchpoint } from '../types.js';

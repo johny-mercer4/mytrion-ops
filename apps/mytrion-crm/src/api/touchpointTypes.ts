@@ -595,10 +595,10 @@ export interface TouchpointMap {
     result: CsDataCenterDeals;
   };
   // ---- Billing (departmentAccess: ['billing'] — use api/billing.ts billingTouchpoint) ----
-  // The transaction/return WRITES (map/top-up/sync/split/unmap, carrier.saveMemory, returns.match) and
-  // the list/search/fuzzy/memory READS moved to Postgres-backed REST routes (see api/billing.ts). Only
-  // billing.invoices.search (CMP) + billing.carrier.type (Zoho) + the DWH/prepay reads remain here.
-  'billing.invoices.search': { params: { carrierId: string }; result: BillingInvoicesResult };
+  // The transaction/return WRITES (map/top-up/sync/split/unmap, carrier.saveMemory, returns.match), the
+  // list/search/fuzzy/memory READS, and the mapping-picker invoice search all moved to Postgres-backed
+  // REST routes (see api/billing.ts — searchCarrierInvoices). Only the DWH/prepay servercrm reads
+  // (datacenter deals/avg-days, debtors, carrier-type) remain touchpoints.
   'billing.datacenter.deals': { params: { fresh?: '0' | '1' }; result: BillingDealsResult };
   'billing.debtors.list': { params: { fresh?: '0' | '1' }; result: BillingDebtorsResult };
   'billing.datacenter.avgDays': { params: { carrierId: string }; result: Record<string, unknown> };

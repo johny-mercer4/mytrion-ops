@@ -202,7 +202,7 @@ export function toInvoiceOption(raw: Raw): InvoiceOption {
   };
 }
 
-/** Map a `billing.invoices.search` payload → the carrier invoice view-model. */
+/** Map a `/billing/invoices/search` payload → the carrier invoice view-model. */
 export function toCarrierInvoiceSearch(data: Raw, fallbackCarrierId: string): CarrierInvoiceSearch {
   const invoicesRaw = Array.isArray(data.invoices) ? (data.invoices as Raw[]) : [];
   return {
