@@ -62,8 +62,8 @@ function parseArgs(argv: string[]): Args {
   const a: Args = { counts: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--counts') a.counts = true;
-    else if (argv[i] === '--table') a.table = argv[++i];
-    else if (argv[i] === '--sample') a.sample = argv[++i];
+    else if (argv[i] === '--table') { const v = argv[++i]; if (v) a.table = v; }
+    else if (argv[i] === '--sample') { const v = argv[++i]; if (v) a.sample = v; }
   }
   return a;
 }

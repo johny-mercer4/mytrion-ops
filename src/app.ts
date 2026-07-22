@@ -29,6 +29,7 @@ import { analyticsRoutes } from './routes/v1/analytics.routes.js';
 import { cmpSchemaRoutes } from './routes/v1/cmpSchema.routes.js';
 import { dwhSchemaRoutes } from './routes/v1/dwhSchema.routes.js';
 import { verificationSchemaRoutes } from './routes/v1/verificationSchema.routes.js';
+import { verificationPipelineRoutes } from './routes/v1/verificationPipeline.routes.js';
 import { mytrionAccessRoutes } from './routes/v1/mytrionAccess.routes.js';
 import { startAnalyticsWarmer } from './modules/analytics/cache.js';
 import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
@@ -237,6 +238,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(touchpointsRoutes);
       await v1.register(deskRoutes);
       await v1.register(dataCenterRoutes);
+      await v1.register(verificationPipelineRoutes);
       await v1.register(csApplicationsRoutes);
       await v1.register(csCitifuelRoutes);
       await v1.register(csAnalyticsRoutes);

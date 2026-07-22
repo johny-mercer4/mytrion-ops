@@ -122,9 +122,9 @@ const byName = (n: number): string => `lower(c.agent) = lower($${n})`;
 const OWNED_COLS = `carrier_id, company_name, deal_full_name, agent, deal_phone, contact_phone,
               total_produced_cards, total_active_cards, deal_money_code, comdata_id, dot, is_loc_suspended`;
 
-/** One owner-resolution arm: the newest dim row per carrier matching `pred`. */
-const ownedArm = (pred: string): string =>
-  `select distinct on (carrier_id) ${OWNED_COLS}
+/** One owner-resolution arm: the newest dim row per carrier matching `pred`, selecting `cols`. */
+const ownedArm = (pred: string, cols: string = OWNED_COLS): string =>
+  `select distinct on (carrier_id) ${cols}
          from octane.dim_company c
         where carrier_id is not null and (${pred})
         order by carrier_id, update_date desc nulls last`;
@@ -135,20 +135,29 @@ const ownedArm = (pred: string): string =>
  * mirrors servercrm's by-agent and is deliberately MUTUALLY EXCLUSIVE, never `id OR name`: display
  * names are not unique, so an always-on name arm could pull carriers owned by a different agent who
  * shares the caller's display name (see the file header). With a single arm it's just that arm.
+ *
+ * `cols` selects which dim_company columns the `owned` relation exposes (default = the roster's
+ * OWNED_COLS). Other agent-scoped DWH readers (e.g. the Verification pipeline deals list) pass their
+ * own column list to reuse this exact id-suffix-first / name-fallback logic — the ONE owner authority.
+ * Every arm selects the SAME cols so the UNION ALL is valid.
  */
-function buildOwnedCte(idBindIdx: number | null, nameBindIdx: number | null): string {
+export function buildOwnedCte(
+  idBindIdx: number | null,
+  nameBindIdx: number | null,
+  cols: string = OWNED_COLS,
+): string {
   const idPred = idBindIdx !== null ? byIdSuffix(idBindIdx) : null;
   const namePred = nameBindIdx !== null ? byName(nameBindIdx) : null;
   if (idPred && namePred) {
-    return `id_owned as (${ownedArm(idPred)}),
-     name_owned as (${ownedArm(namePred)}),
+    return `id_owned as (${ownedArm(idPred, cols)}),
+     name_owned as (${ownedArm(namePred, cols)}),
      owned as (
        select * from id_owned
        union all
        select * from name_owned where not exists (select 1 from id_owned)
      )`;
   }
-  return `owned as (${ownedArm((idPred ?? namePred) as string)})`;
+  return `owned as (${ownedArm((idPred ?? namePred) as string, cols)})`;
 }
 
 /**
@@ -265,7 +274,7 @@ export async function fetchAgentClients(
   return rows.map(toClient);
 }
 
-interface OwnerBinds {
+export interface OwnerBinds {
   binds: string[];
   idBindIdx: number | null;
   nameBindIdx: number | null;
@@ -273,7 +282,7 @@ interface OwnerBinds {
 
 /** The owner-resolution bind list shared by the roster and the ownership probe — one identity
  *  normalization (id → suffix, name → trimmed) so the two can never disagree on who owns what. */
-function ownerBinds(ownerZohoUserId: string, agentName?: string): OwnerBinds {
+export function ownerBinds(ownerZohoUserId: string, agentName?: string): OwnerBinds {
   const binds: string[] = [];
   let idBindIdx: number | null = null;
   let nameBindIdx: number | null = null;

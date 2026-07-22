@@ -31,6 +31,7 @@ import { HomeTab } from './tabs/HomeTab';
 import { InboxTab } from './tabs/InboxTab';
 import { TicketsTab } from './tabs/TicketsTab';
 import { RetentionTab } from './tabs/RetentionTab';
+import { VerificationTab } from './tabs/VerificationTab';
 import { RecordsTab } from './tabs/RecordsTab';
 import { CreateTab } from './tabs/CreateTab';
 import { AutoTab } from './tabs/AutoTab';
@@ -88,6 +89,9 @@ export function SalesRedesign() {
   const [deal, setDeal] = useState<DealVM | null>(null);
   const [focusTicket, setFocusTicket] = useState<string | null>(null);
   const [focusAutomation, setFocusAutomation] = useState<string | null>(null);
+  const [focusDashSub, setFocusDashSub] = useState<'sales' | 'company' | 'debtors' | 'powerbi' | null>(
+    null,
+  );
   const [navQuery, setNavQuery] = useState('');
 
   useEffect(() => {
@@ -127,6 +131,12 @@ export function SalesRedesign() {
     setSection(next);
     setDetail(null);
   }, []);
+  const openDash = useCallback((sub?: 'sales' | 'company' | 'debtors' | 'powerbi') => {
+    setFocusDashSub(sub ?? 'sales');
+    setSection('dash');
+    setDetail(null);
+  }, []);
+  const clearFocusDashSub = useCallback(() => setFocusDashSub(null), []);
   const openClient = useCallback((c: ClientRecord) => {
     setClient(c);
     setClientTab('overview');
@@ -160,6 +170,9 @@ export function SalesRedesign() {
       openLead: setLead,
       openDeal: setDeal,
       go,
+      openDash,
+      focusDashSub,
+      clearFocusDashSub,
       openTicket,
       focusTicketId: focusTicket,
       clearFocusTicket,
@@ -167,7 +180,21 @@ export function SalesRedesign() {
       focusAutomationId: focusAutomation,
       clearFocusAutomation,
     }),
-    [theme, pushToast, openClient, go, openTicket, focusTicket, clearFocusTicket, openAutomation, focusAutomation, clearFocusAutomation],
+    [
+      theme,
+      pushToast,
+      openClient,
+      go,
+      openDash,
+      focusDashSub,
+      clearFocusDashSub,
+      openTicket,
+      focusTicket,
+      clearFocusTicket,
+      openAutomation,
+      focusAutomation,
+      clearFocusAutomation,
+    ],
   );
 
   const T = timeParts();
@@ -330,6 +357,7 @@ export function SalesRedesign() {
                   {section === 'inbox' && <InboxTab />}
                   {section === 'tickets' && <TicketsTab />}
                   {section === 'retention' && <RetentionTab />}
+                  {section === 'verification' && <VerificationTab />}
                   {section === 'records' && <RecordsTab />}
                   {section === 'create' && <CreateTab />}
                   {section === 'auto' && <AutoTab />}
