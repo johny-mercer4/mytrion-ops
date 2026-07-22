@@ -74,9 +74,16 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     onRequest: [app.sessionOrApiKey],
     preHandler: [app.requireAudience('internal', 'partner')],
   };
+  // Mutating the shared KB corpus (ingest + delete) is an admin-only curation action: a non-admin
+  // worker must not be able to poison the RAG grounding corpus or destroy documents. The static
+  // API-key systemContext is role 'admin', so server-to-server tooling is unaffected.
+  const writeGuard = {
+    onRequest: [app.sessionOrApiKey],
+    preHandler: [app.requireAudience('internal', 'partner'), app.requireRole('admin')],
+  };
 
   // --- Ingest: raw text body ---
-  app.post('/knowledge/embed', guard, async (request) => {
+  app.post('/knowledge/embed', writeGuard, async (request) => {
     assertIngestEnabled();
     const ctx = requireContext(request);
     const body = embedSchema.parse(request.body);
@@ -91,7 +98,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // --- Ingest: file upload (mainly .md). Multipart: file part(s) + optional `department` field ---
-  app.post('/knowledge/upload', guard, async (request) => {
+  app.post('/knowledge/upload', writeGuard, async (request) => {
     assertIngestEnabled();
     const ctx = requireContext(request);
 
@@ -192,9 +199,9 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     return { deleted };
   }
 
-  app.delete<{ Params: { id: string } }>('/knowledge/docs/:id', guard, deleteOne);
+  app.delete<{ Params: { id: string } }>('/knowledge/docs/:id', writeGuard, deleteOne);
   // POST alias — Zoho's server-side proxy reliably supports POST but not always DELETE.
-  app.post<{ Params: { id: string } }>('/knowledge/docs/:id/delete', guard, deleteOne);
+  app.post<{ Params: { id: string } }>('/knowledge/docs/:id/delete', writeGuard, deleteOne);
 
   // Freshness attest: resets last_verified_at so retrieval stops demoting the doc as stale.
   app.post<{ Params: { id: string } }>('/knowledge/docs/:id/verify', guard, async (request) => {
@@ -211,7 +218,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // Bulk delete: POST /knowledge/docs/delete  { ids: [...] }
-  app.post('/knowledge/docs/delete', guard, async (request) => {
+  app.post('/knowledge/docs/delete', writeGuard, async (request) => {
     const ctx = requireContext(request);
     const { ids } = bulkDeleteSchema.parse(request.body);
     const deleted: Array<{ id: string; title: string; chunkCount: number }> = [];
