@@ -236,6 +236,37 @@ export const paymentTransactionRepo = {
     return rows[0];
   },
 
+  /**
+   * Flag a just-ingested row as mapped WITHOUT any CMP action — for feeds that arrive already
+   * reconciled (e.g. the pre-mapped Stripe accounts that need no invoice payment, so they should
+   * skip the agent's unmapped queue). Flips ONLY when the row is still unmapped, so a Zap retry
+   * never re-stamps mapped_at and a mapping an agent made in the app is never clobbered.
+   */
+  async markIngestMapped(
+    source: string,
+    sourceRecordId: string,
+    opts: { mappingType?: string; mappedBy?: string } = {},
+  ): Promise<PaymentTransaction | undefined> {
+    const rows = await db
+      .update(paymentTransactions)
+      .set({
+        isInvoiceMapped: true,
+        mappingType: opts.mappingType ?? 'Stripe (auto)',
+        mappedBy: opts.mappedBy ?? 'Zapier (auto)',
+        mappedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(paymentTransactions.source, source),
+          eq(paymentTransactions.sourceRecordId, sourceRecordId),
+          eq(paymentTransactions.isInvoiceMapped, false),
+        ),
+      )
+      .returning();
+    return rows[0];
+  },
+
   /** Clear all mapping columns after a successful CMP reversal (full unmap). */
   async clearMapping(id: number): Promise<PaymentTransaction | undefined> {
     const rows = await db
