@@ -50,10 +50,9 @@ const ICONS = {
 
 interface HomeProps {
   onNavigate: (id: CsSectionId) => void;
-  claimsBadge: number;
 }
 
-export function Home({ onNavigate, claimsBadge }: HomeProps) {
+export function Home({ onNavigate }: HomeProps) {
   const home = useLoad(loadHome, []);
   const worker = getSession()?.worker;
   const name = worker?.userName ?? 'Agent';
@@ -89,9 +88,9 @@ export function Home({ onNavigate, claimsBadge }: HomeProps) {
       chip: 'var(--cs-warning-soft)',
     },
     {
-      id: 'open-pool-claims',
-      label: 'Open Pool Claims',
-      sub: claimsBadge > 0 ? `${claimsBadge} awaiting review` : 'No pending claims',
+      id: 'open-pool',
+      label: 'Open Pool',
+      sub: 'View-only · Sales owns approvals',
       icon: ICONS.shield,
       chip: 'var(--cs-accent-soft)',
     },

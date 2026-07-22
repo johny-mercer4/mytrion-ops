@@ -1,33 +1,44 @@
 /**
- * Retention — Cases (Phase 1) + Open Pool (Sales agents).
+ * Retention — Cases (Phase 1) + Open Pool + prior-owner Claims.
  */
 import { useCallback, useEffect, useState } from 'react';
 
 import { useLoad } from '../../../_shared/useLoad';
 import { s } from '../dc';
+import { OwnerClaimsPane } from '../OwnerClaimsPane';
 import { RetentionCasesPane } from '../RetentionCasesPane';
-import { loadOpenPoolCases } from '../retentionData';
+import { loadOpenPoolCases, loadOwnerClaimsBadge } from '../retentionData';
 import { PoolTab } from './PoolTab';
 
-type RetentionPane = 'cases' | 'pool';
+type RetentionPane = 'cases' | 'pool' | 'claims';
 
 export function RetentionTab() {
   const [pane, setPane] = useState<RetentionPane>('cases');
   const [casesCount, setCasesCount] = useState<number | null>(null);
   const [poolCount, setPoolCount] = useState<number | null>(null);
+  const [claimsCount, setClaimsCount] = useState<number | null>(null);
 
-  /** Seed Open Pool badge without forcing the pool pane mount. */
+  /** Seed Open Pool badge (available to claim) without forcing the pool pane mount. */
   const poolSeed = useLoad(() => loadOpenPoolCases(), []);
   useEffect(() => {
-    if (poolSeed.data?.cases) setPoolCount(poolSeed.data.cases.length);
+    if (poolSeed.data?.cases) {
+      setPoolCount(poolSeed.data.cases.filter((c) => c.statusCode === 'p1_open_pool').length);
+    }
   }, [poolSeed.data?.cases]);
+
+  const claimsSeed = useLoad(() => loadOwnerClaimsBadge().then((count) => ({ count })), []);
+  useEffect(() => {
+    if (claimsSeed.data) setClaimsCount(claimsSeed.data.count);
+  }, [claimsSeed.data]);
 
   const onCasesCount = useCallback((n: number) => setCasesCount(n), []);
   const onPoolCount = useCallback((n: number) => setPoolCount(n), []);
+  const onClaimsCount = useCallback((n: number) => setClaimsCount(n), []);
 
   const tabs: Array<[RetentionPane, string, number | null]> = [
     ['cases', 'Cases', casesCount],
     ['pool', 'Open Pool', poolCount],
+    ['claims', 'Claims', claimsCount],
   ];
 
   return (
@@ -58,6 +69,7 @@ export function RetentionTab() {
 
       {pane === 'cases' && <RetentionCasesPane onOpenCount={onCasesCount} />}
       {pane === 'pool' && <PoolTab onAvailableCount={onPoolCount} />}
+      {pane === 'claims' && <OwnerClaimsPane onPendingCount={onClaimsCount} />}
     </div>
   );
 }

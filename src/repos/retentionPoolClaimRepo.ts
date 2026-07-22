@@ -1,7 +1,8 @@
 /**
- * Sales Open Pool claim — request → CS approve/decline (or 1 BD auto-approve).
+ * Sales Open Pool claim — request → prior Sales owner approve/decline (or 1 BD auto-approve).
  * Durable queue: retention_claim_requests. Processing lock: p1_pool_claim_pending.
- * On approve: Zoho Deal/Contact/Account Owner → claimant, case → p1_new (2 BD).
+ * On approve: Zoho Deal/Contact/Account Owner → claiming Sales agent, case → p1_new (2 BD).
+ * Retention/CS never receive Zoho ownership — only the case moves to the CS desk.
  */
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { db } from '../db/client.js';
@@ -25,7 +26,7 @@ import {
 import {
   notifyClaimApproved,
   notifyClaimDeclined,
-  notifyClaimRequestToCs,
+  notifyClaimRequestToPriorOwner,
 } from '../modules/retention/notify.js';
 import { MAX_OPEN_POOL_AGENTS } from '../modules/retention/phase1.js';
 import {
@@ -47,11 +48,21 @@ function isAdminCtx(ctx: TenantContext): boolean {
   return ctx.role === 'admin' || ctx.bypassRbac === true || ctx.allDepartmentAccess === true;
 }
 
-/** CS workers (or admins) may approve/decline Open Pool claims. */
-function assertCsClaimApprover(ctx: TenantContext, opts: { asAdmin?: boolean } = {}): void {
+/** Prior Sales owner (or admin) may approve/decline Open Pool claims on their deals. */
+function assertPriorOwnerApprover(
+  ctx: TenantContext,
+  existing: RetentionCase,
+  actorZohoUserId: string,
+  opts: { asAdmin?: boolean } = {},
+): void {
   if (opts.asAdmin || isAdminCtx(ctx)) return;
-  if (ctx.departments.includes('customer-service')) return;
-  throw new RBACError('Only Customer Service can approve or decline Open Pool claims');
+  const owner = existing.poolOwnerZohoUserId?.trim();
+  const actor = trim(actorZohoUserId);
+  if (!owner || owner !== actor) {
+    throw new RBACError(
+      'Only the prior Sales owner can approve or decline this Open Pool claim',
+    );
+  }
 }
 
 async function loadCase(ctx: TenantContext, id: string): Promise<RetentionCase> {
@@ -103,7 +114,7 @@ export async function deleteOpenClaimRequests(
   return deleted.length;
 }
 
-/** Finalize after CS approve / auto-approve → Kanban New (2 BD Phase 1 restart). */
+/** Finalize after prior-owner approve / auto-approve → Kanban New (2 BD Phase 1 restart). */
 async function finalizeClaim(
   ctx: TenantContext,
   existing: RetentionCase,
@@ -226,7 +237,7 @@ export interface PendingClaimRow extends RetentionCaseDto {
 
 export const retentionPoolClaimRepo = {
   /**
-   * Request claim from Open Pool — inserts claim_request + Processing lock for CS (1 BD auto).
+   * Request claim from Open Pool — inserts claim_request + Processing lock for prior owner (1 BD auto).
    */
   async requestClaim(
     ctx: TenantContext,
@@ -351,9 +362,9 @@ export const retentionPoolClaimRepo = {
       toStatus: row.statusCode,
       eventType: 'status_change',
       actorZohoUserId: claimant,
-      notes: `Claim requested — ${reason.slice(0, 400)} · awaiting CS (1 BD auto) · assignment would be ${existing.assignmentCount + 1}/${MAX_OPEN_POOL_AGENTS}`,
+      notes: `Claim requested — ${reason.slice(0, 400)} · awaiting prior Sales owner (1 BD auto) · assignment would be ${existing.assignmentCount + 1}/${MAX_OPEN_POOL_AGENTS}`,
     });
-    await notifyClaimRequestToCs(ctx, {
+    await notifyClaimRequestToPriorOwner(ctx, {
       caseId: String(row.id),
       carrierId: row.carrierId,
       companyName: row.companyName,
@@ -370,7 +381,6 @@ export const retentionPoolClaimRepo = {
     actorZohoUserId: string,
     opts: { asAdmin?: boolean; agentName?: string | undefined } = {},
   ): Promise<RetentionCaseDto> {
-    assertCsClaimApprover(ctx, opts);
     const existing = await loadCase(ctx, id);
     if (existing.statusCode !== 'p1_pool_claim_pending' || !existing.pendingClaimantZohoUserId) {
       throw new AppError('No pending claim to approve', {
@@ -380,11 +390,12 @@ export const retentionPoolClaimRepo = {
       });
     }
     const actor = trim(actorZohoUserId);
+    assertPriorOwnerApprover(ctx, existing, actor, opts);
     const claimant = existing.pendingClaimantZohoUserId;
     const dto = await transferZohoThenFinalize(ctx, existing, claimant, {
       agentName: opts.agentName,
       actorZohoUserId: actor,
-      notes: `CS approved claim — New · assignment ${existing.assignmentCount + 1}/${MAX_OPEN_POOL_AGENTS} · 2 BD to act`,
+      notes: `Prior owner approved claim — New · assignment ${existing.assignmentCount + 1}/${MAX_OPEN_POOL_AGENTS} · 2 BD to act`,
     });
     await notifyClaimApproved(ctx, {
       caseId: dto.id,
@@ -401,7 +412,6 @@ export const retentionPoolClaimRepo = {
     actorZohoUserId: string,
     opts: { asAdmin?: boolean } = {},
   ): Promise<RetentionCaseDto> {
-    assertCsClaimApprover(ctx, opts);
     const existing = await loadCase(ctx, id);
     if (existing.statusCode !== 'p1_pool_claim_pending' || !existing.pendingClaimantZohoUserId) {
       throw new AppError('No pending claim to decline', {
@@ -411,6 +421,7 @@ export const retentionPoolClaimRepo = {
       });
     }
     const actor = trim(actorZohoUserId);
+    assertPriorOwnerApprover(ctx, existing, actor, opts);
     const claimant = existing.pendingClaimantZohoUserId;
     await deleteOpenClaimRequests(ctx, existing.id);
     const pool = stampPoolClaimDeadline();
@@ -432,7 +443,7 @@ export const retentionPoolClaimRepo = {
       toStatus: row.statusCode,
       eventType: 'status_change',
       actorZohoUserId: actor,
-      notes: 'CS declined claim — request deleted · back to Open Pool',
+      notes: 'Prior owner declined claim — request deleted · back to Open Pool',
     });
     await notifyClaimDeclined(ctx, {
       caseId: String(row.id),
@@ -443,7 +454,7 @@ export const retentionPoolClaimRepo = {
     return toRetentionCaseDto(row);
   },
 
-  /** Auto-approve overdue pending claims (deadline sweeper) — same path as CS approve. */
+  /** Auto-approve overdue pending claims (deadline sweeper) — same path as owner approve. */
   async autoApproveOverdue(
     ctx: TenantContext,
     existing: RetentionCase,
@@ -468,12 +479,16 @@ export const retentionPoolClaimRepo = {
     return dto;
   },
 
-  /** All pending Open Pool claims (CS queue) with claim reason. */
-  async listPendingClaims(
+  /**
+   * Pending claims on deals this Sales agent previously owned (owner approve queue).
+   */
+  async listPendingForOwner(
     ctx: TenantContext,
+    ownerZohoUserId: string,
     opts: { limit?: number } = {},
   ): Promise<{ cases: PendingClaimRow[]; total: number }> {
     const limit = Math.min(Math.max(opts.limit ?? 100, 1), 200);
+    const owner = trim(ownerZohoUserId);
     const rows = await db
       .select({
         case: retentionCases,
@@ -495,6 +510,7 @@ export const retentionPoolClaimRepo = {
         and(
           eq(retentionCases.tenantId, ctx.tenantId),
           eq(retentionCases.statusCode, 'p1_pool_claim_pending'),
+          eq(retentionCases.poolOwnerZohoUserId, owner),
           isNull(retentionCases.closedAt),
         ),
       )
@@ -511,25 +527,9 @@ export const retentionPoolClaimRepo = {
     return { cases, total: cases.length };
   },
 
-  /** @deprecated Sales owner queue — prefer listPendingClaims for CS. */
-  async listPendingForOwner(
-    ctx: TenantContext,
-    ownerZohoUserId: string,
-    opts: { limit?: number } = {},
-  ): Promise<{ cases: RetentionCaseDto[]; total: number }> {
-    const limit = Math.min(Math.max(opts.limit ?? 100, 1), 200);
-    const where = and(
-      eq(retentionCases.tenantId, ctx.tenantId),
-      eq(retentionCases.statusCode, 'p1_pool_claim_pending'),
-      eq(retentionCases.poolOwnerZohoUserId, trim(ownerZohoUserId)),
-      isNull(retentionCases.closedAt),
-    );
-    const rows = await db
-      .select()
-      .from(retentionCases)
-      .where(where)
-      .orderBy(desc(retentionCases.updatedAt))
-      .limit(limit);
-    return { cases: rows.map(toRetentionCaseDto), total: rows.length };
+  /** Count pending claims for a prior owner (Sales badge). */
+  async countPendingForOwner(ctx: TenantContext, ownerZohoUserId: string): Promise<number> {
+    const { total } = await this.listPendingForOwner(ctx, ownerZohoUserId, { limit: 200 });
+    return total;
   },
 };

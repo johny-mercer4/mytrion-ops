@@ -5,10 +5,9 @@ import { RefreshIcon, SearchIcon, ViewAsIcon, XIcon } from './icons';
 import styles from './ActAsPicker.module.css';
 
 /**
- * "View as" control (TopBar). Admins (no `targets` prop) pick any active Sales-profile CRM user via
- * listAgents → the whole app runs as that rep. A granted NON-admin is passed an explicit, scoped
- * `targets` list (their DB view-as grant) and picks only from it — no admin-only fetch. When acting,
- * shows a banner with an Exit.
+ * "View as" control (TopBar). Scoped to the current Mytrion only (see api/impersonation.ts) —
+ * does not apply on `/main` or other Mytrions. Admins (no `targets`) pick via listAgents; a granted
+ * NON-admin gets an explicit `targets` list. When acting, shows a banner with Exit.
  */
 export function ActAsPicker({ targets }: { targets?: AgentUser[] }) {
   const { actingAs, setActingAs } = useImpersonation();

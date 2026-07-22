@@ -30,7 +30,7 @@ import {
   type RetentionCaseRow,
   type RetentionKanbanCol,
 } from './retentionData';
-import { isSalesLocked, stageTimer } from './retentionTimers';
+import { isSalesLocked, isSalesPooled, stageTimer } from './retentionTimers';
 import { subscribeRetentionLive } from './retentionLiveBus';
 import { useSales } from './ctx';
 
@@ -93,15 +93,8 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
   }, [cases]);
 
   const onUpdated = (row: RetentionCaseRow): void => {
-    // Open Pool clears assignee — drop from Cases immediately (no locked card).
-    if (row.statusCode === 'p1_open_pool' || row.statusCode === 'p1_pool_claim_pending') {
-      setLocalCases((prev) => {
-        const base = prev ?? feed.data?.cases ?? [];
-        return base.filter((x) => x.id !== row.id);
-      });
-      if (selectedId === row.id) setSelectedId(null);
-      return;
-    }
+    // Keep Open Pool / Retention / CITI on the board as locked former-owner cards.
+    if (isSalesLocked(row) && selectedId === row.id) setSelectedId(null);
     setLocalCases((prev) => {
       const base = prev ?? feed.data?.cases ?? [];
       const idx = base.findIndex((x) => x.id === row.id);
@@ -274,15 +267,29 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
               </div>
               {cases.map((c) => {
                 const locked = isSalesLocked(c);
+                const pooled = isSalesPooled(c);
                 const timer = locked ? null : stageTimer(c, now);
                 const overdue = Boolean(timer?.overdue);
                 if (locked) {
+                  const statusTxt = pooled
+                    ? c.statusCode === 'p1_pool_claim_pending'
+                      ? 'Open Pool · pending'
+                      : 'Open Pool'
+                    : c.phaseCode === 'phase_3_citi'
+                      ? 'CITI'
+                      : c.agentOutcome === 'dissatisfied' || c.statusCode === 'p1_dissatisfied'
+                        ? 'Dissatisfied'
+                        : 'Retention';
                   return (
                     <div
                       key={c.id}
-                      className="ss-ret-list-row is-locked"
+                      className={`ss-ret-list-row is-locked${pooled ? ' is-pooled' : ''}`}
                       style={{ display: 'grid', gridTemplateColumns: '1.4fr 110px 90px 1.1fr 90px 160px 90px 1fr' }}
-                      title="Dissatisfied — handed to Retention. Locked for Sales."
+                      title={
+                        pooled
+                          ? 'Sent to Open Pool — locked for you'
+                          : 'Handed off — locked for Sales'
+                      }
                     >
                       <span style={s('font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
                         {c.companyName || '—'}
@@ -297,11 +304,20 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
                       <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px")}>
                         {c.gallons90d != null ? fmtGal(c.gallons90d) : '—'}
                       </span>
-                      <span className="ss-ret-locked-badge" style={{ padding: '4px 6px' }}>
-                        → Retention
+                      <span
+                        className={`ss-ret-locked-badge${pooled ? ' is-pooled' : ''}`}
+                        style={{ padding: '4px 6px' }}
+                      >
+                        {pooled ? '→ Open Pool' : c.phaseCode === 'phase_3_citi' ? '→ CITI' : '→ Retention'}
                       </span>
                       <span className="ss-ret-pips">—</span>
-                      <span style={s('font-size:12px;font-weight:700;color:var(--danger)')}>Dissatisfied</span>
+                      <span
+                        style={s(
+                          `font-size:12px;font-weight:700;color:${pooled ? 'var(--warn)' : 'var(--danger)'}`,
+                        )}
+                      >
+                        {statusTxt}
+                      </span>
                     </div>
                   );
                 }

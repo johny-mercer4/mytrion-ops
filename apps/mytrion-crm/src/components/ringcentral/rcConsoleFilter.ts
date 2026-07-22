@@ -18,11 +18,16 @@ const RC_NOISE: RegExp[] = [
   /^\[RingCentralExtensions\]/,
   /^\[WebSocketSubscription\]/,
   /^\[WebSocketExtension\]/,
+  // SIP.js ringtone/remote media — browser autoplay blocks until a user gesture unlocks audio.
+  /sip\.inviteclientcontext/i,
+  /play was rejected/i,
 ];
 
 function isRcNoise(args: unknown[]): boolean {
-  const first = args[0];
-  return typeof first === 'string' && RC_NOISE.some((re) => re.test(first.trim()));
+  const joined = args
+    .map((a) => (typeof a === 'string' ? a : a instanceof Error ? a.message : ''))
+    .join(' ');
+  return RC_NOISE.some((re) => re.test(joined));
 }
 
 const MARKER = '__mytrionRcConsoleFilter';

@@ -49,12 +49,16 @@ vi.mock('../../src/modules/retention/zohoOwnership.js', () => ({
 import { db } from '../../src/db/client.js';
 import { listActiveUsers } from '../../src/integrations/zohoCrm.js';
 import { pickCsRoundRobinAssignee } from '../../src/modules/retention/csRoundRobin.js';
-import { setDealStageClosedLost } from '../../src/modules/retention/zohoOwnership.js';
+import {
+  setDealStageClosedLost,
+  transferDealOwnershipToClaimant,
+} from '../../src/modules/retention/zohoOwnership.js';
 import { afterRetentionPhaseSideEffects } from '../../src/modules/retention/csRoundRobin.js';
 
 const dbMock = vi.mocked(db, true);
 const listUsers = vi.mocked(listActiveUsers);
 const setStage = vi.mocked(setDealStageClosedLost);
+const transferOwner = vi.mocked(transferDealOwnershipToClaimant);
 
 function ctx(): TenantContext {
   return {
@@ -134,5 +138,33 @@ describe('afterRetentionPhaseSideEffects', () => {
       zohoDealId: 'deal-9',
     });
     expect(setStage).toHaveBeenCalledWith('deal-9');
+  });
+
+  it('does not transfer Zoho when CS claims an unassigned Phase 2 case', async () => {
+    await afterRetentionPhaseSideEffects(
+      'phase_2_retention',
+      {
+        id: '10',
+        phaseCode: 'phase_2_retention',
+        assignedAgentZohoUserId: 'cs-new',
+        zohoDealId: 'deal-10',
+      },
+      { previousAssigneeZohoUserId: null },
+    );
+    expect(transferOwner).not.toHaveBeenCalled();
+  });
+
+  it('does not transfer Zoho on Sales → Retention handoff assign', async () => {
+    await afterRetentionPhaseSideEffects(
+      'phase_1_agent',
+      {
+        id: '11',
+        phaseCode: 'phase_2_retention',
+        assignedAgentZohoUserId: 'cs-rr',
+        zohoDealId: 'deal-11',
+      },
+      { previousAssigneeZohoUserId: 'sales-1' },
+    );
+    expect(transferOwner).not.toHaveBeenCalled();
   });
 });

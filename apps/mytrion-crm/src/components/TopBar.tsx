@@ -49,7 +49,9 @@ export function TopBar({
       </div>
 
       <div className={styles.right}>
+        {/* View-as only inside a Mytrion shell (contextBadge). Never on the /main picker. */}
         {canViewAs &&
+          contextBadge &&
           (admin ? (
             <ActAsPicker />
           ) : (

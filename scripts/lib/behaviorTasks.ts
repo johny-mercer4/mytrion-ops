@@ -28,6 +28,7 @@ const expectSchema = z
     /** agentPath[0] must equal this; 'none' asserts zero delegation. */
     routedAgent: z.union([agentKey, z.literal('none')]).optional(),
     routedOneOf: z.array(agentKey).min(1).optional(),
+    mustRouteTo: z.array(agentKey).min(1).optional(),
     mustCallTool: z.array(z.string().min(1)).optional(),
     expectedToolCalls: z.array(z.object({
       name: z.string(),

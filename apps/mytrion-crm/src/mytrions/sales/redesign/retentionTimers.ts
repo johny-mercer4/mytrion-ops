@@ -142,21 +142,31 @@ function toneOf(overdue: boolean, progress: number): StageTimerTone {
   return 'ok';
 }
 
-/** Dissatisfied / Phase 2 Retention / CITI — Sales cannot act until Open Pool return. */
+/** Open Pool / Retention / CITI — former owner sees a locked card, cannot act. */
 export function isSalesLocked(c: RetentionCaseRow): boolean {
   return (
     c.agentOutcome === 'dissatisfied' ||
     c.statusCode === 'p1_dissatisfied' ||
+    c.statusCode === 'p1_open_pool' ||
+    c.statusCode === 'p1_pool_claim_pending' ||
     c.phaseCode === 'phase_2_retention' ||
     c.phaseCode === 'phase_3_citi'
   );
 }
 
+/** Former-owner Open Pool card (warn styling vs Retention danger). */
+export function isSalesPooled(c: RetentionCaseRow): boolean {
+  return c.statusCode === 'p1_open_pool' || c.statusCode === 'p1_pool_claim_pending';
+}
+
 /**
  * Live stage timer for the next deadline event. Returns null when no clock applies
- * (Dissatisfied handoff, awaiting Ops with cleared deadline, etc.).
+ * (closed/returned, Dissatisfied handoff, awaiting Ops with cleared deadline, etc.).
  */
 export function stageTimer(c: RetentionCaseRow, now: Date = new Date()): StageTimer | null {
+  // Terminal / closed — never show an active SLA (stale 2BD_agent_action used to leak
+  // "Due today · → Retention" on Returned cards after fuel auto-close).
+  if (!c.isOpen || c.statusCode === 'p1_returned') return null;
   if (isSalesLocked(c)) return null;
 
   // Awaiting Ops — human gate, no countdown.

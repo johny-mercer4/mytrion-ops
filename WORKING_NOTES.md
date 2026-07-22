@@ -4588,3 +4588,112 @@ hook call) crashing on `useSessionUser → useImpersonation → useContext`, plu
   (fail-silent), and the route is registered *unconditionally* at `app.ts:252`. A 404 only means the
   **backend** serving the client predates the route — resolved by deploying the backend from this
   branch. No frontend change needed for it.
+
+## 2026-07-22 — Retention Closed cards: fuel-return vs 2BD handoff
+
+Sales Closed with "0d since last fuel" = auto `p1_returned` (hourly sync:
+any txn after case open). Fuel closes the case — it does **not** go to
+Retention. True 2 BD no-action handoff leaves Sales and lands in CS Phase 2
+(`p2_new` / `p2_working`), not Closed.
+
+UI bug fixed: closed/returned no longer show stale "Due today · → Retention"
+(`stageTimer` gates `!isOpen`; sync clears deadline on return-close).
+
+## 2026-07-22 — CS Mytrion sees all retention phases
+
+`retention.cs_cases` / `listForCs`: CS agents browse **any phase** (filters:
+Open · Sales · Retention · P2 New/Working · CITI · Closed · All). Detail pane
+shows carrier, phase, status, assignee, fuel/volume, deadline, Zoho deal id,
+timeline. Claim / log attempt / outcomes stay **Phase 2 only** (backend already
+gated). Zoho Deal+Contact+Account ownership still only on Retention RR assign.
+
+## 2026-07-22 — Zoho ownership: Open Pool + Retention
+
+Both paths use `transferDealOwnershipToClaimant` → Zoho **Deal** (required),
+**Contact** + **Account/Company** (best-effort):
+- Open Pool claim approve: hard-fail if Deal Owner update fails.
+- Retention RR/Spanish handoff + CS claim of unassigned P2: soft transfer
+  (Ops assign kept if Zoho fails). CS claim now also triggers Zoho when
+  assignee changes inside Phase 2 (was a gap).
+
+## 2026-07-22 — CS Retention Cases UI polish
+
+Cases tab: list/detail skeletons, phase+status color badges, due urgency
+(overdue/soon), staggered fade-in, smoother chip/row hover, refresh spinning
+state, reduced-motion respect (`casesUi.tsx`, `retention-panel.css`).
+
+## 2026-07-22 — CS Cases: icons, larger type, clearer filters
+
+Renamed desk chips **To claim** / **In progress** (was P2 New / P2 Working).
+Lucide icons on filters, list rows, detail fields; bumped title/badge/meta
+type sizes for easier scanning.
+
+## 2026-07-22 — CS Cases: hierarchical filters + desk actions
+
+Filter UI: **Phase** then dependent **Status** chips (Sales/Retention/CITI
+buckets). API: `retention.cs_cases` accepts `phase` + `status`.
+Detail: removed channel picker (auto ringcentral); colored Call 1 Listen /
+Call 2 Solution + outcome status buttons (`CaseDeskActions`).
+
+## 2026-07-22 — CS filter chip active tones + Closed (Returned)
+
+Status Closed → **Closed (Returned)** for All/Sales. Active filter chips
+use per-tone colors (sales blue, retention gold, citi purple, success, etc.).
+
+## 2026-07-22 — CS filter labels clarified
+
+Sales: Open→All open, Calling→New. Retention: To claim→Unassigned,
+Offer pending→Offer out. Added filter explain line with timers.
+
+## 2026-07-22 — CS quota + deadline UI clarity
+
+Quota: Claims today + Offer out cards with colors/hints. Deadline field
+shows plain SLA text (no raw 2BD_agent_action).
+
+## 2026-07-22 — CS desk: drop Saved button; clarify Refused gate
+
+Removed Saved from Retention desk UI. Refused stays gated on Call 1+2.
+
+## 2026-07-22 — CITI = red folder
+
+CITI phase chip/badge/nav use Folder icon + danger red (not purple Archive).
+
+## 2026-07-22 — CS Retention Cases → green
+
+Fixed: outcome notes wired; Offer-out min-1 small-portfolio cap;
+claim-before-calls/outcomes; claim cannot steal assigned cases.
+
+## 2026-07-22 — Retention pilot reset (Daniel Brown only)
+
+Wiped retention_cases (398), events (671), rr_cursors. Enabled
+FF_RETENTION_PILOT_ONLY=1 + RETENTION_PILOT_AGENT_ZOHO_USER_IDS=
+6227679000031473048 (Daniel Brown). Sync creates only his clients.
+Set FF_RETENTION_PILOT_ONLY=0 to restore full generation.
+
+## 2026-07-22 — Retention pilot sync + Sales Open Pool UX
+
+Fixed DWH deal_lang (`zoho_deal_id`). Pilot scan filters by agent in SQL.
+Wiped + sync: 16 Daniel Brown cases created. Open Pool UI: status chips,
+how-to strip, claim window, modal extract, better empty/loading.
+
+## 2026-07-22 — Sales Retention modal: unified save loader
+
+Status updates use a single Saving overlay; close-after skips remounting
+timeline (no modal jump). Timeline slot reserved height while hydrating.
+
+## 2026-07-22 — Sales Retention modal: single update loader
+
+Dropped button/timeline spinners on status update — only the modal
+Updating overlay shows while busy (no double loaders).
+
+## 2026-07-22 — Sales Retention: locked former-owner cards + modal overlay
+
+Updating overlay pinned to modal (not scroll body). Dissatisfied/Open Pool
+handoffs stamp pool_owner; my_cases keeps locked cards for former Sales agent.
+SIP play-rejected console noise filtered (browser autoplay).
+
+## 2026-07-22 — View-as per Mytrion + faster retention saves
+
+View-as is scoped per Mytrion (no /main picker, no cross-Mytrion leak).
+Retention outcome/attempt returns after DB write; Zoho + notify post-commit.
+CS RR uses warm Zoho Users cache (no blocking Users call on save).

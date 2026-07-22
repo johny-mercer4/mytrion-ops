@@ -142,6 +142,7 @@ async function executeTurn(
     ...(opts.role ?? ctx.role ? { role: opts.role ?? ctx.role } : {}),
     departments: ctx.departments,
     ...(historySummary ? { historySummary } : {}),
+    ...(ctx.client ? { clientContext: ctx.client } : {}),
   });
 
   const budget = new BudgetMeter();

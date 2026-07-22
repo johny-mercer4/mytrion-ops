@@ -1,9 +1,6 @@
 /**
- * Admin "View as" picker for the bespoke Sales shell — ports the self-service reference's
- * top-bar impersonation control into the redesign's visual language. Admin-only (the shell gates
- * on isAdmin); picks an active Sales-profile CRM user so every panel + the copilot runs as that
- * rep (backend owner-scoping + the AI agent read the x-act-as-* headers the impersonation store
- * attaches). When acting, shows an "ADMIN VIEW · <name>" banner with an Exit.
+ * Admin "View as" for the Sales shell only. Stored under the `sales` Mytrion slot — does not
+ * propagate to `/main` or other Mytrions. Admin-only (shell gates on isAdmin).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { listAgents, type AgentUser } from '@/api/agents';

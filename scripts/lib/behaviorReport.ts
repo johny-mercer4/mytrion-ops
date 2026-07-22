@@ -77,6 +77,9 @@ export function checkDeterministic(
       );
     }
   }
+  for (const agent of e.mustRouteTo ?? []) {
+    if (!result.agentPath.includes(agent)) failures.push(`expected agentPath to contain '${agent}'`);
+  }
   for (const name of e.mustCallTool ?? []) {
     if (!calledTools.includes(canonical(name))) failures.push(`expected tool call '${name}'`);
   }
@@ -94,7 +97,15 @@ export function checkDeterministic(
       const match = result.toolCalls.find((t) => {
         if (canonical(t.name) !== expName) return false;
         if (!exp.argsSubset) return true;
-        const actualArgs = typeof t.args === 'string' ? JSON.parse(t.args) : (t.args || {});
+        let actualArgs = typeof t.args === 'string' ? JSON.parse(t.args) : (t.args || {});
+        if (typeof actualArgs.input === 'string') {
+          try {
+            actualArgs = JSON.parse(actualArgs.input);
+          } catch {
+            // keep as is
+          }
+        }
+        console.log(`[DEBUG] tool ${t.name} actual args:`, actualArgs, `expected args:`, exp.argsSubset);
         return matchesSubset(actualArgs, exp.argsSubset);
       });
       if (!match) {

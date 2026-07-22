@@ -11,10 +11,7 @@ import { listActiveUsers, type CrmUser } from '../../integrations/zohoCrm.js';
 import { logger } from '../../lib/logger.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import type { RetentionCaseDto } from '../../repos/retentionCaseRepo.js';
-import {
-  transferDealOwnershipToClaimant,
-  setDealStageClosedLost,
-} from './zohoOwnership.js';
+import { setDealStageClosedLost } from './zohoOwnership.js';
 import type { CaseTransitionPatch } from './deadlines.js';
 import { assertUnderDailyCap, CS_MAX_DEALS_PER_DAY } from './csCaps.js';
 
@@ -56,12 +53,26 @@ async function saveCursor(tenantId: string, zohoUserId: string): Promise<void> {
     });
 }
 
+/** Short TTL so Dissatisfied/handoff doesn't call Zoho Users on every save. */
+const USERS_CACHE_TTL_MS = 60_000;
+let usersCache: { at: number; users: CrmUser[] } | null = null;
+
+async function listActiveUsersCached(): Promise<CrmUser[]> {
+  const now = Date.now();
+  if (usersCache && now - usersCache.at < USERS_CACHE_TTL_MS) {
+    return usersCache.users;
+  }
+  const users = await listActiveUsers();
+  usersCache = { at: now, users };
+  return users;
+}
+
 async function resolveUserName(
   zohoUserId: string,
   users?: CrmUser[],
 ): Promise<string | null> {
   try {
-    const list = users ?? (await listActiveUsers());
+    const list = users ?? (await listActiveUsersCached());
     return list.find((u) => u.zohoUserId === zohoUserId)?.name ?? null;
   } catch {
     return null;
@@ -75,7 +86,12 @@ async function resolveUserName(
  */
 export async function pickCsRoundRobinAssignee(
   ctx: TenantContext,
-  opts: { users?: CrmUser[]; skipZohoUserIds?: string[] } = {},
+  opts: {
+    users?: CrmUser[];
+    skipZohoUserIds?: string[];
+    /** Skip Zoho Users fetch — use warm cache / allowlist only (Sales save hot path). */
+    fast?: boolean;
+  } = {},
 ): Promise<CsRoundRobinPick | null> {
   const allow = parseAllowlist();
   if (allow.length === 0) {
@@ -84,12 +100,27 @@ export async function pickCsRoundRobinAssignee(
   }
   const skip = new Set(opts.skipZohoUserIds ?? []);
   let users: CrmUser[];
-  try {
-    users = opts.users ?? (await listActiveUsers());
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.error({ err: message }, 'retention CS RoundRobin: listActiveUsers failed');
+  if (opts.users) {
+    users = opts.users;
+  } else if (usersCache) {
+    users = usersCache.users;
+  } else if (opts.fast) {
+    // Do not block Dissatisfied/handoff on Zoho; warm cache in background.
     users = [];
+    void listActiveUsersCached().catch((err) => {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'retention CS RoundRobin: background listActiveUsers failed',
+      );
+    });
+  } else {
+    try {
+      users = await listActiveUsersCached();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err: message }, 'retention CS RoundRobin: listActiveUsers failed');
+      users = [];
+    }
   }
 
   const byId = new Map(users.map((u) => [u.zohoUserId, u]));
@@ -147,7 +178,8 @@ export async function enrichHandoffWithRoundRobin(
     if (spanishId) {
       try {
         await assertUnderDailyCap(ctx, spanishId);
-        const name = await resolveUserName(spanishId);
+        // Name from warm cache only — do not await Zoho Users on the handoff hot path.
+        const name = (await resolveUserName(spanishId, usersCache?.users)) ?? 'Jean Paul';
         return {
           ...patch,
           statusCode: 'p2_working',
@@ -155,7 +187,7 @@ export async function enrichHandoffWithRoundRobin(
           agentName: name,
           eventNotes:
             (patch.eventNotes ?? 'Handed to Retention') +
-            ` · Spanish desk ${name?.trim() || 'Jean Paul'} (${spanishId})`,
+            ` · Spanish desk ${name.trim()} (${spanishId})`,
         };
       } catch (err) {
         logger.warn(
@@ -170,7 +202,7 @@ export async function enrichHandoffWithRoundRobin(
     }
   }
 
-  const pick = await pickCsRoundRobinAssignee(ctx);
+  const pick = await pickCsRoundRobinAssignee(ctx, { fast: true });
   if (!pick) {
     return {
       ...patch,
@@ -190,40 +222,12 @@ export async function enrichHandoffWithRoundRobin(
   };
 }
 
-/** Soft Zoho ownership transfer for Retention handoff (does not block Ops assign). */
-export async function transferOwnershipSoft(
-  zohoDealId: string | null | undefined,
-  claimantZohoUserId: string,
-): Promise<void> {
-  const dealId = zohoDealId?.trim();
-  if (!dealId) {
-    logger.warn(
-      { claimantZohoUserId },
-      'retention CS handoff: no zohoDealId — Ops assigned, Zoho Owner skipped',
-    );
-    return;
-  }
-  try {
-    const result = await transferDealOwnershipToClaimant(dealId, claimantZohoUserId);
-    if (result.warnings.length > 0) {
-      logger.warn(
-        { dealId, warnings: result.warnings },
-        'retention CS handoff: Zoho ownership partial',
-      );
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.warn(
-      { dealId, claimantZohoUserId, err: message },
-      'retention CS handoff: Zoho ownership failed (Ops assign kept)',
-    );
-  }
-}
-
 /**
- * Side effects after a case transition lands:
- * - entered Retention with assignee → Zoho Owner to CS
- * - entered CITI → Deal Stage Closed Lost
+ * Side effects after a case transition lands.
+ * Retention handoff / CS desk claim update the case assignee only — Deal/Contact/Company
+ * stay with the Sales agent. Zoho ownership transfers solely on Open Pool claim approve
+ * (`transferZohoThenFinalize` in retentionPoolClaimRepo).
+ * Entered CITI → Deal Stage Closed Lost.
  */
 export async function afterRetentionPhaseSideEffects(
   beforePhase: string,
@@ -231,15 +235,27 @@ export async function afterRetentionPhaseSideEffects(
     RetentionCaseDto,
     'phaseCode' | 'assignedAgentZohoUserId' | 'zohoDealId' | 'id'
   >,
+  _opts: {
+    previousAssigneeZohoUserId?: string | null;
+  } = {},
 ): Promise<void> {
-  if (
-    after.phaseCode === RETENTION_PHASE.retention &&
-    beforePhase !== RETENTION_PHASE.retention &&
-    after.assignedAgentZohoUserId
-  ) {
-    await transferOwnershipSoft(after.zohoDealId, after.assignedAgentZohoUserId);
-  }
   if (after.phaseCode === RETENTION_PHASE.citi && beforePhase !== RETENTION_PHASE.citi) {
     await setDealStageClosedLost(after.zohoDealId);
   }
+}
+
+/**
+ * Run Zoho / notify work after the HTTP response — keeps Sales modal updates snappy.
+ * Failures are logged; DB transition already committed.
+ */
+export function scheduleRetentionPostCommit(
+  label: string,
+  work: () => Promise<void>,
+): void {
+  void work().catch((err) => {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      `${label} post-commit failed`,
+    );
+  });
 }

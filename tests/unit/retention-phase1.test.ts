@@ -106,6 +106,9 @@ describe('resolvePhase1Transition', () => {
     expect(t.statusCode).toBe('p2_new');
     expect(t.agentOutcome).toBe('dissatisfied');
     expect(t.currentDeadlineType).toBe('10BD_retention');
+    // Former Sales owner stamped so the Cases board keeps a locked card.
+    expect(t.poolOwnerZohoUserId).toBe('777');
+    expect(t.assignedAgentZohoUserId).toBeNull();
   });
 
   it('reached stamps 5BD post-contact watch (clears OoR attempts)', () => {

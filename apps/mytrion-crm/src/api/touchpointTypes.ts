@@ -644,28 +644,58 @@ export interface TouchpointMap {
     params: { caseId: string; reason: string };
     result: { case: RetentionCaseRow; pendingApproval: boolean };
   };
+  'retention.owner_claims_pending': {
+    params: { limit?: number };
+    result: { cases: RetentionPendingClaimRow[]; total: number };
+  };
+  'retention.owner_claims_badge': {
+    params: Record<string, never>;
+    result: { count: number };
+  };
+  'retention.owner_claim_approve': {
+    params: { caseId: string };
+    result: { case: RetentionCaseRow };
+  };
+  'retention.owner_claim_decline': {
+    params: { caseId: string };
+    result: { case: RetentionCaseRow };
+  };
   'retention.lookups': {
     params: { phase_code?: string };
     result: RetentionLookupsResult;
   };
-  'retention.cs_claims_pending': {
+  'retention.cs_pool_list': {
     params: { limit?: number };
-    result: { cases: RetentionPendingClaimRow[]; total: number };
-  };
-  'retention.cs_claims_badge': {
-    params: Record<string, never>;
-    result: { count: number };
-  };
-  'retention.cs_claim_approve': {
-    params: { caseId: string };
-    result: { case: RetentionCaseRow };
-  };
-  'retention.cs_claim_decline': {
-    params: { caseId: string };
-    result: { case: RetentionCaseRow };
+    result: RetentionCasesListResult;
   };
   'retention.cs_cases': {
-    params: { filter?: 'new' | 'working' | 'closed' | 'all_open'; limit?: number };
+    params: {
+      filter?:
+        | 'all_open'
+        | 'all'
+        | 'sales'
+        | 'retention'
+        | 'citi'
+        | 'new'
+        | 'working'
+        | 'closed';
+      phase?: 'any' | 'sales' | 'retention' | 'citi';
+      status?:
+        | 'open'
+        | 'closed'
+        | 'all'
+        | 'to_claim'
+        | 'working'
+        | 'offer_pending'
+        | 'calling'
+        | 'reached'
+        | 'out_of_reach'
+        | 'open_pool'
+        | 'vacation'
+        | 'hold'
+        | 'review';
+      limit?: number;
+    };
     result: RetentionCasesListResult;
   };
   'retention.cs_desk_quota': {
@@ -696,7 +726,6 @@ export interface TouchpointMap {
         | 'saved'
         | 'refused'
         | 'out_of_business'
-        | 'no_response'
         | 'escalate_citi';
       notes?: string;
     };

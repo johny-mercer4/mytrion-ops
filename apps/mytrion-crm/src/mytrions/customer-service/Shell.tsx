@@ -1,10 +1,9 @@
 /**
  * Customer Service shell — gold CSMYTRION chrome, sidebar + content + mobile bottom nav.
- * Retention Cases / Open Pool Claims / CITI Folder sit alongside Citifuel Clients.
+ * Retention Cases / Open Pool (read-only) / CITI Folder sit alongside Citifuel Clients.
  */
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 
-import { csRetention } from '../../api/csRetention';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useTheme } from '../../hooks/useTheme';
 import { Analytics } from './Analytics';
@@ -13,9 +12,8 @@ import { CitiFuel } from './CitiFuel';
 import type { CsSectionId } from './csNav';
 import { Home } from './Home';
 import { CasesPanel } from './retention/CasesPanel';
-import { ClaimsPanel } from './retention/ClaimsPanel';
 import { CitiFolderPanel } from './retention/CitiFolderPanel';
-import { subscribeCsRetentionLive } from './retention/retentionLiveBus';
+import { OpenPoolPanel } from './retention/OpenPoolPanel';
 import { useCsRetentionRealtime } from './retention/useCsRetentionRealtime';
 import { Toast, type ToastState } from './Toast';
 
@@ -25,7 +23,6 @@ interface NavDef {
   shortLabel: string;
   iconPath: string;
   disabled: boolean;
-  badge?: boolean;
 }
 
 const NAV_ITEMS: NavDef[] = [
@@ -54,13 +51,12 @@ const NAV_ITEMS: NavDef[] = [
     disabled: false,
   },
   {
-    id: 'open-pool-claims',
-    label: 'Open Pool Claims',
-    shortLabel: 'Claims',
+    id: 'open-pool',
+    label: 'Open Pool',
+    shortLabel: 'Pool',
     iconPath:
       'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z',
     disabled: false,
-    badge: true,
   },
   {
     id: 'citi-folder',
@@ -117,7 +113,6 @@ export function CsShell() {
   const [active, setActive] = useState<CsSectionId>('home');
   const [mounted, setMounted] = useState<Partial<Record<CsSectionId, boolean>>>({ home: true });
   const { theme, toggle: toggleTheme } = useTheme();
-  const [claimsBadge, setClaimsBadge] = useState(0);
   const [toast, setToast] = useState<ToastState | null>(null);
   // Icons-only rail — persisted like Sales (`ss.nav.collapsed`).
   const [navCollapsed, setNavCollapsed] = useState(() => {
@@ -139,31 +134,11 @@ export function CsShell() {
     });
   }, []);
 
-  const onClaimsToast = useCallback((title: string, detail: string) => {
+  const onRetentionToast = useCallback((title: string, detail: string) => {
     setToast({ id: Date.now(), kind: 'info', message: `${title}: ${detail}` });
   }, []);
 
-  useCsRetentionRealtime(true, onClaimsToast);
-
-  const refreshClaimsBadge = useCallback(() => {
-    void csRetention
-      .claimsBadge()
-      .then((r) => setClaimsBadge(r.count))
-      .catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    refreshClaimsBadge();
-    return subscribeCsRetentionLive((p) => {
-      if (
-        p.type === 'retention.claim_request' ||
-        p.type === 'retention.claim_approved' ||
-        p.type === 'retention.claim_declined'
-      ) {
-        refreshClaimsBadge();
-      }
-    });
-  }, [refreshClaimsBadge]);
+  useCsRetentionRealtime(true, onRetentionToast);
 
   const workerName = user.userName || 'Agent';
   const workerRole = user.role || user.profile || 'Customer Service';
@@ -233,7 +208,7 @@ export function CsShell() {
             {NAV_ITEMS.map((item) => (
               <div
                 key={item.id}
-                className={`cs-nav-item${active === item.id ? ' active' : ''}${item.disabled ? ' cs-nav-disabled' : ''}`}
+                className={`cs-nav-item${active === item.id ? ' active' : ''}${item.disabled ? ' cs-nav-disabled' : ''}${item.id === 'citi-folder' ? ' is-citi-folder' : ''}`}
                 role="button"
                 tabIndex={item.disabled ? -1 : 0}
                 aria-label={item.label}
@@ -251,20 +226,12 @@ export function CsShell() {
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d={item.iconPath} />
                   </svg>
-                  {navCollapsed && item.badge && claimsBadge > 0 ? (
-                    <span className="cs-nav-badge cs-nav-badge--dot">
-                      {claimsBadge > 99 ? '99+' : claimsBadge}
-                    </span>
-                  ) : null}
                   {navCollapsed && item.disabled ? (
                     <span className="cs-nav-soon-dot" aria-hidden="true" />
                   ) : null}
                 </span>
                 <span className="nav-label">{item.label}</span>
                 {!navCollapsed && item.disabled ? <span className="nav-soon">Soon</span> : null}
-                {!navCollapsed && item.badge && claimsBadge > 0 ? (
-                  <span className="cs-nav-badge">{claimsBadge > 99 ? '99+' : claimsBadge}</span>
-                ) : null}
               </div>
             ))}
           </nav>
@@ -309,10 +276,10 @@ export function CsShell() {
         </aside>
 
         <main className="cs-content">
-          {panel('home', <Home onNavigate={navigate} claimsBadge={claimsBadge} />)}
+          {panel('home', <Home onNavigate={navigate} />)}
           {panel('applications', <Applications />)}
           {panel('retention-cases', <CasesPanel />)}
-          {panel('open-pool-claims', <ClaimsPanel onBadge={setClaimsBadge} />)}
+          {panel('open-pool', <OpenPoolPanel />)}
           {panel('citi-folder', <CitiFolderPanel />)}
           {panel('citi-fuel', <CitiFuel />)}
           {panel('analytics', <Analytics />)}

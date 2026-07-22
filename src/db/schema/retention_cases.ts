@@ -146,7 +146,8 @@ export const retentionCases = pgTable(
 
     assignedAgentZohoUserId: text('assigned_agent_zoho_user_id'),
     /**
-     * Last deal owner when the case entered Open Pool (display / notify; CS approves claims)
+     * Last deal owner when the case entered Open Pool / Retention handoff
+     * (Sales prior owner — approves Open Pool claims; Deal ownership stays until approve)
      * (Sales agent-to-agent transfer). Cleared when a claim is finalized.
      */
     poolOwnerZohoUserId: text('pool_owner_zoho_user_id'),

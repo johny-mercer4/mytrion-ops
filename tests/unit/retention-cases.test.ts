@@ -410,6 +410,9 @@ describe('retention routes — CRUD', () => {
 
 describe('retention sync — auto record generation', () => {
   it('creates new cases, refreshes existing ones, and closes returned clients', async () => {
+    // Ignore local pilot .env — this suite asserts full (non-pilot) sync behavior.
+    const prevPilot = process.env.FF_RETENTION_PILOT_ONLY;
+    process.env.FF_RETENTION_PILOT_ONLY = '0';
     const now = new Date();
     const recent = new Date(now.getTime() - 1 * 86_400_000); // returned yesterday
     scanMock.mockResolvedValueOnce([
@@ -426,87 +429,107 @@ describe('retention sync — auto record generation', () => {
     repo.create.mockResolvedValueOnce(caseDto({ id: '11', carrierId: '111' }));
     repo.update.mockResolvedValue(caseDto());
 
-    const res = await app.inject({
-      method: 'POST',
-      url: '/v1/retention/sync',
-      headers: { ...API_KEY_HEADERS, 'content-type': 'application/json' },
-      payload: {},
-    });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().summary).toEqual({
-      scanned: 3,
-      breached: 2,
-      created: 1,
-      refreshed: 1,
-      closedReturned: 1,
-    });
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/retention/sync',
+        headers: { ...API_KEY_HEADERS, 'content-type': 'application/json' },
+        payload: {},
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().summary).toEqual({
+        scanned: 3,
+        breached: 2,
+        created: 1,
+        refreshed: 1,
+        closedReturned: 1,
+        pilotSkipped: 0,
+      });
 
-    expect(repo.create).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        carrierId: '111',
-        zohoDealId: 'zdeal_104882',
-        phaseCode: 'phase_1_agent',
-        statusCode: 'p1_in_progress',
-        source: 'auto',
-      }),
-    );
-    expect(repo.update).toHaveBeenCalledWith(
-      expect.anything(),
-      '22',
-      expect.objectContaining({ metrics: expect.anything() }),
-    );
-    expect(repo.update).toHaveBeenCalledWith(
-      expect.anything(),
-      '44',
-      expect.objectContaining({
-        statusCode: 'p1_returned',
-        agentOutcome: 'returned',
-      }),
-    );
-    // Unified auto-close: all open phases (incl. CITI) are checked for post-create txns.
-    expect(lastTxMock).toHaveBeenCalledWith(expect.arrayContaining(['222', '444', '555']));
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          carrierId: '111',
+          zohoDealId: 'zdeal_104882',
+          phaseCode: 'phase_1_agent',
+          statusCode: 'p1_in_progress',
+          source: 'auto',
+        }),
+      );
+      expect(repo.update).toHaveBeenCalledWith(
+        expect.anything(),
+        '22',
+        expect.objectContaining({ metrics: expect.anything() }),
+      );
+      expect(repo.update).toHaveBeenCalledWith(
+        expect.anything(),
+        '44',
+        expect.objectContaining({
+          statusCode: 'p1_returned',
+          agentOutcome: 'returned',
+        }),
+      );
+      // Unified auto-close: all open phases (incl. CITI) are checked for post-create txns.
+      expect(lastTxMock).toHaveBeenCalledWith(expect.arrayContaining(['222', '444', '555']));
+    } finally {
+      if (prevPilot === undefined) delete process.env.FF_RETENTION_PILOT_ONLY;
+      else process.env.FF_RETENTION_PILOT_ONLY = prevPilot;
+    }
   });
 
   it('closes a citi-phase case when the client transacted after open', async () => {
-    const recent = new Date(Date.now() - 1 * 86_400_000);
-    scanMock.mockResolvedValueOnce([]);
-    repo.listOpen.mockResolvedValueOnce([
-      openRow({ id: 55, carrierId: '555', phaseCode: 'phase_3_citi', statusCode: 'p3_hold' }),
-    ]);
-    lastTxMock.mockResolvedValueOnce(new Map([['555', recent]]));
-    repo.update.mockResolvedValueOnce(caseDto({ id: '55', statusCode: 'p1_returned' }));
-    const res = await app.inject({
-      method: 'POST',
-      url: '/v1/retention/sync',
-      headers: { ...API_KEY_HEADERS, 'content-type': 'application/json' },
-      payload: {},
-    });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().summary.closedReturned).toBe(1);
-    expect(repo.update).toHaveBeenCalledWith(
-      expect.anything(),
-      '55',
-      expect.objectContaining({
-        statusCode: 'p1_returned',
-        agentOutcome: 'returned',
-      }),
-    );
+    const prevPilot = process.env.FF_RETENTION_PILOT_ONLY;
+    process.env.FF_RETENTION_PILOT_ONLY = '0';
+    try {
+      const recent = new Date(Date.now() - 1 * 86_400_000);
+      scanMock.mockResolvedValueOnce([]);
+      repo.listOpen.mockResolvedValueOnce([
+        openRow({ id: 55, carrierId: '555', phaseCode: 'phase_3_citi', statusCode: 'p3_hold' }),
+      ]);
+      lastTxMock.mockResolvedValueOnce(new Map([['555', recent]]));
+      repo.update.mockResolvedValueOnce(caseDto({ id: '55', statusCode: 'p1_returned' }));
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/retention/sync',
+        headers: { ...API_KEY_HEADERS, 'content-type': 'application/json' },
+        payload: {},
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().summary.closedReturned).toBe(1);
+      expect(repo.update).toHaveBeenCalledWith(
+        expect.anything(),
+        '55',
+        expect.objectContaining({
+          statusCode: 'p1_returned',
+          agentOutcome: 'returned',
+        }),
+      );
+    } finally {
+      if (prevPilot === undefined) delete process.env.FF_RETENTION_PILOT_ONLY;
+      else process.env.FF_RETENTION_PILOT_ONLY = prevPilot;
+    }
   });
 
   it('does not close a case when the last transaction predates it', async () => {
-    const stale = new Date('2026-06-15T00:00:00Z'); // before the case's createdAt (Jul 1)
-    scanMock.mockResolvedValueOnce([]);
-    repo.listOpen.mockResolvedValueOnce([openRow({ id: 44, carrierId: '444' })]);
-    lastTxMock.mockResolvedValueOnce(new Map([['444', stale]]));
-    const res = await app.inject({
-      method: 'POST',
-      url: '/v1/retention/sync',
-      headers: { ...API_KEY_HEADERS, 'content-type': 'application/json' },
-      payload: {},
-    });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().summary.closedReturned).toBe(0);
+    const prevPilot = process.env.FF_RETENTION_PILOT_ONLY;
+    process.env.FF_RETENTION_PILOT_ONLY = '0';
+    try {
+      const stale = new Date('2026-06-15T00:00:00Z'); // before the case's createdAt (Jul 1)
+      scanMock.mockResolvedValueOnce([]);
+      repo.listOpen.mockResolvedValueOnce([openRow({ id: 44, carrierId: '444' })]);
+      lastTxMock.mockResolvedValueOnce(new Map([['444', stale]]));
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/retention/sync',
+        headers: { ...API_KEY_HEADERS, 'content-type': 'application/json' },
+        payload: {},
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().summary.closedReturned).toBe(0);
+    } finally {
+      if (prevPilot === undefined) delete process.env.FF_RETENTION_PILOT_ONLY;
+      else process.env.FF_RETENTION_PILOT_ONLY = prevPilot;
+    }
   });
 });
 

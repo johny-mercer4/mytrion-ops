@@ -159,26 +159,11 @@ export async function notifyOpenPoolOpened(
   }
 }
 
-export async function notifyClaimRequestToOwner(
-  ctx: TenantContext,
-  opts: {
-    caseId: string;
-    carrierId: string;
-    companyName: string | null;
-    ownerZohoUserId: string;
-    claimantZohoUserId: string;
-  },
-): Promise<void> {
-  await persistAndPublish(ctx, {
-    ownerId: opts.ownerZohoUserId,
-    type: 'retention.claim_request',
-    title: `Claim request: ${opts.companyName?.trim() || opts.carrierId}`,
-    detail: `caseId=${opts.caseId} · carrier=${opts.carrierId} · claimant=${opts.claimantZohoUserId} · Approve in CS → Open Pool Claims (1 BD auto)`,
-  });
-}
-
-/** Notify CS distribution + broadcast retention:pool when Sales requests a claim. */
-export async function notifyClaimRequestToCs(
+/**
+ * Notify the prior Sales owner (actionable) when another agent requests their Open Pool deal.
+ * Optional Ryan FYI + pool broadcast for visibility — CS does not approve claims.
+ */
+export async function notifyClaimRequestToPriorOwner(
   ctx: TenantContext,
   opts: {
     caseId: string;
@@ -193,15 +178,13 @@ export async function notifyClaimRequestToCs(
   const reasonBit = opts.reason?.trim()
     ? ` · reason=${opts.reason.trim().slice(0, 120)}`
     : '';
-  const detail = `caseId=${opts.caseId} · carrier=${opts.carrierId} · claimant=${opts.claimantZohoUserId}${reasonBit} · Approve in CS → Open Pool Claims (1 BD auto)`;
-  const csId =
-    env.RETENTION_OPEN_POOL_NOTIFY_ZOHO_USER_ID.trim() ||
-    env.RETENTION_OPS_MANAGER_ZOHO_USER_ID.trim();
-  if (csId) {
+  const detail = `caseId=${opts.caseId} · carrier=${opts.carrierId} · claimant=${opts.claimantZohoUserId}${reasonBit} · Approve in Sales → Open Pool Claims (1 BD auto)`;
+  const prev = opts.previousOwnerZohoUserId?.trim();
+  if (prev) {
     await persistAndPublish(ctx, {
-      ownerId: csId,
+      ownerId: prev,
       type: 'retention.claim_request',
-      title: `Open Pool claim: ${company}`,
+      title: `Claim request: ${company}`,
       detail,
       broadcastPool: true,
     });
@@ -210,7 +193,7 @@ export async function notifyClaimRequestToCs(
     realtimeHub.publish(RETENTION_POOL_TOPIC, {
       id: `claim-req-${opts.caseId}`,
       ownerKind: 'worker',
-      ownerId: 'customer-service',
+      ownerId: 'sales',
       type: 'retention.claim_request',
       tag: 'retention',
       priority: 'high',
@@ -222,20 +205,24 @@ export async function notifyClaimRequestToCs(
     });
     logger.info(
       { caseId: opts.caseId },
-      'retention claim CS notify: no RETENTION_* notify user — pool broadcast only',
+      'retention claim notify: no prior owner — pool broadcast only',
     );
   }
-  const prev = opts.previousOwnerZohoUserId?.trim();
-  if (prev && prev !== csId) {
-    await notifyClaimRequestToOwner(ctx, {
-      caseId: opts.caseId,
-      carrierId: opts.carrierId,
-      companyName: opts.companyName,
-      ownerZohoUserId: prev,
-      claimantZohoUserId: opts.claimantZohoUserId,
+  // Optional FYI to Ryan (visibility only — not the approver).
+  const ryanId = env.RETENTION_OPEN_POOL_NOTIFY_ZOHO_USER_ID.trim();
+  if (ryanId && ryanId !== prev) {
+    await persistAndPublish(ctx, {
+      ownerId: ryanId,
+      type: 'retention.claim_request',
+      title: `Open Pool claim (FYI): ${company}`,
+      detail: `${detail} · prior owner must approve`,
+      priority: 'medium',
     });
   }
 }
+
+/** @deprecated Use notifyClaimRequestToPriorOwner — CS no longer approves pool claims. */
+export const notifyClaimRequestToCs = notifyClaimRequestToPriorOwner;
 
 export async function notifyClaimApproved(
   ctx: TenantContext,

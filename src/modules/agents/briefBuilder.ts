@@ -43,22 +43,54 @@ export interface TurnBriefInput {
   role?: string;
   departments: string[];
   historySummary?: string;
+  clientContext?: {
+    profile: string;
+    carrierId?: string;
+    applicationId?: string;
+    cardId?: string;
+    parentUserId?: string;
+  };
 }
 
 /** The human message for a turn: identity/date context + optional history + the request. */
 export function buildTurnBrief(input: TurnBriefInput): string {
   const today = new Date().toISOString().slice(0, 10);
-  const parts = [
-    `[context] date: ${today}` +
-      (input.userName ? `; user: ${input.userName}` : '') +
-      (input.zohoUserId ? `; zohoUserId: ${input.zohoUserId}` : '') +
-      (input.profile ? `; profile: ${input.profile}` : '') +
-      (input.role ? `; role: ${input.role}` : '') +
-      (input.departments.length > 0 ? `; departments: ${input.departments.join(', ')}` : ''),
-  ];
-  if (input.historySummary) {
-    parts.push(`[recent conversation]\n${input.historySummary}`);
+  const parts: string[] = [];
+
+  parts.push('<EnvironmentalContext>');
+  parts.push(`  <Date>${today}</Date>`);
+  
+  if (input.userName || input.zohoUserId || input.profile || input.role || input.departments.length > 0) {
+    parts.push('  <UserIdentity>');
+    if (input.userName) parts.push(`    <Name>${input.userName}</Name>`);
+    if (input.zohoUserId) parts.push(`    <ZohoUserId>${input.zohoUserId}</ZohoUserId>`);
+    if (input.profile) parts.push(`    <Profile>${input.profile}</Profile>`);
+    if (input.role) parts.push(`    <Role>${input.role}</Role>`);
+    if (input.departments.length > 0) parts.push(`    <Departments>${input.departments.join(', ')}</Departments>`);
+    parts.push('  </UserIdentity>');
   }
+
+  if (input.clientContext) {
+    parts.push('  <ClientIdentity>');
+    parts.push(`    <Profile>${input.clientContext.profile}</Profile>`);
+    if (input.clientContext.carrierId) parts.push(`    <CarrierId>${input.clientContext.carrierId}</CarrierId>`);
+    if (input.clientContext.applicationId) parts.push(`    <ApplicationId>${input.clientContext.applicationId}</ApplicationId>`);
+    if (input.clientContext.cardId) parts.push(`    <CardId>${input.clientContext.cardId}</CardId>`);
+    if (input.clientContext.parentUserId) parts.push(`    <ParentUserId>${input.clientContext.parentUserId}</ParentUserId>`);
+    parts.push('  </ClientIdentity>');
+  }
+
+  parts.push('</EnvironmentalContext>');
+
+  if (input.historySummary) {
+    parts.push('<RecentHistory>');
+    parts.push(input.historySummary);
+    parts.push('</RecentHistory>');
+  }
+
+  parts.push('<UserRequest>');
   parts.push(input.message);
-  return parts.join('\n\n');
+  parts.push('</UserRequest>');
+
+  return parts.join('\n');
 }

@@ -95,6 +95,7 @@ export async function consumeAgentStream(
   let lastRootMessage = '';
   const toolCalls: StreamOutcome['toolCalls'] = [];
   const agentPath: string[] = [];
+  const toolArgs = new Map<string, any>();
 
   for await (const event of events) {
     switch (event.event) {
@@ -118,6 +119,7 @@ export async function consumeAgentStream(
           break;
         }
         if (event.name === 'write_todos' || UI_TOOL_NAMES.has(event.name)) break; // planning / UI noise
+        toolArgs.set(event.run_id, event.data?.input);
         sink?.send('tool_call', { name: event.name, agent: event.metadata?.['lc_agent_name'] ?? null });
         break;
       }
@@ -130,13 +132,13 @@ export async function consumeAgentStream(
           break;
         }
         if (event.name === 'write_todos' || UI_TOOL_NAMES.has(event.name)) break;
-        toolCalls.push({ name: event.name, status: 'ok', args: event.data?.input });
+        toolCalls.push({ name: event.name, status: 'ok', args: toolArgs.get(event.run_id) });
         sink?.send('tool_result', { name: event.name, status: 'ok' });
         break;
       }
       case 'on_tool_error': {
         if (event.name === 'task' || event.name === 'write_todos') break;
-        toolCalls.push({ name: event.name, status: 'error', args: event.data?.input });
+        toolCalls.push({ name: event.name, status: 'error', args: toolArgs.get(event.run_id) });
         sink?.send('tool_result', { name: event.name, status: 'error' });
         break;
       }

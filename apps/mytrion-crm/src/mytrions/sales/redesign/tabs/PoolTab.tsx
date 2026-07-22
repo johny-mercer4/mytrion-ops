@@ -1,16 +1,17 @@
 /**
  * Open Pool — other agents' retention cases in p1_open_pool (never your own former deals).
- * Claim request (reason required) → CS approve (or 1 BD auto) → Zoho ownership → p1_new.
+ * Claim request (reason required) → prior owner approve (or 1 BD auto) → Zoho ownership → p1_new.
  * Processing rows (p1_pool_claim_pending) are locked for other agents.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent, MouseEvent } from 'react';
+import type { MouseEvent } from 'react';
 import { useUserContext } from '@/context/UserContextProvider';
 import { s } from '../dc';
 import { Icon } from '../icons';
 import { useSales } from '../ctx';
 import { useLoad } from '../../../_shared/useLoad';
 import { RetentionHero, RetentionPoolMetrics, fmtGal } from '../RetentionBoardUi';
+import { PoolClaimModal } from '../PoolClaimModal';
 import {
   claimOpenPoolCase,
   loadOpenPoolCases,
@@ -18,16 +19,22 @@ import {
   type RetentionCaseRow,
 } from '../retentionData';
 import { subscribeRetentionLive } from '../retentionLiveBus';
+import { stageTimer } from '../retentionTimers';
 
 type SortKey = 'carrierId' | 'companyName' | 'daysInactive' | 'gallons90d' | 'assignmentCount';
+type StatusFilter = 'available' | 'mine' | 'processing' | 'all';
 
 type ClaimModal =
   | { mode: 'single'; caseId: string }
   | { mode: 'bulk'; caseIds: string[] }
   | null;
 
-const poolGrid =
-  'display:grid;grid-template-columns:44px 40px 118px 1.6fr 1.1fr 1.05fr 90px 80px 1.1fr;gap:10px;align-items:center';
+const STATUS_FILTERS: Array<{ id: StatusFilter; label: string; hint: string }> = [
+  { id: 'available', label: 'Available', hint: 'Ready to request' },
+  { id: 'mine', label: 'My requests', hint: 'Awaiting prior owner' },
+  { id: 'processing', label: 'Processing', hint: 'Someone else claimed' },
+  { id: 'all', label: 'All', hint: 'Everything in the pool' },
+];
 
 function isProcessing(c: RetentionCaseRow): boolean {
   return c.statusCode === 'p1_pool_claim_pending';
@@ -38,9 +45,23 @@ function isPendingSelf(c: RetentionCaseRow, selfId: string | undefined): boolean
 }
 
 function statusLabel(c: RetentionCaseRow, selfId: string | undefined): string {
-  if (isPendingSelf(c, selfId)) return 'Your request pending';
+  if (isPendingSelf(c, selfId)) return 'Your request';
   if (isProcessing(c)) return 'Processing';
   return 'Available';
+}
+
+function claimWindowLabel(c: RetentionCaseRow): { text: string; tone: 'ok' | 'warn' | 'danger' | 'muted' } {
+  if (c.statusCode === 'p1_pool_claim_pending') {
+    const t = stageTimer(c);
+    if (t) return { text: t.remain, tone: t.tone === 'danger' ? 'danger' : t.tone === 'warn' ? 'warn' : 'warn' };
+    return { text: 'CS review', tone: 'warn' };
+  }
+  const t = stageTimer(c);
+  if (!t) return { text: '—', tone: 'muted' };
+  return {
+    text: t.remain,
+    tone: t.tone === 'danger' ? 'danger' : t.tone === 'warn' ? 'warn' : 'ok',
+  };
 }
 
 export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) => void }) {
@@ -50,6 +71,7 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
   const feed = useLoad(() => loadOpenPoolCases(), []);
   const [cases, setCases] = useState<RetentionCaseRow[]>([]);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('available');
   const [selected, setSelected] = useState<string[]>([]);
   const [sort, setSort] = useState<{ key: SortKey | null; dir: 'asc' | 'desc' }>({
     key: null,
@@ -64,15 +86,21 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
 
   useEffect(() => {
     if (!feed.data?.cases) return;
-    const rows = feed.data.cases.filter(
-      (c) => !selfId || c.poolOwnerZohoUserId !== selfId || isPendingSelf(c, selfId),
-    );
-    setCases(rows);
-  }, [feed.data?.cases, selfId]);
+    // Backend already excludes your former deals; keep pending-self visible.
+    setCases(feed.data.cases);
+  }, [feed.data?.cases]);
 
   const claimable = useMemo(
     () => cases.filter((c) => c.statusCode === 'p1_open_pool'),
     [cases],
+  );
+  const myPending = useMemo(
+    () => cases.filter((c) => isPendingSelf(c, selfId)),
+    [cases, selfId],
+  );
+  const othersProcessing = useMemo(
+    () => cases.filter((c) => isProcessing(c) && !isPendingSelf(c, selfId)),
+    [cases, selfId],
   );
 
   useEffect(() => {
@@ -121,17 +149,17 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
     setSelected((sel) => (sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id]));
   };
 
-  const toggleAll = (): void => {
-    const ids = filtered.filter((c) => c.statusCode === 'p1_open_pool').map((c) => c.id);
-    setSelected((sel) => (ids.length > 0 && ids.every((id) => sel.includes(id)) ? [] : ids));
-  };
-
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     let rows = cases.slice();
+    if (statusFilter === 'available') rows = rows.filter((c) => c.statusCode === 'p1_open_pool');
+    else if (statusFilter === 'mine') rows = rows.filter((c) => isPendingSelf(c, selfId));
+    else if (statusFilter === 'processing') {
+      rows = rows.filter((c) => isProcessing(c) && !isPendingSelf(c, selfId));
+    }
     if (q) {
       rows = rows.filter((c) =>
-        `${c.carrierId} ${c.companyName ?? ''}`.toLowerCase().includes(q),
+        `${c.carrierId} ${c.companyName ?? ''} ${c.agentName ?? ''}`.toLowerCase().includes(q),
       );
     }
     if (sort.key) {
@@ -149,7 +177,12 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
       });
     }
     return rows;
-  }, [cases, search, sort]);
+  }, [cases, search, sort, statusFilter, selfId]);
+
+  const toggleAll = (): void => {
+    const ids = filtered.filter((c) => c.statusCode === 'p1_open_pool').map((c) => c.id);
+    setSelected((sel) => (ids.length > 0 && ids.every((id) => sel.includes(id)) ? [] : ids));
+  };
 
   const toggleSort = (k: SortKey): void =>
     setSort((cur) => ({ key: k, dir: cur.key === k && cur.dir === 'asc' ? 'desc' : 'asc' }));
@@ -168,11 +201,8 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
       ? cases.find((c) => c.id === claimModal.caseId) ?? null
       : null;
 
-  const reasonOk = reason.trim().length > 0;
-  const canSubmit = confirm && reasonOk && !submitting && claimIds.length > 0;
-
   const submitClaim = async (): Promise<void> => {
-    if (!canSubmit) return;
+    if (!claimIds.length || !reason.trim() || !confirm || submitting) return;
     setSubmitting(true);
     const ids = claimIds.slice();
     const sharedReason = reason.trim();
@@ -191,11 +221,12 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
     setReason('');
     setConfirm(false);
     setSelected([]);
+    setStatusFilter('mine');
     feed.reload();
     if (ok > 0) {
       pushToast(
         'Claim requested',
-        `${ok} deal${ok !== 1 ? 's' : ''} awaiting Customer Service approval (1 BD auto)`,
+        `${ok} deal${ok !== 1 ? 's' : ''} awaiting prior owner (auto in 1 BD)`,
       );
     }
     if (errors.length > 0) {
@@ -208,7 +239,6 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
     selectableFiltered.length > 0 &&
     selectableFiltered.every((c) => selected.includes(c.id));
   const stop = (e: MouseEvent): void => e.stopPropagation();
-  const closeX = <Icon name="close" size={15} strokeWidth={2.4} />;
 
   const poolGallons = useMemo(
     () => claimable.reduce((sum, c) => sum + (c.gallons90d ?? 0), 0),
@@ -222,13 +252,20 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
     return Math.round(days.reduce((a, b) => a + b, 0) / days.length);
   }, [claimable]);
 
+  const filterCount = (id: StatusFilter): number => {
+    if (id === 'available') return claimable.length;
+    if (id === 'mine') return myPending.length;
+    if (id === 'processing') return othersProcessing.length;
+    return cases.length;
+  };
+
   return (
     <>
-      <div className="ss-fu" style={s('display:flex;flex-direction:column;height:calc(100vh - 150px);min-height:480px')}>
+      <div className="ss-fu ss-pool" style={s('display:flex;flex-direction:column;height:calc(100vh - 150px);min-height:480px')}>
         <div style={s('margin-bottom:14px')}>
           <RetentionHero
             title="Open Pool"
-            sub="Other agents' deals — claim with a reason; CS approves (1 BD auto). Unclaimed 3 BD → Retention. Max 3 agents fail → CITI. Processing rows locked."
+            sub="Claim other agents' quiet deals. Prior owner approves (or 1 BD auto). Unclaimed 3 BD → Retention. Max 3 owners → CITI."
             actions={
               <>
                 <button
@@ -277,99 +314,155 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
           </RetentionHero>
         </div>
 
-        <div style={s('display:flex;gap:10px;margin-bottom:10px')}>
-          <div style={s('flex:1;position:relative')}>
-            <Icon name="search" size={15} style={s('position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted)')} />
+        <div className="ss-pool-howto" aria-label="How Open Pool works">
+          <div>
+            <strong>1. Request</strong>
+            <span>Pick available deals + reason</span>
+          </div>
+          <div>
+            <strong>2. CS review</strong>
+            <span>Approve / decline · 1 BD auto</span>
+          </div>
+          <div>
+            <strong>3. Your New</strong>
+            <span>Ownership transfers · 2 BD to act</span>
+          </div>
+        </div>
+
+        <div className="ss-pool-toolbar">
+          <div className="ss-pool-filters" role="tablist" aria-label="Pool status">
+            {STATUS_FILTERS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                role="tab"
+                title={f.hint}
+                aria-selected={statusFilter === f.id}
+                className={`ss-pool-chip${statusFilter === f.id ? ' is-on' : ''}`}
+                onClick={() => {
+                  setStatusFilter(f.id);
+                  setSelected([]);
+                }}
+              >
+                {f.label}
+                <em>{filterCount(f.id)}</em>
+              </button>
+            ))}
+          </div>
+          <div className="ss-pool-search">
+            <Icon name="search" size={15} />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search company or carrier ID…"
+              placeholder="Search company, carrier, or agent…"
               className="ss-in"
-              style={s('width:100%;height:38px;padding:0 14px 0 35px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px')}
             />
           </div>
         </div>
 
-        {feed.error && (
-          <div style={s('padding:12px;margin-bottom:10px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--danger) 30%,var(--border));color:var(--danger);font-size:13px')}>
-            {feed.error}
-          </div>
-        )}
+        {feed.error && <div className="ss-pool-error">{feed.error}</div>}
 
-        <div style={s('flex:1;min-height:0;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);overflow:hidden;display:flex;flex-direction:column;box-shadow:var(--shadow-sm)')}>
+        <div className="ss-pool-table-wrap">
           <div className="ss-scroll" style={s('flex:1;overflow:auto')}>
-            <div style={s('min-width:980px')}>
-              <div style={s(`${poolGrid};position:sticky;top:0;z-index:5;padding:11px 15px;background:var(--alt);border-bottom:1px solid var(--border);font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)`)}>
-                <span style={s('display:flex;align-items:center;justify-content:center')}>
-                  <input type="checkbox" checked={allChecked} onChange={toggleAll} style={s('width:15px;height:15px;cursor:pointer;accent-color:var(--accent)')} />
+            <div style={s('min-width:1040px')}>
+              <div className="ss-pool-head">
+                <span className="ss-pool-check">
+                  <input
+                    type="checkbox"
+                    checked={allChecked}
+                    onChange={toggleAll}
+                    disabled={selectableFiltered.length === 0}
+                    aria-label="Select all available"
+                  />
                 </span>
                 <span>#</span>
-                <span onClick={() => toggleSort('carrierId')} style={s('cursor:pointer')}>Carrier {arrow('carrierId')}</span>
-                <span onClick={() => toggleSort('companyName')} style={s('cursor:pointer')}>Company {arrow('companyName')}</span>
-                <span>Quiet</span>
-                <span>Last txn</span>
-                <span onClick={() => toggleSort('gallons90d')} style={s('cursor:pointer')}>Gallons {arrow('gallons90d')}</span>
-                <span onClick={() => toggleSort('assignmentCount')} style={s('cursor:pointer')}>Cycle {arrow('assignmentCount')}</span>
+                <span onClick={() => toggleSort('carrierId')} className="ss-pool-sort">
+                  Carrier {arrow('carrierId')}
+                </span>
+                <span onClick={() => toggleSort('companyName')} className="ss-pool-sort">
+                  Company {arrow('companyName')}
+                </span>
+                <span>Prior agent</span>
+                <span onClick={() => toggleSort('daysInactive')} className="ss-pool-sort">
+                  Quiet {arrow('daysInactive')}
+                </span>
+                <span onClick={() => toggleSort('gallons90d')} className="ss-pool-sort">
+                  Gallons {arrow('gallons90d')}
+                </span>
+                <span onClick={() => toggleSort('assignmentCount')} className="ss-pool-sort">
+                  Cycle {arrow('assignmentCount')}
+                </span>
+                <span>Window</span>
                 <span>Status</span>
               </div>
+
+              {feed.loading && cases.length === 0
+                ? Array.from({ length: 5 }, (_, i) => (
+                    <div key={i} className="ss-pool-row is-skel" aria-hidden>
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                  ))
+                : null}
+
               {filtered.map((c, i) => {
                 const pendingSelf = isPendingSelf(c, selfId);
                 const processing = isProcessing(c);
                 const claimableRow = c.statusCode === 'p1_open_pool';
                 const on = selected.includes(c.id);
                 const status = statusLabel(c, selfId);
+                const window = claimWindowLabel(c);
                 return (
                   <div
                     key={c.id}
+                    role={claimableRow ? 'button' : undefined}
+                    tabIndex={claimableRow ? 0 : undefined}
                     onClick={() => {
                       if (!claimableRow) return;
                       openClaimModal({ mode: 'single', caseId: c.id });
                     }}
-                    style={s(
-                      `${poolGrid};padding:11px 15px;border-top:1px solid var(--border2);font-size:13px;cursor:${claimableRow ? 'pointer' : 'default'};background:${pendingSelf || processing ? 'rgba(var(--warn-rgb,245,158,11),.08)' : on ? 'rgba(var(--accent-rgb),.10)' : 'transparent'};border-left:3px solid ${pendingSelf || processing ? 'var(--warn)' : on ? 'var(--accent)' : 'transparent'};opacity:${claimableRow || pendingSelf ? '1' : '.85'}`,
-                    )}
+                    onKeyDown={(e) => {
+                      if (!claimableRow) return;
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openClaimModal({ mode: 'single', caseId: c.id });
+                      }
+                    }}
+                    className={`ss-pool-row${on ? ' is-selected' : ''}${pendingSelf ? ' is-mine' : ''}${processing && !pendingSelf ? ' is-processing' : ''}${claimableRow ? ' is-claimable' : ''}`}
                   >
-                    <span style={s('display:flex;align-items:center;justify-content:center')}>
+                    <span className="ss-pool-check" onClick={stop}>
                       {claimableRow ? (
                         <input
                           type="checkbox"
                           checked={on}
-                          onClick={stop}
                           onChange={() => toggle(c.id)}
-                          style={s('width:15px;height:15px;cursor:pointer;accent-color:var(--accent)')}
+                          aria-label={`Select ${c.companyName || c.carrierId}`}
                         />
                       ) : (
-                        <span style={s('width:15px;height:15px')} />
+                        <span className="ss-pool-check-spacer" />
                       )}
                     </span>
-                    <span style={s("font-family:'JetBrains Mono',monospace;color:var(--muted);font-size:11px")}>{i + 1}</span>
-                    <span style={s("font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px")}>{c.carrierId}</span>
-                    <span style={s('font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
-                      {c.companyName || '—'}
-                    </span>
-                    <span style={s('font-size:12px;color:var(--warn)')}>{quietCaption(c)}</span>
-                    <span style={s('font-size:12px;color:var(--muted)')}>
-                      {c.lastTransactionAt
-                        ? new Date(c.lastTransactionAt).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })
-                        : '—'}
-                    </span>
-                    <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px")}>
+                    <span className="ss-pool-mono muted">{i + 1}</span>
+                    <span className="ss-pool-mono">{c.carrierId}</span>
+                    <span className="ss-pool-company">{c.companyName || '—'}</span>
+                    <span className="ss-pool-agent">{c.agentName || '—'}</span>
+                    <span className="ss-pool-quiet">{quietCaption(c)}</span>
+                    <span className="ss-pool-mono">
                       {c.gallons90d != null ? fmtGal(c.gallons90d) : '—'}
                     </span>
-                    <span style={s('font-size:12px;font-weight:700')}>{c.assignmentCount}/3</span>
+                    <span className="ss-pool-cycle">{c.assignmentCount}/3</span>
+                    <span className={`ss-pool-window is-${window.tone}`}>{window.text}</span>
                     <span>
                       <span
-                        style={s(
-                          `display:inline-block;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:999px;padding:3px 8px;border:1px solid ${
-                            processing
-                              ? 'color-mix(in srgb,var(--warn) 40%,var(--border));color:var(--warn)'
-                              : 'color-mix(in srgb,var(--ok) 35%,var(--border));color:var(--ok)'
-                          }`,
-                        )}
+                        className={`ss-pool-status${processing ? ' is-warn' : ' is-ok'}${pendingSelf ? ' is-mine' : ''}`}
                       >
                         {status}
                       </span>
@@ -377,9 +470,25 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
                   </div>
                 );
               })}
+
               {filtered.length === 0 && !feed.loading && (
-                <div style={s('padding:50px 20px;text-align:center;color:var(--muted);font-size:13px')}>
-                  {feed.error ? 'Could not load Open Pool.' : 'No deals in the Open Pool right now.'}
+                <div className="ss-ret-empty" style={s('margin:24px;border:none')}>
+                  <div className="ss-ret-empty-title">
+                    {feed.error
+                      ? 'Could not load Open Pool'
+                      : statusFilter === 'available'
+                        ? 'No available deals'
+                        : statusFilter === 'mine'
+                          ? 'No pending requests'
+                          : 'Nothing here'}
+                  </div>
+                  <div className="ss-ret-empty-body">
+                    {feed.error
+                      ? feed.error
+                      : statusFilter === 'available'
+                        ? 'Deals enter the pool after Reached (5 BD no fuel), Out of Reach (5 attempts), or Retention 10 BD expiry. Your own former deals never appear here.'
+                        : 'Try another filter or refresh.'}
+                  </div>
                 </div>
               )}
             </div>
@@ -387,104 +496,20 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
         </div>
       </div>
 
-      {claimModal && (
-        <div
-          onClick={closeClaimModal}
-          style={s('position:fixed;inset:0;z-index:140;background:rgba(3,7,14,.6);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}
-        >
-          <div
-            onClick={stop}
-            style={s('width:100%;max-width:480px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}
-          >
-            <div style={s('padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:11px')}>
-              <div style={s('width:38px;height:38px;border-radius:var(--radius-md);background:linear-gradient(140deg,var(--accent),var(--accent-2));color:var(--on-accent);display:flex;align-items:center;justify-content:center;flex-shrink:0')}>
-                <Icon name="assign" size={19} />
-              </div>
-              <div style={s('flex:1')}>
-                <div style={s('font-size:16px;font-weight:700')}>
-                  {claimModal.mode === 'single'
-                    ? `Request claim · ${singleSummary?.companyName || singleSummary?.carrierId || 'deal'}`
-                    : `Request claim · ${claimIds.length}`}
-                </div>
-                <div style={s('font-size:12px;color:var(--muted);margin-top:2px')}>
-                  Reason required · Customer Service reviews — 1 BD auto-approve
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={closeClaimModal}
-                className="ss-ico-btn"
-                style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}
-              >
-                {closeX}
-              </button>
-            </div>
-            <div style={s('padding:18px 22px;display:flex;flex-direction:column;gap:14px')}>
-              {singleSummary ? (
-                <div style={s('padding:12px 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);font-size:12px;color:var(--text2);line-height:1.55')}>
-                  <div>
-                    <strong style={s('color:var(--text)')}>{singleSummary.companyName || '—'}</strong>
-                    {' · '}
-                    {singleSummary.carrierId}
-                  </div>
-                  <div>
-                    Quiet {quietCaption(singleSummary)} · Cycle {singleSummary.assignmentCount}/3 ·{' '}
-                    {singleSummary.gallons90d != null ? `${fmtGal(singleSummary.gallons90d)} gal` : '—'}
-                  </div>
-                </div>
-              ) : null}
-              <div>
-                <label style={s('display:block;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-bottom:6px')}>
-                  Why are you claiming?{claimModal.mode === 'bulk' ? ' (shared)' : ''}
-                </label>
-                <textarea
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  maxLength={2000}
-                  rows={3}
-                  placeholder="Brief reason for CS…"
-                  className="ss-in"
-                  style={s('width:100%;padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;resize:vertical;min-height:72px')}
-                />
-              </div>
-              <label style={s('display:flex;align-items:flex-start;gap:11px;padding:14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);cursor:pointer')}>
-                <input
-                  type="checkbox"
-                  checked={confirm}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => setConfirm(e.target.checked)}
-                  style={s('width:16px;height:16px;margin-top:1px;accent-color:var(--accent);cursor:pointer')}
-                />
-                <span style={s('font-size:13px;color:var(--text2);line-height:1.5')}>
-                  Are you sure? After CS approval, this lands in Kanban <strong style={s('color:var(--accent)')}>New</strong> under my ownership (counts toward the 3-agent limit).
-                </span>
-              </label>
-            </div>
-            <div style={s('padding:14px 22px;border-top:1px solid var(--border);display:flex;gap:10px')}>
-              <button
-                type="button"
-                disabled={submitting}
-                onClick={closeClaimModal}
-                style={s('flex:1;height:42px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-weight:700;font-size:13px;cursor:pointer')}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!canSubmit}
-                onClick={() => void submitClaim()}
-                className={canSubmit ? 'ss-btn-p' : undefined}
-                style={s(
-                  canSubmit
-                    ? 'flex:1;height:42px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:pointer'
-                    : 'flex:1;height:42px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:13px;cursor:not-allowed',
-                )}
-              >
-                {submitting ? 'Requesting…' : 'Submit request'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {claimModal ? (
+        <PoolClaimModal
+          mode={claimModal.mode}
+          claimIds={claimIds}
+          singleSummary={singleSummary}
+          reason={reason}
+          confirm={confirm}
+          submitting={submitting}
+          onReason={setReason}
+          onConfirm={setConfirm}
+          onClose={closeClaimModal}
+          onSubmit={() => void submitClaim()}
+        />
+      ) : null}
     </>
   );
 }

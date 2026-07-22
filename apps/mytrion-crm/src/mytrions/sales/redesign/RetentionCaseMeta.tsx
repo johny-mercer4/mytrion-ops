@@ -11,7 +11,7 @@ import {
   type RetentionCaseRow,
 } from './retentionData';
 import { RetentionStageTimer } from './RetentionBoardUi';
-import { isSalesLocked, stageTimer } from './retentionTimers';
+import { isSalesLocked, isSalesPooled, stageTimer } from './retentionTimers';
 
 export function RetentionCaseHeader(props: {
   loading: boolean;
@@ -164,6 +164,7 @@ export function RetentionInactivityBlock({ row }: { row: RetentionCaseRow }) {
 
 export function RetentionMetaGrid({ row }: { row: RetentionCaseRow }) {
   const locked = isSalesLocked(row);
+  const pooled = isSalesPooled(row);
   const timer = locked ? null : stageTimer(row);
   const cells: [string, string, string?][] = [
     ['Status', statusLabel(row.statusCode)],
@@ -173,6 +174,11 @@ export function RetentionMetaGrid({ row }: { row: RetentionCaseRow }) {
     ['Assignment', String(row.assignmentCount)],
     ['Agent', row.agentName || '—'],
   ];
+  const lockedLabel = pooled
+    ? 'Open Pool · no Sales actions'
+    : row.phaseCode === 'phase_3_citi'
+      ? 'CITI · no Sales timer'
+      : 'Retention · no Sales timer';
   return (
     <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:10px')}>
       <div
@@ -188,7 +194,7 @@ export function RetentionMetaGrid({ row }: { row: RetentionCaseRow }) {
           Stage timer
         </div>
         {locked ? (
-          <div className="ss-ret-locked-badge">Handed to Retention · no Sales timer</div>
+          <div className={`ss-ret-locked-badge${pooled ? ' is-pooled' : ''}`}>{lockedLabel}</div>
         ) : timer ? (
           <RetentionStageTimer timer={timer} />
         ) : (
@@ -253,60 +259,73 @@ function eventHeadline(ev: RetentionCaseEventRow): string {
   return to;
 }
 
+/** Reserved-height timeline region — avoids modal jump when events hydrate. */
+export function RetentionTimelineSlot({
+  loading,
+  events,
+  hidden,
+}: {
+  loading: boolean;
+  events: RetentionCaseEventRow[];
+  /** Hide entirely (e.g. New stage — no timeline yet). */
+  hidden?: boolean;
+}) {
+  if (hidden) return null;
+  return (
+    <div className="ss-ret-timeline-slot" aria-busy={loading || undefined}>
+      <div className="ss-ret-timeline-lbl">Timeline</div>
+      {loading ? (
+        <div className="ss-ret-timeline-skel" aria-hidden>
+          <div className="ss-skel" style={s('height:52px')} />
+          <div className="ss-skel" style={s('height:52px')} />
+        </div>
+      ) : (
+        <RetentionEventTrail events={events} />
+      )}
+    </div>
+  );
+}
+
 export function RetentionEventTrail({ events }: { events: RetentionCaseEventRow[] }) {
   if (events.length === 0) {
     return <div style={s('font-size:12px;color:var(--muted)')}>No events yet.</div>;
   }
   return (
-    <div>
-      <div
-        style={s(
-          'font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:8px',
-        )}
-      >
-        Timeline
-      </div>
-      <div style={s('display:flex;flex-direction:column;gap:8px')}>
-        {events.map((ev) => (
-          <div
-            key={ev.id}
-            style={s(
-              'padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border2);background:var(--surface)',
-            )}
-          >
-            <div style={s('display:flex;justify-content:space-between;gap:8px;font-size:11px')}>
-              <span style={s('font-weight:700;color:var(--accent)')}>{eventKindLabel(ev)}</span>
-              <span style={s('color:var(--muted)')}>
-                {new Date(ev.occurredAt).toLocaleString()}
-              </span>
-            </div>
-            <div style={s('font-size:13px;font-weight:700;color:var(--text);margin-top:5px')}>
-              {eventHeadline(ev)}
-            </div>
-            {ev.notes && (
-              <div style={s('font-size:12px;color:var(--muted);margin-top:4px;line-height:1.4')}>
-                {ev.notes}
-              </div>
-            )}
-            {ev.evidenceUrl && (
-              <a
-                href={ev.evidenceUrl}
-                target="_blank"
-                rel="noreferrer"
-                style={s('display:inline-block;margin-top:8px')}
-              >
-                <img
-                  src={ev.evidenceUrl}
-                  alt="Attempt evidence"
-                  style={s(
-                    'max-width:100%;max-height:140px;border-radius:8px;border:1px solid var(--border);object-fit:contain;background:var(--alt)',
-                  )}
-                />
-              </a>
-            )}
+    <div className="ss-ret-timeline-list">
+      {events.map((ev) => (
+        <div key={ev.id} className="ss-ret-timeline-item">
+          <div style={s('display:flex;justify-content:space-between;gap:8px;font-size:11px')}>
+            <span style={s('font-weight:700;color:var(--accent)')}>{eventKindLabel(ev)}</span>
+            <span style={s('color:var(--muted)')}>
+              {new Date(ev.occurredAt).toLocaleString()}
+            </span>
           </div>
-        ))}
-      </div>
+          <div style={s('font-size:13px;font-weight:700;color:var(--text);margin-top:5px')}>
+            {eventHeadline(ev)}
+          </div>
+          {ev.notes && (
+            <div style={s('font-size:12px;color:var(--muted);margin-top:4px;line-height:1.4')}>
+              {ev.notes}
+            </div>
+          )}
+          {ev.evidenceUrl && (
+            <a
+              href={ev.evidenceUrl}
+              target="_blank"
+              rel="noreferrer"
+              style={s('display:inline-block;margin-top:8px')}
+            >
+              <img
+                src={ev.evidenceUrl}
+                alt="Attempt evidence"
+                style={s(
+                  'max-width:100%;max-height:140px;border-radius:8px;border:1px solid var(--border);object-fit:contain;background:var(--alt)',
+                )}
+              />
+            </a>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

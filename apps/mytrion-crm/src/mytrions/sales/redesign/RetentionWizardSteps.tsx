@@ -235,7 +235,7 @@ export function AttemptStep(props: {
           )}
         >
           <div style={s('font-size:12px;color:var(--text);line-height:1.4')}>
-            <strong>{busy ? 'Logging RingCentral attempt…' : 'Call ended — retry logging.'}</strong>
+            <strong>Call ended — retry logging.</strong>
             {callPeerLine(pendingCall) ? (
               <div
                 style={s(
@@ -334,10 +334,9 @@ export function AttemptStep(props: {
             }
             onClick={() => void props.onLogOtherChannel()}
             style={s(
-              `height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-weight:700;font-size:12px;cursor:${busy ? 'wait' : 'pointer'};opacity:${busy ? 0.7 : 1};display:inline-flex;align-items:center;justify-content:center;gap:8px`,
+              `height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-weight:700;font-size:12px;cursor:${busy ? 'wait' : 'pointer'};opacity:${busy ? 0.7 : 1}`,
             )}
           >
-            {busy && <Icon name="refresh" size={14} style={s('animation:ss-spin .9s linear infinite')} />}
             Log {CHANNEL_OPTIONS.find((c) => c.id === props.channel)?.label ?? 'channel'} attempt
           </button>
         </>
@@ -439,23 +438,19 @@ export function StageStep(props: {
           disabled={busy}
           onClick={props.onConfirmStage}
           className="ss-btn-p"
-          aria-busy={busy}
           style={s(
-            `height:42px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:${busy ? 'wait' : 'pointer'};opacity:${busy ? 0.85 : 1};display:inline-flex;align-items:center;justify-content:center;gap:8px`,
+            `height:42px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:${busy ? 'wait' : 'pointer'};opacity:${busy ? 0.85 : 1}`,
           )}
         >
-          {busy && <Icon name="refresh" size={15} style={s('animation:ss-spin .9s linear infinite')} />}
-          {busy
-            ? 'Saving…'
-            : statusPick === 'out_of_reach'
-              ? alreadyOoR
-                ? 'Continue Out of Reach →'
-                : 'Move to Out of Reach →'
-              : statusPick === 'reached'
-                ? 'Save Reached — watch 5 BD'
-                : statusPick === 'vacation'
-                  ? 'Start vacation hold →'
-                  : 'Save stage & close'}
+          {statusPick === 'out_of_reach'
+            ? alreadyOoR
+              ? 'Continue Out of Reach →'
+              : 'Move to Out of Reach →'
+            : statusPick === 'reached'
+              ? 'Save Reached — watch 5 BD'
+              : statusPick === 'vacation'
+                ? 'Start vacation hold →'
+                : 'Save stage & close'}
         </button>
       )}
 

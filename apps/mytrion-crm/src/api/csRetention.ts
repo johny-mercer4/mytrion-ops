@@ -1,5 +1,5 @@
 /**
- * Customer Service Retention touchpoints — Open Pool claims, Phase 2 desk, CITI Folder.
+ * Customer Service Retention touchpoints — Phase 2 desk, CITI Folder, Open Pool (read-only).
  * Pins departmentAccess to customer-service (mirrors api/cs.ts).
  */
 import { callTouchpoint } from './touchpoints';
@@ -15,12 +15,29 @@ function csTp<K extends keyof TouchpointMap>(
 }
 
 export const csRetention = {
-  claimsPending: (limit = 100) => csTp('retention.cs_claims_pending', { limit }),
-  claimsBadge: () => csTp('retention.cs_claims_badge', {}),
-  approveClaim: (caseId: string) => csTp('retention.cs_claim_approve', { caseId }),
-  declineClaim: (caseId: string) => csTp('retention.cs_claim_decline', { caseId }),
-  cases: (filter?: 'new' | 'working' | 'closed' | 'all_open', limit = 200) =>
-    csTp('retention.cs_cases', { ...(filter ? { filter } : {}), limit }),
+  poolList: (limit = 200) => csTp('retention.cs_pool_list', { limit }),
+  cases: (
+    opts:
+      | TouchpointMap['retention.cs_cases']['params']['filter']
+      | {
+          phase?: TouchpointMap['retention.cs_cases']['params']['phase'];
+          status?: TouchpointMap['retention.cs_cases']['params']['status'];
+          filter?: TouchpointMap['retention.cs_cases']['params']['filter'];
+          limit?: number;
+        } = {},
+    limit = 200,
+  ) => {
+    if (typeof opts === 'string') {
+      return csTp('retention.cs_cases', { filter: opts, limit });
+    }
+    const lim = opts.limit ?? limit;
+    return csTp('retention.cs_cases', {
+      ...(opts.phase ? { phase: opts.phase } : {}),
+      ...(opts.status ? { status: opts.status } : {}),
+      ...(opts.filter ? { filter: opts.filter } : {}),
+      limit: lim,
+    });
+  },
   deskQuota: () => csTp('retention.cs_desk_quota', {}),
   caseGet: (caseId: string) => csTp('retention.cs_case_get', { caseId }),
   caseOutcome: (

@@ -79,6 +79,7 @@ export function resolveExpiry(row: RetentionCase, now: Date): CaseTransitionPatc
     return handoffToRetention({
       now,
       agentOutcome: 'no_action_2bd',
+      previousOwnerZohoUserId: row.assignedAgentZohoUserId ?? row.poolOwnerZohoUserId,
       notes: 'Timer: no action in 2 BD — auto-transfer to Retention (10 BD)',
     });
   }
@@ -108,6 +109,7 @@ export function resolveExpiry(row: RetentionCase, now: Date): CaseTransitionPatc
     }
     return handoffToRetention({
       now,
+      previousOwnerZohoUserId: row.poolOwnerZohoUserId ?? row.assignedAgentZohoUserId,
       notes: 'Timer: Open Pool not claimed in 3 BD — Retention (10 BD)',
     });
   }
@@ -130,7 +132,8 @@ export function resolveExpiry(row: RetentionCase, now: Date): CaseTransitionPatc
   if (type === RETENTION_WAIT_DEADLINE_TYPE && row.phaseCode === 'phase_2_retention') {
     return enterOpenPool({
       now,
-      previousOwnerZohoUserId: row.assignedAgentZohoUserId,
+      // Prefer original Sales owner (stamped on handoff) over current CS assignee.
+      previousOwnerZohoUserId: row.poolOwnerZohoUserId ?? row.assignedAgentZohoUserId,
       assignmentCount: row.assignmentCount,
       notes: 'Timer: no new transaction in 10 BD Retention — Open Pool (or CITI at max agents)',
     });
@@ -205,7 +208,9 @@ export async function sweepRetentionDeadlines(
     summary.applied += 1;
     summary.byType[type] = (summary.byType[type] ?? 0) + 1;
 
-    await afterRetentionPhaseSideEffects(beforePhase, updated);
+    await afterRetentionPhaseSideEffects(beforePhase, updated, {
+      previousAssigneeZohoUserId: row.assignedAgentZohoUserId,
+    });
 
     if (updated.statusCode === 'p1_open_pool') {
       const poolReason =

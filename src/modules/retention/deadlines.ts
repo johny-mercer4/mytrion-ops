@@ -123,24 +123,30 @@ export function stampVacationFollowupDeadline(now: Date = new Date()): DeadlineS
 
 /**
  * Phase 2 Retention desk — wait 10 BD for a new transaction.
- * Clears Sales assignee; RoundRobin CS assign + Zoho ownership applied by callers
- * via `enrichHandoffWithRoundRobin` / `afterRetentionPhaseSideEffects`.
+ * Clears Sales assignee; stamps `poolOwnerZohoUserId` so the former Sales agent
+ * still sees a locked card on their Cases board. RoundRobin CS assign + Zoho
+ * ownership applied by callers via `enrichHandoffWithRoundRobin` /
+ * `afterRetentionPhaseSideEffects`.
  */
 export function handoffToRetention(
   opts: {
     agentOutcome?: AgentOutcome | null;
     notes?: string;
     now?: Date;
+    /** Former Sales owner — kept for locked board visibility after handoff. */
+    previousOwnerZohoUserId?: string | null;
   } = {},
 ): CaseTransitionPatch {
   const now = opts.now ?? new Date();
   const wait = stampRetentionWaitDeadline(now);
+  const prev = opts.previousOwnerZohoUserId?.trim() || null;
   return {
     phaseCode: RETENTION_PHASE.retention,
     statusCode: 'p2_new',
     agentOutcome: opts.agentOutcome ?? null,
     assignedAgentZohoUserId: null,
     agentName: null,
+    ...(prev ? { poolOwnerZohoUserId: prev } : {}),
     currentDeadlineAt: wait.currentDeadlineAt,
     currentDeadlineType: wait.currentDeadlineType,
     vacationCountdownEnd: null,

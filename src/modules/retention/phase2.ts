@@ -4,7 +4,6 @@
 import { RETENTION_PHASE } from '../../db/schema/index.js';
 import { AppError } from '../../lib/errors.js';
 import {
-  enterOpenPool,
   moveToCiti,
   stampRetentionWaitDeadline,
   type CaseTransitionPatch,
@@ -84,6 +83,14 @@ export function resolvePhase2Transition(
           expose: true,
         });
       }
+      const owner = row.assignedAgentZohoUserId?.trim() || null;
+      if (owner && owner !== actor) {
+        throw new AppError('Case is already assigned to another CS agent', {
+          statusCode: 409,
+          code: 'RETENTION_ALREADY_ASSIGNED',
+          expose: true,
+        });
+      }
       const wait = stampRetentionWaitDeadline(now);
       return {
         phaseCode: RETENTION_PHASE.retention,
@@ -134,12 +141,15 @@ export function resolvePhase2Transition(
         eventNotes: opts.notes ?? 'Out of business — closed',
       };
     case 'no_response': {
-      return enterOpenPool({
-        now,
-        previousOwnerZohoUserId: row.assignedAgentZohoUserId,
-        assignmentCount: row.assignmentCount,
-        notes: opts.notes ?? 'No response — back to Open Pool',
-      });
+      // CS must not send cases to Open Pool — only the 10BD system timer may.
+      throw new AppError(
+        'CS cannot send cases to Open Pool. The 10 BD Retention timer returns cases automatically.',
+        {
+          statusCode: 409,
+          code: 'RETENTION_CS_NO_POOL',
+          expose: true,
+        },
+      );
     }
     case 'escalate_citi':
       return moveToCiti({

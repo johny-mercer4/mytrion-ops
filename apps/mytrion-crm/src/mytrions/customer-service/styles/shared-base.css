@@ -253,6 +253,26 @@
     color: var(--cs-accent);
 }
 
+/* CITI Folder — red folder accent in sidebar */
+.cs-root .cs-nav-item.is-citi-folder {
+    color: var(--cs-danger);
+}
+.cs-root .cs-nav-item.is-citi-folder svg {
+    color: var(--cs-danger);
+}
+.cs-root .cs-nav-item.is-citi-folder:hover {
+    background: color-mix(in srgb, var(--cs-danger-soft) 65%, var(--surface-2));
+    color: var(--cs-danger);
+}
+.cs-root .cs-nav-item.is-citi-folder.active {
+    background: var(--cs-danger-soft);
+    color: var(--cs-danger);
+    box-shadow: inset 3px 0 0 0 var(--cs-danger);
+}
+.cs-root.dark-mode .cs-nav-item.is-citi-folder.active {
+    color: var(--cs-danger);
+}
+
 .cs-root .cs-nav-item.cs-nav-disabled {
     cursor: not-allowed;
     color: var(--text-muted);
