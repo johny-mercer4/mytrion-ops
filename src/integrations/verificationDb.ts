@@ -26,8 +26,9 @@ export function getVerificationPool(): Pool {
     max: 5,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 8_000,
-    // Enforce read-only at the session level — this wrapper must never write credit_platform.
-    options: '-c default_transaction_read_only=on',
+    // Enforce read-only at the session level — this wrapper must never write credit_platform. Also
+    // cap runaway queries: a single pathological scan must not pin the pool (max 5) indefinitely.
+    options: '-c default_transaction_read_only=on -c statement_timeout=60000 -c idle_in_transaction_session_timeout=60000',
   });
   pool.on('error', (err) => logger.error({ err: err.message }, 'verification-db pool error'));
   return pool;

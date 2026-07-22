@@ -66,6 +66,13 @@ export function getAwsMysqlPool(): Pool {
       });
     });
   }
+  // Cap runaway SELECTs so one pathological query can't pin the pool (max 10). Best-effort: a
+  // failure only warns (e.g. a MySQL build without max_execution_time) — never blocks the query.
+  base.on('connection', (conn: PoolConnection) => {
+    conn.query('SET SESSION max_execution_time=60000', (err: NodeJS.ErrnoException | null) => {
+      if (err) logger.warn({ err: err.message }, 'AWS MySQL: failed to set max_execution_time');
+    });
+  });
   base.on('error', (err: Error) => logger.error({ err: err.message }, 'AWS MySQL pool error'));
   return pool;
 }

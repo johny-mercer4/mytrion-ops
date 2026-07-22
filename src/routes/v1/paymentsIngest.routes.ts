@@ -17,10 +17,12 @@
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { env } from '../../config/env.js';
 import { safeEqual } from '../../lib/crypto.js';
 import { AppError, AuthError } from '../../lib/errors.js';
 import type { NewPaymentTransaction } from '../../db/schema/index.js';
+import { audit } from '../../modules/audit/auditLogger.js';
 import { paymentTransactionRepo } from '../../repos/paymentTransactionRepo.js';
 
 const SECRET_HEADER = 'x-ingest-secret';
@@ -92,6 +94,18 @@ export async function paymentsIngestRoutes(app: FastifyInstance): Promise<void> 
     };
 
     await paymentTransactionRepo.upsertMany([row]);
+    // Financial write audit trail. Secret-authed webhook (no session ctx) → synthetic system actor.
+    await audit({
+      tenantId: DEFAULT_TENANT_ID,
+      action: 'billing.ingest.payment',
+      status: 'ok',
+      audience: 'internal',
+      userName: 'zapier-ingest',
+      resourceType: 'payment_transaction',
+      resourceId: `${b.source}:${b.sourceRecordId}`,
+      detail: { source: b.source, amount: b.amount ?? null },
+      requestId: request.id,
+    });
     request.log.info({ source: b.source, sourceRecordId: b.sourceRecordId }, 'billing ingest: payment upserted');
     return reply.send({ status: 'success', source: b.source, sourceRecordId: b.sourceRecordId });
   });
