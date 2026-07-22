@@ -174,7 +174,26 @@ function handleCall(kind: RingCentralEventKind, call: RawCall): void {
   }
 }
 
+/**
+ * Trust ONLY the RingCentral Embeddable widget iframe. The app runs inside a cross-origin Zoho
+ * iframe, so without this any parent/sibling frame or opener could postMessage a forged
+ * `rc-*-notify` event — which we forward to the backend call-audit log and act on in the UI.
+ * Accept a message if it comes from the widget's own window OR shares its origin (two paths so a
+ * genuine event is never dropped); reject everything else.
+ */
+function isFromRcWidget(e: MessageEvent): boolean {
+  const frame = document.getElementById('rc-widget-adapter-frame') as HTMLIFrameElement | null;
+  if (!frame) return false;
+  if (e.source != null && e.source === frame.contentWindow) return true;
+  try {
+    return Boolean(frame.src) && new URL(frame.src).origin === e.origin;
+  } catch {
+    return false;
+  }
+}
+
 function onMessage(e: MessageEvent): void {
+  if (!isFromRcWidget(e)) return;
   const data = e.data as WidgetMessage | null;
   if (!data || typeof data !== 'object' || typeof data.type !== 'string') return;
 
