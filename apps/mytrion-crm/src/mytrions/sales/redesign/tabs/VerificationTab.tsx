@@ -129,6 +129,32 @@ function TermTile({ label, value }: { label: string; value: string }) {
 
 // ---- active-client current terms (read-only this phase) ----
 function TermsPanel({ client: c }: { client: VerificationClient }) {
+  const prepay = /prepa/i.test(c.paymentTerms ?? '');
+  const flags = (c.isLocSuspended || c.isDebtor) && (
+    <div style={s('display:flex;gap:8px')}>
+      {c.isLocSuspended && <span style={s(badge('LOC Suspended', 'var(--danger)').style)}>LOC Suspended</span>}
+      {c.isDebtor && <span style={s(badge('Debtor', 'var(--warn)').style)}>Debtor</span>}
+    </div>
+  );
+
+  // Prepay = pay-per-load, no credit line — the credit tiles are all N/A, so don't show them.
+  if (prepay) {
+    return (
+      <div style={s('display:flex;flex-direction:column;gap:14px')}>
+        <div style={s('display:flex;align-items:center;gap:10px;flex-wrap:wrap')}>
+          <span style={s(`${badge('Prepay', 'var(--accent)').style};font-size:12px`)}>Prepay</span>
+          <span style={s('font-size:12.5px;color:var(--text2)')}>Pay-per-load client — no credit line, limit, or billing cycle.</span>
+        </div>
+        <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:10px')}>
+          <TermTile label="Active Cards" value={`${c.totalActiveCards}`} />
+          <TermTile label="Swiped (30d)" value={`${c.activeCardsLast30Days}`} />
+          <TermTile label="First Swipe" value={c.firstSwipeDate ?? '—'} />
+        </div>
+        {flags}
+      </div>
+    );
+  }
+
   return (
     <div style={s('display:flex;flex-direction:column;gap:14px')}>
       <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:10px')}>
@@ -142,12 +168,7 @@ function TermsPanel({ client: c }: { client: VerificationClient }) {
         <TermTile label="Swiped (30d)" value={`${c.activeCardsLast30Days}`} />
         <TermTile label="First Swipe" value={c.firstSwipeDate ?? '—'} />
       </div>
-      {(c.isLocSuspended || c.isDebtor) && (
-        <div style={s('display:flex;gap:8px')}>
-          {c.isLocSuspended && <span style={s(badge('LOC Suspended', 'var(--danger)').style)}>LOC Suspended</span>}
-          {c.isDebtor && <span style={s(badge('Debtor', 'var(--warn)').style)}>Debtor</span>}
-        </div>
-      )}
+      {flags}
       <div style={s('font-size:11.5px;color:var(--muted);line-height:1.5')}>
         Limit-change requests (Credit / Card / Weekly) are coming soon — you'll be able to send them here
         without contacting Verification.
@@ -156,28 +177,49 @@ function TermsPanel({ client: c }: { client: VerificationClient }) {
   );
 }
 
-// ---- detail modal ----
-function ClientDetail({ client, onClose }: { client: VerificationClient; onClose: () => void }) {
+// ---- in-page detail (replaces the list; the page scrolls naturally — no modal, no inner scrollbox) ----
+function ClientDetailPage({ client, onBack }: { client: VerificationClient; onBack: () => void }) {
   const cls = CLASS_VIS[client.classification];
+  const isActive = client.classification === 'active';
   return (
-    <div onClick={onClose} style={s('position:fixed;inset:0;z-index:120;background:rgba(3,7,14,.6);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
-      <div onClick={(e) => e.stopPropagation()} style={s('width:100%;max-width:560px;max-height:88vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}>
-        <div style={s('flex-shrink:0;padding:20px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px')}>
-          <div style={s('flex:1;min-width:0')}>
-            <div style={s('font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{client.companyName}</div>
-            <div style={s("font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:3px")}>
-              {client.dealStage}{client.appFillDate ? ` · applied ${client.appFillDate}` : ''}
-            </div>
+    <div className="ss-fu" style={s('max-width:1180px;margin:0 auto')}>
+      <button
+        type="button"
+        onClick={onBack}
+        className="ss-ico-btn"
+        style={s('display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 15px 0 11px;margin-bottom:14px;border-radius:99px;border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:var(--shadow-sm)')}
+      >
+        <Icon name="chevronLeft" size={16} strokeWidth={2.4} /> Back to pipeline
+      </button>
+
+      <div style={s('display:flex;align-items:center;gap:14px;padding:20px 22px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow-sm)')}>
+        <div style={s('flex:1;min-width:0')}>
+          <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{client.companyName}</div>
+          <div style={s("font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:3px")}>
+            {client.dealStage}{client.appFillDate ? ` · applied ${client.appFillDate}` : ''}{client.carrierId ? ` · #${client.carrierId}` : ''}
           </div>
-          <span style={s(`${badge(cls.label, cls.color).style};font-size:11px`)}>{cls.label}</span>
-          <button onClick={onClose} aria-label="Close" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
-            <Icon name="close" size={15} strokeWidth={2.4} />
-          </button>
         </div>
-        <div className="ss-scroll" style={s('flex:1;min-height:0;padding:20px 22px')}>
-          {client.classification === 'active' ? <TermsPanel client={client} /> : <PipelineTimeline client={client} />}
+        <span style={s(`${badge(cls.label, cls.color).style};font-size:11px;flex-shrink:0`)}>{cls.label}</span>
+      </div>
+
+      <div style={s('margin-top:14px;padding:22px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-sm)')}>
+        <div style={s(isActive ? '' : 'max-width:760px')}>
+          {isActive ? <TermsPanel client={client} /> : <PipelineTimeline client={client} />}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---- compact term chip for active cards (terms visible at a glance) ----
+function MiniTerm({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  const accent = tone ?? 'var(--text)';
+  const bg = tone ? `color-mix(in srgb,${tone} 9%,var(--surface))` : 'var(--alt)';
+  const bd = tone ? `color-mix(in srgb,${tone} 28%,var(--border2))` : 'var(--border2)';
+  return (
+    <div style={s(`flex:1;min-width:0;padding:8px 10px;border-radius:10px;background:${bg};border:1px solid ${bd}`)}>
+      <div style={s('font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)')}>{label}</div>
+      <div style={s(`font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;margin-top:3px;color:${accent};white-space:nowrap;overflow:hidden;text-overflow:ellipsis`)}>{value}</div>
     </div>
   );
 }
@@ -187,31 +229,75 @@ export function VerificationTab() {
   const load = useCachedLoad<VerificationClient[]>(`sales:verification:${actAs}`, () =>
     getVerificationClients(getImpersonation()?.zohoUserId),
   );
+  const [view, setView] = useState<'pipeline' | 'active'>('pipeline');
+  const [sort, setSort] = useState<'newest' | 'oldest'>('newest');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<VerificationClient | null>(null);
 
   const clients = load.data ?? [];
+  const pipelineCount = useMemo(() => clients.filter((c) => c.classification !== 'active').length, [clients]);
+  const activeCount = clients.length - pipelineCount;
+
   const q = query.trim().toLowerCase();
-  const filtered = useMemo(
-    () => (q ? clients.filter((c) => `${c.companyName} ${c.dealStage} ${c.carrierId}`.toLowerCase().includes(q)) : clients),
-    [clients, q],
-  );
+  const list = useMemo(() => {
+    const inView = clients.filter((c) => (view === 'active' ? c.classification === 'active' : c.classification !== 'active'));
+    const searched = q ? inView.filter((c) => `${c.companyName} ${c.dealStage} ${c.carrierId}`.toLowerCase().includes(q)) : inView;
+    return [...searched].sort((a, b) => {
+      const av = a.appFillDate ?? '';
+      const bv = b.appFillDate ?? '';
+      if (av === bv) return 0;
+      if (!av) return 1; // undated last, regardless of direction
+      if (!bv) return -1;
+      return sort === 'newest' ? (av < bv ? 1 : -1) : av < bv ? -1 : 1;
+    });
+  }, [clients, view, q, sort]);
+
+  if (selected) {
+    return <ClientDetailPage client={selected} onBack={() => setSelected(null)} />;
+  }
+
+  const emptyMsg = q
+    ? 'No clients match your search.'
+    : view === 'active'
+      ? 'No active card-swiping clients yet.'
+      : 'No clients in your pipeline yet.';
+
+  const tabs: Array<{ v: 'pipeline' | 'active'; label: string; count: number; hue: string }> = [
+    { v: 'pipeline', label: 'Pipeline', count: pipelineCount, hue: 'var(--accent)' },
+    { v: 'active', label: 'Active', count: activeCount, hue: 'var(--ok)' },
+  ];
 
   return (
     <div className="ss-fu" style={s('max-width:1180px;margin:0 auto')}>
       <div style={s('margin-bottom:16px')}>
         <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.01em')}>Verification Pipeline</div>
         <div style={s('font-size:13px;color:var(--muted);margin-top:3px')}>
-          Your clients by application date — track each one through compliance to decision, and see active clients' terms.
+          Your clients by application date — track pipeline clients through compliance to decision, and review active clients' terms.
         </div>
       </div>
 
-      {/* toolbar */}
-      <div style={s('display:flex;gap:12px;margin-bottom:16px;align-items:center')}>
+      {/* Pipeline / Active sub-tabs */}
+      <div style={s('display:inline-flex;gap:4px;padding:4px;margin-bottom:14px;border-radius:99px;background:var(--alt);border:1px solid var(--border2)')}>
+        {tabs.map((t) => {
+          const on = view === t.v;
+          return (
+            <button key={t.v} type="button" onClick={() => setView(t.v)} style={s(`height:34px;padding:0 16px;border:none;border-radius:99px;cursor:pointer;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:7px;transition:background .15s,color .15s;${on ? 'background:var(--surface);color:var(--text);box-shadow:var(--shadow-sm)' : 'background:transparent;color:var(--muted)'}`)}>
+              {t.label}
+              <span style={s(`font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:99px;${on ? `background:color-mix(in srgb,${t.hue} 16%,transparent);color:${t.hue}` : 'background:var(--border2);color:var(--muted)'}`)}>{t.count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* toolbar: search · applied-date sort · refresh */}
+      <div style={s('display:flex;gap:12px;margin-bottom:16px;align-items:center;flex-wrap:wrap')}>
         <div style={s('position:relative;flex:1;min-width:240px')}>
           <Icon name="search" size={16} style={s('position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--muted)')} />
           <input value={query} onChange={(e) => setQuery(e.currentTarget.value)} placeholder="Search clients by name, carrier ID or stage…" className="ss-in" style={s('width:100%;height:44px;padding:0 16px 0 44px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;box-shadow:var(--shadow-sm)')} />
         </div>
+        <button type="button" onClick={() => setSort((p) => (p === 'newest' ? 'oldest' : 'newest'))} title="Sort by application date" className="ss-ico-btn" style={s('height:44px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:var(--shadow-sm)')}>
+          <Icon name="arrows" size={15} /> Applied: {sort === 'newest' ? 'Newest' : 'Oldest'}
+        </button>
         <button type="button" onClick={() => load.reload()} disabled={load.revalidating} title="Refresh" className="ss-ico-btn" style={s(`height:44px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:12px;font-weight:700;cursor:${load.revalidating ? 'default' : 'pointer'};display:flex;align-items:center;gap:8px;box-shadow:var(--shadow-sm);opacity:${load.revalidating ? '.7' : '1'}`)}>
           <span style={s(`display:inline-flex${load.revalidating ? ';animation:ss-spin .8s linear infinite' : ''}`)}><Icon name="refresh" size={15} /></span>
           Refresh
@@ -223,30 +309,42 @@ export function VerificationTab() {
         <div style={s('padding:48px;text-align:center;color:var(--muted);font-size:13px')}>Loading clients…</div>
       ) : load.error && !load.data ? (
         <div style={s('padding:36px;text-align:center;color:var(--danger);font-size:13px')}>{load.error}</div>
-      ) : filtered.length === 0 ? (
-        <div style={s('padding:48px;text-align:center;color:var(--muted);font-size:13px')}>{q ? 'No clients match your search.' : 'No clients in your pipeline yet.'}</div>
+      ) : list.length === 0 ? (
+        <div style={s('padding:48px;text-align:center;color:var(--muted);font-size:13px')}>{emptyMsg}</div>
       ) : (
         <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:14px')}>
-          {filtered.map((c) => {
+          {list.map((c) => {
             const cls = CLASS_VIS[c.classification];
+            const isActive = c.classification === 'active';
+            const isPrepay = isActive && /prepa/i.test(c.paymentTerms ?? '');
             return (
-              <div key={c.carrierId} onClick={() => setSelected(c)} className="ss-card-h" style={s('padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
+              <div key={c.carrierId} onClick={() => setSelected(c)} className="ss-card-h" style={s(`padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)${isActive ? ';border-left:3px solid var(--ok)' : ''}`)}>
                 <div style={s('display:flex;align-items:start;justify-content:space-between;gap:10px')}>
                   <div style={s('font-size:14px;font-weight:700;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{c.companyName}</div>
                   <span style={s(`${badge(cls.label, cls.color).style};flex-shrink:0`)}>{cls.label}</span>
                 </div>
                 <div style={s("font-size:11.5px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:6px")}>{c.dealStage}</div>
+                {isActive &&
+                  (isPrepay ? (
+                    <div style={s('margin-top:12px')}>
+                      <span style={s(`${badge('Prepay', 'var(--accent)').style};font-size:11.5px`)}>Prepay</span>
+                    </div>
+                  ) : (
+                    <div style={s('display:flex;gap:7px;margin-top:12px')}>
+                      <MiniTerm label="Limit" value={money(c.creditLimit)} tone="var(--ok)" />
+                      <MiniTerm label="Cycle" value={c.billingCycle ?? '—'} />
+                      <MiniTerm label="Terms" value={c.paymentTerms ?? '—'} />
+                    </div>
+                  ))}
                 <div style={s('display:flex;align-items:center;justify-content:space-between;margin-top:12px;font-size:11.5px;color:var(--text2)')}>
                   <span>{c.appFillDate ? `Applied ${c.appFillDate}` : '—'}</span>
-                  {c.classification === 'active' && c.creditLimit != null && <span>{money(c.creditLimit)} · {c.billingCycle ?? '—'}</span>}
+                  {isActive && c.lastTransactionDate ? <span style={s('color:var(--muted)')}>Last swipe {c.lastTransactionDate}</span> : null}
                 </div>
               </div>
             );
           })}
         </div>
       )}
-
-      {selected && <ClientDetail client={selected} onClose={() => setSelected(null)} />}
     </div>
   );
 }
