@@ -21,8 +21,12 @@ export function getDwhPool(): Pool {
   pool = new pg.Pool({
     connectionString: env.DWH_DATABASE_URL,
     ssl: false, // DWH is a direct, non-TLS Postgres (matches servercrm).
-    max: 10,
-    idleTimeoutMillis: 30_000,
+    // The DWH is a small, shared analytics Postgres with a low connection cap — servercrm,
+    // mytrion-ops (prod + any dev instance), and BI tools all share it. Keep this pool small (was
+    // 10) and release idle connections quickly so the sum stays under the limit; an oversized pool
+    // exhausts it ("connection slots reserved for SUPERUSER"). Tunable via DWH_POOL_MAX.
+    max: Number(process.env.DWH_POOL_MAX) || 5,
+    idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 15_000,
     // Enforce read-only at the session level — this wrapper must never write the DWH.
     options: '-c default_transaction_read_only=on',
