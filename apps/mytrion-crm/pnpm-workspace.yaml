@@ -1,0 +1,8 @@
+# Single-package “workspace” so pnpm 9+ accepts this file, and pnpm 11 can store
+# lifecycle-script approvals (allowBuilds). Without `packages`, pnpm errors with
+# “packages field missing or empty”.
+packages:
+  - '.'
+
+allowBuilds:
+  esbuild: true

@@ -2120,3 +2120,26 @@ dbt MCP gallons query ~1s cold/0.5s warm, recall ~1.2s). The time is the LLM age
     tests/unit/agent-graph-cache.test.ts (12) covers signature + cache behavior.
 
 Tests: full suite 527 green, typecheck + lint clean.
+
+## 2026-07-22 — Analytics dashboard as reusable components
+
+Analyst Overview was a monolithic Dashboard.tsx. Split into a shared kit under
+`apps/mytrion-crm/src/components/analytics/` so other pages can compose the same data via params:
+
+- Presentational: AnalyticsKpiGrid, AnalyticsTrendChart, AnalyticsBreakdown, AnalyticsLeaderboard,
+  AnalyticsDimensionTabs, DeltaPill
+- Hook: useAnalyticsSnapshot({ dimension, pollMs, enabled }) — loads / caches / polls per dimension
+- Composer: AnalyticsDashboard — accepts dimension / sections / showTabs / showHeader / title /
+  pollMs / external `block` so pages can mount full or slim widgets
+- Analyst page Dashboard.tsx is now a thin `<AnalyticsDashboard />` shell
+
+Import from `@/components/analytics`.
+
+## 2026-07-22 — pnpm 11 broke `pnpm dev:all`
+
+`apps/mytrion-crm/pnpm-workspace.yaml` was auto-created by pnpm 11 with a placeholder
+`esbuild: set this to true or false` (no packages / invalid allowBuilds) →
+`ERROR packages field missing or empty` on `pnpm -C apps/mytrion-crm install`.
+
+Fix: valid `pnpm-workspace.yaml` with `allowBuilds.esbuild: true` (pnpm 11 lifecycle
+approval lives here). Root + CRM node_modules reinstalled; vite works again.
