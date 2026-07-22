@@ -111,7 +111,7 @@ function lastWeekRangeNY(): { from: string; to: string } {
 
 /** Phase-2 T3 — Monday cron: last week's accounting bundle to every pilot carrier's owners. */
 export async function runWeeklyStatements(): Promise<{ carriers: number; sent: number }> {
-  const carriers = pilotCarriers();
+  const carriers = await pilotCarriers();
   const week = lastWeekRangeNY();
   let sent = 0;
   for (const carrierId of carriers) {

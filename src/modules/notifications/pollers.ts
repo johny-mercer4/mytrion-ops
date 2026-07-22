@@ -1,19 +1,19 @@
 /**
  * Notification pollers (ultraplan §2.3) — neither EFS nor the DWH pushes events, so state
- * changes are DIFFED on a schedule. Piloted per carrier via NOTIFY_POLL_CARRIERS (comma-
- * separated carrier ids; empty = the poll job no-ops), matching the rollout plan's
- * "flag per carrier, Onzmove first" stance.
+ * changes are DIFFED on a schedule. Carriers are AUTO-ENROLLED from active owner/manager
+ * mini-app registrations (see pilotCarriers); NOTIFY_POLL_CARRIERS remains a manual extras
+ * list. No registrations + empty env = the poll jobs no-op.
  *
  * card_status: servercrm's per-card status snapshot vs the stored watermark. The FIRST run
  * of a scope only records the baseline (no events) — restarts and fresh pilots never blast
  * out a notification per existing card. External changes (agent widget, EFS auto-relock)
  * are exactly what this catches; the mini-app's own writes already notify inline.
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { env } from '../../config/env.js';
 import { db } from '../../db/client.js';
-import { miniAppNotificationState } from '../../db/schema/index.js';
+import { miniAppNotificationState, registeredMiniAppCompanies } from '../../db/schema/index.js';
 import { findDwhCardByNumber } from '../../integrations/dwhCards.js';
 import { listDwhTransactions } from '../../integrations/dwhTransactions.js';
 import { logger } from '../../lib/logger.js';
@@ -24,10 +24,40 @@ import { notifyMiniApp } from './service.js';
  *  fleet day can't turn into a notification storm. Excess is skipped (dedupe still covers re-runs). */
 const RECEIPT_PER_CARD_CAP = 20;
 
-export function pilotCarriers(): string[] {
+function envCarriers(): string[] {
   return env.NOTIFY_POLL_CARRIERS.split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+let carriersCache: { at: number; list: string[] } | null = null;
+const CARRIERS_CACHE_MS = 60_000;
+
+/**
+ * Carriers the pollers (and the weekly statement cron) serve. AUTO-ENROLLED: every carrier
+ * with an ACTIVE owner/manager mini-app registration is polled from the moment the owner
+ * finishes sign-up — no env edit, no redeploy (owner decision 2026-07-22). Revoking the last
+ * owner registration drops the carrier again. NOTIFY_POLL_CARRIERS stays as a manual EXTRAS
+ * list (testing / pre-registration pilots), unioned in. Cached 60s so each poll tick costs
+ * at most one indexed SELECT.
+ */
+export async function pilotCarriers(): Promise<string[]> {
+  const now = Date.now();
+  if (carriersCache && now - carriersCache.at < CARRIERS_CACHE_MS) return carriersCache.list;
+  const rows = await db
+    .selectDistinct({ carrierId: registeredMiniAppCompanies.carrierId })
+    .from(registeredMiniAppCompanies)
+    .where(
+      and(
+        eq(registeredMiniAppCompanies.tenantId, DEFAULT_TENANT_ID),
+        eq(registeredMiniAppCompanies.status, 'active'),
+        ne(registeredMiniAppCompanies.profile, 'driver'),
+        isNotNull(registeredMiniAppCompanies.carrierId),
+      ),
+    );
+  const list = [...new Set([...envCarriers(), ...rows.map((r) => r.carrierId).filter((c): c is string => !!c)])];
+  carriersCache = { at: now, list };
+  return list;
 }
 
 async function getWatermark(scope: string): Promise<Record<string, unknown> | null> {
@@ -50,7 +80,7 @@ async function setWatermark(scope: string, watermark: Record<string, unknown>): 
 }
 
 export async function runCardStatusPoll(): Promise<{ carriers: number; changes: number }> {
-  const carriers = pilotCarriers();
+  const carriers = await pilotCarriers();
   let changes = 0;
   for (const carrierId of carriers) {
     try {
@@ -100,7 +130,7 @@ export async function runCardStatusPoll(): Promise<{ carriers: number; changes: 
  * PRICE IS NEVER IN THE PAYLOAD — a driver receives this, and drivers never see dollar figures.
  */
 export async function runReceiptPoll(): Promise<{ carriers: number; receipts: number }> {
-  const carriers = pilotCarriers();
+  const carriers = await pilotCarriers();
   let receipts = 0;
   for (const carrierId of carriers) {
     try {
@@ -195,7 +225,7 @@ export async function runReceiptPoll(): Promise<{ carriers: number; receipts: nu
  * rule as /invoices itself, which requires an owner session).
  */
 export async function runInvoicePoll(): Promise<{ carriers: number; invoices: number }> {
-  const carriers = pilotCarriers();
+  const carriers = await pilotCarriers();
   let invoices = 0;
   for (const carrierId of carriers) {
     try {

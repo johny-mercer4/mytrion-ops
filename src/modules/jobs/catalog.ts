@@ -68,7 +68,7 @@ export function payloadToContext(parsed: z.infer<typeof tenantContextSchema>): T
 export const DEAD_LETTER_QUEUE = 'jobs.dead';
 
 /** Notification pollers (card_status diff, later limit/receipt/balance). Singleton cron —
- *  runs never overlap; no-ops while NOTIFY_POLL_CARRIERS is empty. */
+ *  runs never overlap; no-ops with no registered owners and empty NOTIFY_POLL_CARRIERS. */
 export const notificationPollJob = defineJob({
   name: 'notification.poll',
   schema: z.object({}),
