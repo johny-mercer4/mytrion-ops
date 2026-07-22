@@ -40,8 +40,9 @@ describe('catalog shape', () => {
     // Deluge→native (kind: 'local'): 4 dashboards + 6 CRM-backed (inbox/announcements/leads/
     // application/trucking), dropping the deluge count 30→20; billing's last one drops it to 19.
     expect(all.filter((t) => t.kind === 'deluge')).toHaveLength(19);
-    // +7 billing servercrm touchpoints (deals, debtors, avg-days, carrier-type, 3× prepay).
-    expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(51);
+    // servercrm reads incl. 7 billing (deals, debtors, avg-days, carrier-type, 3× prepay); count
+    // reflects the build merge (retention work moved some CS touchpoints to kind:'local').
+    expect(all.filter((t) => t.kind === 'servercrm')).toHaveLength(49);
     // BOCA + Close Application (Playwright microservice) + Zapier ticket-email webhook.
     expect(all.filter((t) => t.kind === 'browserauto')).toHaveLength(2);
     expect(all.filter((t) => t.kind === 'zapier')).toHaveLength(1);
