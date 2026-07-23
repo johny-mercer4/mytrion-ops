@@ -13,9 +13,14 @@ import { config } from './config.js';
 
 const REFRESH_MS = 5 * 60_000;
 const BIND_COOLDOWN_MS = 60_000;
+/** Miss-driven refresh floor: an unmapped chat's message may re-pull the map at most this often —
+ * so a mapping saved in the CRM lands on the very NEXT message (on-time, no 5-min wait), while a
+ * spammy unknown group can't turn the map fetch into a hot loop. */
+const MISS_REFRESH_MS = 15_000;
 
 let map = new Map<string, string>();
 let fetchedAt = 0;
+let lastMissRefresh = 0;
 const bindTried = new Map<number, number>();
 
 async function refresh(force = false): Promise<void> {
@@ -43,7 +48,13 @@ export async function chatMapSize(): Promise<number> {
 
 export async function carrierFor(chatId: number): Promise<string | null> {
   await refresh();
-  const hit = map.get(String(chatId));
+  let hit = map.get(String(chatId));
+  if (!hit && Date.now() - lastMissRefresh > MISS_REFRESH_MS) {
+    // Unknown chat: the mapping may have JUST been saved in the CRM — check live before giving up.
+    lastMissRefresh = Date.now();
+    await refresh(true);
+    hit = map.get(String(chatId));
+  }
   if (hit) return hit;
   if (config.groupChatId && String(chatId) === config.groupChatId && config.carrierId) return config.carrierId;
   return null;

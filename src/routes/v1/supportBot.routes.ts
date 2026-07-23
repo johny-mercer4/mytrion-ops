@@ -186,9 +186,9 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
    * Prod monitor passthrough (2026-07-23): the gateway's web monitor listens on localhost:8787
    * INSIDE the same container, and Render exposes only $PORT — so the dashboard was unreachable
    * in prod. These two routes proxy it at /v1/support-bot/monitor/?token=… . Auth is the
-   * monitor's own MONITOR_TOKEN (browser-opened dashboard — no Bearer headers), and the proxy
-   * FAILS CLOSED: with MONITOR_TOKEN unset in the environment it answers 404, so the dashboard
-   * can never be exposed unauthenticated by accident.
+   * monitor's own MONITOR_TOKEN when it is set; with MONITOR_TOKEN unset the dashboard is OPEN
+   * (owner decision 2026-07-23 — "tokensiz"): anyone with the URL can read client questions,
+   * replies and token spend. To lock it later, just set MONITOR_TOKEN in the env — no code change.
    */
   const monitorUpstream = `http://localhost:${process.env['MONITOR_PORT'] ?? '8787'}`;
   async function proxyMonitor(
@@ -196,7 +196,6 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
     request: { query: unknown },
     reply: { code: (n: number) => { send: (b: unknown) => unknown }; header: (k: string, v: string) => void },
   ): Promise<unknown> {
-    if (!process.env['MONITOR_TOKEN']) return reply.code(404).send({ error: 'monitor disabled' });
     const token = String((request.query as Record<string, unknown>)?.['token'] ?? '');
     const res = await fetch(`${monitorUpstream}${path}?token=${encodeURIComponent(token)}`, {
       signal: AbortSignal.timeout(10_000),
