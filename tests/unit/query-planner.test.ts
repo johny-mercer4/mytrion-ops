@@ -17,29 +17,34 @@ const passages = [{ content: 'Late fees accrue from day 30 at 1.5%/month.' }];
 
 afterEach(() => vi.restoreAllMocks());
 
-describe('judgeSufficiency strictness', () => {
-  it('accepts only an explicit sufficient: true', async () => {
-    setOpenAIClient(stubCompletion('{"sufficient": true, "missingQueries": []}'));
-    expect((await judgeSufficiency('q', passages)).sufficient).toBe(true);
+describe('judgeSufficiency / CRAG grade', () => {
+  it('accepts Correct grade as sufficient', async () => {
+    setOpenAIClient(stubCompletion('{"grade": "Correct", "sufficient": true, "missingQueries": []}'));
+    const v = await judgeSufficiency('q', passages);
+    expect(v.sufficient).toBe(true);
+    expect(v.grade).toBe('Correct');
   });
 
-  it('treats a missing sufficient field as insufficient (no silent certification)', async () => {
-    setOpenAIClient(stubCompletion('{"missingQueries": ["late fee grace period"]}'));
+  it('maps Ambiguous with missingQueries', async () => {
+    setOpenAIClient(
+      stubCompletion('{"grade": "Ambiguous", "sufficient": false, "missingQueries": ["late fee grace period"]}'),
+    );
     const verdict = await judgeSufficiency('q', passages);
     expect(verdict.sufficient).toBe(false);
+    expect(verdict.grade).toBe('Ambiguous');
     expect(verdict.missingQueries).toEqual(['late fee grace period']);
   });
 
-  it('treats garbled judge output as insufficient with no follow-ups (loop exits honestly)', async () => {
+  it('treats garbled judge output as Incorrect with no follow-ups', async () => {
     setOpenAIClient(stubCompletion('not json at all'));
     const verdict = await judgeSufficiency('q', passages);
-    expect(verdict).toEqual({ sufficient: false, missingQueries: [] });
+    expect(verdict).toEqual({ sufficient: false, grade: 'Incorrect', missingQueries: [] });
   });
 
-  it('treats a judge failure as insufficient with no follow-ups', async () => {
+  it('treats a judge failure as Incorrect with no follow-ups', async () => {
     setOpenAIClient(stubFailure());
     const verdict = await judgeSufficiency('q', passages);
-    expect(verdict).toEqual({ sufficient: false, missingQueries: [] });
+    expect(verdict).toEqual({ sufficient: false, grade: 'Incorrect', missingQueries: [] });
   });
 });
 

@@ -16,6 +16,8 @@ vi.mock('../../src/integrations/dwhCards.js', () => ({
   // Card lookups by id are EXACT queries, not a scan of listDwhCards — that scan capped at 100 and
   // silently broke every driver on a carrier with more cards than that.
   findDwhCardById: vi.fn(async () => null),
+  // Read scoping uses AnyStatus (inactive cards still resolve); writes stay on active-only above.
+  findDwhCardByIdAnyStatus: vi.fn(async () => null),
   isActiveCardOfCarrier: vi.fn(async () => false),
 }));
 
@@ -118,7 +120,7 @@ import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { AppError } from '../../src/lib/errors.js';
 import { carrierInvitationRepo } from '../../src/repos/carrierInvitationRepo.js';
 import { registeredMiniAppCompanyRepo, type RegisteredMiniAppCompanyDto } from '../../src/repos/registeredMiniAppCompanyRepo.js';
-import { listDwhCards, findDwhCardById, findDwhCardByNumber, isActiveCardOfCarrier } from '../../src/integrations/dwhCards.js';
+import { listDwhCards, findDwhCardById, findDwhCardByIdAnyStatus, findDwhCardByNumber, isActiveCardOfCarrier } from '../../src/integrations/dwhCards.js';
 import { listDwhTransactions, resolveDwhTxnRange } from '../../src/integrations/dwhTransactions.js';
 import { sendDocument, TelegramChatUnreachableError, parseInitDataUser, signTelegramInitData, verifyTelegramInitData } from '../../src/integrations/telegramCarrierBot.js';
 import { executeZohoFunctionWithFallback } from '../../src/integrations/zohoFunctions.js';
@@ -163,6 +165,11 @@ beforeEach(() => {
   dwhCards.mockResolvedValue([]);
   vi.mocked(findDwhCardByNumber).mockResolvedValue(null);
   vi.mocked(findDwhCardById).mockResolvedValue(null);
+  // Driver read scoping calls findDwhCardByIdAnyStatus; keep it wired to the same mock queue the
+  // suite already primes via findDwhCardById so existing withResolvableCard() helpers keep working.
+  vi.mocked(findDwhCardByIdAnyStatus).mockImplementation((carrier, cardId) =>
+    vi.mocked(findDwhCardById)(carrier, cardId),
+  );
   vi.mocked(isActiveCardOfCarrier).mockResolvedValue(false);
   crm.getCarrierOverview.mockResolvedValue({ company_name: 'Acme Transport LLC', is_active: true });
   registrationRepo.list.mockResolvedValue([]);
@@ -186,6 +193,7 @@ beforeEach(() => {
   // the per-carrier window from a prior test can't leak a spurious 429, and benign wrapper stubs.
   env.FF_MINIAPP_CARD_WRITES_ENABLED = false;
   env.FF_MINIAPP_MONEY_CODE_ENABLED = false;
+  env.FF_MINIAPP_MANAGER_INVITES_ENABLED = false;
   resetRateBucketsForTests();
   efs.getCardEfsInfo.mockResolvedValue({ ok: true } as never);
   efs.overrideCard.mockResolvedValue({ ok: true } as never);
@@ -597,7 +605,23 @@ describe('manager access — owner-equivalent, plus manager invites', () => {
     expect(res.json()).toMatchObject({ count: 1 });
   });
 
+  it('fails closed with 503 when manager self-serve invites are flagged off', async () => {
+    // Default is OFF (owner decision 2026-07-22) — do not queue a registration; the flag gate
+    // rejects before auth, and a leftover once-mock would leak into the next test.
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/carrier/mini-app/manager-invites',
+      headers: { 'content-type': 'application/json' },
+      payload: { initData: 'signed', name: 'Ops Manager' },
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toMatchObject({ error: { code: 'MANAGER_INVITES_DISABLED' } });
+    expect(inviteRepo.create).not.toHaveBeenCalled();
+  });
+
   it('lets a manager mint a manager registration link (managers can grow the team)', async () => {
+    env.FF_MINIAPP_MANAGER_INVITES_ENABLED = true;
     registrationRepo.findByTelegramUserId.mockResolvedValueOnce(managerReg());
     inviteRepo.findById.mockResolvedValueOnce(inviteRow()); // resolveRegistrationAgent lookup
     inviteRepo.create.mockResolvedValueOnce(managerInviteDto());
@@ -616,6 +640,7 @@ describe('manager access — owner-equivalent, plus manager invites', () => {
   });
 
   it('lets an owner mint a manager link too', async () => {
+    env.FF_MINIAPP_MANAGER_INVITES_ENABLED = true;
     registrationRepo.findByTelegramUserId.mockResolvedValueOnce(registrationRow()); // owner, fleet-manager
     inviteRepo.findById.mockResolvedValueOnce(inviteRow());
     inviteRepo.create.mockResolvedValueOnce(managerInviteDto({ id: 'inv_mgr2' }));
@@ -632,6 +657,7 @@ describe('manager access — owner-equivalent, plus manager invites', () => {
   });
 
   it('rejects a manager invite with no name (a manager must be labeled)', async () => {
+    env.FF_MINIAPP_MANAGER_INVITES_ENABLED = true;
     registrationRepo.findByTelegramUserId.mockResolvedValueOnce(managerReg());
 
     const res = await app.inject({
@@ -646,6 +672,7 @@ describe('manager access — owner-equivalent, plus manager invites', () => {
   });
 
   it('refuses a driver at /manager-invites before minting anything', async () => {
+    env.FF_MINIAPP_MANAGER_INVITES_ENABLED = true;
     registrationRepo.findByTelegramUserId.mockResolvedValueOnce(
       registrationRow({ profile: 'driver', companyType: null, cardId: 'card_1' }),
     );
@@ -1268,7 +1295,8 @@ describe('service requests file real Desk tickets', () => {
 
   // The driver catalog offers only the two card-in-hand requests. The map is what enforces that —
   // not the absence of a button — so a driver's own initData must be refused at every owner-side key.
-  for (const key of ['card-activate', 'card-limit', 'card-replace', 'card-fraud', 'billing-form', 'ref-guides'] as const) {
+  // Owner-only catalog keys (ref-guides retired; account-reactivate is the CS reactivation path).
+  for (const key of ['card-activate', 'card-limit', 'card-replace', 'card-fraud', 'billing-form', 'account-reactivate'] as const) {
     it(`refuses a driver at the owner-only request "${key}"`, async () => {
       // No card mock: the role check refuses before requireDriverCardNumber runs, so a queued
       // dwhCards value would go unconsumed and leak into the next test that resolves a card.

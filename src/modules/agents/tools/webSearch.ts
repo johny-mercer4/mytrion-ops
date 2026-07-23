@@ -15,23 +15,27 @@ import { wrapUntrusted } from '../../security/untrusted.js';
 // The Responses web-search built-in tool. Typed locally so the literal matches the SDK union.
 const WEB_SEARCH_TOOL: OpenAI.Responses.Tool = { type: 'web_search_preview' };
 
+/** Programmatic web search for CRAG fallback (raw text; caller wraps UNTRUSTED). */
+export async function runWebSearch(query: string): Promise<string | undefined> {
+  try {
+    const res = await getOpenAI().responses.create({
+      model: env.DEEP_WEB_SEARCH_MODEL,
+      tools: [WEB_SEARCH_TOOL],
+      input: query,
+    });
+    const text = res.output_text?.trim();
+    return text && text.length > 0 ? text : undefined;
+  } catch (err) {
+    logger.warn({ err }, 'agent web search failed');
+    return undefined;
+  }
+}
+
 export const webSearchTool = tool(
   async ({ query }: { query: string }) => {
-    try {
-      const res = await getOpenAI().responses.create({
-        model: env.DEEP_WEB_SEARCH_MODEL,
-        tools: [WEB_SEARCH_TOOL],
-        input: query,
-      });
-      const text = res.output_text?.trim();
-      return text && text.length > 0
-        ? wrapUntrusted('web', text)
-        : 'Web search returned no usable result.';
-    } catch (err) {
-      logger.warn({ err }, 'agent web search failed');
-      const reason = err instanceof Error ? err.message : 'unknown error';
-      return `Web search is currently unavailable (${reason}).`;
-    }
+    const text = await runWebSearch(query);
+    if (text) return wrapUntrusted('web', text);
+    return 'Web search returned no usable result (or is currently unavailable).';
   },
   {
     name: 'internet_search',

@@ -244,9 +244,12 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
         getTicketAttachments(id, q.limit).catch(() => [] as Record<string, unknown>[]),
       ]);
       // The thread LIST only carries a truncated `summary`; fetch each thread's full `content` in
-      // parallel so long customer emails / replies aren't cut off (reference loads comments with
-      // limit 100 — match that window). Falls back to the summary if the per-thread GET fails.
-      const recent = threadList.slice(-40);
+      // parallel so long customer emails / replies aren't cut off. Only the most recent threads get
+      // hydrated — each hydration is a separate Zoho GET, so an unbounded fan-out (a long-running
+      // ticket can have dozens of threads) is what made opening a ticket slow. Older threads keep
+      // their summary; the pane still shows them, just not the fully-expanded body.
+      const THREAD_HYDRATE_WINDOW = 15;
+      const recent = threadList.slice(-THREAD_HYDRATE_WINDOW);
       const enriched = await Promise.all(
         recent.map(async (t) => {
           if (typeof t.content === 'string' && t.content) return t;

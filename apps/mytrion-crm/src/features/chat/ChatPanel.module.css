@@ -1,11 +1,17 @@
+/* Premium Glassmorphism UI for Horizon AI */
+
 .dock {
-  width: 404px;
+  width: 420px;
   flex: none;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-left: 1px solid var(--border);
-  background: var(--surface-alt);
+  border-left: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--surface) 95%, transparent) 0%, color-mix(in srgb, var(--bg-primary) 85%, transparent) 100%);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: -10px 0 40px rgba(0, 0, 0, 0.1);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .full {
@@ -13,52 +19,58 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: color-mix(in srgb, var(--surface) 85%, transparent);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--bg-primary) 85%, transparent), color-mix(in srgb, var(--surface) 50%, transparent));
+  border-radius: 24px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   margin: var(--space-4);
   overflow: hidden;
+  transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-3_5) var(--space-4);
-  border-bottom: 1px solid var(--border);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-light);
   flex: none;
+  background: linear-gradient(to right, color-mix(in srgb, var(--surface-raised) 50%, transparent), transparent);
 }
 
 .title {
   display: flex;
   align-items: center;
-  gap: var(--space-2_5);
+  gap: var(--space-3);
   min-width: 0;
 }
 
 .name {
-  font-family: var(--font-head);
-  font-size: var(--text-base);
-  font-weight: var(--fw-bold);
-  color: var(--text-primary);
+  font-family: 'Inter', var(--font-head);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: -0.01em;
 }
 
 .sub {
-  font-size: var(--text-2xs);
+  font-size: var(--text-xs);
   color: var(--text-muted);
+  letter-spacing: 0.02em;
+  font-weight: 500;
 }
 
 .headerActions {
   display: flex;
   align-items: center;
-  gap: var(--space-1_5);
+  gap: var(--space-2);
   flex: none;
 }
 
-/* The transcript area the history overlay covers. */
 .bodyWrap {
   position: relative;
   flex: 1;
@@ -67,7 +79,6 @@
   flex-direction: column;
 }
 
-/* Visually hidden live region for screen readers. */
 .srOnly {
   position: absolute;
   width: 1px;
@@ -83,52 +94,73 @@
 .new {
   display: flex;
   align-items: center;
-  gap: var(--space-1_5);
+  gap: var(--space-2);
   font-size: var(--text-xs);
-  font-weight: var(--fw-semibold);
-  color: var(--text-muted);
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: var(--space-1_5) var(--space-2_5);
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  padding: var(--space-2) var(--space-3);
   cursor: pointer;
   flex: none;
-  transition:
-    color var(--dur-fast) var(--ease-standard),
-    border-color var(--dur-fast) var(--ease-standard);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: var(--shadow-sm);
 }
+
 .new:hover:not(:disabled) {
-  color: var(--text-secondary);
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--surface-raised) 150%, transparent);
+  border-color: var(--border);
+  transform: translateY(-1px);
 }
+
+.new:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
 .new:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: default;
 }
 
 .error {
-  margin: 0;
-  padding: var(--space-2) var(--space-4);
-  font-size: var(--text-xs);
-  color: var(--danger);
+  margin: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  font-size: var(--text-sm);
+  color: #fff;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(220, 38, 38, 0.05) 100%);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 16px;
+  font-weight: 500;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.15);
+  animation: slideInDown 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideInDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .composerWrap {
   flex: none;
-  padding: var(--space-3_5) var(--space-4);
+  padding: var(--space-3) var(--space-5) var(--space-5);
+  background: linear-gradient(to top, color-mix(in srgb, var(--bg-primary) 95%, transparent), transparent);
+  border-top: 1px solid var(--border-light);
 }
 
-/* On narrow screens the dock drops below the content (handled by the shell). A bounded height
-   keeps the transcript scrolling INTERNALLY so the composer stays reachable on phones. */
 @media (max-width: 1024px) {
   .dock {
     width: 100%;
     border-left: none;
-    border-top: 1px solid var(--border);
-    max-height: 70dvh;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    max-height: 75dvh;
     min-height: 40dvh;
+    border-radius: 24px 24px 0 0;
   }
   .composerWrap {
-    padding-bottom: calc(var(--space-3_5) + env(safe-area-inset-bottom));
+    padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
   }
 }

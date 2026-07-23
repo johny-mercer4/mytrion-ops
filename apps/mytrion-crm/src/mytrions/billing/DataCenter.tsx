@@ -334,15 +334,6 @@ export function DataCenter() {
         </div>
       </div>
 
-      {/* ── Initial Loader ── */}
-      {loading && deals.length === 0 ? (
-        <div className="bm-initial-loader">
-          <div className="bm-loader-ring" />
-          <div className="bm-loader-text">Loading deals</div>
-          <div className="bm-loader-sub">Fetching from data warehouse...</div>
-        </div>
-      ) : null}
-
       {/* ── Error ── the full banner only when there's nothing to show; if deals are already on
            screen, a transient refresh failure shows a small non-destructive notice instead of
            wiping the table. */}
@@ -368,11 +359,10 @@ export function DataCenter() {
         </div>
       ) : null}
 
-      {/* ── Deals Table ── */}
-      {!loading || deals.length > 0 ? (
-        <div className="bm-section" style={{ flex: 1, minHeight: 0 }}>
+      {/* ── Deals Table (skeleton rows on initial / View-as load — no centered ring) ── */}
+      <div className="bm-section" style={{ flex: 1, minHeight: 0 }}>
           <div className="bm-table-wrap" ref={tableWrapRef} style={{ flex: 1, minHeight: 0 }}>
-            <table className="bm-table" id="dc-deals-table">
+            <table className="bm-table" id="dc-deals-table" aria-busy={loading && deals.length === 0}>
               <thead>
                 <tr>
                   <th>Deal Name</th>
@@ -385,7 +375,31 @@ export function DataCenter() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {loading && deals.length === 0 ? (
+                  Array.from({ length: 8 }, (_, i) => (
+                    <tr key={`skel-${i}`} className="dc-deal-row" aria-hidden>
+                      <td>
+                        <div className="bm-skeleton" style={{ height: 12, width: i % 2 === 0 ? '68%' : '54%' }} />
+                      </td>
+                      <td>
+                        <div className="bm-skeleton" style={{ height: 11, width: 72 }} />
+                      </td>
+                      <td>
+                        <div className="bm-skeleton" style={{ height: 22, width: 110, borderRadius: 999 }} />
+                      </td>
+                      <td>
+                        <div className="bm-skeleton" style={{ height: 11, width: 88 }} />
+                      </td>
+                      <td>
+                        <div className="bm-skeleton" style={{ height: 22, width: 86, borderRadius: 999 }} />
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div className="bm-skeleton" style={{ height: 11, width: 48, marginLeft: 'auto' }} />
+                      </td>
+                      <td />
+                    </tr>
+                  ))
+                ) : filtered.length === 0 ? (
                   <tr>
                     <td colSpan={7}>
                       <div className="bm-empty">
@@ -461,7 +475,6 @@ export function DataCenter() {
             </table>
           </div>
         </div>
-      ) : null}
 
       {/* ── Deal Detail modal (read-only) ── */}
       {openDeal ? <DealDetailModal deal={openDeal} onClose={() => setOpenDeal(null)} /> : null}

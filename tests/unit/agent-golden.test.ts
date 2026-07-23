@@ -1,6 +1,6 @@
 /**
  * Golden policy suite — locks each agent's effective posture so a manifest edit that widens
- * (or silently breaks) an agent's authority fails CI loudly. For each of the 10 agents, under
+ * (or silently breaks) an agent's authority fails CI loudly. For each registered agent, under
  * a caller from its own primary department: the exact bound registry tools, the effective RAG
  * departments, read-only posture, and valid escalation targets.
  * (Behavioral golden tasks with a scripted model run via scripts/evalLive.ts — not in CI.)
@@ -14,6 +14,7 @@ import { toolRegistry } from '../../src/modules/tools/index.js';
 import { makeContext } from '../fixtures/seed.js';
 
 // File tools appear only when FF_FILES_ENABLED registers them; golden values assume default-off.
+// Blackboard tools register when FF_AGENT_BLACKBOARD is on (default ON as of SotA Phase 1).
 // crm.* client-service tools are on sales + customer-service (owner-scoped self-service).
 const CLIENT_TOOLS = [
   'crm.carrier_balance',
@@ -24,33 +25,55 @@ const CLIENT_TOOLS = [
   'crm.pick_my_client',
   'crm.transactions',
 ];
+const BLACKBOARD = ['blackboard.read', 'blackboard.write'] as const;
 
-// analytics.snapshot (read-class, cached org-wide dashboard aggregates) is bound to every agent
-// EXCEPT sales — ratified 2026-07: it exposes company-wide totals AND a top-agents-by-gallons
-// ranking (other reps' numbers), so a sales rep must not have it; they only see their own book.
+// Warehouse metrics go through dbt MCP (`dbt_mcp.*` wildcards + warehouse.my_gallons). Those tools
+// register only when FF_DBT_MCP_ENABLED (off in vitest baseline), so goldens list the static
+// native tools only. analytics.snapshot is NOT agent-bound (direct DWH pool — dashboard-only).
 const GOLDEN: Record<string, { caller: string[]; tools: string[]; rag: string[] }> = {
   sales: {
     caller: ['sales'],
-    tools: ['agent.activity', 'agent.sales_snapshot', ...CLIENT_TOOLS, 'zoho_crm.query'].sort(),
+    tools: ['agent.activity', 'agent.sales_snapshot', ...BLACKBOARD, ...CLIENT_TOOLS, 'zoho_crm.query'].sort(),
     rag: ['sales'],
   },
-  marketing: { caller: ['marketing'], tools: ['analytics.snapshot', 'zoho_crm.query'], rag: ['marketing'] },
-  billing: { caller: ['billing'], tools: ['agent.debtors', 'analytics.snapshot', 'zoho_crm.query'], rag: ['billing'] },
+  'data-center': {
+    caller: ['sales'],
+    tools: ['agent.activity', 'agent.sales_snapshot', ...BLACKBOARD, ...CLIENT_TOOLS, 'zoho_crm.query'].sort(),
+    rag: ['sales'],
+  },
+  marketing: {
+    caller: ['marketing'],
+    tools: [...BLACKBOARD, 'zoho_crm.query'].sort(),
+    rag: ['marketing'],
+  },
+  billing: {
+    caller: ['billing'],
+    tools: ['agent.debtors', ...BLACKBOARD, 'zoho_crm.query'].sort(),
+    rag: ['billing'],
+  },
   'customer-service': {
     caller: ['customer-service'],
-    tools: ['analytics.snapshot', ...CLIENT_TOOLS, 'zoho_crm.query', 'zoho_desk.search_tickets'].sort(),
+    tools: [...BLACKBOARD, ...CLIENT_TOOLS, 'zoho_crm.query', 'zoho_desk.search_tickets'].sort(),
     rag: ['customer-service'],
   },
-  verification: { caller: ['verification'], tools: ['analytics.snapshot', 'zoho_crm.query'], rag: ['verification'] },
-  retention: { caller: ['retention'], tools: ['analytics.snapshot', 'zoho_crm.query'], rag: ['retention'] },
+  verification: {
+    caller: ['verification'],
+    tools: [...BLACKBOARD, 'zoho_crm.query'].sort(),
+    rag: ['verification'],
+  },
+  retention: {
+    caller: ['retention'],
+    tools: [...BLACKBOARD, 'zoho_crm.query'].sort(),
+    rag: ['retention'],
+  },
   collection: {
     caller: ['collection'],
-    tools: ['agent.debtors', 'analytics.snapshot', 'zoho_crm.query'],
+    tools: ['agent.debtors', ...BLACKBOARD, 'zoho_crm.query'].sort(),
     rag: ['collection'],
   },
   finance: {
     caller: ['finance'],
-    tools: ['agent.debtors', 'analytics.snapshot', 'zoho_crm.query'],
+    tools: ['agent.debtors', ...BLACKBOARD, 'zoho_crm.query'].sort(),
     rag: ['finance'],
   },
   // analyst/manager goldens use an admin caller (their tier); rag [] = unfiltered-by-scope.
@@ -60,10 +83,10 @@ const GOLDEN: Record<string, { caller: string[]; tools: string[]; rag: string[] 
       'agent.activity',
       'agent.debtors',
       'agent.sales_snapshot',
-      'analytics.snapshot',
+      ...BLACKBOARD,
       'zoho_crm.query',
       'zoho_desk.search_tickets',
-    ],
+    ].sort(),
     rag: [],
   },
   manager: {
@@ -72,11 +95,11 @@ const GOLDEN: Record<string, { caller: string[]; tools: string[]; rag: string[] 
       'agent.activity',
       'agent.debtors',
       'agent.sales_snapshot',
-      'analytics.snapshot',
+      ...BLACKBOARD,
       'zoho_crm.query',
       'zoho_desk.search_tickets',
       'zoho_people.search_employees',
-    ],
+    ].sort(),
     rag: [],
   },
 };
@@ -88,7 +111,7 @@ function callerFor(key: string): ReturnType<typeof makeContext> {
     : makeContext({ scopes: ['*'], departments: golden.caller, allDepartmentAccess: false });
 }
 
-describe('golden per-agent policy (10 agents)', () => {
+describe('golden per-agent policy', () => {
   for (const manifest of ALL_AGENT_MANIFESTS) {
     const golden = GOLDEN[manifest.key];
     it(`${manifest.key}: bound tools, RAG scope, and escalation targets match the golden record`, () => {

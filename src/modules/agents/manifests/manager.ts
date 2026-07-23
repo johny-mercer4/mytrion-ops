@@ -1,9 +1,9 @@
 import { KNOWN_DEPARTMENTS } from '../../../lib/department.js';
 import { AGENT_KEYS, type AgentManifest } from '../types.js';
 import {
-  FILE_TOOLS,
+  BLACKBOARD_TOOLS, FILE_TOOLS,
   READ_ONLY_RULE,
-  ANALYTICS_TOOLS,
+  DBT_MCP_TOOLS,
   WAREHOUSE_TOOLS,
   METRICS_ROUTING_RULE,
 } from './shared.js';
@@ -29,8 +29,8 @@ export const managerAgent: AgentManifest = {
     'zoho_crm.query',
     'zoho_desk.search_tickets',
     'zoho_people.search_employees',
-    ...FILE_TOOLS, ...ANALYTICS_TOOLS, ...WAREHOUSE_TOOLS,
-    'dbt_mcp.*', 'zoho_mcp.*'
+    ...BLACKBOARD_TOOLS, ...FILE_TOOLS, ...DBT_MCP_TOOLS, ...WAREHOUSE_TOOLS,
+    'zoho_mcp.*',
   ],
   composioToolkits: [],
   ragScope: { departments: [], allowAllDepartments: true },

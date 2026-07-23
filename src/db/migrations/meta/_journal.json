@@ -365,6 +365,48 @@
       "when": 1784715600000,
       "tag": "0051_retention_ownership_transfers",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1784719200000,
+      "tag": "0052_ownership_transfer_deal_contact_names",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1784722800000,
+      "tag": "0053_repair_client_news_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1784726400000,
+      "tag": "0054_agent_blackboard_skills",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1784730000000,
+      "tag": "0055_mytrion_role_defaults",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1784733600000,
+      "tag": "0056_mytrion_inbox_messages",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1784737200000,
+      "tag": "0057_mytrion_access_modes",
+      "breakpoints": true
     }
   ]
 }

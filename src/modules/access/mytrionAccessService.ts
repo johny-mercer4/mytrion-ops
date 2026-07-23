@@ -1,10 +1,16 @@
 /**
  * The single authority for "which Mytrions may this worker use" — combines the per-profile default
- * (mytrion_profile_defaults) with the per-user override (worker_mytrion_access) into a final
- * {accessibleMytrions, homeMytrion, allDepartmentAccess, departments}. Injected into the verified
- * session context (authService.contextFromClaims) so backend RBAC (tool/agent/knowledge department
- * gates) is DB-driven, and surfaced to the client (/auth/me) so the UI stops guessing from profile
- * strings.
+ * (mytrion_profile_defaults), per-role default (mytrion_role_defaults), and per-user override
+ * (worker_mytrion_access) into a final {accessibleMytrions, homeMytrion, allDepartmentAccess,
+ * departments}. Injected into the verified session context (authService.contextFromClaims) so
+ * backend RBAC (tool/agent/knowledge department gates) is DB-driven, and surfaced to the client
+ * (/auth/me) so the UI stops guessing from profile strings.
+ *
+ * Layering: profile default (or legacy floor) → role default (UNION grants / OR all-dept / home
+ * overlay) → per-user override (replace / deny) → env-admin pin.
+ *
+ * Per-Mytrion modes (read|full): env-admin / allDept → all full; else user explicit mode wins;
+ * else role mode; else full (profile grants are implicit full). Mode does not affect entry.
  *
  * Safety: an env-marker admin (resolveAllDepartmentAccess — ADMIN_PROFILE_MARKERS / ADMIN_USERS /
  * BYPASS_USERS) is PINNED to all-access; the DB can never lower it (no lockout). On any DB error
@@ -19,9 +25,13 @@ import {
   MYTRION_DEPARTMENT,
   MYTRION_IDS,
   profileKeyOf,
+  roleKeyOf,
+  type MytrionAccessMode,
+  type MytrionAccessModes,
   type MytrionId,
 } from '../../lib/mytrions.js';
 import { mytrionProfileDefaultsRepo, type MytrionProfileDefaultDto } from '../../repos/mytrionProfileDefaultsRepo.js';
+import { mytrionRoleDefaultsRepo, type MytrionRoleDefaultDto } from '../../repos/mytrionRoleDefaultsRepo.js';
 import { workerMytrionAccessRepo, type WorkerMytrionAccessDto } from '../../repos/workerMytrionAccessRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
@@ -32,6 +42,39 @@ export interface ResolvedAccess {
   departments: string[];
   /** Zoho user ids this worker may "View as" (targeted impersonation grant; per-user override). */
   viewAsUserIds: string[];
+  /** Effective read|full per accessible Mytrion (omitted ids treated as full). */
+  mytrionAccessModes: MytrionAccessModes;
+}
+
+/** True when the worker may perform write actions in this Mytrion (admins always can). */
+export function canWriteMytrion(
+  access: Pick<ResolvedAccess, 'allDepartmentAccess' | 'accessibleMytrions' | 'mytrionAccessModes'>,
+  id: MytrionId,
+): boolean {
+  if (access.allDepartmentAccess) return true;
+  if (!access.accessibleMytrions.includes(id)) return false;
+  return access.mytrionAccessModes[id] !== 'read';
+}
+
+function resolveModes(
+  accessible: MytrionId[],
+  allDept: boolean,
+  roleModes: MytrionAccessModes,
+  userModes: MytrionAccessModes,
+): MytrionAccessModes {
+  if (allDept) {
+    const out: MytrionAccessModes = {};
+    for (const id of accessible) out[id] = 'full';
+    return out;
+  }
+  const out: MytrionAccessModes = {};
+  for (const id of accessible) {
+    const fromUser = userModes[id];
+    const fromRole = roleModes[id];
+    const mode: MytrionAccessMode = fromUser ?? fromRole ?? 'full';
+    out[id] = mode;
+  }
+  return out;
 }
 
 export interface ResolveWorkerAccessInput {
@@ -100,6 +143,17 @@ function subtract(ids: MytrionId[], denied: MytrionId[]): MytrionId[] {
   return ids.filter((id) => !deny.has(id));
 }
 
+function unionMytrions(a: MytrionId[], b: MytrionId[]): MytrionId[] {
+  const out: MytrionId[] = [];
+  const seen = new Set<MytrionId>();
+  for (const id of [...a, ...b]) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
 /** Home = the configured home if it's still accessible, else the sole accessible Mytrion, else none. */
 function pickHome(home: MytrionId | null, accessible: MytrionId[]): MytrionId | null {
   if (home && accessible.includes(home)) return home;
@@ -108,14 +162,14 @@ function pickHome(home: MytrionId | null, accessible: MytrionId[]): MytrionId | 
 }
 
 /**
- * Pure (no I/O) combine of a worker's profile default + per-user override rows into their final
- * access. Factored out so a bulk caller (the admin listing endpoint) can fetch both tables ONCE
- * and combine in-memory for every user, instead of the per-user resolver's 2 DB round trips each —
- * see resolveBatch below.
+ * Pure (no I/O) combine of profile default + role default + per-user override into final access.
+ * Factored out so a bulk caller (the admin listing endpoint) can fetch tables ONCE and combine
+ * in-memory for every user — see resolveBatch below.
  */
 function combineAccess(
   input: ResolveWorkerAccessInput,
   pd: MytrionProfileDefaultDto | undefined,
+  rd: MytrionRoleDefaultDto | undefined,
   ov: WorkerMytrionAccessDto | undefined,
 ): ComputeResult {
   const envAdmin = resolveAllDepartmentAccess({
@@ -124,38 +178,56 @@ function combineAccess(
     userName: input.userName ?? null,
   });
   const havePd = Boolean(pd && pd.active);
+  const haveRd = Boolean(rd && rd.active);
   const haveOv = Boolean(ov && ov.active);
 
-  // UNMANAGED non-admin (no profile default AND no override configured) → preserve the legacy
-  // profile-derived access. This makes the rollout non-breaking: nothing changes for a worker
-  // until an admin explicitly configures their profile default or a per-user override. Admins
-  // are still handled by the env floor in the compute path below.
-  if (!envAdmin && !havePd && !haveOv) return { value: legacyAccess(input, false), degraded: false };
+  // UNMANAGED non-admin (no profile / role default AND no override) → legacy profile-derived
+  // access so rollout stays non-breaking until an admin configures something.
+  if (!envAdmin && !havePd && !haveRd && !haveOv) return { value: legacyAccess(input, false), degraded: false };
 
-  // Step 1 — base. The active profile default, OR (when none) the legacy-derived FLOOR — so an
-  // "inherit" override never resolves BELOW the un-configured baseline just because the profile
-  // default row hasn't been seeded yet.
-  const floor = havePd ? undefined : legacyAccess(input, false);
-  let allowed: MytrionId[] = havePd && pd ? pd.allowedMytrions : (floor?.accessibleMytrions ?? []);
-  let home: MytrionId | null = havePd && pd ? pd.homeMytrion : (floor?.homeMytrion ?? null);
-  let allDept = havePd && pd ? pd.allDepartmentAccess : (floor?.allDepartmentAccess ?? false);
+  // Step 1 — base grant.
+  // Profile default wins as the starting set. Role-only (no profile row) starts empty so the
+  // role is authoritative. Override-only (no profile/role) keeps the legacy floor so an
+  // "inherit" override never resolves below the unconfigured baseline.
+  let allowed: MytrionId[] = [];
+  let home: MytrionId | null = null;
+  let allDept = false;
+  if (havePd && pd) {
+    allowed = pd.allowedMytrions;
+    home = pd.homeMytrion;
+    allDept = pd.allDepartmentAccess;
+  } else if (!haveRd) {
+    const floor = legacyAccess(input, false);
+    allowed = floor.accessibleMytrions;
+    home = floor.homeMytrion;
+    allDept = floor.allDepartmentAccess;
+  }
 
-  // Step 2 — per-user override (replace allowed / subtract denied / override home + all-access).
+  // Step 2 — role default overlays grants (UNION) and can raise all-dept / set home.
+  // Particular Mytrion on a role = full access to that Mytrion (department 1:1 via mapping below).
+  if (haveRd && rd) {
+    if (rd.allDepartmentAccess) allDept = true;
+    else allowed = unionMytrions(allowed, rd.allowedMytrions);
+    if (rd.homeMytrion != null) home = rd.homeMytrion;
+  }
+
+  // Step 3 — per-user override (replace allowed / subtract denied / override home + all-access).
   let denied: MytrionId[] = [];
   let viewAsUserIds: string[] = [];
+  let userModes: MytrionAccessModes = {};
   if (haveOv && ov) {
     if (ov.allowedMytrions != null) allowed = ov.allowedMytrions;
     denied = ov.deniedMytrions;
     if (ov.allDepartmentAccess != null) allDept = ov.allDepartmentAccess;
     if (ov.homeMytrion != null) home = ov.homeMytrion;
     viewAsUserIds = ov.viewAsUserIds;
+    userModes = ov.mytrionAccessModes ?? {};
   }
 
-  // Step 3 — ADMIN FLOOR: an env-marker admin's all-access can never be lowered by the DB.
+  // Step 4 — ADMIN FLOOR: an env-marker admin's all-access can never be lowered by the DB.
   if (envAdmin) allDept = true;
 
-  // Step 4 — accessible set. env-marker admins are EXEMPT from the deny-list (the no-lockout
-  // invariant must hold end-to-end: a stray deny can't empty a real admin's Mytrion list).
+  // Step 5 — accessible set. env-marker admins are EXEMPT from the deny-list (no-lockout).
   const fullSet = allDept ? [...MYTRION_IDS] : allowed;
   const accessible = envAdmin ? fullSet : subtract(fullSet, denied);
 
@@ -163,6 +235,7 @@ function combineAccess(
   // "everything except X". A non-env-admin all-access grant WITH denies is downgraded to an
   // explicit department grant so the deny actually enforces (not just hidden in the UI list).
   const enforceableAllDept = allDept && (envAdmin || denied.length === 0);
+  const roleModes = haveRd && rd ? (rd.mytrionAccessModes ?? {}) : {};
   return {
     value: {
       accessibleMytrions: accessible,
@@ -170,6 +243,7 @@ function combineAccess(
       allDepartmentAccess: enforceableAllDept,
       departments: enforceableAllDept ? [] : departmentsForMytrions(accessible),
       viewAsUserIds,
+      mytrionAccessModes: resolveModes(accessible, enforceableAllDept || envAdmin, roleModes, userModes),
     },
     degraded: false,
   };
@@ -184,14 +258,18 @@ async function computeAccess(input: ResolveWorkerAccessInput): Promise<ComputeRe
   const ctx = internalCtx(input.tenantId);
 
   try {
-    const pd =
+    const [pd, rd, ov] = await Promise.all([
       input.profileName != null
-        ? await mytrionProfileDefaultsRepo.findByKey(ctx, profileKeyOf(input.profileName))
-        : undefined;
-    const ov = input.zohoUserId
-      ? await workerMytrionAccessRepo.findByZohoUserId(ctx, input.zohoUserId)
-      : undefined;
-    return combineAccess(input, pd, ov);
+        ? mytrionProfileDefaultsRepo.findByKey(ctx, profileKeyOf(input.profileName))
+        : Promise.resolve(undefined),
+      input.zohoRole != null && input.zohoRole.trim() !== ''
+        ? mytrionRoleDefaultsRepo.findByKey(ctx, roleKeyOf(input.zohoRole))
+        : Promise.resolve(undefined),
+      input.zohoUserId
+        ? workerMytrionAccessRepo.findByZohoUserId(ctx, input.zohoUserId)
+        : Promise.resolve(undefined),
+    ]);
+    return combineAccess(input, pd, rd, ov);
   } catch (err) {
     logger.error(
       { err: err instanceof Error ? err.message : String(err), zohoUserId: input.zohoUserId },
@@ -203,11 +281,18 @@ async function computeAccess(input: ResolveWorkerAccessInput): Promise<ComputeRe
 
 /**
  * Fail-open fallback: env-admin → all; else profile/role substring → departments → Mytrions.
- * Customer Service Mytrion is NEVER granted here — Admin Profile Defaults / per-user override only.
+ * Customer Service Mytrion is NEVER granted here — Admin Profile/Role Defaults / per-user only.
  */
 function legacyAccess(input: ResolveWorkerAccessInput, envAdmin: boolean): ResolvedAccess {
   if (envAdmin) {
-    return { accessibleMytrions: [...MYTRION_IDS], homeMytrion: null, allDepartmentAccess: true, departments: [], viewAsUserIds: [] };
+    return {
+      accessibleMytrions: [...MYTRION_IDS],
+      homeMytrion: null,
+      allDepartmentAccess: true,
+      departments: [],
+      viewAsUserIds: [],
+      mytrionAccessModes: resolveModes([...MYTRION_IDS], true, {}, {}),
+    };
   }
   const departments = deriveWorkerDepartments(input.profileName ?? null, input.zohoRole ?? null).filter(
     (d) => d !== 'customer-service',
@@ -222,6 +307,7 @@ function legacyAccess(input: ResolveWorkerAccessInput, envAdmin: boolean): Resol
     allDepartmentAccess: false,
     departments,
     viewAsUserIds: [],
+    mytrionAccessModes: resolveModes(accessible, false, {}, {}),
   };
 }
 
@@ -255,12 +341,9 @@ export const mytrionAccessService = {
   },
 
   /**
-   * Resolve MANY workers' access at once from two bulk queries (profile defaults + overrides) —
+   * Resolve MANY workers' access at once from bulk queries (profile + role defaults + overrides) —
    * used by the admin listing endpoint so listing N users costs O(1) DB round trips instead of the
-   * per-user resolver's 2N (one profile-default + one override lookup per row). Also warms the
-   * per-user TTL cache so a subsequent resolveWorkerAccess() for the same identity hits it.
-   * Pass `prefetchedOverrides` when the caller already loaded the overrides list (e.g. to build its
-   * own override-by-user map) to avoid fetching it twice.
+   * per-user resolver's 3N. Also warms the per-user TTL cache.
    */
   async resolveBatch(
     tenantId: string,
@@ -268,18 +351,24 @@ export const mytrionAccessService = {
     prefetchedOverrides?: WorkerMytrionAccessDto[],
   ): Promise<Map<string, ResolvedAccess>> {
     const ctx = internalCtx(tenantId);
-    const [profileDefaults, overrides] = await Promise.all([
+    const [profileDefaults, roleDefaults, overrides] = await Promise.all([
       mytrionProfileDefaultsRepo.list(ctx),
+      mytrionRoleDefaultsRepo.list(ctx),
       prefetchedOverrides ?? workerMytrionAccessRepo.list(ctx),
     ]);
     const pdByKey = new Map(profileDefaults.map((p) => [p.profileKey, p]));
+    const rdByKey = new Map(roleDefaults.map((r) => [r.roleKey, r]));
     const ovById = new Map(overrides.map((o) => [o.zohoUserId, o]));
 
     const result = new Map<string, ResolvedAccess>();
     for (const input of users) {
       const pd = input.profileName != null ? pdByKey.get(profileKeyOf(input.profileName)) : undefined;
+      const rd =
+        input.zohoRole != null && input.zohoRole.trim() !== ''
+          ? rdByKey.get(roleKeyOf(input.zohoRole))
+          : undefined;
       const ov = ovById.get(input.zohoUserId);
-      const { value, degraded } = combineAccess(input, pd, ov);
+      const { value, degraded } = combineAccess(input, pd, rd, ov);
       if (!degraded) {
         const key = cacheKey(input);
         lastGood.set(key, value);
@@ -293,10 +382,7 @@ export const mytrionAccessService = {
   /**
    * Seed DEFAULT_PROFILE_SEED for a tenant iff it has no profile defaults yet (idempotent —
    * a tenant with ANY rows is left alone, so admin edits are never clobbered). Called at boot
-   * (modules/access/bootstrap.ts) and by GET /admin/mytrion-access/profiles: unseeded tenants
-   * previously fell to the legacy profile-substring floor, which locks out every profile whose
-   * name doesn't contain its department ('Referral Standard Plus', 'Standard', …).
-   * Returns the tenant's (possibly just-seeded) profile defaults.
+   * (modules/access/bootstrap.ts) and by GET /admin/mytrion-access/profiles.
    */
   async ensureProfileDefaultsSeeded(tenantId: string): Promise<MytrionProfileDefaultDto[]> {
     const ctx = internalCtx(tenantId);
@@ -354,7 +440,7 @@ export const mytrionAccessService = {
     }
   },
 
-  /** Clear the whole cache (call after a profile-default change — it affects many users). */
+  /** Clear the whole cache (call after a profile/role-default change — it affects many users). */
   invalidateAll(): void {
     cache.clear();
     lastGood.clear();

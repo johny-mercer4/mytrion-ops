@@ -5,7 +5,12 @@ import {
   type NewWorkerMytrionAccess,
   type WorkerMytrionAccess,
 } from '../db/schema/index.js';
-import { toMytrionIds, type MytrionId } from '../lib/mytrions.js';
+import {
+  toMytrionAccessModes,
+  toMytrionIds,
+  type MytrionAccessModes,
+  type MytrionId,
+} from '../lib/mytrions.js';
 import type { TenantContext } from '../types/tenantContext.js';
 import { firstOrThrow } from './util.js';
 
@@ -23,6 +28,7 @@ export interface WorkerMytrionAccessDto {
   allDepartmentAccess: boolean | null;
   /** Zoho user ids this worker may "View as" (targeted impersonation grant). */
   viewAsUserIds: string[];
+  mytrionAccessModes: MytrionAccessModes;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -40,6 +46,7 @@ export interface UpsertWorkerAccessInput {
   /** null = inherit; boolean = explicit. */
   allDepartmentAccess?: boolean | null;
   viewAsUserIds?: string[];
+  mytrionAccessModes?: MytrionAccessModes;
   active?: boolean;
 }
 
@@ -57,6 +64,7 @@ function toDto(row: WorkerMytrionAccess): WorkerMytrionAccessDto {
     homeMytrion: row.homeMytrion ?? null,
     allDepartmentAccess: row.allDepartmentAccess,
     viewAsUserIds: Array.isArray(row.viewAsUserIds) ? row.viewAsUserIds : [],
+    mytrionAccessModes: toMytrionAccessModes(row.mytrionAccessModes),
     active: row.active,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -100,6 +108,7 @@ export const workerMytrionAccessRepo = {
     const homeMytrion = input.homeMytrion ?? null;
     const allDepartmentAccess = input.allDepartmentAccess === undefined ? null : input.allDepartmentAccess;
     const viewAsUserIds = (input.viewAsUserIds ?? []).map((s) => s.trim()).filter(Boolean);
+    const mytrionAccessModes = toMytrionAccessModes(input.mytrionAccessModes ?? {});
     const active = input.active ?? true;
     const values: NewWorkerMytrionAccess = {
       tenantId: ctx.tenantId,
@@ -112,6 +121,7 @@ export const workerMytrionAccessRepo = {
       homeMytrion,
       allDepartmentAccess,
       viewAsUserIds,
+      mytrionAccessModes,
       active,
     };
     const rows = await db
@@ -128,6 +138,7 @@ export const workerMytrionAccessRepo = {
           homeMytrion,
           allDepartmentAccess,
           viewAsUserIds,
+          mytrionAccessModes,
           active,
           updatedAt: new Date(),
         },

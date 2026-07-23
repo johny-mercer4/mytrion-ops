@@ -14,6 +14,7 @@ export const AGENT_KEYS = [
   'verification',
   'retention',
   'sales',
+  'data-center',
   'marketing',
   'finance',
   'analyst',

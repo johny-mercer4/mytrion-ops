@@ -6,6 +6,7 @@
  */
 
 import type { MytrionId } from '../access/mytrions.config';
+import type { MytrionAccessModes } from './mytrionAccess';
 
 /** Verified worker identity, as returned by the backend's Zoho callback / /auth/me. */
 export interface SessionWorker {
@@ -20,6 +21,8 @@ export interface SessionWorker {
   accessibleMytrions?: MytrionId[];
   /** Auto-route landing target (e.g. Sales Agent → 'sales'); null → the picker. */
   homeMytrion?: MytrionId | null;
+  /** Per-Mytrion read|full (Billing first); omitted ids treated as full. */
+  mytrionAccessModes?: MytrionAccessModes;
   /** Zoho user ids this worker may "View as" (targeted impersonation grant). */
   viewAsUserIds?: string[];
   /** Resolved identities for the view-as targets, for the picker (non-admins get a scoped list). */

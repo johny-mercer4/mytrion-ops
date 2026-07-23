@@ -14,6 +14,8 @@ export interface InsertOwnershipTransferInput {
   retentionCaseId?: number | null;
   carrierId?: string | null;
   companyName?: string | null;
+  dealName?: string | null;
+  contactName?: string | null;
   zohoDealId?: string | null;
   zohoContactId?: string | null;
   zohoAccountId?: string | null;
@@ -60,6 +62,8 @@ export async function insertOwnershipTransfer(
           : null,
       carrierId: input.carrierId?.trim() || null,
       companyName: input.companyName?.trim() || null,
+      dealName: input.dealName?.trim() || null,
+      contactName: input.contactName?.trim() || null,
       zohoDealId: input.zohoDealId?.trim() || null,
       zohoContactId: input.zohoContactId?.trim() || null,
       zohoAccountId: input.zohoAccountId?.trim() || null,

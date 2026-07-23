@@ -100,12 +100,21 @@ function errMsg(e: unknown): string {
 export interface TransactionModalProps {
   tx: TxRow;
   currentUserName: string;
+  /** When false, hide map/unmap/split/memory writes (Billing read-only). */
+  canWrite?: boolean;
   onClose: () => void;
   onPatch: (patch: Partial<TxRow>) => void;
   onToast: (kind: ToastKind, message: string) => void;
 }
 
-export function TransactionModal({ tx, currentUserName, onClose, onPatch, onToast }: TransactionModalProps) {
+export function TransactionModal({
+  tx,
+  currentUserName,
+  canWrite = true,
+  onClose,
+  onPatch,
+  onToast,
+}: TransactionModalProps) {
   /* ── Single-carrier search state ── */
   const [carrierInput, setCarrierInput] = useState(tx.carrierId ?? '');
   const [searching, setSearching] = useState(false);
@@ -506,12 +515,19 @@ export function TransactionModal({ tx, currentUserName, onClose, onPatch, onToas
   const parsedSplits = parseSplitAllocations(tx.splitAllocationsRaw);
   const invoiceRefs = parseInvoiceRefs(tx.cmpRef, parsedSplits);
   const showUnmap =
-    tx.isInvoiceMapped && (!!tx.cmpRef || !!tx.splitAllocationsRaw || tx.mappingType.startsWith('CRM-Sync'));
-  const editable = !tx.isInvoiceMapped;
+    canWrite &&
+    tx.isInvoiceMapped &&
+    (!!tx.cmpRef || !!tx.splitAllocationsRaw || tx.mappingType.startsWith('CRM-Sync'));
+  const editable = canWrite && !tx.isInvoiceMapped;
 
   return (
     <div className="bm-modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="bm-modal-box tx-detail-modal">
+        {!canWrite ? (
+          <div className="tx-save-msg" style={{ margin: '0.75rem 1rem 0', borderRadius: 6 }} role="status">
+            Billing access is read-only — mapping and unmap are disabled.
+          </div>
+        ) : null}
         {/* Accent header */}
         <div className={`tx-modal-accent-hdr tx-modal-accent-${tx.source}`}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>

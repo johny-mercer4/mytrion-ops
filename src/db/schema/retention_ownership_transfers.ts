@@ -16,6 +16,7 @@ export const OWNERSHIP_TRANSFER_REASON = {
   retentionHandoff: 'retention_handoff',
   openPoolClaim: 'open_pool_claim',
   manualRevert: 'manual_revert',
+  adminManual: 'admin_manual',
 } as const;
 
 export type OwnershipTransferReason =
@@ -39,6 +40,8 @@ export const retentionOwnershipTransfers = pgTable(
     retentionCaseId: bigint('retention_case_id', { mode: 'number' }),
     carrierId: text('carrier_id'),
     companyName: text('company_name'),
+    dealName: text('deal_name'),
+    contactName: text('contact_name'),
     zohoDealId: text('zoho_deal_id'),
     zohoContactId: text('zoho_contact_id'),
     zohoAccountId: text('zoho_account_id'),
@@ -65,6 +68,10 @@ export const retentionOwnershipTransfers = pgTable(
     dealIdx: index('retention_ownership_transfers_deal_idx').on(table.zohoDealId),
     caseIdx: index('retention_ownership_transfers_case_idx').on(table.retentionCaseId),
     carrierIdx: index('retention_ownership_transfers_carrier_idx').on(table.carrierId),
+    fromOwnerIdx: index('retention_ownership_transfers_from_owner_idx').on(
+      table.fromOwnerZohoUserId,
+    ),
+    toOwnerIdx: index('retention_ownership_transfers_to_owner_idx').on(table.toOwnerZohoUserId),
   }),
 );
 

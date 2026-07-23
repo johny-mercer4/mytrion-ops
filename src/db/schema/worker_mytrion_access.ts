@@ -1,6 +1,6 @@
 import { createId } from '@paralleldrive/cuid2';
 import { boolean, index, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
-import type { MytrionId } from '../../lib/mytrions.js';
+import type { MytrionAccessModes, MytrionId } from '../../lib/mytrions.js';
 
 /**
  * worker_mytrion_access — one row per (tenant, Zoho user) access OVERRIDE, layered on top of the
@@ -14,6 +14,7 @@ import type { MytrionId } from '../../lib/mytrions.js';
  *  - allDepartmentAccess NULL → inherit; true/false → explicit override (but an env-marker admin
  *    is always pinned to all-access by the resolver — the DB can never lock a real admin out).
  *  - homeMytrion           → per-user auto-route landing override.
+ *  - mytrionAccessModes    → per-Mytrion read|full; user explicit mode wins over role mode.
  *
  * No FKs (house rule); MytrionId values validated in the repo/Zod layer.
  */
@@ -37,6 +38,8 @@ export const workerMytrionAccess = pgTable(
     allDepartmentAccess: boolean('all_department_access'),
     /** Zoho user ids this (possibly non-admin) worker may "View as" — targeted impersonation grant. */
     viewAsUserIds: jsonb('view_as_user_ids').$type<string[]>().notNull().default([]),
+    /** Per-Mytrion read|full; omitted ids inherit role mode or default to full. */
+    mytrionAccessModes: jsonb('mytrion_access_modes').$type<MytrionAccessModes>().notNull().default({}),
     active: boolean('active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

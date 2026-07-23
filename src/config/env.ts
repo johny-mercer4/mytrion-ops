@@ -122,6 +122,28 @@ const EnvSchema = z.object({
   // Long-term agent memory (FF_AGENT_MEMORY): decay half-life + per-(agent,dept) row cap.
   AGENT_MEMORY_HALFLIFE_DAYS: z.coerce.number().int().positive().default(30),
   AGENT_MEMORY_MAX_PER_KEY: z.coerce.number().int().positive().default(500),
+  // Context paging (PagedPostgresSaver): char budget for mid-history before eviction (~tokens×4).
+  AGENT_CONTEXT_PAGE_CHARS: z.coerce.number().int().positive().default(32_000),
+  // Keep this many trailing messages when paging (plus the first message).
+  AGENT_CONTEXT_KEEP_RECENT: z.coerce.number().int().positive().max(50).default(19),
+  // Inject goal re-anchoring into the turn brief every N user turns (messageCount/2).
+  AGENT_GOAL_RECITE_EVERY: z.coerce.number().int().positive().default(4),
+  // Shared JSON blackboard for supervisor↔worker handoffs.
+  FF_AGENT_BLACKBOARD: flag('1'),
+  AGENT_BLACKBOARD_MAX_CHARS: z.coerce.number().int().positive().default(16_384),
+  // Procedural skill cache (winning tool trajectories).
+  FF_AGENT_SKILL_CACHE: flag('1'),
+  AGENT_SKILL_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.78),
+  AGENT_SKILL_MAX_PER_KEY: z.coerce.number().int().positive().default(200),
+  // Plan-and-Execute JSON DAG (orchestrator path).
+  FF_AGENT_PLAN_DAG: flag('1'),
+  // Deterministic wave executor (dispatches ready DAG nodes; soft prompt path when off).
+  FF_AGENT_HARD_DAG: flag('1'),
+  AGENT_PLAN_MAX_NODES: z.coerce.number().int().positive().max(16).default(8),
+  AGENT_PLAN_MAX_PARALLEL: z.coerce.number().int().positive().max(8).default(3),
+  AGENT_PLAN_MAX_REPLANS: z.coerce.number().int().positive().max(5).default(2),
+  // Corrective RAG: after Incorrect/thin hops, try web fallback when the agent has webSearch.
+  FF_CRAG_WEB_FALLBACK: flag('1'),
   // --- Agentic RAG ---
   // Planner/judge model for query decomposition + sufficiency ('' → default chat model).
   RAG_PLANNER_MODEL: z.string().default(''),
@@ -137,6 +159,7 @@ const EnvSchema = z.object({
   // Optional LangSmith tracing passthrough (traces contain message content — staging only).
   LANGSMITH_TRACING: z.string().default(''),
   LANGSMITH_API_KEY: z.string().default(''),
+  LANGSMITH_PROJECT: z.string().default(''),
 
   // --- Composio (external tool-calling gateway for the DeepAgents external-tools subagent). ---
   // Off unless FF_COMPOSIO_ENABLED. Shared-org-account model: one fixed Composio user owns the
@@ -350,6 +373,10 @@ const EnvSchema = z.object({
   //     secret, scoped to just the ingest endpoint (NOT the full API_KEY). ---
   BILLING_INGEST_SECRET: z.string().default(''),
 
+  // --- Inbox-message webhook (Zoho CRM Org_Module → mytrion_inbox_messages). A dedicated shared
+  //     secret in the `x-inbox-secret` header, scoped to just that endpoint (NOT the full API_KEY). ---
+  INBOX_WEBHOOK_SECRET: z.string().default(''),
+
   // --- File storage: Cloudflare R2 (S3-compatible) ---
   R2_ACCOUNT_ID: z.string().default(''),
   R2_ACCESS_KEY_ID: z.string().default(''),
@@ -412,8 +439,8 @@ const EnvSchema = z.object({
   FF_RAG_ENABLED: flag('1'),
   // Hybrid retrieval (vector + full-text RRF fusion). Requires the content_tsv migration.
   FF_RAG_HYBRID: flag('0'),
-  // Agentic retrieval loop (multi-query planning + sufficiency-driven refinement + citations).
-  FF_AGENTIC_RAG: flag('0'),
+  // Agentic retrieval loop (multi-query planning + CRAG grade + refine/fallback + citations).
+  FF_AGENTIC_RAG: flag('1'),
   // Optional LLM rerank of fused candidates (adds a model call per retrieval).
   FF_RAG_RERANK: flag('0'),
   // Route worker/tool-calling turns to Groq (gpt-oss). Off → all turns stay on OpenAI.
@@ -422,10 +449,10 @@ const EnvSchema = z.object({
   FF_ZOHO_MCP_ENABLED: flag('0'),
   // Additionally expose Zoho MCP WRITE tools (create/update/upsert). Off by default (read-only posture).
   FF_ZOHO_MCP_WRITES: flag('0'),
-  // Connect the hosted dbt MCP (warehouse analytics + query-memory RAG). Off by default. When on,
-  // OpenAI chat/agents get the same agentic tools Claude uses on that MCP (`recall_similar_queries`,
-  // `query`); admin-only via department policy. See integrations/dbtMcp.ts + dbtMcpTools.ts.
-  FF_DBT_MCP_ENABLED: flag('0'),
+  // Connect the hosted dbt MCP (warehouse analytics + query-memory RAG). ON by default — agents
+  // reach the DWH only through dbt MCP (not the direct DWH_DATABASE_URL pool). Requires
+  // DBT_MCP_URL + client credentials. See integrations/dbtMcp.ts + dbtMcpTools.ts.
+  FF_DBT_MCP_ENABLED: flag('1'),
   // Expose dbt MCP WRITE tools (`run` / `test`). Off by default (read-only posture).
   FF_DBT_MCP_WRITES: flag('0'),
   FF_AUDIT_LOG_ENABLED: flag('1'),
@@ -470,9 +497,9 @@ const EnvSchema = z.object({
   FF_ZOHO_OAUTH_ENABLED: flag('1'),
   // Multi-agent orchestrator endpoint (POST /v1/agent). FF_DEEP_AGENTS_ENABLED is kept as a
   // deprecated alias — either flag enables the endpoint.
-  FF_ORCHESTRATOR_ENABLED: flag('0'),
-  // Durable LangGraph threads (PostgresSaver in the 'langgraph' schema). Off = stateless runs.
-  FF_AGENT_CHECKPOINTS: flag('0'),
+  FF_ORCHESTRATOR_ENABLED: flag('1'),
+  // Durable LangGraph threads (PostgresSaver in the 'langgraph' schema).
+  FF_AGENT_CHECKPOINTS: flag('1'),
   // Reuse the compiled LangGraph agent across turns, keyed by (agent + full caller identity/scope).
   // Skips re-compiling the graph + re-fetching Composio tools every turn (big win for admin/
   // orchestrator turns). Safe because the key includes every identity/authority/view field, so no
@@ -565,7 +592,9 @@ export function assertRuntimeSecrets(): void {
   if (!env.OPENAI_API_KEY) missing.push('OPENAI_API_KEY');
   if (env.FF_GROQ_ENABLED && !env.GROQ_API_KEY) missing.push('GROQ_API_KEY');
   if (env.FF_ZOHO_MCP_ENABLED && !env.ZOHO_MCP_URL) missing.push('ZOHO_MCP_URL');
-  if (env.FF_DBT_MCP_ENABLED) {
+  // Soft: flag defaults ON so agents prefer dbt MCP, but missing creds must not brick boot —
+  // discovery already no-ops when DBT_MCP_URL is empty. Warn via missing only in production.
+  if (env.FF_DBT_MCP_ENABLED && env.NODE_ENV === 'production') {
     if (!env.DBT_MCP_URL) missing.push('DBT_MCP_URL');
     if (!env.DBT_MCP_CLIENT_ID) missing.push('DBT_MCP_CLIENT_ID');
     if (!env.DBT_MCP_CLIENT_SECRET) missing.push('DBT_MCP_CLIENT_SECRET');

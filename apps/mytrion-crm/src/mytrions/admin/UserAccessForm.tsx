@@ -1,22 +1,30 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { MYTRIONS, MYTRION_ORDER, type MytrionId } from '../../access/mytrions.config';
-import { updateUserAccess, type AccessUserRow, type UserAccessPatch } from '../../api/mytrionAccess';
+import {
+  updateUserAccess,
+  type AccessUserRow,
+  type MytrionAccessMode,
+  type UserAccessPatch,
+} from '../../api/mytrionAccess';
 import { XIcon } from '../../components/icons';
+import { BillingAccessModeField } from './BillingAccessModeField';
 import s from './admin.module.css';
 
 type Mode = 'custom' | 'all';
 
 const label = (id: MytrionId): string => MYTRIONS[id]?.title ?? id;
 
-/** Edit one worker's Mytrion access override. Maps the tri-mode UI onto the backend patch. */
+/**
+ * Edit one worker's Mytrion access override (username-level). Overrides profile + role defaults.
+ * Billing supports Read-only vs Full access.
+ */
 export function UserAccessForm({
   row,
-  roster,
   onClose,
   onSaved,
 }: {
   row: AccessUserRow;
-  /** All users, for the "can view as" target picker. */
+  /** Kept for call-site compatibility (view-as picker may return later). */
   roster: AccessUserRow[];
   onClose: () => void;
   onSaved: () => void;
@@ -28,12 +36,13 @@ export function UserAccessForm({
     new Set(ov?.allowedMytrions ?? row.effective.accessibleMytrions),
   );
   const [home, setHome] = useState<MytrionId | ''>(ov?.homeMytrion ?? row.effective.homeMytrion ?? '');
+  const [billingMode, setBillingMode] = useState<MytrionAccessMode>(
+    ov?.mytrionAccessModes?.billing ?? row.effective.mytrionAccessModes?.billing ?? 'full',
+  );
   const [active, setActive] = useState<boolean>(ov?.active ?? true);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-
-
 
   const toggle = (id: MytrionId) =>
     setAllowed((prev) => {
@@ -43,26 +52,27 @@ export function UserAccessForm({
       return next;
     });
 
-  const homeOptions =
-    mode === 'all'
-      ? MYTRION_ORDER
-      : mode === 'custom'
-        ? MYTRION_ORDER.filter((id) => allowed.has(id))
-        : row.effective.accessibleMytrions;
+  const homeOptions = mode === 'all' ? MYTRION_ORDER : MYTRION_ORDER.filter((id) => allowed.has(id));
+  const showBillingMode = mode === 'custom' && allowed.has('billing');
 
   async function save() {
     setBusy(true);
     setError('');
     try {
+      const nextAllowed = mode === 'custom' ? MYTRION_ORDER.filter((id) => allowed.has(id)) : null;
+      const mytrionAccessModes =
+        mode === 'custom' && (nextAllowed?.includes('billing') ?? false)
+          ? { billing: billingMode }
+          : {};
       const patch: UserAccessPatch = {
         userName: row.name,
         email: row.email,
         profileName: row.profile,
         active,
-        allowedMytrions: mode === 'custom' ? MYTRION_ORDER.filter((id) => allowed.has(id)) : null,
-        allDepartmentAccess: mode === 'all' ? true : mode === 'custom' ? false : null,
-        homeMytrion: home || null,
-
+        allowedMytrions: nextAllowed,
+        allDepartmentAccess: mode === 'all' ? true : false,
+        homeMytrion: home || (nextAllowed?.length === 1 ? nextAllowed[0]! : null),
+        mytrionAccessModes,
       };
       await updateUserAccess(row.zohoUserId, patch);
       onSaved();
@@ -79,16 +89,29 @@ export function UserAccessForm({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className={`${s.modal} ${s.accessModal}`} role="dialog" aria-modal="true" aria-label={`Access for ${row.name ?? row.zohoUserId}`}>
+      <div
+        className={`${s.modal} ${s.accessModal}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Access for ${row.name ?? row.zohoUserId}`}
+      >
         <div className={s.modalHead}>
-          <span className={s.cardTitle}>{row.name ?? row.zohoUserId}</span>
+          <div>
+            <span className={s.cardTitle}>{row.name ?? row.zohoUserId}</span>
+            <div className={s.deptText} style={{ marginTop: 4 }}>
+              {[row.profile, row.role].filter(Boolean).join(' · ') || 'No profile / role'}
+            </div>
+          </div>
           <button type="button" className={s.iconBtn} onClick={onClose} aria-label="Close">
             <XIcon size={12} />
           </button>
         </div>
 
         <div className={s.accessFormBody}>
-
+          <p className={s.noticeNote}>
+            Per-user override replaces profile + role defaults for this worker. Billing can be
+            Read-only or Full access.
+          </p>
 
           <div className={s.profileModeRow}>
             {(['custom', 'all'] as const).map((m) => (
@@ -98,7 +121,7 @@ export function UserAccessForm({
                 className={`${s.filterChip} ${mode === m ? s.filterChipOn : ''}`}
                 onClick={() => setMode(m)}
               >
-                {m === 'custom' ? 'Custom list' : 'All Mytrions'}
+                {m === 'custom' ? 'Specific Mytrions' : 'All Mytrions'}
               </button>
             ))}
           </div>
@@ -118,9 +141,10 @@ export function UserAccessForm({
             </div>
           )}
           {mode === 'all' && (
-            <p className={s.noticeNote}>This worker will see EVERY Mytrion (all-department access).</p>
+            <p className={s.noticeNote}>Full Mytrions — this worker will see every workspace.</p>
           )}
 
+          {showBillingMode ? <BillingAccessModeField value={billingMode} onChange={setBillingMode} /> : null}
 
           <label className={s.field}>
             <span className={s.fieldLabel}>Home Mytrion (auto-route on sign-in)</span>
@@ -137,8 +161,6 @@ export function UserAccessForm({
               ))}
             </select>
           </label>
-
-
 
           <label className={s.accessCheckRow}>
             <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />

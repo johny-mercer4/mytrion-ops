@@ -40,6 +40,7 @@ export default defineConfig({
     './src/db/schema/payment_carrier_memory.ts',
     './src/db/schema/payment_returns.ts',
     './src/db/schema/mytrion_calls.ts',
+    './src/db/schema/mytrion_inbox_messages.ts',
   ],
   out: './src/db/migrations',
   dialect: 'postgresql',

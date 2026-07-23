@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { UserContext } from '../../context/userContext';
 import type { AgentKey } from '../../access/mytrions.config';
 import { Gem } from '../../components/Gem';
-import { HistoryIcon, PlusIcon } from '../../components/icons';
+import { Sparkle, HistoryIcon, PlusIcon } from '../../components/icons';
 import { Composer } from './Composer';
 import { ConversationList } from './ConversationList';
 import { MessageList } from './MessageList';
@@ -45,9 +45,9 @@ export function ChatPanel({
     <div className={variant === 'full' ? styles.full : styles.dock}>
       <div className={styles.header}>
         <div className={styles.title}>
-          <Gem size={26} />
+          <Sparkle size={26} />
           <div>
-            <div className={styles.name}>AI Chat</div>
+            <div className={styles.name}>Horizon AI</div>
             <div className={styles.sub}>Knowledge-grounded · scope: {scope}</div>
           </div>
         </div>

@@ -52,24 +52,31 @@ export function buildScopedRagTool(manifest: AgentManifest, callerCtx: TenantCon
       run.budget?.countToolCall();
       if (env.FF_AGENTIC_RAG) {
         const { agenticRetrieve } = await import('../../knowledge/agentic/loop.js');
-        const result = await agenticRetrieve(retrievalCtx, query, { k: limit });
-        if (result.passages.length === 0) {
-          return 'No relevant passages found in the knowledge base. The knowledge base may lack coverage for this topic.';
+        const result = await agenticRetrieve(retrievalCtx, query, {
+          k: limit,
+          allowWebFallback: Boolean(manifest.webSearch) || Boolean(callerCtx.allDepartmentAccess),
+        });
+        if (result.passages.length === 0 && !result.webFallbackBlock) {
+          return (
+            'No relevant passages found in the knowledge base. ' +
+            (result.notDocumented
+              ? 'You MUST tell the user the documentation does not specify this — do not invent an answer.'
+              : 'The knowledge base may lack coverage for this topic.')
+          );
         }
-        reportSources(
-          run,
-          result.passages.length,
-          result.citations.map((c) => ({
-            id: c.docId,
-            title: c.docTitle ?? c.docId,
-            marker: c.marker,
-          })),
-        );
-        const webHint = result.suggestWebSearch
-          ? '\n\n(Coverage looks thin — if this needs public/current information, report that the knowledge base lacks coverage.)'
-          : '';
+        if (result.passages.length > 0) {
+          reportSources(
+            run,
+            result.passages.length,
+            result.citations.map((c) => ({
+              id: c.docId,
+              title: c.docTitle ?? c.docId,
+              marker: c.marker,
+            })),
+          );
+        }
         const memory = await recallMemories(retrievalCtx, manifest.key, query);
-        return `${result.groundingBlock}${webHint}${memory}`;
+        return `${result.groundingBlock}${memory}`;
       }
       const results = await retrieve(retrievalCtx, query, limit);
       if (results.length === 0) return 'No relevant passages found in the knowledge base.';

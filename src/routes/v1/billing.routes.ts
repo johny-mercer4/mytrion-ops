@@ -35,10 +35,15 @@ import { paymentReturnRepo } from '../../repos/paymentReturnRepo.js';
 import { paymentTransactionRepo } from '../../repos/paymentTransactionRepo.js';
 import type { NewPaymentTransaction } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { requireDepartment } from './helpers.js';
+import { requireDepartment, requireMytrionWrite } from './helpers.js';
 
 function requireBillingAccess(request: FastifyRequest): TenantContext {
   return requireDepartment(request, 'billing', 'Billing');
+}
+
+/** Enter Billing + write mode (blocks read-only grants). Admins always pass. */
+function requireBillingWrite(request: FastifyRequest): TenantContext {
+  return requireMytrionWrite(request, 'billing', 'Billing');
 }
 
 /** Actor label for mapped_by / matched_by — always the verified session, never client-supplied. */
@@ -233,7 +238,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 
   /** Map a payment to a CMP invoice. */
   app.post('/billing/transactions/:id/map', guard, async (request) => {
-    const ctx = requireBillingAccess(request);
+    const ctx = requireBillingWrite(request);
     const { id } = txIdParam.parse(request.params);
     const b = mapBody.parse(request.body);
     const tx = await paymentTransactionRepo.getById(id);
@@ -254,7 +259,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 
   /** Prepay top-up (credit the carrier's CMP company balance). */
   app.post('/billing/transactions/:id/top-up', guard, async (request) => {
-    const ctx = requireBillingAccess(request);
+    const ctx = requireBillingWrite(request);
     const { id } = txIdParam.parse(request.params);
     const b = topUpBody.parse(request.body);
     const tx = await paymentTransactionRepo.getById(id);
@@ -277,7 +282,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 
   /** CRM-only sync (the CMP payment already exists in the portal; just reconcile PG). */
   app.post('/billing/transactions/:id/sync-crm-only', guard, async (request) => {
-    const ctx = requireBillingAccess(request);
+    const ctx = requireBillingWrite(request);
     const { id } = txIdParam.parse(request.params);
     const b = syncBody.parse(request.body);
     const tx = await paymentTransactionRepo.getById(id);
@@ -301,7 +306,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/billing/transactions/manual', guard, async (request) => {
-    const ctx = requireBillingAccess(request);
+    const ctx = requireBillingWrite(request);
     const b = manualChaseBody.parse(request.body);
     const occurred = new Date(b.postingDate);
     // A provided reference is the idempotency key (re-add = no dup); otherwise mint a unique id.
@@ -334,7 +339,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 
   /** Split a payment across invoices/prepay (sequential CMP; stop-on-first-failure → partial). */
   app.post('/billing/transactions/:id/split', guard, async (request) => {
-    const ctx = requireBillingAccess(request);
+    const ctx = requireBillingWrite(request);
     const { id } = txIdParam.parse(request.params);
     const { splitsJson } = splitBody.parse(request.body);
     const tx = await paymentTransactionRepo.getById(id);
@@ -376,7 +381,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 
   /** Unmap: reverse the CMP money, then clear the PG mapping (unless clearCrm=false). */
   app.post('/billing/transactions/:id/unmap', guard, async (request) => {
-    const ctx = requireBillingAccess(request);
+    const ctx = requireBillingWrite(request);
     const { id } = txIdParam.parse(request.params);
     const b = unmapBody.parse(request.body ?? {});
     const tx = await paymentTransactionRepo.getById(id);
@@ -399,7 +404,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 
   /** Match a return to its original payment: reverse the CMP payment (KEEP the mapping), flag returned. */
   app.post('/billing/returns/:id/match', guard, async (request) => {
-    const ctx = requireBillingAccess(request);
+    const ctx = requireBillingWrite(request);
     const { id } = txIdParam.parse(request.params);
     const b = returnMatchBody.parse(request.body);
     const ret = await paymentReturnRepo.getById(id);
@@ -432,7 +437,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 
   /** Learn a company → carrier pair (auto-map memory). */
   app.post('/billing/carrier/memory', guard, async (request) => {
-    const ctx = requireBillingAccess(request);
+    const ctx = requireBillingWrite(request);
     const b = memoryBody.parse(request.body);
     if (isJunkCompanyName(b.companyName)) return { status: 'success', skipped: true };
     const { created } = await carrierMemoryRepo.insertDedup({ companyName: b.companyName, carrierId: b.carrierId, createdBy: actor(ctx) });

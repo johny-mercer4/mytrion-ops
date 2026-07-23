@@ -3,6 +3,7 @@
  * Row-level isolation (tenant_id) and RBAC (role -> scopes, audience) are enforced
  * against this object — never against raw request input.
  */
+import type { MytrionAccessModes } from '../lib/mytrions.js';
 
 /**
  * 'internal'  — Octane workers (Zoho widget / Mytrion app callers).
@@ -63,6 +64,11 @@ export interface TenantContext {
   departments: string[];
   /** Manager/elevated access: bypass department filtering entirely ("almost everything"). */
   allDepartmentAccess: boolean;
+  /**
+   * Effective per-Mytrion read|full modes (DB-resolved). When a Mytrion is `read`, write REST
+   * routes for that department must 403. Admins / allDepartmentAccess treat every Mytrion as full.
+   */
+  mytrionAccessModes?: MytrionAccessModes;
   /**
    * Hard RBAC bypass (BYPASS_USERS). When true, the tool-access gate short-circuits to allow —
    * skipping audience / scope / write-risk / department checks. Reserved for a small, explicit

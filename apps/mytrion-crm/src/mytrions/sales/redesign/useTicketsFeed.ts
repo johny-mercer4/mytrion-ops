@@ -117,6 +117,9 @@ export function useTicketsFeed(): TicketsFeed {
 
   const softReload = useCallback(() => {
     if (fetchingRef.current) return;
+    // Lock the shared in-flight flag so a 25s auto-refresh and a loadMore can't run concurrently and
+    // reshuffle/duplicate the head mid-append (loadMore also gates on fetchingRef).
+    fetchingRef.current = true;
     void loadTicketsPage({ from: 0, limit: PAGE })
       .then((res) => {
         setScoped(res.scoped);
@@ -124,6 +127,9 @@ export function useTicketsFeed(): TicketsFeed {
       })
       .catch(() => {
         /* quiet */
+      })
+      .finally(() => {
+        fetchingRef.current = false;
       });
   }, []);
 

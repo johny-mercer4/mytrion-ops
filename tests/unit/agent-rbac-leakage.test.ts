@@ -90,6 +90,8 @@ describe('tool binding never crosses departments', () => {
     expect(bound.sort()).toEqual([
       'agent.activity',
       'agent.sales_snapshot',
+      'blackboard.read',
+      'blackboard.write',
       'crm.carrier_balance',
       'crm.carrier_overview',
       'crm.list_cards',
