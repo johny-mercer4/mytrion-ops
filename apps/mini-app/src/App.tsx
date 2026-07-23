@@ -2152,6 +2152,16 @@ function ActionSheet({
   const [exportRetail, setExportRetail] = useState(false);
   /** Detailed columns: full card number + Driver / Unit / Driver ID (client feedback). */
   const [exportDetailed, setExportDetailed] = useState(false);
+  /** Report formats are multi-select now: pick any of Excel/PDF/CSV, then one Send fires them all
+   *  to the bot chat (client ask — one tap instead of three). Excel pre-selected (most common). */
+  const [selectedFormats, setSelectedFormats] = useState<Set<TxnExportFormat>>(() => new Set<TxnExportFormat>(['xlsx']));
+  const toggleFormat = (f: TxnExportFormat) =>
+    setSelectedFormats((prev) => {
+      const next = new Set(prev);
+      if (next.has(f)) next.delete(f);
+      else next.add(f);
+      return next;
+    });
   // ── Money-code draw form (C-17) ──
   const [mcAmount, setMcAmount] = useState('');
   const [mcUnit, setMcUnit] = useState('');
@@ -2374,18 +2384,26 @@ function ActionSheet({
    * can't reliably save a file, and the rows are re-queried on the backend anyway, so nothing from
    * this screen is uploaded. `rows` is only consulted to keep the empty case instant.
    */
-  async function doExport(rows: Array<Record<string, unknown>>, format: TxnExportFormat) {
+  async function doExport(rows: Array<Record<string, unknown>>, formats: TxnExportFormat[]) {
     haptic('tap');
     if (!rows.length) {
       showToast(t('txns.empty'), 'error');
       return;
     }
+    if (!formats.length) {
+      showToast(t('txns.pickFormat'), 'error');
+      return;
+    }
     if (exportBusy) return;
-    setExportBusy(format);
     try {
       const cardFilter = txnCardSel && !session.isDriver ? { cardId: txnCardSel.cardId } : {};
       const opts = range === 'custom' ? { range: 'custom', from, to, ...cardFilter } : { range, ...cardFilter };
-      await sendTransactionsReport(initData, opts, format, exportRetail ? 'retail' : 'discount', exportDetailed);
+      // Sequential: each format is a separate document to the bot chat; the progress bar tracks
+      // whichever is in flight.
+      for (const format of formats) {
+        setExportBusy(format);
+        await sendTransactionsReport(initData, opts, format, exportRetail ? 'retail' : 'discount', exportDetailed);
+      }
       haptic('success');
       showToast(t('toast.reportSentToTelegram'));
     } catch (e) {
@@ -3608,20 +3626,36 @@ function ActionSheet({
                 </button>
               </div>
             )}
+            {/* Format = multi-select checkboxes (client ask). Selected pill mirrors the Detailed
+                toggle's on-state (primary bg + white) so the two rows read as one control group. */}
             <div style={{ display: 'flex', gap: 8 }}>
-              {(['xlsx', 'pdf', 'csv'] as const).map((f) => (
-                <button
-                  key={f}
-                  type="button"
-                  className="press"
-                  disabled={exportBusy !== null}
-                  onClick={() => void doExport(data.v.data ?? [], f)}
-                  style={{ flex: 1, height: 42, border: 'none', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: exportBusy ? 'default' : 'pointer', opacity: exportBusy && exportBusy !== f ? 0.45 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                >
-                  {exportBusy === f ? <Spinner size={16} /> : f === 'xlsx' ? 'Excel' : f === 'pdf' ? 'PDF' : 'CSV'}
-                </button>
-              ))}
+              {(['xlsx', 'pdf', 'csv'] as const).map((f) => {
+                const on = selectedFormats.has(f);
+                return (
+                  <button
+                    key={f}
+                    type="button"
+                    role="checkbox"
+                    aria-checked={on}
+                    className="press"
+                    disabled={exportBusy !== null}
+                    onClick={() => { haptic('tap'); toggleFormat(f); }}
+                    style={{ flex: 1, height: 42, border: 'none', borderRadius: 11, background: on ? 'var(--primary)' : 'var(--secondary)', color: on ? '#FFFFFF' : 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: exportBusy ? 'default' : 'pointer', opacity: exportBusy ? 0.55 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                  >
+                    {on ? '✓ ' : ''}{f === 'xlsx' ? 'Excel' : f === 'pdf' ? 'PDF' : 'CSV'}
+                  </button>
+                );
+              })}
             </div>
+            <button
+              type="button"
+              className="press"
+              disabled={exportBusy !== null || selectedFormats.size === 0}
+              onClick={() => void doExport(data.v.data ?? [], (['xlsx', 'pdf', 'csv'] as const).filter((f) => selectedFormats.has(f)))}
+              style={{ width: '100%', height: 44, marginTop: 8, border: 'none', borderRadius: 11, background: selectedFormats.size === 0 ? 'var(--secondary)' : 'var(--primary)', color: selectedFormats.size === 0 ? 'var(--muted-fg)' : '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: exportBusy !== null || selectedFormats.size === 0 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+            >
+              {exportBusy !== null ? <><Spinner size={16} color="#FFFFFF" /> {t('txns.sendingReport')}</> : t('txns.sendReport')}
+            </button>
             {/* Owner accounting shortcuts: the weekly "fuel and EFS report, both retail and with
                 discount, pdf and xlsx" ritual as one tap, and the EFS half alone. Never shown to a
                 driver — both endpoints are owner-only anyway. */}
