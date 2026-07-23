@@ -117,8 +117,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: 'retention', label: 'Retention', icon: 'retention' },
       // Verification Pipeline parked — process not ready yet; drop `comingSoon` to re-enable (VerificationTab stays wired).
       { id: 'verification', label: 'Verification Pipeline', icon: 'verification', comingSoon: true },
-      // Tickets parked — drop `comingSoon` to re-enable; TicketsTab stays wired.
-      { id: 'tickets', label: 'Tickets', icon: 'tickets', comingSoon: true },
+      { id: 'tickets', label: 'Tickets', icon: 'tickets' },
       { id: 'callHub', label: 'Call Hub', icon: 'callHub', comingSoon: true },
     ],
   },

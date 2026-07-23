@@ -17,6 +17,7 @@ import { publishInboxLive, subscribeInboxReload } from './inboxLiveBus';
 import { setTicketDirectory } from './ticketDirectory';
 import { useTicketUnread, totalTicketUnread, bumpTicketUnread, clearTicketUnread } from './ticketUnread';
 import { getOpenTicketId, publishTicketLive } from './ticketLiveBus';
+import { setSocketConnected } from './socketStatus';
 // Suffix-normalized: the WS ownerId and the session id may differ by org prefix (zohoIds.ts).
 import { zohoIdsMatch } from './zohoIds';
 
@@ -29,9 +30,8 @@ export function useSidebarBadges(
   const readSet = useInboxRead();
   const ticketCounts = useTicketUnread();
   const inboxLoad = useLoad(loadInbox, [currentUserId]);
-  // While Tickets is parked, don't page the whole creator-scoped Desk set (up to 20 requests)
-  // for a badge Shell force-hides anyway. Empty ticketIds keeps the WS handlers inert (the
-  // `!ids.includes(tid)` early return below) and the subscribe frame valid.
+  // If Tickets is ever re-parked, skip paging the whole creator-scoped Desk set (up to ~20 requests)
+  // for a hidden badge; the subscribe frame then simply carries no ticketIds (still valid).
   const ticketLoad = useLoad(
     () => (TICKETS_ENABLED ? loadTickets() : Promise.resolve(NO_TICKETS)),
     [currentUserId],
@@ -52,6 +52,8 @@ export function useSidebarBadges(
   ticketIdsRef.current = ticketIds;
   const inboxReloadRef = useRef(inboxLoad.reload);
   inboxReloadRef.current = inboxLoad.reload;
+  const ticketReloadRef = useRef(ticketLoad.reload);
+  ticketReloadRef.current = ticketLoad.reload;
 
   // Keep a lookup the Tickets tab can use to pin older tickets that aren't paged in yet.
   useEffect(() => {
@@ -66,6 +68,8 @@ export function useSidebarBadges(
     watchKey: currentUserId,
     // Same frame as zoho-octane ticketdashboard.html — userId + the caller's ticket ids.
     subscribe: { type: 'subscribe', userId: currentUserId, ticketIds },
+    onOpen: () => setSocketConnected(true),
+    onClose: () => setSocketConnected(false),
     onMessage: (m) => {
       if (m.type === 'crm_inbox_notification') {
         const eventOwner = String(m.ownerId ?? '').trim();
@@ -91,10 +95,13 @@ export function useSidebarBadges(
       if (m.type !== 'ticket_comment_added' && m.type !== 'ticket_attachment_added') return;
 
       const tid = String(m.ticketId ?? '').trim();
+      // servercrm broadcasts EVERY Desk ticket event to ALL clients (the subscribe frame's ticketIds
+      // are only acked, never used to route), so the client MUST scope to its own ticket set — without
+      // this filter the unread badge + toasts flood with org-wide activity and a phantom badge sticks
+      // (a non-owned ticket never enters the list, so it's never cleared). New tickets enter this set
+      // via the focus refresh below (re-pages loadTickets), so they still go live without a reload.
       const ids = ticketIdsRef.current;
       if (!tid || !ids.includes(tid)) return;
-
-      // Always notify the Tickets tab (reload thread / move to top).
       publishTicketLive({ ticketId: tid, type: m.type });
 
       // Viewing this ticket → stay read, no toast (reference handleNewComment).
@@ -115,6 +122,24 @@ export function useSidebarBadges(
     resubscribe();
     // eslint-disable-next-line
   }, [idsKey]);
+
+  // New tickets: refresh the ticket set when the agent returns to the tab (throttled ≤1/2min), so a
+  // ticket created after load enters the client-side scope filter (ticketIdsRef) and its live events
+  // start surfacing — without a manual reload. Focus-only (no polling storm); most agents re-page in
+  // one request. Beyond-reference: the reference only picks up new tickets on an explicit refresh.
+  useEffect(() => {
+    if (!TICKETS_ENABLED || !currentUserId) return undefined;
+    let last = Date.now();
+    const onVisible = (): void => {
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (now - last < 120_000) return;
+      last = now;
+      ticketReloadRef.current();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [currentUserId]);
 
   // Manual refresh from InboxTab → keep the sidebar unread badge in sync with the new list.
   useEffect(() => subscribeInboxReload(() => inboxLoad.reload()), [inboxLoad.reload]);
