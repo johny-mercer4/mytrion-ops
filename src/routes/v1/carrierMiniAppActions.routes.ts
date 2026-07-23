@@ -24,7 +24,7 @@ import { z } from 'zod';
 import { AppError, NotFoundError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { env, isProduction } from '../../config/env.js';
-import { findDwhCardByIdAnyStatus } from '../../integrations/dwhCards.js';
+import { findDwhCardByIdAnyStatus, getCardEfsIdentity } from '../../integrations/dwhCards.js';
 import { takeToken } from '../../modules/security/rateBucket.js';
 import { efsWrapper } from '../../wrappers/efsWrapper.js';
 import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
@@ -177,14 +177,27 @@ export async function carrierMiniAppActionsRoutes(app: FastifyInstance): Promise
     // the mini-app — a chat message (with the card's last 6) outlives the WebView. Goes through
     // the notification outbox (mini_app_notifications + pg-boss retries) — the first caller of
     // the platform notification layer. Never blocks or fails the override itself.
-    void notifyMiniApp({
-      type: 'override',
-      tenantId: registration.tenantId,
-      carrierId,
-      telegramUserId: registration.telegramUserId,
-      dedupeKey: `override:${carrierId}:${cardId}:${Date.now()}`,
-      payload: { last6: cardNumber.slice(-6), cardId },
-    });
+    // Full PAN + unit + EFS driver on the override receipt (owner ask 2026-07-23), enriched
+    // fire-and-forget so the pump response never waits on the DWH; '—' when the DWH is absent.
+    void (async () => {
+      const efs = env.DWH_DATABASE_URL
+        ? await getCardEfsIdentity(carrierId, cardNumber).catch(() => ({ unit: null, driverName: null }))
+        : { unit: null, driverName: null };
+      await notifyMiniApp({
+        type: 'override',
+        tenantId: registration.tenantId,
+        carrierId,
+        telegramUserId: registration.telegramUserId,
+        dedupeKey: `override:${carrierId}:${cardId}:${Date.now()}`,
+        payload: {
+          last6: cardNumber.slice(-6),
+          card: cardNumber,
+          unit: efs.unit || '—',
+          driverName: efs.driverName || '—',
+          cardId,
+        },
+      });
+    })();
     return result;
   });
 

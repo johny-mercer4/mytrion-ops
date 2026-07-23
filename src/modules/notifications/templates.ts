@@ -1,7 +1,10 @@
 /**
  * Bot-message templates, 4 languages, mirroring the mini-app i18n's tone. Interpolation is
- * {var} over the event payload. Security lives in the TEXTS themselves: cards are always
- * `•••• {last6}` (last-6 rule) and no template has a slot for a money-code value.
+ * {var} over the event payload. No template has a slot for a money-code value. Cards default to
+ * `•••• {last6}`, EXCEPT the card-identity notifications the owner asked to see in full — fueling
+ * receipt, status change, and override use the full PAN + unit + EFS driver (2026-07-23). Those are
+ * delivered ONLY to the cardholder's own chats (owner: all their cards; driver: only their own, via
+ * the dispatcher's payload.cardId fail-closed), so the full number never leaves the cardholder.
  *
  * Locale: the registration captures Telegram's language_code (registered_mini_app_companies),
  * and the dispatcher passes it here — normalizeLang() maps any IETF tag ('ru', 'uz-Cyrl',
@@ -28,10 +31,10 @@ const T: Record<string, Record<Lang, string>> = {
     es: '💵 Se emitió un money code — ábralo en la mini-app. {reason}',
   },
   cardStatus: {
-    en: '💳 Card •••• {last6} status changed: {prev} → {status}.',
-    ru: '💳 Статус карты •••• {last6} изменился: {prev} → {status}.',
-    uz: "💳 •••• {last6} karta holati o'zgardi: {prev} → {status}.",
-    es: '💳 La tarjeta •••• {last6} cambió de estado: {prev} → {status}.',
+    en: '💳 Status changed: {prev} → {status} — card {card} · unit {unit} · {driverName}.',
+    ru: '💳 Статус изменился: {prev} → {status} — карта {card} · юнит {unit} · {driverName}.',
+    uz: "💳 Holat o'zgardi: {prev} → {status} — karta {card} · unit {unit} · {driverName}.",
+    es: '💳 Estado cambiado: {prev} → {status} — tarjeta {card} · unidad {unit} · {driverName}.',
   },
   limit: {
     en: '⛽ Card •••• {last6}: {used} of {limit} gallons used today ({pct}%).',
@@ -52,10 +55,10 @@ const T: Record<string, Record<Lang, string>> = {
     es: '🧾 Carga: {gallons} gal en {location}, {city} {state} — tarjeta {card} · unidad {unit} · {driverName}.',
   },
   override: {
-    en: 'Card •••• {last6} is overridden — you can fuel for about 30 minutes.',
-    ru: 'Карта •••• {last6} разблокирована — можно заправляться около 30 минут.',
-    uz: "•••• {last6} karta override qilindi — ~30 daqiqa yoqilg'i quyish mumkin.",
-    es: 'La tarjeta •••• {last6} está desbloqueada — puede cargar unos 30 minutos.',
+    en: 'Card {card} · unit {unit} · {driverName} is overridden — you can fuel for about 30 minutes.',
+    ru: 'Карта {card} · юнит {unit} · {driverName} разблокирована — можно заправляться около 30 минут.',
+    uz: "{card} karta · unit {unit} · {driverName} override qilindi — ~30 daqiqa yoqilg'i quyish mumkin.",
+    es: 'La tarjeta {card} · unidad {unit} · {driverName} está desbloqueada — puede cargar unos 30 minutos.',
   },
   approval: {
     en: '🔔 {driverName} requests an emergency money code ({amount}). Open the mini-app to approve.',

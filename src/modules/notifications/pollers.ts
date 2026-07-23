@@ -14,7 +14,7 @@ import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { env } from '../../config/env.js';
 import { db } from '../../db/client.js';
 import { miniAppNotificationState, registeredMiniAppCompanies } from '../../db/schema/index.js';
-import { findDwhCardByNumber } from '../../integrations/dwhCards.js';
+import { findDwhCardByNumber, getCardEfsIdentity } from '../../integrations/dwhCards.js';
 import { listDwhTransactions } from '../../integrations/dwhTransactions.js';
 import { logger } from '../../lib/logger.js';
 import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
@@ -102,12 +102,26 @@ export async function runCardStatusPoll(): Promise<{ carriers: number; changes: 
           // without it the owner still hears, the driver copy is silently skipped (fail-closed).
           const owner = env.DWH_DATABASE_URL ? await findDwhCardByNumber(cardNumber).catch(() => null) : null;
           const cardId = owner && String(owner.carrierId) === String(carrierId) ? owner.cardId : '';
+          // Full PAN + unit + EFS driver on the card, so the owner recognizes the truck (owner ask
+          // 2026-07-23) — same identity source as the fueling receipt. Best-effort: '—' when the DWH
+          // is unconfigured or the card has no transactions yet.
+          const efs = env.DWH_DATABASE_URL
+            ? await getCardEfsIdentity(carrierId, cardNumber).catch(() => ({ unit: null, driverName: null }))
+            : { unit: null, driverName: null };
           await notifyMiniApp({
             type: 'card_status',
             tenantId: DEFAULT_TENANT_ID,
             carrierId,
             dedupeKey: `card_status:${carrierId}:${cardNumber.slice(-6)}:${status}`,
-            payload: { last6: cardNumber.slice(-6), prev: before, status, cardId },
+            payload: {
+              last6: cardNumber.slice(-6),
+              card: cardNumber,
+              unit: efs.unit || '—',
+              driverName: efs.driverName || '—',
+              prev: before,
+              status,
+              cardId,
+            },
           });
         }
       }
