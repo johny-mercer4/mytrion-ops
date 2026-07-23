@@ -83,10 +83,8 @@ interface DcTabDef {
 
 const DC_TABS: DcTabDef[] = [
   { id: 'clients', label: 'Clients', icon: 'clients' },
-  // Leads + Deals parked as "Coming soon" — drop `disabled` to re-enable; LeadsView/DealsView
-  // and their loaders (loadLeads/loadDeals) stay fully wired for when they ship.
-  { id: 'leads', label: 'Leads', icon: 'leads', disabled: true },
-  { id: 'deals', label: 'Deals', icon: 'deals', disabled: true },
+  { id: 'leads', label: 'Leads', icon: 'leads' },
+  { id: 'deals', label: 'Deals', icon: 'deals' },
   // Awaiting a redesign — the current view isn't usable. Drop `disabled` to re-enable; the
   // RejectionsView component + loadRejections() stay wired for when the redesign ships.
   { id: 'rejections', label: 'Rejection Reports', icon: 'rejections', disabled: true },

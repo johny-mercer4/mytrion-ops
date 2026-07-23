@@ -57,34 +57,35 @@ export function reasonFieldFor(
 }
 
 /**
- * The "call sequence". A finished outbound call advances the lead one step through it.
- * ENTRY_STATUSES = a lead not yet in the sequence (fresh / uncategorized). Both 'New Lead' and
- * 'Unaccounted' (shown as "New Lead") and the synthetic 'No Status' are treated as entry, so the
- * first call always advances to 'First Call' regardless of which raw value the CRM carries.
+ * Status phases. The "call number" (First → Second → Third Call) is advanced AUTOMATICALLY on the
+ * backend from the call-log count on every ended outbound call — call statuses are NEVER manually
+ * settable. ENTRY_STATUSES = a fresh / uncategorized lead ('New Lead'/'Unaccounted'/'No Status').
  */
 export const ENTRY_STATUSES = ['New Lead', 'Unaccounted', 'No Status', ''];
 export const CALL_STATUSES = ['First Call', 'Second Call', 'Third Call'];
-/** Post-call outcome statuses (reachable after the third call). */
-export const OUTCOME_STATUSES = ['Follow-up', 'Email Follow-Up', 'Unqualified'];
-/** Set only by automation (Interested → Application Filled) — never a manual transition. */
-export const NON_MANUAL_STATUSES = ['Application Filled'];
+/** The manual OUTCOME statuses — the ONLY statuses an agent may set by hand. */
+export const OUTCOME_STATUSES = ['Interested', 'Not Interested', 'Follow-up', 'Email Follow-Up', 'Unqualified'];
+/**
+ * Automation-only statuses — never offered in any manual picker. First/Second/Third Call are set by
+ * the call-count auto-advance; Application Filled is set when the application is filled.
+ */
+export const NON_MANUAL_STATUSES = ['Application Filled', 'First Call', 'Second Call', 'Third Call'];
 
 /**
- * The Zoho Leads Blueprint — the manual transitions allowed FROM each status:
- *   New Lead     → First Call · Interested · Not Interested
- *   First Call   → Second Call                     (strictly sequential — no skipping)
- *   Second Call  → Third Call
- *   Third Call   → Follow-up · Email Follow-Up · Unqualified
- *   Interested   → (Application Filled, set automatically — no manual onward transition)
- * Outcome states are terminal for manual editing. 'Application Filled' is never a manual target.
+ * The lead-status "blueprint" — the MANUAL transitions allowed FROM each status. Only OUTCOMES are
+ * manual, and only from a calling state:
+ *   New Lead / entry → (nothing — call the lead; the call auto-advances the call number)
+ *   First / Second / Third Call → Interested · Not Interested · Follow-up · Email Follow-Up · Unqualified
+ *   any outcome / terminal → (nothing)
+ * First/Second/Third Call and Application Filled are automation-only and never appear as targets.
  */
 const BLUEPRINT: Record<string, string[]> = {
-  'New Lead': ['First Call', 'Interested', 'Not Interested'],
-  Unaccounted: ['First Call', 'Interested', 'Not Interested'],
-  'No Status': ['First Call', 'Interested', 'Not Interested'],
-  'First Call': ['Second Call'],
-  'Second Call': ['Third Call'],
-  'Third Call': ['Follow-up', 'Email Follow-Up', 'Unqualified'],
+  'New Lead': [],
+  Unaccounted: [],
+  'No Status': [],
+  'First Call': OUTCOME_STATUSES,
+  'Second Call': OUTCOME_STATUSES,
+  'Third Call': OUTCOME_STATUSES,
   Interested: [],
   'Not Interested': [],
   'Follow-up': [],
@@ -93,54 +94,37 @@ const BLUEPRINT: Record<string, string[]> = {
   'Application Filled': [],
 };
 
-/** Every status an agent may set by hand (everything except the automation-only ones). */
-const MANUAL_STATUSES = STATUS_OPTIONS.filter((o) => !NON_MANUAL_STATUSES.includes(o.value));
-
-/** current status → next sequential call step (Third Call has no further call step). */
-const NEXT_CALL: Record<string, string> = {
-  'First Call': 'Second Call',
-  'Second Call': 'Third Call',
-};
-
-/** The next sequential call step from the current status, or null if there is none. */
-export function nextCallStep(current: string | null | undefined): string | null {
-  if (current == null) return null;
-  if (ENTRY_STATUSES.includes(current)) return 'First Call';
-  return NEXT_CALL[current] ?? null;
-}
+/** The manual outcome options (in picklist order) — the post-call wizard's picker. */
+export const OUTCOME_OPTIONS = STATUS_OPTIONS.filter((o) => OUTCOME_STATUSES.includes(o.value));
 
 /**
- * Blueprint-allowed manual statuses reachable from the CURRENT status (in picklist order).
- * Unknown/unmapped status → every manual status (never trap the agent). Automation-only statuses
- * (Application Filled) are never included.
+ * Blueprint-allowed manual statuses reachable from the CURRENT status (for the LeadModal editor).
+ * New Lead → [] (call only); First/Second/Third Call → the outcomes; any outcome/terminal → [].
+ * Unknown status → the outcome set (never trap the agent). Call numbers + Application Filled are
+ * never included.
  */
 export function allowedStatuses(
   current: string | null | undefined,
 ): { value: string; label: string }[] {
-  if (current == null || current === '') return MANUAL_STATUSES;
+  if (current == null || current === '') return OUTCOME_OPTIONS;
   const targets = BLUEPRINT[current];
-  if (!targets) return MANUAL_STATUSES;
+  if (!targets) return OUTCOME_OPTIONS;
   return STATUS_OPTIONS.filter((o) => targets.includes(o.value));
 }
 
 /**
- * From a lead's CURRENT status, decide whether an ended outbound call forces the wizard and which
- * status to pre-select:
- *  - calling phase (New Lead / First / Second / Third Call, or unknown) → force the wizard
- *  - terminal / outcome status → do NOT force (the call is still logged)
- *  - preselect = the next sequential call step when the blueprint allows it (New Lead→First,
- *    First→Second, Second→Third). At Third Call there is no next call step, so nothing is
- *    pre-selected and the agent picks the outcome. Unknown → no pre-selection.
+ * Whether an ended outbound call should open the post-call OUTCOME wizard. The call-number status is
+ * set automatically on the backend from the call count, so the wizard never pre-selects it — it only
+ * lets the agent optionally pick an OUTCOME (which supersedes the auto call number). Force it only
+ * while the lead is still in the calling phase; a categorized lead is left alone. `preselect` is
+ * always '' (the agent picks an outcome or closes).
  */
 export function resolveWizardStatus(
   current: string | null | undefined,
 ): { show: boolean; preselect: string } {
   const key = current ?? '';
   const inCallingPhase = current == null || ENTRY_STATUSES.includes(key) || CALL_STATUSES.includes(key);
-  if (!inCallingPhase) return { show: false, preselect: '' };
-  const step = nextCallStep(current);
-  const allowed = allowedStatuses(current).map((o) => o.value);
-  return { show: true, preselect: step && allowed.includes(step) ? step : '' };
+  return { show: inCallingPhase, preselect: '' };
 }
 
 /** Per-status color (CSS var) + icon for the status pickers — matches the pipeline color scheme. */

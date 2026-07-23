@@ -54,43 +54,44 @@ beforeEach(() => {
 });
 
 describe('resolveWizardStatus', () => {
-  it('advances through the call sequence and stays at Third Call', () => {
-    expect(resolveWizardStatus('Unaccounted')).toEqual({ show: true, preselect: 'First Call' });
-    expect(resolveWizardStatus('New Lead')).toEqual({ show: true, preselect: 'First Call' });
-    expect(resolveWizardStatus('No Status')).toEqual({ show: true, preselect: 'First Call' });
-    expect(resolveWizardStatus('First Call')).toEqual({ show: true, preselect: 'Second Call' });
-    expect(resolveWizardStatus('Second Call')).toEqual({ show: true, preselect: 'Third Call' });
-    expect(resolveWizardStatus('Third Call')).toEqual({ show: true, preselect: '' });
+  it('opens the outcome wizard in the calling phase — no pre-selection (call number is automatic)', () => {
+    for (const st of ['Unaccounted', 'New Lead', 'No Status', 'First Call', 'Second Call', 'Third Call']) {
+      expect(resolveWizardStatus(st)).toEqual({ show: true, preselect: '' });
+    }
+    expect(resolveWizardStatus(null)).toEqual({ show: true, preselect: '' });
   });
   it('does not force the wizard for already-categorized statuses', () => {
     for (const st of ['Interested', 'Not Interested', 'Unqualified', 'Application Filled', 'Follow-up', 'Email Follow-Up']) {
       expect(resolveWizardStatus(st).show).toBe(false);
     }
   });
-  it('opens with no pre-selection when the current status is unknown', () => {
-    expect(resolveWizardStatus(null)).toEqual({ show: true, preselect: '' });
-  });
 });
 
-describe('allowedStatuses (Zoho Leads blueprint)', () => {
+describe('allowedStatuses (outcomes-only blueprint)', () => {
   const vals = (st: string | null) => allowedStatuses(st).map((o) => o.value);
-  it('keeps the call sequence strict — one step, no skip-ahead or jump back', () => {
-    expect(vals('New Lead')).toContain('First Call');
-    expect(vals('First Call')).toEqual(['Second Call']);
-    expect(vals('Second Call')).toEqual(['Third Call']);
-    expect(vals('First Call')).not.toContain('Third Call');
-    expect(vals('Second Call')).not.toContain('First Call');
+  it('offers NO manual status for a New Lead (call only)', () => {
+    expect(vals('New Lead')).toEqual([]);
+    expect(vals('Unaccounted')).toEqual([]);
   });
-  it('triages at New Lead and takes outcomes only after the third call', () => {
-    expect(vals('New Lead')).toEqual(expect.arrayContaining(['Interested', 'Not Interested']));
-    expect(vals('Third Call')).toEqual(expect.arrayContaining(['Follow-up', 'Email Follow-Up', 'Unqualified']));
-    expect(vals('First Call')).not.toContain('Interested'); // outcomes aren't reachable mid-calls
-  });
-  it('never offers Application Filled manually (automation-only)', () => {
-    for (const st of ['New Lead', 'First Call', 'Second Call', 'Third Call', null]) {
-      expect(vals(st)).not.toContain('Application Filled');
+  it('offers the 5 outcomes from a calling state', () => {
+    for (const st of ['First Call', 'Second Call', 'Third Call']) {
+      expect(vals(st)).toHaveLength(5);
+      expect(vals(st)).toEqual(
+        expect.arrayContaining(['Interested', 'Not Interested', 'Follow-up', 'Email Follow-Up', 'Unqualified']),
+      );
     }
-    expect(allowedStatuses(null)).toHaveLength(9); // all statuses except Application Filled
+  });
+  it('is terminal for outcome statuses', () => {
+    for (const st of ['Interested', 'Not Interested', 'Follow-up', 'Email Follow-Up', 'Unqualified']) {
+      expect(vals(st)).toEqual([]);
+    }
+  });
+  it('never offers a call status or Application Filled (automation-only) anywhere', () => {
+    for (const st of ['New Lead', 'First Call', 'Second Call', 'Third Call', 'Interested', null]) {
+      for (const banned of ['First Call', 'Second Call', 'Third Call', 'Application Filled']) {
+        expect(vals(st)).not.toContain(banned);
+      }
+    }
   });
 });
 
@@ -164,26 +165,29 @@ describe('LeadCallWizardHost', () => {
     );
   });
 
-  it('pre-selects the next call status from the lead current status (First → Second Call)', async () => {
+  it('shows outcomes only (no call-number preselect) for a lead in the calling phase', async () => {
     hoisted.leads = [{ id: '555', contact: 'Jane Trucker', company: 'JT LLC', phone: '+15551234567', status: 'First Call' }];
     render(<LeadCallWizardHost pushToast={pushToast} />);
     fireCall({ leadId: '555' });
     await screen.findByRole('dialog');
-    expect(screen.getByRole('radio', { name: 'Second Call' })).toBeChecked();
-    const saveBtn = screen.getByRole('button', { name: /save status/i });
-    expect(saveBtn).not.toBeDisabled(); // pre-selected → one-click save
-    fireEvent.click(saveBtn);
+    // Outcomes are offered; call-number statuses are automatic (never in the picker) and nothing preset.
+    expect(screen.getByRole('radio', { name: 'Interested' })).toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: 'Second Call' })).toBeNull();
+    expect(screen.getByRole('button', { name: /save status/i })).toBeDisabled(); // nothing picked yet
+    fireEvent.click(screen.getByRole('radio', { name: 'Interested' }));
+    fireEvent.click(screen.getByRole('button', { name: /save status/i }));
     await waitFor(() =>
-      expect(hoisted.updateLead).toHaveBeenCalledWith('555', expect.objectContaining({ Status: 'Second Call' }), undefined),
+      expect(hoisted.updateLead).toHaveBeenCalledWith('555', expect.objectContaining({ Status: 'Interested' }), undefined),
     );
   });
 
-  it('a New Lead first call pre-selects First Call', async () => {
+  it('a New Lead call opens the outcome wizard (call number set automatically by the backend)', async () => {
     hoisted.leads = [{ id: '555', contact: 'Jane Trucker', company: 'JT LLC', phone: '+15551234567', status: 'Unaccounted' }];
     render(<LeadCallWizardHost pushToast={pushToast} />);
     fireCall({ leadId: '555' });
     await screen.findByRole('dialog');
-    expect(screen.getByRole('radio', { name: 'First Call' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Interested' })).toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: 'First Call' })).toBeNull();
   });
 
   it('does not force the wizard for an already-categorized lead (Interested)', () => {

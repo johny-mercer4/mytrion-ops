@@ -17,7 +17,7 @@ import { Icon } from './icons';
 import { readDcCache } from './dcCache';
 import { invalidateDcCache } from './dcCache';
 import type { LeadVM } from './dataCenterLive';
-import { STATUS_OPTIONS, allowedStatuses, reasonFieldFor, resolveWizardStatus } from './leadStatusFlow';
+import { STATUS_OPTIONS, OUTCOME_OPTIONS, reasonFieldFor, resolveWizardStatus } from './leadStatusFlow';
 import { LeadStatusPicker } from './LeadStatusPicker';
 
 // The status picklist + reason logic moved to leadStatusFlow (shared with the manual editor).
@@ -142,7 +142,7 @@ function LeadCallWizard({
           <div>
             <div style={s('font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:8px')}>Lead status</div>
             <LeadStatusPicker
-              options={allowedStatuses(lead?.status ?? null)}
+              options={OUTCOME_OPTIONS}
               value={status}
               onChange={(v) => {
                 setStatus(v);

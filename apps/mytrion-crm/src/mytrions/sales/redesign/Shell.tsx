@@ -16,6 +16,7 @@ import { useSessionUser } from './sessionUser';
 import { useSidebarBadges } from './sidebarBadges';
 import { useRetentionRealtime } from './useRetentionRealtime';
 import { LeadCallWizardHost } from './LeadCallWizard';
+import { DealCallWizardHost } from './DealCallWizard';
 import { getSession } from '@/api/session';
 import { useUserContext } from '@/context/UserContextProvider';
 import { useImpersonation } from '@/context/ImpersonationProvider';
@@ -438,6 +439,8 @@ export function SalesRedesign() {
 
         {/* Forced post-call Lead status wizard — fires on any tab when an outbound lead call ends. */}
         <LeadCallWizardHost pushToast={pushToast} />
+        {/* Forced post-call Deal note wizard — fires when an outbound deal call ends. */}
+        <DealCallWizardHost pushToast={pushToast} />
 
         {/* TOAST */}
         {toast && (

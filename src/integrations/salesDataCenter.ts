@@ -20,7 +20,7 @@ const LEAD_FIELDS =
 /** Selected Deal fields (validated queryable). Account_Name/Contact_Name are lookups (`{name,id}`). */
 const DEAL_FIELDS =
   'id, Deal_Name, Account_Name, Amount, Credit_Line_Approved, Cards_Requested, Stage, Probability, ' +
-  'Closing_Date, Contact_Name, First_name, Last_Name, Phone, Cell, Email, Application_ID, Carrier_ID, ' +
+  'Closing_Date, Contact_Name, First_name, Last_Name, Phone, Cell, Email, Secondary_Email, Application_ID, Carrier_ID, ' +
   'Application_Date, Created_Time, utm_source, Modified_Time, Description';
 
 export type CrmRow = Record<string, unknown>;

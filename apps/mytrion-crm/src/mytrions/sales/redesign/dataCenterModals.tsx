@@ -415,6 +415,14 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
       pushToast('Invalid email', 'Enter a valid email address or clear the field.');
       return;
     }
+    if (
+      typeof changes.Secondary_Email === 'string' &&
+      changes.Secondary_Email !== '' &&
+      !EMAIL_RE.test(changes.Secondary_Email)
+    ) {
+      pushToast('Invalid secondary email', 'Enter a valid email address or clear the field.');
+      return;
+    }
     setSaving(true);
     try {
       await updateDeal(deal.id, changes, getImpersonation()?.zohoUserId);
@@ -464,6 +472,7 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
             <div style={s(`${CARD_LABEL};margin-bottom:6px`)}>Contact</div>
             <div style={s('font-size:13px;font-weight:600')}>{deal.contact}</div>
             <EditContactRow label="Phone" editing={editing} value={editing ? form.Phone : applied.Phone} onChange={(v) => set('Phone', v)} inputMode="tel" placeholder="Phone" {...(onCall ? { onCall } : {})} />
+            <EditContactRow label="Cell" editing={editing} value={editing ? form.Cell : applied.Cell} onChange={(v) => set('Cell', v)} inputMode="tel" placeholder="Cell" {...(onCall ? { onCall } : {})} />
             {editing ? (
               <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
                 <div style={s('font-size:9.5px;color:var(--muted)')}>Email</div>
@@ -473,6 +482,17 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
               <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
                 <div style={s('font-size:9.5px;color:var(--muted)')}>Email</div>
                 <div style={s("font-size:12px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{applied.Email || '—'}</div>
+              </div>
+            )}
+            {editing ? (
+              <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
+                <div style={s('font-size:9.5px;color:var(--muted)')}>Secondary email</div>
+                <input value={form.Secondary_Email} onChange={(e) => set('Secondary_Email', e.currentTarget.value)} placeholder="name@company.com" inputMode="email" className="ss-in" style={s(`${INPUT_CSS};margin-top:4px`)} />
+              </div>
+            ) : (
+              <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
+                <div style={s('font-size:9.5px;color:var(--muted)')}>Secondary email</div>
+                <div style={s("font-size:12px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{applied.Secondary_Email || '—'}</div>
               </div>
             )}
           </div>

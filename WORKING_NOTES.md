@@ -4992,3 +4992,23 @@ Sales-side authorship: treat viewing CRM agent name/email as "me" in addition to
 `ZOHO_DESK_AGENT_ID`, so a Komilova thread + Desk-agent attachment stay on the same
 (left) side. Surface comment/thread inline attachments; poll open thread every 12s;
 selecting a ticket upserts WS subscribe ids.
+
+## 2026-07-24 — DWH / salesdata connect timeout (ServerCRM)
+
+Symptom: `[server-crm] POST /api/agent/salesdata → HTTP 500: timeout exceeded when
+trying to connect` (~16s). Not a slow Octane query — Render ServerCRM could not
+check out a DWH client.
+
+Root cause (live `pg_stat_activity`): lock storm on the shared analytics Postgres
+(`77.42.31.254:54342`). Mashup Engine pid held a heavy query ~1h47m
+(`ExecuteGather`); postgres/dbt sessions queued behind it; ServerCRM
+`agent_carriers` / salesdata queries sat on `Lock/relation` 60m+ and pinned the
+pool. Local `select 1` / `dim_company` still ~380ms (slots free; jam was lock
+queue, not max_connections=150).
+
+Recovery: jam cleared on its own; `/api/agent/salesdata` returned 200 in ~3s.
+Preventive (Octane-Project/servercrm `services/dwh.js`, needs Render deploy):
+lower `max` (8), `connectionTimeoutMillis` 15s, `statement_timeout=30s`,
+`idle_in_transaction_session_timeout=60s`, `application_name=servercrm`.
+Ops probe: `scripts/probeDwhLockJam.ts`. If it recurs: terminate the Mashup
+root blocker (or restart Mashup), then restart ServerCRM to flush stuck clients.
