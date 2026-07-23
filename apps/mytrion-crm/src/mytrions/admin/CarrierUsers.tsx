@@ -3,10 +3,13 @@ import {
   cancelInvitation,
   listInvitations,
   listRegisteredCompanies,
+  listSupportBotChats,
   revokeRegistration,
+  setSupportBotChat,
   type CarrierInvitation,
   type RegisteredCompany,
 } from '../../api/carrierUsers';
+import { ApiError } from '../../api/transport';
 import { BuildingIcon, PersonIcon, PlusIcon, RefreshIcon, RevokeIcon, SearchIcon, XIcon } from '../../components/icons';
 import { CarrierInvitations } from './CarrierInvitations';
 import { CarrierUserForm, type InviteDraft } from './CarrierUserForm';
@@ -31,7 +34,7 @@ const VIEWS = {
 
 /** Bar width per column — uneven, tracking the shape of real rows: a company name, a pill, an id,
  * a @handle, a date, a button. */
-const REG_SKELETON = ['62%', '76px', '54%', '68%', '58%', '52px'] as const;
+const REG_SKELETON = ['62%', '76px', '54%', '68%', '60%', '58%', '52px'] as const;
 
 /** A destructive action held until the admin confirms it. */
 interface PendingConfirm {
@@ -83,12 +86,24 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
   const [regPage, setRegPage] = useState(1);
   const [pending, setPending] = useState<PendingConfirm | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
+  // Support-bot group per carrier (chat-map). Admins view/set/re-point the STATIC Telegram group id
+  // inline — the manual counterpart of the bot's auto-bind (wire a group before an owner registers).
+  const [botChats, setBotChats] = useState<Map<string, string>>(new Map());
+  const [editingGroup, setEditingGroup] = useState<string | null>(null);
+  const [groupDraft, setGroupDraft] = useState('');
+  const [groupBusy, setGroupBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      setRegistrations(await listRegisteredCompanies());
+      const [regs, chats] = await Promise.all([
+        listRegisteredCompanies(),
+        // Best-effort: the column just shows '—' if the chat-map read fails; registrations still load.
+        listSupportBotChats().catch(() => []),
+      ]);
+      setRegistrations(regs);
+      setBotChats(new Map(chats.map((c): [string, string] => [c.carrierId, c.chatId])));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -107,6 +122,74 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
       setInvLoading(false);
     }
   }, []);
+
+  async function saveGroup(carrierId: string): Promise<void> {
+    const chat = groupDraft.trim();
+    if (!chat || groupBusy) return;
+    if (!/^-?\d{5,20}$/.test(chat)) {
+      adminToast.error('Invalid group id', 'Numeric only — e.g. -1003926878773 (from the group info or @getidsbot).');
+      return;
+    }
+    setGroupBusy(true);
+    try {
+      await setSupportBotChat(chat, carrierId);
+      setBotChats((prev) => new Map(prev).set(carrierId, chat));
+      setEditingGroup(null);
+      adminToast.success('Bot group saved', 'The support bot answers this group within ~5 minutes.');
+    } catch (e) {
+      adminToast.error(
+        'Save failed',
+        e instanceof ApiError && e.status === 403
+          ? 'Admin access required to map bot groups.'
+          : e instanceof Error
+            ? e.message
+            : String(e),
+      );
+    } finally {
+      setGroupBusy(false);
+    }
+  }
+
+  function renderGroupCell(cid: string) {
+    if (editingGroup === cid) {
+      return (
+        <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+          <input
+            className={`${s.input} ${s.mono}`}
+            style={{ height: 30, width: 148, padding: '0 8px', fontSize: 12 }}
+            value={groupDraft}
+            placeholder="-100…"
+            autoFocus
+            disabled={groupBusy}
+            onChange={(e) => setGroupDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void saveGroup(cid);
+              else if (e.key === 'Escape') setEditingGroup(null);
+            }}
+          />
+          <button type="button" className={s.ghostBtn} disabled={groupBusy} onClick={() => void saveGroup(cid)}>
+            {groupBusy ? '…' : 'Save'}
+          </button>
+          <button type="button" className={s.iconBtn} disabled={groupBusy} aria-label="Cancel edit" onClick={() => setEditingGroup(null)}>
+            <XIcon size={12} />
+          </button>
+        </span>
+      );
+    }
+    const current = botChats.get(cid);
+    return (
+      <button
+        type="button"
+        className={s.linkBtn}
+        onClick={() => {
+          setEditingGroup(cid);
+          setGroupDraft(current ?? '');
+        }}
+      >
+        {current ? <span className={s.mono}>{current}</span> : 'Set group'}
+      </button>
+    );
+  }
 
   useEffect(() => {
     void load();
@@ -391,6 +474,7 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
           <span role="columnheader">Type</span>
           <span role="columnheader">Carrier</span>
           <span role="columnheader">Telegram</span>
+          <span role="columnheader">Bot group</span>
           <span role="columnheader">Registered</span>
           <span role="columnheader">Actions</span>
         </div>
@@ -429,6 +513,9 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
                 </span>
                 <span className={s.cellSub} role="cell">
                   {g.ownerVisible && g.owner ? `@${g.owner.telegramUsername ?? g.owner.telegramUserId}` : '—'}
+                </span>
+                <span className={s.cellSub} role="cell">
+                  {g.carrierId ? renderGroupCell(g.carrierId) : '—'}
                 </span>
                 <span className={s.cellSub} role="cell" title={g.ownerVisible && g.owner ? new Date(g.owner.createdAt).toLocaleString() : ''}>
                   {g.ownerVisible && g.owner ? new Date(g.owner.createdAt).toLocaleDateString() : '—'}
