@@ -105,7 +105,8 @@ const OWNER_CATALOG: CatalogGroup[] = [
       // Hold/Unhold built but held back from prod (owner decision 2026-07-22) — "soon" until the
       // servercrm HOLD/UNHOLD release; the cardops sheet + backend schema are gated the same way.
       { key: 'card-hold-unhold', labelKey: 'cat.cardHoldUnhold', icon: 'clock', action: null },
-      { key: 'card-change-pin', labelKey: 'cat.cardChangePin', icon: 'key', action: 'cardops' },
+      // card-change-pin REMOVED 2026-07-23 (owner): it opened the SAME cardops "Card management"
+      // sheet as card-activate — a duplicate entry. PIN / Unit editing lives inside that sheet.
       // card-order-extra removed — owner decision 2026-07-22: no EFS API for ordering new fleet
       // cards exists, and a bare ticket item is not worth a catalog slot; clients ask their rep.
     ],

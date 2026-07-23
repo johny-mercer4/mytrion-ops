@@ -41,6 +41,7 @@ import {
   type CarrierBalance,
   type CardFundsResult,
   type FleetCard,
+  type FleetResponse,
   type LastUsedResult,
   type PaymentInfoResult,
   type RegistrationPreview,
@@ -379,6 +380,73 @@ function LoadingScreen() {
         <Spinner />
         <div style={{ fontSize: 14, color: 'var(--muted-fg)' }}>{t('loading')}</div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Searchable card picker (owner/manager) — replaces the native <select> for the transactions
+ * card filter. An owner rarely knows a card's full number, so options are searchable by card
+ * digits, unit number, OR driver name, and each row shows Unit + driver — the way owners actually
+ * identify a card. Inline expandable panel (not a floating overlay) so it stays mobile-safe.
+ */
+function CardPicker({
+  cards, value, onChange, placeholder, allLabel, searchPlaceholder,
+}: {
+  cards: FleetCard[];
+  value: string | null;
+  onChange: (card: FleetCard | null) => void;
+  placeholder: string;
+  allLabel: string;
+  searchPlaceholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const sel = cards.find((c) => c.cardId === value) ?? null;
+  const numLabel = (c: FleetCard): string => (c.cardNumber ? groupCardNumber(c.cardNumber) : `•••• ${tail6(c.cardNumber, null) ?? ''}`);
+  const subLabel = (c: FleetCard): string => {
+    const bits: string[] = [];
+    if (c.unitNumber) bits.push(`Unit ${c.unitNumber}`);
+    const drv = c.driverName ?? c.efsDriverName ?? null;
+    if (drv) bits.push(drv);
+    return bits.join(' · ');
+  };
+  const needle = q.trim().toLowerCase();
+  const digits = needle.replace(/\D/g, '');
+  const filtered = !needle ? cards : cards.filter((c) => {
+    const hay = `${c.cardNumber ?? ''} ${c.unitNumber ?? ''} ${c.driverName ?? ''} ${c.efsDriverName ?? ''} ${c.efsDriverId ?? ''}`.toLowerCase();
+    return hay.includes(needle) || (digits.length > 0 && (c.cardNumber ?? '').replace(/\D/g, '').includes(digits));
+  });
+  const rowStyle = { width: '100%', display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-start', gap: 1, padding: '9px 12px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' as const, fontFamily: "'Geist'" };
+  return (
+    <div style={{ position: 'relative' }}>
+      <button type="button" onClick={() => { haptic('tap'); setOpen((o) => !o); }} style={{ width: '100%', minHeight: 42, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--secondary)', color: sel ? 'var(--fg)' : 'var(--muted-fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13.5, padding: '6px 10px', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {sel ? `${numLabel(sel)}${subLabel(sel) ? ` · ${subLabel(sel)}` : ''}` : allLabel}
+        </span>
+        <ChevronRight size={15} strokeWidth={2.2} color="var(--muted-fg)" style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)', flex: 'none' }} aria-hidden />
+      </button>
+      {open && (
+        <div style={{ marginTop: 6, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--secondary)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
+            <SearchGlyph />
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={searchPlaceholder} className="selectable" style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, outline: 'none' }} />
+          </div>
+          <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+            <button type="button" className="row-press" onClick={() => { haptic('tap'); onChange(null); setOpen(false); setQ(''); }} style={{ ...rowStyle, borderBottom: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 13.5, fontWeight: 700, color: !sel ? 'var(--link-accent)' : 'var(--fg)' }}>{allLabel}</span>
+            </button>
+            {filtered.length === 0 ? (
+              <div style={{ padding: '14px 12px', fontSize: 13, color: 'var(--muted-fg)', textAlign: 'center' }}>{placeholder}</div>
+            ) : filtered.map((c, i) => (
+              <button key={c.cardId ?? i} type="button" className="row-press" onClick={() => { haptic('tap'); onChange(c); setOpen(false); setQ(''); }} style={{ ...rowStyle, borderBottom: i === filtered.length - 1 ? 'none' : '1px solid var(--border)' }}>
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: c.cardId === value ? 'var(--link-accent)' : 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>{numLabel(c)}</span>
+                {subLabel(c) && <span style={{ fontSize: 12, color: 'var(--muted-fg)' }}>{subLabel(c)}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1556,7 +1624,7 @@ function FleetView({
     if (filter !== 'all' && r.status !== filter) return false;
     if (q) {
       // Feedback 2026-07-22: owners search by unit number and driver ID too, not just card/driver.
-      const hay = `${tail6(r.cardNumber, r.cardId)} ${(r.driverName ?? 'unassigned')} ${r.unitNumber ?? ''} ${r.efsDriverId ?? ''}`.toLowerCase();
+      const hay = `${tail6(r.cardNumber, r.cardId)} ${(r.driverName ?? r.efsDriverName ?? 'unassigned')} ${r.unitNumber ?? ''} ${r.efsDriverId ?? ''}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -1687,7 +1755,12 @@ function FleetView({
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span className="selectable" style={{ fontWeight: 700, fontSize: 15, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em' }}>•••• {tail6(c.cardNumber, c.cardId)}</span>
                     </div>
-                    <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.driverName ?? t('card.unassigned')}</div>
+                    {/* Owner identifies a card by unit + driver, not the masked number (owner ask
+                        2026-07-23). Registration driver name wins; the EFS-provisioned name fills
+                        in for cards with no mini-app registration; unit number leads when present. */}
+                    <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {[c.unitNumber ? `Unit ${c.unitNumber}` : null, c.driverName ?? c.efsDriverName ?? t('card.unassigned')].filter(Boolean).join(' · ')}
+                    </div>
                   </div>
                   <span style={{ fontSize: 12, fontWeight: 700, color: c.statusColor, background: 'var(--secondary)', padding: '5px 10px', borderRadius: 9, flex: 'none' }}>{c.statusWord}</span>
                   <Chevron style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform .2s ease' }} />
@@ -2051,6 +2124,38 @@ const MANAGER_INVITE_UI = false;
 
 const SHEET_CACHE = new Map<string, { at: number; data: SheetData }>();
 const SHEET_TTL_MS = 60_000;
+
+// Shared FLEET cache (owner ask 2026-07-23: "har modal ochilgan yangi fetch bulmoqda"). Card
+// management, the transactions card filter and the fleet roster all need the same owner fleet
+// list — a heavy EFS-first read. One module-level cache serves them all within a TTL, and an
+// in-flight promise dedupes concurrent opens (open cardops + transactions back-to-back = ONE
+// network call). Card writes call invalidateFleet() so the next read is fresh.
+let FLEET_CACHE: { at: number; data: FleetResponse } | null = null;
+let FLEET_INFLIGHT: Promise<FleetResponse> | null = null;
+const FLEET_TTL_MS = 60_000;
+function getFleet(initData: string, force = false): Promise<FleetResponse> {
+  if (!force && FLEET_CACHE && Date.now() - FLEET_CACHE.at < FLEET_TTL_MS) return Promise.resolve(FLEET_CACHE.data);
+  if (FLEET_INFLIGHT) return FLEET_INFLIGHT;
+  FLEET_INFLIGHT = fetchFleet(initData)
+    .then((f) => { FLEET_CACHE = { at: Date.now(), data: f }; return f; })
+    .finally(() => { FLEET_INFLIGHT = null; });
+  return FLEET_INFLIGHT;
+}
+function invalidateFleet(): void { FLEET_CACHE = null; }
+// In-flight dedupe for sheet loads (owner ask 2026-07-23): if a sheet's data is already being
+// fetched for the same cacheId (React StrictMode double-mount, or a fast close/re-open before the
+// first request lands), the second load AWAITS the first's promise instead of firing another
+// network request. Complements SHEET_CACHE (which caches the RESULT for 60s): dedupe covers the
+// window WHILE a request is still in flight, when there is no cached result yet. Errors are never
+// cached — the entry is cleared on settle, so a failed load can be retried immediately.
+const SHEET_INFLIGHT = new Map<string, Promise<SheetData>>();
+function dedupeSheet(key: string, producer: () => Promise<SheetData>): Promise<SheetData> {
+  const existing = SHEET_INFLIGHT.get(key);
+  if (existing) return existing;
+  const p = producer().finally(() => { SHEET_INFLIGHT.delete(key); });
+  SHEET_INFLIGHT.set(key, p);
+  return p;
+}
 function invalidateSheetCache(...prefixes: string[]): void {
   for (const key of [...SHEET_CACHE.keys()]) {
     if (prefixes.some((p) => key.startsWith(p))) SHEET_CACHE.delete(key);
@@ -2152,6 +2257,16 @@ function ActionSheet({
   const [exportRetail, setExportRetail] = useState(false);
   /** Detailed columns: full card number + Driver / Unit / Driver ID (client feedback). */
   const [exportDetailed, setExportDetailed] = useState(false);
+  /** Report formats are multi-select now: pick any of Excel/PDF/CSV, then one Send fires them all
+   *  to the bot chat (client ask — one tap instead of three). Excel pre-selected (most common). */
+  const [selectedFormats, setSelectedFormats] = useState<Set<TxnExportFormat>>(() => new Set<TxnExportFormat>(['xlsx']));
+  const toggleFormat = (f: TxnExportFormat) =>
+    setSelectedFormats((prev) => {
+      const next = new Set(prev);
+      if (next.has(f)) next.delete(f);
+      else next.add(f);
+      return next;
+    });
   // ── Money-code draw form (C-17) ──
   const [mcAmount, setMcAmount] = useState('');
   const [mcUnit, setMcUnit] = useState('');
@@ -2172,6 +2287,8 @@ function ActionSheet({
   }, [data]);
   // ── Card-ops sheet (C-1/C-3/C-4-5/C-26) ──
   const [coCard, setCoCard] = useState<FleetCard | null>(null);
+  const [coSearch, setCoSearch] = useState('');
+  const [coStatus, setCoStatus] = useState<'all' | 'active' | 'inactive' | 'hold'>('all');
   const [coEfs, setCoEfs] = useState<Record<string, unknown> | null>(null);
   const [coEfsLoading, setCoEfsLoading] = useState(false);
   const [coBusy, setCoBusy] = useState<string | null>(null);
@@ -2230,6 +2347,10 @@ function ActionSheet({
           // A cached fast-phase txns list still upgrades to the live EFS merge below.
           if (!(hit.data.kind === 'txns' && hit.data.v.live?.pending)) return;
         }
+        // The whole branch cascade is the sheet's DATA PRODUCER — wrapped so concurrent loads of
+        // the same cacheId share ONE in-flight request (see dedupeSheet). Phase-2 (txns live
+        // upgrade) stays OUTSIDE, keyed off the resolved `next`.
+        const producer = async (): Promise<SheetData> => {
         let next: SheetData;
         if (service === 'balance') next = { kind: 'balance', v: await fetchBalance(initData) };
         else if (service === 'funds') next = { kind: 'funds', v: await fetchCardFunds(initData) };
@@ -2281,7 +2402,7 @@ function ActionSheet({
         else if (service === 'pinunit') next = { kind: 'pinunit', v: await fetchCardEfs(initData).catch(() => null) };
         // Card ops (C-1/C-3/C-4-5/C-26): the picker is the owner's own fleet list.
         else if (service === 'cardops') {
-          const fl = await fetchFleet(initData);
+          const fl = await getFleet(initData);
           next = { kind: 'cardops', v: { fleet: fl.fleet.filter((c) => c.cardId) } };
         }
         else if (service === 'tracking') next = { kind: 'tracking', v: await fetchTracking(initData) };
@@ -2289,6 +2410,9 @@ function ActionSheet({
         // Explicit, because this was a bare `else` that swallowed every unhandled key into a tracking
         // fetch — a new ServiceKey would silently open the wrong sheet instead of failing.
         else throw new Error(`Unhandled service: ${String(service)}`);
+        return next;
+        };
+        const next = await dedupeSheet(cacheId, producer);
         if (cancelled) return;
         SHEET_CACHE.set(cacheId, { at: Date.now(), data: next });
         setData(next);
@@ -2348,7 +2472,7 @@ function ActionSheet({
   useEffect(() => {
     if (service !== 'txns' || session.isDriver || txnFleet !== null) return;
     let cancelled = false;
-    fetchFleet(initData)
+    getFleet(initData)
       .then((f) => {
         if (!cancelled) setTxnFleet(f.fleet.filter((c) => c.cardId));
       })
@@ -2374,18 +2498,26 @@ function ActionSheet({
    * can't reliably save a file, and the rows are re-queried on the backend anyway, so nothing from
    * this screen is uploaded. `rows` is only consulted to keep the empty case instant.
    */
-  async function doExport(rows: Array<Record<string, unknown>>, format: TxnExportFormat) {
+  async function doExport(rows: Array<Record<string, unknown>>, formats: TxnExportFormat[]) {
     haptic('tap');
     if (!rows.length) {
       showToast(t('txns.empty'), 'error');
       return;
     }
+    if (!formats.length) {
+      showToast(t('txns.pickFormat'), 'error');
+      return;
+    }
     if (exportBusy) return;
-    setExportBusy(format);
     try {
       const cardFilter = txnCardSel && !session.isDriver ? { cardId: txnCardSel.cardId } : {};
       const opts = range === 'custom' ? { range: 'custom', from, to, ...cardFilter } : { range, ...cardFilter };
-      await sendTransactionsReport(initData, opts, format, exportRetail ? 'retail' : 'discount', exportDetailed);
+      // Sequential: each format is a separate document to the bot chat; the progress bar tracks
+      // whichever is in flight.
+      for (const format of formats) {
+        setExportBusy(format);
+        await sendTransactionsReport(initData, opts, format, exportRetail ? 'retail' : 'discount', exportDetailed);
+      }
       haptic('success');
       showToast(t('toast.reportSentToTelegram'));
     } catch (e) {
@@ -2760,7 +2892,7 @@ function ActionSheet({
                       (user feedback), while native selects are one tap, show the current choice
                       at rest, and never overflow. Card select is owner-only (drivers are pinned
                       server-side) and waits for the fleet list. */}
-                  <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
                     <label style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.period')}</span>
                       <select
@@ -2790,26 +2922,17 @@ function ActionSheet({
                       </label>
                     )}
                     {!session.isDriver && (txnFleet?.length ?? 0) > 0 && (
-                      <label style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ flexBasis: '100%', minWidth: 0 }}>
                         <span style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.card')}</span>
-                        <select
-                          value={txnCardSel?.cardId ?? ''}
-                          onChange={(e) => {
-                            haptic('tap');
-                            const c = (txnFleet ?? []).find((x) => x.cardId === e.target.value);
-                            setTxnCardSel(c?.cardId ? { cardId: c.cardId, last6: tail6(c.cardNumber, null) ?? '' } : null);
-                          }}
-                          style={{ width: '100%', height: 42, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13.5, padding: '0 10px', boxSizing: 'border-box' }}
-                        >
-                          <option value="">{t('txns.allCards')}</option>
-                          {(txnFleet ?? []).map((c) => (
-                            <option key={c.cardId} value={c.cardId ?? ''}>
-                              {/* Owner/manager select — show the full card number (driver never reaches this). */}
-                              {`${c.cardNumber ? groupCardNumber(c.cardNumber) : `•••• ${tail6(c.cardNumber, null) ?? ''}`}${c.driverName ? ` · ${c.driverName}` : ''}`}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                        <CardPicker
+                          cards={txnFleet ?? []}
+                          value={txnCardSel?.cardId ?? null}
+                          onChange={(c) => setTxnCardSel(c?.cardId ? { cardId: c.cardId, last6: tail6(c.cardNumber, null) ?? '' } : null)}
+                          allLabel={t('txns.allCards')}
+                          placeholder={t('txns.allCards')}
+                          searchPlaceholder={t('txns.searchCard')}
+                        />
+                      </div>
                     )}
                   </div>
                   {range === 'custom' && (
@@ -3165,11 +3288,13 @@ function ActionSheet({
                       })()}
                       <input value={mcUnit} inputMode="numeric" onChange={(e) => setMcUnit(e.target.value)} placeholder="1656" style={{ width: '100%', height: 46, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 15, padding: '0 14px', marginBottom: 12 }} />
                       <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('mc.reason')}</div>
-                      <div className="hscroll" style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-                        {reasons.map((r) => (
-                          <button key={r} type="button" onClick={() => { haptic('tap'); setMcReason(r); }} style={{ flex: 'none', height: 34, padding: '0 14px', borderRadius: 17, border: 'none', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, cursor: 'pointer', background: mcReason === r ? 'var(--primary)' : 'var(--secondary)', color: mcReason === r ? '#FFFFFF' : 'var(--muted-fg)', whiteSpace: 'nowrap' }}>{r}</button>
-                        ))}
-                      </div>
+                      {/* Reason as a native SELECT (2026-07-23, owner ask): the scrolling chips
+                          hid options off-screen; a dropdown shows the whole list and matches the
+                          other mini-app selects. */}
+                      <select value={mcReason} onChange={(e) => { haptic('tap'); setMcReason(e.target.value); }} style={{ width: '100%', height: 46, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--secondary)', color: mcReason ? 'var(--fg)' : 'var(--muted-fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, padding: '0 12px', marginBottom: 16, boxSizing: 'border-box' }}>
+                        <option value="" disabled>{t('mc.reasonSelect')}</option>
+                        {reasons.map((r) => (<option key={r} value={r}>{r}</option>))}
+                      </select>
                       <button type="button" className="press" disabled={!canDraw} onClick={() => {
                         haptic('tap');
                         setMcBusy(true);
@@ -3267,7 +3392,7 @@ function ActionSheet({
                       })
                         .then(() => {
                           haptic('success');
-                          invalidateSheetCache('pinunit', 'cardops', 'status');
+                          invalidateSheetCache('pinunit', 'cardops', 'status'); invalidateFleet();
                           showToast(t('pu.saved'));
                         })
                         .catch((e) => {
@@ -3296,7 +3421,7 @@ function ActionSheet({
                   .then(() => {
                     haptic('success');
                     showToast(doneMsg);
-                    invalidateSheetCache('cardops', 'pinunit', 'status');
+                    invalidateSheetCache('cardops', 'pinunit', 'status'); invalidateFleet();
                     // BUG FIX (feedback 2026-07-22): the status under the card number kept showing
                     // the OLD state after activate/deactivate/hold — the sheet cache was cleared but
                     // the open sheet's own EFS snapshot never re-fetched.
@@ -3312,10 +3437,42 @@ function ActionSheet({
                   .finally(() => setCoBusy(null));
               };
               if (!coCard) {
-                const cards = data.v.fleet;
-                if (!cards.length) return <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('co.noCards')}</div>;
+                const allCards = data.v.fleet;
+                if (!allCards.length) return <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('co.noCards')}</div>;
+                // Search + status filter (owner ask 2026-07-23): a 145-card list is a wall without
+                // them. Search matches card digits, unit or driver; status uses the live EFS status.
+                const stOf = (c: FleetCard): string => String(c.efsStatus ?? '').toLowerCase();
+                const nq = coSearch.trim().toLowerCase();
+                const nqDigits = nq.replace(/\D/g, '');
+                const cards = allCards.filter((c) => {
+                  if (coStatus !== 'all') {
+                    const st = stOf(c);
+                    if (coStatus === 'active' && !(st.includes('active') && !st.includes('inactive'))) return false;
+                    if (coStatus === 'inactive' && !st.includes('inactive')) return false;
+                    if (coStatus === 'hold' && !st.includes('hold')) return false;
+                  }
+                  if (!nq) return true;
+                  const hay = `${c.cardNumber ?? ''} ${c.unitNumber ?? ''} ${c.driverName ?? ''} ${c.efsDriverName ?? ''} ${c.efsDriverId ?? ''}`.toLowerCase();
+                  return hay.includes(nq) || (nqDigits.length > 0 && (c.cardNumber ?? '').replace(/\D/g, '').includes(nqDigits));
+                });
+                const STATUS_FILTERS: ReadonlyArray<{ v: typeof coStatus; k: string }> = [
+                  { v: 'all', k: 'co.fAll' }, { v: 'active', k: 'co.fActive' }, { v: 'inactive', k: 'co.fInactive' }, { v: 'hold', k: 'co.fHold' },
+                ];
                 return (
-                  <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 12px', marginBottom: 8, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--secondary)' }}>
+                      <SearchGlyph />
+                      <input className="selectable" value={coSearch} onChange={(e) => setCoSearch(e.target.value)} placeholder={t('co.searchCard')} style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, outline: 'none' }} />
+                    </div>
+                    <div className="hscroll" style={{ display: 'flex', gap: 7, marginBottom: 12, paddingBottom: 2 }}>
+                      {STATUS_FILTERS.map((f) => (
+                        <button key={f.v} type="button" onClick={() => { haptic('tap'); setCoStatus(f.v); }} style={{ flex: 'none', height: 34, padding: '0 14px', border: 'none', borderRadius: 10, fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', cursor: 'pointer', background: coStatus === f.v ? 'var(--primary)' : 'var(--secondary)', color: coStatus === f.v ? '#FFFFFF' : 'var(--muted-fg)' }}>{t(f.k)}</button>
+                      ))}
+                    </div>
+                    {cards.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '28px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('co.noMatch')}</div>
+                    ) : (
+                    <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
                     {cards.map((c, i) => (
                       <button key={c.cardId ?? i} type="button" className="row-press" onClick={() => {
                         haptic('tap');
@@ -3331,11 +3488,14 @@ function ActionSheet({
                         </span>
                         <span style={{ flex: 1, minWidth: 0 }}>
                           <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>{c.cardNumber ? groupCardNumber(c.cardNumber) : `•••• ${tail6(c.cardNumber, null)}`}</span>
-                          <span style={{ display: 'block', fontSize: 12, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.driverName ?? t('co.noDriver')}</span>
+                          <span style={{ display: 'block', fontSize: 12, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{[c.unitNumber ? `Unit ${c.unitNumber}` : null, c.driverName ?? c.efsDriverName ?? t('co.noDriver')].filter(Boolean).join(' · ')}</span>
                         </span>
+                        {c.efsStatus && <span style={{ flex: 'none', fontSize: 11, fontWeight: 700, color: stOf(c).includes('active') && !stOf(c).includes('inactive') ? 'var(--success)' : 'var(--muted-fg)', background: 'var(--card)', padding: '3px 8px', borderRadius: 8, textTransform: 'capitalize' }}>{c.efsStatus}</span>}
                         <ChevronRight size={15} strokeWidth={2} color="var(--muted-fg)" aria-hidden />
                       </button>
                     ))}
+                    </div>
+                    )}
                   </div>
                 );
               }
@@ -3608,20 +3768,36 @@ function ActionSheet({
                 </button>
               </div>
             )}
+            {/* Format = multi-select checkboxes (client ask). Selected pill mirrors the Detailed
+                toggle's on-state (primary bg + white) so the two rows read as one control group. */}
             <div style={{ display: 'flex', gap: 8 }}>
-              {(['xlsx', 'pdf', 'csv'] as const).map((f) => (
-                <button
-                  key={f}
-                  type="button"
-                  className="press"
-                  disabled={exportBusy !== null}
-                  onClick={() => void doExport(data.v.data ?? [], f)}
-                  style={{ flex: 1, height: 42, border: 'none', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: exportBusy ? 'default' : 'pointer', opacity: exportBusy && exportBusy !== f ? 0.45 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                >
-                  {exportBusy === f ? <Spinner size={16} /> : f === 'xlsx' ? 'Excel' : f === 'pdf' ? 'PDF' : 'CSV'}
-                </button>
-              ))}
+              {(['xlsx', 'pdf', 'csv'] as const).map((f) => {
+                const on = selectedFormats.has(f);
+                return (
+                  <button
+                    key={f}
+                    type="button"
+                    role="checkbox"
+                    aria-checked={on}
+                    className="press"
+                    disabled={exportBusy !== null}
+                    onClick={() => { haptic('tap'); toggleFormat(f); }}
+                    style={{ flex: 1, height: 42, border: 'none', borderRadius: 11, background: on ? 'var(--primary)' : 'var(--secondary)', color: on ? '#FFFFFF' : 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: exportBusy ? 'default' : 'pointer', opacity: exportBusy ? 0.55 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                  >
+                    {on ? '✓ ' : ''}{f === 'xlsx' ? 'Excel' : f === 'pdf' ? 'PDF' : 'CSV'}
+                  </button>
+                );
+              })}
             </div>
+            <button
+              type="button"
+              className="press"
+              disabled={exportBusy !== null || selectedFormats.size === 0}
+              onClick={() => void doExport(data.v.data ?? [], (['xlsx', 'pdf', 'csv'] as const).filter((f) => selectedFormats.has(f)))}
+              style={{ width: '100%', height: 44, marginTop: 8, border: 'none', borderRadius: 11, background: selectedFormats.size === 0 ? 'var(--secondary)' : 'var(--primary)', color: selectedFormats.size === 0 ? 'var(--muted-fg)' : '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: exportBusy !== null || selectedFormats.size === 0 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+            >
+              {exportBusy !== null ? <><Spinner size={16} color="#FFFFFF" /> {t('txns.sendingReport')}</> : t('txns.sendReport')}
+            </button>
             {/* Owner accounting shortcuts: the weekly "fuel and EFS report, both retail and with
                 discount, pdf and xlsx" ritual as one tap, and the EFS half alone. Never shown to a
                 driver — both endpoints are owner-only anyway. */}
@@ -3703,8 +3879,13 @@ function notifToInbox(n: InboxNotification, lang: string, t: TFn): InboxItem {
     const gallons = typeof p['gallons'] === 'number' ? p['gallons'] : Number(p['gallons'] ?? 0);
     const location = typeof p['location'] === 'string' ? p['location'] : '';
     const place = [p['city'], p['state']].map((v) => (typeof v === 'string' ? v : '')).filter(Boolean).join(' ');
+    // Full PAN + unit + driver (owner ask): the owner recognizes the truck by unit + driver, not
+    // the last6. Falls back to last6 for older payloads that predate the full-card fields.
+    const fullCard = typeof p['card'] === 'string' && p['card'] ? p['card'] : card;
+    const unit = typeof p['unit'] === 'string' && p['unit'] ? p['unit'] : '—';
+    const driver = typeof p['driverName'] === 'string' && p['driverName'] ? p['driverName'] : '—';
     titleText = t('inbox.ntfReceipt.title');
-    bodyText = t('inbox.ntfReceipt.body', { gallons, location, place, card });
+    bodyText = t('inbox.ntfReceipt.body', { gallons, location, place, card: fullCard, unit, driver });
   } else if (n.type === 'invoice') {
     const number = typeof p['number'] === 'string' ? p['number'] : '';
     const total = typeof p['total'] === 'string' ? p['total'] : '';
@@ -4097,7 +4278,7 @@ export function App() {
     setFleetLoadError('');
     setFleetActionError('');
     setFleetLoading(true);
-    fetchFleet(wa.initData)
+    getFleet(wa.initData, force)
       .then((res) => {
         setFleetCards(res.fleet);
         fleetLoaded.current = true;

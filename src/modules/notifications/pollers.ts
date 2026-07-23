@@ -142,7 +142,7 @@ export async function runReceiptPoll(): Promise<{ carriers: number; receipts: nu
       const rows = res.data ?? [];
 
       // Collapse line items → one receipt per transaction_id (sum the fuel gallons; fees carry 0).
-      const byTxn = new Map<string, { card: string; gallons: number; date: string; loc: string; city: string; state: string }>();
+      const byTxn = new Map<string, { card: string; gallons: number; date: string; loc: string; city: string; state: string; unit: string; driverName: string }>();
       for (const r of rows) {
         const txnId = String(r['transaction_id'] ?? '');
         const card = String(r['card_number'] ?? '');
@@ -159,6 +159,10 @@ export async function runReceiptPoll(): Promise<{ carriers: number; receipts: nu
             loc: String(r['location_name'] ?? ''),
             city: String(r['location_city'] ?? ''),
             state: String(r['location_state'] ?? ''),
+            // EFS card identity — the owner recognizes the truck by unit + driver, not the PAN.
+            // driver_card_name = cardholder/driver; driver_unit = truck number (both on the mart row).
+            unit: String(r['driver_unit'] ?? '').trim(),
+            driverName: String(r['driver_card_name'] ?? '').trim(),
           });
         }
       }
@@ -195,6 +199,13 @@ export async function runReceiptPoll(): Promise<{ carriers: number; receipts: nu
           dedupeKey: `receipt:${carrierId}:${txnId}`,
           payload: {
             last6: t.card.slice(-6),
+            // Full PAN + unit + driver (owner ask 2026-07-23). Receipts are delivered to each
+            // user's OWN chat/inbox (never the shared group — service.ts sendPlainReply targets the
+            // registrant's chat), so the full number stays with the cardholder. '—' when EFS has
+            // no unit/driver on the card's latest mart row.
+            card: t.card,
+            unit: t.unit || '—',
+            driverName: t.driverName || '—',
             gallons: Number(t.gallons.toFixed(2)),
             location: t.loc,
             city: t.city,

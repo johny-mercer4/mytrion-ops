@@ -701,7 +701,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
     // (deactivated / brand new) resolves its id via the any-status lookup — capped so one giant
     // fleet cannot turn this into an N+1 stampede.
     const digitsOf = (n: unknown): string => String(n ?? '').replace(/\D/g, '');
-    type FleetCardRow = { cardId: string | null; cardNumber: string; cardType: string | null; efsStatus: string | null; unitNumber: string | null; driverId: string | null };
+    type FleetCardRow = { cardId: string | null; cardNumber: string; cardType: string | null; efsStatus: string | null; unitNumber: string | null; driverId: string | null; efsDriverName: string | null };
     let baseCards: FleetCardRow[];
     if (efs?.data?.length) {
       const byNumber = new Map(cards.map((c) => [digitsOf(c.cardNumber), c]));
@@ -718,12 +718,12 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
           const found = await findDwhCardByNumberAnyStatus(num).catch(() => null);
           if (found && String(found.carrierId) === String(carrierId)) cardId = found.cardId;
         }
-        baseCards.push({ cardId, cardNumber: num, cardType, efsStatus: (e['status'] as string | null) ?? null, unitNumber: (e['unitNumber'] as string | null) ?? null, driverId: (e['driverId'] as string | null) ?? null });
+        baseCards.push({ cardId, cardNumber: num, cardType, efsStatus: (e['status'] as string | null) ?? null, unitNumber: (e['unitNumber'] as string | null) ?? null, driverId: (e['driverId'] as string | null) ?? null, efsDriverName: (e['driverName'] as string | null) ?? null });
       }
     } else {
       baseCards = cards
         .filter((c) => c.cardNumber)
-        .map((c) => ({ cardId: c.cardId, cardNumber: String(c.cardNumber), cardType: c.cardType, efsStatus: null, unitNumber: null, driverId: null }));
+        .map((c) => ({ cardId: c.cardId, cardNumber: String(c.cardNumber), cardType: c.cardType, efsStatus: null, unitNumber: null, driverId: null, efsDriverName: null }));
     }
     const fleet = baseCards.map((card) => {
       const reg = card.cardId ? registeredByCard.get(card.cardId) : undefined;
@@ -735,6 +735,10 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
         efsStatus: card.efsStatus,
         unitNumber: card.unitNumber,
         efsDriverId: card.driverId,
+        // EFS-first fleet also carries the driver NAME the card is provisioned to (owner ask
+        // 2026-07-23: identify a card by its unit/driver, not the masked number). Registration
+        // name wins when present; the EFS name fills in for cards with no mini-app registration.
+        efsDriverName: card.efsDriverName,
         driverName: reg?.driverName ?? pend?.driverName ?? null,
         status: reg ? ('registered' as const) : pend ? ('pending' as const) : ('open' as const),
         // Pending only: the link + its deadline, so the owner can re-copy it and the UI can show

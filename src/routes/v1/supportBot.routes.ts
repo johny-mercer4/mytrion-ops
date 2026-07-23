@@ -24,6 +24,7 @@ import { env, isProduction } from '../../config/env.js';
 import { db } from '../../db/client.js';
 import { registeredMiniAppCompanies, supportBotChats, supportBotMessages, type RegisteredMiniAppCompany } from '../../db/schema/index.js';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
+import { searchDwhClients } from '../../integrations/dwhClients.js';
 import { listDwhTransactions } from '../../integrations/dwhTransactions.js';
 import { sendDocument, sendPlainReply, TelegramChatUnreachableError } from '../../integrations/telegramCarrierBot.js';
 import { TXN_FETCH_LIMIT, scopeRowsToCard } from '../../modules/carrier/driverCardScope.js';
@@ -330,10 +331,19 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
   app.post('/support-bot/whoami', guard, async (request) => {
     const body = callerSchema.parse(request.body);
     const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    // Responsible sales agent = the LIVE deal owner from the DWH (stg_zoho_deals.owner_id →
+    // zoho_users.full_name), NOT whoever created the registration link (the invite-stamped
+    // agentName is the link creator on older records) and NEVER the client. Best-effort: if the
+    // DWH lookup finds no owner, return null and let the bot fall back to a generic "your Octane
+    // agent" (prompt rule) — we deliberately do NOT fall back to registration.agentName.
+    const agentName = await searchDwhClients({ q: body.carrierId, limit: 15 })
+      .then((cs) => cs.find((c) => c.carrierId === body.carrierId)?.ownerName ?? null)
+      .catch(() => null);
     return {
       role,
       name: registration.driverName ?? null,
       companyName: registration.companyName ?? null,
+      agentName,
     };
   });
 
@@ -342,7 +352,15 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
    * statuses (capped, like the mini-app's status sheet).
    */
   app.post('/support-bot/card-status', guard, async (request) => {
-    const body = callerSchema.parse(request.body);
+    const body = callerSchema
+      .extend({
+        cardLast6: z.string().trim().min(4).max(19).optional(),
+        // Narrow a big fleet without the old 30-card blind window (owner ask 2026-07-23):
+        // query matches last6 / unit / driver; status filters active|inactive|hold.
+        query: z.string().trim().max(60).optional(),
+        status: z.enum(['active', 'inactive', 'hold']).optional(),
+      })
+      .parse(request.body);
     const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
     takeReadToken(body.carrierId);
     const cardRows = await listCardsLive(body.carrierId);
@@ -361,12 +379,69 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
         limits: efsInfo?.['limits'] ?? null,
       };
     }
-    const rows = cardRows.slice(0, 30).map((r) => ({
+    // SPECIFIC card (owner asked about one card — usually a PHOTO): look it up across the WHOLE
+    // fleet, never the 30-card window. The old summary made the bot GUESS "probably deactivated"
+    // for any card past the first 30 (live incident 2026-07-23: card •••• 567876 was actually
+    // 'Hold For Fraud', not deactivated — the bot guessed wrong). fraudHold/overrideAvailable let
+    // the bot route to Override (one-time), the way a human agent answers, instead of "activate".
+    if (body.cardLast6) {
+      const want = body.cardLast6.replace(/\D/g, '').slice(-6);
+      const match = cardRows.find((r) => String(r['card_number'] ?? '').replace(/\D/g, '').endsWith(want));
+      if (!match) return { role, card: null, note: 'That card is not in this company fleet.' };
+      const status = String(match['status'] ?? '');
+      const fraudHold = /hold|fraud/i.test(status);
+      return {
+        role,
+        card: {
+          last6: String(match['card_number'] ?? '').slice(-6),
+          status: match['status'] ?? null,
+          unit: match['unit_number'] ?? null,
+          driver: match['driver_name'] ?? null,
+          fraudHold,
+          // Override applies to a fraud hold (one-time usage); a plain deactivated card is NOT
+          // overridable — the owner activates it instead.
+          overrideAvailable: fraudHold || Number(match['override'] ?? 0) > 0,
+          active: status.toLowerCase() === 'active',
+        },
+      };
+    }
+    // General fleet read. query / status narrow across the WHOLE fleet (returning unit + driver so
+    // the bot can name a card); with neither, the full list is returned up to a safety cap so a
+    // huge fleet can't blow the response — past the cap the bot is told to use query/status.
+    const OWNER_CARD_CAP = 150;
+    const activeCount = cardRows.filter((r) => String(r['status'] ?? '').toLowerCase() === 'active').length;
+    const holdCount = cardRows.filter((r) => /hold|fraud/i.test(String(r['status'] ?? ''))).length;
+    const nq = (body.query ?? '').toLowerCase();
+    const nqDigits = nq.replace(/\D/g, '');
+    const matched = cardRows.filter((r) => {
+      if (body.status) {
+        const st = String(r['status'] ?? '').toLowerCase();
+        if (body.status === 'active' && !(st.includes('active') && !st.includes('inactive'))) return false;
+        if (body.status === 'inactive' && !st.includes('inactive')) return false;
+        if (body.status === 'hold' && !/hold|fraud/i.test(st)) return false;
+      }
+      if (!nq) return true;
+      const hay = `${r['card_number'] ?? ''} ${r['unit_number'] ?? ''} ${r['driver_name'] ?? ''} ${r['driver_id'] ?? ''}`.toLowerCase();
+      return hay.includes(nq) || (nqDigits.length > 0 && String(r['card_number'] ?? '').replace(/\D/g, '').includes(nqDigits));
+    });
+    const rows = matched.slice(0, OWNER_CARD_CAP).map((r) => ({
       last6: String(r['card_number'] ?? '').slice(-6),
       status: r['status'] ?? null,
+      unit: r['unit_number'] ?? null,
+      driver: r['driver_name'] ?? null,
     }));
-    const activeCount = cardRows.filter((r) => String(r['status'] ?? '').toLowerCase() === 'active').length;
-    return { role, count: cardRows.length, activeCount, cards: rows };
+    return {
+      role,
+      count: cardRows.length,
+      matchCount: matched.length,
+      activeCount,
+      holdCount,
+      cards: rows,
+      truncated: matched.length > OWNER_CARD_CAP,
+      note: matched.length > OWNER_CARD_CAP
+        ? `Showing ${OWNER_CARD_CAP} of ${matched.length}. Narrow with query (last6/unit/driver) or status (active|inactive|hold); for ONE card pass cardLast6.`
+        : 'For ONE specific card (e.g. a photo) pass cardLast6; to narrow, use query or status.',
+    };
   });
 
   /**

@@ -147,7 +147,7 @@ export function InboxTab({
           <div
             key={n.id}
             className="row-press"
-            onClick={() => onRead(n.id)}
+            onClick={() => openFull(n)}
             style={{
               display: 'flex',
               alignItems: 'center',

@@ -1,5 +1,6 @@
 /**
- * Client Management — generate Telegram registration links for owner / driver.
+ * Client Management — generate Telegram registration links for owner / manager / driver.
+ * Owner and manager share the no-card fleet path (manager = owner-equivalent access, no card).
  * Driver is a child of the owner: only available after an active owner registration exists,
  * and each driver is tied to one carrier fuel card (by card number).
  */
@@ -53,7 +54,10 @@ export function ClientManagePanel({
   const [busy, setBusy] = useState(false);
   const [inviteUrl, setInviteUrl] = useState('');
 
-  const isOwner = profile === 'owner';
+  // owner + manager share the no-card fleet path; driver is the per-card path.
+  const isOwnerLike = profile === 'owner' || profile === 'manager';
+  const isDriver = profile === 'driver';
+  const profileLabel = profile === 'owner' ? 'Owner' : profile === 'manager' ? 'Manager' : 'Driver';
 
   const [cards, setCards] = useState<DwhCard[] | null>(null);
   const [cardsBusy, setCardsBusy] = useState(false);
@@ -204,7 +208,7 @@ export function ClientManagePanel({
   const companyType =
     cardCount === null || cardCount === 0 ? null : cardCount === 1 ? 'owner-operator' : 'fleet-manager';
 
-  const valid = isOwner
+  const valid = isOwnerLike
     ? carrierId.trim().length > 0
     : ownerReady
       && carrierId.trim().length > 0
@@ -214,11 +218,11 @@ export function ClientManagePanel({
   const blocker = !valid
     ? !carrierId.trim()
       ? 'This client has no carrier id — cannot generate a link.'
-      : !isOwner && !ownerReady
+      : isDriver && !ownerReady
         ? 'Register the owner user first — drivers can only be created under an active owner user.'
-        : !isOwner && !cardId.trim()
+        : isDriver && !cardId.trim()
           ? 'Pick the carrier card number this driver is for.'
-          : !isOwner && !driverName.trim()
+          : isDriver && !driverName.trim()
             ? "Enter the driver's name."
             : ''
     : '';
@@ -226,7 +230,7 @@ export function ClientManagePanel({
   async function generateInvite(e: FormEvent) {
     e.preventDefault();
     if (busy || !valid) return;
-    if (!isOwner && !ownerReady) {
+    if (isDriver && !ownerReady) {
       pushToast('Owner required', 'Register the owner user before inviting a driver.');
       return;
     }
@@ -240,14 +244,14 @@ export function ClientManagePanel({
         profile,
         carrierId: carrierId.trim(),
         ...(companyName.trim() ? { companyName: companyName.trim() } : {}),
-        ...(!isOwner && cardId.trim() ? { cardId: cardId.trim() } : {}),
-        ...(!isOwner && driverName.trim() ? { driverName: driverName.trim() } : {}),
+        ...(isDriver && cardId.trim() ? { cardId: cardId.trim() } : {}),
+        ...(isDriver && driverName.trim() ? { driverName: driverName.trim() } : {}),
         ...(agentName ? { agentName } : {}),
         ...(agentZohoUserId ? { agentZohoUserId } : {}),
       });
       setInviteUrl(res.inviteUrl);
-      pushToast('Link ready', `${isOwner ? 'Owner' : 'Driver'} registration link generated.`);
-      if (isOwner) setRegsTick((n) => n + 1);
+      pushToast('Link ready', `${profileLabel} registration link generated.`);
+      if (isOwnerLike) setRegsTick((n) => n + 1);
     } catch (err: unknown) {
       pushToast("Couldn't generate", err instanceof Error ? err.message : String(err));
     } finally {
@@ -325,9 +329,17 @@ export function ClientManagePanel({
           <button
             type="button"
             onClick={() => setProfile('owner')}
-            style={s(`flex:1;height:38px;border-radius:var(--radius-md);border:1px solid ${isOwner ? 'var(--accent)' : 'var(--border)'};background:${isOwner ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${isOwner ? 'var(--accent)' : 'var(--text2)'};font-weight:700;font-size:13px;cursor:pointer`)}
+            style={s(`flex:1;height:38px;border-radius:var(--radius-md);border:1px solid ${profile === 'owner' ? 'var(--accent)' : 'var(--border)'};background:${profile === 'owner' ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${profile === 'owner' ? 'var(--accent)' : 'var(--text2)'};font-weight:700;font-size:13px;cursor:pointer`)}
           >
             Owner
+          </button>
+          <button
+            type="button"
+            onClick={() => setProfile('manager')}
+            title="Owner-equivalent fleet access, no card assigned"
+            style={s(`flex:1;height:38px;border-radius:var(--radius-md);border:1px solid ${profile === 'manager' ? 'var(--accent)' : 'var(--border)'};background:${profile === 'manager' ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${profile === 'manager' ? 'var(--accent)' : 'var(--text2)'};font-weight:700;font-size:13px;cursor:pointer`)}
+          >
+            Manager
           </button>
           <button
             type="button"
@@ -340,19 +352,21 @@ export function ClientManagePanel({
             }}
             disabled={!ownerReady}
             title={ownerReady ? 'Driver under this owner user' : 'Requires an active owner user'}
-            style={s(`flex:1;height:38px;border-radius:var(--radius-md);border:1px solid ${!isOwner ? 'var(--accent)' : 'var(--border)'};background:${!isOwner ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${!isOwner ? 'var(--accent)' : 'var(--text2)'};font-weight:700;font-size:13px;cursor:${ownerReady ? 'pointer' : 'default'};opacity:${ownerReady ? '1' : '.45'}`)}
+            style={s(`flex:1;height:38px;border-radius:var(--radius-md);border:1px solid ${profile === 'driver' ? 'var(--accent)' : 'var(--border)'};background:${profile === 'driver' ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${profile === 'driver' ? 'var(--accent)' : 'var(--text2)'};font-weight:700;font-size:13px;cursor:${ownerReady ? 'pointer' : 'default'};opacity:${ownerReady ? '1' : '.45'}`)}
           >
             Driver
           </button>
         </div>
         <div style={s('font-size:12px;color:var(--muted);margin-top:8px;line-height:1.45')}>
-          {isOwner
+          {profile === 'owner'
             ? 'Owner user link — fleet access for all cards. Drivers unlock after this owner user finishes registration.'
-            : 'Driver user link — child of the owner user, tied to one carrier card number.'}
+            : profile === 'manager'
+              ? 'Manager link — owner-equivalent fleet access, no card assigned. For a company manager who needs full visibility without a driver card.'
+              : 'Driver user link — child of the owner user, tied to one carrier card number.'}
         </div>
       </div>
 
-      {!isOwner && ownerReady && (
+      {isDriver && ownerReady && (
         <>
           <div>
             <span style={s(label)}>Card number</span>
@@ -406,24 +420,24 @@ export function ClientManagePanel({
         </>
       )}
 
-      {!isOwner && !ownerReady && (
+      {isDriver && !ownerReady && (
         <div style={s('font-size:12px;color:var(--warn);padding:10px 12px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 28%,var(--border))')}>
           Generate the owner user registration link first. After the owner user registers in Telegram, Driver unlocks so you can invite per card number.
         </div>
       )}
 
-      {blocker && isOwner && (
+      {blocker && isOwnerLike && (
         <div style={s('font-size:12px;color:var(--warn);padding:10px 12px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 28%,var(--border))')}>
           {blocker}
         </div>
       )}
-      {blocker && !isOwner && ownerReady && (
+      {blocker && isDriver && ownerReady && (
         <div style={s('font-size:12px;color:var(--warn);padding:10px 12px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 28%,var(--border))')}>
           {blocker}
         </div>
       )}
 
-      {(isOwner || ownerReady) && (
+      {(isOwnerLike || ownerReady) && (
         <button
           type="submit"
           disabled={busy || !valid}
