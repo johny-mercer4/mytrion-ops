@@ -1,9 +1,6 @@
 /** Admin Deals — org-wide list/search + ownership transfer + Owner_Logs. */
 import { request } from './transport';
 
-/** John Mercer — default transferrer filter for ownership-change discovery. */
-export const DEFAULT_TRANSFERRER_ZOHO_USER_ID = '6227679000093960901';
-
 export interface AdminDeal {
   id: string;
   dealName: string | null;
@@ -67,25 +64,44 @@ export async function listAdminDeals(limit = 200): Promise<AdminDeal[]> {
 }
 
 /**
- * Recovery deal set + Timeline `done_by` filter (not Owner_Logs.Created_By —
- * that field is often the workflow user).
+ * Recovery deal set via Owner_Logs COQL (`Created_By` = transferrer), default page 1000.
+ * Prior owner enriched from each deal's `__timeline`.
  */
 export async function listDealsTransferredBy(
   transferrerId: string,
-  limit = 200,
+  opts: { limit?: number; offset?: number } = {},
 ): Promise<{
   deals: AdminDeal[];
   timeline: Array<{ dealId: string; change: OwnerTimelineChange }>;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+  coql: string | null;
 }> {
   const data = await request('GET', '/admin/deals', {
     impersonate: false,
-    query: { transferredBy: transferrerId, limit },
+    query: {
+      transferredBy: transferrerId,
+      limit: opts.limit ?? 1000,
+      offset: opts.offset ?? 0,
+    },
   });
   const body = data as {
     deals?: AdminDeal[];
     timeline?: Array<{ dealId: string; change: OwnerTimelineChange }>;
+    offset?: number;
+    limit?: number;
+    hasMore?: boolean;
+    coql?: string;
   };
-  return { deals: body.deals ?? [], timeline: body.timeline ?? [] };
+  return {
+    deals: body.deals ?? [],
+    timeline: body.timeline ?? [],
+    offset: body.offset ?? opts.offset ?? 0,
+    limit: body.limit ?? opts.limit ?? 1000,
+    hasMore: Boolean(body.hasMore),
+    coql: body.coql ?? null,
+  };
 }
 
 export async function searchAdminDeals(q: string): Promise<AdminDeal[]> {
@@ -158,51 +174,4 @@ export async function listOwnerLogs(opts: {
     },
   });
   return (data as { logs?: AdminOwnerLog[] }).logs ?? [];
-}
-
-/** Durable Mytrion Ops ownership transfer log (not Zoho Owner_Logs). */
-export interface OwnershipTransferLog {
-  id: number;
-  createdAt: string;
-  reason: string;
-  result: string;
-  dealName: string | null;
-  contactName: string | null;
-  companyName: string | null;
-  zohoDealId: string | null;
-  zohoContactId: string | null;
-  zohoAccountId: string | null;
-  carrierId: string | null;
-  retentionCaseId: number | null;
-  fromOwnerZohoUserId: string | null;
-  fromOwnerName: string | null;
-  toOwnerZohoUserId: string;
-  toOwnerName: string | null;
-  actorZohoUserId: string | null;
-  actorName: string | null;
-  dealUpdated: boolean;
-  contactUpdated: boolean;
-  accountUpdated: boolean;
-  warnings: string | null;
-  errorMessage: string | null;
-}
-
-export async function listOwnershipTransferLogs(opts: {
-  zohoDealId?: string;
-  fromOwnerZohoUserId?: string;
-  toOwnerZohoUserId?: string;
-  reason?: string;
-  limit?: number;
-} = {}): Promise<OwnershipTransferLog[]> {
-  const data = await request('GET', '/admin/ownership-transfers', {
-    impersonate: false,
-    query: {
-      ...(opts.zohoDealId ? { zohoDealId: opts.zohoDealId } : {}),
-      ...(opts.fromOwnerZohoUserId ? { fromOwnerZohoUserId: opts.fromOwnerZohoUserId } : {}),
-      ...(opts.toOwnerZohoUserId ? { toOwnerZohoUserId: opts.toOwnerZohoUserId } : {}),
-      ...(opts.reason ? { reason: opts.reason } : {}),
-      ...(opts.limit != null ? { limit: opts.limit } : {}),
-    },
-  });
-  return (data as { transfers?: OwnershipTransferLog[] }).transfers ?? [];
 }

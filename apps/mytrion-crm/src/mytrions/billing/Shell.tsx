@@ -4,9 +4,8 @@
  * `.bm-root`. Billing defaults to DARK; `.light-mode` on the root flips the palette (theme
  * persisted under the widget's own key `mytrion-billing-theme`).
  *
- * Phase 1: Data Center / Transactions / Debtors are live; Prepay / Returns are "Soon" stubs
- * (Phase 2), and the AI copilot lands as a floating launcher in Phase 3 (no nav tab, matching
- * how CS/Sales expose it).
+ * Data Center / Transactions / Debtors / Prepay / Returns are live. Floating AI copilot is
+ * intentionally not mounted yet (not ready).
  */
 import { useMemo, useState, type ReactNode } from 'react';
 
@@ -15,7 +14,6 @@ import { ActAsPicker } from '../../components/ActAsPicker';
 import { useImpersonation } from '../../context/ImpersonationProvider';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useTheme } from '../../hooks/useTheme';
-import { BillingCopilot } from './BillingCopilot';
 import { DataCenter } from './DataCenter';
 import { Debtors } from './Debtors';
 import { Prepay } from './Prepay';
@@ -216,9 +214,6 @@ export function BillingShell() {
           </button>
         ))}
       </nav>
-
-      {/* Floating AI copilot (replaces the widget's disabled AI Chat nav tab) */}
-      <BillingCopilot user={user} />
     </div>
   );
 }

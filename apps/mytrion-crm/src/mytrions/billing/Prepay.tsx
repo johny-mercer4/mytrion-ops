@@ -588,12 +588,35 @@ export function Prepay() {
 
       {/* ── Loading / Error / Data ── */}
       {loading && companies.length === 0 ? (
-        <div className="bm-initial-loader">
-          <div className="bm-loader-ring" />
-          <div>
-            <div className="bm-loader-text">Loading Prepay Companies</div>
-            <div className="bm-loader-sub">Querying the data warehouse...</div>
+        <div className="db-content-area" aria-busy="true" aria-label="Loading prepay companies">
+          <div className="db-list-header">
+            <div className="db-col-carrier">Carrier</div>
+            <div className="db-col-company">Company Name</div>
+            <div className="db-col-count">Loaded</div>
+            <div className="db-col-count">Payments</div>
+            <div className="db-col-owed">Difference</div>
           </div>
+          {Array.from({ length: 8 }, (_, i) => (
+            <div className="db-row-item" key={`skel-${i}`} aria-hidden>
+              <div className="db-row-main" style={{ pointerEvents: 'none' }}>
+                <div className="db-col-carrier">
+                  <div className="bm-skeleton" style={{ height: 11, width: 56 }} />
+                </div>
+                <div className="db-col-company">
+                  <div className="bm-skeleton" style={{ height: 12, width: i % 2 === 0 ? '72%' : '58%' }} />
+                </div>
+                <div className="db-col-count">
+                  <div className="bm-skeleton" style={{ height: 11, width: 48 }} />
+                </div>
+                <div className="db-col-count">
+                  <div className="bm-skeleton" style={{ height: 11, width: 48 }} />
+                </div>
+                <div className="db-col-owed">
+                  <div className="bm-skeleton" style={{ height: 12, width: 64 }} />
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       ) : load.error ? (
         <div className="db-error-state">

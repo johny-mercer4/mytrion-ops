@@ -269,12 +269,43 @@ export function Debtors() {
 
       {/* ── Loading / Error / Data ── */}
       {page.loading && debtors.length === 0 ? (
-        <div className="bm-initial-loader">
-          <div className="bm-loader-ring" />
-          <div>
-            <div className="bm-loader-text">Loading Debtors</div>
-            <div className="bm-loader-sub">Fetching company-wide financial records...</div>
+        <div className="db-content-area" aria-busy="true" aria-label="Loading debtors">
+          <div className="db-list-header">
+            <div className="db-col-carrier">Carrier</div>
+            <div className="db-col-company">Company</div>
+            <div className="db-col-cycle">Cycle</div>
+            <div className="db-col-status">Status</div>
+            <div className="db-col-age">Oldest Debt</div>
+            <div className="db-col-count">Inv</div>
+            <div className="db-col-remain">Remaining</div>
           </div>
+          {Array.from({ length: 8 }, (_, i) => (
+            <div className="db-row-item" key={`skel-${i}`} aria-hidden>
+              <div className="db-row-main" style={{ pointerEvents: 'none' }}>
+                <div className="db-col-carrier">
+                  <div className="bm-skeleton" style={{ height: 11, width: 56 }} />
+                </div>
+                <div className="db-col-company">
+                  <div className="bm-skeleton" style={{ height: 12, width: i % 2 === 0 ? '70%' : '55%' }} />
+                </div>
+                <div className="db-col-cycle">
+                  <div className="bm-skeleton" style={{ height: 20, width: 64, borderRadius: 999 }} />
+                </div>
+                <div className="db-col-status">
+                  <div className="bm-skeleton" style={{ height: 20, width: 58, borderRadius: 999 }} />
+                </div>
+                <div className="db-col-age">
+                  <div className="bm-skeleton" style={{ height: 11, width: 40 }} />
+                </div>
+                <div className="db-col-count">
+                  <div className="bm-skeleton" style={{ height: 11, width: 24 }} />
+                </div>
+                <div className="db-col-remain">
+                  <div className="bm-skeleton" style={{ height: 12, width: 64 }} />
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       ) : page.error ? (
         <div className="db-error-state">

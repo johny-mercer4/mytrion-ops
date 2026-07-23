@@ -267,6 +267,7 @@ async function actAsContext(
     scopes: scopesForRole(role),
     allDepartmentAccess: access.allDepartmentAccess,
     departments,
+    mytrionAccessModes: access.mytrionAccessModes,
     profiles: target.profile ? [target.profile] : [],
     impersonatorUserId: base.userId,
   };

@@ -4,6 +4,7 @@
  * no LLM output can widen retrieval scope.
  */
 import type { HybridChunk } from '../../../repos/knowledgeSearchRepo.js';
+import type { CragGrade } from './queryPlanner.js';
 
 export interface RetrievedPassage extends HybridChunk {
   /** Reciprocal-rank-fusion score across all sub-queries and legs. Higher = better. */
@@ -25,6 +26,12 @@ export interface AgenticRetrievalResult {
   groundingBlock: string;
   hops: number;
   sufficient: boolean;
-  /** Set when the loop exhausted without sufficiency — the CALLER decides on web fallback. */
+  /** CRAG ternary grade from the last judge (or Correct on score short-circuit). */
+  grade: CragGrade;
+  /** Set when the loop exhausted without Correct — caller may web-fallback or abstain. */
   suggestWebSearch: boolean;
+  /** True when the KB cannot answer and generation must abstain. */
+  notDocumented: boolean;
+  /** Optional UNTRUSTED web snippet appended after CRAG web fallback. */
+  webFallbackBlock?: string;
 }

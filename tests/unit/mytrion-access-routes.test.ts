@@ -13,6 +13,9 @@ vi.hoisted(() => {
 vi.mock('../../src/repos/mytrionProfileDefaultsRepo.js', () => ({
   mytrionProfileDefaultsRepo: { findByKey: vi.fn(), list: vi.fn(), upsert: vi.fn() },
 }));
+vi.mock('../../src/repos/mytrionRoleDefaultsRepo.js', () => ({
+  mytrionRoleDefaultsRepo: { findByKey: vi.fn(), list: vi.fn(), upsert: vi.fn() },
+}));
 vi.mock('../../src/repos/workerMytrionAccessRepo.js', () => ({
   workerMytrionAccessRepo: { findByZohoUserId: vi.fn(), list: vi.fn(), upsert: vi.fn() },
 }));
@@ -20,15 +23,22 @@ vi.mock('../../src/modules/audit/auditLogger.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/modules/audit/auditLogger.js')>();
   return { ...mod, audit: vi.fn(async () => undefined), auditFromContext: vi.fn(async () => undefined) };
 });
+vi.mock('../../src/modules/auth/actAsDirectory.js', () => ({
+  listActiveUsersCached: vi.fn(async () => [
+    { zohoUserId: 'u1', name: 'Ada', email: null, profile: 'Sales Agent', role: 'Collections Agent' },
+  ]),
+}));
 
 import { buildApp } from '../../src/app.js';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import { mytrionAccessService } from '../../src/modules/access/mytrionAccessService.js';
 import { signAccessToken } from '../../src/modules/auth/jwt.js';
 import { mytrionProfileDefaultsRepo } from '../../src/repos/mytrionProfileDefaultsRepo.js';
+import { mytrionRoleDefaultsRepo } from '../../src/repos/mytrionRoleDefaultsRepo.js';
 import { workerMytrionAccessRepo } from '../../src/repos/workerMytrionAccessRepo.js';
 
 const pd = vi.mocked(mytrionProfileDefaultsRepo);
+const roleRepo = vi.mocked(mytrionRoleDefaultsRepo);
 const wa = vi.mocked(workerMytrionAccessRepo);
 
 let app: FastifyInstance;
@@ -45,6 +55,8 @@ beforeEach(() => {
   mytrionAccessService.invalidateAll();
   pd.findByKey.mockResolvedValue(undefined);
   pd.list.mockResolvedValue([]);
+  roleRepo.findByKey.mockResolvedValue(undefined);
+  roleRepo.list.mockResolvedValue([]);
   // Echo the write back as a full DTO — the assertions read what the route persisted.
   // Param/return types come from the mocked fns so this stays in lockstep with the repos.
   pd.upsert.mockImplementation(async (...[, row]: Parameters<typeof pd.upsert>) => ({
@@ -58,7 +70,20 @@ beforeEach(() => {
     createdAt: '',
     updatedAt: '',
   }));
+  roleRepo.upsert.mockImplementation(async (...[, row]: Parameters<typeof roleRepo.upsert>) => ({
+    id: 'rd_1',
+    roleName: row.roleName,
+    roleKey: row.roleName.toLowerCase(),
+    allowedMytrions: row.allowedMytrions,
+    homeMytrion: row.homeMytrion ?? null,
+    allDepartmentAccess: row.allDepartmentAccess ?? false,
+    mytrionAccessModes: row.mytrionAccessModes ?? {},
+    active: row.active ?? true,
+    createdAt: '',
+    updatedAt: '',
+  }));
   wa.findByZohoUserId.mockResolvedValue(undefined);
+  wa.list.mockResolvedValue([]);
   wa.upsert.mockImplementation(async (...[, row]: Parameters<typeof wa.upsert>) => ({
     id: 'wma_1',
     zohoUserId: row.zohoUserId,
@@ -70,6 +95,7 @@ beforeEach(() => {
     homeMytrion: row.homeMytrion ?? null,
     allDepartmentAccess: row.allDepartmentAccess ?? null,
     viewAsUserIds: row.viewAsUserIds ?? [],
+    mytrionAccessModes: row.mytrionAccessModes ?? {},
     active: row.active ?? true,
     createdAt: '',
     updatedAt: '',
@@ -149,6 +175,48 @@ describe('POST /v1/admin/mytrion-access/profiles/:profileKey — home normalizat
     });
     expect(res.statusCode).toBe(200);
     expect((res.json() as { profile: { homeMytrion: string | null } }).profile.homeMytrion).toBe('sales');
+  });
+});
+
+describe('POST /v1/admin/mytrion-access/roles/:roleKey — home normalization', () => {
+  it('a single-Mytrion role default without a home persists that Mytrion as home', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/mytrion-access/roles/collections-agent',
+      headers: { authorization: `Bearer ${await adminToken()}`, 'content-type': 'application/json' },
+      payload: { roleName: 'Collections Agent', allowedMytrions: ['billing'] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as { role: { homeMytrion: string | null } }).role.homeMytrion).toBe('billing');
+  });
+
+  it('persists Billing read-only mode on a role default', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/mytrion-access/roles/collections-agent',
+      headers: { authorization: `Bearer ${await adminToken()}`, 'content-type': 'application/json' },
+      payload: {
+        roleName: 'Collections Agent',
+        allowedMytrions: ['billing'],
+        mytrionAccessModes: { billing: 'read' },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const role = (res.json() as { role: { mytrionAccessModes: { billing?: string } } }).role;
+    expect(role.mytrionAccessModes.billing).toBe('read');
+  });
+});
+
+describe('GET /v1/admin/mytrion-access/roles', () => {
+  it('merges roster roles that are not yet configured', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/mytrion-access/roles',
+      headers: { authorization: `Bearer ${await adminToken()}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const roles = (res.json() as { roles: Array<{ roleKey: string; configured: boolean }> }).roles;
+    expect(roles.some((r) => r.roleKey === 'collections agent' && r.configured === false)).toBe(true);
   });
 });
 

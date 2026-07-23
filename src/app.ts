@@ -225,7 +225,8 @@ export async function buildApp(): Promise<FastifyInstance> {
     );
     try {
       const dbtTools = await Promise.race([loadDbtMcpTools(), deadline]);
-      applyDepartmentPolicy(dbtTools); // no agent lists dbt_mcp.* → admin-only
+      // Manifests list `dbt_mcp.*`; department policy expands the wildcard onto query/recall tools.
+      applyDepartmentPolicy(dbtTools);
       toolRegistry.register(dbtTools);
     } catch (err) {
       logger.error({ err }, 'dbt mcp: tool discovery failed/timed out; continuing without dbt MCP tools');

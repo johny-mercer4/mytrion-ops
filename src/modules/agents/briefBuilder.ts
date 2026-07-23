@@ -3,6 +3,7 @@
  * message so the system prompts stay byte-stable (prompt-prefix caching). Includes a compact
  * summary of the last few turns when the thread is not checkpointer-backed.
  */
+import { env } from '../../config/env.js';
 import { messageStore } from '../chat/messageStore.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
@@ -50,6 +51,16 @@ export interface TurnBriefInput {
     cardId?: string;
     parentUserId?: string;
   };
+  /** Compact blackboard XML when FF_AGENT_BLACKBOARD. */
+  blackboardXml?: string | undefined;
+  /** Cached skill hint block when FF_AGENT_SKILL_CACHE. */
+  cachedSkillXml?: string | undefined;
+  /** Pre-built ExecutionPlan XML when FF_AGENT_PLAN_DAG. */
+  executionPlanXml?: string | undefined;
+  /** Goal re-anchoring reminder (every Nth turn). */
+  goalRecite?: string | undefined;
+  /** Extra orchestration hint for plan execution. */
+  planHint?: string | undefined;
 }
 
 /** The human message for a turn: identity/date context + optional history + the request. */
@@ -59,7 +70,7 @@ export function buildTurnBrief(input: TurnBriefInput): string {
 
   parts.push('<EnvironmentalContext>');
   parts.push(`  <Date>${today}</Date>`);
-  
+
   if (input.userName || input.zohoUserId || input.profile || input.role || input.departments.length > 0) {
     parts.push('  <UserIdentity>');
     if (input.userName) parts.push(`    <Name>${input.userName}</Name>`);
@@ -82,6 +93,19 @@ export function buildTurnBrief(input: TurnBriefInput): string {
 
   parts.push('</EnvironmentalContext>');
 
+  if (input.goalRecite) {
+    parts.push('<GoalReminder>');
+    parts.push(input.goalRecite);
+    parts.push('</GoalReminder>');
+  }
+
+  if (input.blackboardXml) parts.push(input.blackboardXml);
+  if (input.executionPlanXml) {
+    parts.push(input.executionPlanXml);
+    if (input.planHint) parts.push(`<PlanHint>${input.planHint}</PlanHint>`);
+  }
+  if (input.cachedSkillXml) parts.push(input.cachedSkillXml);
+
   if (input.historySummary) {
     parts.push('<RecentHistory>');
     parts.push(input.historySummary);
@@ -93,4 +117,12 @@ export function buildTurnBrief(input: TurnBriefInput): string {
   parts.push('</UserRequest>');
 
   return parts.join('\n');
+}
+
+/** True when this user-turn index should re-anchor the overarching goal. */
+export function shouldReciteGoal(messageCount: number): boolean {
+  const every = env.AGENT_GOAL_RECITE_EVERY;
+  if (every <= 0) return false;
+  const userTurns = Math.floor(messageCount / 2) + 1; // about to append this turn
+  return userTurns > 1 && userTurns % every === 0;
 }

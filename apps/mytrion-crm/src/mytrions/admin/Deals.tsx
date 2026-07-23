@@ -1,10 +1,9 @@
 /**
  * Admin Deals — browse / search Zoho deals and one-click transfer
- * Deal + Contact + Account ownership. Recovery mode uses Timeline `done_by`.
+ * Deal + Contact + Account ownership. Recovery uses Owner_Logs COQL + Timeline prior.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  DEFAULT_TRANSFERRER_ZOHO_USER_ID,
   getAdminDeal,
   listAdminDeals,
   listDealsTransferredBy,
@@ -18,12 +17,10 @@ import { TableSkeleton } from '@/components/mytrion/table-skeleton';
 import { RefreshIcon, SearchIcon } from '../../components/icons';
 import { ConfirmDialog } from './ConfirmDialog';
 import { DealTransferDrawer, type PriorOwnerState } from './DealTransferDrawer';
-import { OwnershipTransferLogPane } from './OwnershipTransferLog';
 import {
   dash,
   filterAgents,
   filterDeals,
-  recoveryStats as buildRecoveryStats,
   relativeTime,
 } from './dealsHelpers';
 import { adminToast } from './toast';
@@ -31,8 +28,12 @@ import s from './admin.module.css';
 
 const BROWSE_SKELETON = ['42%', '28%', '32%', '22%', '24%', '20%', '16%'] as const;
 const RECOVERY_SKELETON = ['40%', '28%', '30%', '28%', '22%', '20%'] as const;
+/** Owner_Logs COQL page size (matches backend default). */
+const RECOVERY_PAGE_SIZE = 1000;
+/** Flip to true to re-enable Recovery (Owner_Logs COQL + Timeline prior). */
+const RECOVERY_TAB_ENABLED = false;
 
-type Mode = 'browse' | 'recovery' | 'transferLog';
+type Mode = 'browse' | 'recovery';
 
 export function Deals() {
   const [mode, setMode] = useState<Mode>('browse');
@@ -43,6 +44,9 @@ export function Deals() {
   const [listFilter, setListFilter] = useState('');
   const [transferrerId, setTransferrerId] = useState('');
   const [activeTransferrerId, setActiveTransferrerId] = useState('');
+  const [recoveryOffset, setRecoveryOffset] = useState(0);
+  const [recoveryHasMore, setRecoveryHasMore] = useState(false);
+  const [recoveryCoql, setRecoveryCoql] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState('');
@@ -61,45 +65,63 @@ export function Deals() {
   const openSeq = useRef(0);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const recoveryMode = mode === 'recovery';
-  const transferLogMode = mode === 'transferLog';
+  const recoveryMode = RECOVERY_TAB_ENABLED && mode === 'recovery';
 
-  const loadDeals = useCallback(async (q: string, opts?: { transferredBy?: string | null }) => {
-    const seq = (loadSeq.current += 1);
-    const transferredBy = opts?.transferredBy?.trim() || null;
+  const loadDeals = useCallback(
+    async (
+      q: string,
+      opts?: { transferredBy?: string | null; offset?: number },
+    ) => {
+      const seq = (loadSeq.current += 1);
+      const transferredBy = RECOVERY_TAB_ENABLED
+        ? opts?.transferredBy?.trim() || null
+        : null;
+      const offset = Math.max(0, opts?.offset ?? 0);
 
-    setLoading(true);
-    setError('');
-    setDeals([]);
-    setTimelineByDeal({});
-    setLastTransfer(null);
-    if (transferredBy) {
-      setMode('recovery');
-      setActiveTransferrerId(transferredBy);
-    } else {
-      setMode('browse');
-      setActiveTransferrerId('');
-    }
-
-    try {
+      setLoading(true);
+      setError('');
+      setDeals([]);
+      setTimelineByDeal({});
+      setLastTransfer(null);
       if (transferredBy) {
-        const result = await listDealsTransferredBy(transferredBy, 200);
-        if (seq !== loadSeq.current) return;
-        setDeals(result.deals);
-        const map: Record<string, OwnerTimelineChange> = {};
-        for (const row of result.timeline) map[row.dealId] = row.change;
-        setTimelineByDeal(map);
+        setMode('recovery');
+        setActiveTransferrerId(transferredBy);
+        setRecoveryOffset(offset);
       } else {
-        const rows = q.trim() ? await searchAdminDeals(q.trim()) : await listAdminDeals(200);
-        if (seq !== loadSeq.current) return;
-        setDeals(rows);
+        setMode('browse');
+        setActiveTransferrerId('');
+        setRecoveryOffset(0);
+        setRecoveryHasMore(false);
+        setRecoveryCoql(null);
       }
-    } catch (e) {
-      if (seq === loadSeq.current) setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      if (seq === loadSeq.current) setLoading(false);
-    }
-  }, []);
+
+      try {
+        if (transferredBy) {
+          const result = await listDealsTransferredBy(transferredBy, {
+            limit: RECOVERY_PAGE_SIZE,
+            offset,
+          });
+          if (seq !== loadSeq.current) return;
+          setDeals(result.deals);
+          const map: Record<string, OwnerTimelineChange> = {};
+          for (const row of result.timeline) map[row.dealId] = row.change;
+          setTimelineByDeal(map);
+          setRecoveryHasMore(result.hasMore);
+          setRecoveryOffset(result.offset);
+          setRecoveryCoql(result.coql);
+        } else {
+          const rows = q.trim() ? await searchAdminDeals(q.trim()) : await listAdminDeals(200);
+          if (seq !== loadSeq.current) return;
+          setDeals(rows);
+        }
+      } catch (e) {
+        if (seq === loadSeq.current) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (seq === loadSeq.current) setLoading(false);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     void listAgents(true)
@@ -125,7 +147,11 @@ export function Deals() {
   };
 
   const loadRecoverySet = () => {
-    const tid = transferrerId.trim() || DEFAULT_TRANSFERRER_ZOHO_USER_ID;
+    const tid = transferrerId.trim();
+    if (!tid) {
+      adminToast.error('Enter a transferrer Zoho user id first');
+      return;
+    }
     if (!/^\d+$/.test(tid)) {
       adminToast.error('Transferrer id must be numeric');
       return;
@@ -134,7 +160,7 @@ export function Deals() {
     setQuery('');
     setListFilter('');
     setSelected(null);
-    void loadDeals('', { transferredBy: tid });
+    void loadDeals('', { transferredBy: tid, offset: 0 });
   };
 
   const switchBrowse = () => {
@@ -167,9 +193,8 @@ export function Deals() {
 
     setDetailLoading(true);
     try {
-      const tid =
-        activeTransferrerId || transferrerId.trim() || DEFAULT_TRANSFERRER_ZOHO_USER_ID;
-      const detail = await getAdminDeal(deal.id, { transferrerId: tid });
+      const tid = activeTransferrerId || transferrerId.trim() || undefined;
+      const detail = await getAdminDeal(deal.id, tid ? { transferrerId: tid } : undefined);
       if (seq !== openSeq.current) return;
       setSelected(detail.deal);
       setPriorOwner(detail.priorOwner);
@@ -199,10 +224,6 @@ export function Deals() {
   const visibleDeals = useMemo(
     () => filterDeals(deals, listFilter, timelineByDeal),
     [deals, listFilter, timelineByDeal],
-  );
-  const recoveryStats = useMemo(
-    () => (recoveryMode ? buildRecoveryStats(deals, timelineByDeal) : null),
-    [recoveryMode, deals, timelineByDeal],
   );
 
   const runTransfer = async () => {
@@ -263,57 +284,40 @@ export function Deals() {
             >
               Browse
             </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'recovery'}
-              className={mode === 'recovery' ? s.dealsModeActive : s.dealsModeBtn}
-              onClick={() => {
-                setMode('recovery');
-                if (!activeTransferrerId && !transferrerId) {
-                  setTransferrerId(DEFAULT_TRANSFERRER_ZOHO_USER_ID);
-                }
-              }}
-            >
-              Recovery
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'transferLog'}
-              className={mode === 'transferLog' ? s.dealsModeActive : s.dealsModeBtn}
-              onClick={() => {
-                setMode('transferLog');
-                setSelected(null);
-                setPriorOwner(null);
-                setLastTransfer(null);
-                setError('');
-              }}
-            >
-              Transfer log
-            </button>
+            {RECOVERY_TAB_ENABLED ? (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === 'recovery'}
+                className={mode === 'recovery' ? s.dealsModeActive : s.dealsModeBtn}
+                onClick={() => {
+                  setMode('recovery');
+                  setSelected(null);
+                  setPriorOwner(null);
+                  setLastTransfer(null);
+                }}
+              >
+                Recovery
+              </button>
+            ) : null}
           </div>
-          {!transferLogMode ? (
-            <button
-              type="button"
-              className={s.ghostBtn}
-              disabled={loading}
-              onClick={() =>
-                void loadDeals(query, {
-                  transferredBy: recoveryMode ? activeTransferrerId || transferrerId : null,
-                })
-              }
-              title="Refresh"
-            >
-              <RefreshIcon /> Refresh
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className={s.ghostBtn}
+            disabled={loading}
+            onClick={() =>
+              void loadDeals(query, {
+                transferredBy: recoveryMode ? activeTransferrerId || transferrerId : null,
+              })
+            }
+            title="Refresh"
+          >
+            <RefreshIcon /> Refresh
+          </button>
         </div>
       </header>
 
-      {transferLogMode ? <OwnershipTransferLogPane /> : null}
-
-      {!transferLogMode && mode === 'browse' ? (
+      {mode === 'browse' ? (
         <div className={s.dealsToolbar}>
           <div className={`${s.search} ${s.searchTall} ${s.dealsSearch}`}>
             <SearchIcon />
@@ -327,7 +331,7 @@ export function Deals() {
           </div>
           {!loading ? <span className={s.dealsCount}>{visibleDeals.length} shown</span> : null}
         </div>
-      ) : !transferLogMode ? (
+      ) : (
         <div className={s.dealsRecoveryBar}>
           <div className={s.dealsRecoveryFields}>
             <label className={s.fieldLabel} htmlFor="transferrer-id">
@@ -347,53 +351,74 @@ export function Deals() {
               />
               <button
                 type="button"
-                className={s.ghostBtn}
-                onClick={() => setTransferrerId(DEFAULT_TRANSFERRER_ZOHO_USER_ID)}
-                title="Fill John Mercer"
-              >
-                John Mercer
-              </button>
-              <button
-                type="button"
                 className={s.primaryBtn}
                 onClick={loadRecoverySet}
-                disabled={loading}
+                disabled={loading || !transferrerId.trim()}
               >
                 Load set
               </button>
             </div>
           </div>
-          {recoveryStats ? (
-            <div className={`${s.statGrid} ${s.dealsStatGrid}`}>
-              <div className={s.statTile}>
-                <div className={s.statNum}>{recoveryStats.total}</div>
-                <div className={s.statLabel}>Deals</div>
-              </div>
-              <div className={s.statTile}>
-                <div className={`${s.statNum} ${s.good}`}>{recoveryStats.withPrior}</div>
-                <div className={s.statLabel}>Have prior</div>
-              </div>
-              <div className={s.statTile}>
-                <div className={`${s.statNum} ${recoveryStats.missing ? s.warn : ''}`}>
-                  {recoveryStats.missing}
-                </div>
-                <div className={s.statLabel}>Missing prior</div>
-              </div>
-              <div className={s.statTile}>
-                <div className={s.statNum}>{recoveryStats.confirmed}</div>
-                <div className={s.statLabel}>Timeline hits</div>
-              </div>
-            </div>
-          ) : (
-            <p className={s.sub} style={{ margin: 0 }}>
-              Enter the transferrer id (or tap John Mercer), then load the recovery set. Each row
-              shows Timeline prior → changed to.
-            </p>
-          )}
+          <p className={s.sub} style={{ margin: 0 }}>
+            {activeTransferrerId
+              ? `${deals.length} deal${deals.length === 1 ? '' : 's'} from Owner_Logs (offset ${recoveryOffset}). Prior owner from Timeline.`
+              : 'Enter the Zoho user id of who changed Deal Owner, then Load set. Uses Owner_Logs COQL (up to 1000 per page).'}
+          </p>
+        </div>
+      )}
+
+      {recoveryMode && activeTransferrerId ? (
+        <div className={s.dealsToolbar}>
+          <span className={s.dealsCount}>
+            {deals.length === 0
+              ? 'No rows'
+              : `Showing ${recoveryOffset + 1}–${recoveryOffset + deals.length}${recoveryHasMore ? '+' : ''}`}
+          </span>
+          <button
+            type="button"
+            className={s.ghostBtn}
+            disabled={loading || recoveryOffset <= 0}
+            onClick={() =>
+              void loadDeals('', {
+                transferredBy: activeTransferrerId,
+                offset: Math.max(0, recoveryOffset - RECOVERY_PAGE_SIZE),
+              })
+            }
+          >
+            Previous
+          </button>
+          <button
+            type="button"
+            className={s.ghostBtn}
+            disabled={loading || !recoveryHasMore}
+            onClick={() =>
+              void loadDeals('', {
+                transferredBy: activeTransferrerId,
+                offset: recoveryOffset + RECOVERY_PAGE_SIZE,
+              })
+            }
+          >
+            Next
+          </button>
+          {recoveryCoql ? (
+            <button
+              type="button"
+              className={s.ghostBtn}
+              title={recoveryCoql}
+              onClick={() => {
+                void navigator.clipboard.writeText(recoveryCoql).then(
+                  () => adminToast.success('COQL copied'),
+                  () => adminToast.error('Could not copy COQL'),
+                );
+              }}
+            >
+              Copy COQL
+            </button>
+          ) : null}
         </div>
       ) : null}
 
-      {!transferLogMode && ((recoveryMode && deals.length > 0) || listFilter) ? (
+      {(recoveryMode && deals.length > 0) || listFilter ? (
         <div className={s.dealsToolbar}>
           <div className={`${s.search} ${s.dealsSearch}`}>
             <SearchIcon />
@@ -412,10 +437,9 @@ export function Deals() {
         </div>
       ) : null}
 
-      {!transferLogMode && error ? <p className={s.errorText}>{error}</p> : null}
+      {error ? <p className={s.errorText}>{error}</p> : null}
 
-      {!transferLogMode ? (
-        <div className={s.dealsLayout}>
+      <div className={s.dealsLayout}>
           <div className={s.tableScroll} aria-busy={loading}>
             <div className={s.table}>
               {recoveryMode ? (
@@ -452,7 +476,7 @@ export function Deals() {
                 <div className={s.emptyState}>
                   {deals.length === 0
                     ? recoveryMode
-                      ? 'No recovery deals loaded yet — enter a transferrer and Load set.'
+                      ? 'No recovery deals loaded yet — enter a transferrer Zoho user id and Load set.'
                       : 'No deals found. Try another search.'
                     : 'No rows match this filter.'}
                 </div>
@@ -529,8 +553,7 @@ export function Deals() {
             }}
             onConfirmTransfer={() => setConfirmOpen(true)}
           />
-        </div>
-      ) : null}
+      </div>
 
       {confirmOpen && selected ? (
         <ConfirmDialog

@@ -600,8 +600,21 @@ export interface TicketMsgVM {
   type: 'comment' | 'attachment';
   text: string;
   time: string;
+  /** Epoch ms used to order the thread chronologically. 0 = unknown → sorts to the bottom
+   *  (newest), so a just-sent bubble or an attachment with no server time never jumps to the top. */
+  ts: number;
   /** Attachment payload (type='attachment') — `attId`/`ticketId` drive the download. */
   file?: { name: string; size: string; attId: string; ticketId: string };
+}
+
+/**
+ * Chronological comparator for a merged thread (server rows + optimistic/live sends). Unknown
+ * times (ts 0) are treated as "just now" so they sink to the bottom rather than floating to the top.
+ */
+export function byTicketMsgTime(a: { ts: number }, b: { ts: number }): number {
+  const ka = a.ts || Number.MAX_SAFE_INTEGER;
+  const kb = b.ts || Number.MAX_SAFE_INTEGER;
+  return ka - kb;
 }
 
 /** Human-readable byte size for a Desk attachment (`size` is a byte count string). */
@@ -611,10 +624,6 @@ function fmtBytes(raw: string | number | undefined): string {
   if (b < 1024) return `${b} B`;
   if (b < 1024 * 1024) return `${Math.round(b / 1024)} KB`;
   return `${(b / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-interface TicketMsgRow extends TicketMsgVM {
-  _ts: number;
 }
 
 export async function loadTicketMessages(ticketId: string): Promise<TicketMsgVM[]> {
@@ -629,11 +638,11 @@ export async function loadTicketMessages(ticketId: string): Promise<TicketMsgVM[
   // else left. The app posts REPLIES as COMMENTS via its shared Desk agent, which the server flags
   // as `mine`. THREADS are the requester's inbound message + any other-agent email replies — never
   // the caller's, so they render left, labelled by author.
-  const rows: TicketMsgRow[] = [];
+  const rows: TicketMsgVM[] = [];
   for (const t of threads ?? []) {
     const text = stripHtml(String(t.content ?? t.summary ?? ''));
     const who = fullName(t.author) || t.author?.name || (t.direction === 'out' ? 'Agent' : 'Customer');
-    if (text) rows.push({ from: who, type: 'comment', text, time: relTime(t.createdTime), _ts: ms(t.createdTime) });
+    if (text) rows.push({ from: who, type: 'comment', text, time: relTime(t.createdTime), ts: ms(t.createdTime) });
   }
   for (const c of comments ?? []) {
     const text = stripHtml(String(c.content ?? ''));
@@ -642,7 +651,7 @@ export async function loadTicketMessages(ticketId: string): Promise<TicketMsgVM[
     // Older tickets carry a "📎 name" placeholder comment from before attachments got their own
     // Attachments-tab bubble — drop that placeholder text now that the real file renders separately.
     const isCaption = /^📎\s/.test(text) && (c.attachments?.length ?? 0) > 0;
-    if (text && !isCaption) rows.push({ from: who, type: 'comment', text, time: relTime(c.commentedTime), _ts: ms(c.commentedTime) });
+    if (text && !isCaption) rows.push({ from: who, type: 'comment', text, time: relTime(c.commentedTime), ts: ms(c.commentedTime) });
   }
   // Attachments are ticket-level (Desk's Attachments tab), not tied to one comment/thread — this is
   // also where a file Mytrion sends, or one a Desk agent uploads directly, shows up for BOTH sides.
@@ -655,10 +664,10 @@ export async function loadTicketMessages(ticketId: string): Promise<TicketMsgVM[
       text: '',
       time: relTime(a.createdTime),
       file: { name: String(a.name ?? 'attachment'), size: fmtBytes(a.size), attId: String(a.id), ticketId },
-      _ts: ms(a.createdTime),
+      ts: ms(a.createdTime),
     });
   }
-  return rows.sort((a, b) => a._ts - b._ts).map(({ _ts, ...m }) => m);
+  return rows.sort(byTicketMsgTime);
 }
 
 export {

@@ -108,11 +108,11 @@ describe('buildOwnerLogsCoql', () => {
     vi.clearAllMocks();
   });
 
-  it('defaults to Deals module ordered by Owner_Log_Time', () => {
+  it('defaults to Deals module ordered by Owner_Log_Time with limit 1000', () => {
     const q = buildOwnerLogsCoql();
     expect(q).toContain("from Owner_Logs where Module = 'Deals'");
     expect(q).toContain('order by Owner_Log_Time desc');
-    expect(q).toContain('limit 0, 100');
+    expect(q).toContain('limit 0, 1000');
   });
 
   it('adds entity, new-owner, and transferrer filters safely', () => {
@@ -121,11 +121,12 @@ describe('buildOwnerLogsCoql', () => {
       newOwnerId: '222',
       transferrerId: '6227679000093960901',
       limit: 50,
+      offset: 100,
     });
     expect(q).toContain("Entity_ID = '111'");
     expect(q).toContain("New_Owner_ID = '222'");
     expect(q).toContain("Created_By = '6227679000093960901'");
-    expect(q).toContain('limit 0, 50');
+    expect(q).toContain('limit 100, 50');
   });
 
   it('rejects injected entity ids', () => {

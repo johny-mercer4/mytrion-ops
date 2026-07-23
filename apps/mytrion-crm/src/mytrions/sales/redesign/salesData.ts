@@ -115,9 +115,10 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       // Retention owns Cases + Open Pool as in-page tabs (Phase 1 live).
       { id: 'retention', label: 'Retention', icon: 'retention' },
+      // Tickets sits right after Retention (the two live desks lead this cluster).
+      { id: 'tickets', label: 'Tickets', icon: 'tickets' },
       // Verification Pipeline parked — process not ready yet; drop `comingSoon` to re-enable (VerificationTab stays wired).
       { id: 'verification', label: 'Verification Pipeline', icon: 'verification', comingSoon: true },
-      { id: 'tickets', label: 'Tickets', icon: 'tickets' },
       { id: 'callHub', label: 'Call Hub', icon: 'callHub', comingSoon: true },
     ],
   },

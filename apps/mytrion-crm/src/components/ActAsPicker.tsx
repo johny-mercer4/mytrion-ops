@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { listAgents, type AgentUser } from '../api/agents';
 import { useImpersonation } from '../context/ImpersonationProvider';
-import { RefreshIcon, SearchIcon, ViewAsIcon, XIcon } from './icons';
+import { SearchIcon, ViewAsIcon, XIcon } from './icons';
 import styles from './ActAsPicker.module.css';
+
+const SKELETON_ROWS = 6;
 
 /**
  * "View as" control (TopBar). Scoped to the current Mytrion only (see api/impersonation.ts) —
@@ -80,56 +82,59 @@ export function ActAsPicker({
           aria-busy={loading}
         >
           <div className={styles.searchRow}>
-            {loading ? (
-              <span className={styles.searchSpin} aria-hidden="true">
-                <RefreshIcon size={13} />
-              </span>
-            ) : (
-              <SearchIcon size={13} />
-            )}
+            <SearchIcon size={13} />
             <input
               className={styles.search}
               placeholder={loading ? 'Loading users…' : 'Search users…'}
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              disabled={loading}
               autoFocus
             />
           </div>
 
           {error && <div className={styles.stateErr}>{error}</div>}
+          {loading && !error ? (
+            <div className={styles.options} role="status" aria-label="Loading users">
+              {Array.from({ length: SKELETON_ROWS }, (_, i) => (
+                <div key={i} className={styles.optionSkel} aria-hidden="true">
+                  <span className={`${styles.skelBar} ${styles.skelName}`} style={{ width: i % 2 === 0 ? '58%' : '46%' }} />
+                  <span className={`${styles.skelBar} ${styles.skelMeta}`} style={{ width: i % 2 === 0 ? '72%' : '64%' }} />
+                </div>
+              ))}
+            </div>
+          ) : null}
           {!loading && !error && filtered.length === 0 && (
             <div className={styles.state}>
               {scoped ? 'No users available to view as.' : 'No users found.'}
             </div>
           )}
-          {!loading && (
+          {!loading && !error && filtered.length > 0 ? (
             <div className={styles.options}>
               {filtered.map((a) => (
-              <button
-                key={a.zohoUserId}
-                type="button"
-                role="option"
-                aria-selected="false"
-                className={styles.option}
-                onClick={() => {
-                  setActingAs({
-                    zohoUserId: a.zohoUserId,
-                    name: a.name ?? a.zohoUserId,
-                    ...(a.profile ? { profile: a.profile } : {}),
-                    ...(a.role ? { role: a.role } : {}),
-                  });
-                  setOpen(false);
-                }}
-              >
-                <span className={styles.optName}>{a.name ?? a.zohoUserId}</span>
-                <span className={styles.optMeta}>
-                  {[a.profile, a.role].filter(Boolean).join(' · ') || a.email || a.zohoUserId}
-                </span>
-              </button>
-            ))}
+                <button
+                  key={a.zohoUserId}
+                  type="button"
+                  role="option"
+                  aria-selected="false"
+                  className={styles.option}
+                  onClick={() => {
+                    setActingAs({
+                      zohoUserId: a.zohoUserId,
+                      name: a.name ?? a.zohoUserId,
+                      ...(a.profile ? { profile: a.profile } : {}),
+                      ...(a.role ? { role: a.role } : {}),
+                    });
+                    setOpen(false);
+                  }}
+                >
+                  <span className={styles.optName}>{a.name ?? a.zohoUserId}</span>
+                  <span className={styles.optMeta}>
+                    {[a.profile, a.role].filter(Boolean).join(' · ') || a.email || a.zohoUserId}
+                  </span>
+                </button>
+              ))}
             </div>
-          )}
+          ) : null}
         </div>
       )}
     </div>

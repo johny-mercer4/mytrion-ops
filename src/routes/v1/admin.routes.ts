@@ -3,9 +3,7 @@ import { z } from 'zod';
 import { env } from '../../config/env.js';
 import { NotFoundError, RBACError } from '../../lib/errors.js';
 import { listActiveUsers, type CrmUser } from '../../integrations/zohoCrm.js';
-import { listAdminOwnershipTransfers } from '../../modules/admin/ownershipTransferAdmin.js';
 import {
-  DEFAULT_TRANSFERRER_ZOHO_USER_ID,
   getAdminDeal,
   listAdminDeals,
   listDealsTransferredBy,
@@ -159,46 +157,55 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   // ── Admin Deals (org-wide browse + one-click ownership transfer) ───────────
 
-  app.get<{ Querystring: { limit?: string; transferredBy?: string } }>(
-    '/admin/deals',
-    { onRequest: [app.authenticate] },
-    async (request) => {
-      const ctx = requireContext(request);
-      requireAllDepartmentAdmin(ctx);
-      const limit = request.query.limit ? Number(request.query.limit) : 200;
-      const transferredBy = request.query.transferredBy?.trim();
-      if (transferredBy) {
-        const result = await listDealsTransferredBy(
-          transferredBy,
-          Number.isFinite(limit) ? limit : 200,
-        );
-        await auditFromContext(ctx, {
-          action: 'admin.deals.list_by_transferrer',
-          status: 'ok',
-          resourceType: 'crm_deal',
-          detail: {
-            count: result.deals.length,
-            transferredBy,
-            timelineMatches: result.timeline.length,
-            source: 'recovery_ids+timeline',
-          },
-        });
-        return {
-          deals: result.deals,
-          timeline: result.timeline,
-          transferredBy,
-        };
-      }
-      const deals = await listAdminDeals(Number.isFinite(limit) ? limit : 200);
+  app.get<{
+    Querystring: { limit?: string; offset?: string; transferredBy?: string };
+  }>('/admin/deals', { onRequest: [app.authenticate] }, async (request) => {
+    const ctx = requireContext(request);
+    requireAllDepartmentAdmin(ctx);
+    const limit = request.query.limit ? Number(request.query.limit) : undefined;
+    const offset = request.query.offset ? Number(request.query.offset) : 0;
+    const transferredBy = request.query.transferredBy?.trim();
+    if (transferredBy) {
+      const result = await listDealsTransferredBy(transferredBy, {
+        ...(Number.isFinite(limit) ? { limit: limit as number } : {}),
+        offset: Number.isFinite(offset) ? offset : 0,
+      });
       await auditFromContext(ctx, {
-        action: 'admin.deals.list',
+        action: 'admin.deals.list_by_transferrer',
         status: 'ok',
         resourceType: 'crm_deal',
-        detail: { count: deals.length },
+        detail: {
+          count: result.deals.length,
+          transferredBy,
+          timelineMatches: result.timeline.length,
+          offset: result.offset,
+          limit: result.limit,
+          hasMore: result.hasMore,
+          source: 'owner_logs_coql+timeline',
+          coql: result.coql,
+        },
       });
-      return { deals };
-    },
-  );
+      return {
+        deals: result.deals,
+        timeline: result.timeline,
+        transferredBy,
+        offset: result.offset,
+        limit: result.limit,
+        hasMore: result.hasMore,
+        coql: result.coql,
+      };
+    }
+    const deals = await listAdminDeals(
+      Number.isFinite(limit as number) ? (limit as number) : 200,
+    );
+    await auditFromContext(ctx, {
+      action: 'admin.deals.list',
+      status: 'ok',
+      resourceType: 'crm_deal',
+      detail: { count: deals.length },
+    });
+    return { deals };
+  });
 
   app.get<{ Querystring: { q?: string } }>(
     '/admin/deals/search',
@@ -226,8 +233,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       requireAllDepartmentAdmin(ctx);
       const deal = await getAdminDeal(request.params.dealId);
       if (!deal) throw new NotFoundError('Deal not found');
-      const transferrerId =
-        request.query.transferrerId?.trim() || DEFAULT_TRANSFERRER_ZOHO_USER_ID;
+      const transferrerId = request.query.transferrerId?.trim() || null;
       const priorOwner = await suggestPriorOwner(deal.id, transferrerId);
       return { deal, priorOwner };
     },
@@ -279,38 +285,6 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       };
     },
   );
-
-  app.get<{
-    Querystring: {
-      zohoDealId?: string;
-      fromOwnerZohoUserId?: string;
-      toOwnerZohoUserId?: string;
-      reason?: string;
-      limit?: string;
-    };
-  }>('/admin/ownership-transfers', { onRequest: [app.authenticate] }, async (request) => {
-    const ctx = requireContext(request);
-    requireAllDepartmentAdmin(ctx);
-    const limit = request.query.limit ? Number(request.query.limit) : 100;
-    const transfers = await listAdminOwnershipTransfers(ctx, {
-      ...(request.query.zohoDealId ? { zohoDealId: request.query.zohoDealId } : {}),
-      ...(request.query.fromOwnerZohoUserId
-        ? { fromOwnerZohoUserId: request.query.fromOwnerZohoUserId }
-        : {}),
-      ...(request.query.toOwnerZohoUserId
-        ? { toOwnerZohoUserId: request.query.toOwnerZohoUserId }
-        : {}),
-      ...(request.query.reason ? { reason: request.query.reason } : {}),
-      limit: Number.isFinite(limit) ? limit : 100,
-    });
-    await auditFromContext(ctx, {
-      action: 'admin.ownership_transfers.list',
-      status: 'ok',
-      resourceType: 'ownership_transfer',
-      detail: { count: transfers.length },
-    });
-    return { transfers };
-  });
 
   app.get<{
     Querystring: {

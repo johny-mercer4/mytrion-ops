@@ -36,6 +36,7 @@ import {
   telegramSendMessageTool,
   telegramSendPhotoTool,
 } from './definitions/telegram.js';
+import { blackboardReadTool, blackboardWriteTool } from './definitions/blackboard.js';
 
 /**
  * The hard-coded tool catalog. Each registerTool() call infers its own input/output
@@ -67,6 +68,10 @@ export const allTools: RegisteredTool[] = [
   registerTool(crmTransactionsTool),
   registerTool(crmPaymentInfoTool),
   registerTool(uiRequestChoiceTool),
+  // Shared conversation blackboard (flag-gated).
+  ...(env.FF_AGENT_BLACKBOARD
+    ? [registerTool(blackboardReadTool), registerTool(blackboardWriteTool)]
+    : []),
   // File generation/analysis (flag-gated; storage = MinIO/S3). generate/analyze are read-class
   // by ratified decision (tenant-scoped, audited artifacts); ingest_to_knowledge stays write.
   ...(env.FF_FILES_ENABLED

@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
 import { broadcastMapping, fetchTransactions, fetchTransactionStats, searchTransactions } from '@/api/billing';
+import { canWriteMytrion } from '../../access/resolveAccess';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useLoad } from '../_shared/useLoad';
 import { computeAutoMapFlag, getCarrierMemoryIndex } from './autoMapFlag';
@@ -77,6 +78,7 @@ function pageNumber(d: PageData, fallback: number): number {
 
 export function Transactions() {
   const user = useUserContext();
+  const canWrite = canWriteMytrion(user, 'billing');
 
   const firstPage = useLoad(() => fetchPage(1), []);
   const page1 = firstPage.data;
@@ -375,16 +377,18 @@ export function Transactions() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <button
-            className="bm-refresh-btn"
-            onClick={() => setShowChaseAdd(true)}
-            title="Manually add a Chase transaction"
-          >
-            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-            </svg>
-            Add Chase
-          </button>
+          {canWrite ? (
+            <button
+              className="bm-refresh-btn"
+              onClick={() => setShowChaseAdd(true)}
+              title="Manually add a Chase transaction"
+            >
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+              </svg>
+              Add Chase
+            </button>
+          ) : null}
           <button className="bm-refresh-btn" onClick={reload} disabled={firstPage.loading || firstPage.refreshing} title="Refresh">
             <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" className={firstPage.loading || firstPage.refreshing ? 'spin-icon' : undefined}>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={REFRESH_PATH} />
@@ -394,11 +398,45 @@ export function Transactions() {
         </div>
       </div>
 
+      {!canWrite ? (
+        <div className="tx-save-msg" style={{ marginBottom: '0.75rem' }} role="status">
+          Billing access is read-only — you can view transactions but not map, unmap, or add Chase entries.
+        </div>
+      ) : null}
+
       {initialLoading ? (
-        <div className="bm-initial-loader">
-          <div className="bm-loader-ring" />
-          <div className="bm-loader-text">Loading transactions</div>
-          <div className="bm-loader-sub">Fetching latest payment data...</div>
+        <div aria-busy="true" aria-label="Loading transactions" style={{ display: 'contents' }}>
+          <div className="bm-summary-banner">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="bm-summary-item">
+                <div className="bm-skeleton" style={{ height: 10, width: 72, marginBottom: 8 }} />
+                <div className="bm-skeleton" style={{ height: 22, width: i === 1 ? 96 : 64 }} />
+                <div className="bm-skeleton" style={{ height: 9, width: 56, marginTop: 8 }} />
+              </div>
+            ))}
+          </div>
+          <div className="bm-table-wrap" style={{ flex: 1, overflow: 'hidden' }}>
+            {Array.from({ length: 9 }, (_, i) => (
+              <div
+                key={`skel-${i}`}
+                aria-hidden
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1.2fr 1fr 0.8fr 0.8fr 0.7fr',
+                  gap: 12,
+                  alignItems: 'center',
+                  padding: '14px 16px',
+                  borderBottom: '1px solid var(--border-light, var(--border))',
+                }}
+              >
+                <div className="bm-skeleton" style={{ height: 12, width: i % 2 === 0 ? '70%' : '55%' }} />
+                <div className="bm-skeleton" style={{ height: 11, width: '60%' }} />
+                <div className="bm-skeleton" style={{ height: 20, width: 72, borderRadius: 999 }} />
+                <div className="bm-skeleton" style={{ height: 11, width: 64 }} />
+                <div className="bm-skeleton" style={{ height: 12, width: 56 }} />
+              </div>
+            ))}
+          </div>
         </div>
       ) : (
         <>
@@ -628,13 +666,14 @@ export function Transactions() {
           key={openTx.recordId}
           tx={openTx}
           currentUserName={user.userName}
+          canWrite={canWrite}
           onClose={() => setOpenId(null)}
           onPatch={(patch) => patchAndBroadcast(openTx, patch)}
           onToast={notify}
         />
       ) : null}
 
-      {showChaseAdd ? (
+      {showChaseAdd && canWrite ? (
         <ChaseAddModal
           onClose={() => setShowChaseAdd(false)}
           onAdded={(msg) => {

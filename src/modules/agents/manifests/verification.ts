@@ -1,5 +1,5 @@
 import type { AgentManifest } from '../types.js';
-import { FILE_TOOLS, STAY_IN_LANE, ANALYTICS_TOOLS } from './shared.js';
+import { BLACKBOARD_TOOLS, FILE_TOOLS, STAY_IN_LANE, DBT_MCP_TOOLS } from './shared.js';
 
 export const verificationAgent: AgentManifest = {
   key: 'verification',
@@ -11,7 +11,7 @@ export const verificationAgent: AgentManifest = {
     `identity, and documents before approval. ${STAY_IN_LANE}`,
   departments: ['verification'],
   allowedAudiences: ['internal'],
-  tools: ['zoho_crm.query', ...FILE_TOOLS, ...ANALYTICS_TOOLS],
+  tools: ['zoho_crm.query', ...BLACKBOARD_TOOLS, ...FILE_TOOLS, ...DBT_MCP_TOOLS],
   composioToolkits: [],
   ragScope: { departments: ['verification'], allowAllDepartments: false },
   readOnly: false,

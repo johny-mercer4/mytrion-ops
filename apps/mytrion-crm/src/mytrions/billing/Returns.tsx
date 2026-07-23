@@ -11,6 +11,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { fetchReturns } from '@/api/billing';
+import { canWriteMytrion } from '../../access/resolveAccess';
+import { useUserContext } from '../../context/UserContextProvider';
 import { useLoad } from '../_shared/useLoad';
 import { readBool } from './transactionModel';
 import { ReturnMatchModal } from './ReturnMatchModal';
@@ -76,6 +78,8 @@ async function fetchAllReturns(): Promise<ReturnRow[]> {
 }
 
 export function Returns() {
+  const user = useUserContext();
+  const canWrite = canWriteMytrion(user, 'billing');
   const load = useLoad(fetchAllReturns, []);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -202,6 +206,12 @@ export function Returns() {
         </div>
       </div>
 
+      {!canWrite ? (
+        <div className="tx-save-msg" style={{ marginBottom: '0.75rem' }} role="status">
+          Billing access is read-only — you can view returns but not match them.
+        </div>
+      ) : null}
+
       {/* ── Toolbar: type + CMP-outcome segmented filters, search, refresh ── */}
       <div className="rt-toolbar">
         <div className="rt-seg">
@@ -305,12 +315,43 @@ export function Returns() {
 
       {/* ── Loading / Error / Data ── */}
       {initialLoading ? (
-        <div className="bm-initial-loader">
-          <div className="bm-loader-ring" />
-          <div>
-            <div className="bm-loader-text">Loading Returns</div>
-            <div className="bm-loader-sub">Fetching returns &amp; chargebacks...</div>
+        <div className="db-content-area" aria-busy="true" aria-label="Loading returns">
+          <div className="db-list-header">
+            <div className="db-col-cycle">Date</div>
+            <div className="db-col-status">Type</div>
+            <div className="db-col-company">Customer / Reference</div>
+            <div className="db-col-company">Reason</div>
+            <div className="db-col-status">Status</div>
+            <div className="db-col-owed">Amount</div>
+            <div className="rt-col-action">Action</div>
           </div>
+          {Array.from({ length: 8 }, (_, i) => (
+            <div className="db-row-item" key={`skel-${i}`} aria-hidden>
+              <div className="db-row-main" style={{ pointerEvents: 'none' }}>
+                <div className="db-col-cycle">
+                  <div className="bm-skeleton" style={{ height: 11, width: 72 }} />
+                </div>
+                <div className="db-col-status">
+                  <div className="bm-skeleton" style={{ height: 20, width: 70, borderRadius: 999 }} />
+                </div>
+                <div className="db-col-company">
+                  <div className="bm-skeleton" style={{ height: 12, width: i % 2 === 0 ? '68%' : '52%' }} />
+                </div>
+                <div className="db-col-company">
+                  <div className="bm-skeleton" style={{ height: 11, width: '60%' }} />
+                </div>
+                <div className="db-col-status">
+                  <div className="bm-skeleton" style={{ height: 20, width: 64, borderRadius: 999 }} />
+                </div>
+                <div className="db-col-owed">
+                  <div className="bm-skeleton" style={{ height: 12, width: 56 }} />
+                </div>
+                <div className="rt-col-action">
+                  <div className="bm-skeleton" style={{ height: 22, width: 48 }} />
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       ) : load.error ? (
         <div className="db-error-state">
@@ -379,7 +420,7 @@ export function Returns() {
                       <div className="db-col-owed db-money-bold text-danger">-{fmtCurrency(ret.amount)}</div>
                       {/* Actions live in their own column — buttons, not pills */}
                       <div className="rt-col-action" onClick={(e) => e.stopPropagation()}>
-                        {!ret.matched ? (
+                        {!ret.matched && canWrite ? (
                           <button
                             className="rt-match-btn"
                             onClick={() => setMatchRet(ret)}
@@ -434,7 +475,7 @@ export function Returns() {
       )}
 
       {/* ── Manual match modal ── */}
-      {matchRet ? (
+      {matchRet && canWrite ? (
         <ReturnMatchModal
           key={matchRet.recordId}
           ret={matchRet}

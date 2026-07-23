@@ -79,21 +79,3 @@ export function filterDeals(
   });
 }
 
-export function recoveryStats(
-  deals: AdminDeal[],
-  timelineByDeal: Record<string, OwnerTimelineChange>,
-): { total: number; withPrior: number; missing: number; confirmed: number } {
-  let withPrior = 0;
-  let missing = 0;
-  for (const d of deals) {
-    const tl = timelineByDeal[d.id];
-    if (tl?.previousOwnerName || tl?.previousOwnerZohoUserId) withPrior += 1;
-    else missing += 1;
-  }
-  return {
-    total: deals.length,
-    withPrior,
-    missing,
-    confirmed: Object.keys(timelineByDeal).length,
-  };
-}

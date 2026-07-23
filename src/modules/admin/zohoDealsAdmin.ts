@@ -13,7 +13,6 @@ import {
   type OwnershipTransferResult,
 } from '../retention/zohoOwnership.js';
 import type { TenantContext } from '../../types/tenantContext.js';
-import { RECOVERY_DEAL_IDS } from './recoveryDealIds.js';
 
 const DEAL_LIST_FIELDS =
   'id, Deal_Name, Owner, Account_Name, Contact_Name, Application_Date, Owner_Last_Updated, Stage, Carrier_ID, Application_ID';
@@ -33,9 +32,6 @@ const DEAL_SEARCH_FIELDS = [
 
 const OWNER_LOG_FIELDS =
   'id, Name, Module, Entity_ID, New_Owner_ID, New_Owner_Name, Owner_Log_Time, Created_Time, Created_By';
-
-/** Default transferrer filter — John Mercer (handled bulk Deal Owner changes). */
-export const DEFAULT_TRANSFERRER_ZOHO_USER_ID = '6227679000093960901';
 
 /** Zoho record / user ids are numeric strings — refuse anything else before COQL. */
 export function assertZohoNumericId(id: string, label = 'id'): string {
@@ -200,11 +196,22 @@ export interface ListOwnerLogsOpts {
   /** Zoho user who performed the transfer (Owner_Logs.Created_By — timeline “by …”). */
   transferrerId?: string;
   since?: string;
+  /** Page size (default 1000, max 1000). */
   limit?: number;
+  /** COQL offset (default 0). */
+  offset?: number;
 }
 
+/** Max Owner_Logs rows per COQL page (Zoho COQL hard ceiling is 2000; we keep 1000). */
+export const OWNER_LOGS_PAGE_DEFAULT = 1000;
+export const OWNER_LOGS_PAGE_MAX = 1000;
+
 export function buildOwnerLogsCoql(opts: ListOwnerLogsOpts = {}): string {
-  const limit = Math.min(200, Math.max(1, Math.trunc(opts.limit ?? 100) || 100));
+  const limit = Math.min(
+    OWNER_LOGS_PAGE_MAX,
+    Math.max(1, Math.trunc(opts.limit ?? OWNER_LOGS_PAGE_DEFAULT) || OWNER_LOGS_PAGE_DEFAULT),
+  );
+  const offset = Math.max(0, Math.trunc(opts.offset ?? 0) || 0);
   const clauses: string[] = [];
   const mod = (opts.module ?? 'Deals').trim();
   if (mod) {
@@ -231,7 +238,7 @@ export function buildOwnerLogsCoql(opts: ListOwnerLogsOpts = {}): string {
     clauses.push(`Owner_Log_Time >= '${since}'`);
   }
   const where = clauses.length ? ` where ${clauses.join(' and ')}` : '';
-  return `select ${OWNER_LOG_FIELDS} from Owner_Logs${where} order by Owner_Log_Time desc limit 0, ${limit}`;
+  return `select ${OWNER_LOG_FIELDS} from Owner_Logs${where} order by Owner_Log_Time desc limit ${offset}, ${limit}`;
 }
 
 export async function listOwnerLogs(opts: ListOwnerLogsOpts = {}): Promise<AdminOwnerLogDto[]> {
@@ -383,53 +390,98 @@ export async function fetchDealOwnerTimelineChange(
 }
 
 /**
- * Recovery set: load known mis-assigned deal ids, confirm Owner change via Timeline
- * `done_by` = transferrer (Owner_Logs.Created_By is the workflow user — unusable).
- * Each timeline row includes prior owner (old) + new owner from Owner field_history.
+ * Recovery set via Owner_Logs COQL filtered by transferrer (`Created_By`), default page 1000.
+ * Prior owner is filled from each deal's `__timeline` (Owner field_history) for the page.
+ *
+ * COQL example:
+ *   select id, Name, Module, Entity_ID, New_Owner_ID, New_Owner_Name, Owner_Log_Time,
+ *          Created_Time, Created_By
+ *   from Owner_Logs
+ *   where Module = 'Deals' and Created_By = '<transferrerId>'
+ *   order by Owner_Log_Time desc
+ *   limit <offset>, <limit>
  */
 export async function listDealsTransferredBy(
   transferrerId: string,
-  limit = 200,
+  opts: { limit?: number; offset?: number } = {},
 ): Promise<{
   deals: AdminDealDto[];
   timeline: Array<{ dealId: string; change: OwnerTimelineChange }>;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+  coql: string;
 }> {
   const tid = assertZohoNumericId(transferrerId, 'transferrer id');
-  const cap = Math.min(200, Math.max(1, Math.trunc(limit) || 200));
-  const ids = RECOVERY_DEAL_IDS.slice(0, cap);
-  const [deals, nameToId] = await Promise.all([fetchDealsByIds(ids), buildUserNameIndex()]);
+  const limit = Math.min(
+    OWNER_LOGS_PAGE_MAX,
+    Math.max(1, Math.trunc(opts.limit ?? OWNER_LOGS_PAGE_DEFAULT) || OWNER_LOGS_PAGE_DEFAULT),
+  );
+  const offset = Math.max(0, Math.trunc(opts.offset ?? 0) || 0);
+  const coql = buildOwnerLogsCoql({
+    module: 'Deals',
+    transferrerId: tid,
+    limit,
+    offset,
+  });
+  const { rows: logRows } = await runCoql(coql);
+  const logs = logRows.map(mapOwnerLogRow).filter((r) => r.id && r.entityId);
+  const hasMore = logRows.length >= limit;
+
+  // One row per deal (newest Owner_Log wins — logs are already Owner_Log_Time desc).
+  const latestByDeal = new Map<string, AdminOwnerLogDto>();
+  for (const log of logs) {
+    const eid = log.entityId!;
+    if (!latestByDeal.has(eid)) latestByDeal.set(eid, log);
+  }
+  const entityIds = [...latestByDeal.keys()];
+  const [deals, nameToId] = await Promise.all([
+    fetchDealsByIds(entityIds),
+    buildUserNameIndex(),
+  ]);
+  const dealById = new Map(deals.map((d) => [d.id, d]));
 
   const timeline: Array<{ dealId: string; change: OwnerTimelineChange }> = [];
-  // Bounded concurrency — Zoho rate limits; recover list is ~130 deals.
-  const concurrency = 6;
-  for (let i = 0; i < deals.length; i += concurrency) {
-    const chunk = deals.slice(i, i + concurrency);
+  const concurrency = 8;
+  for (let i = 0; i < entityIds.length; i += concurrency) {
+    const chunk = entityIds.slice(i, i + concurrency);
     const results = await Promise.all(
-      chunk.map(async (deal) => {
+      chunk.map(async (dealId) => {
+        const log = latestByDeal.get(dealId)!;
         try {
-          const change = await fetchDealOwnerTimelineChange(deal.id, tid, nameToId);
-          return change ? { dealId: deal.id, change } : null;
+          const change = await fetchDealOwnerTimelineChange(dealId, tid, nameToId);
+          if (change) return { dealId, change };
         } catch (err) {
           logger.warn(
-            { dealId: deal.id, err: err instanceof Error ? err.message : String(err) },
+            { dealId, err: err instanceof Error ? err.message : String(err) },
             'admin deals: timeline fetch failed',
           );
-          return null;
         }
+        // Fallback from Owner_Logs when timeline is empty / fails (no prior owner).
+        return {
+          dealId,
+          change: {
+            auditedTime: log.ownerLogTime,
+            transferrerZohoUserId: log.transferrerZohoUserId ?? tid,
+            transferrerName: log.transferrerName,
+            previousOwnerName: null,
+            previousOwnerZohoUserId: null,
+            newOwnerName: log.newOwnerName,
+            newOwnerZohoUserId: log.newOwnerId,
+            source: 'owner_logs',
+          } satisfies OwnerTimelineChange,
+        };
       }),
     );
-    for (const r of results) {
-      if (r) timeline.push(r);
-    }
+    timeline.push(...results);
   }
 
-  const confirmed = new Set(timeline.map((t) => t.dealId));
-  // Prefer deals with a confirmed Owner change by the transferrer; keep others for manual review.
-  const ordered = [
-    ...deals.filter((d) => confirmed.has(d.id)),
-    ...deals.filter((d) => !confirmed.has(d.id)),
-  ];
-  return { deals: ordered, timeline };
+  // Preserve COQL order (newest transfer first).
+  const ordered = entityIds
+    .map((id) => dealById.get(id))
+    .filter((d): d is AdminDealDto => d != null);
+
+  return { deals: ordered, timeline, offset, limit, hasMore, coql };
 }
 
 /**

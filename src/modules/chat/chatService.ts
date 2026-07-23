@@ -171,11 +171,26 @@ async function retrieveGrounding(
   if (!env.FF_RAG_ENABLED) return null;
   try {
     if (env.FF_AGENTIC_RAG) {
-      // Multi-query hybrid loop with [Sn] citations (module enforces the same repo-level RBAC).
+      // Multi-query CRAG loop with [Sn] citations (module enforces the same repo-level RBAC).
       const { agenticRetrieve } = await import('../knowledge/agentic/loop.js');
-      const result = await agenticRetrieve(ctx, query, { k: DEFAULT_RETRIEVAL_K });
-      if (result.passages.length === 0) return null;
-      return { content: result.groundingBlock, count: result.passages.length };
+      const result = await agenticRetrieve(ctx, query, {
+        k: DEFAULT_RETRIEVAL_K,
+        allowWebFallback: Boolean(ctx.allDepartmentAccess),
+      });
+      if (result.passages.length === 0 && !result.webFallbackBlock && !result.notDocumented) {
+        return null;
+      }
+      if (result.notDocumented && result.passages.length === 0 && !result.webFallbackBlock) {
+        return {
+          content:
+            'CRAG: No reliable knowledge-base coverage. Tell the user the documentation does not specify — do not invent policy.',
+          count: 0,
+        };
+      }
+      return {
+        content: result.groundingBlock,
+        count: result.passages.length,
+      };
     }
     const passages = await retrieve(ctx, query, DEFAULT_RETRIEVAL_K);
     if (passages.length === 0) return null;
