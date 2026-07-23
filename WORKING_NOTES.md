@@ -2122,8 +2122,1812 @@ Tests: full suite 527 green, typecheck + lint clean.
 
 ## 2026-07-22 — Analytics dashboard as reusable components
 
-Analyst Overview was a monolithic Dashboard.tsx. Split into a shared kit under
-`apps/mytrion-crm/src/components/analytics/` so other pages can compose the same data via params:
+---
+
+## 2026-07-17 — Carrier User Management UI/UX audit + CRM-wide design pass
+
+Started as "carrier management has no toasts", became a full audit of the surface and then three
+CRM-wide consolidations. Everything below is verified in the running app (dev server on :5181
+against the local backend), not just typechecked.
+
+### Carrier User Management — the fixes that mattered
+
+- **Toasts.** New `admin/toast.tsx` + host at the Admin root. The old inline `notice`/`error`
+  banners had no clearing call anywhere — "Invite cancelled." sat on the page forever. Ported
+  rather than reused from `scope/toast.tsx`: that stack is `position: absolute` inside the scope's
+  own positioned root and styled with scope-local vars, so neither placement nor colour survives
+  outside it. Split by lifetime: action outcomes → toast, load failures → inline banner + Retry.
+- **`copyToClipboard` was lying.** `void navigator.clipboard?.writeText(text)` inside a `try/catch`
+  cannot catch anything — `writeText` rejects *asynchronously*, so a blocked clipboard produced an
+  unhandled rejection while the UI claimed "copied to your clipboard". Now returns whether the text
+  landed, with an `execCommand` fallback; a failed copy hands the URL back in the toast, since that
+  row is the only place the link exists.
+- **Pagination dead-end.** Cancelling the only invite on page 2 dropped the list to one page →
+  `Pager` returned null → `slice(10,20)` = `[]` → empty table, no pager left to escape. Both tables
+  clamp to the last page that exists.
+- **Errors rendered as data.** `listCards(...).catch(() => setCards([]))` made a network failure
+  read as "this carrier has no cards" — and that drove both the company-type badge and the driver's
+  card picker. Failures now stay `null` with their own error + Retry, so cardCount is undetermined
+  rather than wrong. Same for the operator lookup.
+- **Debounce + abort.** The cards effect fired one request *per keystroke* of a manually-typed
+  carrier id. All three lookups now debounce at 300ms and abort on cleanup. Trap worth remembering:
+  transport wraps an aborted fetch as `ApiError('NETWORK')`, so without an `aborted` guard every
+  abort renders as "Couldn't read the card list" — the exact lying-error class above.
+- **Symmetric confirms.** Cancel-invite had no confirmation at all while revoke double-confirmed —
+  backwards, since revoke is a soft status flip (`registeredMiniAppCompanyRepo.revoke`) and cancel
+  has no path back. New `ConfirmDialog` (built on AuditLog's modal pattern) focuses the *dismiss*
+  button, not confirm.
+- **Reissue.** A spent invite left a row with no action. No resend/extend endpoint exists, so
+  "New registration link" seeds a fresh draft from the dead invite. The form's reset effects now
+  guard on the *previous* value, otherwise a prefilled mount wipes its own draft.
+- **Caught live, not by tests:** redeemed invites kept counting down ("in 7 days") next to their
+  Redeemed pill, reading as still-live. Settled invites show `—`.
+
+### CRM-wide
+
+- **Icons → lucide.** `components/icons.tsx` keeps its 25 named exports and per-icon default sizes
+  but each now renders lucide. The hand-drawn SVGs were tracing lucide's own paths (`HomeIcon` =
+  `Home`, `DocIcon` = `FileText`, `ScopeIcon` = `Hash`) — the app was maintaining a near-duplicate
+  of a library 33 files already import directly. `Sparkle` (FuelMark/Gem) and `MytrionGlyph` stay
+  hand-drawn: brand, not UI furniture. Kept `aria-hidden`, which lucide doesn't set by default.
+- **Radius → flat 6px.** `--radius-xs/sm/md/lg` all 6px; `--radius-full` deliberately untouched so
+  pills/avatars/dots stay round. Swept 349 hardcoded px radii across 38 files to `var(--radius-md)`,
+  leaving 56 pill values, 78 `50%` circles, and 6 asymmetric chat-bubble radii (speech-bubble tails).
+  **`customer-service/styles/shared-theme.css` was shadowing the whole scale** with its own 8/10px —
+  that module would have silently ignored the change, and is presumably how it drifted in the first
+  place.
+- **Skeleton primitive.** `components/ui/skeleton.tsx` (sheen only) + `components/mytrion/
+  table-skeleton.tsx` (composed). Gradient is `from-muted via-accent to-muted`, which already map to
+  `--surface-alt`/`--surface-raised` — no arbitrary colours. Animation registered as
+  `--animate-shimmer` in the theme block, the first `--animate-*` in the codebase.
+- **Nav nesting.** `NavItem.children` is opt-in, so the other nine Mytrions are untouched. A parent
+  with children is a *section*, not a destination — it gets a quiet state and the selected child
+  keeps the accent, because both wearing `navActive` left two identical "selected" rows.
+
+### Gotchas worth keeping
+
+- **`grid-template-columns` in a JSX `style` prop cannot be overridden by a media query.** That's
+  why the carrier tables squashed instead of adapting; column ratios now live in CSS classes.
+- **`position: sticky` anchors to the nearest scrollport.** `.table`'s `overflow: hidden` and the
+  `overflow-x` wrapper both qualified, and both are exactly as tall as their content — a sticky
+  header would silently do nothing. `.tableScroll` owns both axes with a height bound; `.table` is
+  `overflow: visible`.
+- **`.tRow:nth-child(even)` broke when rows moved inside a `role="rowgroup"`** — striping marked
+  "2nd row of its group", so sibling drivers shaded differently. Zebra is scoped to direct children
+  now; the tree separates *companies* instead.
+- **`userEvent` deadlocks against fake timers** (its async wrapper awaits a real macrotask). Tests
+  for debounced effects use `fireEvent`.
+- CSS-module class lookups are `string | undefined` under `noUncheckedIndexedAccess` — annotating a
+  prop as `string` rejects them.
+
+### Still open
+
+- **Two icons collide:** Knowledge Base and CMP Database both map to `Database` — their hand-drawn
+  paths were both cylinders, so this is pre-existing. `Library`/`BookOpen` for Knowledge Base is a
+  design call.
+- **`.cs-root` still has its own shimmer** — consolidating means touching customer-service's styling.
+- **The carrier tree now scrolls inside its own box** (Linear/Stripe pattern the brief cites). Drop
+  `max-height` on `.tableScroll` to revert to page scroll.
+- **`admin.module.css` is ~1000 lines** against CLAUDE.md's 600 cap.
+
+## 2026-07-17 — mini-app: driver services, real tickets, and three capped-list bugs
+
+Branch `feature/mini-app-transactions`, 43 commits, **not pushed** (push permission denied — run
+`git push -u origin feature/mini-app-transactions` yourself). 660 tests green, typecheck clean, lint
+0 errors (7 pre-existing warnings).
+
+### Shipped
+
+- **Driver catalog 3 → 7 real services.** `last-used` was already wired end to end (route, client,
+  renderer, scoping) and unreachable purely for want of a catalog line. `reveal-code` renders the PAN
+  the session already carries — no fetch.
+- **Every fake "Request sent" is gone.** 8 catalog items called `sendGenericRequest()`, which wrote a
+  local inbox row and made no network call. They now file real Zoho Desk tickets via
+  `modules/carrier/serviceRequest.ts`. Departments mirror servercrm's own `departmentMap`
+  (`routes/mobileAppRoutes.js`) so they land in the queue the mobile app already feeds.
+  **Fake items remaining across both catalogs: 0.** Driver 7 of 9 real, owner 14 of 31; the other 19
+  are `soon` and need upstreams that don't exist.
+- **Driver name** is asked for at card-number sign-in (was silently taken from the Telegram profile,
+  which is a nickname as often as a name — it lands in the owner's roster). Owners can correct it
+  from the fleet screen.
+
+### Security
+
+- **`/tracking` leaked the whole fleet to any driver.** Every other driver-reachable read scopes to
+  their card; tracking *cannot* — the upstream returns `{trackingNumber, startDate, cardsOrdered}`
+  with no card identity. Now owner-only. Regression test confirmed failing (200, not 403) against the
+  unfixed route. Nothing in 621 tests had caught it.
+- Service requests: the card is resolved server-side from the caller's registration, never the body.
+  `service` is an enum over a server-side map. Driver rename/owner rename key on `(tenant, carrier,
+  card)` — the where-clause IS the authorization.
+
+### Three bugs, one root cause: asking a capped list a question it can't answer
+
+`listDwhCards` defaulted to 100 rows (hard cap 200). Measured on the live DWH across 7967 carriers:
+p99 = 46 active cards, 16 carriers over 100, **max 510**. Three call sites scanned that list:
+
+1. `assertDriverCardAvailable` — a driver past the cap got "That card is not an active card of this
+   carrier" and **could not register at all**.
+2. `resolveDriverCardNumber` — returned null → `requireDriverCardNumber` 503 → **every read that
+   driver had was permanently dead**.
+3. Fleet screen — owner of the 510-card carrier saw 100, and because the filter counts and search run
+   client-side over that array, it **reported 100 as the total**.
+
+Fixed with `findDwhCardById` / `countDwhCards` (exact queries) and `FLEET_CARD_LIMIT = 1000`.
+Pagination was rejected deliberately: p99 is 46, the max payload is 53 KB, and paging would break the
+counts and search it was meant to serve. Verified live: card 17385 of 230 went 400 → 201; fleet
+returned 510/510 (68 KB, 450 ms).
+
+**This also produced the first end-to-end proof that driver scoping filters.** Every carrier with a
+registered driver had one card, or all its transactions on the driver's card — scoping was
+indistinguishable from a passthrough. On carrier 5794015 (7599 line items across 95 cards, 230 active
+cards) the driver's reads return 315 rows on 1 card.
+
+### Test-suite trap (cost two debugging cycles)
+
+`vi.clearAllMocks()` does **not** drain the `mockResolvedValueOnce` queue. A test whose path never
+reached a queued value leaked it into the next test — silently swapping a 201 for a 409 and blaming
+production code that was correct. `beforeEach` now uses `resetAllMocks()` and re-applies the factory
+defaults. Do not revert it.
+
+### Open — decisions needed, not mechanical work
+
+- **Inbox is entirely fabricated.** `seedInbox()` invents "Payment due", "New invoice", "Payment
+  received" for owners with no payment actually due. No backend route exists. A real `inbox_events`
+  table, `inboxEventRepo` and a WebSocket topic (`inbox:<ownerKind>:<ownerId>`) DO exist — but
+  `ownerKind: 'client'` keys on a `carrier_users` row id (`cu_…`) while a mini-app user is a
+  `registered_mini_app_companies` row keyed by `telegram_user_id`. **They do not join.** Resolving
+  that mapping is the first decision, before any Inbox work.
+- **Re-login after a Telegram account change is a dead end** — "This card already has a registered
+  driver", no path out but support. Deliberately not fixed: a card number is printed on the plastic
+  and handed to fuel attendants, so "card = access" opens a takeover vector. Product decision.
+- **Desk ticket creation has never been run end to end** — it would file into the live Customer
+  Service queue. Needs authorization.
+- `carrierMiniApp.routes.ts` is ~1220 lines against the 600 cap. Splitting it is overdue.
+- 19 `soon` services; invoice status filter (endpoint takes `status`, UI never sends it); the
+  `CardWave` redesign.
+
+### Local DB
+
+Demo rows (`DEMO-FLEET-1` / `DEMO-OWNEROP-1`, 5 registrations + 7 invitations) deleted — they made
+every service 400 (`carrierId must be a positive integer`) for whoever opened them. 9 real
+registrations, 46 invitations remain. Test with `?dev=1&uid=772010` (F 4 TRUCKING LLC, carrier
+5747140) or `uid=567461899` (carrier 5836348).
+
+### DECISION 2026-07-17 — Inbox owner mapping: extend `ownerKind`, don't mint carrier_users
+
+**Chosen: add `ownerKind: 'mini_app'` to `InboxOwnerKind`; `ownerId` = `registered_mini_app_companies.id`.**
+
+The mini-app's Inbox is fabricated (`seedInbox()` invents "Payment due" for owners with nothing due).
+Backing it with the real `inbox_events` table needs an owner key, and the mini-app user is a
+`registered_mini_app_companies` row (`telegram_user_id`), not the `carrier_users` row (`cu_…`) that
+`ownerKind: 'client'` expects. Three options were weighed; this records why B won, so it isn't
+re-litigated.
+
+**Why B**
+- `owner_kind` is plain `text NOT NULL` in the migration — no DB enum, no CHECK. `InboxOwnerKind` is
+  a TypeScript `$type<>` union, so a third kind is a **type change with no migration**.
+- `inbox_events_tenant_owner_idx` is `(tenant_id, owner_kind, owner_id, created_at)` — covers a new
+  kind for free.
+- `inboxEventRepo` is already generic over `ownerKind` (`list` filters on it, `create` takes it), and
+  `hub.ts` topics are `inbox:<kind>:<id>` — the pattern generalises with no plumbing.
+- The schema comment states the intent outright: *"One column pair covers both audiences."*
+  `ownerKind` IS the extension point.
+- Bonus: `registeredMiniAppCompanyRepo.upsert` conflicts on `(tenantId, telegramUserId)`, so the row
+  id is **stable across revoke → re-register**. Inbox history survives a re-registration.
+
+**Why not A (create a `carrier_users` row per registration)** — this is a security argument, not an
+aesthetic one. `carrier_users.login` and `.passwordHash` are both `NOT NULL`, and a mini-app user
+authenticates by Telegram initData HMAC — they have neither and never will. A would mean fabricating
+credentials to obtain a notification key, producing a login account that someone who is not the
+driver could authenticate as. New attack surface for no gain.
+
+The `carrier_users` header comment says it is "consumed by /v1/auth/client/login (future Telegram
+mini-app + the /client web page)" — that intent **predates the mini-app that actually got built**,
+which uses Telegram identity, not login/password. That consumer never materialised. Honouring stale
+intent by minting passwords is worse than extending the discriminator that exists for this.
+
+**Why not C (separate mini-app feed table)** — duplicates the table, the repo, the unread logic and
+the WS plumbing for no benefit.
+
+**Caveat to handle when implementing:** `owner_kind` is unconstrained at the DB level, so a typo
+writes silently — `'miniapp'` and `'mini_app'` would become two feeds nobody notices. Make the
+`InboxOwnerKind` union the single source of truth and validate in `inboxEventRepo.create` (the
+pattern `SERVICE_REQUEST_KEYS` uses for the Desk request enum).
+
+**Still undecided, and the real work:** what actually publishes a client event. Nothing writes
+`ownerKind: 'client'` rows today, so the mapping only makes the feed addressable — the events
+themselves (invoice issued, payment received, card shipped, ticket replied) each need a real upstream
+trigger. Until one exists, an honest empty Inbox beats the current invented one.
+
+### Carrier client picker empty — is_active broken upstream (2026-07-17)
+
+Driver/owner registration picker ("WHICH CLIENT") returned "No clients match" for everyone,
+including registered carriers like ONZMOVE INC (carrier 5762018). Root cause is NOT app code:
+`octane.intm_zoho_deals` is a view hard-filtered `where is_active = true`, but the upstream
+dbt/Airflow SCD2 load is broken — all ~253k rows of `octane.stg_zoho_deals` carry
+`is_active = false` AND a non-null `valid_to`, so the view yields zero rows for every carrier.
+(Fuel cards are fine: `octane.stg_cmp_card` healthy, 20 cards for 5762018.)
+
+Fix (`src/integrations/dwhClients.ts`): stop reading intm_zoho_deals; derive the current version
+ourselves from `stg_zoho_deals` via `DISTINCT ON (zoho_deal_id) ... ORDER BY valid_from DESC`
+(collapses 253k → ~21.7k deals), drop the `is_active` filter, exclude `Closed Lost`. DTO unchanged
+→ no frontend change. Verified live: ONZMOVE found via text + numeric search, browse mode returns
+rows. Tests updated (tests/unit/dwh-clients.test.ts). typecheck + lint + the suite green.
+
+REVERT to intm_zoho_deals once the data team repairs the SCD2 current-flag load. Known quirk:
+ONZMOVE surfaces as 2 rows (two distinct zoho_deal_id, same carrier) — left un-deduped; both
+resolve to the same carrier so provisioning is unaffected. Separate prod-config issues found the
+same session (not code): FF_ZOHO_OAUTH_ENABLED unset, ZOHO_OAUTH_REDIRECT_URI defaulting to
+localhost:5173, and the stale /widget base URL (SPA now serves at root /).
+
+## 2026-07-17 (pm) — Sales Mytrion Desk fixes: attachments, live owner/status/order/toast
+
+Branch `feature/func`. Six reported bugs in the Sales ticket console (`TicketsTab.tsx` +
+`/v1/desk/*`), all traced against the actual reference widget (`~/Desktop/Octane-Project/
+zoho-octane/app/ticketdashboard.html`, the Vue prototype this tab was "ported verbatim" from) and
+its servercrm WS backend (`~/Desktop/Octane-Project/servercrm`) — read for protocol/pattern
+reference only, per the "never import from Mytrion" rule; nothing there was edited.
+
+### Root causes (not guessed — read off the reference and the live webhook code)
+
+- **Attachments as a comment, not the Attachments tab (#1) / Desk-side attachment invisible in
+  Mytrion (#2):** the reply/create/escalation routes uploaded via `POST /uploads` then attached the
+  id to a **comment** (`attachmentIds`) — Desk's comment-attachment path, not the ticket's
+  Attachments tab. And `/desk/tickets/:id/comments` never called `GET /tickets/{id}/attachments` at
+  all, so anything landed there (by an agent, or previously by us) never reached Mytrion. Fixed both
+  ends: `uploadTicketAttachment` now hits `POST /tickets/{id}/attachments` directly (dropped
+  `uploadDeskFile`, now dead), and the comments route fetches+merges the ticket-level attachments
+  list, flagged `mine` like comments already are. Confirmed via the reference's own
+  `fetchTicketAttachments`/`formatAttachments` — it never reads `comment.attachments` either; the
+  ticket-level list is the sole attachment source there too.
+- **Owner not shown (#6):** `searchTicketsByCreator`/`ticketsPage` can return a bare `assigneeId`
+  with no embedded `assignee{firstName,lastName}` (Desk's `include`/`fields` behavior isn't
+  consistent enough to trust here — the reference gets it embedded for free on `/tickets/search`
+  with zero extra params, which is not reproducible with confidence). Added
+  `modules/tools/deskOwners.ts::enrichTicketOwners`, joining `assigneeId` against the **same cached
+  Desk agent roster CS analytics already uses** (`fetchDeskAgentRoster`, 10 min TTL) — zero new Desk
+  calls in the common case.
+- **New message doesn't reorder the list (#5):** tickets were paged from Desk sorted by
+  `createdTime`, which never changes. The reference sorts client-side by a `lastActivityTime` it
+  bumps on every WS event. Ported the sort (not the bump): `loadTickets()` now orders by
+  `modifiedTime || createdTime` descending — Desk bumps `modifiedTime` on a new comment/thread, so
+  the WS-triggered reload (already wired) naturally reorders. `modifiedTime`/`description` added to
+  `TICKET_FIELDS` (the fallback `/tickets` path needs it named to come back at all).
+- **No toast on new message (#4):** the WS handler reloaded silently. `InboxTab.tsx` already does
+  `pushToast` + reload on its own WS event — `TicketsTab.tsx` was just missing the equivalent. Added
+  it, gated the same way the reference gates its own notification: only when the event's ticket
+  isn't the one currently open (and only reload the open thread when it IS — was unconditionally
+  reloading `msgsLoad` before, a harmless but pointless extra fetch on every unrelated ticket's
+  event).
+- **Status not live, only on refresh (#3):** confirmed (webhook.js in servercrm) only
+  `Ticket_Comment_Add`/`Ticket_Attachment_Add` are wired — **no push signal exists for a pure status
+  change**, in the reference either. Fixing that for real means a new Desk webhook subscription +
+  servercrm handler, a different repo/deploy entirely. In-scope fix: a 25s poll of the ticket list
+  while the tab is mounted, alongside the existing WS-triggered reload. Flagging the bigger fix as a
+  follow-up, not doing it silently.
+
+### Also
+
+- Removed the "📎 filename" caption-comment hack — the real attachment bubble (now correctly
+  sourced) makes it redundant. Kept stripping it for **historical** comments that already have one,
+  so old tickets don't show a doubled-up bubble.
+- New tests: `zoho-desk.test.ts` covers the two new wrapper methods directly (right path, right
+  query params); `desk-routes.test.ts` covers the route-level contract (file-only reply never calls
+  `postTicketComment`; comments route merges + flags attachments). 29/29 green.
+
+### Test status (repo-wide, not just this change)
+
+Root: lint 0 errors (7 pre-existing warnings, none in touched files), typecheck clean, `pnpm test`
+649/665 green. **The 16 failures are all in `cs-routes.test.ts`, pre-existing and unrelated** —
+`vitest.config.ts` has an uncommitted `FF_ZOHO_OAUTH_ENABLED: '1'` default flip (working-tree change
+found mid-session, not made here) that the CS-analytics RBAC tests haven't caught up with yet. Ran
+this change's own files in isolation to confirm: clean before and after. `apps/mytrion-crm`:
+typecheck clean, 17/17 test files green (116 tests).
+
+### Follow-up same day — Inbox toast never fired outside the Inbox tab
+
+Reported after the above shipped: "connected to the WS, no toast on a new inbox message." The
+gate logic itself (`ownerId === currentUserId`) was correct and already reference-matched — per this
+file's 2026-07-11 entry it was verified by **mocking the WebSocket and injecting a notification**,
+never against a real live event. Re-reading the actual wiring found the real bug: the toast only
+existed inside `InboxTab.tsx`'s OWN `useServerCrmSocket` call, which unmounts (tears down its socket)
+whenever you navigate to any other tab. The sidebar badge count, by contrast, is driven by
+`sidebarBadges.useSidebarBadges` — a **shell-level** socket that's always mounted — which is why the
+badge can look "live" while the toast never appears unless you happen to be sitting on the Inbox tab
+when the event lands.
+
+Fix: moved the toast into `useSidebarBadges` (now takes an optional `pushToast`), called from
+`Shell.tsx` (had to reorder `useSidebarBadges()` to after `pushToast`'s own `useCallback` — it didn't
+exist yet at the call site). Removed the now-duplicate toast from `InboxTab.tsx` (kept its reload —
+it still needs to refresh its own separately-fetched list while mounted). Also hardened the id
+comparison to trim whitespace, and added a `console.debug` on a non-matching ownerId so a live event
+that still doesn't toast is diagnosable from devtools instead of silently vanishing — the deeper open
+question (whether Zoho's real `Owner_Id` payload shape/value even matches `zohoUserId` in production)
+was never live-verified either, and isn't checkable from any repo I have access to.
+
+Verified: `apps/mytrion-crm` typecheck clean, 17/17 test files green (116 tests), root lint clean on
+the touched `.ts` file.
+
+## 2026-07-17 — Create tab: ticket/escalation attachments + lead Deluge
+
+- **Create ticket + escalation:** Desk attach first; on Desk 403/failure, fall back to CRM
+  `attachFileToRecord` on Deals / Escalation_Request so the file still lands. Routes return
+  `warnings`. Ticket create stamps `cf_submitted_by` from form `submitterName` (session/act-as)
+  with server fallback to `ctx.userName`.
+- **Create lead:** still `leads.create` → Deluge `mytrioncreatelead`. UI now parses
+  `DUPLICATE_DATA` nested under `response.details.id` (widget parity) via
+  `resolveCreateLeadOutcome`.
+- Tests: desk-routes create/escalation + file (+ CRM fallback); CRM unit tests for lead outcome.
+
+### Follow-up — Carriers tab filters + create-lead links (widget parity)
+
+- Carriers Lookup now matches self-service `CarrierSearchPanel`: status chips, **Has phone / email**,
+  min units, fetch 200/500, client pagination 50/100, per-row **Create Lead** via `leads.create`
+  (`mytrioncreatelead`) with full carrier payload (dot/email/address/units/dates/status).
+- DUPLICATE_DATA → **Already exists ↗** deep link; success → **Lead #xxxxxx ↗**
+  (`crm.zoho.com/crm/octanefuel/tab/Leads/{id}`).
+- Create tab Create Lead shows the same post-create / duplicate **Go to Lead** banner.
+
+### Follow-up — Sales + Debtors dashboards (self-service parity)
+
+- Dashboard sub-tabs: **Sales** | **Debtors** | Cards (replaced stub Invoices/Transactions).
+- Sales: full `dashboard.agent_sales` payload (no top-8 truncation); hero gallons from TX volume;
+  Card Swipes = `new_cards_cycle` (widget); Inactive/Stuck → bar filter; All/Active/New/Unique bars;
+  company + TX search; activity Cycle/History + day click (shift-range); discount column + totals;
+  refresh. Day drilldown uses `dailyTransactionsByCarrier` when present.
+- Debtors: `dashboard.debtors` with 2+ day rule, Hard only, summary strip, expandable invoices,
+  footer Active/Largest — matches Client Invoices block.
+
+### Follow-up — Dashboard UX: cache, skeletons, Company tab, Debtors soon
+
+- **5-min localStorage cache** for Sales (`mytrion_msd_*`) and Company (`mytrion_cdb_*`), keyed by
+  act-as / session Zoho user id — tab switches and revisit are instant; Refresh bypasses cache.
+- Skeleton loaders for Sales/Company/Cards; Debtors tab is **Coming soon** (no live fetch).
+- New **Company** tab: Applications + Gallon Volume gauges (`dashboard.company`) with widget targets.
+- Sub-tabs restyled with icons (Sales / Company / Debtors / Cards).
+
+## 2026-07-17 (pm 2) — Data Center: Clients balance/debt/gallons + Rejection Reports disabled
+
+Admin feedback on Data Center, six items — three fixed, two deferred pending a design the admin is
+sending, one blocked on the first two (now unblocked):
+
+### Fixed
+
+- **Clients showed $0 balance/debt on every card.** Traced `clients.by_agent` (servercrm
+  `GET /api/clients/by-agent/:zohoUserId` → `services/dwhClients.js` + `services/cmpClients.js`) end
+  to end: `balance`/`efs_balance`/`prepay_balance` — the three fields `mapRecord()` read — **never
+  appear in this endpoint's response at all** (exhaustive grep of the servercrm repo, zero hits;
+  those names only exist on a separate, per-carrier live-EFS endpoint in `agentDwh.js`), so the
+  figure was always 0 regardless of the client. `computed_debt` IS real and live (`dwhClients.js`'s
+  `COALESCE(d.debt, 0)`, reconciled against a live CMP overlay) and matches the reference widget's
+  own debtor detection (`records-panel.js`) field-for-field. Fix: `bal = debt > 0 ? -debt : 0` —
+  shows the real debt as a negative (red) balance; a clean account now reads $0 for the honest
+  reason (no debt), not because of a dead field reference.
+- **"Gallons (cycle)" was wrong on every card.** `total_volume`/`gallons_90d` — the fields
+  `mapRecord()` read — don't exist anywhere in servercrm either; no cycle-gallons aggregation is
+  joined into `clients.by_agent` at all. Rather than inventing a new backend query (a separate
+  repo/deploy), sourced it from data already flowing through this app: `dashboard.agent_sales`'s
+  `transactions` array is documented by the reference `dashboard-panel.js` itself as "full-cycle
+  per-carrier totals" by default, keyed by `carrier_id` per row (`byId[String(r.carrier_id)] = r`,
+  same file). Added `loadCycleGallonsByCarrier()` (parallel fetch alongside `clients.by_agent`,
+  builds a `carrier_id → volume` map) and pointed `mapRecord()`'s gallons at it. Best-effort — a
+  failed fetch just means $0 gallons, not a broken tab.
+  - **Disclosed residual risk** (an adversarial review agent flagged this independently, same
+    conclusion I'd already reached): this joins a Postgres-DWH carrier_id (`clients.by_agent`)
+    against a Zoho Deluge-function carrier_id (`dashboard.agent_sales`) — a pairing with no prior
+    precedent anywhere in this codebase, and no test or smoke check confirms the two actually share
+    the same id format/values live. `scripts/salesPanelSmoke.ts` already calls both touchpoints but
+    never cross-checks their carrier_ids. Neither repo I have access to contains the Deluge
+    function's source, so this could not be verified further than "well-evidenced, not yet
+    live-tested." **Please open the Clients tab and confirm gallons actually populate for a client
+    you know has cycle activity** before treating this as fully closed — if it's still 0 across the
+    board, the join is the first thing to re-check.
+- **Rejection Reports disabled**, per instruction ("current version is not usable, will send
+  redesigned version"). Added `disabled?: boolean` to `DcTabDef`, set on the `rejections` entry only;
+  mirrors the exact "Coming Soon" pattern already used for Open Pool in `Shell.tsx`'s NAV (real
+  `disabled` attribute, `opacity:.5`, `cursor:default`, a warn-colored "SOON" pill, a title tooltip).
+  Confirmed via a research agent that no other page deep-links into this sub-tab, so gating the one
+  button fully closes it off. Underlying code (`RejectionsView`, `loadRejections`, the backing route)
+  is untouched — it's still real Zoho Desk data (confirmed: `dataCenter.routes.ts`'s rejections route
+  calls `zohoDesk.listRejectionReportTickets()`, the SAME function the Desk ticket-dashboard's own
+  rejection listing uses — not CRM Deals, contradicting an older, now-corrected assumption).
+
+### Deferred (no code change — waiting on the admin)
+
+- **Leads**: full rework requested, design incoming. Left as-is.
+- **Deals**: list/kanban confirmed fine; detail-view field spec incoming.
+- **Money Codes**: blocked on Clients fetching per the admin's own note — unblocked now that balance/
+  debt/gallons are fixed; ready for the admin to test.
+
+### Process note
+
+Used a background research workflow (2 parallel agents: trace the balance/debt/gallons data path
+across mytrion-ops + servercrm + the reference widget; confirm the Coming-Soon disable pattern +
+resolve a stale "rejections = CRM Deals" note against current code) before writing any fix, then an
+adversarial code-review agent against the diff afterward — it independently surfaced the same
+DWH↔Deluge carrier_id join risk noted above and ruled out several other hypotheses (comma-formatted
+volume strings, RBAC-based silent zeroing, multi-row-per-carrier double counting) with concrete
+evidence rather than assumption.
+
+**Known pre-existing issue, not touched**: `apps/mytrion-crm/.../live.ts` is now 611 lines against the
+600-line cap (partly this change, partly unrelated concurrent work in the same file this session).
+Flagging, not splitting it here — a structural refactor isn't part of this bug-fix task and this file
+is currently being edited by another process in parallel.
+
+Verified: `apps/mytrion-crm` typecheck clean, 21/21 test files green (128 tests, up from 116 — other
+concurrent work added its own tests, none of which regressed).
+
+### 2026-07-18 — Sales Mytrion icon pass
+
+Fixed misrendered / misaligned outline icons across Sales redesign:
+- Hardened shared `Svg` (block + flex-shrink) and added `SvgPaths` for multi-stroke glyphs
+- Replaced broken KPI / nav / automations path strings with Heroicons 24 outline `d`s
+- Routed Create + Dashboard tab icons and Company dash section icons through `Svg`
+- Cleaned Shell chrome icons (sun/moon/sparkles/bolt) and department picker icons
+
+Verified: `apps/mytrion-crm` tsc clean.
+
+### 2026-07-18 — Sales dashboard reference parity
+
+Aligned Sales Mytrion Dashboard → Sales with zoho-octane self-service MSD:
+- Hero KPIs: fuel-can + card icons, gold/blue strip styling
+- Donuts: crimson active arcs + amber inactive track; Inactive/Stuck alert chips with icons
+- New Cards card: stacked teal stats with plus/calendar icons
+- Cards by Company: status dots, days-since-tx, All/Active/New/Unique bars + chips
+- Card Activity: Tx/Active/New multi-line chart, Cycle/History, day value rows
+- Tabs: Debtors disabled (Soon), Cards removed, Power BI iframe added (same embed URL)
+
+Verified: apps/mytrion-crm tsc clean.
+
+### 2026-07-18 — TX Volume column + dash e2e hardening
+
+- Replaced broken Volume (Gallons) grid cell (wrapped SVG + pill chips) with a real `msd-tx-table` matching self-service: sticky header, gold full-cell wash, no icon
+- Day-filter chip on Transaction Details; empty-state copy matches widget
+- Expanded `dashSalesData` tests (map payload, All-mode bars, day-drill TX aggregate) — 8/8 green
+
+Verified: CRM tsc + dashSalesData vitest.
+
+### 2026-07-18 — Tickets UI / UX polish
+
+Reworked Sales Mytrion Tickets two-pane console for clearer hierarchy and less chrome noise:
+- Extracted `tickets.css` (`ss-tk-*`); `TicketsTab` markup uses classes instead of mega inline styles
+- Quieter New Ticket (tool button next to refresh, not a full-width gradient CTA)
+- Cards: subject + meta + status chip; SLA only when overdue / nearly due (not on every card)
+- Canned replies behind a toggle; composer keeps FAB clearance
+- Details drawer uses shared `ss-scrim`; dropped redundant Is Escalated / Is Overdue rows
+
+Verified: TicketsTab under 600 lines; CRM tsc — TicketsTab clean (pre-existing `IconName` error in salesData.ts unrelated).
+
+### 2026-07-18 — Tickets pagination, status picklist, full comments
+
+Aligned Sales Tickets with zoho-octane `ticketdashboard.html`:
+- Infinite-scroll creator-scoped paging (`loadTicketsPage` / `useTicketsFeed`, page size 50); sidebar `loadTickets` pages up to ~2k
+- Desk search now `include`s contacts/assignee/team/departments; windowed fallback `maxPages` 6→20
+- Status segmented control → picklist; status chip colors match reference (incl. Closed / review states)
+- Comments/threads: limit 99, expand last 40 thread bodies, bubble `pre-wrap` so realtime replies show fully
+
+Verified: TicketsTab + feed hook typecheck clean.
+
+### 2026-07-18 — Hotfix: Desk tickets 502
+
+Cause: `searchTicketsByCreator` briefly passed `include` + `sortBy` — Desk `/tickets/search` rejects those (422) and `deskError` maps to HTTP 502.
+Fix: reverted search query to `customField1` + `from` + `limit` only; widened search→windowed fallback to also catch 422/UNPROCESSABLE.
+
+Note: `/v1/ringcentral/embed-config` 404 is unrelated (route missing / RC not wired here).
+
+### 2026-07-18 — Realtime inbox toast + ticket comments
+
+Hardened Sales realtime to match ticketdashboard / self-service:
+- Shell `useSidebarBadges` owns one WS subscribe (`userId` + ticketIds): inbox toast+reload, ticket comment/attachment toast+unread (skip when that ticket is open)
+- `ticketLiveBus` bridges shell → Tickets tab (reload open thread + soft list refresh)
+- Tickets tab no longer opens a second toasting socket; uses act-as-aware open-ticket focus
+- Inbox/Home reload keyed on currentUserId + ownerId match
+
+Verified: CRM tsc clean for touched files.
+
+### 2026-07-18 — Tickets unread, scroll page, promote-to-top
+
+- Unread badge clears immediately on select (card + sidebar); open-ticket WS frames stay read
+- Scroll/sentinel loads next Desk page (page size 20); removed “N tickets loaded” footer
+- New comment/attachment promotes that ticket to the top of the list
+
+### 2026-07-18 — Sales Mytrion icons → lucide-react (ready-made)
+
+Replaced every hand-authored SVG path-string icon in the Sales redesign with ready-made
+`lucide-react` glyphs (the dep was installed but unused). New single source of truth:
+`redesign/icons.tsx` — a typed `ICON_REGISTRY` (semantic name → lucide component) + an `<Icon
+name=… size strokeWidth color style className />` wrapper mirroring the old `Svg` API (same
+`.ss-icon` class, 24×24 grid, block/flex-shrink) so layout/weight is unchanged.
+
+- Data maps now carry `IconName` keys, not path `d`s: `salesData.ICO` + `NAV`, `autoLive.ICO`,
+  `autoCatalogOrder`, `live.ANN_META`, `RecordsTab` DC tabs/views, `HomeTab` ICON_OF + VMs,
+  `ctx.DetailVM`, `createTicketForms` dept glyphs, `DashTab` TAB_ICONS, `CreateTab`, `InboxTab`.
+- All `<Svg d=…>`, `<SvgPaths>`, and inline `<svg>` icon markup → `<Icon name=…>` across Shell
+  (nav/detail/chrome/toast/send), AutoTab/AutoCatalog, Tickets/Pool, createTicket*, dashboard
+  panels, dataCenterModals, ViewAsPicker, Carriers. `Svg`/`SvgPaths` removed from `dc.tsx`.
+- Data-viz SVGs left untouched (SalesDashPanel donuts, CompanyDashPanel sparkline) — only icon
+  glyphs were swapped.
+
+Verified: `sales/redesign` typechecks clean (0 errors; remaining tsc errors are pre-existing
+TS6133 unused-var warnings in other teammates' in-flight files — MytrionPicker, components/icons,
+SchemaBrowser, UserAccessForm — not touched here), 17/17 redesign vitest tests green, and
+`vite build` succeeds (lucide icon chunks emitted).
+
+### 2026-07-18 — Tickets chat sides + scroll paging fix
+
+- Chat: you/mine on the left, agent on the right; removed Canned toggle + “Click to download”
+- Pagination aligned with ticketdashboard.html: `from=0`, page 20, `from += limit`
+- List cards `flex-shrink:0` + explicit overflow so scroll actually pages
+- Restart API required for Desk `from=0` zod/search change
+
+### 2026-07-18 — Ticket attachment Download hover + toast
+
+- Attachment cards show a Download button on hover (always visible on touch)
+- Toast “Downloading” + filename when download starts; failure toast unchanged
+- Added `download` lucide icon to redesign registry
+
+### 2026-07-18 — Load more sticky + promote old tickets
+
+- “Load more tickets” pinned in a sticky list footer (not buried under scroll)
+- Live comment on an old / not-yet-paged ticket: pull from shell ticket directory, pin to top,
+  scroll list to top; softReload keeps pinned rows above page-0 so they don’t drop again
+
+### 2026-07-18 — Faster ticket send / render
+
+- Optimistic chat bubbles (clear composer + show “Just now”) before Desk POST returns
+- Background thread reconcile only — dropped per-send ticket-list softReload
+- useLoad soft-reload no longer flips loading when data already present
+- Desk reply: parallelize comment + attachment upload when both present
+- Restart API for the parallel reply path
+
+### 2026-07-18 — WS promote old tickets via realtime fetch
+
+- On `ticket_comment_added` / attachment for a ticket not in loaded pages: pin from shell
+  directory instantly, then `GET /desk/tickets/:id` and put the fresh card on top
+- New Desk route + `getDeskTicket` / `loadTicketById`; softReload keeps pinned rows above page 0
+- Restart API required for the new GET-by-id route
+
+### 2026-07-18 — Load more always visible
+
+- Footer button was gated on `hasMore`; short-list auto-paging flipped that off → button vanished
+- Load more is always pinned under the list (solid accent button + “N loaded” meta)
+- Removed silent short-list auto-fetch; manual click can retry past a false “done”
+
+### 2026-07-18 — Load more = next 20 (reference paging)
+
+- Match ticketdashboard.html: from=0, limit=20, from += 20 after each non-empty page
+- Windowed Desk dump is sliced client-side in pages of 20 so Load more still appends +20
+- Removed IntersectionObserver auto-chain; scroll-near-bottom + button only
+- Ensure client query keeps `from=0` (numeric zero) on /desk/tickets
+
+### 2026-07-18 — Why only ~16 tickets (“All loaded”)
+
+Root cause (live probe): `ZOHO_DESK_REFRESH_TOKEN` lacks `Desk.search.READ` →
+`/tickets/search` 403 SCOPE_MISMATCH → old fallback dumped one shallow creator scan and set
+`hasMore:false` (UI: “All tickets loaded” at 16). Widget works because CRM CONNECTION has search.
+
+Fix: `pageTicketsByCreator` progressive scan (up to ~10k org tickets) returns real hasMore + next
+20; `scoped:false` warning; client trusts server paging. Re-mint Desk token with Desk.search.READ
+for true ticketdashboard search parity.
+
+### 2026-07-18 — Hide Sales AI chat (not ready)
+
+- Removed floating Mytrion AI launcher + panel from Sales redesign Shell
+- Removed Home “Ask Mytrion AI” CTA; Automations “Run an action” stays
+
+### 2026-07-18 — Tickets Coming soon; Data Center Leads redesign
+
+- Nav: Tickets marked `comingSoon` (same SOON chip as Open Pool); openTicket / TicketsTab gated
+- Leads COQL now selects Cell, MC, DOT, Referral_Source, Referred_By, Registration_Time,
+  Web_Registration_Date (probed live against `/coql`)
+- LeadVM + list/kanban/modal aligned to Desktop “Sales Mytrion Leads redesign”:
+  - Kanban: contact + Lead_Source badge, company, email, phone, created
+  - List: Name | Company | Status | Source | Email | Phone | Cell | Created (+ hover copy/call)
+  - Modal: contact hero, fleet/source/MC/DOT/referral, Phone+Cell dial, dates, Description notes
+- Status order includes Unaccounted / No Status from real Lead Status picklist
+
+
+### 2026-07-18 — Leads utm_source + Clients balance/gallons/activity
+
+- Leads Source (kanban badge, list, modal) = Zoho `utm_source` with redesign sourceColor palette
+- Status `-None-` normalized to No Status
+- Clients: removed Balance from card + modal overview tiles
+- Cycle gallons via dashboard.agent_sales volume, formatted with up to 2 decimals (galFmt)
+- Client Activity: all_time feed + Load more (growing limit); helpers in clientDrilldown.ts
+
+
+### 2026-07-18 — Sales nav search, Call Hub/Cases SOON, client Manage links
+
+- Sidebar: "Search tabs…" filters NAV (+ Cases children); Call Hub + Cases (Billing/Retention) SOON at end
+- Data Center client modal: Manage tab — owner/driver Telegram registration links (Admin CarrierUserForm flow)
+- Backend: `POST /carrier-invitations` + `GET /carrier-users/dwh-cards` auth-gated for workers (not admin-only)
+
+
+### 2026-07-18 — Cases removed; sidebar nav groups
+
+- Removed Cases + Billing/Retention sub-tabs
+- NAV_GROUPS: Workspace / Pipeline / Tools with section labels (+ dividers when collapsed)
+
+
+### 2026-07-18 — Retention nav (Cases + Open Pool in-page)
+
+- Removed standalone Open Pool from sidebar
+- Added Retention (SOON); RetentionTab scaffolds Cases + Open Pool (PoolTab) sub-tabs
+
+
+### 2026-07-18 — Client Manage: driver under owner + card
+
+- Driver invite requires active owner registration (inviteService + UI gate)
+- Sales: GET /carrier-registrations/for-carrier; Driver picks available card number
+
+
+### 2026-07-20 — Mini-app: wire C-code automations (Faza 1 backend)
+
+Telegram-guruh tahlili (Analitika/) asosida agent widgetining avtomatlashtirilgan bloklarini
+mini-app'ga ulash — backend qismi:
+
+- **modules/carrier/miniAppAuth.ts (yangi)** — carrierMiniApp.routes.ts'dagi auth/scoping
+  helperlar (verifyTelegramUser, requireRegistered*, requireDriverCardNumber, resolveDriver*)
+  ko'chirildi, endi ikkala route fayl bitta gate to'plamini ishlatadi.
+- **routes/v1/carrierMiniAppActions.routes.ts (yangi)** — C-16 override, C-1/C-3 set-status,
+  C-4/5 limits (delta MINIAPP_LIMIT_CHANGE_MAX bilan cheklangan), C-26 card/info, C-10
+  fraud-request, C-17 money-code preview/draw, + /card/efs diagnostika o'qishi. Hammasi:
+  DWH orqali karta egaligi tekshiruvi (owner cardId → findDwhCardById; driver → o'z kartasi,
+  fail-closed), carrier-boshiga 5/min rate-limit, audit, FF_MINIAPP_* flaglar (default OFF).
+- **wrappers**: efsWrapper += setCardStatus/setCardLimits/fraudHoldRelease;
+  serverCrmWrapper += getMoneyCodePreview/drawMoneyCode (widget bilan bir xil body).
+- **C-15**: txnReport priceMode ('discount'|'retail') — retail: Amount=funded+discount,
+  Discount ustuni bo'sh; export route driverni har doim retail'ga majburlaydi
+  ("driverga discount kursatish shart emas" — BILLAD chat talabi). Caption ham mos.
+- **serviceRequest**: 'account-reactivate' (C-7) ticket spec (owner).
+- **apps/mini-app/lib/api.ts** — barcha yangi endpointlar uchun typed client funksiyalar.
+
+Qolgan (keyingi sessiya): App.tsx sheet UI'lari + i18n kalitlari + serviceCatalog'ni real
+actionlarga o'tkazish; RBAC cross-tenant testlar (rule 9) yozish.
+
+## 2026-07-20 (davomi) — RBAC testlar + driver self-register owner'dan decouple
+
+**T2 — RBAC/security testlar (carrierMiniAppActions.routes.ts):** tests/unit/carrier-mini-app.test.ts
++16 test. Gate tartibi: feature-flag(503) → auth/role(403) → rate-limit(429) → card-egaligi(404).
+Har biri rejection kodi + wrapper chaqirilmagani. Baseline fix: carrier-mini-app mock'ida
+findActiveOwnerByCarrier stub yo'q edi (build branchdan) — 11 test qulagan, tuzatildi.
+
+**Driver self-register owner-gate'dan decouple (mahsuliy talab):** 60 kartali kompaniyada
+60 link generatsiya og'ir → har driver o'z card# bilan self-register qiladi, owner ro'yxatdan
+o'tmagan bo'lsa ham.
+- `CreateCarrierInviteArgs.allowWithoutOwner?` qo'shildi (inviteService.ts). Faqat card-possession
+  self-register uzatadi; admin/owner-issued invite'lar hali DRIVER_NEEDS_OWNER talab qiladi.
+- `findDwhCardByNumber` (dwhCards.ts): `limit 1`→`limit 2` + ambiguity guard — bir card# ikki
+  carrier'ga chiqsa fail-closed (null + warn log), noto'g'ri carrier'ga bog'lamaydi. `is_active=true`
+  allaqachon faqat AKTIV kartalar login qilishini ta'minlaydi.
+- Testlar: self-register owner'siz 201 + findActiveOwnerByCarrier chaqirilmaydi; yangi
+  tests/unit/dwh-cards.test.ts (is_active + ambiguity, 6 test).
+
+**Audit natijasi (mini-app user mgmt):**
+- Admin "Registered companies" (CarrierUsers.tsx) driverlarni owner ostiga ALLAQACHON nest qiladi
+  + driver Revoke tugmasi bor. Screenshot'da driver ko'rinmasligi = ma'lumot yo'q (driver yo'q).
+- Ochiq risk (keyingi): one-driver-per-card DB unique constraint yo'q (faqat pre-insert query,
+  concurrent race mumkin) — migration kerak bo'lsa alohida.
+
+Holat: typecheck toza, 695 test yashil.
+
+### 2026-07-20 — Self-register hardening (audit follow-up)
+
+- `findDwhCardByNumber`: bitta carrier ichida duplikat aktiv raqam → warn-log (carrier bog'lash
+  bir ma'noli, shuning uchun fail-close EMAS; card_id tanlovi arbitrar ekani ops uchun surfaced).
+- `/carrier/mini-app/driver-self-register`: verified Telegram user boshiga 3 urinish/daqiqa
+  (takeToken, `SELF_REGISTER_RATE_LIMITED` 429) — karta-raqam enumeration oracle yopildi.
+- Testlar: same-carrier duplikat birinchi qatorga bog'lanadi; 4-urinish 429 va DWH'ga yetmaydi.
+
+### 2026-07-20 — Txn report detailed + stations/dispute/override UI (SelfService filtri)
+
+- txnReport: `detailed` rejim — to'liq PAN + Driver/Unit/Driver ID ustunlari (12 ustun, uch
+  renderer dinamik ustunlarga o'tkazildi, totals endi header bo'yicha). Route/api `detailed` param.
+- Stations sheet (statik, 814 so'rov): yangi ServiceKey, katalogda unpark (owner+driver), 4 tilda.
+- Dispute-txn: real Billing ticket (owner+driver), katalogda unpark.
+- Export panel: "Chegirmasiz" (owner-only ko'rinadi) + "Batafsil" toggle'lari.
+- Driver override: generic sheet ustida bir-bosishlik real C-16 tugmasi; flag o'chiq bo'lsa
+  ticket-fallback saqlangan (503 → xabar).
+
+### 2026-07-20 — Owner write-action UI (T3 yakuni)
+
+- `moneycode` sheet (C-17): preview (available/drawn) → summa+unit+sabab (sabablar backenddan)
+  → draw → muvaffaqiyat ekrani (kod QIYMATI hech qachon ko'rsatilmaydi — widget qoidasi).
+  Flag o'chiq (503) → xuddi shu sheet ichida money-code TICKET fallback formasi.
+- `cardops` sheet (C-1/C-3/C-4-5/C-26): fleet'dan karta tanlash → per-card EFS holat →
+  Activate/Deactivate · kunlik limit (ULSD/DEF, +/− delta) · Unit/Driver/ID saqlash.
+  MINIAPP_WRITES_DISABLED → katalog so'roviga yo'naltiruvchi toast.
+- Katalog: fin-money-code → 'moneycode'; card-activate/card-limit → 'cardops'.
+- Stations sheet OLIB TASHLANDI (owner qarori: mobil appda bor) — katalogda yana 'soon'.
+- i18n: mc.*/co.* to'plami 4 tilda; 2 noto'g'ri kalit tuzatildi.
+
+### 2026-07-20 — Override sheet tozalash + driver PIN/Unit info sheet
+
+- Driver override sheet: ticket-forma va uning intro matni YASHIRILDI — faqat direkt tugma;
+  MINIAPP_WRITES_DISABLED bo'lsa forma fallback sifatida ochiladi (ovrFallback). ovr.hint qo'shildi.
+- drv-change-pin unpark → 'pinunit' READ sheet (analitika: 62 PIN so'rovi, deyarli hammasi
+  "PIN nima/ishlamayapti"): o'z kartasining EFS'dan unit/driver_id/driver_name + PIN yo'riqnomasi
+  (Driver ID yoki last-4; bo'lmasa Override/so'rov) + "unitni owner o'zgartiradi" izohi. 4 tilda.
+
+### 2026-07-20 — Override UX yakuniy: bitta tugma + Home timer + bot xabari
+
+- Override sheet: ticket forma/tugma/intro BUTUNLAY yashirildi (driver) — bitta tugma. Ticket
+  fallback olib tashlandi (owner qarori: agent widgetda ham override direct, ticket ochilmaydi);
+  flag o'chiq → faqat xabar.
+- Home (driver): muvaffaqiyatli override'dan keyin yashil countdown-karta (~30 daq, sekundlab),
+  localStorage orqali app qayta ochilganda ham saqlanadi; tugagach o'zi yo'qoladi.
+- Backend override: muvaffaqiyatdan keyin best-effort bot xabari (karta last-4 bilan) — pump
+  oldida WebView yopilsa ham chat xabari qoladi. Hech qachon override'ni bloklamaydi.
+
+### 2026-07-20 — Product rule: fuel karta LAST 6 raqam bilan ko'rsatiladi (last-4 emas)
+
+- App.tsx: last4() -> tail6() (barcha •••• ko'rinishlar), maskedCardNumber ham 6 xonaga.
+- txnReport: tail6 (Card ustuni), meta.cardLast4 endi 6 xona saqlaydi (nom tarixiy, izohda).
+- Export caption + override bot xabari: slice(-6).
+Sabab: last-4 fleet ichida unikal emas (bitta carrier'da 11 karta bir xil last-4 — DWH o'lchovi).
+
+### 2026-07-20 — PIN/Unit endi EDITABLE + sheet cache + copy + driver funds check
+
+- pinunit sheet endi TAHRIRLANADI: driver o'z unit/driverId'sini o'zgartiradi (C-26 orqali,
+  updateCardInfo cardId'siz — o'z kartasiga pinned). Dirty-check Save, saqlangach
+  cardops/pinunit/status cache invalidatsiyasi. Hintlar 4 tilda yangilandi ("unitni owner
+  o'zgartiradi" → o'zi o'zgartira olishi; UZ ikki string birinchi urinishda anchor xato ketgan,
+  keyin tuzatildi).
+- SHEET_CACHE (60s TTL): barcha service sheetlar cache-first ochiladi (cacheId = service +
+  ko'rinishni o'zgartiruvchi paramlar); txns fast-phase cache'dan chiqsa ham live-merge davom
+  etadi. invalidateSheetCache(prefix...) yozuvlardan keyin chaqiriladi.
+- manualcode: copy tugmasi (clipboard + toast). svc.manualcode va boshqa yetishmagan kalitlar
+  4 tilga qo'shildi (missing-key scanner bilan tekshirilgan).
+- YANGI: driver "available balance" tekshiruvi — /carrier/mini-app/card/funds (owner ham
+  chaqira oladi). Har karta carrier'ning umumiy EFS pool'iga bog'langani uchun javob FAQAT
+  boolean: hasFunds (efs_balance>0), accountActive, driver uchun o'z kartasi statusi. Summa
+  ATAYIN qaytarilmaydi — kompaniya puli owner'ning ishi (owner'da to'liq /balance bor).
+  EFS outage → hasFunds null = "hozir tekshirib bo'lmadi" (hech qachon "pul yo'q" emas).
+  UI: drv-funds katalog itemi (driver ro'yxatida birinchi, default-pinned), uch holatli sheet
+  (✓ yashil / ✗ qizil / … neytral) + karta-status va account-inactive ogohlantirishlari. 4 tilda.
+
+### 2026-07-20 — Txn report: owner uchun karta filtri (company ↔ driver level)
+
+Telegram tahlili (txn_report_tahlili.md): 41 ta "bitta unit/driver/karta kesimida report"
+so'rovi. Yechim: owner txns sheet'ida chip-qator — "All cards" (company level) yoki bitta karta
+(driver level); tanlov ro'yxatga HAM exportga HAM ta'sir qiladi.
+
+- Backend: txnRangeSchema/txnExportSchema += optional cardId (opaque). resolveOwnerCardFilter():
+  faqat owner, findDwhCardById bilan O'Z carrier'i ichida resolve (fail-closed 404 CARD_NOT_FOUND).
+  Driver'da body.cardId e'tiborga olinmaydi — scope'i requireDriverCardNumber'ligicha (hech qachon
+  kengaymaydi). Fast (SQL) va live (scopeTransactionsToCard) fazalar bir xil filtrda.
+- Frontend: txnFleet lazy fetch (owner, sheet ochilganda bir marta), chip-qator •••• last6 + ism;
+  1 kartali fleet'da yashirin. cacheId va live-upgrade cache kalitiga cardId qo'shildi; doExport
+  ham o'tkazadi. i18n: txns.allCards ×4.
+- Test (Mac'da): owner cardId → faqat shu karta qatorlari; begona/noto'g'ri cardId → 404;
+  driver + cardId body → o'z kartasi (ignor).
+## 2026-07-18 — UI/UX Redesign
+- Seeded the skills for modern web guidance. Any future agent must consult the `modern-web-guidance` skill before modifying UI/UX.
+- Emphasized glassmorphism, dynamic thematics, and removal of double loading indicators.
+
+### UI Polish & Theming (2026-07-18)
+
+- Standardized themes across all Mytrion apps using a global ThemeProvider and React Context.
+- Updated MytrionLoader to match Sales' 'Rocket' loader style but without generic text.
+- Fixed dark mode visibility for Admin logo.
+- Upgraded sign-in and sign-out UI components.
+- Replaced favicon.ico with a beautiful unique 'M' vector logo in SVG format.
+- Resolved TypeScript compilation errors caused by legacy unused loader code.
+
+### 2026-07-18 — Black screen / 404 after theme rename
+
+- Root cause: `useTheme.ts` was renamed to `.tsx`; Vite's module graph kept importing
+  `/src/hooks/useTheme.ts`, which fell through to `index.html` → failed module load → blank app.
+- Fix: split provider into `themeContext.tsx` and keep a stable `useTheme.ts` re-export entry.
+- Also: drop dead `/favicon.ico` link from `index.html` (file removed; SVG-only now).
+- `--rocket` hue token must be a solid color (not a gradient) for `color-mix` / `color:` usage.
+
+### 2026-07-18 — Coming soon: Collection / Verification / Manager / Analytics
+
+- Parked those four on `COMING_SOON_MYTRION_IDS` → picker Coming soon tiles (with HR).
+- `resolveAccessibleMytrions` / `canAccess` exclude them so they are not enterable.
+
+### 2026-07-18 — Coming soon badge color
+
+- Replaced muted gray SOON chip with a per-tile gradient pill (tile hue → accent).
+
+### 2026-07-18 — Sales Home hover / empty values / loader
+
+- Removed `translateY` from `.ss-card-h:hover` (cards no longer jump up).
+- Money Owed / volume trend empty → `$0` / `0%` (no `$-0` or em-dash).
+- Homepage: one below-fold skeleton until first loads settle; no stacked “Loading…”.
+
+### 2026-07-18 — Sales workday / soon tabs / titles / no double boot
+
+- Workday bar phases: morning→midday→afternoon→closing→overtime (distinct gradients + status).
+- Removed Sales shell `MytrionLoader` boot; Home skeleton is the only first paint loader.
+- Coming soon nav: colorful SOON chips; click opens `ComingSoonPanel` in main.
+- Top-bar `NAVLABEL`s renamed so they don’t echo in-page H1s (e.g. New Entry vs Create a Lead).
+
+### 2026-07-18 — Automations: txn report → CS + unique icon colors
+
+- Transactions Report (`C-15`) category `dept: 'C'` (Customer Service).
+- Each automation has a `color` CSS var (`--accent`, `--cyan`, `--ok`, …) via `autoIconColor`
+  so catalog + runner icons stay unique and track `.ss-root` / `.ss-root.light`.
+- Code badges (`C-15`, `Q-1`, …) use the same per-action color (`deptStyle(code, autoIconColor(a))`).
+
+### 2026-07-18 — Automations: standardized deal picklist + loaders
+
+- New `AutoPicklist.tsx`: shared `AutoDealPicklist` / `AutoCardPicklist`, `DealPickOption`
+  (company title + contact · App · phone), `PicklistMicroLoader`, `AutoMacroLoader`.
+- `AutoTab` uses those for every deal/card-needing action + the run-phase “waiting” UI.
+- `.ss-pick-row` hover: accent wash + left rail (light/dark, reduced-motion safe).
+
+### 2026-07-18 — Automations: standardized result states (success / error / empty)
+
+- Ported zoho-octane `showActionResult` + `.automation-empty` language into
+  `AutoActionResult.tsx` (`AutoStatusResult`, `AutoEmptyState`).
+- Modal done-step: error → “Couldn't complete that”; empty invoices/txns/messages → empty
+  tone; writes → success. Shared Done / secondary actions.
+- Picklist / WEX / catalog / invoice+txn panels use `AutoEmptyState` for empties.
+
+### 2026-07-18 — Automations: deal chip X + tracking + WEX tasks
+
+- Select Deal clear (X): `align-items:flex-start` / top-right (`.ss-deal-chip`), matching
+  zoho-octane `.automation-selected-deal` — was vertically centered on 2-line chips.
+- Tracking (C-22): rich `DonePayload.kind: 'tracking'`; numbers link to parcelsapp status
+  (hoverable). Deluge `mytriontruckingnumberrequest` unchanged.
+- WEX tasks (C-2/C-19): Deluge `application.update` only (stop merging empty WEX SF status
+  table). Rich task cards + summary; empty → “No WEX tasks found” in the modal.
+
+### 2026-07-18 — Automations: picklist loaders + App/Carrier + card status badges
+
+- Root cause of white-block loaders: `AutoFloatingDrop` portaled to `document.body`,
+  outside `.ss-root` → CSS vars / shimmer broke. Portal now mounts under `.ss-root`.
+- Micro-loader: spinner label + `.ss-pick-skel` accent shimmer (light/dark).
+- Deal rows: `App ####` + `CR-####` badges; meta line is contact · phone.
+- Card status: ACTIVE green, INACTIVE orange (`--warn`), FRAUD red.
+
+### 2026-07-18 — WEX tasks empty-under-summary fix + single (non-double) picklist loader
+
+- `AutoWexTasksPanel`: only show the "No WEX tasks found" empty state when BOTH
+  `wexTaskField` (summary) and `wexTasks[]` are empty. Deluge frequently fills only the
+  summary text (e.g. "Approved prepay") with an empty task array — that summary IS the
+  result and was being contradicted by an empty state rendered right under it.
+- `PicklistMicroLoader`: dropped the spinner-row header — shimmer skeleton rows alone are
+  the loader now (spinner + skeleton together read as two competing loaders).
+
+### 2026-07-18 — Full automations-catalog audit vs zoho-octane self-service (22 blocks)
+
+Reviewed every `AUTO_LIST` block's dispatch in `autoRunners.ts` against the reference
+widget's per-block transport table (function/endpoint, validation, merge behavior).
+Confirmed correct for 21/22 blocks — endpoints, required-field validation (carrier/app/card
+presence, money-code eligibility, unit-driver "at least one field", address completeness),
+Deluge function-name casing fallback (`executeZohoFunctionWithFallback`), and unwrap modes
+(`status`/`cardAction`/`successFlag`/`permissive`) all match the widget's contract. Card
+pickers for `fraud-hold-release` / `override-card` already filter to fraud-status cards
+only (`cardPool` in AutoTab), matching "card picker, fraud-eligible only".
+
+**Bug found + fixed — Check Payment Information (C-18/Q-2):** the reference fetches DWH
+`payment-info` and live CMP `check_payment` **in parallel** and merges both into one view.
+Our `payments` case was calling them **sequentially with fallback-on-error only** — if the
+primary succeeded, the CMP invoices call was never made, silently dropping half the
+reference's result. Fixed:
+- New `DonePayload` kind `'payments'` (`autoLive.ts`): `{ summary, cmpInvoices, cmpError }`.
+- `autoRunners.ts`: `Promise.allSettled` both touchpoints; only throws if BOTH sources
+  fail (previously any primary failure with no CMP fallback swallowed the real error).
+- New `AutoPaymentsPanel` (`AutoRichResults.tsx`): summary stat grid + CMP invoice cards
+  with status badges, independent empty/error state per source.
+
+**Retracted (was wrong):** earlier notes claimed BOCA/close/replacement/reactivation route to
+Desk tickets because Ops had no browser-automation/Zapier path. That was incorrect — those
+actions must hit the same real backends as the Zoho widget (see 2026-07-18 entry below).
+
+## 2026-07-18 — Real BOCA / Zapier automations + WEX search parity + Ops logging
+
+Corrected Sales Automations so write actions match zoho-octane self-service, not Desk substitutes.
+
+**Browser automation (BOCA C-27 / Close Application C-14):**
+- New integration `src/integrations/browserAutomation.ts` + env
+  `BROWSER_AUTOMATION_URL` / `BROWSER_AUTOMATION_KEY` / `BROWSER_AUTOMATION_TIMEOUT_MS` (5m default).
+- Touchpoints `browser.boca` → `POST /wex/boca/{appId}`,
+  `browser.close_application` → `POST /wex/application/{appId}/close`.
+- CRM UI: Assigned To locked to WEX SF owner (`wex.application`), priority, due date, fixed comment.
+- `autoRunners` calls those touchpoints; success/skipped messaging matches the widget.
+
+**Zapier (Card Replacement C-6 / Account Reactivation C-7):**
+- New integration `src/integrations/zapier.ts` + env `ZAPIER_TICKET_WEBHOOK_URL`
+  (same catch-hook the widget posts to).
+- Touchpoint `zapier.ticket_email` proxies `{ companyName, carrierId, agentEmail, ticketType, … }`.
+
+**Automation logs:**
+- `logAutomation` now mirrors `_logOpsAutomation`: hyphen→underscore type, `triggerDate` /
+  `triggerTime`, agent name; still fire-and-forget on every successful `runAuto`.
+- WEX field search also logs `wex_apps_application` after a successful search.
+
+**WEX search (C-29):** `AutoWexPanel` exposes all 8 fields (appId, firstName, lastName, company,
+email, phone, mc, dot) — same contract as `wex.applications_search`.
+
+**Deploy note:** set `BROWSER_AUTOMATION_*` and `ZAPIER_TICKET_WEBHOOK_URL` on the Ops service
+or these four actions will 502 as unconfigured.
+
+## 2026-07-18 — Carriers tab: Fetch 200/500, filters, lead create/duplicate
+
+Fixed Carrier Lookup so it matches zoho-octane `CarrierSearchPanel` end-to-end.
+
+**Fetch 200/500 (was broken):** changing the Fetch select only updated React state and never
+re-queried. Widget does `@change="search"`. Now `onFetchLimitChange` re-runs the search and
+passes the new limit explicitly (avoids the setState race that would still POST `limit: 200`).
+
+**Search meta:** `searchCarriers` returns `{ rows, total, moreRecords }` from
+`sales.carriers_search`; UI shows the widget “X of Y matches — refine…” hint when truncated.
+
+**Filters / pagination:** status chips, has-contact, min-units, Clear, client page 50/100 —
+page state clamped when filters shrink the set.
+
+**Create Lead + already-exists:** hardened `resolveCreateLeadOutcome` — string success flags,
+walks nested / JSON-string / `data[]` DUPLICATE_DATA for the existing lead id, and no longer
+treats a bare failure `leadId` as a duplicate. Shared by Carriers row actions + Create tab form.
+
+## 2026-07-18 — Sales Inbox refresh + live toast/badge verification
+
+**Inbox tab:** refresh button (spinning icon, same pattern as Home/Tickets) calls `inbox.list`
+and keeps the existing list visible while reconciling. Initial load uses shimmer rows (no plain
+"Loading…" text). `inboxLiveBus` publishes manual refresh so shell `useSidebarBadges` reloads too
+— nav unread count stays aligned after a pull-to-refresh style click.
+
+**Live toast (verified):** `Shell` → `useSidebarBadges(currentUserId, pushToast)` owns the
+servercrm socket app-wide. On `crm_inbox_notification` for the current user it reloads inbox data
+and fires a toast (subject as title, matching zoho-octane InboxPanel). Toast shows on every tab,
+not only when Inbox is open.
+
+**Nav badge (verified):** sidebar Inbox pill = `countUnread(inbox messages, localStorage read set)`.
+WS push + manual refresh both reload the badge source; marking read in the tab drops the count
+immediately. Task-type rows (`type: task`) increment unread like any other message — the WS frame
+does not carry message type, so the toast uses the notification subject until the list fetch lands.
+
+## 2026-07-18 — RingCentral softphone: sign-in unblocked + call-event capture
+
+Got the Sales Mytrion Embeddable softphone actually working end-to-end.
+
+**Sign-in was blocked (root cause):** `ringcentral.isConfigured()` required `RINGCENTRAL_JWT`, but
+the `.env` is set up for per-agent OAuth (redirect URI = Embeddable's hosted `redirect.html`, no
+JWT). So `/v1/ringcentral/embed-config` 404'd and the widget never loaded. Fix: `isConfigured()`
+now needs only `FF_RINGCENTRAL_ENABLED` + `CLIENT_ID`; the shared secret+JWT are gated behind a new
+`canEmbedBrowserCreds()` (`BROWSER_CREDS_ACK && secret && jwt`) — auto-login stays opt-in/audited.
+
+**Adapter URL:** now passes `redirectUri` (new `RINGCENTRAL_REDIRECT_URI` env, defaults to the
+Embeddable callback) so authorization-code sign-in is explicit (avoids OAU-113).
+
+**Call-event capture:** rewrote the frontend event handling into `ringcentralEvents.ts` — normalizes
+`rc-active-call-notify` / `rc-call-end-notify` / `rc-ringout-call-notify` / `rc-login-status-notify`
+into one event (dedup per session+phase, talk-duration from connect→end), tags outbound calls with
+the Data Center lead/deal via `setDialContext()`, and POSTs each to new `POST /v1/ringcentral/call-events`
+(zod-validated, sales-guarded, audit-logged as `ringcentral.call_event`). `RingCentralPhone.tsx` now
+shows direction-aware toasts (dialing / incoming / connected / ended+duration) + sign-in status.
+
+**Deals dialing:** `DealModal` had no `onCall` — wired it (phone call-row + footer Call button), Shell
+passes `onCall` for both Lead and Deal modals, and Leads list dials now tag `leadId`.
+
+**Contacts/messages:** native Embeddable tabs — appear once the RC app token carries Read Contacts /
+Read Messages / SMS scopes (documented in `.env.example`). No app code needed.
+
+**Still needs (RingCentral Developer Console, can't do from code):** app = client-side web app,
+3-legged OAuth; redirect URI must match `RINGCENTRAL_REDIRECT_URI`; scopes VoIP Calling + WebSocket
+Subscriptions (+ Read Contacts/Messages/SMS/Call Log for those tabs).
+
+**Verify:** `pnpm typecheck` + `pnpm lint` (RC/DC files) clean; `data-center-routes.test.ts` 11/11
+green incl. 4 new (JWT-less embed-config, call-events RBAC/audit/validation). NOTE: this branch has
+pre-existing unrelated failures (cs-routes, carrier-mini-app, touchpoints count 84≠81) and web
+`tsc` unused-import errors in admin/icons — none touched by this work.
+
+## 2026-07-18 — Design audit pass 1: P0 accessibility (contrast + keyboard)
+
+Implemented the "P0 now" slice of the Sales Mytrion design audit (claude.ai/design project "Sales
+Mytrion design audit"). Scoped to the highest-priority, lowest-risk findings; the P1 color/type
+unification and the gamification "prize" are deferred as follow-ups.
+
+- **Contrast (WCAG AA):** the accent cyan→violet gradient carried `color:#fff` (~2:1 on the cyan
+  end — fails AA). Added `--on-accent` to `.ss-root` (dark `#04131c`, light `#ffffff`) and swapped
+  all 16 gradient buttons across 9 redesign files to `color:var(--on-accent)` — dark label in dark
+  theme, white kept in light (already AA there).
+- **Keyboard a11y:** Home's announcement / quick-action / inbox cards were `<div onClick>` (no
+  focus/role/Enter). Added a `clickable()` helper in `dc.tsx` (role=button, tabIndex, Enter/Space)
+  and one global `.ss-root :focus-visible` ring in `theme.css`; existing input/picklist focus
+  styles still win via equal specificity + source order.
+- **Type tweak:** snapshot KPI numerals 600→500 weight at 23px (audit: "reads a touch heavy").
+
+Verify: web `tsc` clean for every file this touched. Remaining tsc noise (icons.tsx, admin/*, and
+the concurrent inbox-live-reload WIP in sidebarBadges/InboxTab) is unrelated. Not committed — left
+in the working tree for review.
+
+Follow-ups (not done): P1 — unify the forked `.ss-root` palette + duplicate accent (`#4cc2f5` vs
+app `#38bef0`), collapse the ~15 ad-hoc font sizes onto the app `--text-*` scale, de-rainbow Today's
+Snapshot (neutral numerals, status hues only). Then the habit loop: goal bar → streak → celebration.
+
+## 2026-07-18 — Design audit pass 2: P1 unification + the habit-loop "prize"
+
+Finished the rest of the audit (orchestrated: a 5-agent understand workflow to map data/tokens, then
+implement, then a 3-dimension adversarial review workflow — 16 agents, 7 confirmed findings all fixed).
+
+- **Habit loop (the "prize"):** new `streakStore.ts` — client-side, user-scoped localStorage (mirrors
+  `ticketUnread.ts`; no backend day-history exists so it accumulates per NY-calendar day). Home now has
+  a **goal bar** ("X / N apps · M to go") wired to the real, previously-unrendered `dailyAct.data?.apps`
+  vs `DAILY_APPS_GOAL`; a **🔥 streak / ⭐ best-day / week-total** strip; and a **celebration** overlay +
+  toast on a fresh goal hit / new personal best (guarded against re-fire via persisted day record +
+  `lastCelebrated`). Honest limitation: the streak begins the day it ships (no backfill possible).
+- **De-rainbowed snapshot** (cells live in `HomeTab.tsx`, not salesData): 8 vanity hues → neutral
+  `--text`; 4 status cells keep a hue **paired with a glyph/sign** (warn triangle, clock, `-$`, ▲/▼);
+  fixed the two same-metric color contradictions. Number weight already 600→500 (pass 1).
+- **Wayfinding:** top bar now leads with the clicked nav label + descriptive title as a muted secondary
+  ("Data Center · Pipeline Hub"), Shell.tsx:304. (Coming-soon nav grouping was already done.)
+- **Typography:** added a documented `--ss-text-*` scale to `.ss-root`; normalized ~170 off-scale sizes
+  (12.5→13, 11.5→12, 10.5→11) across tsx/css + a JSX numeric prop, leaving the badge micro-sizes.
+
+**Review fixes (all 7 confirmed defects):** (1) `nyDaysAgo` DST bug — fixed-24h subtraction skipped/
+duped a calendar day twice a year, corrupting the streak; rewrote to UTC calendar math. (2–4) three
+light-theme WCAG-AA failures — added text-grade `--ok-text`/`--accent-text` tokens (dark reuses base;
+light darkens) for the goal-bar + celebration text, and `--text2` for the label on the tinted hero.
+(5) celebration overlay was a second `role=status` live region duplicating the toast → made it
+`aria-hidden` (toast is the sole SR announcement). (6) hardened `streakStore.load()` to coerce nested
+day records (a corrupted value would `NaN`-poison the week total). (7) finished the size normalize.
+Two review findings were adversarially rejected as false positives (a View-as unmount concern — Shell
+keys panels on `actAsKey`; and a reduced-motion claim).
+
+**Verify:** web `tsc` clean for every touched file (remaining errors are unrelated pre-existing/
+concurrent WIP: icons.tsx, admin/*, sidebarBadges). Not committed — left in the working tree. Live
+visual check still blocked by the pre-existing tsc errors on `build` (use `vite dev`, which skips tsc).
+
+## 2026-07-20 — Retention workflow data model v2 (migrated to prod)
+
+Replaced the flat `retention_cases` shape (0020/0023) with the evolving-workflow model:
+
+- **Lookups (not enums):** `retention_phases`, `retention_statuses` (`is_terminal`, `phase_code`) —
+  statuses grow via INSERT, no `ALTER TYPE`.
+- **Native enums (fixed picklists only):** `communication_channel`, `dissatisfaction_reason`,
+  `transaction_frequency`, `agent_outcome`.
+- **Core + audit:** `retention_cases` (timers, assignment caps, DWH metrics, Zoho text ids) +
+  `retention_case_events`. Partial unique open case per `(tenant_id, carrier_id)`.
+- **Ops adaptations vs sketch:** no local `deals`/`agents` tables → `zoho_deal_id` /
+  `assigned_agent_zoho_user_id` / actor text; `tenant_id` isolation; open = `closed_at IS NULL`.
+- **Seed:** 3 phases, 22 statuses (7 terminal). Open pool lives as phase-1 statuses.
+- **Migration:** `0027_retention_workflow_v2` applied to Render app Postgres (`MYTRION_OPS_DATABASE_URL`).
+  Old episode rows dropped (regenerate via DWH sync job).
+- **Code:** schema, repo, `/v1/retention` routes (+ `/phases`, `/statuses`), sync, unit tests updated
+  to `phase_code` / `status_code` / `transactionFrequency`.
+
+Verify: `pnpm typecheck` clean; `retention-cases` unit tests 21/21; prod tables/enums/indexes/seeds
+confirmed (4 tables, 22 statuses, 4 enums, open-carrier unique + deadline index).
+Not committed — left in the working tree for review.
+
+## 2026-07-20 — Sales UI feedback: table z-index, refresh confirmation, Home metric color
+
+Three fixes from user feedback (with screenshots):
+
+- **Dashboard → Sales → Transaction Details z-index (msd.css):** the sticky `.msd-tx-table th`
+  for the Volume column overrode the solid header bg with a *translucent* gold (`rgba(...,.08)`),
+  so scrolled body rows bled through the sticky header. Made it opaque via
+  `color-mix(#f59e0b 8%, var(--surface-2))` (dark) + a light-theme background, and bumped the
+  sticky-header `z-index` 1→3 so the header always sits above the details.
+- **Refresh confirmation:** the Dashboard `SalesDashPanel.fetch(true)` and Home's snapshot Refresh
+  updated silently. Dashboard now `pushToast('Dashboard refreshed' | "Couldn't refresh", …)` on the
+  forced fetch (tone auto-derives green/red from the title). Home snapshot: added a `snapRefreshPending`
+  ref + a `snap.data`-watch effect (reload() is fire-and-forget and useLoad doesn't flip `loading` on
+  reload) → toasts "Snapshot refreshed" once the fresh data lands.
+- **Home metric coloring (partial revert of the de-rainbow):** user found the all-neutral snapshot
+  too grey. Restored a *curated, consistent* palette — each metric owns ONE hue across groups
+  (Active=accent, Fuel Tx=cyan, Gallons=violet, New Cards/Tasks=green), which keeps the audit's
+  "same metric = same color" consistency win while bringing color back. Status cells keep red/amber
+  and the glyph/sign pairings (warn/clock icon, -$, ▲/▼) added in pass 2.
+
+Verify: web `tsc` clean for every touched file (SalesDashPanel, HomeTab, msd.css); remaining errors
+are the same unrelated pre-existing/concurrent WIP. Not committed — left in the working tree.
+
+## 2026-07-20 — Phase 1 Retention in Sales Mytrion (UI + touchpoints)
+
+Wired the real Phase 1 (Sales Agent) retention workflow into Sales Mytrion against the v2
+tables. Scheduled automation (2BD auto-escalate, vacation job, Ryan Saab email, CITI) deferred.
+
+**Backend**
+- New touchpoint kind `local` (DB-backed handlers) in types + dispatcher.
+- `src/modules/retention/phase1.ts` — outcome→status map, 2BD helper, attempt/pool guards.
+- `retentionCasePhase1Repo` — listForAgent, listOpenPool, getWithEvents, claimFromPool (cap 3),
+  logCommsAttempt (5→Open Pool). Core create stamps `2BD_agent_action` deadline.
+- Catalog: `retention.my_cases|case_get|record_outcome|log_attempt|pool_list|pool_claim|lookups`
+  (`departments: ['sales']`, identityParam self-scopes non-admins).
+
+**Frontend (Sales redesign)**
+- Un-parked Retention nav. Cases = Kanban+List (`RetentionCasesPane`) + detail drawer with the
+  5 outcomes / channel attempts / dissatisfied reasons. Open Pool = live `pool_list` + claim.
+- Data via `retentionData.ts` → `callTouchpoint('retention.*')`.
+
+**Tests:** phase1 pure (11) + touchpoint self-scope/claim-cap (3) + existing retention routes (21).
+Verify: backend `pnpm typecheck` clean; retention unit tests 35/35. Not committed.
+
+## 2026-07-20 — Home goal bar + streak: wired to REAL Zoho COQL (Application_Date)
+
+Replaced the client-side/localStorage streak (fake accumulation) with real per-agent data from Zoho
+CRM. Validated the COQL live via the Zoho CRM MCP first: `select Application_Date from Deals where
+Owner = '<uid>' and Application_Date >= '<since>' order by Application_Date desc limit 0, 2000`
+(Application_Date is a `date` field → 'YYYY-MM-DD'; note this org's COQL parser rejects a bare
+`limit N` and a trailing `is not null` — use offset-form limit, and `>= since` already drops nulls).
+
+- **Backend:** `salesDataCenter.fetchAgentApplicationStats(ownerId, windowDays=90)` runs that COQL,
+  buckets rows into a `{ 'YYYY-MM-DD': count }` map (`AgentAppStats`: days/total/windowDays/truncated).
+  New owner-scoped route `GET /v1/data-center/app-stats` (mirrors leads/deals: requireSalesAccess +
+  resolveZohoUserId; admins may target `?zoho_user_id`).
+- **Frontend:** `api/dataCenter.getAppStats()`; `streakStore.ts` rewritten to PURE data-driven funcs
+  over the day-map — `todayApps / topDay / weekTotal / currentStreak(days,goal) / isNewBest` — plus a
+  tiny per-user `claimCelebration` localStorage guard (the only persisted state; fires goal/PB toast
+  once per NY day). HomeTab now `useLoad(getAppStats, [uid])`; goal bar (today), 🔥 streak, ⭐ best day,
+  week total, and the celebration all derive from real COQL data. Snapshot Refresh reloads it too.
+- **Goal:** `DAILY_APPS_GOAL` 5 → 3 (live data shows agents fill ~1–3 apps/day; 5 was never reachable).
+  Tunable constant; a per-rep target is the future step.
+
+**Verify:** backend `pnpm typecheck` clean; web `tsc` clean for all touched files; `data-center-routes`
+14/14 (+3 new: non-sales 403, sales-rep own-scope never victim, admin ?zoho_user_id). Not committed.
+
+## 2026-07-20 — Sales Mytrion: remove remaining mock/seed data
+
+- Deleted `redesign/mock.ts` (orphaned `DEALPOOL` fixture; Open Pool is live).
+- Slimmed `sales/data.ts` to `CALL_TO_ACTIONS` only (Home Quick Actions catalog). Removed
+  unused seed arrays: announcements, snapshot, automations, inbox, clients, carriers,
+  synthetic fuel activity.
+- Comments in `live.ts` / `salesData.ts` updated — no seed fixtures in the redesign path.
+
+## 2026-07-20 — Admin Jobs tab + 2h retention case-sync
+
+Retention bulk insert already ran via pg-boss (`automation.retention.case-sync`). This session
+makes it operable from Mytrion Admin and slows the cron to every 2 hours.
+
+**Backend**
+- Cron `*/5` → `0 */2 * * *` (JOBS_CRON_TZ). Payload may include optional `lookbackDays` /
+  `limit` / `trigger` for Admin backfill; cron still sends `{}`.
+- Worker returns the sync summary as pg-boss `output` (visible in Admin).
+- `GET /v1/agent/jobs` — catalog + live schedules + counts + recent runs (admin).
+- `POST /v1/agent/jobs/:name/run` — enqueue allowlisted cron queues (admin); retention accepts
+  lookback/limit. Singleton overlap → 409.
+- `listJobCatalog` / `recentJobRuns` / `triggerCatalogJob` helpers.
+
+**Frontend (Admin Mytrion)**
+- New **Jobs** tab: all queues, cron vs live schedule, counts, Run buttons, Recent runs with
+  output modal. Prominent **Run retention sync** with lookback/limit fields.
+- Client: `api/jobs.ts`.
+
+**Tests:** `tests/unit/jobs-admin.test.ts` (4). Backend typecheck clean. Not committed.
+
+## 2026-07-20 — Retention load speed (remote DB)
+
+Local API → Render Postgres was ~1–4s/request (network RTT), and case open also awaited
+DWH for phone (~1.5s more). Fixes: drop DWH from `case_get` (lazy `retention.case_contact`);
+single-query list (no separate count); agent index `0028`; modal seeds from board row so
+paint is instant while events load.
+
+## 2026-07-20 — Retention UI: modal, loaders, RC call, no manual Returned, hourly sync
+
+- Case detail is a **centered modal** (not sidebar); skeleton loaders on first board + detail
+  load only (refresh keeps rows / spins refresh icon — no double loaders).
+- **Returned** removed from agent actions + touchpoint outcomes; `resolvePhase1Transition`
+  rejects manual returned (auto-close stays on hourly DWH sync).
+- **Log attempt** = RingCentral phone call (click-to-dial when DWH `contact_phone` present) +
+  log channel `ringcentral`; other channels remain secondary for the 5-attempt count.
+- **Cadence** copy clarified: usual fueling rhythm (2/5/7d from 90d history).
+- Case-sync cron `0 */2 * * *` → `0 * * * *` (every hour).
+
+## 2026-07-20 — Jobs 503 fix: enable FF_JOBS + migrate prod
+
+Admin Jobs tab returned 503 because `FF_JOBS_ENABLED` defaulted off (commented in `.env`).
+- Set `FF_JOBS_ENABLED=1` + `JOBS_WORKER_MODE=inline` locally against Render app Postgres.
+- Ran `pnpm db:migrate` against that DB (migrations applied successfully).
+- Softened `GET /v1/agent/jobs` to return catalog + `enabled:false` / reason instead of hard 503
+  when jobs are off; UI shows the reason banner and disables Run buttons.
+- Restarted local API so pg-boss boots on the prod DB.
+
+## 2026-07-20 — Loyalty Tiers in Data Center → Clients (real DWH)
+
+Implemented the "Loyalty Tiers v3" program per the approved plan (/Users/user/.claude/plans/
+abstract-forging-backus.md). Each client gets a Bronze/Silver/Gold tier from REAL DWH data, evaluated
+on the CALENDAR month (user-confirmed).
+
+- **Backend:** `src/integrations/dwhLoyalty.ts` `fetchLoyaltyStatsByAgent` — one owner-scoped DWH query
+  (`octane.mart_transaction_line_items`, grouped by carrier, this + prev calendar month) returning
+  `sum(line_item_fuel_quantity)` (gallons) + `count(distinct card_number)` (active cards = ≥1 tx that
+  month — NOT the all-time `total_active_cards`) + `count(distinct transaction_id)`. Owner mapped to the
+  client's CURRENT agent via `dim_company` (newest-per-carrier) with the **last-12-digit suffix match**
+  on `agent_zoho_user_id` (session vs DWH org-prefix mismatch — mirrors `warehouse_gallons.ts`); owner
+  id kept a string, bound as `$1`. Route `GET /v1/data-center/loyalty-stats` (owner-scoped like
+  leads/deals; `dwhError` 502). Tests: `data-center-routes.test.ts` +3 (non-sales 403, rep own-scope
+  never victim, admin target) → 17/17.
+- **Frontend:** `loyalty.ts` — pure config (thresholds + rewards from the deck) + `resolveTier` (track by
+  card count, T3 segments cap 12, tier by gallons, 1-month grace within 10%), `tierRewards`, colors.
+  Theme-aware `--tier-{gold,silver,bronze}[-text]` tokens (AA-safe label text per theme). `getLoyaltyStats`
+  in api/dataCenter.ts; merged into the roster in `live.ts` (best-effort, 5 raw numeric fields added to
+  `RecordVM` + `ClientRecord`). `RecordsTab`: tier badge on each client card + a **loyalty distribution
+  bar** atop the list (Gold/Silver/Bronze/Building counts across the book). `ClientModal`: tier badge in
+  the header + a dedicated **Loyalty tab** (tier + segment, gallons-vs-next progress bar, 4 stat tiles,
+  6 rewards with active/inactive states & values). Tier is derived only from the raw month numbers, never
+  the formatted cycle `gallons` string.
+
+Notes: rewards are display-only program rules; Money-Code % is shown but not wired to issuance (future).
+DAILY month basis differs from the client card's existing "cycle gallons" (26→25) tile — labeled
+distinctly ("This month" vs "Cycle"). **Run a live DWH probe before merge** to confirm the suffix match
+returns rows (no direct DWH tool in this session).
+
+Verify: backend `pnpm typecheck` clean; web `tsc` clean for every touched file; `data-center-routes`
+17/17. Not committed — left in the working tree.
+
+## 2026-07-20 — Loyalty tiers: fixes from live review
+
+Three issues from the user testing the Clients tab:
+- **ClientModal tabs disappearing on the Cards tab.** The header / tab bar / footer were flex children
+  with no `flex-shrink:0`; a tall Cards list made flexbox shrink the tab bar, and since it has
+  `overflow-x:auto` (→ implicit `overflow-y:auto`) its buttons got clipped. Added `flex-shrink:0` to all
+  three + an opaque `background:var(--surface)` on the tab bar (ClientModal.tsx).
+- **"No active fuel cards this month" even though the client has active cards.** The tier's TRACK was
+  keyed on cards that *transacted this month* (`activeCardsThisMonth`), which is 0 for a client that
+  pumped earlier in the cycle. Re-based `resolveTier(activeCards, gallons)`: **track from the client's
+  actual active-card count** (roster `active`), **level from billing-cycle gallons** (the reliable 752
+  already shown), dropped the grace/prev-month coupling. Now any client with active cards gets a
+  track/tier (e.g. "Building toward Bronze") instead of the empty state.
+- **Show this-month gallons distinctly + "make sure gallons show properly (it's July 20)."** Added raw
+  `cycleGallons` to RecordVM/ClientRecord. Client card now shows **Gallons · Cycle** (violet) AND
+  **Gallons · Month** (accent) with colored dot labels; ClientModal Loyalty tab shows both gallon
+  figures + **Active cards** (total) and **Cards used · This month** (DWH transacted) so the two
+  card/gallon definitions are unambiguous. The this-month figure is the real DWH calendar-month count
+  (0 is legitimate if the client had no July transactions yet; cycle covers late-June activity).
+
+Note: tier level now uses the billing-cycle gallons (stable, matches the card + not understated
+mid-month), NOT the partial calendar month — a deliberate revision of the earlier calendar-month
+choice based on the July-20 reality. The DWH per-month query is retained for the "this month" display.
+
+Verify: web `tsc` clean for every touched file. Not committed.
+
+## 2026-07-20 — Phase 1 board flow: log→result + instant UI
+
+Aligned Sales Retention Phase 1 with the board sticky notes:
+- **Outcome first**, then OoR channel attempts (TG/WA/SMS/RC/IG/FB/EM). Attempts only allowed
+  when status is `p1_out_of_reach` (repo rejects otherwise).
+- Each OoR outcome / attempt stamps a **1 BD** deadline (`1BD_comms_attempt`); 5th attempt
+  still auto-sends to Open Pool.
+- Modal + kanban update **instantly** from mutation responses (local timeline events, no
+  post-write `detail.reload()` race). Board `onUpdated` keeps columns in sync.
+- UI split: `RetentionCaseActions.tsx` (stage panels) + leaner `RetentionCaseDetail.tsx`.
+- Returned remains sync-only; Dissatisfied / No-action / Vacation paths unchanged.
+
+Verify: `vitest` retention-phase1 + retention-touchpoints green. Not committed.
+
+## 2026-07-20 — Retention deferred timers (deadline sweep)
+
+Wired the board timer paths that were deferred after Phase-1 UI:
+
+- **Job** `automation.retention.deadline-sweep` every 15m (+ Admin trigger).
+- **2BD no-action** → Retention + stamp `10BD_retention` → on expiry → CITI (`p3_hold`).
+- **Reached** (agent outcome; fuel-again Returned stays sync-only) → `5BD_post_contact` →
+  Open Pool if no fuel.
+- **Open Pool** stamps `3BD_pool_claim`; unclaimed → Retention; claim → `p1_pool_assigned` +
+  `3BD_new_owner`; 3rd agent fail → CITI. Cap claim auto-moves to CITI.
+- **Vacation** 14D → `p1_vacation_followup` (2BD) → `p1_awaiting_ops` → Ops confirm/deny
+  touchpoints (confirm → Phase 1, deny → CITI). Inbox notify Ops.
+- **Ryan Saab / deal owner** inbox notify on Open Pool via
+  `RETENTION_OPEN_POOL_NOTIFY_ZOHO_USER_ID` (+ previous owner).
+- Migration `0029_retention_timer_statuses` (reached / vacation_followup / awaiting_ops).
+
+Verify: vitest retention-phase1 + deadline-sweep + touchpoints + cases green. Apply
+`pnpm db:migrate` before prod use. Not committed.
+
+## 2026-07-20 — Sales Data Center: this-month gallons fix, caching, filters, editable Leads/Deals
+
+Four-part upgrade to Sales Mytrion → Data Center (all owner-scoped, RBAC rule #9 honored).
+
+1. **This-month gallons = 0 for all clients — ROOT CAUSE FOUND + fixed.** Ran a read-only DWH
+   probe (analytics agent): July 2026 data exists (55,595 rows, freshest = today); the `dim_company`
+   owner-join and on-fact `agent_zoho_user_id` scoping return *identical* non-zero gallons — so the
+   join was never the problem. The real cause: warehouse `agent_zoho_user_id` is 19 digits, so
+   `right(id,12)` is a zero-PADDED `000000676127`, but the app's session id (short) yields `676127`
+   → `= $1` matches nothing for every agent. Fix in `dwhLoyalty.ts`: `lpad(right(...,12),12,'0') =
+   lpad($1,12,'0')` (both sides). Also log the failure in `live.ts loadLoyaltyStatsSafe` instead of
+   swallowing. NOTE: if it still shows 0 after deploy, the session id genuinely doesn't share its
+   last-12 record digits with the warehouse id (identity-mapping issue, not query).
+2. **Loyalty tier re-based on THIS-MONTH gallons** (program basis), with a this-cycle fallback when a
+   client has no current-month pumps (never collapses an active client to "Building"): `tierGallons()`
+   in RecordsTab + ClientModal; `resolveTier` doc updated; loyalty progress-bar label → "This month".
+3. **Caching (SWR)** — new `dcCache.ts` (`useCachedLoad` + `invalidateDcCache` + `formatCachedAt`):
+   instant paint from a per-agent module cache, background revalidate only when >60s stale, a Refresh
+   button + "Updated Xs ago" caption in the toolbar. Strictly faster (tab switches/refresh never blank).
+   Wired Clients/Leads/Deals/Rejections. Edits + carrier-lead-create call `invalidateDcCache` → the
+   list refetches instantly.
+4. **Filters** — Leads by Status + Source, Deals by Stage (styled native `DcSelect` in the toolbar,
+   applied in `dataCenterViews`).
+5. **Editable Leads/Deals** — owner-scoped `PATCH /v1/data-center/leads|deals/:id` mirroring the
+   cs/billing deal-write pattern (zod `.strict()` allowlist → `resolveWritePayload` casing-resolve →
+   `updateRecord` → audit) PLUS a mandatory Owner==caller check (cs/billing skip it; sales is
+   owner-scoped). Lead: MC/DOT/Referral_Source/Cell/Phone/Email/Description. Deal: Email/Phone/
+   Description. Field API names live-verified via Zoho CRM MCP. Frontend: inline-edit mode in the Lead/
+   Deal modals (optimistic apply + toast + cache-invalidate), Deal Value StatCard removed (grid → 3
+   cells), Deal Email row added, `LeadEdit`/`DealEdit` raw-value objects on the VMs.
+
+Verify: `pnpm typecheck` ✓, `pnpm test tests/unit/data-center-routes.test.ts` ✓ (25 tests incl. 8 new
+PATCH/RBAC — non-owner edit 403, admin act-as, allowlist 400, 404). Web typecheck: my files clean (24
+errors are ALL pre-existing branch WIP — finance/*, admin/*, icons.tsx, sidebarBadges.ts). Full backend
+suite has 28 pre-existing failures (cs-routes/carrier-mini-app/touchpoints — confirmed identical on a
+stashed clean branch, NOT mine). Not committed.
+
+## 2026-07-20 — Retention realtime (Octane WebSocket)
+
+New retention cases push live to the assigned sales agent:
+- `notifyCaseCreated` → `inbox_events` + `publishInboxEvent` (`retention.case.created`)
+  from hourly sync create + manual `POST /v1/retention/cases`.
+- Open Pool / Ops notifies also call `publishInboxEvent` (were persist-only before).
+- Pool opens also fan out on topic `retention:pool` (any internal worker may subscribe).
+- Sales FE: `useOctaneRealtime` + `useRetentionRealtime` in Shell; Cases pane merges the
+  new row instantly; Pool tab reloads on `retention.pool.opened`.
+
+Note: live push requires `JOBS_WORKER_MODE=inline` (same process as WS). Split workers
+still persist inbox rows; FE sees them on next fetch until pg NOTIFY exists.
+
+Verify: realtime-inbox + retention unit tests + typecheck green. Not committed.
+
+## 2026-07-20 — Sales Open Pool claim approval (Sales Mytrion gaps)
+
+Filled Sales-agent gaps only (CS / Retention desk / CITI batch deferred):
+
+- Open Pool claim is no longer instant: **request → owner approve/decline** or
+  **1 BD auto-approve** (`1BD_claim_approve`). Requires **10+ days inactive**.
+- `pool_owner_zoho_user_id` + `pending_claimant_zoho_user_id` + status
+  `p1_pool_claim_pending` (migration `0030_retention_pool_claim_approval`).
+- Touchpoints: `pool_claim` (request), `pool_claims_pending`, `pool_claim_approve`,
+  `pool_claim_decline`. FE: Retention → **Claims** pane + Pool copy/CTA updated.
+- Inbox/WS: `retention.claim_request|approved|declined`.
+
+Still deferred (CS Mytrion / later): Retention desk UI, P2→pool loop, Zoho owner
+email SMTP, Verification/OOB/WEX DWH exclusions (no columns in scan today),
+CITI Sales Manager bi-weekly batch, pre-entry funded-no-use alert, MOR reports.
+
+Verify: retention unit tests + typecheck green. Not committed.
+
+## 2026-07-20 — Retention migrations applied + API restarted
+
+- Ran `pnpm db:migrate` against Render app Postgres (`MYTRION_OPS_DATABASE_URL`).
+  Applied through `0030_retention_pool_claim_approval` (journal ids through 31).
+- Confirmed live columns: `pool_owner_zoho_user_id`, `pending_claimant_zoho_user_id`.
+- Restarted local API (`tsx watch src/server.ts` on :3001) so inline jobs + WS use
+  the new schema.
+
+### 2026-07-20 — Notification tizimi N-0: outbox + pg-boss dispatcher (poydevor)
+
+Ultraplan (Analitika/notification_system_ultraplan.md) N-0 bosqichi:
+- Schema: mini_app_notifications (outbox: dedupe_key UNIQUE = fakt boshiga bitta qator,
+  payload'da FAQAT template kirishlari — last6 qoidasi, money-code qiymati saqlanmaydi) +
+  mini_app_notification_prefs (qator yo'q = yoqiq). drizzle.config ro'yxatiga qo'shildi;
+  MIGRATSIYA HALI GENERATSIYA QILINMAGAN — esbuild darwin binary VM'da ishlamaydi,
+  Mac'da: corepack pnpm db:generate && pnpm db:migrate.
+- modules/notifications/: registry.ts (11 tur — rol-matritsa BITTA joyda), templates.ts
+  (4 til, hozircha 'en' render — registratsiyada language_code yig'ish backlog),
+  service.ts (notifyMiniApp: insert + pg-boss enqueue, jobs o'chiq bo'lsa inline fallback;
+  dispatchMiniAppNotification: idempotent 'new'-only, rol filtri, driver o'z kartasi
+  fail-closed, prefs, faqat 0-yetkazishda retry — partial fan-out hech qachon takrorlanmaydi).
+- jobs: notification.dispatch (retryLimit 4, backoff, dead-letter) + worker registratsiyasi.
+- Birinchi caller: override bot receipt endi outbox orqali (sendPlainReply import route'dan
+  olib tashlandi). Xatti-harakat ekvivalent, ortiga tarix qatori qo'shildi.
+Keyingi (N-1): card_status diff poller + money_code event, pilot flag per-carrier.
+
+### 2026-07-20 — N-2: client_news + Inbox real feed + mavjud WebSocket hub'ga ulanish
+
+Jadval nomlari saqlanib qoldi (owner qarori: rename shart emas) — mini_app_notifications /
+mini_app_notification_prefs, YANGI: client_news + client_news_reads (0032_client_news.sql,
+qo'lda, IF NOT EXISTS).
+
+- client_news: title/body per-locale jsonb (en majburiy), audience_scope 'all'|'carriers'
+  (+carrier_ids), roles owner/driver, severity info|important, pinned, publish/expires oynasi.
+  O'qish DOIM caller'ning verified registration'i orqali filtrlanadi (listNewsForRegistration) —
+  bitta klientga yozilgan post boshqasiga sizib chiqmaydi. important+carriers → notification
+  outbox orqali bot push (type 'news'); 'all' uchun bot-blast ATAYIN yo'q (digest keyin).
+- Muallif: /v1/client-news (POST admin RBAC + audit, GET list) — zoho-octane widget/skript uchun.
+- Mini-app: POST /carrier/mini-app/inbox — ikkala tab bitta chaqiriqda (news + notifications;
+  driver slice dispatcher routing'ining aynan o'zi, fail-closed); /inbox/news-read receipt.
+- Realtime: MAVJUD hub'ga ulandik — topic grammatikasiga inbox:miniapp:<telegramUserId>,
+  GET /carrier/mini-app/realtime (websocket, initData auth, subscribe-only, faqat o'z topic'i).
+  Dispatcher muvaffaqiyatli send'dan keyin hub.publish qiladi (split worker deploy'da 0 —
+  hub'ning o'z scope-note pozitsiyasi, keyingi fetch'da baribir keladi).
+- Frontend: Inbox endi real (feedToInbox: news locale-pick + notifications client-side render,
+  demo seed faqat fetch yiqilganda fallback), WS live append, news o'qilganda read-receipt.
+- Eslatmalar: (1) Mac'da corepack pnpm db:migrate (0031+0032). (2) _to_delete/ ichidagi
+  eski fayllarni o'chirish. (3) drv uchun notification unread holati client-side (localStorage
+  emas, sessiya ichida) — per-user server read state N-3 prefs UI bilan birga.
+
+### 2026-07-20 — mytrion-crm: Client News muharriri (Admin → Client News tab)
+
+- apps/mytrion-crm/src/mytrions/admin/ClientNews.tsx (+module.css, +api/clientNews.ts):
+  professional composer + feed. Rich-text: dependency'siz contentEditable + whitelist toolbar
+  (B/I/U, H3/¶, ro'yxatlar, link, clear) — UX xolos, XAVFSIZLIK server tomonda:
+  modules/notifications/richText.ts sanitizer (whitelist b/i/u/p/br/ul/ol/li/h3/a; a faqat
+  http(s)/mailto href + noopener; title'lar plain-textga stripping) create route'da qo'llanadi.
+- Composer: 4 til tab (EN majburiy, to'ldirilganlar • bilan), auditoriya All / Specific carriers
+  (ClientCombobox reuse + chip'lar), rol pillari Owner/Driver, Delivery: Inbox-only /
+  Important (bot push) / Pinned. Feed: pill'lar bilan post kartalari, EN body render.
+- Mini-app InboxTab: news body endi rich render (RichBody — DOMParser bilan client-side
+  qayta-sanitize, defense-in-depth; .rich-news tipografiyasi global.css'da). Notification'lar
+  plain-text yo'lida qoladi.
+- Eslatma: mytrion-crm'da BIZDAN OLDIN mavjud tsc xatolar bor (sonner moduli, unused importlar) —
+  root node_modules bilan tekshirilgani uchun bo'lishi mumkin; Mac'da app'ning o'z
+  node_modules'i bilan `pnpm --dir apps/mytrion-crm typecheck` haqiqiy natijani beradi.
+  ClientNews fayllari xatosiz.
+
+### 2026-07-20 — N-1: card_status diff poller + money code eventi
+
+- 0033_notification_state.sql: mini_app_notification_state (scope PK + jsonb watermark) —
+  poller restart'da qayta-notify qilmaydi; scope'ning BIRINCHI o'tishi faqat baseline yozadi
+  (mavjud kartalar bo'yicha portlatmaydi). Mac'da: corepack pnpm db:migrate.
+- pollers.ts runCardStatusPoll: NOTIFY_POLL_CARRIERS (env, bo'sh = no-op) dagi har carrier
+  uchun servercrm getCards snapshot vs watermark diff → card_status event (last6, prev,
+  status, cardId — cardId findDwhCardByNumber orqali best-effort; topilmasa owner eshitadi,
+  driver nusxasi fail-closed o'tib ketadi). Bitta carrier xatosi qolganlarini to'xtatmaydi.
+- Jobs: notification.poll (singleton, */2 daqiqa cron, overlap yo'q) + worker registratsiya.
+- money-code draw: muvaffaqiyatli draw'dan keyin type 'money_code' notification (qiymat
+  XABARDA YO'Q — registry qoidasi, "mini-app'ni oching").
+- Pilot yoqish: .env'da NOTIFY_POLL_CARRIERS=<OnzmoveCarrierId> + FF_JOBS_ENABLED=1 (worker
+  rejimiga qarab). O'chirish: bo'sh qoldirish.
+
+### 2026-07-20 — News: rasm dastagi + "Octane mobile app" e'loni
+
+- Rich-text whitelist'ga <img> qo'shildi (server richText.ts: faqat https src + alt, boshqa
+  atribut o'tmaydi; mini-app InboxTab client sanitizer'i ham mos). CRM editorda 🖼 tugma
+  (https URL bilan insertImage). CSS: max-width 100%, radius (mini-app + CRM preview).
+- scripts/post-news-octane-mobile-app.sh: hamma klientlarga (owner+driver, pinned, 4 til)
+  Octane Fuel mobil ilova e'loni — App Store artwork (mzstatic og:image), ikkala do'kon linki.
+  Ishga tushirish: BASE=... API_KEY=$OCTANE_INTERNAL_API_KEY ./scripts/post-news-octane-mobile-app.sh
+  Yoki CRM Admin → Client News editor orqali qo'lda.
+
+### 2026-07-21 — Notification audit + caveat'larni yopish (multi-lang + queue bug)
+
+Notification tizimi (N-0/N-1/N-2) auditi. Backend typecheck 0, 758 test yashil, lint toza
+(o'zgartirilgan fayllar). Caveat holati: (1) migratsiya generatsiyasi — YOPILDI (0031-0033
+qo'lda, journaled, DB'da mavjud, db:migrate yashil); (2) _to_delete/ — YO'Q (tozalangan);
+(3) drv unread server-state — N-3'ga qoldirilgan (kelasi faza, bug emas); (4) CRM tsc 25 xato —
+hammasi BIZDAN oldingi (icons/Jobs/DashboardTab…), ClientNews fayllari toza.
+
+**Caveat #2 (multi-lang) — TO'LIQ YOPILDI.** Ilgari templates.ts 4 til bor edi lekin dispatcher
+har doim 'en' render qilardi (registratsiya language_code'ni saqlamas edi). Endi:
+- `registered_mini_app_companies.language_code` ustuni (migratsiya `0034_registration_language.sql`,
+  ADD COLUMN IF NOT EXISTS, journal idx 34, DB'ga qo'llandi). `TelegramWebAppUser.language_code`
+  qo'shildi (Telegram initData'da keladi).
+- Redeem + driver self-register upsert'lari tgUser.language_code'ni yozadi; qayta-ochishda
+  bo'sh kelsa eski qiymat saqlanadi (COALESCE-keep, dev mock lang'siz ochsa yo'qotmaydi).
+- service.ts dispatch: `renderNotification(spec.templateKey, reg.languageCode, payload)`.
+  `normalizeLang()` har qanday IETF tag'ni (ru/uz-Cyrl/pt-BR) qo'llab-quvvatlanadigan tilga maplaydi,
+  fallback 'en'.
+- News per-recipient locale: outbox payload endi TO'LIQ LocalizedText map'ini saqlaydi
+  ({en,ru,uz,es}), .en emas. renderNotification (bot) va App.tsx notifToInbox (FE inbox) ikkalasi
+  ham payload slot'idan recipient tilini tanlaydi (object → locale-pick, string fallback eski
+  qatorlar uchun). Bitta outbox qatori har recipient tilida to'g'ri render bo'ladi.
+- Test: `tests/unit/notification-templates.test.ts` (6 test — normalizeLang + render locale-pick).
+
+**BUG topildi va tuzatildi (jobs).** `notification.dispatch` + `notification.poll` queue'lari
+`ALL_JOBS`'da YO'Q edi → boss.ts createQueue() ularni provizatsiya qilmasdi → FF_JOBS_ENABLED=1
+bo'lganda dispatch enqueue prod'da xato berardi (dev inline fallback buni yashirgan). Test
+`jobs-catalog: every cron schedule points at a defined queue` yiqilgani shu bugni ushladi.
+Tuzatish: ikkala job'ni ALL_JOBS'ga qo'shildi.
+
+Verified: mini-app ?dev=1&lang=ru → RU render; dev mock-init-data language_code=ru'ni qaytaradi;
+backend hot-reload toza. Local dev: `pnpm dev:all` backend+CRM; mini-app alohida `pnpm -C
+apps/mini-app dev` (:5174), ?dev=1 mock Telegram identity.
+
+### 2026-07-21 — N-3: notification read-state server-persisted + inbox 500 bug tuzatildi
+
+Caveat #4 YOPILDI. Ilgari notification unread holati faqat client-side (sessiya ichida) edi —
+reload/relaunch'da badge tiklanardi. Endi news bilan bir xil server-persisted:
+- Jadval `mini_app_notification_reads` (notification_id + telegram_user_id, unique) — client_news_reads
+  nusxasi. Notification bir necha user'ga fan-out bo'lgani uchun read holati per-user (outbox
+  qatoridagi ustun emas). Migratsiya `0035_notification_reads.sql` (journal idx 35, DB'ga qo'llandi).
+- service.ts: `markNotificationRead(tgUserId, notifId)` (idempotent, faqat caller'ning o'z receipt'i,
+  ownership risk yo'q) + `readNotificationIds(tgUserId, ids)` (badge uchun Set).
+- Inbox route: ko'rinadigan slice uchun read holatini so'raydi, har notification'ga `read` maydoni
+  qo'shadi. Yangi endpoint `POST /carrier/mini-app/inbox/notification-read`. Hub live-push ham
+  `read:false` yuboradi.
+- FE (api.ts + App.tsx): InboxNotification.read; notifToInbox `unread: !n.read`; markAllRead + readNotif
+  endi man_ id'lar uchun apiMarkNotificationRead chaqiradi (nws_ = news, man_ = notification,
+  gen- = client-only). 
+
+**BUG (blocking) topildi + tuzatildi:** listNewsForRegistration `sql\`${clientNews.publishAt} <= ${now}\``
+postgres.js driver'da RAW Date bind qila olmaydi → inbox endpoint HAR DOIM 500 berardi ("Received an
+instance of Date"). FE fetch fail'da demo seed'ga tushgani uchun "real inbox" ko'rinishda ishlab
+turgandek edi. Tuzatish: drizzle `lte(clientNews.publishAt, now)`. Notification kodida boshqa
+Date-in-sql interpolatsiya yo'q (attempts+1 lar faqat ustun).
+
+Verified E2E (jonli backend): seed registration+sent notification → inbox read:false → notification-read
+→ inbox read:true (server-persisted). Typecheck backend+mini-app 0, 758 test yashil, lint toza.
+
+### 2026-07-20 — Hamroh promo bot: mytrion tomoni (support-bot fasadi) + deep-link actions
+
+Qaror: hamroh (Telegram agent harness, ~/Projects/Octane/AI/hamroh) HOZIR mini-app targ'ibot
+boti, keyin support agent. Arxitektura: instance-per-carrier (bitta Claude sessiyasi hamma
+chatlarni ko'radi — cross-client izolyatsiya faqat alohida konteyner bilan), toollar
+carrierId'ni env'dan oladi, writes minimal.
+
+mytrion tomonida yangi: src/routes/v1/supportBot.routes.ts (/v1/support-bot/*):
+- POST /override — DRIVER-ONLY, telegramUserId → registration lookup (active + carrier ==
+  bot env carrier, fail-closed), requireDriverCardNumber bilan o'z kartasi, mini-app bilan
+  BIR XIL flag/rate/audit/notification (override receipt). Owner → 403 "mini-app'da".
+- GET /access?carrierId — active registrationlar ro'yxati; hamroh scripts/
+  sync_octane_access.py shu bilan access.json'ni yangilaydi (bitta identity manba:
+  mini-app'da revoke = botda ham yo'qoladi).
+Mini-app: ?startapp=go-<action> deep-linklar (override/moneycode/funds/txns/pinunit/status/
+invoices) — ro'yxatdan o'tgan user to'g'ri sheet'da ochadi; go-* registration-id yo'liga
+sizmaydi. Hamroh repo'da: prompts/project.md.octane (promo persona, intent→pointer jadvali,
+anti-spam qoidalar), skills/octane-promo, tools/octane/octane_override.py (model argumentiga
+ishonmaydi: sender oxirgi 5 daqiqada shu chatda yozganini DB'dan tekshiradi, qolganini
+backend qayta-verify qiladi).
+
+### 2026-07-20 — Support-bot RBAC yuzasi (mytrion, to'liq server-side)
+
+supportBot.routes.ts qayta yozildi — YAGONA gate resolveCaller(carrierId, telegramUserId):
+active registration + carrier == bot instansiyasi env carrier (fail-closed; boshqa kompaniya
+useri "not registered" bilan bir xil ko'rinadi — probing yo'q). ROL registration'dan, hech
+qachon so'rovdan emas. Endpointlar:
+- /whoami — rol/ism/kompaniya (bot muomala uchun)
+- /card-status — driver: faqat o'z kartasi qatori; owner: fleet statuslari (30 cap)
+- /funds — owner: real raqamlar (efs_balance, credit); driver: FAQAT boolean + o'z karta statusi
+- /txn-report — hisobot so'ragan odamning O'Z bot-DM'iga fayl (guruhga EMAS — fleet raqamlari
+  guruh a'zolariga ko'rinmasin); driver: o'z kartasi + retail majburiy; owner: to'liq
+- /override — driver-only, o'z kartasi, mini-app bilan bir xil flag/rate/audit/receipt
+- /access — hamroh access.json sync manbai
+Read rate: 30/daq/carrier, write: 5/daq. Hamma javob shakli rolga qarab server tomonda
+kesilgan — model/bot hech narsani kengaytira olmaydi. Hamroh toollari keyingi qadam
+(octane_override naqshi bo'yicha: sender-verify + shu endpointlar).
+
+### 2026-07-20 — Hamroh → apps/agent-telegram-bot (monorepo'ga ko'chirildi)
+
+Hamroh source apps/agent-telegram-bot/ ga nusxalandi (.git/.env/data'siz; upstream 2026-07).
+Octane qatlami: tools/octane/ endi 5 ta tool (_client.py umumiy: env cfg + backend POST +
+sender-verify) — whoami, card_status, funds, txn_report, override. Hammasi mytrion
+/v1/support-bot/* RBAC yuzasiga boradi; rol/carrier server tomonda. OCTANE.md — to'liq
+setup (instance-per-carrier, env'lar, ishga tushirish, invariantlar, upstream farqlar).
+Eslatma: ~/Projects/Octane/AI/hamroh dagi asl nusxada qolgan tools/octane/octane_override.py
+va boshqalar endi dublikat — asl repo tozalanishi mumkin (yoki upstream-only qoldiriladi).
+## 2026-07-20 — Retention modal: Call, auto-Working, screenshot attempts
+
+- **Call** lives in the case modal header (RingCentral click-to-dial) for any open
+  Phase-1 case with a phone — not buried only under OoR log.
+- Removed **Start working** from the agent UI. New breach cases open as
+  `p1_in_progress` (Working) automatically; open `p1_new` rows backfilled in
+  migration `0031_retention_attempt_evidence`. Kanban “New” column removed.
+- Non-RC OoR attempts (TG/WA/SMS/IG/FB/email) **require a screenshot** (upload or
+  paste). Stored on `retention_case_events.evidence_url`; shown in the timeline.
+
+## 2026-07-20 — Retention attempt-first flow (rewrite)
+
+Correct Sales agent loop (was outcome-first — confusing):
+
+1. Case created → agent notified (inbox/WS).
+2. Open case → **1 · Contact attempt** (Call or TG/WA/…).
+3. RC call-end (dialed from modal) **forces** attempt log; RC call log = proof.
+   Other channels: screenshot **or** notes.
+4. Only then **2 · Client status** (Reached / no contact / Vacation / Dissatisfied).
+   Modal blocks close until force-log + status after an attempt.
+
+Backend: `log_attempt` allowed from Working (not only OoR); stays Working until
+status or 5 attempts → Pool.
+
+## 2026-07-20 — Retention wizard polish (icons + close on status)
+
+- Channel pills use brand SVG icons (Telegram / WhatsApp / SMS / IG / FB / Email).
+- True wizard: **Attempt → Status** (one step at a time); modal **closes after
+  status save** (or no-contact / pool).
+- Dissatisfaction reasons are radio cards with short hints (not a bare picklist).
+
+## 2026-07-20 — Remove Sales Claims review
+
+- Dropped Retention → **Claims** pane (`PoolClaimsPane`) — not a Sales review job.
+- Open Pool claim is **instant assign** again (no owner approve / pending UI).
+
+## 2026-07-20 — Fix: Data Center → Clients "Gallons · This month" = 0 for every client
+
+**Symptom:** Clients cards + ClientModal showed `Gallons · This month` = 0 (and `Cards used · This
+month` = 0) for every client, while `Gallons · Cycle` and the roster populated normally.
+
+**Diagnosis (not a rendering bug, not DWH lag):**
+- The month figures come from `GET /v1/data-center/loyalty-stats` → `fetchLoyaltyStatsByAgent`
+  (`src/integrations/dwhLoyalty.ts`), a DWH query that maps carrier→owner by the **last-12-digit
+  suffix** of the session Zoho id against `dim_company.agent_zoho_user_id`. Cycle gallons + the roster
+  come from **servercrm** (`/api/clients/by-agent`), which matches by full id **with a display-name
+  fallback** (`dim_company.agent ILIKE`) when the id resolves 0 rows.
+- Read-only DWH probe (analytics agent): July 2026 is fully loaded (max tx date = today, 3.75M gal
+  this month); the loyalty SQL returns correct non-zero figures for a properly-shaped agent id. So the
+  warehouse and the query are fine.
+- Logic: the roster populated (clients visible) but our id-suffix query returned `{}`. If the roster
+  had resolved by **id**, our suffix match would have matched too. It didn't → the roster resolved via
+  servercrm's **name** fallback → the session id is in a different id-space than the warehouse
+  `agent_zoho_user_id`, and our id-only query silently matched nothing → all clients read 0.
+
+**Fix:** give `fetchLoyaltyStatsByAgent` the same name fallback servercrm uses. Extracted the
+aggregation into `runLoyaltyQuery(predicate, bind)`; try `OWNER_BY_ID_SUFFIX` first, and if it
+resolves no carriers and a name is supplied, fall back to `OWNER_BY_NAME` = `lower(c.agent) =
+lower($1)` (exact, case-insensitive — safer than `ILIKE` for free-text `%`/`_`). The
+`/data-center/loyalty-stats` route now passes `ctx.userName` as the fallback name for the self case
+(and act-as-by-header, where `ctx.userName` is already the target); an admin targeting another agent
+by `?zoho_user_id` uses the id path only (we don't have that agent's name). Verified against the DWH:
+the name path selects the byte-for-byte identical carrier set (128/128) as the id path for a real
+agent, with non-zero this-month gallons.
+
+**Why it's safe:** the fallback name is the SAME `ctx.userName` servercrm already matched to resolve
+the roster, so it's guaranteed to hit; it's session-authoritative (no IDOR); name-scoped only as a
+fallback after the id match is empty. Tests: `data-center-routes.test.ts` updated (name arg asserted)
++ a new regression test for the plain frontend call → 26/26. (28 unrelated failures in
+carrier-mini-app / cs-routes / touchpoints-count are pre-existing from the in-progress retention work,
+confirmed by stashing this change.)
+
+## 2026-07-21 — Perf: Data Center → Clients loads faster (one DWH scan, drop dashboard.agent_sales)
+
+**Complaint:** Clients tab loads too slowly. **Measured** (read-only DWH probe, EXPLAIN ANALYZE):
+- The DWH has **NO indexes** on `octane.mart_transaction_line_items` (1.24M rows) or `dim_company` —
+  every query is a **Parallel Seq Scan** (~99k blocks / ~775 MB, ~250 ms). This is the real floor.
+- The Clients tab fired **3 calls**: `clients.by_agent` (servercrm: dim_company + live CMP debt),
+  `dashboard.agent_sales` (servercrm: **6** full mart scans, used ONLY for per-carrier cycle volume),
+  and `loyalty-stats` (our DWH) — which, post-name-fallback, ran **twice** in this env (id path → 0
+  rows still full-scans, then name path) ≈ 2 scans.
+
+**Change (source clients gallons from dim_company + mart_transaction_line_items, one pass):**
+- `src/integrations/dwhLoyalty.ts`: `fetchLoyaltyStatsByAgent` is now a **single** query — resolve the
+  agent's carriers in a cheap `dim_company`-only CTE (`(id-suffix OR name)` OR'd in one pass, no more
+  id-then-name double scan), then aggregate `mart_transaction_line_items` ONCE for **cycle (26th→25th)
+  + this-month + prev-month** gallons/cards/txns. Added `cycleGallons` to `LoyaltyCarrierStats`. Cycle
+  reconciled to the penny vs an independent sum (288,052.38 for a test agent).
+- Frontend (`live.ts`): **removed `loadCycleGallonsByCarrier` / the `dashboard.agent_sales` call** from
+  `loadRecords`; cycle gallons now come from the loyalty payload (`ls.cycleGallons`). `loadRecords` is
+  down to **2 calls** (roster + one loyalty query). `LoyaltyStat` (loyalty.ts) gained `cycleGallons`.
+- Net: Clients-tab DWH work goes from *(2 loyalty scans + 6 dashboard scans)* → **one scan**; one fewer
+  round-trip. Clients tab uses stale-while-revalidate cache, so this is the cold-load + revalidate cost.
+
+**Zoho (Leads/Deals):** already batched — `fetchAgentLeads`/`fetchAgentDeals` pull `limit 0, 2000` in
+ONE COQL query, so no change needed there.
+
+**Still the floor / not done here:**
+- The unindexed full seq scan (~250 ms) is unavoidable app-side — a covering index
+  `mart_transaction_line_items (carrier_id, transaction_date) INCLUDE (line_item_fuel_quantity,
+  card_number, transaction_id)` would let it switch to per-carrier range scans (~11k rows vs 1.2M), but
+  the **DWH is a read-only third-party replica — this must be requested from the warehouse owner**, we
+  never migrate it.
+- `SET jit=off` saves ~24–38 ms/query but I did NOT set it globally (dwh.ts) — it could slow the big
+  analytics-agent queries; leaving it as an option.
+- The roster call still goes through servercrm for **live CMP debt**. Could be sourced directly from
+  `dim_company` (fully DWH, 3→1 calls) but that trades live debt for ~3h-stale DWH debt — a product
+  decision, pending the user.
+
+Verify: backend typecheck + lint clean; `data-center-routes.test.ts` 26/26 (mock gained `cycleGallons`);
+frontend typecheck unchanged at 24 pre-existing errors (none in my files; finance/admin WIP). Shipped
+consolidated SQL validated live against the DWH.
+
+## 2026-07-21 — Phase 1 Sales Retention: correct to board
+
+Corrected Phase 1 to match the Sales board (prior attempt-first flow was wrong).
+
+**Backend**
+- Migration `0032`: rename open `1BD_comms_attempt` → `5BD_comms_attempt` (deadline *at* unchanged; next stamp is authoritative).
+- OoR attempts stamp **5 BD** each; log_attempt gated to `p1_out_of_reach` only; attempts 1–4 stay OoR; 5 → Open Pool + Ryan notify.
+- Reached 5 BD expiry → **handoff to Retention** (never Open Pool).
+- Sync closes open non-CITI cases on **any transaction after `createdAt`** (drop “back under threshold”).
+- Deal-owner / Ryan alerts: **inbox + WS only** — no Zoho/SMTP sender in-repo yet; hook documented in `notify.ts`.
+
+**Sales FE**
+- Wizard: **Call → forced stage** (OoR / Reached / Dissatisfied / Vacation); OoR then channel picklist (RC auto on call).
+- Kanban: Working / **Reached** / Out of Reach / Vacation / Exited (Dissatisfied column dropped — jumps to Phase 2).
+- Captions: `5 BD attempt ·`; Reached copy no longer mentions Open Pool.
+
+**Verify:** unit tests for phase1 / deadline-sweep / sync; `pnpm db:migrate` for 0032.
+
+**Out of scope (later):** Open Pool owner-change / 3 BD unclaimed → Retention deep rules; Retention desk / CITI UI.
+
+## 2026-07-21 — Fix: Retention Call shows "No phone on file"
+
+`retention.case_contact` used `getDwhCompanyDetails`, which only read `dim_company.contact_phone`.
+Sales roster / deals use **`deal_phone || contact_phone`** — most carriers only have `deal_phone` filled.
+Updated `getDwhCompanyDetails` to coalesce the same way. Restart API (or wait for reload) and reopen the case.
+
+## 2026-07-21 — Retention Kanban stages + New wizard
+
+- Kanban columns: **New / Reached / Out of Reach / Vacation / Dissatisfied / Closed** (dropped Working + Exited).
+- **New** = call-within-2BD inbox (`p1_new` / `p1_in_progress` / pool assigned).
+- Dissatisfied / Closed stay on the agent board: `my_cases` no longer forces `phase_1_agent`; Retention handoff keeps sales assignee.
+- Modal wizard: New → Call → Stage → per-stage workflow (progress chrome).
+
+## 2026-07-21 — Migration 0033: Sales Agent board columns
+
+- `retention_statuses`: added **`board_column`** + **`sort_order`**; labels match Kanban (New / Reached / OoR / Vacation / Dissatisfied / Closed).
+- `agent_outcome` enum: added **`reached`** (watching) vs `returned` (closed on fuel).
+- Applied locally via `pnpm db:migrate`. Open Reached rows backfilled to `agent_outcome=reached` post-migrate.
+
+## 2026-07-21 — Retention entry exclusions (debtors / pre-swipe / OoB)
+
+**OoB** = Out of Business (CRM: `Closed Lost` / stage text matching out of business).
+
+Sales Agent case scan (`scanRetentionCandidates`) now excludes:
+1. **Debtors** — Billing Mytrion rule via `public.cmp_invoice` (not stale `dim_company.is_debtor`).
+2. **Pre–Card Swiped** (Verification / WEX / funded-never-used) — requires `first_swipe_date`.
+3. **Closed Lost / OoB** — `deal_stage` filter.
+4. **Deactivated** — `is_active = 1` only.
+
+Pure helper: `isRetentionEntryEligible`. UI caption notes the exclusions.
+
+## 2026-07-21 — Phase 1 stage workflows aligned (Reached / Dissatisfied / Vacation)
+
+**Reached:** watch-only (no attempts); hourly sync closes on any fuel after open;
+`5BD_post_contact` expiry → **Open Pool** + Ryan/owner notify (was wrongly Retention).
+Entering Reached clears OoR attempt counter.
+
+**Dissatisfied:** reason list matches board; immediate handoff → Retention (10 BD), not Pool.
+
+**Vacation:** 14d countdown → 2 BD follow-up → Ops confirm (→ New) / deny (→ CITI);
+return-date note field on stage confirm; fuel still auto-closes.
+
+## 2026-07-21 — OoR stage after every attempt + Open Pool Zoho mail
+
+- After each OoR attempt (RC or other), stage picker shows again with **Out of Reach**
+  available (pre-selected); attempt 5 → Open Pool.
+- Open Pool notify: inbox/WS (Ryan + previous owner) **and** best-effort Zoho CRM
+  `send_mail` on the Deal (`RETENTION_NOTIFY_FROM_EMAIL` optional From).
+- Auto-close on any transaction after case open remains in hourly `syncRetentionCases`
+  → `p1_returned` + `closedAt`.
+
+## 2026-07-21 — Retention wizard: RC auto-attempt + stage UX
+
+- **Move to stage** button shows spinner / “Saving…”; optimistic board update before API.
+- **US phone** `formatUsPhone` (+1 (773) 909-6150) prominent in header, call CTA, call-ended banner.
+- **RC auto-log:** New→OoR after a call counts attempt 1 (channel RingCentral); OoR call-end auto-logs (no manual “Log RC” / no note). Retry only on failure.
+- Other channels: note field **red outline** when required (no screenshot).
+- Timeline headlines: `RingCentral attempt → Out of Reach` (etc.).
+
+## 2026-07-21 — RingCentral: silent call lifecycle toasts
+
+Dialing / connected / ended toasts removed from `RingCentralPhone` and dial sites.
+Backend `postRingCentralCallEvent` still runs on every event. UI warnings only for
+**session ended (logout)** and **adapter load failure** / dial-not-ready errors.
+
+## 2026-07-21 — Retention tab UI polish (metrics + kanban chrome)
+
+External CRM kanban patterns (HubSpot-style headline KPIs, column count + value aggregates,
+color-coded stage headers) applied to Sales Retention without leaving the Sales design system
+(Rajdhani / JetBrains Mono / cyan accent).
+
+- `retentionBoardStats()` — active / overdue / gal-at-risk / high-freq + per-column gallons.
+- `RetentionBoardUi.tsx` — hero, 4-up metric strip, column heads (count + gal), cards, empty.
+- Cases / Open Pool / RetentionTab wired to `.ss-ret-*` chrome; tab badges for active + pool.
+- Column hints + left rail colors align with stage SLA copy (2 BD / 5 BD / OoR attempts).
+
+## 2026-07-21 — Inbox live toast on every Sales tab
+
+Shell `useSidebarBadges` already held the ServerCRM WS; hardened so inbox push works off-Inbox:
+- Toast title fixed to **New inbox message** (subject as body) so subjects with “error” don’t
+  render as error-tone; fires for the effective user on any tab.
+- `watchKey` reconnects the shell socket on View-as user change; refs avoid stale owner match.
+- `inboxLiveBus.publishInboxLive` fans out to InboxTab + Home preview lists (shell still owns toast).
+
+## 2026-07-21 — Fix: Home goal/streak stuck at 0
+
+Home called `getAppStats()` with **no** `zoho_user_id`, unlike Deals/Desk. Failures / empty
+owner resolution rendered as silent zeros (no error UI). Backend COQL on
+`Deals.Application_Date` (application filled) was already correct — verified live for Daniel
+(29 apps / 90d; week + best non-zero).
+
+- FE always passes session / act-as `zoho_user_id`; normalizes day counts; shows load/error on
+  goal bar + streak strip.
+- Route logs owner + totals at debug.
+
+## 2026-07-21 — Retention: disable LLM weekly-scan (Sales first)
+
+- Parked `automation.retention.weekly-scan` in `DISABLED_JOB_QUEUES`: no cron, no Admin
+  trigger, no automation worker. Boot unschedules any leftover pg-boss cron.
+- Keep deterministic Sales jobs: `case-sync` (hourly) + `deadline-sweep` (15m).
+- Re-enable LLM weekly scan only after Sales Mytrion retention is solid, then CS Mytrion.
+
+## 2026-07-21 — RingCentral: suppress false “session ended” toast
+
+- Embeddable emits `loggedIn:false` while restoring a persisted session after refresh.
+- Only emit `logout` when prior state was signed-in; reset login cache on adapter teardown;
+  debounce the toast (~2.5s) so a quick re-login cancels it.
+
+## 2026-07-21 — RingCentral: Sales + CS only, pointer cursor
+
+- Softphone moved to `WorkerLayout`, gated to `/main/salesmytrion` + `/main/csmytrion`
+  (torn down on Billing/Finance/Admin/picker).
+- Hover cursor: host `#rc-widget-adapter-frame { cursor: pointer }` + Embeddable
+  `stylesUri` as a `data:text/css` URI (`ringcentralEmbedStyles.ts`) — localhost file
+  URLs are blocked by Chrome Private Network Access from `apps.ringcentral.com`.
 
 - Presentational: AnalyticsKpiGrid, AnalyticsTrendChart, AnalyticsBreakdown, AnalyticsLeaderboard,
   AnalyticsDimensionTabs, DeltaPill
@@ -2140,5 +3944,736 @@ Import from `@/components/analytics`.
 `esbuild: set this to true or false` (no packages / invalid allowBuilds) →
 `ERROR packages field missing or empty` on `pnpm -C apps/mytrion-crm install`.
 
-Fix: valid `pnpm-workspace.yaml` with `allowBuilds.esbuild: true` (pnpm 11 lifecycle
-approval lives here). Root + CRM node_modules reinstalled; vite works again.
+Product: CS (not deal-owner email) approves Sales Open Pool claims; Phase 2 desk + CITI Folder
+in Customer Service Mytrion (distinct from Citifuel Clients).
+
+### Backend
+- `requestClaim` → `p1_pool_claim_pending` + `1BD_claim_approve` (no instant assign).
+- CS `approveClaim` / `declineClaim` (dept `customer-service` or admin); Sales cannot approve.
+- Approve / 1BD auto: Zoho Deal Owner required; Contact + Account Owner best-effort
+  (`src/modules/retention/zohoOwnership.ts`).
+- Touchpoints: `retention.cs_claims_*`, `retention.cs_cases*`, `retention.cs_citi_*`.
+- Phase 2 outcomes in `phase2.ts` + `retentionCaseCsRepo`.
+- Profile seed: Customer Retention → CS Mytrion; migration `0035`.
+
+### Frontend
+- Sales Open Pool: **Request claim** + Pending CS row state.
+- CS Shell nav: Retention Cases / Open Pool Claims (badge + realtime) / CITI Folder.
+
+### Smoke checklist
+1. Sales Open Pool → Request claim → row shows Pending CS; case leaves claimable pool.
+2. CS Open Pool Claims → Approve → claimant owns Deal (+ Contact/Account best-effort); case
+   `p1_pool_assigned`.
+3. CS Reject → back to `p1_open_pool`.
+4. Leave pending 1 BD → sweeper auto-approves with Zoho ownership.
+5. CS Retention Cases → claim / log attempt / Saved|Refused|OoB|No response|CITI.
+6. CS CITI Folder → Confirm → Export CSV (Assignment_Stage=CITI) → Mark sent → `p3_closed`.
+7. Customer Retention profile lands on CS Mytrion after migrate / profile-defaults seed.
+
+## 2026-07-21 — Data Center Money Codes (zoho-octane parity)
+
+Reference: `zoho-octane` self-service Records → Money Codes.
+
+**Correction:** list/void are **not** DWH touchpoints — the ledger is our Ops DB table
+`money_code_requests` (ServerCRM draw writes the same table via `MYTRION_OPS_DB_INTERNAL`).
+
+- Migration `0034`: draw-model columns (company_name, batch_id, unit_number, USED, …);
+  drop the old ACTIVE unique arbiter.
+- Local touchpoints: `money_code.list` (SQL, own-only) + `money_code.void` (own-only check
+  on Ops DB, then ServerCRM EFS-safe void which writes back to the same table).
+- Draw/preview stay `dwh.money_code` / `dwh.money_code_draw` (live EFS).
+- FE: `dataCenterMoneyCodes.tsx` — never shows `efs_money_code`.
+
+## 2026-07-21 — Sales Mytrion go-live hardening (feature/SalesProd, 11 commits)
+
+**P0 root cause — Clients modal Cards/Activity 403 for every non-admin:** the Clients list
+moved to the DWH roster (9d6f270, id-suffix + name-fallback ownership) but `assertCarrierOwned`
+still asked servercrm by-agent with the FULL session zoho id (id spaces diverge). Gate now
+probes the SAME `buildOwnedCte` arms via `dwhClientRoster.isCarrierOwned` (+60s cache,
+in-flight coalescing; DWH outage = 502 DWH_ERROR, never RBACError). Keep gate + list on the
+shared ownership path — a second authority is how this P0 happened.
+
+**Security:** `/carrier-users/dwh-cards` + `/carrier-registrations/for-carrier` returned card
+numbers / owner PII for ANY carrier to ANY signed-in worker — now `assertCarrierOwned`-gated
+(role 'admin' skip covers the API-key system identity).
+
+**RBAC go-live contract:** ADMIN_PROFILE_MARKERS is now EXACT-match, default
+`administrator,ceo` (substring 'manager' made "Sales Manager" a silent full admin) — check the
+Render env group doesn't still pin the old value. Profile defaults seed at boot (fail-open,
+loud log; GET /profiles self-heals). Hard rule: 1 accessible Mytrion ⇒ always auto-enter, no
+picker, no Switch link; single-Mytrion grants persist home on write. Touchpoint `departments`
+is REQUIRED (compile-time fail-closed; 51 entries tagged `SALES`). Contract pinned by
+tests/unit/sales-golive-contract.test.ts + mytrion-access-routes.test.ts + client
+Landing/TopBar tests.
+
+**Live events:** WS ownerId vs session id can differ by org prefix — owner matching is now
+suffix-normalized (`redesign/zohoIds.ts`), fixing silently-dropped inbox toasts (+ retention).
+
+**Perf:** parked-Tickets badge no longer pages the whole Desk set (≤20 req/load) —
+`TICKETS_ENABLED` gates it; `inbox.list` deduped 3→1 POSTs (`fetchDedupe.ts`, 30s TTL,
+invalidated on WS event/refresh/delete; cache writes identity-guarded against the
+invalidation race); `activity.agent` deduped on Home.
+
+**RingCentral:** rc-*-notify / [RingCentralExtensions] console spam is 100% vendor-bundle
+(zero hits in our code/history) — `rcConsoleFilter.ts` drops those exact patterns
+(log/debug/info only), installed just before adapter injection. Iframe-origin krisp lines
+can't be filtered (cross-origin). Prod auth = per-agent OAuth (no BROWSER_CREDS_ACK).
+
+**Known issues NOT from this work:** ~24 pre-existing TS errors committed with the
+SalesMytrionFull merge break the app's `tsc` build gate (vite build itself is clean — the
+served `app/` bundle was rebuilt from a clean HEAD worktree); the checkout also carries
+concurrent uncommitted retention/CS WIP with ~28 failing tests (carrier-mini-app, cs-routes,
+touchpoints catalog count 81→106) — left untouched, scoped all commits by path.
+
+**Deploy checklist:** confirm Render env doesn't override ADMIN_PROFILE_MARKERS; verify
+Daniel Brown (Sales Agent) lands on /main/salesmytrion, gets Forbidden on /main/billingmytrion,
+403 on admin/finance APIs; Clients modal Cards+Activity 200 under View-as; reconcile each
+agent's Zoho display name vs DWH agent name (all-zeros Home snapshot = mismatch).
+
+## 2026-07-21 — Retention Closed green + contact phone at sync
+
+- **Kanban Closed** column accent → `var(--ok)` green.
+- **contact_phone** on `retention_cases` (migration 0037); DWH scan selects
+  deal_phone/contact_phone; sync writes on create + refresh.
+- Modal uses denormalized phone instantly; skeleton loader while resolving;
+  lazy `retention.case_contact` only for older null rows.
+
+## 2026-07-21 — Sales Mytrion brand / Retention UX
+
+- **Brand:** rocket chip removed → large **MYTRION** + gradient **Sales** wordmark.
+- **Retention nav icon:** Handshake → RefreshCw (win-back / re-engage).
+- **Loader:** sales `hue` rocket→`accent`; `data-mytrion=sales` accents match `.ss-root`
+  (cyan/violet dark, blue light) — no longer wizard `--rocket` pink.
+- **Kanban cards:** left rail via inset shadow (fixes double border with column frame).
+- **New stage modal:** hide Timeline; inactivity full-width callout + meter; remove
+  “Continue to choose stage” — call only, stage after call ends.
+
+## 2026-07-21 — CS enterprise soft-pass (gold kept, chroma down)
+
+Softened CS Mytrion for all-day ops without abandoning gold:
+- **Tokens:** light `#C9A227` / dark `#D4B84A` (was neon `#FFD60A` / bright `#EAB308`);
+  quieter softs/glows; neutral slate borders (no cool-blue clash); calmer shadows.
+- **Chrome:** solid (not neon-gradient) primary buttons; soft avatars/badges; inset
+  active-nav bar; muted App IDs; quieter home hero / card hover / focus rings.
+- **Stage hues:** slightly desaturated picklist/dot palette.
+- Loader/`data-mytrion` accents aligned.
+
+## 2026-07-21 — CS brand text, Deal-owner agent, hide copilot
+
+- **Brand:** removed sidebar icon; larger MY/TRION wordmark; “Customer Service” gold
+  gradient text (`background-clip`).
+- **Agent (Deal):** map `_dealOwner` only (widget parity) — never Application `Owner`; empty →
+  `not assigned`.
+- **Copilot:** unmounted `CsCopilot` from Shell for now (file kept).
+
+## 2026-07-21 — CS apps icon + Applications load speed
+
+- **Brand / copilot icon:** sparkles mark → headset (Shell) + chat bubble (CsCopilot FAB/avatars).
+- **Apps/Clients speed:** FE + `cs.applications.list` `perPage` raised **200 → 2000** (Zoho COQL
+  max/call — fewer Deluge round-trips if the function honors `perPage`). 90s client TTL cache on
+  `loadApplications` (bypass via Refresh / invalidate after save). `MAX_COQL_ROWS` → 2000 in
+  `zohoCrm.ts` + tool docs.
+- **Note:** Deluge body for `mytrionGetApplications` lives in Zoho — if it still hardcodes
+  `LIMIT 200` loops, update that function to `LIMIT 2000` (or pass-through `perPage`) for full gain.
+
+## 2026-07-21 — CS Mytrion: CSMYTRION gold redesign (real data only)
+
+Applied `/Users/user/Desktop/CSMYTRION` visual IA to live Customer Service Mytrion:
+
+- **Tokens:** `.cs-root` remapped from royal blue → design gold (`#FFD60A` dark / `#EAB308`
+  light); surfaces/borders/shadows match design; fonts Rajdhani + Instrument Sans + JetBrains Mono.
+- **Loader:** `--yellow` + `[data-mytrion='customer-service']` accents aligned to same gold so
+  `MytrionGuard` Suspense splash matches in-app theme.
+- **Shell:** gold brand mark, MY/TRION wordmark, nav icons, gold claims badge, theme toggle + user card.
+- **Home:** design layout with live `loadHome` + quick-action navigation; **omitted** streak,
+  daily goal, CSAT, fake live-queue inject, fake leaderboard.
+- **Panels:** Retention master-detail (340px list), Apps/Claims/CITI/Citifuel/Analytics/Copilot
+  chrome on gold tokens; APIs unchanged. Data Center / Inbox / Service Center stay Soon.
+- No mock datasets added.
+
+### Enterprise Agentic AI Metrics (2026-07-21)
+
+Applied Agentic AI evaluation skills for coding agents (`.agents/skills/agentic-eval-metrics/SKILL.md`).
+- **Tool Use (Gorilla LLM standard):** Added instructions to evaluate exact AST-based JSON argument match, API resolution rates, and hallucination rates for tools like Zoho/Composio.
+- **Memory/State (MemGPT standard):** Defined checks for Context Paging Efficiency and State Recall Precision across `langgraph-checkpoint-postgres`.
+- **Agentic RAG:** Required Groundedness/Faithfulness and explicit Retrieval Decision Rate testing.
+- **Orchestrator Execution:** Established targets for tracking Ping-Pong Rates and TTFT in `evalLive.ts`.
+
+## 2026-07-21 (pm) — Sales Home fixes, call logging, post-call Lead wizard (feature/SalesProd)
+
+**Home (HomeTab/salesData/streakStore):** workday bar now 10 AM–7 PM NY via
+WORKDAY_START_HOUR/END_HOUR constants (clock was already NY). Today's Snapshot refresh now
+uses `.refresh()` (spinner + cache bypass) with a real stamped "Updated" time — the fetch was
+always working; the bug was `.reload()` leaving `refreshing` false. Activity block hidden and
+its range `activity.agent` fetch dropped (kept the cheap 'today' load for the Tasks-Done cell).
+Best Day tile now names the day (streakStore.topDayEntry).
+
+**Call logging (mytrion_calls):** new table (migration 0036, hand-authored — drizzle-kit
+generate is blocked by the pre-existing 0022/0023 snapshot collision; 0025+ are all
+hand-written) + mytrionCallRepo. The /ringcentral/call-events handler inserts one row per
+finished OUTBOUND call (best-effort): caller from the zoho: principal, phone=callee, duration,
+picked_up/missed derived (no explicit RC flag), source from the dial context
+(retention_case → lead → deal precedence). retentionCaseId now flows to the backend (added to
+payload + callEventSchema; emit no longer strips it). Verified migration green on a throwaway DB.
+
+**Post-call Lead wizard (LeadCallWizard):** shell-level host subscribes to call events; on a
+finished outbound call tagged with a leadId it opens a FORCED modal (ESC/backdrop blocked)
+requiring Status (+ dependent reason: Unqualified→Unqualified_Reason, Not Interested→
+Not_Interested_Reason) before it closes; optional note → Description. Writes via the existing
+owner-scoped PATCH. **IMPORTANT: the Zoho field is `Status`, not `Lead_Status` (no such field).
+Zoho enforces NO picklist dependency — the Status→reason pairing is UI logic.** Backend
+leadEditBody whitelist extended with Status + the two reasons (z.enums of the verbatim live
+picklist values). Deals only log (no wizard).
+
+**Data Center / Manage:** Money Codes sub-tab got its own Refresh button (it owns its loader).
+Manage panel distinguishes DWH outage (502/503) from a real "not your client" 403 in the
+error copy; POST /carrier-invitations now owner-gated for non-admins (matches the reads).
+
+**Test baseline:** 4 unit files fail from concurrent in-flight retention/CS/finance WIP
+(carrier-mini-app driver-registration, cs-routes, touchpoints-catalog/routes catalog SIZE
+51→49 + finance-filter shape) — all WIP-owned, none touch this session's areas. This session's
+suites (ringcentral-call-log, data-center-routes, LeadCallWizard, sales redesign) are green.
+App `tsc` build gate still blocked by ~24 pre-existing finance/admin TS errors — bundle built
+via vite in a clean worktree as before.
+
+## 2026-07-21 (evening) — Fix retention touchpoint 500s (circular ESM import)
+
+`retention.my_cases` / `retention.pool_list` 500'd because `tsx watch` crashed on reload:
+`deadlineSweep` statically imported `retentionPoolClaimRepo`, which imports `notify`, while
+`deadlineSweep` also imports `notify` — TDZ/partial exports →
+`does not provide an export named 'notifyClaimRequestToCs'`. Broke the cycle by
+dynamic-importing `retentionPoolClaimRepo` only inside the claim-approve branch of
+`sweepRetentionDeadlines`. API restarted cleanly; routes return 401 without key (not 500).
+
+## 2026-07-21 (evening) — Retention stage timers on Sales board
+
+Per-stage countdown on Kanban/list/detail for the next deadline event:
+- New: 2 BD → Retention; OoR: 5×1 BD attempts (5th → Open Pool); Reached: 5 BD fuel watch → Pool;
+  Vacation: 14d calendar; Dissatisfied: no timer + card locked for Sales.
+- FE: `retentionTimers.ts` (BD-aware remain) + `RetentionStageTimer` meter; board clock ticks 30s.
+- Backend: OoR stamp back to `1BD_comms_attempt` (migration 0038 renames open `5BD_*` types).
+Open Pool UX deferred to next discussion.
+
+## 2026-07-21 (late) — Sales Phase + Open Pool closeout
+
+Sales Phase escalation is treated as covered (status machine already matched RetentionDocs):
+
+| Path | Result |
+|------|--------|
+| OoR ×5 attempts | → Open Pool + notify |
+| Reached ×5 BD no fuel | → Open Pool + notify |
+| New ×2 BD no action | → Retention (not Pool) |
+| Dissatisfied + reason | → Retention (not Pool) |
+
+**Notify gap closed:** `notifyOpenPoolOpened` / Zoho mail take `reason:
+out_of_reach | reached | reclaim | phase2` so copy is no longer always “5 OoR attempts”.
+Call sites: `logCommsAttempt`, deadlineSweep (Reached vs reclaim), `record_outcome`, Phase 2 CS.
+Touchpoint title for `retention.log_attempt` → “1 BD each”. Unit test
+`retention-open-pool-notify.test.ts` covers reason labels.
+
+**Env (Ryan + From):** `.env.example` clarified. Local `.env` currently has
+`RETENTION_OPEN_POOL_NOTIFY_ZOHO_USER_ID` and `RETENTION_NOTIFY_FROM_EMAIL` **empty** —
+inbox/mail to Ryan will skip until set (previous owner still notified when present;
+pool WS broadcast still fires). Set Ryan’s Zoho user id + allowed From in local/prod;
+no hardcoded personal email in source.
+
+**Deferred:** Open Pool claim UX polish, Phase 2/3 / CITI product, Vacation diagram gap,
+Retention-handoff emails (docs don’t require them for New/Dissatisfied).
+
+## 2026-07-21 (late) — Open Pool email via Zapier (not Zoho send_mail)
+
+`RETENTION_OPEN_POOL_NOTIFY_ZOHO_USER_ID` / `RETENTION_NOTIFY_FROM_EMAIL` are set for
+ops. App path stays inbox + realtime only; removed Zoho CRM `send_mail` from
+`notifyOpenPoolOpened` so Zapier owns outbound Ryan/owner email (avoids double-send).
+
+## 2026-07-22 — Sales Open Pool (Mytrion) ownership model
+
+Product: Open Pool = other agents may request assignment of a retention case /
+underlying Zoho Deal. CS approve transfers Deal + Contact + Account Owner to the
+claimant. Former owner sees the case locked on Cases (not in Open Pool widget).
+
+Implemented:
+- DWH scan joins `stg_zoho_deals` → `zohoDealId` on create + sync backfill
+  (`dwhRetention` / `retentionSync`).
+- `listOpenPool` excludes `pool_owner = viewer`; `pool_list` passes exclude.
+- `listForAgent` includes former owner's `p1_open_pool` / claim-pending rows
+  (Kanban Closed, locked badge — not actionable).
+- Claim approve **requires** `zoho_deal_id` then `transferDealOwnershipToClaimant`
+  (fail closed if missing).
+- PoolTab copy + client-side filter; Cases locked card for pooled former deals.
+
+## 2026-07-22 — Retention deal_id from octane.agent_deals
+
+Deal fetch for retention cases uses `octane.agent_deals` (`id` → `zoho_deal_id`),
+not `stg_zoho_deals`. Distinct on carrier_id, newest `appfilldate` then id.
+
+## 2026-07-22 — Own Open Pool deals leave Cases board
+
+Former-owner pooled cases are not listed on `retention.my_cases` (assignee
+cleared on pool entry). They disappear from the Kanban instead of a locked card.
+
+## 2026-07-22 — Open Pool claim_requests + unified auto-close
+
+Open Pool is **not** a fourth phase — it is Phase 1 status `p1_open_pool` /
+`p1_pool_claim_pending` (Processing). Sales Open Pool tab is a filtered view.
+
+**Schema:** `retention_claim_requests` (migration `0039`) — durable CS queue +
+audit; partial unique one `requested` row per case. Processing lock still on
+the case (`pending_claimant_zoho_user_id` + `p1_pool_claim_pending`).
+
+**Claim flow:**
+- Sales `pool_claim` requires `reason` → insert request + Processing + 1 BD
+  auto-approve deadline (fallback sweeper unchanged; same finalize as CS Approve).
+- CS Reject → **DELETE** request row; case → `p1_open_pool`.
+- CS Approve / auto-approve → Zoho Deal/Contact/Account Owner → claimant;
+  case → **`p1_new`** + `2BD_agent_action` (Kanban New); bump `assignment_count`.
+
+**Sync:** any new post-create transaction closes **all** open phases including
+CITI (`p1_returned`); open claim requests deleted so Processing cannot stick.
+
+**UI:** PoolTab — no Owner column; Available/Processing; reason modal (row +
+bulk); live refresh on claim WS events. ClaimsPanel shows requester + reason.
+
+## 2026-07-22 — Open Pool 3 BD unclaimed + max-3 → CITI
+
+**Unclaimed Open Pool:** every entry via `enterOpenPool` (Sales OoR×5 / Reached
+5BD, Phase 2 `no_response`, CS reject restamp) stamps `3BD_pool_claim`.
+`automation.retention.deadline-sweep` (cron `*/15`) applies overdue rows:
+unclaimed → **Retention** (10 BD); if `assignment_count ≥ 3` → **CITI** (not
+Retention). Processing (`p1_pool_claim_pending`) uses 1 BD auto-approve instead;
+reject restores a fresh 3 BD claim window.
+
+**Max 3 agents:** `enterOpenPool` short-circuits to CITI when already at cap.
+2BD New/in-progress expiry with `assignment_count ≥ 3` also → CITI (3rd agent
+failed their window). Terminal destinations remain Closed (returned / outcomes)
+or CITI.
+
+**Load:** sweeper is a bounded indexed query (`closed_at IS NULL` +
+`current_deadline_at < now`, limit ≤ 500) every 15 minutes — fine for low case
+volume; no per-case jobs. Case-sync is hourly + on-demand.
+
+## 2026-07-22 — CS Retention desk + RoundRobin + CITI Closed Lost
+
+**Claims:** Approve/Reject hardened toasts; claim-approved notify says **2 BD**.
+
+**Phase 2 handoff:** clears Sales assignee; RoundRobin from
+`RETENTION_CS_ROUND_ROBIN_ZOHO_USER_IDS` preferring Zoho `Isonline`; assigns
+Ops case as `p2_working` + soft Zoho Deal/Contact/Account Owner transfer.
+Cursor table `retention_rr_cursors` (migration `0040`).
+
+**10BD Retention:** no txn → **Open Pool** (CITI if `assignment_count ≥ 3`).
+
+**CITI entry:** Deal API field `Stage` = `Closed Lost` (org picklist; not bare
+"Lost"). Export still sets `Assignment_Stage=CITI`.
+
+**Sales lock:** Phase 2 / CITI hidden from `my_cases` open board; FE
+`isSalesLocked`; Phase 1 writes reject wrong phase. CS CasesPanel shows agent,
+phase/status, SLA, timeline via `caseGet`.
+
+## 2026-07-22 — Sales tab go-live sign-off (Data Center / Create / Carriers / Automation)
+
+Four-area assessment (workflow) + fixes on feature/SalesProd:
+- **Data Center P1 (was FAIL → now GTG):** admin View-as → Clients returned 0 for any agent
+  whose session id isn't DWH-aligned — the route dropped the display-name arm when targeting
+  another agent (only appeared to work for id-aligned accounts like Daniel). Fixed: the
+  targetingOther branch resolves the TARGET's name via resolveActAsTarget so buildOwnedCte gets
+  the id-first/name-fallback pair. Empty-state copy no longer says "match your search" with no
+  search term. (dataCenter.routes.ts, RecordsTab.tsx, +test.)
+- **Create:** salutation ("Title") was collected + passed (leads.create schema .passthrough) but
+  dropped in createLead → now written to Zoho Salutation. AttachZone enforces the advertised
+  file types (accept attr + take() allowlist; drag/paste bypassed accept). readMultipart returns
+  a clean 413 on oversize instead of a 500. All create paths verified wired + schema-validate
+  green via salesPanelSmoke. A real create/attachment WRITE test should be run in a controlled
+  env (avoid polluting live Zoho/Desk).
+- **Carriers:** widened root max-width 860→1180 (fills Shell's wrapper; NOT full-bleed — no
+  internal scroll container). Failed Create-Lead is now a "Failed — retry" button (was stuck
+  until a full re-search). Functionality PASS.
+- **Automation:** all 22 self-service actions are FULLY WIRED (no stubs / coming-soon / missing
+  touchpoints; params match; success logs via logAutomation). NOT code-fixed — governance for
+  the user to decide: (1) write-class touchpoints are invokable by non-admin sales (dispatcher
+  admin-gates only 'destructive', behind FF_TOUCHPOINT_DESTRUCTIVE_SALES which defaults ON) —
+  intentional for the self-service panel but deviates from CLAUDE.md rule #7; (2) IDOR:
+  browser.close_application/boca (by appId) and sales_mytrion.invoice_signed_url (by invoiceId)
+  have NO ownership gate — an agent can act on another's app/invoice; recommend the same
+  assertCarrierOwned-style gate as the carrier routes.
+
+## 2026-07-22 — CS access Admin-only + RR pool + OoB Closed Lost
+
+**CS Mytrion access:** Standard profile seed no longer grants CS; legacy
+department substring cannot open CS; `reconcileStandardNoCsGrant` clears
+historical Standard→CS defaults on seed. FE static rule: only
+`Customer Retention` (+ admin bypass). Grant CS via Mytrion Admin Profile
+Defaults / per-user override.
+
+**RoundRobin `.env`:** Manal, Ahsan, Zara, Layla, Charlotte, Isaac Zoho ids
+in `RETENTION_CS_ROUND_ROBIN_ZOHO_USER_IDS` (.env + .env.example). Restart
+API to pick up.
+
+**Out of Business (CS desk):** `p2_out_of_business` now best-effort sets Zoho
+Deal `Stage=Closed Lost` (same as CITI exclusion from future retention).
+
+## 2026-07-22 — Admin grants for Retention RoundRobin pool
+
+Per-user `worker_mytrion_access` overrides for CS Mytrion (home CS) on:
+Manal Alqassimi, Ahsan Ahmed, Zara Ashley, Layla Mei, Charlotte Birmingham,
+Isaac Leo. Standard profile default remains empty (no CS auto-grant).
+Cache invalidated per user after upsert.
+
+## 2026-07-22 — Spanish desk + CS caps + pool WS harden
+
+**Spanish → Jean Paul:** DWH `main_language` (prefer) else `dim_company.nationality=Spanish`
+→ `retention_cases.is_spanish_desk` / `preferred_language` (migration `0041`). Handoff
+bypasses RR to `RETENTION_CS_SPANISH_ZOHO_USER_ID` (Jean Paul `6227679000065094200`);
+falls through to RR if at daily cap or env unset. CS Admin grant applied for Jean Paul.
+
+**Caps:** 40 deals/day (claim/RR), 15% portfolio `p2_offer_pending` (`mark_pending`),
+two-call rule (listen + solution notes) before Saved/Refused. CS CasesPanel +
+`retention.cs_desk_quota`.
+
+**Realtime:** claim approved/declined broadcast on `retention:pool`; Sales
+`useRetentionRealtime` passes claim_* events for peer Pool refresh.
+
+**Deferred:** pre-entry funded alert, Zapier email, KPI/MOR components.
+### 2026-07-21 — Notifications Phase-2: T2 receipt poller (T1 deferred)
+
+**T1 (limit poller) DEFERRED** — per-card daily gallon (ULSD) limit is readable NOWHERE:
+servercrm getCards mart = {card_number, status} only; `/cards/{c}/{card}/efs` = status/unit/driver
+(no limit); no GET for card limits (setCardLimits is write-only, GETs 404). DWH `dim_card` has no
+gallon limit; all DWH "limit" columns are carrier-level `credit_limit` ($ credit line, not per-card
+gallons). Usage gallons exist (`fuel_quantity`/`line_item_fuel_quantity`) but no cap to compare
+against. T1 needs either a configured threshold (env, v1) or a new servercrm EFS-policy read
+endpoint — parked until owner decides.
+
+**T2 (receipt poller) DONE** — `pollers.ts runReceiptPoll`:
+- Source `listDwhTransactions({carrierId, range:'day', limit:200})` (DWH fast path, `t.*`).
+- Line items collapsed → one receipt per `transaction_id` (sum `line_item_fuel_quantity`).
+- Watermark `receipt:<carrierId>` = last `transaction_date`; FIRST pass baseline-only (no blast).
+  Re-scan safe: dedupe_key `receipt:<carrier>:<txnId>` (outbox UNIQUE).
+- Payload: last6, gallons, location, city, state, cardId — **NO price** (driver rule). cardId via
+  findDwhCardByNumber (cached per card), owner hears w/o it, driver copy fail-closed.
+- Backfill guard: RECEIPT_PER_CARD_CAP=20/card/run.
+- Wired into the SINGLE `notification.poll` cron (sequential after runCardStatusPoll — no new job).
+- Mini-app: `notifToInbox` 'receipt' case + `inbox.ntfReceipt.title/body` in 4 langs (en/ru/uz/es).
+- No new env (reuses NOTIFY_POLL_CARRIERS), no migration (reuses `mini_app_notification_state`).
+- Checklist: tsc root+mini-app 0, eslint 0, 762 tests pass (no regression), i18n 4 til. Test on Mac.
+
+### 2026-07-21 — Notifications Phase-2 roadmap decision: money code OFF for MVP
+
+**Decision (owner):** for the MVP, the mini-app money code stays DISABLED for company owners.
+- Enforced by `FF_MINIAPP_MONEY_CODE_ENABLED` — ship default `0` (env.ts + .env.example); local .env
+  flipped 1->0 to match. Backend `requireMoneyCodeEnabled()` -> `MINIAPP_MONEY_CODE_DISABLED`; the
+  mini-app already degrades to a disabled sheet ("Money codes are not enabled here yet. Please send
+  a request instead.") — no dead screen. Verified live.
+
+**Phase-2 status after this session:**
+- T1 limit poller — DEFERRED. Per-card daily gallon limit is readable nowhere (servercrm getCards /
+  `/efs` / no limits GET; DWH `dim_card` no gallon cap, only carrier `credit_limit` $). Needs a
+  configured threshold (env) or a new servercrm EFS-policy read endpoint.
+- T2 receipt poller — DONE (runReceiptPoll + mini-app receipt row, i18n 4 lang).
+- T3 weekly statement — SKIPPED for now (unblocked when wanted: buildTxnReport + sendDocument exist).
+- T4 driver money code + owner confirm — DEFERRED (money code off for MVP). When revived, resolve
+  the OWNER-CONFIRM mechanism first: Telegram inline buttons need bot `callback_query`, but the
+  carrier bot token is polled by agent-gateway (`getUpdates`) and `setWebhook` disables polling —
+  so either a mini-app approve endpoint (no webhook, recommended) or a separate approval bot token.
+
+**Migration numbering:** next hand-written migration is 0041+ (0031-0040 used after the build merge).
+
+### 2026-07-21 — Support-bot PROD PARITY: hamma servis ulandi (money code ham)
+
+Owner qarori: prod uchun to'liq parity. /v1/support-bot yangi endpointlar (hammasi
+resolveCaller RBAC + audit + rate ostida): service-request (butun ticket oilasi, billing-form
+ham), tracking, money-code/draw (FF gate; QIYMAT guruhga emas — owner'ning shaxsiy Octane-bot
+chatiga DM), card-action (activate/deactivate, last-6 bilan; resolveCardByLast6 — 0 match=404,
+ko'p match=409 "last 6 bering"), card-limits (MINIAPP_LIMIT_CHANGE_MAX cap), card-info
+(driver o'z kartasi cardLast6'siz; driverName owner-only), balance (raqamlar DM'ga),
+manual-code (to'liq PAN faqat DM'ga). Gateway: 8 yangi tool + allowedTools + prompt
+(har yozuvga bir-qatorlik confirm; sezgir narsa guruhga chiqmaydi).
+Test checklist (guruhda): owner money code (flag on) → DM'da kod; "4753 ni o'chir" →
+ambiguous bo'lsa last-6 so'raydi; driver unit change o'z kartasiga; balance → DM;
+manual code → DM; billing form → ticket id.
+
+### 2026-07-21 — Gateway: buttons-first UX (Telegram inline keyboard qatlami)
+
+Analitika asosi: klient so'rovlari qisqa/chala ("kod", "gtg?") — eng qulay UX yozish emas,
+BOSISH. Qo'shildi: telegram.ts sendButtons (inline_keyboard, ≤8 tugma 2 tadan qatorda) +
+answerCallback; getUpdates endi callback_query ham oladi; index.ts tap'ni sessiyaga
+"[button tap from <name> (id N)]: <data>" qilib uzatadi (id Telegram'dan — construction
+bo'yicha sender-verified), registered-gate tap'larga ham; tools.ts telegram_buttons tool +
+allowedTools. Prompt "Buttons-first UX": har yozuv-confirm faqat tugma (✅ Ha/❌ Yo'q),
+bo'sh tag/help/menu → rolga mos, talab-tartibli menyu (owner: money code birinchi — 2251;
+driver: kartam holati birinchi), tanlovlar (davr, ambiguous karta, ticket turi) tugmalarda.
+Test: "@bot menu" → tugmali menyu; money code oqimi to'liq tap bilan; "4753 o'chir" →
+Ha/Yo'q tugmalari.
+
+---
+
+## 2026-07-21 — Manager role (owner-equivalent) for carrier mini-app + CRM
+
+- **Why:** big fleets have managers who work with drivers and need company-owner-level access in
+  Octane — but they aren't the account owner. Added a third `profile` value **`manager`** that is
+  owner-EQUIVALENT in every capability gate; differs only in provenance (invited, not the owner) and
+  display. Product decisions (confirmed): full owner-teng access (incl. finances); owner + manager +
+  admin can all issue manager links; a manager can also issue driver links.
+- **No migration.** `profile` is a plain `text` column in both `carrier_invitations` and
+  `registered_mini_app_companies` (no pg enum / CHECK), so widening the TS union `'owner' | 'driver'`
+  → `'owner' | 'manager' | 'driver'` is a code-only change.
+- **Single source of "manager == owner":** `miniAppAuth.isOwnerLike(profile)` = owner || manager.
+  `requireRegisteredOwner` / `requireRegisteredOwnerUser` key off it; `telegramCtx` maps both to the
+  `fleet_manager` role. `serviceRequestAllows` normalizes manager→owner (per-service role lists stay
+  owner/driver). `inviteService` pins `companyType='fleet-manager'` for a manager invite so a DWH
+  hiccup can't null it and lock the manager out of the fleet gate (fail-closed).
+- **Notifications + news need no change:** dispatcher (`service.ts`) and news (`news.ts`) already
+  collapse `profile === 'driver' ? 'driver' : 'owner'`, so a manager inherits owner-targeted
+  deliveries automatically. Registry roles stay owner/driver (routing role, not registration profile).
+- **New endpoint:** `POST /carrier/mini-app/manager-invites` (gated by `requireRegisteredOwner`, so
+  owner OR manager; carrier bound from the caller's own registration, never the body; ttl 48h).
+- **Mini-app FE:** `isOwner` is now owner-LIKE (owner||manager) and drives the whole owner UI; added
+  `isManager` for copy that must distinguish. Manager-invite affordance sits at the top of the fleet
+  screen (fleet-manager only — matches the backend gate): generate → reveal link → copy/regenerate.
+  Confirm/success screens + i18n (EN/RU/UZ/ES) gained manager strings.
+- **CRM admin:** `CarrierUserForm` account-type toggle gained a Manager option (treated owner-like:
+  carrier tie, no card — one logic change: `isOwner = !isDriver`). `CarrierInvitations` list labels
+  manager invites. **Registered Companies screen (per follow-up):** managers now render as their own
+  tier (Manager pill, revocable — revoke was already profile-agnostic at the API); added **status
+  filter chips** (All / Active / Revoked with counts) since revoked accounts accumulate and clutter
+  the roster.
+- **Tests:** +4 in `carrier-mini-app.test.ts` (manager gets owner-only money view; manager & owner
+  can mint a manager link bound to their own carrier; driver refused at /manager-invites). Full suite
+  766 pass. Backend + mini-app + CRM(carrier files) typecheck clean; mini-app bundle rebuilt.
+
+
+## 2026-07-22 — CS Mytrion collapsible sidebar
+
+Branch `hotfix/MytrionOverall`: Customer Service shell gets a Sales-style
+collapse control (panel icon) next to the brand; collapsed rail is icons-only
+(`--sidebar-collapsed`), persisted as `cs.nav.collapsed`. Badges/soon dots
+remain visible on the icon rail.
+
+## 2026-07-22 — Sales Dashboard Debtors tab live
+
+**Debtors (Dashboard → Debtors):** removed Soon stub; agents see their book via
+`dashboard.debtors` (CMP `/api/agent/cmp/debtors` + Zoho deal enrich). Client rules
+match Billing: PENDING/PARTIALLY_PAID invoices with remaining ≥ $1, age ≥ 2 days,
+hard debt at 15+ days (`dashDebtorsData`). UI: search, status chips, KPI strip,
+expandable invoice cards, skeleton/refresh/toasts, 5-min localStorage cache
+(`DEBTORS_DASH_TTL_MS`, keyed by act-as user). Files: `DashTab.tsx`,
+`DebtorsDashPanel.tsx`, `dashDebtorsData.ts`, `dashCache.ts`, `DashSkeleton.tsx`.
+
+## 2026-07-22 — Home Money Owed uses Billing debtor floors
+
+Home snapshot “Money Owed” now matches Dashboard → Debtors / Billing rules
+(pending·partial, remaining ≥ $1, age ≥ 2d, hard ≥ 15d):
+- Backend `summarizeCmpDebtors` recomputes `fetchHomeSnapshot` +
+  `fetchDebtorsInfo` totals from invoice rows.
+- FE `loadSnapshot` overlays `loadDebtorsHomeSummary` (shared 5-min cache;
+  Refresh forces). Card click → Dashboard → Debtors via `openDash`.
+
+## 2026-07-22 — Verification Pipeline tab (Sales Mytrion, hotfix/MytrionOverall)
+
+Phase 1 of the Sales-side verification bridge. Un-parked the "Verification Pipeline" tab.
+- **List:** the agent's DWH deal-clients (`octane.agent_deals`, freshest `appfilldate` first),
+  owner-scoped via the roster authority (`dwhClientRoster.buildOwnedCte` — made reusable with a
+  column-list param + exported `ownerBinds`; id-suffix-first / display-name-fallback), enriched from
+  `octane.dim_company`, classified `in_pipeline | active | closed` (Card Swiped / first_swipe_date ⇒
+  active). Admin View-as resolves the target's name so the name arm fires.
+- **Detail:** in-pipeline → 9-stage vertical timeline (Pre Stop Factors → … → Post Stop Factors) +
+  decision badge (Prepaid / LOC w/ score+limit+cycle / Not accepted / Undecided); active → current
+  terms read-only.
+- **Pipeline data = MOCK via a provider seam** (`modules/verificationPipeline/provider.ts`,
+  deterministic per client, no DB), shaped exactly like the real `credit_platform` model
+  (`kxd.<stage>_reports.status` + `kxd.decision_reports` / `requests.result.summary`) so a future
+  live provider swaps in behind a flag. **No credit_platform querying this phase** (per direction).
+- Files: `src/modules/verificationPipeline/{types,provider,service}.ts`,
+  `src/routes/v1/verificationPipeline.routes.ts` (GET /v1/verification/clients + /pipeline, mirrors
+  dataCenter owner-scoping), `apps/.../api/verification.ts`, `apps/.../tabs/VerificationTab.tsx`.
+- Verified live: 187 deals for View-as Daniel (freshest-first), pipeline route → 9 mock stages;
+  `verification-pipeline.test.ts` (6) green; roster/data-center tests unaffected by the buildOwnedCte
+  change. (3 pre-existing WIP test files still fail: carrier-mini-app, touchpoints-catalog/routes.)
+
+**Follow-ups (documented, not built):** live `credit_platform` provider (swap behind
+FF_VERIFICATION_PIPELINE_LIVE, join `requests.carrier_id → dim_company.carrier_id` 97.8% / fallback
+application_id/dot; expose only stage status + decision + LOC terms, never PII); limit-change request
+submission (Credit/Card/Weekly → new `limit_change_requests` table mig 0042 + touchpoint).
+
+## 2026-07-22 — Fix React #321 (duplicate React) + rebuild served bundle
+
+Reported from a deployed build (`index--dvCpMb7.js`, not in the repo): React error #321 (invalid
+hook call) crashing on `useSessionUser → useImpersonation → useContext`, plus a benign
+`/v1/ringcentral/embed-config` 404.
+- **#321 root cause:** the crash stack split the reconciler (`renderWithHooks`) and the hooks
+  dispatcher (`useContext`) across two chunks = **two React copies in the bundle**. A sibling app
+  (`web/`) ships its own `react-dom`, so a build environment that resolves React from two physical
+  locations duplicates it. Fix: `resolve.dedupe: ['react','react-dom']` in
+  `apps/mytrion-crm/vite.config.ts` — pins one copy in *any* build env.
+- **Verified new build:** `react-dom` now in exactly ONE chunk (`index-By1ddpst.js`, = the entry) →
+  #321 structurally impossible; VerificationTab + ringcentral call present; verification nav
+  un-parked. Rebuilt `apps/mytrion-crm/app/` (vite build, emptyOutDir) and committed.
+- **ringcentral 404 is NOT a crash:** `RingCentralPhone.tsx` already swallows the fetch failure
+  (fail-silent), and the route is registered *unconditionally* at `app.ts:252`. A 404 only means the
+  **backend** serving the client predates the route — resolved by deploying the backend from this
+  branch. No frontend change needed for it.
+
+## 2026-07-22 — Retention Closed cards: fuel-return vs 2BD handoff
+
+Sales Closed with "0d since last fuel" = auto `p1_returned` (hourly sync:
+any txn after case open). Fuel closes the case — it does **not** go to
+Retention. True 2 BD no-action handoff leaves Sales and lands in CS Phase 2
+(`p2_new` / `p2_working`), not Closed.
+
+UI bug fixed: closed/returned no longer show stale "Due today · → Retention"
+(`stageTimer` gates `!isOpen`; sync clears deadline on return-close).
+
+## 2026-07-22 — CS Mytrion sees all retention phases
+
+`retention.cs_cases` / `listForCs`: CS agents browse **any phase** (filters:
+Open · Sales · Retention · P2 New/Working · CITI · Closed · All). Detail pane
+shows carrier, phase, status, assignee, fuel/volume, deadline, Zoho deal id,
+timeline. Claim / log attempt / outcomes stay **Phase 2 only** (backend already
+gated). Zoho Deal+Contact+Account ownership still only on Retention RR assign.
+
+## 2026-07-22 — Zoho ownership: Open Pool + Retention
+
+Both paths use `transferDealOwnershipToClaimant` → Zoho **Deal** (required),
+**Contact** + **Account/Company** (best-effort):
+- Open Pool claim approve: hard-fail if Deal Owner update fails.
+- Retention RR/Spanish handoff + CS claim of unassigned P2: soft transfer
+  (Ops assign kept if Zoho fails). CS claim now also triggers Zoho when
+  assignee changes inside Phase 2 (was a gap).
+
+## 2026-07-22 — CS Retention Cases UI polish
+
+Cases tab: list/detail skeletons, phase+status color badges, due urgency
+(overdue/soon), staggered fade-in, smoother chip/row hover, refresh spinning
+state, reduced-motion respect (`casesUi.tsx`, `retention-panel.css`).
+
+## 2026-07-22 — CS Cases: icons, larger type, clearer filters
+
+Renamed desk chips **To claim** / **In progress** (was P2 New / P2 Working).
+Lucide icons on filters, list rows, detail fields; bumped title/badge/meta
+type sizes for easier scanning.
+
+## 2026-07-22 — CS Cases: hierarchical filters + desk actions
+
+Filter UI: **Phase** then dependent **Status** chips (Sales/Retention/CITI
+buckets). API: `retention.cs_cases` accepts `phase` + `status`.
+Detail: removed channel picker (auto ringcentral); colored Call 1 Listen /
+Call 2 Solution + outcome status buttons (`CaseDeskActions`).
+
+## 2026-07-22 — CS filter chip active tones + Closed (Returned)
+
+Status Closed → **Closed (Returned)** for All/Sales. Active filter chips
+use per-tone colors (sales blue, retention gold, citi purple, success, etc.).
+
+## 2026-07-22 — CS filter labels clarified
+
+Sales: Open→All open, Calling→New. Retention: To claim→Unassigned,
+Offer pending→Offer out. Added filter explain line with timers.
+
+## 2026-07-22 — CS quota + deadline UI clarity
+
+Quota: Claims today + Offer out cards with colors/hints. Deadline field
+shows plain SLA text (no raw 2BD_agent_action).
+
+## 2026-07-22 — CS desk: drop Saved button; clarify Refused gate
+
+Removed Saved from Retention desk UI. Refused stays gated on Call 1+2.
+
+## 2026-07-22 — CITI = red folder
+
+CITI phase chip/badge/nav use Folder icon + danger red (not purple Archive).
+
+## 2026-07-22 — CS Retention Cases → green
+
+Fixed: outcome notes wired; Offer-out min-1 small-portfolio cap;
+claim-before-calls/outcomes; claim cannot steal assigned cases.
+
+## 2026-07-22 — Retention pilot reset (Daniel Brown only)
+
+Wiped retention_cases (398), events (671), rr_cursors. Enabled
+FF_RETENTION_PILOT_ONLY=1 + RETENTION_PILOT_AGENT_ZOHO_USER_IDS=
+6227679000031473048 (Daniel Brown). Sync creates only his clients.
+Set FF_RETENTION_PILOT_ONLY=0 to restore full generation.
+
+## 2026-07-22 — Retention pilot sync + Sales Open Pool UX
+
+Fixed DWH deal_lang (`zoho_deal_id`). Pilot scan filters by agent in SQL.
+Wiped + sync: 16 Daniel Brown cases created. Open Pool UI: status chips,
+how-to strip, claim window, modal extract, better empty/loading.
+
+## 2026-07-22 — Sales Retention modal: unified save loader
+
+Status updates use a single Saving overlay; close-after skips remounting
+timeline (no modal jump). Timeline slot reserved height while hydrating.
+
+## 2026-07-22 — Sales Retention modal: single update loader
+
+Dropped button/timeline spinners on status update — only the modal
+Updating overlay shows while busy (no double loaders).
+
+## 2026-07-22 — Sales Retention: locked former-owner cards + modal overlay
+
+Updating overlay pinned to modal (not scroll body). Dissatisfied/Open Pool
+handoffs stamp pool_owner; my_cases keeps locked cards for former Sales agent.
+SIP play-rejected console noise filtered (browser autoplay).
+
+## 2026-07-22 — View-as per Mytrion + faster retention saves
+
+View-as is scoped per Mytrion (no /main picker, no cross-Mytrion leak).
+Retention outcome/attempt returns after DB write; Zoho + notify post-commit.
+CS RR uses warm Zoho Users cache (no blocking Users call on save).
+
+## 2026-07-23 — Revert Sales Open Pool ownership plan
+
+Stepped back: CS again approves Open Pool claims; Zoho Deal/Contact/Company
+transfers on Retention handoff; CS Claims tab + No-response→Pool restored.
+Sales Claims (prior-owner) pane removed.
+
+## 2026-07-23 — View-as any user + instant Open Pool
+
+Admin View-as lists all CRM users (search); mounted on CS + Billing shells.
+Open Pool claims assign instantly (Zoho + Kanban New); CS sees Claimed/Unclaimed
+activity logs; CS No-response→Pool removed (10 BD timer kept); Sales daily cap = 2.
+Migration 0042 backfills pending claims to Open Pool.
+
+## 2026-07-23 — Sales Cases + Open Pool polish + CS readonly Pool
+
+OoR = Out of Reach (agent UI wording). Migration 0043 adds `previous_owner_*` on
+claim requests + `retention_to_pool_count` on cases. Instant claim stamps previous
+owner + timeline note. Retention 10 BD → Open Pool up to 3 times, then CITI
+(separate from assignment_count agent cycles). Sales Cases: carrier/company search,
+Out of Reach attempt UX (note required for messengers), Ops confirm/deny hidden
+unless Ops/admin, hide agent names / “In Open Pool” · “With Retention” badges.
+Sales Open Pool: no Prior agent column, Claim/Claiming… loaders, short quota copy.
+CS: Activity tab removed; readonly Open Pool list + timeline; Retention Cases desk
+unchanged. `retention.cs_pool_activity` kept backend-only.
+
+## 2026-07-23 — CS desk scope + Open Pool / View-as polish
+
+Sales Cases hero: “Retention workflow” kicker + larger stage copy.
+CS View-as: sidebar placement, menu opens upward.
+CS Open Pool: metrics, badges, empty state, card list + timeline.
+CS Retention Cases list/detail: non-admin sees only assigned cases; admin sees all.
+Open Pool browse stays shared (unassigned) for CS readonly visibility.
+
+## 2026-07-23 — Durable Zoho ownership transfer log
+
+Added `retention_ownership_transfers` (migration 0044): append-only from→to Zoho
+owner log for Retention handoff + Open Pool claim (success/partial/failed). No FK
+to `retention_cases` so rows survive hard-delete. Wired in
+`transferDealOwnershipToClaimant` when audit context is passed. Applied via
+`pnpm db:migrate` against Render app Postgres.
+
+## 2026-07-23 — Disable Retention auto-assign
+
+`RETENTION_AUTO_ASSIGN_ENABLED = false` in `csRoundRobin.ts` — Spanish desk +
+RoundRobin skipped; handoff keeps the Sales agent (no unassign, no Zoho Owner
+transfer to CS). Flip the constant to re-enable CS auto-assign.
+
+## 2026-07-23 — Merge origin/build into hotfix/MytrionOverall
+
+Resolved content conflicts (admin tabs, DWH pool timeouts, dwhCards billing +
+any-status card lookup, payments ingest audit + preMapped). Renumbered local
+retention migrations to avoid colliding with build’s mini-app/news/support-bot
+series: `0049_retention_open_pool_instant`, `0050_retention_pool_cycles_claim_log`,
+`0051_retention_ownership_transfers` (SQL unchanged / IF NOT EXISTS — prod hashes
+already applied stay skipped).

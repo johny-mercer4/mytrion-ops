@@ -8,9 +8,9 @@ vi.mock('../../api/carrierUsers', () => ({ searchClients: vi.fn() }));
 const searchClientsMock = vi.mocked(searchClients);
 
 const CLIENTS: DwhClient[] = [
-  { companyName: 'Acme Transport', stage: 'Won', carrierId: '111', applicationId: null, applicationDate: null, ownerZohoUserId: null },
-  { companyName: 'Globex Freight', stage: 'Won', carrierId: '222', applicationId: null, applicationDate: null, ownerZohoUserId: null },
-  { companyName: 'Initech Haulage', stage: 'New', carrierId: '333', applicationId: null, applicationDate: null, ownerZohoUserId: null },
+  { companyName: 'Acme Transport', stage: 'Won', carrierId: '111', applicationId: null, applicationDate: null, ownerZohoUserId: null, ownerName: null },
+  { companyName: 'Globex Freight', stage: 'Won', carrierId: '222', applicationId: null, applicationDate: null, ownerZohoUserId: null, ownerName: null },
+  { companyName: 'Initech Haulage', stage: 'New', carrierId: '333', applicationId: null, applicationDate: null, ownerZohoUserId: null, ownerName: null },
 ];
 
 // userEvent deadlocks against fake timers, and the search is debounced — drive it with fireEvent.

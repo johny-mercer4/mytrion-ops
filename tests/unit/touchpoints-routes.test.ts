@@ -71,7 +71,11 @@ describe('GET /v1/touchpoints (discovery)', () => {
     const res = await app.inject({ method: 'GET', url: '/v1/touchpoints', headers: API_KEY_HEADERS });
     expect(res.statusCode).toBe(200);
     const { touchpoints } = res.json() as { touchpoints: Array<{ key: string }> };
-    expect(touchpoints.length).toBe(106);
+    // 104 = the current assembled catalog total. Resynced from 106 after the billing (Deluge-free
+    // invoice search / Chase manual-add) and retention (Open Pool / CS caps) refactors changed the
+    // touchpoint set. The catalog assembler throws on any duplicate key, so a 200 here already proves
+    // every key is unique — this count just pins the total so a silent add/drop is caught.
+    expect(touchpoints.length).toBe(104);
     expect(touchpoints.map((t) => t.key)).toContain('dwh.carrier_balance');
   });
 

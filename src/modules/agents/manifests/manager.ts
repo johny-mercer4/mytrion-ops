@@ -30,8 +30,9 @@ export const managerAgent: AgentManifest = {
     'zoho_desk.search_tickets',
     'zoho_people.search_employees',
     ...FILE_TOOLS, ...ANALYTICS_TOOLS, ...WAREHOUSE_TOOLS,
+    'dbt_mcp.*', 'zoho_mcp.*'
   ],
-  composioToolkits: ['ZOHO', 'ZOHO_DESK'],
+  composioToolkits: [],
   ragScope: { departments: [], allowAllDepartments: true },
   readOnly: true,
   delegatesTo: AGENT_KEYS.filter((k) => k !== 'manager'),

@@ -47,6 +47,7 @@ export interface RetentionCaseDto {
   pendingClaimantZohoUserId: string | null;
   assignmentCount: number;
   openPoolAttemptCount: number;
+  retentionToPoolCount: number;
   outOfReachAttempts: number;
   dealOwnerChanged: boolean;
   currentDeadlineAt: string | null;
@@ -111,6 +112,7 @@ export interface UpdateRetentionCaseInput {
   pendingClaimantZohoUserId?: string | null | undefined;
   assignmentCount?: number | undefined;
   openPoolAttemptCount?: number | undefined;
+  retentionToPoolCount?: number | undefined;
   outOfReachAttempts?: number | undefined;
   dealOwnerChanged?: boolean | undefined;
   currentDeadlineAt?: Date | null | undefined;
@@ -168,6 +170,7 @@ export function toRetentionCaseDto(row: RetentionCase): RetentionCaseDto {
     pendingClaimantZohoUserId: row.pendingClaimantZohoUserId,
     assignmentCount: row.assignmentCount,
     openPoolAttemptCount: row.openPoolAttemptCount,
+    retentionToPoolCount: row.retentionToPoolCount,
     outOfReachAttempts: row.outOfReachAttempts,
     dealOwnerChanged: row.dealOwnerChanged,
     currentDeadlineAt: iso(row.currentDeadlineAt),
@@ -442,6 +445,9 @@ export const retentionCaseRepo = {
     if (patch.assignmentCount !== undefined) set.assignmentCount = patch.assignmentCount;
     if (patch.openPoolAttemptCount !== undefined) {
       set.openPoolAttemptCount = patch.openPoolAttemptCount;
+    }
+    if (patch.retentionToPoolCount !== undefined) {
+      set.retentionToPoolCount = patch.retentionToPoolCount;
     }
     if (patch.outOfReachAttempts !== undefined) set.outOfReachAttempts = patch.outOfReachAttempts;
     if (patch.dealOwnerChanged !== undefined) set.dealOwnerChanged = patch.dealOwnerChanged;

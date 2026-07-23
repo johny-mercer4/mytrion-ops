@@ -38,8 +38,8 @@ export function MessageList({
     return (
       <div className={styles.list}>
         <div className={styles.empty}>
-          <Gem size={44} />
-          <p className={styles.emptyTitle}>Ask Mytrion</p>
+          <Gem size={56} />
+          <p className={styles.emptyTitle}>Horizon AI</p>
           <p className={styles.emptyHint}>
             Grounded in your knowledge base and scoped to your department — ask about policies,
             carriers, invoices, tickets, and more.

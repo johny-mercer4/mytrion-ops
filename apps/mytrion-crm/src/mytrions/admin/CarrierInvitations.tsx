@@ -30,7 +30,7 @@ const FILTERS: ReadonlyArray<{ value: StatusFilter; label: string }> = [
 ];
 
 /** Bar width per column, tracking real rows: company, pill, id, status pill, expiry, actions. */
-const INV_SKELETON = ['58%', '64px', '52%', '70px', '46%', '96px'] as const;
+const INV_SKELETON = ['58%', '64px', '52%', '54%', '70px', '46%', '96px'] as const;
 
 /**
  * Status colour tracks what the status means, and the two dead ends are not the same thing:
@@ -121,6 +121,7 @@ export function CarrierInvitations({
           <span role="columnheader">Company</span>
           <span role="columnheader">Type</span>
           <span role="columnheader">Carrier</span>
+          <span role="columnheader">Agent</span>
           <span role="columnheader">Status</span>
           <span role="columnheader">Expires</span>
           <span role="columnheader">Actions</span>
@@ -143,15 +144,21 @@ export function CarrierInvitations({
                 <span className={s.cellStack} role="cell">
                   <span className={s.docTitle}>{inv.companyName ?? '(unnamed company)'}</span>
                   {inv.profile === 'driver' && <span className={s.cellSub}>driver · card {inv.cardId ?? '?'}</span>}
+                  {inv.profile === 'manager' && <span className={s.cellSub}>manager · owner-level access</span>}
                 </span>
                 <span role="cell">
                   <span className={`${s.pill} ${s.pillNeutral}`}>
-                    {inv.profile === 'owner' ? <BuildingIcon size={11} /> : <PersonIcon size={11} />}
-                    {inv.profile === 'owner' ? 'Owner' : 'Driver'}
+                    {inv.profile === 'driver' ? <PersonIcon size={11} /> : <BuildingIcon size={11} />}
+                    {inv.profile === 'owner' ? 'Owner' : inv.profile === 'manager' ? 'Manager' : 'Driver'}
                   </span>
                 </span>
                 <span className={s.mono} role="cell">
                   {inv.carrierId ?? inv.applicationId ?? '—'}
+                </span>
+                {/* Sales agent column (2026-07-23, owner ask): who this registration link belongs
+                    to — the invite already carried agent_name; nothing rendered it. */}
+                <span className={s.cellSub} role="cell" title={inv.agentZohoUserId ?? undefined}>
+                  {inv.agentName ?? '—'}
                 </span>
                 <span role="cell">
                   <span className={`${s.pill} ${s[PILL_CLASS[st]]}`}>{INVITE_STATUS_LABEL[st]}</span>

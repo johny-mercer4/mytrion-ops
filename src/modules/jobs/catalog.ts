@@ -67,6 +67,31 @@ export function payloadToContext(parsed: z.infer<typeof tenantContextSchema>): T
 
 export const DEAD_LETTER_QUEUE = 'jobs.dead';
 
+/** Notification pollers (card_status diff, later limit/receipt/balance). Singleton cron —
+ *  runs never overlap; no-ops with no registered owners and empty NOTIFY_POLL_CARRIERS. */
+export const notificationPollJob = defineJob({
+  name: 'notification.poll',
+  schema: z.object({}),
+  queue: { policy: 'singleton', retryLimit: 0, expireInSeconds: 110, deadLetter: DEAD_LETTER_QUEUE },
+});
+
+/** Mini-app notification delivery — one outbox row (mini_app_notifications) per job. The
+ *  handler is idempotent (only 'new' rows act), so re-delivery and retries are safe. */
+export const notificationDispatchJob = defineJob({
+  name: 'notification.dispatch',
+  schema: z.object({ notificationId: z.string().min(1) }),
+  queue: { retryLimit: 4, retryDelay: 60, retryBackoff: true, expireInSeconds: 300, deadLetter: DEAD_LETTER_QUEUE },
+});
+
+/** Phase-2 T3 — weekly accounting bundle + statement notification (Monday, JOBS_CRON_TZ).
+ *  retryLimit 0 on purpose: the document sends are not idempotent — a retry would re-send files
+ *  (the statement TEXT is deduped by the outbox key, the files are not). */
+export const statementWeeklyJob = defineJob({
+  name: 'notification.statement-weekly',
+  schema: z.object({}),
+  queue: { policy: 'singleton', retryLimit: 0, expireInSeconds: 600, deadLetter: DEAD_LETTER_QUEUE },
+});
+
 /** On-demand async agent run (POST /v1/agent/tasks). */
 export const agentRunJob = defineJob({
   name: 'agent.run',
@@ -170,6 +195,12 @@ export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
   retentionDeadlineSweepJob,
   verificationRecheckJob,
   checkpointSweepJob,
+  // Mini-app notification queues — MUST be here so boss.ts createQueue() provisions them; the
+  // workers boss.work() these names and notifyMiniApp enqueues 'notification.dispatch'. Missing
+  // them meant the queues were never created and dispatch threw under FF_JOBS_ENABLED (the dev
+  // inline fallback masked it — the cron-points-at-a-defined-queue test is what caught it).
+  notificationDispatchJob,
+  notificationPollJob,
   deadLetterJob,
 ];
 
@@ -200,6 +231,8 @@ export const CRON_SCHEDULES: Array<{ name: string; cron: string }> = [
   { name: checkpointSweepJob.name, cron: '30 3 * * *' }, // nightly
   { name: approvalsExpiryJob.name, cron: '15 * * * *' }, // hourly
   { name: memoryDecayJob.name, cron: '45 3 * * *' }, // nightly
+  { name: notificationPollJob.name, cron: '*/2 * * * *' }, // card_status diff (no-op w/o pilot carriers)
+  { name: statementWeeklyJob.name, cron: '0 7 * * 1' }, // weekly accounting bundle (no-op w/o pilot carriers)
 ];
 
 /** Queues an admin may trigger from Mytrion Admin (empty / optional payload only). */

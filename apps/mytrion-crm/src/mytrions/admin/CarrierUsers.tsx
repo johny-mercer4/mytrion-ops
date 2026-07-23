@@ -3,10 +3,13 @@ import {
   cancelInvitation,
   listInvitations,
   listRegisteredCompanies,
+  listSupportBotChats,
   revokeRegistration,
+  setSupportBotChat,
   type CarrierInvitation,
   type RegisteredCompany,
 } from '../../api/carrierUsers';
+import { ApiError } from '../../api/transport';
 import { BuildingIcon, PersonIcon, PlusIcon, RefreshIcon, RevokeIcon, SearchIcon, XIcon } from '../../components/icons';
 import { CarrierInvitations } from './CarrierInvitations';
 import { CarrierUserForm, type InviteDraft } from './CarrierUserForm';
@@ -21,7 +24,7 @@ import s from './admin.module.css';
 const VIEWS = {
   registered: {
     title: 'Registered companies',
-    sub: 'Owners and drivers who finished signing in inside the mini-app.',
+    sub: 'Owners, managers, and drivers who finished signing in inside the mini-app.',
   },
   invitations: {
     title: 'Invitations',
@@ -31,7 +34,7 @@ const VIEWS = {
 
 /** Bar width per column — uneven, tracking the shape of real rows: a company name, a pill, an id,
  * a @handle, a date, a button. */
-const REG_SKELETON = ['62%', '76px', '54%', '68%', '58%', '52px'] as const;
+const REG_SKELETON = ['62%', '76px', '54%', '68%', '60%', '58%', '52px'] as const;
 
 /** A destructive action held until the admin confirms it. */
 interface PendingConfirm {
@@ -47,8 +50,13 @@ interface CarrierGroup {
   carrierId: string | null;
   companyName: string | null;
   owner: RegisteredCompany | null;
+  /** Managers have owner-equivalent access but aren't the account owner — a separate tier between
+   *  the owner and drivers. Each is independently revocable. */
+  managers: RegisteredCompany[];
   drivers: RegisteredCompany[];
 }
+
+type StatusFilter = 'all' | 'active' | 'revoked';
 
 /**
  * Carrier User Management — generates Telegram invite links for owners and drivers (no
@@ -67,6 +75,7 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
   // failed to load is a standing condition the admin has to be able to read and retry.
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [showForm, setShowForm] = useState(false);
   const [draft, setDraft] = useState<InviteDraft | null>(null);
   const [formKey, setFormKey] = useState(0);
@@ -77,12 +86,24 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
   const [regPage, setRegPage] = useState(1);
   const [pending, setPending] = useState<PendingConfirm | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
+  // Support-bot group per carrier (chat-map). Admins view/set/re-point the STATIC Telegram group id
+  // inline — the manual counterpart of the bot's auto-bind (wire a group before an owner registers).
+  const [botChats, setBotChats] = useState<Map<string, string>>(new Map());
+  const [editingGroup, setEditingGroup] = useState<string | null>(null);
+  const [groupDraft, setGroupDraft] = useState('');
+  const [groupBusy, setGroupBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      setRegistrations(await listRegisteredCompanies());
+      const [regs, chats] = await Promise.all([
+        listRegisteredCompanies(),
+        // Best-effort: the column just shows '—' if the chat-map read fails; registrations still load.
+        listSupportBotChats().catch(() => []),
+      ]);
+      setRegistrations(regs);
+      setBotChats(new Map(chats.map((c): [string, string] => [c.carrierId, c.chatId])));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -101,6 +122,74 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
       setInvLoading(false);
     }
   }, []);
+
+  async function saveGroup(carrierId: string): Promise<void> {
+    const chat = groupDraft.trim();
+    if (!chat || groupBusy) return;
+    if (!/^-?\d{5,20}$/.test(chat)) {
+      adminToast.error('Invalid group id', 'Numeric only — e.g. -1003926878773 (from the group info or @getidsbot).');
+      return;
+    }
+    setGroupBusy(true);
+    try {
+      await setSupportBotChat(chat, carrierId);
+      setBotChats((prev) => new Map(prev).set(carrierId, chat));
+      setEditingGroup(null);
+      adminToast.success('Bot group saved', 'The support bot answers this group within ~5 minutes.');
+    } catch (e) {
+      adminToast.error(
+        'Save failed',
+        e instanceof ApiError && e.status === 403
+          ? 'Admin access required to map bot groups.'
+          : e instanceof Error
+            ? e.message
+            : String(e),
+      );
+    } finally {
+      setGroupBusy(false);
+    }
+  }
+
+  function renderGroupCell(cid: string) {
+    if (editingGroup === cid) {
+      return (
+        <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+          <input
+            className={`${s.input} ${s.mono}`}
+            style={{ height: 30, width: 148, padding: '0 8px', fontSize: 12 }}
+            value={groupDraft}
+            placeholder="-100…"
+            autoFocus
+            disabled={groupBusy}
+            onChange={(e) => setGroupDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void saveGroup(cid);
+              else if (e.key === 'Escape') setEditingGroup(null);
+            }}
+          />
+          <button type="button" className={s.ghostBtn} disabled={groupBusy} onClick={() => void saveGroup(cid)}>
+            {groupBusy ? '…' : 'Save'}
+          </button>
+          <button type="button" className={s.iconBtn} disabled={groupBusy} aria-label="Cancel edit" onClick={() => setEditingGroup(null)}>
+            <XIcon size={12} />
+          </button>
+        </span>
+      );
+    }
+    const current = botChats.get(cid);
+    return (
+      <button
+        type="button"
+        className={s.linkBtn}
+        onClick={() => {
+          setEditingGroup(cid);
+          setGroupDraft(current ?? '');
+        }}
+      >
+        {current ? <span className={s.mono}>{current}</span> : 'Set group'}
+      </button>
+    );
+  }
 
   useEffect(() => {
     void load();
@@ -202,37 +291,76 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
       const key = r.carrierId ?? r.applicationId ?? r.id;
       let group = byKey.get(key);
       if (!group) {
-        group = { key, carrierId: r.carrierId, companyName: null, owner: null, drivers: [] };
+        group = { key, carrierId: r.carrierId, companyName: null, owner: null, managers: [], drivers: [] };
         byKey.set(key, group);
       }
+      group.companyName ??= r.companyName;
       if (r.profile === 'owner') {
         group.owner = r;
-        group.companyName ??= r.companyName;
+      } else if (r.profile === 'manager') {
+        group.managers.push(r);
       } else {
         group.drivers.push(r);
-        group.companyName ??= r.companyName;
       }
     }
+    // Active before revoked within each tier — revoked rows sink to the bottom of their section.
+    const byStatus = (a: RegisteredCompany, b: RegisteredCompany) =>
+      Number(a.status === 'revoked') - Number(b.status === 'revoked');
     for (const group of byKey.values()) {
-      group.drivers.sort((a, b) => Number(a.status === 'revoked') - Number(b.status === 'revoked'));
+      group.managers.sort(byStatus);
+      group.drivers.sort(byStatus);
     }
     return [...byKey.values()].sort((a, b) => (a.companyName ?? '').localeCompare(b.companyName ?? ''));
   }, [registrations]);
 
-  const filtered = groups.filter((g) => {
+  const textFiltered = groups.filter((g) => {
     const q = query.trim().toLowerCase();
     if (!q) return true;
-    const haystack = [g.companyName ?? '', g.carrierId ?? '', g.owner?.telegramUsername ?? '', ...g.drivers.map((d) => d.telegramUsername ?? '')]
+    const haystack = [
+      g.companyName ?? '',
+      g.carrierId ?? '',
+      g.owner?.telegramUsername ?? '',
+      ...g.managers.map((m) => m.telegramUsername ?? ''),
+      ...g.drivers.map((d) => d.telegramUsername ?? ''),
+    ]
       .join(' ')
       .toLowerCase();
     return haystack.includes(q);
   });
 
+  // Status chips narrow WHICH rows show inside each company, then drop companies left with nothing.
+  // Counts are over the text-filtered set so the chips track what the search already narrowed to.
+  const matchesStatus = (r: RegisteredCompany) =>
+    statusFilter === 'all' || (statusFilter === 'active' ? r.status === 'active' : r.status === 'revoked');
+  const statusCounts = useMemo(() => {
+    let active = 0;
+    let revoked = 0;
+    for (const g of textFiltered) {
+      for (const r of [g.owner, ...g.managers, ...g.drivers]) {
+        if (!r) continue;
+        if (r.status === 'revoked') revoked += 1;
+        else active += 1;
+      }
+    }
+    return { all: active + revoked, active, revoked };
+  }, [textFiltered]);
+
+  // Keep the owner row as the company anchor (name + carrier) even when its owner is filtered out —
+  // ownerVisible gates only the owner's own detail (type pill, revoke), not the header itself.
+  const filtered = textFiltered
+    .map((g) => ({
+      ...g,
+      ownerVisible: g.owner ? matchesStatus(g.owner) : false,
+      managers: g.managers.filter(matchesStatus),
+      drivers: g.drivers.filter(matchesStatus),
+    }))
+    .filter((g) => g.ownerVisible || g.managers.length > 0 || g.drivers.length > 0);
+
   // Reset to page 1 whenever the filter narrows/widens the result set — otherwise a search could
   // land on a now-out-of-range page and render nothing.
   useEffect(() => {
     setRegPage(1);
-  }, [query]);
+  }, [query, statusFilter]);
 
   // Clamp to the last page that still exists: cancelling the only invite on page 2 drops the list
   // to one page, and an unclamped page 2 renders an empty table with no pager left to escape it.
@@ -319,6 +447,26 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
         </span>
       </label>
 
+      {/* Status filter — a revoked account never leaves the roster (its history stays), so real
+          fleets accumulate revoked rows the admin usually wants out of the way. */}
+      <div className={s.chipRow} style={{ marginBottom: 'var(--space-3)' }}>
+        {([
+          ['all', 'All', statusCounts.all],
+          ['active', 'Active', statusCounts.active],
+          ['revoked', 'Revoked', statusCounts.revoked],
+        ] as const).map(([key, label, count]) => (
+          <button
+            key={key}
+            type="button"
+            className={`${s.filterChip} ${statusFilter === key ? s.filterChipOn : ''}`}
+            aria-pressed={statusFilter === key}
+            onClick={() => setStatusFilter(key)}
+          >
+            {label} · {count}
+          </button>
+        ))}
+      </div>
+
       <div className={s.tableScroll}>
         <div className={s.table} role="table" aria-label="Registered carrier companies" aria-busy={loading}>
         <div className={`${s.tHead} ${s.tCarrier}`} role="row">
@@ -326,6 +474,7 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
           <span role="columnheader">Type</span>
           <span role="columnheader">Carrier</span>
           <span role="columnheader">Telegram</span>
+          <span role="columnheader">Bot group</span>
           <span role="columnheader">Registered</span>
           <span role="columnheader">Actions</span>
         </div>
@@ -341,7 +490,7 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
           pagedGroups.map((g) => (
             // rowgroup keeps the owner and its drivers a valid subtree of the table.
             <div key={g.key} className={s.tGroup} role="rowgroup">
-              <div className={`${s.tRow} ${s.tCarrier} ${g.owner?.status === 'revoked' ? s.tRowRevoked : ''}`} role="row">
+              <div className={`${s.tRow} ${s.tCarrier} ${g.ownerVisible && g.owner?.status === 'revoked' ? s.tRowRevoked : ''}`} role="row">
                 <span className={s.cellStack} role="cell">
                   <span className={s.docTitle}>{g.companyName ?? '(unnamed company)'}</span>
                   {!g.owner && <span className={s.cellSub}>Owner hasn't registered yet</span>}
@@ -351,25 +500,28 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
                       implied "active" about a company that might be revoked, and left the column
                       with two competing colours. The icon and label already tell the types apart,
                       so Revoked is the only thing in this cell that earns a colour. */}
-                  {g.owner && (
+                  {g.ownerVisible && g.owner && (
                     <span className={`${s.pill} ${s.pillNeutral}`}>
                       {g.owner.companyType === 'fleet-manager' ? <BuildingIcon size={11} /> : <PersonIcon size={11} />}
                       {g.owner.companyType === 'fleet-manager' ? 'Company owner' : 'Owner-operator'}
                     </span>
                   )}
-                  {g.owner?.status === 'revoked' && <span className={`${s.pill} ${s.pillBad}`}>Revoked</span>}
+                  {g.ownerVisible && g.owner?.status === 'revoked' && <span className={`${s.pill} ${s.pillBad}`}>Revoked</span>}
                 </span>
                 <span className={s.mono} role="cell">
                   {g.carrierId ?? '—'}
                 </span>
                 <span className={s.cellSub} role="cell">
-                  {g.owner ? `@${g.owner.telegramUsername ?? g.owner.telegramUserId}` : '—'}
+                  {g.ownerVisible && g.owner ? `@${g.owner.telegramUsername ?? g.owner.telegramUserId}` : '—'}
                 </span>
-                <span className={s.cellSub} role="cell" title={g.owner ? new Date(g.owner.createdAt).toLocaleString() : ''}>
-                  {g.owner ? new Date(g.owner.createdAt).toLocaleDateString() : '—'}
+                <span className={s.cellSub} role="cell">
+                  {g.carrierId ? renderGroupCell(g.carrierId) : '—'}
+                </span>
+                <span className={s.cellSub} role="cell" title={g.ownerVisible && g.owner ? new Date(g.owner.createdAt).toLocaleString() : ''}>
+                  {g.ownerVisible && g.owner ? new Date(g.owner.createdAt).toLocaleDateString() : '—'}
                 </span>
                 <span role="cell">
-                  {g.owner && g.owner.status === 'active' && (
+                  {g.ownerVisible && g.owner && g.owner.status === 'active' && (
                     <button
                       type="button"
                       className={`${s.miniBtn} ${s.miniDanger}`}
@@ -382,6 +534,47 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
                   )}
                 </span>
               </div>
+              {g.managers.map((m) => (
+                <div
+                  key={m.id}
+                  className={`${s.tRow} ${s.tCarrier} ${m.status === 'revoked' ? s.tRowRevoked : ''}`}
+                  role="row"
+                >
+                  <span className={s.cellStack} style={{ paddingLeft: 'var(--space-4)' }} role="cell">
+                    <span className={s.docTitle}>{m.driverName ?? `@${m.telegramUsername ?? m.telegramUserId}`}</span>
+                    <span className={s.cellSub}>Manager · owner-level access</span>
+                  </span>
+                  <span style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }} role="cell">
+                    <span className={`${s.pill} ${s.pillNeutral}`}>
+                      <BuildingIcon size={11} />
+                      Manager
+                    </span>
+                    {m.status === 'revoked' && <span className={`${s.pill} ${s.pillBad}`}>Revoked</span>}
+                  </span>
+                  <span className={s.mono} role="cell">
+                    {m.carrierId ?? '—'}
+                  </span>
+                  <span className={s.cellSub} role="cell">
+                    @{m.telegramUsername ?? m.telegramUserId}
+                  </span>
+                  <span className={s.cellSub} role="cell" title={new Date(m.createdAt).toLocaleString()}>
+                    {new Date(m.createdAt).toLocaleDateString()}
+                  </span>
+                  <span role="cell">
+                    {m.status === 'active' && (
+                      <button
+                        type="button"
+                        className={`${s.miniBtn} ${s.miniDanger}`}
+                        disabled={busyId === m.id}
+                        onClick={() => askRevoke(m.id, `@${m.telegramUsername ?? m.telegramUserId} (manager)`)}
+                      >
+                        <RevokeIcon />
+                        Revoke
+                      </button>
+                    )}
+                  </span>
+                </div>
+              ))}
               {g.drivers.map((d) => (
                 <div
                   key={d.id}
@@ -429,8 +622,10 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
             <div className={s.none} role="row">
               <span role="cell">
                 {registrations.length === 0
-                  ? 'No one has registered yet. Use New registration link to invite an owner or driver.'
-                  : 'No companies match your filter.'}
+                  ? 'No one has registered yet. Use New registration link to invite an owner, manager, or driver.'
+                  : statusFilter !== 'all'
+                    ? `No ${statusFilter} accounts match your filter.`
+                    : 'No companies match your filter.'}
               </span>
             </div>
           )}

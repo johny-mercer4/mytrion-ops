@@ -183,6 +183,8 @@ export function resolvePhase1Transition(
         ...handoffToRetention({
           now,
           agentOutcome: 'dissatisfied',
+          previousOwnerZohoUserId: row.assignedAgentZohoUserId,
+          previousOwnerName: row.agentName,
           notes: `Dissatisfied (${input.dissatisfactionReason}) → Retention (10 BD)`,
         }),
         dissatisfactionReason: input.dissatisfactionReason,
@@ -210,6 +212,8 @@ export function resolvePhase1Transition(
       return handoffToRetention({
         now,
         agentOutcome: input.outcome === 'no_action_2bd' ? 'no_action_2bd' : null,
+        previousOwnerZohoUserId: row.assignedAgentZohoUserId ?? row.poolOwnerZohoUserId,
+        previousOwnerName: row.agentName,
         notes:
           input.outcome === 'no_action_2bd'
             ? 'No action in 2BD — escalated to Retention (10 BD)'

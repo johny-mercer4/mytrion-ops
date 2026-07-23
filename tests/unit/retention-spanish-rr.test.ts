@@ -84,50 +84,38 @@ describe('enrichHandoffWithRoundRobin Spanish desk', () => {
     vi.clearAllMocks();
   });
 
-  it('assigns Jean Paul when isSpanishDesk', async () => {
+  it('keeps current agent while auto-assign is disabled (Spanish desk)', async () => {
     const patch = await enrichHandoffWithRoundRobin(
       ctx(),
       {
         phaseCode: RETENTION_PHASE.retention,
         statusCode: 'p2_new',
+        assignedAgentZohoUserId: 'sales-1',
+        agentName: 'Sales One',
         eventType: 'status_change',
         eventNotes: 'Handed to Retention',
       },
       { isSpanishDesk: true },
     );
-    expect(patch.assignedAgentZohoUserId).toBe('jean-paul');
-    expect(patch.statusCode).toBe('p2_working');
-    expect(patch.eventNotes).toMatch(/Spanish desk/);
-    expect(patch.eventNotes).toMatch(/jean-paul/);
+    expect(patch.assignedAgentZohoUserId).toBe('sales-1');
+    expect(patch.agentName).toBe('Sales One');
+    expect(patch.statusCode).toBe('p2_new');
   });
 
-  it('uses RoundRobin when not Spanish', async () => {
-    const { db } = await import('../../src/db/client.js');
-    const dbMock = vi.mocked(db, true);
-    dbMock.select.mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          limit: vi.fn().mockResolvedValue([{ lastZohoUserId: null }]),
-        }),
-      }),
-    } as never);
-    dbMock.insert.mockReturnValue({
-      values: vi.fn().mockReturnValue({
-        onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
-      }),
-    } as never);
-
+  it('keeps current agent while auto-assign is disabled (RoundRobin path)', async () => {
     const patch = await enrichHandoffWithRoundRobin(
       ctx(),
       {
         phaseCode: RETENTION_PHASE.retention,
         statusCode: 'p2_new',
+        assignedAgentZohoUserId: 'sales-2',
+        agentName: 'Sales Two',
         eventType: 'status_change',
         eventNotes: 'Handed to Retention',
       },
       { isSpanishDesk: false },
     );
-    expect(patch.assignedAgentZohoUserId).toBe('u1');
-    expect(patch.eventNotes).toMatch(/RR assign/);
+    expect(patch.assignedAgentZohoUserId).toBe('sales-2');
+    expect(patch.agentName).toBe('Sales Two');
   });
 });

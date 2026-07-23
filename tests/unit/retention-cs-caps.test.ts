@@ -6,10 +6,13 @@ import { resolveSpanishDesk } from '../../src/integrations/dwhRetention.js';
 import {
   formatCallRoleNote,
   parseCallRoleFromNotes,
+  canAddPending,
+  maxPendingAllowed,
   CS_MAX_DEALS_PER_DAY,
   CS_MAX_PENDING_RATIO,
 } from '../../src/modules/retention/csCaps.js';
 import { resolvePhase2Transition } from '../../src/modules/retention/phase2.js';
+import { AppError } from '../../src/lib/errors.js';
 
 describe('resolveSpanishDesk', () => {
   it('prefers main_language Spanish', () => {
@@ -58,5 +61,52 @@ describe('cap constants', () => {
   it('matches RetentionFinal numbers', () => {
     expect(CS_MAX_DEALS_PER_DAY).toBe(40);
     expect(CS_MAX_PENDING_RATIO).toBe(0.15);
+  });
+});
+
+describe('Offer-out portfolio cap', () => {
+  it('allows at least one Offer out on small open portfolios', () => {
+    expect(maxPendingAllowed(0)).toBe(0);
+    expect(maxPendingAllowed(1)).toBe(1);
+    expect(maxPendingAllowed(6)).toBe(1);
+    expect(maxPendingAllowed(7)).toBe(1);
+    expect(maxPendingAllowed(14)).toBe(2);
+    expect(canAddPending(0, 1)).toBe(true);
+    expect(canAddPending(1, 1)).toBe(false);
+    expect(canAddPending(0, 0)).toBe(false);
+  });
+});
+
+describe('phase2 claim ownership', () => {
+  it('rejects claim steal when another CS already owns the case', () => {
+    expect(() =>
+      resolvePhase2Transition(
+        {
+          closedAt: null,
+          phaseCode: 'phase_2_retention',
+          statusCode: 'p2_working',
+          assignedAgentZohoUserId: 'cs-a',
+          assignmentCount: 1,
+        },
+        'claim',
+        { actorZohoUserId: 'cs-b' },
+      ),
+    ).toThrow(AppError);
+  });
+
+  it('allows re-claim / start_working by the same owner', () => {
+    const patch = resolvePhase2Transition(
+      {
+        closedAt: null,
+        phaseCode: 'phase_2_retention',
+        statusCode: 'p2_new',
+        assignedAgentZohoUserId: 'cs-a',
+        assignmentCount: 1,
+      },
+      'start_working',
+      { actorZohoUserId: 'cs-a' },
+    );
+    expect(patch.statusCode).toBe('p2_working');
+    expect(patch.assignedAgentZohoUserId).toBe('cs-a');
   });
 });

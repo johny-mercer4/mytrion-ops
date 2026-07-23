@@ -28,10 +28,12 @@ export function MytrionShell({
   id,
   children,
   nav,
+  disableDockChat = false,
 }: {
   id: MytrionId;
   children: ReactNode;
   nav?: NavItem[];
+  disableDockChat?: boolean;
 }) {
   const user = useUserContext();
   const m = MYTRIONS[id];
@@ -103,18 +105,20 @@ export function MytrionShell({
           </div>
 
           <div className={styles.navGroup}>
-            <button
-              type="button"
-              title="Chat"
-              aria-label="Chat"
-              className={`${styles.navBtn} ${chatView ? styles.navActive : ''}`}
-              onClick={() => setChatView(true)}
-            >
-              <span className={styles.navIcon}>
-                <ChatIcon />
-              </span>
-              <span className={styles.navLabel}>Chat</span>
-            </button>
+            {!disableDockChat && (
+              <button
+                type="button"
+                title="Chat"
+                aria-label="Chat"
+                className={`${styles.navBtn} ${chatView ? styles.navActive : ''}`}
+                onClick={() => setChatView(true)}
+              >
+                <span className={styles.navIcon}>
+                  <ChatIcon />
+                </span>
+                <span className={styles.navLabel}>Chat</span>
+              </button>
+            )}
           </div>
         </nav>
 

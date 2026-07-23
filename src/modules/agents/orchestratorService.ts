@@ -46,7 +46,7 @@ export interface AgentTurnResult {
   /** 'orchestrator' or the direct child key, plus the specialists actually consulted. */
   agentKey: string;
   agentPath: string[];
-  toolCalls: Array<{ name: string; status: string }>;
+  toolCalls: Array<{ name: string; status: string; args?: any }>;
   usage: { promptTokens: number; completionTokens: number; totalCost: number };
   /** Knowledge passages retrieved across the run (the widget's grounding count). */
   ragPassages: number;
@@ -137,8 +137,12 @@ async function executeTurn(
   const brief = buildTurnBrief({
     message,
     ...(opts.userName ?? ctx.userName ? { userName: opts.userName ?? ctx.userName } : {}),
+    ...(opts.zohoUserId ?? ctx.userId ? { zohoUserId: opts.zohoUserId ?? ctx.userId } : {}),
+    ...(opts.profile ?? ctx.profiles?.[0] ? { profile: opts.profile ?? ctx.profiles?.[0] } : {}),
+    ...(opts.role ?? ctx.role ? { role: opts.role ?? ctx.role } : {}),
     departments: ctx.departments,
     ...(historySummary ? { historySummary } : {}),
+    ...(ctx.client ? { clientContext: ctx.client } : {}),
   });
 
   const budget = new BudgetMeter();

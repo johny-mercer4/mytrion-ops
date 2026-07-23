@@ -3,18 +3,22 @@
   gap: var(--space-2);
   align-items: flex-end;
   padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3_5);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   transition:
-    border-color var(--dur-fast) var(--ease-standard),
-    box-shadow var(--dur-fast) var(--ease-standard);
+    border-color var(--dur-fast) cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow var(--dur-fast) cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .pill:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-glow);
+  box-shadow: 0 8px 30px color-mix(in srgb, var(--accent) 15%, transparent), 0 0 0 2px var(--accent-glow);
+  transform: translateY(-2px);
 }
 
 .input {
@@ -41,20 +45,22 @@
 
 .send {
   flex: none;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-md);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
   border: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--accent);
-  color: var(--on-accent);
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, black));
+  color: #fff;
   cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-standard);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 .send:hover:not(:disabled) {
-  background: var(--accent-strong);
+  transform: scale(1.08) translateY(-1px);
+  box-shadow: 0 6px 15px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 .send:disabled {
   opacity: 0.5;

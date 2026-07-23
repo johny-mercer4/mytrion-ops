@@ -32,6 +32,8 @@ export const NEW_OWNER_DEADLINE_TYPE = '3BD_new_owner' as const;
  * importing phase1 (phase1 imports deadlines).
  */
 export const MAX_OPEN_POOL_AGENTS = 3;
+/** Max times Retention 10 BD no-fuel may return a case to Open Pool before CITI. */
+export const MAX_RETENTION_TO_POOL = 3;
 /** Doc: claim approval requires 10+ days of inactivity. */
 export const MIN_INACTIVE_DAYS_FOR_POOL_CLAIM = 10;
 export const RETENTION_WAIT_DEADLINE_TYPE = '10BD_retention' as const;
@@ -57,6 +59,7 @@ export interface CaseTransitionPatch {
   pendingClaimantZohoUserId?: string | null;
   assignmentCount?: number;
   openPoolAttemptCount?: number;
+  retentionToPoolCount?: number;
   outOfReachAttempts?: number;
   dealOwnerChanged?: boolean;
   currentDeadlineAt?: Date | null;
@@ -123,24 +126,32 @@ export function stampVacationFollowupDeadline(now: Date = new Date()): DeadlineS
 
 /**
  * Phase 2 Retention desk — wait 10 BD for a new transaction.
- * Clears Sales assignee; RoundRobin CS assign + Zoho ownership applied by callers
- * via `enrichHandoffWithRoundRobin` / `afterRetentionPhaseSideEffects`.
+ * Keeps the Sales assignee (and name) so the case/deal is not unassigned or
+ * handed to CS. Stamps `poolOwnerZohoUserId` for board visibility. Optional
+ * RoundRobin CS reassignment (currently disabled) lives in
+ * `enrichHandoffWithRoundRobin` / `afterRetentionPhaseSideEffects`.
  */
 export function handoffToRetention(
   opts: {
     agentOutcome?: AgentOutcome | null;
     notes?: string;
     now?: Date;
+    /** Current Sales owner — stays assigned; also stamped as poolOwner. */
+    previousOwnerZohoUserId?: string | null;
+    previousOwnerName?: string | null;
   } = {},
 ): CaseTransitionPatch {
   const now = opts.now ?? new Date();
   const wait = stampRetentionWaitDeadline(now);
+  const prev = opts.previousOwnerZohoUserId?.trim() || null;
+  const prevName = opts.previousOwnerName?.trim() || null;
   return {
     phaseCode: RETENTION_PHASE.retention,
     statusCode: 'p2_new',
     agentOutcome: opts.agentOutcome ?? null,
-    assignedAgentZohoUserId: null,
-    agentName: null,
+    assignedAgentZohoUserId: prev,
+    agentName: prevName,
+    ...(prev ? { poolOwnerZohoUserId: prev } : {}),
     currentDeadlineAt: wait.currentDeadlineAt,
     currentDeadlineType: wait.currentDeadlineType,
     vacationCountdownEnd: null,
@@ -231,7 +242,7 @@ export function vacationFollowupTask(
 }
 
 export function awaitingOpsSignoff(
-  opts: { now?: Date } = {},
+  _opts: { now?: Date } = {},
 ): CaseTransitionPatch {
   return {
     phaseCode: RETENTION_PHASE.agent,
@@ -291,6 +302,7 @@ export function patchToUpdateInput(
   agentName?: string | null;
   assignmentCount?: number;
   openPoolAttemptCount?: number;
+  retentionToPoolCount?: number;
   outOfReachAttempts?: number;
   dealOwnerChanged?: boolean;
   currentDeadlineAt?: Date | null;
@@ -320,6 +332,9 @@ export function patchToUpdateInput(
     ...(patch.assignmentCount !== undefined ? { assignmentCount: patch.assignmentCount } : {}),
     ...(patch.openPoolAttemptCount !== undefined
       ? { openPoolAttemptCount: patch.openPoolAttemptCount }
+      : {}),
+    ...(patch.retentionToPoolCount !== undefined
+      ? { retentionToPoolCount: patch.retentionToPoolCount }
       : {}),
     ...(patch.outOfReachAttempts !== undefined
       ? { outOfReachAttempts: patch.outOfReachAttempts }

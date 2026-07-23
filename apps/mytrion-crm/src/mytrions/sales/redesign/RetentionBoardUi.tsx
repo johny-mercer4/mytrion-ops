@@ -14,6 +14,7 @@ import {
 } from './retentionData';
 import {
   isSalesLocked,
+  isSalesPooled,
   stageTimer,
   type StageTimer,
   type StageTimerTone,
@@ -116,11 +117,16 @@ export function RetentionPoolMetrics({
 export function RetentionHero({
   title,
   sub,
+  kicker,
+  subSize = 'sm',
   actions,
   children,
 }: {
   title: string;
   sub: string;
+  /** Small label above the title (e.g. “Retention workflow”). */
+  kicker?: string;
+  subSize?: 'sm' | 'lg';
   actions?: ReactNode;
   children?: ReactNode;
 }) {
@@ -128,8 +134,9 @@ export function RetentionHero({
     <div className="ss-ret-hero">
       <div style={s('display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap')}>
         <div style={s('min-width:0')}>
+          {kicker ? <div className="ss-ret-hero-kicker">{kicker}</div> : null}
           <div className="ss-ret-hero-title">{title}</div>
-          <div className="ss-ret-hero-sub">{sub}</div>
+          <div className={`ss-ret-hero-sub${subSize === 'lg' ? ' is-lg' : ''}`}>{sub}</div>
         </div>
         {actions ? <div style={s('display:flex;align-items:center;gap:8px;flex-shrink:0')}>{actions}</div> : null}
       </div>
@@ -248,15 +255,26 @@ export function RetentionCaseCard({
   now?: Date;
 }) {
   const locked = isSalesLocked(row);
+  const pooled = isSalesPooled(row);
   const timer = locked ? null : stageTimer(row, now ?? new Date());
   const overdue = Boolean(timer?.overdue);
 
   if (locked) {
+    const lockTitle = pooled
+      ? 'In Open Pool. Locked for you (cannot claim your own deal).'
+      : row.phaseCode === 'phase_3_citi'
+        ? 'Moved to CITI. Locked for Sales.'
+        : 'With Retention. Locked for Sales.';
+    const lockBadge = pooled
+      ? 'In Open Pool'
+      : row.phaseCode === 'phase_3_citi'
+        ? '→ CITI'
+        : 'With Retention';
     return (
       <div
-        className="ss-ret-card is-locked"
+        className={`ss-ret-card is-locked${pooled ? ' is-pooled' : ''}`}
         style={{ ['--ret-col' as string]: colColor, animationDelay: `${Math.min(index, 8) * 0.04}s` }}
-        title="Dissatisfied — handed to Retention. Locked for Sales."
+        title={lockTitle}
       >
         <div style={s('display:flex;justify-content:space-between;gap:6px;align-items:flex-start')}>
           <div style={s('font-size:13px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis')}>
@@ -267,7 +285,7 @@ export function RetentionCaseCard({
         <div style={s("font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text2)")}>
           {row.carrierId}
         </div>
-        <div className="ss-ret-locked-badge">Handed to Retention · locked</div>
+        <div className={`ss-ret-locked-badge${pooled ? ' is-pooled' : ''}`}>{lockBadge}</div>
       </div>
     );
   }
@@ -302,7 +320,13 @@ export function RetentionCaseCard({
         <RetentionStageTimer timer={timer} />
       ) : (
         <div className="ss-ret-timer is-muted">
-          <div className="ss-ret-timer-event">No active deadline</div>
+          <div className="ss-ret-timer-event">
+            {row.statusCode === 'p1_returned'
+              ? 'Returned · fueled again'
+              : !row.isOpen
+                ? 'Closed'
+                : 'No active deadline'}
+          </div>
         </div>
       )}
     </button>

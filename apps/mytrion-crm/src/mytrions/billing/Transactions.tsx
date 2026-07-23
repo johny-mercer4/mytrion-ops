@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { broadcastMapping, fetchTransactions, fetchTransactionStats, searchTransactions } from '@/api/billing';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useLoad } from '../_shared/useLoad';
+import { computeAutoMapFlag, getCarrierMemoryIndex } from './autoMapFlag';
 import { type TxSource, dateLabel, fmtCurrency } from './data';
 import { ChaseAddModal } from './ChaseAddModal';
 import { TransactionModal } from './TransactionModal';
@@ -85,6 +86,18 @@ export function Transactions() {
   // mapping change (see the patches effect below).
   const statsLoad = useLoad(() => fetchTransactionStats(), []);
   const stats = statsLoad.data;
+
+  // Carrier-memory index for the Zelle auto-map row badge (loaded + cached once per session).
+  const [memoryIndex, setMemoryIndex] = useState<Map<string, Set<string>> | null>(null);
+  useEffect(() => {
+    let off = false;
+    void getCarrierMemoryIndex().then((idx) => {
+      if (!off) setMemoryIndex(idx);
+    });
+    return () => {
+      off = true;
+    };
+  }, []);
 
   // Appended pages (page ≥ 2) + optimistic per-row patches, both reset when page 1 reloads.
   const [extra, setExtra] = useState<TxRow[]>([]);
@@ -534,6 +547,20 @@ export function Transactions() {
                                 QUICKPAY
                               </span>
                             ) : null}
+                            {/* Zelle auto-map suggestion badge (parity with the widget) — only when
+                                there IS a positive suggestion; the "why not" reasons show in the modal. */}
+                            {(() => {
+                              const amf = computeAutoMapFlag(tx, memoryIndex);
+                              return amf && amf.kind !== 'none' ? (
+                                <span
+                                  className="bm-badge"
+                                  title="A carrier id suggestion is available — open to review and map."
+                                  style={{ fontSize: '0.55rem', padding: '0.1rem 0.45rem', marginLeft: '0.25rem', fontWeight: 700, letterSpacing: '0.03em', background: 'var(--success-bg)', color: 'var(--success-text)', border: '1px solid var(--success-border)' }}
+                                >
+                                  AUTO-MAP
+                                </span>
+                              ) : null;
+                            })()}
                           </div>
                         </div>
                         <div className="tx-carrier-col">

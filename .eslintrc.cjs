@@ -12,7 +12,10 @@ module.exports = {
     node: true,
     es2022: true,
   },
-  ignorePatterns: ['dist', 'node_modules', 'coverage', '*.cjs', 'src/db/migrations'],
+  // apps/mytrion-crm is a separate Vite/React app with its own toolchain — the backend eslint
+  // config has no React plugin, so linting its hook files here only produces spurious
+  // "react-hooks/exhaustive-deps rule not found" errors. It lints itself.
+  ignorePatterns: ['dist', 'node_modules', 'coverage', '*.cjs', 'src/db/migrations', 'apps/mytrion-crm'],
   rules: {
     '@typescript-eslint/no-unused-vars': [
       'error',
@@ -30,6 +33,15 @@ module.exports = {
       rules: {
         '@typescript-eslint/no-explicit-any': 'off',
         '@typescript-eslint/no-non-null-assertion': 'off',
+      },
+    },
+    {
+      // LangGraph/LangChain integration glue: the base-class overrides (PagedPostgresSaver) and
+      // stream/tool-arg boundaries sit on third-party types that are effectively `any`. Typing
+      // them precisely fights @ts-expect-error'd overrides; allow `any` at this boundary only.
+      files: ['src/modules/agents/**/*.ts'],
+      rules: {
+        '@typescript-eslint/no-explicit-any': 'off',
       },
     },
   ],

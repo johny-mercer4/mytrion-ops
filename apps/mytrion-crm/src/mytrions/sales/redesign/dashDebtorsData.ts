@@ -1,9 +1,18 @@
 /**
- * Debtors dashboard — mytriondbdebtorsinfo via dashboard.debtors.
- * Client rules match self-service: hide ≤1 day debt, hard = 15+ days, recompute card totals.
+ * Debtors dashboard — agent-scoped via dashboard.debtors (CMP + Zoho deal enrich).
+ * Client rules mirror Billing Mytrion:
+ *   PENDING / PARTIALLY_PAID · remaining ≥ $1 · age ≥ 2 days · hard = 15+ days.
  */
 import { callTouchpoint } from '@/api/touchpoints';
+import { DEBTORS_DASH_TTL_MS, readDashCache, writeDashCache } from './dashCache';
 import { n } from './dashFormat';
+
+const CACHE_PREFIX = 'mytrion_debtors';
+
+/** Same floors as Billing / dwhClientRoster / dwhRetention. */
+export const DEBT_MIN_DAYS = 2;
+export const DEBT_MIN_REMAINING = 1;
+export const HARD_DEBT_DAYS = 15;
 
 export interface DebtorInvoice {
   invoiceId: string;
@@ -39,6 +48,8 @@ export interface DebtorsRaw {
   totalDebtors: number;
   totalHardDebtors: number;
   totalDebtAmount: number;
+  cachedAt?: string;
+  fromCache?: boolean;
 }
 
 export interface DebtorsSummary {
@@ -47,7 +58,10 @@ export interface DebtorsSummary {
   partialCount: number;
   hardCount: number;
   largestDebt: number;
+  debtorCount: number;
 }
+
+export type DebtorStatusFilter = 'all' | 'pending' | 'partial' | 'hard';
 
 function mapInvoice(inv: Record<string, unknown>): DebtorInvoice {
   return {
@@ -62,8 +76,12 @@ function mapInvoice(inv: Record<string, unknown>): DebtorInvoice {
   };
 }
 
-export async function loadDebtorsRaw(): Promise<DebtorsRaw> {
-  const res = await callTouchpoint('dashboard.debtors', {});
+function mapDebtorsPayload(res: {
+  debtors?: unknown[];
+  total_debtors?: unknown;
+  total_hard_debtors?: unknown;
+  total_debt_amount?: unknown;
+}): DebtorsRaw {
   const raw = res.debtors ?? [];
   const debtors: DebtorCard[] = raw.map((d, i) => {
     const row = d as Record<string, unknown>;
@@ -82,8 +100,8 @@ export async function loadDebtorsRaw(): Promise<DebtorsRaw> {
       totalPaid: n(row.total_paid),
       totalRemaining: n(row.total_remaining),
       maxDebtDays: n(row.max_debt_days),
-      hasPending: false,
-      hasPartial: false,
+      hasPending: Boolean(row.has_pending),
+      hasPartial: Boolean(row.has_partial),
       isHardDebtor: !!row.is_hard_debtor,
     };
   });
@@ -95,19 +113,43 @@ export async function loadDebtorsRaw(): Promise<DebtorsRaw> {
   };
 }
 
-/** Widget rule: only invoices with debt_days >= 2; recompute card totals from that set. */
-export function filterDebtors(debtors: DebtorCard[], search: string): DebtorCard[] {
-  const MIN = 2;
+export async function loadDebtorsRaw(opts: { force?: boolean } = {}): Promise<DebtorsRaw> {
+  if (!opts.force) {
+    const hit = readDashCache<DebtorsRaw>(CACHE_PREFIX, DEBTORS_DASH_TTL_MS);
+    if (hit) {
+      return { ...hit.data, cachedAt: hit.cachedAt.toISOString(), fromCache: true };
+    }
+  }
+  const res = await callTouchpoint('dashboard.debtors', {});
+  const mapped = mapDebtorsPayload(res);
+  const cachedAt = writeDashCache(CACHE_PREFIX, mapped);
+  return { ...mapped, cachedAt: cachedAt.toISOString(), fromCache: false };
+}
+
+/**
+ * Billing-aligned invoice gate + search. Recomputes card totals from qualifying invoices only.
+ */
+export function filterDebtors(
+  debtors: DebtorCard[],
+  search: string,
+  status: DebtorStatusFilter = 'all',
+): DebtorCard[] {
   let list = debtors
     .map((d) => {
-      const invoices = d.invoices.filter((inv) => inv.debtDays >= MIN);
+      const invoices = d.invoices.filter(
+        (inv) => inv.debtDays >= DEBT_MIN_DAYS && inv.remaining >= DEBT_MIN_REMAINING,
+      );
       if (!invoices.length) return null;
       const totalOwed = invoices.reduce((a, i) => a + i.total, 0);
       const totalRemaining = invoices.reduce((a, i) => a + i.remaining, 0);
       const totalPaid = Math.max(totalOwed - totalRemaining, 0);
       const maxDebtDays = invoices.reduce((a, i) => Math.max(a, i.debtDays), 0);
       const hasPending = invoices.some((i) => i.status.toLowerCase() === 'pending');
-      const hasPartial = invoices.some((i) => i.status.toLowerCase() === 'partially_paid');
+      const hasPartial = invoices.some((i) => {
+        const st = i.status.toLowerCase();
+        return st === 'partially_paid' || st === 'partial';
+      });
+      const worstStatus = hasPartial ? 'partially_paid' : hasPending ? 'pending' : d.worstStatus;
       return {
         ...d,
         invoices,
@@ -118,10 +160,15 @@ export function filterDebtors(debtors: DebtorCard[], search: string): DebtorCard
         maxDebtDays,
         hasPending,
         hasPartial,
-        isHardDebtor: maxDebtDays >= 15,
+        isHardDebtor: maxDebtDays >= HARD_DEBT_DAYS,
+        worstStatus,
       };
     })
     .filter((d): d is DebtorCard => d != null);
+
+  if (status === 'pending') list = list.filter((d) => d.hasPending && !d.hasPartial);
+  else if (status === 'partial') list = list.filter((d) => d.hasPartial);
+  else if (status === 'hard') list = list.filter((d) => d.isHardDebtor);
 
   const q = search.trim().toLowerCase();
   if (q) {
@@ -129,7 +176,8 @@ export function filterDebtors(debtors: DebtorCard[], search: string): DebtorCard
       (d) =>
         d.carrierId.toLowerCase().includes(q) ||
         d.dealName.toLowerCase().includes(q) ||
-        d.companyName.toLowerCase().includes(q),
+        d.companyName.toLowerCase().includes(q) ||
+        d.stage.toLowerCase().includes(q),
     );
   }
   return [...list].sort((a, b) => b.totalRemaining - a.totalRemaining);
@@ -143,10 +191,23 @@ export function debtorsSummary(list: DebtorCard[]): DebtorsSummary {
   let largestDebt = 0;
   for (const d of list) {
     totalRemaining += d.totalRemaining;
-    if (d.hasPending) pendingCount += 1;
+    if (d.hasPending && !d.hasPartial) pendingCount += 1;
     if (d.hasPartial) partialCount += 1;
     if (d.isHardDebtor) hardCount += 1;
     if (d.totalRemaining > largestDebt) largestDebt = d.totalRemaining;
   }
-  return { totalRemaining, pendingCount, partialCount, hardCount, largestDebt };
+  return {
+    totalRemaining,
+    pendingCount,
+    partialCount,
+    hardCount,
+    largestDebt,
+    debtorCount: list.length,
+  };
+}
+
+/** Home “Money Owed” KPIs — same Billing-aligned filter as the Debtors dashboard. */
+export async function loadDebtorsHomeSummary(opts: { force?: boolean } = {}): Promise<DebtorsSummary> {
+  const raw = await loadDebtorsRaw(opts);
+  return debtorsSummary(filterDebtors(raw.debtors, '', 'all'));
 }

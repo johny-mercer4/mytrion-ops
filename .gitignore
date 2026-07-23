@@ -40,3 +40,8 @@ eval-reports/
 .playwright-mcp/
 /*.png
 apps/design_handoff_octane_mini_app/
+
+# Local-only
+.claude/settings.local.json
+.DS_Store
+_to_delete/

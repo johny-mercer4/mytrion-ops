@@ -23,9 +23,9 @@ import {
 import {
   RetentionCaseHeader,
   RetentionDetailSkeleton,
-  RetentionEventTrail,
   RetentionInactivityBlock,
   RetentionMetaGrid,
+  RetentionTimelineSlot,
 } from './RetentionCaseMeta';
 import {
   attemptEvent,
@@ -227,6 +227,7 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
   }, [row?.isOpen, row?.phaseCode, row?.statusCode, pushToast]);
 
   const requestClose = (): void => {
+    if (busy) return;
     if (forceAttempt) {
       pushToast('Retry the call log', 'RingCentral attempt did not save — retry');
       return;
@@ -238,21 +239,30 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
     onClose();
   };
 
+  /**
+   * Apply server result. When `closeAfter`, update the board + toast and close immediately —
+   * skip remounting modal body (timeline / stage swap) so the dialog doesn't jump.
+   */
   const applyUpdate = (
     updated: RetentionCaseRow,
     events: RetentionCaseEventRow | RetentionCaseEventRow[],
     toastTitle: string,
     toastBody: string,
+    opts?: { closeAfter?: boolean },
   ): void => {
     const list = Array.isArray(events) ? events : [events];
+    onUpdated(updated);
+    pushToast(toastTitle, toastBody);
+    if (opts?.closeAfter) {
+      onClose();
+      return;
+    }
     setLiveCase(updated);
     setLiveEvents((prev) => {
       const ids = new Set(list.map((e) => e.id));
       return [...list, ...prev.filter((e) => !ids.has(e.id))];
     });
     setEventsHydrated(true);
-    onUpdated(updated);
-    pushToast(toastTitle, toastBody);
   };
 
   const clearAttemptUi = (opts?: { keepStage?: boolean }): void => {
@@ -284,9 +294,9 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
         pooled
           ? '5 attempts — Ryan + deal owner notified'
           : `${updated.outOfReachAttempts}/5 · choose stage below`,
+        { closeAfter: pooled },
       );
-      clearAttemptUi({ keepStage: !pooled });
-      if (pooled) onClose();
+      if (!pooled) clearAttemptUi({ keepStage: true });
       return true;
     } catch (e) {
       setLiveCase(cur);
@@ -310,11 +320,11 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
     if (busy || !row || forceAttempt) return;
     const fromStatus = row.statusCode;
     const callForAttempt = outcome === 'out_of_reach' ? pendingCall : null;
+    const closeAfter = opts?.close !== false;
     setBusy(true);
+    // Optimistic board update only — do not remount modal body (avoids timeline jump).
     if (outcome === 'out_of_reach') {
-      const optimistic = optimisticOutOfReach(row, !!callForAttempt);
-      setLiveCase(optimistic);
-      onUpdated(optimistic);
+      onUpdated(optimisticOutOfReach(row, !!callForAttempt));
     }
     try {
       let updated = await recordRetentionOutcome(caseId, outcome, extra ?? {});
@@ -352,8 +362,9 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
             events,
             'Moved to Out of Reach',
             e instanceof Error ? e.message : 'Retry RingCentral attempt log',
+            { closeAfter },
           );
-          setStatusPick('');
+          if (!closeAfter) setStatusPick('');
           return;
         }
       } else {
@@ -367,12 +378,10 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
         callForAttempt && outcome === 'out_of_reach'
           ? `Moved to Out of Reach · RingCentral ${updated.outOfReachAttempts}/5`
           : statusLabel(updated.statusCode),
+        { closeAfter },
       );
-      setStatusPick('');
-      // Close after stage choice so the board card can move into the new column.
-      if (opts?.close !== false) onClose();
+      if (!closeAfter) setStatusPick('');
     } catch (e) {
-      setLiveCase(row);
       onUpdated(row);
       pushToast('Update failed', e instanceof Error ? e.message : 'Could not record outcome');
     } finally {
@@ -424,7 +433,7 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
   const onLogOtherChannel = async (): Promise<void> => {
     if (busy || !row || forceAttempt) return;
     if (row.statusCode !== 'p1_out_of_reach') {
-      pushToast('Mark Out of Reach first', 'Channel attempts start after OoR stage');
+      pushToast('Mark Out of Reach first', 'Channel attempts start after Out of Reach stage');
       return;
     }
     if (channel === 'ringcentral') {
@@ -452,9 +461,9 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
         pooled
           ? '5 attempts — Ryan + deal owner notified'
           : `${updated.outOfReachAttempts}/5 · choose stage below`,
+        { closeAfter: pooled },
       );
-      clearAttemptUi({ keepStage: !pooled });
-      if (pooled) onClose();
+      if (!pooled) clearAttemptUi({ keepStage: true });
     } catch (e) {
       setLiveCase(row);
       onUpdated(row);
@@ -463,6 +472,10 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
       setBusy(false);
     }
   };
+
+  const showTimeline = !!row && !isNewStatus(row.statusCode);
+  /** Hydrate-only — busy uses the modal overlay so we don't stack loaders. */
+  const timelineLoading = eventsLoading;
 
   return (
     <div
@@ -476,11 +489,9 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
         role="dialog"
         aria-modal="true"
         aria-label="Retention case detail"
-        aria-busy={initialLoad}
+        aria-busy={initialLoad || busy}
         onClick={(e) => e.stopPropagation()}
-        style={s(
-          'width:min(560px,100%);max-height:min(90vh,820px);display:flex;flex-direction:column;border-radius:var(--radius-lg);border:1px solid var(--border);background:var(--surface);box-shadow:var(--shadow);overflow:hidden;animation:ss-fadein .18s ease both',
-        )}
+        className="ss-ret-modal"
       >
         <RetentionCaseHeader
           loading={initialLoad}
@@ -491,10 +502,14 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
           onClose={requestClose}
         />
 
-        <div
-          className="ss-scroll"
-          style={s('flex:1;min-height:0;padding:16px 18px;display:flex;flex-direction:column;gap:16px')}
-        >
+        {busy ? (
+          <div className="ss-ret-modal-saving" role="status" aria-live="polite">
+            <span className="ss-ret-modal-saving-spin" aria-hidden />
+            <span>Updating…</span>
+          </div>
+        ) : null}
+
+        <div className="ss-scroll ss-ret-modal-body">
           {detail.error && (
             <div style={s('color:var(--danger);font-size:13px')}>{detail.error}</div>
           )}
@@ -502,7 +517,7 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
           {initialLoad && <RetentionDetailSkeleton />}
 
           {row && (
-            <>
+            <div className={busy ? 'ss-ret-modal-content is-saving' : 'ss-ret-modal-content'}>
               <RetentionInactivityBlock row={row} />
               <RetentionMetaGrid row={row} />
               {row.isOpen &&
@@ -562,23 +577,18 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
                       ? 'Open Pool — claim pending.'
                       : 'In Sales Open Pool.'}
                   </strong>{' '}
-                  {row.assignedAgentZohoUserId
-                    ? 'Another agent can claim from Open Pool (max 3 assignments).'
-                    : 'This was your deal — you cannot claim it back here. Other agents request it from Open Pool; CS approval transfers Deal/Contact/Company ownership.'}
+                  {row.statusCode === 'p1_pool_claim_pending'
+                    ? 'A claim is being finalized. Refresh shortly.'
+                    : 'This was your deal — you cannot claim it back here. Other agents can claim it from Open Pool (instant assign).'}
                 </div>
               )}
-              {/* New stage: call-first — no timeline until a stage is chosen */}
-              {!isNewStatus(row.statusCode) &&
-                (eventsLoading ? (
-                  <div style={s('display:flex;flex-direction:column;gap:8px')} aria-busy="true">
-                    <div className="ss-skel" style={s('height:12px;width:30%')} />
-                    <div className="ss-skel" style={s('height:56px')} />
-                    <div className="ss-skel" style={s('height:56px')} />
-                  </div>
-                ) : (
-                  <RetentionEventTrail events={liveEvents} />
-                ))}
-            </>
+              {/* New: no timeline. Other stages: reserved slot (skeleton → trail) — no jump. */}
+              <RetentionTimelineSlot
+                hidden={!showTimeline}
+                loading={timelineLoading}
+                events={liveEvents}
+              />
+            </div>
           )}
         </div>
       </div>

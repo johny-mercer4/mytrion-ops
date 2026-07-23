@@ -1,7 +1,7 @@
 /**
- * Customer Service Retention desk — Phase 2 cases + CITI Folder (Phase 3) bulk ops.
+ * Customer Service Retention desk — all-phase case browse + Phase 2 actions + CITI Folder.
  */
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   RETENTION_PHASE,
@@ -27,9 +27,11 @@ import {
   type RetentionCaseEventDto,
 } from './retentionCaseRepo.js';
 
-const P2_FILTERS = {
+/** Phase 2 desk status buckets (claim / outcomes only apply in Retention phase). */
+const P2_STATUS = {
   new: ['p2_new'] as const,
-  working: ['p2_working', 'p2_offer_pending', 'p2_handoff_citi'] as const,
+  working: ['p2_working', 'p2_handoff_citi'] as const,
+  offerPending: ['p2_offer_pending'] as const,
   closed: [
     'p2_saved',
     'p2_refused',
@@ -37,12 +39,144 @@ const P2_FILTERS = {
     'p2_out_of_business',
     'p2_no_response',
   ] as const,
-  all_open: ['p2_new', 'p2_working', 'p2_offer_pending', 'p2_handoff_citi'] as const,
+  open: ['p2_new', 'p2_working', 'p2_offer_pending', 'p2_handoff_citi'] as const,
 } as const;
 
-export type CsPhase2Filter = keyof typeof P2_FILTERS;
+const P1_STATUS = {
+  calling: ['p1_new', 'p1_in_progress', 'p1_pool_assigned'] as const,
+  reached: ['p1_reached'] as const,
+  outOfReach: ['p1_out_of_reach'] as const,
+  openPool: ['p1_open_pool', 'p1_pool_claim_pending'] as const,
+  vacation: ['p1_vacation', 'p1_vacation_followup', 'p1_awaiting_ops'] as const,
+} as const;
 
 const CITI_OPEN = ['p3_hold', 'p3_review'] as const;
+
+/**
+ * Legacy flat filters (still accepted). Prefer phase + status.
+ */
+export const CS_DESK_FILTERS = [
+  'all_open',
+  'all',
+  'sales',
+  'retention',
+  'citi',
+  'new',
+  'working',
+  'closed',
+] as const;
+
+export type CsDeskFilter = (typeof CS_DESK_FILTERS)[number];
+/** @deprecated Use CsDeskFilter — kept for existing imports. */
+export type CsPhase2Filter = CsDeskFilter;
+
+export const CS_DESK_PHASES = ['any', 'sales', 'retention', 'citi'] as const;
+export type CsDeskPhase = (typeof CS_DESK_PHASES)[number];
+
+export const CS_DESK_STATUSES = [
+  'open',
+  'closed',
+  'all',
+  'to_claim',
+  'working',
+  'offer_pending',
+  'calling',
+  'reached',
+  'out_of_reach',
+  'open_pool',
+  'vacation',
+  'hold',
+  'review',
+] as const;
+export type CsDeskStatus = (typeof CS_DESK_STATUSES)[number];
+
+const CLOSED_LOOKBACK = sql`${retentionCases.closedAt} >= now() - interval '90 days'`;
+
+function phaseClause(phase: CsDeskPhase): SQL | null {
+  if (phase === 'sales') return eq(retentionCases.phaseCode, RETENTION_PHASE.agent);
+  if (phase === 'retention') return eq(retentionCases.phaseCode, RETENTION_PHASE.retention);
+  if (phase === 'citi') return eq(retentionCases.phaseCode, RETENTION_PHASE.citi);
+  return null;
+}
+
+function deskQueryClauses(phase: CsDeskPhase, status: CsDeskStatus): SQL[] {
+  const out: SQL[] = [];
+  const pc = phaseClause(phase);
+  if (pc) out.push(pc);
+
+  if (status === 'all') {
+    out.push(
+      sql`(${retentionCases.closedAt} IS NULL OR ${retentionCases.closedAt} >= now() - interval '90 days')`,
+    );
+    return out;
+  }
+  if (status === 'closed') {
+    out.push(sql`${retentionCases.closedAt} IS NOT NULL`, CLOSED_LOOKBACK);
+    return out;
+  }
+
+  out.push(isNull(retentionCases.closedAt));
+
+  if (status === 'open') {
+    if (phase === 'retention') out.push(inArray(retentionCases.statusCode, [...P2_STATUS.open]));
+    if (phase === 'citi') out.push(inArray(retentionCases.statusCode, [...CITI_OPEN]));
+    return out;
+  }
+
+  if (phase === 'retention') {
+    if (status === 'to_claim') out.push(inArray(retentionCases.statusCode, [...P2_STATUS.new]));
+    else if (status === 'working') out.push(inArray(retentionCases.statusCode, [...P2_STATUS.working]));
+    else if (status === 'offer_pending') {
+      out.push(inArray(retentionCases.statusCode, [...P2_STATUS.offerPending]));
+    }
+    return out;
+  }
+
+  if (phase === 'sales') {
+    if (status === 'calling') out.push(inArray(retentionCases.statusCode, [...P1_STATUS.calling]));
+    else if (status === 'reached') out.push(inArray(retentionCases.statusCode, [...P1_STATUS.reached]));
+    else if (status === 'out_of_reach') {
+      out.push(inArray(retentionCases.statusCode, [...P1_STATUS.outOfReach]));
+    } else if (status === 'open_pool') {
+      out.push(inArray(retentionCases.statusCode, [...P1_STATUS.openPool]));
+    } else if (status === 'vacation') {
+      out.push(inArray(retentionCases.statusCode, [...P1_STATUS.vacation]));
+    }
+    return out;
+  }
+
+  if (phase === 'citi') {
+    if (status === 'hold') out.push(eq(retentionCases.statusCode, 'p3_hold'));
+    else if (status === 'review') out.push(eq(retentionCases.statusCode, 'p3_review'));
+    return out;
+  }
+
+  return out;
+}
+
+/** Map legacy flat filter → phase/status. */
+function legacyToPhaseStatus(filter: CsDeskFilter): { phase: CsDeskPhase; status: CsDeskStatus } {
+  switch (filter) {
+    case 'all_open':
+      return { phase: 'any', status: 'open' };
+    case 'all':
+      return { phase: 'any', status: 'all' };
+    case 'sales':
+      return { phase: 'sales', status: 'open' };
+    case 'retention':
+      return { phase: 'retention', status: 'open' };
+    case 'citi':
+      return { phase: 'citi', status: 'open' };
+    case 'new':
+      return { phase: 'retention', status: 'to_claim' };
+    case 'working':
+      return { phase: 'retention', status: 'working' };
+    case 'closed':
+      return { phase: 'any', status: 'closed' };
+    default:
+      return { phase: 'any', status: 'open' };
+  }
+}
 
 function csvEscape(v: string): string {
   if (/[",\n\r]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
@@ -50,19 +184,42 @@ function csvEscape(v: string): string {
 }
 
 export const retentionCaseCsRepo = {
-  async listPhase2(
+  /**
+   * CS browse — any phase (details via getWithEvents). Write actions remain Phase 2-gated.
+   * Prefer `phase` + `status`; legacy `filter` still works.
+   */
+  async listForCs(
     ctx: TenantContext,
-    opts: { filter?: CsPhase2Filter; limit?: number } = {},
+    opts: {
+      filter?: CsDeskFilter;
+      phase?: CsDeskPhase;
+      status?: CsDeskStatus;
+      limit?: number;
+      /**
+       * When set, restrict to this assignee (CS agent desk).
+       * Open Pool (`sales` + `open_pool`) stays shared — no assignee filter.
+       */
+      assignedAgentZohoUserId?: string;
+    } = {},
   ): Promise<{ cases: RetentionCaseDto[]; total: number }> {
     const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
-    const filter = opts.filter ?? 'all_open';
-    const statuses = [...P2_FILTERS[filter]];
+    const resolved =
+      opts.phase != null || opts.status != null
+        ? {
+            phase: opts.phase ?? 'any',
+            status: opts.status ?? 'open',
+          }
+        : legacyToPhaseStatus(opts.filter ?? 'all_open');
+    const isOpenPool =
+      resolved.phase === 'sales' && resolved.status === 'open_pool';
+    const assignee = opts.assignedAgentZohoUserId?.trim();
     const clauses = [
       eq(retentionCases.tenantId, ctx.tenantId),
-      eq(retentionCases.phaseCode, RETENTION_PHASE.retention),
-      inArray(retentionCases.statusCode, statuses),
+      ...deskQueryClauses(resolved.phase, resolved.status),
+      ...(assignee && !isOpenPool
+        ? [eq(retentionCases.assignedAgentZohoUserId, assignee)]
+        : []),
     ];
-    if (filter !== 'closed') clauses.push(isNull(retentionCases.closedAt));
     const where = and(...clauses);
     const rows = await db
       .select()
@@ -71,6 +228,14 @@ export const retentionCaseCsRepo = {
       .orderBy(desc(retentionCases.gallons90d), desc(retentionCases.updatedAt))
       .limit(limit);
     return { cases: rows.map(toRetentionCaseDto), total: rows.length };
+  },
+
+  /** @deprecated Prefer listForCs — same implementation. */
+  async listPhase2(
+    ctx: TenantContext,
+    opts: { filter?: CsDeskFilter; limit?: number } = {},
+  ): Promise<{ cases: RetentionCaseDto[]; total: number }> {
+    return this.listForCs(ctx, opts);
   },
 
   async recordPhase2Outcome(
@@ -94,6 +259,12 @@ export const retentionCaseCsRepo = {
 
     if (outcome === 'claim' || outcome === 'start_working') {
       await assertUnderDailyCap(ctx, opts.actorZohoUserId);
+    } else if (!existing.assignedAgentZohoUserId?.trim()) {
+      throw new AppError('Claim this case before setting a status', {
+        statusCode: 409,
+        code: 'RETENTION_UNASSIGNED',
+        expose: true,
+      });
     }
     if (outcome === 'mark_pending') {
       const agent = existing.assignedAgentZohoUserId ?? opts.actorZohoUserId;
@@ -121,7 +292,12 @@ export const retentionCaseCsRepo = {
     const { afterRetentionPhaseSideEffects } = await import(
       '../modules/retention/csRoundRobin.js'
     );
-    await afterRetentionPhaseSideEffects(existing.phaseCode, updated);
+    await afterRetentionPhaseSideEffects(existing.phaseCode, updated, {
+      previousAssigneeZohoUserId: existing.assignedAgentZohoUserId,
+      tenantId: ctx.tenantId,
+      actorZohoUserId: opts.actorZohoUserId,
+      actorName: opts.agentName ?? null,
+    });
     // Out of Business → Zoho Deal Stage Closed Lost (exclude from future retention).
     if (updated.statusCode === 'p2_out_of_business' && updated.zohoDealId) {
       const { setDealStageClosedLost } = await import('../modules/retention/zohoOwnership.js');
@@ -170,6 +346,13 @@ export const retentionCaseCsRepo = {
         expose: true,
       });
     }
+    if (!existing.assignedAgentZohoUserId?.trim()) {
+      throw new AppError('Claim this case before logging calls', {
+        statusCode: 409,
+        code: 'RETENTION_UNASSIGNED',
+        expose: true,
+      });
+    }
     const noteTrim = input.notes?.trim() || undefined;
     const evidenceUrl = input.evidenceUrl?.trim() || undefined;
     if (input.channel !== 'ringcentral' && !evidenceUrl && !noteTrim) {
@@ -180,6 +363,7 @@ export const retentionCaseCsRepo = {
       });
     }
     const { formatCallRoleNote } = await import('../modules/retention/csCaps.js');
+    const { stampPhase2Working } = await import('../modules/retention/phase2.js');
     const notes = input.callRole
       ? formatCallRoleNote(input.callRole, noteTrim)
       : (noteTrim ?? `CS contact via ${input.channel}`);
@@ -198,12 +382,7 @@ export const retentionCaseCsRepo = {
         ctx,
         id,
         patchToUpdateInput(
-          {
-            phaseCode: RETENTION_PHASE.retention,
-            statusCode: 'p2_working',
-            eventType: 'status_change',
-            eventNotes: 'First CS contact — working',
-          },
+          stampPhase2Working({ notes: 'First CS contact — working' }),
           input.actorZohoUserId,
         ),
       );
