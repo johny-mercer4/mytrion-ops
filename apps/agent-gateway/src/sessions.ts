@@ -97,6 +97,9 @@ export interface TurnStats {
   numTurns: number;
   usage: Record<string, unknown> | null;
   isError: boolean;
+  /** On a failed turn: the caught error's message — surfaced in the web monitor so a prod
+   * failure is diagnosable from the dashboard, not only from Render logs. */
+  errMsg?: string;
 }
 
 export function enqueueTurn(
@@ -109,9 +112,21 @@ export function enqueueTurn(
   const prev = chains.get(chatId) ?? Promise.resolve();
   const next = prev
     .then(() => runTurn(chatId, carrierId, userPrompt, onReply, onStats))
-    .catch((err) => {
+    .catch(async (err) => {
       console.error(`[chat ${chatId}] turn failed`, err);
-      onStats?.({ durationMs: 0, numTurns: 0, usage: null, isError: true });
+      onStats?.({ durationMs: 0, numTurns: 0, usage: null, isError: true, errMsg: err instanceof Error ? err.message : String(err) });
+      // A terminal error (e.g. SDK auth/init failure) used to leave the tagged user with total
+      // silence, which reads as "the bot is dead" — worst for exactly the person who engaged.
+      // Send one short bilingual fallback so a broken turn is visible, not invisible. Best-effort:
+      // if even the send fails, swallow it (the queue must keep draining for the next turn).
+      try {
+        await onReply(
+          '⚠️ Hozir javob bera olmadim — birozdan keyin qayta urinib ko‘ring. / ' +
+            "Couldn't answer just now — please try again shortly.",
+        );
+      } catch {
+        /* send failed too — nothing more to do */
+      }
     });
   chains.set(chatId, next);
 }

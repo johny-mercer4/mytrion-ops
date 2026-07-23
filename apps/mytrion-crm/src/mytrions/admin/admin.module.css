@@ -259,10 +259,12 @@
 /* Column ratios belong here, not in a JSX style prop: an inline grid-template-columns outranks every
    media query, so the carrier tables had no way to adapt and simply squashed. */
 .tCarrier {
-  grid-template-columns: 2fr 1.1fr 1fr 1.2fr 1fr 0.9fr;
+  /* +Bot group column (2026-07-23) between Telegram and Registered. */
+  grid-template-columns: 2fr 1.1fr 1fr 1.2fr 1.3fr 1fr 0.9fr;
 }
 .tInvite {
-  grid-template-columns: 2fr 1fr 1fr 1fr 1.1fr 1.1fr;
+  /* +Agent column (2026-07-23) between Carrier and Status. */
+  grid-template-columns: 2fr 0.9fr 1fr 1.1fr 1fr 1.1fr 1.1fr;
 }
 .tDocs {
   grid-template-columns: 2.6fr 1fr 0.7fr 0.9fr 1fr;

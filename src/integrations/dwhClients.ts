@@ -23,6 +23,9 @@ export interface DwhClient {
   applicationDate: string | null;
   /** Zoho user id of the deal owner (the sales agent). */
   ownerZohoUserId: string | null;
+  /** Deal owner's display name (zoho_users.full_name) — the SALES AGENT the client should see
+   * (2026-07-23, owner ask: invites must carry the deal owner, not whoever clicked Generate). */
+  ownerName: string | null;
 }
 
 interface DealRow {
@@ -32,6 +35,7 @@ interface DealRow {
   application_id: number | null;
   application_date: string | Date | null;
   owner_id: string | number | null;
+  owner_name: string | null;
 }
 
 function toIsoDate(v: string | Date | null): string | null {
@@ -48,6 +52,7 @@ function toDto(row: DealRow): DwhClient {
     applicationId: row.application_id != null ? String(row.application_id) : null,
     applicationDate: toIsoDate(row.application_date),
     ownerZohoUserId: row.owner_id != null ? String(row.owner_id) : null,
+    ownerName: row.owner_name,
   };
 }
 
@@ -86,13 +91,14 @@ export async function searchDwhClients(opts: {
 
   // Inner: newest snapshot per deal (valid_from DESC). Outer: search + stage filter + display order.
   const rows = await dwhQuery<DealRow>(
-    `select deal_name, stage, carrier_id, application_id, application_date, owner_id
+    `select deal_name, stage, carrier_id, application_id, application_date, owner_id, zu.full_name as owner_name
        from (
          select distinct on (zoho_deal_id)
                 zoho_deal_id, deal_name, stage, carrier_id, application_id, application_date, owner_id
            from octane.stg_zoho_deals
           order by zoho_deal_id, valid_from desc nulls last
        ) latest
+       left join (select distinct id, full_name from zoho_users) zu on latest.owner_id::text = zu.id::text
       where ${where.join(' and ')}
       order by application_date desc nulls last, zoho_deal_id desc
       limit ${limit}`,

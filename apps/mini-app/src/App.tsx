@@ -2014,13 +2014,15 @@ const TXN_RANGES: ReadonlyArray<{ value: TxnRange; key: string }> = [
  * last_7 | last_30 | last_90 | last_365 | custom | all_time. servercrm falls back to last_30 on an
  * unknown preset *silently*, so feeding it 'month' would look wired and quietly do nothing.
  */
-type InvoiceRange = 'last_7' | 'last_30' | 'last_90' | 'last_365' | 'all_time';
+type InvoiceRange = 'last_7' | 'last_30' | 'last_90' | 'last_365' | 'all_time' | 'custom';
 const INVOICE_RANGES: ReadonlyArray<{ value: InvoiceRange; key: string }> = [
   { value: 'last_7', key: 'inv.last7' },
   { value: 'last_30', key: 'inv.last30' },
   { value: 'last_90', key: 'inv.last90' },
   { value: 'last_365', key: 'inv.last365' },
   { value: 'all_time', key: 'inv.allTime' },
+  // Custom window (2026-07-22, owner ask): same affordance as the transactions sheet.
+  { value: 'custom', key: 'txns.custom' },
 ];
 
 type SheetData =
@@ -2116,6 +2118,9 @@ function ActionSheet({
   const [cardStatusFilter, setCardStatusFilter] = useState<string>('all');
   const [range, setRange] = useState<TxnRange>('month');
   const [invRange, setInvRange] = useState<InvoiceRange>('last_30');
+  // Custom invoice window — own state (NOT the txns from/to) so the two sheets don't fight.
+  const [invFrom, setInvFrom] = useState('');
+  const [invTo, setInvTo] = useState('');
   // Lazy init, and relative to TODAY: these were literal dates ('2026-06-01'/'2026-07-09'), so the
   // custom range opened on a window that had already gone stale — by this writing it ended 8 days
   // in the past. Last 30 days is the neutral default; the presets cover the calendar shapes.
@@ -2132,7 +2137,7 @@ function ActionSheet({
   const [genericComment, setGenericComment] = useState('');
   const [invoiceBusyId, setInvoiceBusyId] = useState<string | null>(null);
   /** Feedback #3: the owner picks the invoice file format once; every tap then delivers that. */
-  const [invFormat, setInvFormat] = useState<'pdf' | 'xlsx' | 'csv'>('pdf');
+  const [invFormat, setInvFormat] = useState<'pdf' | 'xlsx'>('pdf');
   /** Phase 2 of the transactions read is in flight — rows are already shown, freshest are pending. */
   const [liveRefreshing, setLiveRefreshing] = useState(false);
   /** Which export format is currently being built + sent to Telegram, if any. */
@@ -2216,7 +2221,7 @@ function ActionSheet({
         const cardFilter = txnCardSel && !session.isDriver ? { cardId: txnCardSel.cardId } : {};
         const txnOpts = dwhRange === 'custom' ? { range: 'custom', from, to, ...cardFilter } : { range: dwhRange, ...cardFilter };
         // Params that change WHAT a sheet shows are part of its cache identity.
-        const cacheId = `${service}|${service === 'txns' ? `${dwhRange}|${from}|${to}|${txnCardSel?.cardId ?? ''}` : ''}|${service === 'invoices' ? invRange : ''}`;
+        const cacheId = `${service}|${service === 'txns' ? `${dwhRange}|${from}|${to}|${txnCardSel?.cardId ?? ''}` : ''}|${service === 'invoices' ? `${invRange}|${invFrom}|${invTo}` : ''}`;
         const hit = SHEET_CACHE.get(cacheId);
         if (hit && Date.now() - hit.at < SHEET_TTL_MS) {
           if (cancelled) return;
@@ -2232,7 +2237,9 @@ function ActionSheet({
         else if (service === 'txns') next = { kind: 'txns', v: await fetchTransactions(initData, txnOpts, false) };
         else if (service === 'lastused') next = { kind: 'lastused', v: await fetchLastUsed(initData) };
         else if (service === 'payment') next = { kind: 'payment', v: await fetchPaymentInfo(initData) };
-        else if (service === 'invoices') next = { kind: 'invoices', v: await fetchInvoices(initData, { range: invRange }) };
+        // Custom invoice window mirrors the txns sheet; until both dates are picked the previous
+        // preset keeps rendering (no half-range fetch, no error flash).
+        else if (service === 'invoices') next = { kind: 'invoices', v: await fetchInvoices(initData, invRange === 'custom' ? (invFrom && invTo ? { from: invFrom, to: invTo } : { range: 'last_30' }) : { range: invRange }) };
         // Manual card usage: the full card number the session already holds, PLUS the unit number
         // and driver ID from the live EFS card (what a pump keypad asks for). EFS is best-effort —
         // a hiccup still shows the card number (the one field that must never be missing here).
@@ -2335,7 +2342,7 @@ function ActionSheet({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target, dwhRange, invRange, from, to, txnCardSel, attempt]);
+  }, [target, dwhRange, invRange, invFrom, invTo, from, to, txnCardSel, attempt]);
 
   // The card-filter chips need the fleet list; owners only, fetched once per sheet mount.
   useEffect(() => {
@@ -2899,6 +2906,19 @@ function ActionSheet({
                       </button>
                     ))}
                   </div>
+                  {invRange === 'custom' && (
+                    /* Same stacked From/To as the txns sheet — side-by-side date inputs overflow on mobile. */
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
+                      <label>
+                        <span style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.from')}</span>
+                        <input type="date" value={invFrom} onChange={(e) => setInvFrom(e.target.value)} style={{ width: '100%', minWidth: 0, height: 44, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, padding: '0 12px', boxSizing: 'border-box' }} />
+                      </label>
+                      <label>
+                        <span style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.to')}</span>
+                        <input type="date" value={invTo} onChange={(e) => setInvTo(e.target.value)} style={{ width: '100%', minWidth: 0, height: 44, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--background)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, padding: '0 12px', boxSizing: 'border-box' }} />
+                      </label>
+                    </div>
+                  )}
                   {/* The backend has sent this summary all along; nothing read it. Billed vs still
                       open is the pair an owner opens invoices for — the list answers "which" after. */}
                   {sum['sum_total_amount'] != null && (
@@ -2923,9 +2943,11 @@ function ActionSheet({
                   )}
                   {rows.length > 0 && (
                     <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-                      {(['pdf', 'xlsx', 'csv'] as const).map((f) => (
+                      {/* CSV removed 2026-07-22: servercrm has no CSV invoice document — the button
+                          400'd. Excel now really works (xlsx→excel mapped in the wrapper). */}
+                      {(['pdf', 'xlsx'] as const).map((f) => (
                         <button key={f} type="button" onClick={() => { haptic('tap'); setInvFormat(f); }} style={{ flex: 1, height: 32, borderRadius: 9, border: 'none', fontFamily: "'Geist'", fontWeight: 700, fontSize: 12, cursor: 'pointer', background: invFormat === f ? 'var(--primary)' : 'var(--secondary)', color: invFormat === f ? '#FFFFFF' : 'var(--muted-fg)' }}>
-                          {f === 'pdf' ? 'PDF' : f === 'xlsx' ? 'Excel' : 'CSV'}
+                          {f === 'pdf' ? 'PDF' : 'Excel'}
                         </button>
                       ))}
                     </div>

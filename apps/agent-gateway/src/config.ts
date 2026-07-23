@@ -1,5 +1,14 @@
 import 'dotenv/config';
 
+// The container runs as ROOT (Render/Docker default). The Claude Code CLI that the Agent SDK
+// spawns for permissionMode 'bypassPermissions' refuses --dangerously-skip-permissions under
+// root ("exited with code 1 ... root/sudo privileges") UNLESS IS_SANDBOX is set. We force it in
+// CODE — not just start-prod.sh / the env group — so it can never be lost to env-propagation
+// quirks between PID1, the shell, pnpm and the spawned CLI. Safe here: the gateway's allowedTools
+// are our MCP tools only (Bash/Read/Write/Edit disallowed), so skip-permissions grants the model
+// no filesystem or shell reach. Set BEFORE any SDK import runs a query.
+if (!process.env['IS_SANDBOX']) process.env['IS_SANDBOX'] = '1';
+
 function req(name: string): string {
   const v = process.env[name];
   if (!v) throw new Error(`env ${name} is required`);

@@ -12,6 +12,20 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build
 
+# --- Gateway: the support bot runs from source via tsx (own lockfile, NOT a workspace pkg).
+#     Full install on purpose: tsx lives in devDependencies. ---
+FROM base AS gateway
+WORKDIR /app/apps/agent-gateway
+COPY apps/agent-gateway/package.json apps/agent-gateway/pnpm-lock.yaml ./
+# The gateway package.json has no packageManager pin, so bare corepack resolves the LATEST pnpm —
+# 11.x crashes on Node 20 (ERR_UNKNOWN_BUILTIN_MODULE, seen live on Render 2026-07-23). Pin the
+# same major the lockfile was written with (matches apps/agent-gateway/Dockerfile).
+RUN corepack prepare pnpm@9.12.0 --activate && corepack pnpm install --frozen-lockfile
+COPY apps/agent-gateway/tsconfig.json ./
+COPY apps/agent-gateway/src ./src
+COPY apps/agent-gateway/prompts ./prompts
+COPY apps/agent-gateway/.claude ./.claude
+
 # --- Runtime: prod deps only + compiled output ---
 FROM base AS runtime
 ENV NODE_ENV=production
@@ -27,5 +41,8 @@ COPY --from=build /app/apps/mytrion-crm/app ./apps/mytrion-crm/app
 # The Telegram carrier mini-app (vendored in git) is served same-origin at /mini-app — carry it
 # into runtime too (matches miniAppStatic's resolver: /app/apps/mini-app/app).
 COPY --from=build /app/apps/mini-app/app ./apps/mini-app/app
+# The support-bot gateway (see scripts/docker/start-prod.sh — starts only when its env is set).
+COPY --from=gateway /app/apps/agent-gateway ./apps/agent-gateway
+COPY scripts/docker/start-prod.sh ./start-prod.sh
 EXPOSE 3001
-CMD ["node", "dist/server.js"]
+CMD ["sh", "./start-prod.sh"]

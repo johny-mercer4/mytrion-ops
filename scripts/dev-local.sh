@@ -18,9 +18,10 @@ WEB_PORT=5173
 # ── 1. Dependencies — ALWAYS sync (fast no-op when the lockfile is unchanged). ─
 # A bare "node_modules exists" check rots: a pull that adds a dependency keeps serving
 # code whose packages were never installed (vite: "Failed to resolve import …").
+# CI=1: pnpm 11 may otherwise prompt "reinstall from scratch?" and abort in non-TTY.
 echo "[setup] syncing deps…"
-$PNPM install --prefer-offline
-$PNPM -C apps/mytrion-crm install --prefer-offline
+CI=1 $PNPM install --prefer-offline
+CI=1 $PNPM -C apps/mytrion-crm install --prefer-offline
 
 # ── 2. Web env: point the app at the local API with the dev key + mock auth ──
 if [ ! -f apps/mytrion-crm/.env.local ]; then

@@ -242,7 +242,7 @@ export function vacationFollowupTask(
 }
 
 export function awaitingOpsSignoff(
-  opts: { now?: Date } = {},
+  _opts: { now?: Date } = {},
 ): CaseTransitionPatch {
   return {
     phaseCode: RETENTION_PHASE.agent,

@@ -178,11 +178,6 @@ function legacyToPhaseStatus(filter: CsDeskFilter): { phase: CsDeskPhase; status
   }
 }
 
-function deskFilterClauses(filter: CsDeskFilter): SQL[] {
-  const { phase, status } = legacyToPhaseStatus(filter);
-  return deskQueryClauses(phase, status);
-}
-
 function csvEscape(v: string): string {
   if (/[",\n\r]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
   return v;

@@ -16,6 +16,8 @@ export interface DwhClient {
   applicationId: string | null;
   applicationDate: string | null;
   ownerZohoUserId: string | null;
+  /** Deal owner's name — the SALES AGENT the client should see everywhere. */
+  ownerName: string | null;
 }
 
 /** Search the DWH client directory by company name, carrier id, or application id. */
@@ -168,6 +170,23 @@ export async function getCarrierRegistrations(
 }
 
 /** Soft-disable a registered owner/driver — reversible, frees their card for reassignment. */
+/** Support-bot chat map: which Telegram GROUP answers for which carrier. */
+export interface SupportBotChat {
+  chatId: string;
+  carrierId: string;
+}
+
+export async function listSupportBotChats(): Promise<SupportBotChat[]> {
+  const res = (await request('GET', '/support-bot/chat-map')) as { chats?: SupportBotChat[] };
+  return res.chats ?? [];
+}
+
+/** Admin-only upstream: set/re-point the STATIC group mapping for a carrier (auto-bind's manual
+ * override — e.g. the group existed before any owner registration, or a re-point is needed). */
+export async function setSupportBotChat(chatId: string, carrierId: string): Promise<void> {
+  await request('POST', '/support-bot/chat-map', { body: { chatId, carrierId } });
+}
+
 export async function revokeRegistration(id: string): Promise<void> {
   await request('POST', `/carrier-registrations/${encodeURIComponent(id)}/revoke`, { body: {} });
 }

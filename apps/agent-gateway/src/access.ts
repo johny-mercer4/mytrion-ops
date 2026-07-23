@@ -17,19 +17,21 @@ import { config } from './config.js';
 
 const REFRESH_MS = 30_000; // near-instant: a new registration is visible within ~30s
 const STALE_GRACE_MS = 30 * 60_000; // backend-down tolerance before fail-closed
-let cache: { at: number; users: Set<string> } | null = null;
+const caches = new Map<string, { at: number; users: Set<string> }>();
 
-export async function isRegistered(userId: number): Promise<boolean> {
+export async function isRegistered(carrierId: string, userId: number): Promise<boolean> {
   const now = Date.now();
+  let cache = caches.get(carrierId) ?? null;
   if (!cache || now - cache.at > REFRESH_MS) {
     try {
       const res = await fetch(
-        `${config.octaneBase}/v1/support-bot/access?carrierId=${encodeURIComponent(config.carrierId)}`,
+        `${config.octaneBase}/v1/support-bot/access?carrierId=${encodeURIComponent(carrierId)}`,
         { headers: { Authorization: `Bearer ${config.octaneKey}` }, signal: AbortSignal.timeout(15_000) },
       );
       if (res.ok) {
         const data = (await res.json()) as { users?: Array<{ telegramUserId: string }> };
         cache = { at: now, users: new Set((data.users ?? []).map((u) => u.telegramUserId)) };
+        caches.set(carrierId, cache);
       }
     } catch {
       /* backend blip — keep serving the stale cache until STALE_GRACE_MS */
