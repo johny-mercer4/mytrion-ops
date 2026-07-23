@@ -383,6 +383,72 @@ function LoadingScreen() {
   );
 }
 
+/**
+ * Searchable card picker (owner/manager) — replaces the native <select> for the transactions
+ * card filter. An owner rarely knows a card's full number, so options are searchable by card
+ * digits, unit number, OR driver name, and each row shows Unit + driver — the way owners actually
+ * identify a card. Inline expandable panel (not a floating overlay) so it stays mobile-safe.
+ */
+function CardPicker({
+  cards, value, onChange, placeholder, allLabel, searchPlaceholder,
+}: {
+  cards: FleetCard[];
+  value: string | null;
+  onChange: (card: FleetCard | null) => void;
+  placeholder: string;
+  allLabel: string;
+  searchPlaceholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const sel = cards.find((c) => c.cardId === value) ?? null;
+  const numLabel = (c: FleetCard): string => (c.cardNumber ? groupCardNumber(c.cardNumber) : `•••• ${tail6(c.cardNumber, null) ?? ''}`);
+  const subLabel = (c: FleetCard): string => {
+    const bits: string[] = [];
+    if (c.unitNumber) bits.push(`Unit ${c.unitNumber}`);
+    if (c.driverName) bits.push(c.driverName);
+    return bits.join(' · ');
+  };
+  const needle = q.trim().toLowerCase();
+  const digits = needle.replace(/\D/g, '');
+  const filtered = !needle ? cards : cards.filter((c) => {
+    const hay = `${c.cardNumber ?? ''} ${c.unitNumber ?? ''} ${c.driverName ?? ''} ${c.efsDriverId ?? ''}`.toLowerCase();
+    return hay.includes(needle) || (digits.length > 0 && (c.cardNumber ?? '').replace(/\D/g, '').includes(digits));
+  });
+  const rowStyle = { width: '100%', display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-start', gap: 1, padding: '9px 12px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' as const, fontFamily: "'Geist'" };
+  return (
+    <div style={{ position: 'relative' }}>
+      <button type="button" onClick={() => { haptic('tap'); setOpen((o) => !o); }} style={{ width: '100%', minHeight: 42, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--secondary)', color: sel ? 'var(--fg)' : 'var(--muted-fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13.5, padding: '6px 10px', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {sel ? `${numLabel(sel)}${subLabel(sel) ? ` · ${subLabel(sel)}` : ''}` : allLabel}
+        </span>
+        <ChevronRight size={15} strokeWidth={2.2} color="var(--muted-fg)" style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)', flex: 'none' }} aria-hidden />
+      </button>
+      {open && (
+        <div style={{ marginTop: 6, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--secondary)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
+            <SearchGlyph />
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={searchPlaceholder} className="selectable" style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, outline: 'none' }} />
+          </div>
+          <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+            <button type="button" className="row-press" onClick={() => { haptic('tap'); onChange(null); setOpen(false); setQ(''); }} style={{ ...rowStyle, borderBottom: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 13.5, fontWeight: 700, color: !sel ? 'var(--link-accent)' : 'var(--fg)' }}>{allLabel}</span>
+            </button>
+            {filtered.length === 0 ? (
+              <div style={{ padding: '14px 12px', fontSize: 13, color: 'var(--muted-fg)', textAlign: 'center' }}>{placeholder}</div>
+            ) : filtered.map((c, i) => (
+              <button key={c.cardId ?? i} type="button" className="row-press" onClick={() => { haptic('tap'); onChange(c); setOpen(false); setQ(''); }} style={{ ...rowStyle, borderBottom: i === filtered.length - 1 ? 'none' : '1px solid var(--border)' }}>
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: c.cardId === value ? 'var(--link-accent)' : 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>{numLabel(c)}</span>
+                {subLabel(c) && <span style={{ fontSize: 12, color: 'var(--muted-fg)' }}>{subLabel(c)}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SupportCard({ agentName }: { agentName?: string | null | undefined }) {
   const { t } = useI18n();
   const agent = cleanAgentName(agentName);
@@ -2778,7 +2844,7 @@ function ActionSheet({
                       (user feedback), while native selects are one tap, show the current choice
                       at rest, and never overflow. Card select is owner-only (drivers are pinned
                       server-side) and waits for the fleet list. */}
-                  <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
                     <label style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.period')}</span>
                       <select
@@ -2808,26 +2874,17 @@ function ActionSheet({
                       </label>
                     )}
                     {!session.isDriver && (txnFleet?.length ?? 0) > 0 && (
-                      <label style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ flexBasis: '100%', minWidth: 0 }}>
                         <span style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 5 }}>{t('txns.card')}</span>
-                        <select
-                          value={txnCardSel?.cardId ?? ''}
-                          onChange={(e) => {
-                            haptic('tap');
-                            const c = (txnFleet ?? []).find((x) => x.cardId === e.target.value);
-                            setTxnCardSel(c?.cardId ? { cardId: c.cardId, last6: tail6(c.cardNumber, null) ?? '' } : null);
-                          }}
-                          style={{ width: '100%', height: 42, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 13.5, padding: '0 10px', boxSizing: 'border-box' }}
-                        >
-                          <option value="">{t('txns.allCards')}</option>
-                          {(txnFleet ?? []).map((c) => (
-                            <option key={c.cardId} value={c.cardId ?? ''}>
-                              {/* Owner/manager select — show the full card number (driver never reaches this). */}
-                              {`${c.cardNumber ? groupCardNumber(c.cardNumber) : `•••• ${tail6(c.cardNumber, null) ?? ''}`}${c.driverName ? ` · ${c.driverName}` : ''}`}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                        <CardPicker
+                          cards={txnFleet ?? []}
+                          value={txnCardSel?.cardId ?? null}
+                          onChange={(c) => setTxnCardSel(c?.cardId ? { cardId: c.cardId, last6: tail6(c.cardNumber, null) ?? '' } : null)}
+                          allLabel={t('txns.allCards')}
+                          placeholder={t('txns.allCards')}
+                          searchPlaceholder={t('txns.searchCard')}
+                        />
+                      </div>
                     )}
                   </div>
                   {range === 'custom' && (
@@ -3183,11 +3240,13 @@ function ActionSheet({
                       })()}
                       <input value={mcUnit} inputMode="numeric" onChange={(e) => setMcUnit(e.target.value)} placeholder="1656" style={{ width: '100%', height: 46, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--secondary)', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 15, padding: '0 14px', marginBottom: 12 }} />
                       <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted-fg)', marginBottom: 8 }}>{t('mc.reason')}</div>
-                      <div className="hscroll" style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-                        {reasons.map((r) => (
-                          <button key={r} type="button" onClick={() => { haptic('tap'); setMcReason(r); }} style={{ flex: 'none', height: 34, padding: '0 14px', borderRadius: 17, border: 'none', fontFamily: "'Geist'", fontWeight: 600, fontSize: 12.5, cursor: 'pointer', background: mcReason === r ? 'var(--primary)' : 'var(--secondary)', color: mcReason === r ? '#FFFFFF' : 'var(--muted-fg)', whiteSpace: 'nowrap' }}>{r}</button>
-                        ))}
-                      </div>
+                      {/* Reason as a native SELECT (2026-07-23, owner ask): the scrolling chips
+                          hid options off-screen; a dropdown shows the whole list and matches the
+                          other mini-app selects. */}
+                      <select value={mcReason} onChange={(e) => { haptic('tap'); setMcReason(e.target.value); }} style={{ width: '100%', height: 46, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--secondary)', color: mcReason ? 'var(--fg)' : 'var(--muted-fg)', fontFamily: "'Geist'", fontWeight: 600, fontSize: 14, padding: '0 12px', marginBottom: 16, boxSizing: 'border-box' }}>
+                        <option value="" disabled>{t('mc.reasonSelect')}</option>
+                        {reasons.map((r) => (<option key={r} value={r}>{r}</option>))}
+                      </select>
                       <button type="button" className="press" disabled={!canDraw} onClick={() => {
                         haptic('tap');
                         setMcBusy(true);
