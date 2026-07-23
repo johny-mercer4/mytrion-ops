@@ -15,6 +15,8 @@ import {
 import {
   isSalesLocked,
   isSalesPooled,
+  salesLockBadge,
+  salesLockTitle,
   stageTimer,
   type StageTimer,
   type StageTimerTone,
@@ -260,21 +262,11 @@ export function RetentionCaseCard({
   const overdue = Boolean(timer?.overdue);
 
   if (locked) {
-    const lockTitle = pooled
-      ? 'In Open Pool. Locked for you (cannot claim your own deal).'
-      : row.phaseCode === 'phase_3_citi'
-        ? 'Moved to CITI. Locked for Sales.'
-        : 'With Retention. Locked for Sales.';
-    const lockBadge = pooled
-      ? 'In Open Pool'
-      : row.phaseCode === 'phase_3_citi'
-        ? '→ CITI'
-        : 'With Retention';
     return (
       <div
         className={`ss-ret-card is-locked${pooled ? ' is-pooled' : ''}`}
         style={{ ['--ret-col' as string]: colColor, animationDelay: `${Math.min(index, 8) * 0.04}s` }}
-        title={lockTitle}
+        title={salesLockTitle(row)}
       >
         <div style={s('display:flex;justify-content:space-between;gap:6px;align-items:flex-start')}>
           <div style={s('font-size:13px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis')}>
@@ -285,7 +277,7 @@ export function RetentionCaseCard({
         <div style={s("font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text2)")}>
           {row.carrierId}
         </div>
-        <div className={`ss-ret-locked-badge${pooled ? ' is-pooled' : ''}`}>{lockBadge}</div>
+        <div className={`ss-ret-locked-badge${pooled ? ' is-pooled' : ''}`}>{salesLockBadge(row)}</div>
       </div>
     );
   }

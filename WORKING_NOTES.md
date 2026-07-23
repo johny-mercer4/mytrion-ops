@@ -4901,3 +4901,19 @@ approvals, caller-identity, cs-routes, retention-*, stream-adapter, department-a
 PRE-EXISTING branch WIP — confirmed via a committed-HEAD worktree: touchpoints-routes fails at the
 bare commit; agent-golden/caller-identity fail only under the branch's uncommitted agent/RBAC rework
 (those files were already `M` at session start). None touch inbox code.
+
+## 2026-07-23 — Silence RingCentral AGW-401 console spam
+
+Embeddable probes `platform.ringcentral.com` before OAuth completes and dumps
+`AGW-401 / Authorization header is not specified` into the page console (string or JSON object).
+Not fixable via adapter params (`enableErrorReport=false` already set). Extended
+`rcConsoleFilter` to match AGW-401 (+ object `errorCode` payloads) on log/debug/info/warn/error,
+and install the filter at `RingCentralPhone` module load so early session-restore probes are
+covered. Network-tab 401 rows / cross-origin iframe logs still cannot be hidden from our origin.
+
+## 2026-07-23 — Sales Retention locked-card copy
+
+Locked former-owner cards now say **Escalated to Retention** (Dissatisfied + New 2BD handoff /
+phase_2) or **Escalated to Open Pool** (pool statuses), via `salesLockBadge` / `salesLockTitle` in
+`retentionTimers.ts`. Cards stay disabled (`is-locked` / pointer-events none). Column hint for
+Dissatisfied → "Escalated · Retention".

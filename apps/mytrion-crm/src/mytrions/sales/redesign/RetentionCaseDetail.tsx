@@ -561,8 +561,9 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
                     'padding:12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);font-size:12px;color:var(--text2);line-height:1.45',
                   )}
                 >
-                  <strong style={s('color:var(--text)')}>Handed to Retention.</strong> Wait 10 BD
-                  for a new transaction — closed on fuel; otherwise CITI (timer-driven).
+                  <strong style={s('color:var(--text)')}>Escalated to Retention.</strong> Wait 10 BD
+                  for a new transaction — closed on fuel; otherwise CITI (timer-driven). Card is
+                  locked for Sales.
                 </div>
               )}
               {(row.statusCode === 'p1_open_pool' ||
@@ -574,12 +575,12 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
                 >
                   <strong style={s('color:var(--text)')}>
                     {row.statusCode === 'p1_pool_claim_pending'
-                      ? 'Open Pool — claim pending.'
-                      : 'In Sales Open Pool.'}
+                      ? 'Escalated to Open Pool — claim pending.'
+                      : 'Escalated to Open Pool.'}
                   </strong>{' '}
                   {row.statusCode === 'p1_pool_claim_pending'
                     ? 'A claim is being finalized. Refresh shortly.'
-                    : 'This was your deal — you cannot claim it back here. Other agents can claim it from Open Pool (instant assign).'}
+                    : 'This was your deal — locked for you; you cannot claim it back. Other agents can claim it from Open Pool (instant assign).'}
                 </div>
               )}
               {/* New: no timeline. Other stages: reserved slot (skeleton → trail) — no jump. */}

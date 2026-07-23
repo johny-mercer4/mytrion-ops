@@ -160,6 +160,25 @@ export function isSalesPooled(c: RetentionCaseRow): boolean {
 }
 
 /**
+ * Banner on a locked Sales card (CSS uppercases). New→2BD handoff, Dissatisfied, and any
+ * phase_2 case share "Escalated to Retention"; pool statuses get the Open Pool variant.
+ */
+export function salesLockBadge(c: RetentionCaseRow): string {
+  if (isSalesPooled(c)) return 'Escalated to Open Pool';
+  if (c.phaseCode === 'phase_3_citi') return '→ CITI';
+  return 'Escalated to Retention';
+}
+
+/** Tooltip / title for the same locked states. */
+export function salesLockTitle(c: RetentionCaseRow): string {
+  if (isSalesPooled(c)) {
+    return 'Escalated to Open Pool. Locked for you (cannot claim your own deal).';
+  }
+  if (c.phaseCode === 'phase_3_citi') return 'Moved to CITI. Locked for Sales.';
+  return 'Escalated to Retention. Locked for Sales.';
+}
+
+/**
  * Live stage timer for the next deadline event. Returns null when no clock applies
  * (closed/returned, Dissatisfied handoff, awaiting Ops with cleared deadline, etc.).
  */
@@ -245,11 +264,7 @@ export function stageTimer(c: RetentionCaseRow, now: Date = new Date()): StageTi
 
 /** Compact caption used in list / meta (keeps prior callers working). */
 export function stageTimerCaption(c: RetentionCaseRow, now: Date = new Date()): string {
-  if (isSalesPooled(c)) return 'In Open Pool';
-  if (isSalesLocked(c)) {
-    if (c.phaseCode === 'phase_3_citi') return '→ CITI';
-    return 'With Retention';
-  }
+  if (isSalesLocked(c)) return salesLockBadge(c);
   const t = stageTimer(c, now);
   if (!t) return '—';
   if (t.tone === 'muted') return t.remain;

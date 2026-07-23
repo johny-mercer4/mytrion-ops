@@ -148,8 +148,8 @@ export const KANBAN_COLS: Array<{
   { id: 'reached', label: 'Reached', hint: 'Fuel watch · 5 BD → Pool', color: 'var(--ok)' },
   { id: 'out_of_reach', label: 'Out of Reach', hint: '5×1 BD attempts → Pool', color: 'var(--warn)' },
   { id: 'vacation', label: 'Vacation', hint: '14-day countdown', color: 'var(--violet)' },
-  { id: 'dissatisfied', label: 'Dissatisfied', hint: 'Locked · Retention', color: 'var(--danger)' },
-  { id: 'closed', label: 'Closed', hint: 'Returned · Open Pool · handoff', color: 'var(--ok)' },
+  { id: 'dissatisfied', label: 'Dissatisfied', hint: 'Escalated · Retention', color: 'var(--danger)' },
+  { id: 'closed', label: 'Closed', hint: 'Returned · Pool / Retention handoff', color: 'var(--ok)' },
 ];
 
 /** status_code → board_column (same seed as retention_statuses). */
