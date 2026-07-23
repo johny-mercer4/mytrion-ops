@@ -108,10 +108,13 @@ export const serverCrmWrapper = {
     });
   },
 
-  /** A time-limited signed URL for one invoice's PDF. Not itself carrier-scoped upstream — callers
-   * must verify ownership (e.g. via getInvoices) before minting one. */
-  getInvoiceSignedUrl(invoiceId: string, type: 'pdf' | 'xlsx' | 'csv' = 'pdf') {
-    return crmGet(`/api/salesMytrion/invoices/${encodeURIComponent(invoiceId)}/signed-url`, { type });
+  /** A time-limited signed URL for one invoice document. Not itself carrier-scoped upstream —
+   * callers must verify ownership (e.g. via getInvoices) before minting one. servercrm speaks
+   * 'pdf' | 'excel' only — the public 'xlsx' name is mapped here (2026-07-22 fix: passing 'xlsx'
+   * upstream got a 400, so the mini-app Excel button never worked). CSV has NO upstream at all;
+   * it is rejected at the route schema and hidden in the UI until servercrm ships it. */
+  getInvoiceSignedUrl(invoiceId: string, type: 'pdf' | 'xlsx' = 'pdf') {
+    return crmGet(`/api/salesMytrion/invoices/${encodeURIComponent(invoiceId)}/signed-url`, { type: type === 'xlsx' ? 'excel' : 'pdf' });
   },
 
   /** C-17 step 1 — the drawable money-code window for a carrier: `{ eligible, available, drawn,

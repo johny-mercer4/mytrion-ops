@@ -372,7 +372,7 @@ export async function fetchInvoiceSignedUrl(initData: string, invoiceId: string)
  * way: a Telegram WebApp cannot reliably save a file, and the signed URL expires — in the chat the
  * document persists and can be forwarded.
  */
-export async function sendInvoice(initData: string, invoiceId: string, format: 'pdf' | 'xlsx' | 'csv' = 'pdf'): Promise<{ sent?: boolean; fileName?: string }> {
+export async function sendInvoice(initData: string, invoiceId: string, format: 'pdf' | 'xlsx' = 'pdf'): Promise<{ sent?: boolean; fileName?: string }> {
   return (await request('POST', '/carrier/mini-app/invoices/send', { initData, invoiceId, format })) as {
     sent?: boolean;
     fileName?: string;

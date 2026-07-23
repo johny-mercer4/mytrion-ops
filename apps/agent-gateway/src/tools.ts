@@ -115,9 +115,15 @@ export function buildOctaneServer(chatId: number, carrierId: string) {
       ),
       tool(
         'octane_invoice',
-        "LONG (~1 min): send the OWNER's LATEST invoice PDF to their PRIVATE bot chat (never this group). Announce via telegram_progress first (ETA + 'DM'ga yuboraman'); final reply = delivery confirmation.",
-        asker,
-        ({ telegram_user_id }) => run('/support-bot/invoice', telegram_user_id),
+        "LONG (~1 min): send the OWNER's LATEST invoice document (PDF, or Excel when they ask) to their PRIVATE bot chat (never this group). Announce via telegram_progress first (ETA + 'DM'ga yuboraman'); final reply = delivery confirmation.",
+        { ...asker, format: z.enum(['pdf', 'xlsx']).default('pdf').describe("'xlsx' when they ask for Excel") },
+        ({ telegram_user_id, format }) => run('/support-bot/invoice', telegram_user_id, { format }),
+      ),
+      tool(
+        'octane_invoices',
+        "Invoice QUESTIONS (OWNER only, MEDIUM ~20-40s): 'qancha qarzim bor', 'invoicelar ro'yxati', a month's invoices. The AMOUNTS are sent to their PRIVATE bot chat automatically; the result gives you ONLY counts/statuses/dates — those are safe to say inline, dollar figures are NOT. Presets or exact from/to dates.",
+        { ...asker, range: z.enum(['last_7', 'last_30', 'last_90', 'last_365', 'all_time']).default('last_90'), from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('custom window start — use when they name exact dates/months'), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() },
+        ({ telegram_user_id, range, from, to }) => run('/support-bot/invoices', telegram_user_id, { range, ...(from ? { from } : {}), ...(to ? { to } : {}) }),
       ),
       tool('octane_balance_dm', "LONG (~1 min): send the OWNER their balance FIGURES to their private Octane bot chat (figures never go in the group). Announce via telegram_progress first (ETA + 'DM'ga yuboraman'); final reply = delivery confirmation.", asker, ({ telegram_user_id }) => run('/support-bot/balance', telegram_user_id)),
       tool('octane_manual_code', "LONG (~1 min): send the asker's manual entry code (full card number) to their PRIVATE bot chat. Drivers: own card. Owners: give card_last6. Announce via telegram_progress first (ETA + delivery promise); final reply = delivery confirmation.", { ...asker, card_last6: z.string().min(4).max(19).optional() }, ({ telegram_user_id, card_last6 }) => run('/support-bot/manual-code', telegram_user_id, card_last6 ? { cardLast6: card_last6 } : {})),
