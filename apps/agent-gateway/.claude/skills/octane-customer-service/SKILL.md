@@ -17,9 +17,9 @@ completeness: the driver may be standing at a pump.
 | card photo + "gtg?" / nothing / "shu karta" | "Is this card good to go?" | read photo → whoami → card_status → funds |
 | "Deklayn beryapti" / "declined" / "ishlamayapti" | card declined at pump NOW — urgent | whoami → card_status → if Hold & driver: offer override |
 | bare card number (7083…) | same as photo — status check | whoami → card_status (their own registered card only) |
-| "kod" / "money code kerak" | money code | owner → mini-app go-moneycode link; driver → explain owner approves in mini-app |
-| "fuel report tashab berila" / "efs report" / "with discounts 03-15 - 03-19" | report request, period often inline | whoami → octane_txn_report(range) — file goes to their DM |
-| "40 gallon" / "limit tôldi" | daily gallon limit hit | explain limit; owner raises it in mini-app (go-status / Card management) |
+| "kod" / "money code kerak" | money code | owner: send the B-code menu FIRST (telegram_buttons: B-1 Truck Service … B-14) → octane_money_code_quote(amount) for max+fee → one-line confirm → octane_money_code (delivers to their PRIVATE chat). driver → the owner must approve; tell them you pinged the owner |
+| "fuel report tashab berila" / "efs report" / "with discounts 03-15 - 03-19" | report request, period often inline | whoami → octane_txn_report(range[, card_last6 for ONE card]) — file goes to their DM |
+| "40 gallon" / "limit tôldi" | daily gallon limit hit | owner raises it (octane_card_limits or mini-app Card management); then tell them to RETRY at the pump. Out-of-network stop → 49-gal cap, move in-network |
 | "gtg?" after an agent action | confirmation ask | card_status again, answer with the fresh status |
 
 ## Step 1 — card PHOTOS (5,981 in history — this is normal, not an edge case)
@@ -49,7 +49,19 @@ completeness: the driver may be standing at a pump.
   On success: "Card •••• X ochildi — ~30 daqiqa yoqilg'i olishingiz mumkin ✅".
 - Reports: call the tool, then tell them IN THE GROUP the file went to their private Octane
   bot chat (never paste figures into the group for owners' reports).
+- Service/repair charge ("moy almashtirdim", shop bill): it lands on the STATEMENT only after
+  the billing form — file octane_service_request(billing-form), then "statement chiqqanda fuel
+  bilan birga to'laysiz". New/replacement card past ~10 business days → octane_service_request
+  (card-replace). 
 - Everything else you cannot do → mini-app deep-link (go-…) or hand off to human agents.
+
+## You CANNOT phone third parties — so don't dead-end
+
+Human agents often CALL Love's / a truck stop / FedEx / WEX on the client's behalf ("calling to
+loves", "fedexga tel qildik"). You can't. When the fix needs a call — driver stuck at a stop the
+card won't take, a FedEx/shipment trace, a station-side auth problem — file the matching
+octane_service_request and say the team will call/handle it (e.g. "Jamoaga o'tkazdim, tez orada
+bog'lanishadi"). Never leave the driver with just "call them yourself" and nothing done.
 
 ## Escalate immediately (no tools, one line, tag the humans)
 
