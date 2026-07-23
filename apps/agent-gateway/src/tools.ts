@@ -68,7 +68,12 @@ export function buildOctaneServer(chatId: number, carrierId: string) {
         },
       ),
       tool('octane_whoami', "Is the sender a registered Octane mini-app user of this company, their role (owner/driver), and the carrier's sales agent (agentName) to hand off to when you can't resolve an ask? Call FIRST for any service ask.", asker, ({ telegram_user_id }) => run('/support-bot/whoami', telegram_user_id)),
-      tool('octane_card_status', "Card status for the asker: driver → their own card WITH live gallon limits (answers 'how many gallons left'); owner → fleet statuses.", asker, ({ telegram_user_id }) => run('/support-bot/card-status', telegram_user_id)),
+      tool(
+        'octane_card_status',
+        "Card status. Owner asking about ONE specific card (a PHOTO, or 'check card X') → PASS card_last6 to get THAT exact card's real status across the whole fleet (fraudHold + overrideAvailable included) — never omit it and guess from the summary. No card_last6 → driver gets their own card WITH gallon limits; owner gets a fleet summary.",
+        { ...asker, card_last6: z.string().min(4).max(19).optional().describe('last 6+ digits of the specific card to check — REQUIRED when the ask is about one card / a photo') },
+        ({ telegram_user_id, card_last6 }) => run('/support-bot/card-status', telegram_user_id, card_last6 ? { cardLast6: card_last6 } : {}),
+      ),
       tool('octane_funds', 'Does the account have funds? Driver gets yes/no only (never figures); owner gets balance figures.', asker, ({ telegram_user_id }) => run('/support-bot/funds', telegram_user_id)),
       tool(
         'octane_txn_report',

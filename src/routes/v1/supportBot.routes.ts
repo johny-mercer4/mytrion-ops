@@ -352,7 +352,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
    * statuses (capped, like the mini-app's status sheet).
    */
   app.post('/support-bot/card-status', guard, async (request) => {
-    const body = callerSchema.parse(request.body);
+    const body = callerSchema.extend({ cardLast6: z.string().trim().min(4).max(19).optional() }).parse(request.body);
     const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
     takeReadToken(body.carrierId);
     const cardRows = await listCardsLive(body.carrierId);
@@ -371,12 +371,38 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
         limits: efsInfo?.['limits'] ?? null,
       };
     }
+    // SPECIFIC card (owner asked about one card — usually a PHOTO): look it up across the WHOLE
+    // fleet, never the 30-card window. The old summary made the bot GUESS "probably deactivated"
+    // for any card past the first 30 (live incident 2026-07-23: card •••• 567876 was actually
+    // 'Hold For Fraud', not deactivated — the bot guessed wrong). fraudHold/overrideAvailable let
+    // the bot route to Override (one-time), the way a human agent answers, instead of "activate".
+    if (body.cardLast6) {
+      const want = body.cardLast6.replace(/\D/g, '').slice(-6);
+      const match = cardRows.find((r) => String(r['card_number'] ?? '').replace(/\D/g, '').endsWith(want));
+      if (!match) return { role, card: null, note: 'That card is not in this company fleet.' };
+      const status = String(match['status'] ?? '');
+      const fraudHold = /hold|fraud/i.test(status);
+      return {
+        role,
+        card: {
+          last6: String(match['card_number'] ?? '').slice(-6),
+          status: match['status'] ?? null,
+          unit: match['unit_number'] ?? null,
+          driver: match['driver_name'] ?? null,
+          fraudHold,
+          // Override applies to a fraud hold (one-time usage); a plain deactivated card is NOT
+          // overridable — the owner activates it instead.
+          overrideAvailable: fraudHold || Number(match['override'] ?? 0) > 0,
+          active: status.toLowerCase() === 'active',
+        },
+      };
+    }
     const rows = cardRows.slice(0, 30).map((r) => ({
       last6: String(r['card_number'] ?? '').slice(-6),
       status: r['status'] ?? null,
     }));
     const activeCount = cardRows.filter((r) => String(r['status'] ?? '').toLowerCase() === 'active').length;
-    return { role, count: cardRows.length, activeCount, cards: rows };
+    return { role, count: cardRows.length, activeCount, cards: rows, note: 'For ONE specific card (e.g. from a photo) pass cardLast6 to get its exact status — do not infer from this summary.' };
   });
 
   /**
