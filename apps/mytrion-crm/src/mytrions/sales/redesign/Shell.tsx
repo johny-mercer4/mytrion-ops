@@ -3,7 +3,8 @@
  * prototype): sidebar with nav badges, top bar + live clock, theme toggle, user card, the
  * shared detail + client modals, and the toast. Owns cross-tab chrome; each tab is a
  * self-contained component under ./tabs. (AI chat launcher is disabled for now.)
- * Boot splash removed — tabs own their own skeletons (avoids double loaders on Home).
+ * Home gates on a full-page skeleton until primary fetches settle (see HomeTab);
+ * other tabs own their own skeletons (no shell-level boot splash).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { s } from './dc';
@@ -144,7 +145,7 @@ export function SalesRedesign() {
   // Jump to Tickets and flag the ticket the tab should auto-open (e.g. after Create).
   const openTicket = useCallback((ticketId: string) => {
     if (!TICKETS_ENABLED) {
-      pushToast('Tickets', 'Coming soon — use Data Center for leads and deals.');
+      pushToast('Tickets', 'Coming soon.');
       return;
     }
     setFocusTicket(ticketId);

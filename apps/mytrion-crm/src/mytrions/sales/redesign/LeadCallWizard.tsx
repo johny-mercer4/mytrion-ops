@@ -17,57 +17,18 @@ import { Icon } from './icons';
 import { readDcCache } from './dcCache';
 import { invalidateDcCache } from './dcCache';
 import type { LeadVM } from './dataCenterLive';
+import { STATUS_OPTIONS, allowedStatuses, reasonFieldFor, resolveWizardStatus } from './leadStatusFlow';
+import { LeadStatusPicker } from './LeadStatusPicker';
 
-/** Status picklist (verbatim Zoho `Status` values). 'Unaccounted' is stored; it displays "New Lead". */
-const STATUS_OPTIONS: { value: string; label: string }[] = [
-  { value: 'Interested', label: 'Interested' },
-  { value: 'Not Interested', label: 'Not Interested' },
-  { value: 'First Call', label: 'First Call' },
-  { value: 'Second Call', label: 'Second Call' },
-  { value: 'Third Call', label: 'Third Call' },
-  { value: 'Follow-up', label: 'Follow-up' },
-  { value: 'Unqualified', label: 'Unqualified' },
-  { value: 'Application Filled', label: 'Application Filled' },
-  { value: 'Email Follow-Up', label: 'Email Follow-Up' },
-  { value: 'Unaccounted', label: 'New Lead' },
-];
-const UNQUALIFIED_REASONS = [
-  'Wrong / inactive phone number',
-  'Invalid email',
-  'Not in trucking industry',
-  'Not using diesel',
-  'Local driver',
-  'Low credit score for LOC',
-  'No response',
-];
-const NOT_INTERESTED_REASONS = [
-  'Wrong language',
-  'Wrong expectations',
-  'Small discounts',
-  'Already has another fuel card',
-  'Truck stop coverage',
-  'Uncomfortable with mobile app',
-  'Unreachable after application',
-  'Has own fueling stations',
-  'Unwilling to share personal info',
-  'Low credit score / bad financials',
-  "Didn't apply / applied accidentally",
-  'Gas only',
-  'Accidental application',
-  'Low discounts',
-  'Other',
-];
-
-/** Which status forces a reason picklist, and which field it writes. Exported for tests. */
-export function reasonFieldFor(status: string): { field: 'Unqualified_Reason' | 'Not_Interested_Reason'; options: string[] } | null {
-  if (status === 'Unqualified') return { field: 'Unqualified_Reason', options: UNQUALIFIED_REASONS };
-  if (status === 'Not Interested') return { field: 'Not_Interested_Reason', options: NOT_INTERESTED_REASONS };
-  return null;
-}
+// The status picklist + reason logic moved to leadStatusFlow (shared with the manual editor).
+// Re-export so existing tests importing reasonFieldFor from this module keep working.
+export { reasonFieldFor };
 
 /** The just-ended call as the wizard needs it. */
 interface PendingLeadCall {
   leadId: string;
+  /** Pre-selected next status from current-status stepping ('' when the lead's status is unknown). */
+  preselect: string;
   peer: string;
   result?: string;
   durationMs?: number;
@@ -94,7 +55,7 @@ function LeadCallWizard({
   pushToast: (title: string, msg: string) => void;
   onDone: () => void;
 }) {
-  const [status, setStatus] = useState<string>('');
+  const [status, setStatus] = useState<string>(call.preselect);
   const [reason, setReason] = useState<string>('');
   const [note, setNote] = useState<string>('');
   const [busy, setBusy] = useState(false);
@@ -102,17 +63,17 @@ function LeadCallWizard({
   const reasonSpec = reasonFieldFor(status);
   const valid = status !== '' && (!reasonSpec || reason !== '');
 
-  // Forced: swallow ESC until valid+saved (matches the retention wizard's blockClose pattern).
+  // Closable: ESC dismisses the wizard (the call is still logged — only the status update is skipped).
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        pushToast('Update the lead', 'Set a status (and reason) before closing.');
+        if (!busy) onDone();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [pushToast]);
+  }, [busy, onDone]);
 
   const submit = useCallback(async () => {
     if (!valid || busy) return;
@@ -135,7 +96,9 @@ function LeadCallWizard({
 
   return (
     <div
-      onClick={() => pushToast('Update the lead', 'Set a status (and reason) before closing.')}
+      onClick={() => {
+        if (!busy) onDone();
+      }}
       style={s('position:fixed;inset:0;z-index:150;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(3,7,14,.58);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)')}
     >
       <div
@@ -157,36 +120,35 @@ function LeadCallWizard({
                 {call.peer} · {fmtDuration(call.durationMs)}{call.result ? ` · ${call.result}` : ''}
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (!busy) onDone();
+              }}
+              aria-label="Close"
+              className="ss-ico-btn"
+              style={s('flex-shrink:0;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius-md);border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer')}
+            >
+              <Icon name="close" size={15} />
+            </button>
           </div>
           <div style={s('font-size:11px;color:var(--muted);margin-top:10px')}>
-            Set the lead status to log this call. Required before you continue.
+            Set the lead status to log this call — or close to skip.
           </div>
         </div>
 
         <div className="ss-scroll" style={s('flex:1;min-height:0;padding:18px 22px;display:flex;flex-direction:column;gap:14px')}>
-          {/* Status picker */}
+          {/* Status picker — blueprint-allowed statuses from the lead's current status */}
           <div>
             <div style={s('font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:8px')}>Lead status</div>
-            <div style={s('display:grid;grid-template-columns:repeat(2,1fr);gap:8px')} role="radiogroup" aria-label="Lead status">
-              {STATUS_OPTIONS.map((o) => {
-                const active = status === o.value;
-                return (
-                  <button
-                    key={o.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    onClick={() => {
-                      setStatus(o.value);
-                      setReason(''); // reset the dependent reason when the status changes
-                    }}
-                    style={s(`text-align:left;padding:10px 12px;border-radius:var(--radius-md);border:1px solid ${active ? 'var(--accent)' : 'var(--border)'};background:${active ? 'color-mix(in srgb,var(--accent) 10%,var(--alt))' : 'var(--alt)'};color:${active ? 'var(--accent)' : 'var(--text)'};font-size:12.5px;font-weight:700;cursor:pointer`)}
-                  >
-                    {o.label}
-                  </button>
-                );
-              })}
-            </div>
+            <LeadStatusPicker
+              options={allowedStatuses(lead?.status ?? null)}
+              value={status}
+              onChange={(v) => {
+                setStatus(v);
+                setReason(''); // reset the dependent reason when the status changes
+              }}
+            />
           </div>
 
           {/* Dependent reason (only for Unqualified / Not Interested) */}
@@ -233,8 +195,9 @@ function LeadCallWizard({
           <button
             onClick={() => void submit()}
             disabled={!valid || busy}
-            style={s(`height:38px;padding:0 20px;border-radius:var(--radius-md);border:none;background:${!valid || busy ? 'var(--muted)' : 'var(--accent)'};color:#fff;font-weight:700;font-size:13px;cursor:${!valid || busy ? 'not-allowed' : 'pointer'};opacity:${!valid || busy ? '.6' : '1'}`)}
+            style={s(`display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 20px;border-radius:var(--radius-md);border:none;background:${!valid || busy ? 'var(--muted)' : 'var(--accent)'};color:#fff;font-weight:700;font-size:13px;cursor:${!valid || busy ? 'not-allowed' : 'pointer'};opacity:${!valid || busy ? '.6' : '1'}`)}
           >
+            {busy && <Icon name="spinner" size={15} style={{ animation: 'ss-spin .7s linear infinite' }} />}
             {busy ? 'Saving…' : 'Save status'}
           </button>
         </div>
@@ -260,12 +223,21 @@ export function LeadCallWizardHost({ pushToast }: { pushToast: (title: string, m
       const leadId = ev.leadId;
       if (!leadId) return; // only lead calls open the wizard (deals only log)
       const actAsId = getImpersonation()?.zohoUserId;
+      // Gate + auto-advance off the lead's CURRENT status (from the DC leads cache): already-
+      // categorized statuses don't force the wizard; calling-phase statuses pre-select the next
+      // step (New Lead → First → Second → Third Call, stays at Third).
+      const cachedStatus =
+        readDcCache<LeadVM[]>(`sales:leads:${actAsId ?? 'self'}`)?.data?.find((l) => l.id === leadId)?.status ??
+        null;
+      const decision = resolveWizardStatus(cachedStatus);
+      if (!decision.show) return; // already-categorized lead → just log the call, no forced wizard
       setPending((cur) =>
         // If a wizard is already open (e.g. a second call event for the same session), keep it.
         cur
           ? cur
           : {
               leadId,
+              preselect: decision.preselect,
               peer: ev.peer,
               ...(ev.result ? { result: ev.result } : {}),
               ...(ev.durationMs != null ? { durationMs: ev.durationMs } : {}),

@@ -24,13 +24,13 @@ import {
   type TicketFilter,
 } from '../ticketListMeta';
 import { setOpenTicketId, subscribeTicketLive } from '../ticketLiveBus';
+import { upsertTicketSubscribeRows } from '../ticketSubscribeRegistry';
 import {
   buildPendingMsgs,
   mergeTicketThread,
   prunePending,
   type PendingTicketMsg,
 } from '../ticketOptimistic';
-import { TicketsBootSkeleton } from '../TicketsBootSkeleton';
 import '../tickets.css';
 
 export function TicketsTab() {
@@ -86,7 +86,7 @@ export function TicketsTab() {
     return () => setOpenTicketId('');
   }, [selectedTicket]);
 
-  // Shell WS → pin ticket to top; reload thread when open (no softReload — preserves promote).
+  // Shell WS → pin ticket to top; reload thread when open (ticketdashboard.html handleNewComment).
   useEffect(() => {
     return subscribeTicketLive((e) => {
       feed.promoteTicket(e.ticketId);
@@ -102,11 +102,21 @@ export function TicketsTab() {
     // eslint-disable-next-line
   }, [selectedTicket]);
 
+  // Soft list refresh (new tickets enter WS scope) — reference only refreshes on focus/manual.
   useEffect(() => {
     const iv = setInterval(() => feed.softReload(), 25_000);
     return () => clearInterval(iv);
     // eslint-disable-next-line
   }, []);
+
+  // Open-thread safety net: poll comments while a ticket is selected so sales still sees CS
+  // replies even if a WS event was missed (ticket not yet in subscribe id set).
+  useEffect(() => {
+    if (!selectedTicket) return undefined;
+    const iv = setInterval(() => msgsLoad.reload(), 12_000);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line
+  }, [selectedTicket]);
 
   // Drop optimistic rows once the server thread includes them.
   useEffect(() => {
@@ -130,6 +140,9 @@ export function TicketsTab() {
     clearTicketUnread(id);
     setOpenTicketId(id);
     setSelectedTicket(id);
+    // Keep WS subscribe scope in sync (ticketdashboard userTicketIds grows as you open tickets).
+    const row = allTickets.find((t) => t.id === id);
+    if (row) upsertTicketSubscribeRows([row]);
   };
 
   const refreshTickets = (): void => {
@@ -253,7 +266,8 @@ export function TicketsTab() {
       ]
     : [];
 
-  const ticketsSpinStyle = ticketsSpin ? 'animation:ss-spin .9s linear infinite' : '';
+  const ticketsSpinStyle =
+    ticketsSpin || feed.revalidating ? 'animation:ss-spin .9s linear infinite' : '';
   const detailsOpen = ticketDetailsOpen && !!tkSel;
 
   return (
@@ -269,9 +283,7 @@ export function TicketsTab() {
             </span>
           </div>
         )}
-        {feed.loading && allTickets.length === 0 && !feed.error ? (
-          <TicketsBootSkeleton />
-        ) : (
+        {/* Chrome always mounts (ticketdashboard.html) — only the list body waits on Desk. */}
         <div className="ss-tk-layout">
           <div className="ss-tk-list">
             <div className="ss-tk-list-hd">
@@ -324,6 +336,12 @@ export function TicketsTab() {
               {feed.error && (
                 <div style={s('padding:36px 14px;text-align:center;color:var(--danger);font-size:13px')}>{feed.error}</div>
               )}
+              {feed.loading && allTickets.length === 0 && !feed.error ? (
+                <div className="ss-tk-list-loading" role="status" aria-live="polite">
+                  <span className="ss-tk-boot-ring" aria-hidden="true" />
+                  <span className="ss-tk-boot-title">Loading tickets…</span>
+                </div>
+              ) : null}
               {tkList.map((t) => {
                 const active = selectedTicket === t.id;
                 const esc = t.channel === 'Escalation';
@@ -533,7 +551,6 @@ export function TicketsTab() {
             )}
           </div>
         </div>
-        )}
       </div>
 
       {detailsOpen && tkSel && (

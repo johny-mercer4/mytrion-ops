@@ -83,8 +83,10 @@ interface DcTabDef {
 
 const DC_TABS: DcTabDef[] = [
   { id: 'clients', label: 'Clients', icon: 'clients' },
-  { id: 'leads', label: 'Leads', icon: 'leads' },
-  { id: 'deals', label: 'Deals', icon: 'deals' },
+  // Leads + Deals parked as "Coming soon" — drop `disabled` to re-enable; LeadsView/DealsView
+  // and their loaders (loadLeads/loadDeals) stay fully wired for when they ship.
+  { id: 'leads', label: 'Leads', icon: 'leads', disabled: true },
+  { id: 'deals', label: 'Deals', icon: 'deals', disabled: true },
   // Awaiting a redesign — the current view isn't usable. Drop `disabled` to re-enable; the
   // RejectionsView component + loadRejections() stay wired for when the redesign ships.
   { id: 'rejections', label: 'Rejection Reports', icon: 'rejections', disabled: true },
@@ -200,6 +202,7 @@ export function RecordsTab() {
   const [dealView, setDealView] = useState<PipeView>('kanban');
   const [leadStatusFilter, setLeadStatusFilter] = useState('all');
   const [leadSourceFilter, setLeadSourceFilter] = useState('all');
+  const [leadMetaOnly, setLeadMetaOnly] = useState(false);
   const [dealStageFilter, setDealStageFilter] = useState('all');
   const [clientStatusFilter, setClientStatusFilter] = useState('all');
 
@@ -330,6 +333,17 @@ export function RecordsTab() {
               onChange={setLeadSourceFilter}
               options={[{ v: 'all', label: 'All sources' }, ...sourceOptions.map((sv) => ({ v: sv, label: sv }))]}
             />
+            {/* Focused quick-filter: Meta (utm_source) leads — high-priority. */}
+            <button
+              type="button"
+              onClick={() => setLeadMetaOnly((v) => !v)}
+              aria-pressed={leadMetaOnly}
+              title="Show only Meta (utm_source) leads"
+              style={s(`display:inline-flex;align-items:center;gap:7px;height:44px;padding:0 16px;border-radius:var(--radius-md);border:1px solid ${leadMetaOnly ? 'var(--accent)' : 'var(--border)'};background:${leadMetaOnly ? 'rgba(var(--accent-rgb),.12)' : 'var(--surface)'};color:${leadMetaOnly ? 'var(--accent)' : 'var(--muted)'};font-size:13px;font-weight:700;cursor:pointer;box-shadow:var(--shadow-sm);white-space:nowrap;transition:all .14s`)}
+            >
+              <span style={s('width:7px;height:7px;border-radius:50%;background:var(--accent);flex-shrink:0')} />
+              Meta
+            </button>
           </>
         )}
         {dcSub === 'deals' && (
@@ -426,7 +440,7 @@ export function RecordsTab() {
 
       {dcSub === 'leads' && (
         <Gate loading={leadsLoad.loading} error={leadsLoad.data ? null : leadsLoad.error} empty={(leadsLoad.data?.length ?? 0) === 0} emptyMsg="No leads yet.">
-          <LeadsView leads={leadsLoad.data ?? []} search={search.leads} view={leadView} statusFilter={leadStatusFilter} sourceFilter={leadSourceFilter} />
+          <LeadsView leads={leadsLoad.data ?? []} search={search.leads} view={leadView} statusFilter={leadStatusFilter} sourceFilter={leadSourceFilter} metaOnly={leadMetaOnly} />
         </Gate>
       )}
 

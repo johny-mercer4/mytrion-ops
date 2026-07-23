@@ -4,22 +4,42 @@
  *   - Inbox   = messages not yet read (marking read in the tab decrements it immediately).
  *   - Tickets = unread ticket messages (a `ticket_comment_added` bumps it; opening a ticket clears).
  *
- * Also owns the toasts (inbox + ticket comment/attachment) so they fire on every Sales tab —
- * matching ticketdashboard.html / self-service InboxPanel. Tabs listen on `inboxLiveBus` /
- * `ticketLiveBus` to refresh their own lists.
+ * Ticket WS scope matches zoho-octane ticketdashboard.html: subscribe with the creator's currently
+ * known ticket ids (first Desk page of 20, then whatever the Tickets tab pages in). We do NOT dump
+ * the full Desk queue on shell mount — that starved the Tickets tab and felt like a hang.
  */
-import { useEffect, useRef } from 'react';
-import { useLoad, loadInbox, loadTickets, type TicketVM } from './live';
+import { useEffect, useRef, useState } from 'react';
+import { useCachedLoad } from './dcCache';
+import { useLoad, loadInbox, loadTicketsPage, type TicketVM } from './live';
 import { TICKETS_ENABLED } from './salesData';
 import { useServerCrmSocket } from './useServerCrmSocket';
 import { useInboxRead, countUnread } from './inboxRead';
 import { subscribeInboxReload } from './inboxLiveBus';
 import { setTicketDirectory } from './ticketDirectory';
+import {
+  seedTicketsFeedCache,
+  ticketsWarmCacheKey,
+  TICKETS_FEED_PAGE,
+  TICKETS_FEED_STALE_MS,
+} from './ticketListCache';
+import {
+  findSubscribedTicket,
+  getTicketSubscribeIds,
+  setTicketSubscribeActor,
+  subscribeTicketIds,
+  upsertTicketSubscribeRows,
+} from './ticketSubscribeRegistry';
 import { useTicketUnread, totalTicketUnread, bumpTicketUnread, clearTicketUnread } from './ticketUnread';
 import { getOpenTicketId, publishTicketLive } from './ticketLiveBus';
 import { setSocketConnected } from './socketStatus';
 
-const NO_TICKETS: { tickets: TicketVM[]; scoped: boolean } = { tickets: [], scoped: true };
+async function warmFirstTicketPage(): Promise<{ tickets: TicketVM[]; scoped: boolean }> {
+  const res = await loadTicketsPage({ from: 0, limit: TICKETS_FEED_PAGE });
+  upsertTicketSubscribeRows(res.tickets);
+  setTicketDirectory(res.tickets);
+  seedTicketsFeedCache(res.tickets, res.scoped);
+  return { tickets: res.tickets, scoped: res.scoped };
+}
 
 export function useSidebarBadges(
   currentUserId: string,
@@ -28,65 +48,69 @@ export function useSidebarBadges(
   const readSet = useInboxRead();
   const ticketCounts = useTicketUnread();
   const inboxLoad = useLoad(loadInbox, [currentUserId]);
-  // If Tickets is ever re-parked, skip paging the whole creator-scoped Desk set (up to ~20 requests)
-  // for a hidden badge; the subscribe frame then simply carries no ticketIds (still valid).
-  const ticketLoad = useLoad(
-    () => (TICKETS_ENABLED ? loadTickets() : Promise.resolve(NO_TICKETS)),
-    [currentUserId],
+
+  // First page only — same as ticketdashboard.html open. Seeds feed cache + WS ids.
+  const ticketWarm = useCachedLoad(
+    ticketsWarmCacheKey(currentUserId),
+    () => (TICKETS_ENABLED ? warmFirstTicketPage() : Promise.resolve({ tickets: [] as TicketVM[], scoped: true })),
+    {
+      enabled: TICKETS_ENABLED && !!currentUserId,
+      staleMs: TICKETS_FEED_STALE_MS,
+    },
   );
 
-  const tickets = ticketLoad.data?.tickets ?? [];
-  const ticketIds = tickets.map((t) => String(t.id));
+  // Progressive ids from shell warm + Tickets tab load-more (registry).
+  const [ticketIds, setTicketIds] = useState<string[]>(() => getTicketSubscribeIds());
   const idsKey = ticketIds.join(',');
 
-  // Latest toast / ticket set for the socket callback (avoid stale closures).
+  useEffect(() => {
+    setTicketSubscribeActor(currentUserId || 'self');
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (ticketWarm.data?.tickets?.length) {
+      upsertTicketSubscribeRows(ticketWarm.data.tickets);
+      setTicketDirectory(ticketWarm.data.tickets);
+      seedTicketsFeedCache(
+        ticketWarm.data.tickets,
+        ticketWarm.data.scoped ?? true,
+        currentUserId,
+      );
+    }
+  }, [ticketWarm.data, currentUserId]);
+
+  useEffect(() => subscribeTicketIds(() => setTicketIds(getTicketSubscribeIds())), []);
+
   const pushToastRef = useRef(pushToast);
   pushToastRef.current = pushToast;
-  const ticketsRef = useRef(tickets);
-  ticketsRef.current = tickets;
   const ticketIdsRef = useRef(ticketIds);
   ticketIdsRef.current = ticketIds;
-  const ticketReloadRef = useRef(ticketLoad.reload);
-  ticketReloadRef.current = ticketLoad.reload;
-
-  // Keep a lookup the Tickets tab can use to pin older tickets that aren't paged in yet.
-  useEffect(() => {
-    setTicketDirectory(tickets);
-    // idsKey tracks ticket set changes without depending on the array identity.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsKey]);
+  const ticketReloadRef = useRef(ticketWarm.reload);
+  ticketReloadRef.current = ticketWarm.reload;
 
   const { resubscribe } = useServerCrmSocket({
     enabled: !!currentUserId,
-    // Re-open when View-as / session user changes so subscribe.userId stays correct.
     watchKey: currentUserId,
-    // Same frame as zoho-octane ticketdashboard.html — userId + the caller's ticket ids.
+    // Same frame as zoho-octane ticketdashboard.html — userId + known ticket ids.
     subscribe: { type: 'subscribe', userId: currentUserId, ticketIds },
     onOpen: () => setSocketConnected(true),
     onClose: () => setSocketConnected(false),
     onMessage: (m) => {
-      // Inbox notifications now ride our own /v1/realtime socket (see useRetentionRealtime →
-      // inbox.* events); this servercrm socket is kept ONLY for ticket comment/attachment events.
       if (m.type !== 'ticket_comment_added' && m.type !== 'ticket_attachment_added') return;
 
       const tid = String(m.ticketId ?? '').trim();
-      // servercrm broadcasts EVERY Desk ticket event to ALL clients (the subscribe frame's ticketIds
-      // are only acked, never used to route), so the client MUST scope to its own ticket set — without
-      // this filter the unread badge + toasts flood with org-wide activity and a phantom badge sticks
-      // (a non-owned ticket never enters the list, so it's never cleared). New tickets enter this set
-      // via the focus refresh below (re-pages loadTickets), so they still go live without a reload.
+      // Client-side scope filter (servercrm broadcasts org-wide).
       const ids = ticketIdsRef.current;
       if (!tid || !ids.includes(tid)) return;
       publishTicketLive({ ticketId: tid, type: m.type });
 
-      // Viewing this ticket → stay read, no toast (reference handleNewComment).
       if (tid === getOpenTicketId()) {
         clearTicketUnread(tid);
         return;
       }
 
       bumpTicketUnread(tid);
-      const t = ticketsRef.current.find((x) => x.id === tid);
+      const t = findSubscribedTicket(tid);
       const label = m.type === 'ticket_attachment_added' ? 'New attachment' : 'New comment';
       const detail = t ? `#${t.num} · ${t.subject}` : `Ticket #${tid}`;
       pushToastRef.current?.(label, detail);
@@ -98,10 +122,7 @@ export function useSidebarBadges(
     // eslint-disable-next-line
   }, [idsKey]);
 
-  // New tickets: refresh the ticket set when the agent returns to the tab (throttled ≤1/2min), so a
-  // ticket created after load enters the client-side scope filter (ticketIdsRef) and its live events
-  // start surfacing — without a manual reload. Focus-only (no polling storm); most agents re-page in
-  // one request. Beyond-reference: the reference only picks up new tickets on an explicit refresh.
+  // Visibility soft-refresh of the FIRST page only (reference never re-dumps the full set).
   useEffect(() => {
     if (!TICKETS_ENABLED || !currentUserId) return undefined;
     let last = Date.now();
@@ -116,7 +137,6 @@ export function useSidebarBadges(
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [currentUserId]);
 
-  // Manual refresh from InboxTab → keep the sidebar unread badge in sync with the new list.
   useEffect(() => subscribeInboxReload(() => inboxLoad.reload()), [inboxLoad.reload]);
 
   return {

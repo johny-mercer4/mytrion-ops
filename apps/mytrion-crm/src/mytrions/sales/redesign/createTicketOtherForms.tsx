@@ -7,6 +7,8 @@ import { Icon } from './icons';
 import { useSales } from './ctx';
 import { createEscalation } from '@/api/desk';
 import { callTouchpoint } from '@/api/touchpoints';
+import { invalidateDcCache } from './dcCache';
+import { invalidateDeduped } from './fetchDedupe';
 import { resolveCreateLeadOutcome } from './createLeadOutcome';
 import { leadShortId, zohoLeadUrl } from './crmUrls';
 import {
@@ -51,6 +53,8 @@ export function EscalationForm() {
             : 'Routed to the escalation team — the file couldn’t be attached.'
           : 'Routed to the escalation team — opening it now.',
       );
+      invalidateDcCache('sales:tickets');
+      invalidateDeduped('desk:tickets:');
       if (res.ticketId) openTicket(res.ticketId);
     } catch (e) {
       pushToast('Couldn’t create escalation', e instanceof Error ? e.message : 'Please try again.');

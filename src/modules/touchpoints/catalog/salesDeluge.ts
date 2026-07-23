@@ -94,7 +94,10 @@ export const salesDelugeTouchpoints: Touchpoint[] = [
     departments: SALES,
     identityParam: 'userId',
     paramsSchema: userKeyed,
-    handler: async (ctx, params) => fetchDebtorsInfo(String(params.userId ?? ''), ctx.userName?.trim() ?? ''),
+    handler: async (ctx, params) =>
+      fetchDebtorsInfo(String(params.userId ?? ''), ctx.userName?.trim() ?? '', {
+        summaryOnly: params.summaryOnly === true,
+      }),
   },
   {
     kind: 'local',

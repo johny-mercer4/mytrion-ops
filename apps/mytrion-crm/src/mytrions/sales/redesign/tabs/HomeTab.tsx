@@ -1,16 +1,12 @@
 /**
  * Sales Mytrion redesign — Home tab. Ported verbatim from the reference prototype's `isHome`
  * slice + `renderVals()` view-model: hero briefing, workday progress, Updates & Announcements,
- * Today's Snapshot (skeleton → 3 groups), Your Activity (range toggle + daily average strip),
- * and the Quick Actions / Recent Inbox two-column footer. The JSX/design is unchanged; the data
- * source is now LIVE — loadSnapshot / loadAnnouncements / loadActivity / loadInbox via useLoad,
- * with the servercrm WebSocket reloading announcements + inbox in real time. Per-tab UI state
- * (activity range, inbox read map, clock tick) stays local; cross-tab affordances come from
- * useSales(). The Quick Actions cards render the static CALL_TO_ACTIONS catalog (action config).
+ * Today's Snapshot, Quick Actions / Recent Inbox. Primary fetches run in parallel behind a
+ * full-page HomePageSkeleton; the page reveals once they settle. Live reloads (WS / refresh)
+ * still use per-block useLoad. Quick Actions = static CALL_TO_ACTIONS catalog.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { getSession } from '@/api/session';
-import { getAppStats } from '@/api/dataCenter';
 import { getImpersonation } from '@/api/impersonation';
 import { useImpersonation } from '@/context/ImpersonationProvider';
 import { s, clickable } from '../dc';
@@ -19,17 +15,8 @@ import { ICO, iconBox, badge, deptStyle, timeParts, WORKDAY_START_HOUR, WORKDAY_
 import { useSessionUser } from '../sessionUser';
 import { markInboxRead } from '../inboxRead';
 import { CALL_TO_ACTIONS } from '../../data';
-import {
-  useLoad,
-  loadSnapshot,
-  loadAnnouncements,
-  loadActivity,
-  loadInbox,
-  numFmt,
-  money,
-  type AnnVM,
-  type InboxVM,
-} from '../live';
+import { useLoad, numFmt, money, type AnnVM, type InboxVM } from '../live';
+import { homeSnapshot, homeActivityToday, homeAnnouncements, homeInbox, homeAppStats } from '../homeBoot';
 import { subscribeInboxLive } from '../inboxLiveBus';
 import { useServerCrmSocket } from '../useServerCrmSocket';
 import { useSales } from '../ctx';
@@ -43,7 +30,7 @@ import {
   isNewBest,
   claimCelebration,
 } from '../streakStore';
-import { HomeBelowFoldSkeleton } from './HomeSkeleton';
+import { HomePageSkeleton } from './HomeSkeleton';
 
 type AnnItem = AnnVM;
 type InboxItem = InboxVM;
@@ -169,21 +156,25 @@ export function HomeTab() {
   const currentUserId = String(actingAs?.zohoUserId ?? getSession()?.worker.zohoUserId ?? '');
 
   // ---- live data ----
-  const snap = useLoad(loadSnapshot, []);
-  const dailyAct = useLoad(() => loadActivity('today'), []); // snapshot "Tasks Done" (today)
-  const ann = useLoad(loadAnnouncements, []);
-  const inbox = useLoad(loadInbox, [currentUserId]);
-  // Real per-day applications (Zoho COQL: Deals.Application_Date = application filled, owner-scoped).
-  // Pass zoho_user_id like Deals/Desk — bare getAppStats() can resolve to no owner and show silent zeros.
-  const appStats = useLoad(() => {
-    const actAsId = getImpersonation()?.zohoUserId?.trim();
-    const selfId = getSession()?.worker.zohoUserId?.trim();
-    return getAppStats(actAsId || selfId || undefined);
-  }, [currentUserId]);
+  // Preloaded during the Mytrion entry loader (see homeBoot): these consume the warm results on the
+  // first render (instant — no post-loader skeleton) and fall back to normal fetching on remount /
+  // refresh / View-as, keyed by the acted-as subject.
+  const homeKey = getImpersonation()?.zohoUserId ?? 'self';
+  const snap = useLoad((fresh) => homeSnapshot(homeKey, fresh), [homeKey]);
+  const dailyAct = useLoad((fresh) => homeActivityToday(homeKey, fresh), [homeKey]); // snapshot "Tasks Done" (today)
+  const ann = useLoad((fresh) => homeAnnouncements(homeKey, fresh), [homeKey]);
+  const inbox = useLoad((fresh) => homeInbox(homeKey, fresh), [homeKey]);
+  // Real per-day applications (owner-scoped): pass the acted-as zoho_user_id, else app-stats can
+  // resolve to no owner and show silent zeros.
+  const appStats = useLoad((fresh) => homeAppStats(homeKey, currentUserId, fresh), [homeKey]);
 
   // ---- local per-tab state ----
   const [, setTick] = useState<number>(0); // drives the 30s clock re-render
-  /** One-shot: keep a single below-fold skeleton until the first home loads settle. */
+  /**
+   * Gate the whole Home page until primary fetches settle (snapshot, announcements, inbox,
+   * today's activity, app-stats). Agents see one loader, then a fully populated Home — not a
+   * hero that paints empty while tiles stream in.
+   */
   const [homeReady, setHomeReady] = useState(false);
   /** Transient goal/personal-best celebration overlay (auto-dismissed). */
   const [celebration, setCelebration] = useState<{ emoji: string; title: string; msg: string } | null>(null);
@@ -203,13 +194,24 @@ export function HomeTab() {
     return () => clearInterval(clock);
   }, []);
 
+  // View-as / user switch — re-gate so we never flash the previous agent's Home.
+  useEffect(() => {
+    setHomeReady(false);
+  }, [currentUserId]);
+
   useEffect(() => {
     if (homeReady) return;
-    const pending =
-      (snap.loading && snap.data === null && !snap.error) ||
-      (ann.loading && ann.data === null && !ann.error) ||
-      (inbox.loading && inbox.data === null && !inbox.error);
-    if (!pending) setHomeReady(true);
+    const pending = (load: { loading: boolean; data: unknown; error: string | null }) =>
+      load.loading && load.data === null && !load.error;
+    if (
+      !pending(snap) &&
+      !pending(ann) &&
+      !pending(inbox) &&
+      !pending(dailyAct) &&
+      !pending(appStats)
+    ) {
+      setHomeReady(true);
+    }
   }, [
     homeReady,
     snap.loading,
@@ -221,6 +223,12 @@ export function HomeTab() {
     inbox.loading,
     inbox.data,
     inbox.error,
+    dailyAct.loading,
+    dailyAct.data,
+    dailyAct.error,
+    appStats.loading,
+    appStats.data,
+    appStats.error,
   ]);
 
   // Real-time: announcements on this tab's socket; inbox toast/reload are shell-level
@@ -347,6 +355,11 @@ export function HomeTab() {
       pushToast('Snapshot refreshed', `Updated ${at} ET`);
     }
   }, [snap.data]);
+
+  // Hold the full page on the skeleton until primary Home data has settled (or failed).
+  if (!homeReady) {
+    return <HomePageSkeleton />;
+  }
 
   const green = 'var(--ok)';
   const red = 'var(--danger)';
@@ -539,10 +552,7 @@ export function HomeTab() {
         </div>
       )}
 
-      {!homeReady ? (
-        <HomeBelowFoldSkeleton />
-      ) : (
-        <>
+      <>
           {/* announcements */}
           <div style={s('display:flex;align-items:center;justify-content:space-between;margin:22px 2px 12px')}>
             <div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name={ICO.bell} size={17} /></span>Updates &amp; Announcements</div>
@@ -644,8 +654,7 @@ export function HomeTab() {
               </div>
             </div>
           </div>
-        </>
-      )}
+      </>
     </div>
   );
 }

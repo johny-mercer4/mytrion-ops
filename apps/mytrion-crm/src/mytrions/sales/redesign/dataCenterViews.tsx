@@ -75,12 +75,14 @@ export function LeadsView({
   view,
   statusFilter = 'all',
   sourceFilter = 'all',
+  metaOnly = false,
 }: {
   leads: LeadVM[];
   search: string;
   view: 'kanban' | 'list';
   statusFilter?: string;
   sourceFilter?: string;
+  metaOnly?: boolean;
 }) {
   const { openLead, pushToast } = useSales();
   const [hoverField, setHoverField] = useState<string | null>(null);
@@ -88,6 +90,8 @@ export function LeadsView({
   const rows = leads.filter((l) => {
     if (statusFilter !== 'all' && l.status !== statusFilter) return false;
     if (sourceFilter !== 'all' && l.source !== sourceFilter) return false;
+    // "Meta" quick-filter — Meta/Facebook/Instagram ad leads carry a utm_source containing "meta".
+    if (metaOnly && !l.source.toLowerCase().includes('meta')) return false;
     if (q && !`${l.contact} ${l.company} ${l.source} ${l.status} ${l.phone} ${l.cell} ${l.email}`.toLowerCase().includes(q)) {
       return false;
     }

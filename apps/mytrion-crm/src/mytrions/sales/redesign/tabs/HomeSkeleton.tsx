@@ -4,6 +4,61 @@ function Skel({ w, h, extra = '' }: { w: string; h: string; extra?: string }) {
   return <div className="ss-skel" style={s(`width:${w};height:${h};border-radius:var(--radius-md);${extra}`)} />;
 }
 
+/** Full Home gate — hero + habit strip + below-fold, shown until primary fetches settle. */
+export function HomePageSkeleton() {
+  return (
+    <div className="ss-fu" aria-busy="true" aria-label="Loading homepage">
+      <div style={s('display:grid;grid-template-columns:1.35fr 1fr;gap:18px;margin-bottom:18px')}>
+        <div
+          style={s(
+            'position:relative;overflow:hidden;border-radius:var(--radius-md);padding:26px 28px;background:linear-gradient(120deg, rgba(var(--accent-rgb),.14), rgba(var(--violet-rgb),.10)), var(--surface);border:1px solid var(--border)',
+          )}
+        >
+          <Skel w="120px" h="12px" />
+          <Skel w="72%" h="30px" extra="margin-top:12px" />
+          <Skel w="90px" h="11px" extra="margin-top:22px" />
+          <Skel w="100%" h="9px" extra="margin-top:10px;border-radius:99px" />
+          <Skel w="200px" h="11px" extra="margin-top:10px" />
+          <Skel w="140px" h="38px" extra="margin-top:18px" />
+        </div>
+        <div
+          style={s(
+            'border-radius:var(--radius-md);padding:22px 24px;background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;justify-content:center',
+          )}
+        >
+          <div style={s('display:flex;justify-content:space-between')}>
+            <Skel w="110px" h="11px" />
+            <Skel w="64px" h="12px" />
+          </div>
+          <Skel w="100%" h="9px" extra="margin:18px 0 12px;border-radius:99px" />
+          <div style={s('display:flex;justify-content:space-between')}>
+            <Skel w="48px" h="11px" />
+            <Skel w="72px" h="11px" />
+            <Skel w="48px" h="11px" />
+          </div>
+        </div>
+      </div>
+      <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px')}>
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            style={s(
+              'display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)',
+            )}
+          >
+            <Skel w="38px" h="38px" />
+            <div style={s('flex:1')}>
+              <Skel w="42px" h="22px" />
+              <Skel w="70px" h="11px" extra="margin-top:6px" />
+            </div>
+          </div>
+        ))}
+      </div>
+      <HomeBelowFoldSkeleton />
+    </div>
+  );
+}
+
 /** Below-fold homepage skeleton — matches announcements / snapshot / activity / inbox shapes. */
 export function HomeBelowFoldSkeleton() {
   return (

@@ -1,5 +1,8 @@
 /**
  * Sales Open Pool daily claim cap — max 2 assigns per agent per UTC day.
+ *
+ * Counts approved claim audit rows by `requested_at` (always set on instant claim).
+ * Prefer requested_at over resolved_at so a null/legacy resolved_at cannot under-count.
  */
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { db } from '../../db/client.js';
@@ -28,7 +31,7 @@ export async function countOpenPoolClaimsToday(
         eq(retentionClaimRequests.tenantId, ctx.tenantId),
         eq(retentionClaimRequests.requesterZohoUserId, agent),
         eq(retentionClaimRequests.status, CLAIM_REQUEST_STATUS.approved),
-        gte(retentionClaimRequests.resolvedAt, dayStart),
+        gte(retentionClaimRequests.requestedAt, dayStart),
       ),
     );
   return Number(rows[0]?.n ?? 0);

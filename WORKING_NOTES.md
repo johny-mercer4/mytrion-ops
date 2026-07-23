@@ -4917,3 +4917,78 @@ Locked former-owner cards now say **Escalated to Retention** (Dissatisfied + New
 phase_2) or **Escalated to Open Pool** (pool statuses), via `salesLockBadge` / `salesLockTitle` in
 `retentionTimers.ts`. Cards stay disabled (`is-locked` / pointer-events none). Column hint for
 Dissatisfied → "Escalated · Retention".
+
+## 2026-07-23 — Retention case creation: all Sales agents
+
+Local `.env`: `FF_RETENTION_PILOT_ONLY=0` (cleared `RETENTION_PILOT_AGENT_ZOHO_USER_IDS`). Render has
+no pilot env var (defaults off). Verified pg-boss: `automation.retention.case-sync` cron
+`0 * * * *` America/Chicago + `deadline-sweep` `*/15`; latest sync
+`created:3 scanned:500 breached:262 refreshed:259 pilotSkipped:0`. Open Phase‑1: **281 cases /
+51 agents** (Daniel Brown only 10). Escalation→CS still blocked (`RETENTION_AUTO_ASSIGN_ENABLED=false`).
+Ops helpers: `scripts/checkRetentionJobs.ts`, `scripts/runRetentionSyncOnce.ts`.
+
+## 2026-07-23 — Open Pool cards stay on their stage column
+
+Former-owner Open Pool / claim-pending cases no longer map to Closed. `kanbanColOf`
+places them on Reached / OoR / Vacation / New from `agentOutcome` (locked badge unchanged).
+`enterOpenPool` only overwrites `agentOutcome` when the caller passes one (preserves stage).
+
+## 2026-07-23 — Sales Home: load-then-reveal
+
+Home no longer paints the hero while tiles stream in. `homeReady` waits for snapshot +
+announcements + inbox + today's activity + app-stats; shows `HomePageSkeleton` (full page)
+until they settle (or error). Re-gates on View-as user switch.
+
+## 2026-07-23 — Seed one Daniel Brown case into Open Pool (claim UX test)
+
+Ran `scripts/seedDanielOpenPoolCase.ts` → case **414** XPEDITED FREIGHT LLC (`5800330`)
+status `p1_open_pool`, poolOwner=Daniel Brown, assignee cleared, 3BD claim window. Use View-as
+any other Sales agent → Retention → Open Pool → claim (instant Zoho + Kanban New).
+
+## 2026-07-23 — Open Pool claim modal polish
+
+Beautified `PoolClaimModal`: header pills (Open Pool / Instant assign / Max 2/day),
+deal summary with colored Quiet/Cycle/Fuel/Cadence badges, numbered reason + confirm
+steps with Ready/Required state, green confirm-on state, and distinct primary Claim
+vs Cancel. Styles in `theme.css` `.ss-pool-*`.
+
+## 2026-07-23 — Revert XPEDITED claim test ownership to Daniel
+
+After successful Open Pool claim UX test (Apo Adams), ran
+`scripts/revertXpeditedToDaniel.ts`: Zoho Deal/Contact/Account
+`6227679000080100779` / `…776` / `…773` Owner → Daniel Brown; case **414**
+assignee restored, assignment_count 2→1, open_pool_attempt 1→0.
+
+## 2026-07-23 — Open Pool daily claim quota UI + count harden
+
+Backend already wrote Apo’s approved claim (case 414) to
+`retention_claim_requests` (used=1 → remaining should be 1), but the badge
+stayed at 2 because the UI only re-fetched quota after claim. Fix:
+`claimNow` returns `{ quota }`, PoolTab applies it immediately + View-as deps,
+badge shows `left / max` with low/empty tones. Count uses `requested_at`
+(UTC day) instead of nullable `resolved_at`.
+
+## 2026-07-24 — Sales Tickets stale-while-revalidate cache
+
+Tickets tab no longer cold-boots Desk on every visit. `useTicketsFeed` paints
+from `dcCache` (`sales:tickets:feed:*`, 60s SWR); shell `loadTickets` uses
+`useCachedLoad` (120s) and seeds the feed cache. Page fetches share via
+`dedupedFetch` (15s). Create-ticket invalidates `sales:tickets` + `desk:tickets:`.
+
+## 2026-07-24 — Tickets: match ticketdashboard load path (fix hang)
+
+Root cause: shell `loadTickets()` dumped up to ~20 Desk pages on every Sales mount,
+and Desk.search is SCOPE_MISMATCH (403) so each page used the slow creator-scan
+fallback — UI looked hung. Fix aligned with zoho-octane ticketdashboard.html:
+- shell warms **first 20 only** + subscribe registry for WS ids
+- Tickets tab progressive pages update the registry (no full dump)
+- windowed `pageTicketsByCreator` scans in parallel batches of 5
+- chrome always visible; list-body spinner only; empty cache never “fresh”
+Verified smoke: search 403 SCOPE_MISMATCH; windowed first page ~3.2s / 15 rows.
+
+## 2026-07-24 — Tickets thread side + attachments + realtime
+
+Sales-side authorship: treat viewing CRM agent name/email as "me" in addition to
+`ZOHO_DESK_AGENT_ID`, so a Komilova thread + Desk-agent attachment stay on the same
+(left) side. Surface comment/thread inline attachments; poll open thread every 12s;
+selecting a ticket upserts WS subscribe ids.

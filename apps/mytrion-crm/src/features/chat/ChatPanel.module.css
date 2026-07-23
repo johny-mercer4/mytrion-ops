@@ -51,6 +51,8 @@
   font-family: 'Inter', var(--font-head);
   font-size: var(--text-lg);
   font-weight: 700;
+  line-height: 1.2;
+  padding: 0.05em 0;
   background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;

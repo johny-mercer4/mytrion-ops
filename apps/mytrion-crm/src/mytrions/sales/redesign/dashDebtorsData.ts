@@ -113,16 +113,22 @@ function mapDebtorsPayload(res: {
   };
 }
 
-export async function loadDebtorsRaw(opts: { force?: boolean } = {}): Promise<DebtorsRaw> {
+export async function loadDebtorsRaw(
+  opts: { force?: boolean; summaryOnly?: boolean } = {},
+): Promise<DebtorsRaw> {
+  // The Home "Money Owed" summary uses summaryOnly — the backend then skips the Zoho deal-enrichment
+  // COQL (the summary never reads deal metadata). Cache it under a SEPARATE key so the enrichment-less
+  // rows can't leak into the full Debtors dashboard (or vice-versa).
+  const cacheKey = opts.summaryOnly ? `${CACHE_PREFIX}:summary` : CACHE_PREFIX;
   if (!opts.force) {
-    const hit = readDashCache<DebtorsRaw>(CACHE_PREFIX, DEBTORS_DASH_TTL_MS);
+    const hit = readDashCache<DebtorsRaw>(cacheKey, DEBTORS_DASH_TTL_MS);
     if (hit) {
       return { ...hit.data, cachedAt: hit.cachedAt.toISOString(), fromCache: true };
     }
   }
-  const res = await callTouchpoint('dashboard.debtors', {});
+  const res = await callTouchpoint('dashboard.debtors', opts.summaryOnly ? { summaryOnly: true } : {});
   const mapped = mapDebtorsPayload(res);
-  const cachedAt = writeDashCache(CACHE_PREFIX, mapped);
+  const cachedAt = writeDashCache(cacheKey, mapped);
   return { ...mapped, cachedAt: cachedAt.toISOString(), fromCache: false };
 }
 
@@ -208,6 +214,7 @@ export function debtorsSummary(list: DebtorCard[]): DebtorsSummary {
 
 /** Home “Money Owed” KPIs — same Billing-aligned filter as the Debtors dashboard. */
 export async function loadDebtorsHomeSummary(opts: { force?: boolean } = {}): Promise<DebtorsSummary> {
-  const raw = await loadDebtorsRaw(opts);
+  // summaryOnly → backend skips the wasted Deals-enrichment COQL; the summary only needs invoice totals.
+  const raw = await loadDebtorsRaw({ ...opts, summaryOnly: true });
   return debtorsSummary(filterDebtors(raw.debtors, '', 'all'));
 }

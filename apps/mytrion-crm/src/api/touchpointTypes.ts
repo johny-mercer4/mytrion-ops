@@ -570,7 +570,7 @@ export interface TouchpointMap {
     result: SalesDashboardResult;
   };
   'dashboard.company': { params: Record<string, never>; result: CompanyDashboardResult };
-  'dashboard.debtors': { params: Record<string, never>; result: DebtorsResult };
+  'dashboard.debtors': { params: { summaryOnly?: boolean }; result: DebtorsResult };
   'sales.carriers_search': { params: { query: string; limit?: number }; result: CarrierSearchResult };
   'leads.create': {
     params: { createPayload: Record<string, string> };
@@ -642,7 +642,11 @@ export interface TouchpointMap {
   };
   'retention.pool_claim': {
     params: { caseId: string; reason: string };
-    result: { case: RetentionCaseRow; pendingApproval: boolean };
+    result: {
+      case: RetentionCaseRow;
+      pendingApproval: boolean;
+      quota: { used: number; max: number; remaining: number };
+    };
   };
   'retention.pool_quota': {
     params: Record<string, never>;

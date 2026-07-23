@@ -33,6 +33,22 @@ export function readDcCache<T>(key: string): Entry<T> | null {
   return (store.get(key) as Entry<T> | undefined) ?? null;
 }
 
+/** Subscribe to write/invalidate for one key (Tickets feed SWR, etc.). */
+export function subscribeDcCache(key: string, fn: Listener): () => void {
+  let set = listeners.get(key);
+  if (!set) {
+    set = new Set();
+    listeners.set(key, set);
+  }
+  set.add(fn);
+  return () => {
+    const cur = listeners.get(key);
+    if (!cur) return;
+    cur.delete(fn);
+    if (cur.size === 0) listeners.delete(key);
+  };
+}
+
 /** Store a freshly-fetched value and tell every mounted hook on this key to adopt it. */
 export function writeDcCache<T>(key: string, data: T): number {
   const ts = Date.now();

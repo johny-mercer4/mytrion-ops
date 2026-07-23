@@ -5,11 +5,13 @@ import type { RegisteredTool } from './types.js';
 import { knowledgeSearchTool } from './definitions/knowledge_search.js';
 import { zohoPeopleSearchEmployeesTool } from './definitions/zoho_people_search_employees.js';
 import { zohoCrmQueryTool } from './definitions/zoho_crm_query.js';
+import { zohoCrmSearchTool } from './definitions/zoho_crm_search.js';
 import { zohoDeskSearchTicketsTool } from './definitions/zoho_desk_search_tickets.js';
 import { agentSalesSnapshotTool } from './definitions/agent_sales_snapshot.js';
 import { agentDebtorsTool } from './definitions/agent_debtors.js';
 import { agentActivityTool } from './definitions/agent_activity.js';
 import { analyticsSnapshotTool } from './definitions/analytics_snapshot.js';
+import { dagExecutorTool } from './definitions/dag_executor.js';
 import { warehouseMyGallonsTool } from './definitions/warehouse_gallons.js';
 import {
   crmCarrierBalanceTool,
@@ -48,6 +50,7 @@ export const allTools: RegisteredTool[] = [
   // Direct Zoho reads (auth via the Zoho wrapper; module/field names come from the knowledge base):
   registerTool(zohoPeopleSearchEmployeesTool),
   registerTool(zohoCrmQueryTool),
+  registerTool(zohoCrmSearchTool),
   registerTool(zohoDeskSearchTicketsTool),
   // servercrm agent-API proxies (owner-scoped to the calling agent server-side):
   registerTool(agentSalesSnapshotTool),
@@ -55,6 +58,8 @@ export const allTools: RegisteredTool[] = [
   registerTool(agentActivityTool),
   // Company analytics snapshot (cached, curated DWH aggregates — same data as the dashboard):
   registerTool(analyticsSnapshotTool),
+  // DAG execution/automation (admin-gated/protected):
+  registerTool(dagExecutorTool),
   // Owner-scoped warehouse gallons/swipes via the dbt MCP (keyed by Zoho user id; non-admins
   // locked to their own rows). Gated on the dbt MCP being configured.
   ...(env.FF_DBT_MCP_ENABLED ? [registerTool(warehouseMyGallonsTool)] : []),
