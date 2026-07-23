@@ -17,7 +17,10 @@ RUN pnpm build
 FROM base AS gateway
 WORKDIR /app/apps/agent-gateway
 COPY apps/agent-gateway/package.json apps/agent-gateway/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+# The gateway package.json has no packageManager pin, so bare corepack resolves the LATEST pnpm —
+# 11.x crashes on Node 20 (ERR_UNKNOWN_BUILTIN_MODULE, seen live on Render 2026-07-23). Pin the
+# same major the lockfile was written with (matches apps/agent-gateway/Dockerfile).
+RUN corepack prepare pnpm@9.12.0 --activate && corepack pnpm install --frozen-lockfile
 COPY apps/agent-gateway/tsconfig.json ./
 COPY apps/agent-gateway/src ./src
 COPY apps/agent-gateway/prompts ./prompts
