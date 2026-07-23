@@ -65,6 +65,42 @@
     border-color: var(--billing-accent);
     box-shadow: 0 0 0 3px var(--accent-bg);
 }
+/* Reference field highlighted amber when it's the cause of a duplicate. */
+.bm-root .chase-input.is-dup {
+    border-color: var(--warning-border);
+    box-shadow: 0 0 0 3px var(--warning-bg);
+}
+
+/* Inline notice callout — replaces the bare red text: amber "already recorded" (duplicate) vs
+   red "could not add" (error), each with an icon and a soft tinted panel. */
+.bm-root .bm-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    animation: bm-notice-in 160ms ease-out;
+}
+.bm-root .bm-notice svg { flex-shrink: 0; width: 15px; height: 15px; margin-top: 1px; }
+.bm-root .bm-notice-title { font-weight: 700; margin-bottom: 0.1rem; }
+.bm-root .bm-notice-msg { font-weight: 500; opacity: 0.9; }
+.bm-root .bm-notice--duplicate {
+    color: var(--warning-text);
+    background: var(--warning-bg);
+    border-color: var(--warning-border);
+}
+.bm-root .bm-notice--error {
+    color: var(--danger-text);
+    background: var(--danger-bg);
+    border-color: var(--danger-border);
+}
+@keyframes bm-notice-in {
+    from { opacity: 0; transform: translateY(-3px); }
+    to { opacity: 1; transform: translateY(0); }
+}
 /* Amount — the hero field: mono, larger, with a $ affix. */
 .bm-root .chase-amount { position: relative; }
 .bm-root .chase-amount .chase-cur {
