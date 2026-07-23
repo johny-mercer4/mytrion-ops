@@ -56,6 +56,7 @@ interface SnapCell {
   value: string;
   label: string;
   help: string;
+  onClick?: () => void;
 }
 interface SnapGroup {
   label: string;
@@ -162,7 +163,7 @@ function StreakStat({
 }
 
 export function HomeTab() {
-  const { openDetail, go, pushToast } = useSales();
+  const { openDetail, go, openDash, pushToast } = useSales();
   const user = useSessionUser();
   const { actingAs } = useImpersonation();
   const currentUserId = String(actingAs?.zohoUserId ?? getSession()?.worker.zohoUserId ?? '');
@@ -354,13 +355,21 @@ export function HomeTab() {
   const violet = 'var(--violet)';
   const cyan = 'var(--cyan)';
   const neutral = 'var(--text)';
-  const mk = (icon: keyof typeof ICO, col: string, value: string | number, label: string, help: string): SnapCell => ({
+  const mk = (
+    icon: keyof typeof ICO,
+    col: string,
+    value: string | number,
+    label: string,
+    help: string,
+    onClick?: () => void,
+  ): SnapCell => ({
     icon: ICO[icon],
     iconStyle: iconBox(col, 36),
     color: col,
     value: String(value),
     label,
     help,
+    onClick,
   });
   const sf = snap.data;
   const debtAmt = sf?.total_debt_amount ?? 0;
@@ -381,7 +390,14 @@ export function HomeTab() {
         mk('users', accent, numFmt(sf?.active_clients ?? 0), 'Active Customers', 'Fueled in the last 10 days'),
         mk('warn', (sf?.inactive_clients ?? 0) > 0 ? red : neutral, numFmt(sf?.inactive_clients ?? 0), 'Need Attention', 'Quiet 10+ days — worth a call'),
         mk('clock', (sf?.stuck_deals_count ?? 0) > 0 ? amber : neutral, numFmt(sf?.stuck_deals_count ?? 0), 'Stuck Applications', 'Sitting 15+ days'),
-        mk('money', debtAmt > 0 ? red : neutral, moneyOwed, 'Money Owed', `${numFmt(sf?.total_debtors ?? 0)} debtors · ${numFmt(sf?.total_hard_debtors ?? 0)} hard`),
+        mk(
+          'money',
+          debtAmt > 0 ? red : neutral,
+          moneyOwed,
+          'Money Owed',
+          `${numFmt(sf?.total_debtors ?? 0)} debtors · ${numFmt(sf?.total_hard_debtors ?? 0)} hard`,
+          () => openDash('debtors'),
+        ),
       ],
     },
     {
@@ -564,7 +580,16 @@ export function HomeTab() {
                       <div style={s('font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px')}>{g.label}</div>
                       <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:12px')}>
                         {g.cells.map((c) => (
-                          <div key={c.label} className="ss-card-h" style={s('padding:15px;border-radius:var(--radius-md);background:linear-gradient(180deg,var(--surface-2),var(--surface));border:1px solid var(--border);position:relative')}>
+                          <div
+                            key={c.label}
+                            className="ss-card-h"
+                            {...(c.onClick ? clickable(c.onClick) : {})}
+                            style={s(
+                              `padding:15px;border-radius:var(--radius-md);background:linear-gradient(180deg,var(--surface-2),var(--surface));border:1px solid var(--border);position:relative${
+                                c.onClick ? ';cursor:pointer' : ''
+                              }`,
+                            )}
+                          >
                             <div style={s(c.iconStyle)}><Icon name={c.icon} size={18} /></div>
                             <div style={s(`font-family:'JetBrains Mono',monospace;font-weight:500;font-size:23px;line-height:1.15;min-height:27px;margin-top:12px;color:${c.color}`)}>{c.value}</div>
                             <div style={s('font-size:12px;font-weight:600;color:var(--text);margin-top:2px')}>{c.label}</div>

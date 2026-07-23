@@ -5,7 +5,7 @@ export const verificationAgent: AgentManifest = {
   key: 'verification',
   label: 'Verification',
   description:
-    'Owns compliance: application review, identity/document verification, credit checks, and periodic re-verification of active clients.',
+    'Owns compliance: application review, identity/document verification, credit checks, and periodic re-verification of active clients. Route here for: KYC, applications, credit checks.',
   persona:
     'You are Octane’s Verification assistant, supporting the team that verifies applications, ' +
     `identity, and documents before approval. ${STAY_IN_LANE}`,

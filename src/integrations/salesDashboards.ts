@@ -37,6 +37,79 @@ function ok(res: Row | null, mode: 'success' | 'status'): boolean {
 
 const AGENT_BODY = (agentName: string): { agentName: string } => ({ agentName });
 
+/**
+ * Billing Mytrion debtor floors (Billing Debtors.tsx + dwhClientRoster):
+ * pending/partial invoices · remaining ≥ $1 · age ≥ 2 days · hard = 15+ days.
+ * CMP roll-up totals can include fresher invoices — recompute from invoice rows when present.
+ */
+export const DEBT_MIN_DAYS = 2;
+export const DEBT_MIN_REMAINING = 1;
+export const HARD_DEBT_DAYS = 15;
+
+export interface CmpDebtorSummary {
+  totalDebtors: number;
+  totalHardDebtors: number;
+  totalDebtAmount: number;
+  largestDebtor: Row;
+}
+
+/** Recompute agent debtor KPIs from CMP invoice rows (Billing-aligned). Falls back to CMP totals. */
+export function summarizeCmpDebtors(list: Row[], fallback: CmpDebtorSummary): CmpDebtorSummary {
+  let sawInvoiceDetail = false;
+  let totalDebtAmount = 0;
+  let totalHardDebtors = 0;
+  let totalDebtors = 0;
+  let largestDebtor: Row = {};
+  let largestRemaining = 0;
+
+  for (const debtor of list) {
+    const invoices = Array.isArray(debtor.invoices) ? (debtor.invoices as Row[]) : [];
+    if (invoices.length > 0) sawInvoiceDetail = true;
+    const kept = invoices.filter(
+      (inv) => num(inv.debt_days) >= DEBT_MIN_DAYS && num(inv.remaining_amount) >= DEBT_MIN_REMAINING,
+    );
+    if (kept.length === 0) {
+      // No invoice detail — keep CMP carrier row if it already qualifies on roll-up fields.
+      if (invoices.length > 0) continue;
+      const remaining = num(debtor.total_remaining);
+      const maxDays = num(debtor.max_debt_days);
+      if (remaining < DEBT_MIN_REMAINING || maxDays < DEBT_MIN_DAYS) continue;
+      totalDebtors += 1;
+      totalDebtAmount += remaining;
+      if (maxDays >= HARD_DEBT_DAYS || bool(debtor.is_hard_debtor)) totalHardDebtors += 1;
+      if (remaining > largestRemaining) {
+        largestRemaining = remaining;
+        largestDebtor = {
+          deal_name: str(debtor.company_name),
+          total_remaining: remaining,
+          carrier_id: str(debtor.carrier_id),
+          worst_status: str(debtor.worst_status),
+        };
+      }
+      continue;
+    }
+    const remaining = kept.reduce((a, inv) => a + num(inv.remaining_amount), 0);
+    const maxDays = kept.reduce((a, inv) => Math.max(a, num(inv.debt_days)), 0);
+    totalDebtors += 1;
+    totalDebtAmount += remaining;
+    if (maxDays >= HARD_DEBT_DAYS) totalHardDebtors += 1;
+    if (remaining > largestRemaining) {
+      largestRemaining = remaining;
+      largestDebtor = {
+        deal_name: str(debtor.company_name),
+        total_remaining: remaining,
+        carrier_id: str(debtor.carrier_id),
+        worst_status: str(debtor.worst_status),
+      };
+    }
+  }
+
+  if (!sawInvoiceDetail && totalDebtors === 0 && fallback.totalDebtors > 0) {
+    return fallback;
+  }
+  return { totalDebtors, totalHardDebtors, totalDebtAmount, largestDebtor };
+}
+
 // ── Date helpers (America/New_York — matches servercrm's ET basis + the org's Zoho TZ) ───────────────
 function etYmd(d: Date): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -117,26 +190,32 @@ export async function fetchHomeSnapshot(userId: string, agentName: string): Prom
   const newCardsAvgLastWeek = num(s.new_cards_avg_per_day_last_week);
   const daysElapsedThisWeek = num(s.days_elapsed_this_week, 7);
 
-  // PART 2 — debtors (list arrives sorted by total_remaining DESC; first = largest)
+  // PART 2 — debtors (Billing floors applied; CMP list sorted by total_remaining DESC)
   let totalDebtors = 0;
   let totalHardDebtors = 0;
   let totalDebtAmount = 0;
   let largestDebtor: Row = {};
   if (ok(debtRes, 'success')) {
     const d = ((debtRes as Row).data as Row) ?? {};
-    totalDebtors = num(d.total_debtors);
-    totalHardDebtors = num(d.total_hard_debtors);
-    totalDebtAmount = num(d.total_debt_amount);
     const list = Array.isArray(d.debtors) ? (d.debtors as Row[]) : [];
     const top = list[0];
-    if (top) {
-      largestDebtor = {
-        deal_name: str(top.company_name),
-        total_remaining: num(top.total_remaining),
-        carrier_id: str(top.carrier_id),
-        worst_status: str(top.worst_status),
-      };
-    }
+    const summarized = summarizeCmpDebtors(list, {
+      totalDebtors: num(d.total_debtors),
+      totalHardDebtors: num(d.total_hard_debtors),
+      totalDebtAmount: num(d.total_debt_amount),
+      largestDebtor: top
+        ? {
+            deal_name: str(top.company_name),
+            total_remaining: num(top.total_remaining),
+            carrier_id: str(top.carrier_id),
+            worst_status: str(top.worst_status),
+          }
+        : {},
+    });
+    totalDebtors = summarized.totalDebtors;
+    totalHardDebtors = summarized.totalHardDebtors;
+    totalDebtAmount = summarized.totalDebtAmount;
+    largestDebtor = summarized.largestDebtor;
   }
 
   const snapshot: Row = {
@@ -300,11 +379,18 @@ export async function fetchDebtorsInfo(userId: string, agentName: string): Promi
     };
   });
 
+  const summarized = summarizeCmpDebtors(rawDebtors, {
+    totalDebtors: num(d.total_debtors),
+    totalHardDebtors: num(d.total_hard_debtors),
+    totalDebtAmount: num(d.total_debt_amount),
+    largestDebtor: {},
+  });
+
   return {
     user_id: userId,
-    total_debtors: num(d.total_debtors),
-    total_hard_debtors: num(d.total_hard_debtors),
-    total_debt_amount: num(d.total_debt_amount),
+    total_debtors: summarized.totalDebtors,
+    total_hard_debtors: summarized.totalHardDebtors,
+    total_debt_amount: summarized.totalDebtAmount,
     debtors,
   };
 }

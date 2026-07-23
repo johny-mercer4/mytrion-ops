@@ -8,6 +8,7 @@ import { getSession } from '@/api/session';
 import { callTouchpoint } from '@/api/touchpoints';
 import { getClients, type AgentClient } from '@/api/dataCenter';
 import { dedupedFetch, invalidateDeduped } from './fetchDedupe';
+import { loadDebtorsHomeSummary } from './dashDebtorsData';
 import { ICO } from './salesData';
 import type { IconName } from './icons';
 
@@ -97,8 +98,12 @@ export interface SnapshotFields {
   fuel_tx_caption: string;
 }
 
-export async function loadSnapshot(): Promise<SnapshotFields> {
-  const raw = await callTouchpoint('dashboard.home_snapshot', {});
+export async function loadSnapshot(fresh = false): Promise<SnapshotFields> {
+  // Parallel: home DWH snapshot + Billing-aligned debtors summary (5-min cache; Refresh forces).
+  const [raw, debtSummary] = await Promise.all([
+    callTouchpoint('dashboard.home_snapshot', {}),
+    loadDebtorsHomeSummary({ force: fresh }).catch(() => null),
+  ]);
   const first = Array.isArray(raw) ? raw[0] : raw;
   const s = ((first as { snapshot?: Record<string, unknown> })?.snapshot ?? {}) as Record<string, unknown>;
   const g = (k: string): number => n(s[k]);
@@ -118,9 +123,10 @@ export async function loadSnapshot(): Promise<SnapshotFields> {
     active_clients: g('active_clients'),
     inactive_clients: g('inactive_clients'),
     stuck_deals_count: g('stuck_deals_count'),
-    total_debt_amount: g('total_debt_amount'),
-    total_debtors: g('total_debtors'),
-    total_hard_debtors: g('total_hard_debtors'),
+    // Prefer client Billing floors so Home “Money Owed” matches Dashboard → Debtors.
+    total_debt_amount: debtSummary?.totalRemaining ?? g('total_debt_amount'),
+    total_debtors: debtSummary?.debtorCount ?? g('total_debtors'),
+    total_hard_debtors: debtSummary?.hardCount ?? g('total_hard_debtors'),
     swipes_this_week: swipesW,
     gallons_this_week: gallonsW,
     new_cards_this_week: g('new_cards_this_week'),
@@ -286,6 +292,8 @@ export interface RecordVM {
   /** Raw billing-cycle gallons (numeric) — drives the loyalty tier level. */
   cycleGallons: number;
   status: 'active' | 'attention' | 'debtor';
+  /** Live open-invoice debt ($) from cmp_invoice (computed server-side). 0 when not a debtor. */
+  computedDebt: number;
   mc: string;
   dot: string;
   /** Real per-calendar-month loyalty inputs (DWH via /data-center/clients). Zero when the client had
@@ -318,6 +326,7 @@ function mapRecord(c: AgentClient): RecordVM {
     gallons: galFmt(c.cycleGallons),
     cycleGallons: c.cycleGallons,
     status,
+    computedDebt: c.computedDebt,
     mc: c.moneyCode,
     dot: c.dot,
     gallonsThisMonth: c.gallonsThisMonth,

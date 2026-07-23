@@ -242,7 +242,9 @@ describe('view-as for NON-admins (targeted, DB-granted impersonation)', () => {
   }
 
   it('a granted non-admin may view-as the specific target (runs AS them, audited impersonator)', async () => {
-    actAsTarget.mockResolvedValue({ zohoUserId: '777', name: 'Rep Riley', email: null, profile: 'Sales Rep', role: 'Sales Agent' });
+    actAsTarget.mockResolvedValue({ zohoUserId: '777', name: 'Rep Riley', email: null, profile: 'Sales Rep', role: 'Sales Agent',
+      isOnline: false,
+    });
     const ctx = await buildCallerContext(viewAsReq(['777'], '777'), {});
     expect(ctx.userId).toBe('zoho:777');
     expect(ctx.impersonatorUserId).toBe('zoho:42');
@@ -256,7 +258,9 @@ describe('view-as for NON-admins (targeted, DB-granted impersonation)', () => {
   });
 
   it('a non-admin can NEVER view-as an all-access (admin) target — escalation blocked', async () => {
-    actAsTarget.mockResolvedValue({ zohoUserId: '999', name: 'Boss', email: null, profile: 'Administrator', role: 'CEO' });
+    actAsTarget.mockResolvedValue({ zohoUserId: '999', name: 'Boss', email: null, profile: 'Administrator', role: 'CEO',
+      isOnline: false,
+    });
     await expect(buildCallerContext(viewAsReq(['999'], '999'), {})).rejects.toThrow();
   });
 });
@@ -271,6 +275,7 @@ describe('act-as impersonation is verified server-side (CRM directory, not heade
       email: null,
       profile: 'Sales Agent',
       role: 'Sales Agent',
+      isOnline: false,
     });
     const req = await sessionRequest(admin);
     req.headers = {
@@ -298,6 +303,7 @@ describe('act-as impersonation is verified server-side (CRM directory, not heade
       email: null,
       profile: 'Administrator',
       role: 'Manager',
+      isOnline: false,
     });
     const req = await sessionRequest(admin);
     req.headers = { 'x-act-as-zoho-user-id': '888' };

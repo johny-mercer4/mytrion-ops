@@ -28,6 +28,8 @@ import { adminRoutes } from './routes/v1/admin.routes.js';
 import { analyticsRoutes } from './routes/v1/analytics.routes.js';
 import { cmpSchemaRoutes } from './routes/v1/cmpSchema.routes.js';
 import { dwhSchemaRoutes } from './routes/v1/dwhSchema.routes.js';
+import { verificationSchemaRoutes } from './routes/v1/verificationSchema.routes.js';
+import { verificationPipelineRoutes } from './routes/v1/verificationPipeline.routes.js';
 import { mytrionAccessRoutes } from './routes/v1/mytrionAccess.routes.js';
 import { startAnalyticsWarmer } from './modules/analytics/cache.js';
 import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
@@ -59,18 +61,28 @@ import { tasksRoutes } from './routes/v1/tasks.routes.js';
 import { toolsRoutes } from './routes/v1/tools.routes.js';
 import { touchpointsRoutes } from './routes/v1/touchpoints.routes.js';
 
+// Redact auth-bearing request headers from Fastify's request logger (defense-in-depth: the default
+// serializer doesn't dump headers, but if request-header logging is ever enabled these must not leak).
+const LOG_REDACT_PATHS = [
+  'req.headers.authorization',
+  'req.headers.cookie',
+  'req.headers["x-api-key"]',
+  'req.headers["x-ingest-secret"]',
+];
+
 function loggerOption() {
   if (isTest) return false;
   if (isDev) {
     return {
       level: env.LOG_LEVEL,
+      redact: LOG_REDACT_PATHS,
       transport: {
         target: 'pino-pretty',
         options: { colorize: true, translateTime: 'SYS:standard', ignore: 'pid,hostname' },
       },
     };
   }
-  return { level: env.LOG_LEVEL };
+  return { level: env.LOG_LEVEL, redact: LOG_REDACT_PATHS };
 }
 
 async function registerDocs(app: FastifyInstance): Promise<void> {
@@ -231,6 +243,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(adminRoutes);
       await v1.register(cmpSchemaRoutes);
       await v1.register(dwhSchemaRoutes);
+      await v1.register(verificationSchemaRoutes);
       await v1.register(mytrionAccessRoutes);
       await v1.register(clientNewsRoutes);
       await v1.register(supportBotRoutes);
@@ -241,6 +254,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(touchpointsRoutes);
       await v1.register(deskRoutes);
       await v1.register(dataCenterRoutes);
+      await v1.register(verificationPipelineRoutes);
       await v1.register(csApplicationsRoutes);
       await v1.register(csCitifuelRoutes);
       await v1.register(csAnalyticsRoutes);

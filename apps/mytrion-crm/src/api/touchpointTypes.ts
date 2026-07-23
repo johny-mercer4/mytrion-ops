@@ -644,28 +644,46 @@ export interface TouchpointMap {
     params: { caseId: string; reason: string };
     result: { case: RetentionCaseRow; pendingApproval: boolean };
   };
+  'retention.pool_quota': {
+    params: Record<string, never>;
+    result: { used: number; max: number; remaining: number };
+  };
   'retention.lookups': {
     params: { phase_code?: string };
     result: RetentionLookupsResult;
   };
-  'retention.cs_claims_pending': {
-    params: { limit?: number };
-    result: { cases: RetentionPendingClaimRow[]; total: number };
-  };
-  'retention.cs_claims_badge': {
-    params: Record<string, never>;
-    result: { count: number };
-  };
-  'retention.cs_claim_approve': {
-    params: { caseId: string };
-    result: { case: RetentionCaseRow };
-  };
-  'retention.cs_claim_decline': {
-    params: { caseId: string };
-    result: { case: RetentionCaseRow };
+  'retention.cs_pool_activity': {
+    params: { limit?: number; status?: 'approved' | 'expired' | 'all' };
+    result: { rows: RetentionPoolActivityRow[]; total: number };
   };
   'retention.cs_cases': {
-    params: { filter?: 'new' | 'working' | 'closed' | 'all_open'; limit?: number };
+    params: {
+      filter?:
+        | 'all_open'
+        | 'all'
+        | 'sales'
+        | 'retention'
+        | 'citi'
+        | 'new'
+        | 'working'
+        | 'closed';
+      phase?: 'any' | 'sales' | 'retention' | 'citi';
+      status?:
+        | 'open'
+        | 'closed'
+        | 'all'
+        | 'to_claim'
+        | 'working'
+        | 'offer_pending'
+        | 'calling'
+        | 'reached'
+        | 'out_of_reach'
+        | 'open_pool'
+        | 'vacation'
+        | 'hold'
+        | 'review';
+      limit?: number;
+    };
     result: RetentionCasesListResult;
   };
   'retention.cs_desk_quota': {
@@ -696,7 +714,6 @@ export interface TouchpointMap {
         | 'saved'
         | 'refused'
         | 'out_of_business'
-        | 'no_response'
         | 'escalate_citi';
       notes?: string;
     };
@@ -1002,6 +1019,8 @@ export interface RetentionCaseRow {
   pendingClaimantZohoUserId: string | null;
   assignmentCount: number;
   openPoolAttemptCount: number;
+  /** Times Retention 10 BD expiry returned this case to Open Pool (max 3 → CITI). */
+  retentionToPoolCount?: number;
   outOfReachAttempts: number;
   dealOwnerChanged: boolean;
   currentDeadlineAt: string | null;
@@ -1025,7 +1044,24 @@ export interface RetentionCaseRow {
   updatedAt: string;
 }
 
-/** CS Open Pool claims queue — case + open claim_request fields. */
+/** CS Open Pool activity log — claimed + unclaimed audit rows. */
+export interface RetentionPoolActivityRow {
+  id: string;
+  kind: 'claimed' | 'unclaimed';
+  status: string;
+  caseId: string;
+  carrierId: string;
+  zohoDealId: string | null;
+  companyName: string | null;
+  requesterZohoUserId: string;
+  requesterName: string | null;
+  reason: string;
+  outcomeNote: string | null;
+  requestedAt: string;
+  resolvedAt: string | null;
+}
+
+/** @deprecated Prefer RetentionPoolActivityRow — legacy claim queue shape. */
 export interface RetentionPendingClaimRow extends RetentionCaseRow {
   claimRequestId: string;
   claimReason: string;

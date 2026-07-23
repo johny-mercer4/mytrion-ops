@@ -12,6 +12,7 @@ import type { TenantContext } from '../../../types/tenantContext.js';
 import {
   afterRetentionPhaseSideEffects,
   enrichHandoffWithRoundRobin,
+  scheduleRetentionPostCommit,
 } from '../../retention/csRoundRobin.js';
 import { notifyOpenPoolOpened } from '../../retention/notify.js';
 import { resolvePhase1Transition, type Phase1Outcome } from '../../retention/phase1.js';
@@ -125,15 +126,17 @@ export const retentionTouchpoints: LocalTouchpoint[] = [
       const detail = await retentionCasePhase1Repo.getWithEvents(ctx, caseId);
       if (!detail) throw new NotFoundError('Retention case not found');
       // Open-pool: any sales agent may view (claim browse). Former owner may
-      // view their pooled / claim-pending case from the Cases board (read-only).
+      // view their locked Open Pool / Retention / CITI card (read-only).
       if (!isAdmin(ctx) && detail.case.statusCode !== 'p1_open_pool') {
         const self = zohoFromCtx(ctx);
         const assigned = self && detail.case.assignedAgentZohoUserId === self;
-        const formerOwnerPooled =
+        const formerOwner =
           self &&
           detail.case.poolOwnerZohoUserId === self &&
-          detail.case.statusCode === 'p1_pool_claim_pending';
-        if (!assigned && !formerOwnerPooled) {
+          (detail.case.statusCode === 'p1_pool_claim_pending' ||
+            detail.case.phaseCode === RETENTION_PHASE.retention ||
+            detail.case.phaseCode === RETENTION_PHASE.citi);
+        if (!assigned && !formerOwner) {
           throw new RBACError('You can only view retention cases assigned to you');
         }
       }
@@ -156,11 +159,13 @@ export const retentionTouchpoints: LocalTouchpoint[] = [
       if (!isAdmin(ctx) && row.statusCode !== 'p1_open_pool') {
         const self = zohoFromCtx(ctx);
         const assigned = self && row.assignedAgentZohoUserId === self;
-        const formerOwnerPooled =
+        const formerOwner =
           self &&
           row.poolOwnerZohoUserId === self &&
-          row.statusCode === 'p1_pool_claim_pending';
-        if (!assigned && !formerOwnerPooled) {
+          (row.statusCode === 'p1_pool_claim_pending' ||
+            row.phaseCode === RETENTION_PHASE.retention ||
+            row.phaseCode === RETENTION_PHASE.citi);
+        if (!assigned && !formerOwner) {
           throw new RBACError('You can only view retention cases assigned to you');
         }
       }
@@ -260,17 +265,24 @@ export const retentionTouchpoints: LocalTouchpoint[] = [
         actorZohoUserId: String(params.zohoUserId ?? zohoFromCtx(ctx) ?? ''),
       });
       if (!updated) throw new NotFoundError('Retention case not found');
-      await afterRetentionPhaseSideEffects(beforePhase, updated);
-      if (updated.statusCode === 'p1_open_pool') {
-        await notifyOpenPoolOpened(ctx, {
-          caseId: updated.id,
-          carrierId: updated.carrierId,
-          companyName: updated.companyName,
-          reason: updated.agentOutcome === 'reached' ? 'reached' : 'out_of_reach',
-          previousOwnerZohoUserId: previousOwner,
-          zohoDealId: updated.zohoDealId,
+      // Zoho ownership + inbox notify after response — do not block the Sales modal.
+      scheduleRetentionPostCommit('retention.record_outcome', async () => {
+        await afterRetentionPhaseSideEffects(beforePhase, updated, {
+          previousAssigneeZohoUserId: previousOwner,
+          tenantId: ctx.tenantId,
+          actorZohoUserId: String(params.zohoUserId ?? zohoFromCtx(ctx) ?? ''),
         });
-      }
+        if (updated.statusCode === 'p1_open_pool') {
+          await notifyOpenPoolOpened(ctx, {
+            caseId: updated.id,
+            carrierId: updated.carrierId,
+            companyName: updated.companyName,
+            reason: updated.agentOutcome === 'reached' ? 'reached' : 'out_of_reach',
+            previousOwnerZohoUserId: previousOwner,
+            zohoDealId: updated.zohoDealId,
+          });
+        }
+      });
       return { case: updated };
     },
   },
@@ -333,7 +345,7 @@ export const retentionTouchpoints: LocalTouchpoint[] = [
   {
     kind: 'local',
     key: 'retention.pool_claim',
-    title: 'Request Open Pool claim (CS approve / 1 BD auto)',
+    title: 'Claim Open Pool deal (instant Zoho + Kanban New)',
     riskClass: 'write',
     departments: salesDept,
     identityParam: 'zohoUserId',
@@ -362,7 +374,31 @@ export const retentionTouchpoints: LocalTouchpoint[] = [
           agentName: typeof params.agentName === 'string' ? params.agentName : undefined,
         },
       );
-      return { case: updated, pendingApproval: updated.pendingApproval };
+      return { case: updated, pendingApproval: false };
+    },
+  },
+
+  {
+    kind: 'local',
+    key: 'retention.pool_quota',
+    title: 'Open Pool daily claim quota (2/day)',
+    riskClass: 'read',
+    departments: salesDept,
+    identityParam: 'zohoUserId',
+    paramsSchema: z.object({
+      zohoUserId: z.string().max(120).optional(),
+    }),
+    handler: async (ctx, params) => {
+      const zohoUserId = String(params.zohoUserId ?? zohoFromCtx(ctx) ?? '');
+      if (!zohoUserId) {
+        throw new AppError('zohoUserId is required', {
+          statusCode: 400,
+          code: 'VALIDATION_ERROR',
+          expose: true,
+        });
+      }
+      const { getOpenPoolDailyQuota } = await import('../../retention/openPoolCaps.js');
+      return getOpenPoolDailyQuota(ctx, zohoUserId);
     },
   },
 

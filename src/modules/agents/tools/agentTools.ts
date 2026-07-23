@@ -85,7 +85,7 @@ function toLangChainTool(
 export function buildAgentTools(manifest: AgentManifest, narrowedCtx: TenantContext): StructuredTool[] {
   return toolRegistry
     .listForContext(narrowedCtx)
-    .filter((rt) => manifest.tools.includes(rt.name))
+    .filter((rt) => manifest.tools.some((t) => t === rt.name || (t.endsWith('.*') && rt.name.startsWith(t.slice(0, -1)))))
     .filter((rt) => rt.name !== 'knowledge.search')
     .filter((rt) => !manifest.readOnly || rt.riskClass === 'read')
     .map((rt) => toLangChainTool(rt, manifest, narrowedCtx));

@@ -104,6 +104,17 @@ const VIEW_BTNS: { v: PipeView; label: string; icon: IconName }[] = [
   { v: 'list', label: 'List', icon: 'list' },
 ];
 
+/** Account-status filter for the Clients view — status (Debtor/Active) + loyalty tier. */
+const CLIENT_STATUS_OPTIONS: { v: string; label: string }[] = [
+  { v: 'all', label: 'All statuses' },
+  { v: 'debtor', label: 'Debtor' },
+  { v: 'active', label: 'Active' },
+  { v: 'gold', label: 'Gold' },
+  { v: 'silver', label: 'Silver' },
+  { v: 'bronze', label: 'Bronze' },
+  { v: 'building', label: 'Building' },
+];
+
 const REC_STATUS: Record<RecStatus, readonly [string, string]> = {
   active: ['Active', 'var(--ok)'],
   attention: ['Needs attention', 'var(--orange)'],
@@ -121,6 +132,7 @@ interface RecordVM {
   cards: number;
   gallons: string;
   gallonsMonth: string;
+  owed: number;
   tier: TierResult;
   onClick: () => void;
 }
@@ -189,6 +201,7 @@ export function RecordsTab() {
   const [leadStatusFilter, setLeadStatusFilter] = useState('all');
   const [leadSourceFilter, setLeadSourceFilter] = useState('all');
   const [dealStageFilter, setDealStageFilter] = useState('all');
+  const [clientStatusFilter, setClientStatusFilter] = useState('all');
 
   // Cache keyed per acted-as agent so an admin's "view-as" switch doesn't cross-contaminate books.
   const actAs = getImpersonation()?.zohoUserId ?? 'self';
@@ -219,6 +232,14 @@ export function RecordsTab() {
   // Clients → RecordVM
   const clients: RecordVM[] = (recsLoad.data ?? [])
     .filter((c) => !q || `${c.name} ${c.carrier} ${c.contact}`.toLowerCase().includes(q))
+    .filter((c) => {
+      if (clientStatusFilter === 'all') return true;
+      if (clientStatusFilter === 'debtor') return c.status === 'debtor';
+      if (clientStatusFilter === 'active') return c.status === 'active';
+      // Remaining options are loyalty tiers (Building = no tier yet).
+      const level = resolveTier(c.active, tierGallons(c)).level;
+      return clientStatusFilter === 'building' ? level === 'none' : level === clientStatusFilter;
+    })
     .map((c) => {
       const [lbl, col] = REC_STATUS[c.status];
       const tier = resolveTier(c.active, tierGallons(c));
@@ -233,11 +254,12 @@ export function RecordsTab() {
         cards: c.cards,
         gallons: c.gallons,
         gallonsMonth: numFmt(c.gallonsThisMonth),
+        owed: c.computedDebt,
         tier,
         onClick: () => openClient({
           id: c.id, name: c.name, carrier: c.carrier, contact: c.contact, phone: c.phone,
           cards: c.cards, active: c.active, gallons: c.gallons, cycleGallons: c.cycleGallons,
-          status: c.status, mc: c.mc, dot: c.dot,
+          status: c.status, mc: c.mc, dot: c.dot, owed: c.computedDebt,
           gallonsThisMonth: c.gallonsThisMonth, activeCardsThisMonth: c.activeCardsThisMonth,
           transactionsThisMonth: c.transactionsThisMonth, gallonsPrevMonth: c.gallonsPrevMonth,
           activeCardsPrevMonth: c.activeCardsPrevMonth,
@@ -286,6 +308,14 @@ export function RecordsTab() {
           <Icon name="search" size={16} style={s('position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--muted)')} />
           <input value={search[dcSub]} onChange={(e) => setSearchVal(e.currentTarget.value)} placeholder={SEARCH_PLACEHOLDER[dcSub]} className="ss-in" style={s('width:100%;height:44px;padding:0 16px 0 44px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;box-shadow:var(--shadow-sm)')} />
         </div>
+        {dcSub === 'clients' && (
+          <DcSelect
+            label="Filter clients by account status"
+            value={clientStatusFilter}
+            onChange={setClientStatusFilter}
+            options={CLIENT_STATUS_OPTIONS}
+          />
+        )}
         {dcSub === 'leads' && (
           <>
             <DcSelect
@@ -380,6 +410,12 @@ export function RecordsTab() {
                     <div style={s("font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:600;color:var(--accent)")}>{c.gallonsMonth}</div>
                     <div style={s('font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px')}><span style={s('display:inline-block;width:6px;height:6px;border-radius:2px;background:var(--accent)')} />Gallons · Month</div>
                   </div>
+                  {c.owed >= 1 && (
+                    <div>
+                      <div style={s("font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:600;color:var(--danger)")}>{`$${Math.round(c.owed).toLocaleString('en-US')}`}</div>
+                      <div style={s('font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px')}><span style={s('display:inline-block;width:6px;height:6px;border-radius:2px;background:var(--danger)')} />Owed</div>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

@@ -1,10 +1,12 @@
 /**
  * Customer Service shell — gold CSMYTRION chrome, sidebar + content + mobile bottom nav.
- * Retention Cases / Open Pool Claims / CITI Folder sit alongside Citifuel Clients.
+ * Retention Cases / Open Pool Activity / CITI Folder sit alongside Citifuel Clients.
  */
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 
-import { csRetention } from '../../api/csRetention';
+import { isAdmin } from '../../access/resolveAccess';
+import { ActAsPicker } from '../../components/ActAsPicker';
+import { useImpersonation } from '../../context/ImpersonationProvider';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useTheme } from '../../hooks/useTheme';
 import { Analytics } from './Analytics';
@@ -13,9 +15,8 @@ import { CitiFuel } from './CitiFuel';
 import type { CsSectionId } from './csNav';
 import { Home } from './Home';
 import { CasesPanel } from './retention/CasesPanel';
-import { ClaimsPanel } from './retention/ClaimsPanel';
+import { OpenPoolReadonlyPanel } from './retention/OpenPoolReadonlyPanel';
 import { CitiFolderPanel } from './retention/CitiFolderPanel';
-import { subscribeCsRetentionLive } from './retention/retentionLiveBus';
 import { useCsRetentionRealtime } from './retention/useCsRetentionRealtime';
 import { Toast, type ToastState } from './Toast';
 
@@ -25,7 +26,6 @@ interface NavDef {
   shortLabel: string;
   iconPath: string;
   disabled: boolean;
-  badge?: boolean;
 }
 
 const NAV_ITEMS: NavDef[] = [
@@ -54,13 +54,12 @@ const NAV_ITEMS: NavDef[] = [
     disabled: false,
   },
   {
-    id: 'open-pool-claims',
-    label: 'Open Pool Claims',
-    shortLabel: 'Claims',
+    id: 'open-pool',
+    label: 'Open Pool',
+    shortLabel: 'Pool',
     iconPath:
       'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z',
     disabled: false,
-    badge: true,
   },
   {
     id: 'citi-folder',
@@ -114,37 +113,38 @@ const NAV_ITEMS: NavDef[] = [
 
 export function CsShell() {
   const user = useUserContext();
+  const admin = isAdmin(user);
+  const { actingAs } = useImpersonation();
+  const actAsKey = actingAs?.zohoUserId ?? 'self';
   const [active, setActive] = useState<CsSectionId>('home');
   const [mounted, setMounted] = useState<Partial<Record<CsSectionId, boolean>>>({ home: true });
   const { theme, toggle: toggleTheme } = useTheme();
-  const [claimsBadge, setClaimsBadge] = useState(0);
   const [toast, setToast] = useState<ToastState | null>(null);
+  // Icons-only rail — persisted like Sales (`ss.nav.collapsed`).
+  const [navCollapsed, setNavCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('cs.nav.collapsed') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleNav = useCallback(() => {
+    setNavCollapsed((c) => {
+      const next = !c;
+      try {
+        localStorage.setItem('cs.nav.collapsed', next ? '1' : '0');
+      } catch {
+        /* storage disabled — in-memory toggle still works */
+      }
+      return next;
+    });
+  }, []);
 
-  const onClaimsToast = useCallback((title: string, detail: string) => {
+  const onPoolToast = useCallback((title: string, detail: string) => {
     setToast({ id: Date.now(), kind: 'info', message: `${title}: ${detail}` });
   }, []);
 
-  useCsRetentionRealtime(true, onClaimsToast);
-
-  const refreshClaimsBadge = useCallback(() => {
-    void csRetention
-      .claimsBadge()
-      .then((r) => setClaimsBadge(r.count))
-      .catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    refreshClaimsBadge();
-    return subscribeCsRetentionLive((p) => {
-      if (
-        p.type === 'retention.claim_request' ||
-        p.type === 'retention.claim_approved' ||
-        p.type === 'retention.claim_declined'
-      ) {
-        refreshClaimsBadge();
-      }
-    });
-  }, [refreshClaimsBadge]);
+  useCsRetentionRealtime(true, onPoolToast);
 
   const workerName = user.userName || 'Agent';
   const workerRole = user.role || user.profile || 'Customer Service';
@@ -168,16 +168,47 @@ export function CsShell() {
     ) : null;
 
   return (
-    <div className={`cs-root${theme === 'dark' ? ' dark-mode' : ''}`}>
+    <div
+      className={`cs-root${theme === 'dark' ? ' dark-mode' : ''}${navCollapsed ? ' cs-nav-collapsed' : ''}`}
+    >
       <div className="cs-body">
-        <aside className="cs-sidebar">
+        <aside className="cs-sidebar" aria-expanded={!navCollapsed}>
           <div className="cs-sidebar-brand">
-            <div className="cs-brand-text">
-              <div className="cs-brand-word">
-                MY<span>TRION</span>
-              </div>
-              <div className="cs-brand-sub">Customer Service</div>
-            </div>
+            {!navCollapsed ? (
+              <>
+                <div className="cs-brand-text">
+                  <div className="cs-brand-word">
+                    MY<span>TRION</span>
+                  </div>
+                  <div className="cs-brand-sub">Customer Service</div>
+                </div>
+                <button
+                  type="button"
+                  className="cs-nav-collapse-btn"
+                  onClick={toggleNav}
+                  aria-label="Collapse sidebar"
+                  title="Collapse sidebar"
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <path d="M9 3v18" />
+                  </svg>
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="cs-nav-collapse-btn"
+                onClick={toggleNav}
+                aria-label="Expand sidebar"
+                title="Expand sidebar"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M9 3v18" />
+                </svg>
+              </button>
+            )}
           </div>
           <nav className="cs-sidebar-nav">
             {NAV_ITEMS.map((item) => (
@@ -197,14 +228,16 @@ export function CsShell() {
                   }
                 }}
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d={item.iconPath} />
-                </svg>
+                <span className="cs-nav-icon-wrap">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d={item.iconPath} />
+                  </svg>
+                  {navCollapsed && item.disabled ? (
+                    <span className="cs-nav-soon-dot" aria-hidden="true" />
+                  ) : null}
+                </span>
                 <span className="nav-label">{item.label}</span>
-                {item.disabled ? <span className="nav-soon">Soon</span> : null}
-                {item.badge && claimsBadge > 0 ? (
-                  <span className="cs-nav-badge">{claimsBadge > 99 ? '99+' : claimsBadge}</span>
-                ) : null}
+                {!navCollapsed && item.disabled ? <span className="nav-soon">Soon</span> : null}
               </div>
             ))}
           </nav>
@@ -238,7 +271,12 @@ export function CsShell() {
               )}
               <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
             </button>
-            <div className="cs-user-card">
+            {admin && !navCollapsed ? (
+              <div className="cs-view-as">
+                <ActAsPicker placement="sidebar" />
+              </div>
+            ) : null}
+            <div className="cs-user-card" title={navCollapsed ? workerName : undefined}>
               <span className="cs-user-avatar">{workerInitials}</span>
               <div className="cs-user-meta">
                 <div className="cs-user-name">{workerName}</div>
@@ -248,11 +286,11 @@ export function CsShell() {
           </div>
         </aside>
 
-        <main className="cs-content">
-          {panel('home', <Home onNavigate={navigate} claimsBadge={claimsBadge} />)}
+        <main className="cs-content" key={actAsKey}>
+          {panel('home', <Home onNavigate={navigate} />)}
           {panel('applications', <Applications />)}
           {panel('retention-cases', <CasesPanel />)}
-          {panel('open-pool-claims', <ClaimsPanel onBadge={setClaimsBadge} />)}
+          {panel('open-pool', <OpenPoolReadonlyPanel />)}
           {panel('citi-folder', <CitiFolderPanel />)}
           {panel('citi-fuel', <CitiFuel />)}
           {panel('analytics', <Analytics />)}

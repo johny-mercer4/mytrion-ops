@@ -16,10 +16,12 @@ export function RetentionTab() {
   const [casesCount, setCasesCount] = useState<number | null>(null);
   const [poolCount, setPoolCount] = useState<number | null>(null);
 
-  /** Seed Open Pool badge without forcing the pool pane mount. */
+  /** Seed Open Pool badge (available to claim) without forcing the pool pane mount. */
   const poolSeed = useLoad(() => loadOpenPoolCases(), []);
   useEffect(() => {
-    if (poolSeed.data?.cases) setPoolCount(poolSeed.data.cases.length);
+    if (poolSeed.data?.cases) {
+      setPoolCount(poolSeed.data.cases.filter((c) => c.statusCode === 'p1_open_pool').length);
+    }
   }, [poolSeed.data?.cases]);
 
   const onCasesCount = useCallback((n: number) => setCasesCount(n), []);

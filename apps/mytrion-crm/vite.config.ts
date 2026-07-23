@@ -11,6 +11,11 @@ export default defineConfig({
   base: './',
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
+    // Force a single React / react-dom instance in the bundle. A sibling app (web/) has its own
+    // react-dom, so a build environment whose dep tree resolves React from two physical locations
+    // produces two copies — the reconciler and the hooks dispatcher then land in different chunks
+    // and every useContext throws React #321 ("invalid hook call") at runtime. dedupe pins one copy.
+    dedupe: ['react', 'react-dom'],
   },
   server: { port: 5173, strictPort: true },
   // Build into app/ — the web root a Zoho widget (zet) serves and packs. sourcemap is OFF: the

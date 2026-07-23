@@ -37,8 +37,11 @@ function baseCase(overrides: Partial<RetentionCase> = {}): RetentionCase {
     pendingClaimantZohoUserId: null,
     assignmentCount: 1,
     openPoolAttemptCount: 0,
+    retentionToPoolCount: 0,
     outOfReachAttempts: 0,
     dealOwnerChanged: false,
+    preferredLanguage: null,
+    isSpanishDesk: false,
     currentDeadlineAt: new Date('2026-07-01T00:00:00Z'),
     currentDeadlineType: PHASE1_DEADLINE_TYPE,
     vacationCountdownEnd: null,
@@ -162,6 +165,7 @@ describe('resolveExpiry', () => {
     expect(t?.phaseCode).toBe('phase_1_agent');
     expect(t?.statusCode).toBe('p1_open_pool');
     expect(t?.currentDeadlineType).toBe(POOL_CLAIM_DEADLINE_TYPE);
+    expect(t?.retentionToPoolCount).toBe(1);
   });
 
   it('10BD Retention wait with assignmentCount 3 → CITI', () => {
@@ -171,6 +175,36 @@ describe('resolveExpiry', () => {
         statusCode: 'p2_working',
         currentDeadlineType: RETENTION_WAIT_DEADLINE_TYPE,
         assignmentCount: 3,
+      }),
+      now,
+    );
+    expect(t?.phaseCode).toBe('phase_3_citi');
+    expect(t?.statusCode).toBe('p3_hold');
+  });
+
+  it('10BD Retention wait increments retentionToPoolCount', () => {
+    const t = resolveExpiry(
+      baseCase({
+        phaseCode: 'phase_2_retention',
+        statusCode: 'p2_working',
+        currentDeadlineType: RETENTION_WAIT_DEADLINE_TYPE,
+        assignmentCount: 1,
+        retentionToPoolCount: 1,
+      }),
+      now,
+    );
+    expect(t?.statusCode).toBe('p1_open_pool');
+    expect(t?.retentionToPoolCount).toBe(2);
+  });
+
+  it('10BD Retention wait with retentionToPoolCount 3 → CITI', () => {
+    const t = resolveExpiry(
+      baseCase({
+        phaseCode: 'phase_2_retention',
+        statusCode: 'p2_working',
+        currentDeadlineType: RETENTION_WAIT_DEADLINE_TYPE,
+        assignmentCount: 1,
+        retentionToPoolCount: 3,
       }),
       now,
     );

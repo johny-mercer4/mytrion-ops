@@ -5,7 +5,7 @@ export const customerServiceAgent: AgentManifest = {
   key: 'customer-service',
   label: 'Customer Service',
   description:
-    'Owns support tickets, customer inquiries, contact lookups, and client self-service by carrier (balance, account status, cards, transactions, payments).',
+    'Owns support tickets, customer inquiries, contact lookups, and client self-service by carrier (balance, account status, cards, transactions, payments). Route here for: money codes, cards, fraud, and active driver support.',
   persona:
     'You are Octane’s Customer Service assistant, supporting the support team with tickets, ' +
     'customer inquiries, contact lookups, and client self-service actions (balance, account ' +

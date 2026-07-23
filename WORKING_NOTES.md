@@ -4954,3 +4954,240 @@ Ha/Yo'q tugmalari.
 - **Tests:** +4 in `carrier-mini-app.test.ts` (manager gets owner-only money view; manager & owner
   can mint a manager link bound to their own carrier; driver refused at /manager-invites). Full suite
   766 pass. Backend + mini-app + CRM(carrier files) typecheck clean; mini-app bundle rebuilt.
+
+
+## 2026-07-22 — CS Mytrion collapsible sidebar
+
+Branch `hotfix/MytrionOverall`: Customer Service shell gets a Sales-style
+collapse control (panel icon) next to the brand; collapsed rail is icons-only
+(`--sidebar-collapsed`), persisted as `cs.nav.collapsed`. Badges/soon dots
+remain visible on the icon rail.
+
+## 2026-07-22 — Sales Dashboard Debtors tab live
+
+**Debtors (Dashboard → Debtors):** removed Soon stub; agents see their book via
+`dashboard.debtors` (CMP `/api/agent/cmp/debtors` + Zoho deal enrich). Client rules
+match Billing: PENDING/PARTIALLY_PAID invoices with remaining ≥ $1, age ≥ 2 days,
+hard debt at 15+ days (`dashDebtorsData`). UI: search, status chips, KPI strip,
+expandable invoice cards, skeleton/refresh/toasts, 5-min localStorage cache
+(`DEBTORS_DASH_TTL_MS`, keyed by act-as user). Files: `DashTab.tsx`,
+`DebtorsDashPanel.tsx`, `dashDebtorsData.ts`, `dashCache.ts`, `DashSkeleton.tsx`.
+
+## 2026-07-22 — Home Money Owed uses Billing debtor floors
+
+Home snapshot “Money Owed” now matches Dashboard → Debtors / Billing rules
+(pending·partial, remaining ≥ $1, age ≥ 2d, hard ≥ 15d):
+- Backend `summarizeCmpDebtors` recomputes `fetchHomeSnapshot` +
+  `fetchDebtorsInfo` totals from invoice rows.
+- FE `loadSnapshot` overlays `loadDebtorsHomeSummary` (shared 5-min cache;
+  Refresh forces). Card click → Dashboard → Debtors via `openDash`.
+
+## 2026-07-22 — Verification Pipeline tab (Sales Mytrion, hotfix/MytrionOverall)
+
+Phase 1 of the Sales-side verification bridge. Un-parked the "Verification Pipeline" tab.
+- **List:** the agent's DWH deal-clients (`octane.agent_deals`, freshest `appfilldate` first),
+  owner-scoped via the roster authority (`dwhClientRoster.buildOwnedCte` — made reusable with a
+  column-list param + exported `ownerBinds`; id-suffix-first / display-name-fallback), enriched from
+  `octane.dim_company`, classified `in_pipeline | active | closed` (Card Swiped / first_swipe_date ⇒
+  active). Admin View-as resolves the target's name so the name arm fires.
+- **Detail:** in-pipeline → 9-stage vertical timeline (Pre Stop Factors → … → Post Stop Factors) +
+  decision badge (Prepaid / LOC w/ score+limit+cycle / Not accepted / Undecided); active → current
+  terms read-only.
+- **Pipeline data = MOCK via a provider seam** (`modules/verificationPipeline/provider.ts`,
+  deterministic per client, no DB), shaped exactly like the real `credit_platform` model
+  (`kxd.<stage>_reports.status` + `kxd.decision_reports` / `requests.result.summary`) so a future
+  live provider swaps in behind a flag. **No credit_platform querying this phase** (per direction).
+- Files: `src/modules/verificationPipeline/{types,provider,service}.ts`,
+  `src/routes/v1/verificationPipeline.routes.ts` (GET /v1/verification/clients + /pipeline, mirrors
+  dataCenter owner-scoping), `apps/.../api/verification.ts`, `apps/.../tabs/VerificationTab.tsx`.
+- Verified live: 187 deals for View-as Daniel (freshest-first), pipeline route → 9 mock stages;
+  `verification-pipeline.test.ts` (6) green; roster/data-center tests unaffected by the buildOwnedCte
+  change. (3 pre-existing WIP test files still fail: carrier-mini-app, touchpoints-catalog/routes.)
+
+**Follow-ups (documented, not built):** live `credit_platform` provider (swap behind
+FF_VERIFICATION_PIPELINE_LIVE, join `requests.carrier_id → dim_company.carrier_id` 97.8% / fallback
+application_id/dot; expose only stage status + decision + LOC terms, never PII); limit-change request
+submission (Credit/Card/Weekly → new `limit_change_requests` table mig 0042 + touchpoint).
+
+## 2026-07-22 — Fix React #321 (duplicate React) + rebuild served bundle
+
+Reported from a deployed build (`index--dvCpMb7.js`, not in the repo): React error #321 (invalid
+hook call) crashing on `useSessionUser → useImpersonation → useContext`, plus a benign
+`/v1/ringcentral/embed-config` 404.
+- **#321 root cause:** the crash stack split the reconciler (`renderWithHooks`) and the hooks
+  dispatcher (`useContext`) across two chunks = **two React copies in the bundle**. A sibling app
+  (`web/`) ships its own `react-dom`, so a build environment that resolves React from two physical
+  locations duplicates it. Fix: `resolve.dedupe: ['react','react-dom']` in
+  `apps/mytrion-crm/vite.config.ts` — pins one copy in *any* build env.
+- **Verified new build:** `react-dom` now in exactly ONE chunk (`index-By1ddpst.js`, = the entry) →
+  #321 structurally impossible; VerificationTab + ringcentral call present; verification nav
+  un-parked. Rebuilt `apps/mytrion-crm/app/` (vite build, emptyOutDir) and committed.
+- **ringcentral 404 is NOT a crash:** `RingCentralPhone.tsx` already swallows the fetch failure
+  (fail-silent), and the route is registered *unconditionally* at `app.ts:252`. A 404 only means the
+  **backend** serving the client predates the route — resolved by deploying the backend from this
+  branch. No frontend change needed for it.
+
+## 2026-07-22 — Retention Closed cards: fuel-return vs 2BD handoff
+
+Sales Closed with "0d since last fuel" = auto `p1_returned` (hourly sync:
+any txn after case open). Fuel closes the case — it does **not** go to
+Retention. True 2 BD no-action handoff leaves Sales and lands in CS Phase 2
+(`p2_new` / `p2_working`), not Closed.
+
+UI bug fixed: closed/returned no longer show stale "Due today · → Retention"
+(`stageTimer` gates `!isOpen`; sync clears deadline on return-close).
+
+## 2026-07-22 — CS Mytrion sees all retention phases
+
+`retention.cs_cases` / `listForCs`: CS agents browse **any phase** (filters:
+Open · Sales · Retention · P2 New/Working · CITI · Closed · All). Detail pane
+shows carrier, phase, status, assignee, fuel/volume, deadline, Zoho deal id,
+timeline. Claim / log attempt / outcomes stay **Phase 2 only** (backend already
+gated). Zoho Deal+Contact+Account ownership still only on Retention RR assign.
+
+## 2026-07-22 — Zoho ownership: Open Pool + Retention
+
+Both paths use `transferDealOwnershipToClaimant` → Zoho **Deal** (required),
+**Contact** + **Account/Company** (best-effort):
+- Open Pool claim approve: hard-fail if Deal Owner update fails.
+- Retention RR/Spanish handoff + CS claim of unassigned P2: soft transfer
+  (Ops assign kept if Zoho fails). CS claim now also triggers Zoho when
+  assignee changes inside Phase 2 (was a gap).
+
+## 2026-07-22 — CS Retention Cases UI polish
+
+Cases tab: list/detail skeletons, phase+status color badges, due urgency
+(overdue/soon), staggered fade-in, smoother chip/row hover, refresh spinning
+state, reduced-motion respect (`casesUi.tsx`, `retention-panel.css`).
+
+## 2026-07-22 — CS Cases: icons, larger type, clearer filters
+
+Renamed desk chips **To claim** / **In progress** (was P2 New / P2 Working).
+Lucide icons on filters, list rows, detail fields; bumped title/badge/meta
+type sizes for easier scanning.
+
+## 2026-07-22 — CS Cases: hierarchical filters + desk actions
+
+Filter UI: **Phase** then dependent **Status** chips (Sales/Retention/CITI
+buckets). API: `retention.cs_cases` accepts `phase` + `status`.
+Detail: removed channel picker (auto ringcentral); colored Call 1 Listen /
+Call 2 Solution + outcome status buttons (`CaseDeskActions`).
+
+## 2026-07-22 — CS filter chip active tones + Closed (Returned)
+
+Status Closed → **Closed (Returned)** for All/Sales. Active filter chips
+use per-tone colors (sales blue, retention gold, citi purple, success, etc.).
+
+## 2026-07-22 — CS filter labels clarified
+
+Sales: Open→All open, Calling→New. Retention: To claim→Unassigned,
+Offer pending→Offer out. Added filter explain line with timers.
+
+## 2026-07-22 — CS quota + deadline UI clarity
+
+Quota: Claims today + Offer out cards with colors/hints. Deadline field
+shows plain SLA text (no raw 2BD_agent_action).
+
+## 2026-07-22 — CS desk: drop Saved button; clarify Refused gate
+
+Removed Saved from Retention desk UI. Refused stays gated on Call 1+2.
+
+## 2026-07-22 — CITI = red folder
+
+CITI phase chip/badge/nav use Folder icon + danger red (not purple Archive).
+
+## 2026-07-22 — CS Retention Cases → green
+
+Fixed: outcome notes wired; Offer-out min-1 small-portfolio cap;
+claim-before-calls/outcomes; claim cannot steal assigned cases.
+
+## 2026-07-22 — Retention pilot reset (Daniel Brown only)
+
+Wiped retention_cases (398), events (671), rr_cursors. Enabled
+FF_RETENTION_PILOT_ONLY=1 + RETENTION_PILOT_AGENT_ZOHO_USER_IDS=
+6227679000031473048 (Daniel Brown). Sync creates only his clients.
+Set FF_RETENTION_PILOT_ONLY=0 to restore full generation.
+
+## 2026-07-22 — Retention pilot sync + Sales Open Pool UX
+
+Fixed DWH deal_lang (`zoho_deal_id`). Pilot scan filters by agent in SQL.
+Wiped + sync: 16 Daniel Brown cases created. Open Pool UI: status chips,
+how-to strip, claim window, modal extract, better empty/loading.
+
+## 2026-07-22 — Sales Retention modal: unified save loader
+
+Status updates use a single Saving overlay; close-after skips remounting
+timeline (no modal jump). Timeline slot reserved height while hydrating.
+
+## 2026-07-22 — Sales Retention modal: single update loader
+
+Dropped button/timeline spinners on status update — only the modal
+Updating overlay shows while busy (no double loaders).
+
+## 2026-07-22 — Sales Retention: locked former-owner cards + modal overlay
+
+Updating overlay pinned to modal (not scroll body). Dissatisfied/Open Pool
+handoffs stamp pool_owner; my_cases keeps locked cards for former Sales agent.
+SIP play-rejected console noise filtered (browser autoplay).
+
+## 2026-07-22 — View-as per Mytrion + faster retention saves
+
+View-as is scoped per Mytrion (no /main picker, no cross-Mytrion leak).
+Retention outcome/attempt returns after DB write; Zoho + notify post-commit.
+CS RR uses warm Zoho Users cache (no blocking Users call on save).
+
+## 2026-07-23 — Revert Sales Open Pool ownership plan
+
+Stepped back: CS again approves Open Pool claims; Zoho Deal/Contact/Company
+transfers on Retention handoff; CS Claims tab + No-response→Pool restored.
+Sales Claims (prior-owner) pane removed.
+
+## 2026-07-23 — View-as any user + instant Open Pool
+
+Admin View-as lists all CRM users (search); mounted on CS + Billing shells.
+Open Pool claims assign instantly (Zoho + Kanban New); CS sees Claimed/Unclaimed
+activity logs; CS No-response→Pool removed (10 BD timer kept); Sales daily cap = 2.
+Migration 0042 backfills pending claims to Open Pool.
+
+## 2026-07-23 — Sales Cases + Open Pool polish + CS readonly Pool
+
+OoR = Out of Reach (agent UI wording). Migration 0043 adds `previous_owner_*` on
+claim requests + `retention_to_pool_count` on cases. Instant claim stamps previous
+owner + timeline note. Retention 10 BD → Open Pool up to 3 times, then CITI
+(separate from assignment_count agent cycles). Sales Cases: carrier/company search,
+Out of Reach attempt UX (note required for messengers), Ops confirm/deny hidden
+unless Ops/admin, hide agent names / “In Open Pool” · “With Retention” badges.
+Sales Open Pool: no Prior agent column, Claim/Claiming… loaders, short quota copy.
+CS: Activity tab removed; readonly Open Pool list + timeline; Retention Cases desk
+unchanged. `retention.cs_pool_activity` kept backend-only.
+
+## 2026-07-23 — CS desk scope + Open Pool / View-as polish
+
+Sales Cases hero: “Retention workflow” kicker + larger stage copy.
+CS View-as: sidebar placement, menu opens upward.
+CS Open Pool: metrics, badges, empty state, card list + timeline.
+CS Retention Cases list/detail: non-admin sees only assigned cases; admin sees all.
+Open Pool browse stays shared (unassigned) for CS readonly visibility.
+
+## 2026-07-23 — Durable Zoho ownership transfer log
+
+Added `retention_ownership_transfers` (migration 0044): append-only from→to Zoho
+owner log for Retention handoff + Open Pool claim (success/partial/failed). No FK
+to `retention_cases` so rows survive hard-delete. Wired in
+`transferDealOwnershipToClaimant` when audit context is passed. Applied via
+`pnpm db:migrate` against Render app Postgres.
+
+## 2026-07-23 — Disable Retention auto-assign
+
+`RETENTION_AUTO_ASSIGN_ENABLED = false` in `csRoundRobin.ts` — Spanish desk +
+RoundRobin skipped; handoff keeps the Sales agent (no unassign, no Zoho Owner
+transfer to CS). Flip the constant to re-enable CS auto-assign.
+
+## 2026-07-23 — Merge origin/build into hotfix/MytrionOverall
+
+Resolved content conflicts (admin tabs, DWH pool timeouts, dwhCards billing +
+any-status card lookup, payments ingest audit + preMapped). Renumbered local
+retention migrations to avoid colliding with build’s mini-app/news/support-bot
+series: `0049_retention_open_pool_instant`, `0050_retention_pool_cycles_claim_log`,
+`0051_retention_ownership_transfers` (SQL unchanged / IF NOT EXISTS — prod hashes
+already applied stay skipped).

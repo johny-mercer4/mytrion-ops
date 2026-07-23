@@ -1,6 +1,33 @@
 .wrap {
   position: relative;
 }
+.wrapSidebar {
+  width: 100%;
+}
+.wrapSidebar .trigger {
+  width: 100%;
+  justify-content: center;
+  background: var(--surface-2, var(--surface));
+  border-color: var(--border-2, var(--border));
+  color: var(--text-secondary, var(--text2, #64748b));
+}
+.wrapSidebar .trigger:hover {
+  border-color: color-mix(in srgb, var(--cs-accent, var(--accent)) 45%, var(--border));
+  color: var(--text-primary, var(--text));
+}
+.bannerSidebar {
+  width: 100%;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.menuUp {
+  top: auto;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  max-height: min(340px, 50vh);
+}
 
 .trigger {
   display: inline-flex;

@@ -45,9 +45,18 @@ export function clickToDial(phone: string, toCall = true): boolean {
 
   const frame = document.querySelector('#rc-widget-adapter-frame') as HTMLIFrameElement | null;
   if (!frame?.contentWindow) return false;
+  // Post to the widget's real origin (derived from its own src) so the dialed number can't leak to
+  // an unexpected document. Falls back to '*' only if the src can't be parsed — never blocks dialing.
+  let targetOrigin = '*';
+  try {
+    const origin = new URL(frame.src).origin;
+    if (origin && origin !== 'null') targetOrigin = origin;
+  } catch {
+    /* keep '*' */
+  }
   frame.contentWindow.postMessage(
     { type: 'rc-adapter-new-call', phoneNumber, toCall },
-    '*',
+    targetOrigin,
   );
   return true;
 }
