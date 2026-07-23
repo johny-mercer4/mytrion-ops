@@ -350,6 +350,10 @@ const EnvSchema = z.object({
   //     secret, scoped to just the ingest endpoint (NOT the full API_KEY). ---
   BILLING_INGEST_SECRET: z.string().default(''),
 
+  // --- Inbox-message webhook (Zoho CRM Org_Module → mytrion_inbox_messages). A dedicated shared
+  //     secret in the `x-inbox-secret` header, scoped to just that endpoint (NOT the full API_KEY). ---
+  INBOX_WEBHOOK_SECRET: z.string().default(''),
+
   // --- File storage: Cloudflare R2 (S3-compatible) ---
   R2_ACCOUNT_ID: z.string().default(''),
   R2_ACCESS_KEY_ID: z.string().default(''),

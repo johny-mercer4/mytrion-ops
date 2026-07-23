@@ -379,6 +379,13 @@
       "when": 1784722800000,
       "tag": "0053_repair_client_news_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1784733600000,
+      "tag": "0056_mytrion_inbox_messages",
+      "breakpoints": true
     }
   ]
 }

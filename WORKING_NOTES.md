@@ -5242,3 +5242,50 @@ missing — journal slots for 0042–0044 had been overwritten by retention
 renumber hashes. Repair migration `0053_repair_client_news_notifications`
 (CREATE IF NOT EXISTS). Admin sidebar: categorized sections + search filter
 via `MytrionShell` `navSections` / `enableNavSearch`.
+
+---
+
+## 2026-07-23 — Sales Inbox off servercrm/Zoho → own Postgres + WebSocket (feature/MytrionAdmin)
+
+Goal: stop the Sales inbox depending on Zoho `Org_Module` (read) + the servercrm
+`crm_inbox_notification` WebSocket (live). Mirror the module into our own table, create rows via our
+own webhook, push live over our existing `/v1/realtime` hub. **Tickets stay on servercrm (migrate later).**
+
+- **Inspected** Zoho `Org_Module`: id, Owner{id,name,email}, Subject, Content(HTML), Type
+  (Task/Update/Assignment/… — free text, values exceed the picklist), Priority(small/medium/high),
+  Tag, Source_Url, Created_Time, Record_Status__s.
+- **New table `mytrion_inbox_messages`** (`src/db/schema/mytrion_inbox_messages.ts`) mirroring those
+  fields + tenant_id, owner_zoho_user_id (scope key), read_at (reserved), timestamps. Partial-unique
+  `(tenant_id, zoho_record_id) WHERE zoho_record_id IS NOT NULL` = idempotent Zoho retries.
+  Migration **0056** hand-authored (drizzle-kit `generate` still hits the 0022/0023 snapshot
+  collision — recent tables 0048/0054/0055 are all hand-authored). Verified on a throwaway DB in the
+  octane-postgres container (structure, idempotent re-run, partial-unique behavior).
+- **Repo** `src/repos/mytrionInboxMessageRepo.ts` (pure DB, tenant+owner scoped: create w/ unique-
+  violation→return-existing, listForOwner excl. Trash, deleteForOwner). **Service**
+  `src/modules/inbox/service.ts` `createInboxMessage()` = persist + `publishInboxEvent` (mirrors
+  `retention/notify.ts`) + `toInboxMessageDto`. Reuses the existing realtime hub — NO new socket.
+- **Routes** `src/routes/v1/inboxMessages.routes.ts` (registered in app.ts):
+  `POST /v1/inbox/messages/webhook` (shared secret `x-inbox-secret` = `INBOX_WEBHOOK_SECRET`, tolerant
+  of Zoho or normalized casing incl. nested `Owner`, required owner+subject; persists + pushes to
+  `inbox:worker:<zohoId>`, synthetic audit); `GET /v1/inbox/messages` (session-authed, owner-scoped
+  via `resolveZohoUserId`, admins View-as `?owner_id`); `POST /v1/inbox/messages/:id/delete`
+  (owner-scoped — improvement over the old no-ownership-check Zoho delete). Internal "several places"
+  call `createInboxMessage()` directly.
+- **Frontend**: `apps/mytrion-crm/src/api/inbox.ts` (new); `loadInbox` now reads `/v1/inbox/messages`
+  (unchanged `InboxVM` map — Type categories preserved so `mapInboxType` needs no change);
+  `useRetentionRealtime` broadened to dispatch `inbox.*` events → the existing inbox reload fan-out
+  (`invalidateInboxCache`+`publishInboxReload`+`publishInboxLive`+toast); removed the
+  `crm_inbox_notification` branch from `sidebarBadges` (servercrm socket KEPT for ticket events).
+- **Cutover step (in Zoho, not code):** repoint the CRM "Inbox" workflow webhook from servercrm
+  `/webhook/crm-inbox` to `POST /v1/inbox/messages/webhook` with the shared secret. No backfill
+  (starts empty, fills from new events).
+- **Follow-up (cosmetic):** `InboxTab` LIVE/OFFLINE dot still uses its own servercrm socket; repoint
+  to our realtime status later (data path is fully off servercrm already).
+
+Verification: `tests/unit/inbox-messages-routes.test.ts` 9/9 (auth, create+publish, tolerant parse,
+validation, owner-scoped list=RBAC leakage, owner-scoped delete). New files typecheck + lint clean.
+The suite's 78 failures (12 files: agent-golden, agent-rbac-leakage, touchpoints-*, carrier-mini-app,
+approvals, caller-identity, cs-routes, retention-*, stream-adapter, department-agents) are
+PRE-EXISTING branch WIP — confirmed via a committed-HEAD worktree: touchpoints-routes fails at the
+bare commit; agent-golden/caller-identity fail only under the branch's uncommitted agent/RBAC rework
+(those files were already `M` at session start). None touch inbox code.

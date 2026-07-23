@@ -6,6 +6,7 @@ import { getDeskTicket, listDeskComments, listDeskTickets, type DeskTicket } fro
 import { getImpersonation } from '@/api/impersonation';
 import { getSession } from '@/api/session';
 import { callTouchpoint } from '@/api/touchpoints';
+import { listInboxMessages, deleteInboxMessage as apiDeleteInboxMessage } from '@/api/inbox';
 import { getClients, type AgentClient } from '@/api/dataCenter';
 import { dedupedFetch, invalidateDeduped } from './fetchDedupe';
 import { loadDebtorsHomeSummary } from './dashDebtorsData';
@@ -207,16 +208,18 @@ function effUserId(): string {
 
 const INBOX_TTL_MS = 30_000;
 
-/** One shared inbox fetch for its three consumers (sidebar badge, Home preview, Inbox tab). */
+/** One shared inbox fetch for its three consumers (sidebar badge, Home preview, Inbox tab). Now
+ *  reads our own mytrion_inbox_messages table via /v1/inbox/messages (was the Zoho `inbox.list`
+ *  touchpoint). Under admin View-as, the impersonated agent's id scopes the query. */
 export async function loadInbox(fresh = false): Promise<InboxVM[]> {
   return dedupedFetch(
     `inbox:${effUserId()}`,
     async () => {
-      const res = await callTouchpoint('inbox.list', {});
-      return (res.messages ?? []).map((m) => {
-        const p = String(m.priority ?? '').toLowerCase();
+      const res = await listInboxMessages(getImpersonation()?.zohoUserId);
+      return res.messages.map((m) => {
+        const p = m.priority.toLowerCase();
         return {
-          id: String(m.id ?? m.recordId ?? ''),
+          id: m.id,
           type: mapInboxType(m.type),
           prio: p === 'high' || p === 'critical' ? 'high' : p === 'low' || p === 'small' ? 'small' : 'medium',
           title: m.subject || m.name || '(no subject)',
@@ -235,7 +238,7 @@ export function invalidateInboxCache(): void {
   invalidateDeduped('inbox:');
 }
 export function deleteInboxMessage(recordId: string): Promise<unknown> {
-  return callTouchpoint('inbox.delete_message', { recordId });
+  return apiDeleteInboxMessage(recordId);
 }
 
 // ---- Home/Dashboard: activity (activity.agent) ----
