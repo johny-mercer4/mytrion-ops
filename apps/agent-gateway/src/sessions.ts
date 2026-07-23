@@ -188,6 +188,7 @@ async function runQuery(
       allowedTools: [
         'mcp__octane__telegram_progress',
         'mcp__octane__octane_whoami',
+        'mcp__octane__octane_kb_search',
         'mcp__octane__octane_card_status',
         'mcp__octane__octane_funds',
         'mcp__octane__octane_txn_report',

@@ -8,6 +8,7 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { config } from './config.js';
+import { searchKb } from './kb/search.js';
 import { sendButtons, sendMessage, setReaction } from './telegram.js';
 import { logMessage } from './messageLog.js';
 
@@ -68,6 +69,15 @@ export function buildOctaneServer(chatId: number, carrierId: string) {
         },
       ),
       tool('octane_whoami', "Is the sender a registered Octane mini-app user of this company, their role (owner/driver), and the carrier's sales agent (agentName) to hand off to when you can't resolve an ask? Call FIRST for any service ask.", asker, ({ telegram_user_id }) => run('/support-bot/whoami', telegram_user_id)),
+      tool(
+        'octane_kb_search',
+        "FAST: search the Octane client knowledge base for a FACTUAL 'how does X work' question you can't answer from the loaded KB — fees, supported stations, money-code rules, gallon limits, card ops, mini-app how-tos, troubleshooting. Returns the most relevant article(s). State facts ONLY from the returned text (or live octane_* tools); if nothing relevant comes back, say a human will confirm and offer to reach their Octane agent. Client-safe content only — never internal process.",
+        { query: z.string().min(2).max(200).describe('the topic or the question to look up, in any language') },
+        async ({ query }) => {
+          const hits = searchKb(query, 3);
+          return { content: [{ type: 'text' as const, text: JSON.stringify(hits.length ? hits : { note: 'no KB match — do not guess; offer to escalate to the Octane agent' }) }] };
+        },
+      ),
       tool(
         'octane_card_status',
         "Card status across the WHOLE fleet (no blind window). ONE card (a PHOTO or 'check card X') → pass card_last6 for its exact status (fraudHold + overrideAvailable). Narrow a big fleet → query (matches last6/unit/driver, e.g. a driver name) and/or status ('active'|'inactive'|'hold', e.g. 'which cards are on hold'). Nothing → driver gets own card WITH gallon limits; owner gets the full fleet (up to 150) + active/hold counts.",
