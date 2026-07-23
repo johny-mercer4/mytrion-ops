@@ -41,6 +41,7 @@ import {
   type CarrierBalance,
   type CardFundsResult,
   type FleetCard,
+  type FleetResponse,
   type LastUsedResult,
   type PaymentInfoResult,
   type RegistrationPreview,
@@ -2123,6 +2124,24 @@ const MANAGER_INVITE_UI = false;
 
 const SHEET_CACHE = new Map<string, { at: number; data: SheetData }>();
 const SHEET_TTL_MS = 60_000;
+
+// Shared FLEET cache (owner ask 2026-07-23: "har modal ochilgan yangi fetch bulmoqda"). Card
+// management, the transactions card filter and the fleet roster all need the same owner fleet
+// list — a heavy EFS-first read. One module-level cache serves them all within a TTL, and an
+// in-flight promise dedupes concurrent opens (open cardops + transactions back-to-back = ONE
+// network call). Card writes call invalidateFleet() so the next read is fresh.
+let FLEET_CACHE: { at: number; data: FleetResponse } | null = null;
+let FLEET_INFLIGHT: Promise<FleetResponse> | null = null;
+const FLEET_TTL_MS = 60_000;
+function getFleet(initData: string, force = false): Promise<FleetResponse> {
+  if (!force && FLEET_CACHE && Date.now() - FLEET_CACHE.at < FLEET_TTL_MS) return Promise.resolve(FLEET_CACHE.data);
+  if (FLEET_INFLIGHT) return FLEET_INFLIGHT;
+  FLEET_INFLIGHT = fetchFleet(initData)
+    .then((f) => { FLEET_CACHE = { at: Date.now(), data: f }; return f; })
+    .finally(() => { FLEET_INFLIGHT = null; });
+  return FLEET_INFLIGHT;
+}
+function invalidateFleet(): void { FLEET_CACHE = null; }
 function invalidateSheetCache(...prefixes: string[]): void {
   for (const key of [...SHEET_CACHE.keys()]) {
     if (prefixes.some((p) => key.startsWith(p))) SHEET_CACHE.delete(key);
@@ -2254,6 +2273,8 @@ function ActionSheet({
   }, [data]);
   // ── Card-ops sheet (C-1/C-3/C-4-5/C-26) ──
   const [coCard, setCoCard] = useState<FleetCard | null>(null);
+  const [coSearch, setCoSearch] = useState('');
+  const [coStatus, setCoStatus] = useState<'all' | 'active' | 'inactive' | 'hold'>('all');
   const [coEfs, setCoEfs] = useState<Record<string, unknown> | null>(null);
   const [coEfsLoading, setCoEfsLoading] = useState(false);
   const [coBusy, setCoBusy] = useState<string | null>(null);
@@ -2363,7 +2384,7 @@ function ActionSheet({
         else if (service === 'pinunit') next = { kind: 'pinunit', v: await fetchCardEfs(initData).catch(() => null) };
         // Card ops (C-1/C-3/C-4-5/C-26): the picker is the owner's own fleet list.
         else if (service === 'cardops') {
-          const fl = await fetchFleet(initData);
+          const fl = await getFleet(initData);
           next = { kind: 'cardops', v: { fleet: fl.fleet.filter((c) => c.cardId) } };
         }
         else if (service === 'tracking') next = { kind: 'tracking', v: await fetchTracking(initData) };
@@ -2430,7 +2451,7 @@ function ActionSheet({
   useEffect(() => {
     if (service !== 'txns' || session.isDriver || txnFleet !== null) return;
     let cancelled = false;
-    fetchFleet(initData)
+    getFleet(initData)
       .then((f) => {
         if (!cancelled) setTxnFleet(f.fleet.filter((c) => c.cardId));
       })
@@ -3350,7 +3371,7 @@ function ActionSheet({
                       })
                         .then(() => {
                           haptic('success');
-                          invalidateSheetCache('pinunit', 'cardops', 'status');
+                          invalidateSheetCache('pinunit', 'cardops', 'status'); invalidateFleet();
                           showToast(t('pu.saved'));
                         })
                         .catch((e) => {
@@ -3379,7 +3400,7 @@ function ActionSheet({
                   .then(() => {
                     haptic('success');
                     showToast(doneMsg);
-                    invalidateSheetCache('cardops', 'pinunit', 'status');
+                    invalidateSheetCache('cardops', 'pinunit', 'status'); invalidateFleet();
                     // BUG FIX (feedback 2026-07-22): the status under the card number kept showing
                     // the OLD state after activate/deactivate/hold — the sheet cache was cleared but
                     // the open sheet's own EFS snapshot never re-fetched.
@@ -3395,10 +3416,42 @@ function ActionSheet({
                   .finally(() => setCoBusy(null));
               };
               if (!coCard) {
-                const cards = data.v.fleet;
-                if (!cards.length) return <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('co.noCards')}</div>;
+                const allCards = data.v.fleet;
+                if (!allCards.length) return <div style={{ textAlign: 'center', padding: '34px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('co.noCards')}</div>;
+                // Search + status filter (owner ask 2026-07-23): a 145-card list is a wall without
+                // them. Search matches card digits, unit or driver; status uses the live EFS status.
+                const stOf = (c: FleetCard): string => String(c.efsStatus ?? '').toLowerCase();
+                const nq = coSearch.trim().toLowerCase();
+                const nqDigits = nq.replace(/\D/g, '');
+                const cards = allCards.filter((c) => {
+                  if (coStatus !== 'all') {
+                    const st = stOf(c);
+                    if (coStatus === 'active' && !(st.includes('active') && !st.includes('inactive'))) return false;
+                    if (coStatus === 'inactive' && !st.includes('inactive')) return false;
+                    if (coStatus === 'hold' && !st.includes('hold')) return false;
+                  }
+                  if (!nq) return true;
+                  const hay = `${c.cardNumber ?? ''} ${c.unitNumber ?? ''} ${c.driverName ?? ''} ${c.efsDriverName ?? ''} ${c.efsDriverId ?? ''}`.toLowerCase();
+                  return hay.includes(nq) || (nqDigits.length > 0 && (c.cardNumber ?? '').replace(/\D/g, '').includes(nqDigits));
+                });
+                const STATUS_FILTERS: ReadonlyArray<{ v: typeof coStatus; k: string }> = [
+                  { v: 'all', k: 'co.fAll' }, { v: 'active', k: 'co.fActive' }, { v: 'inactive', k: 'co.fInactive' }, { v: 'hold', k: 'co.fHold' },
+                ];
                 return (
-                  <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 12px', marginBottom: 8, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--secondary)' }}>
+                      <SearchGlyph />
+                      <input className="selectable" value={coSearch} onChange={(e) => setCoSearch(e.target.value)} placeholder={t('co.searchCard')} style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, outline: 'none' }} />
+                    </div>
+                    <div className="hscroll" style={{ display: 'flex', gap: 7, marginBottom: 12, paddingBottom: 2 }}>
+                      {STATUS_FILTERS.map((f) => (
+                        <button key={f.v} type="button" onClick={() => { haptic('tap'); setCoStatus(f.v); }} style={{ flex: 'none', height: 34, padding: '0 14px', border: 'none', borderRadius: 10, fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', cursor: 'pointer', background: coStatus === f.v ? 'var(--primary)' : 'var(--secondary)', color: coStatus === f.v ? '#FFFFFF' : 'var(--muted-fg)' }}>{t(f.k)}</button>
+                      ))}
+                    </div>
+                    {cards.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '28px 20px', color: 'var(--muted-fg)', fontSize: 14 }}>{t('co.noMatch')}</div>
+                    ) : (
+                    <div style={{ background: 'var(--secondary)', borderRadius: 14, overflow: 'hidden' }}>
                     {cards.map((c, i) => (
                       <button key={c.cardId ?? i} type="button" className="row-press" onClick={() => {
                         haptic('tap');
@@ -3416,9 +3469,12 @@ function ActionSheet({
                           <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>{c.cardNumber ? groupCardNumber(c.cardNumber) : `•••• ${tail6(c.cardNumber, null)}`}</span>
                           <span style={{ display: 'block', fontSize: 12, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{[c.unitNumber ? `Unit ${c.unitNumber}` : null, c.driverName ?? c.efsDriverName ?? t('co.noDriver')].filter(Boolean).join(' · ')}</span>
                         </span>
+                        {c.efsStatus && <span style={{ flex: 'none', fontSize: 11, fontWeight: 700, color: stOf(c).includes('active') && !stOf(c).includes('inactive') ? 'var(--success)' : 'var(--muted-fg)', background: 'var(--card)', padding: '3px 8px', borderRadius: 8, textTransform: 'capitalize' }}>{c.efsStatus}</span>}
                         <ChevronRight size={15} strokeWidth={2} color="var(--muted-fg)" aria-hidden />
                       </button>
                     ))}
+                    </div>
+                    )}
                   </div>
                 );
               }
@@ -4196,7 +4252,7 @@ export function App() {
     setFleetLoadError('');
     setFleetActionError('');
     setFleetLoading(true);
-    fetchFleet(wa.initData)
+    getFleet(wa.initData, force)
       .then((res) => {
         setFleetCards(res.fleet);
         fleetLoaded.current = true;
