@@ -425,7 +425,7 @@ function CardPicker({
         <ChevronRight size={15} strokeWidth={2.2} color="var(--muted-fg)" style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)', flex: 'none' }} aria-hidden />
       </button>
       {open && (
-        <div style={{ marginTop: 6, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--secondary)', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, zIndex: 30, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--card)', overflow: 'hidden', boxShadow: '0 10px 34px rgba(0,0,0,.32)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
             <SearchGlyph />
             <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={searchPlaceholder} className="selectable" style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, outline: 'none' }} />
