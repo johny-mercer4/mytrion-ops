@@ -226,6 +226,7 @@ describe('homeMytrion invariant', () => {
       profileName: null,
       allowedMytrions: ['billing'],
       deniedMytrions: [],
+      mytrionAccessModes: {},
       homeMytrion: null,
       allDepartmentAccess: null,
       viewAsUserIds: [],
