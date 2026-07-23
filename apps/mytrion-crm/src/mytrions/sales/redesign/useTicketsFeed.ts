@@ -2,21 +2,35 @@
  * Progressive creator-scoped ticket list — mirrors zoho-octane ticketdashboard.html:
  *   from=0, limit=20; Load more / scroll → from += 20 until a short or empty page.
  *
+ * Stale-while-revalidate via dcCache: re-entering Tickets paints instantly (no boot
+ * skeleton) while Desk reconciles in the background. The shell's full `loadTickets`
+ * also seeds this cache so the first open after Home is often already warm.
+ *
  * When Desk.search.READ is missing the server still returns pages of 20 via a deep /tickets
  * creator scan (scoped:false). Do not treat windowed as “all loaded”.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { readDcCache, subscribeDcCache, writeDcCache } from './dcCache';
 import { getCachedTicket, upsertCachedTicket } from './ticketDirectory';
+import {
+  TICKETS_FEED_PAGE,
+  TICKETS_FEED_STALE_MS,
+  ticketsFeedCacheKey,
+  type TicketsFeedCache,
+} from './ticketListCache';
+import { upsertTicketSubscribeRows } from './ticketSubscribeRegistry';
 import { loadTicketById, loadTicketsPage, type TicketVM } from './live';
 
-const PAGE = 20;
+const PAGE = TICKETS_FEED_PAGE;
 const MAX_PINNED = 30;
 
 export interface TicketsFeed {
   tickets: TicketVM[];
   scoped: boolean;
   loading: boolean;
+  /** Background refresh while cached rows are already visible. */
+  revalidating: boolean;
   loadingMore: boolean;
   error: string | null;
   hasMore: boolean;
@@ -49,26 +63,66 @@ function appendUnique(prev: TicketVM[], incoming: TicketVM[]): TicketVM[] {
   return added.length ? [...prev, ...added] : prev;
 }
 
+function persistFeed(
+  key: string,
+  state: {
+    tickets: TicketVM[];
+    scoped: boolean;
+    hasMore: boolean;
+    nextFrom: number;
+  },
+): void {
+  upsertTicketSubscribeRows(state.tickets);
+  writeDcCache<TicketsFeedCache>(key, state);
+}
+
+function adoptFeedCache(hit: { data: TicketsFeedCache }): {
+  tickets: TicketVM[];
+  scoped: boolean;
+  hasMore: boolean;
+  nextFrom: number;
+} {
+  const tickets = hit.data.tickets ?? [];
+  return {
+    tickets,
+    scoped: hit.data.scoped ?? true,
+    hasMore: hit.data.hasMore ?? tickets.length >= PAGE,
+    nextFrom: hit.data.nextFrom ?? tickets.length,
+  };
+}
+
 export function useTicketsFeed(): TicketsFeed {
-  const [tickets, setTickets] = useState<TicketVM[]>([]);
-  const [scoped, setScoped] = useState(true);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = ticketsFeedCacheKey();
+  const initial = readDcCache<TicketsFeedCache>(cacheKey);
+
+  const [tickets, setTickets] = useState<TicketVM[]>(initial?.data.tickets ?? []);
+  const [scoped, setScoped] = useState(initial?.data.scoped ?? true);
+  const [loading, setLoading] = useState(() => !initial);
+  const [revalidating, setRevalidating] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasMore, setHasMore] = useState(true);
+  const [hasMore, setHasMore] = useState(initial?.data.hasMore ?? true);
   const [tick, setTick] = useState(0);
 
-  const nextFromRef = useRef(0);
+  const nextFromRef = useRef(initial?.data.nextFrom ?? 0);
   const fetchingRef = useRef(false);
-  const hasMoreRef = useRef(true);
-  const ticketsRef = useRef<TicketVM[]>([]);
+  const hasMoreRef = useRef(initial?.data.hasMore ?? true);
+  const scopedRef = useRef(initial?.data.scoped ?? true);
+  const ticketsRef = useRef<TicketVM[]>(initial?.data.tickets ?? []);
   const pinnedRef = useRef<string[]>([]);
   const promoteFetchRef = useRef<Set<string>>(new Set());
+  const forceRef = useRef(false);
+  const cacheKeyRef = useRef(cacheKey);
+  cacheKeyRef.current = cacheKey;
 
   ticketsRef.current = tickets;
   hasMoreRef.current = hasMore;
+  scopedRef.current = scoped;
 
-  const reload = useCallback(() => setTick((t) => t + 1), []);
+  const reload = useCallback(() => {
+    forceRef.current = true;
+    setTick((t) => t + 1);
+  }, []);
 
   const pinId = (id: string): void => {
     pinnedRef.current = [id, ...pinnedRef.current.filter((x) => x !== id)].slice(0, MAX_PINNED);
@@ -77,7 +131,16 @@ export function useTicketsFeed(): TicketsFeed {
   const putOnTop = useCallback((row: TicketVM): void => {
     if (!row.id) return;
     upsertCachedTicket(row);
-    setTickets((prev) => [row, ...prev.filter((t) => t.id !== row.id)]);
+    setTickets((prev) => {
+      const next = [row, ...prev.filter((t) => t.id !== row.id)];
+      persistFeed(cacheKeyRef.current, {
+        tickets: next,
+        scoped: scopedRef.current,
+        hasMore: hasMoreRef.current,
+        nextFrom: nextFromRef.current,
+      });
+      return next;
+    });
   }, []);
 
   const promoteTicket = useCallback(
@@ -93,7 +156,14 @@ export function useTicketsFeed(): TicketsFeed {
           if (i <= 0) return prev;
           const row = prev[i];
           if (!row) return prev;
-          return [row, ...prev.slice(0, i), ...prev.slice(i + 1)];
+          const next = [row, ...prev.slice(0, i), ...prev.slice(i + 1)];
+          persistFeed(cacheKeyRef.current, {
+            tickets: next,
+            scoped: scopedRef.current,
+            hasMore: hasMoreRef.current,
+            nextFrom: nextFromRef.current,
+          });
+          return next;
         });
         return;
       }
@@ -117,50 +187,109 @@ export function useTicketsFeed(): TicketsFeed {
 
   const softReload = useCallback(() => {
     if (fetchingRef.current) return;
-    // Lock the shared in-flight flag so a 25s auto-refresh and a loadMore can't run concurrently and
-    // reshuffle/duplicate the head mid-append (loadMore also gates on fetchingRef).
     fetchingRef.current = true;
+    setRevalidating(true);
     void loadTicketsPage({ from: 0, limit: PAGE })
       .then((res) => {
         setScoped(res.scoped);
-        setTickets((prev) => mergeWithPins(res.tickets, prev, pinnedRef.current));
+        scopedRef.current = res.scoped;
+        setTickets((prev) => {
+          const next = mergeWithPins(res.tickets, prev, pinnedRef.current);
+          if (nextFromRef.current < res.nextFrom) nextFromRef.current = res.nextFrom;
+          persistFeed(cacheKeyRef.current, {
+            tickets: next,
+            scoped: res.scoped,
+            hasMore: hasMoreRef.current,
+            nextFrom: nextFromRef.current,
+          });
+          return next;
+        });
       })
       .catch(() => {
         /* quiet */
       })
       .finally(() => {
         fetchingRef.current = false;
+        setRevalidating(false);
       });
   }, []);
 
   useEffect(() => {
     let off = false;
+    const key = cacheKey;
+    const hit = readDcCache<TicketsFeedCache>(key);
+    const force = forceRef.current;
+    forceRef.current = false;
+
+    if (hit?.data.tickets?.length) {
+      const adopted = adoptFeedCache(hit);
+      setTickets(adopted.tickets);
+      setScoped(adopted.scoped);
+      scopedRef.current = adopted.scoped;
+      nextFromRef.current = adopted.nextFrom;
+      setHasMore(adopted.hasMore);
+      hasMoreRef.current = adopted.hasMore;
+      upsertTicketSubscribeRows(adopted.tickets);
+      setLoading(false);
+    }
+
+    // Never treat an empty snapshot as fresh — that stuck the boot spinner forever.
+    const fresh =
+      hit != null &&
+      (hit.data.tickets?.length ?? 0) > 0 &&
+      Date.now() - hit.ts < TICKETS_FEED_STALE_MS;
+    if (fresh && !force) {
+      return () => {
+        off = true;
+      };
+    }
+
     fetchingRef.current = true;
-    setLoading(true);
+    if (hit) setRevalidating(true);
+    else {
+      setLoading(true);
+      nextFromRef.current = 0;
+      hasMoreRef.current = true;
+      pinnedRef.current = [];
+      setHasMore(true);
+    }
     setError(null);
-    nextFromRef.current = 0;
-    hasMoreRef.current = true;
-    pinnedRef.current = [];
-    setHasMore(true);
-    void loadTicketsPage({ from: 0, limit: PAGE })
+
+    void loadTicketsPage({ from: 0, limit: PAGE, fresh: force })
       .then((res) => {
         if (off) return;
         setScoped(res.scoped);
-        setTickets(res.tickets);
-        nextFromRef.current = res.nextFrom;
-        setHasMore(res.hasMore);
-        hasMoreRef.current = res.hasMore;
+        scopedRef.current = res.scoped;
+        setTickets((prev) => {
+          const next =
+            hit && pinnedRef.current.length
+              ? mergeWithPins(res.tickets, prev, pinnedRef.current)
+              : res.tickets;
+          nextFromRef.current = res.nextFrom;
+          setHasMore(res.hasMore);
+          hasMoreRef.current = res.hasMore;
+          persistFeed(key, {
+            tickets: next,
+            scoped: res.scoped,
+            hasMore: res.hasMore,
+            nextFrom: res.nextFrom,
+          });
+          return next;
+        });
       })
       .catch((e: unknown) => {
         if (off) return;
         setError(e instanceof Error ? e.message : 'Failed to load tickets');
-        setTickets([]);
-        setHasMore(false);
-        hasMoreRef.current = false;
+        if (!hit) {
+          setTickets([]);
+          setHasMore(false);
+          hasMoreRef.current = false;
+        }
       })
       .finally(() => {
         if (!off) {
           setLoading(false);
+          setRevalidating(false);
           fetchingRef.current = false;
         }
       });
@@ -168,10 +297,32 @@ export function useTicketsFeed(): TicketsFeed {
       off = true;
       fetchingRef.current = false;
     };
-  }, [tick]);
+  }, [tick, cacheKey]);
+
+  useEffect(
+    () =>
+      subscribeDcCache(cacheKey, (kind) => {
+        if (kind === 'invalidate') {
+          forceRef.current = true;
+          setTick((t) => t + 1);
+          return;
+        }
+        const hit = readDcCache<TicketsFeedCache>(cacheKey);
+        if (!hit?.data.tickets?.length) return;
+        const adopted = adoptFeedCache(hit);
+        setTickets(adopted.tickets);
+        setScoped(adopted.scoped);
+        scopedRef.current = adopted.scoped;
+        nextFromRef.current = adopted.nextFrom;
+        setHasMore(adopted.hasMore);
+        hasMoreRef.current = adopted.hasMore;
+        upsertTicketSubscribeRows(adopted.tickets);
+        setLoading(false);
+      }),
+    [cacheKey],
+  );
 
   const loadMore = useCallback(() => {
-    // Reference: if (!this.isFetchingMore && this.ticketPagination.hasMore)
     if (fetchingRef.current || !hasMoreRef.current) return;
     fetchingRef.current = true;
     setLoadingMore(true);
@@ -180,15 +331,31 @@ export function useTicketsFeed(): TicketsFeed {
     void loadTicketsPage({ from, limit: PAGE })
       .then((res) => {
         setScoped(res.scoped);
+        scopedRef.current = res.scoped;
         if (res.tickets.length === 0) {
           setHasMore(false);
           hasMoreRef.current = false;
+          persistFeed(cacheKeyRef.current, {
+            tickets: ticketsRef.current,
+            scoped: res.scoped,
+            hasMore: false,
+            nextFrom: nextFromRef.current,
+          });
           return;
         }
-        setTickets((prev) => appendUnique(prev, res.tickets));
-        nextFromRef.current = res.nextFrom;
-        setHasMore(res.hasMore);
-        hasMoreRef.current = res.hasMore;
+        setTickets((prev) => {
+          const next = appendUnique(prev, res.tickets);
+          nextFromRef.current = res.nextFrom;
+          setHasMore(res.hasMore);
+          hasMoreRef.current = res.hasMore;
+          persistFeed(cacheKeyRef.current, {
+            tickets: next,
+            scoped: res.scoped,
+            hasMore: res.hasMore,
+            nextFrom: res.nextFrom,
+          });
+          return next;
+        });
       })
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : 'Failed to load more tickets');
@@ -203,6 +370,7 @@ export function useTicketsFeed(): TicketsFeed {
     tickets,
     scoped,
     loading,
+    revalidating,
     loadingMore,
     error,
     hasMore,

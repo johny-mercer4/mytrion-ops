@@ -156,7 +156,12 @@ export const retentionCasePhase1Repo = {
     id: string,
     newAgentZohoUserId: string,
     opts: { agentName?: string | undefined; reason: string },
-  ): Promise<RetentionCaseDto & { pendingApproval: boolean }> {
+  ): Promise<
+    RetentionCaseDto & {
+      pendingApproval: boolean;
+      quota: { used: number; max: number; remaining: number };
+    }
+  > {
     const { retentionPoolClaimRepo } = await import('./retentionPoolClaimRepo.js');
     return retentionPoolClaimRepo.claimNow(ctx, id, newAgentZohoUserId, opts);
   },

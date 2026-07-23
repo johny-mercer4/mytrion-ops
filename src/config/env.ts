@@ -88,6 +88,12 @@ const EnvSchema = z.object({
   // Worker model for tool-calling/simple turns. gpt-oss (NOT Llama — deprecated on Groq).
   GROQ_MODEL_WORKER: z.string().default('openai/gpt-oss-120b'),
 
+  // --- Zhipu AI / GLM (via OpenAI-compatible API). ---
+  GLM_API_KEY: z.string().default(''),
+  GLM_BASE_URL: z.string().default('https://open.bigmodel.cn/api/paas/v4/'),
+  // Worker model for GLM. glm-4-flash is the primary free model.
+  GLM_MODEL_WORKER: z.string().default('glm-4-flash'),
+
   // --- DeepAgents (LangChain/LangGraph orchestrator + RAG / web-search / tool-caller subagents). ---
   // Off by default (FF_DEEP_AGENTS_ENABLED). Reuses OPENAI_API_KEY; no new provider.
   // Empty DEEP_AGENTS_MODEL falls back to OPEN_AI_FOUR_O_MINI. The web-search subagent calls the

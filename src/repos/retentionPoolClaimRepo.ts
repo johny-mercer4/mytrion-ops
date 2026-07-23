@@ -19,7 +19,10 @@ import {
   stampPhase1ActionDeadline,
   stampPoolClaimDeadline,
 } from '../modules/retention/deadlines.js';
-import { assertUnderOpenPoolDailyCap } from '../modules/retention/openPoolCaps.js';
+import {
+  assertUnderOpenPoolDailyCap,
+  getOpenPoolDailyQuota,
+} from '../modules/retention/openPoolCaps.js';
 import { MAX_OPEN_POOL_AGENTS } from '../modules/retention/phase1.js';
 import { OWNERSHIP_TRANSFER_REASON } from '../db/schema/retention_ownership_transfers.js';
 import {
@@ -167,7 +170,12 @@ export const retentionPoolClaimRepo = {
     id: string,
     claimantZohoUserId: string,
     opts: { agentName?: string | undefined; reason: string },
-  ): Promise<RetentionCaseDto & { pendingApproval: boolean }> {
+  ): Promise<
+    RetentionCaseDto & {
+      pendingApproval: boolean;
+      quota: { used: number; max: number; remaining: number };
+    }
+  > {
     const reason = opts.reason.trim();
     if (!reason) {
       throw new AppError('Claim reason is required', {
@@ -353,7 +361,8 @@ export const retentionPoolClaimRepo = {
       actorZohoUserId: claimant,
       notes: `Open Pool claimed — ${reason.slice(0, 200)} · New · assignment ${existing.assignmentCount + 1}/${MAX_OPEN_POOL_AGENTS} · 2 BD to act`,
     });
-    return { ...dto, pendingApproval: false };
+    const quota = await getOpenPoolDailyQuota(ctx, claimant, now);
+    return { ...dto, pendingApproval: false, quota };
   },
 
   /** @deprecated Use claimNow — kept as alias for callers. */
@@ -362,7 +371,12 @@ export const retentionPoolClaimRepo = {
     id: string,
     claimantZohoUserId: string,
     opts: { agentName?: string | undefined; reason: string },
-  ): Promise<RetentionCaseDto & { pendingApproval: boolean }> {
+  ): Promise<
+    RetentionCaseDto & {
+      pendingApproval: boolean;
+      quota: { used: number; max: number; remaining: number };
+    }
+  > {
     return this.claimNow(ctx, id, claimantZohoUserId, opts);
   },
 

@@ -1,10 +1,11 @@
 import OpenAI from 'openai';
 import { env } from '../../config/env.js';
 
-export type Provider = 'openai' | 'groq';
+export type Provider = 'openai' | 'groq' | 'glm';
 
 let openaiClient: OpenAI | null = null;
 let groqClient: OpenAI | null = null;
+let glmClient: OpenAI | null = null;
 
 /**
  * Lazily construct a single OpenAI client. Lazy so importing this module never
@@ -38,8 +39,25 @@ export function getGroq(): OpenAI {
   return groqClient;
 }
 
-/** Resolve the client for a provider (both are OpenAI-SDK clients). */
+/**
+ * Zhipu AI / GLM via its OpenAI-compatible endpoint.
+ * Lazy + placeholder key.
+ */
+export function getGLM(): OpenAI {
+  if (!glmClient) {
+    glmClient = new OpenAI({
+      apiKey: env.GLM_API_KEY || 'glm-not-configured',
+      baseURL: env.GLM_BASE_URL,
+      maxRetries: 2,
+      timeout: env.OPENAI_TIMEOUT_MS,
+    });
+  }
+  return glmClient;
+}
+
+/** Resolve the client for a provider (all are OpenAI-SDK clients). */
 export function getClient(provider: Provider): OpenAI {
+  if (provider === 'glm') return getGLM();
   return provider === 'groq' ? getGroq() : getOpenAI();
 }
 
@@ -51,6 +69,11 @@ export function setOpenAIClient(stub: OpenAI): void {
 /** For tests: inject a stub Groq client. */
 export function setGroqClient(stub: OpenAI): void {
   groqClient = stub;
+}
+
+/** For tests: inject a stub GLM client. */
+export function setGLMClient(stub: OpenAI): void {
+  glmClient = stub;
 }
 
 export const models = {

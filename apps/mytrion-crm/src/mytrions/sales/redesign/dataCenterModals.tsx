@@ -24,6 +24,8 @@ import {
   type LeadEdit,
   type LeadVM,
 } from './dataCenterLive';
+import { STATUS_OPTIONS, allowedStatuses, reasonFieldFor } from './leadStatusFlow';
+import { LeadStatusPicker } from './LeadStatusPicker';
 
 function avStyle(col: string): string {
   return `width:52px;height:52px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:19px;background:color-mix(in srgb,${col} 16%,transparent);color:${col}`;
@@ -177,8 +179,15 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
   const [saving, setSaving] = useState(false);
   const [applied, setApplied] = useState<LeadEdit>(lead.edit);
   const [form, setForm] = useState<LeadEdit>(lead.edit);
+  // Manual status editing — agents also reach clients off-RingCentral, so status is editable here
+  // (not only via the post-call wizard). Reason picklist follows Unqualified / Not Interested.
+  const [appliedStatus, setAppliedStatus] = useState<string>(lead.status);
+  const [statusForm, setStatusForm] = useState<string>(lead.status);
+  const [statusReason, setStatusReason] = useState<string>('');
+  const statusReasonSpec = reasonFieldFor(statusForm);
+  const statusChanged = statusForm !== appliedStatus && STATUS_OPTIONS.some((o) => o.value === statusForm);
 
-  const meta = { col: leadStatusColor(lead.status), label: lead.status };
+  const meta = { col: leadStatusColor(appliedStatus), label: appliedStatus };
   const stageBadge = lead.converted ? badge('Converted', 'var(--ok)') : badge(meta.label, meta.col);
   const fleetText = `${lead.trucks} truck${lead.trucks === 1 ? '' : 's'}`;
   const set = (k: keyof LeadEdit, v: string): void => setForm((f) => ({ ...f, [k]: v }));
@@ -186,10 +195,14 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
 
   const startEdit = (): void => {
     setForm(applied);
+    setStatusForm(appliedStatus);
+    setStatusReason('');
     setEditing(true);
   };
   const cancelEdit = (): void => {
     setForm(applied);
+    setStatusForm(appliedStatus);
+    setStatusReason('');
     setEditing(false);
   };
 
@@ -198,6 +211,14 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
     (Object.keys(form) as (keyof LeadEdit)[]).forEach((k) => {
       if (form[k] !== applied[k]) changes[k] = form[k];
     });
+    if (statusChanged) {
+      if (statusReasonSpec && !statusReason) {
+        pushToast('Reason required', `Pick a ${statusForm === 'Unqualified' ? 'Unqualified' : 'Not-interested'} reason.`);
+        return;
+      }
+      changes.Status = statusForm;
+      if (statusReasonSpec) changes[statusReasonSpec.field] = statusReason;
+    }
     if (Object.keys(changes).length === 0) {
       setEditing(false);
       return;
@@ -210,6 +231,7 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
     try {
       await updateLead(lead.id, changes, getImpersonation()?.zohoUserId);
       setApplied({ ...form });
+      if (statusChanged) setAppliedStatus(statusForm);
       invalidateDcCache('sales:leads');
       setEditing(false);
       const count = Object.keys(changes).length;
@@ -237,6 +259,49 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
           </button>
         </div>
         <div className="ss-scroll" style={s('flex:1;min-height:0;padding:22px')}>
+          {editing && (
+            <div style={s(`margin-bottom:14px;${CARD}`)}>
+              <div style={s(`${CARD_LABEL};margin-bottom:8px`)}>Lead status</div>
+              {allowedStatuses(appliedStatus).length > 0 ? (
+                <LeadStatusPicker
+                  options={allowedStatuses(appliedStatus)}
+                  value={statusForm}
+                  onChange={(v) => {
+                    setStatusForm(v);
+                    setStatusReason('');
+                  }}
+                />
+              ) : (
+                <div style={s('font-size:12px;color:var(--muted);padding:2px 0')}>
+                  No manual status change from “{appliedStatus}” — this stage is set by the process.
+                </div>
+              )}
+              {statusReasonSpec && (
+                <div style={s('margin-top:10px')}>
+                  <div style={s('font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--danger);margin-bottom:6px')}>
+                    {statusForm === 'Unqualified' ? 'Unqualified reason' : 'Not-interested reason'} — required
+                  </div>
+                  <div style={s('display:flex;flex-direction:column;gap:6px')} role="radiogroup" aria-label="Reason">
+                    {statusReasonSpec.options.map((r) => {
+                      const active = statusReason === r;
+                      return (
+                        <button
+                          key={r}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          onClick={() => setStatusReason(r)}
+                          style={s(`text-align:left;padding:8px 12px;border-radius:var(--radius-md);border:1px solid ${active ? 'var(--danger)' : 'var(--border)'};background:${active ? 'color-mix(in srgb,var(--danger) 8%,var(--alt))' : 'var(--alt)'};color:${active ? 'var(--danger)' : 'var(--text)'};font-size:12px;font-weight:700;cursor:pointer`)}
+                        >
+                          {r}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
             <StatCard label="Fleet Size" value={fleetText} mono />
             <div style={s(CARD)}>
@@ -350,6 +415,14 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
       pushToast('Invalid email', 'Enter a valid email address or clear the field.');
       return;
     }
+    if (
+      typeof changes.Secondary_Email === 'string' &&
+      changes.Secondary_Email !== '' &&
+      !EMAIL_RE.test(changes.Secondary_Email)
+    ) {
+      pushToast('Invalid secondary email', 'Enter a valid email address or clear the field.');
+      return;
+    }
     setSaving(true);
     try {
       await updateDeal(deal.id, changes, getImpersonation()?.zohoUserId);
@@ -399,6 +472,7 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
             <div style={s(`${CARD_LABEL};margin-bottom:6px`)}>Contact</div>
             <div style={s('font-size:13px;font-weight:600')}>{deal.contact}</div>
             <EditContactRow label="Phone" editing={editing} value={editing ? form.Phone : applied.Phone} onChange={(v) => set('Phone', v)} inputMode="tel" placeholder="Phone" {...(onCall ? { onCall } : {})} />
+            <EditContactRow label="Cell" editing={editing} value={editing ? form.Cell : applied.Cell} onChange={(v) => set('Cell', v)} inputMode="tel" placeholder="Cell" {...(onCall ? { onCall } : {})} />
             {editing ? (
               <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
                 <div style={s('font-size:9.5px;color:var(--muted)')}>Email</div>
@@ -408,6 +482,17 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
               <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
                 <div style={s('font-size:9.5px;color:var(--muted)')}>Email</div>
                 <div style={s("font-size:12px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{applied.Email || '—'}</div>
+              </div>
+            )}
+            {editing ? (
+              <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
+                <div style={s('font-size:9.5px;color:var(--muted)')}>Secondary email</div>
+                <input value={form.Secondary_Email} onChange={(e) => set('Secondary_Email', e.currentTarget.value)} placeholder="name@company.com" inputMode="email" className="ss-in" style={s(`${INPUT_CSS};margin-top:4px`)} />
+              </div>
+            ) : (
+              <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
+                <div style={s('font-size:9.5px;color:var(--muted)')}>Secondary email</div>
+                <div style={s("font-size:12px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{applied.Secondary_Email || '—'}</div>
               </div>
             )}
           </div>

@@ -311,7 +311,11 @@ export async function fetchAgentSalesDashboard(agentName: string): Promise<unkno
 //    the caller's Deals, keyed by Carrier_ID). Returns { user_id, total_debtors, total_hard_debtors,
 //    total_debt_amount, debtors[] }.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────
-export async function fetchDebtorsInfo(userId: string, agentName: string): Promise<Row> {
+export async function fetchDebtorsInfo(
+  userId: string,
+  agentName: string,
+  opts: { summaryOnly?: boolean } = {},
+): Promise<Row> {
   const empty: Row = {
     user_id: userId,
     total_debtors: 0,
@@ -321,30 +325,27 @@ export async function fetchDebtorsInfo(userId: string, agentName: string): Promi
   };
   if (!agentName) return { ...empty, error: `Could not resolve agent name for userId: ${userId}` };
 
-  // Enrichment map: Carrier_ID → deal. Owner-scoped to the caller (userId validated numeric so it can't
-  // be smuggled into COQL). Best-effort — a COQL failure just means debtors render without deal metadata.
-  const carrierIdToDeal = new Map<string, Row>();
-  if (/^\d+$/.test(userId)) {
-    try {
-      const deals = await coqlAllDeals(
-        'id, Deal_Name, Stage, Owner, Carrier_ID, Application_ID, Created_Time',
-        `Owner = '${userId}'`,
-        'order by Created_Time desc',
-      );
-      for (const deal of deals) {
-        const cid = str(deal.Carrier_ID);
-        if (cid && cid !== 'null' && cid !== '0' && cid !== '0.0') carrierIdToDeal.set(cid, deal);
-      }
-    } catch {
-      /* best-effort enrichment */
-    }
-  }
+  // Enrichment map: Carrier_ID → deal. Owner-scoped (userId validated numeric so it can't be smuggled
+  // into COQL). Run the enrichment COQL and the CMP debtors fetch IN PARALLEL (they're independent).
+  // The Home "Money Owed" summary path (summaryOnly) skips enrichment entirely — that path only sums
+  // remaining/counts from the CMP rows and never reads deal metadata, so the up-to-25-page Deals scan
+  // was pure waste there. Best-effort: a COQL failure just means debtors render without deal metadata.
+  const doEnrich = !opts.summaryOnly && /^\d+$/.test(userId);
+  const [deals, debtRes] = await Promise.all([
+    doEnrich
+      ? coqlAllDeals(
+          'id, Deal_Name, Stage, Owner, Carrier_ID, Application_ID, Created_Time',
+          `Owner = '${userId}'`,
+          'order by Created_Time desc',
+        ).catch(() => [] as Row[])
+      : Promise.resolve([] as Row[]),
+    serverCrmPost<Row>('/api/agent/cmp/debtors', AGENT_BODY(agentName)).catch(() => null),
+  ]);
 
-  let debtRes: Row | null = null;
-  try {
-    debtRes = await serverCrmPost<Row>('/api/agent/cmp/debtors', AGENT_BODY(agentName));
-  } catch {
-    debtRes = null;
+  const carrierIdToDeal = new Map<string, Row>();
+  for (const deal of deals) {
+    const cid = str(deal.Carrier_ID);
+    if (cid && cid !== 'null' && cid !== '0' && cid !== '0.0') carrierIdToDeal.set(cid, deal);
   }
   if (!ok(debtRes, 'success')) return { ...empty, error: 'DWH call failed' };
 

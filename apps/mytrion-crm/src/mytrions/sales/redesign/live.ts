@@ -556,25 +556,36 @@ export async function loadTicketById(ticketId: string): Promise<TicketVM> {
 export async function loadTicketsPage(opts: {
   from?: number;
   limit?: number;
+  /** Bypass short in-flight/TTL share (Refresh). */
+  fresh?: boolean;
 } = {}): Promise<TicketsPageResult> {
   const limit = Math.min(99, Math.max(1, opts.limit ?? TICKET_PAGE));
   const from = Math.max(0, opts.from ?? 0);
-  const res = await listDeskTickets({ from, limit, ...ticketScope() });
-  const raw = res.tickets;
-  const hasMore = typeof res.hasMore === 'boolean' ? res.hasMore : raw.length >= limit;
-  const nextFrom = typeof res.nextFrom === 'number' ? res.nextFrom : from + limit;
-  return {
-    tickets: raw.map(mapTicket),
-    scoped: res.scoped,
-    windowed: Boolean(res.windowed),
-    hasMore,
-    nextFrom,
-  };
+  const scope = ticketScope();
+  const actor = scope.zohoUserId ?? getSession()?.worker.zohoUserId ?? 'self';
+  return dedupedFetch(
+    `desk:tickets:page:${actor}:${from}:${limit}`,
+    async () => {
+      const res = await listDeskTickets({ from, limit, ...scope });
+      const raw = res.tickets;
+      const hasMore = typeof res.hasMore === 'boolean' ? res.hasMore : raw.length >= limit;
+      const nextFrom = typeof res.nextFrom === 'number' ? res.nextFrom : from + limit;
+      return {
+        tickets: raw.map(mapTicket),
+        scoped: res.scoped,
+        windowed: Boolean(res.windowed),
+        hasMore,
+        nextFrom,
+      };
+    },
+    { ttlMs: 15_000, fresh: opts.fresh === true },
+  );
 }
 
 /**
- * Full creator-scoped set (for sidebar WS subscribe + badge). Pages until exhausted or the Desk
- * search window (~2k). Prefer `loadTicketsPage` in the Tickets tab for progressive loading.
+ * @deprecated Do not call from the shell — paging the full Desk set starves the Tickets tab
+ * (ticketdashboard.html only loads `limit=20` on open). Prefer `loadTicketsPage` + the
+ * subscribe registry. Kept for rare admin dumps.
  */
 export async function loadTickets(): Promise<{ tickets: TicketVM[]; scoped: boolean }> {
   const seen = new Set<string>();
@@ -626,6 +637,45 @@ function fmtBytes(raw: string | number | undefined): string {
   return `${(b / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** Normalize a person label for fuzzy equality (Komilova vs KOMILOVA vs "A Komilova"). */
+function normPerson(v: string | null | undefined): string {
+  return (v ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function personMatches(a: string | null | undefined, b: string | null | undefined): boolean {
+  const x = normPerson(a);
+  const y = normPerson(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  // Last-token match catches "Komilova" vs "Dilnoza Komilova".
+  const xt = x.split(' ');
+  const yt = y.split(' ');
+  const xl = xt[xt.length - 1] ?? '';
+  const yl = yt[yt.length - 1] ?? '';
+  return xl.length >= 3 && xl === yl;
+}
+
+/**
+ * Sales-side authorship — reference uses zohoDeskAdminId === commenterId for "me".
+ * We also treat the viewing CRM sales agent (session / View-as) as "me", so a thread authored
+ * as "Komilova" and an attachment uploaded via the shared Desk agent land on the SAME side.
+ */
+function isSalesSideMessage(opts: {
+  mineFlag?: boolean | undefined;
+  authorName?: string | null | undefined;
+  authorEmail?: string | null | undefined;
+}): boolean {
+  if (opts.mineFlag) return true;
+  const imp = getImpersonation();
+  const worker = getSession()?.worker;
+  const selfName = imp?.name ?? worker?.userName ?? null;
+  const selfEmail = worker?.email ?? null;
+  if (personMatches(opts.authorName, selfName)) return true;
+  const email = (opts.authorEmail ?? '').trim().toLowerCase();
+  if (email && selfEmail && email === selfEmail.trim().toLowerCase()) return true;
+  return false;
+}
+
 export async function loadTicketMessages(ticketId: string): Promise<TicketMsgVM[]> {
   // Reference ticketdashboard loads comments with limit 100; Desk caps lists at 99.
   const { threads, comments, attachments } = await listDeskComments(ticketId, 99);
@@ -634,29 +684,84 @@ export async function loadTicketMessages(ticketId: string): Promise<TicketMsgVM[
     return Number.isNaN(t) ? 0 : t;
   };
 
-  // Placement (matches the reference dashboard): the caller's OWN posts go right ("me"), everyone
-  // else left. The app posts REPLIES as COMMENTS via its shared Desk agent, which the server flags
-  // as `mine`. THREADS are the requester's inbound message + any other-agent email replies — never
-  // the caller's, so they render left, labelled by author.
+  // Placement: sales agent's own posts → "me" (left in our CSS). Everyone else (CS / customer) →
+  // opposite side. Matches ticketdashboard.html's me-vs-other split, plus CRM-name matching so a
+  // sales author isn't split from their Desk-agent uploads.
   const rows: TicketMsgVM[] = [];
+  const seenAtt = new Set<string>();
+
   for (const t of threads ?? []) {
     const text = stripHtml(String(t.content ?? t.summary ?? ''));
-    const who = fullName(t.author) || t.author?.name || (t.direction === 'out' ? 'Agent' : 'Customer');
-    if (text) rows.push({ from: who, type: 'comment', text, time: relTime(t.createdTime), ts: ms(t.createdTime) });
+    const authorName = fullName(t.author) || t.author?.name || null;
+    const authorEmail = typeof t.author?.email === 'string' ? t.author.email : null;
+    // Name/email of the viewing sales agent → same side as Desk-agent uploads ("me").
+    const sales = isSalesSideMessage({ authorName, authorEmail });
+    const who = sales ? 'me' : authorName || (t.direction === 'out' ? 'Support' : 'Customer');
+    if (text) {
+      rows.push({ from: who, type: 'comment', text, time: relTime(t.createdTime), ts: ms(t.createdTime) });
+    }
+    // Thread-inline attachments (reference surfaces files from comments + Attachments tab).
+    for (const a of t.attachments ?? []) {
+      if (!a?.id || seenAtt.has(String(a.id))) continue;
+      seenAtt.add(String(a.id));
+      const aMine = Boolean(a.mine) || sales;
+      rows.push({
+        from: aMine ? 'me' : 'Support',
+        type: 'attachment',
+        text: '',
+        time: relTime(a.createdTime ?? t.createdTime),
+        file: {
+          name: String(a.name ?? 'attachment'),
+          size: fmtBytes(a.size),
+          attId: String(a.id),
+          ticketId,
+        },
+        ts: ms(a.createdTime ?? t.createdTime),
+      });
+    }
   }
+
   for (const c of comments ?? []) {
     const text = stripHtml(String(c.content ?? ''));
     const cm = c.commenter;
-    const who = c.mine ? 'me' : fullName(cm) || cm?.name || 'Support';
+    const authorName = fullName(cm) || cm?.name || null;
+    const authorEmail = typeof cm?.email === 'string' ? cm.email : null;
+    const sales = isSalesSideMessage({
+      mineFlag: c.mine === true,
+      authorName,
+      authorEmail,
+    });
+    const who = sales ? 'me' : authorName || 'Support';
     // Older tickets carry a "📎 name" placeholder comment from before attachments got their own
     // Attachments-tab bubble — drop that placeholder text now that the real file renders separately.
     const isCaption = /^📎\s/.test(text) && (c.attachments?.length ?? 0) > 0;
-    if (text && !isCaption) rows.push({ from: who, type: 'comment', text, time: relTime(c.commentedTime), ts: ms(c.commentedTime) });
+    if (text && !isCaption) {
+      rows.push({ from: who, type: 'comment', text, time: relTime(c.commentedTime), ts: ms(c.commentedTime) });
+    }
+    for (const a of c.attachments ?? []) {
+      if (!a?.id || seenAtt.has(String(a.id))) continue;
+      seenAtt.add(String(a.id));
+      const aMine = Boolean(a.mine) || sales;
+      rows.push({
+        from: aMine ? 'me' : authorName || 'Support',
+        type: 'attachment',
+        text: '',
+        time: relTime(a.createdTime ?? c.commentedTime),
+        file: {
+          name: String(a.name ?? 'attachment'),
+          size: fmtBytes(a.size),
+          attId: String(a.id),
+          ticketId,
+        },
+        ts: ms(a.createdTime ?? c.commentedTime),
+      });
+    }
   }
-  // Attachments are ticket-level (Desk's Attachments tab), not tied to one comment/thread — this is
-  // also where a file Mytrion sends, or one a Desk agent uploads directly, shows up for BOTH sides.
+
+  // Ticket-level Attachments tab (Mytrion uploadTicketAttachment + Desk UI uploads).
   for (const a of attachments ?? []) {
-    if (!a?.id) continue;
+    if (!a?.id || seenAtt.has(String(a.id))) continue;
+    seenAtt.add(String(a.id));
     const who = a.mine ? 'me' : 'Support';
     rows.push({
       from: who,

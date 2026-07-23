@@ -190,10 +190,13 @@ export function enterOpenPool(
   }
   const claim = stampPoolClaimDeadline(now);
   const prev = opts.previousOwnerZohoUserId?.trim() || null;
+  // Only stamp agentOutcome when the caller knows the stage that escalated (Reached /
+  // OoR / …). Omitting it keeps the prior outcome so the Sales board can leave the
+  // locked card in that column instead of dumping every pool case into Closed.
   return {
     phaseCode: RETENTION_PHASE.agent,
     statusCode: 'p1_open_pool',
-    agentOutcome: opts.agentOutcome ?? 'out_of_reach',
+    ...(opts.agentOutcome !== undefined ? { agentOutcome: opts.agentOutcome } : {}),
     assignedAgentZohoUserId: null,
     poolOwnerZohoUserId: prev,
     pendingClaimantZohoUserId: null,

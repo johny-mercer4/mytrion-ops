@@ -4,6 +4,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
+import { getImpersonation } from '../../../../api/impersonation';
 import { s } from '../dc';
 import { Icon } from '../icons';
 import { useSales } from '../ctx';
@@ -19,6 +20,8 @@ import {
 } from '../retentionData';
 import { subscribeRetentionLive } from '../retentionLiveBus';
 import { stageTimer } from '../retentionTimers';
+
+type PoolQuota = { used: number; max: number; remaining: number };
 
 type SortKey = 'carrierId' | 'companyName' | 'daysInactive' | 'gallons90d' | 'assignmentCount';
 type StatusFilter = 'available' | 'all';
@@ -134,8 +137,9 @@ function PoolEmptyState({
 
 export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) => void }) {
   const { pushToast } = useSales();
-  const feed = useLoad(() => loadOpenPoolCases(), []);
-  const quota = useLoad(() => loadOpenPoolQuota(), []);
+  const actAsKey = getImpersonation()?.zohoUserId ?? 'self';
+  const feed = useLoad(() => loadOpenPoolCases(), [actAsKey]);
+  const quota = useLoad(() => loadOpenPoolQuota(), [actAsKey]);
   const [cases, setCases] = useState<RetentionCaseRow[]>([]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('available');
@@ -149,7 +153,17 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
   const [confirm, setConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [spin, setSpin] = useState(false);
+  /** Immediate post-claim quota so the badge does not wait on a second fetch. */
+  const [quotaSnap, setQuotaSnap] = useState<PoolQuota | null>(null);
   const spinTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => {
+    setQuotaSnap(null);
+  }, [actAsKey]);
+
+  useEffect(() => {
+    if (quota.data) setQuotaSnap(quota.data);
+  }, [quota.data]);
 
   useEffect(() => {
     if (!feed.data?.cases) return;
@@ -257,12 +271,21 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
     const sharedReason = reason.trim();
     let ok = 0;
     const errors: string[] = [];
+    let lastQuota: PoolQuota | null = null;
     for (const id of ids) {
       try {
-        await claimOpenPoolCase(id, sharedReason);
+        const res = await claimOpenPoolCase(id, sharedReason);
         ok += 1;
+        if (res.quota) {
+          lastQuota = res.quota;
+          setQuotaSnap(res.quota);
+        }
       } catch (e) {
         errors.push(e instanceof Error ? e.message : 'Failed');
+        // Cap hit mid-bulk — stop so we don't spam 429s.
+        if (/daily|2 claim|limit|quota|per day|RETENTION_OPEN_POOL_DAILY_CAP/i.test(errors[errors.length - 1] ?? '')) {
+          break;
+        }
       }
     }
     setSubmitting(false);
@@ -273,7 +296,13 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
     feed.reload();
     quota.reload();
     if (ok > 0) {
-      pushToast('Assigned — in New', `${ok} deal${ok !== 1 ? 's' : ''} claimed`);
+      const left = lastQuota?.remaining;
+      pushToast(
+        'Assigned — in New',
+        left != null
+          ? `${ok} deal${ok !== 1 ? 's' : ''} claimed · ${left} claim${left !== 1 ? 's' : ''} left today`
+          : `${ok} deal${ok !== 1 ? 's' : ''} claimed`,
+      );
     }
     if (errors.length > 0) {
       const first = errors[0] ?? 'Could not claim';
@@ -303,7 +332,7 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
     return Math.round(days.reduce((a, b) => a + b, 0) / days.length);
   }, [claimable]);
 
-  const remaining = quota.data?.remaining ?? null;
+  const remaining = quotaSnap?.remaining ?? quota.data?.remaining ?? null;
 
   return (
     <>
@@ -318,8 +347,14 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
             actions={
               <>
                 {remaining != null ? (
-                  <span className="ss-pool-quota" title="Claims left today (UTC)">
+                  <span
+                    className={`ss-pool-quota${remaining <= 0 ? ' is-empty' : remaining === 1 ? ' is-low' : ''}`}
+                    title="Open Pool claims left today (UTC day)"
+                  >
                     Claims left today · {remaining}
+                    {quotaSnap?.max != null || quota.data?.max != null
+                      ? ` / ${quotaSnap?.max ?? quota.data?.max}`
+                      : ''}
                   </span>
                 ) : null}
                 <button
