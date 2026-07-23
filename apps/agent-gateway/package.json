@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "packageManager": "pnpm@9.12.0",
   "description": "Octane support bot v2 \u2014 Claude Agent SDK gateway. Per-chat sessions, RBAC via mytrion /v1/support-bot. MVP: one group (long-poll).",
   "scripts": {
     "dev": "tsx watch src/index.ts",
