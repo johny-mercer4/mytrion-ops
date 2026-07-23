@@ -82,8 +82,14 @@ export function buildOctaneServer(chatId: number, carrierId: string) {
         ({ telegram_user_id, range, from, to, format }) => run('/support-bot/txn-report', telegram_user_id, { range, format, ...(from ? { from } : {}), ...(to ? { to } : {}) }),
       ),
       tool(
+        'octane_money_code_quote',
+        "FAST: how much money code the OWNER can draw RIGHT NOW + the fee for an amount. Call this when they ask 'qancha olsam bo'ladi?' and ALWAYS before octane_money_code to confirm the amount fits. Returns `available` (the server-computed limit — NEVER invent one) and, if you pass amount, the EFS fee ($3.50 per $500 + $0.75 per extra use) and whether it fits. Owner-only; amounts may be spoken to the owner.",
+        { ...asker, amount: z.coerce.number().positive().optional().describe('optional — get the exact fee + whether it fits the limit') },
+        ({ telegram_user_id, amount }) => run('/support-bot/money-code/preview', telegram_user_id, amount != null ? { amount } : {}),
+      ),
+      tool(
         'octane_money_code',
-        'LONG (~1-2 min): issue an EFS money code (OWNER only, confirm amount+unit+reason first). The code goes to their PRIVATE Octane bot chat — never this group. After confirmation, announce via telegram_progress (ETA + delivery promise); final reply = delivery confirmation.',
+        'LONG (~1-2 min): issue an EFS money code (OWNER only, confirm amount+unit+reason first; check octane_money_code_quote so the amount fits the limit). The code goes to their PRIVATE Octane bot chat — never this group. After confirmation, announce via telegram_progress (ETA + delivery promise); final reply = delivery confirmation.',
         { ...asker, amount: z.number().positive(), unit_number: z.string().min(1).max(60), reason: z.string().min(1).max(120) },
         ({ telegram_user_id, amount, unit_number, reason }) => run('/support-bot/money-code/draw', telegram_user_id, { amount, unitNumber: unit_number, reason }),
       ),

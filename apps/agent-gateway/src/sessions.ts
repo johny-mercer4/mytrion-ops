@@ -193,6 +193,7 @@ async function runQuery(
         'mcp__octane__octane_txn_report',
         'mcp__octane__octane_transactions',
         'mcp__octane__octane_override',
+        'mcp__octane__octane_money_code_quote',
         'mcp__octane__octane_money_code',
         'mcp__octane__octane_card_action',
         'mcp__octane__octane_card_limits',

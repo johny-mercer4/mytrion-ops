@@ -804,6 +804,53 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * Money code — QUOTE (owner-only, read). Answers "qancha money code olsam bo'ladi?" and
+   * fee-for-amount BEFORE a draw. The drawable window (limit) is servercrm's authoritative
+   * getMoneyCodePreview — a % of the latest invoice (credit) or the prepaid balance — and is the
+   * ONLY source of truth; the bot must NEVER invent a limit. The fee is the published EFS/WEX
+   * schedule (KB-15): $3.50 per $500 increment (rounded up) + $0.75 per additional use of a code.
+   */
+  app.post('/support-bot/money-code/preview', guard, async (request) => {
+    if (!env.FF_MINIAPP_MONEY_CODE_ENABLED) {
+      throw new AppError('Money code is not enabled yet.', { statusCode: 503, code: 'MINIAPP_MONEY_CODE_DISABLED', expose: true });
+    }
+    const body = callerSchema.extend({ amount: z.coerce.number().positive().optional() }).parse(request.body);
+    const { role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    if (role !== 'owner') {
+      throw new AppError('Money codes are issued by the account owner.', { statusCode: 403, code: 'SUPPORT_BOT_OWNER_ONLY', expose: true });
+    }
+    takeReadToken(body.carrierId);
+    const preview = (await serverCrmWrapper.getMoneyCodePreview(body.carrierId)) as Record<string, unknown>;
+    const num = (v: unknown): number | null => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
+    const available = num(preview['available']);
+    const drawn = num(preview['drawn']);
+    const eligible = preview['eligible'] === true || preview['eligible'] === 'true' || (available != null && available > 0);
+    const reasons = Array.isArray(preview['moneycode_reasons']) ? preview['moneycode_reasons'] : [];
+    // Fee for a requested amount, if one was given. $3.50 per $500 increment (rounded up).
+    const fee = (amount: number) => {
+      const increments = Math.max(1, Math.ceil(amount / 500));
+      return { amount, fee: increments * 3.5, increments, perUse: 0.75 };
+    };
+    const quote =
+      body.amount != null
+        ? {
+            ...fee(body.amount),
+            withinLimit: available == null ? null : body.amount <= available,
+          }
+        : null;
+    return {
+      role,
+      eligible,
+      available, // max drawable RIGHT NOW — authoritative; never invent a limit
+      drawn,
+      reasons,
+      ...(quote ? { quote } : {}),
+      feeSchedule: { perIncrementUsd: 3.5, incrementUsd: 500, additionalUseUsd: 0.75 },
+      note: '`available` is the ONLY limit source. Fee = $3.50 per $500 (rounded up) + $0.75 per additional use of a code. Amounts may be spoken to the OWNER; the code value itself never goes to the group.',
+    };
+  });
+
+  /**
    * Money code — FULL service through the bot (prod parity), with the standing rule intact:
    * the CODE VALUE never appears in the group. It is drawn here and delivered to the OWNER'S
    * private Octane bot chat; the group only hears "sent to your private chat".

@@ -111,6 +111,13 @@ explicit yes; ambiguous card digits → ask for the last 6; if the backend says 
 disabled, say so and offer the request-ticket fallback. NOTHING sensitive ever lands in the
 group: money codes, full card numbers, and balance figures go to private chats only.
 
+MONEY CODE — quote first: for "qancha money code olsam bo'ladi?" or before issuing one, call
+octane_money_code_quote. Use its `available` as the limit (NEVER invent one); if the amount is
+over `available`, tell the owner the max they can draw now instead of drawing. Pass the amount to
+get the EFS fee ($3.50 per $500 + $0.75 per additional use) and state it in the confirm line, e.g.
+"$1,500 money code, unit 12 — ~$10.50 EFS fee. Chiqazaymi?". Only after an explicit yes call
+octane_money_code.
+
 # Everything else → route, never dead-end (one pointer, the best one)
 Deep-link pattern: https://t.me/{BOT_USERNAME}/{MINIAPP_SHORT_NAME}?startapp=go-<action>
 - Issue money code (owner) → go-moneycode · Activate/deactivate/limits → go-cardops
