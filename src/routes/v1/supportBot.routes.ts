@@ -24,7 +24,7 @@ import { env, isProduction } from '../../config/env.js';
 import { db } from '../../db/client.js';
 import { registeredMiniAppCompanies, supportBotChats, supportBotMessages, type RegisteredMiniAppCompany } from '../../db/schema/index.js';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
-import { searchDwhClients } from '../../integrations/dwhClients.js';
+import { findDealOwnerForCarrier } from '../../integrations/dwhClients.js';
 import { listDwhTransactions } from '../../integrations/dwhTransactions.js';
 import { sendDocument, sendPlainReply, TelegramChatUnreachableError } from '../../integrations/telegramCarrierBot.js';
 import { TXN_FETCH_LIMIT, scopeRowsToCard } from '../../modules/carrier/driverCardScope.js';
@@ -332,14 +332,13 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
   app.post('/support-bot/whoami', guard, async (request) => {
     const body = callerSchema.parse(request.body);
     const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
-    // Responsible sales agent = the LIVE deal owner from the DWH (stg_zoho_deals.owner_id →
-    // zoho_users.full_name), NOT whoever created the registration link (the invite-stamped
-    // agentName is the link creator on older records) and NEVER the client. Best-effort: if the
-    // DWH lookup finds no owner, return null and let the bot fall back to a generic "your Octane
-    // agent" (prompt rule) — we deliberately do NOT fall back to registration.agentName.
-    const agentName = await searchDwhClients({ q: body.carrierId, limit: 15 })
-      .then((cs) => cs.find((c) => c.carrierId === body.carrierId)?.ownerName ?? null)
-      .catch(() => null);
+    // Responsible sales agent = the LIVE deal owner from the DWH, NOT whoever created the
+    // registration link (the invite-stamped agentName is the link creator on older records) and
+    // NEVER the client. findDealOwnerForCarrier matches the carrier EXACTLY, keeps closed deals,
+    // and falls back to dim_company when the Zoho deal row has no owner — so an active client like
+    // ONZMOVE resolves instead of the old prefix/Closed-Lost search returning null. Best-effort:
+    // null → the bot falls back to a generic "your Octane agent" (prompt rule).
+    const agentName = await findDealOwnerForCarrier(body.carrierId).catch(() => null);
     return {
       role,
       name: registration.driverName ?? null,
@@ -677,11 +676,19 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
         from: z.string().max(10).optional(),
         to: z.string().max(10).optional(),
         format: z.enum(['csv', 'xlsx', 'pdf']).default('xlsx'),
+        // Owner ask 2026-07-23: an owner wanted a report for ONE card, not the whole fleet. A driver
+        // is already scoped to their own card; this lets an OWNER scope by last-6 too.
+        cardLast6: z.string().trim().min(4).max(19).optional(),
       })
       .parse(request.body);
     const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
     takeReadToken(body.carrierId);
-    const cardNumber = role === 'driver' ? await requireDriverCardNumber(registration) : null;
+    const cardNumber =
+      role === 'driver'
+        ? await requireDriverCardNumber(registration)
+        : body.cardLast6
+          ? await resolveCardByLast6(body.carrierId, body.cardLast6)
+          : null;
     const result = await listDwhTransactions({
       carrierId: body.carrierId,
       ...(cardNumber ? { cardNumber } : {}),
@@ -801,6 +808,122 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
     } catch (err) {
       throw new AppError('Tracking lookup failed', { statusCode: 502, code: 'TRACKING_ERROR', expose: true, cause: err });
     }
+  });
+
+  /**
+   * Per-card LAST-USED date — the mini-app drv-last-used / fleet last-used, now over the bot.
+   * Driver → own card; owner → whole fleet, or one card via cardLast6. No dollar figures, so the
+   * bot may answer inline.
+   */
+  app.post('/support-bot/last-used', guard, async (request) => {
+    const body = callerSchema
+      .extend({ range: z.string().max(20).default('all_time'), cardLast6: z.string().trim().min(4).max(19).optional() })
+      .parse(request.body);
+    const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    takeReadToken(body.carrierId);
+    const result = await serverCrmWrapper.getLastUsed(body.carrierId, body.range);
+    let rows = (result.data ?? []) as Array<Record<string, unknown>>;
+    if (role === 'driver') {
+      rows = scopeRowsToCard(rows, await requireDriverCardNumber(registration));
+    } else if (body.cardLast6) {
+      rows = scopeRowsToCard(rows, await resolveCardByLast6(body.carrierId, body.cardLast6));
+    }
+    return { role, count: rows.length, cards: rows.slice(0, 50) };
+  });
+
+  /**
+   * Owner billing-cycle + payment status (servercrm payment-info, ~90-day window) — the mini-app
+   * fin-payment-status service. Owner-only. Carries dollar figures, so the bot keeps AMOUNTS to the
+   * owner's private chat and says only status/dates in the group (same money-in-group rule).
+   */
+  app.post('/support-bot/payment', guard, async (request) => {
+    const body = callerSchema.parse(request.body);
+    const { role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    if (role !== 'owner') {
+      throw new AppError('Payment status is available to the account owner.', { statusCode: 403, code: 'SUPPORT_BOT_OWNER_ONLY', expose: true });
+    }
+    takeReadToken(body.carrierId);
+    const payment = await serverCrmWrapper.getPaymentInfo(body.carrierId);
+    return { role, payment, note: 'Dollar figures go to the owner PRIVATELY; in the group say only status/dates, never amounts.' };
+  });
+
+  /**
+   * Owner billing form + verification status — the READ behind the mini-app doc-billing-form sheet
+   * (Zoho mytrionfetchbillingforminfo). Owner-only. Distinct from octane_service_request(billing-form),
+   * which FILES a form; this SHOWS the current one.
+   */
+  app.post('/support-bot/billing-form', guard, async (request) => {
+    const body = callerSchema.parse(request.body);
+    const { role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    if (role !== 'owner') {
+      throw new AppError('The billing form is available to the account owner.', { statusCode: 403, code: 'SUPPORT_BOT_OWNER_ONLY', expose: true });
+    }
+    takeReadToken(body.carrierId);
+    try {
+      const raw = await executeZohoFunctionWithFallback(
+        ['mytrionfetchbillingforminfo', 'mytrionFetchBillingFormInfo'],
+        { carrierId: body.carrierId },
+        { unwrap: 'permissive' },
+      );
+      if (!raw || typeof raw !== 'object') return { role, verification: null, billingForm: null, notes: [] };
+      const r = raw as Record<string, unknown>;
+      const deal = (r['deal'] ?? null) as Record<string, unknown> | null;
+      return {
+        role,
+        verification: deal?.['billingVerification'] ?? null,
+        billingForm: (r['billingForm'] ?? null) as Record<string, unknown> | null,
+        notes: Array.isArray(r['notes']) ? r['notes'] : [],
+      };
+    } catch (err) {
+      throw new AppError('Billing form lookup failed', { statusCode: 502, code: 'BILLING_FORM_ERROR', expose: true, cause: err });
+    }
+  });
+
+  /**
+   * Money code — QUOTE (owner-only, read). Answers "qancha money code olsam bo'ladi?" and
+   * fee-for-amount BEFORE a draw. The drawable window (limit) is servercrm's authoritative
+   * getMoneyCodePreview — a % of the latest invoice (credit) or the prepaid balance — and is the
+   * ONLY source of truth; the bot must NEVER invent a limit. The fee is the published EFS/WEX
+   * schedule (KB-15): $3.50 per $500 increment (rounded up) + $0.75 per additional use of a code.
+   */
+  app.post('/support-bot/money-code/preview', guard, async (request) => {
+    if (!env.FF_MINIAPP_MONEY_CODE_ENABLED) {
+      throw new AppError('Money code is not enabled yet.', { statusCode: 503, code: 'MINIAPP_MONEY_CODE_DISABLED', expose: true });
+    }
+    const body = callerSchema.extend({ amount: z.coerce.number().positive().optional() }).parse(request.body);
+    const { role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    if (role !== 'owner') {
+      throw new AppError('Money codes are issued by the account owner.', { statusCode: 403, code: 'SUPPORT_BOT_OWNER_ONLY', expose: true });
+    }
+    takeReadToken(body.carrierId);
+    const preview = (await serverCrmWrapper.getMoneyCodePreview(body.carrierId)) as Record<string, unknown>;
+    const num = (v: unknown): number | null => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
+    const available = num(preview['available']);
+    const drawn = num(preview['drawn']);
+    const eligible = preview['eligible'] === true || preview['eligible'] === 'true' || (available != null && available > 0);
+    const reasons = Array.isArray(preview['moneycode_reasons']) ? preview['moneycode_reasons'] : [];
+    // Fee for a requested amount, if one was given. $3.50 per $500 increment (rounded up).
+    const fee = (amount: number) => {
+      const increments = Math.max(1, Math.ceil(amount / 500));
+      return { amount, fee: increments * 3.5, increments, perUse: 0.75 };
+    };
+    const quote =
+      body.amount != null
+        ? {
+            ...fee(body.amount),
+            withinLimit: available == null ? null : body.amount <= available,
+          }
+        : null;
+    return {
+      role,
+      eligible,
+      available, // max drawable RIGHT NOW — authoritative; never invent a limit
+      drawn,
+      reasons,
+      ...(quote ? { quote } : {}),
+      feeSchedule: { perIncrementUsd: 3.5, incrementUsd: 500, additionalUseUsd: 0.75 },
+      note: '`available` is the ONLY limit source. Fee = $3.50 per $500 (rounded up) + $0.75 per additional use of a code. Amounts may be spoken to the OWNER; the code value itself never goes to the group.',
+    };
   });
 
   /**

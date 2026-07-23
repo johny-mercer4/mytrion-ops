@@ -8,6 +8,7 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { config } from './config.js';
+import { searchKb } from './kb/search.js';
 import { sendButtons, sendMessage, setReaction } from './telegram.js';
 import { logMessage } from './messageLog.js';
 
@@ -69,6 +70,15 @@ export function buildOctaneServer(chatId: number, carrierId: string) {
       ),
       tool('octane_whoami', "Is the sender a registered Octane mini-app user of this company, their role (owner/driver), and the carrier's sales agent (agentName) to hand off to when you can't resolve an ask? Call FIRST for any service ask.", asker, ({ telegram_user_id }) => run('/support-bot/whoami', telegram_user_id)),
       tool(
+        'octane_kb_search',
+        "FAST: search the Octane client knowledge base for a FACTUAL 'how does X work' question you can't answer from the loaded KB — fees, supported stations, money-code rules, gallon limits, card ops, mini-app how-tos, troubleshooting. Returns the most relevant article(s). State facts ONLY from the returned text (or live octane_* tools); if nothing relevant comes back, say a human will confirm and offer to reach their Octane agent. Client-safe content only — never internal process.",
+        { query: z.string().min(2).max(200).describe('the topic or the question to look up, in any language') },
+        async ({ query }) => {
+          const hits = searchKb(query, 3);
+          return { content: [{ type: 'text' as const, text: JSON.stringify(hits.length ? hits : { note: 'no KB match — do not guess; offer to escalate to the Octane agent' }) }] };
+        },
+      ),
+      tool(
         'octane_card_status',
         "Card status across the WHOLE fleet (no blind window). ONE card (a PHOTO or 'check card X') → pass card_last6 for its exact status (fraudHold + overrideAvailable). Narrow a big fleet → query (matches last6/unit/driver, e.g. a driver name) and/or status ('active'|'inactive'|'hold', e.g. 'which cards are on hold'). Nothing → driver gets own card WITH gallon limits; owner gets the full fleet (up to 150) + active/hold counts.",
         { ...asker, card_last6: z.string().min(4).max(19).optional().describe('exact card to check — REQUIRED for a one-card / photo ask'), query: z.string().min(1).max(60).optional().describe('search last6 / unit / driver name'), status: z.enum(['active', 'inactive', 'hold']).optional().describe('filter the fleet by status') },
@@ -77,13 +87,19 @@ export function buildOctaneServer(chatId: number, carrierId: string) {
       tool('octane_funds', 'Does the account have funds? Driver gets yes/no only (never figures); owner gets balance figures.', asker, ({ telegram_user_id }) => run('/support-bot/funds', telegram_user_id)),
       tool(
         'octane_txn_report',
-        "LONG (~1-3 min): build the asker's transaction report and send it to THEIR PRIVATE Octane bot chat (never this group). Driver: own card, retail. Owner: fleet. ANNOUNCE FIRST via telegram_progress (ETA + 'DM'ga yuboraman'), and make your final reply the delivery confirmation.",
-        { ...asker, range: z.enum(['day', 'week', 'month', 'quarter']).default('week'), from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('custom window start YYYY-MM-DD — use when they name exact dates'), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), format: z.enum(['xlsx', 'pdf', 'csv']).default('xlsx') },
-        ({ telegram_user_id, range, from, to, format }) => run('/support-bot/txn-report', telegram_user_id, { range, format, ...(from ? { from } : {}), ...(to ? { to } : {}) }),
+        "LONG (~1-3 min): build the asker's transaction report and send it to THEIR PRIVATE Octane bot chat (never this group). Driver: own card, retail. Owner: whole fleet, OR one card when they name it — pass card_last6 to scope the report to a single card (e.g. 'shu karta uchun report'). ANNOUNCE FIRST via telegram_progress (ETA + 'DM'ga yuboraman'), and make your final reply the delivery confirmation.",
+        { ...asker, range: z.enum(['day', 'week', 'month', 'quarter']).default('week'), from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('custom window start YYYY-MM-DD — use when they name exact dates'), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), format: z.enum(['xlsx', 'pdf', 'csv']).default('xlsx'), card_last6: z.string().min(4).max(19).optional().describe('OWNER only: scope the report to ONE card by its last digits, instead of the whole fleet') },
+        ({ telegram_user_id, range, from, to, format, card_last6 }) => run('/support-bot/txn-report', telegram_user_id, { range, format, ...(from ? { from } : {}), ...(to ? { to } : {}), ...(card_last6 ? { cardLast6: card_last6 } : {}) }),
+      ),
+      tool(
+        'octane_money_code_quote',
+        "FAST: how much money code the OWNER can draw RIGHT NOW + the fee for an amount. Call this when they ask 'qancha olsam bo'ladi?' and ALWAYS before octane_money_code to confirm the amount fits. Returns `available` (the server-computed limit — NEVER invent one) and, if you pass amount, the EFS fee ($3.50 per $500 + $0.75 per extra use) and whether it fits. Owner-only; amounts may be spoken to the owner.",
+        { ...asker, amount: z.coerce.number().positive().optional().describe('optional — get the exact fee + whether it fits the limit') },
+        ({ telegram_user_id, amount }) => run('/support-bot/money-code/preview', telegram_user_id, amount != null ? { amount } : {}),
       ),
       tool(
         'octane_money_code',
-        'LONG (~1-2 min): issue an EFS money code (OWNER only, confirm amount+unit+reason first). The code goes to their PRIVATE Octane bot chat — never this group. After confirmation, announce via telegram_progress (ETA + delivery promise); final reply = delivery confirmation.',
+        'LONG (~1-2 min): issue an EFS money code (OWNER only, confirm amount+unit+reason first; check octane_money_code_quote so the amount fits the limit). The code goes to their PRIVATE Octane bot chat — never this group. After confirmation, announce via telegram_progress (ETA + delivery promise); final reply = delivery confirmation.',
         { ...asker, amount: z.number().positive(), unit_number: z.string().min(1).max(60), reason: z.string().min(1).max(120) },
         ({ telegram_user_id, amount, unit_number, reason }) => run('/support-bot/money-code/draw', telegram_user_id, { amount, unitNumber: unit_number, reason }),
       ),
@@ -143,6 +159,9 @@ export function buildOctaneServer(chatId: number, carrierId: string) {
         ({ telegram_user_id, request, comment }) => run('/support-bot/service-request', telegram_user_id, { request, comment }),
       ),
       tool('octane_tracking', "Where is the owner's card shipment? Owner-only tracking status.", asker, ({ telegram_user_id }) => run('/support-bot/tracking', telegram_user_id)),
+      tool('octane_last_used', "When was a card last used? Driver: their own card. Owner: the whole fleet, or one card via card_last6. No dollar figures — safe to answer inline.", { ...asker, card_last6: z.string().min(4).max(19).optional().describe('OWNER: one card by last digits; omit for the fleet') }, ({ telegram_user_id, card_last6 }) => run('/support-bot/last-used', telegram_user_id, card_last6 ? { cardLast6: card_last6 } : {})),
+      tool('octane_payment_status', "Owner billing-cycle & payment status — billing cycle, next due date, open/paid invoice counts, open balance. Owner-only. DOLLAR FIGURES go to the owner's PRIVATE chat only; in the group say status + dates, never amounts.", asker, ({ telegram_user_id }) => run('/support-bot/payment', telegram_user_id)),
+      tool('octane_billing_form', "Show the OWNER their billing form + verification status (the same info the mini-app billing-form sheet shows). Owner-only. To SUBMIT/file a billing form for a service charge, use octane_service_request(billing-form) instead.", asker, ({ telegram_user_id }) => run('/support-bot/billing-form', telegram_user_id)),
       tool(
         'telegram_buttons',
         'Send a message WITH TAPPABLE BUTTONS — the preferred UX for confirmations and choices. Use for: write confirms (✅ Ha / ❌ Yo\'q), offering the service menu, picking a report period, choosing between matched cards. Button data comes back to you as a [button tap ...] message. After calling this, output SILENT (the buttons message IS your reply).',

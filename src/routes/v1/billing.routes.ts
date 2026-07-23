@@ -312,6 +312,26 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     // A provided reference is the idempotency key (re-add = no dup); otherwise mint a unique id.
     const ref = b.reference?.trim();
     const sourceRecordId = ref ? `chase:${ref}` : `chase-manual:${randomUUID()}`;
+    // With a reference, a re-add hits the SAME natural key: the upsert would silently UPDATE the
+    // existing row (no new record) yet still look like success. Detect it and report a duplicate
+    // instead, so the UI can tell the user the transaction already exists rather than "added".
+    if (ref) {
+      const existing = await paymentTransactionRepo.findBySourceRecord('chase', sourceRecordId);
+      if (existing) {
+        await auditFromContext(ctx, {
+          action: 'billing.transactions.manual-add',
+          status: 'ok',
+          resourceType: 'payment_transaction',
+          resourceId: sourceRecordId,
+          detail: { source: 'chase', outcome: 'duplicate-skipped', reference: ref },
+        });
+        return {
+          status: 'duplicate',
+          message: `A Chase transaction with reference "${ref}" already exists — not added.`,
+          sourceRecordId,
+        };
+      }
+    }
     const row: NewPaymentTransaction = {
       source: 'chase',
       sourceModule: 'manual',
@@ -334,7 +354,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
       resourceId: sourceRecordId,
       detail: { source: 'chase', amount: b.amount, senderName: b.senderName ?? null },
     });
-    return { status: 'success', sourceRecordId };
+    return { status: 'success', created: true, sourceRecordId };
   });
 
   /** Split a payment across invoices/prepay (sequential CMP; stop-on-first-failure → partial). */

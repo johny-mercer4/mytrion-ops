@@ -179,6 +179,17 @@ export const paymentTransactionRepo = {
     return rows[0];
   },
 
+  /** Look up a row by its natural key (source, source_record_id) — e.g. to detect a duplicate
+   *  manual add before upserting (the upsert would silently update, hiding the duplicate). */
+  async findBySourceRecord(source: string, sourceRecordId: string): Promise<PaymentTransaction | undefined> {
+    const rows = await db
+      .select()
+      .from(paymentTransactions)
+      .where(and(eq(paymentTransactions.source, source), eq(paymentTransactions.sourceRecordId, sourceRecordId)))
+      .limit(1);
+    return rows[0];
+  },
+
   /**
    * Ingest upsert (new data only). Conflict on the natural key updates the source FACT columns +
    * raw + synced_at, but DELIBERATELY leaves the PG-owned mapping/returns columns untouched — a

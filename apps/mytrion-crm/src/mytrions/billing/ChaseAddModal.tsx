@@ -51,7 +51,8 @@ export function ChaseAddModal({ onClose, onAdded }: ChaseAddModalProps) {
   const [reference, setReference] = useState('');
   const [memo, setMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // A duplicate reference is an informational "already recorded" (amber), not a hard error (red).
+  const [notice, setNotice] = useState<{ kind: 'error' | 'duplicate'; message: string } | null>(null);
 
   const amountNum = Number(amount.replace(/[^0-9.\-]/g, ''));
   const amountValid = Number.isFinite(amountNum) && amountNum > 0;
@@ -60,7 +61,7 @@ export function ChaseAddModal({ onClose, onAdded }: ChaseAddModalProps) {
   async function submit() {
     if (!valid || submitting) return;
     setSubmitting(true);
-    setError(null);
+    setNotice(null);
     try {
       const res = await addManualChaseTransaction({
         amount: amountNum,
@@ -70,15 +71,20 @@ export function ChaseAddModal({ onClose, onAdded }: ChaseAddModalProps) {
         reference: reference.trim() || undefined,
         memo: memo.trim() || undefined,
       });
+      if (res.status === 'duplicate') {
+        setNotice({ kind: 'duplicate', message: res.message || 'A transaction with this reference already exists — not added.' });
+        setSubmitting(false);
+        return;
+      }
       if (res.status !== 'success') {
-        setError(res.message || 'Could not add the transaction.');
+        setNotice({ kind: 'error', message: res.message || 'Could not add the transaction.' });
         setSubmitting(false);
         return;
       }
       onAdded(`Chase deposit added: $${amountNum.toFixed(2)}`);
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not add the transaction.');
+      setNotice({ kind: 'error', message: e instanceof Error ? e.message : 'Could not add the transaction.' });
       setSubmitting(false);
     }
   }
@@ -159,9 +165,12 @@ export function ChaseAddModal({ onClose, onAdded }: ChaseAddModalProps) {
             <div className="chase-row-2">
               <Field label="Reference / Txn ID" optional="prevents duplicates">
                 <input
-                  className="chase-input"
+                  className={`chase-input${notice?.kind === 'duplicate' ? ' is-dup' : ''}`}
                   value={reference}
-                  onChange={(e) => setReference(e.target.value)}
+                  onChange={(e) => {
+                    setReference(e.target.value);
+                    if (notice) setNotice(null); // editing the reference clears the duplicate/error notice
+                  }}
                   placeholder="Check # or Chase id"
                 />
               </Field>
@@ -175,9 +184,21 @@ export function ChaseAddModal({ onClose, onAdded }: ChaseAddModalProps) {
               </Field>
             </div>
 
-            {error ? (
-              <div className="text-danger" style={{ fontSize: '0.78rem', fontWeight: 500 }}>
-                {error}
+            {notice ? (
+              <div className={`bm-notice bm-notice--${notice.kind}`} role="alert">
+                {notice.kind === 'duplicate' ? (
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                ) : (
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  </svg>
+                )}
+                <div>
+                  <div className="bm-notice-title">{notice.kind === 'duplicate' ? 'Already recorded' : 'Could not add'}</div>
+                  <div className="bm-notice-msg">{notice.message}</div>
+                </div>
               </div>
             ) : null}
           </div>

@@ -106,3 +106,53 @@ export async function searchDwhClients(opts: {
   );
   return rows.map(toDto);
 }
+
+/**
+ * The responsible SALES AGENT (deal owner) for ONE carrier — "who is my agent?". More robust than
+ * searchDwhClients for a targeted lookup: it matches the carrier_id EXACTLY (not a prefix), keeps
+ * closed deals (a closed deal still has an owner), and falls back to a SECOND DWH authority when the
+ * Zoho deal row has no owner. Two independent arms so one source erroring never blocks the other:
+ *   1. octane.stg_zoho_deals — newest deal snapshot's owner_id → zoho_users.full_name.
+ *   2. octane.dim_company — the carrier's synced deal_full_name / agent (survives an ownerless deal).
+ * Returns null only when NEITHER source names anyone (then the bot says "your Octane agent").
+ */
+export async function findDealOwnerForCarrier(carrierId: string): Promise<string | null> {
+  const cid = String(carrierId).trim();
+  if (!cid) return null;
+  try {
+    const rows = await dwhQuery<{ owner_name: string | null }>(
+      `select zu.full_name as owner_name
+         from (
+           select distinct on (zoho_deal_id) zoho_deal_id, owner_id, valid_from
+             from octane.stg_zoho_deals
+            where carrier_id::text = $1
+            order by zoho_deal_id, valid_from desc nulls last
+         ) latest
+         left join (select distinct id, full_name from zoho_users) zu on latest.owner_id::text = zu.id::text
+        where zu.full_name is not null
+        order by latest.valid_from desc nulls last
+        limit 1`,
+      [cid],
+    );
+    const name = rows[0]?.owner_name?.trim();
+    if (name) return name;
+  } catch {
+    /* stg_zoho_deals unavailable — try dim_company */
+  }
+  try {
+    const rows = await dwhQuery<{ deal_full_name: string | null; agent: string | null }>(
+      `select deal_full_name, agent
+         from octane.dim_company
+        where carrier_id::text = $1
+        order by update_date desc nulls last
+        limit 1`,
+      [cid],
+    );
+    const r = rows[0];
+    const name = (r?.deal_full_name?.trim() || r?.agent?.trim()) || null;
+    if (name) return name;
+  } catch {
+    /* no dim_company match either */
+  }
+  return null;
+}

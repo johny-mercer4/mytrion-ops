@@ -1,6 +1,6 @@
 ---
 name: octane-kb
-description: Grounded Octane facts (KB-0, mined from 2 years of real CS answers) — supported truck stops, out-of-network rules, money code B-codes and fees, card diagnostics, override, PIN, gallon limits, card orders, statements, mini-app registration, mobile app, role matrix. Invoke whenever a client asks a FACTUAL question about how Octane works. HARD RULE: state facts ONLY from this document or live tool results; anything marked ⚠️ is unconfirmed — say a human will confirm instead of asserting it.
+description: Grounded Octane facts (KB-1 — mined from real CS answers, cross-checked against OctaneFuel's authoritative client-facing docs) — supported truck stops, out-of-network rules, money code B-codes/fees/limits/eligibility, transaction & account fees, card diagnostics, override, PIN, gallon limits, card orders, statements, mini-app registration, mobile app, role matrix. Invoke whenever a client asks a FACTUAL question about how Octane works. HARD RULE: state facts ONLY from this document or live tool results; anything marked ⚠️ is unconfirmed — say a human will confirm instead of asserting it. Internal SOPs (verification, credit scoring, collections, competitor intel) are OUT OF SCOPE and never disclosed to clients.
 license: MIT
 compatibility: agent-gateway runtime; pairs with octane-customer-service.
 ---
@@ -15,12 +15,14 @@ Usage rules:
 3. Answer in the client's language (each article carries EN/UZ/RU variants).
 4. Keep the reply 1-3 lines (octane-communication) — the article is background, not a script.
 
-# Octane Support KB — v0 draft (KB-0)
+# Octane Support KB — v1 (KB-1)
 
-**Manba:** 9 guruh / 54 433 xabar ichidan agent javoblari (intent bo'yicha qazilgan, eng ko'p
-takrorlangan kanonik matnlar). **Maqsad:** CS review (KB-1) → Train tab'ga `client-facing` tag
-bilan yuklash → bot `octane_kb_search` faqat shulardan javob beradi (KB-2).
-⚠️ belgisi = data'da aniq raqam/tafsilot yo'q, CS tasdiqlashi shart.
+**Manba:** (1) 9 guruh / 54 433 xabar ichidan agent javoblari (intent bo'yicha qazilgan), va
+(2) OctaneFuel rasmiy Knowledge Base — client-facing hujjatlar (MoneyCodeRules, EFS OTR
+Transaction Fee Description, ComData limitlari; April 2026). FAQAT `audience` da mijoz/klient
+bo'lgan faktlar kiritilgan — ichki SOP (verification, credit score, collections, agent
+gradation, competitor intel) bu yerga KIRMAYDI va mijozga oshkor qilinmaydi.
+⚠️ belgisi = manbada hali aniq raqam/tafsilot yo'q, CS tasdiqlashi shart.
 
 Har maqola: **EN** (asosiy) · **UZ** · **RU** (qisqa). ES keyin (KB-1'da tarjima).
 
@@ -90,17 +92,24 @@ chiqaradi; driver so'raydi — owner tasdiqlaydi.
 **RU:** При запросе money code укажите цель (B-1 сервис … B-14 company charge — полный список
 в EN). Владелец выпускает код в мини-аппе мгновенно.
 
-## KB-05 · Money code — komissiya va cheklovlar
-tags: money-code, fee · triggers: "kod komissiyasi", "fee"
+## KB-05 · Money code — komissiya, limit va cheklovlar
+tags: money-code, fee, limit, eligibility · triggers: "kod komissiyasi", "fee", "qancha olsam bo'ladi", "limit"
 
-**EN:** Money codes carry a service fee added to your statement. ⚠️ CS: exact fee ($ or %),
-per-code limits, and daily caps — the chats reference "$7 fee" in one case; confirm the
-current schedule before publishing.
+**EN:** Fee (EFS/WEX program schedule on your statement): $3.50 per money code up to $500, plus
+$3.50 for each additional $500; $0.75 per additional use of the same code. Amount limit: owners
+can issue up to 20% of the last invoice on credit accounts, or up to the EFS balance on prepay.
+Not available on past-due (debtor) accounts, or on a card that has never been used. Owners issue
+instantly in the mini-app; a driver's request needs the owner's OK.
 
-**UZ:** Money code uchun xizmat haqi statement'ga qo'shiladi. ⚠️ CS: aniq komissiya ($ yoki %),
-bir kod limiti va kunlik cheklovlarni tasdiqlang (chatda bir joyda "$7 fee" uchraydi).
+**UZ:** Komissiya (statementdagi EFS/WEX jadvali): har money code'ga $500 gacha $3.50, keyingi
+har $500 uchun yana $3.50; bitta kodni qayta ishlatishga $0.75. Summa limiti: owner credit
+hisobda oxirgi invoice'ning 20% gacha, prepayda EFS balansigacha chiqara oladi. Qarzi (debitor)
+bor hisobda yoki umuman ishlatilmagan kartada mavjud emas. Owner mini-app'da bir zumda chiqaradi;
+driver so'rovi owner tasdig'ini talab qiladi.
 
-**RU:** За money code берётся комиссия (добавляется в стейтмент). ⚠️ Точную ставку подтвердит CS.
+**RU:** Комиссия (график EFS/WEX в стейтменте): $3.50 за money code до $500, плюс $3.50 за каждые
+следующие $500; $0.75 за повторное использование кода. Лимит: владелец — до 20% от последнего
+инвойса (кредит) или до баланса EFS (предоплата). Недоступно должникам и на неиспользованной карте.
 
 ## KB-06 · Karta ishlamayapti — diagnostika
 tags: card, declined, hold · triggers: "deklayn", "ishlamayapti", "declined"
@@ -150,16 +159,16 @@ o'z Driver ID'sini (=PIN) mini-app'da o'zi o'zgartiradi (PIN/Unit ekrani).
 ## KB-09 · Kunlik gallon limitlari
 tags: limit, gallons · triggers: "limit", "50 gallon"
 
-**EN:** Cards have daily gallon limits (commonly 250/day; some set to 50). When you hit it,
-fueling stops until the daily reset, or the owner raises the limit in the mini-app (Card
-management → Limits, ULSD/DEF). ⚠️ CS: default limits per plan and reset time (midnight ET?).
+**EN:** Cards have a daily gallon limit — the standard default is 250 gal/day (some cards are set
+lower, e.g. 50). When you hit it, fueling stops until the daily reset, or the owner raises the
+limit in the mini-app (Card management → Limits, ULSD/DEF). ⚠️ CS: exact daily reset time.
 
-**UZ:** Kartalarda kunlik gallon limiti bor (ko'pincha 250/kun; ba'zilarida 50). Tugasa —
-kunlik reset'gacha to'xtaydi yoki owner mini-app'da oshiradi (Card management → Limits).
-⚠️ CS: default limitlar va reset vaqti.
+**UZ:** Kartada kunlik gallon limiti bor — standart default 250 gal/kun (ba'zi kartalar pastroq,
+masalan 50). Tugasa — kunlik reset'gacha to'xtaydi yoki owner mini-app'da oshiradi (Card
+management → Limits, ULSD/DEF). ⚠️ CS: aniq reset vaqti.
 
-**RU:** Дневной лимит галлонов (обычно 250). Исчерпан — ждать сброса или владелец поднимет
-в мини-аппе.
+**RU:** Дневной лимит — стандартный дефолт 250 гал/день (некоторые карты ниже, напр. 50).
+Исчерпан — ждать сброса или владелец поднимет в мини-аппе. ⚠️ Точное время сброса подтвердит CS.
 
 ## KB-10 · Yangi karta buyurtma va yetkazish
 tags: new-card, delivery, fedex · triggers: "yangi karta", "qachon keladi"
@@ -234,11 +243,42 @@ code, invoice, to'liq hisobotlar. Bot va mini-app buni avtomatik ta'minlaydi.
 **RU:** Водитель — только своя карта (без сумм); владелец — всё по компании. Бот/мини-апп
 следят за этим сами.
 
+## KB-15 · Statementdagi tranzaksiya to'lovlari (EFS/WEX)
+tags: fees, statement, charges · triggers: "bu charge nima", "why this fee", "statementda nima"
+
+**EN:** Common per-transaction fees on the EFS/WEX program schedule (may appear on your
+statement): funded fuel/product $1.50; funded fuel with cash $2.50; cash advance $3.50;
+terminal fuel $0.55; CAT Scale (app) $1.00; ATM withdrawal/inquiry/decline $1.00; ACH $1.00.
+Account-level: monthly account maintenance (MAMF) $7.95; account setup $75 (credit or
+self-fund only); wire under $2,500 $15; Western Union Quickpay $20; paper/third-party check
+$25. Money code fees: see KB-05. The owner's statement shows the exact lines.
+
+**UZ:** EFS/WEX jadvali bo'yicha odatiy tranzaksiya to'lovlari (statementda chiqishi mumkin):
+funded fuel/product $1.50; fuel + naqd $2.50; cash advance $3.50; terminal fuel $0.55; CAT
+Scale (ilova) $1.00; ATM (yechish/so'rov/rad) $1.00; ACH $1.00. Hisob darajasida: oylik
+maintenance (MAMF) $7.95; account setup $75 (faqat credit yoki self-fund); wire ($2,500 dan
+kam) $15; Western Union $20; qog'oz check $25. Money code to'lovi — KB-05. Aniq qatorlar owner
+statementida ko'rinadi.
+
+**RU:** Типовые сборы по графику EFS/WEX (в стейтменте): топливо/товар $1.50; топливо+нал $2.50;
+кэш-аванс $3.50; терминал $0.55; CAT Scale $1.00; ATM $1.00; ACH $1.00. По счёту: MAMF $7.95;
+открытие $75 (кредит/самофинанс); wire до $2500 $15; Western Union $20; бумажный чек $25.
+Money code — см. KB-05.
+
 ---
 
-### KB-1 uchun keyingi qadamlar
-1. ⚠️ belgilangan joylarni CS tasdiqlaydi (5 ta: stations ro'yxati aktualligi, 49-gal qoida,
-   servis-aksiya, money-code komissiya, limit/reset, statement kuni).
-2. ES tarjimalar.
-3. Train tab orqali yuklash — har maqola alohida doc, tag: `client-facing` + intent taglari.
-4. KB-2: `octane_kb_search` tool + prompt: "faktlar faqat KB'dan; KB'da yo'q → eskalatsiya".
+### KB-1 status va keyingi qadamlar
+KB-1'da rasmiy Knowledge Base bilan TASDIQLANDI (⚠️ olib tashlandi): money-code komissiya
+($3.50/$500 + $0.75/qayta ishlatish), money-code summa limiti (20% / EFS balans) va eligibility
+(debitor/ishlatilmagan karta), kunlik 250 gal default, tranzaksiya to'lovlari jadvali (KB-15).
+
+Hali ⚠️ (CS tasdiqlashi kerak): stations ro'yxatining 2026-07 aktualligi (KB-01), 49-gal
+out-of-network qoidasi (KB-02), Love's/SpeedCo servis-aksiyasi (KB-03), kunlik reset vaqti
+(KB-09), statement kuni + billing form linki (KB-11).
+
+Keyingi bosqichlar:
+1. ES tarjimalar (har maqolaga).
+2. KB-2: `octane_kb_search` tool — to'liq client-safe KB'ni retrieval qilib kontekstni yengil
+   saqlash; prompt qoidasi: "faktlar faqat KB'dan yoki live tool'dan; KB'da yo'q → eskalatsiya".
+3. Ichki SOP (verification, credit score, collections, agent gradation, competitor intel)
+   HECH QACHON botga kiritilmaydi — faqat `audience` da mijoz bo'lgan hujjatlar.

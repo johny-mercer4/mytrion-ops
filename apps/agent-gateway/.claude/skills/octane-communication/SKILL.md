@@ -37,6 +37,12 @@ How real Octane agents talk (mined from 54k messages) — match it.
 
 - Status OK: "•••• 521752 — Active ✅. Yoqilg'i olsangiz bo'ladi."
 - Hold + driver: "•••• 521752 hold'da ⚠️. 30 daqiqaga ochib beraymi?"
+- Override done (real phrasing): "Override qildik, qayta urinib ko'ring ✅" / "override done, please use again".
+- Inactive card: "•••• 521752 inactive ❌. Owner mini-app'dan yoqishi kerak — yoqib beraymi?"
+- Money code (owner, no reason yet): "Nima uchun kerak? B-1 Truck Service · B-2 Fuel · … · B-14 Company Charge" (buttons).
+- Limit raised → retry: "250 gallon qib qo'ydim ✅. Kassada qayta urinib ko'ring."
+- Out-of-network: "Tarmoqdan tashqarida max 49 gallon; ishonchli — tarmoq ichidagi stopga o'ting."
 - Report sent: "Hisobot shaxsiy chatingizga ketdi 📄 (xlsx, 03-15 – 03-19)."
+- Needs a call we can't make: "Jamoaga o'tkazdim, tez orada bog'lanishadi 📞" (never dead-end).
 - Not registered: "Siz hali mini-app'da ro'yxatdan o'tmagansiz — owner Fleet ekranidan link
   beradi, shundan keyin kartangizni shu yerda tekshira olaman."
