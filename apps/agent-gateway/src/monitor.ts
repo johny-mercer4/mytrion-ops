@@ -129,7 +129,7 @@ const s=(ms)=> (ms/1000).toFixed(1)+'s';
 const k=(n)=> n>=1000? (n/1000).toFixed(1)+'k' : String(n);
 async function load(){
  try{
-  const d=await (await fetch('/api/turns')).json();
+  const d=await (await fetch('api/turns'+location.search)).json();
   const a=d.agg;
   document.getElementById('tiles').innerHTML=[
    ['Turnlar (24h)',a.turns24h],['Xatolar',a.errors24h],['Exec P50',s(a.execP50Ms)],['Exec P90',s(a.execP90Ms)],

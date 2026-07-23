@@ -182,6 +182,36 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(201).send({ inserted: body.messages.length });
   });
 
+  /**
+   * Prod monitor passthrough (2026-07-23): the gateway's web monitor listens on localhost:8787
+   * INSIDE the same container, and Render exposes only $PORT — so the dashboard was unreachable
+   * in prod. These two routes proxy it at /v1/support-bot/monitor/?token=… . Auth is the
+   * monitor's own MONITOR_TOKEN (browser-opened dashboard — no Bearer headers), and the proxy
+   * FAILS CLOSED: with MONITOR_TOKEN unset in the environment it answers 404, so the dashboard
+   * can never be exposed unauthenticated by accident.
+   */
+  const monitorUpstream = `http://localhost:${process.env['MONITOR_PORT'] ?? '8787'}`;
+  async function proxyMonitor(
+    path: string,
+    request: { query: unknown },
+    reply: { code: (n: number) => { send: (b: unknown) => unknown }; header: (k: string, v: string) => void },
+  ): Promise<unknown> {
+    if (!process.env['MONITOR_TOKEN']) return reply.code(404).send({ error: 'monitor disabled' });
+    const token = String((request.query as Record<string, unknown>)?.['token'] ?? '');
+    const res = await fetch(`${monitorUpstream}${path}?token=${encodeURIComponent(token)}`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    reply.header('content-type', res.headers.get('content-type') ?? 'text/plain');
+    return reply.code(res.status).send(Buffer.from(await res.arrayBuffer()));
+  }
+  // Without the trailing slash the dashboard's relative api fetch would resolve one level up.
+  app.get('/support-bot/monitor', async (request, reply) => {
+    const q = request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : '';
+    return reply.redirect(`/v1/support-bot/monitor/${q}`);
+  });
+  app.get('/support-bot/monitor/', async (request, reply) => proxyMonitor('/', request, reply));
+  app.get('/support-bot/monitor/api/turns', async (request, reply) => proxyMonitor('/api/turns', request, reply));
+
   app.get('/support-bot/chat-map', guard, async () => {
     const rows = await db.select().from(supportBotChats).where(eq(supportBotChats.enabled, true));
     return { chats: rows.map((r) => ({ chatId: r.chatId, carrierId: r.carrierId })) };
