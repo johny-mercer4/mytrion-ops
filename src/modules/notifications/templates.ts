@@ -46,10 +46,10 @@ const T: Record<string, Record<Lang, string>> = {
     es: '📄 Su estado de cuenta semanal está adjunto.',
   },
   receipt: {
-    en: '🧾 Fueling: {gallons} gal at {location}, {city} {state} — card •••• {last6}.',
-    ru: '🧾 Заправка: {gallons} гал., {location}, {city} {state} — карта •••• {last6}.',
-    uz: "🧾 Yoqilg'i: {gallons} gal, {location}, {city} {state} — •••• {last6}.",
-    es: '🧾 Carga: {gallons} gal en {location}, {city} {state} — tarjeta •••• {last6}.',
+    en: '🧾 Fueling: {gallons} gal at {location}, {city} {state} — card {card} · unit {unit} · {driverName}.',
+    ru: '🧾 Заправка: {gallons} гал., {location}, {city} {state} — карта {card} · юнит {unit} · {driverName}.',
+    uz: "🧾 Yoqilg'i: {gallons} gal, {location}, {city} {state} — karta {card} · unit {unit} · {driverName}.",
+    es: '🧾 Carga: {gallons} gal en {location}, {city} {state} — tarjeta {card} · unidad {unit} · {driverName}.',
   },
   override: {
     en: 'Card •••• {last6} is overridden — you can fuel for about 30 minutes.',

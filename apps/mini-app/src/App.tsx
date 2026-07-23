@@ -3879,8 +3879,13 @@ function notifToInbox(n: InboxNotification, lang: string, t: TFn): InboxItem {
     const gallons = typeof p['gallons'] === 'number' ? p['gallons'] : Number(p['gallons'] ?? 0);
     const location = typeof p['location'] === 'string' ? p['location'] : '';
     const place = [p['city'], p['state']].map((v) => (typeof v === 'string' ? v : '')).filter(Boolean).join(' ');
+    // Full PAN + unit + driver (owner ask): the owner recognizes the truck by unit + driver, not
+    // the last6. Falls back to last6 for older payloads that predate the full-card fields.
+    const fullCard = typeof p['card'] === 'string' && p['card'] ? p['card'] : card;
+    const unit = typeof p['unit'] === 'string' && p['unit'] ? p['unit'] : '—';
+    const driver = typeof p['driverName'] === 'string' && p['driverName'] ? p['driverName'] : '—';
     titleText = t('inbox.ntfReceipt.title');
-    bodyText = t('inbox.ntfReceipt.body', { gallons, location, place, card });
+    bodyText = t('inbox.ntfReceipt.body', { gallons, location, place, card: fullCard, unit, driver });
   } else if (n.type === 'invoice') {
     const number = typeof p['number'] === 'string' ? p['number'] : '';
     const total = typeof p['total'] === 'string' ? p['total'] : '';
