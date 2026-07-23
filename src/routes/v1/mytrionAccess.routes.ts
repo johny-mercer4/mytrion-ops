@@ -195,7 +195,7 @@ export async function mytrionAccessRoutes(app: FastifyInstance): Promise<void> {
       mytrionRoleDefaultsRepo.list(ctx),
       listActiveUsersCached(),
     ]);
-    const byKey = new Map(stored.map((r) => [r.roleKey, { ...r, configured: true as const }]));
+    const byKey = new Map(stored.map((r) => [r.roleKey, { ...r, configured: true }]));
     for (const u of users) {
       const name = u.role?.trim();
       if (!name) continue;
