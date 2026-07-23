@@ -16,7 +16,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
-import { broadcastMapping, fetchTransactions, fetchTransactionStats, searchTransactions } from '@/api/billing';
+import { broadcastMapping, fetchTransactions, fetchTransactionStats, searchTransactions, type TxListFilters } from '@/api/billing';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useLoad } from '../_shared/useLoad';
 import { computeAutoMapFlag, getCarrierMemoryIndex } from './autoMapFlag';
@@ -60,8 +60,8 @@ const CARRIER_OPTIONS = [
   { id: 'invoiceUnmapped', label: 'Invoice Unmapped' },
 ];
 
-function fetchPage(page: number): Promise<BillingTransactionsPage> {
-  return fetchTransactions(page, BM_TX_PAGE_SIZE);
+function fetchPage(page: number, filters: TxListFilters = {}): Promise<BillingTransactionsPage> {
+  return fetchTransactions(page, BM_TX_PAGE_SIZE, filters);
 }
 function pageHasMore(d: PageData): boolean {
   return readBool(d?.has_more) || readBool(d?.hasMore) || readBool(d?.more_records);
@@ -78,7 +78,25 @@ function pageNumber(d: PageData, fallback: number): number {
 export function Transactions() {
   const user = useUserContext();
 
-  const firstPage = useLoad(() => fetchPage(1), []);
+  // Source + mapped filters are applied SERVER-SIDE: a filter must reach records beyond the loaded
+  // page(s) — e.g. older Chase txns that aren't in the newest 200 yet. Changing either refetches
+  // page 1 (useLoad drops stale data + reloads on these deps), so the list is never just a
+  // client-side slice of what happened to be in memory ("No transactions found" while 497 exist).
+  const [source, setSource] = useState<'all' | TxSource>('all');
+  const [carrierFilter, setCarrierFilter] = useState('all');
+  const listFilters = useMemo<TxListFilters>(
+    () => ({
+      ...(source !== 'all' ? { source: source as NonNullable<TxListFilters['source']> } : {}),
+      ...(carrierFilter === 'invoiceMapped'
+        ? { isMapped: true }
+        : carrierFilter === 'invoiceUnmapped'
+          ? { isMapped: false }
+          : {}),
+    }),
+    [source, carrierFilter],
+  );
+
+  const firstPage = useLoad(() => fetchPage(1, listFilters), [source, carrierFilter]);
   const page1 = firstPage.data;
 
   // Whole-dataset aggregates (source counts + mapped/total/$) — so the source filter and summary
@@ -106,8 +124,6 @@ export function Transactions() {
   const [loadingMore, setLoadingMore] = useState(false);
 
   const [search, setSearch] = useState('');
-  const [source, setSource] = useState<'all' | TxSource>('all');
-  const [carrierFilter, setCarrierFilter] = useState('all');
   const [serverExtras, setServerExtras] = useState<TxRow[] | null>(null);
   const [searchFetching, setSearchFetching] = useState(false);
 
@@ -259,7 +275,7 @@ export function Transactions() {
     setLoadingMore(true);
     try {
       const next = curPage + 1;
-      const data = await fetchPage(next);
+      const data = await fetchPage(next, listFilters);
       const recs = extractRecords(data).map(normalizeTx);
       const seen = new Set(rows.map((r) => r.recordId));
       const fresh = recs.filter((r) => !seen.has(r.recordId));
