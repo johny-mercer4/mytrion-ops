@@ -60,9 +60,31 @@ export interface TeamOpenTicket {
   id: string;
   ticketNumber: string | null;
   status: string | null;
+  statusType: string | null;
   priority: string | null;
   subject: string | null;
   owner: string | null;
+}
+
+/** Zoho's standard open (non-closed) ticket statuses. Fetched server-side per status so no open
+ *  ticket is ever crowded out of a newest-N window; a status this org renamed just returns empty. */
+const CS_OPEN_STATUSES = ['Open', 'On Hold', 'Escalated'] as const;
+
+/** All open CS Desk tickets, merged across the open statuses (deduped by id, Open first). */
+async function fetchCsOpenTicketsDetailed(): Promise<Record<string, unknown>[]> {
+  const perStatus = await Promise.all(
+    CS_OPEN_STATUSES.map((status) =>
+      zohoDesk
+        .listTicketsDetailed({ departmentId: DESK_DEPARTMENTS.cs, status, limit: 100 })
+        .catch(() => [] as Record<string, unknown>[]),
+    ),
+  );
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const row of perStatus.flat()) {
+    const id = String(row.id ?? '');
+    if (id && !byId.has(id)) byId.set(id, row);
+  }
+  return [...byId.values()];
 }
 
 /** Data Center billing edit — exact widget allowlist (datacenter-panel.js edit modal). */
@@ -108,7 +130,7 @@ export async function csAnalyticsRoutes(app: FastifyInstance): Promise<void> {
       serverCrm.get('/api/desk/dwh/tickets/analytics', { from: q.from, to: q.to }) as Promise<{
         data?: { agents?: Array<{ open_count?: number }>; byPriority?: unknown };
       }>,
-      zohoDesk.listTicketsDetailed({ departmentId: DESK_DEPARTMENTS.cs, status: 'Open', limit: 100 }),
+      fetchCsOpenTicketsDetailed(),
     ]);
     const agg = aggR.status === 'fulfilled' ? aggR.value : {};
     const agents = agg.data?.agents ?? [];
@@ -122,11 +144,13 @@ export async function csAnalyticsRoutes(app: FastifyInstance): Promise<void> {
           id: String(t.id ?? ''),
           ticketNumber: sstr(t.ticketNumber),
           status: sstr(t.status),
+          statusType: sstr(t.statusType),
           priority: sstr(t.priority),
           subject: sstr(t.subject),
           owner: ticketOwnerName(t.assignee),
         }))
-        .filter((t) => t.id);
+        .filter((t) => t.id)
+        .slice(0, 100);
     }
     // Prefer the DWH total; fall back to the live list length if the analytics proxy was down.
     const openTickets = summedOpen > 0 ? summedOpen : tickets.length;

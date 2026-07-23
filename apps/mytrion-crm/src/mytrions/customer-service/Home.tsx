@@ -23,6 +23,16 @@ const DOT_COLORS: Record<ActivityRow['dot'], string> = {
   purple: 'var(--cs-purple)',
 };
 
+/** Status pill color — Escalated/Overdue red, On Hold amber, Open green, Closed muted, else sky. */
+function ticketStatusColor(status: string | null, statusType: string | null): string {
+  if (statusType && statusType.toLowerCase() === 'closed') return 'var(--text-muted)';
+  const s = (status ?? '').toLowerCase();
+  if (s.includes('escalat') || s.includes('overdue')) return 'var(--cs-danger)';
+  if (s.includes('hold')) return 'var(--cs-warning)';
+  if (s.includes('open')) return 'var(--cs-success)';
+  return 'var(--cs-sky)';
+}
+
 const TODAY_LABEL = new Date().toLocaleDateString('en-US', {
   weekday: 'long',
   month: 'long',
@@ -312,7 +322,15 @@ export function Home({ onNavigate }: HomeProps) {
                       <span className="cs-home-ticket-subject" title={t.subject ?? undefined}>
                         {t.subject ?? '—'}
                       </span>
-                      <span className="cs-home-ticket-status">{t.status ?? '—'}</span>
+                      <span
+                        className="cs-home-ticket-status"
+                        style={{
+                          background: `color-mix(in srgb, ${ticketStatusColor(t.status, t.statusType)} 16%, transparent)`,
+                          color: ticketStatusColor(t.status, t.statusType),
+                        }}
+                      >
+                        {t.status ?? '—'}
+                      </span>
                       <span className="cs-home-ticket-owner" title={t.owner ?? 'Unassigned'}>
                         {t.owner ?? 'Unassigned'}
                       </span>

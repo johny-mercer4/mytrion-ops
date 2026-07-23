@@ -226,6 +226,7 @@ export interface CsOpenTicket {
   id: string;
   ticketNumber: string | null;
   status: string | null;
+  statusType: string | null;
   priority: string | null;
   subject: string | null;
   owner: string | null;
