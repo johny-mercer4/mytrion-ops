@@ -60,6 +60,7 @@ describe('CarrierInvitations', () => {
       'Company',
       'Type',
       'Carrier',
+      'Agent',
       'Status',
       'Expires',
       'Actions',
@@ -158,7 +159,9 @@ describe('CarrierInvitations', () => {
 
     expect(within(rowFor('Redeemed Co')).queryByText(/in \d|ago/)).not.toBeInTheDocument();
     expect(within(rowFor('Cancelled Co')).queryByText(/in \d|ago/)).not.toBeInTheDocument();
-    expect(within(rowFor('Redeemed Co')).getByText('—')).toBeInTheDocument();
+    // Two em-dashes can share the row now (the Agent column also shows — when unassigned), so
+    // assert at least one — the dropped countdown — rather than a unique match.
+    expect(within(rowFor('Redeemed Co')).getAllByText('—').length).toBeGreaterThan(0);
   });
 
   it('distinguishes an empty result set from an empty table', async () => {
