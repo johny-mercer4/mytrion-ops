@@ -221,14 +221,27 @@ export function getCallsAnalytics(w: AnalyticsWindow, ownerEmail?: string): Prom
   }) as Promise<CallsAnalytics>;
 }
 
-export function getTeamOpenTickets(
-  from: string,
-  to: string,
-): Promise<{ openTickets: number; byPriority: Array<{ priority?: string; count?: number }> }> {
+/** One open Desk ticket for the Home team panel — number, status, and assigned owner. */
+export interface CsOpenTicket {
+  id: string;
+  ticketNumber: string | null;
+  status: string | null;
+  priority: string | null;
+  subject: string | null;
+  owner: string | null;
+}
+
+export interface TeamOpenTickets {
+  openTickets: number;
+  byPriority: Array<{ priority?: string; count?: number }>;
+  tickets: CsOpenTicket[];
+}
+
+export function getTeamOpenTickets(from: string, to: string): Promise<TeamOpenTickets> {
   return request('GET', '/cs/analytics/tickets/team-open', {
     headers: CS_HEADERS,
     query: { from, to },
-  }) as Promise<{ openTickets: number; byPriority: Array<{ priority?: string; count?: number }> }>;
+  }) as Promise<TeamOpenTickets>;
 }
 
 export interface DeskRosterAgent {

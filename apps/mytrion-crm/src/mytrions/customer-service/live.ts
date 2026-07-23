@@ -10,6 +10,7 @@ import {
   getCsContext,
   getDeskRoster,
   getTeamOpenTickets,
+  type CsOpenTicket,
   getTicketsAnalytics,
   type AnalyticsWindow,
   type CsContext,
@@ -176,6 +177,8 @@ export interface HomeData {
   my: { pendingApps: string; activeClients: string; ticketsMonth: string; ticketsLastMonth: string };
   activity: ActivityRow[];
   byPriority: PriorityRow[];
+  /** Live per-ticket open list (number / status / owner) for the team panel. */
+  openTicketRows: CsOpenTicket[];
 }
 
 const stat = (v: unknown): string => (v === undefined || v === null || v === '' ? '—' : String(v));
@@ -251,6 +254,7 @@ export async function loadHome(): Promise<HomeData> {
     },
     activity,
     byPriority,
+    openTicketRows: teamOpen?.tickets ?? [],
   };
 }
 

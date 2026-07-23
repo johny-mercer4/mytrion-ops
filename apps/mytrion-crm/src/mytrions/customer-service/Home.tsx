@@ -70,6 +70,7 @@ export function Home({ onNavigate }: HomeProps) {
   const loading = home.loading;
   const activity: ActivityRow[] = home.data?.activity ?? [];
   const priorities: PriorityRow[] = home.data?.byPriority ?? [];
+  const openTicketRows = home.data?.openTicketRows ?? [];
   const totalOpen = priorities.reduce((sum, p) => sum + p.count, 0);
   const maxPriority = Math.max(1, ...priorities.map((p) => p.count));
 
@@ -279,27 +280,47 @@ export function Home({ onNavigate }: HomeProps) {
           </div>
           {loading ? (
             [1, 2, 3].map((i) => <SkeletonActivityItem key={i} />)
-          ) : priorities.length === 0 ? (
-            <div className="cs-home-empty">No open-ticket breakdown available</div>
+          ) : priorities.length === 0 && openTicketRows.length === 0 ? (
+            <div className="cs-home-empty">No open tickets</div>
           ) : (
-            <div className="cs-home-priority-list">
-              {priorities.map((p) => (
-                <div key={p.label} className="cs-home-priority-row">
-                  <div className="cs-home-priority-labels">
-                    <span>{p.label}</span>
-                    <span className="cs-home-mono">{p.count}</span>
-                  </div>
-                  <div className="cs-home-priority-track">
-                    <div
-                      style={{
-                        width: `${Math.round((p.count / maxPriority) * 100)}%`,
-                        background: PRIORITY_COLORS[p.tone],
-                      }}
-                    />
-                  </div>
+            <>
+              {priorities.length > 0 ? (
+                <div className="cs-home-priority-list">
+                  {priorities.map((p) => (
+                    <div key={p.label} className="cs-home-priority-row">
+                      <div className="cs-home-priority-labels">
+                        <span>{p.label}</span>
+                        <span className="cs-home-mono">{p.count}</span>
+                      </div>
+                      <div className="cs-home-priority-track">
+                        <div
+                          style={{
+                            width: `${Math.round((p.count / maxPriority) * 100)}%`,
+                            background: PRIORITY_COLORS[p.tone],
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              ) : null}
+              {openTicketRows.length > 0 ? (
+                <div className="cs-home-ticket-list">
+                  {openTicketRows.map((t) => (
+                    <div key={t.id} className="cs-home-ticket-row">
+                      <span className="cs-home-ticket-num">#{t.ticketNumber ?? t.id}</span>
+                      <span className="cs-home-ticket-subject" title={t.subject ?? undefined}>
+                        {t.subject ?? '—'}
+                      </span>
+                      <span className="cs-home-ticket-status">{t.status ?? '—'}</span>
+                      <span className="cs-home-ticket-owner" title={t.owner ?? 'Unassigned'}>
+                        {t.owner ?? 'Unassigned'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </>
           )}
         </div>
 
