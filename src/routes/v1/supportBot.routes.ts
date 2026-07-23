@@ -334,6 +334,9 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
       role,
       name: registration.driverName ?? null,
       companyName: registration.companyName ?? null,
+      // The carrier's deal owner / sales agent (stamped at invite). The bot hands off to this
+      // person BY NAME when it can't resolve an ask — never to the client themselves.
+      agentName: registration.agentName ?? null,
     };
   });
 

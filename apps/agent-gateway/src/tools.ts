@@ -67,7 +67,7 @@ export function buildOctaneServer(chatId: number, carrierId: string) {
           return { content: [{ type: 'text' as const, text: 'progress line sent — continue the task' }] };
         },
       ),
-      tool('octane_whoami', 'Is the sender a registered Octane mini-app user of this company, and their role (owner/driver)? Call FIRST for any service ask.', asker, ({ telegram_user_id }) => run('/support-bot/whoami', telegram_user_id)),
+      tool('octane_whoami', "Is the sender a registered Octane mini-app user of this company, their role (owner/driver), and the carrier's sales agent (agentName) to hand off to when you can't resolve an ask? Call FIRST for any service ask.", asker, ({ telegram_user_id }) => run('/support-bot/whoami', telegram_user_id)),
       tool('octane_card_status', "Card status for the asker: driver → their own card WITH live gallon limits (answers 'how many gallons left'); owner → fleet statuses.", asker, ({ telegram_user_id }) => run('/support-bot/card-status', telegram_user_id)),
       tool('octane_funds', 'Does the account have funds? Driver gets yes/no only (never figures); owner gets balance figures.', asker, ({ telegram_user_id }) => run('/support-bot/funds', telegram_user_id)),
       tool(
