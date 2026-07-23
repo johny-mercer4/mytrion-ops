@@ -147,6 +147,8 @@ export interface FleetCard {
   efsStatus?: string | null;
   unitNumber?: string | null;
   efsDriverId?: string | null;
+  /** Driver NAME the card is provisioned to in EFS (fallback when no mini-app registration). */
+  efsDriverName?: string | null;
 }
 
 export interface FleetResponse {

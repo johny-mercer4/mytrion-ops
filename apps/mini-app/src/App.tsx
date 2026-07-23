@@ -406,13 +406,14 @@ function CardPicker({
   const subLabel = (c: FleetCard): string => {
     const bits: string[] = [];
     if (c.unitNumber) bits.push(`Unit ${c.unitNumber}`);
-    if (c.driverName) bits.push(c.driverName);
+    const drv = c.driverName ?? c.efsDriverName ?? null;
+    if (drv) bits.push(drv);
     return bits.join(' · ');
   };
   const needle = q.trim().toLowerCase();
   const digits = needle.replace(/\D/g, '');
   const filtered = !needle ? cards : cards.filter((c) => {
-    const hay = `${c.cardNumber ?? ''} ${c.unitNumber ?? ''} ${c.driverName ?? ''} ${c.efsDriverId ?? ''}`.toLowerCase();
+    const hay = `${c.cardNumber ?? ''} ${c.unitNumber ?? ''} ${c.driverName ?? ''} ${c.efsDriverName ?? ''} ${c.efsDriverId ?? ''}`.toLowerCase();
     return hay.includes(needle) || (digits.length > 0 && (c.cardNumber ?? '').replace(/\D/g, '').includes(digits));
   });
   const rowStyle = { width: '100%', display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-start', gap: 1, padding: '9px 12px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' as const, fontFamily: "'Geist'" };
@@ -1622,7 +1623,7 @@ function FleetView({
     if (filter !== 'all' && r.status !== filter) return false;
     if (q) {
       // Feedback 2026-07-22: owners search by unit number and driver ID too, not just card/driver.
-      const hay = `${tail6(r.cardNumber, r.cardId)} ${(r.driverName ?? 'unassigned')} ${r.unitNumber ?? ''} ${r.efsDriverId ?? ''}`.toLowerCase();
+      const hay = `${tail6(r.cardNumber, r.cardId)} ${(r.driverName ?? r.efsDriverName ?? 'unassigned')} ${r.unitNumber ?? ''} ${r.efsDriverId ?? ''}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -1753,7 +1754,12 @@ function FleetView({
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span className="selectable" style={{ fontWeight: 700, fontSize: 15, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em' }}>•••• {tail6(c.cardNumber, c.cardId)}</span>
                     </div>
-                    <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.driverName ?? t('card.unassigned')}</div>
+                    {/* Owner identifies a card by unit + driver, not the masked number (owner ask
+                        2026-07-23). Registration driver name wins; the EFS-provisioned name fills
+                        in for cards with no mini-app registration; unit number leads when present. */}
+                    <div style={{ fontSize: 13, color: 'var(--muted-fg)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {[c.unitNumber ? `Unit ${c.unitNumber}` : null, c.driverName ?? c.efsDriverName ?? t('card.unassigned')].filter(Boolean).join(' · ')}
+                    </div>
                   </div>
                   <span style={{ fontSize: 12, fontWeight: 700, color: c.statusColor, background: 'var(--secondary)', padding: '5px 10px', borderRadius: 9, flex: 'none' }}>{c.statusWord}</span>
                   <Chevron style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform .2s ease' }} />
@@ -3408,7 +3414,7 @@ function ActionSheet({
                         </span>
                         <span style={{ flex: 1, minWidth: 0 }}>
                           <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>{c.cardNumber ? groupCardNumber(c.cardNumber) : `•••• ${tail6(c.cardNumber, null)}`}</span>
-                          <span style={{ display: 'block', fontSize: 12, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.driverName ?? t('co.noDriver')}</span>
+                          <span style={{ display: 'block', fontSize: 12, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{[c.unitNumber ? `Unit ${c.unitNumber}` : null, c.driverName ?? c.efsDriverName ?? t('co.noDriver')].filter(Boolean).join(' · ')}</span>
                         </span>
                         <ChevronRight size={15} strokeWidth={2} color="var(--muted-fg)" aria-hidden />
                       </button>
