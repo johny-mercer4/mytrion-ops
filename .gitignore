@@ -36,7 +36,9 @@ tmp/
 # Generated metadata catalogs (keep the dir, ignore contents)
 metadataScripts/output/*
 !metadataScripts/output/.gitkeep
-eval-reports/
+eval-reports/*
+!eval-reports/.gitkeep
+!eval-reports/baseline-*.json
 .playwright-mcp/
 /*.png
 apps/design_handoff_octane_mini_app/

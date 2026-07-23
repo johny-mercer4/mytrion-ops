@@ -1,23 +1,26 @@
 import type { FastifyInstance, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
 import { RBACError } from '../../lib/errors.js';
-import { MYTRION_IDS, type MytrionId } from '../../lib/mytrions.js';
+import { MYTRION_IDS, roleKeyOf, toMytrionAccessModes, type MytrionId } from '../../lib/mytrions.js';
 import { listActiveUsersCached } from '../../modules/auth/actAsDirectory.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { mytrionAccessService } from '../../modules/access/mytrionAccessService.js';
 import { mytrionProfileDefaultsRepo } from '../../repos/mytrionProfileDefaultsRepo.js';
+import { mytrionRoleDefaultsRepo } from '../../repos/mytrionRoleDefaultsRepo.js';
 import { workerMytrionAccessRepo } from '../../repos/workerMytrionAccessRepo.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireContext } from './helpers.js';
 
 const mytrionIdSchema = z.enum([...MYTRION_IDS] as [MytrionId, ...MytrionId[]]);
+const mytrionAccessModesSchema = z.record(z.string(), z.enum(['read', 'full'])).optional();
 
-/** Per-user override patch. `allowedMytrions: null` = inherit the profile default; array = replace. */
+/** Per-user override patch. `allowedMytrions: null` = inherit profile+role defaults; array = replace. */
 const userAccessBody = z.object({
   allowedMytrions: z.array(mytrionIdSchema).max(20).nullable().optional(),
   deniedMytrions: z.array(mytrionIdSchema).max(20).optional(),
   homeMytrion: mytrionIdSchema.nullable().optional(),
   allDepartmentAccess: z.boolean().nullable().optional(),
+  mytrionAccessModes: mytrionAccessModesSchema,
   /** Zoho user ids this worker may "View as" (targeted impersonation grant). */
   viewAsUserIds: z.array(z.string().min(1).max(120)).max(50).optional(),
   active: z.boolean().optional(),
@@ -32,6 +35,15 @@ const profileDefaultBody = z.object({
   allowedMytrions: z.array(mytrionIdSchema).max(20),
   homeMytrion: mytrionIdSchema.nullable().optional(),
   allDepartmentAccess: z.boolean().optional(),
+  active: z.boolean().optional(),
+});
+
+const roleDefaultBody = z.object({
+  roleName: z.string().min(1).max(200),
+  allowedMytrions: z.array(mytrionIdSchema).max(20),
+  homeMytrion: mytrionIdSchema.nullable().optional(),
+  allDepartmentAccess: z.boolean().optional(),
+  mytrionAccessModes: mytrionAccessModesSchema,
   active: z.boolean().optional(),
 });
 
@@ -115,6 +127,7 @@ export async function mytrionAccessRoutes(app: FastifyInstance): Promise<void> {
         homeMytrion: normalizedHome(body.homeMytrion, body.allowedMytrions),
         allDepartmentAccess: body.allDepartmentAccess === undefined ? null : body.allDepartmentAccess,
         viewAsUserIds: body.viewAsUserIds ?? [],
+        mytrionAccessModes: toMytrionAccessModes(body.mytrionAccessModes ?? {}),
         active: body.active ?? true,
       });
       mytrionAccessService.invalidateUser(ctx.tenantId, zohoUserId);
@@ -128,6 +141,7 @@ export async function mytrionAccessRoutes(app: FastifyInstance): Promise<void> {
           deniedMytrions: saved.deniedMytrions,
           homeMytrion: saved.homeMytrion,
           allDepartmentAccess: saved.allDepartmentAccess,
+          mytrionAccessModes: saved.mytrionAccessModes,
         },
       });
       return { access: saved };
@@ -167,6 +181,79 @@ export async function mytrionAccessRoutes(app: FastifyInstance): Promise<void> {
         },
       });
       return { profile: saved };
+    },
+  );
+
+  /**
+   * Role defaults — stored rows plus every distinct Zoho role seen on the roster (so admins can
+   * configure a role before/without a prior save). Unsaved roster roles return empty inactive
+   * stubs (`configured: false`); they do not affect resolution until saved.
+   */
+  app.get('/admin/mytrion-access/roles', guard, async (request) => {
+    const ctx = requireAdmin(request);
+    const [stored, users] = await Promise.all([
+      mytrionRoleDefaultsRepo.list(ctx),
+      listActiveUsersCached(),
+    ]);
+    const byKey = new Map(stored.map((r) => [r.roleKey, { ...r, configured: true }]));
+    for (const u of users) {
+      const name = u.role?.trim();
+      if (!name) continue;
+      const key = roleKeyOf(name);
+      if (byKey.has(key)) continue;
+      byKey.set(key, {
+        id: '',
+        roleName: name,
+        roleKey: key,
+        allowedMytrions: [],
+        homeMytrion: null,
+        allDepartmentAccess: false,
+        mytrionAccessModes: {},
+        active: false,
+        createdAt: '',
+        updatedAt: '',
+        configured: false,
+      });
+    }
+    const roles = [...byKey.values()].sort((a, b) =>
+      a.roleName.localeCompare(b.roleName, undefined, { sensitivity: 'base' }),
+    );
+    return { roles };
+  });
+
+  app.post<{ Params: { roleKey: string } }>(
+    '/admin/mytrion-access/roles/:roleKey',
+    guard,
+    async (request) => {
+      const ctx = requireAdmin(request);
+      const body = roleDefaultBody.parse(request.body);
+      const allowed =
+        body.allDepartmentAccess === true ? [...MYTRION_IDS] : body.allowedMytrions;
+      const saved = await mytrionRoleDefaultsRepo.upsert(ctx, {
+        roleName: body.roleName,
+        allowedMytrions: allowed,
+        homeMytrion: normalizedHome(
+          body.homeMytrion,
+          body.allDepartmentAccess === true ? null : body.allowedMytrions,
+        ),
+        allDepartmentAccess: body.allDepartmentAccess ?? false,
+        mytrionAccessModes: toMytrionAccessModes(body.mytrionAccessModes ?? {}),
+        active: body.active ?? true,
+      });
+      mytrionAccessService.invalidateAll();
+      await auditFromContext(ctx, {
+        action: 'admin.mytrion_access.role.update',
+        status: 'ok',
+        resourceType: 'mytrion_role_defaults',
+        resourceId: saved.roleKey,
+        detail: {
+          allowedMytrions: saved.allowedMytrions,
+          homeMytrion: saved.homeMytrion,
+          allDepartmentAccess: saved.allDepartmentAccess,
+          mytrionAccessModes: saved.mytrionAccessModes,
+        },
+      });
+      return { role: saved };
     },
   );
 }

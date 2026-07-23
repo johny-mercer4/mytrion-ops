@@ -11,7 +11,7 @@ const keys = (ctx: ReturnType<typeof dept>) =>
   agentRegistry.listForContext(ctx).map((m) => m.key).sort();
 
 describe('agent manifests', () => {
-  it('registers all 10 agents exactly once', () => {
+  it('registers all agents exactly once', () => {
     expect(ALL_AGENT_MANIFESTS.map((m) => m.key).sort()).toEqual([...AGENT_KEYS].sort());
     expect(agentRegistry.all()).toHaveLength(AGENT_KEYS.length);
   });
@@ -23,8 +23,8 @@ describe('agent manifests', () => {
 });
 
 describe('agent selection RBAC (checkAccess / listForContext)', () => {
-  it('sales caller may select only agents granting sales (sales + marketing)', () => {
-    expect(keys(dept(['sales']))).toEqual(['marketing', 'sales']);
+  it('sales caller may select only agents granting sales (data-center + sales + marketing)', () => {
+    expect(keys(dept(['sales']))).toEqual(['data-center', 'marketing', 'sales']);
   });
 
   it('billing caller may select only the billing agent', () => {

@@ -9,6 +9,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../src/repos/mytrionProfileDefaultsRepo.js', () => ({
   mytrionProfileDefaultsRepo: { findByKey: vi.fn(), list: vi.fn(), upsert: vi.fn() },
 }));
+vi.mock('../../src/repos/mytrionRoleDefaultsRepo.js', () => ({
+  mytrionRoleDefaultsRepo: { findByKey: vi.fn(), list: vi.fn(), upsert: vi.fn() },
+}));
 vi.mock('../../src/repos/workerMytrionAccessRepo.js', () => ({
   workerMytrionAccessRepo: { findByZohoUserId: vi.fn(), list: vi.fn(), upsert: vi.fn() },
 }));
@@ -16,9 +19,11 @@ vi.mock('../../src/repos/workerMytrionAccessRepo.js', () => ({
 import { mytrionAccessService } from '../../src/modules/access/mytrionAccessService.js';
 import { MYTRION_IDS } from '../../src/lib/mytrions.js';
 import { mytrionProfileDefaultsRepo } from '../../src/repos/mytrionProfileDefaultsRepo.js';
+import { mytrionRoleDefaultsRepo } from '../../src/repos/mytrionRoleDefaultsRepo.js';
 import { workerMytrionAccessRepo } from '../../src/repos/workerMytrionAccessRepo.js';
 
 const pd = vi.mocked(mytrionProfileDefaultsRepo);
+const rd = vi.mocked(mytrionRoleDefaultsRepo);
 const wa = vi.mocked(workerMytrionAccessRepo);
 
 let seq = 0;
@@ -31,6 +36,7 @@ function principal(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   mytrionAccessService.invalidateAll();
   pd.findByKey.mockReset().mockResolvedValue(undefined);
+  rd.findByKey.mockReset().mockResolvedValue(undefined);
   wa.findByZohoUserId.mockReset().mockResolvedValue(undefined);
 });
 
@@ -42,6 +48,21 @@ function profileDefault(over: Record<string, unknown> = {}) {
     allowedMytrions: [],
     homeMytrion: null,
     allDepartmentAccess: false,
+    active: true,
+    createdAt: '',
+    updatedAt: '',
+    ...over,
+  };
+}
+function roleDefault(over: Record<string, unknown> = {}) {
+  return {
+    id: 'rd_x',
+    roleName: 'X',
+    roleKey: 'x',
+    allowedMytrions: [],
+    homeMytrion: null,
+    allDepartmentAccess: false,
+    mytrionAccessModes: {},
     active: true,
     createdAt: '',
     updatedAt: '',
@@ -60,6 +81,7 @@ function override(over: Record<string, unknown> = {}) {
     homeMytrion: null,
     allDepartmentAccess: null,
     viewAsUserIds: [],
+    mytrionAccessModes: {},
     active: true,
     createdAt: '',
     updatedAt: '',
@@ -82,6 +104,113 @@ describe('resolveWorkerAccess — profile defaults', () => {
     expect(r.accessibleMytrions).toEqual([]);
     expect(r.allDepartmentAccess).toBe(false);
     expect(r.homeMytrion).toBeNull();
+  });
+});
+
+describe('resolveWorkerAccess — role defaults', () => {
+  it('role-only grant: particular Mytrion = full access + auto-route home', async () => {
+    rd.findByKey.mockResolvedValue(
+      roleDefault({
+        roleName: 'Collections Agent',
+        roleKey: 'collections agent',
+        allowedMytrions: ['billing'],
+        homeMytrion: 'billing',
+      }),
+    );
+    const r = await mytrionAccessService.resolveWorkerAccess(
+      principal({ profileName: 'Mystery', zohoRole: 'Collections Agent' }),
+    );
+    expect(r.accessibleMytrions).toEqual(['billing']);
+    expect(r.homeMytrion).toBe('billing');
+    expect(r.departments).toEqual(['billing']);
+    expect(r.allDepartmentAccess).toBe(false);
+  });
+
+  it('role UNIONs onto profile defaults (additive grants)', async () => {
+    pd.findByKey.mockResolvedValue(profileDefault({ allowedMytrions: ['sales'], homeMytrion: 'sales' }));
+    rd.findByKey.mockResolvedValue(
+      roleDefault({ allowedMytrions: ['billing'], homeMytrion: 'billing' }),
+    );
+    const r = await mytrionAccessService.resolveWorkerAccess(
+      principal({ profileName: 'Sales Agent', zohoRole: 'Collections Agent' }),
+    );
+    expect(r.accessibleMytrions.sort()).toEqual(['billing', 'sales']);
+    expect(r.homeMytrion).toBe('billing'); // role home overlays profile home
+  });
+
+  it('per-user override still REPLACES the combined profile+role set', async () => {
+    pd.findByKey.mockResolvedValue(profileDefault({ allowedMytrions: ['sales'] }));
+    rd.findByKey.mockResolvedValue(roleDefault({ allowedMytrions: ['billing'] }));
+    wa.findByZohoUserId.mockResolvedValue(override({ allowedMytrions: ['finance'], homeMytrion: 'finance' }));
+    const r = await mytrionAccessService.resolveWorkerAccess(
+      principal({ profileName: 'Sales Agent', zohoRole: 'Collections Agent' }),
+    );
+    expect(r.accessibleMytrions).toEqual(['finance']);
+    expect(r.homeMytrion).toBe('finance');
+  });
+
+  it('role allDepartmentAccess grants Full Mytrions', async () => {
+    rd.findByKey.mockResolvedValue(roleDefault({ allDepartmentAccess: true }));
+    const r = await mytrionAccessService.resolveWorkerAccess(
+      principal({ profileName: 'Standard', zohoRole: 'Team Lead' }),
+    );
+    expect(r.allDepartmentAccess).toBe(true);
+    expect(r.accessibleMytrions.length).toBe(MYTRION_IDS.length);
+  });
+});
+
+describe('resolveWorkerAccess — mytrion access modes (read|full)', () => {
+  it('role can downgrade profile-granted Billing to read-only', async () => {
+    pd.findByKey.mockResolvedValue(
+      profileDefault({ allowedMytrions: ['sales', 'billing'], homeMytrion: 'sales' }),
+    );
+    rd.findByKey.mockResolvedValue(
+      roleDefault({
+        allowedMytrions: [],
+        mytrionAccessModes: { billing: 'read' },
+      }),
+    );
+    const r = await mytrionAccessService.resolveWorkerAccess(
+      principal({ profileName: 'Standard Plus', zohoRole: 'Collections Agent' }),
+    );
+    expect(r.accessibleMytrions.sort()).toEqual(['billing', 'sales']);
+    expect(r.mytrionAccessModes.billing).toBe('read');
+    expect(r.mytrionAccessModes.sales).toBe('full');
+  });
+
+  it('user override mode wins over role mode', async () => {
+    rd.findByKey.mockResolvedValue(
+      roleDefault({
+        allowedMytrions: ['billing'],
+        homeMytrion: 'billing',
+        mytrionAccessModes: { billing: 'read' },
+      }),
+    );
+    wa.findByZohoUserId.mockResolvedValue(
+      override({
+        allowedMytrions: ['billing'],
+        homeMytrion: 'billing',
+        mytrionAccessModes: { billing: 'full' },
+      }),
+    );
+    const r = await mytrionAccessService.resolveWorkerAccess(
+      principal({ profileName: 'Mystery', zohoRole: 'Collections Agent' }),
+    );
+    expect(r.mytrionAccessModes.billing).toBe('full');
+  });
+
+  it('allDepartmentAccess forces every accessible Mytrion to full', async () => {
+    rd.findByKey.mockResolvedValue(
+      roleDefault({
+        allDepartmentAccess: true,
+        mytrionAccessModes: { billing: 'read' },
+      }),
+    );
+    const r = await mytrionAccessService.resolveWorkerAccess(
+      principal({ profileName: 'Standard', zohoRole: 'Team Lead' }),
+    );
+    expect(r.allDepartmentAccess).toBe(true);
+    expect(r.mytrionAccessModes.billing).toBe('full');
   });
 });
 

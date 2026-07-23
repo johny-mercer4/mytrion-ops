@@ -19,6 +19,8 @@ export class RunTracker extends BaseCallbackHandler {
   override name = 'octane-run-tracker';
   promptTokens = 0;
   completionTokens = 0;
+  /** Prompt tokens served from provider KV / prompt cache (when reported). */
+  cachedPromptTokens = 0;
   readonly agentPath: string[] = [];
 
   constructor(
@@ -28,24 +30,54 @@ export class RunTracker extends BaseCallbackHandler {
     super();
   }
 
+  /** Fraction of prompt tokens that were cache hits (0–1), or null when unknown. */
+  cacheHitRate(): number | null {
+    if (this.promptTokens <= 0 || this.cachedPromptTokens <= 0) {
+      return this.promptTokens > 0 && this.cachedPromptTokens === 0 ? 0 : null;
+    }
+    return Math.min(1, this.cachedPromptTokens / this.promptTokens);
+  }
+
   override async handleLLMEnd(output: LLMResult): Promise<void> {
     let prompt = 0;
     let completion = 0;
+    let cached = 0;
     const usage = output.llmOutput?.['tokenUsage'] as
-      | { promptTokens?: number; completionTokens?: number }
+      | {
+          promptTokens?: number;
+          completionTokens?: number;
+          prompt_tokens?: number;
+          completion_tokens?: number;
+          promptTokensDetails?: { cachedTokens?: number };
+          input_token_details?: { cache_read?: number };
+        }
       | undefined;
-    if (usage && (usage.promptTokens || usage.completionTokens)) {
-      prompt = usage.promptTokens ?? 0;
-      completion = usage.completionTokens ?? 0;
+    if (usage && (usage.promptTokens || usage.completionTokens || usage.prompt_tokens)) {
+      prompt = usage.promptTokens ?? usage.prompt_tokens ?? 0;
+      completion = usage.completionTokens ?? usage.completion_tokens ?? 0;
+      cached =
+        usage.promptTokensDetails?.cachedTokens ??
+        usage.input_token_details?.cache_read ??
+        0;
     } else {
       // Streaming path: usage arrives on the message's usage_metadata instead of llmOutput.
       for (const generations of output.generations) {
         for (const gen of generations) {
-          const meta = (gen as { message?: { usage_metadata?: { input_tokens?: number; output_tokens?: number } } })
-            .message?.usage_metadata;
+          const meta = (
+            gen as {
+              message?: {
+                usage_metadata?: {
+                  input_tokens?: number;
+                  output_tokens?: number;
+                  input_token_details?: { cache_read?: number };
+                };
+              };
+            }
+          ).message?.usage_metadata;
           if (meta) {
             prompt += meta.input_tokens ?? 0;
             completion += meta.output_tokens ?? 0;
+            cached += meta.input_token_details?.cache_read ?? 0;
           }
         }
       }
@@ -53,6 +85,7 @@ export class RunTracker extends BaseCallbackHandler {
     if (prompt === 0 && completion === 0) return;
     this.promptTokens += prompt;
     this.completionTokens += completion;
+    this.cachedPromptTokens += cached;
     if (this.budget) {
       const cost = computeCost({ model: this.modelId, promptTokens: prompt, completionTokens: completion });
       this.budget.charge(cost.totalCost);

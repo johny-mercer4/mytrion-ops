@@ -94,6 +94,18 @@ export function dispatchFrame(frame: string, h: StreamHandlers): void {
     case 'token': h.onToken?.(data); break;
     case 'agent': h.onAgent?.(data); break;
     case 'elicitation': h.onElicitation?.(data as unknown as Elicitation); break;
+    case 'plan':
+      // SotA Phase 1: surface DAG progress via status chip (Horizon AI).
+      h.onStatus?.({
+        state: 'planning',
+        label:
+          typeof data.goal === 'string'
+            ? `Plan: ${data.goal}`
+            : typeof data.nodeId === 'string'
+              ? `Plan node ${data.nodeId}: ${String(data.state ?? '')}`
+              : 'Updating plan…',
+      });
+      break;
     case 'done': h.onDone?.(data); break;
     case 'error': h.onError?.(typeof data.message === 'string' ? data.message : 'Stream error.'); break;
     default: break;

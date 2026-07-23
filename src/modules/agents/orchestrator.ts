@@ -23,6 +23,7 @@ import { buildBrowserTools } from './tools/browserTools.js';
 import { buildComposioToolsFor } from './tools/composio.js';
 import { buildScopedRagTool } from './tools/scopedRag.js';
 import { webSearchTool } from './tools/webSearch.js';
+import { buildOrchestratorPlanTools } from './planning/planTools.js';
 import type { AgentManifest } from './types.js';
 
 /** All tools one child agent gets: scoped RAG + (RBAC ∩ allowlist) registry tools + extras. */
@@ -80,15 +81,25 @@ export async function buildOrchestrator(callerCtx: TenantContext): Promise<{
 }> {
   // Cache keyed by the caller's full identity/scope: two callers never share a graph, and the same
   // caller (same department view) reuses it across turns. See graphCache.ts for the safety contract.
-  return getCachedAgent(`orch:${identitySignature(callerCtx)}`, async () => {
+  // Flags that change bound tools must be part of the cache key (plan tools / blackboard).
+  const flagSig = [
+    env.FF_AGENT_PLAN_DAG ? 'plan1' : 'plan0',
+    env.FF_AGENT_BLACKBOARD ? 'bb1' : 'bb0',
+    env.FF_COMPOSIO_ENABLED ? 'co1' : 'co0',
+    env.FF_FILES_ENABLED ? 'fi1' : 'fi0',
+  ].join(':');
+  return getCachedAgent(`orch:${flagSig}:${identitySignature(callerCtx)}`, async () => {
     const manifests = agentRegistry.listForContext(callerCtx);
     const subagents = await Promise.all(manifests.map((m) => compileSubAgent(m, callerCtx)));
     const checkpointer = getCheckpointer();
+    const planTools = buildOrchestratorPlanTools();
     const agent = createDeepAgent({
       model: resolveOrchestratorModel(),
       systemPrompt: ORCHESTRATOR_PROMPT,
       subagents,
+      ...(planTools.length > 0 ? { tools: planTools } : {}),
       ...(checkpointer ? { checkpointer } : {}),
+      middleware: [],
     });
     return { agent, agentKeys: manifests.map((m) => m.key) };
   });
@@ -103,13 +114,19 @@ export async function buildSingleAgent(
   manifest: AgentManifest,
   callerCtx: TenantContext,
 ): Promise<ReturnType<typeof createDeepAgent>> {
-  return getCachedAgent(`single:${manifest.key}:${identitySignature(callerCtx)}`, async () => {
+  const flagSig = [
+    env.FF_AGENT_BLACKBOARD ? 'bb1' : 'bb0',
+    env.FF_COMPOSIO_ENABLED ? 'co1' : 'co0',
+    env.FF_FILES_ENABLED ? 'fi1' : 'fi0',
+  ].join(':');
+  return getCachedAgent(`single:${manifest.key}:${flagSig}:${identitySignature(callerCtx)}`, async () => {
     const checkpointer = getCheckpointer();
     return createDeepAgent({
       model: resolveAgentModel(manifest),
       systemPrompt: childSystemPrompt(manifest),
       tools: await childTools(manifest, callerCtx),
       ...(checkpointer ? { checkpointer } : {}),
+      middleware: [],
     });
   });
 }

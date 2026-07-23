@@ -50,11 +50,11 @@ function buildMcpTool(def: McpToolDef, riskClass: RiskClass): RegisteredTool {
     inputSchema: z.unknown(),
     outputSchema: z.unknown(),
     riskClass,
-    allowedAudiences: ['internal'],
+    allowedAudiences: ['internal', 'customer', 'partner'],
     requiredScopes: riskClass === 'read' ? ['zoho_crm:read'] : ['zoho_crm:write'],
     rateLimit: { perMinute: 30 },
     rawParameters: paramsForOpenAi(def.inputSchema),
-    run: (rawInput) => callMcpTool(def.name, isRecord(rawInput) ? rawInput : {}),
+    run: (rawInput, ctx) => callMcpTool(def.name, isRecord(rawInput) ? rawInput : {}, ctx),
   };
 }
 

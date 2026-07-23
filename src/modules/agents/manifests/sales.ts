@@ -2,11 +2,11 @@ import { env } from '../../../config/env.js';
 import type { AgentManifest } from '../types.js';
 import { CLIENT_SERVICE_RULE,
   CLIENT_SERVICE_TOOLS,
-  FILE_TOOLS,
+  BLACKBOARD_TOOLS, FILE_TOOLS,
   OCTANE_CONTEXT,
   OWNER_SCOPE_RULE,
   RAG_USAGE_RULE,
-  STAY_IN_LANE, WAREHOUSE_TOOLS } from './shared.js';
+  STAY_IN_LANE, DBT_MCP_TOOLS, WAREHOUSE_TOOLS } from './shared.js';
 
 /**
  * What the Sales agent can actually DO today (all read-only, owner-scoped). Kept honest so the model
@@ -65,10 +65,19 @@ export const salesAgent: AgentManifest = {
     STAY_IN_LANE,
   departments: ['sales'],
   allowedAudiences: ['internal'],
-  // NO analytics.snapshot: it is COMPANY-WIDE (incl. a top-agents-by-gallons ranking that exposes
-  // other reps' numbers). A sales rep may only see their OWN data — warehouse.my_gallons is
-  // self-locked for non-admins; agent.sales_snapshot/activity and crm.* are owner-scoped.
-  tools: ['agent.sales_snapshot', 'agent.activity', 'zoho_crm.query', 'zoho_mcp.*', 'dbt_mcp.*', ...CLIENT_SERVICE_TOOLS, ...FILE_TOOLS, ...WAREHOUSE_TOOLS],
+  // Warehouse via dbt MCP only (no direct DWH pool / analytics.snapshot). Prefer
+  // warehouse.my_gallons for own book; free SQL via dbt_mcp.* stays owner-scoped by identity headers.
+  tools: [
+    'agent.sales_snapshot',
+    'agent.activity',
+    'zoho_crm.query',
+    'zoho_mcp.*',
+    ...DBT_MCP_TOOLS,
+    ...CLIENT_SERVICE_TOOLS,
+    ...BLACKBOARD_TOOLS,
+    ...FILE_TOOLS,
+    ...WAREHOUSE_TOOLS,
+  ],
   composioToolkits: [],
   ragScope: { departments: ['sales'], allowAllDepartments: false },
   readOnly: false,

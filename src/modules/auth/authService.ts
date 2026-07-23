@@ -85,6 +85,7 @@ export async function contextFromClaims(
       scopes: scopesForRole(role),
       departments: access.departments,
       allDepartmentAccess: access.allDepartmentAccess,
+      mytrionAccessModes: access.mytrionAccessModes,
       sessionVerified: true,
       requestId,
     };

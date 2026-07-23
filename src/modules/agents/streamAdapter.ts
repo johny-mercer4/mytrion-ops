@@ -37,8 +37,17 @@ function labelFor(key: string): string {
   return (isAgentKey(key) ? agentRegistry.get(key)?.label : undefined) ?? key;
 }
 
-/** UI-only tools that shouldn't surface as operational tool_call/tool_result noise. */
-const UI_TOOL_NAMES = new Set(['ui.request_choice', 'ui__request_choice']);
+/** UI-only / planning tools that shouldn't surface as operational tool_call/tool_result noise. */
+const UI_TOOL_NAMES = new Set([
+  'ui.request_choice',
+  'ui__request_choice',
+  'plan_propose',
+  'plan_update',
+  'blackboard__read',
+  'blackboard__write',
+  'blackboard.read',
+  'blackboard.write',
+]);
 
 function contentToText(content: unknown): string {
   if (typeof content === 'string') return content;

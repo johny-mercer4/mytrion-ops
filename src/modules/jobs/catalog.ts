@@ -201,6 +201,9 @@ export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
   // inline fallback masked it — the cron-points-at-a-defined-queue test is what caught it).
   notificationDispatchJob,
   notificationPollJob,
+  // Scheduled in CRON_SCHEDULES (weekly), so its queue MUST be provisioned here too — otherwise
+  // applySchedules' boss.schedule() hits a queue-not-found FK error and jobs boot crashes.
+  statementWeeklyJob,
   deadLetterJob,
 ];
 

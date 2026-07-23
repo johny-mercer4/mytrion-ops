@@ -39,8 +39,22 @@ function billingGet<T>(path: string): Promise<T> {
 }
 
 /** Paged payment ledger (newest first). */
-export function fetchTransactions(page: number, limit: number): Promise<BillingTransactionsPage> {
-  return billingGet(`/billing/transactions?page=${page}&limit=${limit}`);
+/** Server-side list filters. Applied in Postgres so a filter reaches records beyond the loaded
+ *  page(s) — e.g. Chase txns that are older than the newest 200 and wouldn't be in memory yet. */
+export interface TxListFilters {
+  source?: 'mx' | 'zelle' | 'chase' | 'stripe';
+  isMapped?: boolean;
+}
+
+export function fetchTransactions(
+  page: number,
+  limit: number,
+  filters: TxListFilters = {},
+): Promise<BillingTransactionsPage> {
+  const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (filters.source) qs.set('source', filters.source);
+  if (filters.isMapped !== undefined) qs.set('isMapped', String(filters.isMapped));
+  return billingGet(`/billing/transactions?${qs.toString()}`);
 }
 
 /** Full-dataset text search. */

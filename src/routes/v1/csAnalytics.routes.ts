@@ -11,6 +11,8 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { serverCrm } from '../../integrations/serverCrm.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
+import { DESK_DEPARTMENTS, zohoDesk } from '../../integrations/zohoDesk.js';
+import { enrichTicketOwners } from '../../modules/tools/deskOwners.js';
 import { RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import {
@@ -37,6 +39,53 @@ const windowQuery = z.object({
 
 const ticketsQuery = windowQuery.extend({ assigneeId: z.string().max(60).optional() });
 const callsQuery = windowQuery.extend({ ownerEmail: z.string().max(200).optional() });
+
+/** Trim a string-ish Desk field to a non-empty string, else null. */
+function sstr(v: unknown): string | null {
+  if (typeof v === 'string') return v.trim() || null;
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  return null;
+}
+
+/** Owner (assigned agent) name from an enriched Desk ticket's `assignee` (name, or first+last). */
+function ticketOwnerName(assignee: unknown): string | null {
+  if (!assignee || typeof assignee !== 'object') return null;
+  const a = assignee as Record<string, unknown>;
+  if (typeof a.name === 'string' && a.name.trim()) return a.name.trim();
+  const full = [a.firstName, a.lastName].filter((x): x is string => typeof x === 'string' && Boolean(x.trim())).join(' ').trim();
+  return full || null;
+}
+
+export interface TeamOpenTicket {
+  id: string;
+  ticketNumber: string | null;
+  status: string | null;
+  statusType: string | null;
+  priority: string | null;
+  subject: string | null;
+  owner: string | null;
+}
+
+/** Zoho's standard open (non-closed) ticket statuses. Fetched server-side per status so no open
+ *  ticket is ever crowded out of a newest-N window; a status this org renamed just returns empty. */
+const CS_OPEN_STATUSES = ['Open', 'On Hold', 'Escalated'] as const;
+
+/** All open CS Desk tickets, merged across the open statuses (deduped by id, Open first). */
+async function fetchCsOpenTicketsDetailed(): Promise<Record<string, unknown>[]> {
+  const perStatus = await Promise.all(
+    CS_OPEN_STATUSES.map((status) =>
+      zohoDesk
+        .listTicketsDetailed({ departmentId: DESK_DEPARTMENTS.cs, status, limit: 100 })
+        .catch(() => [] as Record<string, unknown>[]),
+    ),
+  );
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const row of perStatus.flat()) {
+    const id = String(row.id ?? '');
+    if (id && !byId.has(id)) byId.set(id, row);
+  }
+  return [...byId.values()];
+}
 
 /** Data Center billing edit — exact widget allowlist (datacenter-panel.js edit modal). */
 const dealBillingBody = z
@@ -74,13 +123,38 @@ export async function csAnalyticsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/cs/analytics/tickets/team-open', guard, async (request) => {
     requireCsAccess(request);
     const q = z.object({ from: isoStamp, to: isoStamp }).parse(request.query);
-    const raw = (await serverCrm.get('/api/desk/dwh/tickets/analytics', {
-      from: q.from,
-      to: q.to,
-    })) as { data?: { agents?: Array<{ open_count?: number }>; byPriority?: unknown } };
-    const agents = raw.data?.agents ?? [];
-    const openTickets = agents.reduce((sum, a) => sum + (Number(a.open_count) || 0), 0);
-    return { openTickets, byPriority: raw.data?.byPriority ?? [] };
+    // Aggregate counts come from the DWH analytics proxy (accurate total even >100). The per-ticket
+    // list is a live Desk read (CS dept, Open) so an agent sees the actual tickets — number, status,
+    // owner — not just a histogram. Independent so a slow/failed Desk read still returns the counts.
+    const [aggR, listR] = await Promise.allSettled([
+      serverCrm.get('/api/desk/dwh/tickets/analytics', { from: q.from, to: q.to }) as Promise<{
+        data?: { agents?: Array<{ open_count?: number }>; byPriority?: unknown };
+      }>,
+      fetchCsOpenTicketsDetailed(),
+    ]);
+    const agg = aggR.status === 'fulfilled' ? aggR.value : {};
+    const agents = agg.data?.agents ?? [];
+    const summedOpen = agents.reduce((sum, a) => sum + (Number(a.open_count) || 0), 0);
+
+    let tickets: TeamOpenTicket[] = [];
+    if (listR.status === 'fulfilled') {
+      const enriched = await enrichTicketOwners(listR.value).catch(() => listR.value);
+      tickets = enriched
+        .map((t) => ({
+          id: String(t.id ?? ''),
+          ticketNumber: sstr(t.ticketNumber),
+          status: sstr(t.status),
+          statusType: sstr(t.statusType),
+          priority: sstr(t.priority),
+          subject: sstr(t.subject),
+          owner: ticketOwnerName(t.assignee),
+        }))
+        .filter((t) => t.id)
+        .slice(0, 100);
+    }
+    // Prefer the DWH total; fall back to the live list length if the analytics proxy was down.
+    const openTickets = summedOpen > 0 ? summedOpen : tickets.length;
+    return { openTickets, byPriority: agg.data?.byPriority ?? [], tickets };
   });
 
   /** Tickets analytics (DWH; scoped by Desk assignee_id). */

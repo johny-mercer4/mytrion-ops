@@ -9,14 +9,17 @@
  *   pnpm eval:live --category routing    # one category
  *   pnpm eval:live --id greeting-1       # one task
  *   pnpm eval:live --max-cost 1.0        # tighten the suite spend cap (USD)
+ *   EVAL_AGENT_SOTA=1 pnpm eval:live --category sota
+ *     # enables checkpoints + blackboard + plan/hard DAG + skill cache + CRAG
+ *   pnpm eval:live --baseline eval-reports/baseline-sota-phase2.json
+ *     # fail on category/KPI regression vs committed floors
  *
  * Requires MYTRION_OPS_DATABASE_URL + OPENAI_API_KEY. Do NOT point at production: the run
  * ingests the fixture corpus AND writes conversations/messages/agent_runs rows. Non-localhost
  * DB hosts are refused unless EVAL_I_KNOW_THIS_IS_NOT_PROD=1.
- *
- * Baseline: record per-category pass rates in WORKING_NOTES.md after each meaningful run.
  */
 import 'dotenv/config';
+import './lib/evalSotaBootstrap.js';
 import { execSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import PQueue from 'p-queue';
@@ -31,8 +34,12 @@ import { models } from '../src/modules/llm/openaiClient.js';
 import { judgedChecksFor, judgeTask } from './lib/behaviorJudge.js';
 import {
   checkDeterministic,
+  compareToBaseline,
   renderSummary,
+  suiteKpis,
   summarize,
+  toolSelectionScores,
+  type EvalBaseline,
   type TaskReport,
 } from './lib/behaviorReport.js';
 import { loadBehaviorTasks, taskContext, type BehaviorTask } from './lib/behaviorTasks.js';
@@ -121,6 +128,13 @@ async function runTask(
   if (!result) throw new Error(`task ${task.id} has no turns`);
 
   const deterministic = checkDeterministic(task, result, allowedAgents);
+  const expectedTools = [
+    ...(task.expect.mustCallTool ?? []),
+    ...(task.expect.expectedToolCalls?.map((t) => t.name) ?? []),
+  ];
+  const actualTools = result.toolCalls.map((t) => t.name);
+  const toolF1 =
+    expectedTools.length > 0 ? toolSelectionScores(expectedTools, actualTools).f1 : undefined;
   const report: TaskReport = {
     id: task.id,
     category: task.category,
@@ -129,8 +143,10 @@ async function runTask(
     agentPath: result.agentPath,
     pingPongCount: result.agentPath.length > 1 ? result.agentPath.length - 1 : 0,
     durationMs,
-    toolCalls: result.toolCalls.map((t) => t.name),
+    toolCalls: actualTools,
     costUsd,
+    ...(toolF1 !== undefined ? { toolF1 } : {}),
+    cacheHitRate: result.usage.cacheHitRate ?? null,
   };
 
   // The judge only runs when the mechanical half passed — a wrong route/tool already fails.
@@ -160,23 +176,48 @@ async function main(): Promise<void> {
   const categoryFilter = cliOption('category');
   const idFilter = cliOption('id');
 
-  // Match the prod agent posture; keep side-effectful subsystems out of the run.
+  // Match the prod agent posture; keep side-effectful subsystems out of the run —
+  // unless EVAL_AGENT_SOTA=1 (checkpoints + blackboard + plan/hard DAG + skills + CRAG).
+  const sotaProfile = process.env['EVAL_AGENT_SOTA'] === '1' || process.env['EVAL_AGENT_SOTA'] === 'true';
+  const baselinePath = cliOption('baseline');
   const saved = {
     composio: env.FF_COMPOSIO_ENABLED,
     memory: env.FF_AGENT_MEMORY,
     checkpoints: env.FF_AGENT_CHECKPOINTS,
     agenticRag: env.FF_AGENTIC_RAG,
+    blackboard: env.FF_AGENT_BLACKBOARD,
+    skillCache: env.FF_AGENT_SKILL_CACHE,
+    planDag: env.FF_AGENT_PLAN_DAG,
+    hardDag: env.FF_AGENT_HARD_DAG,
+    cragWeb: env.FF_CRAG_WEB_FALLBACK,
   };
   env.FF_COMPOSIO_ENABLED = false;
-  env.FF_AGENT_MEMORY = false;
-  env.FF_AGENT_CHECKPOINTS = false;
   env.FF_AGENTIC_RAG = false;
+  if (sotaProfile) {
+    env.FF_AGENT_MEMORY = true;
+    env.FF_AGENT_CHECKPOINTS = true;
+    env.FF_AGENT_BLACKBOARD = true;
+    env.FF_AGENT_SKILL_CACHE = true;
+    env.FF_AGENT_PLAN_DAG = true;
+    env.FF_AGENT_HARD_DAG = true;
+    env.FF_AGENTIC_RAG = true;
+    env.FF_CRAG_WEB_FALLBACK = true;
+    logger.info('EVAL_AGENT_SOTA=1 — enabling checkpoints/memory/blackboard/plan/hard-DAG/skills/CRAG');
+  } else {
+    env.FF_AGENT_MEMORY = false;
+    env.FF_AGENT_CHECKPOINTS = false;
+    env.FF_AGENT_BLACKBOARD = false;
+    env.FF_AGENT_SKILL_CACHE = false;
+    env.FF_AGENT_PLAN_DAG = false;
+    env.FF_AGENT_HARD_DAG = false;
+  }
 
   try {
     logger.info('ingesting fixture corpus (checksum-idempotent)…');
     const corpus = await ingestCorpus();
 
     let tasks = loadBehaviorTasks();
+    if (!sotaProfile) tasks = tasks.filter((t) => t.category !== 'sota');
     if (categoryFilter) tasks = tasks.filter((t) => t.category === categoryFilter);
     if (idFilter) tasks = tasks.filter((t) => t.id === idFilter);
     if (tasks.length === 0) throw new Error('no tasks match the given filters');
@@ -226,9 +267,18 @@ async function main(): Promise<void> {
     await queue.onIdle();
 
     const summary = summarize(reports);
+    const kpis = suiteKpis(reports);
     const failures = reports.filter((r) => r.verdict === 'fail' || r.verdict === 'error');
 
     console.log(`\n${renderSummary(summary)}\n`);
+    console.log(
+      `KPIs: avgPingPong=${kpis.avgPingPong.toFixed(2)} p50Ms=${kpis.p50DurationMs} p95Ms=${kpis.p95DurationMs}` +
+        ` toolF1=${kpis.avgToolF1 === null ? 'n/a' : kpis.avgToolF1.toFixed(2)}` +
+        ` kvHit=${kpis.avgCacheHitRate === null ? 'n/a' : kpis.avgCacheHitRate.toFixed(2)}`,
+    );
+    if (kpis.softBreaches.length > 0) {
+      console.log(`KPI soft thresholds: ${kpis.softBreaches.join('; ')}`);
+    }
     for (const f of failures) {
       console.log(`FAIL ${f.id} [${f.category}] — ${f.failures.join(' | ')}`);
     }
@@ -261,6 +311,7 @@ async function main(): Promise<void> {
           spentUsd,
           capTripped,
           summary,
+          kpis,
           tasks: reports,
         },
         null,
@@ -269,13 +320,31 @@ async function main(): Promise<void> {
     );
     logger.info({ report: reportPath.pathname }, 'JSON report written');
 
+    let baselineRegressed = false;
+    if (baselinePath) {
+      const baseline = JSON.parse(readFileSync(baselinePath, 'utf-8')) as EvalBaseline;
+      const regressions = compareToBaseline(summary, kpis, baseline);
+      if (regressions.length > 0) {
+        baselineRegressed = true;
+        console.log(`\nBASELINE REGRESSION vs ${baselinePath}:`);
+        for (const r of regressions) console.log(`  - ${r}`);
+      } else {
+        console.log(`\nBaseline OK vs ${baselinePath}`);
+      }
+    }
+
     const breached = Object.values(summary).some((s) => s.breached);
-    if (breached || capTripped) process.exitCode = 1;
+    if (breached || capTripped || baselineRegressed) process.exitCode = 1;
   } finally {
     env.FF_COMPOSIO_ENABLED = saved.composio;
     env.FF_AGENT_MEMORY = saved.memory;
     env.FF_AGENT_CHECKPOINTS = saved.checkpoints;
     env.FF_AGENTIC_RAG = saved.agenticRag;
+    env.FF_AGENT_BLACKBOARD = saved.blackboard;
+    env.FF_AGENT_SKILL_CACHE = saved.skillCache;
+    env.FF_AGENT_PLAN_DAG = saved.planDag;
+    env.FF_AGENT_HARD_DAG = saved.hardDag;
+    env.FF_CRAG_WEB_FALLBACK = saved.cragWeb;
   }
 }
 

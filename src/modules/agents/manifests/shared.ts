@@ -46,15 +46,14 @@ export const READ_ONLY_RULE =
 export const METRICS_ROUTING_RULE =
   'DATA ROUTING — pick ONE tool on the first try; do not fish, and do not call a second data tool ' +
   'to double-check a number the first already returned:\n' +
-  '• Company / org-wide totals (gallons, swipes, fuel spend, sales, top-ups, balances, open ' +
-  'debtors, top agents, pipeline, conversion) → analytics.snapshot (cached dashboard numbers; ' +
-  'dimension: transactions | pipeline | billing). This is the FAST path for "how many gallons does ' +
-  'the company have", "sales this month", "top agents".\n' +
+  '• Company / org-wide warehouse metrics (gallons, swipes, fuel spend, top agents, pipeline-ish ' +
+  'SQL questions) → dbt MCP: first `dbt_mcp.recall_similar_queries`, then adapt and run ' +
+  '`dbt_mcp.query`. The warehouse is ONLY reached through dbt MCP — never invent SQL from memory.\n' +
   '• One rep’s own gallons/swipes book, or "my gallons/swipes" → warehouse.my_gallons (admins may ' +
-  'pass agentZohoUserId to target a specific rep).\n' +
+  'pass agentZohoUserId to target a specific rep; also dbt MCP under the hood).\n' +
   '• One agent’s portfolio HEALTH (active/inactive/stuck client counts, week-over-week deltas, ' +
-  'calls/notes/tasks/leads) → agent.sales_snapshot / agent.activity / agent.debtors. NEVER use ' +
-  'these for raw company gallons totals — that is analytics.snapshot.';
+  'calls/notes/tasks/leads) → agent.sales_snapshot / agent.activity / agent.debtors (ServerCRM). ' +
+  'NEVER use those for raw company gallons totals — that is dbt_mcp.query / warehouse.my_gallons.';
 
 /**
  * File capability tools every department agent gets (read-class: generate/export/analyze).
@@ -70,12 +69,17 @@ export const FILE_TOOLS = [
 ] as const;
 
 /**
- * Company analytics snapshot (read-class, served from the ~2h snapshot cache) — the same
- * org-wide aggregates every internal worker sees on the live Analytics dashboard. Given to
- * EVERY department agent so chat answers "how are sales / gallons / top-ups this month"
- * with live numbers instead of guessing.
+ * Shared conversation blackboard (registers only when FF_AGENT_BLACKBOARD). Listing here is
+ * inert until the flag flips — same pattern as FILE_TOOLS.
  */
-export const ANALYTICS_TOOLS = ['analytics.snapshot'] as const;
+export const BLACKBOARD_TOOLS = ['blackboard.read', 'blackboard.write'] as const;
+
+/**
+ * Hosted dbt MCP tools (warehouse SQL + query-memory recall). Agents reach the DWH only through
+ * this path — not the direct `DWH_DATABASE_URL` pool. Registers at boot when FF_DBT_MCP_ENABLED.
+ * Wildcard expands in department policy + agent tool binding (`dbt_mcp.query`, etc.).
+ */
+export const DBT_MCP_TOOLS = ['dbt_mcp.*'] as const;
 
 /**
  * Owner-scoped warehouse totals (gallons/swipes) via the dbt MCP, keyed by the caller's Zoho user

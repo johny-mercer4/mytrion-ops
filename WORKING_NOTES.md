@@ -4677,3 +4677,227 @@ retention migrations to avoid colliding with build’s mini-app/news/support-bot
 series: `0049_retention_open_pool_instant`, `0050_retention_pool_cycles_claim_log`,
 `0051_retention_ownership_transfers` (SQL unchanged / IF NOT EXISTS — prod hashes
 already applied stay skipped).
+
+## 2026-07-23 — Admin Deals tab (one-click ownership)
+
+Mytrion Admin → **Deals**: list 200 by `Application_Date`, word/id search, drawer
+to pick agent and transfer Deal+Contact+Account via
+`transferDealOwnershipToClaimant` (`admin_manual` audit). Owner Logs subview
+reads Zoho `Owner_Logs` (Entity_ID / New_Owner_* / Owner_Log_Time) to find
+mis-assigned deals; suggests prior owner from chronological logs. Meta refreshed
+live for Deals/Contacts/Accounts/Owner_Logs. Routes under `/admin/deals*` +
+`/admin/owner-logs` (allDepartmentAccess).
+
+**Transferrer filter:** Owner_Logs `Created_By` (= timeline “by John Mercer”).
+Default id `6227679000093960901`. Deals tab “Show my transfers” →
+`GET /admin/deals?transferredBy=` hydrates unique Entity_IDs into deal rows.
+
+## 2026-07-23 — Admin Deals recovery via Timeline (not Created_By)
+
+Owner_Logs `Created_By` is often Amir Alimov (workflow) — unusable as transferrer.
+Recovery now loads the fixed deal-id list (`recoveryDealIds.ts`, 132 ids) and
+reads each deal’s `__timeline` with `done_by.id` = John Mercer
+(`6227679000093960901`). Prior owner = Timeline Owner `_value.old` (name → Zoho
+user id via ActiveUsers). Admin UI: **Load recovery set**.
+
+## 2026-07-23 — Recovery list shows Timeline prior owner
+
+Admin Deals recovery rows now surface Timeline Owner `_value.old` / `_value.new`
+(prior → changed to), when, and by whom; names resolved to Zoho user ids via
+ActiveUsers. Drawer mirrors the same Timeline evidence before transfer.
+
+## 2026-07-23 — Admin Deals UX polish
+
+Browse / Recovery mode switch, recovery stats, list filter, agent typeahead,
+Current→Return-to flow card, copy deal id, relative timeline times, and
+post-transfer Deal/Contact/Company badges. Keeps Owner Logs disabled.
+
+## 2026-07-23 — Ops ownership transfer log (from→to)
+
+Every Zoho ownership transfer through Ops (`transferDealOwnershipToClaimant`)
+already wrote `retention_ownership_transfers`; now enriched with `deal_name` +
+`contact_name` (migration `0052`), from→to owner names/ids, and clearer actor
+(impersonator when acting-as). Admin Deals → **Transfer log** reads our DB via
+`GET /admin/ownership-transfers` (not Zoho Owner_Logs). Reasons covered:
+`admin_manual`, `retention_handoff`, `open_pool_claim`.
+
+## 2026-07-23 — Client News 500 + Admin sidebar
+
+`GET /v1/client-news` 500: `client_news` (and mini_app notification tables) were
+missing — journal slots for 0042–0044 had been overwritten by retention
+renumber hashes. Repair migration `0053_repair_client_news_notifications`
+(CREATE IF NOT EXISTS). Admin sidebar: categorized sections + search filter
+via `MytrionShell` `navSections` / `enableNavSearch`.
+
+## 2026-07-23 — SotA Agentic Phase 1 (Horizon AI)
+
+Upgraded the deepagents orchestrator (Admin → Horizon AI → `POST /v1/agent`)
+with four workstreams. **Defaults are ON** (orchestrator + checkpoints + blackboard +
+skill cache + plan DAG) in `env.ts` / `.env.example`.
+
+| Flag | What |
+|------|------|
+| `FF_ORCHESTRATOR_ENABLED` (default 1) | `POST /v1/agent` |
+| `FF_AGENT_CHECKPOINTS` + paging envs | Token-budget MemGPT paging; structured `<MemorySummary>`; goal re-anchor |
+| `FF_AGENT_BLACKBOARD` (default 1) | `agent_blackboards` + `blackboard.read/write`; `<Blackboard>` in brief |
+| `FF_AGENT_SKILL_CACHE` (default 1) | `agent_skills` trajectory cache; `<CachedSkill>` hint only |
+| `FF_AGENT_PLAN_DAG` (default 1) | Pre-invoke JSON DAG + `plan_propose` / `plan_update`; SSE `plan` |
+
+Migration: `0054_agent_blackboard_skills`. Stay on deepagents (no custom StateGraph).
+
+**Local Horizon QA** (`feature/MytrionAdmin`): `pnpm db:migrate` → `pnpm dev:all` →
+`/main/adminmytrion` → **Horizon AI**. Smoke: `"hi"`; multi-dept ask; long thread; skill hint.
+
+**Eval:** `EVAL_AGENT_SOTA=1 pnpm eval:live --category sota`. Unit: `tests/unit/agent-sota-phase1.test.ts`.
+
+## 2026-07-23 — SotA Agentic Phase 2
+
+Sequenced on `feature/MytrionAdmin` after Phase 1.
+
+### 2.1 Hard DAG + data-center agent
+- `FF_AGENT_HARD_DAG=1` (default): [`waveRunner.ts`](src/modules/agents/planning/waveRunner.ts)
+  deterministically runs ready plan nodes via isolated `createDeepAgent` + `AgentResult`,
+  writes blackboard artifacts, replans when blocked, then synthesis turn.
+- New agent key `data-center` (Sales-book / Data Center workspace copilot; `departments: ['sales']`,
+  no new department tag). Routing copy in orchestrator prompt.
+
+### 2.2 Corrective RAG
+- Ternary grade Correct|Ambiguous|Incorrect in `judgeSufficiency`.
+- Loop: refine on Ambiguous; broaden then discard Incorrect; optional web fallback
+  (`FF_CRAG_WEB_FALLBACK`, when `webSearch` or admin); else `notDocumented` abstain.
+- `FF_AGENTIC_RAG` default **on**. Wired in `scopedRag` + chat `retrieveGrounding`.
+
+### 2.3 Eval / observability
+- `RunTracker.cachedPromptTokens` / `cacheHitRate` → `AgentTurnResult.usage`.
+- `toolSelectionScores` F1 + `suiteKpis` (p50/p95, soft KPI ceilings) in `behaviorReport` / `evalLive`.
+- `pnpm eval:live --baseline eval-reports/baseline-sota-phase2.json` fails on category/KPI regression.
+- `EVAL_AGENT_SOTA=1` also enables hard DAG + agentic RAG / CRAG web fallback.
+- `eval:retrieval` exits non-zero below recall/MRR floors.
+- `LANGSMITH_PROJECT` env. Units: `agent-sota-phase2.test.ts`, updated `query-planner.test.ts`.
+- Committed floors: `eval-reports/baseline-sota-phase2.json` (runtime reports still gitignored).
+
+## 2026-07-23 — Admin Deals Recovery / Transfer log
+
+- Recovery: removed John Mercer default transferrer chip + auto-fill; tab starts empty; Load set
+  requires an explicit numeric Zoho user id. Backend `GET /admin/deals/:id` no longer defaults
+  transferrer to Mercer (optional query only).
+- **Removed Transfer log tab** (and list UI/API): `OwnershipTransferLog.tsx`,
+  `GET /admin/ownership-transfers`, `ownershipTransferAdmin.ts`, FE list client, repo `list`.
+  Append-only `insertOwnershipTransfer` audit writes on actual transfers remain (no UI).
+
+## 2026-07-23 — KB sync + Recovery COQL
+
+- Knowledge Base empty: API on local `:5433` had 0 docs; synced 49 docs / 604 chunks from Render.
+- Recovery: removed Have prior / Missing prior / Timeline hits tiles. Transferrer filter is
+  Owner_Logs COQL (`Created_By`, default limit 1000) + pagination; static `recoveryDealIds` removed.
+  Prior owner still from deal `__timeline`. Copy COQL button in Recovery toolbar.
+
+---
+
+## 2026-07-23 — Sales Tickets: ordering, latency, tab order (feature/MytrionAdmin)
+
+### Chat message ordering (our reply vs Desk message interleaved wrong)
+- `loadTicketMessages` sorted server rows by `_ts`, but rows with a missing/unparseable time got
+  `_ts=0` and floated to the **top** (e.g. an attachment with no server time), and the sort key was
+  stripped before the pending merge — so optimistic/live sends were blindly appended
+  (`[...server, ...extras]`) and could sit out of order next to Desk messages.
+- Fix: `TicketMsgVM` now carries `ts` (epoch ms; 0 = unknown). Added `byTicketMsgTime` comparator
+  that sends unknown times to the **bottom** (treated as "just now"). `loadTicketMessages` keeps `ts`
+  and sorts with it; `buildPendingMsgs` stamps `ts` (`Date.now()`); `mergeTicketThread` now sorts the
+  server+pending union so the whole thread is always chronological. (live.ts, ticketOptimistic.ts)
+
+### Slow ticket open
+- Backend `/desk/tickets/:id/comments` hydrated full thread content with an **unbounded** per-thread
+  Zoho GET fan-out (`threadList.slice(-40)`), so long-running tickets fired dozens of serial-credited
+  Desk calls per open. Capped the hydration window to the most recent 15 threads
+  (`THREAD_HYDRATE_WINDOW`); older threads keep their summary. (src/routes/v1/desk.routes.ts)
+
+### Tab order
+- Moved **Tickets** to sit right after **Retention** in the `soon` nav cluster
+  (retention → tickets → verification → callHub). (salesData.ts)
+
+### Move-to-top
+- Reviewed: `useTicketsFeed.promoteTicket` already pins + fetches tickets outside the loaded pages
+  (via directory cache + `loadTicketById`), and pins survive `softReload`/`loadMore`. The path is
+  functionally correct for any owned ticket; the perceived "not bumping" was the open latency above.
+  Left the shell-level ownership filter (sidebarBadges full page scan) as-is — changing it blind is
+  risky and it works for the common (<99 tickets = 1 page) case.
+
+- Verified: `tests/unit/desk-routes.test.ts` (23) green; app typecheck introduces no new errors in
+  the touched files (pre-existing WIP errors elsewhere on the branch remain).
+
+## 2026-07-23 — View as loaders (Billing + CS)
+
+- ActAsPicker: empty menu + spinning refresh icon while `listAgents` loads → shimmer skeleton
+  rows (search stays usable; no spinner).
+- Billing + CS Data Center: centered ring loaders on initial / View-as remount → table-row
+  skeletons that keep toolbar/table chrome.
+- Billing Transactions / Debtors / Prepay / Returns: same pattern (drop `bm-initial-loader` rings
+  on View-as remount).
+
+## 2026-07-23 — User Management: Zoho role defaults
+
+- Added `mytrion_role_defaults` (migration `0055`) + repo. Resolver layering is now
+  profile default → role default (UNION grants / OR all-dept / home overlay) → per-user
+  override → env-admin pin. Specific Mytrion grant = full access to that Mytrion
+  (department 1:1).
+- Admin API: `GET/POST /admin/mytrion-access/roles` (roster roles appear as unconfigured
+  stubs until saved). Admin UI: Role Defaults tab; Users table shows Role column.
+- Tests extended for role-only, union, override-wins, Full Mytrions via role.
+
+## 2026-07-23 — Billing read-only vs full (User + Role)
+
+- Added `mytrion_access_modes` JSONB on `mytrion_role_defaults` + `worker_mytrion_access`
+  (migration `0057`). Profile defaults stay implicit full.
+- Resolver merge: env-admin/all-dept → all full; else user mode; else role mode; else full.
+  Surfaced on `/auth/me` + admin effective; `requireMytrionWrite` gates Billing write POSTs.
+- Admin UI: Role Defaults + User override show Billing Read-only / Full. Billing Transactions/
+  Returns hide write actions when read-only.
+
+
+---
+
+## 2026-07-23 — Sales Inbox off servercrm/Zoho → own Postgres + WebSocket (feature/MytrionAdmin)
+
+Goal: stop the Sales inbox depending on Zoho `Org_Module` (read) + the servercrm
+`crm_inbox_notification` WebSocket (live). Mirror the module into our own table, create rows via our
+own webhook, push live over our existing `/v1/realtime` hub. **Tickets stay on servercrm (migrate later).**
+
+- **Inspected** Zoho `Org_Module`: id, Owner{id,name,email}, Subject, Content(HTML), Type
+  (Task/Update/Assignment/… — free text, values exceed the picklist), Priority(small/medium/high),
+  Tag, Source_Url, Created_Time, Record_Status__s.
+- **New table `mytrion_inbox_messages`** (`src/db/schema/mytrion_inbox_messages.ts`) mirroring those
+  fields + tenant_id, owner_zoho_user_id (scope key), read_at (reserved), timestamps. Partial-unique
+  `(tenant_id, zoho_record_id) WHERE zoho_record_id IS NOT NULL` = idempotent Zoho retries.
+  Migration **0056** hand-authored (drizzle-kit `generate` still hits the 0022/0023 snapshot
+  collision — recent tables 0048/0054/0055 are all hand-authored). Verified on a throwaway DB in the
+  octane-postgres container (structure, idempotent re-run, partial-unique behavior).
+- **Repo** `src/repos/mytrionInboxMessageRepo.ts` (pure DB, tenant+owner scoped: create w/ unique-
+  violation→return-existing, listForOwner excl. Trash, deleteForOwner). **Service**
+  `src/modules/inbox/service.ts` `createInboxMessage()` = persist + `publishInboxEvent` (mirrors
+  `retention/notify.ts`) + `toInboxMessageDto`. Reuses the existing realtime hub — NO new socket.
+- **Routes** `src/routes/v1/inboxMessages.routes.ts` (registered in app.ts):
+  `POST /v1/inbox/messages/webhook` (shared secret `x-inbox-secret` = `INBOX_WEBHOOK_SECRET`, tolerant
+  of Zoho or normalized casing incl. nested `Owner`, required owner+subject; persists + pushes to
+  `inbox:worker:<zohoId>`, synthetic audit); `GET /v1/inbox/messages` (session-authed, owner-scoped
+  via `resolveZohoUserId`, admins View-as `?owner_id`); `POST /v1/inbox/messages/:id/delete`
+  (owner-scoped — improvement over the old no-ownership-check Zoho delete). Internal "several places"
+  call `createInboxMessage()` directly.
+- **Frontend**: `apps/mytrion-crm/src/api/inbox.ts` (new); `loadInbox` now reads `/v1/inbox/messages`
+  (unchanged `InboxVM` map — Type categories preserved so `mapInboxType` needs no change);
+  `useRetentionRealtime` broadened to dispatch `inbox.*` events → the existing inbox reload fan-out
+  (`invalidateInboxCache`+`publishInboxReload`+`publishInboxLive`+toast); removed the
+  `crm_inbox_notification` branch from `sidebarBadges` (servercrm socket KEPT for ticket events).
+- **Cutover step (in Zoho, not code):** repoint the CRM "Inbox" workflow webhook from servercrm
+  `/webhook/crm-inbox` to `POST /v1/inbox/messages/webhook` with the shared secret. No backfill
+  (starts empty, fills from new events).
+- **Follow-up (cosmetic):** `InboxTab` LIVE/OFFLINE dot still uses its own servercrm socket; repoint
+  to our realtime status later (data path is fully off servercrm already).
+
+Verification: `tests/unit/inbox-messages-routes.test.ts` 9/9 (auth, create+publish, tolerant parse,
+validation, owner-scoped list=RBAC leakage, owner-scoped delete). New files typecheck + lint clean.
+The suite's 78 failures (12 files: agent-golden, agent-rbac-leakage, touchpoints-*, carrier-mini-app,
+approvals, caller-identity, cs-routes, retention-*, stream-adapter, department-agents) are
+PRE-EXISTING branch WIP — confirmed via a committed-HEAD worktree: touchpoints-routes fails at the
+bare commit; agent-golden/caller-identity fail only under the branch's uncommitted agent/RBAC rework
+(those files were already `M` at session start). None touch inbox code.

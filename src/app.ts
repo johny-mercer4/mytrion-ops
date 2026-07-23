@@ -41,6 +41,7 @@ import { csCitifuelRoutes } from './routes/v1/csCitifuel.routes.js';
 import { csAnalyticsRoutes } from './routes/v1/csAnalytics.routes.js';
 import { billingRoutes } from './routes/v1/billing.routes.js';
 import { paymentsIngestRoutes } from './routes/v1/paymentsIngest.routes.js';
+import { inboxMessagesRoutes } from './routes/v1/inboxMessages.routes.js';
 import { agentRoutes } from './routes/v1/agent.routes.js';
 import { authRoutes } from './routes/v1/auth.routes.js';
 import { automationRoutes } from './routes/v1/automation.routes.js';
@@ -68,6 +69,7 @@ const LOG_REDACT_PATHS = [
   'req.headers.cookie',
   'req.headers["x-api-key"]',
   'req.headers["x-ingest-secret"]',
+  'req.headers["x-inbox-secret"]',
 ];
 
 function loggerOption() {
@@ -223,7 +225,8 @@ export async function buildApp(): Promise<FastifyInstance> {
     );
     try {
       const dbtTools = await Promise.race([loadDbtMcpTools(), deadline]);
-      applyDepartmentPolicy(dbtTools); // no agent lists dbt_mcp.* → admin-only
+      // Manifests list `dbt_mcp.*`; department policy expands the wildcard onto query/recall tools.
+      applyDepartmentPolicy(dbtTools);
       toolRegistry.register(dbtTools);
     } catch (err) {
       logger.error({ err }, 'dbt mcp: tool discovery failed/timed out; continuing without dbt MCP tools');
@@ -260,6 +263,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(csAnalyticsRoutes);
       await v1.register(billingRoutes);
       await v1.register(paymentsIngestRoutes);
+      await v1.register(inboxMessagesRoutes);
       await v1.register(agentRoutes);
       await v1.register(tasksRoutes);
       await v1.register(filesRoutes);

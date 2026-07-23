@@ -35,6 +35,8 @@ export interface OwnershipTransferAudit {
   retentionCaseId?: number | null;
   carrierId?: string | null;
   companyName?: string | null;
+  dealName?: string | null;
+  contactName?: string | null;
   actorZohoUserId?: string | null;
   actorName?: string | null;
   /** Display name for the new owner when known (CS / claimant). */
@@ -72,6 +74,9 @@ async function persistTransferLog(
     zohoDealId: string;
     zohoContactId: string | null;
     zohoAccountId: string | null;
+    dealName?: string | null;
+    contactName?: string | null;
+    companyName?: string | null;
     toOwnerZohoUserId: string;
     fromOwnerZohoUserId: string | null;
     fromOwnerName: string | null;
@@ -88,7 +93,9 @@ async function persistTransferLog(
     tenantId: audit.tenantId,
     retentionCaseId: audit.retentionCaseId ?? null,
     carrierId: audit.carrierId ?? null,
-    companyName: audit.companyName ?? null,
+    companyName: row.companyName ?? audit.companyName ?? null,
+    dealName: row.dealName ?? audit.dealName ?? null,
+    contactName: row.contactName ?? audit.contactName ?? null,
     zohoDealId: row.zohoDealId,
     zohoContactId: row.zohoContactId,
     zohoAccountId: row.zohoAccountId,
@@ -146,6 +153,12 @@ export async function transferDealOwnershipToClaimant(
   const accountId = lookupId(deal.Account_Name);
   const fromOwnerZohoUserId = lookupId(deal.Owner);
   const fromOwnerName = lookupName(deal.Owner);
+  const dealName =
+    typeof deal.Deal_Name === 'string' && deal.Deal_Name.trim()
+      ? deal.Deal_Name.trim()
+      : (audit?.dealName ?? null);
+  const contactName = lookupName(deal.Contact_Name) ?? audit?.contactName ?? null;
+  const companyName = lookupName(deal.Account_Name) ?? audit?.companyName ?? null;
   const warnings: string[] = [];
 
   try {
@@ -157,6 +170,9 @@ export async function transferDealOwnershipToClaimant(
       zohoDealId: dealId,
       zohoContactId: contactId,
       zohoAccountId: accountId,
+      dealName,
+      contactName,
+      companyName,
       toOwnerZohoUserId: claimant,
       fromOwnerZohoUserId,
       fromOwnerName,
@@ -221,6 +237,9 @@ export async function transferDealOwnershipToClaimant(
     zohoDealId: dealId,
     zohoContactId: contactId,
     zohoAccountId: accountId,
+    dealName,
+    contactName,
+    companyName,
     toOwnerZohoUserId: claimant,
     fromOwnerZohoUserId,
     fromOwnerName,

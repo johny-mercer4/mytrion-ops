@@ -17,10 +17,10 @@ describe('orchestrator compiler', () => {
     const ctx = makeContext({ scopes: ['*'], departments: ['sales'], allDepartmentAccess: false });
     const { agent, agentKeys } = await buildOrchestrator(ctx);
     expect(agent).toBeTruthy();
-    expect(agentKeys.sort()).toEqual(['marketing', 'sales']);
+    expect(agentKeys.sort()).toEqual(['data-center', 'marketing', 'sales']);
   });
 
-  it("admin caller's orchestrator contains all 10 agents", async () => {
+  it("admin caller's orchestrator contains all registered agents", async () => {
     env.FF_COMPOSIO_ENABLED = false;
     const admin = makeContext({ allDepartmentAccess: true });
     const { agentKeys } = await buildOrchestrator(admin);
@@ -43,18 +43,21 @@ describe('orchestrator compiler', () => {
   });
 });
 
-describe('company-wide analytics access', () => {
-  it('sales reps do NOT get analytics.snapshot (company-wide → would expose other reps)', () => {
-    expect(agentRegistry.get('sales')!.tools).not.toContain('analytics.snapshot');
+describe('warehouse access via dbt MCP (no direct DWH pool on agents)', () => {
+  it('no agent binds analytics.snapshot (dashboard/direct-pool path stays off the agent surface)', () => {
+    for (const m of agentRegistry.all()) {
+      expect(m.tools).not.toContain('analytics.snapshot');
+    }
   });
 
-  it('sales reps keep only the self-scoped warehouse.my_gallons for gallons/swipes', () => {
+  it('sales reps keep self-scoped warehouse.my_gallons + dbt_mcp wildcard', () => {
     const tools = agentRegistry.get('sales')!.tools;
     expect(tools).toContain('warehouse.my_gallons');
+    expect(tools).toContain('dbt_mcp.*');
   });
 
-  it('leadership agents (manager/analyst) still have company-wide analytics', () => {
-    expect(agentRegistry.get('manager')!.tools).toContain('analytics.snapshot');
-    expect(agentRegistry.get('analyst')!.tools).toContain('analytics.snapshot');
+  it('leadership agents (manager/analyst) use dbt MCP for warehouse metrics', () => {
+    expect(agentRegistry.get('manager')!.tools).toContain('dbt_mcp.*');
+    expect(agentRegistry.get('analyst')!.tools).toContain('dbt_mcp.*');
   });
 });

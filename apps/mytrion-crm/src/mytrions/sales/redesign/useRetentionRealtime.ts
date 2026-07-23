@@ -1,8 +1,12 @@
 /**
- * Shell-level Octane retention realtime — toast + bus publish so Cases/Pool
- * panes refresh instantly when a case is created or pool/ops events fire.
+ * Shell-level Octane realtime consumer over the single /v1/realtime socket. Dispatches:
+ *   - retention.* events → toast + retentionLiveBus (Cases/Pool panes refresh)
+ *   - inbox.*     events → the inbox reload fan-out (badge + Inbox tab + Home preview), replacing
+ *                          the old servercrm `crm_inbox_notification` path.
  */
 import { getSession } from '@/api/session';
+import { invalidateInboxCache } from './live';
+import { publishInboxLive, publishInboxReload } from './inboxLiveBus';
 import {
   parseRetentionCaseId,
   publishRetentionLive,
@@ -28,6 +32,18 @@ export function useRetentionRealtime(
     enabled: !!currentUserId,
     extraTopics,
     onInboxEvent: (event) => {
+      // Inbox messages (our copy of Zoho Org_Module) — refresh the Sales inbox in real time.
+      if (event.type.startsWith('inbox.')) {
+        if (!zohoIdsMatch(event.ownerId, currentUserId)) return;
+        // Drop the 30s inbox cache first so the reload (badge + tab, which collapse into one POST)
+        // fetches the NEW message.
+        invalidateInboxCache();
+        publishInboxReload();
+        publishInboxLive({ ownerId: event.ownerId, subject: event.title });
+        pushToast?.('New inbox message', event.title);
+        return;
+      }
+
       if (!event.type.startsWith('retention.')) return;
 
       const forMe = zohoIdsMatch(event.ownerId, currentUserId);

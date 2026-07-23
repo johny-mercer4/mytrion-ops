@@ -136,46 +136,55 @@
 .search::placeholder {
   color: var(--text-muted);
 }
-.search:disabled {
-  opacity: 0.7;
-  cursor: wait;
+.options {
+  overflow-y: auto;
 }
 
-.loadingRow {
+/* Skeleton rows while agents load — no spinner (avoids double/harsh loaders). */
+.optionSkel {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 18px 12px;
-  font-size: 12.5px;
-  color: var(--text-muted);
+  flex-direction: column;
+  gap: 6px;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border-light);
+}
+.optionSkel:last-child {
+  border-bottom: none;
+}
+.skelBar {
+  display: block;
+  height: 10px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--text-muted) 14%, transparent) 25%,
+    color-mix(in srgb, var(--text-muted) 28%, transparent) 50%,
+    color-mix(in srgb, var(--text-muted) 14%, transparent) 75%
+  );
+  background-size: 200% 100%;
+  animation: actAsShimmer 1.4s ease-in-out infinite;
+}
+.skelName {
+  height: 12px;
+}
+.skelMeta {
+  height: 9px;
+  opacity: 0.85;
 }
 
-.spinner {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--accent) 25%, var(--border));
-  border-top-color: var(--accent);
-  animation: spin 0.75s linear infinite;
-  flex: none;
-}
-
-.searchSpin {
-  display: inline-flex;
-  animation: spin 0.75s linear infinite;
-  color: var(--accent);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .spinner,
-  .searchSpin {
-    animation: none;
+@keyframes actAsShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
   }
 }
 
-.options {
-  overflow-y: auto;
+@media (prefers-reduced-motion: reduce) {
+  .skelBar {
+    animation: none;
+  }
 }
 
 .option {

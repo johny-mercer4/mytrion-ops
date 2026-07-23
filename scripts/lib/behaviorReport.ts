@@ -17,6 +17,8 @@ export const CATEGORY_THRESHOLDS: Record<TaskCategory, number> = {
   delegation: 0.75,
   'tool-selection': 0.75,
   'web-navigation': 0.5,
+  // SotA Phase 1 profile (EVAL_AGENT_SOTA=1): looser until baseline is recorded.
+  sota: 0.5,
 };
 
 /** LangChain normalizes registry tool names ('crm.pick_my_client' → 'crm__pick_my_client'). */
@@ -117,6 +119,24 @@ export function checkDeterministic(
   return { pass: failures.length === 0, failures };
 }
 
+/** Set-level tool selection scores (expected vs actual tool names). */
+export function toolSelectionScores(
+  expectedTools: string[],
+  actualTools: string[],
+): { precision: number; recall: number; f1: number } {
+  const exp = new Set(expectedTools.map(canonical));
+  const act = new Set(actualTools.map(canonical));
+  if (exp.size === 0 && act.size === 0) return { precision: 1, recall: 1, f1: 1 };
+  if (exp.size === 0) return { precision: 0, recall: 1, f1: 0 };
+  if (act.size === 0) return { precision: 1, recall: 0, f1: 0 };
+  let tp = 0;
+  for (const t of act) if (exp.has(t)) tp += 1;
+  const precision = tp / act.size;
+  const recall = tp / exp.size;
+  const f1 = precision + recall === 0 ? 0 : (2 * precision * recall) / (precision + recall);
+  return { precision, recall, f1 };
+}
+
 export type TaskVerdict = 'pass' | 'fail' | 'skip' | 'error';
 
 export interface TaskReport {
@@ -129,6 +149,8 @@ export interface TaskReport {
   durationMs: number;
   toolCalls: string[];
   costUsd: number;
+  toolF1?: number;
+  cacheHitRate?: number | null;
   judge?: JudgeOutcome[];
   /** Skip reason or runtime error message. */
   note?: string;
@@ -175,4 +197,114 @@ export function renderSummary(summary: Record<string, CategorySummary>): string 
     );
   }
   return lines.join('\n');
+}
+
+/** Soft suite KPI ceilings — breach is advisory in logs unless --baseline is used. */
+export const KPI_SOFT_THRESHOLDS = {
+  avgPingPongMax: 3,
+  p95DurationMsMax: 180_000,
+  avgToolF1Min: 0.4,
+} as const;
+
+/** Suite-level KPIs (ping-pong, duration percentiles, tool F1, KV hit). */
+export function suiteKpis(reports: TaskReport[]): {
+  avgPingPong: number;
+  p50DurationMs: number;
+  p95DurationMs: number;
+  avgToolF1: number | null;
+  avgCacheHitRate: number | null;
+  softBreaches: string[];
+} {
+  const evaluated = reports.filter((r) => r.verdict === 'pass' || r.verdict === 'fail');
+  const durations = evaluated.map((r) => r.durationMs).sort((a, b) => a - b);
+  const pct = (p: number) => {
+    if (durations.length === 0) return 0;
+    // Nearest-rank: index = ceil(p/100 * n) - 1
+    const i = Math.min(durations.length - 1, Math.max(0, Math.ceil((p / 100) * durations.length) - 1));
+    return durations[i] ?? 0;
+  };
+  const f1s = evaluated.map((r) => r.toolF1).filter((x): x is number => typeof x === 'number');
+  const hits = evaluated
+    .map((r) => r.cacheHitRate)
+    .filter((x): x is number => typeof x === 'number');
+  const avgPingPong =
+    evaluated.length === 0
+      ? 0
+      : evaluated.reduce((s, r) => s + r.pingPongCount, 0) / evaluated.length;
+  const p50DurationMs = pct(50);
+  const p95DurationMs = pct(95);
+  const avgToolF1 = f1s.length ? f1s.reduce((a, b) => a + b, 0) / f1s.length : null;
+  const avgCacheHitRate = hits.length ? hits.reduce((a, b) => a + b, 0) / hits.length : null;
+  const softBreaches: string[] = [];
+  if (avgPingPong > KPI_SOFT_THRESHOLDS.avgPingPongMax) {
+    softBreaches.push(
+      `avgPingPong ${avgPingPong.toFixed(2)} > soft max ${KPI_SOFT_THRESHOLDS.avgPingPongMax}`,
+    );
+  }
+  if (p95DurationMs > KPI_SOFT_THRESHOLDS.p95DurationMsMax) {
+    softBreaches.push(
+      `p95DurationMs ${p95DurationMs} > soft max ${KPI_SOFT_THRESHOLDS.p95DurationMsMax}`,
+    );
+  }
+  if (avgToolF1 !== null && avgToolF1 < KPI_SOFT_THRESHOLDS.avgToolF1Min) {
+    softBreaches.push(
+      `avgToolF1 ${avgToolF1.toFixed(2)} < soft min ${KPI_SOFT_THRESHOLDS.avgToolF1Min}`,
+    );
+  }
+  return {
+    avgPingPong,
+    p50DurationMs,
+    p95DurationMs,
+    avgToolF1,
+    avgCacheHitRate,
+    softBreaches,
+  };
+}
+
+export interface EvalBaseline {
+  summary?: Record<string, { passRate?: number | null }>;
+  kpis?: {
+    avgPingPong?: number;
+    p95DurationMs?: number;
+    avgToolF1?: number | null;
+    avgCacheHitRate?: number | null;
+  };
+}
+
+/** Compare a run against a committed baseline; returns human-readable regressions. */
+export function compareToBaseline(
+  summary: Record<string, CategorySummary>,
+  kpis: ReturnType<typeof suiteKpis>,
+  baseline: EvalBaseline,
+  /** Absolute pass-rate drop allowed before counting as regression (default 5pp). */
+  passRateSlack = 0.05,
+): string[] {
+  const regressions: string[] = [];
+  for (const [category, base] of Object.entries(baseline.summary ?? {})) {
+    if (base.passRate === null || base.passRate === undefined) continue;
+    const cur = summary[category];
+    if (!cur || cur.passRate === null) continue;
+    if (cur.passRate + passRateSlack < base.passRate) {
+      regressions.push(
+        `${category} passRate ${cur.passRate.toFixed(2)} < baseline ${base.passRate.toFixed(2)} (−${passRateSlack} slack)`,
+      );
+    }
+  }
+  const bk = baseline.kpis ?? {};
+  if (typeof bk.avgPingPong === 'number' && kpis.avgPingPong > bk.avgPingPong) {
+    regressions.push(`avgPingPong ${kpis.avgPingPong.toFixed(2)} > baseline ${bk.avgPingPong}`);
+  }
+  if (typeof bk.p95DurationMs === 'number' && kpis.p95DurationMs > bk.p95DurationMs) {
+    regressions.push(`p95DurationMs ${kpis.p95DurationMs} > baseline ${bk.p95DurationMs}`);
+  }
+  if (
+    typeof bk.avgToolF1 === 'number' &&
+    kpis.avgToolF1 !== null &&
+    kpis.avgToolF1 + 0.05 < bk.avgToolF1
+  ) {
+    regressions.push(
+      `avgToolF1 ${kpis.avgToolF1.toFixed(2)} < baseline ${bk.avgToolF1.toFixed(2)}`,
+    );
+  }
+  return regressions;
 }

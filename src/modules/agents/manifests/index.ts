@@ -1,5 +1,5 @@
 /**
- * The 10 child-agent manifests, in AGENT_KEYS order. This list is the single source of truth
+ * Child-agent manifests, in AGENT_KEYS order. This list is the single source of truth
  * for the multi-agent core; departmentAgents.ts (the /v1/chat persona + tool-policy shim) and
  * the agent registry are both derived from it.
  */
@@ -8,6 +8,7 @@ import { analystAgent } from './analyst.js';
 import { billingAgent } from './billing.js';
 import { collectionAgent } from './collection.js';
 import { customerServiceAgent } from './customerService.js';
+import { dataCenterAgent } from './dataCenter.js';
 import { financeAgent } from './finance.js';
 import { managerAgent } from './manager.js';
 import { marketingAgent } from './marketing.js';
@@ -21,6 +22,7 @@ const byKey: Record<AgentKey, AgentManifest> = {
   verification: verificationAgent,
   retention: retentionAgent,
   sales: salesAgent,
+  'data-center': dataCenterAgent,
   marketing: marketingAgent,
   finance: financeAgent,
   analyst: analystAgent,

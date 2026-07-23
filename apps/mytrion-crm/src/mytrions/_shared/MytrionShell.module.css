@@ -27,10 +27,72 @@
   overflow-y: auto;
 }
 
+.navTop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  flex: 1;
+}
+.navSearch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 34px;
+  padding: 0 var(--space-2_5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--text-muted);
+  flex: none;
+}
+.navSearch:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow: 0 0 0 2px var(--accent-glow);
+  color: var(--text-primary);
+}
+.navSearch input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+}
+.navSearch input::placeholder {
+  color: var(--text-muted);
+}
 .navGroup {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+.navSection {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.navSection + .navSection {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+}
+.navSectionLabel {
+  padding: 0 var(--space-3) var(--space-1);
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.navEmpty {
+  padding: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: 1.4;
 }
 
 .navBtn {
@@ -132,6 +194,7 @@
 /* center content (scrolls) */
 .center {
   flex: 1;
+  height: 100%;
   overflow-y: auto;
   min-width: 0;
   background:
@@ -157,17 +220,40 @@
   }
   .sidebar {
     width: 100%;
-    flex-direction: row;
+    flex-direction: column;
     justify-content: flex-start;
     gap: var(--space-2);
     padding: var(--space-2) var(--space-3);
     border-right: none;
     border-bottom: 1px solid var(--border);
     overflow-x: auto;
+    max-height: none;
+  }
+  .navTop {
+    flex: none;
   }
   .navGroup {
     flex-direction: row;
+    flex-wrap: wrap;
     gap: var(--space-1);
+  }
+  .navSection {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+  }
+  .navSection + .navSection {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+    margin-left: var(--space-2);
+    padding-left: var(--space-2);
+    border-left: 1px solid var(--border);
+  }
+  .navSectionLabel {
+    padding: 0 var(--space-1) 0 0;
+    align-self: center;
   }
   .navBtn {
     width: auto;

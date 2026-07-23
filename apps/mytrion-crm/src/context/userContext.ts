@@ -8,6 +8,7 @@
  * standalone without a backend.
  */
 import type { MytrionId } from '../access/mytrions.config';
+import type { MytrionAccessModes } from '../api/mytrionAccess';
 import type { SessionWorker } from '../api/session';
 
 export interface UserContext {
@@ -25,6 +26,8 @@ export interface UserContext {
   accessibleMytrions?: MytrionId[];
   homeMytrion?: MytrionId | null;
   allDepartmentAccess?: boolean;
+  /** Per-Mytrion read|full; omitted / absent → treat as full (back-compat). */
+  mytrionAccessModes?: MytrionAccessModes;
   /** Users this worker may "View as" (targeted impersonation grant) — drives the picker for non-admins. */
   viewAsTargets?: Array<{ zohoUserId: string; name: string | null }>;
 }
@@ -51,6 +54,7 @@ export function contextFromWorker(worker: SessionWorker): UserContext {
   if (worker.accessibleMytrions) ctx.accessibleMytrions = worker.accessibleMytrions;
   if (worker.homeMytrion !== undefined) ctx.homeMytrion = worker.homeMytrion;
   if (worker.allDepartmentAccess !== undefined) ctx.allDepartmentAccess = worker.allDepartmentAccess;
+  if (worker.mytrionAccessModes) ctx.mytrionAccessModes = worker.mytrionAccessModes;
   if (worker.viewAsTargets) ctx.viewAsTargets = worker.viewAsTargets;
   return ctx;
 }

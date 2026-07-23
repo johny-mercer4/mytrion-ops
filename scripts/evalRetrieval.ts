@@ -93,19 +93,42 @@ async function main(): Promise<void> {
   env.FF_RAG_HYBRID = hybridFlag;
 
   const n = corpus.queries.length;
+  // Floor gates vs 2026-07 baseline (single-shot recall@6 = 1.00). Soften slightly for agentic/CRAG noise.
+  const FLOORS: Record<(typeof modes)[number], { recall: number; mrr: number }> = {
+    'single-shot': { recall: 1.0, mrr: 0.8 },
+    hybrid: { recall: 0.9, mrr: 0.7 },
+    agentic: { recall: 0.85, mrr: 0.65 },
+  };
+  let breached = false;
   for (const mode of modes) {
     const { hits, rrSum } = totals[mode];
+    const recallAtK = hits / n;
+    const mrr = rrSum / n;
+    const floor = FLOORS[mode];
+    const modeBreach = recallAtK < floor.recall || mrr < floor.mrr;
+    if (modeBreach) breached = true;
     logger.info(
-      { mode, recallAtK: (hits / n).toFixed(2), mrr: (rrSum / n).toFixed(3), queries: n },
+      {
+        mode,
+        recallAtK: recallAtK.toFixed(2),
+        mrr: mrr.toFixed(3),
+        queries: n,
+        floor,
+        breached: modeBreach,
+      },
       'retrieval eval result',
     );
+  }
+  if (breached) {
+    logger.error('retrieval eval REGRESSION vs floors — failing');
+    process.exitCode = 1;
   }
 }
 
 main()
   .then(async () => {
     await closeDb();
-    process.exit(0);
+    process.exit(process.exitCode ?? 0);
   })
   .catch(async (err) => {
     logger.error({ err }, 'retrieval eval failed');

@@ -1,0 +1,22 @@
+{
+  "label": "sota-phase2",
+  "recordedAt": "2026-07-23",
+  "note": "Committed floors for --baseline regression. Update after a green EVAL_AGENT_SOTA=1 pnpm eval:live run.",
+  "summary": {
+    "rbac": { "passRate": 1.0 },
+    "greeting": { "passRate": 1.0 },
+    "routing": { "passRate": 0.9 },
+    "grounding": { "passRate": 0.8 },
+    "refusal": { "passRate": 0.75 },
+    "delegation": { "passRate": 0.75 },
+    "tool-selection": { "passRate": 0.75 },
+    "web-navigation": { "passRate": 0.5 },
+    "sota": { "passRate": 0.5 }
+  },
+  "kpis": {
+    "avgPingPong": 2.5,
+    "p95DurationMs": 120000,
+    "avgToolF1": 0.5,
+    "avgCacheHitRate": null
+  }
+}

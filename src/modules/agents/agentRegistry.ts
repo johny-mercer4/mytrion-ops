@@ -1,5 +1,5 @@
 /**
- * AgentRegistry — RBAC-gated lookup over the 10 agent manifests, mirroring ToolRegistry.
+ * AgentRegistry — RBAC-gated lookup over the agent manifests, mirroring ToolRegistry.
  * checkAccess decides whether a caller may select/route-to an agent at all; it runs BEFORE
  * the orchestrator is constructed, so a caller's orchestrator never contains agents outside
  * their departments. (Tool calls inside a selected agent are still re-checked per dispatch —

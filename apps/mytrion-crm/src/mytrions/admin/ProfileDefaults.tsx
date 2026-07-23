@@ -5,7 +5,7 @@ import s from './admin.module.css';
 
 const label = (id: MytrionId): string => MYTRIONS[id]?.title ?? id;
 
-/** Per-profile default Mytrion access. A worker inherits this unless a per-user override changes it. */
+/** Per-profile default Mytrion access. Layered with role defaults; per-user override still wins. */
 export function ProfileDefaults() {
   const [profiles, setProfiles] = useState<ProfileDefault[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,7 +29,10 @@ export function ProfileDefaults() {
 
   return (
     <>
-
+      <p className={s.noticeNote} style={{ marginBottom: '0.75rem' }}>
+        Profile defaults apply to every worker with that Zoho CRM profile. Specific Mytrion = full
+        access to that Mytrion. Role defaults add on top; per-user overrides still win.
+      </p>
       {error && (
         <p className={s.errorNote} role="alert">
           {error}

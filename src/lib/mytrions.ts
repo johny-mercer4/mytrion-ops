@@ -23,6 +23,25 @@ export const MYTRION_IDS = [
 
 export type MytrionId = (typeof MYTRION_IDS)[number];
 
+/** Per-Mytrion capability: enter + read vs enter + write (money moves, matches, etc.). */
+export const MYTRION_ACCESS_MODES = ['read', 'full'] as const;
+export type MytrionAccessMode = (typeof MYTRION_ACCESS_MODES)[number];
+export type MytrionAccessModes = Partial<Record<MytrionId, MytrionAccessMode>>;
+
+export function isMytrionAccessMode(value: unknown): value is MytrionAccessMode {
+  return value === 'read' || value === 'full';
+}
+
+/** Keep only valid Mytrion→mode pairs from an arbitrary object. */
+export function toMytrionAccessModes(value: unknown): MytrionAccessModes {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const out: MytrionAccessModes = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (isMytrionId(k) && isMytrionAccessMode(v)) out[k] = v;
+  }
+  return out;
+}
+
 /** Each Mytrion → its backend `department_access` slug (a free string; not an enforced allowlist). */
 export const MYTRION_DEPARTMENT: Record<MytrionId, string> = {
   admin: 'admin',
@@ -97,4 +116,9 @@ export const DEFAULT_PROFILE_SEED: ProfileDefaultSeed[] = [
 /** Match key for a profile name: trim + lowercase (same normalization used everywhere). */
 export function profileKeyOf(profileName: string): string {
   return profileName.trim().toLowerCase();
+}
+
+/** Match key for a Zoho CRM role name — same normalization as profiles. */
+export function roleKeyOf(roleName: string): string {
+  return profileKeyOf(roleName);
 }
