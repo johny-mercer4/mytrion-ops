@@ -1,16 +1,12 @@
 /**
  * Sales Mytrion redesign — Home tab. Ported verbatim from the reference prototype's `isHome`
  * slice + `renderVals()` view-model: hero briefing, workday progress, Updates & Announcements,
- * Today's Snapshot (skeleton → 3 groups), Your Activity (range toggle + daily average strip),
- * and the Quick Actions / Recent Inbox two-column footer. The JSX/design is unchanged; the data
- * source is now LIVE — loadSnapshot / loadAnnouncements / loadActivity / loadInbox via useLoad,
- * with the servercrm WebSocket reloading announcements + inbox in real time. Per-tab UI state
- * (activity range, inbox read map, clock tick) stays local; cross-tab affordances come from
- * useSales(). The Quick Actions cards render the static CALL_TO_ACTIONS catalog (action config).
+ * Today's Snapshot, Quick Actions / Recent Inbox. Primary fetches run in parallel behind a
+ * full-page HomePageSkeleton; the page reveals once they settle. Live reloads (WS / refresh)
+ * still use per-block useLoad. Quick Actions = static CALL_TO_ACTIONS catalog.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { getSession } from '@/api/session';
-import { getAppStats } from '@/api/dataCenter';
 import { getImpersonation } from '@/api/impersonation';
 import { useImpersonation } from '@/context/ImpersonationProvider';
 import { s, clickable } from '../dc';
@@ -19,17 +15,9 @@ import { ICO, iconBox, badge, deptStyle, timeParts, WORKDAY_START_HOUR, WORKDAY_
 import { useSessionUser } from '../sessionUser';
 import { markInboxRead } from '../inboxRead';
 import { CALL_TO_ACTIONS } from '../../data';
-import {
-  useLoad,
-  loadSnapshot,
-  loadAnnouncements,
-  loadActivity,
-  loadInbox,
-  numFmt,
-  money,
-  type AnnVM,
-  type InboxVM,
-} from '../live';
+import { loadSnapshot, loadAnnouncements, loadActivity, loadInbox, numFmt, money, type AnnVM, type InboxVM } from '../live';
+import { getAppStats } from '@/api/dataCenter';
+import { useCachedLoad } from '../dcCache';
 import { subscribeInboxLive } from '../inboxLiveBus';
 import { useServerCrmSocket } from '../useServerCrmSocket';
 import { useSales } from '../ctx';
@@ -43,7 +31,7 @@ import {
   isNewBest,
   claimCelebration,
 } from '../streakStore';
-import { HomeBelowFoldSkeleton } from './HomeSkeleton';
+import { AnnouncementsRailSkeleton, SnapshotCardsSkeleton, InboxListSkeleton } from './HomeSkeleton';
 
 type AnnItem = AnnVM;
 type InboxItem = InboxVM;
@@ -56,7 +44,7 @@ interface SnapCell {
   value: string;
   label: string;
   help: string;
-  onClick?: () => void;
+  onClick?: (() => void) | undefined;
 }
 interface SnapGroup {
   label: string;
@@ -169,22 +157,19 @@ export function HomeTab() {
   const currentUserId = String(actingAs?.zohoUserId ?? getSession()?.worker.zohoUserId ?? '');
 
   // ---- live data ----
-  const snap = useLoad(loadSnapshot, []);
-  const dailyAct = useLoad(() => loadActivity('today'), []); // snapshot "Tasks Done" (today)
-  const ann = useLoad(loadAnnouncements, []);
-  const inbox = useLoad(loadInbox, [currentUserId]);
-  // Real per-day applications (Zoho COQL: Deals.Application_Date = application filled, owner-scoped).
-  // Pass zoho_user_id like Deals/Desk — bare getAppStats() can resolve to no owner and show silent zeros.
-  const appStats = useLoad(() => {
-    const actAsId = getImpersonation()?.zohoUserId?.trim();
-    const selfId = getSession()?.worker.zohoUserId?.trim();
-    return getAppStats(actAsId || selfId || undefined);
-  }, [currentUserId]);
+  const homeKey = getImpersonation()?.zohoUserId ?? 'self';
+  // SWR-cached per block (dcCache): paints instantly from cache on tab re-entry + revalidates in the
+  // background — no cold refetch storm, no whole-page loader. Keyed by the acted-as subject.
+  const snap = useCachedLoad(`sales:home:snapshot:${homeKey}`, () => loadSnapshot(), { staleMs: 60_000 });
+  const dailyAct = useCachedLoad(`sales:home:activityToday:${homeKey}`, () => loadActivity('today'), { staleMs: 60_000 });
+  const ann = useCachedLoad(`sales:home:announcements:${homeKey}`, () => loadAnnouncements(), { staleMs: 120_000 });
+  const inbox = useCachedLoad(`sales:home:inbox:${homeKey}`, () => loadInbox(), { staleMs: 30_000 });
+  // Real per-day applications (owner-scoped): pass the acted-as zoho_user_id, else app-stats zeros out.
+  const appStats = useCachedLoad(`sales:home:appStats:${homeKey}`, () => getAppStats(currentUserId || undefined), { staleMs: 60_000 });
 
   // ---- local per-tab state ----
   const [, setTick] = useState<number>(0); // drives the 30s clock re-render
-  /** One-shot: keep a single below-fold skeleton until the first home loads settle. */
-  const [homeReady, setHomeReady] = useState(false);
+  // Progressive per-block loading (dcCache SWR) — no whole-page gate; each block owns its skeleton.
   /** Transient goal/personal-best celebration overlay (auto-dismissed). */
   const [celebration, setCelebration] = useState<{ emoji: string; title: string; msg: string } | null>(null);
   /** Set while a user-initiated snapshot refresh is in flight, so we can confirm it on completion. */
@@ -203,25 +188,7 @@ export function HomeTab() {
     return () => clearInterval(clock);
   }, []);
 
-  useEffect(() => {
-    if (homeReady) return;
-    const pending =
-      (snap.loading && snap.data === null && !snap.error) ||
-      (ann.loading && ann.data === null && !ann.error) ||
-      (inbox.loading && inbox.data === null && !inbox.error);
-    if (!pending) setHomeReady(true);
-  }, [
-    homeReady,
-    snap.loading,
-    snap.data,
-    snap.error,
-    ann.loading,
-    ann.data,
-    ann.error,
-    inbox.loading,
-    inbox.data,
-    inbox.error,
-  ]);
+  // (progressive per-block loading — no whole-page gate)
 
   // Real-time: announcements on this tab's socket; inbox toast/reload are shell-level
   // (`useSidebarBadges` → toast on every tab + `inboxLiveBus` for the Home preview list).
@@ -237,12 +204,10 @@ export function HomeTab() {
 
   const refreshSnapshot = (): void => {
     snapRefreshPending.current = true;
-    // refresh() (not reload()) flips `refreshing` true for spinner feedback AND bypasses any
-    // fetch cache — reload() leaves `refreshing` false when data is already present, which read
-    // as "nothing happened". Also drives the Tasks-Done daily cell + app-stat tiles.
-    snap.refresh();
-    dailyAct.refresh();
-    appStats.refresh();
+    // reload() forces a background revalidation (dcCache) — keeps tiles visible while refetching.
+    snap.reload();
+    dailyAct.reload();
+    appStats.reload();
   };
 
   const openInbox = (i: InboxItem): void => {
@@ -287,7 +252,7 @@ export function HomeTab() {
   const workdayEndLabel = hourLabel(WORKDAY_END_HOUR);
   const annData = ann.data ?? [];
   const inboxData = inbox.data ?? [];
-  const snapSpinCss = snap.refreshing || snap.loading ? 'animation:ss-spin .9s linear infinite' : '';
+  const snapSpinCss = snap.revalidating || snap.loading ? 'animation:ss-spin .9s linear infinite' : '';
 
   // ---- daily-goal habit loop — REAL data (Zoho COQL: Deals.Application_Date per day, owner-scoped) ----
   const appsLoading = appStats.loading && !appStats.data;
@@ -539,15 +504,15 @@ export function HomeTab() {
         </div>
       )}
 
-      {!homeReady ? (
-        <HomeBelowFoldSkeleton />
-      ) : (
-        <>
+      <>
           {/* announcements */}
           <div style={s('display:flex;align-items:center;justify-content:space-between;margin:22px 2px 12px')}>
             <div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name={ICO.bell} size={17} /></span>Updates &amp; Announcements</div>
             <span style={s('font-size:11px;font-weight:800;letter-spacing:.04em;padding:3px 9px;border-radius:99px;background:rgba(var(--accent-rgb),.14);color:var(--accent)')}>{annData.length} NEW</span>
           </div>
+          {ann.loading ? (
+            <AnnouncementsRailSkeleton />
+          ) : (
           <div style={s('display:flex;gap:12px;overflow-x:auto;padding-bottom:6px')}>
             {ann.error && <StateNote tone="danger">{ann.error}</StateNote>}
             {!ann.error && annData.length === 0 && <StateNote tone="muted">No announcements</StateNote>}
@@ -561,19 +526,23 @@ export function HomeTab() {
               </div>
             ))}
           </div>
+          )}
 
           {/* snapshot */}
           <div style={s('margin-top:24px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
             <div style={s('display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)')}>
               <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}>Today's Snapshot</div>
               <div style={s('display:flex;align-items:center;gap:10px')}>
-                <span style={s('font-size:11px;color:var(--muted)')}>{snap.refreshing ? 'Refreshing…' : `Updated ${snapFetchedAt || timeFmt}`}</span>
+                <span style={s('font-size:11px;color:var(--muted)')}>{snap.revalidating ? 'Refreshing…' : `Updated ${snapFetchedAt || timeFmt}`}</span>
                 <button onClick={refreshSnapshot} aria-label="Refresh" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}><Icon name="refresh" size={15} style={s(snapSpinCss)} /></button>
               </div>
             </div>
             <div style={s('padding:18px 20px')}>
-              {snap.error && <StateNote tone="danger">{snap.error}</StateNote>}
-              {!snap.error && (
+              {snap.loading ? (
+                <SnapshotCardsSkeleton />
+              ) : snap.error ? (
+                <StateNote tone="danger">{snap.error}</StateNote>
+              ) : (
                 <div>
                   {snapshotGroups.map((g) => (
                     <div key={g.label} style={s('margin-bottom:16px')}>
@@ -628,6 +597,9 @@ export function HomeTab() {
             </div>
             <div>
               <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name="inbox" size={17} /></span>Recent Inbox</div><button onClick={goInbox} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-md)')}>View all →</button></div>
+              {inbox.loading ? (
+                <InboxListSkeleton />
+              ) : (
               <div style={s('display:flex;flex-direction:column;gap:10px')}>
                 {inbox.error && <StateNote tone="danger">{inbox.error}</StateNote>}
                 {!inbox.error && inboxData.length === 0 && <StateNote tone="muted">No messages</StateNote>}
@@ -642,10 +614,10 @@ export function HomeTab() {
                   </div>
                 ))}
               </div>
+              )}
             </div>
           </div>
-        </>
-      )}
+      </>
     </div>
   );
 }

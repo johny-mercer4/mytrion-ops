@@ -194,6 +194,7 @@ describe('retentionPoolClaimRepo.claimNow', () => {
 
     expect(out.pendingApproval).toBe(false);
     expect(out.statusCode).toBe('p1_new');
+    expect(out.quota).toEqual({ used: 0, max: 2, remaining: 2 });
     expect(dbMock.insert).toHaveBeenCalled();
     expect(zoho.updateRecord).toHaveBeenCalledWith('Deals', 'deal-1', {
       Owner: { id: 'claimant-9' },
@@ -248,7 +249,15 @@ describe('retentionPoolClaimRepo.claimNow', () => {
         reason: 'Try claim',
       }),
     ).rejects.toBeInstanceOf(AppError);
-    expect(dbMock.insert).not.toHaveBeenCalled();
+    // Ownership-transfer audit may log the Zoho failure; claim audit must not be written.
+    const inserted = dbMock.insert.mock.calls.map((c) => {
+      // Cast through unknown since Drizzle PgTable doesn't have an index signature for symbols
+      const table = c[0] as unknown as { [symbol: symbol]: string } | undefined;
+      const symbols = table ? Object.getOwnPropertySymbols(table) : [];
+      const nameSym = symbols.find((s) => String(s).includes('Name'));
+      return nameSym && table ? table[nameSym] : '';
+    });
+    expect(inserted).not.toContain('retention_claim_requests');
   });
 
   it('enforces daily Open Pool cap', async () => {

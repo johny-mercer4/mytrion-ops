@@ -16,6 +16,7 @@ import { ringcentral } from '../../integrations/ringcentral.js';
 import { NotFoundError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { mytrionCallRepo } from '../../repos/mytrionCallRepo.js';
+import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import type { MytrionCallSourceType } from '../../db/schema/index.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 import { requireDepartment } from './helpers.js';
@@ -58,6 +59,23 @@ function callSource(body: CallEventBody): { sourceType: MytrionCallSourceType; s
 /** Zoho user id of the caller from the session principal (`zoho:<id>`), else the raw userId. */
 function callerZohoUserId(ctx: TenantContext): string {
   return ctx.userId.startsWith('zoho:') ? ctx.userId.slice('zoho:'.length) : ctx.userId;
+}
+
+/** Statuses a call must NOT overwrite — a categorized lead is left alone (never un-categorized). */
+const LEAD_TERMINAL_STATUSES = new Set([
+  'Interested',
+  'Not Interested',
+  'Follow-up',
+  'Email Follow-Up',
+  'Unqualified',
+  'Application Filled',
+]);
+
+/** Call-log count → the Zoho Lead call-number status (capped at Third Call). */
+function callStatusForCount(count: number): string {
+  if (count <= 1) return 'First Call';
+  if (count === 2) return 'Second Call';
+  return 'Third Call';
 }
 
 export async function ringcentralRoutes(app: FastifyInstance): Promise<void> {
@@ -128,6 +146,23 @@ export async function ringcentralRoutes(app: FastifyInstance): Promise<void> {
           });
         } catch (err) {
           request.log.warn({ err }, 'mytrion_calls insert failed (call event still audited)');
+        }
+
+        // Auto-advance the Lead's call number (First/Second/Third) from the call-log count. Call
+        // statuses are never set by hand — here they follow the logs. Skip a categorized lead
+        // (outcome / Application Filled) so a later call never un-categorizes it.
+        if (source.sourceType === 'lead') {
+          try {
+            const callCount = await mytrionCallRepo.countForSource(ctx, 'lead', source.sourceId);
+            const target = callStatusForCount(callCount);
+            const rec = await zohoCrmRecords.getRecord('Leads', source.sourceId);
+            const cur = rec && typeof rec.Status === 'string' ? rec.Status : '';
+            if (!LEAD_TERMINAL_STATUSES.has(cur) && cur !== target) {
+              await zohoCrmRecords.updateRecord('Leads', source.sourceId, { Status: target });
+            }
+          } catch (err) {
+            request.log.warn({ err }, 'lead call-status auto-advance failed (call still logged)');
+          }
         }
       }
     }

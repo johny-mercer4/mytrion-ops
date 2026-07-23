@@ -374,7 +374,8 @@ export const retentionTouchpoints: LocalTouchpoint[] = [
           agentName: typeof params.agentName === 'string' ? params.agentName : undefined,
         },
       );
-      return { case: updated, pendingApproval: false };
+      const { pendingApproval, quota, ...caseRow } = updated;
+      return { case: caseRow, pendingApproval, quota };
     },
   },
 

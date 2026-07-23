@@ -15,6 +15,10 @@
  * ISOLATION NOTE: free-SQL `query` is registered as admin-only (department policy) behind
  * FF_DBT_MCP_ENABLED; `run`/`test` also need FF_DBT_MCP_WRITES. See modules/tools/dbtMcpTools.ts.
  */
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { env } from '../config/env.js';
 import { AppError } from '../lib/errors.js';
 
@@ -296,16 +300,46 @@ export async function callDbtTool(
       statusCode: 502,
     });
   }
-  if (result.structuredContent !== undefined) return result.structuredContent;
-  const parsed = blocks.map((b) => {
-    try {
-      return JSON.parse(b);
-    } catch {
-      return b;
+  let finalResult: unknown = null;
+  if (result.structuredContent !== undefined) {
+    finalResult = result.structuredContent;
+  } else {
+    const parsed = blocks.map((b) => {
+      try {
+        return JSON.parse(b);
+      } catch {
+        return b;
+      }
+    });
+    if (parsed.length > 0) {
+      finalResult = parsed.length === 1 ? parsed[0] : parsed;
     }
-  });
-  if (parsed.length === 0) return null;
-  return parsed.length === 1 ? parsed[0] : parsed;
+  }
+
+  if (finalResult !== null && typeof finalResult === 'object') {
+    const jsonStr = JSON.stringify(finalResult);
+    if (jsonStr.length > env.AGENT_TOOL_OUTPUT_MAX_CHARS) {
+      const scratchDir = join(tmpdir(), 'octane_mcp_scratch');
+      mkdirSync(scratchDir, { recursive: true });
+      const file = join(scratchDir, `dwh_${randomUUID()}.json`);
+      writeFileSync(file, jsonStr, 'utf-8');
+      
+      let summary = '';
+      if (Array.isArray(finalResult) && finalResult.length > 0 && typeof finalResult[0] === 'object' && finalResult[0] !== null) {
+        summary = `Columns: ${Object.keys(finalResult[0]).join(', ')}`;
+      }
+      
+      return {
+        _is_scratchpad: true,
+        message: `Result exceeded context budget (${jsonStr.length} chars). Written to local scratchpad.`,
+        filepath: file,
+        rows: Array.isArray(finalResult) ? finalResult.length : 1,
+        summary,
+      };
+    }
+  }
+
+  return finalResult;
 }
 
 /** For tests/smoke: reset the cached session + token. */

@@ -171,7 +171,7 @@ export type LeadEditFields = Partial<
   >
 >;
 /** Editable Deal fields (exact Zoho API names). */
-export type DealEditFields = Partial<Record<'Email' | 'Phone' | 'Description', string | null>>;
+export type DealEditFields = Partial<Record<'Email' | 'Phone' | 'Cell' | 'Secondary_Email' | 'Description', string | null>>;
 
 /** Owner-scoped edit of a Lead (server re-checks the record Owner). Admins acting-as an agent pass
  *  their impersonation `zohoUserId` so the owner check targets that agent's records. */

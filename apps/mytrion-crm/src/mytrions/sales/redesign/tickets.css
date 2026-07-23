@@ -232,6 +232,16 @@
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
+.ss-root .ss-tk-list-loading {
+  flex: 1;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--muted);
+}
 
 /* ── Ticket card ───────────────────────────────────────────────── */
 .ss-root .ss-tk-card {
@@ -438,7 +448,12 @@
   gap: 9px;
   align-items: flex-end;
 }
-/* You (mine) → left; agent → right */
+/*
+ * Sales agent's own posts ("me" / You) → LEFT.
+ * CS / customer / other agents → RIGHT.
+ * (Reference ticketdashboard puts "me" on the right; Sales Mytrion keeps the agent's
+ * own bubbles on the left so deal-owner messages read as the primary column.)
+ */
 .ss-root .ss-tk-msg.is-me {
   flex-direction: row;
 }

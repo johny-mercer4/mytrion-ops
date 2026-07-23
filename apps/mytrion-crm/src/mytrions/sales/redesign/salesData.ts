@@ -115,8 +115,9 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       // Retention owns Cases + Open Pool as in-page tabs (Phase 1 live).
       { id: 'retention', label: 'Retention', icon: 'retention' },
-      // Tickets sits right after Retention (the two live desks lead this cluster).
-      { id: 'tickets', label: 'Tickets', icon: 'tickets' },
+      // Tickets parked as "Coming soon" — drop `comingSoon` to re-enable (TicketsTab stays wired;
+      // TICKETS_ENABLED flips back automatically, restoring the badge + Desk paging + openTicket nav).
+      { id: 'tickets', label: 'Tickets', icon: 'tickets', comingSoon: true },
       // Verification Pipeline parked — process not ready yet; drop `comingSoon` to re-enable (VerificationTab stays wired).
       { id: 'verification', label: 'Verification Pipeline', icon: 'verification', comingSoon: true },
       { id: 'callHub', label: 'Call Hub', icon: 'callHub', comingSoon: true },
@@ -274,8 +275,9 @@ export function timeParts(now: Date = new Date()) {
     pct,
     phase,
     workday,
-    /** Knob sits on the fill end; stay inset so it doesn't clip the track. */
-    knobPct: before ? 0 : Math.min(Math.max(pct, 2), 96),
+    /** Knob sits on the fill end. Floor 2% keeps it off the left cap; ceiling 100% lets it reach
+     *  the end when the workday is over (the track container is overflow:visible, so no clip). */
+    knobPct: before ? 0 : Math.min(Math.max(pct, 2), 100),
     timeFmt: now.toLocaleTimeString('en-US', { timeZone: NY_TZ, hour: 'numeric', minute: '2-digit', hour12: true }),
     dateLabel: now.toLocaleDateString('en-US', { timeZone: NY_TZ, weekday: 'long', month: 'long', day: 'numeric' }),
   };

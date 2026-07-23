@@ -109,7 +109,11 @@ export async function loadOpenPoolCases(): Promise<RetentionCasesListResult> {
 export async function claimOpenPoolCase(
   caseId: string,
   reason: string,
-): Promise<{ case: RetentionCaseRow; pendingApproval: boolean }> {
+): Promise<{
+  case: RetentionCaseRow;
+  pendingApproval: boolean;
+  quota: { used: number; max: number; remaining: number };
+}> {
   return callTouchpoint('retention.pool_claim', { caseId, reason });
 }
 
@@ -149,7 +153,7 @@ export const KANBAN_COLS: Array<{
   { id: 'out_of_reach', label: 'Out of Reach', hint: '5×1 BD attempts → Pool', color: 'var(--warn)' },
   { id: 'vacation', label: 'Vacation', hint: '14-day countdown', color: 'var(--violet)' },
   { id: 'dissatisfied', label: 'Dissatisfied', hint: 'Escalated · Retention', color: 'var(--danger)' },
-  { id: 'closed', label: 'Closed', hint: 'Returned · Pool / Retention handoff', color: 'var(--ok)' },
+  { id: 'closed', label: 'Closed', hint: 'Returned · Retention handoff', color: 'var(--ok)' },
 ];
 
 /** status_code → board_column (same seed as retention_statuses). */
@@ -164,18 +168,40 @@ const STATUS_BOARD: Record<string, RetentionKanbanCol> = {
   p1_awaiting_ops: 'vacation',
   p1_dissatisfied: 'dissatisfied',
   p1_no_action_2bd: 'closed',
-  p1_open_pool: 'closed',
-  p1_pool_claim_pending: 'closed',
+  // Open Pool / claim-pending: column comes from agentOutcome (see kanbanColOf) — stay on stage.
   p1_returned: 'closed',
   p1_handoff_retention: 'closed',
   p3_hold: 'closed',
   p3_closed: 'closed',
 };
 
+/** Former-owner Open Pool card — keep the stage that escalated (locked), never Closed. */
+function openPoolKanbanCol(outcome: RetentionCaseRow['agentOutcome']): RetentionKanbanCol {
+  switch (outcome) {
+    case 'reached':
+      return 'reached';
+    case 'vacation':
+      return 'vacation';
+    case 'dissatisfied':
+      return 'dissatisfied';
+    case 'no_action_2bd':
+      return 'new';
+    case 'out_of_reach':
+      return 'out_of_reach';
+    default:
+      // Reclaim / unknown — treat as New (most reclaim paths left pool-assigned New).
+      return 'new';
+  }
+}
+
 export function kanbanColOf(c: RetentionCaseRow): RetentionKanbanCol {
   // Dissatisfied handoff lands in Phase 2 — keep it on the Dissatisfied column.
   if (c.agentOutcome === 'dissatisfied' || c.statusCode === 'p1_dissatisfied') {
     return 'dissatisfied';
+  }
+  // Open Pool: blocked on the stage it left from (Reached / OoR / Vacation / …).
+  if (c.statusCode === 'p1_open_pool' || c.statusCode === 'p1_pool_claim_pending') {
+    return openPoolKanbanCol(c.agentOutcome);
   }
   const mapped = STATUS_BOARD[c.statusCode];
   if (mapped) return mapped;
@@ -194,8 +220,8 @@ export function statusLabel(code: string): string {
     p1_reached: 'Reached · watching',
     p1_dissatisfied: 'Dissatisfied',
     p1_no_action_2bd: 'Closed · no action',
-    p1_open_pool: 'Closed · Open Pool',
-    p1_pool_claim_pending: 'Claim pending',
+    p1_open_pool: 'Open Pool',
+    p1_pool_claim_pending: 'Open Pool · claim pending',
     p1_pool_assigned: 'New · from pool',
     p1_returned: 'Closed · returned',
     p1_handoff_retention: 'Closed · Retention',

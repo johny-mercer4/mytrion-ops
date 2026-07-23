@@ -3,7 +3,8 @@
  * prototype): sidebar with nav badges, top bar + live clock, theme toggle, user card, the
  * shared detail + client modals, and the toast. Owns cross-tab chrome; each tab is a
  * self-contained component under ./tabs. (AI chat launcher is disabled for now.)
- * Boot splash removed — tabs own their own skeletons (avoids double loaders on Home).
+ * Home gates on a full-page skeleton until primary fetches settle (see HomeTab);
+ * other tabs own their own skeletons (no shell-level boot splash).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { s } from './dc';
@@ -15,6 +16,7 @@ import { useSessionUser } from './sessionUser';
 import { useSidebarBadges } from './sidebarBadges';
 import { useRetentionRealtime } from './useRetentionRealtime';
 import { LeadCallWizardHost } from './LeadCallWizard';
+import { DealCallWizardHost } from './DealCallWizard';
 import { getSession } from '@/api/session';
 import { useUserContext } from '@/context/UserContextProvider';
 import { useImpersonation } from '@/context/ImpersonationProvider';
@@ -144,7 +146,7 @@ export function SalesRedesign() {
   // Jump to Tickets and flag the ticket the tab should auto-open (e.g. after Create).
   const openTicket = useCallback((ticketId: string) => {
     if (!TICKETS_ENABLED) {
-      pushToast('Tickets', 'Coming soon — use Data Center for leads and deals.');
+      pushToast('Tickets', 'Coming soon.');
       return;
     }
     setFocusTicket(ticketId);
@@ -437,6 +439,8 @@ export function SalesRedesign() {
 
         {/* Forced post-call Lead status wizard — fires on any tab when an outbound lead call ends. */}
         <LeadCallWizardHost pushToast={pushToast} />
+        {/* Forced post-call Deal note wizard — fires when an outbound deal call ends. */}
+        <DealCallWizardHost pushToast={pushToast} />
 
         {/* TOAST */}
         {toast && (

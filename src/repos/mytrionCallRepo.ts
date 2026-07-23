@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   mytrionCalls,
@@ -45,6 +45,25 @@ export const mytrionCallRepo = {
     };
     const rows = await db.insert(mytrionCalls).values(row).returning();
     return firstOrThrow(rows, 'mytrion_calls insert returned no row');
+  },
+
+  /** Count a source record's logged calls (tenant-scoped) — drives the Lead call-number auto-advance. */
+  async countForSource(
+    ctx: TenantContext,
+    sourceType: MytrionCallSourceType,
+    sourceId: string,
+  ): Promise<number> {
+    const rows = await db
+      .select({ n: count() })
+      .from(mytrionCalls)
+      .where(
+        and(
+          eq(mytrionCalls.tenantId, ctx.tenantId),
+          eq(mytrionCalls.sourceType, sourceType),
+          eq(mytrionCalls.sourceId, sourceId),
+        ),
+      );
+    return Number(rows[0]?.n ?? 0);
   },
 
   /** A source record's call history (tenant-scoped), newest first — for future call-log views. */

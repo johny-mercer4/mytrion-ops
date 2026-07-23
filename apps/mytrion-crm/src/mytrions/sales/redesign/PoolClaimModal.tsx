@@ -1,11 +1,36 @@
 /**
  * Open Pool claim modal — reason + confirm; assigns instantly (Zoho + Kanban New).
+ * Visual hierarchy: deal identity → status badges → reason → confirm → primary Claim.
  */
 import type { ChangeEvent, MouseEvent } from 'react';
 import { s } from './dc';
 import { Icon } from './icons';
 import { fmtGal } from './RetentionBoardUi';
-import { quietCaption, type RetentionCaseRow } from './retentionData';
+import {
+  breachSeverity,
+  freqLabel,
+  type RetentionCaseRow,
+} from './retentionData';
+
+function quietTone(c: RetentionCaseRow): 'ok' | 'warn' | 'danger' {
+  const sev = breachSeverity(c);
+  if (sev >= 14) return 'danger';
+  if (sev >= 3 || (c.daysInactive ?? 0) > (c.thresholdDays ?? 0)) return 'warn';
+  return 'ok';
+}
+
+/** Compact quiet label for badges (full sentence is too long in a chip). */
+function quietBadge(c: RetentionCaseRow): string {
+  const days = c.daysInactive ?? 0;
+  const thr = c.thresholdDays;
+  return thr ? `${days}d · every ${thr}d` : `${days}d`;
+}
+
+function cycleTone(count: number): 'ok' | 'warn' | 'danger' {
+  if (count >= 3) return 'danger';
+  if (count === 2) return 'warn';
+  return 'ok';
+}
 
 export function PoolClaimModal({
   mode,
@@ -33,6 +58,10 @@ export function PoolClaimModal({
   const reasonOk = reason.trim().length > 0;
   const canSubmit = confirm && reasonOk && !submitting && claimIds.length > 0;
   const stop = (e: MouseEvent): void => e.stopPropagation();
+  const dealTitle =
+    mode === 'single'
+      ? singleSummary?.companyName || singleSummary?.carrierId || 'deal'
+      : `${claimIds.length} deals`;
 
   return (
     <div className="ss-scrim" style={{ zIndex: 140 }} onClick={onClose}>
@@ -48,13 +77,18 @@ export function PoolClaimModal({
             <Icon name="assign" size={19} />
           </div>
           <div style={s('flex:1;min-width:0')}>
+            <div className="ss-pool-modal-kicker">
+              <span className="ss-pool-pill is-pool">Open Pool</span>
+              <span className="ss-pool-pill is-instant">Instant assign</span>
+              <span className="ss-pool-pill is-limit">Max 2 / day</span>
+            </div>
             <div id="ss-pool-claim-title" className="ss-pool-modal-title">
-              {mode === 'single'
-                ? `Claim · ${singleSummary?.companyName || singleSummary?.carrierId || 'deal'}`
-                : `Claim · ${claimIds.length} deals`}
+              Claim · {dealTitle}
             </div>
             <div className="ss-pool-modal-sub">
-              Reason required · instant assign · max 2/day
+              {mode === 'bulk'
+                ? `One reason covers all ${claimIds.length} selected deals.`
+                : 'Add a short reason, confirm, then claim into your New column.'}
             </div>
           </div>
           <button
@@ -74,42 +108,83 @@ export function PoolClaimModal({
         <div className="ss-pool-modal-body">
           {singleSummary ? (
             <div className="ss-pool-modal-summary">
-              <div>
-                <strong>{singleSummary.companyName || '—'}</strong>
-                {' · '}
-                {singleSummary.carrierId}
+              <div className="ss-pool-modal-summary-top">
+                <div className="ss-pool-modal-company">{singleSummary.companyName || '—'}</div>
+                <span className="ss-pool-mono ss-pool-carrier">{singleSummary.carrierId}</span>
               </div>
-              <div>
-                Quiet {quietCaption(singleSummary)} · Cycle {singleSummary.assignmentCount}/3 ·{' '}
-                {singleSummary.gallons90d != null ? `${fmtGal(singleSummary.gallons90d)} gal` : '—'}
+              <div className="ss-pool-badge-row" aria-label="Deal status">
+                <span className={`ss-pool-stat is-${quietTone(singleSummary)}`} title="Days since last fuel vs expected cadence">
+                  <em>Quiet</em>
+                  {quietBadge(singleSummary)}
+                </span>
+                <span className={`ss-pool-stat is-${cycleTone(singleSummary.assignmentCount)}`}>
+                  <em>Cycle</em>
+                  {singleSummary.assignmentCount}/3
+                </span>
+                <span className="ss-pool-stat is-neutral">
+                  <em>90d fuel</em>
+                  {singleSummary.gallons90d != null ? `${fmtGal(singleSummary.gallons90d)} gal` : '—'}
+                </span>
+                {singleSummary.transactionFrequency ? (
+                  <span className="ss-pool-stat is-accent">
+                    <em>Cadence</em>
+                    {freqLabel(singleSummary.transactionFrequency)}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          ) : mode === 'bulk' ? (
+            <div className="ss-pool-modal-summary is-bulk">
+              <div className="ss-pool-modal-company">Bulk claim</div>
+              <div className="ss-pool-badge-row">
+                <span className="ss-pool-stat is-accent">
+                  <em>Selected</em>
+                  {claimIds.length} deals
+                </span>
+                <span className="ss-pool-stat is-warn">
+                  <em>Quota</em>
+                  Counts as {claimIds.length} toward your 2/day
+                </span>
               </div>
             </div>
           ) : null}
 
-          <div>
-            <label className="ss-pool-field-lbl" htmlFor="ss-pool-claim-reason">
-              Why are you claiming?{mode === 'bulk' ? ' (shared for all)' : ''}
-            </label>
+          <div className="ss-pool-step">
+            <div className="ss-pool-step-head">
+              <span className="ss-pool-step-num">1</span>
+              <label className="ss-pool-field-lbl" htmlFor="ss-pool-claim-reason">
+                Why are you claiming?{mode === 'bulk' ? ' (shared for all)' : ''}
+              </label>
+              <span className={`ss-pool-req ${reasonOk ? 'is-ok' : ''}`}>
+                {reasonOk ? 'Ready' : 'Required'}
+              </span>
+            </div>
             <textarea
               id="ss-pool-claim-reason"
               value={reason}
               onChange={(e) => onReason(e.target.value)}
               maxLength={2000}
               rows={3}
-              placeholder="Brief reason for the claim…"
-              className="ss-in ss-pool-reason"
+              placeholder="e.g. Worked this carrier before · nearby territory · following up on prior contact…"
+              className={`ss-in ss-pool-reason${reasonOk ? ' is-ok' : ''}`}
             />
           </div>
 
-          <label className="ss-pool-confirm">
+          <label className={`ss-pool-confirm${confirm ? ' is-on' : ''}`}>
             <input
               type="checkbox"
               checked={confirm}
               onChange={(e: ChangeEvent<HTMLInputElement>) => onConfirm(e.target.checked)}
             />
-            <span>
-              Assigns to my Kanban <strong className="ss-pool-accent">New</strong> now · counts
-              toward cycle 3 and my 2 claims/day.
+            <span className="ss-pool-confirm-body">
+              <span className="ss-pool-step-head" style={s('margin-bottom:4px')}>
+                <span className="ss-pool-step-num">2</span>
+                <span className="ss-pool-confirm-title">Confirm assignment</span>
+              </span>
+              <span className="ss-pool-confirm-text">
+                Moves to your Kanban <strong className="ss-pool-accent">New</strong> immediately.
+                Counts toward cycle <strong>3</strong> and your <strong>2 claims/day</strong>.
+              </span>
             </span>
           </label>
         </div>
@@ -134,8 +209,15 @@ export function PoolClaimModal({
             disabled={!canSubmit}
             onClick={onSubmit}
             className={canSubmit ? 'ss-btn-p ss-pool-btn-primary' : 'ss-pool-btn-disabled'}
+            title={
+              !reasonOk
+                ? 'Add a reason first'
+                : !confirm
+                  ? 'Confirm assignment first'
+                  : undefined
+            }
           >
-            {submitting ? 'Claiming…' : 'Claim'}
+            {submitting ? 'Claiming…' : mode === 'bulk' ? `Claim ${claimIds.length}` : 'Claim deal'}
           </button>
         </div>
       </div>

@@ -236,24 +236,29 @@ export class ZohoDeskWrapper extends ZohoWrapper {
     const need = skip + take;
     const matched: Record<string, unknown>[] = [];
     const seen = new Set<string>();
-    let orgFrom = 1;
     let exhausted = false;
-
-    for (let p = 0; p < maxOrgPages && matched.length < need; p++) {
-      const page = await this.ticketsPage(orgFrom, MAX_TICKET_LIMIT).catch(
-        () => [] as Record<string, unknown>[],
+    // Parallel batches (same idea as listTicketsByCreator) — sequential page-by-page made the
+    // SCOPE_MISMATCH fallback feel hung for agents with sparse matches in org history.
+    const BATCH = 5;
+    for (let p = 0; p < maxOrgPages && matched.length < need; p += BATCH) {
+      const batchCount = Math.min(BATCH, maxOrgPages - p);
+      const froms = Array.from({ length: batchCount }, (_, i) => 1 + (p + i) * MAX_TICKET_LIMIT);
+      const pages = await Promise.all(
+        froms.map((from) =>
+          this.ticketsPage(from, MAX_TICKET_LIMIT).catch(() => [] as Record<string, unknown>[]),
+        ),
       );
-      if (page.length < MAX_TICKET_LIMIT) exhausted = true;
-      for (const row of page) {
-        const cf = (row.cf ?? {}) as Record<string, unknown>;
-        if (String(cf.cf_crm_created_by_id ?? '') !== target) continue;
-        const id = String(row.id ?? '');
-        if (!id || seen.has(id)) continue;
-        seen.add(id);
-        matched.push(row);
-        if (matched.length >= need) break;
+      for (const page of pages) {
+        if (page.length < MAX_TICKET_LIMIT) exhausted = true;
+        for (const row of page) {
+          const cf = (row.cf ?? {}) as Record<string, unknown>;
+          if (String(cf.cf_crm_created_by_id ?? '') !== target) continue;
+          const id = String(row.id ?? '');
+          if (!id || seen.has(id)) continue;
+          seen.add(id);
+          matched.push(row);
+        }
       }
-      orgFrom += MAX_TICKET_LIMIT;
       if (exhausted) break;
     }
 

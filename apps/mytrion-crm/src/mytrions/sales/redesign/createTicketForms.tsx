@@ -12,6 +12,8 @@ import { useLoad, loadClientCards, type ClientCardVM } from './live';
 import { loadDeals, type DealVM } from './dataCenterLive';
 import { AUTO_LIST, type Automation } from './autoLive';
 import { createDeskTicket, type CreateTicketInput } from '@/api/desk';
+import { invalidateDcCache } from './dcCache';
+import { invalidateDeduped } from './fetchDedupe';
 import {
   AttachZone,
   BackBtn,
@@ -195,6 +197,8 @@ export function TicketWizard() {
             : 'Routed to the right team — the file couldn’t be attached.'
           : 'Routed to the right team — opening it now.',
       );
+      invalidateDcCache('sales:tickets');
+      invalidateDeduped('desk:tickets:');
       if (res.ticketId) openTicket(res.ticketId); // jump to Tickets and open the new ticket
     } catch (e) {
       pushToast('Couldn’t create ticket', e instanceof Error ? e.message : 'Please try again.');

@@ -111,6 +111,8 @@ const dealEditBody = z
   .object({
     Email: editableEmail,
     Phone: z.string().max(30).nullable().optional(),
+    Cell: z.string().max(30).nullable().optional(),
+    Secondary_Email: editableEmail,
     Description: z.string().max(32000).nullable().optional(),
   })
   .strict()

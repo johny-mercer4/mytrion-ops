@@ -266,6 +266,8 @@ export interface DealVM {
 export interface DealEdit {
   Email: string;
   Phone: string;
+  Cell: string;
+  Secondary_Email: string;
   Description: string;
 }
 
@@ -300,6 +302,8 @@ function mapDeal(r: CrmRow): DealVM {
       Email: str(r.Email),
       // Raw Phone only — the display `phone` falls back to Cell, which must not be written into Phone.
       Phone: str(r.Phone),
+      Cell: str(r.Cell),
+      Secondary_Email: str(r.Secondary_Email),
       Description: str(r.Description),
     },
   };

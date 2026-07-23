@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { runCoql } from '../../../integrations/zohoCrm.js';
+import { callMcpTool } from '../../../integrations/zohoMcp.js';
 import type { ToolManifest } from '../types.js';
 
 const inputSchema = z.object({
@@ -38,8 +38,11 @@ export const zohoCrmQueryTool: ToolManifest<z.infer<typeof inputSchema>, z.infer
   allowedAudiences: ['internal'],
   requiredScopes: ['zoho_crm:read'],
   rateLimit: { perMinute: 30 },
-  async handler(input) {
-    const { rows, count, moreRecords } = await runCoql(input.select_query);
+  async handler(input, ctx) {
+    const res = (await callMcpTool('coql', { select_query: input.select_query }, ctx)) as any;
+    const rows = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : [];
+    const count = Array.isArray(res) ? res.length : (res?.info?.count ?? rows.length);
+    const moreRecords = Array.isArray(res) ? false : (res?.info?.more_records === true);
     return { count, moreRecords, rows };
   },
 };
