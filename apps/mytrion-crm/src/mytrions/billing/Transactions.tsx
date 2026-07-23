@@ -16,7 +16,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
-import { broadcastMapping, fetchTransactions, fetchTransactionStats, searchTransactions } from '@/api/billing';
+import { broadcastMapping, fetchTransactions, fetchTransactionStats, searchTransactions, type TxListFilters } from '@/api/billing';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useLoad } from '../_shared/useLoad';
 import { computeAutoMapFlag, getCarrierMemoryIndex } from './autoMapFlag';
@@ -60,8 +60,8 @@ const CARRIER_OPTIONS = [
   { id: 'invoiceUnmapped', label: 'Invoice Unmapped' },
 ];
 
-function fetchPage(page: number): Promise<BillingTransactionsPage> {
-  return fetchTransactions(page, BM_TX_PAGE_SIZE);
+function fetchPage(page: number, filters: TxListFilters = {}): Promise<BillingTransactionsPage> {
+  return fetchTransactions(page, BM_TX_PAGE_SIZE, filters);
 }
 function pageHasMore(d: PageData): boolean {
   return readBool(d?.has_more) || readBool(d?.hasMore) || readBool(d?.more_records);
@@ -78,7 +78,25 @@ function pageNumber(d: PageData, fallback: number): number {
 export function Transactions() {
   const user = useUserContext();
 
-  const firstPage = useLoad(() => fetchPage(1), []);
+  // Source + mapped filters are applied SERVER-SIDE: a filter must reach records beyond the loaded
+  // page(s) — e.g. older Chase txns that aren't in the newest 200 yet. Changing either refetches
+  // page 1 (useLoad drops stale data + reloads on these deps), so the list is never just a
+  // client-side slice of what happened to be in memory ("No transactions found" while 497 exist).
+  const [source, setSource] = useState<'all' | TxSource>('all');
+  const [carrierFilter, setCarrierFilter] = useState('all');
+  const listFilters = useMemo<TxListFilters>(
+    () => ({
+      ...(source !== 'all' ? { source: source as NonNullable<TxListFilters['source']> } : {}),
+      ...(carrierFilter === 'invoiceMapped'
+        ? { isMapped: true }
+        : carrierFilter === 'invoiceUnmapped'
+          ? { isMapped: false }
+          : {}),
+    }),
+    [source, carrierFilter],
+  );
+
+  const firstPage = useLoad(() => fetchPage(1, listFilters), [source, carrierFilter]);
   const page1 = firstPage.data;
 
   // Whole-dataset aggregates (source counts + mapped/total/$) — so the source filter and summary
@@ -106,10 +124,11 @@ export function Transactions() {
   const [loadingMore, setLoadingMore] = useState(false);
 
   const [search, setSearch] = useState('');
-  const [source, setSource] = useState<'all' | TxSource>('all');
-  const [carrierFilter, setCarrierFilter] = useState('all');
   const [serverExtras, setServerExtras] = useState<TxRow[] | null>(null);
   const [searchFetching, setSearchFetching] = useState(false);
+  // The query the current results correspond to — lets us tell "still searching" (show a loader)
+  // apart from "searched, nothing matched" (show the empty state), so we never flash "not found".
+  const [searchedQuery, setSearchedQuery] = useState('');
 
   const [openId, setOpenId] = useState<string | null>(null);
   const [showChaseAdd, setShowChaseAdd] = useState(false);
@@ -149,11 +168,13 @@ export function Transactions() {
     if (!q) {
       setServerExtras(null);
       setSearchFetching(false);
+      setSearchedQuery('');
       return;
     }
     if (SOURCE_NAMES.includes(q.toLowerCase())) {
-      // Source-name queries can't match text fields server-side — local matches only.
+      // Source-name queries can't match text fields server-side — local matches only (settled).
       setServerExtras(null);
+      setSearchedQuery(q);
       return;
     }
     let off = false;
@@ -161,7 +182,10 @@ export function Transactions() {
       setSearchFetching(true);
       searchTransactions(q)
         .then((data) => {
-          if (!off) setServerExtras(extractRecords(data).map(normalizeTx));
+          if (!off) {
+            setServerExtras(extractRecords(data).map(normalizeTx));
+            setSearchedQuery(q);
+          }
         })
         .catch(() => {
           if (!off) notify('error', 'Search failed. Try again.');
@@ -247,6 +271,10 @@ export function Transactions() {
   // Summary tiles show whole-dataset stats (ALL transactions), not just the loaded page. During an
   // active text search the list is a specific query, so fall back to the (full-dataset) match set.
   const searchActive = !!search.trim();
+  // A text search is still resolving when its (debounced) server fetch hasn't returned results for
+  // the CURRENT query yet — so the list shows a loader, never a premature "No transactions found".
+  const searchPending =
+    searchActive && !SOURCE_NAMES.includes(search.trim().toLowerCase()) && searchedQuery !== search.trim();
   const g = !searchActive ? stats : null;
   const summaryTotal = g ? g.total : filtered.length;
   const summaryMapped = g ? g.mapped : mappedCount;
@@ -259,7 +287,7 @@ export function Transactions() {
     setLoadingMore(true);
     try {
       const next = curPage + 1;
-      const data = await fetchPage(next);
+      const data = await fetchPage(next, listFilters);
       const recs = extractRecords(data).map(normalizeTx);
       const seen = new Set(rows.map((r) => r.recordId));
       const fresh = recs.filter((r) => !seen.has(r.recordId));
@@ -362,7 +390,14 @@ export function Transactions() {
     [patchRow],
   );
 
-  const initialLoading = firstPage.loading && rows.length === 0;
+  // First-ever load shows the full-tab loader; once we've loaded once, a filter change reloads
+  // ONLY the table (the header/tiles/toolbar shell stays put) — see hasLoadedOnce.
+  const hasLoadedOnce = useRef(false);
+  if (page1) hasLoadedOnce.current = true;
+  const initialLoading = firstPage.loading && !hasLoadedOnce.current;
+  const tableReloading = firstPage.loading && hasLoadedOnce.current;
+  // Header total stays whole-dataset (from stats), so it doesn't jump around as filters change.
+  const headerTotal = stats ? stats.total : totalFetched;
 
   return (
     <div className="bm-panel tx-panel">
@@ -371,7 +406,7 @@ export function Transactions() {
         <div>
           <h2 className="bm-title">Payment Transactions</h2>
           <div className="bm-subtitle">
-            {totalFetched > 0 ? `${totalFetched.toLocaleString()} total records` : 'Live transaction ledger'}
+            {headerTotal > 0 ? `${headerTotal.toLocaleString()} total records` : 'Live transaction ledger'}
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -485,7 +520,15 @@ export function Transactions() {
 
           {/* List */}
           <div className="bm-table-wrap" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            {filtered.length === 0 ? (
+            {tableReloading || (filtered.length === 0 && searchPending) ? (
+              // Filter refetch or an in-flight search → loader in the TABLE only (shell stays put),
+              // never a premature "No transactions found".
+              <div className="bm-initial-loader">
+                <div className="bm-loader-ring" />
+                <div className="bm-loader-text">{searchPending ? 'Searching transactions' : 'Updating transactions'}</div>
+                <div className="bm-loader-sub">{searchPending ? 'Looking across all payment data…' : 'Applying your filter…'}</div>
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="bm-empty">
                 <svg width="36" height="36" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
