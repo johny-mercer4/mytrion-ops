@@ -24,7 +24,7 @@ import { env, isProduction } from '../../config/env.js';
 import { db } from '../../db/client.js';
 import { registeredMiniAppCompanies, supportBotChats, supportBotMessages, type RegisteredMiniAppCompany } from '../../db/schema/index.js';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
-import { searchDwhClients } from '../../integrations/dwhClients.js';
+import { findDealOwnerForCarrier } from '../../integrations/dwhClients.js';
 import { listDwhTransactions } from '../../integrations/dwhTransactions.js';
 import { sendDocument, sendPlainReply, TelegramChatUnreachableError } from '../../integrations/telegramCarrierBot.js';
 import { TXN_FETCH_LIMIT, scopeRowsToCard } from '../../modules/carrier/driverCardScope.js';
@@ -332,14 +332,13 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
   app.post('/support-bot/whoami', guard, async (request) => {
     const body = callerSchema.parse(request.body);
     const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
-    // Responsible sales agent = the LIVE deal owner from the DWH (stg_zoho_deals.owner_id →
-    // zoho_users.full_name), NOT whoever created the registration link (the invite-stamped
-    // agentName is the link creator on older records) and NEVER the client. Best-effort: if the
-    // DWH lookup finds no owner, return null and let the bot fall back to a generic "your Octane
-    // agent" (prompt rule) — we deliberately do NOT fall back to registration.agentName.
-    const agentName = await searchDwhClients({ q: body.carrierId, limit: 15 })
-      .then((cs) => cs.find((c) => c.carrierId === body.carrierId)?.ownerName ?? null)
-      .catch(() => null);
+    // Responsible sales agent = the LIVE deal owner from the DWH, NOT whoever created the
+    // registration link (the invite-stamped agentName is the link creator on older records) and
+    // NEVER the client. findDealOwnerForCarrier matches the carrier EXACTLY, keeps closed deals,
+    // and falls back to dim_company when the Zoho deal row has no owner — so an active client like
+    // ONZMOVE resolves instead of the old prefix/Closed-Lost search returning null. Best-effort:
+    // null → the bot falls back to a generic "your Octane agent" (prompt rule).
+    const agentName = await findDealOwnerForCarrier(body.carrierId).catch(() => null);
     return {
       role,
       name: registration.driverName ?? null,
@@ -677,11 +676,19 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
         from: z.string().max(10).optional(),
         to: z.string().max(10).optional(),
         format: z.enum(['csv', 'xlsx', 'pdf']).default('xlsx'),
+        // Owner ask 2026-07-23: an owner wanted a report for ONE card, not the whole fleet. A driver
+        // is already scoped to their own card; this lets an OWNER scope by last-6 too.
+        cardLast6: z.string().trim().min(4).max(19).optional(),
       })
       .parse(request.body);
     const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
     takeReadToken(body.carrierId);
-    const cardNumber = role === 'driver' ? await requireDriverCardNumber(registration) : null;
+    const cardNumber =
+      role === 'driver'
+        ? await requireDriverCardNumber(registration)
+        : body.cardLast6
+          ? await resolveCardByLast6(body.carrierId, body.cardLast6)
+          : null;
     const result = await listDwhTransactions({
       carrierId: body.carrierId,
       ...(cardNumber ? { cardNumber } : {}),

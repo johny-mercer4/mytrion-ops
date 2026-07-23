@@ -77,9 +77,9 @@ export function buildOctaneServer(chatId: number, carrierId: string) {
       tool('octane_funds', 'Does the account have funds? Driver gets yes/no only (never figures); owner gets balance figures.', asker, ({ telegram_user_id }) => run('/support-bot/funds', telegram_user_id)),
       tool(
         'octane_txn_report',
-        "LONG (~1-3 min): build the asker's transaction report and send it to THEIR PRIVATE Octane bot chat (never this group). Driver: own card, retail. Owner: fleet. ANNOUNCE FIRST via telegram_progress (ETA + 'DM'ga yuboraman'), and make your final reply the delivery confirmation.",
-        { ...asker, range: z.enum(['day', 'week', 'month', 'quarter']).default('week'), from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('custom window start YYYY-MM-DD — use when they name exact dates'), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), format: z.enum(['xlsx', 'pdf', 'csv']).default('xlsx') },
-        ({ telegram_user_id, range, from, to, format }) => run('/support-bot/txn-report', telegram_user_id, { range, format, ...(from ? { from } : {}), ...(to ? { to } : {}) }),
+        "LONG (~1-3 min): build the asker's transaction report and send it to THEIR PRIVATE Octane bot chat (never this group). Driver: own card, retail. Owner: whole fleet, OR one card when they name it — pass card_last6 to scope the report to a single card (e.g. 'shu karta uchun report'). ANNOUNCE FIRST via telegram_progress (ETA + 'DM'ga yuboraman'), and make your final reply the delivery confirmation.",
+        { ...asker, range: z.enum(['day', 'week', 'month', 'quarter']).default('week'), from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('custom window start YYYY-MM-DD — use when they name exact dates'), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), format: z.enum(['xlsx', 'pdf', 'csv']).default('xlsx'), card_last6: z.string().min(4).max(19).optional().describe('OWNER only: scope the report to ONE card by its last digits, instead of the whole fleet') },
+        ({ telegram_user_id, range, from, to, format, card_last6 }) => run('/support-bot/txn-report', telegram_user_id, { range, format, ...(from ? { from } : {}), ...(to ? { to } : {}), ...(card_last6 ? { cardLast6: card_last6 } : {}) }),
       ),
       tool(
         'octane_money_code_quote',
