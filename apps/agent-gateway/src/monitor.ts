@@ -142,7 +142,7 @@ async function load(){
    return '<tr><td>'+t+'</td><td>'+esc(r.name)+'</td><td class="q">'+esc(r.question)+'</td>'+
     '<td>'+s(r.waitMs)+'</td><td>'+s(r.execMs)+'</td><td>'+r.numTurns+'</td><td>'+k(r.inTok)+'</td><td>'+k(r.outTok)+'</td>'+
     '<td>'+k(r.cacheRead)+'</td><td>'+k(r.cacheWrite)+'</td>'+
-    '<td class="r '+(r.isError?'err':'okb')+'">'+(r.isError?'ERROR':esc(r.reply||'(silent)'))+'</td></tr>';
+    '<td class="r '+(r.isError?'err':'okb')+'">'+(r.isError?esc(r.reply||'ERROR'):esc(r.reply||'(silent)'))+'</td></tr>';
   }).join('');
   document.getElementById('upd').textContent=new Date().toLocaleTimeString('en-GB');
  }catch(e){console.error(e)}

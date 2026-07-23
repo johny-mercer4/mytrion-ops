@@ -84,7 +84,7 @@ function logTurn(
       name,
       kind,
       question: question.slice(0, 300),
-      reply: replyRef.text.slice(0, 300),
+      reply: stats.isError && stats.errMsg ? `⚠ ${stats.errMsg}`.slice(0, 300) : replyRef.text.slice(0, 300),
       waitMs: Math.max(0, Date.now() - enqueuedAt - stats.durationMs),
       execMs: stats.durationMs,
       numTurns: stats.numTurns,
