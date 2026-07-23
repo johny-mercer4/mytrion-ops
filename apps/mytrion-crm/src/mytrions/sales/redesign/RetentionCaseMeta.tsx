@@ -11,7 +11,7 @@ import {
   type RetentionCaseRow,
 } from './retentionData';
 import { RetentionStageTimer } from './RetentionBoardUi';
-import { isSalesLocked, isSalesPooled, stageTimer } from './retentionTimers';
+import { isSalesLocked, isSalesPooled, salesLockBadge, stageTimer } from './retentionTimers';
 
 export function RetentionCaseHeader(props: {
   loading: boolean;
@@ -173,11 +173,6 @@ export function RetentionMetaGrid({ row }: { row: RetentionCaseRow }) {
     ['Attempts', `${row.outOfReachAttempts}/5`],
     ['Cycle', `${row.assignmentCount}/3`],
   ];
-  const lockedLabel = pooled
-    ? 'In Open Pool'
-    : row.phaseCode === 'phase_3_citi'
-      ? '→ CITI'
-      : 'With Retention';
   return (
     <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:10px')}>
       <div
@@ -193,7 +188,7 @@ export function RetentionMetaGrid({ row }: { row: RetentionCaseRow }) {
           Stage timer
         </div>
         {locked ? (
-          <div className={`ss-ret-locked-badge${pooled ? ' is-pooled' : ''}`}>{lockedLabel}</div>
+          <div className={`ss-ret-locked-badge${pooled ? ' is-pooled' : ''}`}>{salesLockBadge(row)}</div>
         ) : timer ? (
           <RetentionStageTimer timer={timer} />
         ) : (

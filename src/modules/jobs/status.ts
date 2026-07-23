@@ -67,6 +67,16 @@ export interface CatalogJob {
   expireInSeconds: number | null;
 }
 
+/**
+ * pg-boss timestamp columns (`created_on`/`started_on`/`completed_on`) come back from the
+ * raw postgres.js client as strings, not Dates — only Drizzle-mapped columns are auto-parsed
+ * to Date. Coerce before formatting so `.toISOString()` never blows up on a string.
+ */
+function toIso(v: Date | string | null): string | null {
+  if (v == null) return null;
+  return (v instanceof Date ? v : new Date(v)).toISOString();
+}
+
 export async function jobCounts(): Promise<QueueStateCount[]> {
   const rows = await pg<{ name: string; state: string; count: string }[]>`
     SELECT name, state, count(*)::text AS count
@@ -78,7 +88,7 @@ export async function jobCounts(): Promise<QueueStateCount[]> {
 }
 
 export async function recentFailures(limit = 20): Promise<RecentFailure[]> {
-  const rows = await pg<{ id: string; name: string; completed_on: Date | null; output: unknown }[]>`
+  const rows = await pg<{ id: string; name: string; completed_on: string | null; output: unknown }[]>`
     SELECT id, name, completed_on, output
     FROM ${pg(env.PGBOSS_SCHEMA)}.job
     WHERE state = 'failed'
@@ -88,7 +98,7 @@ export async function recentFailures(limit = 20): Promise<RecentFailure[]> {
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
-    completedOn: r.completed_on ? r.completed_on.toISOString() : null,
+    completedOn: toIso(r.completed_on),
     output: r.output,
   }));
 }
@@ -108,9 +118,9 @@ export async function recentJobRuns(opts: {
       state: string;
       data: unknown;
       output: unknown;
-      created_on: Date | null;
-      started_on: Date | null;
-      completed_on: Date | null;
+      created_on: string | null;
+      started_on: string | null;
+      completed_on: string | null;
     }[]
   >`
     SELECT id, name, state, data, output, created_on, started_on, completed_on
@@ -126,9 +136,9 @@ export async function recentJobRuns(opts: {
     state: r.state,
     data: r.data,
     output: r.output,
-    createdOn: r.created_on ? r.created_on.toISOString() : null,
-    startedOn: r.started_on ? r.started_on.toISOString() : null,
-    completedOn: r.completed_on ? r.completed_on.toISOString() : null,
+    createdOn: toIso(r.created_on),
+    startedOn: toIso(r.started_on),
+    completedOn: toIso(r.completed_on),
   }));
 }
 

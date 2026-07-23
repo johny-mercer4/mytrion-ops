@@ -103,8 +103,8 @@ export async function inboxMessagesRoutes(app: FastifyInstance): Promise<void> {
     const b = webhookSchema.parse({
       zohoRecordId: pickString(raw, 'id', 'recordId', 'zoho_record_id', 'zohoRecordId'),
       ownerZohoUserId: owner.id,
-      ownerName: pickString(raw, 'owner_name', 'ownerName') ?? owner.name,
-      ownerEmail: pickString(raw, 'owner_email', 'ownerEmail') ?? owner.email,
+      ownerName: pickString(raw, 'owner_name', 'ownerName', 'Owner_Name') ?? owner.name,
+      ownerEmail: pickString(raw, 'owner_email', 'ownerEmail', 'Owner_Email') ?? owner.email,
       subject: pickString(raw, 'subject', 'Subject') ?? pickString(raw, 'name', 'Name'),
       name: pickString(raw, 'name', 'Name'),
       content: pickString(raw, 'content', 'Content'),

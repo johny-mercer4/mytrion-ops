@@ -30,7 +30,7 @@ import {
   type RetentionCaseRow,
   type RetentionKanbanCol,
 } from './retentionData';
-import { isSalesLocked, isSalesPooled, stageTimer } from './retentionTimers';
+import { isSalesLocked, isSalesPooled, salesLockBadge, salesLockTitle, stageTimer } from './retentionTimers';
 import { subscribeRetentionLive } from './retentionLiveBus';
 import { useSales } from './ctx';
 
@@ -302,23 +302,13 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
                 const timer = locked ? null : stageTimer(c, now);
                 const overdue = Boolean(timer?.overdue);
                 if (locked) {
-                  const statusTxt = pooled
-                    ? 'In Open Pool'
-                    : c.phaseCode === 'phase_3_citi'
-                      ? 'CITI'
-                      : c.agentOutcome === 'dissatisfied' || c.statusCode === 'p1_dissatisfied'
-                        ? 'Dissatisfied'
-                        : 'With Retention';
+                  const badge = salesLockBadge(c);
                   return (
                     <div
                       key={c.id}
                       className={`ss-ret-list-row is-locked${pooled ? ' is-pooled' : ''}`}
                       style={{ display: 'grid', gridTemplateColumns: '1.4fr 110px 90px 1.1fr 90px 160px 90px 1fr' }}
-                      title={
-                        pooled
-                          ? 'In Open Pool — locked for you'
-                          : 'With Retention — locked for Sales'
-                      }
+                      title={salesLockTitle(c)}
                     >
                       <span style={s('font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
                         {c.companyName || '—'}
@@ -337,7 +327,7 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
                         className={`ss-ret-locked-badge${pooled ? ' is-pooled' : ''}`}
                         style={{ padding: '4px 6px' }}
                       >
-                        {pooled ? 'In Open Pool' : c.phaseCode === 'phase_3_citi' ? '→ CITI' : 'With Retention'}
+                        {badge}
                       </span>
                       <span className="ss-ret-pips">—</span>
                       <span
@@ -345,7 +335,7 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
                           `font-size:12px;font-weight:700;color:${pooled ? 'var(--warn)' : 'var(--danger)'}`,
                         )}
                       >
-                        {statusTxt}
+                        {badge}
                       </span>
                     </div>
                   );

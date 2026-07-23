@@ -17,6 +17,10 @@ import {
 import { X, AlertCircle } from 'lucide-react';
 import './ringcentralHost.css';
 
+// Install as soon as this module loads — Embeddable can emit AGW-401 before the mount effect
+// reaches script injection (persisted session restore / early probes).
+installRcConsoleFilter();
+
 /** Softphone is only for desk-phone Mytrions (expand later as needed). */
 const RC_ALLOWED_MYTRIONS = new Set<MytrionId>(['sales', 'customer-service']);
 
