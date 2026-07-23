@@ -712,7 +712,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
         if (!num) continue;
         const d = byNumber.get(digitsOf(num));
         let cardId: string | null = d?.cardId ?? null;
-        let cardType: string | null = d?.cardType ?? null;
+        const cardType: string | null = d?.cardType ?? null;
         if (!cardId && lookups < 30) {
           lookups += 1;
           const found = await findDwhCardByNumberAnyStatus(num).catch(() => null);

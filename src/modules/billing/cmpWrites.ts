@@ -122,7 +122,7 @@ export async function reverseMapping(input: ReverseInput): Promise<ReverseResult
   const kind = ref ? str(ref.kind) : '';
 
   if (ref && kind === 'invoice') {
-    let entry = toEntry(ref);
+    const entry = toEntry(ref);
     // Auto-mapped MX portal payment with no stored paymentId → resolve it, then reverse.
     if (!entry && input.carrierId && input.amount != null) {
       const res = await resolveRef({
