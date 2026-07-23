@@ -134,6 +134,15 @@
   box-shadow: inset 0 0 0 2px var(--ring);
 }
 
+/* Text inputs already sit inside their own bordered container (search bars, forms), so the global
+   white --ring reads as a harsh box-in-a-box when typing. Recolor their focus to the primary accent
+   — an intentional focus tint on-theme, instead of a stark white rectangle. Buttons/tabs/rows keep
+   the --ring treatment above (their a11y ring is fine on solid surfaces). */
+input:focus-visible,
+textarea:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--primary);
+}
+
 /* Fixed to the viewport, not min-height: the app-root's internal flex column (sticky header +
    scrollable body + fixed bottom tab bar) only works if nothing outside it can grow taller than
    the screen and hand scrolling to the page instead of the inner scroll region. */
