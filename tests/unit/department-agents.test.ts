@@ -10,7 +10,7 @@ import type { RegisteredTool } from '../../src/modules/tools/types.js';
 import { makeContext } from '../fixtures/seed.js';
 
 describe('departmentsForTool', () => {
-  it('maps tools to the right gate (derived from the 10 agent manifests)', () => {
+  it('maps tools to the right gate (derived from agent manifests)', () => {
     expect(departmentsForTool('knowledge.search')).toEqual([]); // universal/open
     // manager grants management/c-level on the cross-department read tools it lists
     expect(departmentsForTool('agent.sales_snapshot').sort()).toEqual(['c-level', 'management', 'sales']);
@@ -27,9 +27,19 @@ describe('departmentsForTool', () => {
     ]);
     // HR lookups are manager-tier now (was admin-sentinel before the manager agent existed)
     expect(departmentsForTool('zoho_people.search_employees').sort()).toEqual(['c-level', 'management']);
+    // Wildcard manifests: dbt_mcp.* expands onto concrete MCP tool names
+    expect(departmentsForTool('dbt_mcp.query')).toContain('sales');
+    expect(departmentsForTool('dbt_mcp.recall_similar_queries')).toContain('billing');
+    // zoho_mcp.* wildcard on sales/manager/data-center expands onto concrete MCP tool names
+    expect(departmentsForTool('zoho_mcp.ZohoCRM_getRecords').sort()).toEqual([
+      'c-level',
+      'management',
+      'sales',
+    ]);
     // not in any agent → admin-only sentinel
-    expect(departmentsForTool('zoho_mcp.ZohoCRM_getRecords')).toEqual([...ADMIN_ONLY_DEPARTMENTS]);
     expect(departmentsForTool('telegram.send_message')).toEqual([...ADMIN_ONLY_DEPARTMENTS]);
+    // analytics.snapshot unbound from agents → admin-only if still registered
+    expect(departmentsForTool('analytics.snapshot')).toEqual([...ADMIN_ONLY_DEPARTMENTS]);
   });
 });
 
@@ -45,7 +55,7 @@ describe('applyDepartmentPolicy', () => {
     expect(tools[1]!.allowedDepartments!.sort()).toEqual(
       ['billing', 'c-level', 'collection', 'finance', 'management'],
     );
-    expect(tools[2]!.allowedDepartments).toEqual([...ADMIN_ONLY_DEPARTMENTS]);
+    expect(tools[2]!.allowedDepartments!.sort()).toEqual(['c-level', 'management', 'sales']);
   });
 });
 
@@ -81,7 +91,8 @@ describe('tool gating through the live registry (widget path)', () => {
     expect(n).toEqual([
       'agent.activity',
       'agent.sales_snapshot',
-      'analytics.snapshot',
+      'blackboard.read',
+      'blackboard.write',
       'crm.carrier_balance',
       'crm.carrier_overview',
       'crm.list_cards',
@@ -99,13 +110,20 @@ describe('tool gating through the live registry (widget path)', () => {
 
   it('Billing sees debtors + CRM + RAG, not sales/desk/client-service tools', () => {
     const n = names(dept(['billing']));
-    expect(n).toEqual(['agent.debtors', 'analytics.snapshot', 'knowledge.search', 'zoho_crm.query']);
+    expect(n).toEqual([
+      'agent.debtors',
+      'blackboard.read',
+      'blackboard.write',
+      'knowledge.search',
+      'zoho_crm.query',
+    ]);
     expect(n).not.toContain('crm.carrier_balance');
   });
 
   it('Customer Service sees Desk tickets + CRM + client-service tools + RAG', () => {
     expect(names(dept(['customer-service']))).toEqual([
-      'analytics.snapshot',
+      'blackboard.read',
+      'blackboard.write',
       'crm.carrier_balance',
       'crm.carrier_overview',
       'crm.list_cards',

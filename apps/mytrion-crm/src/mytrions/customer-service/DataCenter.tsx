@@ -265,17 +265,6 @@ export function DataCenter() {
         </div>
       </div>
 
-      {/* ── Initial Loader ── */}
-      {deals.loading && rows.length === 0 ? (
-        <div
-          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3rem 0', gap: '0.75rem' }}
-        >
-          <div className="cs-dc-loader-ring" />
-          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>Loading deals</div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Fetching from Zoho CRM…</div>
-        </div>
-      ) : null}
-
       {/* ── Error ── */}
       {deals.error ? (
         <div
@@ -299,10 +288,9 @@ export function DataCenter() {
         </div>
       ) : null}
 
-      {/* ── Deals Table ── */}
-      {!deals.loading || rows.length > 0 ? (
-        <div className="cs-table-wrap cs-dc-table-wrap">
-          <table className="cs-table">
+      {/* ── Deals Table (skeleton on initial / View-as load — no centered ring) ── */}
+      <div className="cs-table-wrap cs-dc-table-wrap">
+          <table className="cs-table" aria-busy={deals.loading && rows.length === 0}>
             <thead>
               <tr>
                 <th>Deal Name</th>
@@ -314,6 +302,30 @@ export function DataCenter() {
               </tr>
             </thead>
             <tbody>
+              {deals.loading && rows.length === 0
+                ? Array.from({ length: 8 }, (_, i) => (
+                    <tr key={`skel-${i}`} aria-hidden>
+                      <td>
+                        <div className="cs-skeleton" style={{ height: 12, width: i % 2 === 0 ? '62%' : '48%' }} />
+                      </td>
+                      <td>
+                        <div className="cs-skeleton" style={{ height: 11, width: 64 }} />
+                      </td>
+                      <td>
+                        <div className="cs-skeleton" style={{ height: 22, width: 96, borderRadius: 999 }} />
+                      </td>
+                      <td>
+                        <div className="cs-skeleton" style={{ height: 22, width: 78, borderRadius: 999 }} />
+                      </td>
+                      <td>
+                        <div className="cs-skeleton" style={{ height: 11, width: 56 }} />
+                      </td>
+                      <td>
+                        <div className="cs-skeleton" style={{ height: 22, width: 40 }} />
+                      </td>
+                    </tr>
+                  ))
+                : null}
               {visible.length === 0 && !deals.loading ? (
                 <tr>
                   <td colSpan={6}>
@@ -380,7 +392,6 @@ export function DataCenter() {
             </tbody>
           </table>
         </div>
-      ) : null}
 
       {filtered.length > MAX_ROWS ? (
         <div style={{ marginTop: '0.5rem', textAlign: 'right', fontSize: '0.75rem', color: 'var(--text-muted)' }}>

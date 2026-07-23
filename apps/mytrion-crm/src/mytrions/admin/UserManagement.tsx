@@ -5,9 +5,10 @@ import { listAccessUsers, type AccessUserRow } from '../../api/mytrionAccess';
 import { SearchIcon } from '../../components/icons';
 import s from './admin.module.css';
 import { ProfileDefaults } from './ProfileDefaults';
+import { RoleDefaults } from './RoleDefaults';
 import { UserAccessForm } from './UserAccessForm';
 
-const USER_SKELETON = ['52%', '70px', '64%', '48%', '44px'] as const;
+const USER_SKELETON = ['40%', '70px', '70px', '58%', '48%', '44px'] as const;
 
 export function mytrionLabel(id: MytrionId): string {
   return MYTRIONS[id]?.title ?? id;
@@ -15,7 +16,7 @@ export function mytrionLabel(id: MytrionId): string {
 
 /** Admin — Internal User Management: which Zoho worker can access which Mytrion (DB-authoritative). */
 export function UserManagement() {
-  const [view, setView] = useState<'users' | 'profiles'>('users');
+  const [view, setView] = useState<'users' | 'profiles' | 'roles'>('users');
   const [rows, setRows] = useState<AccessUserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -42,7 +43,7 @@ export function UserManagement() {
     const q = query.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter((r) =>
-      [r.name, r.email, r.profile].filter(Boolean).join(' ').toLowerCase().includes(q),
+      [r.name, r.email, r.profile, r.role].filter(Boolean).join(' ').toLowerCase().includes(q),
     );
   }, [rows, query]);
 
@@ -51,7 +52,6 @@ export function UserManagement() {
       <div className={s.head}>
         <div>
           <h2 className={s.h2}>User Management</h2>
-
         </div>
       </div>
 
@@ -70,10 +70,19 @@ export function UserManagement() {
         >
           Profile Defaults
         </button>
+        <button
+          type="button"
+          className={`${s.filterChip} ${view === 'roles' ? s.filterChipOn : ''}`}
+          onClick={() => setView('roles')}
+        >
+          Role Defaults
+        </button>
       </div>
 
       {view === 'profiles' ? (
         <ProfileDefaults />
+      ) : view === 'roles' ? (
+        <RoleDefaults />
       ) : (
         <>
           <label className={s.search}>
@@ -82,7 +91,7 @@ export function UserManagement() {
               className={s.searchInput}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search users by name, email, profile…"
+              placeholder="Search users by name, email, profile, role…"
             />
           </label>
 
@@ -96,6 +105,7 @@ export function UserManagement() {
             <div className={`${s.tHead} ${s.tUsers}`}>
               <span>User</span>
               <span>Profile</span>
+              <span>Role</span>
               <span>Accessible Mytrions</span>
               <span>Home</span>
               <span className={s.right}>Edit</span>
@@ -110,35 +120,39 @@ export function UserManagement() {
             )}
             {!loading &&
               visible.map((r) => (
-              <div key={r.zohoUserId} className={`${s.tRow} ${s.tUsers}`}>
-                <span className={s.docCell}>
-                  <span className={s.docTitle}>{r.name ?? r.zohoUserId}</span>
-                </span>
-                <span className={s.deptText}>{r.profile ?? '—'}</span>
-                <span className={s.chipRow}>
-                  {r.effective.allDepartmentAccess ? (
-                    <span className={`${s.pill} ${s.pillGood}`}>All access</span>
-                  ) : r.effective.accessibleMytrions.length ? (
-                    r.effective.accessibleMytrions.map((id) => (
-                      <span key={id} className={s.modeChip}>
-                        {mytrionLabel(id)}
-                      </span>
-                    ))
-                  ) : (
-                    <span className={s.deptText}>none</span>
-                  )}
-                  {r.override && <span className={`${s.pill} ${s.pillInfo}`}>override</span>}
-                </span>
-                <span className={s.deptText}>
-                  {r.effective.homeMytrion ? mytrionLabel(r.effective.homeMytrion) : '—'}
-                </span>
-                <span className={s.right}>
-                  <button type="button" className={s.miniBtn} onClick={() => setEditing(r)}>
-                    Edit
-                  </button>
-                </span>
-              </div>
-            ))}
+                <div key={r.zohoUserId} className={`${s.tRow} ${s.tUsers}`}>
+                  <span className={s.docCell}>
+                    <span className={s.docTitle}>{r.name ?? r.zohoUserId}</span>
+                  </span>
+                  <span className={s.deptText}>{r.profile ?? '—'}</span>
+                  <span className={s.deptText}>{r.role ?? '—'}</span>
+                  <span className={s.chipRow}>
+                    {r.effective.allDepartmentAccess ? (
+                      <span className={`${s.pill} ${s.pillGood}`}>All access</span>
+                    ) : r.effective.accessibleMytrions.length ? (
+                      r.effective.accessibleMytrions.map((id) => (
+                        <span key={id} className={s.modeChip}>
+                          {mytrionLabel(id)}
+                          {id === 'billing' && r.effective.mytrionAccessModes?.billing === 'read'
+                            ? ' · read'
+                            : ''}
+                        </span>
+                      ))
+                    ) : (
+                      <span className={s.deptText}>none</span>
+                    )}
+                    {r.override && <span className={`${s.pill} ${s.pillInfo}`}>override</span>}
+                  </span>
+                  <span className={s.deptText}>
+                    {r.effective.homeMytrion ? mytrionLabel(r.effective.homeMytrion) : '—'}
+                  </span>
+                  <span className={s.right}>
+                    <button type="button" className={s.miniBtn} onClick={() => setEditing(r)}>
+                      Edit
+                    </button>
+                  </span>
+                </div>
+              ))}
             {!loading && visible.length === 0 && <div className={s.none}>No users match.</div>}
           </div>
         </>

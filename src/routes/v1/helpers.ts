@@ -2,6 +2,7 @@ import type { FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
 import { normalizeDepartments, type KnownDepartment } from '../../lib/department.js';
 import { AuthError, RBACError } from '../../lib/errors.js';
+import type { MytrionId } from '../../lib/mytrions.js';
 import type { TenantContext } from '../../types/tenantContext.js';
 
 /** Narrow request.ctx to non-null after the `authenticate` guard has run. */
@@ -90,5 +91,23 @@ export function requireDepartment(
     ctx.allDepartmentAccess ||
     ctx.departments.includes(department);
   if (!ok) throw new RBACError(`${resourceLabel} requires ${department} department access`);
+  return ctx;
+}
+
+/**
+ * Department membership + write mode for a Mytrion. Admins / all-dept / bypass always write.
+ * Mode `read` on the Mytrion → 403 (UI hide is not the security boundary).
+ */
+export function requireMytrionWrite(
+  request: FastifyRequest,
+  mytrionId: MytrionId,
+  resourceLabel: string,
+): TenantContext {
+  const department = mytrionId as KnownDepartment;
+  const ctx = requireDepartment(request, department, resourceLabel);
+  if (ctx.bypassRbac === true || ctx.allDepartmentAccess || ctx.role === 'admin') return ctx;
+  if (ctx.mytrionAccessModes?.[mytrionId] === 'read') {
+    throw new RBACError(`${resourceLabel} requires full (write) access — your access is read-only`);
+  }
   return ctx;
 }

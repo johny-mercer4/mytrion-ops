@@ -102,11 +102,18 @@ export function resolveAgentPersona(ctx: TenantContext): string {
  *   - manifest tools   → union of the granting departments of every agent listing it
  *   - anything else    → admin-only sentinel (only allDepartmentAccess passes)
  */
+/** Manifest entry matches a concrete tool name, including `prefix.*` wildcards. */
+function manifestListsTool(manifestTools: readonly string[], toolName: string): boolean {
+  return manifestTools.some(
+    (t) => t === toolName || (t.endsWith('.*') && toolName.startsWith(t.slice(0, -1))),
+  );
+}
+
 export function departmentsForTool(toolName: string): string[] {
   if ((UNIVERSAL_TOOLS as readonly string[]).includes(toolName)) return [];
   const depts = new Set<string>();
   for (const m of ALL_AGENT_MANIFESTS) {
-    if (!m.tools.includes(toolName)) continue;
+    if (!manifestListsTool(m.tools, toolName)) continue;
     for (const dept of normalizeDepartments(m.departments)) depts.add(dept);
   }
   return depts.size > 0 ? [...depts] : [...ADMIN_ONLY_DEPARTMENTS];

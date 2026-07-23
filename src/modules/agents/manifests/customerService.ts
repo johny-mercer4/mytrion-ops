@@ -1,5 +1,5 @@
 import type { AgentManifest } from '../types.js';
-import { CLIENT_SERVICE_RULE, CLIENT_SERVICE_TOOLS, FILE_TOOLS, STAY_IN_LANE, ANALYTICS_TOOLS } from './shared.js';
+import { CLIENT_SERVICE_RULE, CLIENT_SERVICE_TOOLS, BLACKBOARD_TOOLS, FILE_TOOLS, STAY_IN_LANE, DBT_MCP_TOOLS } from './shared.js';
 
 export const customerServiceAgent: AgentManifest = {
   key: 'customer-service',
@@ -12,7 +12,7 @@ export const customerServiceAgent: AgentManifest = {
     `status, cards, transactions, payment info). ${CLIENT_SERVICE_RULE} ${STAY_IN_LANE}`,
   departments: ['customer-service'],
   allowedAudiences: ['internal'],
-  tools: ['zoho_desk.search_tickets', 'zoho_crm.query', ...CLIENT_SERVICE_TOOLS, ...FILE_TOOLS, ...ANALYTICS_TOOLS],
+  tools: ['zoho_desk.search_tickets', 'zoho_crm.query', ...CLIENT_SERVICE_TOOLS, ...BLACKBOARD_TOOLS, ...FILE_TOOLS, ...DBT_MCP_TOOLS],
   composioToolkits: [],
   ragScope: { departments: ['customer-service'], allowAllDepartments: false },
   readOnly: false,

@@ -19,13 +19,18 @@ import { validateCitations, type WireCitation } from '../knowledge/agentic/citat
 import { costTracker } from '../llm/costTracker.js';
 import { agentRegistry } from './agentRegistry.js';
 import { BudgetExceededError, BudgetMeter } from './budget.js';
-import { buildTurnBrief, recentHistorySummary } from './briefBuilder.js';
+import { buildTurnBrief, recentHistorySummary, shouldReciteGoal } from './briefBuilder.js';
+import { formatBlackboardXml, loadBlackboard, mergeBlackboard } from './blackboard.js';
 import { ensureCheckpointerReady, getCheckpointer, threadIdFor } from './checkpointer.js';
 import { runWithAgentContext, type RunCollector } from './context.js';
 import { resolveAgentModelId } from './models.js';
 import { buildOrchestrator, buildSingleAgent } from './orchestrator.js';
 import { RunTracker } from './runTracker.js';
 import type { Elicitation } from './elicitation.js';
+import { maybeBuildPlan } from './planning/planner.js';
+import { orchestrationHint } from './planning/planExecutor.js';
+import { runHardDagWaves } from './planning/waveRunner.js';
+import { captureSkill, recallSkillHint } from './skillCache.js';
 import { consumeAgentStream, type StreamOutcome } from './streamAdapter.js';
 import { isAgentKey, type AgentManifest } from './types.js';
 
@@ -47,7 +52,13 @@ export interface AgentTurnResult {
   agentKey: string;
   agentPath: string[];
   toolCalls: Array<{ name: string; status: string; args?: any }>;
-  usage: { promptTokens: number; completionTokens: number; totalCost: number };
+  usage: {
+    promptTokens: number;
+    completionTokens: number;
+    totalCost: number;
+    cachedPromptTokens?: number;
+    cacheHitRate?: number | null;
+  };
   /** Knowledge passages retrieved across the run (the widget's grounding count). */
   ragPassages: number;
   /** Validated sources backing the answer (post-run [Sn] marker check). */
@@ -134,16 +145,37 @@ async function executeTurn(
   if (checkpointing) await ensureCheckpointerReady();
   const historySummary =
     !checkpointing && opts.conversationId ? await recentHistorySummary(ctx, conv.id) : '';
-  const brief = buildTurnBrief({
-    message,
-    ...(opts.userName ?? ctx.userName ? { userName: opts.userName ?? ctx.userName } : {}),
-    ...(opts.zohoUserId ?? ctx.userId ? { zohoUserId: opts.zohoUserId ?? ctx.userId } : {}),
-    ...(opts.profile ?? ctx.profiles?.[0] ? { profile: opts.profile ?? ctx.profiles?.[0] } : {}),
-    ...(opts.role ?? ctx.role ? { role: opts.role ?? ctx.role } : {}),
-    departments: ctx.departments,
-    ...(historySummary ? { historySummary } : {}),
-    ...(ctx.client ? { clientContext: ctx.client } : {}),
-  });
+
+  const isOrchestrator = !manifest;
+  const allowedAgentKeys = agentRegistry.listForContext(ctx).map((m) => m.key);
+
+  // Shared blackboard snapshot for the brief (flag-gated).
+  let blackboardXml: string | undefined;
+  if (env.FF_AGENT_BLACKBOARD) {
+    const board = await loadBlackboard(ctx, conv.id);
+    if (!board.goal) {
+      await mergeBlackboard({ ...ctx, actingAgent: 'orchestrator' }, conv.id, {
+        goal: message.slice(0, 500),
+      });
+    }
+    const refreshed = await loadBlackboard(ctx, conv.id);
+    blackboardXml = formatBlackboardXml(refreshed);
+  }
+
+  // Goal re-anchoring every Nth user turn.
+  let goalRecite: string | undefined;
+  if (shouldReciteGoal(conv.messageCount)) {
+    const board = env.FF_AGENT_BLACKBOARD ? await loadBlackboard(ctx, conv.id) : null;
+    const goal = board?.goal || message.slice(0, 240);
+    const step = board?.planId
+      ? `You have an active plan (${board.planId}). Continue the next ready step.`
+      : 'Continue toward that goal; do not restart from scratch.';
+    goalRecite = `Reminder: Your overarching goal is "${goal}". ${step}`;
+  }
+
+  // Procedural skill hint (suggestion only).
+  const cachedSkillXml =
+    (await recallSkillHint(ctx, agentKey, message)) || undefined;
 
   const budget = new BudgetMeter();
   const agentRunId = createId();
@@ -176,6 +208,65 @@ async function executeTurn(
         ...(sse ? { emit: (event: string, data: unknown) => sse.send(event, data) } : {}),
       },
       async () => {
+        // Pre-invoke planner (complex orchestrator turns only) — seeds <ExecutionPlan>.
+        const planSeed = await maybeBuildPlan({
+          message,
+          ctx,
+          conversationId: conv.id,
+          allowedAgentKeys,
+          isOrchestrator,
+          ...(sse ? { emit: (event: string, data: unknown) => sse.send(event, data) } : {}),
+        });
+
+        // Hard DAG: deterministically execute ready waves, then synthesize.
+        let hardDagXml: string | undefined;
+        let hardDagHint: string | undefined;
+        if (
+          planSeed &&
+          isOrchestrator &&
+          env.FF_AGENT_HARD_DAG &&
+          env.FF_AGENT_PLAN_DAG
+        ) {
+          const hard = await runHardDagWaves({
+            plan: planSeed.plan,
+            planId: planSeed.planId,
+            message,
+            ctx,
+            conversationId: conv.id,
+            allowedAgentKeys,
+            signal: wallAbort.signal,
+            ...(sse ? { emit: (event: string, data: unknown) => sse.send(event, data) } : {}),
+          });
+          for (const r of hard.results) {
+            if (r.status === 'done' && !tracker.agentPath.includes(r.agent)) {
+              tracker.agentPath.push(r.agent);
+            }
+          }
+          hardDagXml = hard.waveResultsXml;
+          hardDagHint =
+            'Specialist waves already ran. Synthesize the final answer from <WaveResults> and <Blackboard>. ' +
+            'Do not re-delegate completed nodes.';
+        }
+
+        const brief = buildTurnBrief({
+          message,
+          ...(opts.userName ?? ctx.userName ? { userName: opts.userName ?? ctx.userName } : {}),
+          ...(opts.zohoUserId ?? ctx.userId ? { zohoUserId: opts.zohoUserId ?? ctx.userId } : {}),
+          ...(opts.profile ?? ctx.profiles?.[0] ? { profile: opts.profile ?? ctx.profiles?.[0] } : {}),
+          ...(opts.role ?? ctx.role ? { role: opts.role ?? ctx.role } : {}),
+          departments: ctx.departments,
+          ...(historySummary ? { historySummary } : {}),
+          ...(ctx.client ? { clientContext: ctx.client } : {}),
+          ...(blackboardXml ? { blackboardXml } : {}),
+          ...(cachedSkillXml ? { cachedSkillXml } : {}),
+          ...(goalRecite ? { goalRecite } : {}),
+          ...(hardDagXml
+            ? { executionPlanXml: hardDagXml, planHint: hardDagHint }
+            : planSeed
+              ? { executionPlanXml: planSeed.xml, planHint: orchestrationHint(planSeed.plan) }
+              : {}),
+        });
+
         const agent = manifest
           ? await buildSingleAgent(manifest, ctx)
           : (await buildOrchestrator(ctx)).agent;
@@ -185,7 +276,12 @@ async function executeTurn(
         // generous headroom. The BudgetMeter (tool-call count / cost / wall-time) is the real
         // semantic runaway guard; this just prevents an infinite graph.
         const childCap = manifest?.maxIterations ?? env.AGENT_MAX_CHILD_ITERATIONS;
-        const recursionLimit = manifest ? childCap * 5 + 10 : childCap * 6 + 24;
+        // After hard DAG, synthesis needs fewer hops.
+        const recursionLimit = hardDagXml
+          ? 24
+          : manifest
+            ? childCap * 5 + 10
+            : childCap * 6 + 24;
         const events = agent.streamEvents(
           { messages: [{ role: 'user', content: brief }] },
           {
@@ -245,6 +341,8 @@ async function executeTurn(
     promptTokens: tracker.promptTokens,
     completionTokens: tracker.completionTokens,
     totalCost: tracker.totalCost(),
+    cachedPromptTokens: tracker.cachedPromptTokens,
+    cacheHitRate: tracker.cacheHitRate(),
   };
 
   // Persistence + bookkeeping are best-effort: the user already has the answer.
@@ -303,6 +401,7 @@ async function executeTurn(
     // Fire-and-forget distillation — memory must never delay or fail a turn.
     const { distillMemories } = await import('./memory.js');
     void distillMemories(ctx, agentKey, message, finalText);
+    void captureSkill(ctx, agentKey, message, finalText, outcome.toolCalls);
   }
 
   const result: AgentTurnResult = {

@@ -201,6 +201,36 @@ export class ZohoCrmRecordsWrapper extends ZohoWrapper {
     return json.fields ?? [];
   }
 
+  /**
+   * Record timeline (`GET /{module}/{id}/__timeline`) — field history + done_by actor.
+   * Use `doneByUserId` to filter to one CRM user (timeline “by …”).
+   */
+  async getRecordTimeline(
+    module: string,
+    recordId: string,
+    opts: { doneByUserId?: string; perPage?: number } = {},
+  ): Promise<Array<Record<string, unknown>>> {
+    const path = `/${encodeURIComponent(module)}/${encodeURIComponent(recordId)}/__timeline`;
+    const query: Record<string, string | number> = {
+      sort_by: 'audited_time',
+      per_page: opts.perPage ?? 50,
+      include_inner_details: 'field_history.field_label,done_by.profile',
+    };
+    if (opts.doneByUserId?.trim()) {
+      query.filters = JSON.stringify({
+        field: { api_name: 'done_by.id' },
+        comparator: 'in',
+        value: [opts.doneByUserId.trim()],
+      });
+    }
+    const res = await this.requestRaw('GET', path, { query });
+    if (res.status === 204 || res.status === 404) return [];
+    const text = await res.text();
+    if (!res.ok) throw this.httpError('GET', path, res.status, text);
+    const json = text ? (JSON.parse(text) as { __timeline?: Array<Record<string, unknown>> }) : {};
+    return json.__timeline ?? [];
+  }
+
   private async parsePage(method: 'GET', path: string, res: Response): Promise<RecordPage> {
     if (res.status === 204) return { rows: [], moreRecords: false };
     const text = await res.text();

@@ -82,3 +82,13 @@ export function canAccess(ctx: UserContext, id: MytrionId): boolean {
   const rule = MYTRIONS[id];
   return rule ? ruleAllows(ctx, rule) : false;
 }
+
+/**
+ * Write capability for a Mytrion (Billing first). Admins / all-dept always write. Mode `read`
+ * blocks map/unmap/match UI; backend still enforces on POST.
+ */
+export function canWriteMytrion(ctx: UserContext, id: MytrionId): boolean {
+  if (isAdmin(ctx)) return true;
+  if (!canAccess(ctx, id)) return false;
+  return ctx.mytrionAccessModes?.[id] !== 'read';
+}

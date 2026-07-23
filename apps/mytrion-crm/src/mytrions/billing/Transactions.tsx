@@ -16,7 +16,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
-import { broadcastMapping, fetchTransactions, fetchTransactionStats, searchTransactions } from '@/api/billing';
+import { broadcastMapping, fetchTransactions, fetchTransactionStats, searchTransactions, type TxListFilters } from '@/api/billing';
+import { canWriteMytrion } from '../../access/resolveAccess';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useLoad } from '../_shared/useLoad';
 import { computeAutoMapFlag, getCarrierMemoryIndex } from './autoMapFlag';
@@ -60,8 +61,8 @@ const CARRIER_OPTIONS = [
   { id: 'invoiceUnmapped', label: 'Invoice Unmapped' },
 ];
 
-function fetchPage(page: number): Promise<BillingTransactionsPage> {
-  return fetchTransactions(page, BM_TX_PAGE_SIZE);
+function fetchPage(page: number, filters: TxListFilters = {}): Promise<BillingTransactionsPage> {
+  return fetchTransactions(page, BM_TX_PAGE_SIZE, filters);
 }
 function pageHasMore(d: PageData): boolean {
   return readBool(d?.has_more) || readBool(d?.hasMore) || readBool(d?.more_records);
@@ -77,8 +78,27 @@ function pageNumber(d: PageData, fallback: number): number {
 
 export function Transactions() {
   const user = useUserContext();
+  const canWrite = canWriteMytrion(user, 'billing');
 
-  const firstPage = useLoad(() => fetchPage(1), []);
+  // Source + mapped filters are applied SERVER-SIDE: a filter must reach records beyond the loaded
+  // page(s) — e.g. older Chase txns that aren't in the newest 200 yet. Changing either refetches
+  // page 1 (useLoad drops stale data + reloads on these deps), so the list is never just a
+  // client-side slice of what happened to be in memory ("No transactions found" while 497 exist).
+  const [source, setSource] = useState<'all' | TxSource>('all');
+  const [carrierFilter, setCarrierFilter] = useState('all');
+  const listFilters = useMemo<TxListFilters>(
+    () => ({
+      ...(source !== 'all' ? { source: source as NonNullable<TxListFilters['source']> } : {}),
+      ...(carrierFilter === 'invoiceMapped'
+        ? { isMapped: true }
+        : carrierFilter === 'invoiceUnmapped'
+          ? { isMapped: false }
+          : {}),
+    }),
+    [source, carrierFilter],
+  );
+
+  const firstPage = useLoad(() => fetchPage(1, listFilters), [source, carrierFilter]);
   const page1 = firstPage.data;
 
   // Whole-dataset aggregates (source counts + mapped/total/$) — so the source filter and summary
@@ -106,10 +126,11 @@ export function Transactions() {
   const [loadingMore, setLoadingMore] = useState(false);
 
   const [search, setSearch] = useState('');
-  const [source, setSource] = useState<'all' | TxSource>('all');
-  const [carrierFilter, setCarrierFilter] = useState('all');
   const [serverExtras, setServerExtras] = useState<TxRow[] | null>(null);
   const [searchFetching, setSearchFetching] = useState(false);
+  // The query the current results correspond to — lets us tell "still searching" (show a loader)
+  // apart from "searched, nothing matched" (show the empty state), so we never flash "not found".
+  const [searchedQuery, setSearchedQuery] = useState('');
 
   const [openId, setOpenId] = useState<string | null>(null);
   const [showChaseAdd, setShowChaseAdd] = useState(false);
@@ -149,11 +170,13 @@ export function Transactions() {
     if (!q) {
       setServerExtras(null);
       setSearchFetching(false);
+      setSearchedQuery('');
       return;
     }
     if (SOURCE_NAMES.includes(q.toLowerCase())) {
-      // Source-name queries can't match text fields server-side — local matches only.
+      // Source-name queries can't match text fields server-side — local matches only (settled).
       setServerExtras(null);
+      setSearchedQuery(q);
       return;
     }
     let off = false;
@@ -161,7 +184,10 @@ export function Transactions() {
       setSearchFetching(true);
       searchTransactions(q)
         .then((data) => {
-          if (!off) setServerExtras(extractRecords(data).map(normalizeTx));
+          if (!off) {
+            setServerExtras(extractRecords(data).map(normalizeTx));
+            setSearchedQuery(q);
+          }
         })
         .catch(() => {
           if (!off) notify('error', 'Search failed. Try again.');
@@ -247,6 +273,10 @@ export function Transactions() {
   // Summary tiles show whole-dataset stats (ALL transactions), not just the loaded page. During an
   // active text search the list is a specific query, so fall back to the (full-dataset) match set.
   const searchActive = !!search.trim();
+  // A text search is still resolving when its (debounced) server fetch hasn't returned results for
+  // the CURRENT query yet — so the list shows a loader, never a premature "No transactions found".
+  const searchPending =
+    searchActive && !SOURCE_NAMES.includes(search.trim().toLowerCase()) && searchedQuery !== search.trim();
   const g = !searchActive ? stats : null;
   const summaryTotal = g ? g.total : filtered.length;
   const summaryMapped = g ? g.mapped : mappedCount;
@@ -259,7 +289,7 @@ export function Transactions() {
     setLoadingMore(true);
     try {
       const next = curPage + 1;
-      const data = await fetchPage(next);
+      const data = await fetchPage(next, listFilters);
       const recs = extractRecords(data).map(normalizeTx);
       const seen = new Set(rows.map((r) => r.recordId));
       const fresh = recs.filter((r) => !seen.has(r.recordId));
@@ -362,7 +392,14 @@ export function Transactions() {
     [patchRow],
   );
 
-  const initialLoading = firstPage.loading && rows.length === 0;
+  // First-ever load shows the full-tab loader; once we've loaded once, a filter change reloads
+  // ONLY the table (the header/tiles/toolbar shell stays put) — see hasLoadedOnce.
+  const hasLoadedOnce = useRef(false);
+  if (page1) hasLoadedOnce.current = true;
+  const initialLoading = firstPage.loading && !hasLoadedOnce.current;
+  const tableReloading = firstPage.loading && hasLoadedOnce.current;
+  // Header total stays whole-dataset (from stats), so it doesn't jump around as filters change.
+  const headerTotal = stats ? stats.total : totalFetched;
 
   return (
     <div className="bm-panel tx-panel">
@@ -371,20 +408,22 @@ export function Transactions() {
         <div>
           <h2 className="bm-title">Payment Transactions</h2>
           <div className="bm-subtitle">
-            {totalFetched > 0 ? `${totalFetched.toLocaleString()} total records` : 'Live transaction ledger'}
+            {headerTotal > 0 ? `${headerTotal.toLocaleString()} total records` : 'Live transaction ledger'}
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <button
-            className="bm-refresh-btn"
-            onClick={() => setShowChaseAdd(true)}
-            title="Manually add a Chase transaction"
-          >
-            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-            </svg>
-            Add Chase
-          </button>
+          {canWrite ? (
+            <button
+              className="bm-refresh-btn"
+              onClick={() => setShowChaseAdd(true)}
+              title="Manually add a Chase transaction"
+            >
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+              </svg>
+              Add Chase
+            </button>
+          ) : null}
           <button className="bm-refresh-btn" onClick={reload} disabled={firstPage.loading || firstPage.refreshing} title="Refresh">
             <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" className={firstPage.loading || firstPage.refreshing ? 'spin-icon' : undefined}>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={REFRESH_PATH} />
@@ -394,11 +433,45 @@ export function Transactions() {
         </div>
       </div>
 
+      {!canWrite ? (
+        <div className="tx-save-msg" style={{ marginBottom: '0.75rem' }} role="status">
+          Billing access is read-only — you can view transactions but not map, unmap, or add Chase entries.
+        </div>
+      ) : null}
+
       {initialLoading ? (
-        <div className="bm-initial-loader">
-          <div className="bm-loader-ring" />
-          <div className="bm-loader-text">Loading transactions</div>
-          <div className="bm-loader-sub">Fetching latest payment data...</div>
+        <div aria-busy="true" aria-label="Loading transactions" style={{ display: 'contents' }}>
+          <div className="bm-summary-banner">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="bm-summary-item">
+                <div className="bm-skeleton" style={{ height: 10, width: 72, marginBottom: 8 }} />
+                <div className="bm-skeleton" style={{ height: 22, width: i === 1 ? 96 : 64 }} />
+                <div className="bm-skeleton" style={{ height: 9, width: 56, marginTop: 8 }} />
+              </div>
+            ))}
+          </div>
+          <div className="bm-table-wrap" style={{ flex: 1, overflow: 'hidden' }}>
+            {Array.from({ length: 9 }, (_, i) => (
+              <div
+                key={`skel-${i}`}
+                aria-hidden
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1.2fr 1fr 0.8fr 0.8fr 0.7fr',
+                  gap: 12,
+                  alignItems: 'center',
+                  padding: '14px 16px',
+                  borderBottom: '1px solid var(--border-light, var(--border))',
+                }}
+              >
+                <div className="bm-skeleton" style={{ height: 12, width: i % 2 === 0 ? '70%' : '55%' }} />
+                <div className="bm-skeleton" style={{ height: 11, width: '60%' }} />
+                <div className="bm-skeleton" style={{ height: 20, width: 72, borderRadius: 999 }} />
+                <div className="bm-skeleton" style={{ height: 11, width: 64 }} />
+                <div className="bm-skeleton" style={{ height: 12, width: 56 }} />
+              </div>
+            ))}
+          </div>
         </div>
       ) : (
         <>
@@ -485,7 +558,15 @@ export function Transactions() {
 
           {/* List */}
           <div className="bm-table-wrap" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            {filtered.length === 0 ? (
+            {tableReloading || (filtered.length === 0 && searchPending) ? (
+              // Filter refetch or an in-flight search → loader in the TABLE only (shell stays put),
+              // never a premature "No transactions found".
+              <div className="bm-initial-loader">
+                <div className="bm-loader-ring" />
+                <div className="bm-loader-text">{searchPending ? 'Searching transactions' : 'Updating transactions'}</div>
+                <div className="bm-loader-sub">{searchPending ? 'Looking across all payment data…' : 'Applying your filter…'}</div>
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="bm-empty">
                 <svg width="36" height="36" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
@@ -628,13 +709,14 @@ export function Transactions() {
           key={openTx.recordId}
           tx={openTx}
           currentUserName={user.userName}
+          canWrite={canWrite}
           onClose={() => setOpenId(null)}
           onPatch={(patch) => patchAndBroadcast(openTx, patch)}
           onToast={notify}
         />
       ) : null}
 
-      {showChaseAdd ? (
+      {showChaseAdd && canWrite ? (
         <ChaseAddModal
           onClose={() => setShowChaseAdd(false)}
           onAdded={(msg) => {

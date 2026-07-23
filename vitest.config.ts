@@ -31,6 +31,13 @@ export default defineConfig({
       FF_WRITE_APPROVALS: '0',
       FF_AGENT_MEMORY: '0',
       FF_AGENT_CHECKPOINTS: '0',
+      // Blackboard + Telegram match production defaults (ON) — goldens / RBAC / approvals bind them.
+      // Skill cache + plan DAG stay off; agent-sota suites toggle those at runtime.
+      FF_AGENT_BLACKBOARD: '1',
+      FF_AGENT_SKILL_CACHE: '0',
+      FF_AGENT_PLAN_DAG: '0',
+      FF_AGENT_HARD_DAG: '0',
+      FF_TELEGRAM_ENABLED: '1',
       // Off in tests so flag-toggling suites (e.g. Composio on/off) always compile fresh graphs;
       // the dedicated graphCache suite enables it explicitly. Production defaults ON.
       FF_AGENT_GRAPH_CACHE: '0',

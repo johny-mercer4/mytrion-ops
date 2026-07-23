@@ -3,6 +3,15 @@ import { z } from 'zod';
 import { env } from '../../config/env.js';
 import { NotFoundError, RBACError } from '../../lib/errors.js';
 import { listActiveUsers, type CrmUser } from '../../integrations/zohoCrm.js';
+import {
+  getAdminDeal,
+  listAdminDeals,
+  listDealsTransferredBy,
+  listOwnerLogs,
+  searchAdminDeals,
+  suggestPriorOwner,
+  transferAdminDealOwnership,
+} from '../../modules/admin/zohoDealsAdmin.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { toPublicUser } from '../../modules/auth/authService.js';
 import { hashPassword } from '../../modules/auth/password.js';
@@ -10,6 +19,12 @@ import { auditRepo } from '../../repos/auditRepo.js';
 import { userRepo, type UpdateUserPatch } from '../../repos/userRepo.js';
 import { ROLES, AUDIENCES } from '../../types/tenantContext.js';
 import { requireContext } from './helpers.js';
+
+function requireAllDepartmentAdmin(ctx: ReturnType<typeof requireContext>): void {
+  if (!ctx.allDepartmentAccess) {
+    throw new RBACError('Admin (all-department) access required.');
+  }
+}
 
 /** Lowercased, trimmed term list from a CSV env value. */
 function terms(csv: string): string[] {
@@ -139,6 +154,170 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       return { agents };
     },
   );
+
+  // ── Admin Deals (org-wide browse + one-click ownership transfer) ───────────
+
+  app.get<{
+    Querystring: { limit?: string; offset?: string; transferredBy?: string };
+  }>('/admin/deals', { onRequest: [app.authenticate] }, async (request) => {
+    const ctx = requireContext(request);
+    requireAllDepartmentAdmin(ctx);
+    const limit = request.query.limit ? Number(request.query.limit) : undefined;
+    const offset = request.query.offset ? Number(request.query.offset) : 0;
+    const transferredBy = request.query.transferredBy?.trim();
+    if (transferredBy) {
+      const result = await listDealsTransferredBy(transferredBy, {
+        ...(Number.isFinite(limit) ? { limit: limit as number } : {}),
+        offset: Number.isFinite(offset) ? offset : 0,
+      });
+      await auditFromContext(ctx, {
+        action: 'admin.deals.list_by_transferrer',
+        status: 'ok',
+        resourceType: 'crm_deal',
+        detail: {
+          count: result.deals.length,
+          transferredBy,
+          timelineMatches: result.timeline.length,
+          offset: result.offset,
+          limit: result.limit,
+          hasMore: result.hasMore,
+          source: 'owner_logs_coql+timeline',
+          coql: result.coql,
+        },
+      });
+      return {
+        deals: result.deals,
+        timeline: result.timeline,
+        transferredBy,
+        offset: result.offset,
+        limit: result.limit,
+        hasMore: result.hasMore,
+        coql: result.coql,
+      };
+    }
+    const deals = await listAdminDeals(
+      Number.isFinite(limit as number) ? (limit as number) : 200,
+    );
+    await auditFromContext(ctx, {
+      action: 'admin.deals.list',
+      status: 'ok',
+      resourceType: 'crm_deal',
+      detail: { count: deals.length },
+    });
+    return { deals };
+  });
+
+  app.get<{ Querystring: { q?: string } }>(
+    '/admin/deals/search',
+    { onRequest: [app.authenticate] },
+    async (request) => {
+      const ctx = requireContext(request);
+      requireAllDepartmentAdmin(ctx);
+      const q = (request.query.q ?? '').trim();
+      const deals = await searchAdminDeals(q);
+      await auditFromContext(ctx, {
+        action: 'admin.deals.search',
+        status: 'ok',
+        resourceType: 'crm_deal',
+        detail: { q: q.slice(0, 80), count: deals.length },
+      });
+      return { deals };
+    },
+  );
+
+  app.get<{ Params: { dealId: string }; Querystring: { transferrerId?: string } }>(
+    '/admin/deals/:dealId',
+    { onRequest: [app.authenticate] },
+    async (request) => {
+      const ctx = requireContext(request);
+      requireAllDepartmentAdmin(ctx);
+      const deal = await getAdminDeal(request.params.dealId);
+      if (!deal) throw new NotFoundError('Deal not found');
+      const transferrerId = request.query.transferrerId?.trim() || null;
+      const priorOwner = await suggestPriorOwner(deal.id, transferrerId);
+      return { deal, priorOwner };
+    },
+  );
+
+  app.post<{ Params: { dealId: string }; Body: { toZohoUserId?: string; toOwnerName?: string } }>(
+    '/admin/deals/:dealId/transfer',
+    { onRequest: [app.authenticate] },
+    async (request) => {
+      const ctx = requireContext(request);
+      requireAllDepartmentAdmin(ctx);
+      const body = z
+        .object({
+          toZohoUserId: z.string().min(1).max(40),
+          toOwnerName: z.string().max(200).optional(),
+        })
+        .parse(request.body ?? {});
+      const result = await transferAdminDealOwnership(ctx, request.params.dealId, body.toZohoUserId, {
+        toOwnerName: body.toOwnerName ?? null,
+      });
+      await auditFromContext(ctx, {
+        action: 'admin.deals.transfer',
+        status: 'ok',
+        resourceType: 'crm_deal',
+        resourceId: result.deal.id,
+        detail: {
+          toZohoUserId: body.toZohoUserId,
+          toOwnerName: body.toOwnerName ?? null,
+          fromOwnerZohoUserId: result.transfer.fromOwnerZohoUserId,
+          fromOwnerName: result.transfer.fromOwnerName,
+          dealUpdated: result.transfer.dealUpdated,
+          contactUpdated: result.transfer.contactUpdated,
+          accountUpdated: result.transfer.accountUpdated,
+          warnings: result.transfer.warnings,
+        },
+      });
+      return {
+        deal: result.deal,
+        transfer: {
+          dealUpdated: result.transfer.dealUpdated,
+          contactUpdated: result.transfer.contactUpdated,
+          accountUpdated: result.transfer.accountUpdated,
+          contactId: result.transfer.contactId,
+          accountId: result.transfer.accountId,
+          fromOwnerZohoUserId: result.transfer.fromOwnerZohoUserId,
+          fromOwnerName: result.transfer.fromOwnerName,
+          warnings: result.transfer.warnings,
+        },
+      };
+    },
+  );
+
+  app.get<{
+    Querystring: {
+      module?: string;
+      entityId?: string;
+      newOwnerId?: string;
+      transferrerId?: string;
+      since?: string;
+      limit?: string;
+    };
+  }>('/admin/owner-logs', { onRequest: [app.authenticate] }, async (request) => {
+    const ctx = requireContext(request);
+    requireAllDepartmentAdmin(ctx);
+    const limit = request.query.limit ? Number(request.query.limit) : 100;
+    const logs = await listOwnerLogs({
+      module: request.query.module ?? 'Deals',
+      ...(request.query.entityId ? { entityId: request.query.entityId } : {}),
+      ...(request.query.newOwnerId ? { newOwnerId: request.query.newOwnerId } : {}),
+      ...(request.query.transferrerId ? { transferrerId: request.query.transferrerId } : {}),
+      ...(request.query.since ? { since: request.query.since } : {}),
+      limit: Number.isFinite(limit) ? limit : 100,
+    });
+    await auditFromContext(ctx, {
+      action: 'admin.owner_logs.list',
+      status: 'ok',
+      resourceType: 'crm_owner_log',
+      detail: {
+        count: logs.length,
+        transferrerId: request.query.transferrerId ?? null,
+      },
+    });
+    return { logs };
+  });
 
   // Audit trail for the Mytrion Admin: who (user/name/profile/role/company) did what, when.
   // Guard: session OR static API key (dev transport), then a role-admin check — same gate as

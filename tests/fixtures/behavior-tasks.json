@@ -381,6 +381,37 @@
       "turns": ["Go to https://example.com and tell me what the main heading is."],
       "expect": { "mustCallTool": ["browser.goto"] },
       "judgeRubric": "PASS if the agent successfully used the browser tool to navigate to example.com and extracted the domain information."
+    },
+    {
+      "id": "sota-plan-multidept-1",
+      "category": "sota",
+      "caller": { "departments": [], "allDepartmentAccess": true },
+      "agent": null,
+      "turns": [
+        "Get the late-fee policy for overdue invoices and also summarize our retention win-back first step for a dormant client."
+      ],
+      "expect": { "mustRouteTo": ["billing", "retention"] },
+      "judgeRubric": "PASS if the orchestrator consulted both billing and retention (or produced a plan covering both) without inventing policy."
+    },
+    {
+      "id": "sota-greeting-no-plan-1",
+      "category": "sota",
+      "caller": { "departments": [], "allDepartmentAccess": true },
+      "agent": null,
+      "turns": ["hi"],
+      "expect": { "routedAgent": "none", "maxToolCalls": 0 }
+    },
+    {
+      "id": "sota-multiturn-recall-1",
+      "category": "sota",
+      "caller": { "departments": [], "allDepartmentAccess": true },
+      "agent": null,
+      "turns": [
+        "Remember for this chat that we are discussing carrier Acme Freight under deal DF-9921.",
+        "What deal id were we just talking about?"
+      ],
+      "expect": { "routedAgent": "none" },
+      "judgeRubric": "PASS only if the answer mentions DF-9921 (or Acme Freight) using conversation/memory context — not inventing a different deal."
     }
   ]
 }

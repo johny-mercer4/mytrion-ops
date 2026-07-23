@@ -160,6 +160,15 @@ function workerContext(request: FastifyRequest, body: CallerIdentityBody): Tenan
   const callerRole = toArray(body.role).join(', ');
   if (profiles.length > 0) merged.profiles = profiles;
   if (callerRole) merged.callerRole = callerRole;
+  
+  const computedRole = workerRoleFor({
+    profile: toArray(body.profile)[0],
+    zohoRole: toArray(body.role)[0],
+    userName: workerName,
+  });
+  merged.role = computedRole;
+  merged.scopes = scopesForRole(computedRole);
+
   const displayName = workerName ?? body.company_name?.trim();
   if (displayName) merged.userName = displayName;
   const email = body.email?.trim().toLowerCase();
@@ -258,6 +267,7 @@ async function actAsContext(
     scopes: scopesForRole(role),
     allDepartmentAccess: access.allDepartmentAccess,
     departments,
+    mytrionAccessModes: access.mytrionAccessModes,
     profiles: target.profile ? [target.profile] : [],
     impersonatorUserId: base.userId,
   };

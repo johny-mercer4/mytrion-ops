@@ -12,6 +12,7 @@ import { useSales } from '../ctx';
 import { useLoad, loadTicketMessages, isTicketClosed, type TicketMsgVM } from '../live';
 import { useTicketUnread, clearTicketUnread } from '../ticketUnread';
 import { useTicketsFeed } from '../useTicketsFeed';
+import { useSocketConnected } from '../socketStatus';
 import { ticketStatusColor } from '../ticketStatus';
 import {
   ageText,
@@ -54,6 +55,7 @@ export function TicketsTab() {
 
   // ---------- live data (infinite-scroll feed + open-thread messages) ----------
   const feed = useTicketsFeed();
+  const live = useSocketConnected();
   const msgsLoad = useLoad(
     () => (selectedTicket ? loadTicketMessages(selectedTicket) : Promise.resolve<TicketMsgVM[]>([])),
     [selectedTicket],
@@ -276,9 +278,21 @@ export function TicketsTab() {
               <div className="ss-tk-list-title-row">
                 <span className="ss-tk-list-title">My Tickets</span>
                 <div className="ss-tk-list-actions">
-                  <span className="ss-tk-live" title={scoped ? undefined : 'Showing recent tickets — Desk search scope unavailable'}>
-                    <span className="ss-tk-live-dot" />
-                    LIVE
+                  <span
+                    className="ss-tk-live"
+                    title={
+                      !live
+                        ? 'Reconnecting to live updates…'
+                        : scoped
+                          ? undefined
+                          : 'Showing recent tickets — Desk search scope unavailable'
+                    }
+                  >
+                    <span
+                      className="ss-tk-live-dot"
+                      style={live ? undefined : { background: 'var(--muted)', animation: 'none' }}
+                    />
+                    {live ? 'LIVE' : 'OFFLINE'}
                   </span>
                   <button type="button" onClick={refreshTickets} aria-label="Refresh" className="ss-tk-tool ss-ico-btn">
                     <Icon name="refresh" size={14} style={s(ticketsSpinStyle)} />

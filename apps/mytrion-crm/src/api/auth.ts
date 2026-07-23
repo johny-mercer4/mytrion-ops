@@ -96,8 +96,18 @@ export async function refreshWorkerFromMe(): Promise<boolean> {
     const res = (await request('GET', '/auth/me', { impersonate: false })) as { worker?: SessionWorker };
     const w = res?.worker;
     if (!w?.zohoUserId) return false;
-    const before = JSON.stringify([s.worker.accessibleMytrions, s.worker.homeMytrion, s.worker.allDepartmentAccess]);
-    const after = JSON.stringify([w.accessibleMytrions, w.homeMytrion, w.allDepartmentAccess]);
+    const before = JSON.stringify([
+      s.worker.accessibleMytrions,
+      s.worker.homeMytrion,
+      s.worker.allDepartmentAccess,
+      s.worker.mytrionAccessModes,
+    ]);
+    const after = JSON.stringify([
+      w.accessibleMytrions,
+      w.homeMytrion,
+      w.allDepartmentAccess,
+      w.mytrionAccessModes,
+    ]);
     setSession({ ...s, worker: { ...s.worker, ...w } });
     return before !== after;
   } catch {

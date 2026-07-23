@@ -2,7 +2,7 @@
  * Optimistic ticket chat bubbles — show the agent's send instantly while Desk POST + thread
  * reconcile run in the background.
  */
-import type { TicketMsgVM } from './live';
+import { byTicketMsgTime, type TicketMsgVM } from './live';
 
 export type PendingTicketMsg = { id: string; msg: TicketMsgVM };
 
@@ -24,7 +24,7 @@ export function buildPendingMsgs(
   if (text) {
     out.push({
       id: `p-c-${stamp}`,
-      msg: { from: 'me', type: 'comment', text, time: 'Just now' },
+      msg: { from: 'me', type: 'comment', text, time: 'Just now', ts: stamp },
     });
   }
   if (file) {
@@ -35,6 +35,7 @@ export function buildPendingMsgs(
         type: 'attachment',
         text: '',
         time: 'Just now',
+        ts: stamp,
         file: {
           name: file.name,
           size: fmtLocalBytes(file.size),
@@ -57,14 +58,18 @@ function coveredByServer(pending: TicketMsgVM, server: TicketMsgVM[]): boolean {
   });
 }
 
-/** Server thread + any pending sends not yet reflected in Desk. */
+/**
+ * Server thread + any pending sends not yet reflected in Desk, re-sorted chronologically so an
+ * optimistic bubble (or a live message that lands mid-send) can never sit out of time order next
+ * to Desk messages. Server rows are already sorted; sorting the union keeps them stable.
+ */
 export function mergeTicketThread(
   server: TicketMsgVM[],
   pending: PendingTicketMsg[],
 ): TicketMsgVM[] {
   if (!pending.length) return server;
   const extras = pending.filter((p) => !coveredByServer(p.msg, server)).map((p) => p.msg);
-  return extras.length ? [...server, ...extras] : server;
+  return extras.length ? [...server, ...extras].sort(byTicketMsgTime) : server;
 }
 
 /** Drop pending rows that already appear on the server (after reload / WS). */

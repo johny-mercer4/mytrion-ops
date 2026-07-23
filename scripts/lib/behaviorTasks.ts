@@ -18,6 +18,7 @@ const CATEGORIES = [
   'delegation',
   'rbac',
   'web-navigation',
+  'sota',
 ] as const;
 export type TaskCategory = (typeof CATEGORIES)[number];
 
