@@ -2142,6 +2142,20 @@ function getFleet(initData: string, force = false): Promise<FleetResponse> {
   return FLEET_INFLIGHT;
 }
 function invalidateFleet(): void { FLEET_CACHE = null; }
+// In-flight dedupe for sheet loads (owner ask 2026-07-23): if a sheet's data is already being
+// fetched for the same cacheId (React StrictMode double-mount, or a fast close/re-open before the
+// first request lands), the second load AWAITS the first's promise instead of firing another
+// network request. Complements SHEET_CACHE (which caches the RESULT for 60s): dedupe covers the
+// window WHILE a request is still in flight, when there is no cached result yet. Errors are never
+// cached — the entry is cleared on settle, so a failed load can be retried immediately.
+const SHEET_INFLIGHT = new Map<string, Promise<SheetData>>();
+function dedupeSheet(key: string, producer: () => Promise<SheetData>): Promise<SheetData> {
+  const existing = SHEET_INFLIGHT.get(key);
+  if (existing) return existing;
+  const p = producer().finally(() => { SHEET_INFLIGHT.delete(key); });
+  SHEET_INFLIGHT.set(key, p);
+  return p;
+}
 function invalidateSheetCache(...prefixes: string[]): void {
   for (const key of [...SHEET_CACHE.keys()]) {
     if (prefixes.some((p) => key.startsWith(p))) SHEET_CACHE.delete(key);
@@ -2333,6 +2347,10 @@ function ActionSheet({
           // A cached fast-phase txns list still upgrades to the live EFS merge below.
           if (!(hit.data.kind === 'txns' && hit.data.v.live?.pending)) return;
         }
+        // The whole branch cascade is the sheet's DATA PRODUCER — wrapped so concurrent loads of
+        // the same cacheId share ONE in-flight request (see dedupeSheet). Phase-2 (txns live
+        // upgrade) stays OUTSIDE, keyed off the resolved `next`.
+        const producer = async (): Promise<SheetData> => {
         let next: SheetData;
         if (service === 'balance') next = { kind: 'balance', v: await fetchBalance(initData) };
         else if (service === 'funds') next = { kind: 'funds', v: await fetchCardFunds(initData) };
@@ -2392,6 +2410,9 @@ function ActionSheet({
         // Explicit, because this was a bare `else` that swallowed every unhandled key into a tracking
         // fetch — a new ServiceKey would silently open the wrong sheet instead of failing.
         else throw new Error(`Unhandled service: ${String(service)}`);
+        return next;
+        };
+        const next = await dedupeSheet(cacheId, producer);
         if (cancelled) return;
         SHEET_CACHE.set(cacheId, { at: Date.now(), data: next });
         setData(next);
