@@ -28,12 +28,15 @@ interface JsonRpcResponse {
 let sessionId: string | null = null;
 let nextId = 1;
 
-function baseHeaders(): Record<string, string> {
+function baseHeaders(ctx?: import('../types/tenantContext.js').TenantContext): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'application/json, text/event-stream',
   };
   if (sessionId) headers['Mcp-Session-Id'] = sessionId;
+  if (ctx) {
+    headers['X-Tenant-Context'] = Buffer.from(JSON.stringify(ctx)).toString('base64');
+  }
   return headers;
 }
 
@@ -67,7 +70,7 @@ interface RpcOutcome {
 }
 
 /** Single POST to the MCP endpoint, always bounded by REQUEST_TIMEOUT_MS (so nothing can hang). */
-async function postRaw(payload: Record<string, unknown>): Promise<Response> {
+async function postRaw(payload: Record<string, unknown>, ctx?: import('../types/tenantContext.js').TenantContext): Promise<Response> {
   const url = env.ZOHO_MCP_URL;
   if (!url) throw new AppError('ZOHO_MCP_URL is not configured', { code: 'MCP_NOT_CONFIGURED' });
   const controller = new AbortController();
@@ -75,7 +78,7 @@ async function postRaw(payload: Record<string, unknown>): Promise<Response> {
   try {
     return await fetch(url, {
       method: 'POST',
-      headers: baseHeaders(),
+      headers: baseHeaders(ctx),
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
@@ -84,8 +87,8 @@ async function postRaw(payload: Record<string, unknown>): Promise<Response> {
   }
 }
 
-async function post(method: string, params: unknown): Promise<RpcOutcome> {
-  const res = await postRaw({ jsonrpc: '2.0', id: nextId++, method, params });
+async function post(method: string, params: unknown, ctx?: import('../types/tenantContext.js').TenantContext): Promise<RpcOutcome> {
+  const res = await postRaw({ jsonrpc: '2.0', id: nextId++, method, params }, ctx);
   const text = await res.text();
   return {
     httpStatus: res.status,
@@ -129,13 +132,13 @@ function isSessionError(o: RpcOutcome): boolean {
   return msg.includes('session');
 }
 
-async function call(method: string, params: unknown): Promise<unknown> {
+async function call(method: string, params: unknown, ctx?: import('../types/tenantContext.js').TenantContext): Promise<unknown> {
   await ensureSession();
-  let out = await post(method, params);
+  let out = await post(method, params, ctx);
   if (isSessionError(out) && sessionId !== null) {
     sessionId = null;
     await ensureSession();
-    out = await post(method, params);
+    out = await post(method, params, ctx);
   }
   if (out.httpStatus !== 200 || !out.rpc) {
     throw new AppError(`Zoho MCP ${method} HTTP ${out.httpStatus}: ${out.bodySnippet}`, {
@@ -169,8 +172,8 @@ interface CallToolResult {
 }
 
 /** Invoke one MCP tool. Throws (so the dispatcher records an error) when the tool reports failure. */
-export async function callMcpTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-  const result = (await call('tools/call', { name, arguments: args })) as CallToolResult;
+export async function callMcpTool(name: string, args: Record<string, unknown>, ctx?: import('../types/tenantContext.js').TenantContext): Promise<unknown> {
+  const result = (await call('tools/call', { name, arguments: args }, ctx)) as CallToolResult;
   const blocks = (result.content ?? [])
     .filter((c) => c.type === 'text' && typeof c.text === 'string')
     .map((c) => c.text as string);

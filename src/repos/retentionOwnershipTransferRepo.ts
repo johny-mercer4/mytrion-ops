@@ -1,11 +1,13 @@
 /**
  * Append-only ownership transfer log. Never cascade-deletes with cases.
  */
+import { and, desc, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   retentionOwnershipTransfers,
   type OwnershipTransferReason,
   type OwnershipTransferResultCode,
+  type RetentionOwnershipTransfer,
 } from '../db/schema/retention_ownership_transfers.js';
 import { logger } from '../lib/logger.js';
 
@@ -14,6 +16,8 @@ export interface InsertOwnershipTransferInput {
   retentionCaseId?: number | null;
   carrierId?: string | null;
   companyName?: string | null;
+  dealName?: string | null;
+  contactName?: string | null;
   zohoDealId?: string | null;
   zohoContactId?: string | null;
   zohoAccountId?: string | null;
@@ -30,6 +34,15 @@ export interface InsertOwnershipTransferInput {
   accountUpdated?: boolean;
   warnings?: string[] | string | null;
   errorMessage?: string | null;
+}
+
+export interface ListOwnershipTransfersOpts {
+  tenantId: string;
+  zohoDealId?: string | null;
+  fromOwnerZohoUserId?: string | null;
+  toOwnerZohoUserId?: string | null;
+  reason?: string | null;
+  limit?: number;
 }
 
 function warningsText(warnings: string[] | string | null | undefined): string | null {
@@ -60,6 +73,8 @@ export async function insertOwnershipTransfer(
           : null,
       carrierId: input.carrierId?.trim() || null,
       companyName: input.companyName?.trim() || null,
+      dealName: input.dealName?.trim() || null,
+      contactName: input.contactName?.trim() || null,
       zohoDealId: input.zohoDealId?.trim() || null,
       zohoContactId: input.zohoContactId?.trim() || null,
       zohoAccountId: input.zohoAccountId?.trim() || null,
@@ -89,6 +104,34 @@ export async function insertOwnershipTransfer(
   }
 }
 
+export async function listOwnershipTransfers(
+  opts: ListOwnershipTransfersOpts,
+): Promise<RetentionOwnershipTransfer[]> {
+  const limit = Math.min(200, Math.max(1, Math.trunc(opts.limit ?? 100) || 100));
+  const clauses = [eq(retentionOwnershipTransfers.tenantId, opts.tenantId)];
+  if (opts.zohoDealId?.trim()) {
+    clauses.push(eq(retentionOwnershipTransfers.zohoDealId, opts.zohoDealId.trim()));
+  }
+  if (opts.fromOwnerZohoUserId?.trim()) {
+    clauses.push(
+      eq(retentionOwnershipTransfers.fromOwnerZohoUserId, opts.fromOwnerZohoUserId.trim()),
+    );
+  }
+  if (opts.toOwnerZohoUserId?.trim()) {
+    clauses.push(eq(retentionOwnershipTransfers.toOwnerZohoUserId, opts.toOwnerZohoUserId.trim()));
+  }
+  if (opts.reason?.trim()) {
+    clauses.push(eq(retentionOwnershipTransfers.reason, opts.reason.trim()));
+  }
+  return db
+    .select()
+    .from(retentionOwnershipTransfers)
+    .where(and(...clauses))
+    .orderBy(desc(retentionOwnershipTransfers.createdAt))
+    .limit(limit);
+}
+
 export const retentionOwnershipTransferRepo = {
   insert: insertOwnershipTransfer,
+  list: listOwnershipTransfers,
 };

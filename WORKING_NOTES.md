@@ -5191,3 +5191,54 @@ retention migrations to avoid colliding with build’s mini-app/news/support-bot
 series: `0049_retention_open_pool_instant`, `0050_retention_pool_cycles_claim_log`,
 `0051_retention_ownership_transfers` (SQL unchanged / IF NOT EXISTS — prod hashes
 already applied stay skipped).
+
+## 2026-07-23 — Admin Deals tab (one-click ownership)
+
+Mytrion Admin → **Deals**: list 200 by `Application_Date`, word/id search, drawer
+to pick agent and transfer Deal+Contact+Account via
+`transferDealOwnershipToClaimant` (`admin_manual` audit). Owner Logs subview
+reads Zoho `Owner_Logs` (Entity_ID / New_Owner_* / Owner_Log_Time) to find
+mis-assigned deals; suggests prior owner from chronological logs. Meta refreshed
+live for Deals/Contacts/Accounts/Owner_Logs. Routes under `/admin/deals*` +
+`/admin/owner-logs` (allDepartmentAccess).
+
+**Transferrer filter:** Owner_Logs `Created_By` (= timeline “by John Mercer”).
+Default id `6227679000093960901`. Deals tab “Show my transfers” →
+`GET /admin/deals?transferredBy=` hydrates unique Entity_IDs into deal rows.
+
+## 2026-07-23 — Admin Deals recovery via Timeline (not Created_By)
+
+Owner_Logs `Created_By` is often Amir Alimov (workflow) — unusable as transferrer.
+Recovery now loads the fixed deal-id list (`recoveryDealIds.ts`, 132 ids) and
+reads each deal’s `__timeline` with `done_by.id` = John Mercer
+(`6227679000093960901`). Prior owner = Timeline Owner `_value.old` (name → Zoho
+user id via ActiveUsers). Admin UI: **Load recovery set**.
+
+## 2026-07-23 — Recovery list shows Timeline prior owner
+
+Admin Deals recovery rows now surface Timeline Owner `_value.old` / `_value.new`
+(prior → changed to), when, and by whom; names resolved to Zoho user ids via
+ActiveUsers. Drawer mirrors the same Timeline evidence before transfer.
+
+## 2026-07-23 — Admin Deals UX polish
+
+Browse / Recovery mode switch, recovery stats, list filter, agent typeahead,
+Current→Return-to flow card, copy deal id, relative timeline times, and
+post-transfer Deal/Contact/Company badges. Keeps Owner Logs disabled.
+
+## 2026-07-23 — Ops ownership transfer log (from→to)
+
+Every Zoho ownership transfer through Ops (`transferDealOwnershipToClaimant`)
+already wrote `retention_ownership_transfers`; now enriched with `deal_name` +
+`contact_name` (migration `0052`), from→to owner names/ids, and clearer actor
+(impersonator when acting-as). Admin Deals → **Transfer log** reads our DB via
+`GET /admin/ownership-transfers` (not Zoho Owner_Logs). Reasons covered:
+`admin_manual`, `retention_handoff`, `open_pool_claim`.
+
+## 2026-07-23 — Client News 500 + Admin sidebar
+
+`GET /v1/client-news` 500: `client_news` (and mini_app notification tables) were
+missing — journal slots for 0042–0044 had been overwritten by retention
+renumber hashes. Repair migration `0053_repair_client_news_notifications`
+(CREATE IF NOT EXISTS). Admin sidebar: categorized sections + search filter
+via `MytrionShell` `navSections` / `enableNavSearch`.

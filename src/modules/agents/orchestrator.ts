@@ -89,6 +89,7 @@ export async function buildOrchestrator(callerCtx: TenantContext): Promise<{
       systemPrompt: ORCHESTRATOR_PROMPT,
       subagents,
       ...(checkpointer ? { checkpointer } : {}),
+      middleware: [],
     });
     return { agent, agentKeys: manifests.map((m) => m.key) };
   });
@@ -110,6 +111,7 @@ export async function buildSingleAgent(
       systemPrompt: childSystemPrompt(manifest),
       tools: await childTools(manifest, callerCtx),
       ...(checkpointer ? { checkpointer } : {}),
+      middleware: [],
     });
   });
 }
