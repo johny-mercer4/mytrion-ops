@@ -24,6 +24,7 @@ import { env, isProduction } from '../../config/env.js';
 import { db } from '../../db/client.js';
 import { registeredMiniAppCompanies, supportBotChats, supportBotMessages, type RegisteredMiniAppCompany } from '../../db/schema/index.js';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
+import { searchDwhClients } from '../../integrations/dwhClients.js';
 import { listDwhTransactions } from '../../integrations/dwhTransactions.js';
 import { sendDocument, sendPlainReply, TelegramChatUnreachableError } from '../../integrations/telegramCarrierBot.js';
 import { TXN_FETCH_LIMIT, scopeRowsToCard } from '../../modules/carrier/driverCardScope.js';
@@ -330,13 +331,19 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
   app.post('/support-bot/whoami', guard, async (request) => {
     const body = callerSchema.parse(request.body);
     const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    // Responsible sales agent = the LIVE deal owner from the DWH (stg_zoho_deals.owner_id →
+    // zoho_users.full_name), NOT whoever created the registration link (the invite-stamped
+    // agentName is the link creator on older records) and NEVER the client. Best-effort: if the
+    // DWH lookup finds no owner, return null and let the bot fall back to a generic "your Octane
+    // agent" (prompt rule) — we deliberately do NOT fall back to registration.agentName.
+    const agentName = await searchDwhClients({ q: body.carrierId, limit: 15 })
+      .then((cs) => cs.find((c) => c.carrierId === body.carrierId)?.ownerName ?? null)
+      .catch(() => null);
     return {
       role,
       name: registration.driverName ?? null,
       companyName: registration.companyName ?? null,
-      // The carrier's deal owner / sales agent (stamped at invite). The bot hands off to this
-      // person BY NAME when it can't resolve an ask — never to the client themselves.
-      agentName: registration.agentName ?? null,
+      agentName,
     };
   });
 
