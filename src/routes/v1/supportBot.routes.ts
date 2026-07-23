@@ -25,7 +25,7 @@ import { db } from '../../db/client.js';
 import { registeredMiniAppCompanies, supportBotChats, supportBotMessages, type RegisteredMiniAppCompany } from '../../db/schema/index.js';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { listDwhTransactions } from '../../integrations/dwhTransactions.js';
-import { sendDocument, TelegramChatUnreachableError } from '../../integrations/telegramCarrierBot.js';
+import { sendDocument, sendPlainReply, TelegramChatUnreachableError } from '../../integrations/telegramCarrierBot.js';
 import { TXN_FETCH_LIMIT, scopeRowsToCard } from '../../modules/carrier/driverCardScope.js';
 import { listLiveCardRows as listCardsLive } from '../../modules/carrier/liveCards.js';
 import { requireDriverCardNumber, telegramCtx } from '../../modules/carrier/miniAppAuth.js';
@@ -439,7 +439,12 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
    * sendDocument DM); owner-only, company finances. Never lands in the group.
    */
   app.post('/support-bot/invoice', guard, async (request) => {
-    const body = callerSchema.parse(request.body);
+    const body = callerSchema
+      .extend({
+        /** 2026-07-22: Excel joins PDF — same wrapper mapping ('xlsx' -> upstream 'excel') as the mini-app. */
+        format: z.enum(['pdf', 'xlsx']).default('pdf'),
+      })
+      .parse(request.body);
     const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
     if (role !== 'owner') {
       throw new AppError('Invoices are available to the company owner only.', {
@@ -458,7 +463,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
     const dated = [...rows].sort((a, b) => String(b['invoice_date'] ?? b['created_at'] ?? '').localeCompare(String(a['invoice_date'] ?? a['created_at'] ?? '')));
     const inv = dated[0] as Record<string, unknown>;
     const invoiceId = String(inv['invoice_id'] ?? inv['id'] ?? '');
-    const signed = (await serverCrmWrapper.getInvoiceSignedUrl(invoiceId)) as Record<string, unknown>;
+    const signed = (await serverCrmWrapper.getInvoiceSignedUrl(invoiceId, body.format)) as Record<string, unknown>;
     const url = String(signed['url'] ?? signed['signed_url'] ?? '');
     if (!invoiceId || !url) {
       throw new AppError("Couldn't prepare that invoice document.", { statusCode: 502, code: 'INVOICE_URL_FAILED', expose: true });
@@ -471,8 +476,8 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
     try {
       await sendDocument({
         chatId: registration.telegramChatId ?? body.telegramUserId,
-        fileName: `Octane_Invoice_${invoiceId}.pdf`,
-        contentType: 'application/pdf',
+        fileName: `Octane_Invoice_${invoiceId}.${body.format}`,
+        contentType: body.format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         bytes,
         caption: `Octane · Invoice #${invoiceId}`,
       });
@@ -487,7 +492,70 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
       }
       throw err;
     }
-    return { sent: true, invoiceId, note: "PDF sent to the asker's PRIVATE bot chat — tell them to check it" };
+    return { sent: true, invoiceId, note: 'Document sent to the asker\'s PRIVATE bot chat — tell them to check it' };
+  });
+
+  /**
+   * Invoice QUESTIONS ("qancha qarzim bor", "may oyi invoicelari") — owner-only. The DOLLAR
+   * FIGURES are composed server-side and sent to the asker's PRIVATE bot chat (company money
+   * never enters the group — same stance as /balance and /txn-report); the tool result carries
+   * only counts/statuses/dates, which ARE safe to say inline. Range mirrors the mini-app
+   * invoices sheet (presets + custom from/to; the wrapper flips to range=custom itself).
+   */
+  app.post('/support-bot/invoices', guard, async (request) => {
+    const body = callerSchema
+      .extend({
+        range: z.enum(['last_7', 'last_30', 'last_90', 'last_365', 'all_time']).default('last_90'),
+        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      })
+      .parse(request.body);
+    const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    if (role !== 'owner') {
+      throw new AppError('Invoices are available to the company owner only.', {
+        statusCode: 403,
+        code: 'OWNER_ONLY',
+        expose: true,
+      });
+    }
+    takeReadToken(body.carrierId);
+    const list = await serverCrmWrapper.getInvoices(body.carrierId, {
+      range: body.range,
+      ...(body.from ? { from: body.from } : {}),
+      ...(body.to ? { to: body.to } : {}),
+    });
+    const rows = (list.data ?? []) as Array<Record<string, unknown>>;
+    const sum = ((list as unknown as Record<string, unknown>)['summary'] ?? {}) as Record<string, unknown>;
+    const money = (v: unknown) => `$${Number(v ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const label = body.from && body.to ? `${body.from} — ${body.to}` : body.range.replace('_', ' ');
+    const lines = rows.slice(0, 8).map((r) => {
+      const id = String(r['invoice_id'] ?? r['id'] ?? '');
+      const date = String(r['invoice_date'] ?? r['created_at'] ?? '').slice(0, 10);
+      const status = String(r['status'] ?? '').replace(/_/g, ' ');
+      return `#${id} · ${date} · ${status} · ${money(r['total_amount'])}`;
+    });
+    if (rows.length > 0) {
+      await sendPlainReply(
+        registration.telegramChatId ?? body.telegramUserId,
+        [
+          `📄 Octane · Invoices (${label})`,
+          `Billed: ${money(sum['sum_total_amount'])} · Open: ${money(sum['sum_open_balance'])}`,
+          '',
+          ...lines,
+          rows.length > 8 ? `… +${rows.length - 8} more (mini-app → Invoices)` : '',
+        ].filter(Boolean).join('\n'),
+      );
+    }
+    return {
+      sent: rows.length > 0,
+      count: rows.length,
+      open_count: Number(sum['open_count'] ?? 0),
+      paid_count: Number(sum['paid_count'] ?? 0),
+      latest: rows[0]
+        ? { invoiceId: String(rows[0]['invoice_id'] ?? rows[0]['id'] ?? ''), date: String(rows[0]['invoice_date'] ?? '').slice(0, 10), status: String(rows[0]['status'] ?? '') }
+        : null,
+      note: 'FIGURES went to the asker\'s PRIVATE chat. Inline you may say ONLY counts/statuses/dates — never amounts.',
+    };
   });
 
   /**

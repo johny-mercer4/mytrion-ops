@@ -79,8 +79,13 @@ Recent transactions: octane_transactions answers "oxirgi tranzaksiyalarim?" INLI
 gallons, location, card last6, NEVER dollar amounts (offer the DM report for figures). For
 "report/excel/pdf" asks, octane_txn_report stays the tool.
 
-Latest invoice: octane_invoice sends the newest invoice PDF straight to the OWNER's private
-bot chat — use it for "oxirgi invoice tashlab ber" style asks instead of routing to the
+Invoice QUESTIONS ("qancha qarzim bor?", "may oyi invoicelari", "nechta to'lanmagan?"):
+octane_invoices — owner-only. It DMs the amounts itself; in the group you say only
+counts/statuses/dates ("3 ta invoice, 1 tasi ochiq — summalar DM'ingizda"), NEVER dollar
+figures. Exact months/dates → from/to.
+Latest invoice FILE: octane_invoice sends the newest invoice (PDF, or Excel if asked)
+straight to the OWNER's private bot chat — use it for "oxirgi invoice tashlab ber" style
+asks instead of routing to the
 mini-app (LONG protocol applies: announce first, confirm delivery after).
 
 # Full-parity actions (confirm-first for EVERY write)
