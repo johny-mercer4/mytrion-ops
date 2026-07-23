@@ -9,6 +9,9 @@ import {
   createCarrierInvitation,
   getCarrierRegistrations,
   listCards,
+  listSupportBotChats,
+  searchClients,
+  setSupportBotChat,
   type CarrierProfile,
   type DwhCard,
   type RegisteredCompany,
@@ -62,6 +65,20 @@ export function ClientManagePanel({
   const [regsError, setRegsError] = useState('');
   const [regsTick, setRegsTick] = useState(0);
 
+  // Support-bot group mapping (2026-07-23, owner ask): show the STATIC Telegram group id bound to
+  // this carrier and let an admin set/edit it — the manual counterpart of the bot's auto-bind
+  // (needed when the group should be wired BEFORE any owner registration, or re-pointed).
+  const [botChatId, setBotChatId] = useState('');
+  const [botChatSaved, setBotChatSaved] = useState<string | null>(null);
+  const [botChatBusy, setBotChatBusy] = useState(false);
+  const [botChatMsg, setBotChatMsg] = useState('');
+
+  // Deal owner = the SALES AGENT the client must see in the mini-app (2026-07-23, owner ask).
+  // Before: invites stamped whoever clicked Generate (actingAs/worker) — wrong person whenever an
+  // admin or a colleague generated the link. The DWH deal row is the source of truth; the
+  // logged-in worker stays only as the fallback for deals with no resolvable owner.
+  const [dealOwner, setDealOwner] = useState<{ name: string; zohoUserId: string | null } | null>(null);
+
   const prevProfile = useRef(profile);
 
   useEffect(() => {
@@ -93,6 +110,54 @@ export function ClientManagePanel({
       });
     return () => ac.abort();
   }, [carrierId]);
+
+  useEffect(() => {
+    setDealOwner(null);
+    const cid0 = carrierId.trim();
+    if (cid0) {
+      void searchClients(cid0, 15)
+        .then((clients) => {
+          const mine = clients.find((c) => c.carrierId === cid0);
+          if (mine?.ownerName) setDealOwner({ name: mine.ownerName, zohoUserId: mine.ownerZohoUserId });
+        })
+        .catch(() => undefined); // best-effort — fallback below still stamps someone sensible
+    }
+    setBotChatSaved(null);
+    setBotChatId('');
+    setBotChatMsg('');
+    const cid = carrierId.trim();
+    if (!cid) return;
+    void listSupportBotChats()
+      .then((chats) => {
+        const mine = chats.find((c) => c.carrierId === cid);
+        if (mine) {
+          setBotChatSaved(mine.chatId);
+          setBotChatId(mine.chatId);
+        }
+      })
+      .catch(() => undefined); // read is best-effort — the input still works for a fresh set
+  }, [carrierId]);
+
+  async function saveBotChat(): Promise<void> {
+    const cid = carrierId.trim();
+    const chat = botChatId.trim();
+    if (!cid || !chat || botChatBusy) return;
+    if (!/^-?\d{5,20}$/.test(chat)) {
+      setBotChatMsg('Group id must be numeric (e.g. -1003926878773 — from the group\'s info or @getidsbot).');
+      return;
+    }
+    setBotChatBusy(true);
+    setBotChatMsg('');
+    try {
+      await setSupportBotChat(chat, cid);
+      setBotChatSaved(chat);
+      setBotChatMsg('Saved — the bot answers this group within ~5 minutes.');
+    } catch (e) {
+      setBotChatMsg(e instanceof ApiError && e.status === 403 ? 'Admin access required to map bot groups.' : friendlyManageError(e));
+    } finally {
+      setBotChatBusy(false);
+    }
+  }
 
   useEffect(() => {
     setOwner(undefined);
@@ -169,8 +234,8 @@ export function ClientManagePanel({
     try {
       const actingAs = getImpersonation();
       const worker = getSession()?.worker;
-      const agentName = actingAs?.name?.trim() || worker?.userName?.trim() || undefined;
-      const agentZohoUserId = actingAs?.zohoUserId?.trim() || worker?.zohoUserId?.trim() || undefined;
+      const agentName = dealOwner?.name || actingAs?.name?.trim() || worker?.userName?.trim() || undefined;
+      const agentZohoUserId = dealOwner?.zohoUserId?.trim() || actingAs?.zohoUserId?.trim() || worker?.zohoUserId?.trim() || undefined;
       const res = await createCarrierInvitation({
         profile,
         carrierId: carrierId.trim(),
@@ -217,10 +282,41 @@ export function ClientManagePanel({
           Carrier {carrierId || '—'}
           {companyType ? ` · ${companyType}` : ''}
         </div>
+        {dealOwner && (
+          <div style={s('margin-top:4px;font-size:12px;color:var(--text2)')}>
+            Sales agent: <b>{dealOwner.name}</b> — stamped on the registration link; the client sees this name in the mini-app.
+          </div>
+        )}
         <div style={s(`margin-top:10px;font-size:12px;font-weight:700;color:${ownerReady ? 'var(--ok)' : 'var(--warn)'}`)}>
           {ownerStatusLabel}
           {ownerReady && owner?.telegramUsername ? ` · @${owner.telegramUsername}` : ''}
         </div>
+      </div>
+
+      <div style={s(tile)}>
+        <span style={s(label)}>Support bot group</span>
+        <div style={s('display:flex;gap:8px')}>
+          <input
+            value={botChatId}
+            onChange={(e) => setBotChatId(e.target.value)}
+            placeholder="-1003926878773"
+            style={s("flex:1;height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);padding:0 10px;font-family:'JetBrains Mono',monospace;font-size:13px")}
+          />
+          <button
+            type="button"
+            onClick={() => void saveBotChat()}
+            disabled={botChatBusy || !botChatId.trim() || botChatId.trim() === botChatSaved}
+            style={s(`height:38px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--accent);background:rgba(var(--accent-rgb),.12);color:var(--accent);font-weight:700;font-size:13px;cursor:pointer;opacity:${botChatBusy || !botChatId.trim() || botChatId.trim() === botChatSaved ? '.5' : '1'}`)}
+          >
+            {botChatBusy ? 'Saving…' : botChatSaved ? 'Update' : 'Save'}
+          </button>
+        </div>
+        <div style={s('margin-top:7px;font-size:12px;color:var(--text2)')}>
+          {botChatSaved
+            ? `Bound: ${botChatSaved} — the support bot answers this Telegram group.`
+            : 'Optional: paste the Telegram group id to wire the support bot BEFORE the owner registers. Otherwise the group binds itself on the registered owner\'s first message.'}
+        </div>
+        {botChatMsg && <div style={s('margin-top:5px;font-size:12px;color:var(--warn)')}>{botChatMsg}</div>}
       </div>
 
       <div>

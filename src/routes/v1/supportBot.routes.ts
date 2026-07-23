@@ -35,7 +35,6 @@ import { buildTxnReport } from '../../modules/carrier/txnReport.js';
 import { notifyMiniApp } from '../../modules/notifications/service.js';
 import { takeToken } from '../../modules/security/rateBucket.js';
 import { efsWrapper } from '../../wrappers/efsWrapper.js';
-import { sendPlainReply } from '../../integrations/telegramCarrierBot.js';
 import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
 import { requireContext } from './helpers.js';
 
