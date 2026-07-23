@@ -10,6 +10,17 @@
 #   OCTANE_API_BASE         <- localhost:$PORT               (same box — no public round-trip)
 #   OCTANE_INTERNAL_API_KEY <- API_KEY                       (supportBot routes use sessionOrApiKey)
 #   HOME                    <- /app/data/claude-home         (SDK session store on the persistent disk)
+#   IS_SANDBOX=1                                              (the container runs as ROOT; the Claude
+#                                                              Code CLI refuses --dangerously-skip-
+#                                                              permissions as root — this flag, which
+#                                                              the SDK sends for permissionMode
+#                                                              'bypassPermissions', is what killed every
+#                                                              turn with 'exited with code 1 ... root/
+#                                                              sudo privileges'. IS_SANDBOX=1 is the
+#                                                              documented allow-as-root switch; safe
+#                                                              here because the gateway's allowedTools
+#                                                              are our MCP tools only — Bash/Read/Write
+#                                                              are disallowed.)
 #
 # The gateway writes sessions/messages under its cwd ./data — symlinked onto the
 # persistent disk so a redeploy never amnesias group conversations.
@@ -29,6 +40,7 @@ if [ -n "${TELEGRAM_CARRIER_BOT_TOKEN:-}" ] && [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-
   OCTANE_MINIAPP_LINK="${TELEGRAM_CARRIER_MINI_APP_URL:-}" \
   GATEWAY_MODEL="${GATEWAY_MODEL:-claude-sonnet-4-5}" \
   HOME=/app/data/claude-home \
+  IS_SANDBOX=1 \
   pnpm start &
   echo "[start-prod] gateway launched"
 else
