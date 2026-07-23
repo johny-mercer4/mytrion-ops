@@ -211,6 +211,29 @@ export async function findDwhCardByNumber(cardNumber: string): Promise<DwhCardOw
   return { cardId: String(row.card_id), carrierId: String(row.carrier_id), cardNumber: String(row.card_number ?? cardNumber) };
 }
 
+/**
+ * Unit + driver identity for ONE card, taken off its most-recent EFS transaction (mart) row — the
+ * same source the fueling receipt uses (`driver_unit` / `driver_card_name`). Best-effort enrichment
+ * for card notifications (status change, override); both fields are null when the card has no
+ * transactions yet. Callers gate on env.DWH_DATABASE_URL and swallow errors (fail-open to '—').
+ */
+export async function getCardEfsIdentity(
+  carrierId: string,
+  cardNumber: string,
+): Promise<{ unit: string | null; driverName: string | null }> {
+  const rows = await dwhQuery<{ driver_unit: string | null; driver_card_name: string | null }>(
+    `select driver_unit, driver_card_name
+       from octane.mart_transaction_line_items
+      where carrier_id = $1 and card_number = $2
+      order by transaction_date desc nulls last, transaction_id desc
+      limit 1`,
+    [carrierId, cardNumber],
+  );
+  const r = rows[0];
+  const s = (v: string | null): string | null => (v != null && String(v).trim() ? String(v).trim() : null);
+  return { unit: r ? s(r.driver_unit) : null, driverName: r ? s(r.driver_card_name) : null };
+}
+
 /** A carrier's company profile — the fields the mini-app's owner profile sheet surfaces. */
 export interface DwhCompanyDetails {
   carrierId: string;

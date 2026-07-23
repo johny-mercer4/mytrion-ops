@@ -19,6 +19,10 @@
   --card-foreground: #ffffff;
   --secondary: #2a2e3a;
   --secondary-foreground: #ffffff;
+  /* Skeleton shimmer endpoints — a color pulse (not opacity), so it stays visible on the light
+     theme too, where fading a near-card-colored bar showed nothing. */
+  --skel-lo: #2a2e3a;
+  --skel-hi: #3b4150;
   --muted: #1c202b;
   --muted-foreground: #8a8f9c;
   --border: rgba(255, 255, 255, 0.08);
@@ -60,6 +64,10 @@
   --card-foreground: #111318;
   --secondary: #e9ebf1;
   --secondary-foreground: #111318;
+  /* Skeleton shimmer endpoints — a visible gray pulse on the white card (opacity fading a
+     near-card-colored bar was imperceptible here, which read as "no animation"). */
+  --skel-lo: #d9dee7;
+  --skel-hi: #eef1f6;
   --muted: #ffffff;
   /* #7a8091 measured 3.9:1 on a white card — under WCAG AA (4.5:1) for the 11.5–13px labels that
      use this token everywhere. #6a7080 reads 4.8:1 on card and 4.1:1 on --secondary while staying
@@ -132,6 +140,15 @@
 :focus-visible {
   outline: none;
   box-shadow: inset 0 0 0 2px var(--ring);
+}
+
+/* Text inputs already sit inside their own bordered container (search bars, forms), so the global
+   white --ring reads as a harsh box-in-a-box when typing. Recolor their focus to the primary accent
+   — an intentional focus tint on-theme, instead of a stark white rectangle. Buttons/tabs/rows keep
+   the --ring treatment above (their a11y ring is fine on solid surfaces). */
+input:focus-visible,
+textarea:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--primary);
 }
 
 /* Fixed to the viewport, not min-height: the app-root's internal flex column (sticky header +
@@ -293,8 +310,8 @@ input,
 
 /* Skeleton shimmer — the balance hero's first-ever paint, before any cached figure exists. */
 @keyframes octskeleton {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.45; }
+  0%, 100% { background-color: var(--skel-lo); }
+  50% { background-color: var(--skel-hi); }
 }
 
 /**

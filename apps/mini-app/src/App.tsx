@@ -28,14 +28,12 @@ import {
   fetchMoneyCodePreview,
   drawMoneyCode,
   fetchCardEfs,
-  sendAccountingBundleReport,
   setCardStatus,
   setCardLimits,
   updateCardInfo,
   type MoneyCodePreview,
   redeemRegistration,
   sendInvoice,
-  sendMoneyCodeReport,
   voidMoneyCodeDraw,
   sendTransactionsReport,
   type CarrierBalance,
@@ -427,7 +425,7 @@ function CardPicker({
         <ChevronRight size={15} strokeWidth={2.2} color="var(--muted-fg)" style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)', flex: 'none' }} aria-hidden />
       </button>
       {open && (
-        <div style={{ marginTop: 6, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--secondary)', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, zIndex: 30, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--card)', overflow: 'hidden', boxShadow: '0 10px 34px rgba(0,0,0,.32)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
             <SearchGlyph />
             <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={searchPlaceholder} className="selectable" style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--fg)', fontFamily: "'Geist'", fontSize: 14, outline: 'none' }} />
@@ -2247,7 +2245,6 @@ function ActionSheet({
   const [liveRefreshing, setLiveRefreshing] = useState(false);
   /** Which export format is currently being built + sent to Telegram, if any. */
   const [exportBusy, setExportBusy] = useState<TxnExportFormat | null>(null);
-  const [bundleBusy, setBundleBusy] = useState<'bundle' | 'efs' | null>(null);
   /** Owner's card filter on the txns sheet — null = company level (all cards), else one card
    *  ("driver-level report"; 41 chat asks). Drivers never see the picker: they are server-pinned. */
   const [txnCardSel, setTxnCardSel] = useState<{ cardId: string; last6: string } | null>(null);
@@ -2531,36 +2528,6 @@ function ActionSheet({
     }
   }
 
-  /** Owner accounting shortcuts — the weekly ritual ("fuel and EFS report, both retail and with
-   *  discount, pdf and xlsx") as one tap, or the EFS money-code report alone. Same delivery
-   *  contract as doExport: the files land in the bot chat. */
-  async function doBundle(kind: 'bundle' | 'efs') {
-    haptic('tap');
-    if (exportBusy || bundleBusy) return;
-    setBundleBusy(kind);
-    try {
-      const opts = range === 'custom' ? { range: 'custom', from, to } : { range };
-      if (kind === 'bundle') await sendAccountingBundleReport(initData, opts);
-      else await sendMoneyCodeReport(initData, opts, 'xlsx');
-      haptic('success');
-      showToast(t('toast.reportSentToTelegram'));
-    } catch (e) {
-      const code = e instanceof ApiError ? e.code : '';
-      haptic('error');
-      showToast(
-        code === 'TELEGRAM_CHAT_UNREACHABLE'
-          ? t('toast.openBotFirst')
-          : code === 'MC_REPORT_EMPTY' || code === 'BUNDLE_EMPTY'
-            ? t('txns.bundleEmpty')
-            : e instanceof ApiError
-              ? e.message
-              : t('sheet.loadError'),
-        'error',
-      );
-    } finally {
-      setBundleBusy(null);
-    }
-  }
 
   /**
    * Files a real Desk ticket when the catalog item carries a `request` key; otherwise falls back to
@@ -3748,28 +3715,25 @@ function ActionSheet({
             scroll area, so reaching it meant scrolling past every transaction; a client pulling a
             year would never find it. As a sibling of the scroll container it stays put. */}
         {data?.kind === 'txns' && (data.v.data ?? []).length > 0 && (
-          <div style={{ flex: 'none', borderTop: '1px solid var(--border)', background: 'var(--card)', padding: '12px 20px calc(14px + env(safe-area-inset-bottom))' }}>
+          <div style={{ flex: 'none', borderTop: '1px solid var(--border)', background: 'var(--card)', padding: '10px 16px calc(10px + env(safe-area-inset-bottom))' }}>
             {/* Indeterminate by necessity: the work is a server-side build plus a Telegram upload
                 behind our own API, so there are no progress events to report. The bar says
                 "working"; it does not claim a percentage it cannot know. */}
             <div style={{ height: 2, borderRadius: 2, overflow: 'hidden', background: exportBusy ? 'var(--secondary)' : 'transparent', marginBottom: 9 }}>
               {exportBusy && <div style={{ width: '40%', height: '100%', borderRadius: 2, background: 'var(--primary)', animation: 'octbar 1.1s ease-in-out infinite' }} />}
             </div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-fg)', marginBottom: 7 }}>
-              {exportBusy ? t('txns.sendingReport') : t('txns.exportToTelegram')}
-            </div>
-            {/* Detailed columns = full card number + Driver / Unit / Driver ID. Owner/manager only:
-                a driver's view is already one driver + one card, so the breakdown is redundant (and
-                the driver already never sees other cards' numbers). */}
-            {!session.isDriver && (
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                <button type="button" className="press" onClick={() => { haptic('tap'); setExportDetailed((v) => !v); }} style={{ flex: 1, height: 34, borderRadius: 9, fontFamily: "'Geist'", fontWeight: 600, fontSize: 12, cursor: 'pointer', background: exportDetailed ? 'var(--primary)' : 'var(--secondary)', color: exportDetailed ? '#FFFFFF' : 'var(--muted-fg)', border: 'none' }}>
-                  {t('txns.detailedCols')}
+            {/* Compact: label + the owner-only Detailed toggle share one line, then the format
+                checkboxes, then Send — three tight rows, no secondary report buttons. */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {exportBusy ? t('txns.sendingReport') : t('txns.exportToTelegram')}
+              </span>
+              {!session.isDriver && (
+                <button type="button" className="press" aria-pressed={exportDetailed} onClick={() => { haptic('tap'); setExportDetailed((v) => !v); }} style={{ flex: 'none', height: 28, padding: '0 12px', borderRadius: 999, fontFamily: "'Geist'", fontWeight: 600, fontSize: 11.5, cursor: 'pointer', background: exportDetailed ? 'var(--primary)' : 'var(--secondary)', color: exportDetailed ? '#FFFFFF' : 'var(--muted-fg)', border: 'none', whiteSpace: 'nowrap' }}>
+                  {exportDetailed ? '✓ ' : ''}{t('txns.detailedCols')}
                 </button>
-              </div>
-            )}
-            {/* Format = multi-select checkboxes (client ask). Selected pill mirrors the Detailed
-                toggle's on-state (primary bg + white) so the two rows read as one control group. */}
+              )}
+            </div>
             <div style={{ display: 'flex', gap: 8 }}>
               {(['xlsx', 'pdf', 'csv'] as const).map((f) => {
                 const on = selectedFormats.has(f);
@@ -3782,7 +3746,7 @@ function ActionSheet({
                     className="press"
                     disabled={exportBusy !== null}
                     onClick={() => { haptic('tap'); toggleFormat(f); }}
-                    style={{ flex: 1, height: 42, border: 'none', borderRadius: 11, background: on ? 'var(--primary)' : 'var(--secondary)', color: on ? '#FFFFFF' : 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: exportBusy ? 'default' : 'pointer', opacity: exportBusy ? 0.55 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                    style={{ flex: 1, height: 36, border: 'none', borderRadius: 10, background: on ? 'var(--primary)' : 'var(--secondary)', color: on ? '#FFFFFF' : 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 12.5, cursor: exportBusy ? 'default' : 'pointer', opacity: exportBusy ? 0.55 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
                   >
                     {on ? '✓ ' : ''}{f === 'xlsx' ? 'Excel' : f === 'pdf' ? 'PDF' : 'CSV'}
                   </button>
@@ -3794,29 +3758,10 @@ function ActionSheet({
               className="press"
               disabled={exportBusy !== null || selectedFormats.size === 0}
               onClick={() => void doExport(data.v.data ?? [], (['xlsx', 'pdf', 'csv'] as const).filter((f) => selectedFormats.has(f)))}
-              style={{ width: '100%', height: 44, marginTop: 8, border: 'none', borderRadius: 11, background: selectedFormats.size === 0 ? 'var(--secondary)' : 'var(--primary)', color: selectedFormats.size === 0 ? 'var(--muted-fg)' : '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 14, cursor: exportBusy !== null || selectedFormats.size === 0 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+              style={{ width: '100%', height: 40, marginTop: 8, border: 'none', borderRadius: 10, background: selectedFormats.size === 0 ? 'var(--secondary)' : 'var(--primary)', color: selectedFormats.size === 0 ? 'var(--muted-fg)' : '#FFFFFF', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13.5, cursor: exportBusy !== null || selectedFormats.size === 0 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
             >
               {exportBusy !== null ? <><Spinner size={16} color="#FFFFFF" /> {t('txns.sendingReport')}</> : t('txns.sendReport')}
             </button>
-            {/* Owner accounting shortcuts: the weekly "fuel and EFS report, both retail and with
-                discount, pdf and xlsx" ritual as one tap, and the EFS half alone. Never shown to a
-                driver — both endpoints are owner-only anyway. */}
-            {!session.isDriver && (
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                {([['bundle', t('txns.bundle')], ['efs', t('txns.efsReport')]] as const).map(([k, label]) => (
-                  <button
-                    key={k}
-                    type="button"
-                    className="press"
-                    disabled={exportBusy !== null || bundleBusy !== null}
-                    onClick={() => void doBundle(k)}
-                    style={{ flex: 1, height: 42, border: 'none', borderRadius: 11, background: k === 'bundle' ? 'var(--primary)' : 'var(--secondary)', color: k === 'bundle' ? '#FFFFFF' : 'var(--fg)', fontFamily: "'Geist'", fontWeight: 700, fontSize: 13, cursor: bundleBusy ? 'default' : 'pointer', opacity: bundleBusy && bundleBusy !== k ? 0.45 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    {bundleBusy === k ? <Spinner size={16} color={k === 'bundle' ? '#FFFFFF' : 'var(--fg)'} /> : label}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         )}
       </div>

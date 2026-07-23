@@ -31,6 +31,7 @@ import { TXN_FETCH_LIMIT, scopeRowsToCard } from '../../modules/carrier/driverCa
 import { listLiveCardRows as listCardsLive } from '../../modules/carrier/liveCards.js';
 import { requireDriverCardNumber, telegramCtx } from '../../modules/carrier/miniAppAuth.js';
 import { fileServiceRequest, SERVICE_REQUEST_KEYS, serviceRequestAllows } from '../../modules/carrier/serviceRequest.js';
+import { getCardEfsIdentity } from '../../integrations/dwhCards.js';
 import { executeZohoFunctionWithFallback } from '../../integrations/zohoFunctions.js';
 import { buildTxnReport } from '../../modules/carrier/txnReport.js';
 import { notifyMiniApp } from '../../modules/notifications/service.js';
@@ -1010,14 +1011,27 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
       resourceId: registration.cardId ?? cardNumber.slice(-6),
       detail: { carrierId: body.carrierId, via: 'support-bot' },
     });
-    void notifyMiniApp({
-      type: 'override',
-      tenantId: registration.tenantId,
-      carrierId: body.carrierId,
-      telegramUserId: registration.telegramUserId,
-      dedupeKey: `override:${body.carrierId}:${registration.cardId ?? cardNumber.slice(-6)}:${Date.now()}`,
-      payload: { last6: cardNumber.slice(-6), cardId: registration.cardId ?? '' },
-    });
+    // Full PAN + unit + EFS driver on the override receipt (owner ask 2026-07-23). Enrichment is
+    // fire-and-forget so it never delays the driver's pump response; '—' when the DWH is absent.
+    void (async () => {
+      const efs = env.DWH_DATABASE_URL
+        ? await getCardEfsIdentity(body.carrierId, cardNumber).catch(() => ({ unit: null, driverName: null }))
+        : { unit: null, driverName: null };
+      await notifyMiniApp({
+        type: 'override',
+        tenantId: registration.tenantId,
+        carrierId: body.carrierId,
+        telegramUserId: registration.telegramUserId,
+        dedupeKey: `override:${body.carrierId}:${registration.cardId ?? cardNumber.slice(-6)}:${Date.now()}`,
+        payload: {
+          last6: cardNumber.slice(-6),
+          card: cardNumber,
+          unit: efs.unit || '—',
+          driverName: efs.driverName || '—',
+          cardId: registration.cardId ?? '',
+        },
+      });
+    })();
     return { success: true, last6: cardNumber.slice(-6), minutes: 30, raw: result };
   });
 }
