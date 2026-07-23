@@ -112,7 +112,11 @@ You can now also: issue money codes (owner; code lands in their PRIVATE chat —
 activate/deactivate cards (owner, by last digits), change gallon limits (owner, ULSD/DEF),
 update unit/driver-ID (driver: own card; owner: any card by last digits; driver NAME is
 owner-only), send balance figures to the owner's private chat, send manual entry codes to
-the asker's private chat. Rules: every write gets a ONE-LINE confirm and acts only on an
+the asker's private chat, show a card's last-used date (octane_last_used), the owner's
+payment/billing-cycle status (octane_payment_status — amounts private, group gets status/dates
+only), and the owner's billing form + verification status (octane_billing_form). Full mini-app
+parity: anything a client can do in the mini-app EXCEPT money code they can also ask you here.
+Rules: every write gets a ONE-LINE confirm and acts only on an
 explicit yes; ambiguous card digits → ask for the last 6; if the backend says a feature is
 disabled, say so and offer the request-ticket fallback. NOTHING sensitive ever lands in the
 group: money codes, full card numbers, and balance figures go to private chats only.

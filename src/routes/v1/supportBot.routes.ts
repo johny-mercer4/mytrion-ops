@@ -811,6 +811,75 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * Per-card LAST-USED date — the mini-app drv-last-used / fleet last-used, now over the bot.
+   * Driver → own card; owner → whole fleet, or one card via cardLast6. No dollar figures, so the
+   * bot may answer inline.
+   */
+  app.post('/support-bot/last-used', guard, async (request) => {
+    const body = callerSchema
+      .extend({ range: z.string().max(20).default('all_time'), cardLast6: z.string().trim().min(4).max(19).optional() })
+      .parse(request.body);
+    const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    takeReadToken(body.carrierId);
+    const result = await serverCrmWrapper.getLastUsed(body.carrierId, body.range);
+    let rows = (result.data ?? []) as Array<Record<string, unknown>>;
+    if (role === 'driver') {
+      rows = scopeRowsToCard(rows, await requireDriverCardNumber(registration));
+    } else if (body.cardLast6) {
+      rows = scopeRowsToCard(rows, await resolveCardByLast6(body.carrierId, body.cardLast6));
+    }
+    return { role, count: rows.length, cards: rows.slice(0, 50) };
+  });
+
+  /**
+   * Owner billing-cycle + payment status (servercrm payment-info, ~90-day window) — the mini-app
+   * fin-payment-status service. Owner-only. Carries dollar figures, so the bot keeps AMOUNTS to the
+   * owner's private chat and says only status/dates in the group (same money-in-group rule).
+   */
+  app.post('/support-bot/payment', guard, async (request) => {
+    const body = callerSchema.parse(request.body);
+    const { role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    if (role !== 'owner') {
+      throw new AppError('Payment status is available to the account owner.', { statusCode: 403, code: 'SUPPORT_BOT_OWNER_ONLY', expose: true });
+    }
+    takeReadToken(body.carrierId);
+    const payment = await serverCrmWrapper.getPaymentInfo(body.carrierId);
+    return { role, payment, note: 'Dollar figures go to the owner PRIVATELY; in the group say only status/dates, never amounts.' };
+  });
+
+  /**
+   * Owner billing form + verification status — the READ behind the mini-app doc-billing-form sheet
+   * (Zoho mytrionfetchbillingforminfo). Owner-only. Distinct from octane_service_request(billing-form),
+   * which FILES a form; this SHOWS the current one.
+   */
+  app.post('/support-bot/billing-form', guard, async (request) => {
+    const body = callerSchema.parse(request.body);
+    const { role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    if (role !== 'owner') {
+      throw new AppError('The billing form is available to the account owner.', { statusCode: 403, code: 'SUPPORT_BOT_OWNER_ONLY', expose: true });
+    }
+    takeReadToken(body.carrierId);
+    try {
+      const raw = await executeZohoFunctionWithFallback(
+        ['mytrionfetchbillingforminfo', 'mytrionFetchBillingFormInfo'],
+        { carrierId: body.carrierId },
+        { unwrap: 'permissive' },
+      );
+      if (!raw || typeof raw !== 'object') return { role, verification: null, billingForm: null, notes: [] };
+      const r = raw as Record<string, unknown>;
+      const deal = (r['deal'] ?? null) as Record<string, unknown> | null;
+      return {
+        role,
+        verification: deal?.['billingVerification'] ?? null,
+        billingForm: (r['billingForm'] ?? null) as Record<string, unknown> | null,
+        notes: Array.isArray(r['notes']) ? r['notes'] : [],
+      };
+    } catch (err) {
+      throw new AppError('Billing form lookup failed', { statusCode: 502, code: 'BILLING_FORM_ERROR', expose: true, cause: err });
+    }
+  });
+
+  /**
    * Money code — QUOTE (owner-only, read). Answers "qancha money code olsam bo'ladi?" and
    * fee-for-amount BEFORE a draw. The drawable window (limit) is servercrm's authoritative
    * getMoneyCodePreview — a % of the latest invoice (credit) or the prepaid balance — and is the

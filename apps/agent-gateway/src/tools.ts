@@ -159,6 +159,9 @@ export function buildOctaneServer(chatId: number, carrierId: string) {
         ({ telegram_user_id, request, comment }) => run('/support-bot/service-request', telegram_user_id, { request, comment }),
       ),
       tool('octane_tracking', "Where is the owner's card shipment? Owner-only tracking status.", asker, ({ telegram_user_id }) => run('/support-bot/tracking', telegram_user_id)),
+      tool('octane_last_used', "When was a card last used? Driver: their own card. Owner: the whole fleet, or one card via card_last6. No dollar figures — safe to answer inline.", { ...asker, card_last6: z.string().min(4).max(19).optional().describe('OWNER: one card by last digits; omit for the fleet') }, ({ telegram_user_id, card_last6 }) => run('/support-bot/last-used', telegram_user_id, card_last6 ? { cardLast6: card_last6 } : {})),
+      tool('octane_payment_status', "Owner billing-cycle & payment status — billing cycle, next due date, open/paid invoice counts, open balance. Owner-only. DOLLAR FIGURES go to the owner's PRIVATE chat only; in the group say status + dates, never amounts.", asker, ({ telegram_user_id }) => run('/support-bot/payment', telegram_user_id)),
+      tool('octane_billing_form', "Show the OWNER their billing form + verification status (the same info the mini-app billing-form sheet shows). Owner-only. To SUBMIT/file a billing form for a service charge, use octane_service_request(billing-form) instead.", asker, ({ telegram_user_id }) => run('/support-bot/billing-form', telegram_user_id)),
       tool(
         'telegram_buttons',
         'Send a message WITH TAPPABLE BUTTONS — the preferred UX for confirmations and choices. Use for: write confirms (✅ Ha / ❌ Yo\'q), offering the service menu, picking a report period, choosing between matched cards. Button data comes back to you as a [button tap ...] message. After calling this, output SILENT (the buttons message IS your reply).',
