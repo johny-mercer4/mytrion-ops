@@ -126,7 +126,8 @@ const OWNER_CATALOG: CatalogGroup[] = [
   {
     groupLabelKey: 'svcgrp.documents',
     items: [
-      { key: 'doc-invoices', labelKey: 'cat.docInvoices', icon: 'doc', action: 'invoices' },
+      // 'doc-invoices' removed 2026-07-22 (owner): duplicated fin-invoice-view — both opened the
+      // same invoices sheet, so owners saw "invoices" twice in the catalog.
       // Real read now (was a generic ticket): the same servercrm billing-form fetch the CRM
       // widget uses (carrier.billing_form_info), rendered in its own sheet.
       { key: 'doc-billing-form', labelKey: 'cat.docBillingForm', icon: 'doc', action: 'billingform' },

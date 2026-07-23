@@ -191,7 +191,8 @@ const invoicesSchema = z.object({
 const invoiceSignedUrlSchema = z.object({
   initData: z.string().min(1),
   invoiceId: z.string().min(1).max(120),
-  format: z.enum(['pdf', 'xlsx', 'csv']).default('pdf'),
+  // 'csv' removed 2026-07-22: servercrm has no CSV invoice document — the button lied.
+  format: z.enum(['pdf', 'xlsx']).default('pdf'),
 });
 /** `service` is an enum, not free text: it selects a spec from a server-side map (subject, Desk
  *  department, allowed roles), so a caller cannot invent a request type or route one to an arbitrary
@@ -1305,7 +1306,7 @@ export async function carrierMiniAppRoutes(app: FastifyInstance): Promise<void> 
   async function ownedInvoiceUrl(
     initData: string,
     invoiceId: string,
-    format: 'pdf' | 'xlsx' | 'csv' = 'pdf',
+    format: 'pdf' | 'xlsx' = 'pdf',
   ): Promise<{ url: string; carrierId: string; invoice: Record<string, unknown>; registration: RegisteredMiniAppCompany }> {
     const { carrierId, registration } = await requireRegisteredOwnerUser(initData);
     const list = await serverCrmWrapper.getInvoices(carrierId, { range: 'all_time' });
