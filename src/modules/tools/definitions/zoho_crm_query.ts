@@ -39,10 +39,14 @@ export const zohoCrmQueryTool: ToolManifest<z.infer<typeof inputSchema>, z.infer
   requiredScopes: ['zoho_crm:read'],
   rateLimit: { perMinute: 30 },
   async handler(input, ctx) {
-    const res = (await callMcpTool('coql', { select_query: input.select_query }, ctx)) as any;
+    // COQL responses arrive either as a bare row array or as { data, info } — never typed upstream.
+    const res = (await callMcpTool('coql', { select_query: input.select_query }, ctx)) as
+      | { data?: Array<Record<string, unknown>>; info?: { count?: number; more_records?: boolean } }
+      | Array<Record<string, unknown>>
+      | null;
     const rows = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : [];
     const count = Array.isArray(res) ? res.length : (res?.info?.count ?? rows.length);
-    const moreRecords = Array.isArray(res) ? false : (res?.info?.more_records === true);
+    const moreRecords = Array.isArray(res) ? false : res?.info?.more_records === true;
     return { count, moreRecords, rows };
   },
 };
