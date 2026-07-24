@@ -70,6 +70,15 @@ export async function setReaction(chatId: number, messageId: number, emoji: stri
   });
 }
 
+/** Remove any reaction the bot put on a message — an empty reaction array clears it. */
+export async function clearReaction(chatId: number, messageId: number): Promise<void> {
+  await fetch(`${API}/setMessageReaction`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId, reaction: [] }),
+  });
+}
+
 /** Message with tappable inline buttons — the group bot's real "UI". Buttons arrive back as
  *  callback_query taps (routed into the session as [button tap ...] lines). ≤8 buttons, 2/row. */
 export async function sendButtons(

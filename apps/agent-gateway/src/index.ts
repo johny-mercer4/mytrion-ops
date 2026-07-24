@@ -5,7 +5,7 @@
  */
 import { config } from './config.js';
 import { enqueueTurn } from './sessions.js';
-import { getUpdates, sendMessage, sendTyping, setReaction, type TgMessage , answerCallback } from './telegram.js';
+import { getUpdates, sendMessage, sendTyping, setReaction, clearReaction, type TgMessage , answerCallback } from './telegram.js';
 import { noteSender } from './tools.js';
 import { notePhoto } from './telegramTools.js';
 import { noteEngaged, shouldEngage } from './filter.js';
@@ -197,11 +197,11 @@ async function main(): Promise<void> {
         const mReply = { text: '' };
         const mAt = Date.now();
         const baseStats = logTurn('message', m.chat.id, m.from?.id ?? 0, mName, mQuestion, mAt, mReply);
-        // Upgrade the 👀 (seen) ack to ✅ (handled) when the turn answered successfully — the human
-        // "done" nod. On an error turn or a deliberate SILENT (no reply text), the 👀 just stays.
+        // The 👀 was only a transient "working on it" indicator — remove it once the turn is done
+        // (the reply itself is the acknowledgment), so old messages don't keep a stale eye reaction.
         const mStats: typeof baseStats = (stats) => {
           baseStats(stats);
-          if (!stats.isError && mReply.text) void setReaction(m.chat.id, m.message_id, '✅').catch(() => undefined);
+          void clearReaction(m.chat.id, m.message_id).catch(() => undefined);
         };
         enqueueTurn(m.chat.id, carrier, formatPrompt(m), async (text) => {
           const finalText = stampElapsed(text, mAt);
