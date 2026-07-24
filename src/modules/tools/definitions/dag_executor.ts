@@ -20,38 +20,42 @@ const outputSchema = z.object({
 });
 
 /** Resolves dot-notation paths like 'result.data.0.id' against an object */
-function resolvePath(obj: any, path: string): any {
-  return path.split('.').reduce((acc, part) => (acc && acc[part] !== undefined ? acc[part] : undefined), obj);
+function resolvePath(obj: unknown, path: string): unknown {
+  return path.split('.').reduce<unknown>((acc, part) => {
+    if (acc !== null && typeof acc === 'object' && part in acc) {
+      return (acc as Record<string, unknown>)[part];
+    }
+    return undefined;
+  }, obj);
+}
+
+/** Looks up one `task_id.some.path` template against the results context. */
+function resolveTemplate(path: string, context: Record<string, unknown>): unknown {
+  const [taskId = '', ...rest] = path.split('.');
+  if (!taskId || context[taskId] === undefined) return undefined;
+  return resolvePath(context[taskId], rest.join('.'));
 }
 
 /** Recursively string-interpolates ${task_id.path} templates in arguments */
-function interpolateArguments(args: any, context: Record<string, any>): any {
+function interpolateArguments(args: unknown, context: Record<string, unknown>): unknown {
   if (typeof args === 'string') {
-    return args.replace(/\$\{([^}]+)\}/g, (match, path) => {
-      const [taskId, ...rest] = path.split('.');
-      if (context[taskId]) {
-        const val = resolvePath(context[taskId], rest.join('.'));
-        if (val !== undefined) {
-          // If the entire argument is just the template, preserve type (e.g. number, object)
-          if (match === args) return val as any;
-          return String(val);
-        }
-      }
-      return match;
+    // The entire argument is one template → preserve the resolved value's native type
+    // (number, object, array), not its string rendering.
+    const whole = /^\$\{([^}]+)\}$/.exec(args);
+    if (whole) {
+      const val = resolveTemplate(whole[1] ?? '', context);
+      return val === undefined ? args : val;
+    }
+    return args.replace(/\$\{([^}]+)\}/g, (match, path: string) => {
+      const val = resolveTemplate(path, context);
+      return val === undefined ? match : String(val);
     });
   } else if (Array.isArray(args)) {
     return args.map((item) => interpolateArguments(item, context));
   } else if (args !== null && typeof args === 'object') {
-    const newArgs: Record<string, any> = {};
+    const newArgs: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(args)) {
-      const interpolatedValue = interpolateArguments(v, context);
-      // If a template resolved to the literal string representation or native type, we use it.
-      // However, if the template itself was the entire string, it might return a native type.
-      // We handle replacing properties correctly.
-      if (typeof v === 'string' && v.startsWith('${') && v.endsWith('}') && v === interpolatedValue?.toString()) {
-        // Handled by the string block above
-      }
-      newArgs[k] = interpolatedValue;
+      newArgs[k] = interpolateArguments(v, context);
     }
     return newArgs;
   }
@@ -72,7 +76,7 @@ export const dagExecutorTool: ToolManifest<z.infer<typeof inputSchema>, z.infer<
   rateLimit: { perMinute: 20 },
   async handler(input, ctx) {
     const tasks = input.tasks;
-    const resultsContext: Record<string, any> = {};
+    const resultsContext: Record<string, unknown> = {};
     const pendingTasks = new Set(tasks.map(t => t.id));
     const runningTasks = new Set<string>();
     const completedTasks = new Set<string>();
@@ -123,8 +127,8 @@ export const dagExecutorTool: ToolManifest<z.infer<typeof inputSchema>, z.infer<
           
           resultsContext[id] = { result };
           completedTasks.add(id);
-        } catch (err: any) {
-          resultsContext[id] = { error: err.message || 'Unknown error' };
+        } catch (err) {
+          resultsContext[id] = { error: err instanceof Error ? err.message : 'Unknown error' };
           failedTasks.add(id);
         } finally {
           runningTasks.delete(id);
