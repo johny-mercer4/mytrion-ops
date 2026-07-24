@@ -196,7 +196,13 @@ async function main(): Promise<void> {
         const mQuestion = (m.text ?? m.caption ?? '') + (m.photo ? ' [photo]' : '');
         const mReply = { text: '' };
         const mAt = Date.now();
-        const mStats = logTurn('message', m.chat.id, m.from?.id ?? 0, mName, mQuestion, mAt, mReply);
+        const baseStats = logTurn('message', m.chat.id, m.from?.id ?? 0, mName, mQuestion, mAt, mReply);
+        // Upgrade the 👀 (seen) ack to ✅ (handled) when the turn answered successfully — the human
+        // "done" nod. On an error turn or a deliberate SILENT (no reply text), the 👀 just stays.
+        const mStats: typeof baseStats = (stats) => {
+          baseStats(stats);
+          if (!stats.isError && mReply.text) void setReaction(m.chat.id, m.message_id, '✅').catch(() => undefined);
+        };
         enqueueTurn(m.chat.id, carrier, formatPrompt(m), async (text) => {
           const finalText = stampElapsed(text, mAt);
           mReply.text = finalText;
