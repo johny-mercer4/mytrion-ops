@@ -9,6 +9,7 @@ import { config } from './config.js';
 import { buildOctaneServer } from './tools.js';
 import { buildTelegramServer } from './telegramTools.js';
 import { systemPrompt } from './prompt.js';
+import { sendTyping } from './telegram.js';
 
 const SESSIONS_FILE = 'data/sessions.json';
 
@@ -131,7 +132,37 @@ export function enqueueTurn(
   chains.set(chatId, next);
 }
 
+/**
+ * Telegram's "typing…" status auto-expires after ~5s, so a single sendTyping flashes for a moment
+ * and then goes dark while a 20-40s turn (LLM + tools) keeps running — the client looks idle even
+ * though the bot is working. Re-send the action every ~4s so a CONTINUOUS "writing…" shows until
+ * the reply lands; the returned stop() clears the loop (the reply message itself also ends it).
+ * Best-effort — a failed keep-alive tick never throws into the turn.
+ */
+const TYPING_REFRESH_MS = 4000;
+function startTypingKeepAlive(chatId: number): () => void {
+  void sendTyping(chatId).catch(() => undefined);
+  const timer = setInterval(() => void sendTyping(chatId).catch(() => undefined), TYPING_REFRESH_MS);
+  return () => clearInterval(timer);
+}
+
+/** Keep the "typing…" indicator alive for the whole turn, then stop it once the reply is sent. */
 async function runTurn(
+  chatId: number,
+  carrierId: string,
+  userPrompt: TurnContent,
+  onReply: (text: string) => Promise<void>,
+  onStats?: (stats: TurnStats) => void,
+): Promise<void> {
+  const stopTyping = startTypingKeepAlive(chatId);
+  try {
+    await runTurnInner(chatId, carrierId, userPrompt, onReply, onStats);
+  } finally {
+    stopTyping();
+  }
+}
+
+async function runTurnInner(
   chatId: number,
   carrierId: string,
   userPrompt: TurnContent,
