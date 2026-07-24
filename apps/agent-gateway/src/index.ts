@@ -1,10 +1,11 @@
 /**
- * Octane agent gateway (v2 MVP) — one group, per-chat Claude sessions over the Agent SDK.
- * Long-poll loop: every inbound group message → note sender (tool guard) → enqueue a turn
- * on that chat's serial queue → reply with the session's final text (or stay silent).
+ * Octane agent gateway (v2) — multi-group, per-USER Claude sessions over the Agent SDK.
+ * Long-poll loop: every inbound group message → note sender (tool guard) → enqueue a turn on that
+ * (chat, user)'s serial queue → reply with the session's final text (or stay silent). Different
+ * users (even in one group) run in parallel; a user's own turns stay ordered.
  */
 import { config } from './config.js';
-import { enqueueTurn } from './sessions.js';
+import { enqueueTurn, maxConcurrentTurns } from './sessions.js';
 import { getUpdates, sendMessage, sendTyping, setReaction, clearReaction, type TgMessage , answerCallback } from './telegram.js';
 import { noteSender } from './tools.js';
 import { notePhoto } from './telegramTools.js';
@@ -13,6 +14,7 @@ import { recordTurn, startMonitor } from './monitor.js';
 import { logMessage } from './messageLog.js';
 import { isRegistered } from './access.js';
 import { carrierFor, chatMapSize, tryAutoBind } from './chatMap.js';
+import { tokenCount } from './authPool.js';
 
 /**
  * One-time signpost for a TAGGED but unregistered user. Gate 2 used to be pure silence, which
@@ -98,7 +100,7 @@ function logTurn(
 }
 
 async function main(): Promise<void> {
-  console.log(`octane-agent-gateway up · model=${config.model} · mapped chats=${await chatMapSize()}${config.groupChatId ? ' + env fallback' : ''}`);
+  console.log(`octane-agent-gateway up · model=${config.model} · tokens=${tokenCount()} · maxConcurrent=${maxConcurrentTurns() || '∞'} · mapped chats=${await chatMapSize()}${config.groupChatId ? ' + env fallback' : ''}`);
   startMonitor();
   let offset = 0;
   for (;;) {
@@ -123,7 +125,7 @@ async function main(): Promise<void> {
           const cbAt = Date.now();
           logMessage({ ts: new Date().toISOString(), chatId, userId: cb.from.id, name, dir: 'in', text: `[tap] ${cb.data ?? ''}`, engaged: true });
           const cbStats = logTurn('button', chatId, cb.from.id, name, `[tap] ${cb.data ?? ''}`, cbAt, cbReply);
-          enqueueTurn(chatId, cbCarrier, `[button tap from ${name} (id ${cb.from.id})]: ${cb.data ?? ''}`, async (text) => {
+          enqueueTurn(chatId, cb.from.id, cbCarrier, `[button tap from ${name} (id ${cb.from.id})]: ${cb.data ?? ''}`, async (text) => {
             const finalText = stampElapsed(text, cbAt);
             cbReply.text = finalText;
             noteEngaged(chatId, cb.from.id);
@@ -203,7 +205,7 @@ async function main(): Promise<void> {
           baseStats(stats);
           void clearReaction(m.chat.id, m.message_id).catch(() => undefined);
         };
-        enqueueTurn(m.chat.id, carrier, formatPrompt(m), async (text) => {
+        enqueueTurn(m.chat.id, m.from?.id ?? 0, carrier, formatPrompt(m), async (text) => {
           const finalText = stampElapsed(text, mAt);
           mReply.text = finalText;
           noteEngaged(m.chat.id, m.from?.id ?? 0);

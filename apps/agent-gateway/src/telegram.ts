@@ -3,6 +3,51 @@ import { config } from './config.js';
 
 const API = `https://api.telegram.org/bot${config.botToken}`;
 
+/**
+ * GLOBAL send throttle. Per-user parallelism can fire many replies/reactions/typing pulses at once;
+ * Telegram's Bot API has its OWN limit (~30 msg/s globally) and 429s — sustained 429s get the bot
+ * temporarily banned. So all OUTBOUND sends are spaced ≥ TELEGRAM_MIN_GAP_MS apart. Two lanes share
+ * one clock:
+ *   - queued(): ordered, must-deliver (replies, buttons, reactions, callback acks). Never dropped.
+ *   - bestEffort(): typing pulses — skipped if a send happened within the gap, so cosmetic keep-alives
+ *     never delay a real reply (a dropped typing tick is invisible; it re-fires in ~4s anyway).
+ * Polling (getUpdates) and file downloads are NOT throttled — they are reads on separate limits.
+ */
+const SEND_MIN_GAP_MS = Number(process.env['TELEGRAM_MIN_GAP_MS'] ?? '40'); // ≈25 sends/s
+// Every outbound POST is time-bounded. Without this, one hung Telegram connection would stall the
+// SERIALIZED send chain forever — freezing every user's reply. The timeout lets the chain advance.
+const SEND_TIMEOUT_MS = Number(process.env['TELEGRAM_SEND_TIMEOUT_MS'] ?? '10000');
+let sendChain: Promise<unknown> = Promise.resolve();
+let lastSendAt = 0;
+
+/** One outbound Bot-API POST, always time-bounded. */
+function tgPost(method: string, payload: Record<string, unknown>): Promise<Response> {
+  return fetch(`${API}/${method}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+  });
+}
+
+function queued<T>(fn: () => Promise<T>): Promise<T> {
+  const run = sendChain.then(async () => {
+    const wait = lastSendAt + SEND_MIN_GAP_MS - Date.now();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    lastSendAt = Date.now();
+    return fn();
+  });
+  // Keep the chain alive regardless of any single send's outcome (a rejection must not stall the queue).
+  sendChain = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+function bestEffort(fn: () => Promise<void>): Promise<void> {
+  if (Date.now() - lastSendAt < SEND_MIN_GAP_MS) return Promise.resolve(); // yield to real sends
+  lastSendAt = Date.now();
+  return fn().catch(() => undefined);
+}
+
 export interface TgMessage {
   message_id: number;
   chat: { id: number; type: string; title?: string };
@@ -29,15 +74,13 @@ export async function getUpdates(offset: number): Promise<Array<{ update_id: num
 }
 
 export async function sendMessage(chatId: number, text: string, replyTo?: number): Promise<void> {
-  await fetch(`${API}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+  await queued(() =>
+    tgPost('sendMessage', {
       chat_id: chatId,
       text,
       ...(replyTo ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : {}),
     }),
-  });
+  );
 }
 
 /** Download a Telegram file as base64 (photos: pick with pickPhotoSize first). ≤10MB guard. */
@@ -63,20 +106,12 @@ export function pickPhotoSize(photos: Array<{ file_id: string; width: number }>)
 
 /** Emoji reaction — the cheapest possible ack (the human agents' "done ✅" habit). */
 export async function setReaction(chatId: number, messageId: number, emoji: string): Promise<void> {
-  await fetch(`${API}/setMessageReaction`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, message_id: messageId, reaction: [{ type: 'emoji', emoji }] }),
-  });
+  await queued(() => tgPost('setMessageReaction', { chat_id: chatId, message_id: messageId, reaction: [{ type: 'emoji', emoji }] }));
 }
 
 /** Remove any reaction the bot put on a message — an empty reaction array clears it. */
 export async function clearReaction(chatId: number, messageId: number): Promise<void> {
-  await fetch(`${API}/setMessageReaction`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, message_id: messageId, reaction: [] }),
-  });
+  await queued(() => tgPost('setMessageReaction', { chat_id: chatId, message_id: messageId, reaction: [] }));
 }
 
 /** Message with tappable inline buttons — the group bot's real "UI". Buttons arrive back as
@@ -94,33 +129,24 @@ export async function sendButtons(
     if (last && last.length < 2) last.push(btn);
     else rows.push([btn]);
   }
-  await fetch(`${API}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+  await queued(() =>
+    tgPost('sendMessage', {
       chat_id: chatId,
       text,
       reply_markup: { inline_keyboard: rows },
       ...(replyTo ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : {}),
     }),
-  });
+  );
 }
 
 /** Ack a button tap so Telegram stops the spinner on the client. */
 export async function answerCallback(callbackId: string): Promise<void> {
-  await fetch(`${API}/answerCallbackQuery`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ callback_query_id: callbackId }),
-  }).catch(() => {});
+  await queued(() => tgPost('answerCallbackQuery', { callback_query_id: callbackId })).catch(() => {});
 }
 
 export async function sendTyping(chatId: number): Promise<void> {
-  await fetch(`${API}/sendChatAction`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, action: 'typing' }),
-  }).catch(() => {});
+  // Cosmetic keep-alive — best-effort so it never queues ahead of (or delays) a real reply.
+  await bestEffort(() => tgPost('sendChatAction', { chat_id: chatId, action: 'typing' }).then(() => undefined));
 }
 
 /** A downloaded image, ready to hand to the model as a base64 content block. */

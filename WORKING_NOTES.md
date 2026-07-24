@@ -5012,3 +5012,126 @@ lower `max` (8), `connectionTimeoutMillis` 15s, `statement_timeout=30s`,
 `idle_in_transaction_session_timeout=60s`, `application_name=servercrm`.
 Ops probe: `scripts/probeDwhLockJam.ts`. If it recurs: terminate the Mashup
 root blocker (or restart Mashup), then restart ServerCRM to flush stuck clients.
+
+---
+
+## 2026-07-25 — agent-gateway: OAuth token pool (multi-token failover)
+
+Problem: every parallel turn drew on ONE `CLAUDE_CODE_OAUTH_TOKEN`. With several groups active,
+the subscription 5h/7d window exhausts and the whole bot goes dark. (Turns were already parallel
+across chats via `sessions.ts` `chains` map — concurrency was never the blocker; shared quota was.)
+
+Added `src/authPool.ts`: token pool with round-robin SPREAD + cooldown FAILOVER.
+- Config (merged, de-duped): `CLAUDE_CODE_OAUTH_TOKENS` (comma/newline list) | `..._1.._10` |
+  single `CLAUDE_CODE_OAUTH_TOKEN` (legacy = no rotation). `AUTH_COOLDOWN_MS` fallback (1h).
+- `pickToken(tried)` round-robins healthy tokens so N concurrent group turns land on N accounts;
+  best-effort returns a cooling token if all are down; null once all tried this turn.
+- `markLimited(token, resetsAt)` cools a token (normalizes unix-seconds→ms); `soonestRecovery()`.
+
+`sessions.ts`:
+- `runQuery` now takes `authToken`, pins it via `options.env` (spreads `process.env` — that option
+  REPLACES the subprocess env). Detects rate-limit in-stream: rejected `rate_limit_event`
+  (+resetsAt), assistant `error:'rate_limit'`, result `api_error_status===429` — only acted on when
+  the turn produced NO text.
+- New `runWithRotation` wraps it: on `rateLimited`, cool the token + retry SAME turn RESUMING the
+  SAME session id on the next token (transcript is on disk under `$HOME/.claude`, account-agnostic,
+  so the conversation continues). Also folds in the existing dead-resume heal (retry fresh, same
+  token). Throws `AllTokensLimitedError(retryAt)` only when every token is exhausted →
+  enqueue's catch sends a bilingual "try again in N min" fallback.
+
+Boot log now prints `tokens=N`. Verified authPool logic standalone (8/8: dedupe, spread, failover,
+cooldown, all-exhausted). `pnpm typecheck` green. Live-run TODO: confirm a mid-session token swap
+resumes cleanly (the one thing disk-transcript resume can't be unit-tested for).
+
+### MAX_CONCURRENT_TURNS cap (same session)
+
+Added global concurrency semaphore in `sessions.ts`: `MAX_CONCURRENT_TURNS` (default 6, ≥1). Per-chat
+chains still serialise a single chat; the semaphore bounds total turns EXECUTING across all chats so
+a busy hour can't spawn dozens of CLI subprocesses and OOM the container. Acquired in `runTurn`
+BEFORE the typing keep-alive (a queued turn doesn't flash "writing…" while waiting); released in
+`finally`. Slot handed directly to the next waiter on release (active count only drops when nobody
+waits). Boot log now prints `maxConcurrent=N`. Fuzzed the semaphore algo (500 concurrent, 4/4:
+peak==cap, never breaches, all drain, zero leaked slots). `pnpm typecheck` green.
+
+### Per-USER sessions (no same-group head-of-line wait)
+
+Decision (owner): a user who writes must NEVER wait because the bot is busy on someone else — the
+worst failure mode of the agent. Two changes:
+1. `MAX_CONCURRENT_TURNS` default flipped to UNLIMITED (0/unset). The cap I added earlier was itself
+   starving fresh chats; kept as an opt-in safety valve only. Boot log prints `maxConcurrent=∞`.
+2. Session + queue key changed `chatId` → `chatId:userId` (`sessions.ts`). Turns now serial WITHIN a
+   user's thread, parallel ACROSS users — so in a busy group driver B is answered while driver A's
+   turn still runs. `enqueueTurn(chatId, userId, …)`; both call sites in `index.ts` updated. `chains`
+   map pruned on settle (was bounded by #chats, now would grow per unique asker).
+
+Why safe (checked, not assumed): the tool layer already authorises by (chatId, userId) — `tools.ts`
+`recentSenders` is `chatId→(userId→ts)` (no clobbered "current sender"), and `telegramTools.ts`
+`telegram_read_image` refuses a photo whose `entry.userId` ≠ asker. Per-user context also means one
+user's session only ever holds their own id, so it can't act as another user. Known minor: only ONE
+latest photo per chat — if A posts then B posts, A must resend (guard refuses, no leak).
+
+Concurrency reality with a single resumable session id: it can't run two turns at once (SDK resume
+not concurrent-safe), which is exactly why per-USER keying (not a bigger per-chat lock) is the fix.
+
+Verified: queue keying (same-user serial / cross-user parallel / prune 3/3), semaphore fuzz (4/4),
+authPool (8/8). `pnpm typecheck` green.
+
+### Hardening pass (adversarial review fixes)
+
+Reviewed the multi-token / per-user work for failure modes. Fixed the code-side ones:
+
+- **Double tool-execution on rotation** (`sessions.ts` runWithRotation): on rate-limit, carry the
+  session id the failed attempt established (`init` stores it even when the turn then limits) into
+  the retry, so the next token RESUMES the transcript instead of re-running the user prompt — a write
+  tool that already fired on token A won't fire again on B.
+- **All-tokens-exhausted amplification** (`sessions.ts`): fast-fail a turn when every token is cooling
+  and the soonest reset is > `ALL_LIMITED_FASTFAIL_MS` (30s), instead of best-effort-spawning a doomed
+  CLI per token per queued turn (100 queued × 3 tokens = 300 pointless spawns hammering a limited API).
+- **Cooldown re-extension** (`authPool.ts` markLimited): authoritative `resetsAt` always wins; a
+  no-reset limit only STARTS a cooldown on a currently-healthy token — repeat probes no longer push a
+  cooling token's recovery farther out.
+- **Telegram Bot-API 429** (`telegram.ts`): global outbound send throttle. `queued()` spaces
+  replies/buttons/reactions/acks ≥ `TELEGRAM_MIN_GAP_MS` (40ms ≈25/s), FIFO, a rejecting send never
+  stalls the queue. `sendTyping` uses `bestEffort()` — skipped if within the gap so cosmetic pulses
+  never delay a real reply. Polling + file downloads unthrottled (separate limits).
+
+Verified: throttle (gap/FIFO/reject-resilience/best-effort-skip 5/5), markLimited no-re-extend +
+authoritative-override (2/2). `pnpm typecheck` green.
+
+DEFERRED (need product/live decision, NOT fixed in code):
+- **Tokens MUST be separate Anthropic accounts.** 3 setup-tokens off ONE subscription share ONE quota
+  → they limit together → rotation is a no-op. Confirm 3 distinct Max/Pro seats before relying on it.
+- **Cross-token resume UNVERIFIED.** "Continue conversation on the next token" assumes resuming a
+  session created under account A works when authed as account B (transcript is on the shared disk
+  volume, so plausibly yes). The double-write fix depends on this. Live-test a forced mid-turn swap.
+- **Shared `~/.claude.json` under high concurrency**: downgraded — the CLI writes it atomically
+  (temp+rename, see data/claude-home/backups/*.backup), so concurrent writers get last-write-wins,
+  not corruption. Left shared on purpose: per-token config dirs would isolate the transcript store
+  and break cross-token resume.
+- **Per-group Telegram limit (~20 msg/min/group)** still applies — a single group with a burst of
+  users can't be replied to faster than Telegram allows, regardless of our global gap. Per-chat
+  bucket is a possible follow-up.
+- **Group context**: per-user sessions mean the bot no longer sees other users' messages as context
+  (accepted trade for no head-of-line wait).
+
+### Verification harnesses (#1 accounts, #4 cross-token resume)
+
+Added two on-demand diagnostics (hit real API, cost a tiny turn each):
+- `scripts/checkTokens.mts` — one haiku turn per token, reads the `rate_limit_event` window
+  (`resetsAt` five-hour + `overageResetsAt` seven-day). Two tokens sharing a 5h reset timestamp =
+  SAME account → flags 🔴 "rotation won't help". Independent windows = 🟢. (accountInfo has no email
+  for OAuth tokens, and the /usage control method returned empty/unscoped, so the window timestamp
+  from the message stream is the reliable discriminator.)
+- `scripts/testCrossTokenResume.mts` — phase 1 token A stores codeword TANGERINE-42, phase 2 token B
+  RESUMES that session id and must recall it. PASS ⇒ context survives a token swap.
+
+Ran both with the single configured token:
+- checkTokens: works (status=allowed, 5h window resets 2026-07-24T23:10Z). Only 1 token → nothing to
+  compare; waiting on the real pool.
+- resume test (degenerates to same-token): 🟢 PASS — resume plumbing itself is sound.
+
+STILL NEEDS the real 3-token pool (owner to set CLAUDE_CODE_OAUTH_TOKENS) to close #1 + true #4.
+Note: runWithRotation ALREADY handles a cross-account resume REJECTION gracefully — the catch drops
+the session and retries fresh on the new token. Residual if that path fires: the rare mid-turn
+double-write returns (write tool re-run on the fresh retry). So the cross-account resume result
+determines whether #2's fix is fully effective or we lean on the fallback.
