@@ -5,7 +5,7 @@
  */
 import { config } from './config.js';
 import { enqueueTurn } from './sessions.js';
-import { getUpdates, sendMessage, sendTyping, type TgMessage , answerCallback } from './telegram.js';
+import { getUpdates, sendMessage, sendTyping, setReaction, type TgMessage , answerCallback } from './telegram.js';
 import { noteSender } from './tools.js';
 import { notePhoto } from './telegramTools.js';
 import { noteEngaged, shouldEngage } from './filter.js';
@@ -187,6 +187,10 @@ async function main(): Promise<void> {
           }
           continue;
         }
+        // Instant acknowledgment on the very message we're about to answer: a 👀 reaction says
+        // "seen, working on it" the moment we engage — so a 20-40s turn never looks ignored (pairs
+        // with the typing keep-alive). Best-effort: a group that disabled this reaction just no-ops.
+        void setReaction(m.chat.id, m.message_id, '👀').catch(() => undefined);
         void sendTyping(m.chat.id);
         const mName = m.from?.first_name ?? m.from?.username ?? 'user';
         const mQuestion = (m.text ?? m.caption ?? '') + (m.photo ? ' [photo]' : '');
