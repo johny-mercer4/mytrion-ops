@@ -7,6 +7,7 @@
  * other tabs own their own skeletons (no shell-level boot splash).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { s } from './dc';
 import { Icon } from './icons';
 import { SalesContext, type ClientRecord, type DetailVM, type SalesCtx } from './ctx';
@@ -442,25 +443,34 @@ export function SalesRedesign() {
         {/* Forced post-call Deal note wizard — fires when an outbound deal call ends. */}
         <DealCallWizardHost pushToast={pushToast} />
 
-        {/* TOAST */}
-        {toast && (
-          <div
-            role="status"
-            style={s(`position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:140;display:flex;align-items:center;gap:11px;padding:13px 18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${toast.tone === 'err' ? 'color-mix(in srgb,var(--danger) 35%,var(--border))' : toast.tone === 'warn' ? 'color-mix(in srgb,var(--warn) 35%,var(--border))' : 'var(--border)'};box-shadow:var(--shadow);animation:ss-pop .2s both;max-width:min(420px,92vw)`)}
-          >
-            <span style={s(`width:28px;height:28px;border-radius:var(--radius-md);flex:none;display:flex;align-items:center;justify-content:center;background:${toast.tone === 'err' ? 'color-mix(in srgb,var(--danger) 16%,transparent)' : toast.tone === 'warn' ? 'color-mix(in srgb,var(--warn) 16%,transparent)' : 'color-mix(in srgb,var(--ok) 16%,transparent)'};color:${toast.tone === 'err' ? 'var(--danger)' : toast.tone === 'warn' ? 'var(--warn)' : 'var(--ok)'}`)}>
-              <Icon
-                name={toast.tone === 'err' ? 'alert' : toast.tone === 'warn' ? 'warn' : 'check'}
-                size={16}
-                strokeWidth={2.4}
-              />
-            </span>
-            <div style={s('min-width:0')}>
-              <div style={s('font-size:13px;font-weight:700;color:var(--text)')}>{toast.title}</div>
-              <div style={s('font-size:12px;color:var(--muted);line-height:1.4')}>{toast.msg}</div>
-            </div>
-          </div>
-        )}
+        {/* TOAST — portaled under .ss-root, above force modals (z 160). */}
+        {toast &&
+          typeof document !== 'undefined' &&
+          createPortal(
+            <div
+              role="status"
+              style={s(
+                `position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:200;display:flex;align-items:center;gap:11px;padding:13px 18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${toast.tone === 'err' ? 'color-mix(in srgb,var(--danger) 40%,var(--border))' : toast.tone === 'warn' ? 'color-mix(in srgb,var(--warn) 40%,var(--border))' : 'color-mix(in srgb,var(--ok) 35%,var(--border))'};box-shadow:var(--shadow);animation:ss-pop .2s both;max-width:min(420px,92vw)`,
+              )}
+            >
+              <span
+                style={s(
+                  `width:28px;height:28px;border-radius:var(--radius-md);flex:none;display:flex;align-items:center;justify-content:center;background:${toast.tone === 'err' ? 'color-mix(in srgb,var(--danger) 16%,transparent)' : toast.tone === 'warn' ? 'color-mix(in srgb,var(--warn) 16%,transparent)' : 'color-mix(in srgb,var(--ok) 16%,transparent)'};color:${toast.tone === 'err' ? 'var(--danger)' : toast.tone === 'warn' ? 'var(--warn)' : 'var(--ok)'}`,
+                )}
+              >
+                <Icon
+                  name={toast.tone === 'err' ? 'alert' : toast.tone === 'warn' ? 'warn' : 'check'}
+                  size={16}
+                  strokeWidth={2.4}
+                />
+              </span>
+              <div style={s('min-width:0')}>
+                <div style={s('font-size:13px;font-weight:700;color:var(--text)')}>{toast.title}</div>
+                <div style={s('font-size:12px;color:var(--muted);line-height:1.4')}>{toast.msg}</div>
+              </div>
+            </div>,
+            document.querySelector('.ss-root') ?? document.body,
+          )}
       </div>
     </SalesContext.Provider>
   );

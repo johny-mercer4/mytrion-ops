@@ -4993,6 +4993,48 @@ Sales-side authorship: treat viewing CRM agent name/email as "me" in addition to
 (left) side. Surface comment/thread inline attachments; poll open thread every 12s;
 selecting a ticket upserts WS subscribe ids.
 
+## 2026-07-25 — Pause Open Pool + Retention escalations (Sales keeps ownership)
+
+Cases still generate; Sales can work New / Reached / OoR / Vacation / Dissatisfied.
+Kill-switches in `src/modules/retention/killSwitches.ts` (logic kept, all `false`):
+- `RETENTION_OPEN_POOL_ESCALATION_ENABLED` — no enterOpenPool (timers, 5× OoR, claims)
+- `RETENTION_PHASE2_ESCALATION_ENABLED` — no handoffToRetention; Dissatisfied → `p1_dissatisfied`
+- `RETENTION_OPEN_POOL_CLAIM_ZOHO_TRANSFER_ENABLED` — no Deal/Contact/Account Owner rewrite
+`RETENTION_AUTO_ASSIGN_ENABLED` remains false. Flip switches later to restore.
+
+## 2026-07-25 — RingCentral prod: sign-in without hard refresh
+
+Prod symptom: softphone dock sometimes missing Sign in until a full page refresh.
+Cause: adapter `<script>` could remain while `#rc-widget-adapter-frame` was gone (Zoho
+tab blur / soft-nav); bootstrap early-returned on “script already injected” and never
+remounted. Fix:
+- remount when iframe missing; wait for frame after inject; `revealRingCentralWidget()`
+  (un-minimize / un-close) on boot, login, logout toast, and tab visible / pageshow
+- adapter URL adds `multipleTabsSupport=1`
+- embed-config + call-events allow **sales or customer-service** (CS Mytrion was 403)
+
+## 2026-07-25 — Escalated-to-Retention stay on New/Dissatisfied + CS single assignee
+
+Kanban: Phase 2 “Escalated to Retention” cards were dumping into Closed via
+`kanbanColOf` (`phase !== phase_1_agent → closed`). They now stay on the stage
+they left from (Dissatisfied → Dissatisfied; New / 2BD escalate → New). Closed
+is for returned/fuel only.
+
+CS assign: RoundRobin rotation removed — `RETENTION_CS_ROUND_ROBIN_ZOHO_USER_IDS`
+first id is the fixed assignee when auto-assign is later enabled.
+`RETENTION_AUTO_ASSIGN_ENABLED` remains **false** (do not activate yet).
+
+## 2026-07-25 — Retention call finish: restore stage picker (not DC wizards)
+
+Retention New-case flow was colliding with Data Center Deal/Lead post-call
+wizards: dial context attached `dealId` from the case, so after a retention call
+the Deal validation modal opened on top of the case stage picker.
+
+Restore the older Retention UX:
+- “Continue to choose stage →” + “← Back to call” on New cases again
+- dial context is `retentionCaseId` only (no `dealId`)
+- `LeadCallWizardHost` / `DealCallWizardHost` ignore events with `retentionCaseId`
+
 ## 2026-07-24 — DWH / salesdata connect timeout (ServerCRM)
 
 Symptom: `[server-crm] POST /api/agent/salesdata → HTTP 500: timeout exceeded when
@@ -5012,3 +5054,228 @@ lower `max` (8), `connectionTimeoutMillis` 15s, `statement_timeout=30s`,
 `idle_in_transaction_session_timeout=60s`, `application_name=servercrm`.
 Ops probe: `scripts/probeDwhLockJam.ts`. If it recurs: terminate the Mashup
 root blocker (or restart Mashup), then restart ServerCRM to flush stuck clients.
+
+## 2026-07-25 — Retention post-call force stage modal + snappy save
+
+After a Retention **New** case call ends, stage selection opens as a forced
+overlay modal (`RetentionCallStageModal`, portaled z-index 160) — not the
+in-panel stage section under the case. Case panel stays on Call with a short
+banner; ESC/close still blocked until a stage is picked.
+
+Save path: optimistic board patch + close immediately, then
+`retention.record_outcome` (+ OoR `log_attempt`) in the background. Reverts
+the board + toast on failure. Manual Continue still uses the in-panel stage
+step.
+
+## 2026-07-25 — Return Retention-phase cases to Sales
+
+Prod one-shot `scripts/returnRetentionCasesToSales.ts --apply`:
+8 open `phase_2_retention` cases → `phase_1_agent` (2× `p1_dissatisfied` when
+outcome was dissatisfied, 6× `p1_new`). No open Open Pool rows at apply time.
+Assignee restored from `pool_owner` when null; deadlines cleared; audit event
+logged. Remaining open cases were already Sales Phase 1 (~295 `p1_in_progress`).
+
+## 2026-07-25 — Retention New: force modal only, no Continue
+
+Post-call stage uses `RetentionCallStageModal` alone (case dialog no longer
+stacked behind). Removed New-flow “Continue to choose stage →” / back-to-call;
+stage is pickable only after the call ends.
+
+## 2026-07-25 — Retention stage modal theme + toast z-index
+
+Force stage modal was portaled to `document.body`, outside `.ss-root`, so
+CSS vars (`--warn`, `--on-accent`, …) never resolved → flat cards + near-
+invisible CTA. Now portals into `.ss-root` (same as AutoFloatingDrop).
+Shell toasts also portal under `.ss-root` at z-index 200 (above modal 160).
+Stage cards keep kanban colors/icons; confirm CTA uses stage fill + dark label.
+
+## 2026-07-25 — Horizon picker: theme toggle + card hover parity
+
+Theme pill driven from React `dark` (Horizon-style inline styles + spring knob
+slide) so light/dark no longer fight CSS `[data-theme]` rules. Workspace cards
+use the same accent bloom / lift / outer glow in light as in dark (no more weak
+gray light-mode shadow); hover layers are state-driven, not CSS `:hover`.
+
+## 2026-07-25 — Picker full-width + theme flash fix
+
+Picker content/nav drop `max-width` gutters; hero/top gaps tightened. Theme
+toggle flash: `data-theme` now applied synchronously + `useLayoutEffect` (was
+post-paint `useEffect`, so header lagged the pill for a frame). Single nav blur
+layer; no `transition:all` / filter interpolation on the toggle.
+
+## 2026-07-25 — Picker polish: light hover, Sales icon, width
+
+Restored centered column at 80rem (was 72rem). Kill hover underlines on
+workspace Links. Soften light cards/hover (no heavy accent bloom). Sales glyph
+→ `TrendingUp`.
+
+## 2026-07-25 — Picker card hover = HorizonNew verbatim
+
+Stopped “softening” the hover. `WorkspaceCard` styles + `horizonGlass` tokens
+copied from HorizonNew `App.tsx` (incl. separate `gradientLight`, light frost /
+specular / shimmer opacities, and light soft gray shadow). Sales → `LineChart`.
+
+## 2026-07-25 — Soft light theme + accent hover
+
+Dark left alone. Light: softer page/mesh/type; rest cards near-neutral;
+hover blooms accent wash + colored soft shadow, title/chevron/icon tint shift.
+
+## 2026-07-25 — Theme VT + light wordmark + icon chip
+
+Theme toggle uses View Transitions crossfade (no hard flicker). Light wordmark
+gradients deepened for contrast. Light card hover: white icon chip vs pastel
+card wash so icon/bg no longer match 1:1.
+
+## 2026-07-25 — Horizon design system promoted to tokens; Admin skinned
+
+**New:** `apps/mytrion-crm/src/styles/horizon.css` — the Horizon gradient + glass
+primitives as app-wide tokens, imported by `global.css` after `theme.css`. The
+gradient (sky→pale blue→sunset) is now THE accent in both themes: same hue
+journey, deeper stops in light (`--hz-1..5`), plus glass shells (`--hz-pane*`,
+`--hz-glass*`), motion (`--hz-ease`, `--hz-dur-*`) and ambience
+(`--hz-mesh/grid/vignette`). Every token has a call site — audited, no dead ones.
+
+**Wizard cards → HorizonNew verbatim** (this un-does the repeated "soften the
+light theme" passes above; the reference is the spec now):
+- Light frost layer direction was INVERTED — it must *increase* on hover
+  (0.52→0.78 / 0.06→0.18), so the pane gets glassier as the hue saturates.
+- Light colour wash 0.16→0.72 corrected to 0.45→1; specular 0.28→0.65.
+- Light cards are hue-TINTED at rest (`rgba(240,249,255,.82)` etc.), not neutral
+  white; borders + icon strokes are hue-tinted too (`horizonGlass.ts` restored to
+  the reference values, incl. a new `purple` theme for HR).
+- Light card lift shadow is neutral, not hue-glowed. Icon chip 0.88→1 white.
+- Title + chevron no longer recolour on hover (fixed ink, one hue per card).
+- Added the missing `.icon-draw.drawn` equivalent: `.glyphLit svg` →
+  `drop-shadow(0 0 4px currentColor)`.
+- Light gradient alphas fixed to the Tailwind source (`-200/50 via -100/30`).
+
+**Gotcha worth remembering:** `background` is a shorthand and RESETS
+`background-clip`. Setting the wordmark fill in a rule *after* the clip rule
+painted MYTRION/HORIZON as solid gradient blocks instead of text. Fill now comes
+via `--hz-wordmark` inside the same rule as the clip. Caught only by screenshot.
+
+**Admin = the Horizon pilot.** Opt-in via `_shared/horizonSkin.ts` →
+`data-horizon="on"` on the shell root; add an id there to skin another module.
+Nothing gated on it touches the other Mytrions (verified: Sales/Billing render
+unchanged). `[data-mytrion='admin']` accent is now the ramp itself, with a new
+`--accent-2` (defaults to `--accent`, so single-hue modules are unaffected) so
+`accent → accent-2` can be written unconditionally.
+Skinned: shell ambience/sidebar/tabs (gradient rail via `::after` — a box-shadow
+can't take a gradient), masthead glass + gradient hairline, panels, tables
+(blurred sticky header), stat tiles (lift + glow + shimmer), buttons, chips,
+toggles, inputs, modals, dropzone, toasts, Client News language tabs,
+SchemaBrowser, and Octane-Scope's `bg0` pinned to `--hz-page`.
+
+**Verified** in a real browser (Chrome CDP, second dev server on :5174 with
+`VITE_DEV_MOCK_AUTH=1` so :5173 was untouched): picker + admin, dark + light,
+rest + hover, plus Client News / Scope / Train / Jobs tabs.
+
+**Pre-existing and NOT from this work:** 23 `tsc` errors (unused imports +
+strict-null in `finance/redesign`, `sales/redesign`, `icons.tsx`, `Jobs.tsx`,
+`SchemaBrowser.tsx`) and 1 failing test
+(`sales/redesign/dashDebtorsData.test.ts` — expectation missing `debtorCount`);
+both files are unmodified vs HEAD. `vite build` is green.
+
+## 2026-07-26 — Light mode pass (dark left alone)
+
+Dark was signed off as-is, so every change below is light-only or a light branch.
+
+**The black SVG shadow.** `.glyphLit svg { drop-shadow(0 0 4px currentColor) }` takes its colour from
+the ink — and light's `iconHoverLight` was the hue's **950** (Sales `#082f49`), so the "glow" rendered
+as a black smudge under the glyph. Two fixes, both deliberate divergences from HorizonNew:
+- `iconHoverLight` now BRIGHTENS to the hue's 600 instead of darkening to 950 (all 10 workspaces).
+  The reference darkens on hover, which also made the chip feel heavier as you approach — backwards
+  from dark, where hover brightens.
+- The filter is `none` under `[data-theme='light']` entirely; light's hover is carried by the chip's
+  coloured ring + the ink brightening.
+
+**"Too bright and sharp"** — the page had no ground: `#f3f5ff` put white cards on white with nothing
+to separate them, so definition came only from shadows, which then had to be hard.
+- `--hz-page` light → `#e9edf6`. Panels now sit ON something.
+- Vignette used to fade toward a colour *brighter* than the page (lighting the corners, adding
+  glare). Now settles the edges down: `rgba(191,203,226,.3)` from 40%.
+- Grid hairlines: saturated sky → neutral slate `rgba(100,116,139,.05)`. Cyan ruling on a light field
+  reads as sharp lines, not texture.
+- Every light shadow is slate-tinted with a negative spread, never pure black. Two new theme-aware
+  elevation tokens, `--hz-shadow-lift` / `--hz-shadow-pop`, replaced 5 hardcoded `rgba(0,0,0,…)`
+  shadows in `admin.module.css` (a dark-theme drop shadow on a pale field is the main "sharp" tell).
+- Card frost top stop 0.78 → 0.62 and specular 0.65 → 0.46: the reference pushed the pane to
+  near-opaque white on hover, blowing the hue straight back out.
+- Chip shadows are hue-tinted now, not neutral grey.
+- Light hairlines (`navShell`, `navDivider`, `sectionLine`, `footer`) moved off `rgba(0,0,0,…)` to
+  slate.
+
+**Barely-visible text.** `--text-muted` light was `#8a92a1` ≈ **3.1:1** on `--surface` — under the
+4.5:1 floor, and the systemic cause (Admin stat labels, table headers, hints). Now `#69707e` ≈ 4.7:1;
+dark untouched. In the picker: footer `#cbd5e1` (~1.3:1 — effectively invisible) → `#6b7a94`;
+section title / stat label `#94a3b8` → `#5c6b82`; blurb → `#56637a`; sign-out + user role darkened.
+`.soonBadge` was cream-on-pale-amber → dark amber ink on a solid `#fef3c7` tint. `.cardSoon` in light
+drops the `grayscale(.15)` + 0.72 opacity (0.9, no filter) — dimming an already-pastel card pushed
+the whole HR tile under the floor.
+
+**Verified** in Chrome (CDP, :5174 dev server, :5173 untouched): picker light rest/hover + a tight
+crop on the chip to confirm the shadow is gone, footer legibility, Admin light + dark. Dark
+re-shot and confirmed pixel-identical. 183/184 tests (same pre-existing `dashDebtorsData` failure),
+0 typecheck errors in touched files.
+
+## 2026-07-26 — Customer Service: full Horizon glass propagation + Open Pool rebuild
+
+**Token bridge, not a repaint.** `.cs-root` keeps its own variable layer but now derives from the
+shared Horizon tokens: `--color-bg-primary` → `--hz-page`, surfaces/`--surface-raised` → `--hz-glass*`,
+all three shadow steps → `--hz-shadow-rest/lift/pop`, modal backdrop → the Horizon page mix. CS uses
+the global `useTheme()`, so `<html data-theme>` and `.cs-root.dark-mode` stay in sync and the
+`--hz-*` light/dark swap follows the module's own toggle for free.
+
+**Accent: enterprise gold → the Horizon warm segment.** `#C9A227` measured ~2.3:1 on white, which is
+*why* light mode looked washed — every gold fill, pill and primary button was low-contrast beige.
+Now amber → sunset (`#B45309`→`#EA580C` light, `#FBBF24`→`#FB923C` dark), which is also the hue
+HorizonNew assigns Customer Service. `--accent-2` gives CS its slice of the ramp so
+`accent → accent-2` gradients work the same way they do in Admin.
+
+**Two new sheets, imported last** so equal-specificity rules beat the seven panel sheets:
+- `cs-horizon.css` — the language: ambience, sidebar, nav, buttons, cards, tables, tabs, chips,
+  inputs, badges, modals, loaders, toasts, bottom nav, focus rings.
+- `cs-horizon-panels.css` — maps every panel's own surface classes (`cs-home-*`, `cs-an-*`,
+  `cs-app-*`, `cs-ret-*`, `cs-citi-*`, `cs-summary-*`) onto it, so the tabs are one system.
+- `pool-panel.css` — Open Pool specifics.
+
+**Open Pool rebuilt** (was the thinnest tab): gradient kicker, 4 glass metric tiles with a real
+`longest quiet` + `claim pending` count, glass search + status-filter chips + shown/total counter,
+**sortable** glass table (nulls always sort last, not "smallest"), sticky timeline drawer with a
+gradient top edge, and distinct skeleton / error / no-match / empty-state branches. Follows the Sales
+Open Pool tab for context and the CITI Folder table for structure.
+
+**Bugs found and fixed:**
+1. `.cs-btn-danger` **had no CSS rule anywhere** — CITI Folder's "Mark sent" rendered as bare text
+   with no affordance (visible in the light-mode screenshot). Defined it.
+2. Sidebar tabs were `role="button"` **divs** with `tabIndex`; Chrome fires `:focus-visible` on
+   *mouse* click for those, so the global 2px accent outline stuck to whatever tab you clicked.
+   Now real `<button>`s — native focus semantics, and the hand-rolled Enter/Space handler is gone.
+3. `is-citi-folder` styling existed in CSS but was **never applied** in the markup — dead rules. The
+   class is now set, so CITI Folder reads red in the sidebar as designed.
+4. CITI Folder rendered the **raw enum** (`p3_hold`) as its status. Now `statusLabel` + `statusTone`
+   via `CaseBadge`, same as every other panel.
+5. `downloadCsv` revoked the blob URL in the same tick and never appended the anchor — fragile in
+   Chrome, broken in Firefox. Now appends, clicks, then revokes on the next tick.
+6. CITI Folder's export set a partial-failure **warning toast that `run()` immediately overwrote**
+   with the success line, so failed Zoho stage writes were silent. `run()` now accepts a toast
+   override from the action.
+7. CITI Folder's Refresh called `reload()`, which never flips `refreshing` — the button had no
+   feedback. Now `refresh()` (also passes `fresh=true`) with a spinner + disabled state.
+8. Bare `<input type=checkbox>` had no accessible name in either header or row. Labelled, and styled
+   (the module had no checkbox styling at all).
+9. CITI Folder's initial load showed an **empty tbody** with no indication; added a loading row.
+10. Disabled buttons faded a *gradient* to 45% opacity — the exact muddy-beige look the accent change
+    was meant to kill. Disabled is now inert neutral, no gradient, no lift, no glow.
+11. Specificity trap worth remembering: `.cs-root.dark-mode .cs-user-avatar` /
+    `.cs-home-welcome-avatar` set the ink to `--cs-accent`. Fine over the old soft tint; on the new
+    gradient fill it was amber-on-amber, i.e. invisible initials. My rules had to match the
+    `.dark-mode` specificity. Audited every `.cs-root.dark-mode` selector for the same trap.
+
+**Verified** in Chrome (CDP, :5174, :5173 untouched): Home / Applications / Retention / Open Pool /
+CITI / Citifuel / Analytics in both themes, plus a post-click crop confirming the focus ring is gone.
+CS typechecks clean; repo-wide errors 23 → **20** (fixed 3 pre-existing ones in the Open Pool file).
+183/184 tests — same pre-existing `dashDebtorsData` failure.
+
+**Still dirty:** `apps/mytrion-crm/app/` (committed widget build output) has churn from `vite build`.
+`git clean -fd -- apps/mytrion-crm/app && git checkout -- apps/mytrion-crm/app` to reset.

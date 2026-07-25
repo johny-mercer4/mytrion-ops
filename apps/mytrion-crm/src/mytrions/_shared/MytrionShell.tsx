@@ -5,6 +5,7 @@ import { ChatPanel } from '../../features/chat/ChatPanel';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { TopBar } from '../../components/TopBar';
 import { ChatIcon, HomeIcon, SearchIcon } from '../../components/icons';
+import { horizonSkin } from './horizonSkin';
 import styles from './MytrionShell.module.css';
 
 export interface NavItem {
@@ -144,8 +145,11 @@ export function MytrionShell({
   };
 
   return (
-    <div className={styles.shell} data-mytrion={id}>
+    <div className={styles.shell} data-mytrion={id} data-horizon={horizonSkin(id)}>
       <TopBar contextBadge={m.tag} showSwitch />
+      {/* Ambient Horizon backdrop — mesh + grid + vignette behind the whole frame. Inert for
+          modules that haven't opted into the skin (see horizonSkin.ts). */}
+      <div className={styles.ambience} aria-hidden="true" />
       <div className={styles.body}>
         <nav className={styles.sidebar} aria-label={`${m.title} navigation`}>
           <div className={styles.navTop}>

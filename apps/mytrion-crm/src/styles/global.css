@@ -2,6 +2,8 @@
    component's *.module.css or Tailwind utilities. One token-driven system (see DESIGN_SYSTEM.md). */
 @import 'tailwindcss';
 @import './theme.css';
+/* Horizon brand gradient + glass primitives. After theme.css so it wins over the base scale. */
+@import './horizon.css';
 
 /* Bridges Tailwind's semantic names onto the design tokens in theme.css, so `bg-card`,
    `text-muted-foreground`, `bg-tint-good-bg`, etc. resolve to the same values the CSS-Modules
@@ -56,9 +58,26 @@
 
 /* Per-Mytrion accent — set data-mytrion="<id>" on a module root to swap --accent* to that
    module's hue; everything else (bg/surface/text/status) stays the shared scale. Dark is the
-   default; [data-theme="light"] overrides. Reconciled per DESIGN_SYSTEM.md §7. */
-[data-mytrion='admin'] { --accent: #38bef0; --accent-strong: #2cb6ec; --on-accent: #04131c; --accent-soft: rgba(56, 190, 240, 0.12); --accent-glow: rgba(56, 190, 240, 0.26); }
-[data-theme='light'] [data-mytrion='admin'] { --accent: #0c8fc7; --accent-strong: #0e9ad6; --on-accent: #fff; --accent-soft: rgba(12, 143, 199, 0.1); --accent-glow: rgba(12, 143, 199, 0.2); }
+   default; [data-theme="light"] overrides. Reconciled per DESIGN_SYSTEM.md §7.
+   `--accent-2` is the far end of the module's accent gradient — it defaults to the accent itself
+   (so a single-hue module is unchanged) and is only distinct where a module runs a real ramp. */
+[data-mytrion] { --accent-2: var(--accent); }
+
+/* Admin IS the Horizon workspace: its accent is the brand ramp itself, sky → sunset, so every
+   accent-driven surface in the module (nav rail, active tab, primary button, progress, focus ring)
+   is literally the Mytrion Horizon gradient. See styles/horizon.css. */
+[data-mytrion='admin'] {
+  --accent: var(--hz-sky);
+  --accent-2: var(--hz-sun);
+  --accent-strong: var(--hz-sky-deep);
+  --on-accent: var(--hz-on-gradient);
+  --accent-soft: rgba(56, 189, 248, 0.12);
+  --accent-glow: rgba(56, 189, 248, 0.26);
+}
+[data-theme='light'] [data-mytrion='admin'] {
+  --accent-soft: rgba(2, 132, 199, 0.1);
+  --accent-glow: rgba(2, 132, 199, 0.2);
+}
 
 /* Match Sales redesign theme.css (.ss-root / .ss-root.light) — not wizard --rocket */
 [data-mytrion='sales'] { --accent: #4cc2f5; --accent-strong: #7c5cff; --on-accent: #04131c; --accent-soft: rgba(76, 194, 245, 0.14); --accent-glow: rgba(76, 194, 245, 0.26); }
@@ -176,5 +195,33 @@ button {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Smooth theme crossfade (View Transitions API — see themeContext.tsx). */
+html.theme-vt::view-transition-old(root),
+html.theme-vt::view-transition-new(root) {
+  animation-duration: 0.42s;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  mix-blend-mode: normal;
+}
+
+html.theme-vt::view-transition-old(root) {
+  animation-name: theme-vt-fade-out;
+}
+
+html.theme-vt::view-transition-new(root) {
+  animation-name: theme-vt-fade-in;
+}
+
+@keyframes theme-vt-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes theme-vt-fade-in {
+  from {
+    opacity: 0;
   }
 }

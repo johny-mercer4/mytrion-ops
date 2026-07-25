@@ -220,6 +220,8 @@ export function LeadCallWizardHost({ pushToast }: { pushToast: (title: string, m
     return subscribeRingCentral((ev) => {
       if (ev.kind !== 'ended') return;
       if (ev.direction && ev.direction !== 'Outbound') return;
+      // Retention cases own their in-modal stage picker — never open DC lead status wizard.
+      if (ev.retentionCaseId) return;
       const leadId = ev.leadId;
       if (!leadId) return; // only lead calls open the wizard (deals only log)
       const actAsId = getImpersonation()?.zohoUserId;

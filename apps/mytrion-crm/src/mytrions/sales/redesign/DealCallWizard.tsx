@@ -143,6 +143,8 @@ export function DealCallWizardHost({ pushToast }: { pushToast: (title: string, m
     return subscribeRingCentral((ev) => {
       if (ev.kind !== 'ended') return;
       if (ev.direction && ev.direction !== 'Outbound') return;
+      // Retention cases own their in-modal stage picker — never open DC deal validation.
+      if (ev.retentionCaseId) return;
       const dealId = ev.dealId;
       if (!dealId) return; // only deal calls open this wizard (leads have their own)
       const actAsId = getImpersonation()?.zohoUserId;

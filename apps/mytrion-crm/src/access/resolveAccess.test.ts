@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { UserContext } from '../context/userContext';
-import { resolveAccessibleMytrions, canAccess, isAdmin } from './resolveAccess';
+import { resolveAccessibleMytrions, canAccess, isAdmin, ruleAllows } from './resolveAccess';
+import { MYTRIONS } from './mytrions.config';
 
 function ctx(over: Partial<UserContext>): UserContext {
   return { userId: 'u', profile: '', role: '', userName: '', trusted: false, ...over };
@@ -31,21 +32,23 @@ describe('resolveAccessibleMytrions', () => {
     expect(accessible.length).toBeGreaterThan(1);
     // Coming-soon Mytrions stay on the picker grid but are not enterable.
     expect(accessible).not.toContain('collection');
+    expect(accessible).not.toContain('finance');
     expect(accessible).not.toContain('verification');
-    expect(accessible).not.toContain('manager');
     expect(accessible).not.toContain('analyst');
+    // Manager has launched — no longer coming-soon, so an admin sees it as enterable.
+    expect(accessible).toContain('manager');
   });
 
   it('coming-soon Mytrions are never enterable (even when server-granted)', () => {
     const granted = ctx({
       profile: 'Administrator',
-      accessibleMytrions: ['sales', 'collection', 'verification', 'manager', 'analyst'],
+      accessibleMytrions: ['sales', 'collection', 'finance', 'verification', 'analyst'],
       allDepartmentAccess: true,
     });
     expect(resolveAccessibleMytrions(granted).accessible).toEqual(['sales']);
     expect(canAccess(granted, 'collection')).toBe(false);
+    expect(canAccess(granted, 'finance')).toBe(false);
     expect(canAccess(granted, 'verification')).toBe(false);
-    expect(canAccess(granted, 'manager')).toBe(false);
     expect(canAccess(granted, 'analyst')).toBe(false);
   });
 
@@ -60,20 +63,24 @@ describe('resolveAccessibleMytrions', () => {
     expect(isAdmin(ctx({ profile: 'Sales Agent' }))).toBe(false);
   });
 
-  it('grants finance to Administrator profile', () => {
-    expect(canAccess(ctx({ profile: 'Administrator' }), 'finance')).toBe(true);
+  // Finance is parked coming-soon, so canAccess('finance') is false for everyone. These assert the
+  // underlying access RULE via ruleAllows so the grant logic stays covered until finance re-launches.
+  it('finance access rule grants the Administrator profile (finance itself is parked coming-soon)', () => {
+    expect(ruleAllows(ctx({ profile: 'Administrator' }), MYTRIONS.finance)).toBe(true);
+    // Parked → not actually enterable yet, even for a matching rule.
+    expect(canAccess(ctx({ profile: 'Administrator' }), 'finance')).toBe(false);
   });
 
-  it('grants finance when userName contains Azimov or Mirjalol', () => {
-    expect(canAccess(ctx({ profile: 'Sales Agent', userName: 'John Azimov' }), 'finance')).toBe(true);
-    expect(canAccess(ctx({ profile: 'Billing', userName: 'Mirjalol Karimov' }), 'finance')).toBe(true);
-    expect(canAccess(ctx({ profile: 'Sales Agent', userName: 'azimov.ops' }), 'finance')).toBe(true);
+  it('finance access rule grants a userName containing Azimov or Mirjalol', () => {
+    expect(ruleAllows(ctx({ profile: 'Sales Agent', userName: 'John Azimov' }), MYTRIONS.finance)).toBe(true);
+    expect(ruleAllows(ctx({ profile: 'Billing', userName: 'Mirjalol Karimov' }), MYTRIONS.finance)).toBe(true);
+    expect(ruleAllows(ctx({ profile: 'Sales Agent', userName: 'azimov.ops' }), MYTRIONS.finance)).toBe(true);
   });
 
-  it('denies finance to unrelated users (no adminBypass)', () => {
-    expect(canAccess(ctx({ profile: 'Finance' }), 'finance')).toBe(false);
-    expect(canAccess(ctx({ profile: 'Sales Agent', userName: 'Random User' }), 'finance')).toBe(false);
-    expect(canAccess(ctx({ role: 'CEO', profile: 'Sales Agent' }), 'finance')).toBe(false);
+  it('finance access rule denies unrelated users (no adminBypass)', () => {
+    expect(ruleAllows(ctx({ profile: 'Finance' }), MYTRIONS.finance)).toBe(false);
+    expect(ruleAllows(ctx({ profile: 'Sales Agent', userName: 'Random User' }), MYTRIONS.finance)).toBe(false);
+    expect(ruleAllows(ctx({ role: 'CEO', profile: 'Sales Agent' }), MYTRIONS.finance)).toBe(false);
   });
 });
 

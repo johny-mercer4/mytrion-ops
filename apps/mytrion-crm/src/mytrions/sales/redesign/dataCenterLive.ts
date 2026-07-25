@@ -178,6 +178,8 @@ export interface LeadVM {
   dot: string;
   referral: string;
   trucks: number;
+  /** Mytrion_Call_Attempts — count of calls placed from Mytrion (our reliable "real calls" signal). */
+  callAttempts: number;
   note: string;
   /** Raw values for the inline editor (see {@link LeadEdit}). */
   edit: LeadEdit;
@@ -211,6 +213,7 @@ function mapLead(r: CrmRow): LeadVM {
     dot: dotRaw == null || str(dotRaw) === '' ? '—' : str(dotRaw),
     referral,
     trucks: n(r.Trucks),
+    callAttempts: n(r.Mytrion_Call_Attempts),
     note: str(r.Description) || 'No notes on this lead yet.',
     edit: {
       MC: str(r.MC),
@@ -250,6 +253,8 @@ export interface DealVM {
   value: number;
   valueFmt: string;
   cards: number;
+  /** Mytrion_Call_Attempts — count of calls placed from Mytrion. */
+  callAttempts: number;
   prob: number;
   close: string;
   contact: string;
@@ -290,6 +295,7 @@ function mapDeal(r: CrmRow): DealVM {
     value,
     valueFmt: value > 0 ? money(value) : '—',
     cards: n(r.Cards_Requested),
+    callAttempts: n(r.Mytrion_Call_Attempts),
     prob: n(r.Probability),
     close: fmtDate(r.Closing_Date) || '—',
     contact: contact || '—',

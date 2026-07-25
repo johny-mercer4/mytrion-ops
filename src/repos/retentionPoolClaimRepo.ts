@@ -26,6 +26,10 @@ import {
 import { MAX_OPEN_POOL_AGENTS } from '../modules/retention/phase1.js';
 import { OWNERSHIP_TRANSFER_REASON } from '../db/schema/retention_ownership_transfers.js';
 import {
+  RETENTION_OPEN_POOL_CLAIM_ZOHO_TRANSFER_ENABLED,
+  RETENTION_OPEN_POOL_ESCALATION_ENABLED,
+} from '../modules/retention/killSwitches.js';
+import {
   setDealStageClosedLost,
   transferDealOwnershipToClaimant,
 } from '../modules/retention/zohoOwnership.js';
@@ -192,6 +196,13 @@ export const retentionPoolClaimRepo = {
       });
     }
 
+    if (!RETENTION_OPEN_POOL_ESCALATION_ENABLED) {
+      throw new AppError(
+        'Open Pool is temporarily disabled — deals stay with the Sales agent',
+        { statusCode: 409, code: 'RETENTION_OPEN_POOL_DISABLED', expose: true },
+      );
+    }
+
     const claimant = trim(claimantZohoUserId);
     await assertUnderOpenPoolDailyCap(ctx, claimant);
 
@@ -283,24 +294,35 @@ export const retentionPoolClaimRepo = {
     }
 
     try {
-      const ownership = await transferDealOwnershipToClaimant(dealId, claimant, {
-        tenantId: ctx.tenantId,
-        reason: OWNERSHIP_TRANSFER_REASON.openPoolClaim,
-        retentionCaseId: existing.id,
-        carrierId: existing.carrierId,
-        companyName: existing.companyName,
-        actorZohoUserId: claimant,
-        actorName: opts.agentName?.trim() || null,
-        toOwnerName: opts.agentName?.trim() || null,
-      });
-      if (ownership.warnings.length > 0) {
+      if (RETENTION_OPEN_POOL_CLAIM_ZOHO_TRANSFER_ENABLED) {
+        const ownership = await transferDealOwnershipToClaimant(dealId, claimant, {
+          tenantId: ctx.tenantId,
+          reason: OWNERSHIP_TRANSFER_REASON.openPoolClaim,
+          retentionCaseId: existing.id,
+          carrierId: existing.carrierId,
+          companyName: existing.companyName,
+          actorZohoUserId: claimant,
+          actorName: opts.agentName?.trim() || null,
+          toOwnerName: opts.agentName?.trim() || null,
+        });
+        if (ownership.warnings.length > 0) {
+          await appendRetentionEvent({
+            caseId: existing.id,
+            fromStatus: 'p1_open_pool',
+            toStatus: 'p1_pool_claim_pending',
+            eventType: 'note',
+            actorZohoUserId: claimant,
+            notes: `Zoho ownership partial: ${ownership.warnings.join('; ')}`,
+          });
+        }
+      } else {
         await appendRetentionEvent({
           caseId: existing.id,
           fromStatus: 'p1_open_pool',
           toStatus: 'p1_pool_claim_pending',
           eventType: 'note',
           actorZohoUserId: claimant,
-          notes: `Zoho ownership partial: ${ownership.warnings.join('; ')}`,
+          notes: 'Zoho Owner transfer skipped — Deal/Contact/Company stay with Sales',
         });
       }
     } catch (err) {

@@ -42,7 +42,6 @@ import {
   User,
   Users,
   X,
-  Rocket,
   Wallet,
   Activity,
   LineChart,
@@ -133,7 +132,7 @@ export const Sparkle = ({ size = 16, className, style }: IconProps) => (
 /** Lucide glyphs for each Mytrion module — picker tiles and anywhere a department icon is needed. */
 const MYTRION_GLYPHS: Record<string, LucideIcon> = {
   admin: Shield,
-  sales: Rocket,
+  sales: LineChart,
   billing: Wallet,
   collection: Receipt,
   finance: Landmark,

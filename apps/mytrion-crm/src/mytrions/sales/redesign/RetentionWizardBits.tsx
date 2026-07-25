@@ -82,10 +82,10 @@ export function DissatisfiedForm(props: {
         type="submit"
         disabled={props.busy || !props.reason}
         style={s(
-          `height:40px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--danger) 35%,var(--border));background:color-mix(in srgb,var(--danger) 12%,transparent);color:var(--danger);font-weight:700;font-size:13px;cursor:${props.busy || !props.reason ? 'not-allowed' : 'pointer'};opacity:${!props.reason ? 0.55 : 1}`,
+          `height:46px;width:100%;border:none;border-radius:var(--radius-md);background:var(--danger);color:#04131c;font-weight:800;font-size:14px;cursor:${props.busy || !props.reason ? 'not-allowed' : 'pointer'};opacity:${!props.reason ? 0.55 : 1};box-shadow:0 8px 22px color-mix(in srgb,var(--danger) 35%,transparent)`,
         )}
       >
-        Hand off to Retention & close
+        {props.busy ? 'Saving…' : 'Save Dissatisfied →'}
       </button>
     </form>
   );

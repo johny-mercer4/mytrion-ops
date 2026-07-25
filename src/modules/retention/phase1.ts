@@ -26,6 +26,7 @@ import {
   VACATION_COUNTDOWN_DAYS,
   type CaseTransitionPatch,
 } from './deadlines.js';
+import { RETENTION_PHASE2_ESCALATION_ENABLED } from './killSwitches.js';
 
 export {
   addBusinessDays,
@@ -179,16 +180,33 @@ export function resolvePhase1Transition(
           expose: true,
         });
       }
+      const reason = input.dissatisfactionReason;
+      const note = input.reasonNote?.trim() || null;
+      // Kill-switch: stay Phase 1 Dissatisfied — Sales keeps case + Zoho Owner (no Phase 2).
+      if (!RETENTION_PHASE2_ESCALATION_ENABLED) {
+        return {
+          phaseCode: RETENTION_PHASE.agent,
+          statusCode: 'p1_dissatisfied',
+          agentOutcome: 'dissatisfied',
+          dissatisfactionReason: reason,
+          reasonNote: note,
+          currentDeadlineAt: null,
+          currentDeadlineType: null,
+          vacationCountdownEnd: null,
+          eventType: 'outcome_recorded',
+          eventNotes: `Dissatisfied (${reason}) — Retention handoff disabled; stays with Sales`,
+        };
+      }
       return {
         ...handoffToRetention({
           now,
           agentOutcome: 'dissatisfied',
           previousOwnerZohoUserId: row.assignedAgentZohoUserId,
           previousOwnerName: row.agentName,
-          notes: `Dissatisfied (${input.dissatisfactionReason}) → Retention (10 BD)`,
+          notes: `Dissatisfied (${reason}) → Retention (10 BD)`,
         }),
-        dissatisfactionReason: input.dissatisfactionReason,
-        reasonNote: input.reasonNote?.trim() || null,
+        dissatisfactionReason: reason,
+        reasonNote: note,
       };
     }
 

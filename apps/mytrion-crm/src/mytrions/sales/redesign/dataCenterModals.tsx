@@ -26,6 +26,7 @@ import {
 } from './dataCenterLive';
 import { STATUS_OPTIONS, allowedStatuses, reasonFieldFor } from './leadStatusFlow';
 import { LeadStatusPicker } from './LeadStatusPicker';
+import { RecordActivityPanels } from './recordActivityPanels';
 
 function avStyle(col: string): string {
   return `width:52px;height:52px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:19px;background:color-mix(in srgb,${col} 16%,transparent);color:${col}`;
@@ -163,14 +164,6 @@ function EditContactRow({
   );
 }
 
-function Overlay({ onClose, children }: { onClose: () => void; children: ReactNode }) {
-  return (
-    <div onClick={onClose} style={s('position:fixed;inset:0;z-index:120;background:rgba(3,7,14,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
-      {children}
-    </div>
-  );
-}
-
 // ---------------- Lead modal ----------------
 
 export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: () => void; onCall?: (phone: string) => void }) {
@@ -189,6 +182,7 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
 
   const meta = { col: leadStatusColor(appliedStatus), label: appliedStatus };
   const stageBadge = lead.converted ? badge('Converted', 'var(--ok)') : badge(meta.label, meta.col);
+  const callsBadge = badge(`Calls · ${lead.callAttempts}`, 'var(--accent-2)');
   const fleetText = `${lead.trucks} truck${lead.trucks === 1 ? '' : 's'}`;
   const set = (k: keyof LeadEdit, v: string): void => setForm((f) => ({ ...f, [k]: v }));
   const canCallPhone = Boolean(onCall && applied.Phone.trim());
@@ -236,6 +230,7 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
       setEditing(false);
       const count = Object.keys(changes).length;
       pushToast('Lead updated', `${count} field${count === 1 ? '' : 's'} saved to Zoho.`);
+      onClose(); // close the modal fully once the update lands (back to the board)
     } catch (e) {
       pushToast('Update failed', e instanceof Error ? e.message : 'Could not save changes.');
     } finally {
@@ -245,135 +240,144 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
 
   const referralDisplay = applied.Referral_Source || lead.referral;
   return (
-    <Overlay onClose={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={s(`width:100%;max-width:540px;max-height:86vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid ${meta.col};box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
-        <div style={s('padding:22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px')}>
-          <div style={s(avStyle(meta.col))}>{lead.initials}</div>
-          <div style={s('flex:1;min-width:0')}>
-            <div style={s('font-size:17px;font-weight:700')}>{lead.contact}</div>
-            <div style={s('font-size:12px;color:var(--muted);margin-top:3px')}>{lead.company}</div>
-          </div>
-          <span style={s(stageBadge.style)}>{stageBadge.text}</span>
-          <button onClick={onClose} aria-label="Close" className="ss-ico-btn" style={s(HEADER_CLOSE)}>
-            <Icon name="close" size={15} strokeWidth={2.4} />
-          </button>
+    <div style={s('position:fixed;inset:0;z-index:120;background:var(--bg);display:flex;flex-direction:column')}>
+      <div style={s(`padding:15px 24px;border-bottom:1px solid var(--border);border-top:3px solid ${meta.col};display:flex;align-items:center;gap:14px;flex-shrink:0`)}>
+        <button type="button" onClick={onClose} aria-label="Back to board" style={s('display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 13px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0')}>
+          <span style={s('font-size:16px;line-height:1')}>←</span> Board
+        </button>
+        <div style={s(avStyle(meta.col))}>{lead.initials}</div>
+        <div style={s('flex:1;min-width:0')}>
+          <div style={s('font-size:19px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{lead.contact}</div>
+          <div style={s('font-size:12px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{lead.company}</div>
         </div>
-        <div className="ss-scroll" style={s('flex:1;min-height:0;padding:22px')}>
-          {editing && (
-            <div style={s(`margin-bottom:14px;${CARD}`)}>
-              <div style={s(`${CARD_LABEL};margin-bottom:8px`)}>Lead status</div>
-              {allowedStatuses(appliedStatus).length > 0 ? (
-                <LeadStatusPicker
-                  options={allowedStatuses(appliedStatus)}
-                  value={statusForm}
-                  onChange={(v) => {
-                    setStatusForm(v);
-                    setStatusReason('');
-                  }}
-                />
-              ) : (
-                <div style={s('font-size:12px;color:var(--muted);padding:2px 0')}>
-                  No manual status change from “{appliedStatus}” — this stage is set by the process.
-                </div>
-              )}
-              {statusReasonSpec && (
-                <div style={s('margin-top:10px')}>
-                  <div style={s('font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--danger);margin-bottom:6px')}>
-                    {statusForm === 'Unqualified' ? 'Unqualified reason' : 'Not-interested reason'} — required
-                  </div>
-                  <div style={s('display:flex;flex-direction:column;gap:6px')} role="radiogroup" aria-label="Reason">
-                    {statusReasonSpec.options.map((r) => {
-                      const active = statusReason === r;
-                      return (
-                        <button
-                          key={r}
-                          type="button"
-                          role="radio"
-                          aria-checked={active}
-                          onClick={() => setStatusReason(r)}
-                          style={s(`text-align:left;padding:8px 12px;border-radius:var(--radius-md);border:1px solid ${active ? 'var(--danger)' : 'var(--border)'};background:${active ? 'color-mix(in srgb,var(--danger) 8%,var(--alt))' : 'var(--alt)'};color:${active ? 'var(--danger)' : 'var(--text)'};font-size:12px;font-weight:700;cursor:pointer`)}
-                        >
-                          {r}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-          <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
-            <StatCard label="Fleet Size" value={fleetText} mono />
-            <div style={s(CARD)}>
-              <div style={s(CARD_LABEL)}>Source</div>
-              {(() => {
-                const src = lead.source || 'No source';
-                const c = leadSourceColor(src);
-                return (
-                  <div style={s(`margin-top:8px;display:inline-block;font-size:12px;font-weight:700;padding:4px 10px;border-radius:99px;background:color-mix(in srgb,${c} 16%,transparent);color:${c}`)}>
-                    {src}
-                  </div>
-                );
-              })()}
-            </div>
-            <EditCard label="MC Number" editing={editing} mono value={form.MC} display={applied.MC || '—'} onChange={(v) => set('MC', v)} placeholder="MC #" />
-            <EditCard
-              label="DOT Number"
-              editing={editing}
-              mono
-              inputMode="numeric"
-              value={form.DOT}
-              display={applied.DOT || '—'}
-              onChange={(v) => set('DOT', v.replace(/\D/g, '').slice(0, 9))}
-              placeholder="DOT #"
-            />
-            <EditCard label="Referral Source" editing={editing} span value={form.Referral_Source} display={referralDisplay} onChange={(v) => set('Referral_Source', v)} placeholder="Referral source" />
-          </div>
-          <div style={s(`margin-top:14px;${CARD}`)}>
-            <div style={s(`${CARD_LABEL};margin-bottom:10px`)}>Contact</div>
-            <EditContactRow label="Phone" editing={editing} value={editing ? form.Phone : applied.Phone} onChange={(v) => set('Phone', v)} inputMode="tel" placeholder="Phone" {...(onCall ? { onCall } : {})} />
-            <EditContactRow label="Cell" editing={editing} value={editing ? form.Cell : applied.Cell} onChange={(v) => set('Cell', v)} inputMode="tel" placeholder="Cell" {...(onCall ? { onCall } : {})} />
-            {editing ? (
-              <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
-                <div style={s('font-size:9.5px;color:var(--muted)')}>Email</div>
-                <input value={form.Email} onChange={(e) => set('Email', e.currentTarget.value)} placeholder="name@company.com" inputMode="email" className="ss-in" style={s(`${INPUT_CSS};margin-top:4px`)} />
-              </div>
-            ) : (
-              <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
-                <div style={s('font-size:9.5px;color:var(--muted)')}>Email</div>
-                <div style={s("font-size:12px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{applied.Email || '—'}</div>
-              </div>
-            )}
-          </div>
-          <div style={s(`margin-top:14px;${CARD}`)}>
-            <div style={s(`${CARD_LABEL};margin-bottom:10px`)}>Dates</div>
-            <DateRow label="Created" value={lead.createdAt} />
-            <DateRow label="FB Registration" value={lead.fbRegisteredAt} />
-            <DateRow label="Web Registration" value={lead.webRegisteredAt} />
-            <DateRow label="Last Activity" value={lead.lastActivityAt} />
-            <DateRow label="Modified" value={lead.modifiedAt} />
-          </div>
-          <div style={s(`margin-top:14px;${CARD}`)}>
-            <div style={s(`${CARD_LABEL};margin-bottom:6px`)}>Notes</div>
-            {editing ? (
-              <textarea value={form.Description} onChange={(e) => set('Description', e.currentTarget.value)} placeholder="Add a note…" className="ss-in" style={s(AREA_CSS)} />
-            ) : (
-              <div style={s('font-size:13px;line-height:1.6;color:var(--text2);white-space:pre-wrap')}>{applied.Description || 'No notes on this lead yet.'}</div>
-            )}
-          </div>
-        </div>
-        <ModalFooter
-          editing={editing}
-          saving={saving}
-          onEdit={startEdit}
-          onCancel={cancelEdit}
-          onSave={save}
-          onClose={onClose}
-          call={canCallPhone && !editing ? { label: `Call ${applied.Phone}`, phone: applied.Phone } : null}
-          {...(onCall ? { onCall } : {})}
-        />
+        <span style={s(stageBadge.style)}>{stageBadge.text}</span>
+        <span title="Real call attempts — calls placed from Mytrion" style={s(callsBadge.style)}>{callsBadge.text}</span>
+        <button type="button" onClick={onClose} aria-label="Close" className="ss-ico-btn" style={s(HEADER_CLOSE)}>
+          <Icon name="close" size={15} strokeWidth={2.4} />
+        </button>
       </div>
-    </Overlay>
+      <div className="ss-scroll" style={s('flex:1;min-height:0;overflow:auto;padding:22px')}>
+        <div style={s('max-width:1120px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px;align-items:start')}>
+          <div style={s('min-width:0')}>
+            {editing && (
+              <div style={s(`margin-bottom:14px;${CARD}`)}>
+                <div style={s(`${CARD_LABEL};margin-bottom:8px`)}>Lead status</div>
+                {allowedStatuses(appliedStatus).length > 0 ? (
+                  <LeadStatusPicker
+                    options={allowedStatuses(appliedStatus)}
+                    value={statusForm}
+                    onChange={(v) => {
+                      setStatusForm(v);
+                      setStatusReason('');
+                    }}
+                  />
+                ) : (
+                  <div style={s('font-size:12px;color:var(--muted);padding:2px 0')}>
+                    No manual status change from “{appliedStatus}” — this stage is set by the process.
+                  </div>
+                )}
+                {statusReasonSpec && (
+                  <div style={s('margin-top:10px')}>
+                    <div style={s('font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--danger);margin-bottom:6px')}>
+                      {statusForm === 'Unqualified' ? 'Unqualified reason' : 'Not-interested reason'} — required
+                    </div>
+                    <div style={s('display:flex;flex-direction:column;gap:6px')} role="radiogroup" aria-label="Reason">
+                      {statusReasonSpec.options.map((r) => {
+                        const active = statusReason === r;
+                        return (
+                          <button
+                            key={r}
+                            type="button"
+                            role="radio"
+                            aria-checked={active}
+                            onClick={() => setStatusReason(r)}
+                            style={s(`text-align:left;padding:8px 12px;border-radius:var(--radius-md);border:1px solid ${active ? 'var(--danger)' : 'var(--border)'};background:${active ? 'color-mix(in srgb,var(--danger) 8%,var(--alt))' : 'var(--alt)'};color:${active ? 'var(--danger)' : 'var(--text)'};font-size:12px;font-weight:700;cursor:pointer`)}
+                          >
+                            {r}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
+              <StatCard label="Fleet Size" value={fleetText} mono />
+              <div style={s(CARD)}>
+                <div style={s(CARD_LABEL)}>Source</div>
+                {(() => {
+                  const src = lead.source || 'No source';
+                  const c = leadSourceColor(src);
+                  return (
+                    <div style={s(`margin-top:8px;display:inline-block;font-size:12px;font-weight:700;padding:4px 10px;border-radius:99px;background:color-mix(in srgb,${c} 16%,transparent);color:${c}`)}>
+                      {src}
+                    </div>
+                  );
+                })()}
+              </div>
+              <EditCard label="MC Number" editing={editing} mono value={form.MC} display={applied.MC || '—'} onChange={(v) => set('MC', v)} placeholder="MC #" />
+              <EditCard
+                label="DOT Number"
+                editing={editing}
+                mono
+                inputMode="numeric"
+                value={form.DOT}
+                display={applied.DOT || '—'}
+                onChange={(v) => set('DOT', v.replace(/\D/g, '').slice(0, 9))}
+                placeholder="DOT #"
+              />
+              <EditCard label="Referral Source" editing={editing} span value={form.Referral_Source} display={referralDisplay} onChange={(v) => set('Referral_Source', v)} placeholder="Referral source" />
+            </div>
+            <div style={s(`margin-top:14px;${CARD}`)}>
+              <div style={s(`${CARD_LABEL};margin-bottom:10px`)}>Contact</div>
+              <EditContactRow label="Phone" editing={editing} value={editing ? form.Phone : applied.Phone} onChange={(v) => set('Phone', v)} inputMode="tel" placeholder="Phone" {...(onCall ? { onCall } : {})} />
+              <EditContactRow label="Cell" editing={editing} value={editing ? form.Cell : applied.Cell} onChange={(v) => set('Cell', v)} inputMode="tel" placeholder="Cell" {...(onCall ? { onCall } : {})} />
+              {editing ? (
+                <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
+                  <div style={s('font-size:9.5px;color:var(--muted)')}>Email</div>
+                  <input value={form.Email} onChange={(e) => set('Email', e.currentTarget.value)} placeholder="name@company.com" inputMode="email" className="ss-in" style={s(`${INPUT_CSS};margin-top:4px`)} />
+                </div>
+              ) : (
+                <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
+                  <div style={s('font-size:9.5px;color:var(--muted)')}>Email</div>
+                  <div style={s("font-size:12px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{applied.Email || '—'}</div>
+                </div>
+              )}
+            </div>
+            <div style={s(`margin-top:14px;${CARD}`)}>
+              <div style={s(`${CARD_LABEL};margin-bottom:10px`)}>Dates</div>
+              <DateRow label="Created" value={lead.createdAt} />
+              <DateRow label="FB Registration" value={lead.fbRegisteredAt} />
+              <DateRow label="Web Registration" value={lead.webRegisteredAt} />
+              <DateRow label="Last Activity" value={lead.lastActivityAt} />
+              <DateRow label="Modified" value={lead.modifiedAt} />
+            </div>
+            <div style={s(`margin-top:14px;${CARD}`)}>
+              <div style={s(`${CARD_LABEL};margin-bottom:6px`)}>Description</div>
+              {editing ? (
+                <textarea value={form.Description} onChange={(e) => set('Description', e.currentTarget.value)} placeholder="Add a note…" className="ss-in" style={s(AREA_CSS)} />
+              ) : (
+                <div style={s('font-size:13px;line-height:1.6;color:var(--text2);white-space:pre-wrap')}>{applied.Description || 'No description on this lead yet.'}</div>
+              )}
+            </div>
+          </div>
+          <div style={s('min-width:0')}>
+            <RecordActivityPanels kind="leads" id={lead.id} />
+          </div>
+        </div>
+      </div>
+      <ModalFooter
+        editing={editing}
+        saving={saving}
+        onEdit={startEdit}
+        onCancel={cancelEdit}
+        onSave={save}
+        onClose={onClose}
+        call={canCallPhone && !editing ? { label: `Call ${applied.Phone}`, phone: applied.Phone } : null}
+        {...(onCall ? { onCall } : {})}
+      />
+    </div>
   );
 }
 
@@ -388,6 +392,7 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
 
   const meta = { col: dealStageColor(deal.stage), label: deal.stage };
   const stageBadge = badge(meta.label, meta.col);
+  const callsBadge = badge(`Calls · ${deal.callAttempts}`, 'var(--accent-2)');
   const set = (k: keyof DealEdit, v: string): void => setForm((f) => ({ ...f, [k]: v }));
   // Prefer the editable Phone; fall back to the display phone (which may carry the Cell) for dialing.
   const callTarget = applied.Phone || (deal.phone !== '—' ? deal.phone : '');
@@ -431,6 +436,7 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
       setEditing(false);
       const count = Object.keys(changes).length;
       pushToast('Deal updated', `${count} field${count === 1 ? '' : 's'} saved to Zoho.`);
+      onClose(); // close the modal fully once the update lands (back to the board)
     } catch (e) {
       pushToast('Update failed', e instanceof Error ? e.message : 'Could not save changes.');
     } finally {
@@ -439,84 +445,93 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
   };
 
   return (
-    <Overlay onClose={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={s(`width:100%;max-width:560px;max-height:86vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid ${meta.col};box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
-        <div style={s('padding:22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px')}>
-          <div style={s(avStyle(meta.col))}>{deal.initials}</div>
-          <div style={s('flex:1;min-width:0')}>
-            <div style={s('font-size:17px;font-weight:700')}>{deal.company}</div>
-            <div style={s('font-size:12px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{deal.name}</div>
-          </div>
-          <span style={s(stageBadge.style)}>{stageBadge.text}</span>
-          <button onClick={onClose} aria-label="Close" className="ss-ico-btn" style={s(HEADER_CLOSE)}>
-            <Icon name="close" size={15} strokeWidth={2.4} />
-          </button>
+    <div style={s('position:fixed;inset:0;z-index:120;background:var(--bg);display:flex;flex-direction:column')}>
+      <div style={s(`padding:15px 24px;border-bottom:1px solid var(--border);border-top:3px solid ${meta.col};display:flex;align-items:center;gap:14px;flex-shrink:0`)}>
+        <button type="button" onClick={onClose} aria-label="Back to board" style={s('display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 13px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0')}>
+          <span style={s('font-size:16px;line-height:1')}>←</span> Board
+        </button>
+        <div style={s(avStyle(meta.col))}>{deal.initials}</div>
+        <div style={s('flex:1;min-width:0')}>
+          <div style={s('font-size:19px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{deal.company}</div>
+          <div style={s('font-size:12px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{deal.name}</div>
         </div>
-        <div className="ss-scroll" style={s('flex:1;min-height:0;padding:22px')}>
-          <div style={s(`margin-bottom:16px;${CARD}`)}>
-            <div style={s('display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:8px')}>
-              <span style={s('text-transform:uppercase;letter-spacing:.05em;font-weight:700')}>Win probability</span>
-              <span style={s(`color:${meta.col};font-weight:800;font-family:'JetBrains Mono',monospace`)}>{deal.prob}%</span>
-            </div>
-            <div style={s('height:8px;border-radius:99px;background:var(--raised);overflow:hidden')}>
-              <div style={s(`height:100%;width:${deal.prob}%;background:${meta.col}`)} />
-            </div>
-            <div style={s('font-size:11px;color:var(--muted);margin-top:9px')}>Expected close {deal.close}</div>
-          </div>
-          <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:12px')}>
-            <StatCard label="Cards" value={String(deal.cards)} mono />
-            <StatCard label="Application" value={deal.app} />
-            <StatCard label="Carrier" value={deal.carrier} />
-          </div>
-          <div style={s(`margin-top:14px;${CARD}`)}>
-            <div style={s(`${CARD_LABEL};margin-bottom:6px`)}>Contact</div>
-            <div style={s('font-size:13px;font-weight:600')}>{deal.contact}</div>
-            <EditContactRow label="Phone" editing={editing} value={editing ? form.Phone : applied.Phone} onChange={(v) => set('Phone', v)} inputMode="tel" placeholder="Phone" {...(onCall ? { onCall } : {})} />
-            <EditContactRow label="Cell" editing={editing} value={editing ? form.Cell : applied.Cell} onChange={(v) => set('Cell', v)} inputMode="tel" placeholder="Cell" {...(onCall ? { onCall } : {})} />
-            {editing ? (
-              <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
-                <div style={s('font-size:9.5px;color:var(--muted)')}>Email</div>
-                <input value={form.Email} onChange={(e) => set('Email', e.currentTarget.value)} placeholder="name@company.com" inputMode="email" className="ss-in" style={s(`${INPUT_CSS};margin-top:4px`)} />
-              </div>
-            ) : (
-              <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
-                <div style={s('font-size:9.5px;color:var(--muted)')}>Email</div>
-                <div style={s("font-size:12px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{applied.Email || '—'}</div>
-              </div>
-            )}
-            {editing ? (
-              <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
-                <div style={s('font-size:9.5px;color:var(--muted)')}>Secondary email</div>
-                <input value={form.Secondary_Email} onChange={(e) => set('Secondary_Email', e.currentTarget.value)} placeholder="name@company.com" inputMode="email" className="ss-in" style={s(`${INPUT_CSS};margin-top:4px`)} />
-              </div>
-            ) : (
-              <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
-                <div style={s('font-size:9.5px;color:var(--muted)')}>Secondary email</div>
-                <div style={s("font-size:12px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{applied.Secondary_Email || '—'}</div>
-              </div>
-            )}
-          </div>
-          <div style={s(`margin-top:14px;${CARD}`)}>
-            <div style={s(`${CARD_LABEL};margin-bottom:6px`)}>Notes</div>
-            {editing ? (
-              <textarea value={form.Description} onChange={(e) => set('Description', e.currentTarget.value)} placeholder="Add a note…" className="ss-in" style={s(AREA_CSS)} />
-            ) : (
-              <div style={s('font-size:13px;line-height:1.6;color:var(--text2);white-space:pre-wrap')}>{applied.Description || 'No notes on this deal yet.'}</div>
-            )}
-          </div>
-        </div>
-        <ModalFooter
-          editing={editing}
-          saving={saving}
-          onEdit={startEdit}
-          onCancel={cancelEdit}
-          onSave={save}
-          onClose={onClose}
-          call={canCallPhone && !editing ? { label: `Call ${callTarget}`, phone: callTarget } : null}
-          {...(onCall ? { onCall } : {})}
-        />
+        <span style={s(stageBadge.style)}>{stageBadge.text}</span>
+        <span title="Real call attempts — calls placed from Mytrion" style={s(callsBadge.style)}>{callsBadge.text}</span>
+        <button type="button" onClick={onClose} aria-label="Close" className="ss-ico-btn" style={s(HEADER_CLOSE)}>
+          <Icon name="close" size={15} strokeWidth={2.4} />
+        </button>
       </div>
-    </Overlay>
+      <div className="ss-scroll" style={s('flex:1;min-height:0;overflow:auto;padding:22px')}>
+        <div style={s('max-width:1120px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px;align-items:start')}>
+          <div style={s('min-width:0')}>
+            <div style={s(`margin-bottom:14px;${CARD}`)}>
+              <div style={s('display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:8px')}>
+                <span style={s('text-transform:uppercase;letter-spacing:.05em;font-weight:700')}>Win probability</span>
+                <span style={s(`color:${meta.col};font-weight:800;font-family:'JetBrains Mono',monospace`)}>{deal.prob}%</span>
+              </div>
+              <div style={s('height:8px;border-radius:99px;background:var(--raised);overflow:hidden')}>
+                <div style={s(`height:100%;width:${deal.prob}%;background:${meta.col}`)} />
+              </div>
+              <div style={s('font-size:11px;color:var(--muted);margin-top:9px')}>Expected close {deal.close}</div>
+            </div>
+            <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:12px')}>
+              <StatCard label="Cards" value={String(deal.cards)} mono />
+              <StatCard label="Application" value={deal.app} />
+              <StatCard label="Carrier" value={deal.carrier} />
+            </div>
+            <div style={s(`margin-top:14px;${CARD}`)}>
+              <div style={s(`${CARD_LABEL};margin-bottom:6px`)}>Contact</div>
+              <div style={s('font-size:13px;font-weight:600')}>{deal.contact}</div>
+              <EditContactRow label="Phone" editing={editing} value={editing ? form.Phone : applied.Phone} onChange={(v) => set('Phone', v)} inputMode="tel" placeholder="Phone" {...(onCall ? { onCall } : {})} />
+              <EditContactRow label="Cell" editing={editing} value={editing ? form.Cell : applied.Cell} onChange={(v) => set('Cell', v)} inputMode="tel" placeholder="Cell" {...(onCall ? { onCall } : {})} />
+              {editing ? (
+                <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
+                  <div style={s('font-size:9.5px;color:var(--muted)')}>Email</div>
+                  <input value={form.Email} onChange={(e) => set('Email', e.currentTarget.value)} placeholder="name@company.com" inputMode="email" className="ss-in" style={s(`${INPUT_CSS};margin-top:4px`)} />
+                </div>
+              ) : (
+                <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
+                  <div style={s('font-size:9.5px;color:var(--muted)')}>Email</div>
+                  <div style={s("font-size:12px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{applied.Email || '—'}</div>
+                </div>
+              )}
+              {editing ? (
+                <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
+                  <div style={s('font-size:9.5px;color:var(--muted)')}>Secondary email</div>
+                  <input value={form.Secondary_Email} onChange={(e) => set('Secondary_Email', e.currentTarget.value)} placeholder="name@company.com" inputMode="email" className="ss-in" style={s(`${INPUT_CSS};margin-top:4px`)} />
+                </div>
+              ) : (
+                <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
+                  <div style={s('font-size:9.5px;color:var(--muted)')}>Secondary email</div>
+                  <div style={s("font-size:12px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{applied.Secondary_Email || '—'}</div>
+                </div>
+              )}
+            </div>
+            <div style={s(`margin-top:14px;${CARD}`)}>
+              <div style={s(`${CARD_LABEL};margin-bottom:6px`)}>Description</div>
+              {editing ? (
+                <textarea value={form.Description} onChange={(e) => set('Description', e.currentTarget.value)} placeholder="Add a note…" className="ss-in" style={s(AREA_CSS)} />
+              ) : (
+                <div style={s('font-size:13px;line-height:1.6;color:var(--text2);white-space:pre-wrap')}>{applied.Description || 'No description on this deal yet.'}</div>
+              )}
+            </div>
+          </div>
+          <div style={s('min-width:0')}>
+            <RecordActivityPanels kind="deals" id={deal.id} />
+          </div>
+        </div>
+      </div>
+      <ModalFooter
+        editing={editing}
+        saving={saving}
+        onEdit={startEdit}
+        onCancel={cancelEdit}
+        onSave={save}
+        onClose={onClose}
+        call={canCallPhone && !editing ? { label: `Call ${callTarget}`, phone: callTarget } : null}
+        {...(onCall ? { onCall } : {})}
+      />
+    </div>
   );
 }
 

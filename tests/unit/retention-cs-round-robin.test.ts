@@ -1,5 +1,5 @@
 /**
- * Phase 2 CS RoundRobin — online prefer + cursor advance.
+ * Phase 2 CS assign — fixed single assignee (first allowlisted id).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
@@ -90,7 +90,7 @@ describe('pickCsRoundRobinAssignee', () => {
     } as never);
   });
 
-  it('prefers online allowlisted users and advances past last cursor', async () => {
+  it('assigns the first allowlisted user only (no RoundRobin rotation)', async () => {
     listUsers.mockResolvedValue([
       {
         zohoUserId: 'u1',
@@ -119,9 +119,9 @@ describe('pickCsRoundRobinAssignee', () => {
     ]);
 
     const pick = await pickCsRoundRobinAssignee(ctx());
-    // Online pool = u2,u3; last was u1 (not in online) → first online u2
-    expect(pick?.zohoUserId).toBe('u2');
-    expect(pick?.name).toBe('B');
+    expect(pick?.zohoUserId).toBe('u1');
+    expect(pick?.name).toBe('A');
+    expect(pick?.source).toBe('fixed_assignee');
   });
 });
 

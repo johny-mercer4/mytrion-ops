@@ -36,6 +36,7 @@ import { carrierMiniAppRoutes } from './routes/v1/carrierMiniApp.routes.js';
 import { carrierMiniAppActionsRoutes } from './routes/v1/carrierMiniAppActions.routes.js';
 import { deskRoutes } from './routes/v1/desk.routes.js';
 import { dataCenterRoutes } from './routes/v1/dataCenter.routes.js';
+import { managerRoutes } from './routes/v1/manager.routes.js';
 import { csApplicationsRoutes } from './routes/v1/csApplications.routes.js';
 import { csCitifuelRoutes } from './routes/v1/csCitifuel.routes.js';
 import { csAnalyticsRoutes } from './routes/v1/csAnalytics.routes.js';
@@ -257,6 +258,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(touchpointsRoutes);
       await v1.register(deskRoutes);
       await v1.register(dataCenterRoutes);
+      await v1.register(managerRoutes);
       await v1.register(verificationPipelineRoutes);
       await v1.register(csApplicationsRoutes);
       await v1.register(csCitifuelRoutes);

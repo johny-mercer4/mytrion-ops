@@ -4,6 +4,11 @@
  */
 import type { AgentOutcome, RetentionCase } from '../../db/schema/index.js';
 import { RETENTION_PHASE } from '../../db/schema/index.js';
+import { AppError } from '../../lib/errors.js';
+import {
+  RETENTION_OPEN_POOL_ESCALATION_ENABLED,
+  RETENTION_PHASE2_ESCALATION_ENABLED,
+} from './killSwitches.js';
 
 /** Add N business days (Mon–Fri). Weekends are skipped; holidays are not modeled. */
 export function addBusinessDays(from: Date, days: number): Date {
@@ -141,6 +146,12 @@ export function handoffToRetention(
     previousOwnerName?: string | null;
   } = {},
 ): CaseTransitionPatch {
+  if (!RETENTION_PHASE2_ESCALATION_ENABLED) {
+    throw new AppError(
+      'Retention escalation is temporarily disabled — case stays with the Sales agent',
+      { statusCode: 409, code: 'RETENTION_PHASE2_DISABLED', expose: true },
+    );
+  }
   const now = opts.now ?? new Date();
   const wait = stampRetentionWaitDeadline(now);
   const prev = opts.previousOwnerZohoUserId?.trim() || null;
@@ -179,6 +190,12 @@ export function enterOpenPool(
     assignmentCount?: number;
   } = {},
 ): CaseTransitionPatch {
+  if (!RETENTION_OPEN_POOL_ESCALATION_ENABLED) {
+    throw new AppError(
+      'Open Pool escalation is temporarily disabled — case stays with the Sales agent',
+      { statusCode: 409, code: 'RETENTION_OPEN_POOL_DISABLED', expose: true },
+    );
+  }
   const now = opts.now ?? new Date();
   if ((opts.assignmentCount ?? 0) >= MAX_OPEN_POOL_AGENTS) {
     return moveToCiti({

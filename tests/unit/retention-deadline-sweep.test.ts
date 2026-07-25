@@ -1,9 +1,17 @@
 /**
  * Deadline sweeper transition table — pure resolveExpiry cases.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_TENANT_ID } from '../../src/config/constants.js';
 import type { RetentionCase } from '../../src/db/schema/index.js';
+
+/** Exercise full timer escalations — production kill-switches are off. */
+vi.mock('../../src/modules/retention/killSwitches.js', () => ({
+  RETENTION_OPEN_POOL_ESCALATION_ENABLED: true,
+  RETENTION_PHASE2_ESCALATION_ENABLED: true,
+  RETENTION_OPEN_POOL_CLAIM_ZOHO_TRANSFER_ENABLED: true,
+}));
+
 import {
   NEW_OWNER_DEADLINE_TYPE,
   POOL_CLAIM_DEADLINE_TYPE,

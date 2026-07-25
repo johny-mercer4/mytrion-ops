@@ -1,6 +1,6 @@
 /** Step UI blocks for the Retention Phase 1 case wizard. */
 import type { FormEvent } from 'react';
-import { Icon } from './icons';
+import { Icon, type IconName } from './icons';
 import { s } from './dc';
 import { CHANNEL_BRAND, RetentionChannelIcon } from './RetentionChannelIcons';
 import { DissatisfiedForm, ScreenshotField } from './RetentionWizardBits';
@@ -13,6 +13,7 @@ import {
   type RetentionDissatisfactionReason,
   type RetentionPhase1Outcome,
 } from './retentionData';
+
 export interface PendingCallLog {
   sessionId?: string;
   peer: string;
@@ -31,6 +32,17 @@ function callPeerLine(pending: PendingCallLog): string {
 }
 
 export type StatusPick = 'out_of_reach' | 'reached' | 'vacation' | 'dissatisfied' | '';
+
+/** Stage card chrome — colors match `KANBAN_COLS` on the Retention board. */
+const STAGE_CARD: Record<Exclude<StatusPick, ''>, { color: string; icon: IconName }> = {
+  out_of_reach: { color: 'var(--warn)', icon: 'warn' },
+  reached: { color: 'var(--ok)', icon: 'checkCircle' },
+  vacation: { color: 'var(--violet)', icon: 'calendar' },
+  dissatisfied: { color: 'var(--danger)', icon: 'alert' },
+};
+
+/** High-contrast label on bright stage fills (warn/ok/violet/danger). */
+const STAGE_ON = '#04131c';
 
 export function WizardChrome(props: {
   stage: string;
@@ -147,10 +159,10 @@ export function CallFirstBlock(props: {
       )}
     >
       <div>
-        <SectionTitle>Call required</SectionTitle>
+        <SectionTitle>Step 1 · Call the client</SectionTitle>
         <div style={s('font-size:12px;color:var(--text2);line-height:1.5;margin-top:6px')}>
-          New cases start with a phone call only. After the call ends, you&apos;ll choose Out of
-          Reach, Reached, Dissatisfied, or Vacation. Stage selection unlocks when the call completes.
+          Call first. When the call ends, a stage dialog opens — Out of Reach, Reached,
+          Dissatisfied, or Vacation. Out of Reach auto-logs attempt 1 for RingCentral.
         </div>
       </div>
 
@@ -350,6 +362,8 @@ export function StageStep(props: {
   showOutOfReach: boolean;
   /** Already on OoR — confirming OoR stays on the stage and refreshes the 1 BD timer. */
   alreadyOutOfReach?: boolean;
+  /** Force-modal layout — no nested card chrome. */
+  embedded?: boolean;
   title?: string;
   setStatusPick: (v: StatusPick) => void;
   setReason: (v: RetentionDissatisfactionReason | '') => void;
@@ -360,34 +374,51 @@ export function StageStep(props: {
 }) {
   const { busy, statusPick, setStatusPick, onAct, row, showOutOfReach } = props;
   const alreadyOoR = props.alreadyOutOfReach === true;
+  const embedded = props.embedded === true;
   const oorHint =
     row.outOfReachAttempts >= 5
       ? '5/5 → Open Pool'
       : alreadyOoR
         ? `Stay Out of Reach · attempt ${row.outOfReachAttempts}/5 · 1 BD`
         : 'Channel attempts · 5×1 BD';
+  const pickColor = statusPick ? STAGE_CARD[statusPick].color : 'var(--accent)';
+  const confirmLabel =
+    statusPick === 'out_of_reach'
+      ? alreadyOoR
+        ? 'Continue Out of Reach →'
+        : 'Move to Out of Reach →'
+      : statusPick === 'reached'
+        ? 'Save Reached — watch 5 BD'
+        : statusPick === 'vacation'
+          ? 'Start vacation hold →'
+          : 'Save stage & close';
 
   return (
     <section
       style={s(
-        'padding:14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);display:flex;flex-direction:column;gap:12px',
+        embedded
+          ? 'display:flex;flex-direction:column;gap:14px'
+          : 'padding:14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);display:flex;flex-direction:column;gap:12px',
       )}
     >
-      <div>
-        <SectionTitle>{props.title ?? 'Choose stage'}</SectionTitle>
-        <div style={s('font-size:12px;color:var(--text2);line-height:1.45;margin-top:6px')}>
-          {alreadyOoR
-            ? 'After each attempt, pick a stage. Out of Reach stays available until attempt 5 → Open Pool.'
-            : showOutOfReach
-              ? 'Pick one stage. The card moves to that column on the board.'
-              : 'Reached, Dissatisfied, or Vacation — or keep logging Out of Reach attempts above.'}
+      {!embedded && (
+        <div>
+          <SectionTitle>{props.title ?? 'Choose stage'}</SectionTitle>
+          <div style={s('font-size:12px;color:var(--text2);line-height:1.45;margin-top:6px')}>
+            {alreadyOoR
+              ? 'After each attempt, pick a stage. Out of Reach stays available until attempt 5 → Open Pool.'
+              : showOutOfReach
+                ? 'Pick one stage. The card moves to that column on the board.'
+                : 'Reached, Dissatisfied, or Vacation — or keep logging Out of Reach attempts above.'}
+          </div>
         </div>
-      </div>
+      )}
 
-      <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:8px')}>
+      <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:10px')}>
         {showOutOfReach && (
           <StatusCard
             active={statusPick === 'out_of_reach'}
+            stage="out_of_reach"
             title="Out of Reach"
             hint={oorHint}
             onClick={() => setStatusPick('out_of_reach')}
@@ -395,22 +426,24 @@ export function StageStep(props: {
         )}
         <StatusCard
           active={statusPick === 'reached'}
+          stage="reached"
           title="Reached"
           hint="Spoke — watch fuel · 5 BD (else Pool)"
           onClick={() => setStatusPick('reached')}
         />
         <StatusCard
           active={statusPick === 'vacation'}
+          stage="vacation"
           title="Vacation"
           hint="Away — 14-day hold → Ops path"
           onClick={() => setStatusPick('vacation')}
         />
         <StatusCard
           active={statusPick === 'dissatisfied'}
+          stage="dissatisfied"
           title="Dissatisfied"
-          hint="Unhappy → Retention (not Pool)"
+          hint="Unhappy → stays with Sales"
           onClick={() => setStatusPick('dissatisfied')}
-          tone="danger"
         />
       </div>
 
@@ -423,7 +456,7 @@ export function StageStep(props: {
           placeholder="Return date / vacation note (recommended)…"
           className="ss-in"
           style={s(
-            'height:34px;padding:0 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px',
+            'height:38px;padding:0 12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--violet) 40%,var(--border));background:var(--surface);color:var(--text);font-size:12px',
           )}
         />
       )}
@@ -433,20 +466,11 @@ export function StageStep(props: {
           type="button"
           disabled={busy}
           onClick={props.onConfirmStage}
-          className="ss-btn-p"
           style={s(
-            `height:42px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:${busy ? 'wait' : 'pointer'};opacity:${busy ? 0.85 : 1}`,
+            `height:46px;width:100%;border:none;border-radius:var(--radius-md);background:${pickColor};color:${STAGE_ON};font-weight:800;font-size:14px;letter-spacing:.01em;cursor:${busy ? 'wait' : 'pointer'};opacity:${busy ? 0.85 : 1};box-shadow:0 8px 22px color-mix(in srgb,${pickColor} 35%,transparent)`,
           )}
         >
-          {statusPick === 'out_of_reach'
-            ? alreadyOoR
-              ? 'Continue Out of Reach →'
-              : 'Move to Out of Reach →'
-            : statusPick === 'reached'
-              ? 'Save Reached — watch 5 BD'
-              : statusPick === 'vacation'
-                ? 'Start vacation hold →'
-                : 'Save stage & close'}
+          {busy ? 'Saving…' : confirmLabel}
         </button>
       )}
 
@@ -468,25 +492,36 @@ export function StageStep(props: {
 
 function StatusCard(props: {
   active: boolean;
+  stage: Exclude<StatusPick, ''>;
   title: string;
   hint: string;
   onClick: () => void;
-  tone?: 'danger';
 }) {
-  const col = props.tone === 'danger' ? 'var(--danger)' : 'var(--accent)';
+  const { color, icon } = STAGE_CARD[props.stage];
+  const border = props.active ? color : `color-mix(in srgb,${color} 42%,var(--border))`;
+  const bg = props.active
+    ? `color-mix(in srgb,${color} 18%,var(--surface))`
+    : `color-mix(in srgb,${color} 8%,var(--surface))`;
   return (
     <button
       type="button"
       onClick={props.onClick}
       aria-pressed={props.active}
       style={s(
-        `text-align:left;padding:12px;border-radius:var(--radius-md);border:1px solid ${props.active ? col : 'var(--border)'};background:${props.active ? `color-mix(in srgb,${col} 12%,var(--surface))` : 'var(--surface)'};cursor:pointer`,
+        `text-align:left;padding:13px 12px;border-radius:var(--radius-md);border:1.5px solid ${border};background:${bg};cursor:pointer;transition:border-color .15s,background .15s,transform .12s,box-shadow .15s;box-shadow:${props.active ? `0 0 0 1px color-mix(in srgb,${color} 55%,transparent),0 10px 24px color-mix(in srgb,${color} 18%,transparent)` : 'none'};transform:${props.active ? 'translateY(-1px)' : 'none'}`,
       )}
     >
-      <div style={s(`font-size:13px;font-weight:800;color:${props.active ? col : 'var(--text)'}`)}>
-        {props.title}
+      <div style={s('display:flex;align-items:center;gap:9px')}>
+        <span
+          style={s(
+            `width:30px;height:30px;border-radius:9px;flex:none;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,${color} 22%,transparent);color:${color}`,
+          )}
+        >
+          <Icon name={icon} size={15} strokeWidth={2.5} color={color} />
+        </span>
+        <div style={s(`font-size:13px;font-weight:800;color:${color}`)}>{props.title}</div>
       </div>
-      <div style={s('font-size:11px;color:var(--muted);margin-top:4px;line-height:1.35')}>
+      <div style={s('font-size:11px;color:var(--text2);margin-top:8px;line-height:1.4;padding-left:39px')}>
         {props.hint}
       </div>
     </button>

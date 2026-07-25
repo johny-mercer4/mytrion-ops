@@ -13,6 +13,51 @@
   min-height: 0;
 }
 
+/* ── Horizon skin ──────────────────────────────────────────────────────────────
+   Everything below is gated on [data-horizon='on'] (set per-module by horizonSkin.ts), so a module
+   that hasn't opted in renders exactly as it did before. The glass chrome needs the page itself to
+   be the dark/light Horizon field, otherwise translucent panels have nothing to blur. */
+
+.ambience {
+  display: none;
+}
+
+.shell[data-horizon='on'] {
+  position: relative; /* containing block for .ambience */
+  background: var(--hz-page);
+  isolation: isolate;
+}
+
+.shell[data-horizon='on'] .ambience {
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: var(--hz-mesh);
+  transition: background var(--hz-dur-tone) var(--hz-ease);
+}
+.shell[data-horizon='on'] .ambience::before,
+.shell[data-horizon='on'] .ambience::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.shell[data-horizon='on'] .ambience::before {
+  background-image: var(--hz-grid);
+  background-size: var(--hz-grid-size);
+}
+.shell[data-horizon='on'] .ambience::after {
+  background: var(--hz-vignette);
+  transition: background var(--hz-dur-tone) var(--hz-ease);
+}
+
+/* The frame sits above the ambience; `position: relative` is what gives it a stacking context. */
+.shell[data-horizon='on'] .body {
+  position: relative;
+  z-index: 1;
+}
+
 /* left labeled sidebar: module items on top, Chat pinned to the bottom */
 .sidebar {
   width: 248px;
@@ -202,6 +247,103 @@
     var(--bg-primary);
 }
 
+/* ── Horizon skin: sidebar + tabs ─────────────────────────────────────────────
+   The sidebar becomes a frosted pane over the ambience, and the selected tab is the one place in
+   the frame that carries the full Horizon gradient. */
+
+.shell[data-horizon='on'] .sidebar {
+  background: var(--hz-glass);
+  backdrop-filter: blur(var(--hz-blur));
+  -webkit-backdrop-filter: blur(var(--hz-blur));
+  border-right: 1px solid var(--hz-glass-bd);
+  box-shadow: var(--hz-glass-inset);
+  transition:
+    background var(--hz-dur-tone) var(--hz-ease),
+    border-color var(--hz-dur-tone) var(--hz-ease);
+}
+
+.shell[data-horizon='on'] .center {
+  /* Transparent so the ambience shows through; the panels themselves supply the surfaces. */
+  background: none;
+}
+
+.shell[data-horizon='on'] .navSearch {
+  background: var(--hz-glass);
+  backdrop-filter: blur(var(--hz-blur-sm));
+  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+  border-color: var(--hz-glass-bd);
+  transition:
+    border-color var(--dur-base) var(--hz-ease),
+    box-shadow var(--dur-base) var(--hz-ease),
+    background var(--dur-base) var(--hz-ease);
+}
+.shell[data-horizon='on'] .navSearch:focus-within {
+  background: var(--hz-glass-hover);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.shell[data-horizon='on'] .navBtn {
+  border: 1px solid transparent;
+  transition:
+    color var(--hz-dur-wash) var(--hz-ease),
+    background var(--hz-dur-wash) var(--hz-ease),
+    border-color var(--hz-dur-wash) var(--hz-ease),
+    box-shadow var(--hz-dur-wash) var(--hz-ease),
+    transform var(--hz-dur-wash) var(--hz-ease);
+}
+.shell[data-horizon='on'] .navBtn:hover {
+  background: var(--hz-glass-hover);
+  border-color: var(--hz-glass-bd-hover);
+  box-shadow: var(--hz-glass-inset);
+  transform: translateX(2px);
+}
+
+/* Selected tab: the Horizon ramp as a 2px rail plus the soft brand wash behind the row. The rail is
+   a ::after rather than an inset box-shadow because a gradient can't be a box-shadow colour. */
+.shell[data-horizon='on'] .navActive,
+.shell[data-horizon='on'] .navActive:hover {
+  background: var(--hz-gradient-soft);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--accent);
+  box-shadow:
+    0 2px 14px -4px var(--accent-glow),
+    var(--hz-glass-inset);
+  transform: none;
+  overflow: hidden;
+}
+.shell[data-horizon='on'] .navActive::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: inherit;
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
+}
+/* The glyph in the selected row glows in the accent, matching the picker's lit icon chip. */
+.shell[data-horizon='on'] .navActive .navIcon {
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 55%, transparent));
+}
+
+.shell[data-horizon='on'] .navSub {
+  border-left-color: var(--hz-glass-bd);
+}
+.shell[data-horizon='on'] .navSubActive,
+.shell[data-horizon='on'] .navSubActive:hover {
+  background: var(--hz-gradient-soft);
+  color: var(--accent);
+  transform: none;
+}
+.shell[data-horizon='on'] .navSubActive::before {
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
+}
+
+.shell[data-horizon='on'] .navSection + .navSection {
+  border-top-color: var(--hz-glass-bd);
+}
+
 /* Chat-as-view: fill the center and neutralize the ChatPanel dock's fixed width + left border. */
 .chatView {
   flex: 1;
@@ -261,6 +403,19 @@
   .navActive,
   .navActive:hover {
     box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  /* Horizontal tab strip on narrow screens — the gradient rail moves to the bottom edge. */
+  .shell[data-horizon='on'] .navBtn:hover {
+    transform: translateY(-1px);
+  }
+  .shell[data-horizon='on'] .navActive::after {
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    width: auto;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 100%);
   }
   .center {
     flex: none;

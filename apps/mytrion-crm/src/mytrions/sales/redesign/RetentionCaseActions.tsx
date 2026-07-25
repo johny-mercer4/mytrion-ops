@@ -8,7 +8,6 @@ import { useUserContext } from '@/context/UserContextProvider';
 import { s } from './dc';
 import {
   AttemptStep,
-  CallEndedBanner,
   CallFirstBlock,
   InfoBanner,
   StageStep,
@@ -32,17 +31,11 @@ function canShowOpsControls(profile: string, role: string, admin: boolean): bool
 
 export type { PendingCallLog, StatusPick };
 
-/** UI step for New cases (before a stage is saved). */
-export type NewWizardStep = 'call' | 'stage';
-
 export function RetentionCaseActions(props: {
   row: RetentionCaseRow;
   busy: boolean;
   contactPhone: string | null;
   phoneLoading?: boolean;
-  newWizardStep: NewWizardStep;
-  /** Call ended while New — must pick a stage. */
-  forceStage: boolean;
   /** Call ended while OoR — must log RC attempt. */
   forceAttempt: boolean;
   pendingCall: PendingCallLog | null;
@@ -66,16 +59,7 @@ export function RetentionCaseActions(props: {
   onLogPhoneCall: () => Promise<void>;
   onLogOtherChannel: () => Promise<void>;
 }) {
-  const {
-    row,
-    busy,
-    contactPhone,
-    phoneLoading = false,
-    forceStage,
-    pendingCall,
-    onAct,
-    newWizardStep,
-  } = props;
+  const { row, busy, contactPhone, phoneLoading = false, onAct } = props;
   const user = useUserContext();
   const showOps = canShowOpsControls(user.profile ?? '', user.role ?? '', isAdmin(user));
   const isNew =
@@ -93,10 +77,10 @@ export function RetentionCaseActions(props: {
   if (dissatisfied) {
     return (
       <div style={s('display:flex;flex-direction:column;gap:12px')}>
-        <WizardChrome stage="Dissatisfied" stepLabel="Handed to Retention" />
-        <InfoBanner title="Dissatisfied — routed to Retention immediately.">
-          No Open Pool. Retention owns the 10 BD watch. Any new fuel still closes the case
-          automatically.
+        <WizardChrome stage="Dissatisfied" stepLabel="With Sales" />
+        <InfoBanner title="Dissatisfied — stays with the Sales agent.">
+          Retention desk handoff is paused. Deal / Contact / Company ownership stay with Sales.
+          Any new fuel still closes the case automatically.
         </InfoBanner>
       </div>
     );
@@ -171,30 +155,22 @@ export function RetentionCaseActions(props: {
   }
 
   if (isNew) {
-    /* Stage step only after the call ends (forceStage) — no manual continue. */
-    const onStageStep = forceStage || newWizardStep === 'stage';
+    /* Stage picker is only the post-call force modal — no in-panel Continue / stage step. */
     return (
       <div style={s('display:flex;flex-direction:column;gap:14px')}>
         <WizardChrome
           stage="New"
           steps={[
-            { n: 1, label: 'Call', active: !onStageStep, done: onStageStep },
-            { n: 2, label: 'Stage', active: onStageStep, done: false },
+            { n: 1, label: 'Call', active: true, done: false },
+            { n: 2, label: 'Stage', active: false, done: false },
           ]}
         />
-        {!onStageStep ? (
-          <CallFirstBlock
-            busy={busy}
-            contactPhone={contactPhone}
-            phoneLoading={phoneLoading}
-            onCall={props.onCall}
-          />
-        ) : (
-          <>
-            {pendingCall && <CallEndedBanner pendingCall={pendingCall} />}
-            <StageStep {...props} showOutOfReach title="Choose stage" />
-          </>
-        )}
+        <CallFirstBlock
+          busy={busy}
+          contactPhone={contactPhone}
+          phoneLoading={phoneLoading}
+          onCall={props.onCall}
+        />
       </div>
     );
   }

@@ -7,7 +7,7 @@
  * map them to view-model shapes. Lookup fields (Owner/Account_Name/Contact_Name) arrive as
  * `{ name, id }` objects.
  */
-import { request } from './transport';
+import { request, requestMultipart } from './transport';
 
 // LEGACY assertion — the server now derives department access from the verified session (Zoho
 // profile/role), so this header is IGNORED for signed-in users. Kept only so the
@@ -37,6 +37,65 @@ export function listDeals(zohoUserId?: string): Promise<CrmRow[]> {
 
 export function listRejections(zohoUserId?: string): Promise<CrmRow[]> {
   return get('/data-center/rejections', zohoUserId);
+}
+
+// ---- Per-record call history + Notes (Zoho Notes module) ----
+
+export interface CallHistoryItem {
+  source: 'mytrion' | 'zoho';
+  id: string;
+  when: string;
+  whenTs: number;
+  durationSeconds: number | null;
+  status: string;
+  label: string;
+  number: string;
+}
+
+export interface NoteItem {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  owner: string;
+}
+
+type RecordKind = 'leads' | 'deals';
+
+async function getKeyed<T>(path: string, key: string, zohoUserId?: string): Promise<T[]> {
+  const res = (await request('GET', path, {
+    query: zohoUserId ? { zoho_user_id: zohoUserId } : {},
+    headers: DC_HEADERS,
+  })) as Record<string, T[] | undefined>;
+  return res[key] ?? [];
+}
+
+/** Merged call history for a Lead/Deal (our mytrion_calls + the Zoho Calls), badged by `source`. */
+export function listRecordCalls(kind: RecordKind, id: string, zohoUserId?: string): Promise<CallHistoryItem[]> {
+  return getKeyed<CallHistoryItem>(`/data-center/${kind}/${id}/calls`, 'calls', zohoUserId);
+}
+
+/** Existing Zoho Notes on a Lead/Deal. */
+export function listRecordNotes(kind: RecordKind, id: string, zohoUserId?: string): Promise<NoteItem[]> {
+  return getKeyed<NoteItem>(`/data-center/${kind}/${id}/notes`, 'notes', zohoUserId);
+}
+
+/** Log a Zoho Note (content + optional title + optional attachment) on a Lead/Deal. */
+export async function createRecordNote(
+  kind: RecordKind,
+  id: string,
+  input: { content: string; title?: string },
+  file?: File | null,
+  zohoUserId?: string,
+): Promise<{ id: string; hasAttachment: boolean }> {
+  const form = new FormData();
+  form.append('content', input.content);
+  if (input.title) form.append('title', input.title);
+  if (file) form.append('file', file, file.name);
+  const qs = zohoUserId ? `?zoho_user_id=${encodeURIComponent(zohoUserId)}` : '';
+  return (await requestMultipart(`/data-center/${kind}/${id}/notes${qs}`, form, {
+    headers: DC_HEADERS,
+  })) as { id: string; hasAttachment: boolean };
 }
 
 /** Per-day applications-filled counts (by CRM `Application_Date` — "application filled") for the
