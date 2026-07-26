@@ -5584,3 +5584,12 @@ Vite `base: './'` rewrote `/favicon.svg` → `./favicon.svg`. On `/main/salesmyt
 requested `/main/favicon.svg` (SPA fallback HTML) so the tab icon never showed. Fix: inline the M
 mark as a `data:image/svg+xml` favicon in `apps/mytrion-crm/index.html` (survives relative base).
 
+## 2026-07-26 — Prod Zoho login hit localhost:3001 (CORS)
+
+Shipped `apps/mytrion-crm/app` had `resolveApiConfig` baked as `baseUrl: http://localhost:3001`
+because `vite build` ran with shell `NODE_ENV=development` (Cursor/agent shells), so Vite inlined
+DEV + `.env` VITE_API_URL. Prod page then CORS-failed against localhost.
+
+Fix: runtime hostname gate (non-localhost → always same-origin `''`); `package.json` build forces
+`NODE_ENV=production vite build --mode production`; rebuild + push `app/`.
+
