@@ -5570,3 +5570,17 @@ Clients modal: denser scrim (`.8` + blur), sheet `820px`, icon tabs, Escape/`rol
 Leads/Deals cold load: Home-style `DcKanbanSkeleton` / `DcListSkeleton` in RecordsTab Gate.
 Lead/Deal detail: centered `DetailSheet` (no full-bleed “separate page”), stay-open after save, saving
 overlay, related panels use `DcPanelSkeleton` + section icons. Shared footer in `dataCenterSheet.tsx`.
+
+## 2026-07-26 — Rebuild served CRM bundle on `build`
+
+PR #65 had already landed Sales UX source (`DetailSheet`, skeletons, Clients + Retention), but Render
+still served the old committed `apps/mytrion-crm/app/` hashes — including the full-page Lead detail
+with “← Board”. Ran `vite build` on `build` and committed the new `app/` assets so deploy picks up
+the sheet UI. (Full `pnpm build` still blocked by pre-existing Finance `tsc` errors.)
+
+## 2026-07-26 — Favicon on deep Sales routes
+
+Vite `base: './'` rewrote `/favicon.svg` → `./favicon.svg`. On `/main/salesmytrion` the browser
+requested `/main/favicon.svg` (SPA fallback HTML) so the tab icon never showed. Fix: inline the M
+mark as a `data:image/svg+xml` favicon in `apps/mytrion-crm/index.html` (survives relative base).
+

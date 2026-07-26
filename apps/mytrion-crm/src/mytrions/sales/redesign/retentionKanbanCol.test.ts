@@ -7,6 +7,7 @@ function row(partial: Partial<RetentionCaseRow>): RetentionCaseRow {
     carrierId: '5806565',
     companyName: 'Test',
     zohoDealId: null,
+    applicationId: null,
     agentName: null,
     assignedAgentZohoUserId: null,
     poolOwnerZohoUserId: null,
