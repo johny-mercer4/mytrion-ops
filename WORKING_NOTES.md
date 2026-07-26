@@ -5593,3 +5593,60 @@ DEV + `.env` VITE_API_URL. Prod page then CORS-failed against localhost.
 Fix: runtime hostname gate (non-localhost → always same-origin `''`); `package.json` build forces
 `NODE_ENV=production vite build --mode production`; rebuild + push `app/`.
 
+
+## 2026-07-27 — Manager Referrals: bonus ledger data model (migration 0058)
+
+Data-model-only slice for the referral bonus system. **No calculation engine, no pg-boss, no
+routes/UI yet** — deliberately scoped so the numbers can be designed against a settled schema.
+
+### Grounding (inspected live, not assumed)
+
+- **`Calculation` picklist exists on BOTH Zoho referral modules** (`Parent_Referrers`,
+  `Child_Referrals`) with values `Gallons (Legacy) | Swipes (Legacy) | Gallons (Parent) |
+  Gallons (Child)` — a 1:1 match for the PDF's four types. `Child_Referrals.Parent_Paid` / `.Paid`
+  are the one-time guards for types 3 / 4.
+- **Both modules are effectively empty test data**: 7 parents, 4 children. `Calculation` is null on
+  every record, `Parent_Referrer` null on all children, `Deal_Id` null on all parents.
+- **Zero Leads and zero Deals have `Child_Referrer` populated.** The intended linkage
+  (`Deals.Child_Referrer` → `Deals.Carrier_ID` → mart) therefore returns nothing today; everything
+  falls back to `Child_Referrals.Carrier_ID`. Hence the `resolution` column + `unresolved` state.
+- **No literal `DSL` fuel code exists** in `octane.mart_transaction_line_items.line_item_category`.
+  Present diesel-family codes: ULSD (63.0M gal), ULSR (0.66M), DSL1/CDSL/BDSL/CBDL (~98k combined),
+  plus generic FUEL. Type 3/4's `'DSL'` currently matches zero rows — flagged in
+  `referralBonusTypes.ts`, NOT silently expanded. Needs a BA/Admin decision.
+- 288,451 rows (19.4M gal, ~23% of volume) carry a NULL `line_item_category`. PDF filters by code,
+  so they are excluded — this will legitimately disagree with the Sales dashboard, which applies no
+  fuel filter at all (servercrm `agentDwh.js` `base` CTE).
+- "Swipe" = the dashboard's **new-card** metric: `MIN(transaction_date) OVER (PARTITION BY
+  carrier_id, card_number)` landing in the period. ~610–985/mo company-wide. Note the dashboard
+  field named `swipes_*` is `COUNT(DISTINCT transaction_id)` — that is NOT this metric.
+
+### Shipped
+
+- `src/db/schema/mytrion_referral_bonuses.ts` — ledger + `mytrion_referral_calc_runs` audit table.
+- `src/modules/manager/referralBonusTypes.ts` — declarative spec (rates, thresholds, recipients,
+  PDF fuel-code lists, picklist mapping). Types 1+2 are concurrent per the PDF, so either legacy
+  picklist value selects BOTH legacy bonuses.
+- `src/repos/referralBonusRepo.ts` — tenant-scoped upsert/list/totals/status/runs (rule 2).
+- `tests/unit/referral-bonus-repo.test.ts` — 24 tests; renders the SQL drizzle actually builds and
+  asserts every read/write is bound to `ctx.tenantId` (rule 9).
+
+### Two duplicate-payout guards, not one
+
+`..._period_uq` (tenant, child, type, month) makes monthly recompute idempotent. `..._one_time_uq`
+is a PARTIAL unique on (tenant, child, type) `WHERE bonus_type IN ('gallons_parent','gallons_child')`
+— without it, a recompute whose threshold-crossing month shifted would insert a second one-time row
+under a different month and pay the $50 twice. Verified live: cross-month duplicate blocked (23505),
+same child under a different tenant still allowed, recurring types still repeat across months.
+
+### Gotchas hit
+
+- **`pnpm db:generate` is broken repo-wide.** Snapshots `0025`–`0057` are MISSING and the `0022`/
+  `0023`/`0024` chain has a prevId collision, so drizzle-kit aborts. Migrations 0025+ have all been
+  hand-written; 0058 follows that convention (idempotent `IF NOT EXISTS`, `--> statement-breakpoint`,
+  manual `_journal.json` entry). Repairing the snapshot chain is separate, unblocked work.
+- **`MYTRION_OPS_DATABASE_URL` in `.env` points at Render PROD**, not `localhost:5433` as CLAUDE.md
+  describes. `pnpm db:migrate` therefore applied 0058 to production. Additive only (two new empty
+  tables + indexes), but worth knowing before running any migration command here.
+- Verified 0058 from scratch on a throwaway DB: 59 migrations applied, 47 tables, both new tables
+  present.
