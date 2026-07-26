@@ -600,3 +600,27 @@
         transform: none;
     }
 }
+
+
+/* Chromatic edge — a 1px ring running sky at the top to sunset at the bottom, so the sheet reads as
+   glass with THICKNESS rather than a flat translucent rectangle. Masked pseudo-ring, not
+   `border-image`: border-image takes a gradient but ignores border-radius (square corners), and
+   box-shadow respects the radius but takes no gradient. CSS-only, no runtime cost. */
+.cs-root .cs-modal-box::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--hz-edge);
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}

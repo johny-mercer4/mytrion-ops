@@ -527,12 +527,11 @@
   transition: background 0.35s ease;
 }
 
+/* Full-bleed so the pointer-tracked --mx/--my (percentages of the CARD) map 1:1. The glint's own
+   size is stated explicitly in the gradient rather than inherited from a 55%x42% box. */
 .cardSpecular {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 55%;
-  height: 42%;
+  inset: 0;
   pointer-events: none;
   transition: background 0.35s ease;
 }

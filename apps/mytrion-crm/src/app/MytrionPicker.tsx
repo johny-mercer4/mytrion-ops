@@ -14,6 +14,7 @@ import {
 } from '../access/mytrions.config';
 import { logout } from '../api/auth';
 import { useTheme } from '../hooks/useTheme';
+import { usePointerGlow } from '../hooks/usePointerGlow';
 import { MytrionGlyph } from '../components/icons';
 import { glassFor, readLastWorkspace, rememberWorkspace } from './horizonGlass';
 import styles from './MytrionPicker.module.css';
@@ -49,6 +50,9 @@ function alpha(rgba: string, a: number): string {
 /** Exact port of HorizonNew WorkspaceCard hover math. */
 function WorkspaceCard({ id, title, blurb, tag, icon, hue, to, soon, dark }: TileProps) {
   const [hovered, setHovered] = useState(false);
+  // Pointer-tracked specular. Writes --mx/--my straight to the node (no re-render per move) and is
+  // read by .cardSpecular below; falls back to the fixed corner glint when the vars are absent.
+  const glow = usePointerGlow<HTMLDivElement>();
   const g = glassFor(id, hue);
   const active = hovered && !soon;
 
@@ -143,7 +147,10 @@ function WorkspaceCard({ id, title, blurb, tag, icon, hue, to, soon, dark }: Til
         }}
       />
       <div
-        className={`${styles.card} ${soon ? styles.cardSoon : ''}`}
+        ref={glow.ref}
+        onPointerMove={glow.onPointerMove}
+        onPointerLeave={glow.onPointerLeave}
+        className={`${styles.card} hzEdge ${soon ? styles.cardSoon : ''}`}
         style={cardStyle}
       >
         {dark ? (
@@ -177,15 +184,6 @@ function WorkspaceCard({ id, title, blurb, tag, icon, hue, to, soon, dark }: Til
                 transition: 'opacity 0.35s ease',
               }}
             />
-            {/* Specular corner catch — the highlight that sells it as a physical pane. Kept under
-                0.5 so it stays a catch of light and not a second white blowout in the corner. */}
-            <div
-              className={styles.cardSpecular}
-              style={{
-                background: `radial-gradient(ellipse at 18% 18%, rgba(255,255,255,${active ? '0.46' : '0.24'}), transparent 68%)`,
-                transition: 'background 0.35s ease',
-              }}
-            />
             <div
               className={styles.cardBottomGlow}
               style={{
@@ -196,6 +194,18 @@ function WorkspaceCard({ id, title, blurb, tag, icon, hue, to, soon, dark }: Til
             />
           </>
         )}
+        {/* Specular highlight — FOLLOWS THE POINTER via --mx/--my (usePointerGlow), falling back to a
+            fixed top-left glint when they're unset (at rest, and under prefers-reduced-motion). Sized
+            explicitly so it reads as a light source on glass rather than a corner gradient. */}
+        <div
+          className={styles.cardSpecular}
+          style={{
+            background: `radial-gradient(42% 36% at var(--mx, 18%) var(--my, 18%), rgba(255,255,255,${
+              dark ? (active ? '0.13' : '0.05') : active ? '0.5' : '0.26'
+            }), transparent 70%)`,
+            transition: 'background 0.35s ease',
+          }}
+        />
         <div
           className={styles.cardShimmer}
           style={{

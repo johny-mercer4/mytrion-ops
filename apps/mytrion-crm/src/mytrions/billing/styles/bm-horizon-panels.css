@@ -17,6 +17,9 @@
 }
 
 .bm-root .bm-modal-box {
+    /* Required by the chromatic-edge ::after at the bottom of this file: without it the absolutely
+       positioned ring resolves against the fixed backdrop and covers the whole screen. */
+    position: relative;
     /* Ramp along the top edge, as a background layer so it survives the body's internal scroll. */
     background:
         linear-gradient(90deg, var(--billing-accent) 0%, var(--accent-2) 100%) top left / 100% 2px no-repeat,
@@ -383,4 +386,28 @@
     background: var(--hz-pane-lift);
     border-color: color-mix(in srgb, var(--billing-accent) 40%, var(--hz-pane-bd));
     transform: var(--hz-hover-lift-sm);
+}
+
+
+/* Chromatic edge — a 1px ring running sky at the top to sunset at the bottom, so the sheet reads as
+   glass with THICKNESS rather than a flat translucent rectangle. Masked pseudo-ring, not
+   `border-image`: border-image takes a gradient but ignores border-radius (square corners), and
+   box-shadow respects the radius but takes no gradient. CSS-only, no runtime cost. */
+.bm-root .bm-modal-box::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--hz-edge);
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
 }

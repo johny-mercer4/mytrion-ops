@@ -78,6 +78,19 @@
     transparent 92%
   );
 
+  /* ── Chromatic edge — the "glass has thickness" cue ───────────────────────────
+     A 1px ring that runs sky at the top edge to sunset at the bottom, so an edge catches a
+     different wavelength depending on which way it faces. Paint it with `.hzEdge` (below), NOT with
+     `border-image`: border-image ignores border-radius and would square off every corner in a design
+     built on 12–16px radii. */
+  --hz-edge: linear-gradient(
+    170deg,
+    color-mix(in srgb, var(--hz-1) 60%, transparent) 0%,
+    var(--hz-glass-bd) 42%,
+    var(--hz-glass-bd) 58%,
+    color-mix(in srgb, var(--hz-5) 55%, transparent) 100%
+  );
+
   /* Frosted panes for module content. Derived from --surface / --surface-alt rather than fixed
      rgba, so they follow the theme automatically (color-mix resolves at the use site) and a panel
      stays legible over the mesh instead of turning into a milky rectangle.
@@ -236,6 +249,35 @@
 }
 
 /* ── Reusable Horizon utilities ────────────────────────────────────────────── */
+
+/* A 1px chromatic ring that FOLLOWS the element's own border-radius. Painted as a masked pseudo-ring
+   (paint the gradient over the whole box, then knock the middle out) because that is the only
+   technique that both takes a gradient and respects a radius:
+     - `border-image` takes a gradient but ignores border-radius → square corners.
+     - `box-shadow` respects the radius but takes no gradient.
+   Applies to an ::after, so it needs the host to be positioned. */
+.hzEdge {
+  position: relative;
+}
+.hzEdge::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--hz-edge);
+  pointer-events: none;
+  /* content-box minus border-box = a 1px ring hugging the radius. */
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
 
 /* Gradient text. Kept as background-clip (never `filter`) — HorizonNew's GradText comment
    records that a filtered version painted a solid rectangle in WebKit. */
