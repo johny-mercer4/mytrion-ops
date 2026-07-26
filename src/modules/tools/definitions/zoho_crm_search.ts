@@ -34,10 +34,10 @@ export const zohoCrmSearchTool: ToolManifest<z.infer<typeof inputSchema>, z.infe
     // We pass the context back so the LLM knows what fields were discovered/assumed.
     const contextUsed = passages.map(p => p.content).join('\\n');
     
-    // Fallback/standard fields
-    let emailField = 'Email';
-    let nameField = 'Last_Name'; 
-    let phoneField = 'Phone';
+    // Fallback/standard fields (nameField is module-dependent below; the others never change)
+    const emailField = 'Email';
+    let nameField = 'Last_Name';
+    const phoneField = 'Phone';
     
     // Some modules use "Account_Name", "Deal_Name", "Contact_Name".
     if (input.module.toLowerCase() === 'accounts') nameField = 'Account_Name';
@@ -56,7 +56,11 @@ export const zohoCrmSearchTool: ToolManifest<z.infer<typeof inputSchema>, z.infe
     
     const results = await Promise.allSettled(
       queries.map(async (q) => {
-        const res = (await callMcpTool('coql', { select_query: q }, ctx)) as any;
+        // Same untyped COQL envelope as zoho_crm_query: bare array or { data } wrapper.
+        const res = (await callMcpTool('coql', { select_query: q }, ctx)) as
+          | { data?: Array<Record<string, unknown>> }
+          | Array<Record<string, unknown>>
+          | null;
         return Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : [];
       })
     );

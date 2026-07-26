@@ -72,7 +72,9 @@ interface SplitDraft {
   invoiceOptions: InvoiceOption[];
   selectedInvoice: InvoiceOption | null;
   isPrepayCarrier: boolean;
-  amount: number;
+  // Raw input text (not a number) so a partial decimal like "1435." can be typed — parsed to a
+  // number only at use-sites. Storing it as a number stripped the trailing dot on every keystroke.
+  amount: string;
   error: string;
 }
 
@@ -84,7 +86,7 @@ const EMPTY_DRAFT: SplitDraft = {
   invoiceOptions: [],
   selectedInvoice: null,
   isPrepayCarrier: false,
-  amount: 0,
+  amount: '',
   error: '',
 };
 
@@ -401,7 +403,7 @@ export function TransactionModal({
   const splitRemaining = round2(tx.amount - splitTotal);
   const canApplySplits = splits.length >= 2 && splitRemaining >= 0 && !applyingSplits;
   const canAddDraft = (() => {
-    const amt = draft.amount || 0;
+    const amt = parseFloat(draft.amount) || 0;
     if (!draft.carrierId.trim() || amt <= 0) return false;
     if (amt > splitRemaining + 0.001) return false;
     if ((draft.type === 'invoice' || draft.type === 'syncOnly') && !draft.selectedInvoice) return false;
@@ -421,7 +423,7 @@ export function TransactionModal({
       setIsPrepay(false);
       setPrepayLoading(false);
       setSplitMode(true);
-      setDraft({ ...EMPTY_DRAFT, amount: tx.amount });
+      setDraft({ ...EMPTY_DRAFT, amount: String(tx.amount) });
     }
   }
 
@@ -450,7 +452,7 @@ export function TransactionModal({
     const alloc: SplitAllocation = {
       type: draft.type,
       carrierId: draft.carrierId.trim(),
-      amount: round2(draft.amount),
+      amount: round2(parseFloat(draft.amount) || 0),
     };
     if ((draft.type === 'invoice' || draft.type === 'syncOnly') && draft.selectedInvoice) {
       alloc.invoiceId = draft.selectedInvoice.id;
@@ -458,13 +460,14 @@ export function TransactionModal({
     }
     const nextRemaining = round2(tx.amount - (splitTotal + alloc.amount));
     setSplits((prev) => [...prev, alloc]);
-    setDraft({ ...EMPTY_DRAFT, amount: nextRemaining });
+    setDraft({ ...EMPTY_DRAFT, amount: nextRemaining ? String(nextRemaining) : '' });
   }
 
   function removeSplitAllocation(index: number): void {
     setSplits((prev) => {
       const next = prev.filter((_, i) => i !== index);
-      setDraft((d) => ({ ...d, amount: round2(tx.amount - next.reduce((s, a) => s + a.amount, 0)) }));
+      const rem = round2(tx.amount - next.reduce((s, a) => s + a.amount, 0));
+      setDraft((d) => ({ ...d, amount: rem ? String(rem) : '' }));
       return next;
     });
   }
@@ -1268,7 +1271,14 @@ function SplitSection(props: SplitSectionProps) {
             </label>
             <div style={{ position: 'relative' }}>
               <span style={{ position: 'absolute', left: '0.625rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600 }}>$</span>
-              <input value={draft.amount || ''} onChange={(e) => setDraft((d) => ({ ...d, amount: parseFloat(e.target.value.replace(',', '.')) || 0 }))} type="text" inputMode="decimal" placeholder="0.00" className="tx-carrier-input" style={{ paddingLeft: '1.5rem' }} />
+              <input value={draft.amount} onChange={(e) => {
+                // Keep the raw text (digits + a single dot) so "1435.52" — and the partial "1435." —
+                // can be typed. Parsing to a number here dropped the trailing dot every keystroke.
+                let v = e.target.value.replace(',', '.').replace(/[^0-9.]/g, '');
+                const dot = v.indexOf('.');
+                if (dot !== -1) v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, '');
+                setDraft((d) => ({ ...d, amount: v }));
+              }} type="text" inputMode="decimal" placeholder="0.00" className="tx-carrier-input" style={{ paddingLeft: '1.5rem' }} />
             </div>
           </div>
 

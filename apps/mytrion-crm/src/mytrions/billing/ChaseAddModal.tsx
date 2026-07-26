@@ -107,7 +107,9 @@ export function ChaseAddModal({ onClose, onAdded }: ChaseAddModalProps) {
         </div>
 
         <div className="bm-modal-body">
-          <div className="chase-form">
+          {/* A real <form> with named fields so the browser remembers + suggests prior entries
+              (sender name, description, memo) on the next add — same as other inputs in the app. */}
+          <form className="chase-form" id="chaseAddForm" autoComplete="on" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
             <div className="chase-intro">
               Key in a Chase deposit from the bank statement. It lands <b>unmapped</b> in Transactions,
               where you map it to an invoice or prepay like any other payment.
@@ -121,11 +123,10 @@ export function ChaseAddModal({ onClose, onAdded }: ChaseAddModalProps) {
                   <input
                     className="chase-input"
                     inputMode="decimal"
+                    name="amount"
+                    autoComplete="off"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && valid) void submit();
-                    }}
                     placeholder="0.00"
                     // eslint-disable-next-line jsx-a11y/no-autofocus
                     autoFocus
@@ -145,6 +146,8 @@ export function ChaseAddModal({ onClose, onAdded }: ChaseAddModalProps) {
             <Field label="Sender / Payer" optional="recommended — used to auto-suggest the carrier">
               <input
                 className="chase-input"
+                name="senderName"
+                autoComplete="on"
                 value={senderName}
                 onChange={(e) => setSenderName(e.target.value)}
                 placeholder="Name on the deposit, e.g. SUNRISE LOGISTICS LLC"
@@ -156,6 +159,8 @@ export function ChaseAddModal({ onClose, onAdded }: ChaseAddModalProps) {
             <Field label="Description">
               <input
                 className="chase-input"
+                name="description"
+                autoComplete="on"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Statement description / memo line"
@@ -166,6 +171,8 @@ export function ChaseAddModal({ onClose, onAdded }: ChaseAddModalProps) {
               <Field label="Reference / Txn ID" optional="prevents duplicates">
                 <input
                   className={`chase-input${notice?.kind === 'duplicate' ? ' is-dup' : ''}`}
+                  name="reference"
+                  autoComplete="off"
                   value={reference}
                   onChange={(e) => {
                     setReference(e.target.value);
@@ -177,6 +184,8 @@ export function ChaseAddModal({ onClose, onAdded }: ChaseAddModalProps) {
               <Field label="Memo">
                 <input
                   className="chase-input"
+                  name="memo"
+                  autoComplete="on"
                   value={memo}
                   onChange={(e) => setMemo(e.target.value)}
                   placeholder="Internal note"
@@ -201,16 +210,17 @@ export function ChaseAddModal({ onClose, onAdded }: ChaseAddModalProps) {
                 </div>
               </div>
             ) : null}
-          </div>
+          </form>
         </div>
 
         <div className="bm-modal-footer">
-          <button className="bm-btn" onClick={onClose} disabled={submitting}>
+          <button type="button" className="bm-btn" onClick={onClose} disabled={submitting}>
             Cancel
           </button>
           <button
+            type="submit"
+            form="chaseAddForm"
             className="bm-btn bm-btn-primary"
-            onClick={() => void submit()}
             disabled={!valid || submitting}
           >
             {submitting ? 'Adding…' : 'Add Transaction'}
