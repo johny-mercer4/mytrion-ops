@@ -7,7 +7,7 @@ import {
   type MytrionId,
 } from '@/access/mytrions.config';
 import { installRcConsoleFilter } from './rcConsoleFilter';
-import { RC_ADAPTER_SCRIPT_ID } from './ringcentralDial';
+import { RC_ADAPTER_SCRIPT_ID, dockRingCentralWidget } from './ringcentralDial';
 import { ringcentralStylesDataUri } from './ringcentralEmbedStyles';
 import {
   resetRingCentralLoginState,
@@ -26,6 +26,10 @@ const RC_ALLOWED_MYTRIONS = new Set<MytrionId>(['sales', 'customer-service']);
 
 /** Ignore brief logged-out blips while Embeddable restores a persisted session. */
 const LOGOUT_TOAST_GRACE_MS = 2500;
+
+/** How long to wait for the vendor iframe after injecting adapter.js. */
+const FRAME_WAIT_MS = 12_000;
+const FRAME_POLL_MS = 200;
 
 type ToastType = 'error';
 interface ToastMsg {
@@ -70,11 +74,87 @@ function forceRcFrameCursor(frame: HTMLElement): void {
   frame.style.setProperty('cursor', 'pointer', 'important');
 }
 
+function rcFrame(): HTMLElement | null {
+  return document.getElementById('rc-widget-adapter-frame');
+}
+
 function teardownAdapter(): void {
   clearPendingLogoutToast();
   resetRingCentralLoginState();
   document.getElementById(RC_ADAPTER_SCRIPT_ID)?.remove();
-  document.getElementById('rc-widget-adapter-frame')?.remove();
+  rcFrame()?.remove();
+}
+
+function waitForRcFrame(timeoutMs: number): Promise<HTMLElement | null> {
+  const existing = rcFrame();
+  if (existing) return Promise.resolve(existing);
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const tick = (): void => {
+      const frame = rcFrame();
+      if (frame) {
+        resolve(frame);
+        return;
+      }
+      if (Date.now() - started >= timeoutMs) {
+        resolve(null);
+        return;
+      }
+      window.setTimeout(tick, FRAME_POLL_MS);
+    };
+    tick();
+  });
+}
+
+/**
+ * Inject (or remount) the Embeddable adapter. Remounts when the script tag is present but the
+ * iframe is gone — that stuck state is why prod sometimes needs a hard refresh to show Sign in.
+ */
+async function mountAdapter(
+  adapterUrl: string,
+  opts: { cancelled: () => boolean; onLoadError: () => void },
+): Promise<void> {
+  const nextSrc = withStylesUri(adapterUrl);
+  const existing = document.getElementById(RC_ADAPTER_SCRIPT_ID) as HTMLScriptElement | null;
+  const frame = rcFrame();
+
+  if (existing && frame && existing.src.includes('stylesUri=data')) {
+    forceRcFrameCursor(frame);
+    dockRingCentralWidget();
+    return;
+  }
+
+  // Script without iframe (or stale stylesUri) → tear down and inject fresh.
+  if (existing || frame) teardownAdapter();
+  if (opts.cancelled()) return;
+
+  installRcConsoleFilter();
+
+  await new Promise<void>((resolve) => {
+    const script = document.createElement('script');
+    script.id = RC_ADAPTER_SCRIPT_ID;
+    script.src = nextSrc;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => {
+      console.warn('[ringcentral] Embeddable adapter failed to load');
+      script.remove();
+      opts.onLoadError();
+      resolve();
+    };
+    document.body.appendChild(script);
+  });
+
+  if (opts.cancelled()) return;
+
+  const ready = await waitForRcFrame(FRAME_WAIT_MS);
+  if (opts.cancelled()) return;
+  if (ready) {
+    forceRcFrameCursor(ready);
+    dockRingCentralWidget();
+  } else {
+    console.warn('[ringcentral] Embeddable iframe did not appear after adapter inject');
+  }
 }
 
 /**
@@ -109,55 +189,49 @@ export function RingCentralPhone() {
     }
 
     let cancelled = false;
+    const isCancelled = (): boolean => cancelled;
+    let cachedAdapterUrl: string | null = null;
 
-    // Keep host iframe cursor on pointer (vendor re-applies grab/move on the docked pill).
-    const lockCursor = (): void => {
-      const frame = document.getElementById('rc-widget-adapter-frame');
-      if (frame) forceRcFrameCursor(frame);
+    const boot = async (reason: string): Promise<void> => {
+      try {
+        if (!cachedAdapterUrl) {
+          const cfg = await fetchRingCentralEmbedConfig();
+          if (cancelled || !cfg.enabled || !cfg.adapterUrl) return;
+          cachedAdapterUrl = cfg.adapterUrl;
+        }
+        if (cancelled || !cachedAdapterUrl) return;
+        await mountAdapter(cachedAdapterUrl, {
+          cancelled: isCancelled,
+          onLoadError: () => {
+            if (!cancelled) {
+              addToast(
+                'error',
+                'RingCentral failed to load',
+                'Refresh the page or check your network, then try again.',
+              );
+            }
+          },
+        });
+        if (!cancelled) {
+          // Nudge after vendor init settles — ensure the widget is a visible DOCK, not popped open.
+          window.setTimeout(() => {
+            if (!cancelled) dockRingCentralWidget();
+          }, 800);
+        }
+      } catch (err) {
+        // Widget unavailable (RC disabled / not configured) — fail silently.
+        if (reason === 'visibility' || reason === 'pageshow') {
+          console.warn('[ringcentral] recover failed', err);
+        }
+      }
     };
 
-    void (async () => {
-      try {
-        const cfg = await fetchRingCentralEmbedConfig();
-        if (cancelled || !cfg.enabled || !cfg.adapterUrl) return;
-
-        const nextSrc = withStylesUri(cfg.adapterUrl);
-        const existing = document.getElementById(RC_ADAPTER_SCRIPT_ID) as HTMLScriptElement | null;
-        // Remount when cursor CSS (stylesUri) is missing from an older adapter inject.
-        if (existing) {
-          if (existing.src.includes('stylesUri=data')) {
-            lockCursor();
-            return;
-          }
-          teardownAdapter();
-        }
-
-        installRcConsoleFilter();
-
-        const script = document.createElement('script');
-        script.id = RC_ADAPTER_SCRIPT_ID;
-        script.src = nextSrc;
-        script.async = true;
-        script.onerror = () => {
-          console.warn('[ringcentral] Embeddable adapter failed to load');
-          script.remove();
-          if (!cancelled) {
-            addToast(
-              'error',
-              'RingCentral failed to load',
-              'Refresh the page or check your network, then try again.',
-            );
-          }
-        };
-        document.body.appendChild(script);
-      } catch {
-        // Widget unavailable (RC disabled / not configured) — fail silently.
-      }
-    })();
+    void boot('mount');
 
     const unsubscribe = subscribeRingCentral((event: RingCentralCallEvent) => {
       if (cancelled) return;
       if (event.kind === 'login') {
+        // Don't pop the widget open on login — leave it docked; the agent opens it when they want.
         clearPendingLogoutToast();
         return;
       }
@@ -167,6 +241,7 @@ export function RingCentralPhone() {
       pendingLogoutToast = setTimeout(() => {
         pendingLogoutToast = null;
         if (cancelled) return;
+        // Toast only — do NOT auto-expand the widget; the agent opens it to sign in again.
         addToast(
           'error',
           'RingCentral session ended',
@@ -175,24 +250,54 @@ export function RingCentralPhone() {
       }, LOGOUT_TOAST_GRACE_MS);
     });
 
+    const lockCursor = (): void => {
+      const frame = rcFrame();
+      if (frame) forceRcFrameCursor(frame);
+    };
     lockCursor();
     const cursorTimer = window.setInterval(lockCursor, 800);
     const cursorObs = new MutationObserver((mutations) => {
       for (const m of mutations) {
         if (m.type === 'childList') {
           for (const n of m.addedNodes) {
-            if (n instanceof HTMLElement && (n.id === 'rc-widget-adapter-frame' || n.querySelector?.('#rc-widget-adapter-frame'))) {
+            if (
+              n instanceof HTMLElement &&
+              (n.id === 'rc-widget-adapter-frame' || n.querySelector?.('#rc-widget-adapter-frame'))
+            ) {
               lockCursor();
+              dockRingCentralWidget();
               return;
             }
           }
         }
-        if (m.type === 'attributes' && m.target instanceof HTMLElement && m.target.id === 'rc-widget-adapter-frame') {
+        if (
+          m.type === 'attributes' &&
+          m.target instanceof HTMLElement &&
+          m.target.id === 'rc-widget-adapter-frame'
+        ) {
           lockCursor();
         }
       }
     });
-    cursorObs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+    cursorObs.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['style'],
+    });
+
+    /** Prod Zoho: tab blur / bfcache / CRM soft-nav can drop the iframe while the script stays. */
+    const onVisible = (): void => {
+      if (document.visibilityState !== 'visible') return;
+      // Re-boot only if the iframe was dropped. If it's still there, leave the widget exactly as the
+      // agent left it — never auto-expand on tab focus (that was the main "keeps popping" cause).
+      if (!rcFrame()) void boot('visibility');
+    };
+    const onPageShow = (e: PageTransitionEvent): void => {
+      if (e.persisted || !rcFrame()) void boot('pageshow');
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('pageshow', onPageShow);
 
     return () => {
       cancelled = true;
@@ -200,6 +305,8 @@ export function RingCentralPhone() {
       unsubscribe();
       window.clearInterval(cursorTimer);
       cursorObs.disconnect();
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('pageshow', onPageShow);
       // Softphone stays mounted across Sales ↔ CS (allowed stays true).
     };
   }, [allowed]);

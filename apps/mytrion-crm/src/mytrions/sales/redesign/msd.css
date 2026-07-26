@@ -426,7 +426,7 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .ss-root.light .msd-bar-search {
   background: var(--alt);
@@ -445,7 +445,7 @@
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -568,7 +568,7 @@
   border-radius: 99px;
   background: transparent;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   cursor: pointer;
 }
@@ -625,7 +625,7 @@
   gap: 10px;
   padding: 28px 12px;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .ss-root .msd-activity-single__grid {
   display: grid;

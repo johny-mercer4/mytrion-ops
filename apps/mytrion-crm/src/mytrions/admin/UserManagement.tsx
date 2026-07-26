@@ -51,7 +51,12 @@ export function UserManagement() {
     <div className={`${s.panel} ${s.panelWide}`}>
       <div className={s.head}>
         <div>
+          <div className={s.eyebrow}>Access &amp; RBAC</div>
           <h2 className={s.h2}>User Management</h2>
+          <p className={s.sub}>
+            Workers, the Mytrions each one can enter, and the per-user overrides layered on top of
+            their profile and role defaults.
+          </p>
         </div>
       </div>
 

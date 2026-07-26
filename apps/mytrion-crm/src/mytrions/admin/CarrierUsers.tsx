@@ -380,7 +380,8 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
         <div>
           <div className={s.eyebrow}>Carrier User Management</div>
           <h2 className={s.h2}>{VIEWS[view].title}</h2>
-
+          {/* `VIEWS[view].sub` was declared for both views and never rendered. */}
+          <p className={s.sub}>{VIEWS[view].sub}</p>
         </div>
         <div className={s.inlineRow}>
           <button type="button" className={s.ghostBtn} disabled={refreshing} onClick={refresh}>
@@ -432,7 +433,7 @@ export function CarrierUsers({ view = 'registered' }: { view?: 'registered' | 'i
             </p>
           )}
 
-          <label className={s.search}>
+          <label className={`${s.search} ${s.searchWithMeta}`}>
         <SearchIcon size={14} />
         <input
           className={s.searchInput}

@@ -154,11 +154,11 @@ export function InboxTab() {
     <div className="ss-fu">
       <div style={s('display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px')}>
         <div>
-          <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.04em;text-transform:uppercase')}>Inbox</div>
-          <div style={s('font-size:13px;color:var(--muted);margin-top:2px')}>Reminders, alerts &amp; tasks assigned to you</div>
+          <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:24px;letter-spacing:.04em;text-transform:uppercase')}>Inbox</div>
+          <div style={s('font-size:14px;color:var(--muted);margin-top:2px')}>Reminders, alerts &amp; tasks assigned to you</div>
         </div>
         <div style={s('display:flex;align-items:center;gap:9px')}>
-          <span style={s(`display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:${wsReady ? 'var(--ok)' : 'var(--muted)'}`)}>
+          <span style={s(`display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:${wsReady ? 'var(--ok)' : 'var(--muted)'}`)}>
             <span style={s(`width:7px;height:7px;border-radius:50%;background:${wsReady ? 'var(--ok)' : 'var(--muted)'};box-shadow:0 0 0 3px color-mix(in srgb,${wsReady ? 'var(--ok)' : 'var(--muted)'} 22%,transparent)`)}></span>{wsReady ? 'LIVE' : 'OFFLINE'}
           </span>
           <button
@@ -173,7 +173,7 @@ export function InboxTab() {
             <Icon name="refresh" size={15} style={s(refreshSpinCss)} />
           </button>
           {inboxUnreadHas && (
-            <button onClick={markAllRead} className="ss-ico-btn" style={s('height:34px;padding:0 13px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:12px;font-weight:700;cursor:pointer')}>Mark all read</button>
+            <button onClick={markAllRead} className="ss-ico-btn" style={s('height:34px;padding:0 13px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:13px;font-weight:700;cursor:pointer')}>Mark all read</button>
           )}
         </div>
       </div>
@@ -181,7 +181,7 @@ export function InboxTab() {
         {TAB_DEFS.map(([id, label]) => {
           const on = inboxFilter === id;
           const count = iCount[id];
-          const style = `padding:8px 15px;border:1px solid ${on ? 'rgba(var(--accent-rgb),.4)' : 'var(--border)'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'var(--surface)'};color:${on ? 'var(--accent)' : 'var(--muted)'};border-radius:99px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .14s`;
+          const style = `padding:8px 15px;border:1px solid ${on ? 'rgba(var(--accent-rgb),.4)' : 'var(--border)'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'var(--surface)'};color:${on ? 'var(--accent)' : 'var(--muted)'};border-radius:99px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .14s`;
           return (
             <button key={id} onClick={() => setInboxFilter(id)} style={s(style)}>
               {label} {count > 0 && (<span style={s('opacity:.7')}>· {String(count)}</span>)}
@@ -204,7 +204,7 @@ export function InboxTab() {
         </div>
       )}
       {hasError && (
-        <div style={s('text-align:center;padding:64px 20px;color:var(--danger);font-size:13px')}>{error}</div>
+        <div style={s('text-align:center;padding:64px 20px;color:var(--danger);font-size:14px')}>{error}</div>
       )}
       {inboxHas && (
         <div style={s('display:flex;flex-direction:column;gap:11px')}>
@@ -219,12 +219,12 @@ export function InboxTab() {
                 {unread && (<div style={s('position:absolute;left:11px;top:14px;width:7px;height:7px;border-radius:50%;background:var(--accent)')}></div>)}
                 <div style={s(iconBox(colOf[i.type], 38) + ';margin-left:6px')}><Icon name={iconOf[i.type]} size={16} /></div>
                 <div style={s('flex:1;min-width:0')}>
-                  <div style={s('font-size:13.5px;font-weight:700;line-height:1.3')}>{i.title}</div>
-                  <div style={s('font-size:12px;color:var(--muted);margin-top:4px;line-height:1.45;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical')}>{i.desc}</div>
+                  <div style={s('font-size:14px;font-weight:700;line-height:1.3')}>{i.title}</div>
+                  <div style={s('font-size:13px;color:var(--muted);margin-top:4px;line-height:1.45;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical')}>{i.desc}</div>
                   <div style={s('display:flex;align-items:center;gap:7px;margin-top:9px;flex-wrap:wrap')}>
-                    <span style={s("font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace")}>{i.time}</span>
+                    <span style={s("font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace")}>{i.time}</span>
                     <span style={s(prioBadge.style)}>{prioBadge.text}</span>
-                    {i.tag && <span style={s('font-size:10px;font-weight:700;padding:3px 8px;border-radius:99px;background:var(--raised);color:var(--text2)')}>{i.tag}</span>}
+                    {i.tag && <span style={s('font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px;background:var(--raised);color:var(--text2)')}>{i.tag}</span>}
                   </div>
                 </div>
                 <div style={s('display:flex;flex-direction:column;gap:6px;flex-shrink:0')}>
@@ -247,8 +247,8 @@ export function InboxTab() {
           <div style={s('width:72px;height:72px;border-radius:50%;background:var(--raised);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;color:var(--ok)')}>
             <Icon name="check" size={34} strokeWidth={1.6} />
           </div>
-          <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:18px;text-transform:uppercase;letter-spacing:.05em;color:var(--text)')}>All caught up!</div>
-          <div style={s('font-size:13px;margin-top:5px')}>No {inboxEmptyLabel}notifications right now.</div>
+          <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;text-transform:uppercase;letter-spacing:.05em;color:var(--text)')}>All caught up!</div>
+          <div style={s('font-size:14px;margin-top:5px')}>No {inboxEmptyLabel}notifications right now.</div>
         </div>
       )}
     </div>

@@ -8,16 +8,8 @@ export function Pager({ page, total, onChange }: { page: number; total: number; 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   if (totalPages <= 1) return null;
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'flex-end',
-        gap: 'var(--space-3)',
-        padding: 'var(--space-3) 0',
-      }}
-    >
-      <span className={s.chipMeta}>
+    <div className={s.pager}>
+      <span className={s.pagerMeta}>
         Page {page} of {totalPages} · {total} total
       </span>
       <button type="button" className={s.ghostBtn} disabled={page <= 1} onClick={() => onChange(page - 1)}>

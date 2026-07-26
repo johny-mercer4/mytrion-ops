@@ -21,6 +21,13 @@ import { fetchAgentClients } from '../../integrations/dwhClientRoster.js';
 import { listClientCards, getClientBilling } from '../../integrations/dwhCards.js';
 import { listRejectionReportTickets } from '../../integrations/zohoDesk.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
+import { zohoCrm } from '../../integrations/zohoCrm.js';
+import {
+  createRecordNote,
+  fetchRecordCallHistory,
+  fetchRecordNotes,
+  type CrmModule,
+} from '../../modules/sales/recordActivity.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { resolveWritePayload } from '../../modules/customerService/fieldResolver.js';
 import { resolveActAsTarget } from '../../modules/auth/actAsDirectory.js';
@@ -135,6 +142,94 @@ function dwhError(err: unknown): AppError {
     cause: err,
     expose: true,
   });
+}
+
+/** 20 MB cap for a note attachment (matches the Desk attachment limit). */
+const MAX_NOTE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+/** Collect a note's multipart body — form fields + one optional file — into a plain shape. */
+async function readNoteUpload(
+  request: FastifyRequest,
+): Promise<{ fields: Record<string, string>; file: { name: string; mime: string; buffer: Buffer } | null }> {
+  const fields: Record<string, string> = {};
+  let file: { name: string; mime: string; buffer: Buffer } | null = null;
+  try {
+    for await (const part of request.parts({ limits: { fileSize: MAX_NOTE_ATTACHMENT_BYTES, files: 1 } })) {
+      if (part.type === 'file') {
+        file = {
+          name: part.filename || 'attachment',
+          mime: part.mimetype || 'application/octet-stream',
+          buffer: await part.toBuffer(),
+        };
+      } else {
+        fields[part.fieldname] = typeof part.value === 'string' ? part.value : String(part.value ?? '');
+      }
+    }
+  } catch (err) {
+    if (err instanceof Error && /file too large|FST_REQ_FILE_TOO_LARGE|request file too large/i.test(err.message)) {
+      throw new AppError('Attachment exceeds the 20MB limit.', {
+        statusCode: 413,
+        code: 'ATTACHMENT_TOO_LARGE',
+        expose: true,
+      });
+    }
+    throw err;
+  }
+  return { fields, file };
+}
+
+/**
+ * Apply a Lead edit whose payload includes `Status`. Non-status fields are written normally (so they
+ * persist regardless of the blueprint); `Status` is moved via a Zoho Blueprint transition — the only
+ * way Zoho accepts a change to a blueprint-controlled field — falling back to a plain update when the
+ * lead isn't in a blueprint. Reason fields (Unqualified_Reason / Not_Interested_Reason) ride along as
+ * the transition's data. Returns the written field names; throws a clear 422 on an invalid transition.
+ */
+async function applyLeadUpdateWithStatus(id: string, resolved: Record<string, unknown>): Promise<string[]> {
+  const REASON_KEYS = ['Unqualified_Reason', 'Not_Interested_Reason'];
+  const targetStatus = String(resolved.Status ?? '');
+  const transitionData: Record<string, unknown> = {};
+  for (const k of REASON_KEYS) if (k in resolved) transitionData[k] = resolved[k];
+  const rest = Object.fromEntries(
+    Object.entries(resolved).filter(([k]) => k !== 'Status' && !REASON_KEYS.includes(k)),
+  );
+  const written: string[] = [];
+
+  // 1) Non-status fields first — they persist even if the status transition is later rejected.
+  if (Object.keys(rest).length > 0) {
+    try {
+      await zohoCrmRecords.updateRecord('Leads', id, rest);
+      written.push(...Object.keys(rest));
+    } catch (err) {
+      throw crmError(err);
+    }
+  }
+
+  // 2) Status: a Blueprint transition when the lead is in one, else a plain update.
+  const transitions = await zohoCrmRecords.getBlueprintTransitions('Leads', id).catch(() => []);
+  if (transitions.length === 0) {
+    try {
+      await zohoCrmRecords.updateRecord('Leads', id, { Status: targetStatus, ...transitionData });
+    } catch (err) {
+      throw crmError(err);
+    }
+  } else {
+    const match = transitions.find((t) => t.nextValue === targetStatus);
+    if (!match) {
+      const allowed = transitions.map((t) => t.nextValue).filter((v) => v && v !== '-None-').join(', ');
+      throw new AppError(
+        `"${targetStatus}" isn't an available status transition for this lead right now (Zoho Blueprint). Allowed: ${allowed}.`,
+        { statusCode: 422, code: 'BLUEPRINT_TRANSITION_INVALID', expose: true },
+      );
+    }
+    try {
+      await zohoCrmRecords.executeBlueprintTransition('Leads', id, match.id, transitionData);
+    } catch (err) {
+      throw crmError(err);
+    }
+  }
+  written.push('Status', ...Object.keys(transitionData));
+  return written;
 }
 
 export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
@@ -310,19 +405,28 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
       throw new AppError('No editable fields supplied', { statusCode: 400, code: 'NO_FIELDS', expose: true });
     }
     const resolved = await resolveWritePayload(module, payload);
-    try {
-      await zohoCrmRecords.updateRecord(module, id, resolved);
-    } catch (err) {
-      throw crmError(err);
+
+    // Lead `Status` is Blueprint-controlled: a plain updateRecord is rejected while the lead is in an
+    // active blueprint (and would drop the other edits with it). Split it out — see the helper.
+    let updatedFields: string[];
+    if (module === 'Leads' && 'Status' in resolved) {
+      updatedFields = await applyLeadUpdateWithStatus(id, resolved);
+    } else {
+      try {
+        await zohoCrmRecords.updateRecord(module, id, resolved);
+      } catch (err) {
+        throw crmError(err);
+      }
+      updatedFields = Object.keys(resolved);
     }
     await auditFromContext(ctx, {
       action: module === 'Leads' ? 'sales.datacenter.lead_update' : 'sales.datacenter.deal_update',
       status: 'ok',
       resourceType: module === 'Leads' ? 'crm_lead' : 'crm_deal',
       resourceId: id,
-      detail: { fields: Object.keys(resolved) },
+      detail: { fields: updatedFields },
     });
-    return { id, updatedFields: Object.keys(resolved) };
+    return { id, updatedFields };
   }
 
   /** Edit an owned Lead's contact/qualification fields (MC/DOT/Referral/Cell/Phone/Email/Notes). */
@@ -336,4 +440,103 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
     const body = dealEditBody.parse(request.body);
     return ownerScopedUpdate(request, 'Deals', body, fetchDealOwnerId);
   });
+
+  // ---- Per-record call history + Notes (sales gate → record-ownership check → Zoho) ----
+
+  /** Sales gate + record-ownership check for a read/log under one record; returns the scoped ctx+id. */
+  async function assertOwnedRecord(
+    request: FastifyRequest,
+    module: CrmModule,
+    fetchOwner: (id: string) => Promise<string | null>,
+  ): Promise<{ ctx: TenantContext; id: string }> {
+    const ctx = requireSalesAccess(request);
+    const { id } = idParam.parse(request.params);
+    const q = scopeQuery.parse(request.query);
+    const targetOwner = resolveZohoUserId(ctx, q.zoho_user_id);
+    if (!ctx.bypassRbac) {
+      let recordOwner: string | null;
+      try {
+        recordOwner = await fetchOwner(id);
+      } catch (err) {
+        throw crmError(err);
+      }
+      if (!recordOwner) {
+        throw new AppError('Record not found', { statusCode: 404, code: 'NOT_FOUND', expose: true });
+      }
+      if (recordOwner !== targetOwner) {
+        throw new RBACError('You can only view your own records');
+      }
+    }
+    return { ctx, id };
+  }
+
+  /** Merged call history (our mytrion_calls + the Zoho Calls related to the record), badged by source. */
+  app.get('/data-center/leads/:id/calls', guard, async (request) => {
+    const { ctx, id } = await assertOwnedRecord(request, 'Leads', fetchLeadOwnerId);
+    return { calls: await fetchRecordCallHistory(ctx, 'Leads', id) };
+  });
+  app.get('/data-center/deals/:id/calls', guard, async (request) => {
+    const { ctx, id } = await assertOwnedRecord(request, 'Deals', fetchDealOwnerId);
+    return { calls: await fetchRecordCallHistory(ctx, 'Deals', id) };
+  });
+
+  /** The record's existing Zoho Notes (newest first from Zoho). */
+  app.get('/data-center/leads/:id/notes', guard, async (request) => {
+    const { id } = await assertOwnedRecord(request, 'Leads', fetchLeadOwnerId);
+    try {
+      return { notes: await fetchRecordNotes('Leads', id) };
+    } catch (err) {
+      throw crmError(err);
+    }
+  });
+  app.get('/data-center/deals/:id/notes', guard, async (request) => {
+    const { id } = await assertOwnedRecord(request, 'Deals', fetchDealOwnerId);
+    try {
+      return { notes: await fetchRecordNotes('Deals', id) };
+    } catch (err) {
+      throw crmError(err);
+    }
+  });
+
+  /** Log a Zoho Note on the record (multipart: `content`, optional `title`, optional `file`). */
+  async function logRecordNote(
+    request: FastifyRequest,
+    module: CrmModule,
+    fetchOwner: (id: string) => Promise<string | null>,
+  ): Promise<{ id: string; hasAttachment: boolean }> {
+    const { ctx, id } = await assertOwnedRecord(request, module, fetchOwner);
+    const { fields, file } = await readNoteUpload(request);
+    const content = (fields.content ?? '').trim();
+    if (!content) {
+      throw new AppError('A note requires content.', { statusCode: 400, code: 'NO_CONTENT', expose: true });
+    }
+    let noteId: string;
+    try {
+      noteId = await createRecordNote(module, id, {
+        content,
+        ...(fields.title?.trim() ? { title: fields.title.trim() } : {}),
+      });
+    } catch (err) {
+      throw crmError(err);
+    }
+    // A note is saved even if its attachment fails — surface the note, warn on the file.
+    if (file) {
+      try {
+        await zohoCrm.attachFileToRecord('Notes', noteId, file.name, file.buffer, file.mime);
+      } catch (err) {
+        request.log.warn({ err }, 'note attachment upload failed (note saved)');
+      }
+    }
+    await auditFromContext(ctx, {
+      action: 'sales.datacenter.note_create',
+      status: 'ok',
+      resourceType: module === 'Leads' ? 'crm_lead' : 'crm_deal',
+      resourceId: id,
+      detail: { noteId, hasAttachment: Boolean(file) },
+    });
+    return { id: noteId, hasAttachment: Boolean(file) };
+  }
+
+  app.post('/data-center/leads/:id/notes', guard, (request) => logRecordNote(request, 'Leads', fetchLeadOwnerId));
+  app.post('/data-center/deals/:id/notes', guard, (request) => logRecordNote(request, 'Deals', fetchDealOwnerId));
 }

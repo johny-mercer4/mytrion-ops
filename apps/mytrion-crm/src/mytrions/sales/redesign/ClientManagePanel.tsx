@@ -265,8 +265,8 @@ export function ClientManagePanel({
     pushToast(ok ? 'Copied' : "Couldn't copy", ok ? 'Registration link on clipboard.' : 'Copy the link manually.');
   }
 
-  const field = 'width:100%;height:36px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px;outline:none;box-sizing:border-box';
-  const label = 'font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:6px;display:block';
+  const field = 'width:100%;height:36px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:14px;outline:none;box-sizing:border-box';
+  const label = 'font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:6px;display:block';
   const tile = 'padding:14px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)';
 
   const ownerStatusLabel = regsBusy
@@ -280,18 +280,18 @@ export function ClientManagePanel({
   return (
     <form onSubmit={(e) => void generateInvite(e)} style={s('display:flex;flex-direction:column;gap:16px')}>
       <div style={s(tile)}>
-        <div style={s('font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Client</div>
-        <div style={s('font-size:14px;font-weight:700;margin-top:5px')}>{companyName || '—'}</div>
-        <div style={s("font-size:12px;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:3px")}>
+        <div style={s('font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Client</div>
+        <div style={s('font-size:15px;font-weight:700;margin-top:5px')}>{companyName || '—'}</div>
+        <div style={s("font-size:13px;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:3px")}>
           Carrier {carrierId || '—'}
           {companyType ? ` · ${companyType}` : ''}
         </div>
         {dealOwner && (
-          <div style={s('margin-top:4px;font-size:12px;color:var(--text2)')}>
+          <div style={s('margin-top:4px;font-size:13px;color:var(--text2)')}>
             Sales agent: <b>{dealOwner.name}</b> — stamped on the registration link; the client sees this name in the mini-app.
           </div>
         )}
-        <div style={s(`margin-top:10px;font-size:12px;font-weight:700;color:${ownerReady ? 'var(--ok)' : 'var(--warn)'}`)}>
+        <div style={s(`margin-top:10px;font-size:13px;font-weight:700;color:${ownerReady ? 'var(--ok)' : 'var(--warn)'}`)}>
           {ownerStatusLabel}
           {ownerReady && owner?.telegramUsername ? ` · @${owner.telegramUsername}` : ''}
         </div>
@@ -304,23 +304,23 @@ export function ClientManagePanel({
             value={botChatId}
             onChange={(e) => setBotChatId(e.target.value)}
             placeholder="-1003926878773"
-            style={s("flex:1;height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);padding:0 10px;font-family:'JetBrains Mono',monospace;font-size:13px")}
+            style={s("flex:1;height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);padding:0 10px;font-family:'JetBrains Mono',monospace;font-size:14px")}
           />
           <button
             type="button"
             onClick={() => void saveBotChat()}
             disabled={botChatBusy || !botChatId.trim() || botChatId.trim() === botChatSaved}
-            style={s(`height:38px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--accent);background:rgba(var(--accent-rgb),.12);color:var(--accent);font-weight:700;font-size:13px;cursor:pointer;opacity:${botChatBusy || !botChatId.trim() || botChatId.trim() === botChatSaved ? '.5' : '1'}`)}
+            style={s(`height:38px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--accent);background:rgba(var(--accent-rgb),.12);color:var(--accent);font-weight:700;font-size:14px;cursor:pointer;opacity:${botChatBusy || !botChatId.trim() || botChatId.trim() === botChatSaved ? '.5' : '1'}`)}
           >
             {botChatBusy ? 'Saving…' : botChatSaved ? 'Update' : 'Save'}
           </button>
         </div>
-        <div style={s('margin-top:7px;font-size:12px;color:var(--text2)')}>
+        <div style={s('margin-top:7px;font-size:13px;color:var(--text2)')}>
           {botChatSaved
             ? `Bound: ${botChatSaved} — the support bot answers this Telegram group.`
             : 'Optional: paste the Telegram group id to wire the support bot BEFORE the owner registers. Otherwise the group binds itself on the registered owner\'s first message.'}
         </div>
-        {botChatMsg && <div style={s('margin-top:5px;font-size:12px;color:var(--warn)')}>{botChatMsg}</div>}
+        {botChatMsg && <div style={s('margin-top:5px;font-size:13px;color:var(--warn)')}>{botChatMsg}</div>}
       </div>
 
       <div>
@@ -329,7 +329,7 @@ export function ClientManagePanel({
           <button
             type="button"
             onClick={() => setProfile('owner')}
-            style={s(`flex:1;height:38px;border-radius:var(--radius-md);border:1px solid ${profile === 'owner' ? 'var(--accent)' : 'var(--border)'};background:${profile === 'owner' ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${profile === 'owner' ? 'var(--accent)' : 'var(--text2)'};font-weight:700;font-size:13px;cursor:pointer`)}
+            style={s(`flex:1;height:38px;border-radius:var(--radius-md);border:1px solid ${profile === 'owner' ? 'var(--accent)' : 'var(--border)'};background:${profile === 'owner' ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${profile === 'owner' ? 'var(--accent)' : 'var(--text2)'};font-weight:700;font-size:14px;cursor:pointer`)}
           >
             Owner
           </button>
@@ -337,7 +337,7 @@ export function ClientManagePanel({
             type="button"
             onClick={() => setProfile('manager')}
             title="Owner-equivalent fleet access, no card assigned"
-            style={s(`flex:1;height:38px;border-radius:var(--radius-md);border:1px solid ${profile === 'manager' ? 'var(--accent)' : 'var(--border)'};background:${profile === 'manager' ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${profile === 'manager' ? 'var(--accent)' : 'var(--text2)'};font-weight:700;font-size:13px;cursor:pointer`)}
+            style={s(`flex:1;height:38px;border-radius:var(--radius-md);border:1px solid ${profile === 'manager' ? 'var(--accent)' : 'var(--border)'};background:${profile === 'manager' ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${profile === 'manager' ? 'var(--accent)' : 'var(--text2)'};font-weight:700;font-size:14px;cursor:pointer`)}
           >
             Manager
           </button>
@@ -352,12 +352,12 @@ export function ClientManagePanel({
             }}
             disabled={!ownerReady}
             title={ownerReady ? 'Driver under this owner user' : 'Requires an active owner user'}
-            style={s(`flex:1;height:38px;border-radius:var(--radius-md);border:1px solid ${profile === 'driver' ? 'var(--accent)' : 'var(--border)'};background:${profile === 'driver' ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${profile === 'driver' ? 'var(--accent)' : 'var(--text2)'};font-weight:700;font-size:13px;cursor:${ownerReady ? 'pointer' : 'default'};opacity:${ownerReady ? '1' : '.45'}`)}
+            style={s(`flex:1;height:38px;border-radius:var(--radius-md);border:1px solid ${profile === 'driver' ? 'var(--accent)' : 'var(--border)'};background:${profile === 'driver' ? 'rgba(var(--accent-rgb),.12)' : 'var(--alt)'};color:${profile === 'driver' ? 'var(--accent)' : 'var(--text2)'};font-weight:700;font-size:14px;cursor:${ownerReady ? 'pointer' : 'default'};opacity:${ownerReady ? '1' : '.45'}`)}
           >
             Driver
           </button>
         </div>
-        <div style={s('font-size:12px;color:var(--muted);margin-top:8px;line-height:1.45')}>
+        <div style={s('font-size:13px;color:var(--muted);margin-top:8px;line-height:1.45')}>
           {profile === 'owner'
             ? 'Owner user link — fleet access for all cards. Drivers unlock after this owner user finishes registration.'
             : profile === 'manager'
@@ -370,10 +370,10 @@ export function ClientManagePanel({
         <>
           <div>
             <span style={s(label)}>Card number</span>
-            {cardsBusy && <div style={s('font-size:12px;color:var(--muted)')}>Loading cards…</div>}
-            {cardsError && <div style={s('font-size:12px;color:var(--danger)')}>{cardsError}</div>}
+            {cardsBusy && <div style={s('font-size:13px;color:var(--muted)')}>Loading cards…</div>}
+            {cardsError && <div style={s('font-size:13px;color:var(--danger)')}>{cardsError}</div>}
             {!cardsBusy && !cardsError && availableCards.length === 0 && (
-              <div style={s('font-size:12px;color:var(--muted)')}>
+              <div style={s('font-size:13px;color:var(--muted)')}>
                 {(cards?.length ?? 0) === 0
                   ? 'No active cards on this carrier.'
                   : 'Every active card already has a driver.'}
@@ -394,7 +394,7 @@ export function ClientManagePanel({
               </select>
             )}
             {drivers.length > 0 && (
-              <div style={s('font-size:11px;color:var(--muted);margin-top:8px;line-height:1.4')}>
+              <div style={s('font-size:12px;color:var(--muted);margin-top:8px;line-height:1.4')}>
                 {drivers.length} driver{drivers.length === 1 ? '' : 's'} already on cards
                 {drivers
                   .filter((d) => d.cardId)
@@ -421,18 +421,18 @@ export function ClientManagePanel({
       )}
 
       {isDriver && !ownerReady && (
-        <div style={s('font-size:12px;color:var(--warn);padding:10px 12px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 28%,var(--border))')}>
+        <div style={s('font-size:13px;color:var(--warn);padding:10px 12px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 28%,var(--border))')}>
           Generate the owner user registration link first. After the owner user registers in Telegram, Driver unlocks so you can invite per card number.
         </div>
       )}
 
       {blocker && isOwnerLike && (
-        <div style={s('font-size:12px;color:var(--warn);padding:10px 12px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 28%,var(--border))')}>
+        <div style={s('font-size:13px;color:var(--warn);padding:10px 12px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 28%,var(--border))')}>
           {blocker}
         </div>
       )}
       {blocker && isDriver && ownerReady && (
-        <div style={s('font-size:12px;color:var(--warn);padding:10px 12px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 28%,var(--border))')}>
+        <div style={s('font-size:13px;color:var(--warn);padding:10px 12px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 28%,var(--border))')}>
           {blocker}
         </div>
       )}
@@ -442,7 +442,7 @@ export function ClientManagePanel({
           type="submit"
           disabled={busy || !valid}
           className="ss-btn-p"
-          style={s(`height:40px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:${busy || !valid ? 'default' : 'pointer'};opacity:${busy || !valid ? '.55' : '1'};display:flex;align-items:center;justify-content:center;gap:8px`)}
+          style={s(`height:40px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:14px;cursor:${busy || !valid ? 'default' : 'pointer'};opacity:${busy || !valid ? '.55' : '1'};display:flex;align-items:center;justify-content:center;gap:8px`)}
         >
           <Icon name="link" size={16} color="#fff" />
           {busy ? 'Generating…' : 'Generate registration link'}
@@ -451,12 +451,12 @@ export function ClientManagePanel({
 
       {inviteUrl && (
         <div style={s(tile)}>
-          <div style={s('font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Registration link</div>
-          <div style={s("font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--text2);margin-top:8px;word-break:break-all;line-height:1.45")}>{inviteUrl}</div>
+          <div style={s('font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>Registration link</div>
+          <div style={s("font-size:13px;font-family:'JetBrains Mono',monospace;color:var(--text2);margin-top:8px;word-break:break-all;line-height:1.45")}>{inviteUrl}</div>
           <button
             type="button"
             onClick={() => void copyLink()}
-            style={s('margin-top:12px;height:34px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:700;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:7px')}
+            style={s('margin-top:12px;height:34px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:700;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px')}
           >
             <Icon name="copy" size={14} />
             Copy link

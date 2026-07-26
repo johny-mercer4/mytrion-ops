@@ -1,253 +1,836 @@
+/* Mytrion Horizon workspace picker — glassmorphism port of HorizonNew App.tsx */
+
 .screen {
   position: relative;
+  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  font-family: 'Space Grotesk', var(--font-body), system-ui, sans-serif;
+  background: var(--hz-page);
+  color: #e2e8f0;
   z-index: 1;
 }
 
-.bgAmbient {
+:global([data-theme='light']) .screen {
+  color: #334155;
+}
+
+/* ── Background mesh — the shared Horizon ambience (styles/horizon.css) ─────── */
+.mesh {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.meshGrad {
   position: absolute;
   inset: 0;
-  overflow: hidden;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(ellipse 60% 50% at 50% -20%, color-mix(in srgb, var(--accent) 8%, transparent), transparent),
-    radial-gradient(ellipse 50% 40% at 80% 120%, color-mix(in srgb, var(--orange) 6%, transparent), transparent);
+  background: var(--hz-mesh);
+  transition: background 0.45s var(--hz-ease);
 }
 
-:global([data-theme="light"]) .bgAmbient {
-  background:
-    radial-gradient(ellipse 60% 50% at 50% -20%, color-mix(in srgb, var(--accent) 5%, transparent), transparent),
-    radial-gradient(ellipse 50% 40% at 80% 120%, color-mix(in srgb, var(--orange) 4%, transparent), transparent);
+.meshGrid {
+  position: absolute;
+  inset: 0;
+  background-image: var(--hz-grid);
+  background-size: var(--hz-grid-size);
 }
 
-.scroll {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-  position: relative;
-  z-index: 1;
+.meshVignette {
+  position: absolute;
+  inset: 0;
+  background: var(--hz-vignette);
+  transition: background 0.45s var(--hz-ease);
 }
 
-.content {
-  max-width: 1180px;
+/* ── Navbar (single blur layer — double sticky/bg caused theme-switch flash) */
+.navShell {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  flex-shrink: 0;
+  width: 100%;
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  background: rgba(5, 8, 26, 0.78);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  transition:
+    background 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+:global([data-theme='light']) .navShell {
+  background: rgba(255, 255, 255, 0.76);
+  /* Slate, not black — a pure-black hairline over a cool field reads as a hard rule. */
+  border-bottom-color: rgba(100, 116, 139, 0.16);
+}
+
+.nav {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  max-width: 80rem;
+  width: 100%;
   margin: 0 auto;
-  padding: var(--space-10) var(--space-6) var(--space-12);
+  box-sizing: border-box;
+  background: transparent;
+  border: none;
 }
 
-.hero {
-  margin-bottom: var(--space-10);
-  text-align: center;
-  max-width: 720px;
-  margin-left: auto;
-  margin-right: auto;
+.wordmark {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+  text-decoration: none;
 }
 
-.eyebrow {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  font-weight: var(--fw-semibold);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--accent);
-  margin-bottom: var(--space-3);
-}
-
-.title {
-  font-family: var(--font-heading);
-  font-size: var(--text-3xl);
-  font-weight: var(--fw-bold);
-  margin: 0 0 var(--space-4);
-  letter-spacing: -0.02em;
-  line-height: var(--lh-3xl);
-  color: var(--text-primary);
-}
-
-.title span {
-  background: var(--fuel);
+/* The wordmark is the gradient's definition: MYTRION takes the cool half of the ramp, HORIZON
+   carries it through the horizon line into the sunset. Both halves read from the same tokens, so
+   light mode deepens the stops without changing the hue journey. */
+.gradMytrion,
+.gradHorizon {
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.18em;
+  /* `background` is a SHORTHAND and resets background-clip to border-box, so the fill must be
+     declared before the clip *in the same rule*. Hence the custom property: a per-word
+     `background:` rule further down the cascade would silently un-clip the text and paint the
+     word as a solid gradient block. */
+  background: var(--hz-wordmark);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
-.lede {
-  font-family: var(--font-body);
-  font-size: var(--text-md);
-  color: var(--text-secondary);
-  margin: 0;
-  line-height: var(--lh-md);
-  max-width: 580px;
-  margin-left: auto;
-  margin-right: auto;
+.gradMytrion {
+  --hz-wordmark: linear-gradient(90deg, var(--hz-1) 0%, var(--hz-2) 55%, var(--hz-3) 100%);
 }
 
+.gradHorizon {
+  --hz-wordmark: linear-gradient(90deg, var(--hz-3) 0%, var(--hz-4) 50%, var(--hz-5) 100%);
+}
+
+.navRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.themeToggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 58px;
+  height: 30px;
+  padding: 3px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  cursor: pointer;
+  overflow: hidden;
+  isolation: isolate;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  /* Never use transition:all — filter interpolation flickers */
+  transition:
+    background 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.themeKnob {
+  position: relative;
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  will-change: transform;
+  transition:
+    transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.navDivider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+:global([data-theme='light']) .navDivider {
+  background: rgba(100, 116, 139, 0.2);
+}
+
+.userBlock {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.userText {
+  text-align: right;
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .userText {
+    display: block;
+  }
+}
+
+.userName {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
+  line-height: 1.2;
+}
+
+:global([data-theme='light']) .userName {
+  color: #334155;
+}
+
+.userRole {
+  font-size: 10px;
+  color: #475569;
+  line-height: 1.2;
+}
+
+:global([data-theme='light']) .userRole {
+  color: #64748b;
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+  background: var(--hz-gradient-fill);
+  box-shadow: 0 0 12px var(--hz-glow);
+}
+
+.signOut {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.04);
+  color: #4b5563;
+  transition: all 0.2s ease;
+}
+
+@media (min-width: 640px) {
+  .signOut {
+    display: inline-flex;
+  }
+}
+
+:global([data-theme='light']) .signOut {
+  border-color: rgba(100, 116, 139, 0.18);
+  background: rgba(255, 255, 255, 0.6);
+  color: #64748b;
+}
+
+.signOut:hover {
+  background: rgba(239, 68, 68, 0.09);
+  border-color: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+/* ── Main scroll ─────────────────────────────────────────────── */
+.scroll {
+  position: relative;
+  z-index: 10;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.content {
+  /* Slightly wider than the original 72rem centered column */
+  max-width: 80rem;
+  margin: 0 auto;
+  width: 100%;
+  padding: 28px 28px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  box-sizing: border-box;
+}
+
+/* ── Hero ────────────────────────────────────────────────────── */
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  padding-top: 4px;
+  width: 100%;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  background: color-mix(in srgb, var(--hz-sky) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--hz-sky) 22%, transparent);
+  color: var(--hz-1);
+}
+
+.pulseDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--hz-1);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--hz-1) 85%, transparent);
+  animation: hzPulse 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes hzPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3rem);
+  font-weight: 700;
+  letter-spacing: -0.022em;
+  line-height: 1.2;
+  color: #f1f5f9;
+}
+
+:global([data-theme='light']) .title {
+  color: #0f172a;
+}
+
+/* The user's name takes the sunset end of the Horizon ramp. */
+.titleName {
+  font-weight: 700;
+  background: linear-gradient(90deg, var(--hz-5) 0%, var(--hz-sun-deep) 50%, var(--hz-4) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 16px;
+  margin-top: 4px;
+  width: 100%;
+  max-width: 560px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px 14px;
+  border-radius: 16px;
+  width: 100%;
+  min-height: 132px;
+  box-sizing: border-box;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.statIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.statValue {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statLabel {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.7);
+  text-align: center;
+  line-height: 1.2;
+  max-width: 100%;
+}
+
+:global([data-theme='light']) .statLabel {
+  color: #5c6b82;
+}
+
+/* ── Section head ────────────────────────────────────────────── */
+.sectionHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #374151;
+  white-space: nowrap;
+}
+
+:global([data-theme='light']) .sectionTitle {
+  color: #5c6b82;
+}
+
+.sectionLine {
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+:global([data-theme='light']) .sectionLine {
+  background: rgba(100, 116, 139, 0.16);
+}
+
+.sectionCount {
+  font-size: 10px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--hz-sky) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--hz-sky) 20%, transparent);
+  color: var(--hz-1);
+}
+
+/* ── Grid + glass cards ──────────────────────────────────────── */
 .grid {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: var(--space-5);
+  grid-template-columns: 1fr;
+  gap: 20px;
 }
 
-.gridItem {
-  display: contents;
+@media (min-width: 640px) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.cardWrap {
+  position: relative;
+  display: block;
+  height: 100%;
+  text-decoration: none !important;
+  color: inherit;
+}
+
+.cardWrap:hover,
+.cardWrap:focus,
+.cardWrap:focus-visible,
+.cardWrap:active,
+.cardWrap:visited {
+  text-decoration: none !important;
+  color: inherit;
+}
+
+.cardWrap:hover *,
+.cardWrap:focus *,
+.cardWrap:focus-visible * {
+  text-decoration: none !important;
+}
+
+.cardGlow {
+  position: absolute;
+  inset: -1px;
+  border-radius: 16px;
+  pointer-events: none;
+  transition: opacity 0.45s ease;
 }
 
 .card {
   position: relative;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-4);
-  padding: var(--space-6);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  text-decoration: none;
-  color: inherit;
-  transition:
-    background var(--dur-base) var(--ease-standard),
-    border-color var(--dur-base) var(--ease-standard),
-    box-shadow var(--dur-base) var(--ease-standard),
-    transform var(--dur-fast) var(--ease-out);
+  padding: 24px;
+  border-radius: 16px;
+  border: 1px solid transparent;
   overflow: hidden;
-}
-
-.card:hover,
-.card:focus-visible {
-  background: var(--surface-alt);
-  border-color: color-mix(in srgb, var(--card-hue, var(--accent)) 40%, transparent);
-  box-shadow:
-    0 12px 32px -8px color-mix(in srgb, var(--card-hue, var(--accent)) 18%, rgba(0, 0, 0, 0.15)),
-    0 4px 12px -4px rgba(0, 0, 0, 0.1);
-  transform: translateY(-4px);
+  min-height: 230px;
+  height: 100%;
   text-decoration: none;
   color: inherit;
+  box-sizing: border-box;
+  /* Hover visuals — exact HorizonNew WorkspaceCard inline styles */
 }
 
-:global([data-theme="light"]) .card:hover,
-:global([data-theme="light"]) .card:focus-visible {
-  box-shadow:
-    0 12px 32px -8px color-mix(in srgb, var(--card-hue, var(--accent)) 15%, rgba(20, 30, 50, 0.1)),
-    0 4px 12px -4px rgba(20, 30, 50, 0.06);
+.cardGrad {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: opacity 0.35s ease;
 }
 
-.glyph {
+.cardFrost {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: background 0.35s ease;
+}
+
+/* Full-bleed so the pointer-tracked --mx/--my (percentages of the CARD) map 1:1. The glint's own
+   size is stated explicitly in the gradient rather than inherited from a 55%x42% box. */
+.cardSpecular {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: background 0.35s ease;
+}
+
+.cardBottomGlow {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 50%;
+  height: 40%;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+.cardShimmer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  pointer-events: none;
+  transition: opacity 0.32s ease;
+}
+
+.cardTop {
   position: relative;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  height: 56px;
-  border-radius: var(--radius-md);
-  flex: none;
-  transition:
-    transform var(--dur-base) var(--ease-emphasized),
-    box-shadow var(--dur-base) var(--ease-standard);
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--card-hue, var(--accent)) 20%, transparent);
-}
-
-.card:hover .glyph,
-.card:focus-visible .glyph {
-  transform: scale(1.08) rotate(-3deg);
-}
-
-.cardHead {
-  position: relative;
-  z-index: 1;
+  z-index: 10;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--space-3);
-  width: 100%;
+  margin-bottom: auto;
+}
+
+.glyph {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Hover: in DARK the stroke emits light in its own hue — `currentColor` there is a bright tint, so
+   a drop-shadow of it reads as a glow. In LIGHT the ink is a dark tint, and the same filter paints a
+   black smudge under the glyph instead. Light gets no filter at all; its hover is carried by the
+   chip's coloured ring and the ink brightening (see horizonGlass.ts). */
+.glyph svg {
+  transition: filter 0.35s ease;
+}
+.glyphLit svg {
+  filter: drop-shadow(0 0 4px currentColor);
+}
+:global([data-theme='light']) .glyphLit svg {
+  filter: none;
+}
+
+.cardBody {
+  position: relative;
+  z-index: 10;
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .cardTitle {
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.35;
+  color: #f1f5f9;
+  margin: 0;
+}
+
+:global([data-theme='light']) .cardTitle {
+  color: #1e293b;
+}
+
+.cardBlurb {
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: rgba(148, 163, 184, 0.82);
+  margin: 0;
+}
+
+:global([data-theme='light']) .cardBlurb {
+  color: #56637a;
+}
+
+.cardTitle,
+.cardBlurb,
+.badge {
+  text-decoration: none !important;
+}
+
+.badge {
   position: relative;
-  z-index: 1;
-  font-family: var(--font-heading);
-  font-size: var(--text-xl);
-  font-weight: var(--fw-semibold);
-  letter-spacing: 0.01em;
-  line-height: var(--lh-xl);
-  text-decoration: none;
-  color: var(--text-secondary);
-  transition: color var(--dur-fast) var(--ease-standard);
-}
-
-.card:hover .cardTitle,
-.card:focus-visible .cardTitle {
-  color: var(--text-primary);
-}
-
-.cardTag {
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  font-weight: var(--fw-medium);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--card-hue, var(--accent));
-  background: color-mix(in srgb, var(--card-hue, var(--accent)) 12%, transparent);
-  padding: var(--space-0_5) var(--space-2);
-  border-radius: var(--radius-full);
+  z-index: 10;
+  margin-top: 16px;
+  display: inline-flex;
+  align-items: center;
   align-self: flex-start;
-  margin-top: auto;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
 }
 
+/* Dark badge washes — `from-<hue>-500/20 to-<via>-500/20 border-<hue>-400/30 text-<hue>-300` */
+.hzBadgeSky {
+  background: linear-gradient(90deg, rgba(14, 165, 233, 0.2), rgba(59, 130, 246, 0.2));
+  border-color: rgba(56, 189, 248, 0.3);
+  color: #7dd3fc;
+}
+.hzBadgeViolet {
+  background: linear-gradient(90deg, rgba(139, 92, 246, 0.2), rgba(168, 85, 247, 0.2));
+  border-color: rgba(167, 139, 250, 0.3);
+  color: #c4b5fd;
+}
+.hzBadgeEmerald {
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.2), rgba(20, 184, 166, 0.2));
+  border-color: rgba(52, 211, 153, 0.3);
+  color: #6ee7b7;
+}
+.hzBadgeAmber {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.2), rgba(249, 115, 22, 0.2));
+  border-color: rgba(251, 191, 36, 0.3);
+  color: #fcd34d;
+}
+.hzBadgeRose {
+  background: linear-gradient(90deg, rgba(244, 63, 94, 0.2), rgba(236, 72, 153, 0.2));
+  border-color: rgba(251, 113, 133, 0.3);
+  color: #fda4af;
+}
+.hzBadgePink {
+  background: linear-gradient(90deg, rgba(236, 72, 153, 0.2), rgba(244, 63, 94, 0.2));
+  border-color: rgba(244, 114, 182, 0.3);
+  color: #f9a8d4;
+}
+.hzBadgeIndigo {
+  background: linear-gradient(90deg, rgba(99, 102, 241, 0.2), rgba(59, 130, 246, 0.2));
+  border-color: rgba(129, 140, 248, 0.3);
+  color: #a5b4fc;
+}
+.hzBadgePurple {
+  background: linear-gradient(90deg, rgba(168, 85, 247, 0.2), rgba(139, 92, 246, 0.2));
+  border-color: rgba(192, 132, 252, 0.3);
+  color: #d8b4fe;
+}
+.hzBadgeTeal {
+  background: linear-gradient(90deg, rgba(20, 184, 166, 0.2), rgba(6, 182, 212, 0.2));
+  border-color: rgba(45, 212, 191, 0.3);
+  color: #5eead4;
+}
+.hzBadgeGreen {
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0.2), rgba(16, 185, 129, 0.2));
+  border-color: rgba(74, 222, 128, 0.3);
+  color: #86efac;
+}
+
+.hzBadgeSkyLight {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+  color: #0284c7;
+}
+.hzBadgeVioletLight {
+  background: #f5f3ff;
+  border-color: #ddd6fe;
+  color: #7c3aed;
+}
+.hzBadgeEmeraldLight {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #059669;
+}
+.hzBadgeAmberLight {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #b45309;
+}
+.hzBadgeRoseLight {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #e11d48;
+}
+.hzBadgePinkLight {
+  background: #fdf2f8;
+  border-color: #fbcfe8;
+  color: #db2777;
+}
+.hzBadgeIndigoLight {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #4f46e5;
+}
+.hzBadgeTealLight {
+  background: #f0fdfa;
+  border-color: #99f6e4;
+  color: #0f766e;
+}
+.hzBadgeGreenLight {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #15803d;
+}
+.hzBadgePurpleLight {
+  background: #faf5ff;
+  border-color: #e9d5ff;
+  color: #9333ea;
+}
+
+/* Coming soon — muted glass */
 .cardSoon {
   cursor: default;
-  opacity: 0.55;
-  filter: grayscale(30%);
+  opacity: 0.72;
+  filter: grayscale(0.15);
 }
 
-.cardSoon:hover {
-  border-color: var(--border);
-  box-shadow: none;
-  background: var(--surface);
-  transform: none;
+/* Light: the pastel wash is already low-energy, so dimming + desaturating on top of it pushed the
+   whole tile under the legibility floor. Keep the colour, lean on the badge to say "not yet". */
+:global([data-theme='light']) .cardSoon {
+  opacity: 0.9;
+  filter: none;
 }
 
-.cardSoon:hover .glyph {
-  transform: scale(1.03);
+.cardWrapSoon {
+  cursor: default;
 }
 
 .soonBadge {
   position: relative;
-  z-index: 1;
-  flex: none;
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  font-weight: var(--fw-bold);
-  letter-spacing: 0.05em;
+  z-index: 10;
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: var(--space-0_5) var(--space-2);
-  border-radius: var(--radius-full);
-  color: #fff;
-  white-space: nowrap;
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--soon-hue, var(--orange)) 80%, transparent),
-    color-mix(in srgb, var(--soon-hue, var(--orange)) 40%, transparent)
-  );
-  border: 1px solid color-mix(in srgb, var(--soon-hue, var(--orange)) 50%, transparent);
-  box-shadow: 0 4px 14px -2px color-mix(in srgb, var(--soon-hue, var(--orange)) 40%, transparent);
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #fef3c7;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.55), rgba(249, 115, 22, 0.35));
+  border: 1px solid rgba(251, 191, 36, 0.4);
 }
 
-:global([data-theme="light"]) .soonBadge {
-  color: #fff;
+/* Cream on a pale amber wash is invisible in light — flip to dark amber ink on a solid tint. */
+:global([data-theme='light']) .soonBadge {
+  color: #92400e;
+  background: #fef3c7;
+  border-color: #fcd34d;
+}
+
+/* ── Footer ──────────────────────────────────────────────────── */
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+:global([data-theme='light']) .footer {
+  border-top-color: rgba(100, 116, 139, 0.16);
+}
+
+.footerNote {
+  font-size: 11px;
+  color: #1f2937;
+}
+
+:global([data-theme='light']) .footerNote {
+  /* #cbd5e1 on the light page was ~1.3:1 — invisible, not "subtle". */
+  color: #6b7a94;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .card,
+  .cardGlow,
+  .cardGrad,
+  .cardFrost,
+  .cardSpecular,
+  .cardBottomGlow,
+  .cardShimmer,
   .glyph,
-  .cardTitle {
+  .glyph svg,
+  .pulseDot,
+  .themeKnob {
     transition-duration: 0.01ms !important;
+    animation: none !important;
+  }
+  /* The lift is the one hover effect worth suppressing outright. */
+  .card {
+    transform: none !important;
   }
 }

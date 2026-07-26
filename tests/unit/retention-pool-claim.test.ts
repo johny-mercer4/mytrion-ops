@@ -7,6 +7,13 @@ import type { RetentionCase } from '../../src/db/schema/index.js';
 import { AppError } from '../../src/lib/errors.js';
 import type { TenantContext } from '../../src/types/tenantContext.js';
 
+/** Claim tests need Open Pool + Zoho transfer on — production kill-switches are off. */
+vi.mock('../../src/modules/retention/killSwitches.js', () => ({
+  RETENTION_OPEN_POOL_ESCALATION_ENABLED: true,
+  RETENTION_PHASE2_ESCALATION_ENABLED: true,
+  RETENTION_OPEN_POOL_CLAIM_ZOHO_TRANSFER_ENABLED: true,
+}));
+
 vi.mock('../../src/db/client.js', () => ({
   db: {
     select: vi.fn(),

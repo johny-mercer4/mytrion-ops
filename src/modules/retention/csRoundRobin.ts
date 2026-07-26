@@ -1,9 +1,10 @@
 /**
- * Phase 2 Retention CS RoundRobin — prefer Zoho CRM online (Isonline) users
- * from RETENTION_CS_ROUND_ROBIN_ZOHO_USER_IDS allowlist.
- * Spanish desk (is_spanish_desk) bypasses RR → RETENTION_CS_SPANISH_ZOHO_USER_ID.
+ * Phase 2 Retention CS assignee — single configured Zoho user from
+ * RETENTION_CS_ROUND_ROBIN_ZOHO_USER_IDS (first id wins; env name kept for compat).
+ * Spanish desk (is_spanish_desk) bypasses → RETENTION_CS_SPANISH_ZOHO_USER_ID.
+ *
+ * Auto-assign is gated by RETENTION_AUTO_ASSIGN_ENABLED (off for now).
  */
-import { eq } from 'drizzle-orm';
 import { env } from '../../config/env.js';
 import { db } from '../../db/client.js';
 import { RETENTION_PHASE, retentionRrCursors } from '../../db/schema/index.js';
@@ -25,9 +26,10 @@ export interface CsRoundRobinPick {
   zohoUserId: string;
   name: string | null;
   /** How the assignee was chosen. */
-  source: 'spanish_desk' | 'round_robin';
+  source: 'spanish_desk' | 'fixed_assignee';
 }
 
+/** Allowlist (comma-separated). First id is the fixed CS assignee when auto-assign is on. */
 function parseAllowlist(): string[] {
   return env.RETENTION_CS_ROUND_ROBIN_ZOHO_USER_IDS.split(',')
     .map((s) => s.trim())
@@ -37,26 +39,6 @@ function parseAllowlist(): string[] {
 function spanishDeskUserId(): string | null {
   const id = env.RETENTION_CS_SPANISH_ZOHO_USER_ID.trim();
   return id || null;
-}
-
-async function loadCursor(tenantId: string): Promise<string | null> {
-  const rows = await db
-    .select()
-    .from(retentionRrCursors)
-    .where(eq(retentionRrCursors.tenantId, tenantId))
-    .limit(1);
-  return rows[0]?.lastZohoUserId ?? null;
-}
-
-async function saveCursor(tenantId: string, zohoUserId: string): Promise<void> {
-  const now = new Date();
-  await db
-    .insert(retentionRrCursors)
-    .values({ tenantId, lastZohoUserId: zohoUserId, updatedAt: now })
-    .onConflictDoUpdate({
-      target: retentionRrCursors.tenantId,
-      set: { lastZohoUserId: zohoUserId, updatedAt: now },
-    });
 }
 
 /** Short TTL so Dissatisfied/handoff doesn't call Zoho Users on every save. */
@@ -86,9 +68,9 @@ async function resolveUserName(
 }
 
 /**
- * Next CS assignee from allowlist ∩ active users, preferring Isonline.
- * Advances tenant cursor. Returns null when allowlist empty or no active match.
- * Skips agents already at the daily 40-deal cap (tries next in pool).
+ * Fixed CS assignee from allowlist (first id). No RoundRobin / cursor rotation.
+ * Returns null when allowlist empty or assignee at daily cap.
+ * Skips Zoho Users fetch on `fast` (Sales save hot path) — uses warm cache / id only.
  */
 export async function pickCsRoundRobinAssignee(
   ctx: TenantContext,
@@ -101,22 +83,29 @@ export async function pickCsRoundRobinAssignee(
 ): Promise<CsRoundRobinPick | null> {
   const allow = parseAllowlist();
   if (allow.length === 0) {
-    logger.warn('retention CS RoundRobin skipped — RETENTION_CS_ROUND_ROBIN_ZOHO_USER_IDS empty');
+    logger.warn(
+      'retention CS assign skipped — RETENTION_CS_ROUND_ROBIN_ZOHO_USER_IDS empty',
+    );
     return null;
   }
-  const skip = new Set(opts.skipZohoUserIds ?? []);
+
+  const assigneeId = allow[0]!;
+  if (opts.skipZohoUserIds?.includes(assigneeId)) {
+    logger.warn({ assigneeId }, 'retention CS assign — fixed assignee in skip list');
+    return null;
+  }
+
   let users: CrmUser[];
   if (opts.users) {
     users = opts.users;
   } else if (usersCache) {
     users = usersCache.users;
   } else if (opts.fast) {
-    // Do not block Dissatisfied/handoff on Zoho; warm cache in background.
     users = [];
     void listActiveUsersCached().catch((err) => {
       logger.warn(
         { err: err instanceof Error ? err.message : String(err) },
-        'retention CS RoundRobin: background listActiveUsers failed',
+        'retention CS assign: background listActiveUsers failed',
       );
     });
   } else {
@@ -124,47 +113,50 @@ export async function pickCsRoundRobinAssignee(
       users = await listActiveUsersCached();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      logger.error({ err: message }, 'retention CS RoundRobin: listActiveUsers failed');
+      logger.error({ err: message }, 'retention CS assign: listActiveUsers failed');
       users = [];
     }
   }
 
   const byId = new Map(users.map((u) => [u.zohoUserId, u]));
-  const activeAllow =
-    users.length > 0
-      ? allow.filter((id) => byId.has(id) && !skip.has(id))
-      : allow.filter((id) => !skip.has(id));
-  if (activeAllow.length === 0) {
+  if (users.length > 0 && !byId.has(assigneeId)) {
     logger.warn(
-      { allowCount: allow.length },
-      'retention CS RoundRobin — no allowlisted users available',
+      { assigneeId },
+      'retention CS assign — fixed assignee not in active Zoho users',
     );
     return null;
   }
 
-  const online = activeAllow.filter((id) => byId.get(id)?.isOnline === true);
-  const pool = online.length > 0 ? online : activeAllow;
-  const last = await loadCursor(ctx.tenantId);
-  // Rotate pool so we try next after cursor, then wrap.
-  const startIdx = last && pool.includes(last) ? (pool.indexOf(last) + 1) % pool.length : 0;
-  const ordered = [...pool.slice(startIdx), ...pool.slice(0, startIdx)];
-
-  for (const nextId of ordered) {
-    try {
-      await assertUnderDailyCap(ctx, nextId);
-      await saveCursor(ctx.tenantId, nextId);
-      const user = byId.get(nextId);
-      return { zohoUserId: nextId, name: user?.name ?? null, source: 'round_robin' };
-    } catch {
-      // at daily cap — try next
-    }
+  try {
+    await assertUnderDailyCap(ctx, assigneeId);
+  } catch {
+    logger.warn(
+      { cap: CS_MAX_DEALS_PER_DAY, assigneeId },
+      'retention CS assign — fixed assignee at daily cap',
+    );
+    return null;
   }
 
-  logger.warn(
-    { cap: CS_MAX_DEALS_PER_DAY, poolSize: pool.length },
-    'retention CS RoundRobin — all candidates at daily cap',
-  );
-  return null;
+  // Best-effort cursor stamp (legacy table) — not used for rotation anymore.
+  try {
+    const now = new Date();
+    await db
+      .insert(retentionRrCursors)
+      .values({ tenantId: ctx.tenantId, lastZohoUserId: assigneeId, updatedAt: now })
+      .onConflictDoUpdate({
+        target: retentionRrCursors.tenantId,
+        set: { lastZohoUserId: assigneeId, updatedAt: now },
+      });
+  } catch {
+    /* non-fatal */
+  }
+
+  const user = byId.get(assigneeId);
+  return {
+    zohoUserId: assigneeId,
+    name: user?.name ?? null,
+    source: 'fixed_assignee',
+  };
 }
 
 export interface HandoffCaseHint {
@@ -172,12 +164,13 @@ export interface HandoffCaseHint {
 }
 
 /**
- * Temporary kill-switch for Retention auto-assign (Spanish desk + RoundRobin).
+ * Temporary kill-switch for Retention auto-assign (Spanish desk + fixed CS assignee).
  * When false: leave the Sales assignee as-is and skip Zoho Owner transfer to CS.
+ * Flip to true later to restore both — logic below stays intact.
  */
 export const RETENTION_AUTO_ASSIGN_ENABLED = false;
 
-/** Enrich a Retention handoff patch with Spanish desk or RoundRobin CS assignee → p2_working. */
+/** Enrich a Retention handoff patch with Spanish desk or fixed CS assignee → p2_working. */
 export async function enrichHandoffWithRoundRobin(
   ctx: TenantContext,
   patch: CaseTransitionPatch,
@@ -215,12 +208,12 @@ export async function enrichHandoffWithRoundRobin(
       } catch (err) {
         logger.warn(
           { spanishId, err: err instanceof Error ? err.message : String(err) },
-          'retention Spanish desk at daily cap — falling through to RoundRobin',
+          'retention Spanish desk at daily cap — falling through to fixed CS assignee',
         );
       }
     } else {
       logger.warn(
-        'retention Spanish desk case but RETENTION_CS_SPANISH_ZOHO_USER_ID unset — RoundRobin',
+        'retention Spanish desk case but RETENTION_CS_SPANISH_ZOHO_USER_ID unset — fixed CS assignee',
       );
     }
   }
@@ -241,7 +234,7 @@ export async function enrichHandoffWithRoundRobin(
     agentName: pick.name,
     eventNotes:
       (patch.eventNotes ?? 'Handed to Retention') +
-      ` · RR assign ${pick.name?.trim() || 'CS'} (${pick.zohoUserId})`,
+      ` · CS assign ${pick.name?.trim() || 'CS'} (${pick.zohoUserId})`,
   };
 }
 
@@ -278,7 +271,7 @@ export async function transferOwnershipSoft(
 
 /**
  * Side effects after a case transition lands:
- * - entered Retention with assignee → Zoho Owner to CS
+ * - entered Retention with assignee → Zoho Owner to CS (gated by auto-assign flag)
  * - entered CITI → Deal Stage Closed Lost
  */
 export async function afterRetentionPhaseSideEffects(

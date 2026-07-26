@@ -231,6 +231,58 @@ export class ZohoCrmRecordsWrapper extends ZohoWrapper {
     return json.__timeline ?? [];
   }
 
+  /**
+   * Blueprint transitions currently available for a record (empty when it is NOT in an active
+   * blueprint, or when Zoho errors on the lookup). Each transition's `nextValue` is the value its
+   * blueprint field moves to — used to map a target Status to the transition to execute.
+   * `GET /{module}/{id}/actions/blueprint`.
+   */
+  async getBlueprintTransitions(
+    module: string,
+    id: string,
+  ): Promise<Array<{ id: string; nextValue: string; name: string }>> {
+    const path = `/${encodeURIComponent(module)}/${encodeURIComponent(id)}/actions/blueprint`;
+    const res = await this.requestRaw('GET', path);
+    if (!res.ok) return []; // 204 / "record not in a blueprint" → no transitions
+    const text = await res.text();
+    if (!text) return [];
+    const json = JSON.parse(text) as {
+      blueprint?: { transitions?: Array<{ id?: string; next_field_value?: string; name?: string }> };
+    };
+    return (json.blueprint?.transitions ?? [])
+      .filter((t): t is { id: string; next_field_value?: string; name?: string } => typeof t.id === 'string')
+      .map((t) => ({
+        id: t.id,
+        nextValue: typeof t.next_field_value === 'string' ? t.next_field_value : '',
+        name: typeof t.name === 'string' ? t.name : '',
+      }));
+  }
+
+  /**
+   * Execute a blueprint transition — the only way to move a blueprint-controlled field (e.g. Lead
+   * `Status`) when the record is in an active blueprint. `data` supplies any fields the transition
+   * requires (e.g. a reason). Throws on a row-level failure code.
+   * `PUT /{module}/{id}/actions/blueprint`.
+   */
+  async executeBlueprintTransition(
+    module: string,
+    id: string,
+    transitionId: string,
+    data: Record<string, unknown> = {},
+  ): Promise<void> {
+    const path = `/${encodeURIComponent(module)}/${encodeURIComponent(id)}/actions/blueprint`;
+    const res = await this.requestRaw('PUT', path, {
+      body: { blueprint: [{ transition_id: transitionId, data }] },
+    });
+    const text = await res.text();
+    if (!res.ok) throw this.httpError('PUT', path, res.status, text);
+    const json = text ? (JSON.parse(text) as { data?: MutationRow[]; blueprint?: MutationRow[] }) : {};
+    const row = json.data?.[0] ?? json.blueprint?.[0];
+    if (row && row.code && row.code !== 'SUCCESS') {
+      throw new Error(`[zoho-crm-records] blueprint transition ${module} failed — ${row.code}: ${row.message ?? ''}`);
+    }
+  }
+
   private async parsePage(method: 'GET', path: string, res: Response): Promise<RecordPage> {
     if (res.status === 204) return { rows: [], moreRecords: false };
     const text = await res.text();

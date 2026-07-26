@@ -515,6 +515,7 @@ describe('ringcentral embed-config — OAuth sign-in without a shared JWT', () =
     expect(res.statusCode).toBe(200);
     expect(res.json().enabled).toBe(true);
     expect(res.json().adapterUrl).toContain('clientId=rc-client-id');
+    expect(res.json().adapterUrl).toContain('multipleTabsSupport=1');
     expect(res.body).not.toContain('clientSecret=');
     expect(res.body).not.toContain('jwt=');
   });

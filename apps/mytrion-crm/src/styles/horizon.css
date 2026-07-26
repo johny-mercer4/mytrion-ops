@@ -1,0 +1,321 @@
+/*
+ * Mytrion Horizon — the brand gradient + the glassmorphism primitives, ported from
+ * `HorizonNew` (src/app/App.tsx + src/styles/theme.css) and promoted to app-wide tokens.
+ *
+ * THE design color, in both themes, is the Horizon gradient: sky → pale blue → sunset.
+ * It is the same hue journey in light and dark — only the luminance of the stops changes so
+ * the ramp stays legible on white. Everything accent-coloured should trace back to here.
+ *
+ * Imported by global.css AFTER theme.css, so these win over the base scale and per-Mytrion
+ * accents can still override --accent/--accent-2 downstream.
+ */
+
+:root {
+  /* ── The Horizon ramp — dark (over #05081a) ──────────────────────────────── */
+  --hz-1: #7dd3fc; /* sky-300     — first light */
+  --hz-2: #93c5fd; /* blue-300                  */
+  --hz-3: #bfdbfe; /* blue-200    — the horizon line */
+  --hz-4: #fdba74; /* orange-300                */
+  --hz-5: #fb923c; /* orange-400  — sunset      */
+
+  /* Anchors pulled out of the ramp for solid fills / icon strokes. */
+  --hz-sky: #38bdf8; /* sky-400   — the "cool" anchor */
+  --hz-sky-deep: #0ea5e9; /* sky-500 */
+  --hz-sun: #fb923c; /* orange-400 — the "warm" anchor */
+  --hz-sun-deep: #f97316; /* orange-500 */
+
+  /* The gradient itself. `-r` sweeps left→right (text, rails, progress);
+     `-d` runs 135° (fills, chips, avatars); `-soft` is the low-alpha wash for surfaces. */
+  --hz-gradient-r: linear-gradient(
+    90deg,
+    var(--hz-1) 0%,
+    var(--hz-2) 28%,
+    var(--hz-3) 52%,
+    var(--hz-4) 78%,
+    var(--hz-5) 100%
+  );
+  /* Two-stop version for small fills, where five stops read as mud. */
+  --hz-gradient-fill: linear-gradient(135deg, var(--hz-sky) 0%, var(--hz-sun) 100%);
+  --hz-gradient-soft: linear-gradient(
+    135deg,
+    rgba(56, 189, 248, 0.16) 0%,
+    rgba(191, 219, 254, 0.08) 52%,
+    rgba(251, 146, 60, 0.14) 100%
+  );
+  /* Ink for text sitting on a Horizon-gradient fill. */
+  --hz-on-gradient: #04131c;
+
+  /* ── Glass shells — the WorkspaceCard math, as tokens ───────────────────── */
+  --hz-blur: 28px;
+  --hz-blur-sm: 12px;
+  --hz-blur-md: 20px;
+  --hz-glass: rgba(255, 255, 255, 0.042);
+  --hz-glass-hover: rgba(255, 255, 255, 0.09);
+  --hz-glass-bd: rgba(255, 255, 255, 0.07);
+  --hz-glass-bd-hover: rgba(255, 255, 255, 0.18);
+  --hz-glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --hz-glass-inset-strong: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  --hz-shadow-rest: 0 2px 12px rgba(0, 0, 0, 0.22);
+  /* Two elevation steps, theme-aware. `lift` = a hovered surface, `pop` = a surface that floats
+     over the page (modal / drawer / dropdown). Both carry the module's accent glow so elevation is
+     branded rather than grey, and both are much shallower in light — a dark-theme drop shadow
+     transplanted onto a pale field is the single biggest cause of "sharp" light mode. */
+  --hz-shadow-lift:
+    0 16px 40px -12px var(--accent-glow, var(--hz-glow)),
+    0 4px 14px -4px rgba(0, 0, 0, 0.18);
+  --hz-shadow-pop:
+    0 32px 80px -20px rgba(0, 0, 0, 0.55),
+    0 0 0 1px var(--hz-glow-soft);
+  /* Accent glow, restated as the Horizon sky so glass rings match the brand by default. */
+  --hz-glow: rgba(56, 189, 248, 0.38);
+  --hz-glow-soft: rgba(56, 189, 248, 0.2);
+
+  /* 1px specular line along a card's top edge, revealed on hover. */
+  --hz-shimmer: linear-gradient(
+    90deg,
+    transparent 8%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 92%
+  );
+
+  /* ── Chromatic edge — the "glass has thickness" cue ───────────────────────────
+     A 1px ring that runs sky at the top edge to sunset at the bottom, so an edge catches a
+     different wavelength depending on which way it faces. Paint it with `.hzEdge` (below), NOT with
+     `border-image`: border-image ignores border-radius and would square off every corner in a design
+     built on 12–16px radii. */
+  --hz-edge: linear-gradient(
+    170deg,
+    color-mix(in srgb, var(--hz-1) 60%, transparent) 0%,
+    var(--hz-glass-bd) 42%,
+    var(--hz-glass-bd) 58%,
+    color-mix(in srgb, var(--hz-5) 55%, transparent) 100%
+  );
+
+  /* Frosted panes for module content. Derived from --surface / --surface-alt rather than fixed
+     rgba, so they follow the theme automatically (color-mix resolves at the use site) and a panel
+     stays legible over the mesh instead of turning into a milky rectangle.
+     --hz-pane      a card, table or modal
+     --hz-pane-alt  a nested/inset surface (table header, form field, chip track)
+     --hz-pane-lift the same pane, brightened — the hover state */
+  --hz-pane: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--surface) 88%, transparent) 0%,
+    color-mix(in srgb, var(--surface) 64%, transparent) 100%
+  );
+  --hz-pane-lift: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--surface) 96%, transparent) 0%,
+    color-mix(in srgb, var(--surface) 78%, transparent) 100%
+  );
+  --hz-pane-alt: color-mix(in srgb, var(--surface-alt) 72%, transparent);
+  --hz-pane-bd: color-mix(in srgb, var(--border) 88%, transparent);
+
+  /* ── Motion — HorizonNew timings ────────────────────────────────────────── */
+  --hz-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --hz-dur-lift: 0.55s;
+  --hz-dur-tone: 0.45s;
+  --hz-dur-wash: 0.35s;
+  --hz-hover-lift-sm: translateY(-2px);
+
+  /* ── Layout ─────────────────────────────────────────────────────────────── */
+  /* One content measure for module panels, so every tab in a module lines up. */
+  --hz-measure: 1280px;
+
+  /* ── Ambient background — the 4-lobe mesh, grid and vignette ────────────── */
+  --hz-page: #05081a;
+  --hz-mesh:
+    radial-gradient(ellipse 75% 50% at 8% 0%, rgba(56, 189, 248, 0.17) 0%, transparent 58%),
+    radial-gradient(ellipse 50% 42% at 92% 8%, rgba(147, 197, 253, 0.13) 0%, transparent 52%),
+    radial-gradient(ellipse 60% 60% at 50% 108%, rgba(14, 165, 233, 0.12) 0%, transparent 58%),
+    radial-gradient(ellipse 38% 32% at 78% 86%, rgba(251, 146, 60, 0.1) 0%, transparent 48%);
+  --hz-grid:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  --hz-grid-size: 64px 64px;
+  --hz-vignette: radial-gradient(
+    ellipse 120% 120% at 50% 50%,
+    transparent 30%,
+    rgba(5, 8, 26, 0.7) 100%
+  );
+}
+
+[data-theme='light'] {
+  /* Same hue journey, deeper stops — sky-600 → blue-500 → blue-400 → orange-500 → orange-600.
+     The dark ramp's sky-300/orange-300 wash out to nothing against white. */
+  --hz-1: #0284c7;
+  --hz-2: #3b82f6;
+  --hz-3: #60a5fa;
+  --hz-4: #f97316;
+  --hz-5: #ea580c;
+
+  --hz-sky: #0284c7;
+  --hz-sky-deep: #0369a1;
+  --hz-sun: #ea580c;
+  --hz-sun-deep: #c2410c;
+
+  --hz-gradient-fill: linear-gradient(135deg, var(--hz-sky) 0%, var(--hz-sun) 100%);
+  --hz-gradient-soft: linear-gradient(
+    135deg,
+    rgba(2, 132, 199, 0.1) 0%,
+    rgba(96, 165, 250, 0.05) 52%,
+    rgba(234, 88, 12, 0.09) 100%
+  );
+  --hz-on-gradient: #ffffff;
+
+  --hz-glass: rgba(255, 255, 255, 0.66);
+  --hz-glass-hover: rgba(255, 255, 255, 0.86);
+  --hz-glass-bd: rgba(148, 163, 184, 0.22);
+  --hz-glass-bd-hover: rgba(2, 132, 199, 0.38);
+  --hz-glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --hz-glass-inset-strong: inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  /* Slate-tinted, never pure black: a neutral-black shadow on a cool light field reads as dirt.
+     Short, soft and low-alpha — the page is the quiet part, the panels sit gently on top. */
+  --hz-shadow-rest: 0 1px 3px rgba(30, 41, 59, 0.05);
+  --hz-shadow-lift:
+    0 14px 34px -12px var(--accent-glow, var(--hz-glow)),
+    0 3px 10px -4px rgba(30, 41, 59, 0.09);
+  --hz-shadow-pop:
+    0 18px 48px -16px rgba(30, 41, 59, 0.16),
+    0 0 0 1px var(--hz-glow-soft);
+  --hz-glow: rgba(2, 132, 199, 0.28);
+  --hz-glow-soft: rgba(2, 132, 199, 0.14);
+
+  /* 0.98 white was a hard specular line against near-white panels — barely a highlight, mostly a
+     seam. Pulled back so it reads as sheen. */
+  --hz-shimmer: linear-gradient(
+    90deg,
+    transparent 8%,
+    rgba(255, 255, 255, 0.82) 50%,
+    transparent 92%
+  );
+
+  /* A touch deeper than the panels sitting on it. #f3f5ff left white cards floating on white with
+     nothing to separate them, which is what read as "too bright / too sharp": no ground. */
+  --hz-page: #e9edf6;
+  --hz-mesh:
+    radial-gradient(ellipse 75% 50% at 8% 0%, rgba(2, 132, 199, 0.07) 0%, transparent 58%),
+    radial-gradient(ellipse 50% 42% at 92% 8%, rgba(59, 130, 246, 0.055) 0%, transparent 52%),
+    radial-gradient(ellipse 60% 60% at 50% 108%, rgba(14, 165, 233, 0.045) 0%, transparent 58%),
+    radial-gradient(ellipse 38% 32% at 78% 86%, rgba(249, 115, 22, 0.05) 0%, transparent 48%);
+  /* Neutral slate rather than saturated sky — cyan hairlines on a light field read as sharp ruling
+     rather than texture. */
+  --hz-grid:
+    linear-gradient(rgba(100, 116, 139, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(100, 116, 139, 0.05) 1px, transparent 1px);
+  /* Frames the content by settling the edges DOWN. The old light vignette faded toward a colour
+     brighter than the page, so it lit the corners and added to the glare instead of containing it. */
+  --hz-vignette: radial-gradient(
+    ellipse 120% 120% at 50% 50%,
+    transparent 40%,
+    rgba(191, 203, 226, 0.3) 100%
+  );
+}
+
+/* ── Wayfinding tones ──────────────────────────────────────────────────────────
+   A hue per destination, for long categorised sidebars where a column of identical grey glyphs is
+   slow to scan. Referenced as tokens (not raw hex) precisely so they can be theme-swapped: dark uses
+   the bright 400-level, light the deep 600/700-level. Same families as the picker's workspace hues.
+   Tint only the glyph — labels stay on the text scale, or the sidebar becomes a fruit salad. */
+:root {
+  --tone-sky: #38bdf8;
+  --tone-cyan: #22d3ee;
+  --tone-teal: #2dd4bf;
+  --tone-emerald: #34d399;
+  --tone-violet: #a78bfa;
+  --tone-purple: #c084fc;
+  --tone-amber: #fbbf24;
+  --tone-orange: #fb923c;
+  --tone-pink: #f472b6;
+  --tone-rose: #fb7185;
+  --tone-indigo: #818cf8;
+  --tone-blue: #60a5fa;
+  --tone-slate: #94a3b8;
+}
+
+[data-theme='light'] {
+  --tone-sky: #0284c7;
+  --tone-cyan: #0891b2;
+  --tone-teal: #0d9488;
+  --tone-emerald: #059669;
+  --tone-violet: #7c3aed;
+  --tone-purple: #9333ea;
+  --tone-amber: #b45309;
+  --tone-orange: #ea580c;
+  --tone-pink: #db2777;
+  --tone-rose: #e11d48;
+  --tone-indigo: #4f46e5;
+  --tone-blue: #2563eb;
+  --tone-slate: #64748b;
+}
+
+/* ── Reusable Horizon utilities ────────────────────────────────────────────── */
+
+/* A 1px chromatic ring that FOLLOWS the element's own border-radius. Painted as a masked pseudo-ring
+   (paint the gradient over the whole box, then knock the middle out) because that is the only
+   technique that both takes a gradient and respects a radius:
+     - `border-image` takes a gradient but ignores border-radius → square corners.
+     - `box-shadow` respects the radius but takes no gradient.
+   Applies to an ::after, so it needs the host to be positioned. */
+.hzEdge {
+  position: relative;
+}
+.hzEdge::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--hz-edge);
+  pointer-events: none;
+  /* content-box minus border-box = a 1px ring hugging the radius. */
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+/* Gradient text. Kept as background-clip (never `filter`) — HorizonNew's GradText comment
+   records that a filtered version painted a solid rectangle in WebKit. */
+.hzGrad {
+  background: var(--hz-gradient-r);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* The ambient page backdrop: mesh + 64px grid + vignette, as three stacked layers on one
+   element. `position: fixed` so it doesn't scroll with content. */
+.hzMesh {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: var(--hz-mesh);
+  transition: background var(--hz-dur-tone) var(--hz-ease);
+}
+.hzMesh::before,
+.hzMesh::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.hzMesh::before {
+  background-image: var(--hz-grid);
+  background-size: var(--hz-grid-size);
+}
+.hzMesh::after {
+  background: var(--hz-vignette);
+  transition: background var(--hz-dur-tone) var(--hz-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --hz-hover-lift-sm: none;
+  }
+}

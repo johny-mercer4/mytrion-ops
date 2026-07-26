@@ -3,11 +3,13 @@
  * Distinct from Citifuel Clients (Zoho Citifuel_Clients module).
  */
 import { useEffect, useMemo, useState } from 'react';
+import { Folder, RefreshCw } from 'lucide-react';
 import type { RetentionCaseRow } from '@/api/touchpointTypes';
 import { csRetention } from '@/api/csRetention';
 import { Toast, type ToastState } from '../Toast';
 import { useLoad } from '../live';
 import { subscribeCsRetentionLive } from './retentionLiveBus';
+import { CaseBadge, statusLabel, statusTone } from './casesUi';
 
 function toastMsg(kind: ToastState['kind'], message: string): ToastState {
   return { id: Date.now(), kind, message };
@@ -19,8 +21,15 @@ function downloadCsv(csv: string, filename: string): void {
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
+  // Firefox ignores a click on an anchor that isn't in the document, and revoking the URL in the
+  // same tick can cancel a download that hasn't started reading yet — hence append + deferred revoke.
+  a.style.display = 'none';
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => {
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 0);
 }
 
 export function CitiFolderPanel() {
@@ -49,12 +58,20 @@ export function CitiFolderPanel() {
 
   const toggleAll = (): void => setSelected(allChecked ? [] : allIds.slice());
 
-  const run = async (fn: () => Promise<void>, ok: string): Promise<void> => {
+  /**
+   * `fn` may return its own toast (e.g. the export's partial-failure warning); when it does we show
+   * that instead of the generic success line. Previously the action set a warning toast and `run`
+   * immediately overwrote it with "Exported N deal(s)", so partial Zoho write failures were silent.
+   */
+  const run = async (
+    fn: () => Promise<ToastState | void>,
+    ok: string,
+  ): Promise<void> => {
     if (busy || selected.length === 0) return;
     setBusy(true);
     try {
-      await fn();
-      setToast(toastMsg('success', ok));
+      const override = await fn();
+      setToast(override ?? toastMsg('success', ok));
       setSelected([]);
       feed.reload();
     } catch (e) {
@@ -68,13 +85,28 @@ export function CitiFolderPanel() {
     <div className="cs-panel">
       <div className="cs-panel-header">
         <div>
+          <div className="cs-section-kicker">
+            <Folder size={13} strokeWidth={2.3} aria-hidden />
+            Phase 3 · CITI handoff
+          </div>
           <h2 className="cs-panel-title">CITI Folder</h2>
           <p className="cs-panel-sub">
             Phase 3 deals · bulk review + CSV handoff (not Citifuel Clients)
           </p>
         </div>
-        <button type="button" className="cs-btn cs-btn-ghost" onClick={() => feed.reload()}>
-          Refresh
+        <button
+          type="button"
+          className={`cs-btn cs-btn-ghost${feed.refreshing ? ' is-spinning' : ''}`}
+          onClick={() => feed.refresh()}
+          disabled={feed.refreshing || busy}
+        >
+          <RefreshCw
+            size={14}
+            strokeWidth={2.3}
+            aria-hidden
+            className={feed.refreshing ? 'cs-ret-spin' : undefined}
+          />
+          {feed.refreshing ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
 
@@ -101,20 +133,17 @@ export function CitiFolderPanel() {
             disabled={!selected.length || busy}
             onClick={() =>
               void run(async () => {
+                const count = selected.length;
                 const out = await csRetention.citiExport(selected);
-                downloadCsv(
-                  out.csv,
-                  `citi-export-${new Date().toISOString().slice(0, 10)}.csv`,
-                );
-                if (out.zohoFailures.length > 0) {
-                  setToast(
-                    toastMsg(
+                downloadCsv(out.csv, `citi-export-${new Date().toISOString().slice(0, 10)}.csv`);
+                // Surface partial Zoho failures instead of letting the success line bury them.
+                return out.zohoFailures.length > 0
+                  ? toastMsg(
                       'warning',
                       `Exported ${out.exported}; ${out.zohoFailures.length} Zoho stage write(s) failed`,
-                    ),
-                  );
-                }
-              }, `Exported ${selected.length} deal(s)`)
+                    )
+                  : toastMsg('success', `Exported ${count} deal(s)`);
+              }, 'Exported')
             }
           >
             Export CSV
@@ -141,7 +170,13 @@ export function CitiFolderPanel() {
           <thead>
             <tr>
               <th>
-                <input type="checkbox" checked={allChecked} onChange={toggleAll} />
+                <input
+                  type="checkbox"
+                  checked={allChecked}
+                  onChange={toggleAll}
+                  aria-label={allChecked ? 'Deselect all deals' : 'Select all deals'}
+                  disabled={rows.length === 0}
+                />
               </th>
               <th>Company</th>
               <th>Carrier</th>
@@ -153,18 +188,20 @@ export function CitiFolderPanel() {
           </thead>
           <tbody>
             {rows.map((c) => (
-              <tr key={c.id}>
+              <tr key={c.id} className={selected.includes(c.id) ? 'cs-citi-row-sel' : undefined}>
                 <td>
                   <input
                     type="checkbox"
                     checked={selected.includes(c.id)}
                     onChange={() => toggle(c.id)}
+                    aria-label={`Select ${c.companyName || c.carrierId}`}
                   />
                 </td>
-                <td>{c.companyName || '—'}</td>
-                <td>{c.carrierId}</td>
+                <td className="cs-citi-company">{c.companyName || '—'}</td>
+                <td className="cs-pool-mono">{c.carrierId}</td>
                 <td>
-                  <span className="cs-badge cs-badge-warning">{c.statusCode}</span>
+                  {/* Was `{c.statusCode}` — the raw enum (e.g. "p3_hold") leaked into the UI. */}
+                  <CaseBadge tone={statusTone(c.statusCode)}>{statusLabel(c.statusCode)}</CaseBadge>
                 </td>
                 <td>
                   {c.citiFolderEnteredAt
@@ -176,11 +213,17 @@ export function CitiFolderPanel() {
                     ? new Date(c.citiFolderHoldUntil).toLocaleDateString()
                     : '—'}
                 </td>
-                <td>
-                  {c.assignmentCount}/3
-                </td>
+                <td className="cs-pool-mono">{c.assignmentCount}/3</td>
               </tr>
             ))}
+            {/* The initial load previously rendered an empty <tbody> with no indication at all. */}
+            {rows.length === 0 && feed.loading ? (
+              <tr>
+                <td colSpan={7} className="cs-empty">
+                  Loading CITI Folder…
+                </td>
+              </tr>
+            ) : null}
             {rows.length === 0 && !feed.loading ? (
               <tr>
                 <td colSpan={7} className="cs-empty">

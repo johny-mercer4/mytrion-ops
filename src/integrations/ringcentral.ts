@@ -53,6 +53,9 @@ export class RingCentralWrapper extends BaseWrapper {
       redirectUri: env.RINGCENTRAL_REDIRECT_URI,
       defaultCallWith: 'browser',
       enableErrorReport: 'false',
+      // Zoho CRM hosts Mytrion in an iframe/tab — multi-tab support keeps the webphone
+      // alive when agents open another CRM tab (avoids a "dead" dock that needs refresh).
+      multipleTabsSupport: '1',
       ...(browserCreds
         ? { clientSecret: env.RINGCENTRAL_CLIENT_SECRET, jwt: env.RINGCENTRAL_JWT }
         : {}),

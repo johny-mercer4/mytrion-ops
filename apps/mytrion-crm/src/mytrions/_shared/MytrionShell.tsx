@@ -1,10 +1,11 @@
-import { useState, type ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import { useUserContext } from '../../context/UserContextProvider';
 import { MYTRIONS, agentKeyFor, type MytrionId } from '../../access/mytrions.config';
 import { ChatPanel } from '../../features/chat/ChatPanel';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { TopBar } from '../../components/TopBar';
 import { ChatIcon, HomeIcon, SearchIcon } from '../../components/icons';
+import { horizonSkin } from './horizonSkin';
 import styles from './MytrionShell.module.css';
 
 export interface NavItem {
@@ -18,6 +19,12 @@ export interface NavItem {
   children?: NavItem[];
   /** Optional keywords for sidebar search (label is always searched). */
   keywords?: string[];
+  /**
+   * Optional per-item icon colour. A long categorised sidebar is much faster to scan when each
+   * destination has its own hue than when fifteen identical grey glyphs sit in a column. Applied as
+   * the `--nav-tone` custom property; the label stays on the text scale so only the glyph is tinted.
+   */
+  tone?: string;
 }
 
 export interface NavSection {
@@ -67,6 +74,7 @@ function NavItemButton({
         className={`${styles.navBtn} ${selected ? styles.navActive : ''} ${
           open && !chatView ? styles.navOpen : ''
         }`}
+        {...(item.tone ? { style: { '--nav-tone': item.tone } as CSSProperties } : {})}
         onClick={() => onSelect(item)}
       >
         <span className={styles.navIcon}>{item.icon}</span>
@@ -144,8 +152,11 @@ export function MytrionShell({
   };
 
   return (
-    <div className={styles.shell} data-mytrion={id}>
+    <div className={styles.shell} data-mytrion={id} data-horizon={horizonSkin(id)}>
       <TopBar contextBadge={m.tag} showSwitch />
+      {/* Ambient Horizon backdrop — mesh + grid + vignette behind the whole frame. Inert for
+          modules that haven't opted into the skin (see horizonSkin.ts). */}
+      <div className={styles.ambience} aria-hidden="true" />
       <div className={styles.body}>
         <nav className={styles.sidebar} aria-label={`${m.title} navigation`}>
           <div className={styles.navTop}>

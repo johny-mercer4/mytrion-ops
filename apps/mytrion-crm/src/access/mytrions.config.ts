@@ -197,7 +197,7 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     title: 'Manager Mytrion',
     tag: 'Manager',
     icon: 'manager',
-    blurb: 'Team metrics roll-up and cross-department KPIs.',
+    blurb: 'Manager hub — referral records and team operations.',
     hue: 'light-blue',
     department: 'management',
     // OPEN DECISION: are managers hierarchical (see across departments)? If yes, set true.
@@ -247,8 +247,8 @@ export const MYTRION_ORDER: MytrionId[] = [
  */
 export const COMING_SOON_MYTRION_IDS: readonly MytrionId[] = [
   'collection',
+  'finance',
   'verification',
-  'manager',
   'analyst',
 ];
 

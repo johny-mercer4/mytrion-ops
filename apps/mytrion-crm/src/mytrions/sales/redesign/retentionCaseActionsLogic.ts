@@ -5,6 +5,8 @@ import {
   localRetentionEvent,
   type RetentionCaseRow,
   type RetentionChannel,
+  type RetentionDissatisfactionReason,
+  type RetentionPhase1Outcome,
 } from './retentionData';
 import type { PendingCallLog } from './RetentionWizardSteps';
 
@@ -39,6 +41,37 @@ export function optimisticOutOfReach(
       ? Math.min(5, row.outOfReachAttempts + 1)
       : row.outOfReachAttempts,
   };
+}
+
+/** Instant board patch before `retention.record_outcome` returns. */
+export function optimisticOutcome(
+  row: RetentionCaseRow,
+  outcome: RetentionPhase1Outcome,
+  opts?: {
+    withAttempt?: boolean;
+    dissatisfactionReason?: RetentionDissatisfactionReason;
+    reasonNote?: string;
+  },
+): RetentionCaseRow {
+  const note = opts?.reasonNote?.trim() || null;
+  switch (outcome) {
+    case 'out_of_reach':
+      return optimisticOutOfReach(row, !!opts?.withAttempt);
+    case 'reached':
+      return { ...row, statusCode: 'p1_reached', agentOutcome: 'reached', reasonNote: note ?? row.reasonNote };
+    case 'vacation':
+      return { ...row, statusCode: 'p1_vacation', agentOutcome: 'vacation', reasonNote: note };
+    case 'dissatisfied':
+      return {
+        ...row,
+        statusCode: 'p1_dissatisfied',
+        agentOutcome: 'dissatisfied',
+        dissatisfactionReason: opts?.dissatisfactionReason ?? row.dissatisfactionReason,
+        reasonNote: note,
+      };
+    default:
+      return row;
+  }
 }
 
 export function attemptEvent(

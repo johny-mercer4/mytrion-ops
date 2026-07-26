@@ -5,8 +5,8 @@
 import { s } from './dc';
 import type { AutoPriority } from './autoRunners';
 
-const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px';
-const labelCss = 'font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
+const inp42 = 'width:100%;height:42px;padding:0 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px';
+const labelCss = 'font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em';
 const locked = `${inp42};padding-right:36px;cursor:default;color:var(--text2)`;
 
 function Lbl({ t, opt }: { t: string; opt?: boolean }) {

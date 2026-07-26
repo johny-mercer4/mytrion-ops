@@ -112,6 +112,12 @@ describe('LeadCallWizardHost', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it('does not open for a retention-tagged call even if leadId is present', () => {
+    render(<LeadCallWizardHost pushToast={pushToast} />);
+    fireCall({ leadId: '555', retentionCaseId: 'ret-9' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('can be closed with the X button — call still logged, status not forced', async () => {
     render(<LeadCallWizardHost pushToast={pushToast} />);
     fireCall({ leadId: '555' });

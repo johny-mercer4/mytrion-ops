@@ -50,10 +50,10 @@
   font-weight: 800;
   line-height: 1.2;
   padding: 0.1em 0;
-  background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent) 50%, var(--purple) 100%);
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2, var(--accent)) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  text-shadow: 0 4px 30px color-mix(in srgb, var(--purple) 30%, transparent);
+  text-shadow: 0 4px 30px var(--accent-glow);
   letter-spacing: -0.02em;
 }
 
