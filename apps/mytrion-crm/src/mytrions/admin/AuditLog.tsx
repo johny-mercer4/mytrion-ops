@@ -105,8 +105,11 @@ export function AuditLog() {
     <div className={`${s.panel} ${s.panelWide}`}>
       <div className={s.head}>
         <div>
+          <div className={s.eyebrow}>Activity trail</div>
           <h2 className={s.h2}>Audit Log</h2>
-
+          <p className={s.sub}>
+            Every tool call and admin action, newest first — who did it, to what, and what came back.
+          </p>
         </div>
       </div>
 

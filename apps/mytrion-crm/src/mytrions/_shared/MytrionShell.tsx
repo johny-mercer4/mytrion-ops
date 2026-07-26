@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import { useUserContext } from '../../context/UserContextProvider';
 import { MYTRIONS, agentKeyFor, type MytrionId } from '../../access/mytrions.config';
 import { ChatPanel } from '../../features/chat/ChatPanel';
@@ -19,6 +19,12 @@ export interface NavItem {
   children?: NavItem[];
   /** Optional keywords for sidebar search (label is always searched). */
   keywords?: string[];
+  /**
+   * Optional per-item icon colour. A long categorised sidebar is much faster to scan when each
+   * destination has its own hue than when fifteen identical grey glyphs sit in a column. Applied as
+   * the `--nav-tone` custom property; the label stays on the text scale so only the glyph is tinted.
+   */
+  tone?: string;
 }
 
 export interface NavSection {
@@ -68,6 +74,7 @@ function NavItemButton({
         className={`${styles.navBtn} ${selected ? styles.navActive : ''} ${
           open && !chatView ? styles.navOpen : ''
         }`}
+        {...(item.tone ? { style: { '--nav-tone': item.tone } as CSSProperties } : {})}
         onClick={() => onSelect(item)}
       >
         <span className={styles.navIcon}>{item.icon}</span>

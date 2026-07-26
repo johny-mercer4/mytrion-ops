@@ -1,11 +1,19 @@
 /* =====================================================
    Billing Mytrion — Theme Variables
-   Brand: Mytrion AI — Midnight Blue / Razor-Sharp Fintech
+   Brand: the COOL END of the Mytrion Horizon ramp. Billing's accent was already the Horizon sky
+   anchor (#38bdf8 == --hz-sky), so this module is the gradient's opening, sky → blue, the way CS is
+   its amber → sunset close. Surfaces, elevation and motion come from styles/horizon.css (--hz-*).
+
+   Deviation from the original "Razor-Sharp" spec: the 1–4px radii are relaxed (see --radius-* below).
+   Sharp corners read as precision on a flat sheet, but glass needs a little curvature to catch light
+   on its edge, and 4px pills rendered as rectangles.
    ===================================================== */
 
 .bm-root {
-    /* ── Dark Mode (default) — soft blue-gray, easy on eyes ── */
-    --color-bg-primary:    #22232e;
+    /* ── Dark Mode (default) ── */
+    /* The shared Horizon field, so Billing sits on the same ground as every other module and the
+       translucent panes have something to blur against. */
+    --color-bg-primary:    var(--hz-page);
     --color-bg-secondary:  #1c1d26;
     --color-brand:         #c8ccda;
     --color-brand-hover:   #e2e5ef;
@@ -21,7 +29,9 @@
     --accent-soft:    var(--accent-bg);
     --accent-strong:  var(--accent-hover);
 
-    /* ── Billing accent ── */
+    /* ── Billing accent — sky, i.e. --hz-1/--hz-sky ── */
+    /* Far end of the module's ramp; `accent → accent-2` is Billing's slice of the Horizon gradient. */
+    --accent-2:            #818cf8;
     --billing-accent:      #38bdf8;
     --billing-accent-glow: rgba(56, 189, 248, 0.20);
     --billing-success:     #2ECC71;
@@ -89,12 +99,12 @@
     --header-height:      56px;
     --bottom-nav-height:  62px;
 
-    /* ── Surfaces ── (design: cards = #252632, raised/hover = #2a2b38) ── */
+    /* ── Surfaces — translucent panes; the blur lives in bm-horizon.css ── */
     --surface:        #252632;
     --surface-alt:    #2a2b38;
-    --surface-raised: rgba(200, 204, 218, 0.05);
-    --sidebar-bg:     #1e1f2a;
-    --header-bg:      #1e1f2a;
+    --surface-raised: var(--hz-glass-hover);
+    --sidebar-bg:     var(--hz-glass);
+    --header-bg:      var(--hz-glass);
 
     /* ── Borders ── */
     --border:       rgba(200, 204, 218, 0.11);
@@ -115,27 +125,29 @@
     --success: #2ECC71;
     --error:   #EF4444;
 
-    /* ── Shadows ── */
-    --shadow-sm: 0 1px 3px rgba(0,0,0,0.40), 0 1px 2px rgba(0,0,0,0.30);
-    --shadow-md: 0 4px 12px rgba(0,0,0,0.35), 0 2px 6px rgba(0,0,0,0.25);
-    --shadow-lg: 0 10px 30px rgba(0,0,0,0.50), 0 4px 12px rgba(0,0,0,0.35);
+    /* ── Shadows — the shared Horizon elevation steps ── */
+    --shadow-sm: var(--hz-shadow-rest);
+    --shadow-md: var(--hz-shadow-lift);
+    --shadow-lg: var(--hz-shadow-pop);
+    --card-shadow-hz: var(--hz-shadow-rest);
 
     /* ── Modal ── */
-    --modal-backdrop-bg: rgba(10, 11, 18, 0.78);
+    --modal-backdrop-bg: color-mix(in srgb, var(--hz-page) 68%, transparent);
     --modal-box-bg:      #2a2b38;
 
-    /* ── Radii — Razor-Sharp: max 4px ── */
-    --radius-xs:   1px;
-    --radius-sm:   2px;
-    --radius-md:   4px;
-    --radius-lg:   4px;
-    --radius-full: 4px;
+    /* ── Radii — relaxed from the 1–4px "Razor-Sharp" ramp (see note at top of file).
+          --radius-full was a dead token at 4px; it is now an actual pill. ── */
+    --radius-xs:   4px;
+    --radius-sm:   6px;
+    --radius-md:   8px;
+    --radius-lg:   12px;
+    --radius-full: 999px;
 }
 
 /* ── Light Mode ── */
 .bm-root.light-mode {
-    /* Backgrounds — warm blue-white, no harsh pure white or flat gray */
-    --color-bg-primary:    #f5f7ff;
+    /* Backgrounds — the shared Horizon light field */
+    --color-bg-primary:    var(--hz-page);
     --color-bg-secondary:  #eceffe;
     --color-brand:         #1a1d38;
     --color-brand-hover:   #2d3260;
@@ -143,6 +155,7 @@
     --color-accent:        #2563eb;
 
     /* Billing accent — vivid blue pops cleanly on white surfaces */
+    --accent-2:            #4f46e5;
     --billing-accent:      #2563eb;
     --billing-accent-glow: rgba(37, 99, 235, 0.12);
     --billing-success:     #16a34a;
@@ -200,12 +213,12 @@
     --brand-dark:         #eceffe;
     --accent:             #2563eb;
 
-    /* Surfaces — clean white cards on a tinted page */
+    /* Surfaces — clean white panes on the tinted Horizon page */
     --surface:        #ffffff;
     --surface-alt:    #f1f3fd;
-    --surface-raised: rgba(37, 99, 235, 0.03);
-    --sidebar-bg:     #ffffff;
-    --header-bg:      #ffffff;
+    --surface-raised: var(--hz-glass-hover);
+    --sidebar-bg:     var(--hz-glass);
+    --header-bg:      var(--hz-glass);
 
     /* Borders — subtle navy tint, not flat black alpha */
     --border:       rgba(88, 95, 150, 0.13);
@@ -222,13 +235,13 @@
     --muted-bg:     rgba(79, 88, 150, 0.10);
     --muted-bd:     rgba(79, 88, 150, 0.20);
 
-    /* Shadows — soft blue-tinted, avoid flat gray */
-    --shadow-sm: 0 1px 4px rgba(37, 99, 235, 0.07), 0 1px 2px rgba(0,0,0,0.04);
-    --shadow-md: 0 4px 16px rgba(37, 99, 235, 0.09), 0 2px 6px rgba(0,0,0,0.05);
-    --shadow-lg: 0 10px 32px rgba(37, 99, 235, 0.11), 0 4px 12px rgba(0,0,0,0.06);
+    /* Shadows — the shared Horizon elevation steps */
+    --shadow-sm: var(--hz-shadow-rest);
+    --shadow-md: var(--hz-shadow-lift);
+    --shadow-lg: var(--hz-shadow-pop);
 
     /* Modal */
-    --modal-backdrop-bg: rgba(15, 17, 42, 0.48);
+    --modal-backdrop-bg: color-mix(in srgb, var(--hz-page) 62%, transparent);
     --modal-box-bg:      #ffffff;
 
     /* Status — richer on white backgrounds */

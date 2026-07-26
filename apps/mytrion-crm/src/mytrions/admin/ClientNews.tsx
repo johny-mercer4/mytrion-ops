@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClientNews, listClientNews, type ClientNewsPost, type NewsLocalized } from '../../api/clientNews';
+import { DocIcon } from '../../components/icons';
 import { ClientCombobox } from './ClientCombobox';
 import { adminToast } from './toast';
 import admin from './admin.module.css';
@@ -147,14 +148,24 @@ export function ClientNews() {
   const filled = (l: Lang) => Boolean(titles[l].trim() || emptyToNull(bodies[l]));
 
   return (
-    <div className={admin.panelWide}>
-      <div className={admin.cardHead}>
-        <div className={admin.cardTitle}>
-          Client News {posts && <span className="count">{posts.length}</span>}
+    /* `panelWide` alone only sets a max-width — it carries none of `.panel`'s padding, flex column
+       or gap, which is why this tab sat flush against the content edge while every other tab had a
+       margin. It needs both classes. */
+    <div className={`${admin.panel} ${admin.panelWide}`}>
+      <div className={admin.head}>
+        <div>
+          <div className={admin.eyebrow}>Mini-app inbox</div>
+          <h2 className={admin.h2}>Client News</h2>
+          <p className={admin.sub}>
+            Publishes straight into every client&rsquo;s mini-app inbox, in the language they use.
+          </p>
         </div>
-        <button type="button" className={admin.primaryBtn} onClick={() => setComposerOpen((v) => !v)}>
-          {composerOpen ? 'Close composer' : 'New post'}
-        </button>
+        <div className={admin.emptyCta}>
+          {posts ? <span className={admin.pagerMeta}>{posts.length} published</span> : null}
+          <button type="button" className={admin.primaryBtn} onClick={() => setComposerOpen((v) => !v)}>
+            {composerOpen ? 'Close composer' : 'New post'}
+          </button>
+        </div>
       </div>
 
       <div className={styles.layout}>
@@ -237,8 +248,31 @@ export function ClientNews() {
         )}
 
         <div>
-          {posts === null && <div className={styles.postMeta}>Loading…</div>}
-          {posts?.length === 0 && <div className={styles.postMeta}>No news yet — the composer on the left publishes straight into every client's mini-app inbox.</div>}
+          {/* Was bare `postMeta` text for both states — the only tab in Admin without a skeleton
+              loader or a standard empty state. */}
+          {posts === null && (
+            <>
+              <span className={admin.srOnly} role="status">
+                Loading client news…
+              </span>
+              <div className={admin.skelGrid} aria-hidden="true">
+                <div className={admin.skelCard} />
+                <div className={admin.skelCard} />
+              </div>
+            </>
+          )}
+          {posts?.length === 0 && (
+            <div className={admin.none}>
+              <span className={admin.emptyIcon} aria-hidden="true">
+                <DocIcon />
+              </span>
+              <div className={admin.emptyTitle}>No news yet</div>
+              <p className={admin.emptyBody}>
+                Nothing published. Use <strong>New post</strong> above — it goes straight into every
+                client&rsquo;s mini-app inbox, in the language they use.
+              </p>
+            </div>
+          )}
           {posts?.map((p) => (
             <div key={p.id} className={styles.postCard}>
               <div className={styles.postHead}>

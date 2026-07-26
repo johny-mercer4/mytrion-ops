@@ -227,6 +227,20 @@
   justify-content: center;
   width: 20px;
   flex: none;
+  /* Per-item hue when the item declares `tone` (see NavItem); inherits otherwise, so modules that
+     don't set tones are unchanged. */
+  color: var(--nav-tone, currentColor);
+  transition: color var(--dur-base) var(--ease-standard);
+}
+/* At rest the tint is held back so the column reads as one list; it comes up on hover and full on
+   the selected row. A sidebar of fifteen fully-saturated glyphs is a fruit salad. */
+.navBtn .navIcon {
+  opacity: 0.72;
+}
+.navBtn:hover .navIcon,
+.navActive .navIcon,
+.navOpen .navIcon {
+  opacity: 1;
 }
 .navLabel {
   font-size: var(--text-sm);
@@ -265,6 +279,14 @@
 .shell[data-horizon='on'] .center {
   /* Transparent so the ambience shows through; the panels themselves supply the surfaces. */
   background: none;
+}
+
+/* Chat-as-view honours the same measure as the module's panels — it was the one tab that ran full
+   bleed, and over-long chat lines are harder to read, not easier. */
+.shell[data-horizon='on'] .chatView {
+  width: 100%;
+  max-width: var(--hz-measure);
+  margin: 0 auto;
 }
 
 .shell[data-horizon='on'] .navSearch {
@@ -324,7 +346,8 @@
 }
 /* The glyph in the selected row glows in the accent, matching the picker's lit icon chip. */
 .shell[data-horizon='on'] .navActive .navIcon {
-  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 55%, transparent));
+  /* Glow in the item's own tone when it has one, so the halo matches the glyph. */
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--nav-tone, var(--accent)) 55%, transparent));
 }
 
 .shell[data-horizon='on'] .navSub {

@@ -5279,3 +5279,215 @@ CS typechecks clean; repo-wide errors 23 → **20** (fixed 3 pre-existing ones i
 
 **Still dirty:** `apps/mytrion-crm/app/` (committed widget build output) has churn from `vite build`.
 `git clean -fd -- apps/mytrion-crm/app && git checkout -- apps/mytrion-crm/app` to reset.
+
+## 2026-07-26 — Billing: Horizon glass propagation (production module — paint-only)
+
+Billing is in daily use by the billing agents, so the whole pass is deliberately constrained:
+
+**Paint-only rule.** Every rule in the two new sheets touches background / border-color / box-shadow /
+backdrop-filter / color / border-radius / transition / hover-transform. No `display`, `position`,
+`width`, `padding`, `margin`, `grid` or `flex` changes anywhere, so nothing can reflow. The single
+exception is `position: relative` on two elements that needed a `::before` rail — that does not
+reflow a block, and the border it replaces keeps its 3px so box geometry is byte-identical.
+
+**One TSX change, purely additive:** a `<div className="bm-ambience" aria-hidden />` in Shell.tsx.
+`pointer-events: none`, so it cannot intercept a click. No logic, no handlers, no data paths touched.
+
+**Billing was already the Horizon sky.** `--billing-accent: #38bdf8` is literally `--hz-sky`, so this
+module is the gradient's *opening* (sky → blue) the way CS is its close (amber → sunset). Added
+`--accent-2` (`#818cf8` dark / `#4f46e5` light) so `accent → accent-2` gradients work as in Admin/CS.
+Page/surfaces/shadows/backdrop now derive from `--hz-*`.
+
+**Deliberate deviation: the "Razor-Sharp" radii are relaxed.** 1–4px reads as precision on a flat
+sheet, but glass needs a little curvature to catch light on its edge. `--radius-xs/sm/md/lg` →
+4/6/8/12px, and `--radius-full` (a dead token at 4px) is now an actual pill. `.bm-badge` hardcoded
+`border-radius: 3px`, so it's overridden explicitly — badges were rendering as rectangles.
+
+**Also fixed along the way:**
+- Billing had **no `:focus-visible` rule of its own**, so the app-wide `outline: 2px solid` from
+  styles/global.css was landing on its controls as a hard offset ring (visible on the clicked nav item
+  in the Debtors/Prepay/Returns screenshots). Now the same soft accent ring as every other module.
+  I could not reproduce a specific trigger, so this is "make it read as design wherever it fires"
+  rather than a root-cause fix.
+- `.bm-btn` used `transition: all 100ms`, which interpolates filter/backdrop-filter and flickers.
+  Replaced with explicit properties.
+- Disabled buttons now read as inert neutral instead of a faded gradient (the muddy-beige failure
+  mode from the CS pass).
+- `.bm-field-row` gained a row hover — a 10-row key/value list in a modal is hard to track without one.
+
+**Covered:** masthead (+ ramp hairline, gradient wordmark, gradient avatar), sidebar + nav (gradient
+rail, glass hover), KPI/summary cards (semantic left bars preserved), tables (blurred header band,
+glass row hover), search/selects, buttons, badges→pills, skeletons + spinner (accent-ringed, one per
+surface), notices/toasts, empty+error states, bottom nav, focus rings, the AI copilot panel/FAB/chips,
+and the **detail level**: modal box (ramp on the top edge as a background layer so it survives the
+body's internal scroll), blurred backdrop, source-tinted transaction header, section titles with a
+gradient rail, invoice/carrier cards, proposed-carrier chips, modal inputs, modal footer.
+
+**Verified** in Chrome (CDP, :5174, :5173 untouched): all five tabs × both themes, plus the
+transaction modal rendered in both themes by injecting the exact markup shape from
+TransactionModal.tsx (the modal needs live data the sandboxed port can't reach — CORS — so the CSS
+was verified against the real class structure rather than a real record). Billing typechecks clean;
+repo-wide errors unchanged at 20; 183/184 tests, same pre-existing `dashDebtorsData` failure.
+
+**Still dirty:** `apps/mytrion-crm/app/` build output.
+`git clean -fd -- apps/mytrion-crm/app && git checkout -- apps/mytrion-crm/app` to reset.
+
+## 2026-07-26 — Mytrion Admin: per-tab standardization pass
+
+**One content measure.** Admin had FOUR widths: `.panel` 1120, `.panelWide` 1240, `.dealsPanel` 1360,
+and the chat view full-bleed — which is why each tab felt like a different app. All now resolve to
+`--hz-measure` (1280px, promoted to a shared token in styles/horizon.css so the shell can use it too);
+`.panelWide`/`.dealsPanel` are kept as aliases so no panel markup had to change. The chat view is
+capped to the same measure — it was the one full-bleed tab, and long chat lines are harder to read.
+
+**Sidebar icon tones.** New `--tone-*` scale (13 hues) in horizon.css, THEME-AWARE by design: dark
+uses the bright 400-level, light the deep 600/700-level, which is exactly why they're tokens and not
+raw hex in the TSX. `NavItem.tone` sets `--nav-tone`; `.navIcon` colours from it. Tint the glyph only,
+held at 0.72 opacity at rest and full on hover/active — fifteen fully-saturated glyphs is a fruit
+salad. The selected-row drop-shadow follows the tone too. Tabs are grouped by section hue:
+AI&Knowledge sky/cyan/teal/emerald · Access violet/purple · CRM&Ops amber/orange/pink/rose ·
+Data indigo/blue/blue · Platform slate.
+
+**Standardized states.**
+- `.emptyState` and `.none` were two classes saying the same thing in different tabs → now one block,
+  plus `.emptyIcon` / `.emptyTitle` / `.emptyBody` for the richer version.
+- NEW `.errorState`: icon + title + cause (mono) + actionable hint + retry, on its own pane (it
+  replaces the table, so unlike `.none` it can't borrow a container).
+- `.pager` — was inline styles inside Pager.tsx.
+- `.primaryBtn:disabled` → inert neutral. It was still fading the sky→sunset gradient to 55% opacity,
+  i.e. the muddy-beige failure mode already fixed in CS and Billing. Visible on Train's two buttons.
+
+**Header typography.** One pattern on all ten data tabs: eyebrow (where you are) → h2 (what it is) →
+sub (what it does). Five tabs had no eyebrow AND no subtitle; several had an `<h2>` followed by a
+stray blank line where a subtitle clearly used to be.
+
+**Horizon AI (tab 1) light/dark.** The reported problem was real and specific: `.error` was
+`color: #fff` on a light-red tint — white-on-pink, invisible in light mode. Beyond that the whole chat
+surface carried a hardcoded indigo/purple palette (`#a5b4fc`, `#c084fc`, a `#4f46e5→#9333ea` user
+bubble) that ignored the module accent and was dark-mode-tuned; 13 substitutions moved it onto
+`--accent`/`--accent-2`, so the chat now adopts each Mytrion's hue. The `--gem` AI mark is left alone
+— it's a deliberate brand element shared by every AI surface.
+
+**Bugs found and fixed:**
+1. Client News used `panelWide` **without** `panel`, so it got the max-width but none of the padding,
+   flex column or gap — the tab sat flush against the content edge. (Visible in the screenshot.)
+2. Client News rendered its count via `className="count"` — a plain string that never matches a
+   hashed CSS-module selector, so it showed as a bare unstyled `0` next to the title.
+3. `SchemaBrowser`'s `subtitle` prop was accepted and **never rendered** — all three DB tabs silently
+   dropped their "structure only; no row data is ever read" explanation.
+4. `CarrierUsers`' `VIEWS[view].sub` was declared for both views and never rendered.
+5. `Jobs.statusClass` returned `string | undefined` against a `string` signature (3 typecheck errors).
+6. Jobs' subtitle printed bare `…` placeholders before load — reads as a truncation glitch, not as
+   "not loaded yet". Now the clause only appears once there's something real to show.
+7. Deals surfaced load failures as bare red text; the other twelve files use the tinted `errorNote`
+   pane.
+8. Deals' "Could not load agents" toast passed a title only, so it rendered as a headline with no
+   explanation.
+9. CarrierUsers' count chip was being squeezed against a clipped placeholder inside a 360px-capped
+   search box, reading as two colliding strings. Pinned the chip and widened the box.
+10. Client News was the only tab with no skeleton loader and no standard empty state (bare
+    `postMeta` text for both).
+
+**CMP Database error system (as asked):** a failed *initial* load now takes over the surface and names
+the fix — CMP's hint points at the SSH tunnel on :3307 and `pnpm dev:all`; DWH and Verification get
+their own. A failed *refresh* keeps the last good snapshot visible with a quiet note instead.
+
+**Octane-Scope panel untouched**, as requested (it does get a slate sidebar tone).
+
+**Verified** in Chrome (CDP, :5174, :5173 untouched): all 13 tabs × both themes, re-shot after each
+round. Admin typechecks clean; repo-wide errors 20 → **16** (fixed 4). 183/184 tests, same
+pre-existing `dashDebtorsData` failure. `vite build` green.
+
+**Known remaining inconsistency (not fixed):** three pagination paradigms coexist — `Pager`
+(prev/next + count) in the carrier tables, "Load more (N of M)" in Audit Log, custom prev/next in
+Deals. Each suits its data shape, so unifying them is a product decision rather than a cleanup.
+
+**Still dirty:** `apps/mytrion-crm/app/` build output.
+
+## 2026-07-26 — Orchestrator onboarding: ONBOARDING.md + ORCHESTRATION.md
+
+New engineer/agent onboarding pass over the whole system. Fanned out five parallel read-only
+explorations (CRM app, data model, pgvector/RAG, pg-boss, vendors), verified the counts directly,
+and wrote two durable docs at the repo root.
+
+**`ONBOARDING.md`** — the system brief. Octane/Mytrion/Horizon naming, the nine-Mytrion taxonomy and
+the `src/lib/mytrions.ts` ↔ `apps/mytrion-crm/src/access/mytrions.config.ts` mirror, repo topology,
+the CRM app (stack, `useLoad` convention, workspace inventory, Zoho OAuth session + act-as, the
+77-key touchpoint surface, committed `app/` build), the 45-table data model and repo pattern,
+pgvector/CRAG parameters, the 13 pg-boss queues, the vendor matrix split into wired / idle /
+zero-caller / placeholder, local run stack, and the rules restated with the failure behind each.
+
+**`ORCHESTRATION.md`** — routing for the Gemini 3.1 Pro / Claude Code / Cursor-Grok fleet: which
+agent gets which class of work, the brief boilerplate every executor needs, what can run in parallel
+vs what is single-writer (migrations, env.ts, jobs catalog, both mytrions configs, this file, and
+`apps/mytrion-crm/app/`), a review checklist, and a delegable backlog.
+
+**Verified while writing:** 45 tables / 39 schema files / 58 migrations (latest
+`0057_mytrion_access_modes`) / 39 route files / 34 repos / 17 tool definitions / 13 queues /
+3 `vector(1536)` columns.
+
+**Findings worth acting on, recorded here so they don't get lost in the doc:**
+1. `drizzle.config.ts` enumerates schema files and is **missing four** — `agent_blackboards.ts`,
+   `agent_skills.ts`, `mytrion_role_defaults.ts`, `support_bot_messages.ts` (all created by
+   hand-written migrations 0054/0055/0048). `pnpm db:generate` today would emit DROPs for them.
+   This blocks the next legitimate schema change; fix before anyone runs generate.
+2. Last full `eval:live` run (2026-07-22, 41 tasks) breached four floors: routing 0.46 (floor 0.9),
+   grounding 0.50 (0.8), delegation 0.00 (0.75), web-navigation 0.00. RBAC and greeting held at 1.0.
+   The only newer report is a 1-task routing spot-check, so the breach is still the current signal.
+3. `render.yaml` deliberately excludes `FF_JOBS_ENABLED` — all 13 queues and every cron are off in
+   prod, and there is no worker service. Either turn it on or retire the surface; leaving 13
+   registered queues that never fire is a trap for the next reader.
+4. `README.md` is stale on two counts: audiences are three (`internal|partner|customer`), not two,
+   and knowledge ingestion is no longer purely synchronous (>2 MB goes to `knowledge.bulk-ingest`).
+
+No source changed this session — docs only.
+
+## 2026-07-26 — Billing wordmark parity + Manager Mytrion set up
+
+**Billing wordmark → Admin's.** `.bm-header-title` was Rajdhani / mixed-case / 0.04em with a solid
+accent on "trion"; Admin's BrandMark is Space Grotesk / uppercase / 0.08em with the Horizon ramp on
+the second word. Billing now matches exactly and reads **MYTRION HORIZON**, with the module name in
+the badge beside it — so every Mytrion's masthead says the same thing and only the badge changes.
+
+## Manager Mytrion
+
+**Structure.** Two nav groups replacing the single Overview item:
+- *General* → Overview (the hub; Referrals opens from its grid, so Overview stays selected while
+  you're inside Referrals and the back button returns there).
+- *Departments* → Sales · Customer Service · Billing · Finance · Collection · Mobile · Verification.
+
+Sidebar labels are SHORT ("Customer Service", not "Customer Service Management") — the full name
+truncated to "Customer Service Manag…" in a 248px rail, and the group is already titled Departments.
+Full names stay on the page heading and the Overview cards (`navLabel` vs `label` in managerNav.ts).
+
+**RBAC-ready.** Layer 1 stays `canAccess`; Layer 2 is `access(user)` per card AND per department, with
+`canOpenManagerDepartment` guarding the view switch so a stale state can't bypass the grid. Departments
+are open today — when per-department RBAC lands, narrow the predicate rather than hiding items in the
+shell. Documented in the module header.
+
+**Design.** Opted into the Horizon glass skin (`horizonSkin.ts`) so Manager gets the ambience, glass
+sidebar, gradient rail and glass masthead for free. `manager.css` rewritten as Manager's own
+standardized system: a `--mg-*` block at the top (measure = `--hz-measure`, gap/pad rhythm, radii)
+with everything else reading from it, built on the shared `--hz-*` primitives. Covers hero, section
+heads, workspace cards (lift + tone glow + specular hairline), department grid, coming-soon landings,
+buttons (one recipe, inert-neutral disabled), toolbar/search, one loader, one error, one empty, the
+referrals accordion, chips and the CRM definition grid. Focus ring: one soft accent ring, keyboard only.
+
+**Accent: teal → pink/rose.** The workspace picker's Manager tile is pink, but the module was teal —
+the card you clicked and the workspace you landed in disagreed. Now aligned, with `--accent-2` = rose.
+
+**Per-department tones** come from the shared `--tone-*` scale (theme-aware), each matching that
+department's own colour elsewhere in the app: Sales sky · CS amber · Billing emerald · Finance teal ·
+Collection indigo · Mobile cyan · Verification violet. Verification deviates from its usual teal
+because Finance holds teal here and distinctness inside one list wins. Module identity (pink) stays in
+the kicker; department identity is in the glyphs — so both read at once without competing.
+
+**No mock data**, as asked: each department landing is a real "coming soon" surface that names the
+department, keeps its hue, and says what will live there. The Overview department cards carry a `Soon`
+badge so the state is visible before the click, not discovered by it.
+
+**Verified** in Chrome (CDP, :5174, :5173 untouched): Overview, a department landing and Referrals, in
+both themes. Manager and Billing typecheck clean; repo-wide errors unchanged at 16; 183/184 tests
+(same pre-existing `dashDebtorsData` failure); `vite build` green.
+
+**Still dirty:** `apps/mytrion-crm/app/` build output.

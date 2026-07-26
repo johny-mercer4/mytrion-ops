@@ -98,8 +98,24 @@
 [data-mytrion='verification'] { --accent: #6d7cff; --accent-strong: #94a0ff; --on-accent: #0a0c2e; --accent-soft: rgba(109, 124, 255, 0.14); --accent-glow: rgba(109, 124, 255, 0.28); }
 [data-theme='light'] [data-mytrion='verification'] { --accent: #4f46e5; --accent-strong: #4338ca; --on-accent: #fff; --accent-soft: rgba(79, 70, 229, 0.1); --accent-glow: rgba(79, 70, 229, 0.2); }
 
-[data-mytrion='manager'] { --accent: #2dd4bf; --accent-strong: #5ee0d0; --on-accent: #04231f; --accent-soft: rgba(45, 212, 191, 0.13); --accent-glow: rgba(45, 212, 191, 0.28); }
-[data-theme='light'] [data-mytrion='manager'] { --accent: #0d9488; --accent-strong: #0b8177; --on-accent: #fff; --accent-soft: rgba(13, 148, 136, 0.1); --accent-glow: rgba(13, 148, 136, 0.2); }
+/* Manager runs pink → rose: the workspace picker's Manager tile is pink, and the module used to be
+   teal, so the card you clicked and the workspace you landed in disagreed. */
+[data-mytrion='manager'] {
+  --accent: #f472b6;
+  --accent-2: #fb7185;
+  --accent-strong: #f9a8d4;
+  --on-accent: #2a0716;
+  --accent-soft: rgba(244, 114, 182, 0.13);
+  --accent-glow: rgba(244, 114, 182, 0.28);
+}
+[data-theme='light'] [data-mytrion='manager'] {
+  --accent: #db2777;
+  --accent-2: #e11d48;
+  --accent-strong: #be185d;
+  --on-accent: #fff;
+  --accent-soft: rgba(219, 39, 119, 0.1);
+  --accent-glow: rgba(219, 39, 119, 0.2);
+}
 
 * {
   box-sizing: border-box;

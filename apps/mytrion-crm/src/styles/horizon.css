@@ -104,6 +104,10 @@
   --hz-dur-wash: 0.35s;
   --hz-hover-lift-sm: translateY(-2px);
 
+  /* ── Layout ─────────────────────────────────────────────────────────────── */
+  /* One content measure for module panels, so every tab in a module lines up. */
+  --hz-measure: 1280px;
+
   /* ── Ambient background — the 4-lobe mesh, grid and vignette ────────────── */
   --hz-page: #05081a;
   --hz-mesh:
@@ -192,6 +196,43 @@
     transparent 40%,
     rgba(191, 203, 226, 0.3) 100%
   );
+}
+
+/* ── Wayfinding tones ──────────────────────────────────────────────────────────
+   A hue per destination, for long categorised sidebars where a column of identical grey glyphs is
+   slow to scan. Referenced as tokens (not raw hex) precisely so they can be theme-swapped: dark uses
+   the bright 400-level, light the deep 600/700-level. Same families as the picker's workspace hues.
+   Tint only the glyph — labels stay on the text scale, or the sidebar becomes a fruit salad. */
+:root {
+  --tone-sky: #38bdf8;
+  --tone-cyan: #22d3ee;
+  --tone-teal: #2dd4bf;
+  --tone-emerald: #34d399;
+  --tone-violet: #a78bfa;
+  --tone-purple: #c084fc;
+  --tone-amber: #fbbf24;
+  --tone-orange: #fb923c;
+  --tone-pink: #f472b6;
+  --tone-rose: #fb7185;
+  --tone-indigo: #818cf8;
+  --tone-blue: #60a5fa;
+  --tone-slate: #94a3b8;
+}
+
+[data-theme='light'] {
+  --tone-sky: #0284c7;
+  --tone-cyan: #0891b2;
+  --tone-teal: #0d9488;
+  --tone-emerald: #059669;
+  --tone-violet: #7c3aed;
+  --tone-purple: #9333ea;
+  --tone-amber: #b45309;
+  --tone-orange: #ea580c;
+  --tone-pink: #db2777;
+  --tone-rose: #e11d48;
+  --tone-indigo: #4f46e5;
+  --tone-blue: #2563eb;
+  --tone-slate: #64748b;
 }
 
 /* ── Reusable Horizon utilities ────────────────────────────────────────────── */

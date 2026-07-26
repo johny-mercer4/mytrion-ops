@@ -9,7 +9,7 @@ import type { MytrionId } from '../../access/mytrions.config';
  * ADD AN ID HERE to opt a module in. Everything else keeps the flat token chrome, so the rollout is
  * one Mytrion at a time rather than a single all-or-nothing switch.
  */
-const HORIZON_SKIN: ReadonlySet<MytrionId> = new Set<MytrionId>(['admin']);
+const HORIZON_SKIN: ReadonlySet<MytrionId> = new Set<MytrionId>(['admin', 'manager']);
 
 /** `'on'` for skinned modules, `undefined` otherwise — so the attribute is simply absent. */
 export function horizonSkin(id: MytrionId): 'on' | undefined {

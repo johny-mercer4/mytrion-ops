@@ -15,3 +15,6 @@
 @import './shared-effects.css';
 @import './shared-responsive.css';
 @import './overrides.css';
+/* LAST: the Horizon glass layer wins over the panel sheets above at equal specificity. */
+@import './bm-horizon.css';
+@import './bm-horizon-panels.css';

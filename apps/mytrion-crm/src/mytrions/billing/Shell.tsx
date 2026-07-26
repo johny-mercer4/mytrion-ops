@@ -122,9 +122,12 @@ export function BillingShell() {
 
   return (
     <div className={`bm-root${theme === 'light' ? ' light-mode' : ''}`}>
+      {/* Ambient Horizon backdrop — mesh + 64px grid + vignette behind the whole module. Purely
+          decorative and pointer-events:none, so it cannot intercept anything. */}
+      <div className="bm-ambience" aria-hidden="true" />
       {/* ═══ HEADER (design: logo · BILLING · spacer · theme · avatar) ═══ */}
       <header className="bm-header">
-        <div className="bm-header-title">My<span>trion</span></div>
+        <div className="bm-header-title">MYTRION<span> HORIZON</span></div>
         <span className="bm-header-badge">BILLING</span>
         <div style={{ flex: 1 }} />
         {admin ? (

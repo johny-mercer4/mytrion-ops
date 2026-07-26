@@ -2,16 +2,21 @@
    Octane-Scope). Token-driven per DESIGN_SYSTEM.md — no raw px, no hardcoded hex. */
 
 /* ── panel frame ────────────────────────────────────────────────────────────── */
+/* ONE content measure for every tab. There used to be four (1120 / 1240 / 1360 / full-bleed), which
+   is why each tab felt like a different app. `.panelWide` and `.dealsPanel` are kept as aliases so
+   no panel markup has to change — they now resolve to the same width. Change it here, once. */
 .panel {
+  --admin-measure: var(--hz-measure);
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
   padding: var(--space-8) var(--space-10);
-  max-width: 1120px;
+  width: 100%;
+  max-width: var(--admin-measure);
   animation: panelIn var(--dur-base) var(--ease-out);
 }
 .panelWide {
-  max-width: 1240px;
+  max-width: var(--admin-measure);
 }
 
 @keyframes panelIn {
@@ -109,10 +114,18 @@
   outline: none;
   box-shadow: 0 0 0 3px var(--accent-glow);
 }
-.primaryBtn:disabled {
-  opacity: 0.55;
+/* Inert neutral, not a faded gradient. Dropping the sky→sunset fill to 55% opacity over a pale
+   field is exactly the muddy-beige look the ramp is meant to avoid (same fix as CS and Billing). */
+.primaryBtn:disabled,
+.primaryBtn:disabled:hover {
+  opacity: 1;
   cursor: not-allowed;
+  background: var(--hz-pane-alt);
+  border-color: var(--hz-pane-bd);
+  color: var(--text-muted);
   box-shadow: none;
+  filter: none;
+  transform: none;
 }
 .primaryBtn.tall {
   height: 40px;
@@ -400,7 +413,7 @@
   transition: opacity 120ms ease;
 }
 .dealsPanel {
-  max-width: 1360px;
+  max-width: var(--admin-measure);
 }
 .dealsModeSwitch {
   display: inline-flex;
@@ -639,12 +652,6 @@
   color: var(--danger, #dc2626);
   font-size: var(--text-sm);
 }
-.emptyState {
-  padding: var(--space-8) var(--space-4);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
 .loadingOverlay {
   position: absolute;
   inset: 0;
@@ -861,18 +868,6 @@
   animation: spin 0.8s linear infinite;
 }
 
-.none {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  padding: var(--space-10) var(--space-5);
-  text-align: center;
-  font-size: var(--text-sm);
-  line-height: var(--lh-md);
-  color: var(--text-muted);
-}
 
 .loadingBlock {
   display: flex;
@@ -941,6 +936,122 @@
   .skelCard {
     animation: none;
   }
+}
+
+/* ── ONE empty state ────────────────────────────────────────────────────────────
+   `.emptyState` and `.none` were two classes for the same idea used by different tabs. They are now
+   the same block, so an empty table reads identically wherever you are. */
+.emptyState,
+.none {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-10) var(--space-5);
+  text-align: center;
+  font-size: var(--text-sm);
+  line-height: var(--lh-md);
+  color: var(--text-muted);
+}
+/* An icon in an empty state gets the same glass chip as the picker's tiles. */
+.emptyIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--hz-gradient-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  color: var(--accent);
+  box-shadow: var(--hz-glass-inset);
+}
+.emptyTitle {
+  font-family: var(--font-head);
+  font-size: var(--text-md);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+.emptyBody {
+  max-width: 46ch;
+  color: var(--text-muted);
+}
+
+/* ── ONE error state — icon + title + cause + retry ─────────────────────────────
+   Used by the three schema browsers (CMP / DWH / Verification), where a failure is a normal
+   operational event (tunnel down, replica unreachable) and needs to say what to do next. */
+/* Always stands alone (it replaces the table), so unlike `.none` it carries its own pane — a bare
+   centred column on the page ambience reads as a broken layout rather than a state. */
+.errorState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-12) var(--space-6);
+  text-align: center;
+  border: 1px solid var(--hz-pane-bd);
+  border-radius: var(--radius-xl, 12px);
+  background: var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur));
+  -webkit-backdrop-filter: blur(var(--hz-blur));
+  box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+}
+.errorIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 32%, transparent);
+  color: var(--danger);
+  box-shadow: var(--hz-glass-inset);
+}
+.errorTitle {
+  font-family: var(--font-head);
+  font-size: var(--text-md);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+.errorCause {
+  max-width: 60ch;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--lh-sm);
+  color: var(--danger);
+  word-break: break-word;
+}
+.errorHint {
+  max-width: 52ch;
+  font-size: var(--text-xs);
+  line-height: var(--lh-sm);
+  color: var(--text-muted);
+}
+.errorActions {
+  display: inline-flex;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* ── ONE pager — was inline styles inside Pager.tsx ───────────────────────────── */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+}
+.pagerMeta {
+  margin-right: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── generic card ───────────────────────────────────────────────────────────── */
@@ -1266,9 +1377,19 @@
 }
 .chipMeta {
   margin-left: auto;
+  /* `flex: none` + nowrap: inside a flex search box this was getting squeezed against a clipped
+     placeholder, which read as the two strings colliding. */
+  flex: none;
+  white-space: nowrap;
+  padding-left: var(--space-2);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   color: var(--text-muted);
+}
+
+/* A search box that also carries a count needs room for both — 360px fits one or the other. */
+.searchWithMeta {
+  max-width: 520px;
 }
 .results {
   display: flex;

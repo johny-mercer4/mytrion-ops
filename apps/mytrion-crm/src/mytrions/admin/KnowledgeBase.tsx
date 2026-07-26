@@ -102,8 +102,12 @@ export function KnowledgeBase({ onAddSource }: { onAddSource?: () => void }) {
     <div className={s.panel}>
       <div className={s.head}>
         <div>
+          <div className={s.eyebrow}>Retrieval corpus</div>
           <h2 className={s.h2}>Knowledge Base</h2>
-
+          <p className={s.sub}>
+            Every document the agents can retrieve from, with its scope and embedded chunk count.
+            Add sources in Train.
+          </p>
         </div>
         <button type="button" className={s.primaryBtn} onClick={onAddSource}>
           <PlusIcon size={14} />

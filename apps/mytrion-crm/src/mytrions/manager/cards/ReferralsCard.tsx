@@ -214,6 +214,8 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
             </button>
           ) : null}
           <div>
+            {/* Same kicker → title → sub rhythm as the department landings. */}
+            <div className="mg-kicker">Workspaces</div>
             <h1 className="mg-page-title">Referrals</h1>
             <p className="mg-page-sub">
               Parent referrers, their child referrals (by referrer id), and the Leads &amp; Deals that

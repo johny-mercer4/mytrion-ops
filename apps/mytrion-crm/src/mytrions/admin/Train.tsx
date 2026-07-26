@@ -163,8 +163,12 @@ export function Train({ onTrained }: { onTrained?: () => void }) {
     <div className={s.panel}>
       <div className={s.head}>
         <div>
+          <div className={s.eyebrow}>Ingest &amp; embed</div>
           <h2 className={s.h2}>Train Agents</h2>
-
+          <p className={s.sub}>
+            Drop files or paste text to embed into the knowledge base. Scope a tag to one department,
+            or leave it blank to make it global.
+          </p>
         </div>
       </div>
 
