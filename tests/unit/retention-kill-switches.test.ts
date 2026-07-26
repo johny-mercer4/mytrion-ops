@@ -51,7 +51,9 @@ function baseCase(overrides: Partial<RetentionCase> = {}): RetentionCase {
     vacationCountdownEnd: null,
     citiFolderEnteredAt: null,
     citiFolderHoldUntil: null,
-    phaseChangedAt: null,
+    // NOT NULL DEFAULT now() in the schema and in every migration that touches it
+    // (0020 / 0023 / 0027) — a null here was a fixture bug, not a nullable column.
+    phaseChangedAt: new Date('2026-07-01T00:00:00Z'),
     closedAt: null,
     createdAt: new Date('2026-07-01T00:00:00Z'),
     updatedAt: new Date('2026-07-01T00:00:00Z'),
