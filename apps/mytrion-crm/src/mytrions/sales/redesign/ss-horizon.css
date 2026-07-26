@@ -1,0 +1,442 @@
+/* =====================================================
+   Sales Mytrion — Horizon glass layer
+   Imported AFTER theme.css so it wins at equal specificity.
+
+   Sales is unusual: its surfaces are built with INLINE styles (147 × `background:var(--surface)`,
+   262 × `var(--border)`), not classes. So the main lever here is the TOKEN BRIDGE below — redefining
+   what those inline styles resolve to turns every surface in the module to glass at once, without
+   touching 26k lines of markup. Only the handful of real classes (.ss-tab-x, .ss-btn-p, .ss-in,
+   .ss-skel, .ss-pool-*, .ss-auto-*) are styled directly.
+
+   Audience note driving the density work: sales agents coming from Zoho and Google Sheets. The type
+   scale was remapped (25 sizes → 13, floor lifted 8px → 11px) and the radii softened, because a
+   cramped, sharp, squinty interface is the fastest way to make someone refuse to adopt a tool.
+   ===================================================== */
+
+/* =====================================================
+   TOKEN BRIDGE
+   `--surface` / `--alt` / `--surface-2` MUST stay colours, not gradients: there is a
+   `color:var(--surface)` use site, and several `linear-gradient(…), var(--surface)` stacks that need
+   a colour in the final layer. Translucent colours over the ambience give the glass read; the frost
+   comes from the blur applied to chrome + card surfaces.
+   ===================================================== */
+.ss-root {
+  /* The shared Horizon field, so Sales sits on the same ground as every other module. */
+  --bg: var(--hz-page);
+  --bg2: color-mix(in srgb, var(--hz-page) 82%, transparent);
+
+  --surface: rgba(24, 31, 45, 0.66);
+  --surface-2: rgba(28, 36, 52, 0.72);
+  --alt: rgba(18, 24, 36, 0.58);
+  --raised: rgba(255, 255, 255, 0.06);
+
+  --border: rgba(255, 255, 255, 0.09);
+  --border2: rgba(255, 255, 255, 0.055);
+
+  /* Every surface that already uses --shadow-sm now also gets the 1px inset sheen that reads as a
+     lit glass edge — no per-element edit needed. */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --shadow: 0 18px 48px -18px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+
+  /* Softer than the inherited global 6px. Sharp corners on a dense grid read as spreadsheet, which
+     is precisely the thing this audience is being moved away from. */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  /* Breathing room. Larger type in the same boxes is worse than the old type, so the rhythm goes up
+     with it. */
+  line-height: 1.55;
+}
+
+.ss-root.light {
+  --surface: rgba(255, 255, 255, 0.82);
+  --surface-2: rgba(255, 255, 255, 0.92);
+  --alt: rgba(241, 244, 249, 0.72);
+  --raised: rgba(15, 23, 42, 0.045);
+
+  --border: rgba(15, 23, 42, 0.1);
+  --border2: rgba(15, 23, 42, 0.06);
+
+  /* Slate-tinted, never pure black — a dark-theme shadow on a pale field reads as dirt. */
+  --shadow-sm: 0 1px 3px rgba(30, 41, 59, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --shadow: 0 16px 44px -18px rgba(30, 41, 59, 0.18), 0 2px 8px rgba(30, 41, 59, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+/* ── Ambient field ───────────────────────────────────────────────────────── */
+.ss-root {
+  position: relative;
+  background: var(--hz-page);
+  isolation: isolate;
+}
+
+.ss-root .ss-ambience {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--hz-mesh);
+  transition: background var(--hz-dur-tone) var(--hz-ease);
+}
+.ss-root .ss-ambience::before,
+.ss-root .ss-ambience::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.ss-root .ss-ambience::before {
+  background-image: var(--hz-grid);
+  background-size: var(--hz-grid-size);
+}
+.ss-root .ss-ambience::after {
+  background: var(--hz-vignette);
+  transition: background var(--hz-dur-tone) var(--hz-ease);
+}
+
+/* ── Sidebar nav ─────────────────────────────────────────────────────────── */
+/* `.ss-tab-x:hover` in theme.css uses !important, so this has to as well to win. */
+.ss-root .ss-tab-x {
+  position: relative;
+  border: 1px solid transparent !important;
+  transition:
+    color var(--hz-dur-wash) var(--hz-ease),
+    background var(--hz-dur-wash) var(--hz-ease),
+    border-color var(--hz-dur-wash) var(--hz-ease),
+    box-shadow var(--hz-dur-wash) var(--hz-ease),
+    transform var(--hz-dur-wash) var(--hz-ease) !important;
+}
+.ss-root .ss-tab-x:hover {
+  color: var(--text) !important;
+  background: var(--raised) !important;
+  border-color: var(--border) !important;
+  transform: translateX(2px);
+}
+/* The selected tab's rail is a gradient, so it can't be the inline inset box-shadow it used to be
+   (a box-shadow takes no gradient). Shell.tsx drops that inline shadow; this paints it. */
+.ss-root .ss-tab-x.is-active {
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--ss-tone, var(--accent)) 15%, transparent) 0%,
+    color-mix(in srgb, var(--accent-2) 7%, transparent) 100%
+  ) !important;
+  border-color: color-mix(in srgb, var(--ss-tone, var(--accent)) 30%, transparent) !important;
+  color: var(--ss-tone, var(--accent)) !important;
+  box-shadow: 0 2px 14px -4px color-mix(in srgb, var(--ss-tone, var(--accent)) 30%, transparent);
+  transform: none;
+}
+.ss-root .ss-tab-x.is-active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2.5px;
+  border-radius: inherit;
+  background: linear-gradient(180deg, var(--ss-tone, var(--accent)) 0%, var(--accent-2) 100%);
+}
+/* At rest the per-tab hue is held back so the column reads as one list. */
+.ss-root .ss-tab-x .ss-tab-ico {
+  color: var(--ss-tone, currentColor);
+  opacity: 0.7;
+  transition: opacity var(--hz-dur-wash) var(--hz-ease);
+}
+.ss-root .ss-tab-x:hover .ss-tab-ico,
+.ss-root .ss-tab-x.is-active .ss-tab-ico {
+  opacity: 1;
+}
+.ss-root .ss-tab-x.is-active .ss-tab-ico {
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--ss-tone, var(--accent)) 55%, transparent));
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.ss-root .ss-btn-p {
+  transition:
+    filter var(--hz-dur-wash) var(--hz-ease),
+    box-shadow var(--hz-dur-wash) var(--hz-ease),
+    transform 0.1s var(--hz-ease);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.ss-root .ss-btn-p:hover:not(:disabled) {
+  filter: saturate(1.1) brightness(1.06);
+  box-shadow:
+    0 8px 26px -6px color-mix(in srgb, var(--accent) 45%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transform: var(--hz-hover-lift-sm);
+}
+/* Inert neutral — a faded gradient reads as muddy, not as disabled. */
+.ss-root .ss-btn-p:disabled,
+.ss-root .ss-btn-p:disabled:hover {
+  filter: none;
+  transform: none;
+  box-shadow: none;
+  background: var(--alt) !important;
+  color: var(--muted) !important;
+  cursor: not-allowed;
+}
+
+.ss-root .ss-ico-btn {
+  backdrop-filter: blur(var(--hz-blur-sm));
+  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+  transition:
+    background var(--hz-dur-wash) var(--hz-ease),
+    color var(--hz-dur-wash) var(--hz-ease),
+    border-color var(--hz-dur-wash) var(--hz-ease),
+    box-shadow var(--hz-dur-wash) var(--hz-ease),
+    transform var(--hz-dur-wash) var(--hz-ease);
+}
+.ss-root .ss-ico-btn:hover {
+  box-shadow: 0 4px 16px -4px rgba(var(--accent-rgb), 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transform: var(--hz-hover-lift-sm);
+}
+
+/* ── Inputs ──────────────────────────────────────────────────────────────── */
+.ss-root .ss-in {
+  background-color: var(--alt);
+  backdrop-filter: blur(var(--hz-blur-sm));
+  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition:
+    background var(--hz-dur-wash) var(--hz-ease),
+    border-color var(--hz-dur-wash) var(--hz-ease),
+    box-shadow var(--hz-dur-wash) var(--hz-ease);
+}
+.ss-root .ss-in:hover:not(:focus) {
+  border-color: rgba(var(--accent-rgb), 0.28) !important;
+}
+.ss-root .ss-in:focus,
+.ss-root .ss-in:focus-visible {
+  outline: none;
+  background-color: var(--surface-2);
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* ── Loading — one system ────────────────────────────────────────────────────
+   The skeleton sheen carries a hint of the accent in BOTH themes; the old dark variant slid a plain
+   white band, which on a translucent pane reads as a glitch rather than as loading. */
+.ss-root .ss-skel {
+  background: linear-gradient(
+    90deg,
+    var(--raised) 25%,
+    color-mix(in srgb, var(--accent) 12%, var(--raised)) 37%,
+    var(--raised) 63%
+  );
+  background-size: 900px 100%;
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+}
+.ss-root.light .ss-skel {
+  background: linear-gradient(
+    90deg,
+    rgba(15, 23, 42, 0.05) 25%,
+    color-mix(in srgb, var(--accent) 13%, rgba(15, 23, 42, 0.05)) 37%,
+    rgba(15, 23, 42, 0.05) 63%
+  );
+  background-size: 900px 100%;
+}
+
+/* ── Modals ──────────────────────────────────────────────────────────────── */
+.ss-root .ss-pool-modal,
+.ss-root .ss-modal-box,
+.ss-root .ss-float-drop {
+  /* Ramp along the top edge, painted as a background layer so it survives internal scrolling. */
+  background:
+    linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 100%) top left / 100% 2px no-repeat,
+    var(--surface-2) !important;
+  backdrop-filter: blur(var(--hz-blur));
+  -webkit-backdrop-filter: blur(var(--hz-blur));
+  border: 1px solid var(--border) !important;
+  box-shadow: var(--shadow) !important;
+}
+
+/* ── Cards / surfaces that carry a class ─────────────────────────────────── */
+.ss-root .ss-card-h,
+.ss-root .ss-pool-empty,
+.ss-root .ss-ret-empty,
+.ss-root .ss-auto-empty,
+.ss-root .ss-auto-result,
+.ss-root .ss-pool-error {
+  backdrop-filter: blur(var(--hz-blur-md));
+  -webkit-backdrop-filter: blur(var(--hz-blur-md));
+}
+
+/* Empty / error / success states — one glass treatment, semantic tint kept. */
+.ss-root .ss-auto-result--ok {
+  border-color: color-mix(in srgb, var(--ok) 32%, transparent) !important;
+}
+.ss-root .ss-auto-result--err {
+  border-color: color-mix(in srgb, var(--danger) 32%, transparent) !important;
+}
+.ss-root .ss-pool-empty-ico,
+.ss-root .ss-ret-empty-ico,
+.ss-root .ss-auto-empty-icon,
+.ss-root .ss-auto-result-icon {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* ── Focus — one ring, keyboard only ─────────────────────────────────────── */
+.ss-root :focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.28);
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ss-root .ss-tab-x:hover,
+  .ss-root .ss-btn-p:hover,
+  .ss-root .ss-ico-btn:hover {
+    transform: none;
+  }
+}
+
+/* =====================================================
+   ONE STATE BLOCK — empty / error / success (SalesStates.tsx)
+   Replaces ~35 bare lines of centred coloured text. For agents coming off Zoho and spreadsheets, a
+   small red sentence with nothing to press is a dead end; this gives every state a recognisable
+   shape and, for errors, an action.
+   ===================================================== */
+.ss-root .ss-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 30px 22px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.55;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border2);
+  background: var(--alt);
+  backdrop-filter: blur(var(--hz-blur-sm));
+  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.ss-root .ss-state-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  border: 1px solid transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+.ss-root .ss-state-msg {
+  max-width: 52ch;
+}
+
+/* Empty is quiet: it is a normal outcome, not a problem. */
+.ss-root .ss-state--muted {
+  color: var(--muted);
+}
+.ss-root .ss-state--muted .ss-state-ico {
+  background: var(--raised);
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+/* An error is the one state allowed to raise its voice. */
+.ss-root .ss-state--danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 28%, transparent);
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+}
+.ss-root .ss-state--danger .ss-state-ico {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+  color: var(--danger);
+}
+
+.ss-root .ss-state--ok {
+  color: var(--ok-text);
+  border-color: color-mix(in srgb, var(--ok) 28%, transparent);
+  background: color-mix(in srgb, var(--ok) 7%, transparent);
+}
+.ss-root .ss-state--ok .ss-state-ico {
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  border-color: color-mix(in srgb, var(--ok) 30%, transparent);
+  color: var(--ok-text);
+}
+
+.ss-root .ss-state-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 13px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text2);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    color var(--hz-dur-wash) var(--hz-ease),
+    background var(--hz-dur-wash) var(--hz-ease),
+    border-color var(--hz-dur-wash) var(--hz-ease),
+    box-shadow var(--hz-dur-wash) var(--hz-ease),
+    transform var(--hz-dur-wash) var(--hz-ease);
+}
+.ss-root .ss-state-btn:hover {
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), 0.45);
+  box-shadow: 0 4px 14px -4px rgba(var(--accent-rgb), 0.3);
+  transform: var(--hz-hover-lift-sm);
+}
+
+/* ── Sidebar labels must not wrap ────────────────────────────────────────────
+   The type-scale lift pushed long labels ("Verification Pipeline") onto two lines, which broke the
+   row rhythm of the whole rail. */
+.ss-root .ss-tab-x > span:not(.ss-tab-ico) {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* ── SOON chips: quieter ─────────────────────────────────────────────────────
+   These were bright gradient pills with a glow, so the four PARKED tabs were the loudest thing in
+   the sidebar and pulled attention away from the live ones. Now a tinted pill in the same hue. */
+.ss-root .ss-soon-chip {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border-radius: 99px;
+  color: var(--ss-soon-hue, var(--warn));
+  background: color-mix(in srgb, var(--ss-soon-hue, var(--warn)) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ss-soon-hue, var(--warn)) 30%, transparent);
+  box-shadow: none;
+}
+
+
+/* Chromatic edge — a 1px ring running sky at the top to sunset at the bottom, so the sheet reads as
+   glass with THICKNESS rather than a flat translucent rectangle. Masked pseudo-ring, not
+   `border-image`: border-image takes a gradient but ignores border-radius (square corners), and
+   box-shadow respects the radius but takes no gradient. CSS-only, no runtime cost. */
+.ss-root .ss-pool-modal::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--hz-edge);
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}

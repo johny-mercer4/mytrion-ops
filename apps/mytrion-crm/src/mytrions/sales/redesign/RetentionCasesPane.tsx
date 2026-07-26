@@ -39,6 +39,16 @@ type ViewMode = 'kanban' | 'list';
 const LIST_GRID =
   'grid-template-columns:1.4fr 110px 90px 1.1fr 90px 160px 90px 1fr';
 
+/** Short empty-column copy — stage-specific, not a generic "Empty". */
+const COL_EMPTY_HINT: Record<RetentionKanbanCol, string> = {
+  new: 'Call to start',
+  reached: 'None watching',
+  out_of_reach: 'No open attempts',
+  vacation: 'None on hold',
+  dissatisfied: 'None locked',
+  closed: 'None closed yet',
+};
+
 function useBoardClock(ms = 30_000): Date {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -217,7 +227,7 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
       {feed.error && (
         <div
           style={s(
-            'padding:14px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--danger) 30%,var(--border));background:color-mix(in srgb,var(--danger) 8%,transparent);color:var(--danger);font-size:13px',
+            'padding:14px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--danger) 30%,var(--border));background:color-mix(in srgb,var(--danger) 8%,transparent);color:var(--danger);font-size:14px',
           )}
         >
           {feed.error}
@@ -231,9 +241,12 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
           title={search.trim() ? 'No matching cases' : 'No retention cases'}
           body={
             search.trim()
-              ? 'Try another carrier ID or company name.'
+              ? 'Nothing matches that carrier or company. Clear search to see your full board.'
               : 'When a client goes quiet longer than usual, a case appears here automatically.'
           }
+          {...(search.trim()
+            ? { onClearSearch: () => setSearch(''), clearLabel: 'Clear search' }
+            : {})}
         />
       )}
 
@@ -263,8 +276,8 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
                     />
                   ))}
                   {rows.length === 0 && (
-                    <div style={s('padding:28px 8px;text-align:center;font-size:11px;color:var(--faint);font-weight:600')}>
-                      Empty
+                    <div style={s('padding:28px 8px;text-align:center;font-size:12px;color:var(--faint);font-weight:600')}>
+                      {COL_EMPTY_HINT[col.id]}
                     </div>
                   )}
                 </div>
@@ -284,7 +297,7 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
             <div style={s('min-width:920px')}>
               <div
                 style={s(
-                  `display:grid;${LIST_GRID};gap:10px;padding:11px 15px;background:var(--alt);border-bottom:1px solid var(--border);font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);position:sticky;top:0;z-index:2`,
+                  `display:grid;${LIST_GRID};gap:10px;padding:11px 15px;background:var(--alt);border-bottom:1px solid var(--border);font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);position:sticky;top:0;z-index:2`,
                 )}
               >
                 <span>Company</span>
@@ -313,14 +326,14 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
                       <span style={s('font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
                         {c.companyName || '—'}
                       </span>
-                      <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted)")}>
+                      <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--muted)")}>
                         {c.carrierId}
                       </span>
                       <span>
                         <RetentionFreqBadge f={c.transactionFrequency} />
                       </span>
-                      <span style={s('font-size:12px;color:var(--muted)')}>{quietCaption(c)}</span>
-                      <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px")}>
+                      <span style={s('font-size:13px;color:var(--muted)')}>{quietCaption(c)}</span>
+                      <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px")}>
                         {c.gallons90d != null ? fmtGal(c.gallons90d) : '—'}
                       </span>
                       <span
@@ -332,7 +345,7 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
                       <span className="ss-ret-pips">—</span>
                       <span
                         style={s(
-                          `font-size:12px;font-weight:700;color:${pooled ? 'var(--warn)' : 'var(--danger)'}`,
+                          `font-size:13px;font-weight:700;color:${pooled ? 'var(--warn)' : 'var(--danger)'}`,
                         )}
                       >
                         {badge}
@@ -351,7 +364,7 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
                     <span style={s('font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
                       {c.companyName || '—'}
                     </span>
-                    <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted)")}>
+                    <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--muted)")}>
                       {c.carrierId}
                     </span>
                     <span>
@@ -359,23 +372,23 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
                     </span>
                     <span
                       style={s(
-                        `font-size:12px;color:${breachSeverity(c) > 0 ? 'var(--warn)' : 'var(--muted)'}`,
+                        `font-size:13px;color:${breachSeverity(c) > 0 ? 'var(--warn)' : 'var(--muted)'}`,
                       )}
                     >
                       {quietCaption(c)}
                     </span>
-                    <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px")}>
+                    <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px")}>
                       {c.gallons90d != null ? fmtGal(c.gallons90d) : '—'}
                     </span>
                     <span>
                       {timer ? (
                         <RetentionStageTimer timer={timer} compact />
                       ) : (
-                        <span style={s('font-size:12px;color:var(--faint)')}>—</span>
+                        <span style={s('font-size:13px;color:var(--faint)')}>—</span>
                       )}
                     </span>
                     <span className="ss-ret-pips">{attemptPips(c.outOfReachAttempts)}</span>
-                    <span style={s('font-size:12px;font-weight:700;color:var(--text2)')}>
+                    <span style={s('font-size:13px;font-weight:700;color:var(--text2)')}>
                       {statusLabel(c.statusCode)}
                     </span>
                   </button>

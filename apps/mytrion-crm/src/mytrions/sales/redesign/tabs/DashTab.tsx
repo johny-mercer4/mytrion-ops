@@ -54,12 +54,12 @@ export function DashTab() {
       <div style={s('margin-bottom:18px')}>
         <div
           style={s(
-            'font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.04em;text-transform:uppercase',
+            'font-family:Rajdhani,sans-serif;font-weight:700;font-size:24px;letter-spacing:.04em;text-transform:uppercase',
           )}
         >
           Dashboard
         </div>
-        <div style={s('font-size:13px;color:var(--muted);margin-top:2px')}>{todayDate}</div>
+        <div style={s('font-size:14px;color:var(--muted);margin-top:2px')}>{todayDate}</div>
       </div>
 
       <div
@@ -83,7 +83,7 @@ export function DashTab() {
                   on ? 'color-mix(in srgb,var(--accent) 45%,var(--border))' : 'transparent'
                 };background:${on ? 'color-mix(in srgb,var(--accent) 12%,transparent)' : 'transparent'};color:${
                   on ? 'var(--accent)' : 'var(--muted)'
-                };font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .14s,color .14s,border-color .14s`,
+                };font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .14s,color .14s,border-color .14s`,
               )}
             >
               <span style={s(`opacity:${on ? 1 : 0.75};display:flex`)}>

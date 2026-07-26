@@ -58,13 +58,13 @@ function PipelineTimeline({ client }: { client: VerificationClient }) {
   );
 
   if (pipe.loading && !pipe.data) {
-    return <div style={s('padding:28px;text-align:center;color:var(--muted);font-size:13px')}>Loading pipeline…</div>;
+    return <div style={s('padding:28px;text-align:center;color:var(--muted);font-size:14px')}>Loading pipeline…</div>;
   }
   if (pipe.error) {
-    return <div style={s('padding:28px;text-align:center;color:var(--danger);font-size:13px')}>{pipe.error}</div>;
+    return <div style={s('padding:28px;text-align:center;color:var(--danger);font-size:14px')}>{pipe.error}</div>;
   }
   if (!pipe.data) {
-    return <div style={s('padding:28px;text-align:center;color:var(--muted);font-size:13px')}>No verification record for this client yet.</div>;
+    return <div style={s('padding:28px;text-align:center;color:var(--muted);font-size:14px')}>No verification record for this client yet.</div>;
   }
 
   const { stages, decision } = pipe.data;
@@ -87,11 +87,11 @@ function PipelineTimeline({ client }: { client: VerificationClient }) {
             {/* body */}
             <div style={s('flex:1;min-width:0;padding-bottom:14px')}>
               <div style={s('display:flex;align-items:center;gap:8px')}>
-                <span style={s('font-size:11px;color:var(--muted);font-family:JetBrains Mono,monospace')}>{st.order}</span>
-                <span style={s('font-size:13px;font-weight:700')}>{st.label}</span>
+                <span style={s('font-size:12px;color:var(--muted);font-family:JetBrains Mono,monospace')}>{st.order}</span>
+                <span style={s('font-size:14px;font-weight:700')}>{st.label}</span>
                 <span style={s(badge(vis.label, vis.color).style)}>{vis.label}</span>
               </div>
-              {st.detail && <div style={s('font-size:11.5px;color:var(--text2);margin-top:3px')}>{st.detail}</div>}
+              {st.detail && <div style={s('font-size:12px;color:var(--text2);margin-top:3px')}>{st.detail}</div>}
             </div>
           </div>
         );
@@ -100,8 +100,8 @@ function PipelineTimeline({ client }: { client: VerificationClient }) {
       {/* decision */}
       <div style={s('margin-top:8px;padding:14px 16px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
         <div style={s('display:flex;align-items:center;justify-content:space-between;gap:10px')}>
-          <span style={s('font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)')}>Decision</span>
-          <span style={s(`${badge(dec.text, dec.color).style};font-size:12px`)}>{dec.text}</span>
+          <span style={s('font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)')}>Decision</span>
+          <span style={s(`${badge(dec.text, dec.color).style};font-size:13px`)}>{dec.text}</span>
         </div>
         {decision.outcome === 'loc' && (
           <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px')}>
@@ -111,7 +111,7 @@ function PipelineTimeline({ client }: { client: VerificationClient }) {
           </div>
         )}
         {decision.reason && decision.outcome !== 'loc' && (
-          <div style={s('font-size:12px;color:var(--text2);margin-top:8px')}>{decision.reason}</div>
+          <div style={s('font-size:13px;color:var(--text2);margin-top:8px')}>{decision.reason}</div>
         )}
       </div>
     </div>
@@ -121,8 +121,8 @@ function PipelineTimeline({ client }: { client: VerificationClient }) {
 function TermTile({ label, value }: { label: string; value: string }) {
   return (
     <div style={s('padding:12px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border2)')}>
-      <div style={s('font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>{label}</div>
-      <div style={s("font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:600;margin-top:5px")}>{value}</div>
+      <div style={s('font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em')}>{label}</div>
+      <div style={s("font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:600;margin-top:5px")}>{value}</div>
     </div>
   );
 }
@@ -142,8 +142,8 @@ function TermsPanel({ client: c }: { client: VerificationClient }) {
     return (
       <div style={s('display:flex;flex-direction:column;gap:14px')}>
         <div style={s('display:flex;align-items:center;gap:10px;flex-wrap:wrap')}>
-          <span style={s(`${badge('Prepay', 'var(--accent)').style};font-size:12px`)}>Prepay</span>
-          <span style={s('font-size:12.5px;color:var(--text2)')}>Pay-per-load client — no credit line, limit, or billing cycle.</span>
+          <span style={s(`${badge('Prepay', 'var(--accent)').style};font-size:13px`)}>Prepay</span>
+          <span style={s('font-size:13px;color:var(--text2)')}>Pay-per-load client — no credit line, limit, or billing cycle.</span>
         </div>
         <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:10px')}>
           <TermTile label="Active Cards" value={`${c.totalActiveCards}`} />
@@ -169,7 +169,7 @@ function TermsPanel({ client: c }: { client: VerificationClient }) {
         <TermTile label="First Swipe" value={c.firstSwipeDate ?? '—'} />
       </div>
       {flags}
-      <div style={s('font-size:11.5px;color:var(--muted);line-height:1.5')}>
+      <div style={s('font-size:12px;color:var(--muted);line-height:1.5')}>
         Limit-change requests (Credit / Card / Weekly) are coming soon — you'll be able to send them here
         without contacting Verification.
       </div>
@@ -187,19 +187,19 @@ function ClientDetailPage({ client, onBack }: { client: VerificationClient; onBa
         type="button"
         onClick={onBack}
         className="ss-ico-btn"
-        style={s('display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 15px 0 11px;margin-bottom:14px;border-radius:99px;border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:var(--shadow-sm)')}
+        style={s('display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 15px 0 11px;margin-bottom:14px;border-radius:99px;border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:13px;font-weight:700;cursor:pointer;box-shadow:var(--shadow-sm)')}
       >
         <Icon name="chevronLeft" size={16} strokeWidth={2.4} /> Back to pipeline
       </button>
 
       <div style={s('display:flex;align-items:center;gap:14px;padding:20px 22px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow-sm)')}>
         <div style={s('flex:1;min-width:0')}>
-          <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{client.companyName}</div>
-          <div style={s("font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:3px")}>
+          <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:21px;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{client.companyName}</div>
+          <div style={s("font-size:13px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:3px")}>
             {client.dealStage}{client.appFillDate ? ` · applied ${client.appFillDate}` : ''}{client.carrierId ? ` · #${client.carrierId}` : ''}
           </div>
         </div>
-        <span style={s(`${badge(cls.label, cls.color).style};font-size:11px;flex-shrink:0`)}>{cls.label}</span>
+        <span style={s(`${badge(cls.label, cls.color).style};font-size:12px;flex-shrink:0`)}>{cls.label}</span>
       </div>
 
       <div style={s('margin-top:14px;padding:22px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-sm)')}>
@@ -218,8 +218,8 @@ function MiniTerm({ label, value, tone }: { label: string; value: string; tone?:
   const bd = tone ? `color-mix(in srgb,${tone} 28%,var(--border2))` : 'var(--border2)';
   return (
     <div style={s(`flex:1;min-width:0;padding:8px 10px;border-radius:10px;background:${bg};border:1px solid ${bd}`)}>
-      <div style={s('font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)')}>{label}</div>
-      <div style={s(`font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;margin-top:3px;color:${accent};white-space:nowrap;overflow:hidden;text-overflow:ellipsis`)}>{value}</div>
+      <div style={s('font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)')}>{label}</div>
+      <div style={s(`font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;margin-top:3px;color:${accent};white-space:nowrap;overflow:hidden;text-overflow:ellipsis`)}>{value}</div>
     </div>
   );
 }
@@ -270,8 +270,8 @@ export function VerificationTab() {
   return (
     <div className="ss-fu" style={s('max-width:1180px;margin:0 auto')}>
       <div style={s('margin-bottom:16px')}>
-        <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.01em')}>Verification Pipeline</div>
-        <div style={s('font-size:13px;color:var(--muted);margin-top:3px')}>
+        <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:24px;letter-spacing:.01em')}>Verification Pipeline</div>
+        <div style={s('font-size:14px;color:var(--muted);margin-top:3px')}>
           Your clients by application date — track pipeline clients through compliance to decision, and review active clients' terms.
         </div>
       </div>
@@ -281,9 +281,9 @@ export function VerificationTab() {
         {tabs.map((t) => {
           const on = view === t.v;
           return (
-            <button key={t.v} type="button" onClick={() => setView(t.v)} style={s(`height:34px;padding:0 16px;border:none;border-radius:99px;cursor:pointer;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:7px;transition:background .15s,color .15s;${on ? 'background:var(--surface);color:var(--text);box-shadow:var(--shadow-sm)' : 'background:transparent;color:var(--muted)'}`)}>
+            <button key={t.v} type="button" onClick={() => setView(t.v)} style={s(`height:34px;padding:0 16px;border:none;border-radius:99px;cursor:pointer;font-size:13px;font-weight:700;display:flex;align-items:center;gap:7px;transition:background .15s,color .15s;${on ? 'background:var(--surface);color:var(--text);box-shadow:var(--shadow-sm)' : 'background:transparent;color:var(--muted)'}`)}>
               {t.label}
-              <span style={s(`font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:99px;${on ? `background:color-mix(in srgb,${t.hue} 16%,transparent);color:${t.hue}` : 'background:var(--border2);color:var(--muted)'}`)}>{t.count}</span>
+              <span style={s(`font-size:11px;font-weight:800;padding:1px 7px;border-radius:99px;${on ? `background:color-mix(in srgb,${t.hue} 16%,transparent);color:${t.hue}` : 'background:var(--border2);color:var(--muted)'}`)}>{t.count}</span>
             </button>
           );
         })}
@@ -293,12 +293,12 @@ export function VerificationTab() {
       <div style={s('display:flex;gap:12px;margin-bottom:16px;align-items:center;flex-wrap:wrap')}>
         <div style={s('position:relative;flex:1;min-width:240px')}>
           <Icon name="search" size={16} style={s('position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--muted)')} />
-          <input value={query} onChange={(e) => setQuery(e.currentTarget.value)} placeholder="Search clients by name, carrier ID or stage…" className="ss-in" style={s('width:100%;height:44px;padding:0 16px 0 44px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;box-shadow:var(--shadow-sm)')} />
+          <input value={query} onChange={(e) => setQuery(e.currentTarget.value)} placeholder="Search clients by name, carrier ID or stage…" className="ss-in" style={s('width:100%;height:44px;padding:0 16px 0 44px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;box-shadow:var(--shadow-sm)')} />
         </div>
-        <button type="button" onClick={() => setSort((p) => (p === 'newest' ? 'oldest' : 'newest'))} title="Sort by application date" className="ss-ico-btn" style={s('height:44px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:var(--shadow-sm)')}>
+        <button type="button" onClick={() => setSort((p) => (p === 'newest' ? 'oldest' : 'newest'))} title="Sort by application date" className="ss-ico-btn" style={s('height:44px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:var(--shadow-sm)')}>
           <Icon name="arrows" size={15} /> Applied: {sort === 'newest' ? 'Newest' : 'Oldest'}
         </button>
-        <button type="button" onClick={() => load.reload()} disabled={load.revalidating} title="Refresh" className="ss-ico-btn" style={s(`height:44px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:12px;font-weight:700;cursor:${load.revalidating ? 'default' : 'pointer'};display:flex;align-items:center;gap:8px;box-shadow:var(--shadow-sm);opacity:${load.revalidating ? '.7' : '1'}`)}>
+        <button type="button" onClick={() => load.reload()} disabled={load.revalidating} title="Refresh" className="ss-ico-btn" style={s(`height:44px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:13px;font-weight:700;cursor:${load.revalidating ? 'default' : 'pointer'};display:flex;align-items:center;gap:8px;box-shadow:var(--shadow-sm);opacity:${load.revalidating ? '.7' : '1'}`)}>
           <span style={s(`display:inline-flex${load.revalidating ? ';animation:ss-spin .8s linear infinite' : ''}`)}><Icon name="refresh" size={15} /></span>
           Refresh
         </button>
@@ -306,11 +306,11 @@ export function VerificationTab() {
 
       {/* content */}
       {load.loading && !load.data ? (
-        <div style={s('padding:48px;text-align:center;color:var(--muted);font-size:13px')}>Loading clients…</div>
+        <div style={s('padding:48px;text-align:center;color:var(--muted);font-size:14px')}>Loading clients…</div>
       ) : load.error && !load.data ? (
-        <div style={s('padding:36px;text-align:center;color:var(--danger);font-size:13px')}>{load.error}</div>
+        <div style={s('padding:36px;text-align:center;color:var(--danger);font-size:14px')}>{load.error}</div>
       ) : list.length === 0 ? (
-        <div style={s('padding:48px;text-align:center;color:var(--muted);font-size:13px')}>{emptyMsg}</div>
+        <div style={s('padding:48px;text-align:center;color:var(--muted);font-size:14px')}>{emptyMsg}</div>
       ) : (
         <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:14px')}>
           {list.map((c) => {
@@ -320,14 +320,14 @@ export function VerificationTab() {
             return (
               <div key={c.carrierId} onClick={() => setSelected(c)} className="ss-card-h" style={s(`padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)${isActive ? ';border-left:3px solid var(--ok)' : ''}`)}>
                 <div style={s('display:flex;align-items:start;justify-content:space-between;gap:10px')}>
-                  <div style={s('font-size:14px;font-weight:700;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{c.companyName}</div>
+                  <div style={s('font-size:15px;font-weight:700;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{c.companyName}</div>
                   <span style={s(`${badge(cls.label, cls.color).style};flex-shrink:0`)}>{cls.label}</span>
                 </div>
-                <div style={s("font-size:11.5px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:6px")}>{c.dealStage}</div>
+                <div style={s("font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:6px")}>{c.dealStage}</div>
                 {isActive &&
                   (isPrepay ? (
                     <div style={s('margin-top:12px')}>
-                      <span style={s(`${badge('Prepay', 'var(--accent)').style};font-size:11.5px`)}>Prepay</span>
+                      <span style={s(`${badge('Prepay', 'var(--accent)').style};font-size:12px`)}>Prepay</span>
                     </div>
                   ) : (
                     <div style={s('display:flex;gap:7px;margin-top:12px')}>
@@ -336,7 +336,7 @@ export function VerificationTab() {
                       <MiniTerm label="Terms" value={c.paymentTerms ?? '—'} />
                     </div>
                   ))}
-                <div style={s('display:flex;align-items:center;justify-content:space-between;margin-top:12px;font-size:11.5px;color:var(--text2)')}>
+                <div style={s('display:flex;align-items:center;justify-content:space-between;margin-top:12px;font-size:12px;color:var(--text2)')}>
                   <span>{c.appFillDate ? `Applied ${c.appFillDate}` : '—'}</span>
                   {isActive && c.lastTransactionDate ? <span style={s('color:var(--muted)')}>Last swipe {c.lastTransactionDate}</span> : null}
                 </div>

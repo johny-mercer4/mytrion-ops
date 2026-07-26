@@ -18,8 +18,10 @@
   margin-bottom: 10px;
 }
 .langTab {
-  border: 1px solid var(--border, #d8dce3);
-  background: transparent;
+  border: 1px solid var(--hz-pane-bd);
+  background: var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur-sm));
+  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
   border-radius: 8px;
   padding: 4px 12px;
   font: inherit;
@@ -28,25 +30,48 @@
   cursor: pointer;
   color: inherit;
   opacity: 0.65;
+  transition:
+    background var(--hz-dur-wash) var(--hz-ease),
+    border-color var(--hz-dur-wash) var(--hz-ease),
+    box-shadow var(--hz-dur-wash) var(--hz-ease),
+    opacity var(--hz-dur-wash) var(--hz-ease);
 }
+.langTab:hover:not(.langTabOn) {
+  opacity: 1;
+  background: var(--hz-pane-lift);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--hz-pane-bd));
+}
+/* Selected language: the same gradient fill the rest of the module uses for an active segment. */
 .langTabOn {
   opacity: 1;
-  border-color: currentColor;
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: var(--on-accent);
+  box-shadow:
+    0 3px 12px -4px color-mix(in srgb, var(--accent) 42%, transparent),
+    var(--hz-glass-inset-strong);
 }
 .langTabFilled::after {
   content: '•';
   margin-left: 5px;
-  color: #16a34a;
+  color: var(--success);
+}
+/* On the gradient-filled tab the green dot loses contrast — use the ink colour instead. */
+.langTabOn.langTabFilled::after {
+  color: currentColor;
 }
 
 .toolbar {
   display: flex;
   gap: 2px;
-  border: 1px solid var(--border, #d8dce3);
+  border: 1px solid var(--hz-pane-bd);
   border-bottom: none;
   border-radius: 10px 10px 0 0;
   padding: 5px 7px;
   flex-wrap: wrap;
+  background: var(--hz-pane-alt);
+  backdrop-filter: blur(var(--hz-blur-sm));
+  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
 }
 .toolBtn {
   border: none;
@@ -62,7 +87,7 @@
   opacity: 0.8;
 }
 .toolBtn:hover {
-  background: rgba(127, 127, 127, 0.12);
+  background: var(--hz-glass-hover);
   opacity: 1;
 }
 .toolSep {
@@ -73,8 +98,11 @@
 }
 
 .editor {
-  border: 1px solid var(--border, #d8dce3);
+  border: 1px solid var(--hz-pane-bd);
   border-radius: 0 0 10px 10px;
+  background: var(--hz-pane);
+  backdrop-filter: blur(var(--hz-blur-sm));
+  -webkit-backdrop-filter: blur(var(--hz-blur-sm));
   min-height: 170px;
   max-height: 340px;
   overflow: auto;

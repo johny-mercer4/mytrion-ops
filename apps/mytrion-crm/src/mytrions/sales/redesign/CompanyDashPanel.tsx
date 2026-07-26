@@ -50,8 +50,8 @@ function Gauge(props: {
           {pct != null ? `${Math.min(Math.round(pct), 999)}% of target` : 'No target set'}
         </text>
       </svg>
-      <div style={s('font-size:13px;font-weight:800;margin-top:6px')}>{props.label}</div>
-      <div style={s('font-size:11px;color:var(--faint);margin-top:3px')}>
+      <div style={s('font-size:14px;font-weight:800;margin-top:6px')}>{props.label}</div>
+      <div style={s('font-size:12px;color:var(--faint);margin-top:3px')}>
         {props.target != null ? `Target: ${props.target.toLocaleString()}` : 'Not set yet'}
       </div>
     </div>
@@ -87,7 +87,7 @@ export function CompanyDashPanel() {
   if (loading && !data) return <CompanySkeleton />;
   if (error && !data) {
     return (
-      <div style={s('text-align:center;padding:48px 20px;color:var(--danger);font-size:13px')}>
+      <div style={s('text-align:center;padding:48px 20px;color:var(--danger);font-size:14px')}>
         {error}
         <div style={s('margin-top:12px')}>
           <button type="button" onClick={() => void fetch(true)} style={s('padding:8px 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;cursor:pointer')}>
@@ -105,8 +105,8 @@ export function CompanyDashPanel() {
     <div style={s('display:flex;flex-direction:column;gap:16px')}>
       <div style={s('display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap')}>
         <div>
-          <div style={s('font-size:15px;font-weight:800')}>Company Dashboard</div>
-          <div style={s('font-size:12px;color:var(--muted);margin-top:2px')}>
+          <div style={s('font-size:16px;font-weight:800')}>Company Dashboard</div>
+          <div style={s('font-size:13px;color:var(--muted);margin-top:2px')}>
             {data.asOf
               ? `As of ${data.asOf}${data.weekStart ? ` — week starts ${data.weekStart}` : ''}`
               : 'Applications & gallon volume'}
@@ -120,7 +120,7 @@ export function CompanyDashPanel() {
           onClick={() => void fetch(true)}
           disabled={refreshing}
           style={s(
-            'height:34px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;font-size:12px;cursor:pointer;color:var(--text2);display:inline-flex;align-items:center;gap:7px',
+            'height:34px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;font-size:13px;cursor:pointer;color:var(--text2);display:inline-flex;align-items:center;gap:7px',
           )}
         >
           {refreshing ? (
@@ -139,7 +139,7 @@ export function CompanyDashPanel() {
           <span style={s('width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--orange) 14%,transparent);color:var(--orange)')}>
             <Icon name={ICO.doc} size={14} />
           </span>
-          <span style={s('font-size:13.5px;font-weight:800')}>Applications</span>
+          <span style={s('font-size:14px;font-weight:800')}>Applications</span>
         </div>
         <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:12px')}>
           <Gauge label="Today" value={data.fillsToday} target={COMPANY_TARGETS.fills_today} stroke="var(--orange)" />
@@ -153,7 +153,7 @@ export function CompanyDashPanel() {
           <span style={s('width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)')}>
             <Icon name={ICO.bolt} size={14} />
           </span>
-          <span style={s('font-size:13.5px;font-weight:800')}>Gallon Volume</span>
+          <span style={s('font-size:14px;font-weight:800')}>Gallon Volume</span>
         </div>
         <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:12px')}>
           <Gauge label="Today" value={data.gallonsToday} target={COMPANY_TARGETS.gallons_today} stroke="var(--accent)" />

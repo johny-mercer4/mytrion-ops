@@ -225,15 +225,15 @@ export function TicketWizard() {
   const circle = (n: number): string => {
     const done = cr.step > n;
     const curr = cr.step === n;
-    return `width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13.5px;flex-shrink:0;${done ? 'background:var(--accent);color:#fff;border:1.5px solid var(--accent)' : curr ? 'background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent);border:1.5px solid var(--accent)' : 'background:var(--surface);color:var(--muted);border:1.5px solid var(--border)'}`;
+    return `width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0;${done ? 'background:var(--accent);color:#fff;border:1.5px solid var(--accent)' : curr ? 'background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent);border:1.5px solid var(--accent)' : 'background:var(--surface);color:var(--muted);border:1.5px solid var(--border)'}`;
   };
-  const stepLabel = (n: number): string => `font-size:12px;font-weight:${cr.step === n || cr.step > n ? '700' : '600'};color:${cr.step === n ? 'var(--text)' : cr.step > n ? 'var(--text2)' : 'var(--muted)'};white-space:nowrap`;
+  const stepLabel = (n: number): string => `font-size:13px;font-weight:${cr.step === n || cr.step > n ? '700' : '600'};color:${cr.step === n ? 'var(--text)' : cr.step > n ? 'var(--text2)' : 'var(--muted)'};white-space:nowrap`;
 
   return (
     <>
       <div style={s('margin-bottom:20px')}>
-        <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.04em;text-transform:uppercase')}>Create a Ticket</div>
-        <div style={s('font-size:13px;color:var(--muted);margin-top:3px')}>{subhead}</div>
+        <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:24px;letter-spacing:.04em;text-transform:uppercase')}>Create a Ticket</div>
+        <div style={s('font-size:14px;color:var(--muted);margin-top:3px')}>{subhead}</div>
       </div>
 
       {/* stepper */}
@@ -260,8 +260,8 @@ export function TicketWizard() {
                   <Icon name={d.icon} size={22} strokeWidth={1.9} />
                 </div>
                 <div style={s('flex:1;min-width:0')}>
-                  <div style={s('font-weight:700;font-size:13.5px;color:var(--text)')}>{d.name}</div>
-                  <div style={s('font-size:11px;color:var(--muted);margin-top:3px;line-height:1.35')}>{d.desc}</div>
+                  <div style={s('font-weight:700;font-size:14px;color:var(--text)')}>{d.name}</div>
+                  <div style={s('font-size:12px;color:var(--muted);margin-top:3px;line-height:1.35')}>{d.desc}</div>
                 </div>
                 <div style={s(`width:24px;height:24px;flex-shrink:0;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${d.color};color:#fff;opacity:${on ? '1' : '0'};transition:opacity .16s`)}><Icon name="check" size={14} strokeWidth={3.2} /></div>
               </button>
@@ -281,11 +281,11 @@ export function TicketWizard() {
               placeholder="Search by name, company, carrier ID, application ID, or phone…"
               disabled={dealsLoad.loading}
               className="ss-in"
-              style={s('width:100%;height:46px;padding:0 16px 0 42px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;box-shadow:var(--shadow-sm)')}
+              style={s('width:100%;height:46px;padding:0 16px 0 42px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;box-shadow:var(--shadow-sm)')}
             />
           </div>
           {!dq && !dealsLoad.loading && !dealsLoad.error && deals.length > 0 && (
-            <div style={s('font-size:12px;color:var(--muted);margin:-6px 2px 12px')}>
+            <div style={s('font-size:13px;color:var(--muted);margin:-6px 2px 12px')}>
               {allDeals.length > deals.length
                 ? `Showing your ${deals.length} most recent deals by application date — search to find any other.`
                 : `Showing all your ${deals.length} ${deals.length === 1 ? 'deal' : 'deals'} by application date.`}
@@ -309,18 +309,18 @@ export function TicketWizard() {
             </div>
           ) : dealsLoad.error ? (
             <div style={s('text-align:center;padding:36px 20px')}>
-              <div style={s('color:var(--danger);font-size:13px;font-weight:600')}>{dealsLoad.error}</div>
+              <div style={s('color:var(--danger);font-size:14px;font-weight:600')}>{dealsLoad.error}</div>
               <button
                 type="button"
                 onClick={() => dealsLoad.reload()}
                 className="ss-ico-btn"
-                style={s('margin-top:14px;height:36px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;font-weight:700;cursor:pointer')}
+                style={s('margin-top:14px;height:36px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;font-weight:700;cursor:pointer')}
               >
                 Retry
               </button>
             </div>
           ) : deals.length === 0 ? (
-            <div style={s('text-align:center;padding:36px 20px;color:var(--muted);font-size:13px')}>
+            <div style={s('text-align:center;padding:36px 20px;color:var(--muted);font-size:14px')}>
               {dq ? `No deals match “${cr.dealQ.trim()}”.` : 'No deals found for your account.'}
             </div>
           ) : (
@@ -337,10 +337,10 @@ export function TicketWizard() {
                 const chip = dealIdChip(d);
                 const chipCss =
                   chip.tone === 'carrier'
-                    ? "font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--accent);background:rgba(var(--accent-rgb),.12);padding:3px 8px;border-radius:var(--radius-md);border:1px solid rgba(var(--accent-rgb),.28)"
+                    ? "font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--accent);background:rgba(var(--accent-rgb),.12);padding:3px 8px;border-radius:var(--radius-md);border:1px solid rgba(var(--accent-rgb),.28)"
                     : chip.tone === 'app'
-                      ? "font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--violet);background:color-mix(in srgb,var(--violet) 14%,transparent);padding:3px 8px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--violet) 30%,transparent)"
-                      : "font-size:11px;font-weight:600;color:var(--muted);background:var(--alt);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--border)";
+                      ? "font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--violet);background:color-mix(in srgb,var(--violet) 14%,transparent);padding:3px 8px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--violet) 30%,transparent)"
+                      : "font-size:12px;font-weight:600;color:var(--muted);background:var(--alt);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--border)";
                 const hasPhone = Boolean(d.phone && d.phone !== '—');
                 return (
                   <button
@@ -350,26 +350,26 @@ export function TicketWizard() {
                     className="ss-card-h"
                     style={s(`display:flex;align-items:center;gap:13px;padding:13px 14px;border-radius:var(--radius-md);border:1px solid ${sel ? 'var(--accent)' : 'var(--border)'};background:${sel ? 'rgba(var(--accent-rgb),.08)' : 'var(--surface)'};cursor:pointer;width:100%`)}
                   >
-                    <div style={s('width:40px;height:40px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.12);color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0')}>
+                    <div style={s('width:40px;height:40px;border-radius:var(--radius-md);background:rgba(var(--accent-rgb),.12);color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0')}>
                       {initials}
                     </div>
                     <div style={s('flex:1;min-width:0;text-align:left')}>
-                      <div style={s('font-weight:700;font-size:13.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
+                      <div style={s('font-weight:700;font-size:14px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
                         {d.company || d.name}
                       </div>
-                      <div style={s('font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px')}>
+                      <div style={s('font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px')}>
                         {d.name !== d.company ? d.name : d.stage}
                       </div>
                     </div>
                     <div style={s('display:flex;flex-direction:column;align-items:flex-end;gap:7px;flex-shrink:0')}>
                       <span style={s(chipCss)}>{chip.text}</span>
                       {hasPhone ? (
-                        <span style={s("display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;letter-spacing:.02em;color:var(--text);background:var(--alt);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--border)")}>
+                        <span style={s("display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;letter-spacing:.02em;color:var(--text);background:var(--alt);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--border)")}>
                           <Icon name="calls" size={12} strokeWidth={2.2} />
                           {displayPhone(d.phone)}
                         </span>
                       ) : (
-                        <span style={s('font-size:11px;font-weight:600;color:var(--faint)')}>No phone</span>
+                        <span style={s('font-size:12px;font-weight:600;color:var(--faint)')}>No phone</span>
                       )}
                     </div>
                   </button>
@@ -378,7 +378,7 @@ export function TicketWizard() {
             </div>
           )}
           <div style={s('margin-top:18px')}>
-            <button type="button" onClick={back} className="ss-ico-btn" style={s('height:40px;padding:0 16px;display:inline-flex;align-items:center;gap:8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:13px;font-weight:700')}>
+            <button type="button" onClick={back} className="ss-ico-btn" style={s('height:40px;padding:0 16px;display:inline-flex;align-items:center;gap:8px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;font-size:14px;font-weight:700')}>
               <Icon name="chevronLeft" size={15} strokeWidth={2.2} />
               Back
             </button>
@@ -391,19 +391,19 @@ export function TicketWizard() {
         <div>
           <div style={s('display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:13px 15px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);margin-bottom:16px')}>
             <div style={s('display:flex;align-items:center;gap:8px;min-width:0;flex:1;flex-wrap:wrap')}>
-              <span style={s(`display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:${dept.color};background:color-mix(in srgb, ${dept.color} 14%, transparent);padding:4px 10px;border-radius:var(--radius-md);white-space:nowrap;flex-shrink:0`)}>{dept.name}</span>
+              <span style={s(`display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:${dept.color};background:color-mix(in srgb, ${dept.color} 14%, transparent);padding:4px 10px;border-radius:var(--radius-md);white-space:nowrap;flex-shrink:0`)}>{dept.name}</span>
               <span style={s('color:var(--faint)')}>·</span>
-              <div style={s('font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0')}>{cr.company}</div>
+              <div style={s('font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0')}>{cr.company}</div>
               {cr.carrierId ? (
-                <span style={s("font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--accent);background:rgba(var(--accent-rgb),.12);padding:3px 8px;border-radius:var(--radius-md)")}>CR-{cr.carrierId}</span>
+                <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--accent);background:rgba(var(--accent-rgb),.12);padding:3px 8px;border-radius:var(--radius-md)")}>CR-{cr.carrierId}</span>
               ) : cr.app ? (
-                <span style={s("font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--violet);background:color-mix(in srgb,var(--violet) 14%,transparent);padding:3px 8px;border-radius:var(--radius-md)")}>App {cr.app}</span>
+                <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--violet);background:color-mix(in srgb,var(--violet) 14%,transparent);padding:3px 8px;border-radius:var(--radius-md)")}>App {cr.app}</span>
               ) : null}
               {cr.phone ? (
-                <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--text);background:var(--alt);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--border)")}>{displayPhone(cr.phone)}</span>
+                <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--text);background:var(--alt);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--border)")}>{displayPhone(cr.phone)}</span>
               ) : null}
             </div>
-            <div style={s('display:flex;gap:7px;flex-shrink:0')}><button onClick={() => patch({ step: 1 })} className="ss-ico-btn" style={s('height:30px;padding:0 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:11px;font-weight:700;cursor:pointer')}>Dept</button><button onClick={() => patch({ step: 2 })} className="ss-ico-btn" style={s('height:30px;padding:0 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:11px;font-weight:700;cursor:pointer')}>Deal</button></div>
+            <div style={s('display:flex;gap:7px;flex-shrink:0')}><button onClick={() => patch({ step: 1 })} className="ss-ico-btn" style={s('height:30px;padding:0 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:12px;font-weight:700;cursor:pointer')}>Dept</button><button onClick={() => patch({ step: 2 })} className="ss-ico-btn" style={s('height:30px;padding:0 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:12px;font-weight:700;cursor:pointer')}>Deal</button></div>
           </div>
           <div style={s('padding:22px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:17px')}>
             <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:14px')}>
@@ -451,25 +451,25 @@ export function TicketWizard() {
               </div>
               <div><div style={s(LABEL)}>Card</div>
                 <div style={s('position:relative')}>
-                  <input value={cr.cardQ} onChange={(e) => patch({ cardQ: e.currentTarget.value, cardOpen: true })} onFocus={() => patch({ cardOpen: true, typeOpen: false })} placeholder="Search or select a card…" className="ss-in" style={s('width:100%;height:44px;padding:0 40px 0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px')} />
+                  <input value={cr.cardQ} onChange={(e) => patch({ cardQ: e.currentTarget.value, cardOpen: true })} onFocus={() => patch({ cardOpen: true, typeOpen: false })} placeholder="Search or select a card…" className="ss-in" style={s('width:100%;height:44px;padding:0 40px 0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px')} />
                   <button type="button" onClick={() => patch({ cardOpen: !cr.cardOpen })} style={s('position:absolute;right:5px;top:6px;height:32px;width:32px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;cursor:pointer;color:var(--muted)')}><Icon name="chevronDown" size={16} /></button>
                   {cr.cardOpen && (
                     <>
                       <div onClick={() => patch({ cardOpen: false })} style={s('position:fixed;inset:0;z-index:8')} />
                       <div className="ss-scroll" role="listbox" style={s(`${DROP_PANEL};max-height:240px`)}>
                         {cardsLoad.loading && (
-                          <div role="status" style={s('display:flex;align-items:center;justify-content:center;gap:8px;padding:16px;color:var(--muted);font-size:12px;font-weight:600')}>
+                          <div role="status" style={s('display:flex;align-items:center;justify-content:center;gap:8px;padding:16px;color:var(--muted);font-size:13px;font-weight:600')}>
                             <span style={s('width:12px;height:12px;border-radius:50%;border:2px solid color-mix(in srgb,var(--accent) 25%,var(--border));border-top-color:var(--accent);animation:ss-spin .75s linear infinite;flex:none')} aria-hidden="true" />
                             Loading cards…
                           </div>
                         )}
                         {!cardsLoad.loading && !cr.carrierId && (
-                          <div style={s('padding:14px;text-align:center;color:var(--muted);font-size:12px')}>
+                          <div style={s('padding:14px;text-align:center;color:var(--muted);font-size:13px')}>
                             No carrier ID on this deal — cards load after conversion (App {cr.app || '—'}).
                           </div>
                         )}
                         {!cardsLoad.loading && cr.carrierId && cards.length === 0 && (
-                          <div style={s('padding:14px;text-align:center;color:var(--muted);font-size:12px')}>No cards found</div>
+                          <div style={s('padding:14px;text-align:center;color:var(--muted);font-size:13px')}>No cards found</div>
                         )}
                         {cards.map((c, i) => {
                           const on = cr.card === c.num;
@@ -483,8 +483,8 @@ export function TicketWizard() {
                               className={`ss-menu-i${on ? ' is-on' : ''}`}
                               style={s('display:flex;flex-direction:column;align-items:flex-start;gap:2px')}
                             >
-                              <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600")}>{c.num}</span>
-                              <span style={s('font-size:11px;color:var(--muted);font-weight:500')}>{c.status}</span>
+                              <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600")}>{c.num}</span>
+                              <span style={s('font-size:12px;color:var(--muted);font-weight:500')}>{c.status}</span>
                             </button>
                           );
                         })}
@@ -495,7 +495,7 @@ export function TicketWizard() {
               </div>
             </div>
             <div><div style={s(LABEL)}>Subject <span style={s('color:var(--accent)')}>*</span></div><input value={cr.subject} onChange={(e) => patch({ subject: e.currentTarget.value })} placeholder="Brief summary of the request" className="ss-in" style={s(FIELD)} /></div>
-            <div><div style={s(LABEL)}>Description <span style={s('color:var(--accent)')}>*</span></div><textarea value={cr.body} onChange={(e) => patch({ body: e.currentTarget.value })} placeholder="What's needed, which card / driver, and any context…" className="ss-in" style={s('width:100%;min-height:104px;padding:11px 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;resize:vertical;line-height:1.5')} /></div>
+            <div><div style={s(LABEL)}>Description <span style={s('color:var(--accent)')}>*</span></div><textarea value={cr.body} onChange={(e) => patch({ body: e.currentTarget.value })} placeholder="What's needed, which card / driver, and any context…" className="ss-in" style={s('width:100%;min-height:104px;padding:11px 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;resize:vertical;line-height:1.5')} /></div>
             <div><div style={s(LABEL)}>Attachment <span style={s('font-weight:500;color:var(--faint);text-transform:none;letter-spacing:0')}>· max 20MB</span></div><AttachZone id="cr-att" file={att} onFile={setAtt} /></div>
             <div style={s('display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:2px')}>
               <BackBtn onClick={back} />
@@ -523,11 +523,11 @@ export function TicketWizard() {
             <div style={s('width:52px;height:52px;margin:0 auto 16px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--orange) 16%,var(--surface));color:var(--orange);border:1px solid color-mix(in srgb,var(--orange) 28%,transparent)')}>
               <Icon name={ICO.bolt} size={24} />
             </div>
-            <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:19px;letter-spacing:.02em;color:var(--text);margin-bottom:8px')}>You can do this yourself</div>
-            <div style={s('font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:6px')}><strong style={s('color:var(--text);font-weight:700')}>{cr.autoPrompt.title}</strong> is available as an instant action in the Automations tab — no need to file a ticket for it.</div>
-            {cr.autoPrompt.desc && <div style={s('font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:20px')}>{cr.autoPrompt.desc}</div>}
+            <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;letter-spacing:.02em;color:var(--text);margin-bottom:8px')}>You can do this yourself</div>
+            <div style={s('font-size:14px;color:var(--text2);line-height:1.55;margin-bottom:6px')}><strong style={s('color:var(--text);font-weight:700')}>{cr.autoPrompt.title}</strong> is available as an instant action in the Automations tab — no need to file a ticket for it.</div>
+            {cr.autoPrompt.desc && <div style={s('font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:20px')}>{cr.autoPrompt.desc}</div>}
             <div style={s('display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:14px')}>
-              <button type="button" onClick={() => patch({ autoPrompt: null })} className="ss-ico-btn" style={s('height:42px;padding:0 20px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:700;font-size:13px;cursor:pointer')}>Stay Here</button>
+              <button type="button" onClick={() => patch({ autoPrompt: null })} className="ss-ico-btn" style={s('height:42px;padding:0 20px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:700;font-size:14px;cursor:pointer')}>Stay Here</button>
               <button
                 type="button"
                 onClick={() => {
@@ -536,7 +536,7 @@ export function TicketWizard() {
                   if (id) openAutomation(id);
                 }}
                 className="ss-btn-p"
-                style={s('height:42px;padding:0 20px;border-radius:var(--radius-md);border:none;background:var(--accent);color:#fff;font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 6px 18px rgba(var(--accent-rgb),.28)')}
+                style={s('height:42px;padding:0 20px;border-radius:var(--radius-md);border:none;background:var(--accent);color:#fff;font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 6px 18px rgba(var(--accent-rgb),.28)')}
               >
                 Open {cr.autoPrompt.title.length > 28 ? 'action' : cr.autoPrompt.title} ↗
               </button>

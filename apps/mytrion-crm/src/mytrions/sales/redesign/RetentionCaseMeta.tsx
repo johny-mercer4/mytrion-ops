@@ -37,13 +37,13 @@ export function RetentionCaseHeader(props: {
           <>
             <div
               style={s(
-                'font-family:Rajdhani,sans-serif;font-weight:700;font-size:18px;letter-spacing:.04em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap',
+                'font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;letter-spacing:.04em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap',
               )}
             >
               {props.companyName}
             </div>
             <div style={s('display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:4px')}>
-              <span style={s("font-size:12px;color:var(--text2);font-family:'JetBrains Mono',monospace")}>
+              <span style={s("font-size:13px;color:var(--text2);font-family:'JetBrains Mono',monospace")}>
                 {props.carrierId}
               </span>
               {props.phoneLoading ? (
@@ -55,13 +55,13 @@ export function RetentionCaseHeader(props: {
               ) : props.phoneDisplay ? (
                 <span
                   style={s(
-                    "font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;letter-spacing:.03em;color:var(--accent-text)",
+                    "font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;letter-spacing:.03em;color:var(--accent-text)",
                   )}
                 >
                   {props.phoneDisplay}
                 </span>
               ) : (
-                <span style={s('font-size:11px;font-weight:600;color:var(--muted)')}>No phone on file</span>
+                <span style={s('font-size:12px;font-weight:600;color:var(--muted)')}>No phone on file</span>
               )}
             </div>
           </>
@@ -114,7 +114,7 @@ export function RetentionInactivityBlock({ row }: { row: RetentionCaseRow }) {
       <div style={s('display:flex;align-items:center;justify-content:space-between;gap:10px')}>
         <div
           style={s(
-            'font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)',
+            'font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)',
           )}
         >
           Inactivity
@@ -122,23 +122,23 @@ export function RetentionInactivityBlock({ row }: { row: RetentionCaseRow }) {
         {breached ? (
           <span
             style={s(
-              'display:inline-flex;padding:2px 8px;border-radius:99px;background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger);font-size:10px;font-weight:800',
+              'display:inline-flex;padding:2px 8px;border-radius:99px;background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger);font-size:11px;font-weight:800',
             )}
           >
             Past cadence
           </span>
         ) : null}
       </div>
-      <div style={s(`margin-top:8px;font-size:15px;font-weight:800;color:${tone};line-height:1.35`)}>
+      <div style={s(`margin-top:8px;font-size:16px;font-weight:800;color:${tone};line-height:1.35`)}>
         {days}
-        <span style={s('font-size:12px;font-weight:700;opacity:.85')}>d</span>
-        <span style={s('font-size:13px;font-weight:650;color:var(--text);margin-left:6px')}>
+        <span style={s('font-size:13px;font-weight:700;opacity:.85')}>d</span>
+        <span style={s('font-size:14px;font-weight:650;color:var(--text);margin-left:6px')}>
           since last fuel
         </span>
       </div>
       {thr > 0 ? (
         <>
-          <div style={s('margin-top:6px;font-size:12px;color:var(--text2);line-height:1.4')}>
+          <div style={s('margin-top:6px;font-size:13px;color:var(--text2);line-height:1.4')}>
             Expected every <strong style={s('color:var(--text)')}>{thr}d</strong>
             {breached ? ` · ${days - thr}d over cadence` : null}
           </div>
@@ -156,7 +156,7 @@ export function RetentionInactivityBlock({ row }: { row: RetentionCaseRow }) {
           </div>
         </>
       ) : (
-        <div style={s('margin-top:6px;font-size:12px;color:var(--text2)')}>{quietCaption(row)}</div>
+        <div style={s('margin-top:6px;font-size:13px;color:var(--text2)')}>{quietCaption(row)}</div>
       )}
     </div>
   );
@@ -182,7 +182,7 @@ export function RetentionMetaGrid({ row }: { row: RetentionCaseRow }) {
       >
         <div
           style={s(
-            'font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px',
+            'font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px',
           )}
         >
           Stage timer
@@ -192,7 +192,7 @@ export function RetentionMetaGrid({ row }: { row: RetentionCaseRow }) {
         ) : timer ? (
           <RetentionStageTimer timer={timer} />
         ) : (
-          <div style={s('font-size:13px;font-weight:700;color:var(--faint)')}>No active deadline</div>
+          <div style={s('font-size:14px;font-weight:700;color:var(--faint)')}>No active deadline</div>
         )}
       </div>
       {cells.map(([label, value, hint]) => (
@@ -205,20 +205,20 @@ export function RetentionMetaGrid({ row }: { row: RetentionCaseRow }) {
         >
           <div
             style={s(
-              'font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)',
+              'font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)',
             )}
           >
             {label}
           </div>
           <div
             style={s(
-              'font-size:13px;font-weight:700;margin-top:4px;color:var(--text)',
+              'font-size:14px;font-weight:700;margin-top:4px;color:var(--text)',
             )}
           >
             {value}
           </div>
           {hint ? (
-            <div style={s('font-size:10px;color:var(--faint);margin-top:3px;line-height:1.3')}>{hint}</div>
+            <div style={s('font-size:11px;color:var(--faint);margin-top:3px;line-height:1.3')}>{hint}</div>
           ) : null}
         </div>
       ))}
@@ -282,23 +282,23 @@ export function RetentionTimelineSlot({
 
 export function RetentionEventTrail({ events }: { events: RetentionCaseEventRow[] }) {
   if (events.length === 0) {
-    return <div style={s('font-size:12px;color:var(--muted)')}>No events yet.</div>;
+    return <div style={s('font-size:13px;color:var(--muted)')}>No events yet.</div>;
   }
   return (
     <div className="ss-ret-timeline-list">
       {events.map((ev) => (
         <div key={ev.id} className="ss-ret-timeline-item">
-          <div style={s('display:flex;justify-content:space-between;gap:8px;font-size:11px')}>
+          <div style={s('display:flex;justify-content:space-between;gap:8px;font-size:12px')}>
             <span style={s('font-weight:700;color:var(--accent)')}>{eventKindLabel(ev)}</span>
             <span style={s('color:var(--muted)')}>
               {new Date(ev.occurredAt).toLocaleString()}
             </span>
           </div>
-          <div style={s('font-size:13px;font-weight:700;color:var(--text);margin-top:5px')}>
+          <div style={s('font-size:14px;font-weight:700;color:var(--text);margin-top:5px')}>
             {eventHeadline(ev)}
           </div>
           {ev.notes && (
-            <div style={s('font-size:12px;color:var(--muted);margin-top:4px;line-height:1.4')}>
+            <div style={s('font-size:13px;color:var(--muted);margin-top:4px;line-height:1.4')}>
               {ev.notes}
             </div>
           )}

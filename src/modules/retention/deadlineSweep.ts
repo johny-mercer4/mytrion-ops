@@ -45,6 +45,10 @@ import {
   vacationFollowupTask,
   type CaseTransitionPatch,
 } from './deadlines.js';
+import {
+  RETENTION_OPEN_POOL_ESCALATION_ENABLED,
+  RETENTION_PHASE2_ESCALATION_ENABLED,
+} from './killSwitches.js';
 import { notifyOpenPoolOpened, notifyOpsVacationSignoff } from './notify.js';
 // Dynamic-import retentionPoolClaimRepo below — a static import cycles
 // deadlineSweep → poolClaimRepo → notify (partial) and crashes boot with
@@ -70,6 +74,7 @@ export function resolveExpiry(row: RetentionCase, now: Date): CaseTransitionPatc
     ) {
       return null;
     }
+    if (!RETENTION_PHASE2_ESCALATION_ENABLED) return null;
     // 3rd Open Pool agent already counted — fail closed to CITI, not Retention.
     if (row.assignmentCount >= MAX_OPEN_POOL_AGENTS) {
       return moveToCiti({
@@ -87,6 +92,7 @@ export function resolveExpiry(row: RetentionCase, now: Date): CaseTransitionPatc
   }
 
   if (type === POST_CONTACT_DEADLINE_TYPE && row.statusCode === 'p1_reached') {
+    if (!RETENTION_OPEN_POOL_ESCALATION_ENABLED) return null;
     // Spoke / watching — no fuel in 5 BD → Sales Open Pool (Ryan + owner notified).
     return enterOpenPool({
       now,
@@ -103,6 +109,7 @@ export function resolveExpiry(row: RetentionCase, now: Date): CaseTransitionPatc
   }
 
   if (type === POOL_CLAIM_DEADLINE_TYPE && row.statusCode === 'p1_open_pool') {
+    if (!RETENTION_PHASE2_ESCALATION_ENABLED) return null;
     if (row.assignmentCount >= MAX_OPEN_POOL_AGENTS) {
       return moveToCiti({
         now,
@@ -118,6 +125,7 @@ export function resolveExpiry(row: RetentionCase, now: Date): CaseTransitionPatc
   }
 
   if (type === NEW_OWNER_DEADLINE_TYPE && row.statusCode === 'p1_pool_assigned') {
+    if (!RETENTION_OPEN_POOL_ESCALATION_ENABLED) return null;
     if (row.assignmentCount >= MAX_OPEN_POOL_AGENTS) {
       return moveToCiti({
         now,
@@ -133,6 +141,7 @@ export function resolveExpiry(row: RetentionCase, now: Date): CaseTransitionPatc
   }
 
   if (type === RETENTION_WAIT_DEADLINE_TYPE && row.phaseCode === 'phase_2_retention') {
+    if (!RETENTION_OPEN_POOL_ESCALATION_ENABLED) return null;
     // Retention → Pool cycles are independent of assignment_count (agent cycles).
     if ((row.retentionToPoolCount ?? 0) >= MAX_RETENTION_TO_POOL) {
       return moveToCiti({

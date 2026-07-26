@@ -130,7 +130,12 @@ export function Deals() {
           [...rows].sort((a, b) => (a.name ?? a.zohoUserId).localeCompare(b.name ?? b.zohoUserId)),
         ),
       )
-      .catch(() => adminToast.error('Could not load agents'));
+      .catch((e: unknown) =>
+        adminToast.error(
+          'Could not load agents',
+          e instanceof Error ? e.message : 'The agent roster could not be fetched.',
+        ),
+      );
   }, []);
 
   useEffect(() => {
@@ -437,7 +442,13 @@ export function Deals() {
         </div>
       ) : null}
 
-      {error ? <p className={s.errorText}>{error}</p> : null}
+      {/* Every other tab surfaces a load failure in the tinted `errorNote` pane; this was the one
+          place it rendered as bare red text with nothing to separate it from the table below. */}
+      {error ? (
+        <p className={s.errorNote} role="alert">
+          {error}
+        </p>
+      ) : null}
 
       <div className={s.dealsLayout}>
           <div className={s.tableScroll} aria-busy={loading}>

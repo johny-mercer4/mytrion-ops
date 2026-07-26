@@ -11,8 +11,12 @@
 @import './service-center-panel.css';
 @import './citi-fuel-panel.css';
 @import './retention-panel.css';
+@import './pool-panel.css';
 @import './datacenter-panel.css';
 @import './analytics-panel.css';
 @import './shared-effects.css';
 @import './shared-responsive.css';
 @import './overrides.css';
+/* LAST: the Horizon glass layer wins over the panel sheets above at equal specificity. */
+@import './cs-horizon.css';
+@import './cs-horizon-panels.css';

@@ -1,15 +1,14 @@
-import { MytrionScaffold } from '../_shared/MytrionScaffold';
+import { ManagerShell } from './ManagerShell';
 
-/** Manager Mytrion — NEW (no existing widget). Skeleton: shell + scoped chat. */
+/**
+ * Manager Mytrion — a card-hub ("wizard"): each card block opens its own page. Two RBAC layers —
+ * Layer 1 entering the Mytrion (canAccess), Layer 2 per card (managerNav access). First card:
+ * Referrals — the Zoho parent/child referral records browser.
+ */
 export default function ManagerMytrion() {
   return (
-    <MytrionScaffold
-      id="manager"
-      buildNotes={[
-        'Team oversight: per-agent metrics roll-up',
-        'Cross-department KPI dashboard (scope depends on OPEN DECISION: manager hierarchy)',
-        'Approvals / escalations queue',
-      ]}
-    />
+    <div data-mytrion="manager" className="contents">
+      <ManagerShell />
+    </div>
   );
 }

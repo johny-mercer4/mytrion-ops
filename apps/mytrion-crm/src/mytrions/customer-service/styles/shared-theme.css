@@ -1,27 +1,31 @@
 /* =====================================================
    Customer Service — Theme Variables
-   Brand: muted enterprise gold (same hue family as CSMYTRION).
-   Softened chroma / glows for all-day ops; light + dark.
+   Brand: the WARM END of the Mytrion Horizon ramp (amber → sunset), which is exactly the hue
+   HorizonNew assigns Customer Service. Replaces the old enterprise gold: #C9A227 measured ~2.3:1
+   on white, so every gold fill, pill and "primary" button in light mode read as muddy beige.
+   Glass primitives, motion and elevation all come from styles/horizon.css (--hz-*).
    ===================================================== */
 
 .cs-root {
-    /* ── Canvas (neutral-warm, less blue clash with gold) ── */
-    --color-bg-primary: #F5F6F8;
+    /* ── Canvas — the shared Horizon field, so CS sits on the same ground as every other module ── */
+    --color-bg-primary: var(--hz-page);
     --color-bg-secondary: #EBEEF2;
     --color-brand: #0F172A;
     --color-brand-hover: #020617;
     --color-on-brand: #FFFFFF;
-    --color-accent: #C9A227;
+    --color-accent: #B45309;
 
-    /* ── Gold accent — same family, lower neon ── */
-    --cs-accent: #C9A227;
-    --cs-accent-hover: #D4AF37;
-    --cs-accent-deep: #A8841A;
-    --cs-on-accent: #1A1400;
-    --cs-accent-soft: rgba(201, 162, 39, 0.12);
-    --cs-accent-softer: rgba(201, 162, 39, 0.06);
-    --cs-accent-glow: rgba(201, 162, 39, 0.14);
-    --cs-border-gold: rgba(168, 132, 26, 0.28);
+    /* ── Amber accent, light: deep enough to carry text and fills on a pale field ── */
+    --cs-accent: #B45309;
+    --cs-accent-hover: #C2410C;
+    --cs-accent-deep: #92400E;
+    --cs-on-accent: #FFFFFF;
+    --cs-accent-soft: rgba(180, 83, 9, 0.10);
+    --cs-accent-softer: rgba(180, 83, 9, 0.05);
+    --cs-accent-glow: rgba(180, 83, 9, 0.20);
+    --cs-border-gold: rgba(180, 83, 9, 0.26);
+    /* Far end of the module's ramp — `accent → accent-2` is CS's slice of the Horizon gradient. */
+    --accent-2: #EA580C;
     --cs-success: #1B8A54;
     --cs-success-soft: rgba(27, 138, 84, 0.10);
     --cs-warning: #A66B14;
@@ -35,8 +39,8 @@
     --cs-sky-soft: rgba(12, 127, 152, 0.10);
 
     /* ── Chat ── */
-    --chat-user-bg: #C9A227;
-    --chat-user-text: #1A1400;
+    --chat-user-bg: #B45309;
+    --chat-user-text: #FFFFFF;
 
     /* ── Text ── */
     --color-text-primary: #0F172A;
@@ -54,14 +58,14 @@
     --soon-color: #94A3B8;
 
     /* ── Backward-compat aliases ── */
-    --brand-blue: #C9A227;
+    --brand-blue: #B45309;
     --brand-cyan: #0C7F98;
-    --brand-blue-hover: #D4AF37;
+    --brand-blue-hover: #C2410C;
     --brand-navy: #EBEEF2;
     --brand-navy-mid: #F1F5F9;
     --brand-dark: #EBEEF2;
-    --accent: #C9A227;
-    --accent-glow: rgba(201, 162, 39, 0.14);
+    --accent: #B45309;
+    --accent-glow: rgba(180, 83, 9, 0.20);
 
     /* ── Layout ── */
     --sidebar-width: 238px;
@@ -81,9 +85,10 @@
     --surface-alt: #F8FAFC;
     --surface-2: #F1F5F9;
     --surface-3: #E2E8F0;
-    --surface-raised: rgba(15, 23, 42, 0.03);
-    --sidebar-bg: #FFFFFF;
-    --header-bg: #FFFFFF;
+    --surface-raised: var(--hz-glass-hover);
+    /* Sidebar/header are translucent panes over the ambience — the blur lives in cs-horizon.css. */
+    --sidebar-bg: var(--hz-glass);
+    --header-bg: var(--hz-glass);
 
     /* ── Loader aliases ── */
     --bg:            var(--color-bg-primary);
@@ -108,13 +113,13 @@
     --success: #1B8A54;
     --error: #C04540;
 
-    /* ── Shadows (quieter) ── */
-    --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
-    --shadow-md: 0 4px 16px rgba(15, 23, 42, 0.06), 0 1px 4px rgba(15, 23, 42, 0.04);
-    --shadow-lg: 0 18px 44px rgba(15, 23, 42, 0.10), 0 6px 14px rgba(15, 23, 42, 0.06);
+    /* ── Shadows — the shared Horizon elevation steps (slate-tinted, never black) ── */
+    --shadow-sm: var(--hz-shadow-rest);
+    --shadow-md: var(--hz-shadow-lift);
+    --shadow-lg: var(--hz-shadow-pop);
 
     /* ── Modal / toast ── */
-    --modal-backdrop-bg: rgba(15, 23, 42, 0.36);
+    --modal-backdrop-bg: color-mix(in srgb, var(--hz-page) 62%, transparent);
     --modal-box-bg: #FFFFFF;
     --toast-bg: #0F172A;
     --toast-fg: #FFFFFF;
@@ -135,22 +140,23 @@
    DARK MODE — calmer gold on deep slate
    ===================================================== */
 .cs-root.dark-mode {
-    --color-bg-primary: #0E1219;
+    --color-bg-primary: var(--hz-page);
     --color-bg-secondary: #141A24;
     --color-brand: #E2E8F0;
     --color-brand-hover: #F8FAFC;
     --color-on-brand: #0E1219;
-    --color-accent: #D4B84A;
+    --color-accent: #FBBF24;
 
-    /* Soft gold — same hue as #FFD60A, lower chroma */
-    --cs-accent: #D4B84A;
-    --cs-accent-hover: #E0C96A;
-    --cs-accent-deep: #C4A83A;
+    /* Horizon amber — the reference's Customer Service hue. */
+    --cs-accent: #FBBF24;
+    --cs-accent-hover: #FCD34D;
+    --cs-accent-deep: #F59E0B;
     --cs-on-accent: #1A1400;
-    --cs-accent-soft: rgba(212, 184, 74, 0.12);
-    --cs-accent-softer: rgba(212, 184, 74, 0.06);
-    --cs-accent-glow: rgba(212, 184, 74, 0.14);
-    --cs-border-gold: rgba(212, 184, 74, 0.22);
+    --cs-accent-soft: rgba(245, 158, 11, 0.12);
+    --cs-accent-softer: rgba(245, 158, 11, 0.06);
+    --cs-accent-glow: rgba(245, 158, 11, 0.26);
+    --cs-border-gold: rgba(251, 191, 36, 0.28);
+    --accent-2: #FB923C;
     --cs-success: #3DBF72;
     --cs-success-soft: rgba(61, 191, 114, 0.12);
     --cs-warning: #E0A93A;
@@ -163,7 +169,7 @@
     --cs-sky: #3AADCC;
     --cs-sky-soft: rgba(58, 173, 204, 0.12);
 
-    --chat-user-bg: #D4B84A;
+    --chat-user-bg: #FBBF24;
     --chat-user-text: #1A1400;
 
     --color-text-primary: #E2E8F0;
@@ -178,22 +184,22 @@
     --ghost-color: #3D4654;
     --soon-color: #5C6B7E;
 
-    --brand-blue: #D4B84A;
+    --brand-blue: #FBBF24;
     --brand-cyan: #3AADCC;
-    --brand-blue-hover: #E0C96A;
+    --brand-blue-hover: #FCD34D;
     --brand-navy: #141A24;
     --brand-navy-mid: #1C2430;
     --brand-dark: #141A24;
-    --accent: #D4B84A;
-    --accent-glow: rgba(212, 184, 74, 0.14);
+    --accent: #FBBF24;
+    --accent-glow: rgba(245, 158, 11, 0.26);
 
     --surface: #171D28;
     --surface-alt: #1C2430;
     --surface-2: #1C2430;
     --surface-3: #252E3C;
-    --surface-raised: rgba(226, 232, 240, 0.04);
-    --sidebar-bg: #0B0F16;
-    --header-bg: #0E1219;
+    --surface-raised: var(--hz-glass-hover);
+    --sidebar-bg: var(--hz-glass);
+    --header-bg: var(--hz-glass);
 
     --border: rgba(226, 232, 240, 0.08);
     --border-2: rgba(226, 232, 240, 0.05);
@@ -209,11 +215,11 @@
     --success: #3DBF72;
     --error: #E07068;
 
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
-    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.32), 0 1px 4px rgba(0, 0, 0, 0.22);
-    --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.42), 0 6px 14px rgba(0, 0, 0, 0.28);
+    --shadow-sm: var(--hz-shadow-rest);
+    --shadow-md: var(--hz-shadow-lift);
+    --shadow-lg: var(--hz-shadow-pop);
 
-    --modal-backdrop-bg: rgba(0, 0, 0, 0.55);
+    --modal-backdrop-bg: color-mix(in srgb, var(--hz-page) 62%, transparent);
     --modal-box-bg: #171D28;
     --toast-bg: #171D28;
     --toast-fg: #E2E8F0;

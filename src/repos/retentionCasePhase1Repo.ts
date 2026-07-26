@@ -12,6 +12,7 @@ import {
 } from '../db/schema/index.js';
 import { AppError, NotFoundError } from '../lib/errors.js';
 import { enterOpenPool } from '../modules/retention/deadlines.js';
+import { RETENTION_OPEN_POOL_ESCALATION_ENABLED } from '../modules/retention/killSwitches.js';
 import {
   afterRetentionPhaseSideEffects,
   scheduleRetentionPostCommit,
@@ -233,7 +234,9 @@ export const retentionCasePhase1Repo = {
       }
     }
     const attempts = Math.min(existing.outOfReachAttempts + 1, MAX_OUT_OF_REACH_ATTEMPTS);
-    const toPool = attempts >= MAX_OUT_OF_REACH_ATTEMPTS;
+    // Kill-switch: at 5 attempts stay on OoR (do not enter Open Pool).
+    const toPool =
+      RETENTION_OPEN_POOL_ESCALATION_ENABLED && attempts >= MAX_OUT_OF_REACH_ATTEMPTS;
     const previousOwner = existing.assignedAgentZohoUserId;
     const pool = toPool
       ? enterOpenPool({

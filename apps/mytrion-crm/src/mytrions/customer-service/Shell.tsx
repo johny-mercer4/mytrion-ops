@@ -171,6 +171,8 @@ export function CsShell() {
     <div
       className={`cs-root${theme === 'dark' ? ' dark-mode' : ''}${navCollapsed ? ' cs-nav-collapsed' : ''}`}
     >
+      {/* Ambient Horizon backdrop — mesh + 64px grid + vignette behind the whole module. */}
+      <div className="cs-ambience" aria-hidden="true" />
       <div className="cs-body">
         <aside className="cs-sidebar" aria-expanded={!navCollapsed}>
           <div className="cs-sidebar-brand">
@@ -211,22 +213,22 @@ export function CsShell() {
             )}
           </div>
           <nav className="cs-sidebar-nav">
+            {/* Real <button>s, not role="button" divs. Chrome applies :focus-visible to a
+                tabIndex'd div on MOUSE click, which left a hard accent ring stuck on the tab you
+                just clicked; native buttons only show it for keyboard focus. It also removes the
+                hand-rolled Enter/Space handler — the browser does that for free. */}
             {NAV_ITEMS.map((item) => (
-              <div
+              <button
                 key={item.id}
-                className={`cs-nav-item${active === item.id ? ' active' : ''}${item.disabled ? ' cs-nav-disabled' : ''}`}
-                role="button"
-                tabIndex={item.disabled ? -1 : 0}
+                type="button"
+                className={`cs-nav-item${active === item.id ? ' active' : ''}${item.disabled ? ' cs-nav-disabled' : ''}${
+                  item.id === 'citi-folder' ? ' is-citi-folder' : ''
+                }`}
+                disabled={item.disabled}
                 aria-label={item.label}
                 aria-current={active === item.id ? 'page' : undefined}
                 title={item.disabled ? 'Coming soon' : item.label}
-                onClick={() => !item.disabled && navigate(item.id)}
-                onKeyDown={(e) => {
-                  if ((e.key === 'Enter' || e.key === ' ') && !item.disabled) {
-                    e.preventDefault();
-                    navigate(item.id);
-                  }
-                }}
+                onClick={() => navigate(item.id)}
               >
                 <span className="cs-nav-icon-wrap">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -238,7 +240,7 @@ export function CsShell() {
                 </span>
                 <span className="nav-label">{item.label}</span>
                 {!navCollapsed && item.disabled ? <span className="nav-soon">Soon</span> : null}
-              </div>
+              </button>
             ))}
           </nav>
 

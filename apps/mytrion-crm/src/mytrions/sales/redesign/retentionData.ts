@@ -153,7 +153,7 @@ export const KANBAN_COLS: Array<{
   { id: 'out_of_reach', label: 'Out of Reach', hint: '5×1 BD attempts → Pool', color: 'var(--warn)' },
   { id: 'vacation', label: 'Vacation', hint: '14-day countdown', color: 'var(--violet)' },
   { id: 'dissatisfied', label: 'Dissatisfied', hint: 'Escalated · Retention', color: 'var(--danger)' },
-  { id: 'closed', label: 'Closed', hint: 'Returned · Retention handoff', color: 'var(--ok)' },
+  { id: 'closed', label: 'Closed', hint: 'Returned · fuel', color: 'var(--ok)' },
 ];
 
 /** status_code → board_column (same seed as retention_statuses). */
@@ -167,16 +167,18 @@ const STATUS_BOARD: Record<string, RetentionKanbanCol> = {
   p1_vacation_followup: 'vacation',
   p1_awaiting_ops: 'vacation',
   p1_dissatisfied: 'dissatisfied',
-  p1_no_action_2bd: 'closed',
+  // Legacy — live New→Retention handoffs use phase_2 + stay on New via kanbanColOf.
+  p1_no_action_2bd: 'new',
   // Open Pool / claim-pending: column comes from agentOutcome (see kanbanColOf) — stay on stage.
   p1_returned: 'closed',
-  p1_handoff_retention: 'closed',
+  // Legacy handoff status — park on New (not Closed).
+  p1_handoff_retention: 'new',
   p3_hold: 'closed',
   p3_closed: 'closed',
 };
 
-/** Former-owner Open Pool card — keep the stage that escalated (locked), never Closed. */
-function openPoolKanbanCol(outcome: RetentionCaseRow['agentOutcome']): RetentionKanbanCol {
+/** Former-owner Open Pool / Retention-escalation card — keep the stage it left from. */
+function stageFromOutcome(outcome: RetentionCaseRow['agentOutcome']): RetentionKanbanCol {
   switch (outcome) {
     case 'reached':
       return 'reached';
@@ -189,23 +191,28 @@ function openPoolKanbanCol(outcome: RetentionCaseRow['agentOutcome']): Retention
     case 'out_of_reach':
       return 'out_of_reach';
     default:
-      // Reclaim / unknown — treat as New (most reclaim paths left pool-assigned New).
+      // escalate_retention / reclaim / unknown — New column.
       return 'new';
   }
 }
 
 export function kanbanColOf(c: RetentionCaseRow): RetentionKanbanCol {
-  // Dissatisfied handoff lands in Phase 2 — keep it on the Dissatisfied column.
+  // Dissatisfied (Phase 1 or Phase 2 handoff) — stay on Dissatisfied, never Closed.
   if (c.agentOutcome === 'dissatisfied' || c.statusCode === 'p1_dissatisfied') {
     return 'dissatisfied';
   }
   // Open Pool: blocked on the stage it left from (Reached / OoR / Vacation / …).
   if (c.statusCode === 'p1_open_pool' || c.statusCode === 'p1_pool_claim_pending') {
-    return openPoolKanbanCol(c.agentOutcome);
+    return stageFromOutcome(c.agentOutcome);
+  }
+  // Escalated to Retention (Phase 2) — stay on the Sales stage it left from (New / …).
+  if (c.phaseCode === 'phase_2_retention' && c.isOpen) {
+    return stageFromOutcome(c.agentOutcome);
   }
   const mapped = STATUS_BOARD[c.statusCode];
   if (mapped) return mapped;
-  if (!c.isOpen || c.phaseCode !== 'phase_1_agent') return 'closed';
+  if (!c.isOpen) return 'closed';
+  if (c.phaseCode !== 'phase_1_agent') return 'closed';
   return 'new';
 }
 
@@ -219,13 +226,14 @@ export function statusLabel(code: string): string {
     p1_awaiting_ops: 'Awaiting Ops',
     p1_reached: 'Reached · watching',
     p1_dissatisfied: 'Dissatisfied',
-    p1_no_action_2bd: 'Closed · no action',
+    p1_no_action_2bd: 'Escalated · Retention',
     p1_open_pool: 'Open Pool',
     p1_pool_claim_pending: 'Open Pool · claim pending',
     p1_pool_assigned: 'New · from pool',
     p1_returned: 'Closed · returned',
-    p1_handoff_retention: 'Closed · Retention',
-    p2_new: 'In Retention',
+    p1_handoff_retention: 'Escalated · Retention',
+    p2_new: 'Escalated · Retention',
+    p2_working: 'Escalated · Retention',
     p3_hold: 'CITI hold',
   };
   return map[code] ?? code;

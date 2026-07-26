@@ -52,6 +52,7 @@ export default function AdminMytrion() {
       items: [
         {
           key: 'horizon',
+          tone: 'var(--tone-sky)',
           label: 'Horizon AI',
           icon: <Sparkle />,
           active: tab === 'horizon',
@@ -60,6 +61,7 @@ export default function AdminMytrion() {
         },
         {
           key: 'kb',
+          tone: 'var(--tone-cyan)',
           label: 'Knowledge Base',
           icon: <KnowledgeIcon />,
           active: tab === 'kb',
@@ -68,6 +70,7 @@ export default function AdminMytrion() {
         },
         {
           key: 'train',
+          tone: 'var(--tone-teal)',
           label: 'Train',
           icon: <TrainIcon />,
           active: tab === 'train',
@@ -76,6 +79,7 @@ export default function AdminMytrion() {
         },
         {
           key: 'browser',
+          tone: 'var(--tone-emerald)',
           label: 'Knowledge Browser',
           icon: <SearchIcon />,
           active: tab === 'browser',
@@ -90,6 +94,7 @@ export default function AdminMytrion() {
       items: [
         {
           key: 'access',
+          tone: 'var(--tone-violet)',
           label: 'User Management',
           icon: <AccessIcon />,
           active: tab === 'access',
@@ -98,6 +103,7 @@ export default function AdminMytrion() {
         },
         {
           key: 'carriers',
+          tone: 'var(--tone-purple)',
           label: 'Carrier User Management',
           icon: <UsersIcon />,
           active: CARRIER_TABS.includes(tab),
@@ -128,6 +134,7 @@ export default function AdminMytrion() {
       items: [
         {
           key: 'news',
+          tone: 'var(--tone-amber)',
           label: 'Client News',
           icon: <DocIcon />,
           active: tab === 'news',
@@ -136,6 +143,7 @@ export default function AdminMytrion() {
         },
         {
           key: 'deals',
+          tone: 'var(--tone-orange)',
           label: 'Deals',
           icon: <BuildingIcon />,
           active: tab === 'deals',
@@ -144,6 +152,7 @@ export default function AdminMytrion() {
         },
         {
           key: 'audit',
+          tone: 'var(--tone-pink)',
           label: 'Audit Log',
           icon: <HistoryIcon size={18} />,
           active: tab === 'audit',
@@ -152,6 +161,7 @@ export default function AdminMytrion() {
         },
         {
           key: 'jobs',
+          tone: 'var(--tone-rose)',
           label: 'Jobs',
           icon: <JobsIcon />,
           active: tab === 'jobs',
@@ -166,6 +176,7 @@ export default function AdminMytrion() {
       items: [
         {
           key: 'cmp',
+          tone: 'var(--tone-indigo)',
           label: 'CMP Database',
           icon: <DatabaseIcon />,
           active: tab === 'cmp',
@@ -174,6 +185,7 @@ export default function AdminMytrion() {
         },
         {
           key: 'dwh',
+          tone: 'var(--tone-blue)',
           label: 'Data Warehouse',
           icon: <WarehouseIcon />,
           active: tab === 'dwh',
@@ -182,6 +194,7 @@ export default function AdminMytrion() {
         },
         {
           key: 'verification-db',
+          tone: 'var(--tone-blue)',
           label: 'Verification DB',
           icon: <DatabaseIcon />,
           active: tab === 'verification-db',
@@ -196,6 +209,7 @@ export default function AdminMytrion() {
       items: [
         {
           key: 'scope',
+          tone: 'var(--tone-slate)',
           label: 'Octane-Scope',
           icon: <ScopeIcon />,
           active: tab === 'scope',

@@ -75,8 +75,8 @@ export function ViewAsPicker() {
         >
           <Icon name="user" size={10} strokeWidth={2.5} />
         </span>
-        <span style={s('font-size:9.5px;font-weight:800;letter-spacing:.08em;color:var(--accent)')}>ADMIN VIEW</span>
-        <span style={s('font-size:13px;font-weight:700;color:var(--text);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
+        <span style={s('font-size:11px;font-weight:800;letter-spacing:.08em;color:var(--accent)')}>ADMIN VIEW</span>
+        <span style={s('font-size:14px;font-weight:700;color:var(--text);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
           {actingAs.name}
         </span>
         <button
@@ -86,7 +86,7 @@ export function ViewAsPicker() {
           aria-label="Exit admin view"
           className="ss-ico-btn"
           style={s(
-            'display:flex;align-items:center;gap:4px;height:24px;padding:0 9px;border-radius:99px;border:none;background:var(--surface);color:var(--text2);font-size:9.5px;font-weight:800;letter-spacing:.06em;cursor:pointer',
+            'display:flex;align-items:center;gap:4px;height:24px;padding:0 9px;border-radius:99px;border:none;background:var(--surface);color:var(--text2);font-size:11px;font-weight:800;letter-spacing:.06em;cursor:pointer',
           )}
         >
           <Icon name="close" size={9} strokeWidth={3} />
@@ -104,7 +104,7 @@ export function ViewAsPicker() {
 
   return (
     <div style={s('display:flex;align-items:center;gap:9px')}>
-      <span style={s('font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>View as</span>
+      <span style={s('font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>View as</span>
       <div style={s('position:relative')}>
         <div
           style={s(
@@ -125,7 +125,7 @@ export function ViewAsPicker() {
             placeholder={loading ? 'Loading users…' : 'Search users…'}
             aria-label="Search users to view as"
             autoComplete="off"
-            style={s('flex:1;min-width:0;border:none;background:none;outline:none;color:var(--text);font-size:13px')}
+            style={s('flex:1;min-width:0;border:none;background:none;outline:none;color:var(--text);font-size:14px')}
           />
         </div>
         {open && (
@@ -136,10 +136,10 @@ export function ViewAsPicker() {
             )}
             className="ss-scroll"
           >
-            {error && <div style={s('padding:10px 12px;font-size:12px;color:var(--danger)')}>{error}</div>}
+            {error && <div style={s('padding:10px 12px;font-size:13px;color:var(--danger)')}>{error}</div>}
 
             {!error && !loading && filtered.length === 0 && (
-              <div style={s('padding:10px 12px;font-size:12px;color:var(--muted)')}>No users found.</div>
+              <div style={s('padding:10px 12px;font-size:13px;color:var(--muted)')}>No users found.</div>
             )}
             {filtered.map((a) => (
               <button
@@ -165,16 +165,16 @@ export function ViewAsPicker() {
               >
                 <span
                   style={s(
-                    'flex-shrink:0;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);font-size:11px;font-weight:700',
+                    'flex-shrink:0;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);font-size:12px;font-weight:700',
                   )}
                 >
                   {initials(a.name ?? a.zohoUserId)}
                 </span>
                 <span style={s('min-width:0')}>
-                  <span style={s('display:block;font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
+                  <span style={s('display:block;font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
                     {a.name ?? a.zohoUserId}
                   </span>
-                  <span style={s('display:block;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
+                  <span style={s('display:block;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
                     {[a.profile, a.role].filter(Boolean).join(' · ') || a.email || a.zohoUserId}
                   </span>
                 </span>

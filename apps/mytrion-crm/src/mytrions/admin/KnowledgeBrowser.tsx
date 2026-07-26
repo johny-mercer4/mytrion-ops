@@ -71,8 +71,12 @@ export function KnowledgeBrowser() {
     <div className={s.panel}>
       <div className={s.head}>
         <div>
+          <div className={s.eyebrow}>Vector search</div>
           <h2 className={s.h2}>Knowledge Browser</h2>
-
+          <p className={s.sub}>
+            Run a retrieval query the way an agent would, and see exactly which chunks come back and
+            how strongly they scored.
+          </p>
         </div>
       </div>
 

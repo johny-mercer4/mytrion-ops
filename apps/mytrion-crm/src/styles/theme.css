@@ -26,6 +26,9 @@
   --on-accent: #04131c;
   --accent-soft: rgba(56, 190, 240, 0.12);
   --accent-glow: rgba(56, 190, 240, 0.26);
+  /* Far end of the accent ramp. Same as --accent unless a module declares a real gradient
+     (see [data-mytrion] in global.css); lets `accent → accent-2` be written unconditionally. */
+  --accent-2: var(--accent);
   --success: #34d399;
   --warning: #fbbf4d;
   --danger: #f4716f;
@@ -150,7 +153,10 @@
   --header-bg: #ffffff;
   --text-primary: #18202e;
   --text-secondary: #4d5666;
-  --text-muted: #8a92a1;
+  /* Was #8a92a1 — ~3.1:1 on --surface, under the 4.5:1 floor, which is what made light-mode stat
+     labels, table headers and hints read as "barely visible". #69707e is ~4.7:1 and still clearly
+     the quietest step in the scale. Dark's --text-muted is untouched. */
+  --text-muted: #69707e;
   --border: rgba(20, 30, 50, 0.1);
   --border-light: rgba(20, 30, 50, 0.07);
   --border-dark: rgba(20, 30, 50, 0.05);

@@ -528,9 +528,10 @@ const EnvSchema = z.object({
   RETENTION_OPS_MANAGER_ZOHO_USER_ID: z.string().default(''),
   // Reserved for Zapier / ops identity — not used by app Zoho send_mail (disabled).
   RETENTION_NOTIFY_FROM_EMAIL: z.string().default(''),
-  // Comma-separated Zoho CRM user ids for Phase 2 Retention RoundRobin (prefer Isonline).
+  // Phase 2 Retention CS assignee — first Zoho user id wins (no RoundRobin). Gated off until
+  // RETENTION_AUTO_ASSIGN_ENABLED is flipped in csRoundRobin.ts.
   RETENTION_CS_ROUND_ROBIN_ZOHO_USER_IDS: z.string().default(''),
-  // Spanish Retention desk assignee (bypasses RoundRobin when is_spanish_desk).
+  // Spanish Retention desk assignee (bypasses fixed assignee when is_spanish_desk).
   RETENTION_CS_SPANISH_ZOHO_USER_ID: z.string().default(''),
   // Pilot switch: when ON, auto-create Retention cases only for listed Sales agents
   // (Zoho CRM user ids). Off = generate for all agents (production). Clear flag to reset.

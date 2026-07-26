@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { DbSchemaSnapshot, DbTable } from '../../api/schema';
-import { SearchIcon } from '../../components/icons';
+import { AlertIcon, SearchIcon } from '../../components/icons';
 import s from './admin.module.css';
 import x from './SchemaBrowser.module.css';
 
@@ -26,6 +26,12 @@ export interface SchemaBrowserProps {
   load: () => Promise<DbSchemaSnapshot>;
   /** Shown while the initial snapshot is loading. */
   loadingMessage?: string;
+  /**
+   * What to DO when the load fails. A schema browser fails for operational reasons (tunnel down,
+   * replica unreachable) far more often than for code reasons, so the error state names the fix
+   * rather than only echoing the exception.
+   */
+  errorHint?: string;
   /** Icon shown in the header database badge, e.g. the engine's glyph. */
   headerIcon?: ReactNode;
 }
@@ -78,7 +84,7 @@ function tableKey(t: DbTable): string {
  * DWH Postgres snapshot; the schema dimension (filter, per-row badge, stat tile) appears only when
  * the source reports multiple schemas.
  */
-export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading schema…', headerIcon }: SchemaBrowserProps) {
+export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading schema…', errorHint, headerIcon }: SchemaBrowserProps) {
   const [snap, setSnap] = useState<DbSchemaSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -156,8 +162,11 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
     <div className={`${s.panel} ${s.panelWide}`}>
       <div className={s.head}>
         <div>
+          <div className={s.eyebrow}>Read-only schema</div>
           <h2 className={s.h2}>{title}</h2>
-
+          {/* `subtitle` was accepted as a prop and never rendered, so every wrapper's explanation
+              ("structure only; no row data is ever read") was silently dropped. */}
+          <p className={s.sub}>{subtitle}</p>
         </div>
         <div className={x.schemaMeta}>
           {snap && (
@@ -257,12 +266,29 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
         </div>
       </div>
 
-      {error && (
+      {/* A failed REFRESH keeps the last good snapshot on screen and says so quietly. */}
+      {error && snap && (
         <p className={s.errorNote} role="alert">
-          {error}
+          Could not refresh — showing the last loaded snapshot. {error}
         </p>
       )}
 
+      {/* A failed INITIAL load has nothing to show, so it takes over the surface and names the fix. */}
+      {error && !snap ? (
+        <div className={s.errorState} role="alert">
+          <span className={s.errorIcon} aria-hidden="true">
+            <AlertIcon size={20} />
+          </span>
+          <div className={s.errorTitle}>Could not reach {title}</div>
+          <p className={s.errorCause}>{error}</p>
+          {errorHint ? <p className={s.errorHint}>{errorHint}</p> : null}
+          <div className={s.errorActions}>
+            <button type="button" className={s.primaryBtn} disabled={loading} onClick={() => void refresh()}>
+              {loading ? 'Retrying…' : 'Try again'}
+            </button>
+          </div>
+        </div>
+      ) : (
       <div className={s.table}>
         <div className={s.tHead} style={TABLE_COLS}>
           <span>Table</span>
@@ -356,9 +382,16 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
           </div>
         )}
         {!loading && snap && visible.length === 0 && (
-          <div className={s.none}>No tables match the current filters.</div>
+          <div className={s.none}>
+            <span className={s.emptyIcon} aria-hidden="true">
+              <SearchIcon size={18} />
+            </span>
+            <div className={s.emptyTitle}>No tables match</div>
+            <p className={s.emptyBody}>Nothing in this schema matches the current search or filters.</p>
+          </div>
         )}
       </div>
+      )}
     </div>
   );
 }

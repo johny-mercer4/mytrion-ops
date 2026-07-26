@@ -18,9 +18,11 @@ const QUEUE_SKELETON = ['70%', '56%', '48%', '40%', '48px'] as const;
 const RUN_SKELETON = ['48%', '70%', '40%', '64%'] as const;
 
 function statusClass(job: CatalogJob): string {
-  if (!job.active) return s.statusOff;
-  if (job.trigger === 'cron') return s.statusOn;
-  return s.statusReady;
+  // CSS-module lookups are `string | undefined` under the strict typing this app uses, so each
+  // branch needs a fallback for the declared `string` return to hold.
+  if (!job.active) return s.statusOff ?? '';
+  if (job.trigger === 'cron') return s.statusOn ?? '';
+  return s.statusReady ?? '';
 }
 
 function relativeTime(iso: string | null): string {
@@ -132,7 +134,10 @@ export function Jobs() {
           <h2 className={s.h2}>pg-boss</h2>
           <p className={s.sub}>
             Every queue, live cron schedules, and recent run results (retention sync summaries live
-            here). Timezone {data?.cronTz ?? '…'} · worker {data?.workerMode ?? '…'}
+            here).
+            {/* Only append the runtime facts once they exist — `…` placeholders read as a
+                truncation glitch rather than as "not loaded yet". */}
+            {data ? ` Timezone ${data.cronTz} · worker ${data.workerMode}` : ''}
           </p>
         </div>
         <button type="button" className={s.ghostBtn} onClick={() => void load()} disabled={loading}>
