@@ -1,8 +1,14 @@
 /**
- * Sales Mytrion loyalty tiers — pure config + math. Single source of truth for the "Loyalty Tiers v3"
- * program surfaced in Data Center → Clients. Inputs are REAL DWH monthly stats from
- * GET /v1/data-center/clients (see api/dataCenter.getClients); the thresholds + rewards are static
- * program rules from the spec. No React/imports here — trivially unit-testable.
+ * Octane loyalty tiers — pure config + math. Single source of truth for the "Loyalty Tiers v3"
+ * program, shared by BOTH surfaces that render it:
+ *
+ *   Sales Mytrion   Data Center → Clients — one agent's book (GET /v1/data-center/clients)
+ *   Manager Mytrion Loyalty Program       — every carrier (GET /v1/manager/loyalty/clients)
+ *
+ * It lives in `_shared` precisely so those two can never disagree about a client's tier: both feed
+ * the same `resolveTier(activeCards, gallons)` with the same DWH figures, which come from the same
+ * underlying roster query (see integrations/dwhClientRoster.ts). The thresholds + rewards below are
+ * static program rules from the spec. No React/imports here — trivially unit-testable.
  *
  * Track by active-card count (distinct cards with >=1 tx this calendar month):
  *   T1 Owner-Operator (1) · T2 Small Company (2–3) · T3 Fleet (4+, segmented; capped at 12 cards).

@@ -54,6 +54,12 @@ export interface AgentClientRow {
   carrierId: string;
   companyName: string;
   contact: string;
+  /**
+   * The carrier's CURRENT owning agent (`dim_company.agent`). Already selected by every owner arm;
+   * surfaced because the Manager all-clients roster spans agents and must show who owns each row.
+   * For the agent-scoped roster this is just the caller's own name.
+   */
+  agentName: string;
   phone: string;
   producedCards: number;
   activeCards: number;
@@ -240,6 +246,7 @@ function toClient(r: ClientDbRow): AgentClientRow {
     companyName: str(r.company_name) || '(unnamed)',
     // deal contact name, falling back to the owning agent's name (there is no contact_name on the dim).
     contact: dash(str(r.deal_full_name) || str(r.agent)),
+    agentName: dash(str(r.agent)),
     phone: dash(str(r.deal_phone) || str(r.contact_phone)),
     producedCards: num(r.total_produced_cards ?? r.total_active_cards),
     activeCards: num(r.total_active_cards),
@@ -271,6 +278,23 @@ export async function fetchAgentClients(
   const { binds, idBindIdx, nameBindIdx } = ownerBinds(ownerZohoUserId, agentName);
   if (idBindIdx === null && nameBindIdx === null) return [];
   const rows = await runClientsQuery(buildOwnedCte(idBindIdx, nameBindIdx), binds);
+  return rows.map(toClient);
+}
+
+/**
+ * EVERY carrier in the warehouse, agent-agnostic — the Manager Mytrion → Loyalty Program roster.
+ *
+ * Deliberately runs the SAME `runClientsQuery` + `toClient` as the agent-scoped roster, with the only
+ * difference being an `owned` CTE that drops the owner predicate (`ownedArm('true')` still keeps the
+ * `carrier_id is not null` guard and the newest-dim-row-per-carrier dedupe). Reusing one query is the
+ * point: loyalty tier is derived from `activeCards` + monthly gallons, so if Manager computed those
+ * differently from Data Center → Clients the two surfaces would disagree about a client's tier.
+ *
+ * NOT owner-filtered, so this is a MANAGER-ONLY read — the route must be `management`-gated. There
+ * are no binds at all (the predicate is a fixed literal), so nothing here is caller-controlled.
+ */
+export async function fetchAllClients(): Promise<AgentClientRow[]> {
+  const rows = await runClientsQuery(`owned as (${ownedArm('true')})`, []);
   return rows.map(toClient);
 }
 

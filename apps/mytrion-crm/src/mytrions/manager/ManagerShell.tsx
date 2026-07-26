@@ -13,6 +13,7 @@ import {
 } from './managerNav';
 import { DepartmentSoon } from './DepartmentSoon';
 import { ManagerHome } from './ManagerHome';
+import { LoyaltyCard } from './cards/LoyaltyCard';
 import { ReferralsCard } from './cards/ReferralsCard';
 import './manager.css';
 
@@ -20,10 +21,10 @@ import './manager.css';
  * Manager hub shell — standard Mytrion chrome (TopBar + sidebar) via MytrionShell, chat dock disabled.
  *
  * The sidebar has two groups: General (Overview) and Departments (one entry each). Overview is also
- * the hub the Referrals workspace opens from, so Referrals has no nav entry of its own — it opens from
- * the Overview grid and returns there via the back button, and Overview stays selected while you're
- * inside it. Every view switch is guarded by the Layer-2 RBAC predicate so a stale state can't bypass
- * the grid.
+ * the hub the workspace cards open from (Referrals, Loyalty Program), so those have no nav entry of
+ * their own — each opens from the Overview grid and returns there via the back button, and Overview
+ * stays selected while you're inside one. Every view switch is guarded by the Layer-2 RBAC predicate
+ * so a stale state can't bypass the grid.
  */
 export function ManagerShell() {
   const user = useUserContext();
@@ -48,9 +49,9 @@ export function ManagerShell() {
           label: 'Overview',
           icon: <LayoutGrid size={19} />,
           tone: 'var(--tone-pink)',
-          active: view === 'overview' || view === 'referrals',
+          active: view === 'overview' || view === 'referrals' || view === 'loyalty',
           onClick: () => setView('overview'),
-          keywords: ['home', 'hub', 'referrals'],
+          keywords: ['home', 'hub', 'referrals', 'loyalty', 'tiers'],
         },
       ],
     },
@@ -78,6 +79,7 @@ export function ManagerShell() {
           <ManagerHome onOpenCard={openCard} onOpenDepartment={openDept} />
         ) : null}
         {view === 'referrals' ? <ReferralsCard onBack={() => setView('overview')} /> : null}
+        {view === 'loyalty' ? <LoyaltyCard onBack={() => setView('overview')} /> : null}
         {activeDept ? <DepartmentSoon dept={activeDept} /> : null}
       </div>
     </MytrionShell>

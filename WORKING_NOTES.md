@@ -5650,3 +5650,69 @@ same child under a different tenant still allowed, recurring types still repeat 
   tables + indexes), but worth knowing before running any migration command here.
 - Verified 0058 from scratch on a throwaway DB: 59 migrations applied, 47 tables, both new tables
   present.
+
+## 2026-07-27 — Manager Mytrion: Loyalty Program card
+
+Company-wide loyalty tier board, next to Referrals on the Manager Overview hub. Branch
+`feature/MytrionAll`.
+
+### Reused rather than rebuilt
+
+The tier logic already existed and already matched the Loyalty Tiers v3 spec exactly
+(`sales/redesign/loyalty.ts` — T1 1,100/1,500/2,000 · T2 2,200/3,000/4,500 · T3 segmented
+4–6/7–8/9–10/11–12). **Moved it to `mytrions/_shared/loyalty.ts`** (2 import sites) so Manager and
+Sales share ONE implementation — the program is company-wide, not Sales-specific, and a second copy
+would let the two surfaces disagree about a client's tier.
+
+Same for the data: `fetchAllClients()` in `dwhClientRoster.ts` reuses the exact `runClientsQuery` +
+`toClient` the agent-scoped roster uses, with only the owner predicate dropped (`ownedArm('true')`).
+One gallons basis, one active-card count, one billing cycle.
+
+### Measured before designing
+
+`fetchAllClients()` → **8,045 carriers, 2.4s, 3.27 MB** of JSON. So:
+- `loyaltyRoster.ts` projects to the 9 fields the board needs (~1 MB), dropping debt/phone/DOT/money
+  code — those belong to the Clients tab, not the loyalty program. A route test asserts the
+  projection so those columns can't creep back in.
+- Server orders by the tier gallons basis DESC; the grid renders in windows of 60. Alphabetical
+  would bury all 621 tiered clients behind thousands of zero-gallon carriers.
+- Distribution is always computed over the FULL roster, never the visible slice.
+
+### Colour — the ask, and the correction it forced
+
+Requested: gold for Gold, silver for Silver, bronze for Bronze, orange for not-reached. The shared
+`--tier-bronze` is **`#fb923c`, i.e. already orange**, so bronze and not-reached were the same hue.
+Fixed with a card-scoped `--lty-*` palette (true copper `#b87333` for bronze, `#f97316` for
+Building), leaving Sales' `--tier-*` untouched. Sales therefore still shows bronze-as-orange —
+propagating that is a one-line change if wanted.
+
+**First render exposed a worse problem:** the distribution bar came out 92% orange, because
+`resolveTier` collapses "fuelling but under Bronze" (3,952) and "no active cards at all" (3,472) into
+the same `level: 'none'`. Those are completely different business states. Split into a 5th `idle`
+bucket ("No cards", receding neutral + dashed border so the state survives greyscale/colour-blind
+viewing). Bar now reads 1.3 / 3.1 / 3.3 / 49.1 / 43.2 %. Dropped the redundant "No active cards"
+track chip since the tile selects that set.
+
+Verified by rendering the real markup against the real stylesheets in headless Chrome, dark AND
+light. That caught a genuine CSS bug: `--hz-pane` is a **gradient**, so the skeleton's
+`background: <image> var(--hz-pane)` space-separated shorthand was invalid and dropped the whole
+declaration — now two comma-separated layers with per-layer `background-position` in the keyframes.
+
+### Security
+
+`/v1/manager/loyalty/clients` is the one Manager read that is NOT owner-scoped, so
+`tests/unit/manager-loyalty-routes.test.ts` (9 tests) covers it: unauthenticated 401, non-management
+403, sales rep 403, and the header-elevation triad (`x-department-access: management`,
+`x-all-departments: true`, both) all 403 — each asserting the DWH was never touched, not merely that
+the body was withheld. Verified sessions ignore claimed headers
+(`FF_SESSION_DEPT_AUTHORITATIVE=1`), and `ADMIN_PROFILE_MARKERS` is exact-match `administrator,ceo`
+so a "Management" profile doesn't accidentally get all-department access.
+
+### Checks
+
+Backend typecheck + lint clean. CRM app: **10 tsc errors before and after — all pre-existing**
+(Finance, ChatPanel, RecordsTab strict-null). `vite build` succeeds. Full suite: the only delta vs
+the clean-tree baseline is `ringcentral-call-log` "logs a finished outbound lead call", which is a
+pre-existing **timeout flake** — passes 2 of 3 isolated runs with no code change, and my change isn't
+in that path. NOTE: the served bundle in `apps/mytrion-crm/app/` was NOT rebuilt; deploy needs
+`NODE_ENV=production vite build` committed (see the 2026-07-26 CORS entry).
