@@ -143,15 +143,51 @@ export function CallEndedBanner({ pendingCall }: { pendingCall: PendingCallLog }
   );
 }
 
+function CallDialButton(props: {
+  canCall: boolean;
+  awaitingCallEnd: boolean;
+  height: number;
+  idleLabel: string;
+  onCall: () => void;
+}) {
+  const { canCall, awaitingCallEnd, height, idleLabel, onCall } = props;
+  return (
+    <button
+      type="button"
+      disabled={!canCall}
+      onClick={onCall}
+      className="ss-btn-p"
+      aria-busy={awaitingCallEnd}
+      style={s(
+        `height:${height}px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:14px;cursor:${canCall ? 'pointer' : 'not-allowed'};opacity:${canCall || awaitingCallEnd ? 1 : 0.5};display:inline-flex;align-items:center;justify-content:center;gap:8px`,
+      )}
+    >
+      {awaitingCallEnd ? (
+        <>
+          <Icon name="spinner" size={16} color="currentColor" style={s('animation:ss-spin .8s linear infinite')} />
+          Waiting for call to end…
+        </>
+      ) : (
+        <>
+          <Icon name="calls" size={16} color="currentColor" />
+          {idleLabel}
+        </>
+      )}
+    </button>
+  );
+}
+
 export function CallFirstBlock(props: {
   busy: boolean;
   contactPhone: string | null;
   phoneLoading?: boolean;
+  awaitingCallEnd?: boolean;
   onCall: () => void;
 }) {
-  const { busy, contactPhone, phoneLoading = false } = props;
+  const { busy, contactPhone, phoneLoading = false, awaitingCallEnd = false } = props;
   const phone = formatUsPhone(contactPhone) || contactPhone?.trim() || '';
-  const canCall = !busy && !phoneLoading && !!contactPhone?.trim();
+  const canCall = !busy && !phoneLoading && !awaitingCallEnd && !!contactPhone?.trim();
+  const idleLabel = phoneLoading ? 'Loading number…' : phone ? `Call ${phone}` : 'No phone on file';
   return (
     <section
       style={s(
@@ -186,18 +222,13 @@ export function CallFirstBlock(props: {
         </div>
       )}
 
-      <button
-        type="button"
-        disabled={!canCall}
-        onClick={props.onCall}
-        className="ss-btn-p"
-        style={s(
-          `height:46px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:14px;cursor:${canCall ? 'pointer' : 'not-allowed'};opacity:${canCall ? 1 : 0.5};display:inline-flex;align-items:center;justify-content:center;gap:8px`,
-        )}
-      >
-        <Icon name="calls" size={16} color="currentColor" />
-        {phoneLoading ? 'Loading number…' : phone ? `Call ${phone}` : 'No phone on file'}
-      </button>
+      <CallDialButton
+        canCall={canCall}
+        awaitingCallEnd={awaitingCallEnd}
+        height={46}
+        idleLabel={idleLabel}
+        onCall={props.onCall}
+      />
     </section>
   );
 }
@@ -207,6 +238,7 @@ export function AttemptStep(props: {
   busy: boolean;
   contactPhone: string | null;
   forceAttempt: boolean;
+  awaitingCallEnd?: boolean;
   pendingCall: PendingCallLog | null;
   channel: RetentionChannel;
   attemptNote: string;
@@ -219,12 +251,13 @@ export function AttemptStep(props: {
   onLogPhoneCall: () => Promise<void>;
   onLogOtherChannel: () => Promise<void>;
 }) {
-  const { busy, contactPhone, forceAttempt, pendingCall, row } = props;
+  const { busy, contactPhone, forceAttempt, pendingCall, row, awaitingCallEnd = false } = props;
   const brand =
     props.channel !== 'ringcentral' ? CHANNEL_BRAND[props.channel] : null;
   const phone = formatUsPhone(contactPhone) || contactPhone?.trim() || '';
   // Messenger / email: note required; screenshot optional (encourage both).
   const noteMissing = !props.attemptNote.trim();
+  const canCall = !busy && !awaitingCallEnd && !!contactPhone?.trim();
 
   return (
     <section
@@ -273,18 +306,13 @@ export function AttemptStep(props: {
         </div>
       )}
 
-      <button
-        type="button"
-        disabled={busy || !contactPhone?.trim()}
-        onClick={props.onCall}
-        className="ss-btn-p"
-        style={s(
-          `height:40px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:14px;cursor:${busy || !contactPhone ? 'not-allowed' : 'pointer'};opacity:${!contactPhone ? 0.5 : 1};display:inline-flex;align-items:center;justify-content:center;gap:8px`,
-        )}
-      >
-        <Icon name="calls" size={16} color="currentColor" />
-        {phone ? `Call ${phone}` : 'No phone on file'}
-      </button>
+      <CallDialButton
+        canCall={canCall}
+        awaitingCallEnd={awaitingCallEnd}
+        height={40}
+        idleLabel={phone ? `Call ${phone}` : 'No phone on file'}
+        onCall={props.onCall}
+      />
 
       {!forceAttempt && (
         <>

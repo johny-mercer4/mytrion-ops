@@ -12,6 +12,7 @@ import { useLoad } from '../../../_shared/useLoad';
 import { RetentionHero, RetentionPoolMetrics, fmtGal } from '../RetentionBoardUi';
 import { PoolClaimModal } from '../PoolClaimModal';
 import {
+  breachSeverity,
   claimOpenPoolCase,
   loadOpenPoolCases,
   loadOpenPoolQuota,
@@ -24,17 +25,11 @@ import { stageTimer } from '../retentionTimers';
 type PoolQuota = { used: number; max: number; remaining: number };
 
 type SortKey = 'carrierId' | 'companyName' | 'daysInactive' | 'gallons90d' | 'assignmentCount';
-type StatusFilter = 'available' | 'all';
 
 type ClaimModal =
   | { mode: 'single'; caseId: string }
   | { mode: 'bulk'; caseIds: string[] }
   | null;
-
-const STATUS_FILTERS: Array<{ id: StatusFilter; label: string; hint: string }> = [
-  { id: 'available', label: 'Available', hint: 'Ready to claim' },
-  { id: 'all', label: 'All', hint: 'Everything in the pool' },
-];
 
 function claimWindowLabel(c: RetentionCaseRow): {
   text: string;
@@ -142,7 +137,6 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
   const quota = useLoad(() => loadOpenPoolQuota(), [actAsKey]);
   const [cases, setCases] = useState<RetentionCaseRow[]>([]);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('available');
   const [selected, setSelected] = useState<string[]>([]);
   const [sort, setSort] = useState<{ key: SortKey | null; dir: 'asc' | 'desc' }>({
     key: null,
@@ -220,7 +214,6 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     let rows = cases.slice();
-    if (statusFilter === 'available') rows = rows.filter((c) => c.statusCode === 'p1_open_pool');
     if (q) {
       rows = rows.filter((c) =>
         `${c.carrierId} ${c.companyName ?? ''}`.toLowerCase().includes(q),
@@ -241,7 +234,7 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
       });
     }
     return rows;
-  }, [cases, search, sort, statusFilter]);
+  }, [cases, search, sort]);
 
   const toggleAll = (): void => {
     const ids = filtered.map((c) => c.id);
@@ -440,25 +433,6 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
         </div>
 
         <div className="ss-pool-toolbar">
-          <div className="ss-pool-filters" role="tablist" aria-label="Pool status">
-            {STATUS_FILTERS.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                role="tab"
-                title={f.hint}
-                aria-selected={statusFilter === f.id}
-                className={`ss-pool-chip${statusFilter === f.id ? ' is-on' : ''}`}
-                onClick={() => {
-                  setStatusFilter(f.id);
-                  setSelected([]);
-                }}
-              >
-                {f.label}
-                <em>{f.id === 'available' ? claimable.length : cases.length}</em>
-              </button>
-            ))}
-          </div>
           <div className="ss-pool-search">
             <Icon name="search" size={15} />
             <input
@@ -466,11 +440,15 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search carrier or company…"
               className="ss-in"
+              aria-label="Search carrier or company"
             />
           </div>
         </div>
 
-        {feed.error && <div className="ss-pool-error">{feed.error}</div>}
+        {/* Banner only when rows exist; empty+error uses PoolEmptyState alone. */}
+        {feed.error && (filtered.length > 0 || feed.loading) ? (
+          <div className="ss-pool-error">{feed.error}</div>
+        ) : null}
 
         <div className={`ss-pool-table-wrap${submitting ? ' is-busy' : ''}`}>
           <div className="ss-scroll" style={s('flex:1;overflow:auto')}>
@@ -556,7 +534,9 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
                     <span className="ss-pool-mono muted">{i + 1}</span>
                     <span className="ss-pool-mono">{c.carrierId}</span>
                     <span className="ss-pool-company">{c.companyName || '—'}</span>
-                    <span className="ss-pool-quiet">{quietCaption(c)}</span>
+                    <span className={`ss-pool-quiet${breachSeverity(c) > 0 ? ' is-warn' : ''}`}>
+                      {quietCaption(c)}
+                    </span>
                     <span className="ss-pool-mono">
                       {c.gallons90d != null ? fmtGal(c.gallons90d) : '—'}
                     </span>

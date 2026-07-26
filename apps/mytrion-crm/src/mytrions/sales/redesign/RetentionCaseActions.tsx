@@ -38,6 +38,8 @@ export function RetentionCaseActions(props: {
   phoneLoading?: boolean;
   /** Call ended while OoR — must log RC attempt. */
   forceAttempt: boolean;
+  /** Dial placed — waiting for RingCentral hangup before stage UI. */
+  awaitingCallEnd?: boolean;
   pendingCall: PendingCallLog | null;
   reason: RetentionDissatisfactionReason | '';
   reasonNote: string;
@@ -170,6 +172,7 @@ export function RetentionCaseActions(props: {
           busy={busy}
           contactPhone={contactPhone}
           phoneLoading={phoneLoading}
+          awaitingCallEnd={props.awaitingCallEnd ?? false}
           onCall={props.onCall}
         />
       </div>

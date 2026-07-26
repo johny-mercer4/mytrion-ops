@@ -39,6 +39,16 @@ type ViewMode = 'kanban' | 'list';
 const LIST_GRID =
   'grid-template-columns:1.4fr 110px 90px 1.1fr 90px 160px 90px 1fr';
 
+/** Short empty-column copy — stage-specific, not a generic "Empty". */
+const COL_EMPTY_HINT: Record<RetentionKanbanCol, string> = {
+  new: 'Call to start',
+  reached: 'None watching',
+  out_of_reach: 'No open attempts',
+  vacation: 'None on hold',
+  dissatisfied: 'None locked',
+  closed: 'None closed yet',
+};
+
 function useBoardClock(ms = 30_000): Date {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -231,9 +241,12 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
           title={search.trim() ? 'No matching cases' : 'No retention cases'}
           body={
             search.trim()
-              ? 'Try another carrier ID or company name.'
+              ? 'Nothing matches that carrier or company. Clear search to see your full board.'
               : 'When a client goes quiet longer than usual, a case appears here automatically.'
           }
+          {...(search.trim()
+            ? { onClearSearch: () => setSearch(''), clearLabel: 'Clear search' }
+            : {})}
         />
       )}
 
@@ -264,7 +277,7 @@ export function RetentionCasesPane({ onOpenCount }: { onOpenCount?: (n: number) 
                   ))}
                   {rows.length === 0 && (
                     <div style={s('padding:28px 8px;text-align:center;font-size:12px;color:var(--faint);font-weight:600')}>
-                      Empty
+                      {COL_EMPTY_HINT[col.id]}
                     </div>
                   )}
                 </div>

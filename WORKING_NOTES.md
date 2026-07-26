@@ -5559,3 +5559,14 @@ risk conflicting with in-progress work.
 - The hero's "Could not load apps from Deals" still renders through a separate path, not StateNote.
 
 **Still dirty:** `apps/mytrion-crm/app/` build output.
+
+## 2026-07-26 — Retention UX density pass
+
+Kanban/list empty + card declutter; Open Pool quiet warn only when breached; dropped no-op All chip and double error empty; call button surfaces awaitingCallEnd; forceAttempt stage blocks toast instead of silent return. Files: RetentionBoardUi, RetentionCasesPane, RetentionWizardSteps, RetentionCaseActions, RetentionCaseDetail, PoolTab, theme.css.
+
+## 2026-07-26 — Sales Data Center + detail UX pass
+
+Clients modal: denser scrim (`.8` + blur), sheet `820px`, icon tabs, Escape/`role=dialog`, richer empties.
+Leads/Deals cold load: Home-style `DcKanbanSkeleton` / `DcListSkeleton` in RecordsTab Gate.
+Lead/Deal detail: centered `DetailSheet` (no full-bleed “separate page”), stay-open after save, saving
+overlay, related panels use `DcPanelSkeleton` + section icons. Shared footer in `dataCenterSheet.tsx`.

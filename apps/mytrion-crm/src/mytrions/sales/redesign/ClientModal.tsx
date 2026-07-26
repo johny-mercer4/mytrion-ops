@@ -1,5 +1,5 @@
 /**
- * Client drilldown modal — Overview / Cards / Activity / Manage (registration links).
+ * Client drilldown modal — Overview / Loyalty / Cards / Activity / Billing / Manage.
  */
 import { useEffect, useState, type ReactNode } from 'react';
 
@@ -14,7 +14,7 @@ import {
 } from './clientDrilldown';
 import type { ClientRecord } from './ctx';
 import { s } from './dc';
-import { Icon } from './icons';
+import { Icon, type IconName } from './icons';
 import { useLoad, numFmt } from './live';
 import { badge } from './salesData';
 import {
@@ -28,6 +28,35 @@ import {
 } from './loyalty';
 
 export type ClientModalTab = 'overview' | 'loyalty' | 'cards' | 'activity' | 'billing' | 'manage';
+
+const TAB_META: Array<[ClientModalTab, string, IconName]> = [
+  ['overview', 'Overview', 'clients'],
+  ['loyalty', 'Loyalty', 'star'],
+  ['cards', 'Cards', 'card'],
+  ['activity', 'Activity', 'clock'],
+  ['billing', 'Billing', 'billing'],
+  ['manage', 'Manage', 'gear'],
+];
+
+function EmptyHint({ icon, title, body }: { icon: IconName; title: string; body: string }) {
+  return (
+    <div
+      style={s(
+        'display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:36px 18px;border-radius:var(--radius-md);background:var(--alt);border:1px dashed var(--border2)',
+      )}
+    >
+      <div
+        style={s(
+          'width:44px;height:44px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent)',
+        )}
+      >
+        <Icon name={icon} size={20} />
+      </div>
+      <div style={s('font-size:15px;font-weight:700')}>{title}</div>
+      <div style={s('font-size:13px;color:var(--muted);line-height:1.5;max-width:320px')}>{body}</div>
+    </div>
+  );
+}
 
 // ---- Billing & Account tab ----
 function BillingField({ label, value, soon }: { label: string; value?: string; soon?: boolean }) {
@@ -185,46 +214,93 @@ export function ClientModal({
       .finally(() => setActLoadingMore(false));
   };
 
-  const avStyle = `width:52px;height:52px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;background:color-mix(in srgb,${col} 16%,transparent);color:${col}`;
-  const tabs: Array<[ClientModalTab, string]> = [
-    ['overview', 'Overview'],
-    ['loyalty', 'Loyalty'],
-    ['cards', 'Cards'],
-    ['activity', 'Activity'],
-    ['billing', 'Billing'],
-    ['manage', 'Manage'],
-  ];
-  const tile = 'padding:15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)';
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const avStyle = `width:52px;height:52px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;background:color-mix(in srgb,${col} 18%,var(--surface));color:${col};border:1px solid color-mix(in srgb,${col} 28%,transparent)`;
+  const tile = 'padding:14px 15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)';
   const tLbl = 'font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em';
   const tVal = "font-family:'JetBrains Mono',monospace;font-size:21px;font-weight:600;margin-top:5px";
   return (
-    <div onClick={onClose} style={s('position:fixed;inset:0;z-index:118;background:rgba(3,7,14,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
-      <div onClick={(e) => e.stopPropagation()} style={s('width:100%;max-width:560px;max-height:86vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden')}>
-        <div style={s('flex-shrink:0;padding:22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px')}>
+    <div
+      role="presentation"
+      onClick={onClose}
+      style={s(
+        'position:fixed;inset:0;z-index:118;background:rgba(3,7,14,.8);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:flex;align-items:center;justify-content:center;padding:20px',
+      )}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Client ${client.name}`}
+        onClick={(e) => e.stopPropagation()}
+        style={s(
+          'width:100%;max-width:820px;max-height:90vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);box-shadow:var(--shadow);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden',
+        )}
+      >
+        <div
+          style={s(
+            'flex-shrink:0;padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;background:color-mix(in srgb,var(--surface) 88%,var(--alt))',
+          )}
+        >
           <div style={s(avStyle)}>{initials}</div>
           <div style={s('flex:1;min-width:0')}>
-            <div style={s('font-size:17px;font-weight:700')}>{client.name}</div>
-            <div style={s("font-size:13px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:3px")}>{client.carrier} · MC {client.mc} · DOT {client.dot}</div>
+            <div style={s('font-size:18px;font-weight:700;letter-spacing:-.01em')}>{client.name}</div>
+            <div style={s("font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:3px")}>
+              {client.carrier} · MC {client.mc} · DOT {client.dot}
+            </div>
           </div>
           {tier.level !== 'none' && (
             <span style={s(badge(tierLabel(tier.level), tierColor(tier.level)).style + `;color:${tierTextColor(tier.level)};display:inline-flex;align-items:center;gap:4px`)}>
-              <Icon name="star" size={11} />{tierLabel(tier.level)}
+              <Icon name="star" size={11} />
+              {tierLabel(tier.level)}
             </span>
           )}
           <span style={s(statusBadge.style)}>{statusBadge.text}</span>
-          <button onClick={onClose} aria-label="Close" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center')}>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="ss-ico-btn"
+            style={s(
+              'width:32px;height:32px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center',
+            )}
+          >
             <Icon name="close" size={15} strokeWidth={2.4} />
           </button>
         </div>
-        <div style={s('flex-shrink:0;display:flex;gap:4px;padding:0 22px;border-bottom:1px solid var(--border);overflow-x:auto;background:var(--surface)')}>
-          {tabs.map(([id, label]) => {
+        <div
+          role="tablist"
+          aria-label="Client sections"
+          style={s(
+            'flex-shrink:0;display:flex;gap:2px;padding:0 12px;border-bottom:1px solid var(--border);overflow-x:auto;background:var(--alt)',
+          )}
+        >
+          {TAB_META.map(([id, label, icon]) => {
             const on = clientTab === id;
             return (
-              <button key={id} onClick={() => setClientTab(id)} style={s(`padding:8px 15px;border:none;background:none;border-bottom:2px solid ${on ? 'var(--accent)' : 'transparent'};color:${on ? 'var(--text)' : 'var(--muted)'};font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap`)}>{label}</button>
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                onClick={() => setClientTab(id)}
+                style={s(
+                  `display:inline-flex;align-items:center;gap:7px;padding:11px 14px;border:none;background:none;border-bottom:2px solid ${on ? 'var(--accent)' : 'transparent'};color:${on ? 'var(--text)' : 'var(--muted)'};font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap`,
+                )}
+              >
+                <Icon name={icon} size={14} color={on ? 'var(--accent)' : 'currentColor'} />
+                {label}
+              </button>
             );
           })}
         </div>
-        <div className="ss-scroll" style={s('flex:1;min-height:0;padding:22px')}>
+        <div className="ss-scroll" style={s('flex:1;min-height:0;padding:20px')}>
           {clientTab === 'overview' && (
             <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
               <div style={s(`grid-column:1 / span 2;${tile}`)}>
@@ -244,9 +320,11 @@ export function ClientModal({
           )}
           {clientTab === 'loyalty' &&
             (tier.track === null ? (
-              <div style={s('font-size:14px;color:var(--muted);padding:8px 2px')}>
-                No active fuel cards yet — the loyalty tier appears once this client has active cards.
-              </div>
+              <EmptyHint
+                icon="star"
+                title="Loyalty not active yet"
+                body="The tier track appears once this carrier has active fuel cards pumping."
+              />
             ) : (
               <div style={s('display:flex;flex-direction:column;gap:14px')}>
                 <div style={s(`${tile};display:flex;align-items:center;gap:14px`)}>
@@ -302,7 +380,7 @@ export function ClientModal({
               {cardsL.loading && <div style={s('font-size:14px;color:var(--muted);padding:8px 2px')}>Loading cards…</div>}
               {cardsL.error && <div style={s('font-size:14px;color:var(--danger);padding:8px 2px')}>Couldn't load cards — {cardsL.error}</div>}
               {!cardsL.loading && !cardsL.error && (cardsL.data?.length ?? 0) === 0 && (
-                <div style={s('font-size:14px;color:var(--muted);padding:8px 2px')}>No cards on file for this carrier.</div>
+                <EmptyHint icon="card" title="No cards on file" body="Fuel cards for this carrier will show up here once issued." />
               )}
               {(cardsL.data ?? []).map((card, i) => (
                 <div key={`${card.num}-${i}`} style={s('display:flex;flex-direction:column;gap:8px;padding:13px 15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)')}>
@@ -336,7 +414,7 @@ export function ClientModal({
               {actLoading && <div style={s('font-size:14px;color:var(--muted);padding:8px 2px')}>Loading activity…</div>}
               {actError && <div style={s('font-size:14px;color:var(--danger);padding:8px 2px')}>Couldn't load activity — {actError}</div>}
               {!actLoading && !actError && actRows.length === 0 && (
-                <div style={s('font-size:14px;color:var(--muted);padding:8px 2px')}>No transactions for this carrier.</div>
+                <EmptyHint icon="clock" title="No activity yet" body="Transactions and account events for this carrier will appear in this timeline." />
               )}
               {actRows.map((ev, i, arr) => {
                 const line = i < arr.length - 1;
@@ -369,10 +447,32 @@ export function ClientModal({
             <ClientManagePanel carrierId={client.id} companyName={client.name} />
           )}
         </div>
-        <div style={s('flex-shrink:0;padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px')}>
-          <button onClick={onClose} style={s('height:38px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:14px;cursor:pointer')}>Close</button>
+        <div
+          style={s(
+            'flex-shrink:0;padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px;background:color-mix(in srgb,var(--surface) 90%,var(--alt))',
+          )}
+        >
+          <button
+            type="button"
+            onClick={onClose}
+            style={s(
+              'height:38px;padding:0 18px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:14px;cursor:pointer',
+            )}
+          >
+            Close
+          </button>
           {clientTab !== 'manage' && (
-            <button onClick={onRun} className="ss-btn-p" style={s('height:38px;padding:0 18px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:14px;cursor:pointer')}>Run an action</button>
+            <button
+              type="button"
+              onClick={onRun}
+              className="ss-btn-p"
+              style={s(
+                'height:38px;padding:0 18px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:7px',
+              )}
+            >
+              <Icon name="bolt" size={14} />
+              Run an action
+            </button>
           )}
         </div>
       </div>

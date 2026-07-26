@@ -28,6 +28,7 @@ import { useCachedLoad, formatCachedAt, type CachedLoad } from '../dcCache';
 import { getImpersonation } from '@/api/impersonation';
 import { useSales } from '../ctx';
 import { LeadsView, DealsView, RejectionsView } from '../dataCenterViews';
+import { DcKanbanSkeleton, DcListSkeleton } from '../DataCenterSkeletons';
 import { MoneyCodesView } from '../dataCenterMoneyCodes';
 
 /** Tier level from this-CALENDAR-month gallons (the program basis), falling back to this-cycle
@@ -171,15 +172,24 @@ function TierDistribution({ counts, total }: { counts: Record<TierLevel, number>
   );
 }
 
-/** Centered spinner (loading) / red line (error) / muted line (empty) in the ss-* look. */
-function Gate({ loading, error, empty, emptyMsg, children }: {
+/** Skeleton / spinner (loading) / red line (error) / muted line (empty) in the ss-* look. */
+function Gate({
+  loading,
+  error,
+  empty,
+  emptyMsg,
+  children,
+  skeleton,
+}: {
   loading: boolean;
   error: string | null;
   empty: boolean;
   emptyMsg: string;
   children: React.ReactNode;
+  skeleton?: React.ReactNode;
 }) {
   if (loading) {
+    if (skeleton) return <>{skeleton}</>;
     return (
       <div style={s('display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:60px 20px')}>
         <span style={s('width:34px;height:34px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--accent);animation:ss-spin .8s linear infinite')} />
@@ -437,13 +447,37 @@ export function RecordsTab() {
       )}
 
       {dcSub === 'leads' && (
-        <Gate loading={leadsLoad.loading} error={leadsLoad.data ? null : leadsLoad.error} empty={(leadsLoad.data?.length ?? 0) === 0} emptyMsg="No leads yet.">
+        <Gate
+          loading={leadsLoad.loading && !leadsLoad.data}
+          error={leadsLoad.data ? null : leadsLoad.error}
+          empty={(leadsLoad.data?.length ?? 0) === 0}
+          emptyMsg="No leads yet."
+          skeleton={
+            leadView === 'kanban' ? (
+              <DcKanbanSkeleton label="leads" />
+            ) : (
+              <DcListSkeleton label="leads" cols={5} />
+            )
+          }
+        >
           <LeadsView leads={leadsLoad.data ?? []} search={search.leads} view={leadView} statusFilter={leadStatusFilter} sourceFilter={leadSourceFilter} metaOnly={leadMetaOnly} />
         </Gate>
       )}
 
       {dcSub === 'deals' && (
-        <Gate loading={dealsLoad.loading} error={dealsLoad.data ? null : dealsLoad.error} empty={(dealsLoad.data?.length ?? 0) === 0} emptyMsg="No deals yet.">
+        <Gate
+          loading={dealsLoad.loading && !dealsLoad.data}
+          error={dealsLoad.data ? null : dealsLoad.error}
+          empty={(dealsLoad.data?.length ?? 0) === 0}
+          emptyMsg="No deals yet."
+          skeleton={
+            dealView === 'kanban' ? (
+              <DcKanbanSkeleton label="deals" />
+            ) : (
+              <DcListSkeleton label="deals" cols={5} />
+            )
+          }
+        >
           <DealsView deals={dealsLoad.data ?? []} search={search.deals} view={dealView} stageFilter={dealStageFilter} />
         </Gate>
       )}

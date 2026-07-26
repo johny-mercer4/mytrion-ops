@@ -255,6 +255,7 @@
 /* ── Cards / surfaces that carry a class ─────────────────────────────────── */
 .ss-root .ss-card-h,
 .ss-root .ss-pool-empty,
+.ss-root .ss-ret-empty,
 .ss-root .ss-auto-empty,
 .ss-root .ss-auto-result,
 .ss-root .ss-pool-error {
@@ -270,6 +271,7 @@
   border-color: color-mix(in srgb, var(--danger) 32%, transparent) !important;
 }
 .ss-root .ss-pool-empty-ico,
+.ss-root .ss-ret-empty-ico,
 .ss-root .ss-auto-empty-icon,
 .ss-root .ss-auto-result-icon {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);

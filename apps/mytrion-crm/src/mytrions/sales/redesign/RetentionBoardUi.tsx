@@ -4,6 +4,7 @@
  */
 import type { ReactNode } from 'react';
 import { s } from './dc';
+import { Icon } from './icons';
 import {
   breachSeverity,
   cadenceExplain,
@@ -295,18 +296,13 @@ export function RetentionCaseCard({
         </div>
         <RetentionFreqBadge f={row.transactionFrequency} />
       </div>
-      <div style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text2)")}>{row.carrierId}</div>
+      <div className="ss-ret-card-meta">{row.carrierId}</div>
       <div
         style={s(
           `font-size:13px;font-weight:600;color:${breachSeverity(row) > 0 ? 'var(--warn)' : 'var(--text2)'}`,
         )}
       >
         {quietCaption(row)}
-      </div>
-      <div style={s('display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px')}>
-        <span style={s('color:var(--text2);font-family:JetBrains Mono,monospace')}>
-          {row.gallons90d != null ? `${fmtGal(row.gallons90d)} gal` : '—'}
-        </span>
       </div>
       {timer ? (
         <RetentionStageTimer timer={timer} />
@@ -325,11 +321,29 @@ export function RetentionCaseCard({
   );
 }
 
-export function RetentionEmpty({ title, body }: { title: string; body: string }) {
+export function RetentionEmpty({
+  title,
+  body,
+  onClearSearch,
+  clearLabel = 'Clear search',
+}: {
+  title: string;
+  body: string;
+  onClearSearch?: () => void;
+  clearLabel?: string;
+}) {
   return (
     <div className="ss-ret-empty">
+      <div className="ss-ret-empty-ico" aria-hidden>
+        <Icon name="retention" size={22} />
+      </div>
       <div className="ss-ret-empty-title">{title}</div>
       <div className="ss-ret-empty-body">{body}</div>
+      {onClearSearch ? (
+        <button type="button" className="ss-ret-empty-cta" onClick={onClearSearch}>
+          {clearLabel}
+        </button>
+      ) : null}
     </div>
   );
 }

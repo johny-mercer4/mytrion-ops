@@ -307,7 +307,11 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
     },
     opts?: { close?: boolean },
   ): Promise<void> => {
-    if (busy || !row || forceAttempt) return;
+    if (busy || !row) return;
+    if (forceAttempt) {
+      pushToast('Finish the call log', 'Retry the RingCentral attempt before changing stage');
+      return;
+    }
     const fromStatus = row.statusCode;
     const snapshot = row;
     const callForAttempt = outcome === 'out_of_reach' ? pendingCall : null;
@@ -404,6 +408,7 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
   };
 
   const onCall = (): void => {
+    if (awaitingCallEnd) return;
     if (!row || !contactPhone?.trim()) {
       pushToast('No phone', 'No DWH contact number for this carrier');
       return;
@@ -420,7 +425,11 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
   };
 
   const onLogOtherChannel = async (): Promise<void> => {
-    if (busy || !row || forceAttempt) return;
+    if (busy || !row) return;
+    if (forceAttempt) {
+      pushToast('Finish the call log', 'Retry the RingCentral attempt before logging another channel');
+      return;
+    }
     if (row.statusCode !== 'p1_out_of_reach') {
       pushToast('Mark Out of Reach first', 'Channel attempts start after Out of Reach stage');
       return;
@@ -539,6 +548,7 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
                     contactPhone={contactPhone}
                     phoneLoading={phoneLoading}
                     forceAttempt={forceAttempt}
+                    awaitingCallEnd={awaitingCallEnd}
                     pendingCall={pendingCall}
                     reason={reason}
                     reasonNote={reasonNote}

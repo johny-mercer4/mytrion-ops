@@ -27,6 +27,7 @@ import {
 import { STATUS_OPTIONS, allowedStatuses, reasonFieldFor } from './leadStatusFlow';
 import { LeadStatusPicker } from './LeadStatusPicker';
 import { RecordActivityPanels } from './recordActivityPanels';
+import { DetailSheet, ModalFooter } from './dataCenterSheet';
 
 function avStyle(col: string): string {
   return `width:52px;height:52px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;background:color-mix(in srgb,${col} 16%,transparent);color:${col}`;
@@ -40,13 +41,9 @@ const INPUT_CSS =
   'width:100%;height:34px;margin-top:6px;padding:0 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;font-family:inherit';
 const AREA_CSS =
   'width:100%;margin-top:6px;padding:9px 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;line-height:1.55;font-family:inherit;resize:vertical;min-height:84px';
-const FOOT_BTN = 'height:38px;padding:0 18px;border-radius:var(--radius-md);font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:7px';
-const PRIMARY_BTN = `${FOOT_BTN};border:none;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:var(--on-accent)`;
-const GHOST_BTN = `${FOOT_BTN};border:1px solid var(--border);background:var(--alt);color:var(--text)`;
-const HEADER_CLOSE =
-  'width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center';
-
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const BODY_GRID =
+  'display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:16px;align-items:start';
 
 function StatCard({ label, value, mono, color }: { label: string; value: string; mono?: boolean; color?: string }) {
   return (
@@ -230,7 +227,6 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
       setEditing(false);
       const count = Object.keys(changes).length;
       pushToast('Lead updated', `${count} field${count === 1 ? '' : 's'} saved to Zoho.`);
-      onClose(); // close the modal fully once the update lands (back to the board)
     } catch (e) {
       pushToast('Update failed', e instanceof Error ? e.message : 'Could not save changes.');
     } finally {
@@ -240,28 +236,43 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
 
   const referralDisplay = applied.Referral_Source || lead.referral;
   return (
-    <div style={s('position:fixed;inset:0;z-index:120;background:var(--bg);display:flex;flex-direction:column')}>
-      <div style={s(`padding:15px 24px;border-bottom:1px solid var(--border);border-top:3px solid ${meta.col};display:flex;align-items:center;gap:14px;flex-shrink:0`)}>
-        <button type="button" onClick={onClose} aria-label="Back to board" style={s('display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 13px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:14px;font-weight:700;cursor:pointer;flex-shrink:0')}>
-          <span style={s('font-size:17px;line-height:1')}>←</span> Board
-        </button>
-        <div style={s(avStyle(meta.col))}>{lead.initials}</div>
-        <div style={s('flex:1;min-width:0')}>
-          <div style={s('font-size:20px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{lead.contact}</div>
-          <div style={s('font-size:13px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{lead.company}</div>
-        </div>
-        <span style={s(stageBadge.style)}>{stageBadge.text}</span>
-        <span title="Real call attempts — calls placed from Mytrion" style={s(callsBadge.style)}>{callsBadge.text}</span>
-        <button type="button" onClick={onClose} aria-label="Close" className="ss-ico-btn" style={s(HEADER_CLOSE)}>
-          <Icon name="close" size={15} strokeWidth={2.4} />
-        </button>
-      </div>
-      <div className="ss-scroll" style={s('flex:1;min-height:0;overflow:auto;padding:22px')}>
-        <div style={s('max-width:1120px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px;align-items:start')}>
+    <DetailSheet
+      accent={meta.col}
+      ariaLabel={`Lead ${lead.contact}`}
+      title={lead.contact}
+      subtitle={lead.company}
+      avatar={<div style={s(avStyle(meta.col))}>{lead.initials}</div>}
+      badges={
+        <>
+          <span style={s(stageBadge.style)}>{stageBadge.text}</span>
+          <span title="Real call attempts — calls placed from Mytrion" style={s(callsBadge.style)}>
+            {callsBadge.text}
+          </span>
+        </>
+      }
+      onClose={onClose}
+      saving={saving}
+      footer={
+        <ModalFooter
+          editing={editing}
+          saving={saving}
+          onEdit={startEdit}
+          onCancel={cancelEdit}
+          onSave={save}
+          onClose={onClose}
+          call={canCallPhone && !editing ? { label: `Call ${applied.Phone}`, phone: applied.Phone } : null}
+          {...(onCall ? { onCall } : {})}
+        />
+      }
+    >
+      <div style={s(BODY_GRID)}>
           <div style={s('min-width:0')}>
             {editing && (
-              <div style={s(`margin-bottom:14px;${CARD}`)}>
-                <div style={s(`${CARD_LABEL};margin-bottom:8px`)}>Lead status</div>
+              <div style={s(`margin-bottom:14px;${CARD};border-color:color-mix(in srgb,var(--accent) 28%,var(--border2))`)}>
+                <div style={s(`${CARD_LABEL};margin-bottom:8px;display:inline-flex;align-items:center;gap:6px`)}>
+                  <Icon name="edit" size={12} color="var(--accent)" />
+                  Lead status
+                </div>
                 {allowedStatuses(appliedStatus).length > 0 ? (
                   <LeadStatusPicker
                     options={allowedStatuses(appliedStatus)}
@@ -354,7 +365,10 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
               <DateRow label="Modified" value={lead.modifiedAt} />
             </div>
             <div style={s(`margin-top:14px;${CARD}`)}>
-              <div style={s(`${CARD_LABEL};margin-bottom:6px`)}>Description</div>
+              <div style={s(`${CARD_LABEL};margin-bottom:6px;display:inline-flex;align-items:center;gap:6px`)}>
+                <Icon name="notes" size={12} />
+                Description
+              </div>
               {editing ? (
                 <textarea value={form.Description} onChange={(e) => set('Description', e.currentTarget.value)} placeholder="Add a note…" className="ss-in" style={s(AREA_CSS)} />
               ) : (
@@ -365,19 +379,8 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
           <div style={s('min-width:0')}>
             <RecordActivityPanels kind="leads" id={lead.id} />
           </div>
-        </div>
       </div>
-      <ModalFooter
-        editing={editing}
-        saving={saving}
-        onEdit={startEdit}
-        onCancel={cancelEdit}
-        onSave={save}
-        onClose={onClose}
-        call={canCallPhone && !editing ? { label: `Call ${applied.Phone}`, phone: applied.Phone } : null}
-        {...(onCall ? { onCall } : {})}
-      />
-    </div>
+    </DetailSheet>
   );
 }
 
@@ -436,7 +439,6 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
       setEditing(false);
       const count = Object.keys(changes).length;
       pushToast('Deal updated', `${count} field${count === 1 ? '' : 's'} saved to Zoho.`);
-      onClose(); // close the modal fully once the update lands (back to the board)
     } catch (e) {
       pushToast('Update failed', e instanceof Error ? e.message : 'Could not save changes.');
     } finally {
@@ -445,28 +447,43 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
   };
 
   return (
-    <div style={s('position:fixed;inset:0;z-index:120;background:var(--bg);display:flex;flex-direction:column')}>
-      <div style={s(`padding:15px 24px;border-bottom:1px solid var(--border);border-top:3px solid ${meta.col};display:flex;align-items:center;gap:14px;flex-shrink:0`)}>
-        <button type="button" onClick={onClose} aria-label="Back to board" style={s('display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 13px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:14px;font-weight:700;cursor:pointer;flex-shrink:0')}>
-          <span style={s('font-size:17px;line-height:1')}>←</span> Board
-        </button>
-        <div style={s(avStyle(meta.col))}>{deal.initials}</div>
-        <div style={s('flex:1;min-width:0')}>
-          <div style={s('font-size:20px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{deal.company}</div>
-          <div style={s('font-size:13px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{deal.name}</div>
-        </div>
-        <span style={s(stageBadge.style)}>{stageBadge.text}</span>
-        <span title="Real call attempts — calls placed from Mytrion" style={s(callsBadge.style)}>{callsBadge.text}</span>
-        <button type="button" onClick={onClose} aria-label="Close" className="ss-ico-btn" style={s(HEADER_CLOSE)}>
-          <Icon name="close" size={15} strokeWidth={2.4} />
-        </button>
-      </div>
-      <div className="ss-scroll" style={s('flex:1;min-height:0;overflow:auto;padding:22px')}>
-        <div style={s('max-width:1120px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px;align-items:start')}>
+    <DetailSheet
+      accent={meta.col}
+      ariaLabel={`Deal ${deal.company}`}
+      title={deal.company}
+      subtitle={deal.name}
+      avatar={<div style={s(avStyle(meta.col))}>{deal.initials}</div>}
+      badges={
+        <>
+          <span style={s(stageBadge.style)}>{stageBadge.text}</span>
+          <span title="Real call attempts — calls placed from Mytrion" style={s(callsBadge.style)}>
+            {callsBadge.text}
+          </span>
+        </>
+      }
+      onClose={onClose}
+      saving={saving}
+      footer={
+        <ModalFooter
+          editing={editing}
+          saving={saving}
+          onEdit={startEdit}
+          onCancel={cancelEdit}
+          onSave={save}
+          onClose={onClose}
+          call={canCallPhone && !editing ? { label: `Call ${callTarget}`, phone: callTarget } : null}
+          {...(onCall ? { onCall } : {})}
+        />
+      }
+    >
+      <div style={s(BODY_GRID)}>
           <div style={s('min-width:0')}>
             <div style={s(`margin-bottom:14px;${CARD}`)}>
               <div style={s('display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:8px')}>
-                <span style={s('text-transform:uppercase;letter-spacing:.05em;font-weight:700')}>Win probability</span>
+                <span style={s('text-transform:uppercase;letter-spacing:.05em;font-weight:700;display:inline-flex;align-items:center;gap:6px')}>
+                  <Icon name="trend" size={12} />
+                  Win probability
+                </span>
                 <span style={s(`color:${meta.col};font-weight:800;font-family:'JetBrains Mono',monospace`)}>{deal.prob}%</span>
               </div>
               <div style={s('height:8px;border-radius:99px;background:var(--raised);overflow:hidden')}>
@@ -508,7 +525,10 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
               )}
             </div>
             <div style={s(`margin-top:14px;${CARD}`)}>
-              <div style={s(`${CARD_LABEL};margin-bottom:6px`)}>Description</div>
+              <div style={s(`${CARD_LABEL};margin-bottom:6px;display:inline-flex;align-items:center;gap:6px`)}>
+                <Icon name="notes" size={12} />
+                Description
+              </div>
               {editing ? (
                 <textarea value={form.Description} onChange={(e) => set('Description', e.currentTarget.value)} placeholder="Add a note…" className="ss-in" style={s(AREA_CSS)} />
               ) : (
@@ -519,76 +539,7 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
           <div style={s('min-width:0')}>
             <RecordActivityPanels kind="deals" id={deal.id} />
           </div>
-        </div>
       </div>
-      <ModalFooter
-        editing={editing}
-        saving={saving}
-        onEdit={startEdit}
-        onCancel={cancelEdit}
-        onSave={save}
-        onClose={onClose}
-        call={canCallPhone && !editing ? { label: `Call ${callTarget}`, phone: callTarget } : null}
-        {...(onCall ? { onCall } : {})}
-      />
-    </div>
-  );
-}
-
-// ---------------- shared footer ----------------
-
-function ModalFooter({
-  editing,
-  saving,
-  onEdit,
-  onCancel,
-  onSave,
-  onClose,
-  call,
-  onCall,
-}: {
-  editing: boolean;
-  saving: boolean;
-  onEdit: () => void;
-  onCancel: () => void;
-  onSave: () => void;
-  onClose: () => void;
-  call: { label: string; phone: string } | null;
-  onCall?: (phone: string) => void;
-}) {
-  return (
-    <div style={s('padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px')}>
-      {editing ? (
-        <>
-          <button type="button" onClick={onCancel} disabled={saving} style={s(`${GHOST_BTN};opacity:${saving ? '.6' : '1'}`)}>
-            Cancel
-          </button>
-          <button type="button" onClick={onSave} disabled={saving} style={s(`${PRIMARY_BTN};opacity:${saving ? '.7' : '1'}`)}>
-            {saving ? (
-              <span style={s('width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,.5);border-top-color:#fff;animation:ss-spin .8s linear infinite')} />
-            ) : (
-              <Icon name="check" size={14} strokeWidth={2.6} />
-            )}
-            {saving ? 'Saving…' : 'Save changes'}
-          </button>
-        </>
-      ) : (
-        <>
-          {call && onCall && (
-            <button type="button" onClick={() => onCall(call.phone)} style={s(PRIMARY_BTN)}>
-              <Icon name="calls" size={14} />
-              {call.label}
-            </button>
-          )}
-          <button type="button" onClick={onEdit} style={s(GHOST_BTN)}>
-            <Icon name="edit" size={14} />
-            Edit
-          </button>
-          <button type="button" onClick={onClose} style={s(GHOST_BTN)}>
-            Close
-          </button>
-        </>
-      )}
-    </div>
+    </DetailSheet>
   );
 }

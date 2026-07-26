@@ -16,6 +16,8 @@ import {
   type CallHistoryItem,
   type NoteItem,
 } from '@/api/dataCenter';
+import { DcPanelSkeleton } from './DataCenterSkeletons';
+import { Icon } from './icons';
 
 const CARD = 'padding:15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)';
 const CARD_LABEL = 'font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em';
@@ -58,9 +60,12 @@ function CallsPanel({ kind, id }: { kind: Kind; id: string }) {
   }, [kind, id]);
 
   return (
-    <div style={s(`margin-top:14px;${CARD}`)}>
-      <div style={s(`${CARD_LABEL};margin-bottom:10px`)}>Call history</div>
-      {!calls && !err && <div style={s(MUTED)}>Loading calls…</div>}
+    <div style={s(`${CARD}`)}>
+      <div style={s(`${CARD_LABEL};margin-bottom:10px;display:inline-flex;align-items:center;gap:6px`)}>
+        <Icon name="calls" size={12} color="var(--accent)" />
+        Call history
+      </div>
+      {!calls && !err && <DcPanelSkeleton rows={3} />}
       {err && <div style={s(MUTED)}>Couldn’t load call history.</div>}
       {calls && calls.length === 0 && <div style={s(MUTED)}>No calls logged yet.</div>}
       {calls && calls.length > 0 && (
@@ -132,9 +137,12 @@ function NotesPanel({ kind, id }: { kind: Kind; id: string }) {
   };
 
   return (
-    <div style={s(`margin-top:14px;${CARD}`)}>
+    <div style={s(CARD)}>
       <div style={s('display:flex;align-items:center;justify-content:space-between;margin-bottom:10px')}>
-        <div style={s(CARD_LABEL)}>Notes</div>
+        <div style={s(`${CARD_LABEL};display:inline-flex;align-items:center;gap:6px`)}>
+          <Icon name="notes" size={12} color="var(--accent)" />
+          Notes
+        </div>
         <button type="button" onClick={() => setOpen((o) => !o)} style={s(SMALL_BTN)}>
           {open ? 'Cancel' : '+ Log a note'}
         </button>
@@ -158,7 +166,7 @@ function NotesPanel({ kind, id }: { kind: Kind; id: string }) {
         </div>
       )}
 
-      {!notes && !err && <div style={s(MUTED)}>Loading notes…</div>}
+      {!notes && !err && <DcPanelSkeleton rows={2} />}
       {err && <div style={s(MUTED)}>Couldn’t load notes.</div>}
       {notes && notes.length === 0 && <div style={s(MUTED)}>No notes yet.</div>}
       {notes && notes.length > 0 && (
@@ -183,9 +191,9 @@ function NotesPanel({ kind, id }: { kind: Kind; id: string }) {
 /** Call-history + Notes panels for a Lead/Deal modal. */
 export function RecordActivityPanels({ kind, id }: { kind: Kind; id: string }) {
   return (
-    <>
+    <div style={s('display:flex;flex-direction:column;gap:14px')}>
       <CallsPanel kind={kind} id={id} />
       <NotesPanel kind={kind} id={id} />
-    </>
+    </div>
   );
 }
