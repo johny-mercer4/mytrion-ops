@@ -783,6 +783,35 @@ export interface TouchpointMap {
     params: { carrierId: string; limit?: number };
     result: Record<string, unknown>;
   };
+  /**
+   * Latest EFS parent balance snapshot. Verified live 2026-07-27:
+   * { status, record_id, name: 'SNAP000', balance: '715765.14',
+   *   captured_at: '2026-07-26T18:30:04-04:00', mode: 'COMFORT',
+   *   record_name: 'OCTANE_PARENT_SNAPSHOT' }
+   * `balance` arrives as a STRING — never render it without coercing.
+   */
+  'finance.parent_snapshot': {
+    params: Record<string, never>;
+    result: FinanceParentSnapshot;
+  };
+  /** Fire-and-forget: triggers a fresh balance run, then re-fetch the snapshot. */
+  'finance.balance_run': {
+    params: Record<string, never>;
+    result: Record<string, unknown>;
+  };
+}
+
+/** EFS parent balance snapshot (finance.parent_snapshot). */
+export interface FinanceParentSnapshot {
+  status?: string;
+  record_id?: string;
+  name?: string;
+  /** Dollars, as a string from Deluge. */
+  balance?: string | number;
+  captured_at?: string;
+  /** Smart-Balance posture, e.g. 'COMFORT'. */
+  mode?: string;
+  record_name?: string;
 }
 
 // ---- Customer Service result shapes (widget-observed; legitimately-sparse fields optional) ----

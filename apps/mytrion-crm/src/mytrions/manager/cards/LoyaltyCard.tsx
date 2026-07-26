@@ -176,7 +176,7 @@ function Distribution({
           <button
             key={b}
             type="button"
-            className="mg-lty-tile"
+            className={`mg-lty-tile is-${b}`}
             style={bucketVars(b)}
             aria-pressed={selected === b}
             onClick={() => onSelect(selected === b ? null : b)}
@@ -196,9 +196,10 @@ function Distribution({
 /** One carrier — the card is tinted, bordered and top-ruled by the tier it holds. */
 function ClientCard({ row }: { row: Scored }) {
   const { client, tier, bucket, gallons } = row;
-  const flag = bucket === 'gold' ? ' is-gold' : bucket === 'idle' ? ' is-idle' : '';
+  // `is-<bucket>` carries the shared --tint / --sheen tuning (see manager.css) plus any per-bucket
+  // extras — Gold's halo, No-cards' dashed border.
   return (
-    <article className={`mg-lty-c${flag}`} style={bucketVars(bucket)}>
+    <article className={`mg-lty-c is-${bucket}`} style={bucketVars(bucket)}>
       <div className="mg-lty-c-top">
         <div>
           <div className="mg-lty-c-name" title={client.companyName}>

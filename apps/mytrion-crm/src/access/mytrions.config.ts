@@ -24,6 +24,7 @@ export type MytrionId =
   | 'verification'
   | 'manager'
   | 'analyst'
+  | 'hr'
   | 'customer-service';
 
 export interface MytrionAccessRule {
@@ -226,6 +227,22 @@ export const MYTRIONS: Record<MytrionId, MytrionAccessRule> = {
     adminBypass: true,
     status: 'new',
   },
+  hr: {
+    id: 'hr',
+    title: 'HR Mytrion',
+    tag: 'HR',
+    icon: 'hr',
+    blurb: 'People operations — employee directory, attendance, requests and profiles.',
+    hue: 'red',
+    department: 'hr',
+    allDepartments: false,
+    // Placeholder until the real Zoho CRM profile/role names for HR are confirmed.
+    allowedProfiles: ['HR'],
+    allowedRoles: ['HR'],
+    allowedUsernames: [],
+    adminBypass: true,
+    status: 'new',
+  },
 };
 
 /** Display order for the picker. */
@@ -239,6 +256,7 @@ export const MYTRION_ORDER: MytrionId[] = [
   'verification',
   'manager',
   'analyst',
+  'hr',
 ];
 
 /**
@@ -247,7 +265,6 @@ export const MYTRION_ORDER: MytrionId[] = [
  */
 export const COMING_SOON_MYTRION_IDS: readonly MytrionId[] = [
   'collection',
-  'finance',
   'verification',
   'analyst',
 ];
@@ -267,12 +284,6 @@ export const COMING_SOON_PICKER_TILES: ComingSoonPickerTile[] = [
     icon: MYTRIONS[id].icon,
     hue: MYTRIONS[id].hue,
   })),
-  {
-    id: 'hr',
-    title: 'HR Mytrion',
-    icon: 'hr',
-    hue: 'red',
-  },
 ];
 
 /** Type guard for a path param. */
@@ -295,6 +306,7 @@ export const MYTRION_URL_SLUG: Record<MytrionId, string> = {
   verification: 'verificationmytrion',
   manager: 'managermytrion',
   analyst: 'analystmytrion',
+  hr: 'hrmytrion',
   'customer-service': 'csmytrion',
 };
 
@@ -340,5 +352,7 @@ export const AGENT_LABELS: Record<AgentKey, string> = {
 
 /** The department agent for a Mytrion. `admin` → null (orchestrator routes across the caller's agents). */
 export function agentKeyFor(id: MytrionId): AgentKey | null {
-  return id === 'admin' ? null : (id as AgentKey);
+  // `admin` routes through the orchestrator; `hr` has no backend agent yet (no 'hr' in AGENT_KEYS),
+  // so it must NOT be cast — its shell disables the chat dock instead.
+  return id === 'admin' || id === 'hr' ? null : (id as AgentKey);
 }

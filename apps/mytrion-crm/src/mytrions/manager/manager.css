@@ -863,25 +863,66 @@
    ===================================================== */
 .mg-root .mg-lty {
   --lty-gold: #eaa32c;
-  --lty-silver: #a9b4c2;
+  /* Cool and bright — a real silver. Kept well away from --lty-idle's neutral grey, because at low
+     tint a slate-blue silver and a slate-blue "no cards" were indistinguishable. */
+  --lty-silver: #c3cfdd;
   /* True copper, deliberately browner than --lty-building so the two never read as one hue. */
   --lty-bronze: #b87333;
   --lty-building: #f97316;
-  /* Not in the program at all (zero active cards) — recedes, so it can't drown the distribution. */
-  --lty-idle: #5b6673;
+  /* Not in the program at all (zero active cards) — a flat, hueless grey that recedes. */
+  --lty-idle: #6e7681;
   /* Text variants — the fills above are tuned for dark; these keep labels AA-legible. */
   --lty-gold-text: #eaa32c;
-  --lty-silver-text: #b6c0cc;
+  --lty-silver-text: #cbd6e3;
   --lty-bronze-text: #d69356;
   --lty-building-text: #fb9245;
-  --lty-idle-text: #8b95a2;
+  --lty-idle-text: #868d98;
 }
 [data-theme='light'] .mg-root .mg-lty {
+  /* Light theme needs darker FILLS too, not just text — a #c3cfdd border vanishes on white. */
+  --lty-silver: #8496ad;
+  --lty-idle: #9ba1aa;
   --lty-gold-text: #96620a;
-  --lty-silver-text: #4a5563;
+  --lty-silver-text: #45546a;
   --lty-bronze-text: #8a4d1a;
   --lty-building-text: #a34405;
-  --lty-idle-text: #4d5663;
+  --lty-idle-text: #6b7280;
+}
+
+/* ── One background recipe, five tunings ──────────────────────────────────────
+   Every tinted surface (client card + distribution tile) reads the same two custom properties, so
+   the buckets stay a single system rather than five bespoke treatments:
+
+     --tint   how strongly the bucket hue washes the surface
+     --sheen  a metallic highlight band — set ONLY for the three medal tiers
+
+   That gives silver and "no cards" four independent separators (hue, tint strength, sheen, and the
+   dashed border below), so they never collapse into each other in either theme or in greyscale. */
+.mg-root .mg-lty .is-gold {
+  --tint: 18%;
+  --sheen: color-mix(in srgb, var(--lty-gold) 22%, transparent);
+}
+.mg-root .mg-lty .is-silver {
+  --tint: 17%;
+  /* White, not silver — a specular highlight is what makes a surface read as polished metal. */
+  --sheen: color-mix(in srgb, #ffffff 17%, transparent);
+}
+.mg-root .mg-lty .is-bronze {
+  --tint: 16%;
+  --sheen: color-mix(in srgb, var(--lty-bronze) 20%, transparent);
+}
+/* Aspirational, not a metal — flat wash, no sheen. */
+.mg-root .mg-lty .is-building {
+  --tint: 12%;
+  --sheen: transparent;
+}
+/* Barely painted at all: the card looks unfinished on purpose. */
+.mg-root .mg-lty .is-idle {
+  --tint: 4%;
+  --sheen: transparent;
+}
+[data-theme='light'] .mg-root .mg-lty .is-silver {
+  --sheen: color-mix(in srgb, #ffffff 62%, transparent);
 }
 
 /* ── Distribution: stacked bar + one tinted tile per tier ─────────────────────── */
@@ -925,8 +966,11 @@
   font-family: inherit;
   border-radius: var(--mg-r-sm);
   border: 1px solid color-mix(in srgb, var(--t) 24%, var(--hz-pane-bd));
+  /* Same recipe as the client card: sheen band over the bucket wash. --hz-pane-alt is a colour, so
+     it is legal in the final layer; --hz-pane is a gradient and would not be. */
   background:
-    linear-gradient(150deg, color-mix(in srgb, var(--t) 12%, transparent), transparent 62%),
+    linear-gradient(115deg, transparent 28%, var(--sheen, transparent) 47%, transparent 68%),
+    linear-gradient(150deg, color-mix(in srgb, var(--t) var(--tint, 12%), transparent), transparent 62%),
     var(--hz-pane-alt);
   box-shadow: var(--hz-glass-inset);
   transition:
@@ -943,7 +987,12 @@
 .mg-root .mg-lty-tile[aria-pressed='true'] {
   border-color: color-mix(in srgb, var(--t) 70%, transparent);
   background:
-    linear-gradient(150deg, color-mix(in srgb, var(--t) 26%, transparent), transparent 70%),
+    linear-gradient(115deg, transparent 28%, var(--sheen, transparent) 47%, transparent 68%),
+    linear-gradient(
+      150deg,
+      color-mix(in srgb, var(--t) calc(var(--tint, 12%) + 14%), transparent),
+      transparent 70%
+    ),
     var(--hz-pane-lift);
   box-shadow: 0 10px 28px -12px color-mix(in srgb, var(--t) 55%, transparent), var(--hz-glass-inset);
 }
@@ -993,10 +1042,13 @@
   gap: 11px;
   padding: 15px 16px;
   border-radius: var(--mg-r-md);
-  /* The tier hue drives the border, the wash and the top rule — a Gold card reads gold. */
+  /* The tier hue drives the border, the wash and the top rule — a Gold card reads gold. Three
+     layers: specular sheen (metals only) → bucket wash → the shared glass pane. All COMMA-separated;
+     --hz-pane is a gradient, so it can only occupy an <image> slot. */
   border: 1px solid color-mix(in srgb, var(--t) 26%, var(--hz-pane-bd));
   background:
-    linear-gradient(157deg, color-mix(in srgb, var(--t) 13%, transparent), transparent 58%),
+    linear-gradient(115deg, transparent 26%, var(--sheen, transparent) 46%, transparent 68%),
+    linear-gradient(157deg, color-mix(in srgb, var(--t) var(--tint, 13%), transparent), transparent 58%),
     var(--hz-pane);
   backdrop-filter: blur(var(--hz-blur-sm));
   -webkit-backdrop-filter: blur(var(--hz-blur-sm));
@@ -1025,12 +1077,16 @@
     var(--hz-glass-inset);
 }
 /* Not in the program (no active cards) — dashed, so the state is legible without relying on hue
-   alone (colour-blind users, greyscale printouts). Shape carries the meaning too. */
+   alone (colour-blind users, greyscale printouts). Shape carries the meaning too, which is the
+   separator that survives even when Silver's cool grey and this neutral grey sit side by side. */
 .mg-root .mg-lty-c.is-idle {
   border-style: dashed;
 }
 .mg-root .mg-lty-c.is-idle::before {
-  opacity: 0.45;
+  opacity: 0.3;
+}
+.mg-root .mg-lty-tile.is-idle {
+  border-style: dashed;
 }
 
 .mg-root .mg-lty-c-top {

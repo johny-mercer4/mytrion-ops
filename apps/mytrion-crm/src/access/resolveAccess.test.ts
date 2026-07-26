@@ -32,11 +32,14 @@ describe('resolveAccessibleMytrions', () => {
     expect(accessible.length).toBeGreaterThan(1);
     // Coming-soon Mytrions stay on the picker grid but are not enterable.
     expect(accessible).not.toContain('collection');
-    expect(accessible).not.toContain('finance');
     expect(accessible).not.toContain('verification');
     expect(accessible).not.toContain('analyst');
-    // Manager has launched — no longer coming-soon, so an admin sees it as enterable.
+    // Manager and HR have launched — no longer coming-soon, so an admin sees them as enterable.
     expect(accessible).toContain('manager');
+    expect(accessible).toContain('hr');
+    // Finance has launched too, but its rule sets adminBypass:false — the 'Administrator' PROFILE
+    // is what grants it here, not the admin bypass.
+    expect(accessible).toContain('finance');
   });
 
   it('coming-soon Mytrions are never enterable (even when server-granted)', () => {
@@ -45,9 +48,10 @@ describe('resolveAccessibleMytrions', () => {
       accessibleMytrions: ['sales', 'collection', 'finance', 'verification', 'analyst'],
       allDepartmentAccess: true,
     });
-    expect(resolveAccessibleMytrions(granted).accessible).toEqual(['sales']);
+    // Finance is no longer parked, so a server grant for it now resolves; the other three stay shut.
+    expect(resolveAccessibleMytrions(granted).accessible).toEqual(['sales', 'finance']);
     expect(canAccess(granted, 'collection')).toBe(false);
-    expect(canAccess(granted, 'finance')).toBe(false);
+    expect(canAccess(granted, 'finance')).toBe(true);
     expect(canAccess(granted, 'verification')).toBe(false);
     expect(canAccess(granted, 'analyst')).toBe(false);
   });
@@ -65,10 +69,10 @@ describe('resolveAccessibleMytrions', () => {
 
   // Finance is parked coming-soon, so canAccess('finance') is false for everyone. These assert the
   // underlying access RULE via ruleAllows so the grant logic stays covered until finance re-launches.
-  it('finance access rule grants the Administrator profile (finance itself is parked coming-soon)', () => {
+  it('finance access rule grants the Administrator profile, and finance has launched', () => {
     expect(ruleAllows(ctx({ profile: 'Administrator' }), MYTRIONS.finance)).toBe(true);
-    // Parked → not actually enterable yet, even for a matching rule.
-    expect(canAccess(ctx({ profile: 'Administrator' }), 'finance')).toBe(false);
+    // No longer parked — Home (EFS parent balance) + Clients are live, so it is enterable.
+    expect(canAccess(ctx({ profile: 'Administrator' }), 'finance')).toBe(true);
   });
 
   it('finance access rule grants a userName containing Azimov or Mirjalol', () => {

@@ -100,6 +100,23 @@
 
 /* Manager runs pink → rose: the workspace picker's Manager tile is pink, and the module used to be
    teal, so the card you clicked and the workspace you landed in disagreed. */
+[data-mytrion='hr'] {
+  --accent: #f26d6d;
+  --accent-2: #fb923c;
+  --accent-strong: #f89a9a;
+  --on-accent: #2b0a0a;
+  --accent-soft: rgba(242, 109, 109, 0.13);
+  --accent-glow: rgba(242, 109, 109, 0.28);
+}
+[data-theme='light'] [data-mytrion='hr'] {
+  --accent: #dc2626;
+  --accent-2: #ea580c;
+  --accent-strong: #b91c1c;
+  --on-accent: #fff;
+  --accent-soft: rgba(220, 38, 38, 0.1);
+  --accent-glow: rgba(220, 38, 38, 0.2);
+}
+
 [data-mytrion='manager'] {
   --accent: #f472b6;
   --accent-2: #fb7185;

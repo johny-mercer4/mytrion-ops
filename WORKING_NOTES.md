@@ -5716,3 +5716,163 @@ the clean-tree baseline is `ringcentral-call-log` "logs a finished outbound lead
 pre-existing **timeout flake** — passes 2 of 3 isolated runs with no code change, and my change isn't
 in that path. NOTE: the served bundle in `apps/mytrion-crm/app/` was NOT rebuilt; deploy needs
 `NODE_ENV=production vite build` committed (see the 2026-07-26 CORS entry).
+
+## 2026-07-27 — Loyalty bucket palette fix + HR Mytrion scaffold
+
+Branch `feature/MytrionAll`.
+
+### 1. Loyalty: Silver vs No-cards were indistinguishable
+
+Reviewed Data Center → Clients first (RecordsTab.tsx): its client cards are flat `var(--surface)`
+with the tier shown only on a badge — it shares NO css with the Manager board, so all changes here
+are isolated to `manager.css` and Sales is untouched.
+
+Root cause: `--lty-silver` was `#a9b4c2` and `--lty-idle` `#5b6673` — both slate-blue, and at a 13%
+wash they collapsed into each other. Fixed by making the five buckets ONE background recipe with two
+tuned custom properties instead of five bespoke treatments:
+
+    --tint    how strongly the bucket hue washes the surface
+    --sheen   a specular highlight band — set ONLY for the three medal tiers
+
+    gold 18% + gold sheen · silver 17% + WHITE sheen · bronze 16% + copper sheen
+    building 12% flat · idle 4% flat + dashed border
+
+Silver is now `#c3cfdd` (cool, bright) and idle `#6e7681` (hueless grey), and a white specular band
+is what actually makes silver read as polished metal. Silver and No-cards now differ on four
+independent axes — hue, tint strength, sheen, border style — so they stay distinct in light, dark
+AND greyscale. Light theme needed darker FILLS too, not just text (`#c3cfdd` vanishes on white).
+Both the client card and the distribution tile read the same properties, so they can't drift apart.
+
+### 2. HR Mytrion — structural UI only
+
+Promoted HR from a picker-only "coming soon" tile to a real Mytrion. Tabs: Home · Employees ·
+Attendance · Requests · Profile. Flat sidebar tab set (HR is a workspace you live in) rather than
+Manager's card-hub; Home doubles as a launcher.
+
+Registered in: `access/mytrions.config.ts` (MytrionId, MYTRIONS.hr, MYTRION_ORDER,
+MYTRION_URL_SLUG → `hrmytrion`, removed the duplicate picker tile), `mytrions/registry.ts` (lazy
+import so HR code-splits), `styles/global.css` (red accent, light + dark), and backend
+`src/lib/mytrions.ts` (MYTRION_IDS + MYTRION_DEPARTMENT `hr → 'hr'`).
+
+**Deliberately NOT added: `'hr'` to `KNOWN_DEPARTMENTS`.** `deriveWorkerDepartments` does a plain
+substring match, and `"christopher".includes("hr")` is TRUE — adding it would hand HR access to
+anyone whose profile or role happens to contain those two letters. KNOWN_DEPARTMENTS is
+documentation-only and not an enforced allowlist, so omitting it is safe; HR access comes from the
+DB-backed resolver via the access table instead, which is the correct path anyway.
+
+`agentKeyFor('hr')` returns null (there is no `hr` in AGENT_KEYS) and the shell sets
+`disableDockChat` — otherwise the chat dock would silently fall through to the orchestrator.
+
+**Zoho People inspected live** (100-record sample) so the layouts are shaped by reality, not guesses
+— the full field map is documented in `hr/peoplePreview.ts`. What it changed:
+- Name is composed from `FirstName` + `LastName`; `Full_Name` is only 73% populated.
+- `Department` 72%, `Designation` 70%, `LocationName` 66%, `Dateofjoining` 65% → every one of those
+  needs a real empty state, which the cards now render as an em-dash.
+- `Employeestatus` is the status source of truth: Active / Terminated (60/40 in the sample).
+- `tabularSections` is a nested object, not a scalar — needs its own sub-view later, not a column.
+- Real `Department` values are wired as the directory's filter chips (categories are live even
+  though the employee rows are not).
+- ⚠️ OPEN: the call returned exactly 100 rows for `limit: 200`. Either the org has 100 employees or
+  the wrapper/API caps a page at 100 — confirm before assuming the directory is complete.
+
+All employee/attendance/request rows are SYNTHETIC placeholders and every tab renders a
+`<PreviewBanner />` saying so, so nothing here can be mistaken for real HR data. Approve/Reject on
+Requests are rendered but disabled with a title explaining why — they are writes and need an
+audited, gated endpoint first.
+
+### Checks
+
+Backend + frontend typecheck clean (CRM app still 10 pre-existing errors, unchanged). `vite build`
+succeeds and HR code-splits. Lint 0 errors. Rendered every surface in headless Chrome, light and
+dark. Frontend tests: 187/188, the one failure (`dashDebtorsData`) is pre-existing on a clean tree.
+Backend suite is flaky under load — of 8 apparent new failures, `agent-scripted-turn`, `cs-routes`
+and `retention-cases` all pass 100% in isolation, and `touchpoints-routes` fails identically 3/9 on a
+clean tree. Zero real regressions.
+
+## 2026-07-27 — Loyalty bucket polish · HR badge · Finance Mytrion rebuilt
+
+Branch `feature/MytrionAll`.
+
+### 1. Loyalty — Silver vs No-cards, one background system
+
+Reviewed Data Center → Clients first: its cards are flat `var(--surface)` with the tier only on a
+badge, sharing no CSS with the Manager board — so these changes stay isolated to `manager.css`.
+
+Silver (`#a9b4c2`) and idle (`#5b6673`) were both slate-blue and collapsed together at a 13% wash.
+Replaced the five bespoke treatments with ONE recipe driven by two custom properties:
+
+    --tint    strength of the bucket hue wash
+    --sheen   a specular highlight band — metals only
+
+    gold 18% + gold sheen · silver 17% + WHITE sheen · bronze 16% + copper sheen
+    building 12% flat     · no-cards 4% flat + dashed border
+
+Silver is now `#c3cfdd` with a **white** specular band (that is what reads as polished metal) and
+idle is a hueless `#6e7681`. The two now differ on four independent axes — hue, tint, sheen, border
+style — so they survive light, dark and greyscale. Light theme needed darker FILLS too, not just
+text. The client card and the distribution tile read the same properties, so they can't drift.
+
+### 2. HR — badge + light mode
+
+`tag: 'People'` → `'HR'` (the TopBar context badge reads `MYTRIONS[id].tag`). Re-rendered all five
+tabs in light: hero, banners, stat tiles, employee cards, attendance table, request rows and the
+profile grid all read correctly. No changes needed.
+
+### 3. Finance Mytrion — rebuilt from zero
+
+**Deleted the entire old module** (`redesign/` shell, Dashboard/Transactions/Audits/Clients/
+SmartBalance/Home + `data.ts`). It was mock data end-to-end. Side effect: the CRM app's typecheck
+errors went **10 → 2**; eight of them lived in that dead code.
+
+Two tabs, both real:
+- **Home** — the EFS parent balance from the `finance.parent_snapshot` Deluge touchpoint. Verified
+  live: `{ balance: '715765.14', mode: 'COMFORT', captured_at: '2026-07-26T18:30:04-04:00' }`.
+  `balance` arrives as a STRING — coerced, never rendered raw. It's a SNAPSHOT, so the capture time
+  is displayed as prominently as the figure; a stale balance shown as current is how someone
+  over-sweeps. "Run refresh" fires `balance_run` then re-reads, and a failed run does NOT block the
+  re-read.
+- **Clients** — every carrier from `octane.dim_company` with computed debt.
+
+**Debt uses the Billing/Sales definition, not the dim.** `dim_company.debt_amount` / `.is_debtor`
+are stale (servercrm measured the dim at ~$6M vs ~$13.4M from invoices), so debt is computed from
+`public.cmp_invoice` with the shared predicate: PENDING/PARTIALLY_PAID, owes ≥ $1, ≥ 2 days old.
+Live: **8,045 carriers, 413 debtors, $2,008,487 outstanding**.
+
+**Speed.** The roster is 8k rows and the tab filters client-side, so payload is the whole game:
+- Dropped the mart scan the Loyalty roster does (Finance needs terms/credit/debt, not gallons) →
+  dim_company + cmp_invoice only.
+- Split the payload: a LEAN 10-field row for the table, with the rest of the profile fetched per
+  carrier when a modal opens. **3.63 MB / 1,328ms → 1.62 MB / 875ms.**
+- `useDeferredValue` on the search term so typing never blocks on re-filtering 8k rows; list renders
+  in windows of 50.
+- ⚠️ **`@fastify/compress` is NOT installed**, so JSON ships uncompressed — that 1.62 MB gzips to
+  ~200 KB. Adding compression is the single biggest remaining win and would benefit every route.
+
+**Client modal** — 1320px wide (the tables are 7–9 columns; a narrow sheet destroys them), portalled
+so the fixed scrim escapes the module's scroll container, Escape-to-close, body scroll locked. Six
+icon tabs, each loading only when opened so opening the modal costs one small request:
+Details (icon-per-field grid + roll-up) · Invoices (`cmp_invoice`) · Payments (our
+`payment_transactions`, matched on carrier_id) · Transactions (`mart_transaction_line_items` via the
+shared reader) · EFS and Money Codes as explicit coming-soon — both MOVE MONEY and stay unbuilt
+rather than half-wired.
+
+Finance is no longer in `COMING_SOON_MYTRION_IDS`; `resolveAccess.test.ts` was updated to match
+(it asserted finance was parked).
+
+`tests/unit/finance-routes.test.ts` — 21 tests: every route 401s unauthenticated and 403s a sales
+rep with the warehouse never queried, the header-elevation triad stays shut, non-numeric carrierIds
+are rejected before any query binds, and an unknown carrier is a 404 rather than an empty 200.
+
+### Checks
+
+Lint 0 errors. Backend typecheck clean (1 pre-existing). Frontend typecheck **2, down from 10**.
+`vite build` succeeds. Rendered Finance and HR in light AND dark.
+
+Frontend tests 187/188 — the one failure (`dashDebtorsData`) is pre-existing on a clean tree.
+
+⚠️ **The backend suite degrades badly under parallel load** and I have now added two more
+`buildApp()` suites (loyalty, finance), which makes it worse. A full run reported 37 failures; run in
+isolation, `cs-routes` (21/21), `desk-routes` (23/23), `agent-scripted-turn` (6/6) and
+`retention-cases` (23/23) all pass. The only real remainders are `data-center-routes`' post-call
+wizard test and `ringcentral-call-log`'s timeout flake — both pre-existing. Worth capping vitest
+concurrency or splitting the app-building suites into their own project.
