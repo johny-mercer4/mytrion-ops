@@ -5578,3 +5578,9 @@ still served the old committed `apps/mytrion-crm/app/` hashes — including the 
 with “← Board”. Ran `vite build` on `build` and committed the new `app/` assets so deploy picks up
 the sheet UI. (Full `pnpm build` still blocked by pre-existing Finance `tsc` errors.)
 
+## 2026-07-26 — Favicon on deep Sales routes
+
+Vite `base: './'` rewrote `/favicon.svg` → `./favicon.svg`. On `/main/salesmytrion` the browser
+requested `/main/favicon.svg` (SPA fallback HTML) so the tab icon never showed. Fix: inline the M
+mark as a `data:image/svg+xml` favicon in `apps/mytrion-crm/index.html` (survives relative base).
+
