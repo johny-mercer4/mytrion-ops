@@ -74,19 +74,19 @@ export function RetentionCallStageModal(props: {
               <Icon name="calls" size={17} />
             </span>
             <div style={s('flex:1;min-width:0')}>
-              <div style={s('font-size:15px;font-weight:800;color:var(--text)')}>
+              <div style={s('font-size:16px;font-weight:800;color:var(--text)')}>
                 Call ended — update {props.companyName || 'case'}
               </div>
               <div
                 style={s(
-                  "font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px",
+                  "font-size:13px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px",
                 )}
               >
                 {bits.join(' · ')}
               </div>
             </div>
           </div>
-          <div style={s('font-size:12px;color:var(--text2);margin-top:10px;line-height:1.4')}>
+          <div style={s('font-size:13px;color:var(--text2);margin-top:10px;line-height:1.4')}>
             Pick a stage to move the card — required after this call.
           </div>
         </div>

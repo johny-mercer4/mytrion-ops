@@ -184,7 +184,7 @@ export function RetentionFreqBadge({ f }: { f: RetentionCaseRow['transactionFreq
     <span
       title={cadenceExplain(f)}
       style={s(
-        `display:inline-flex;padding:2px 8px;border-radius:99px;background:color-mix(in srgb,${col} 14%,transparent);color:${col};font-size:10px;font-weight:800;letter-spacing:.02em`,
+        `display:inline-flex;padding:2px 8px;border-radius:99px;background:color-mix(in srgb,${col} 14%,transparent);color:${col};font-size:11px;font-weight:800;letter-spacing:.02em`,
       )}
     >
       {freqLabel(f)}
@@ -269,12 +269,12 @@ export function RetentionCaseCard({
         title={salesLockTitle(row)}
       >
         <div style={s('display:flex;justify-content:space-between;gap:6px;align-items:flex-start')}>
-          <div style={s('font-size:13px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis')}>
+          <div style={s('font-size:14px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis')}>
             {row.companyName || '—'}
           </div>
           <RetentionFreqBadge f={row.transactionFrequency} />
         </div>
-        <div style={s("font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text2)")}>
+        <div style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text2)")}>
           {row.carrierId}
         </div>
         <div className={`ss-ret-locked-badge${pooled ? ' is-pooled' : ''}`}>{salesLockBadge(row)}</div>
@@ -290,20 +290,20 @@ export function RetentionCaseCard({
       style={{ ['--ret-col' as string]: colColor, animationDelay: `${Math.min(index, 8) * 0.04}s` }}
     >
       <div style={s('display:flex;justify-content:space-between;gap:6px;align-items:flex-start')}>
-        <div style={s('font-size:13px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis')}>
+        <div style={s('font-size:14px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis')}>
           {row.companyName || '—'}
         </div>
         <RetentionFreqBadge f={row.transactionFrequency} />
       </div>
-      <div style={s("font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text2)")}>{row.carrierId}</div>
+      <div style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text2)")}>{row.carrierId}</div>
       <div
         style={s(
-          `font-size:12px;font-weight:600;color:${breachSeverity(row) > 0 ? 'var(--warn)' : 'var(--text2)'}`,
+          `font-size:13px;font-weight:600;color:${breachSeverity(row) > 0 ? 'var(--warn)' : 'var(--text2)'}`,
         )}
       >
         {quietCaption(row)}
       </div>
-      <div style={s('display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:11px')}>
+      <div style={s('display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px')}>
         <span style={s('color:var(--text2);font-family:JetBrains Mono,monospace')}>
           {row.gallons90d != null ? `${fmtGal(row.gallons90d)} gal` : '—'}
         </span>

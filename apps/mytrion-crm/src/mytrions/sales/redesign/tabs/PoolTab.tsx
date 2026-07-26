@@ -371,8 +371,8 @@ export function PoolTab({ onAvailableCount }: { onAvailableCount?: (n: number) =
                   className={selected.length && !submitting ? 'ss-btn-p' : undefined}
                   style={s(
                     selected.length && !submitting
-                      ? 'height:38px;padding:0 16px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:7px'
-                      : 'height:38px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:13px;cursor:not-allowed;display:flex;align-items:center;gap:7px',
+                      ? 'height:38px;padding:0 16px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:7px'
+                      : 'height:38px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--muted);font-weight:700;font-size:14px;cursor:not-allowed;display:flex;align-items:center;gap:7px',
                   )}
                 >
                   <Icon name="assign" size={15} strokeWidth={2.2} />

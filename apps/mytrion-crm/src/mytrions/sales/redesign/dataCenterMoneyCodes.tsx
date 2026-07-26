@@ -157,8 +157,8 @@ export function MoneyCodesView({ search }: { search: string }) {
     <div style={s('display:flex;flex-direction:column;gap:12px')}>
       <div style={s('display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap')}>
         <div>
-          <div style={s('font-size:13px;font-weight:700')}>My money codes</div>
-          <div style={s('font-size:12px;color:var(--muted);margin-top:2px')}>
+          <div style={s('font-size:14px;font-weight:700')}>My money codes</div>
+          <div style={s('font-size:13px;color:var(--muted);margin-top:2px')}>
             Own draws only · code values are never shown (sent to the carrier app)
           </div>
         </div>
@@ -182,7 +182,7 @@ export function MoneyCodesView({ search }: { search: string }) {
             disabled={loading}
             title="Refresh"
             className="ss-ico-btn"
-            style={s(`height:32px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:12px;font-weight:700;cursor:${loading ? 'default' : 'pointer'};display:flex;align-items:center;gap:7px;opacity:${loading ? '.7' : '1'}`)}
+            style={s(`height:32px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:13px;font-weight:700;cursor:${loading ? 'default' : 'pointer'};display:flex;align-items:center;gap:7px;opacity:${loading ? '.7' : '1'}`)}
           >
             <span style={s(`display:inline-flex${loading ? ';animation:ss-spin .8s linear infinite' : ''}`)}>
               <Icon name="refresh" size={14} />
@@ -199,16 +199,16 @@ export function MoneyCodesView({ search }: { search: string }) {
               'width:34px;height:34px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--accent);animation:ss-spin .8s linear infinite',
             )}
           />
-          <span style={s('font-size:13px;color:var(--muted)')}>Loading money codes…</span>
+          <span style={s('font-size:14px;color:var(--muted)')}>Loading money codes…</span>
         </div>
       )}
 
       {!loading && error && (
-        <div style={s('padding:36px 20px;text-align:center;color:var(--danger);font-size:13px')}>{error}</div>
+        <div style={s('padding:36px 20px;text-align:center;color:var(--danger);font-size:14px')}>{error}</div>
       )}
 
       {!loading && !error && rows.length === 0 && (
-        <div style={s('padding:40px 20px;text-align:center;color:var(--muted);font-size:13px;line-height:1.55')}>
+        <div style={s('padding:40px 20px;text-align:center;color:var(--muted);font-size:14px;line-height:1.55')}>
           No money codes yet. Draw one from <strong style={s('color:var(--text2)')}>Automations → Money Code</strong>.
         </div>
       )}
@@ -223,7 +223,7 @@ export function MoneyCodesView({ search }: { search: string }) {
             <div style={s('min-width:960px')}>
               <div
                 style={s(
-                  "display:grid;grid-template-columns:1.5fr 100px 100px 1.2fr 90px 110px 120px 90px;gap:10px;padding:11px 15px;background:var(--alt);border-bottom:1px solid var(--border);font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);position:sticky;top:0;z-index:2",
+                  "display:grid;grid-template-columns:1.5fr 100px 100px 1.2fr 90px 110px 120px 90px;gap:10px;padding:11px 15px;background:var(--alt);border-bottom:1px solid var(--border);font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);position:sticky;top:0;z-index:2",
                 )}
               >
                 <span>Company</span>
@@ -242,44 +242,44 @@ export function MoneyCodesView({ search }: { search: string }) {
                   <div
                     key={String(row.id)}
                     style={s(
-                      'display:grid;grid-template-columns:1.5fr 100px 100px 1.2fr 90px 110px 120px 90px;gap:10px;align-items:center;padding:12px 15px;border-top:1px solid var(--border2);font-size:13px',
+                      'display:grid;grid-template-columns:1.5fr 100px 100px 1.2fr 90px 110px 120px 90px;gap:10px;align-items:center;padding:12px 15px;border-top:1px solid var(--border2);font-size:14px',
                     )}
                   >
                     <span style={s('font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
                       {row.company_name || '—'}
                     </span>
-                    <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted)")}>
+                    <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--muted)")}>
                       {row.carrier_id ?? '—'}
                     </span>
                     <span
                       style={s(
-                        "text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700",
+                        "text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700",
                       )}
                     >
                       {fmtUsd(amountOf(row))}
                     </span>
-                    <span style={s('font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
+                    <span style={s('font-size:13px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>
                       {row.moneycode_reason || '—'}
                     </span>
-                    <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px")}>
+                    <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px")}>
                       {row.unit_number || '—'}
                     </span>
-                    <span style={s('font-size:11px;color:var(--muted)')}>{fmtWhen(row.created_at)}</span>
+                    <span style={s('font-size:12px;color:var(--muted)')}>{fmtWhen(row.created_at)}</span>
                     <span>
                       <span
                         style={s(
-                          `display:inline-flex;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:800;background:color-mix(in srgb,${statusTone(st)} 14%,transparent);color:${statusTone(st)}`,
+                          `display:inline-flex;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:800;background:color-mix(in srgb,${statusTone(st)} 14%,transparent);color:${statusTone(st)}`,
                         )}
                       >
                         {st}
                       </span>
                       {row.has_code === false && st === 'ISSUED' ? (
-                        <div style={s('font-size:10px;color:var(--warn);margin-top:3px')}>No EFS issue</div>
+                        <div style={s('font-size:11px;color:var(--warn);margin-top:3px')}>No EFS issue</div>
                       ) : null}
                       {row.notify_error ? (
-                        <div style={s('font-size:10px;color:var(--warn);margin-top:3px')}>Notify failed</div>
+                        <div style={s('font-size:11px;color:var(--warn);margin-top:3px')}>Notify failed</div>
                       ) : row.notified_at ? (
-                        <div style={s('font-size:10px;color:var(--ok);margin-top:3px')}>App notified</div>
+                        <div style={s('font-size:11px;color:var(--ok);margin-top:3px')}>App notified</div>
                       ) : null}
                     </span>
                     <span>
@@ -291,13 +291,13 @@ export function MoneyCodesView({ search }: { search: string }) {
                             setVoidReason('');
                           }}
                           style={s(
-                            'height:28px;padding:0 10px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--danger) 35%,var(--border));background:transparent;color:var(--danger);font-weight:700;font-size:11px;cursor:pointer',
+                            'height:28px;padding:0 10px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--danger) 35%,var(--border));background:transparent;color:var(--danger);font-weight:700;font-size:12px;cursor:pointer',
                           )}
                         >
                           Void
                         </button>
                       ) : (
-                        <span style={s('font-size:11px;color:var(--faint)')}>—</span>
+                        <span style={s('font-size:12px;color:var(--faint)')}>—</span>
                       )}
                     </span>
                   </div>
@@ -312,7 +312,7 @@ export function MoneyCodesView({ search }: { search: string }) {
                 disabled={loadingMore}
                 onClick={() => void load({ page: page + 1, append: true, status, search: deferredSearch })}
                 style={s(
-                  `height:34px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-weight:700;font-size:12px;cursor:${loadingMore ? 'wait' : 'pointer'};display:inline-flex;align-items:center;gap:8px`,
+                  `height:34px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-weight:700;font-size:13px;cursor:${loadingMore ? 'wait' : 'pointer'};display:inline-flex;align-items:center;gap:8px`,
                 )}
               >
                 {loadingMore && (
@@ -345,8 +345,8 @@ export function MoneyCodesView({ search }: { search: string }) {
             )}
           >
             <div style={s('padding:16px 18px;border-bottom:1px solid var(--border)')}>
-              <div style={s('font-size:15px;font-weight:700')}>Void money code</div>
-              <div style={s('font-size:12px;color:var(--muted);margin-top:4px;line-height:1.45')}>
+              <div style={s('font-size:16px;font-weight:700')}>Void money code</div>
+              <div style={s('font-size:13px;color:var(--muted);margin-top:4px;line-height:1.45')}>
                 {voidTarget.company_name || 'Carrier'} · {fmtUsd(amountOf(voidTarget))} · frees the
                 limit if not already redeemed
               </div>
@@ -358,7 +358,7 @@ export function MoneyCodesView({ search }: { search: string }) {
                 placeholder="Optional void reason…"
                 className="ss-in"
                 style={s(
-                  'width:100%;height:36px;padding:0 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:12px',
+                  'width:100%;height:36px;padding:0 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-size:13px',
                 )}
               />
             </div>
@@ -368,7 +368,7 @@ export function MoneyCodesView({ search }: { search: string }) {
                 disabled={voidBusy}
                 onClick={() => setVoidTarget(null)}
                 style={s(
-                  'flex:1;height:40px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-weight:700;font-size:13px;cursor:pointer',
+                  'flex:1;height:40px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-weight:700;font-size:14px;cursor:pointer',
                 )}
               >
                 Cancel
@@ -378,7 +378,7 @@ export function MoneyCodesView({ search }: { search: string }) {
                 disabled={voidBusy}
                 onClick={() => void onVoid()}
                 style={s(
-                  `flex:1;height:40px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--danger) 40%,var(--border));background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger);font-weight:700;font-size:13px;cursor:${voidBusy ? 'wait' : 'pointer'};display:inline-flex;align-items:center;justify-content:center;gap:8px`,
+                  `flex:1;height:40px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--danger) 40%,var(--border));background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger);font-weight:700;font-size:14px;cursor:${voidBusy ? 'wait' : 'pointer'};display:inline-flex;align-items:center;justify-content:center;gap:8px`,
                 )}
               >
                 {voidBusy && (

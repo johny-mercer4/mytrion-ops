@@ -18,15 +18,15 @@ import {
 } from '@/api/dataCenter';
 
 const CARD = 'padding:15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)';
-const CARD_LABEL = 'font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em';
+const CARD_LABEL = 'font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em';
 const ROW = 'padding:8px 0;border-top:1px solid var(--border2)';
-const MUTED = 'font-size:12px;color:var(--muted)';
+const MUTED = 'font-size:13px;color:var(--muted)';
 const SMALL_BTN =
-  'height:26px;padding:0 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--accent);font-size:11px;font-weight:700;cursor:pointer';
+  'height:26px;padding:0 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--accent);font-size:12px;font-weight:700;cursor:pointer';
 const SAVE_BTN =
-  'height:34px;padding:0 16px;border-radius:var(--radius-md);border:none;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:var(--on-accent);font-size:12px;font-weight:700;cursor:pointer;margin-top:8px';
+  'height:34px;padding:0 16px;border-radius:var(--radius-md);border:none;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:var(--on-accent);font-size:13px;font-weight:700;cursor:pointer;margin-top:8px';
 const NOTE_AREA =
-  'width:100%;padding:9px 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;font-family:inherit;resize:vertical;min-height:70px';
+  'width:100%;padding:9px 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;font-family:inherit;resize:vertical;min-height:70px';
 
 type Kind = 'leads' | 'deals';
 
@@ -75,10 +75,10 @@ function CallsPanel({ kind, id }: { kind: Kind; id: string }) {
               <div key={`${c.source}-${c.id}`} style={s(`display:flex;align-items:center;gap:10px;${ROW}`)}>
                 <span style={s(b.style)}>{b.text}</span>
                 <div style={s('flex:1;min-width:0')}>
-                  <div style={s('font-size:12px;font-weight:600;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
+                  <div style={s('font-size:13px;font-weight:600;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
                     {c.label || c.number || 'Call'}
                   </div>
-                  <div style={s('font-size:11px;color:var(--muted);margin-top:2px')}>
+                  <div style={s('font-size:12px;color:var(--muted);margin-top:2px')}>
                     {fmtWhen(c.when)}
                     {dur ? ` · ${dur}` : ''}
                     {c.status ? ` · ${c.status}` : ''}
@@ -165,10 +165,10 @@ function NotesPanel({ kind, id }: { kind: Kind; id: string }) {
         <div style={s('display:flex;flex-direction:column')}>
           {notes.map((nt) => (
             <div key={nt.id} style={s(ROW)}>
-              <div style={s('font-size:13px;line-height:1.5;color:var(--text2);white-space:pre-wrap')}>
+              <div style={s('font-size:14px;line-height:1.5;color:var(--text2);white-space:pre-wrap')}>
                 {nt.content || nt.title || '—'}
               </div>
-              <div style={s('font-size:11px;color:var(--muted);margin-top:3px')}>
+              <div style={s('font-size:12px;color:var(--muted);margin-top:3px')}>
                 {nt.owner || '—'}
                 {nt.createdAt ? ` · ${fmtWhen(nt.createdAt)}` : ''}
               </div>

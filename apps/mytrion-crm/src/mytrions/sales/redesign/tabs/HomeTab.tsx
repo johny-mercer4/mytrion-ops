@@ -5,11 +5,12 @@
  * full-page HomePageSkeleton; the page reveals once they settle. Live reloads (WS / refresh)
  * still use per-block useLoad. Quick Actions = static CALL_TO_ACTIONS catalog.
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState} from 'react';
 import { getSession } from '@/api/session';
 import { getImpersonation } from '@/api/impersonation';
 import { useImpersonation } from '@/context/ImpersonationProvider';
 import { s, clickable } from '../dc';
+import { StateNote } from '../SalesStates';
 import { Icon, type IconName } from '../icons';
 import { ICO, iconBox, badge, deptStyle, timeParts, WORKDAY_START_HOUR, WORKDAY_END_HOUR } from '../salesData';
 import { useSessionUser } from '../sessionUser';
@@ -87,14 +88,6 @@ const COL_OF: Record<InboxType, string> = {
 };
 
 /** Centered muted / red status text — used for errors and true empty states only. */
-function StateNote({ tone, children }: { tone: 'muted' | 'danger'; children: ReactNode }) {
-  return (
-    <div style={s(`width:100%;padding:22px;text-align:center;color:var(--${tone});font-size:13px;font-weight:600`)}>
-      {children}
-    </div>
-  );
-}
-
 /** One mini stat in the habit-loop strip (streak / personal best / momentum). */
 function StreakStat({
   emoji,
@@ -124,7 +117,7 @@ function StreakStat({
     >
       <div
         style={s(
-          `width:38px;height:38px;flex-shrink:0;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-size:19px;background:color-mix(in srgb,${tone} 15%,transparent);color:${tone}`,
+          `width:38px;height:38px;flex-shrink:0;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-size:20px;background:color-mix(in srgb,${tone} 15%,transparent);color:${tone}`,
         )}
       >
         {emoji ?? (icon ? <Icon name={icon} size={18} /> : null)}
@@ -135,15 +128,15 @@ function StreakStat({
         ) : (
           <div
             style={s(
-              "font-family:'JetBrains Mono',monospace;font-weight:500;font-size:22px;line-height:1;color:var(--text)",
+              "font-family:'JetBrains Mono',monospace;font-weight:500;font-size:24px;line-height:1;color:var(--text)",
             )}
           >
             {value}
           </div>
         )}
-        <div style={s('font-size:11px;color:var(--muted);margin-top:5px')}>{label}</div>
+        <div style={s('font-size:12px;color:var(--muted);margin-top:5px')}>{label}</div>
         {sub && !loading && (
-          <div style={s("font-size:10.5px;color:var(--text2);margin-top:2px;font-family:'JetBrains Mono',monospace")}>{sub}</div>
+          <div style={s("font-size:11px;color:var(--text2);margin-top:2px;font-family:'JetBrains Mono',monospace")}>{sub}</div>
         )}
       </div>
     </div>
@@ -413,18 +406,18 @@ export function HomeTab() {
       <div style={s('display:grid;grid-template-columns:1.35fr 1fr;gap:18px;margin-bottom:18px')}>
         <div style={s('position:relative;overflow:hidden;border-radius:var(--radius-md);padding:26px 28px;background:linear-gradient(120deg, rgba(var(--accent-rgb),.14), rgba(var(--violet-rgb),.10)), var(--surface);border:1px solid var(--border)')}>
           <div style={s('position:absolute;right:-40px;top:-40px;width:190px;height:190px;border-radius:50%;background:radial-gradient(circle,rgba(var(--accent-rgb),.22),transparent 70%);pointer-events:none')}></div>
-          <div style={s('font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent)')}>{dateLabel}</div>
-          <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:30px;letter-spacing:.01em;margin-top:8px;line-height:1.1')}>Good {timeOfDay}, <span style={s('background:linear-gradient(120deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent')}>{user.first}</span></div>
+          <div style={s('font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent)')}>{dateLabel}</div>
+          <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:32px;letter-spacing:.01em;margin-top:8px;line-height:1.1')}>Good {timeOfDay}, <span style={s('background:linear-gradient(120deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent')}>{user.first}</span></div>
           {/* Daily goal bar — Deals.Application_Date (application filled), owner-scoped COQL. */}
           <div style={s('margin-top:18px')} aria-busy={appsLoading || undefined}>
             <div style={s('display:flex;justify-content:space-between;align-items:center;margin-bottom:8px')}>
-              <span style={s('font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--text2)')}>
+              <span style={s('font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--text2)')}>
                 Today's Goal
               </span>
               {appsLoading ? (
                 <div className="ss-skel" style={s('width:72px;height:12px;border-radius:6px')} />
               ) : (
-                <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text2)")}>
+                <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text2)")}>
                   {appsDone} / {DAILY_APPS_GOAL} apps
                 </span>
               )}
@@ -445,7 +438,7 @@ export function HomeTab() {
             ) : (
               <div
                 style={s(
-                  `font-size:11px;margin-top:7px;font-weight:700;font-family:'JetBrains Mono',monospace;color:${appStats.error ? 'var(--danger)' : goalMet ? 'var(--ok-text)' : 'var(--accent-text)'}`,
+                  `font-size:12px;margin-top:7px;font-weight:700;font-family:'JetBrains Mono',monospace;color:${appStats.error ? 'var(--danger)' : goalMet ? 'var(--ok-text)' : 'var(--accent-text)'}`,
                 )}
               >
                 {appStats.error
@@ -457,13 +450,13 @@ export function HomeTab() {
             )}
           </div>
           <div style={s('display:flex;gap:10px;margin-top:18px')}>
-            <button onClick={goAuto} className="ss-btn-p" style={s('height:38px;padding:0 16px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:7px')}><Icon name={ICO.bolt} size={15} strokeWidth={2.2} />Run an action</button>
+            <button onClick={goAuto} className="ss-btn-p" style={s('height:38px;padding:0 16px;border-radius:var(--radius-md);border:none;background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:7px')}><Icon name={ICO.bolt} size={15} strokeWidth={2.2} />Run an action</button>
           </div>
         </div>
         <div style={s('border-radius:var(--radius-md);padding:22px 24px;background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;justify-content:center')}>
           <div style={s('display:flex;justify-content:space-between;align-items:baseline')}>
-            <span style={s('font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)')}>Workday Progress</span>
-            <span style={s("font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text2)")}>{timeFmt}</span>
+            <span style={s('font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)')}>Workday Progress</span>
+            <span style={s("font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text2)")}>{timeFmt}</span>
           </div>
           <div style={s('position:relative;height:9px;border-radius:99px;background:var(--raised);margin:18px 0 10px;overflow:visible')}>
             {/* Phase track ticks: morning · midday · afternoon · close */}
@@ -476,7 +469,7 @@ export function HomeTab() {
             <div style={s(`position:absolute;inset:0;width:${workdayFill};border-radius:99px;background:${workday.barGradient};transition:width .35s ease,background .35s ease`)}></div>
             <div style={s(`position:absolute;top:50%;left:${workdayKnob};transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:var(--surface);border:2px solid ${workday.accent};box-shadow:0 2px 8px color-mix(in srgb, ${workday.accent} 55%, transparent);transition:left .35s ease,border-color .35s ease`)}></div>
           </div>
-          <div style={s('display:flex;justify-content:space-between;font-size:11px;color:var(--muted);font-weight:600')}>
+          <div style={s('display:flex;justify-content:space-between;font-size:12px;color:var(--muted);font-weight:600')}>
             <span>{workdayStartLabel}</span>
             <span style={s(`color:${workday.accent};font-family:'JetBrains Mono',monospace;font-weight:700`)}>{workday.statusLabel}</span>
             <span>{workdayEndLabel}</span>
@@ -495,10 +488,10 @@ export function HomeTab() {
         <div aria-hidden="true" style={s('position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;pointer-events:none')}>
           <div style={s('position:relative;padding:20px 28px;border-radius:var(--radius-md);background:linear-gradient(120deg,rgba(var(--accent-rgb),.16),rgba(var(--violet-rgb),.12)),var(--surface);border:1px solid rgba(var(--accent-rgb),.45);box-shadow:var(--shadow);display:flex;align-items:center;gap:16px;animation:ss-pop .3s cubic-bezier(.2,0,0,1) both')}>
             <div aria-hidden="true" style={s('position:absolute;inset:0;border-radius:var(--radius-md);border:2px solid var(--accent);animation:ss-ring .9s ease-out both;pointer-events:none')}></div>
-            <span style={s('font-size:34px')}>{celebration.emoji}</span>
+            <span style={s('font-size:36px')}>{celebration.emoji}</span>
             <div style={s('min-width:0')}>
-              <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:18px;letter-spacing:.03em;text-transform:uppercase;color:var(--ok-text)")}>{celebration.title}</div>
-              <div style={s('font-size:13px;color:var(--text2);margin-top:2px')}>{celebration.msg}</div>
+              <div style={s("font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;letter-spacing:.03em;text-transform:uppercase;color:var(--ok-text)")}>{celebration.title}</div>
+              <div style={s('font-size:14px;color:var(--text2);margin-top:2px')}>{celebration.msg}</div>
             </div>
           </div>
         </div>
@@ -507,8 +500,8 @@ export function HomeTab() {
       <>
           {/* announcements */}
           <div style={s('display:flex;align-items:center;justify-content:space-between;margin:22px 2px 12px')}>
-            <div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name={ICO.bell} size={17} /></span>Updates &amp; Announcements</div>
-            <span style={s('font-size:11px;font-weight:800;letter-spacing:.04em;padding:3px 9px;border-radius:99px;background:rgba(var(--accent-rgb),.14);color:var(--accent)')}>{annData.length} NEW</span>
+            <div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name={ICO.bell} size={17} /></span>Updates &amp; Announcements</div>
+            <span style={s('font-size:12px;font-weight:800;letter-spacing:.04em;padding:3px 9px;border-radius:99px;background:rgba(var(--accent-rgb),.14);color:var(--accent)')}>{annData.length} NEW</span>
           </div>
           {ann.loading ? (
             <AnnouncementsRailSkeleton />
@@ -520,8 +513,8 @@ export function HomeTab() {
               <div key={a.title} {...clickable(() => openAnn(a))} className="ss-card-h" style={s('flex:0 0 300px;display:flex;gap:12px;padding:15px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
                 <div style={s(iconBox(a.color, 40))}><Icon name={a.icon} size={18} /></div>
                 <div style={s('min-width:0')}>
-                  <div style={s('font-size:13px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical')}>{a.title}</div>
-                  <div style={s('font-size:11px;color:var(--muted);margin-top:4px')}>{a.time}</div>
+                  <div style={s('font-size:14px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical')}>{a.title}</div>
+                  <div style={s('font-size:12px;color:var(--muted);margin-top:4px')}>{a.time}</div>
                 </div>
               </div>
             ))}
@@ -531,9 +524,9 @@ export function HomeTab() {
           {/* snapshot */}
           <div style={s('margin-top:24px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)')}>
             <div style={s('display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)')}>
-              <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}>Today's Snapshot</div>
+              <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase')}>Today's Snapshot</div>
               <div style={s('display:flex;align-items:center;gap:10px')}>
-                <span style={s('font-size:11px;color:var(--muted)')}>{snap.revalidating ? 'Refreshing…' : `Updated ${snapFetchedAt || timeFmt}`}</span>
+                <span style={s('font-size:12px;color:var(--muted)')}>{snap.revalidating ? 'Refreshing…' : `Updated ${snapFetchedAt || timeFmt}`}</span>
                 <button onClick={refreshSnapshot} aria-label="Refresh" className="ss-ico-btn" style={s('width:30px;height:30px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center')}><Icon name="refresh" size={15} style={s(snapSpinCss)} /></button>
               </div>
             </div>
@@ -546,7 +539,7 @@ export function HomeTab() {
                 <div>
                   {snapshotGroups.map((g) => (
                     <div key={g.label} style={s('margin-bottom:16px')}>
-                      <div style={s('font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px')}>{g.label}</div>
+                      <div style={s('font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px')}>{g.label}</div>
                       <div style={s('display:grid;grid-template-columns:repeat(4,1fr);gap:12px')}>
                         {g.cells.map((c) => (
                           <div
@@ -560,9 +553,9 @@ export function HomeTab() {
                             )}
                           >
                             <div style={s(c.iconStyle)}><Icon name={c.icon} size={18} /></div>
-                            <div style={s(`font-family:'JetBrains Mono',monospace;font-weight:500;font-size:23px;line-height:1.15;min-height:27px;margin-top:12px;color:${c.color}`)}>{c.value}</div>
-                            <div style={s('font-size:12px;font-weight:600;color:var(--text);margin-top:2px')}>{c.label}</div>
-                            <div style={s('font-size:11px;color:var(--muted);margin-top:4px;line-height:1.35')}>{c.help}</div>
+                            <div style={s(`font-family:'JetBrains Mono',monospace;font-weight:500;font-size:24px;line-height:1.15;min-height:27px;margin-top:12px;color:${c.color}`)}>{c.value}</div>
+                            <div style={s('font-size:13px;font-weight:600;color:var(--text);margin-top:2px')}>{c.label}</div>
+                            <div style={s('font-size:12px;color:var(--muted);margin-top:4px;line-height:1.35')}>{c.help}</div>
                           </div>
                         ))}
                       </div>
@@ -578,7 +571,7 @@ export function HomeTab() {
           {/* CTA + inbox preview */}
           <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px')}>
             <div>
-              <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name={ICO.bolt} size={17} /></span>Quick Actions</div><button onClick={goAuto} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-md)')}>All guides →</button></div>
+              <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name={ICO.bolt} size={17} /></span>Quick Actions</div><button onClick={goAuto} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:13px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-md)')}>All guides →</button></div>
               <div style={s('display:flex;flex-direction:column;gap:12px')}>
                 {ctaCards.map((c) => (
                   <div key={c.name} {...clickable(goAuto)} className="ss-card-h" style={s('padding:16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
@@ -587,16 +580,16 @@ export function HomeTab() {
                         <span key={code.text} style={s(code.style)}>{code.text}</span>
                       ))}
                       <div style={s('flex:1')}></div>
-                      {c.top && (<span style={s('font-size:9px;font-weight:800;padding:2px 7px;border-radius:99px;background:rgba(248,113,113,.16);color:var(--danger)')}>TOP</span>)}
+                      {c.top && (<span style={s('font-size:11px;font-weight:800;padding:2px 7px;border-radius:99px;background:rgba(248,113,113,.16);color:var(--danger)')}>TOP</span>)}
                     </div>
-                    <div style={s('font-size:14px;font-weight:700')}>{c.name}</div>
-                    <div style={s('font-size:12px;color:var(--muted);margin-top:5px;line-height:1.45')}>{c.desc}</div>
+                    <div style={s('font-size:15px;font-weight:700')}>{c.name}</div>
+                    <div style={s('font-size:13px;color:var(--muted);margin-top:5px;line-height:1.45')}>{c.desc}</div>
                   </div>
                 ))}
               </div>
             </div>
             <div>
-              <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name="inbox" size={17} /></span>Recent Inbox</div><button onClick={goInbox} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-md)')}>View all →</button></div>
+              <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name="inbox" size={17} /></span>Recent Inbox</div><button onClick={goInbox} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:13px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-md)')}>View all →</button></div>
               {inbox.loading ? (
                 <InboxListSkeleton />
               ) : (
@@ -608,8 +601,8 @@ export function HomeTab() {
                     <div style={s(`position:absolute;left:0;top:0;bottom:0;width:3px;background:${i.barColor}`)}></div>
                     <div style={s(i.iconStyle)}><Icon name={i.icon} size={15} /></div>
                     <div style={s('min-width:0;flex:1')}>
-                      <div style={s('display:flex;justify-content:space-between;gap:8px')}><span style={s('font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{i.title}</span><span style={s('font-size:11px;color:var(--muted);white-space:nowrap')}>{i.time}</span></div>
-                      <div style={s('font-size:12px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{i.desc}</div>
+                      <div style={s('display:flex;justify-content:space-between;gap:8px')}><span style={s('font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{i.title}</span><span style={s('font-size:12px;color:var(--muted);white-space:nowrap')}>{i.time}</span></div>
+                      <div style={s('font-size:13px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')}>{i.desc}</div>
                     </div>
                   </div>
                 ))}

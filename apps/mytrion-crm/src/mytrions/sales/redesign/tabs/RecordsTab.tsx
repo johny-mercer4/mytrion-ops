@@ -56,7 +56,7 @@ function DcSelect({
         value={value}
         onChange={(e) => onChange(e.currentTarget.value)}
         aria-label={label}
-        style={s("height:44px;padding:0 34px 0 34px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;box-shadow:var(--shadow-sm);-webkit-appearance:none;-moz-appearance:none;appearance:none;max-width:220px;font-family:inherit")}
+        style={s("height:44px;padding:0 34px 0 34px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;box-shadow:var(--shadow-sm);-webkit-appearance:none;-moz-appearance:none;appearance:none;max-width:220px;font-family:inherit")}
       >
         {options.map((o) => (
           <option key={o.v} value={o.v}>
@@ -64,7 +64,7 @@ function DcSelect({
           </option>
         ))}
       </select>
-      <span style={s('position:absolute;right:13px;pointer-events:none;color:var(--muted);font-size:10px')}>▾</span>
+      <span style={s('position:absolute;right:13px;pointer-events:none;color:var(--muted);font-size:11px')}>▾</span>
     </div>
   );
 }
@@ -149,8 +149,8 @@ function TierDistribution({ counts, total }: { counts: Record<TierLevel, number>
   return (
     <div style={s('margin-bottom:14px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:14px 16px;box-shadow:var(--shadow-sm)')}>
       <div style={s('display:flex;align-items:center;justify-content:space-between;margin-bottom:10px')}>
-        <span style={s('font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>Loyalty distribution</span>
-        <span style={s("font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace")}>{total} client{total === 1 ? '' : 's'}</span>
+        <span style={s('font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>Loyalty distribution</span>
+        <span style={s("font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace")}>{total} client{total === 1 ? '' : 's'}</span>
       </div>
       <div style={s('display:flex;height:8px;border-radius:99px;overflow:hidden;background:var(--raised)')}>
         {TIER_ORDER.map(({ level }) => {
@@ -162,8 +162,8 @@ function TierDistribution({ counts, total }: { counts: Record<TierLevel, number>
         {TIER_ORDER.map(({ level, label }) => (
           <div key={level} style={s('display:flex;align-items:center;gap:6px')}>
             <span style={s(`width:8px;height:8px;border-radius:2px;flex-shrink:0;background:${tierColor(level)}`)} />
-            <span style={s(`font-size:13px;font-weight:700;font-family:'JetBrains Mono',monospace;color:${tierTextColor(level)}`)}>{counts[level]}</span>
-            <span style={s('font-size:11px;color:var(--muted)')}>{label}</span>
+            <span style={s(`font-size:14px;font-weight:700;font-family:'JetBrains Mono',monospace;color:${tierTextColor(level)}`)}>{counts[level]}</span>
+            <span style={s('font-size:12px;color:var(--muted)')}>{label}</span>
           </div>
         ))}
       </div>
@@ -183,12 +183,12 @@ function Gate({ loading, error, empty, emptyMsg, children }: {
     return (
       <div style={s('display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:60px 20px')}>
         <span style={s('width:34px;height:34px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--accent);animation:ss-spin .8s linear infinite')} />
-        <span style={s('font-size:13px;color:var(--muted)')}>Loading…</span>
+        <span style={s('font-size:14px;color:var(--muted)')}>Loading…</span>
       </div>
     );
   }
-  if (error) return <div style={s('padding:44px 20px;text-align:center;color:var(--danger);font-size:13px')}>{error}</div>;
-  if (empty) return <div style={s('padding:44px 20px;text-align:center;color:var(--muted);font-size:13px')}>{emptyMsg}</div>;
+  if (error) return <div style={s('padding:44px 20px;text-align:center;color:var(--danger);font-size:14px')}>{error}</div>;
+  if (empty) return <div style={s('padding:44px 20px;text-align:center;color:var(--muted);font-size:14px')}>{emptyMsg}</div>;
   return <>{children}</>;
 }
 
@@ -249,7 +249,7 @@ export function RecordsTab() {
         name: c.name,
         carrier: c.carrier,
         initials: c.name.split(' ').map((w) => w.charAt(0)).slice(0, 2).join(''),
-        avStyle: `width:40px;height:40px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px;background:color-mix(in srgb, ${col} 15%, transparent);color:${col}`,
+        avStyle: `width:40px;height:40px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;background:color-mix(in srgb, ${col} 15%, transparent);color:${col}`,
         statusBadge: badge(lbl, col),
         active: c.active,
         cards: c.cards,
@@ -276,8 +276,8 @@ export function RecordsTab() {
   return (
     <div className="ss-fu">
       <div style={s('margin-bottom:14px')}>
-        <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:.04em;text-transform:uppercase')}>Data Center</div>
-        <div style={s('font-size:13px;color:var(--muted);margin-top:2px')}>Everything about your pipeline — clients, leads, deals, rejections &amp; money codes.</div>
+        <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:24px;letter-spacing:.04em;text-transform:uppercase')}>Data Center</div>
+        <div style={s('font-size:14px;color:var(--muted);margin-top:2px')}>Everything about your pipeline — clients, leads, deals, rejections &amp; money codes.</div>
       </div>
 
       {/* sub-tabs */}
@@ -291,12 +291,12 @@ export function RecordsTab() {
               onClick={soon ? undefined : () => setDcSub(t.id)}
               disabled={soon}
               title={soon ? `${t.label} — coming soon` : undefined}
-              style={s(`display:flex;align-items:center;gap:8px;padding:9px 15px;border-radius:var(--radius-md);border:1px solid ${on ? 'rgba(var(--accent-rgb),.4)' : 'transparent'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:13px;font-weight:700;cursor:${soon ? 'default' : 'pointer'};opacity:${soon ? '.5' : '1'};white-space:nowrap;transition:all .14s`)}
+              style={s(`display:flex;align-items:center;gap:8px;padding:9px 15px;border-radius:var(--radius-md);border:1px solid ${on ? 'rgba(var(--accent-rgb),.4)' : 'transparent'};background:${on ? 'rgba(var(--accent-rgb),.12)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:14px;font-weight:700;cursor:${soon ? 'default' : 'pointer'};opacity:${soon ? '.5' : '1'};white-space:nowrap;transition:all .14s`)}
             >
               <Icon name={t.icon} size={16} style={{ flexShrink: 0 }} />
               {t.label}
               {soon && (
-                <span style={s('font-size:8.5px;font-weight:800;letter-spacing:.05em;padding:2px 7px;border-radius:99px;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)')}>SOON</span>
+                <span style={s('font-size:11px;font-weight:800;letter-spacing:.05em;padding:2px 7px;border-radius:99px;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)')}>SOON</span>
               )}
             </button>
           );
@@ -307,7 +307,7 @@ export function RecordsTab() {
       <div style={s('display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap;align-items:center')}>
         <div style={s('position:relative;flex:1;min-width:240px')}>
           <Icon name="search" size={16} style={s('position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--muted)')} />
-          <input value={search[dcSub]} onChange={(e) => setSearchVal(e.currentTarget.value)} placeholder={SEARCH_PLACEHOLDER[dcSub]} className="ss-in" style={s('width:100%;height:44px;padding:0 16px 0 44px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;box-shadow:var(--shadow-sm)')} />
+          <input value={search[dcSub]} onChange={(e) => setSearchVal(e.currentTarget.value)} placeholder={SEARCH_PLACEHOLDER[dcSub]} className="ss-in" style={s('width:100%;height:44px;padding:0 16px 0 44px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;box-shadow:var(--shadow-sm)')} />
         </div>
         {dcSub === 'clients' && (
           <DcSelect
@@ -337,7 +337,7 @@ export function RecordsTab() {
               onClick={() => setLeadMetaOnly((v) => !v)}
               aria-pressed={leadMetaOnly}
               title="Show only Meta (utm_source) leads"
-              style={s(`display:inline-flex;align-items:center;gap:7px;height:44px;padding:0 16px;border-radius:var(--radius-md);border:1px solid ${leadMetaOnly ? 'var(--accent)' : 'var(--border)'};background:${leadMetaOnly ? 'rgba(var(--accent-rgb),.12)' : 'var(--surface)'};color:${leadMetaOnly ? 'var(--accent)' : 'var(--muted)'};font-size:13px;font-weight:700;cursor:pointer;box-shadow:var(--shadow-sm);white-space:nowrap;transition:all .14s`)}
+              style={s(`display:inline-flex;align-items:center;gap:7px;height:44px;padding:0 16px;border-radius:var(--radius-md);border:1px solid ${leadMetaOnly ? 'var(--accent)' : 'var(--border)'};background:${leadMetaOnly ? 'rgba(var(--accent-rgb),.12)' : 'var(--surface)'};color:${leadMetaOnly ? 'var(--accent)' : 'var(--muted)'};font-size:14px;font-weight:700;cursor:pointer;box-shadow:var(--shadow-sm);white-space:nowrap;transition:all .14s`)}
             >
               <span style={s('width:7px;height:7px;border-radius:50%;background:var(--accent);flex-shrink:0')} />
               Meta
@@ -357,7 +357,7 @@ export function RecordsTab() {
             {VIEW_BTNS.map((b) => {
               const on = view === b.v;
               return (
-                <button key={b.v} onClick={() => setView(b.v)} style={s(`display:flex;align-items:center;gap:7px;padding:8px 13px;border-radius:var(--radius-md);border:none;background:${on ? 'rgba(var(--accent-rgb),.14)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:12px;font-weight:700;cursor:pointer;transition:all .14s`)}>
+                <button key={b.v} onClick={() => setView(b.v)} style={s(`display:flex;align-items:center;gap:7px;padding:8px 13px;border-radius:var(--radius-md);border:none;background:${on ? 'rgba(var(--accent-rgb),.14)' : 'transparent'};color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:13px;font-weight:700;cursor:pointer;transition:all .14s`)}>
                   <Icon name={b.icon} size={15} />
                   {b.label}
                 </button>
@@ -372,7 +372,7 @@ export function RecordsTab() {
             disabled={activeLoad.revalidating}
             title="Refresh"
             className="ss-ico-btn"
-            style={s(`height:44px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:12px;font-weight:700;cursor:${activeLoad.revalidating ? 'default' : 'pointer'};display:flex;align-items:center;gap:8px;box-shadow:var(--shadow-sm);opacity:${activeLoad.revalidating ? '.7' : '1'}`)}
+            style={s(`height:44px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-size:13px;font-weight:700;cursor:${activeLoad.revalidating ? 'default' : 'pointer'};display:flex;align-items:center;gap:8px;box-shadow:var(--shadow-sm);opacity:${activeLoad.revalidating ? '.7' : '1'}`)}
           >
             <span style={s(`display:inline-flex${activeLoad.revalidating ? ';animation:ss-spin .8s linear infinite' : ''}`)}>
               <Icon name="refresh" size={15} />
@@ -382,7 +382,7 @@ export function RecordsTab() {
         )}
       </div>
       {activeLoad?.cachedAt && (
-        <div style={s('margin-bottom:16px;font-size:11px;color:var(--faint)')}>
+        <div style={s('margin-bottom:16px;font-size:12px;color:var(--faint)')}>
           {activeLoad.revalidating ? 'Refreshing…' : `Updated ${formatCachedAt(activeLoad.cachedAt)}`}
         </div>
       )}
@@ -399,8 +399,8 @@ export function RecordsTab() {
                 <div style={s('display:flex;align-items:center;gap:12px')}>
                   <div style={s(c.avStyle)}>{c.initials}</div>
                   <div style={s('min-width:0;flex:1')}>
-                    <div style={s('font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{c.name}</div>
-                    <div style={s("font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{c.carrier}</div>
+                    <div style={s('font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{c.name}</div>
+                    <div style={s("font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{c.carrier}</div>
                   </div>
                 </div>
                 <div style={s('margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:8px')}>
@@ -411,21 +411,21 @@ export function RecordsTab() {
                 </div>
                 <div style={s('display:flex;gap:16px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border2)')}>
                   <div>
-                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:600")}>{c.active}<span style={s('color:var(--muted);font-size:12px')}>/{c.cards}</span></div>
-                    <div style={s('font-size:11px;color:var(--muted)')}>Active cards</div>
+                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:600")}>{c.active}<span style={s('color:var(--muted);font-size:13px')}>/{c.cards}</span></div>
+                    <div style={s('font-size:12px;color:var(--muted)')}>Active cards</div>
                   </div>
                   <div>
-                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:600;color:var(--violet)")}>{c.gallons}</div>
-                    <div style={s('font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px')}><span style={s('display:inline-block;width:6px;height:6px;border-radius:2px;background:var(--violet)')} />Gallons · Cycle</div>
+                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:600;color:var(--violet)")}>{c.gallons}</div>
+                    <div style={s('font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px')}><span style={s('display:inline-block;width:6px;height:6px;border-radius:2px;background:var(--violet)')} />Gallons · Cycle</div>
                   </div>
                   <div>
-                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:600;color:var(--accent)")}>{c.gallonsMonth}</div>
-                    <div style={s('font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px')}><span style={s('display:inline-block;width:6px;height:6px;border-radius:2px;background:var(--accent)')} />Gallons · Month</div>
+                    <div style={s("font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:600;color:var(--accent)")}>{c.gallonsMonth}</div>
+                    <div style={s('font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px')}><span style={s('display:inline-block;width:6px;height:6px;border-radius:2px;background:var(--accent)')} />Gallons · Month</div>
                   </div>
                   {c.owed >= 1 && (
                     <div>
-                      <div style={s("font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:600;color:var(--danger)")}>{`$${Math.round(c.owed).toLocaleString('en-US')}`}</div>
-                      <div style={s('font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px')}><span style={s('display:inline-block;width:6px;height:6px;border-radius:2px;background:var(--danger)')} />Owed</div>
+                      <div style={s("font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:600;color:var(--danger)")}>{`$${Math.round(c.owed).toLocaleString('en-US')}`}</div>
+                      <div style={s('font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px')}><span style={s('display:inline-block;width:6px;height:6px;border-radius:2px;background:var(--danger)')} />Owed</div>
                     </div>
                   )}
                 </div>

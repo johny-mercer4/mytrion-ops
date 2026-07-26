@@ -104,7 +104,7 @@ export function RetentionCaseActions(props: {
         <WizardChrome stage="Vacation" stepLabel="Ops confirm" />
         {showOps ? (
           <>
-            <div style={s('font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)')}>
+            <div style={s('font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)')}>
               Ops — vacation confirm
             </div>
             <div style={s('display:flex;flex-wrap:wrap;gap:8px')}>
@@ -145,10 +145,11 @@ export function RetentionCaseActions(props: {
               : 'Vacation — 14-day hold (no channel attempts).'
           }
         >
-          {followUp
+          {/* InfoBanner takes ONE string child — two adjacent expressions make it string[]. */}
+          {(followUp
             ? 'If still quiet, Ops confirms vacation (back to New) or denies (→ CITI). Any fuel closes the case.'
-            : 'Client confirmed away. After 14 days → follow-up task. Any new fuel closes the case automatically.'}
-          {row.reasonNote ? ` Return note: ${row.reasonNote}` : ''}
+            : 'Client confirmed away. After 14 days → follow-up task. Any new fuel closes the case automatically.') +
+            (row.reasonNote ? ` Return note: ${row.reasonNote}` : '')}
         </InfoBanner>
       </div>
     );
@@ -195,7 +196,7 @@ export function RetentionCaseActions(props: {
   }
 
   return (
-    <div style={s('font-size:12px;color:var(--muted)')}>
+    <div style={s('font-size:13px;color:var(--muted)')}>
       This case is waiting on the next workflow step (pool / sync).
     </div>
   );

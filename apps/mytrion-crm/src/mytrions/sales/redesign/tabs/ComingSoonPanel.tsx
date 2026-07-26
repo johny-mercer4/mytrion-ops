@@ -49,7 +49,7 @@ export function ComingSoonPanel({ sectionId }: { sectionId: string }) {
     <div className="ss-fu" style={wrapStyle}>
       <span
         style={s(
-          `font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:5px 12px;border-radius:99px;color:#fff;background:linear-gradient(135deg, color-mix(in srgb, ${meta.hue} 92%, #fff), color-mix(in srgb, ${meta.hue} 55%, var(--accent)));box-shadow:0 4px 14px -2px color-mix(in srgb, ${meta.hue} 45%, transparent)`,
+          `font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:5px 12px;border-radius:99px;color:#fff;background:linear-gradient(135deg, color-mix(in srgb, ${meta.hue} 92%, #fff), color-mix(in srgb, ${meta.hue} 55%, var(--accent)));box-shadow:0 4px 14px -2px color-mix(in srgb, ${meta.hue} 45%, transparent)`,
         )}
       >
         Coming soon
@@ -61,10 +61,10 @@ export function ComingSoonPanel({ sectionId }: { sectionId: string }) {
       >
         <Icon name={meta.icon} size={28} />
       </div>
-      <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:26px;letter-spacing:.04em;text-transform:uppercase;text-align:center')}>
+      <div style={s('font-family:Rajdhani,sans-serif;font-weight:700;font-size:28px;letter-spacing:.04em;text-transform:uppercase;text-align:center')}>
         {meta.title}
       </div>
-      <p style={s('margin:0;max-width:420px;text-align:center;font-size:13.5px;line-height:1.55;color:var(--muted)')}>{meta.blurb}</p>
+      <p style={s('margin:0;max-width:420px;text-align:center;font-size:14px;line-height:1.55;color:var(--muted)')}>{meta.blurb}</p>
     </div>
   );
 }

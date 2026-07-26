@@ -85,13 +85,13 @@ export function SalesDashPanel() {
   if (error && !data) {
     if (NO_CARRIERS.test(error)) {
       return (
-        <div style={s('text-align:center;padding:56px 20px;color:var(--muted);font-size:13px')}>
+        <div style={s('text-align:center;padding:56px 20px;color:var(--muted);font-size:14px')}>
           No carriers assigned to your account yet.
         </div>
       );
     }
     return (
-      <div style={s('text-align:center;padding:56px 20px;color:var(--danger);font-size:13px')}>
+      <div style={s('text-align:center;padding:56px 20px;color:var(--danger);font-size:14px')}>
         {error}
         <div style={s('margin-top:12px')}>
           <button type="button" onClick={() => void fetch(true)} style={s('padding:8px 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;cursor:pointer')}>
@@ -187,8 +187,8 @@ export function SalesDashPanel() {
     <div style={s('display:flex;flex-direction:column;gap:16px')}>
       <div style={s('display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap')}>
         <div>
-          <div style={s('font-size:15px;font-weight:800')}>Sales Dashboard</div>
-          <div style={s('font-size:12px;color:var(--muted);margin-top:2px')}>
+          <div style={s('font-size:16px;font-weight:800')}>Sales Dashboard</div>
+          <div style={s('font-size:13px;color:var(--muted);margin-top:2px')}>
             Cycle {cycleLabel}
             {cachedAt ? (
               <span style={s('margin-left:8px;color:var(--faint)')}>
@@ -203,7 +203,7 @@ export function SalesDashPanel() {
           disabled={refreshing}
           title="Bypass 5-minute cache and reload from Zoho"
           style={s(
-            'height:34px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;font-size:12px;cursor:pointer;color:var(--text2);display:inline-flex;align-items:center;gap:7px',
+            'height:34px;padding:0 14px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);font-weight:700;font-size:13px;cursor:pointer;color:var(--text2);display:inline-flex;align-items:center;gap:7px',
           )}
         >
           {refreshing ? (

@@ -29,18 +29,18 @@ import { LeadStatusPicker } from './LeadStatusPicker';
 import { RecordActivityPanels } from './recordActivityPanels';
 
 function avStyle(col: string): string {
-  return `width:52px;height:52px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:19px;background:color-mix(in srgb,${col} 16%,transparent);color:${col}`;
+  return `width:52px;height:52px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;background:color-mix(in srgb,${col} 16%,transparent);color:${col}`;
 }
 const CARD = 'padding:15px;border-radius:var(--radius-md);background:var(--alt);border:1px solid var(--border2)';
-const CARD_LABEL = 'font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em';
+const CARD_LABEL = 'font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em';
 const DATE_ROW = 'display:flex;justify-content:space-between;padding:9px 0;border-top:1px solid var(--border2)';
 const CALL_BTN =
   'width:30px;height:30px;border-radius:50%;border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);cursor:pointer;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0';
 const INPUT_CSS =
-  'width:100%;height:34px;margin-top:6px;padding:0 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;font-family:inherit';
+  'width:100%;height:34px;margin-top:6px;padding:0 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;font-family:inherit';
 const AREA_CSS =
-  'width:100%;margin-top:6px;padding:9px 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;line-height:1.55;font-family:inherit;resize:vertical;min-height:84px';
-const FOOT_BTN = 'height:38px;padding:0 18px;border-radius:var(--radius-md);font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:7px';
+  'width:100%;margin-top:6px;padding:9px 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;line-height:1.55;font-family:inherit;resize:vertical;min-height:84px';
+const FOOT_BTN = 'height:38px;padding:0 18px;border-radius:var(--radius-md);font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:7px';
 const PRIMARY_BTN = `${FOOT_BTN};border:none;background:linear-gradient(140deg,var(--accent),var(--accent-2));color:var(--on-accent)`;
 const GHOST_BTN = `${FOOT_BTN};border:1px solid var(--border);background:var(--alt);color:var(--text)`;
 const HEADER_CLOSE =
@@ -52,7 +52,7 @@ function StatCard({ label, value, mono, color }: { label: string; value: string;
   return (
     <div style={s(CARD)}>
       <div style={s(CARD_LABEL)}>{label}</div>
-      <div style={s(`${mono ? "font-family:'JetBrains Mono',monospace;font-size:20px" : 'font-size:14px'};font-weight:700;margin-top:5px${color ? `;color:${color}` : ''}`)}>
+      <div style={s(`${mono ? "font-family:'JetBrains Mono',monospace;font-size:21px" : 'font-size:15px'};font-weight:700;margin-top:5px${color ? `;color:${color}` : ''}`)}>
         {value}
       </div>
     </div>
@@ -62,8 +62,8 @@ function StatCard({ label, value, mono, color }: { label: string; value: string;
 function DateRow({ label, value }: { label: string; value: string }) {
   return (
     <div style={s(DATE_ROW)}>
-      <span style={s('font-size:12px;color:var(--muted)')}>{label}</span>
-      <span style={s("font-size:12px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace")}>{value}</span>
+      <span style={s('font-size:13px;color:var(--muted)')}>{label}</span>
+      <span style={s("font-size:13px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace")}>{value}</span>
     </div>
   );
 }
@@ -73,8 +73,8 @@ function ContactCallRow({ label, value, onCall }: { label: string; value: string
   return (
     <div style={s('display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border2)')}>
       <div style={s('flex:1;min-width:0')}>
-        <div style={s('font-size:9.5px;color:var(--muted)')}>{label}</div>
-        <div style={s("font-size:12px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>
+        <div style={s('font-size:11px;color:var(--muted)')}>{label}</div>
+        <div style={s("font-size:13px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>
           {value.trim() ? value : '—'}
         </div>
       </div>
@@ -122,7 +122,7 @@ function EditCard({
           style={s(`${INPUT_CSS}${mono ? ";font-family:'JetBrains Mono',monospace" : ''}`)}
         />
       ) : (
-        <div style={s(`${mono ? "font-family:'JetBrains Mono',monospace;font-size:20px;margin-top:5px" : 'font-size:14px;margin-top:5px'};font-weight:700`)}>
+        <div style={s(`${mono ? "font-family:'JetBrains Mono',monospace;font-size:21px;margin-top:5px" : 'font-size:15px;margin-top:5px'};font-weight:700`)}>
           {display}
         </div>
       )}
@@ -151,7 +151,7 @@ function EditContactRow({
   if (!editing) return <ContactCallRow label={label} value={value || '—'} {...(onCall ? { onCall } : {})} />;
   return (
     <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
-      <div style={s('font-size:9.5px;color:var(--muted)')}>{label}</div>
+      <div style={s('font-size:11px;color:var(--muted)')}>{label}</div>
       <input
         value={value}
         onChange={(e) => onChange(e.currentTarget.value)}
@@ -242,13 +242,13 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
   return (
     <div style={s('position:fixed;inset:0;z-index:120;background:var(--bg);display:flex;flex-direction:column')}>
       <div style={s(`padding:15px 24px;border-bottom:1px solid var(--border);border-top:3px solid ${meta.col};display:flex;align-items:center;gap:14px;flex-shrink:0`)}>
-        <button type="button" onClick={onClose} aria-label="Back to board" style={s('display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 13px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0')}>
-          <span style={s('font-size:16px;line-height:1')}>←</span> Board
+        <button type="button" onClick={onClose} aria-label="Back to board" style={s('display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 13px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:14px;font-weight:700;cursor:pointer;flex-shrink:0')}>
+          <span style={s('font-size:17px;line-height:1')}>←</span> Board
         </button>
         <div style={s(avStyle(meta.col))}>{lead.initials}</div>
         <div style={s('flex:1;min-width:0')}>
-          <div style={s('font-size:19px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{lead.contact}</div>
-          <div style={s('font-size:12px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{lead.company}</div>
+          <div style={s('font-size:20px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{lead.contact}</div>
+          <div style={s('font-size:13px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{lead.company}</div>
         </div>
         <span style={s(stageBadge.style)}>{stageBadge.text}</span>
         <span title="Real call attempts — calls placed from Mytrion" style={s(callsBadge.style)}>{callsBadge.text}</span>
@@ -272,13 +272,13 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
                     }}
                   />
                 ) : (
-                  <div style={s('font-size:12px;color:var(--muted);padding:2px 0')}>
+                  <div style={s('font-size:13px;color:var(--muted);padding:2px 0')}>
                     No manual status change from “{appliedStatus}” — this stage is set by the process.
                   </div>
                 )}
                 {statusReasonSpec && (
                   <div style={s('margin-top:10px')}>
-                    <div style={s('font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--danger);margin-bottom:6px')}>
+                    <div style={s('font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--danger);margin-bottom:6px')}>
                       {statusForm === 'Unqualified' ? 'Unqualified reason' : 'Not-interested reason'} — required
                     </div>
                     <div style={s('display:flex;flex-direction:column;gap:6px')} role="radiogroup" aria-label="Reason">
@@ -291,7 +291,7 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
                             role="radio"
                             aria-checked={active}
                             onClick={() => setStatusReason(r)}
-                            style={s(`text-align:left;padding:8px 12px;border-radius:var(--radius-md);border:1px solid ${active ? 'var(--danger)' : 'var(--border)'};background:${active ? 'color-mix(in srgb,var(--danger) 8%,var(--alt))' : 'var(--alt)'};color:${active ? 'var(--danger)' : 'var(--text)'};font-size:12px;font-weight:700;cursor:pointer`)}
+                            style={s(`text-align:left;padding:8px 12px;border-radius:var(--radius-md);border:1px solid ${active ? 'var(--danger)' : 'var(--border)'};background:${active ? 'color-mix(in srgb,var(--danger) 8%,var(--alt))' : 'var(--alt)'};color:${active ? 'var(--danger)' : 'var(--text)'};font-size:13px;font-weight:700;cursor:pointer`)}
                           >
                             {r}
                           </button>
@@ -310,7 +310,7 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
                   const src = lead.source || 'No source';
                   const c = leadSourceColor(src);
                   return (
-                    <div style={s(`margin-top:8px;display:inline-block;font-size:12px;font-weight:700;padding:4px 10px;border-radius:99px;background:color-mix(in srgb,${c} 16%,transparent);color:${c}`)}>
+                    <div style={s(`margin-top:8px;display:inline-block;font-size:13px;font-weight:700;padding:4px 10px;border-radius:99px;background:color-mix(in srgb,${c} 16%,transparent);color:${c}`)}>
                       {src}
                     </div>
                   );
@@ -335,13 +335,13 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
               <EditContactRow label="Cell" editing={editing} value={editing ? form.Cell : applied.Cell} onChange={(v) => set('Cell', v)} inputMode="tel" placeholder="Cell" {...(onCall ? { onCall } : {})} />
               {editing ? (
                 <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
-                  <div style={s('font-size:9.5px;color:var(--muted)')}>Email</div>
+                  <div style={s('font-size:11px;color:var(--muted)')}>Email</div>
                   <input value={form.Email} onChange={(e) => set('Email', e.currentTarget.value)} placeholder="name@company.com" inputMode="email" className="ss-in" style={s(`${INPUT_CSS};margin-top:4px`)} />
                 </div>
               ) : (
                 <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
-                  <div style={s('font-size:9.5px;color:var(--muted)')}>Email</div>
-                  <div style={s("font-size:12px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{applied.Email || '—'}</div>
+                  <div style={s('font-size:11px;color:var(--muted)')}>Email</div>
+                  <div style={s("font-size:13px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{applied.Email || '—'}</div>
                 </div>
               )}
             </div>
@@ -358,7 +358,7 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
               {editing ? (
                 <textarea value={form.Description} onChange={(e) => set('Description', e.currentTarget.value)} placeholder="Add a note…" className="ss-in" style={s(AREA_CSS)} />
               ) : (
-                <div style={s('font-size:13px;line-height:1.6;color:var(--text2);white-space:pre-wrap')}>{applied.Description || 'No description on this lead yet.'}</div>
+                <div style={s('font-size:14px;line-height:1.6;color:var(--text2);white-space:pre-wrap')}>{applied.Description || 'No description on this lead yet.'}</div>
               )}
             </div>
           </div>
@@ -447,13 +447,13 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
   return (
     <div style={s('position:fixed;inset:0;z-index:120;background:var(--bg);display:flex;flex-direction:column')}>
       <div style={s(`padding:15px 24px;border-bottom:1px solid var(--border);border-top:3px solid ${meta.col};display:flex;align-items:center;gap:14px;flex-shrink:0`)}>
-        <button type="button" onClick={onClose} aria-label="Back to board" style={s('display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 13px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0')}>
-          <span style={s('font-size:16px;line-height:1')}>←</span> Board
+        <button type="button" onClick={onClose} aria-label="Back to board" style={s('display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 13px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text2);font-size:14px;font-weight:700;cursor:pointer;flex-shrink:0')}>
+          <span style={s('font-size:17px;line-height:1')}>←</span> Board
         </button>
         <div style={s(avStyle(meta.col))}>{deal.initials}</div>
         <div style={s('flex:1;min-width:0')}>
-          <div style={s('font-size:19px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{deal.company}</div>
-          <div style={s('font-size:12px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{deal.name}</div>
+          <div style={s('font-size:20px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{deal.company}</div>
+          <div style={s('font-size:13px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{deal.name}</div>
         </div>
         <span style={s(stageBadge.style)}>{stageBadge.text}</span>
         <span title="Real call attempts — calls placed from Mytrion" style={s(callsBadge.style)}>{callsBadge.text}</span>
@@ -465,14 +465,14 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
         <div style={s('max-width:1120px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px;align-items:start')}>
           <div style={s('min-width:0')}>
             <div style={s(`margin-bottom:14px;${CARD}`)}>
-              <div style={s('display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:8px')}>
+              <div style={s('display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:8px')}>
                 <span style={s('text-transform:uppercase;letter-spacing:.05em;font-weight:700')}>Win probability</span>
                 <span style={s(`color:${meta.col};font-weight:800;font-family:'JetBrains Mono',monospace`)}>{deal.prob}%</span>
               </div>
               <div style={s('height:8px;border-radius:99px;background:var(--raised);overflow:hidden')}>
                 <div style={s(`height:100%;width:${deal.prob}%;background:${meta.col}`)} />
               </div>
-              <div style={s('font-size:11px;color:var(--muted);margin-top:9px')}>Expected close {deal.close}</div>
+              <div style={s('font-size:12px;color:var(--muted);margin-top:9px')}>Expected close {deal.close}</div>
             </div>
             <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:12px')}>
               <StatCard label="Cards" value={String(deal.cards)} mono />
@@ -481,29 +481,29 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
             </div>
             <div style={s(`margin-top:14px;${CARD}`)}>
               <div style={s(`${CARD_LABEL};margin-bottom:6px`)}>Contact</div>
-              <div style={s('font-size:13px;font-weight:600')}>{deal.contact}</div>
+              <div style={s('font-size:14px;font-weight:600')}>{deal.contact}</div>
               <EditContactRow label="Phone" editing={editing} value={editing ? form.Phone : applied.Phone} onChange={(v) => set('Phone', v)} inputMode="tel" placeholder="Phone" {...(onCall ? { onCall } : {})} />
               <EditContactRow label="Cell" editing={editing} value={editing ? form.Cell : applied.Cell} onChange={(v) => set('Cell', v)} inputMode="tel" placeholder="Cell" {...(onCall ? { onCall } : {})} />
               {editing ? (
                 <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
-                  <div style={s('font-size:9.5px;color:var(--muted)')}>Email</div>
+                  <div style={s('font-size:11px;color:var(--muted)')}>Email</div>
                   <input value={form.Email} onChange={(e) => set('Email', e.currentTarget.value)} placeholder="name@company.com" inputMode="email" className="ss-in" style={s(`${INPUT_CSS};margin-top:4px`)} />
                 </div>
               ) : (
                 <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
-                  <div style={s('font-size:9.5px;color:var(--muted)')}>Email</div>
-                  <div style={s("font-size:12px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{applied.Email || '—'}</div>
+                  <div style={s('font-size:11px;color:var(--muted)')}>Email</div>
+                  <div style={s("font-size:13px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{applied.Email || '—'}</div>
                 </div>
               )}
               {editing ? (
                 <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
-                  <div style={s('font-size:9.5px;color:var(--muted)')}>Secondary email</div>
+                  <div style={s('font-size:11px;color:var(--muted)')}>Secondary email</div>
                   <input value={form.Secondary_Email} onChange={(e) => set('Secondary_Email', e.currentTarget.value)} placeholder="name@company.com" inputMode="email" className="ss-in" style={s(`${INPUT_CSS};margin-top:4px`)} />
                 </div>
               ) : (
                 <div style={s('padding:9px 0;border-top:1px solid var(--border2)')}>
-                  <div style={s('font-size:9.5px;color:var(--muted)')}>Secondary email</div>
-                  <div style={s("font-size:12px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{applied.Secondary_Email || '—'}</div>
+                  <div style={s('font-size:11px;color:var(--muted)')}>Secondary email</div>
+                  <div style={s("font-size:13px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-top:2px")}>{applied.Secondary_Email || '—'}</div>
                 </div>
               )}
             </div>
@@ -512,7 +512,7 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
               {editing ? (
                 <textarea value={form.Description} onChange={(e) => set('Description', e.currentTarget.value)} placeholder="Add a note…" className="ss-in" style={s(AREA_CSS)} />
               ) : (
-                <div style={s('font-size:13px;line-height:1.6;color:var(--text2);white-space:pre-wrap')}>{applied.Description || 'No description on this deal yet.'}</div>
+                <div style={s('font-size:14px;line-height:1.6;color:var(--text2);white-space:pre-wrap')}>{applied.Description || 'No description on this deal yet.'}</div>
               )}
             </div>
           </div>

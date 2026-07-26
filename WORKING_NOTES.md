@@ -5491,3 +5491,71 @@ both themes. Manager and Billing typecheck clean; repo-wide errors unchanged at 
 (same pre-existing `dashDebtorsData` failure); `vite build` green.
 
 **Still dirty:** `apps/mytrion-crm/app/` build output.
+
+## 2026-07-26 — Sales Mytrion: foundation pass (type scale, shell, glass, state system)
+
+Sales is 26.7k lines / 114 files — roughly 2× CS or Billing. This session did the FOUNDATION; the
+per-tab detail work is listed as remaining at the bottom.
+
+**The density problem, measured.** Before assuming anything I counted: **647 inline `font-size`
+declarations across 25 distinct values**, ~470 of them ≤13px, with a floor of **8px**. The module had
+a documented `--ss-text-*` scale that almost nothing actually used. Given the audience — agents moving
+off Zoho and Google Sheets, who abandon tools that feel hostile — that is the single biggest adoption
+risk in the module, and it isn't a glass problem.
+
+Remapped mechanically (753 declarations across 59 files): **25 sizes → 13, floor 8px → 11px**, every
+size up ~1px, nothing shrunk. Body is now 13–14px, micro-labels 11–12px. `--ss-text-*` lifted to match.
+Radii softened from the inherited global 6px to 8/12/16px scoped on `.ss-root` — sharp corners on a
+dense grid read as spreadsheet, which is exactly what these users are being moved away from — plus
+`line-height: 1.55` on the root.
+
+**Token bridge, because Sales has almost no classes.** Its surfaces are built with INLINE styles
+(147 × `background:var(--surface)`, 262 × `var(--border)`, 88 × `var(--alt)`), and there are only 170
+CSS classes total, of which `.ss-in` / `.ss-btn-p` / `.ss-ico-btn` / `.ss-tab-x` are the only real
+primitives. So `ss-horizon.css` works mostly by redefining what those inline styles RESOLVE to:
+- `--bg` → `--hz-page`; surfaces/alt/raised → translucent (over the ambience).
+- **Constraint found and respected:** `--surface` must stay a COLOUR, not a gradient — there is a
+  `color:var(--surface)` use site and several `linear-gradient(…), var(--surface)` stacks.
+- `--shadow-sm` now carries the 1px inset sheen, so every surface already using it gained a lit glass
+  edge with no per-element edit.
+
+**Shell + sidebar.** Ambience layer (shared mesh + grid + vignette) replaces the two bespoke radial
+gradients that lived on the root's inline background; `z-index:-1` with `isolation:isolate` so it sits
+above the root background and below all in-flow content and can never cover a panel. Per-tab
+wayfinding tones from the shared `--tone-*` scale (11 tabs), glyph tint held at 0.7 and full on
+hover/active. Selected tab now has a GRADIENT rail — which required moving the active state out of the
+inline `box-shadow` (a box-shadow takes no gradient) into `.ss-tab-x.is-active`.
+
+**Three UI bugs fixed:**
+1. The type-scale lift pushed long nav labels onto two lines, breaking the rail's row rhythm →
+   nowrap + ellipsis, and "Verification Pipeline" shortened to "Verification" (the tab title already
+   reads "Verification Desk").
+2. The SOON chips were bright gradient pills with a glow, so the four PARKED tabs were the loudest
+   thing in the sidebar, pulling attention away from the live ones → quiet tinted pill in the same hue.
+3. `InfoBanner` was being passed two adjacent JSX expressions where it takes one string
+   (pre-existing typecheck error).
+
+**One state block.** `StateNote` was local to HomeTab and rendered a bare line of centred coloured
+text; ~35 places across the module did the same thing by hand. Promoted to `SalesStates.tsx` with the
+SAME `tone`/`children` API (so no call site needed editing), now an icon + readable line + optional
+retry, in three tones. "Could not reach the backend" in small red text with nothing to press is a dead
+end for this audience.
+
+**Verified** in Chrome (CDP, :5174, :5173 untouched): all 8 live tabs × both themes, re-shot after
+each round. Repo-wide typecheck errors 16 → **15**; 183/184 tests (same pre-existing
+`dashDebtorsData` failure); `vite build` green.
+
+**Deliberately left alone:** `retentionKanbanCol.test.ts` — an UNTRACKED file (your WIP). Its
+`exactOptionalPropertyTypes` error comes from spreading a `Partial<RetentionCaseRow>`; fixing it would
+risk conflicting with in-progress work.
+
+**REMAINING for Sales (next session):**
+- Wire `onRetry` at the error call sites — the shared state block supports it, but each site needs its
+  own reload fn passed in.
+- Per-tab detail passes: Inbox, Create, Carriers, Retention, Dashboard content structure + detail level.
+- Modal level: ClientModal / LeadModal / DealModal / the wizards (Lead + Deal call wizards,
+  Retention wizard) — only the shared `.ss-pool-modal`/`.ss-modal-box` shells were touched.
+- Picklist (`AutoPicklist`), toast, and badge/chip polish.
+- The hero's "Could not load apps from Deals" still renders through a separate path, not StateNote.
+
+**Still dirty:** `apps/mytrion-crm/app/` build output.

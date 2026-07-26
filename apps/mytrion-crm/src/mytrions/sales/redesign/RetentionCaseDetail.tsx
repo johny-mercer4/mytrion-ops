@@ -521,7 +521,7 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
 
         <div className="ss-scroll ss-ret-modal-body">
           {detail.error && (
-            <div style={s('color:var(--danger);font-size:13px')}>{detail.error}</div>
+            <div style={s('color:var(--danger);font-size:14px')}>{detail.error}</div>
           )}
 
           {initialLoad && <RetentionDetailSkeleton />}
@@ -566,7 +566,7 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
               {row.isOpen && row.phaseCode !== 'phase_1_agent' && (
                 <div
                   style={s(
-                    'padding:12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);font-size:12px;color:var(--text2);line-height:1.45',
+                    'padding:12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);font-size:13px;color:var(--text2);line-height:1.45',
                   )}
                 >
                   <strong style={s('color:var(--text)')}>Escalated to Retention.</strong> Wait 10 BD
@@ -578,7 +578,7 @@ export function RetentionCaseDetail({ caseId, seed = null, onClose, onUpdated }:
                 row.statusCode === 'p1_pool_claim_pending') && (
                 <div
                   style={s(
-                    'padding:12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--warn) 35%,var(--border));background:color-mix(in srgb,var(--warn) 10%,var(--alt));font-size:12px;color:var(--text2);line-height:1.45',
+                    'padding:12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--warn) 35%,var(--border));background:color-mix(in srgb,var(--warn) 10%,var(--alt));font-size:13px;color:var(--text2);line-height:1.45',
                   )}
                 >
                   <strong style={s('color:var(--text)')}>

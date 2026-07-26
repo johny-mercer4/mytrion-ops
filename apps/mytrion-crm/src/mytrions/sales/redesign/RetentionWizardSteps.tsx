@@ -58,12 +58,12 @@ export function WizardChrome(props: {
       <div>
         <div
           style={s(
-            'font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)',
+            'font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)',
           )}
         >
           Stage
         </div>
-        <div style={s('font-size:14px;font-weight:800;color:var(--text);margin-top:2px')}>
+        <div style={s('font-size:15px;font-weight:800;color:var(--text);margin-top:2px')}>
           {props.stage}
         </div>
       </div>
@@ -81,7 +81,7 @@ export function WizardChrome(props: {
       ) : props.stepLabel ? (
         <div
           style={s(
-            "font-size:11px;font-weight:700;color:var(--muted);font-family:'JetBrains Mono',monospace",
+            "font-size:12px;font-weight:700;color:var(--muted);font-family:'JetBrains Mono',monospace",
           )}
         >
           {props.stepLabel}
@@ -106,12 +106,12 @@ function StepPill({
   return (
     <div
       style={s(
-        `display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:${col}`,
+        `display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:${col}`,
       )}
     >
       <span
         style={s(
-          `width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;border:1px solid ${col};background:${active || done ? 'color-mix(in srgb,var(--accent) 14%,transparent)' : 'transparent'}`,
+          `width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;border:1px solid ${col};background:${active || done ? 'color-mix(in srgb,var(--accent) 14%,transparent)' : 'transparent'}`,
         )}
       >
         {done ? '✓' : n}
@@ -126,14 +126,14 @@ export function CallEndedBanner({ pendingCall }: { pendingCall: PendingCallLog }
   return (
     <div
       style={s(
-        'padding:12px 14px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--warn) 40%,var(--border));background:color-mix(in srgb,var(--warn) 12%,transparent);font-size:12px;color:var(--text);line-height:1.45',
+        'padding:12px 14px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--warn) 40%,var(--border));background:color-mix(in srgb,var(--warn) 12%,transparent);font-size:13px;color:var(--text);line-height:1.45',
       )}
     >
       <div style={s('font-weight:800')}>Call ended — choose a stage.</div>
       {line ? (
         <div
           style={s(
-            "margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;letter-spacing:.02em;color:var(--accent-text)",
+            "margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;letter-spacing:.02em;color:var(--accent-text)",
           )}
         >
           {line}
@@ -160,7 +160,7 @@ export function CallFirstBlock(props: {
     >
       <div>
         <SectionTitle>Step 1 · Call the client</SectionTitle>
-        <div style={s('font-size:12px;color:var(--text2);line-height:1.5;margin-top:6px')}>
+        <div style={s('font-size:13px;color:var(--text2);line-height:1.5;margin-top:6px')}>
           Call first. When the call ends, a stage dialog opens — Out of Reach, Reached,
           Dissatisfied, or Vacation. Out of Reach auto-logs attempt 1 for RingCentral.
         </div>
@@ -175,13 +175,13 @@ export function CallFirstBlock(props: {
       ) : phone ? (
         <div
           style={s(
-            "font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;letter-spacing:.03em;color:var(--accent-text)",
+            "font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;letter-spacing:.03em;color:var(--accent-text)",
           )}
         >
           {phone}
         </div>
       ) : (
-        <div style={s('font-size:12px;font-weight:600;color:var(--warn)')}>
+        <div style={s('font-size:13px;font-weight:600;color:var(--warn)')}>
           No phone on file — add a number on the deal before calling.
         </div>
       )}
@@ -192,7 +192,7 @@ export function CallFirstBlock(props: {
         onClick={props.onCall}
         className="ss-btn-p"
         style={s(
-          `height:46px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:${canCall ? 'pointer' : 'not-allowed'};opacity:${canCall ? 1 : 0.5};display:inline-flex;align-items:center;justify-content:center;gap:8px`,
+          `height:46px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:14px;cursor:${canCall ? 'pointer' : 'not-allowed'};opacity:${canCall ? 1 : 0.5};display:inline-flex;align-items:center;justify-content:center;gap:8px`,
         )}
       >
         <Icon name="calls" size={16} color="currentColor" />
@@ -234,7 +234,7 @@ export function AttemptStep(props: {
     >
       <div>
         <SectionTitle>Log attempt — call or messenger + short note</SectionTitle>
-        <div style={s('font-size:12px;color:var(--text2);line-height:1.45;margin-top:6px')}>
+        <div style={s('font-size:13px;color:var(--text2);line-height:1.45;margin-top:6px')}>
           Attempt {row.outOfReachAttempts}/5. RingCentral logs on call end. Other channels need a
           short note (screenshot optional). At 5 → Open Pool.
         </div>
@@ -246,12 +246,12 @@ export function AttemptStep(props: {
             'padding:12px 14px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--warn) 40%,var(--border));background:color-mix(in srgb,var(--warn) 12%,transparent);display:flex;flex-direction:column;gap:10px',
           )}
         >
-          <div style={s('font-size:12px;color:var(--text);line-height:1.4')}>
+          <div style={s('font-size:13px;color:var(--text);line-height:1.4')}>
             <strong>Call ended — retry logging.</strong>
             {callPeerLine(pendingCall) ? (
               <div
                 style={s(
-                  "margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:var(--accent-text)",
+                  "margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:var(--accent-text)",
                 )}
               >
                 {callPeerLine(pendingCall)}
@@ -264,7 +264,7 @@ export function AttemptStep(props: {
               onClick={() => void props.onLogPhoneCall()}
               className="ss-btn-p"
               style={s(
-                'height:36px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:12px;cursor:pointer',
+                'height:36px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:pointer',
               )}
             >
               Retry RingCentral log
@@ -279,7 +279,7 @@ export function AttemptStep(props: {
         onClick={props.onCall}
         className="ss-btn-p"
         style={s(
-          `height:40px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:13px;cursor:${busy || !contactPhone ? 'not-allowed' : 'pointer'};opacity:${!contactPhone ? 0.5 : 1};display:inline-flex;align-items:center;justify-content:center;gap:8px`,
+          `height:40px;border:none;border-radius:var(--radius-md);background:linear-gradient(120deg,var(--accent),var(--accent-2));color:var(--on-accent);font-weight:700;font-size:14px;cursor:${busy || !contactPhone ? 'not-allowed' : 'pointer'};opacity:${!contactPhone ? 0.5 : 1};display:inline-flex;align-items:center;justify-content:center;gap:8px`,
         )}
       >
         <Icon name="calls" size={16} color="currentColor" />
@@ -288,7 +288,7 @@ export function AttemptStep(props: {
 
       {!forceAttempt && (
         <>
-          <div style={s('font-size:11px;font-weight:700;color:var(--muted)')}>
+          <div style={s('font-size:12px;font-weight:700;color:var(--muted)')}>
             Or message another channel
           </div>
           <div style={s('display:flex;flex-wrap:wrap;gap:8px')}>
@@ -313,7 +313,7 @@ export function AttemptStep(props: {
             })}
           </div>
           {brand && (
-            <div style={s(`font-size:12px;font-weight:700;color:${brand.color}`)}>
+            <div style={s(`font-size:13px;font-weight:700;color:${brand.color}`)}>
               Logging via {brand.label}
             </div>
           )}
@@ -324,11 +324,11 @@ export function AttemptStep(props: {
             className="ss-in"
             aria-required
             style={s(
-              `height:34px;padding:0 10px;border-radius:var(--radius-md);border:1px solid ${noteMissing ? 'var(--danger)' : 'var(--border)'};background:var(--surface);color:var(--text);font-size:12px;box-shadow:${noteMissing ? '0 0 0 1px color-mix(in srgb,var(--danger) 35%,transparent)' : 'none'}`,
+              `height:34px;padding:0 10px;border-radius:var(--radius-md);border:1px solid ${noteMissing ? 'var(--danger)' : 'var(--border)'};background:var(--surface);color:var(--text);font-size:13px;box-shadow:${noteMissing ? '0 0 0 1px color-mix(in srgb,var(--danger) 35%,transparent)' : 'none'}`,
             )}
           />
           {noteMissing && (
-            <div style={s('font-size:11px;font-weight:700;color:var(--danger);margin-top:-6px')}>
+            <div style={s('font-size:12px;font-weight:700;color:var(--danger);margin-top:-6px')}>
               Note required for messenger / email attempts
             </div>
           )}
@@ -342,7 +342,7 @@ export function AttemptStep(props: {
             disabled={busy || props.channel === 'ringcentral' || noteMissing}
             onClick={() => void props.onLogOtherChannel()}
             style={s(
-              `height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-weight:700;font-size:12px;cursor:${busy ? 'wait' : 'pointer'};opacity:${busy ? 0.7 : 1}`,
+              `height:38px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text2);font-weight:700;font-size:13px;cursor:${busy ? 'wait' : 'pointer'};opacity:${busy ? 0.7 : 1}`,
             )}
           >
             Log {CHANNEL_OPTIONS.find((c) => c.id === props.channel)?.label ?? 'channel'} attempt
@@ -404,7 +404,7 @@ export function StageStep(props: {
       {!embedded && (
         <div>
           <SectionTitle>{props.title ?? 'Choose stage'}</SectionTitle>
-          <div style={s('font-size:12px;color:var(--text2);line-height:1.45;margin-top:6px')}>
+          <div style={s('font-size:13px;color:var(--text2);line-height:1.45;margin-top:6px')}>
             {alreadyOoR
               ? 'After each attempt, pick a stage. Out of Reach stays available until attempt 5 → Open Pool.'
               : showOutOfReach
@@ -456,7 +456,7 @@ export function StageStep(props: {
           placeholder="Return date / vacation note (recommended)…"
           className="ss-in"
           style={s(
-            'height:38px;padding:0 12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--violet) 40%,var(--border));background:var(--surface);color:var(--text);font-size:12px',
+            'height:38px;padding:0 12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--violet) 40%,var(--border));background:var(--surface);color:var(--text);font-size:13px',
           )}
         />
       )}
@@ -467,7 +467,7 @@ export function StageStep(props: {
           disabled={busy}
           onClick={props.onConfirmStage}
           style={s(
-            `height:46px;width:100%;border:none;border-radius:var(--radius-md);background:${pickColor};color:${STAGE_ON};font-weight:800;font-size:14px;letter-spacing:.01em;cursor:${busy ? 'wait' : 'pointer'};opacity:${busy ? 0.85 : 1};box-shadow:0 8px 22px color-mix(in srgb,${pickColor} 35%,transparent)`,
+            `height:46px;width:100%;border:none;border-radius:var(--radius-md);background:${pickColor};color:${STAGE_ON};font-weight:800;font-size:15px;letter-spacing:.01em;cursor:${busy ? 'wait' : 'pointer'};opacity:${busy ? 0.85 : 1};box-shadow:0 8px 22px color-mix(in srgb,${pickColor} 35%,transparent)`,
           )}
         >
           {busy ? 'Saving…' : confirmLabel}
@@ -480,7 +480,7 @@ export function StageStep(props: {
           disabled={busy}
           onClick={() => void onAct('no_action_2bd')}
           style={s(
-            'height:34px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--danger) 35%,var(--border));background:transparent;color:var(--danger);font-weight:700;font-size:11px;cursor:pointer',
+            'height:34px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--danger) 35%,var(--border));background:transparent;color:var(--danger);font-weight:700;font-size:12px;cursor:pointer',
           )}
         >
           Escalate — no action in 2 BD
@@ -519,9 +519,9 @@ function StatusCard(props: {
         >
           <Icon name={icon} size={15} strokeWidth={2.5} color={color} />
         </span>
-        <div style={s(`font-size:13px;font-weight:800;color:${color}`)}>{props.title}</div>
+        <div style={s(`font-size:14px;font-weight:800;color:${color}`)}>{props.title}</div>
       </div>
-      <div style={s('font-size:11px;color:var(--text2);margin-top:8px;line-height:1.4;padding-left:39px')}>
+      <div style={s('font-size:12px;color:var(--text2);margin-top:8px;line-height:1.4;padding-left:39px')}>
         {props.hint}
       </div>
     </button>
@@ -532,7 +532,7 @@ export function SectionTitle({ children }: { children: string }) {
   return (
     <div
       style={s(
-        'font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)',
+        'font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)',
       )}
     >
       {children}
@@ -544,7 +544,7 @@ export function InfoBanner({ title, children }: { title: string; children: strin
   return (
     <div
       style={s(
-        'padding:12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);font-size:12px;color:var(--text2);line-height:1.45',
+        'padding:12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);font-size:13px;color:var(--text2);line-height:1.45',
       )}
     >
       <strong style={s('color:var(--text)')}>{title}</strong> {children}
@@ -577,7 +577,7 @@ export function ToneBtn({
       disabled={busy}
       onClick={onClick}
       style={s(
-        `height:36px;padding:0 12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,${col} 35%,var(--border));background:color-mix(in srgb,${col} 12%,transparent);color:${col};font-weight:700;font-size:12px;cursor:${busy ? 'wait' : 'pointer'};opacity:${busy ? 0.7 : 1}`,
+        `height:36px;padding:0 12px;border-radius:var(--radius-md);border:1px solid color-mix(in srgb,${col} 35%,var(--border));background:color-mix(in srgb,${col} 12%,transparent);color:${col};font-weight:700;font-size:13px;cursor:${busy ? 'wait' : 'pointer'};opacity:${busy ? 0.7 : 1}`,
       )}
     >
       {label}
