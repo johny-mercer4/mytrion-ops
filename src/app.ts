@@ -157,7 +157,19 @@ export async function buildApp(): Promise<FastifyInstance> {
   combinedAuthPlugin(app);
   rbacPlugin(app);
 
-  await app.register(helmet, { contentSecurityPolicy: false });
+  await app.register(helmet, {
+    contentSecurityPolicy: false,
+    // helmet's default is COOP: same-origin, which puts any window.open() popup in a SEPARATE
+    // browsing context group and makes `window.opener` null inside it. That silently breaks every
+    // OAuth-popup sign-in we host — most visibly the RingCentral softphone: Embeddable opens the RC
+    // login popup, RC redirects it to its own redirect.html, and redirect.js hands the code back via
+    // `window.opener.oAuthCallback(...)` / `window.opener.postMessage({callbackUri}, ...)` then
+    // window.close(). With the opener severed that throws, so the popup never closes and the agent
+    // sits on redirect.html's literal "Loading..." forever. Dev never saw it because the Vite dev
+    // server sends no COOP at all. `same-origin-allow-popups` keeps this document protected from a
+    // cross-origin opener while letting popups WE open keep their opener reference.
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+  });
   await app.register(cors, {
     // Reflect the caller's Origin when allowed (exact match or allowed suffix, e.g.
     // *.zappsusercontent.com) — never a bare "*", since we send a custom x-api-key header.

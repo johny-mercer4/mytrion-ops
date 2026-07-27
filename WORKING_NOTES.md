@@ -6183,3 +6183,86 @@ pre-existing on `main` (identical with the change stashed), untouched here.
 
 **A frontend change is not deployed until `apps/mytrion-crm/app` is rebuilt and committed.** Merging to
 `main` is not enough. Same applies to `apps/mini-app/app` (currently in sync at `af018b2`).
+
+## 2026-07-27 (2) — Sales Mytrion: RingCentral prod auth, call-trigger correctness, Retention map
+
+### 1. RingCentral prod sign-in hung on "Loading…" — COOP
+
+`@fastify/helmet`'s default `Cross-Origin-Opener-Policy: same-origin` (confirmed live on the prod
+portal, root + SPA deep links + assets) puts any `window.open()` popup in a separate browsing context
+group, so `window.opener` is **null** inside it.
+
+Embeddable's sign-in is 3-legged OAuth through RC's own
+`apps.ringcentral.com/…/redirect.html`, whose `redirect.js` does
+`window.opener.oAuthCallback(…)` / `window.opener.postMessage({callbackUri}, …)` then `window.close()`.
+Opener severed → throws → popup never closes. That page's body is literally `<p>Loading...</p>`, which
+is exactly the stuck screen agents reported. Dev never reproduced it: the Vite dev server sends no COOP.
+
+Fix: `crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' }` in `src/app.ts` — keeps the
+document protected from a cross-origin opener, lets popups we open keep their opener. Regression test
+in `tests/unit/security-headers.test.ts`. **Not** a redirect-URI problem: both envs already use RC's
+hosted redirect.html, which is correct (a wrong one gives OAU-113, not a hang).
+
+### 2. Call-end trigger dropped the lead on any call over 30 seconds
+
+`ringcentralEvents.ts` re-read the TTL'd global dial context (`DIAL_CTX_TTL_MS = 30_000`, measured from
+the dial CLICK) when building **every** event — including `ended`, which by definition arrives when the
+call finishes. So a normal multi-minute sales call came back with no `leadId` / `dealId` /
+`retentionCaseId`, and the whole post-call chain silently no-opped: no forced Lead status wizard, no
+`mytrion_calls` row (the route needs a source), no `Mytrion_Call_Attempts` bump. Short calls worked,
+which is why it survived. Zero test coverage existed.
+
+Fix: latch the dial context per `sessionId` on first sight of the call (`sessionDialCtx`) and reuse it
+for that call's whole life; clear on `ended`. The TTL now bounds only click→call association, which is
+all it was ever for. Four tests in `ringcentralEvents.test.ts`, including a guard that a later untagged
+call cannot inherit a previous call's lead.
+
+### 3. Two "pre-existing" test failures were masking the Data Center write paths
+
+`vi.mock` spread a **class instance** (`{ ...mod.zohoCrmRecords, updateRecord }`). Spread copies only
+own enumerable props, so every prototype method became `undefined`. `getBlueprintTransitions(...)` then
+threw a *synchronous* TypeError that the route's `.catch(() => [])` cannot attach to → the post-call
+Status write looked like a 500. Product code was fine; the most important write path had no working
+test. Same root cause made `ringcentral-call-log` hit a live Zoho round-trip and time out.
+
+Both now use `Object.create(realInstance)` to keep the prototype chain. Added the coverage that was
+missing: the Blueprint branch (transition executed, `Status` never plain-written) and its 422, plus the
+`Mytrion_Call_Attempts` increment, first-call-from-unset, retention-call-counts-against-Deal, and
+Zoho-failure-doesn't-fail-the-POST. Backend suite 13 → 11 failures; the rest are unrelated pre-existing.
+
+### 4. Retention flow — how it actually behaves today
+
+Three phases in lookup tables (`retention_phases` / `retention_statuses`), one open case per carrier
+(`closed_at IS NULL`, partial unique on tenant+carrier).
+
+- **Phase 1 · Sales agent** — `p1_new → p1_in_progress`, outcomes `p1_reached` (5 BD watch),
+  `p1_out_of_reach` (1 BD per attempt, 5 max), `p1_vacation` (14 D), `p1_dissatisfied`,
+  `p1_no_action_2bd`, `p1_open_pool` / `p1_pool_assigned` (3 BD claim), terminal `p1_returned`.
+- **Phase 2 · Retention desk** — `p2_new → p2_working → p2_offer_pending`, terminal `p2_saved`,
+  `p2_refused`, `p2_lost`, `p2_out_of_business`, `p2_no_response`; 10 BD wait for a new transaction.
+- **Phase 3 · CITI** — `p3_hold` (7 D) → `p3_review` → terminal `p3_closed`.
+
+Caps: `MAX_OPEN_POOL_AGENTS = 3`, `MAX_OUT_OF_REACH_ATTEMPTS = 5`, `MAX_RETENTION_TO_POOL = 3`. All
+deadlines are business days except vacation (14 calendar) and CITI hold (7 calendar);
+`addBusinessDays` skips weekends only — **holidays are not modeled**.
+
+Automation is two pg-boss crons: `retentionCaseSync` hourly (DWH breach scan → open cases; any
+transaction after `created_at` auto-closes as `p1_returned`, all phases incl. CITI) and
+`retentionDeadlineSweep` every 15 min (all timer paths).
+
+**The live surface is much smaller than the schema suggests.** Three hardcoded consts in
+`killSwitches.ts` are all `false`: `RETENTION_OPEN_POOL_ESCALATION_ENABLED`,
+`RETENTION_PHASE2_ESCALATION_ENABLED`, `RETENTION_OPEN_POOL_CLAIM_ZOHO_TRANSFER_ENABLED`. Consequently:
+
+- Phase 2 and Open Pool are **unreachable**; `send_to_open_pool`, `escalate_retention` and
+  `no_action_2bd` throw "temporarily disabled"; Dissatisfied stays Phase 1 with Sales keeping the Zoho
+  Owner.
+- In `resolveExpiry`, only the vacation chain still fires: `14D_vacation → p1_vacation_followup`,
+  `2BD_vacation_followup → p1_awaiting_ops`, then Ops confirm (→ `p1_in_progress`) or deny (→ CITI).
+  Every other timer returns null. CITI is reachable today **only** via Ops denial.
+- The Sales board hides all this: `kanbanColOf` parks pool/Phase-2 cards on the stage they left from.
+
+**Open question for prod:** both crons require `FF_JOBS_ENABLED`, which `render.yaml` explicitly
+excludes ("pg-boss workers/crons stay off") — local `.env` has `FF_JOBS_ENABLED=1`,
+`JOBS_WORKER_MODE=inline`. If the `octane-assistant-secrets` env group doesn't set it, prod has **no
+case auto-generation, no auto-close on fuel return, and no timers at all**. Needs checking in Render.
