@@ -36,9 +36,27 @@ export const serverCrmFinanceTouchpoints: Touchpoint[] = [
     title: 'Main transactions (list)',
     riskClass: 'read',
     departments: ['finance'],
-    paramsSchema: z.object({ limit: limit(500, 100).optional() }),
+    /**
+     * `.strict()` on purpose. This entry used to be a servercrm passthrough with a looseFilters()
+     * map; as a local handler it kept a plain z.object, which SILENTLY STRIPS unknown keys — so
+     * `page` / `search` were accepted, dropped, and answered 200 with the unfiltered first page.
+     * Strict turns any unsupported filter into a 400 instead of a wrong-but-successful read, the
+     * same "never silently no-op a write/filter" rule resolveWritePayload enforces for CRM writes.
+     */
+    paramsSchema: z
+      .object({
+        limit: limit(500, 100).optional(),
+        // 1-based, matching the widget. Bounded so a deep OFFSET can't be used to stall the DWH.
+        page: z.coerce.number().int().min(1).max(1000).optional(),
+        search: z.string().trim().min(1).max(120).optional(),
+      })
+      .strict(),
     handler: async (ctx, params) => {
-      return fetchFinanceTransactions({ limit: params.limit as number });
+      return fetchFinanceTransactions({
+        ...(params.limit !== undefined ? { limit: params.limit as number } : {}),
+        ...(params.page !== undefined ? { page: params.page as number } : {}),
+        ...(params.search !== undefined ? { search: params.search as string } : {}),
+      });
     },
   },
   financeList('finance.main_transactions_count', 'Main transactions (count)', '/api/main-transactions/count'),

@@ -6266,3 +6266,71 @@ transaction after `created_at` auto-closes as `p1_returned`, all phases incl. CI
 excludes ("pg-boss workers/crons stay off") — local `.env` has `FF_JOBS_ENABLED=1`,
 `JOBS_WORKER_MODE=inline`. If the `octane-assistant-secrets` env group doesn't set it, prod has **no
 case auto-generation, no auto-close on fuel return, and no timers at all**. Needs checking in Render.
+
+## 2026-07-27 (3) — Finance: modal tab strip crushed; main_transactions filters restored
+
+### 1. Client modal — the tab strip vanished on content-heavy tabs
+
+Reported as "the main filter tab is not visible when we click Transactions or others". Reproduced in
+headless Chrome against the real `finance.css` (harness: the exact ClientModal DOM + a 100-row
+transactions table). Measured at a 1512×900 viewport:
+
+```
+tabs  h=6.6   scrollHeight=24   ← crushed to a sliver; only the EFS/Money-Codes "Soon" pills peeked
+head  h=80.8  body h=665.4
+```
+
+Cause: `.fi-modal` is a column flex container. `.fi-modal-tabs` is `overflow-x: auto`, which makes it
+a **scroll container — and a scroll container's automatic minimum size is 0, not its content
+height**. So the strip was fully shrinkable while its sibling `.fi-modal-body` was floored at
+`min-height: 260px`. The flex algorithm took the deficit out of the only item that would yield.
+`.fi-modal-head` survived because it is not a scroll container, which is why the modal still looked
+half-normal and the bug read as "the tabs are gone" rather than "the layout is broken".
+
+Fix: `flex: none` on `.fi-modal-tabs` (and `.fi-modal-head` for the same reason). After: tabs
+38.4px against a 39px content height, and `80.8 + 38.4 + 633.6 = 752.8` exactly fills the modal.
+Verified stable at viewport heights 1100 / 900 / 760 / 620 / 520 — the strip holds at 38.4px at every
+one and the body absorbs the difference.
+
+**Same latent shape elsewhere, NOT changed** (could not make them reproduce): `.bm-copilot-chips` and
+`.cs-copilot-chips` are also unpinned `overflow-x: auto` strips in a column flex panel. They survive
+today only because their bodies use `min-height: 0` (basis 0 ⇒ shrink weight 0), so nothing forces a
+deficit until the viewport gets very short. Worth pinning if either panel ever grows a fixed-height
+sibling. Note `.fi-subbar` (the Transactions Range chips) scrolls away with the body — it is inside
+the scroller and not sticky. Left alone: it is visible on open and was not what was reported.
+
+### 2. `finance.main_transactions` — page/search silently stripped
+
+Confirmed a real capability regression, not a stale test. The entry moved from a servercrm
+passthrough (`financeList` → `looseFilters()`, which carried the widget's `page`/`search`) to a local
+DWH query understanding only `limit`. The params schema stayed a plain `z.object`, and **zod strips
+unknown keys silently**, so a caller paginating or searching got a 200 and the unfiltered first page.
+
+Restored rather than deleted, because the roster is ~8k carriers and page-1-of-everything is not an
+answer:
+
+- `fetchFinanceTransactions` now takes `{ limit, page, search }` → `LIMIT $1 OFFSET $2` with `page`
+  1-based, and an ILIKE `WHERE` across `company_name` / `carrier_id::text` / `card_number` /
+  `location_name`. LIKE metacharacters in the needle are escaped so a literal `%` or `_` matches
+  itself instead of widening the search. Args stay in step with the SQL ($3 only bound when searching).
+- The schema is now **`.strict()`** and bounds `page` to 1..1000 (a deep OFFSET should not be able to
+  stall the DWH). Strict is the point: an unsupported filter is now a 400 rather than a
+  wrong-but-successful read — the same rule `resolveWritePayload` enforces for CRM writes.
+
+Safe to tighten: the only caller is `scripts/financePanelSmoke.ts` (`{ limit: 2 }`). The frontend's
+`touchpointTypes.ts` entry is declaration-only — nothing in the CRM app invokes this key (the Finance
+UI reads `/v1/finance/*` and `finance.client_recent_transactions` instead).
+
+New `tests/unit/dwh-finance-transactions.test.ts` (8) asserts the emitted SQL and args, not just the
+schema: default page, OFFSET arithmetic, the four search columns, metacharacter escaping, and
+WHERE-before-ORDER-BY-before-LIMIT ordering.
+
+### Checks
+
+Backend typecheck green, lint 0 errors, suite 10 failures / 985 passed (was 11 / 976 — touchpoints
+catalog fixed, 8 added). Frontend 191/192, the one failure the long-standing `dashDebtorsData`.
+Widget bundle rebuilt and the `flex:none` rules verified present in the shipped CSS.
+
+**Note:** CLAUDE.md rule 10 asks for the `modern-web-guidance` skill on UI work — it is not
+registered in this environment (`Unknown skill`), so the CSS change was made without it. Worth either
+installing the skill or dropping the rule.

@@ -19,8 +19,32 @@ export async function fetchFinanceDebtors(params: { limit?: number } = {}) {
   return rows;
 }
 
-export async function fetchFinanceTransactions(params: { limit?: number } = {}) {
+/**
+ * Recent fuel transactions, org-wide.
+ *
+ * `page` and `search` exist because this touchpoint replaced a servercrm passthrough that had them:
+ * when it became a local DWH query it kept only `limit`, and since the params schema was a plain
+ * (non-strict) zod object the two dropped keys were silently stripped — a caller paginating or
+ * searching got a successful 200 and the unfiltered first page. Restored here rather than deleted
+ * from the schema, because the finance roster is ~8k carriers and page-1-of-everything is not a
+ * usable answer.
+ */
+export async function fetchFinanceTransactions(
+  params: { limit?: number; page?: number; search?: string } = {},
+) {
   const limit = params.limit ?? 100;
+  const offset = ((params.page ?? 1) - 1) * limit;
+  const search = params.search?.trim();
+  // Escape LIKE metacharacters so a literal % or _ in a company name matches itself rather than
+  // silently widening the search (backslash is Postgres's default LIKE escape character).
+  const needle = search ? `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
+  // $3 is only referenced when a needle exists, so the arg list stays in step with the SQL.
+  const where = needle
+    ? `WHERE company_name ILIKE $3
+          OR carrier_id::text ILIKE $3
+          OR card_number ILIKE $3
+          OR location_name ILIKE $3`
+    : '';
   const rows = await dwhQuery(`
     SELECT
       transaction_id::text as transaction_id,
@@ -39,8 +63,9 @@ export async function fetchFinanceTransactions(params: { limit?: number } = {}) 
       location_state as state,
       transaction_date as date
     FROM octane.mart_transaction_line_items
+    ${where}
     ORDER BY transaction_date DESC
-    LIMIT $1
-  `, [limit]);
+    LIMIT $1 OFFSET $2
+  `, needle ? [limit, offset, needle] : [limit, offset]);
   return rows;
 }

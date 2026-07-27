@@ -539,6 +539,8 @@
   }
 }
 .fi-modal-head {
+  /* Chrome, never a flex casualty — see .fi-modal-tabs for why this is spelled out. */
+  flex: none;
   display: flex;
   align-items: flex-start;
   gap: 15px;
@@ -581,8 +583,19 @@
   color: var(--text-muted);
 }
 
-/* Tab strip — icons + label, underline on the active one. */
+/* Tab strip — icons + label, underline on the active one.
+ *
+ * `flex: none` is load-bearing, not tidiness. `.fi-modal` is a column flex container and this strip
+ * is `overflow-x: auto`, which makes it a scroll container — and a scroll container's AUTOMATIC
+ * MINIMUM SIZE is 0, not its content height. So the strip was fully shrinkable while its sibling
+ * `.fi-modal-body` was floored at `min-height: 260px`; on the content-heavy tabs (Transactions,
+ * Invoices, Payments) the flex algorithm crushed the whole strip to ~6px and the tabs vanished —
+ * leaving no way back to Details short of closing the modal. Measured before/after: 6.6px → 38.4px
+ * against a 39px content height. Pinning the basis keeps the strip at its natural height and lets
+ * the body absorb the overflow, which is what `overflow: auto` on the body is there for.
+ */
 .fi-modal-tabs {
+  flex: none;
   display: flex;
   gap: 2px;
   padding: 0 12px;
