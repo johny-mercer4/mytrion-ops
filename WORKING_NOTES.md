@@ -6136,3 +6136,50 @@ Lint 0 errors. Frontend typecheck 2, backend 1 — all pre-existing (frontend ba
 `vite build` succeeds and both new modules code-split. Frontend tests 187/188 (the failure is the
 pre-existing `dashDebtorsData`); the three suites added this session are 54/54. Rendered Trailhead
 and Verification in dark.
+
+## 2026-07-27 — Prod served a stale widget bundle (main was fine; the artifact wasn't)
+
+### Symptom
+
+`build` merged into `main` (PR #70), `git diff origin/build origin/main` empty — yet prod showed none
+of the new work, through hard reloads. Not a caching problem and not a bad merge.
+
+### Cause
+
+The CRM frontend is a **vendored build artifact**: `apps/mytrion-crm/app` is committed to git, and the
+root `Dockerfile` only `COPY`s it (`pnpm build` is `tsc -p tsconfig.build.json` — backend only). Nothing
+in the Render build ever runs `vite`. So prod ships whatever bundle is *committed*, not whatever the
+source says.
+
+The last three commits (`429a3aa` Loyalty program, `ad30cc3` Implementator, `127d87d` Full Mytrion)
+changed **101 files** under `apps/mytrion-crm/src` and **0 files** under `apps/mytrion-crm/app`. Last
+rebuild was `5df153f` (07-26). Merging to `main` moved source that prod never executes.
+
+### Why it went unrebuilt
+
+`pnpm build:widget` was **failing**, so the bundle couldn't be regenerated:
+
+- `ChatPanel.tsx` — unused `Gem` import (TS6133).
+- `retentionKanbanCol.test.ts` — factory missing 10 required `RetentionCaseRow` fields
+  (`phaseChangedAt`, `citiFolder*`, `lastReviewCycleAt`, `salesManagerZohoUserId`, `lastTransactionAt`,
+  `txCount90d`, `activeCards`, `source`, `lastSyncedAt`), added by `ad30cc3` (TS2375,
+  `exactOptionalPropertyTypes`).
+
+The previous session recorded these as "pre-existing, `vite build` succeeds" — true, but `build:widget`
+is `tsc --noEmit && vite build`, so the gate was red even though vite alone was green. **A red
+`build:widget` means the deploy silently keeps shipping the old UI.**
+
+Same class of bug in `tests/unit/retention-kill-switches.test.ts` (backend `RetentionCase` factory,
+6 missing columns + `source`) — was breaking `pnpm typecheck`. Fixed too.
+
+### Result
+
+`pnpm build:widget` green; every chunk hash changed and new chunks appeared (`ComingSoon`,
+`ModuleShell`, `fuel`, `credit-card`, `download`, `calendar-clock`, `ticket`). Root `pnpm build` green,
+`pnpm typecheck` green, `pnpm lint` 0 errors. Backend suite 13 failures across 9 files — verified
+pre-existing on `main` (identical with the change stashed), untouched here.
+
+### Rule
+
+**A frontend change is not deployed until `apps/mytrion-crm/app` is rebuilt and committed.** Merging to
+`main` is not enough. Same applies to `apps/mini-app/app` (currently in sync at `af018b2`).

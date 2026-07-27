@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import type { UserContext } from '../../context/userContext';
 import type { AgentKey } from '../../access/mytrions.config';
-import { Gem } from '../../components/Gem';
 import { Sparkle, HistoryIcon, PlusIcon } from '../../components/icons';
 import { Composer } from './Composer';
 import { ConversationList } from './ConversationList';
