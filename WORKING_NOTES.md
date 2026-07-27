@@ -6596,3 +6596,102 @@ applies, and if it still misbehaves, `Landing.tsx` + `pickHome` are the places t
 Typecheck green, lint 0 errors, backend 998 passed / 10 failed (the same pre-existing set), frontend
 199/200. NOTE the backend suite again reported 34 failures on the run immediately after a build and
 10 on the next — the post-build flake logged on 2026-07-27 is reproducible and worth chasing.
+
+## 2026-07-28 — Codex onboarding: Mytrion Horizon / Mytrion CRM
+
+Read-only architecture and product onboarding across the live `apps/mytrion-crm` portal, its
+Fastify backend, the sibling `HorizonNew` Figma export, current working notes, recent git history,
+deployment configuration, security context, access resolver, agent/tool runtime, repository layer,
+and external integration boundaries. No product code was changed and no tests were run.
+
+Key mental model:
+
+- `HorizonNew` is the visual prototype/source lineage; `apps/mytrion-crm` is the live internal
+  operating platform. Horizon's mesh, glass, type, motion, and per-workspace hue language is being
+  propagated into the live picker, shared shell, and bespoke Sales/Billing/CS workspaces.
+- Worker identity enters through Zoho OAuth. The backend mints the Bearer session and re-resolves
+  effective access from profile defaults + role defaults + per-user overrides on authenticated
+  requests. Frontend access checks are routing/UX only; backend context, route guards, repos, and
+  tool/agent registries are the enforcement layers.
+- The frontend is one code-split React SPA with 11 Mytrions. Admin, Sales, Billing, Finance,
+  Customer Service, Manager, and Analytics contain live surfaces of varying depth; Collection,
+  Verification, HR, Trailhead, and several sub-tabs deliberately render honest Coming Soon states
+  instead of fabricated operational data.
+- The API is a same-origin Fastify control plane over the Mytrion Ops Postgres, DWH Postgres,
+  verification DB, CMP/servercrm, Zoho CRM/Desk/People, RingCentral, EFS, browser automation,
+  Telegram/support-bot flows, realtime WebSockets, pg-boss jobs, and optional MCP/Composio systems.
+- The AI path is governed infrastructure: typed `AgentManifest` and `ToolManifest` catalogs,
+  department narrowing, server-side dispatch RBAC, risk classes, optional write approvals,
+  owner-scoped data tools, persistence, cost/budget limits, citations, and audit attribution.
+
+Watch points discovered during onboarding: current user-owned worktree changes are implementing
+manageable Administrator overrides + last-admin protection and Switch-Mytrion links for bespoke
+shells; architecture comments retain some retired API-key/client-asserted-scope wording; frontend
+and backend Mytrion taxonomies must remain synchronized; the committed Vite `app/` bundle must be
+rebuilt for deployment; `.env.example` contains a populated inbox webhook-secret-shaped value and
+should be treated as potentially exposed/rotated rather than assumed to be a harmless example.
+
+## 2026-07-28 — Zoho People metadata + bulk records; WorkDrive skill
+
+- Fixed `meta:zoho-people`: maps `labelname`/`comptype` (was empty apiName/type); supports
+  `--module=` / `--list` (all or by name). Shared helpers in `metadataScripts/lib/people*.ts`.
+- Added `pnpm meta:zoho-people-records` — paginated `getRecords` dump for one form.
+- Rewrote `.claude/skills/zoho-workdrive-api` (JSON:API workspaces/files/upload/share; not wired
+  in app yet). Synced People skill script docs; mirrored both skills under `.agents/skills/`.
+
+
+## 2026-07-28 (2) — Rejection Reports tab enabled + verified; loyalty tier check
+
+### Rejection Reports was still hard-disabled
+
+`DC_SUBS` in RecordsTab carried `{ id: 'rejections', …, disabled: true }`, so the tab rendered as
+"SOON" and was not navigable regardless of the backend work. Removed the flag, gave the Gate the
+standard `DcListSkeleton` (it had none), and relabelled the "Ticket" column to "Carrier" — the DB
+row surfaces the carrier id there now, not a Desk ticket number.
+
+### End-to-end verification (against the LOCAL db, never prod)
+
+Ran the real path with `MYTRION_OPS_DATABASE_URL` pointed at the docker Postgres:
+
+```
+WEBHOOK 201 {"id":"mrr_…","ownerSource":"dim_company"}
+RETRY   201 {"id":"mrr_…"}          ← same id: idempotency holds
+LIST    200 count=1
+ROW     …"cardLast4":"1234","isNetwork":true,"isFraud":false,
+         "agentName":"Daniel Brown","occurredAt":"2026-07-28T09:15:00.000Z"
+```
+
+Confirms: the DWH carrier→agent lookup really resolves (carrier 5806565 → Daniel Brown,
+`ownerSource: dim_company`), the Deluge's naive `yyyy-MM-dd HH:mm:ss` parses to a real timestamp,
+booleans survive as booleans, and the full PAN never reaches the wire. Scratch row deleted after.
+
+### Loyalty tiers — NOT a calculation bug
+
+Reported: "2K gallons is Gold but 14K is Silver?!". Ran the real thresholds on both cards:
+
+```
+DD SMART EXPRESS:  1 card,     2,045.79 gal → GOLD   (Owner-Operator; gold at 2,000)
+KUT EXPRESS LLC:  12 cards,   14,611.96 gal → SILVER (Fleet·Fleet; silver 13,500, gold 23,000)
+```
+
+Both correct per the Loyalty Tiers v3 thresholds, and both surfaces agree — Sales passes
+`c.activeCards` + `tierGallons`, Manager passes `client.activeCards` + `loyaltyGallons`, which are
+the same field and the same `gallonsThisMonth || cycleGallons` rule. No drift.
+
+The tier is RELATIVE TO FLEET SIZE by design: a one-truck operator on 2K is top-of-class, a 12-card
+fleet on 14.6K is mid. What was missing is that the card never said so, so a mixed grid reads as
+broken. The tier badge now carries a tooltip with the track, the three thresholds and the distance to
+the next tier.
+
+**⚠️ Open product question surfaced, not silently changed.** `loyalty.ts`'s header claimed the track
+counts "distinct cards with >=1 tx this calendar month", but both callers pass `activeCards` (cards
+active on the account) and the warehouse exposes `activeCardsThisMonth` as a separate, UNUSED field.
+They differ materially — DD SMART shows "1/6 active cards", and the other reading could put it on a
+different track and therefore a different tier. Header corrected to describe the code as-built, with
+the discrepancy called out; switching the input would re-tier the entire book, so it needs a decision.
+
+### Checks
+
+Typecheck green; backend 1002 passed / 10 failed across two consecutive runs (the same pre-existing
+set); frontend 199/200. The 37-failure run seen earlier was the post-build flake again — it only
+appears on the run immediately following a build.

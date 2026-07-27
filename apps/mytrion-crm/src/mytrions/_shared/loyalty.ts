@@ -10,9 +10,22 @@
  * underlying roster query (see integrations/dwhClientRoster.ts). The thresholds + rewards below are
  * static program rules from the spec. No React/imports here — trivially unit-testable.
  *
- * Track by active-card count (distinct cards with >=1 tx this calendar month):
+ * Track by active-card count:
  *   T1 Owner-Operator (1) · T2 Small Company (2–3) · T3 Fleet (4+, segmented; capped at 12 cards).
  * Tier by total company gallons this calendar month vs the track/segment thresholds.
+ *
+ * A tier is RELATIVE TO FLEET SIZE, which surprises people reading a grid: a 1-card owner-operator
+ * on 2,046 gal is Gold (T1 gold = 2,000) while a 12-card fleet on 14,612 gal is only Silver
+ * (T3-fleet silver = 13,500, gold = 23,000). That is the program working as specified, not a bug —
+ * the badge tooltip spells out the track and threshold so the card explains itself.
+ *
+ * ⚠️ OPEN QUESTION — what counts as an "active card" for the TRACK.
+ * This header used to claim "distinct cards with >=1 tx this calendar month", but both callers pass
+ * `activeCards` (cards active on the account) and the warehouse exposes `activeCardsThisMonth` as a
+ * SEPARATE, currently-unused field. The two can differ a lot — a carrier showing "1/6 active cards"
+ * would land on a different track under the other reading, and therefore a different tier. The code
+ * is documented here as-built (total active cards); switching to transacting-cards-only would re-tier
+ * the whole book, so it needs a product decision, not a quiet edit.
  */
 
 export type TrackId = 'T1' | 'T2' | 'T3';

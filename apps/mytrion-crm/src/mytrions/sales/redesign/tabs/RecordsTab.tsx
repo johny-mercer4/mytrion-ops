@@ -17,6 +17,7 @@ import { badge, type BadgeVM } from '../salesData';
 import {
   resolveTier,
   tierBucketOf,
+  trackCaption,
   tierBucketIcon,
   tierBucketLabel,
   tierBucketColor,
@@ -91,7 +92,7 @@ const DC_TABS: DcTabDef[] = [
   { id: 'deals', label: 'Deals', icon: 'deals' },
   // Awaiting a redesign — the current view isn't usable. Drop `disabled` to re-enable; the
   // RejectionsView component + loadRejections() stay wired for when the redesign ships.
-  { id: 'rejections', label: 'Rejection Reports', icon: 'rejections', disabled: true },
+  { id: 'rejections', label: 'Rejection Reports', icon: 'rejections' },
   { id: 'money', label: 'Money Codes', icon: 'moneyCodes' },
 ];
 
@@ -476,8 +477,18 @@ export function RecordsTab() {
                     // One badge per bucket, each with its own silhouette — a star on all four made
                     // Gold/Silver/Bronze read as the same badge in different tints.
                     const bk = tierBucketOf(c.tier);
+                    // Tiers are relative to FLEET SIZE, so a grid legitimately shows a 1-card client
+                    // at Gold next to a 12-card client at Silver. Spell out the track + the bar they
+                    // were measured against, otherwise the board reads as broken.
+                    const th = c.tier.thresholds;
+                    const tip = th
+                      ? `${trackCaption(c.tier)} — ${tierBucketLabel(bk)}. ` +
+                        `Bronze ${numFmt(th.bronze)} / Silver ${numFmt(th.silver)} / Gold ${numFmt(th.gold)} gal this month; ` +
+                        `this client: ${numFmt(Math.round(c.tier.gallons))} gal` +
+                        (c.tier.nextLevel ? ` (${numFmt(Math.round(c.tier.gallonsToNext))} to ${c.tier.nextLevel})` : '')
+                      : 'No active cards this month — not in the program.';
                     return (
-                      <span style={s(badge(tierBucketLabel(bk), tierBucketColor(bk)).style + `;color:${tierBucketTextColor(bk)};display:inline-flex;align-items:center;gap:5px;flex-shrink:0`)}>
+                      <span title={tip} style={s(badge(tierBucketLabel(bk), tierBucketColor(bk)).style + `;color:${tierBucketTextColor(bk)};display:inline-flex;align-items:center;gap:5px;flex-shrink:0;cursor:help`)}>
                         <Icon name={tierBucketIcon(bk)} size={12} />{tierBucketLabel(bk)}{c.tier.grace ? ' •' : ''}
                       </span>
                     );
@@ -547,7 +558,13 @@ export function RecordsTab() {
       )}
 
       {dcSub === 'rejections' && (
-        <Gate loading={rejLoad.loading} error={rejLoad.data ? null : rejLoad.error} empty={(rejLoad.data?.length ?? 0) === 0} emptyMsg="No rejected applications — nice work.">
+        <Gate
+          loading={rejLoad.loading}
+          error={rejLoad.data ? null : rejLoad.error}
+          empty={(rejLoad.data?.length ?? 0) === 0}
+          emptyMsg="No card declines recorded for your clients yet."
+          skeleton={<DcListSkeleton label="rejection reports" cols={5} />}
+        >
           <RejectionsView rejections={rejLoad.data ?? []} search={search.rejections} />
         </Gate>
       )}
