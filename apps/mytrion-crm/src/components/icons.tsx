@@ -5,6 +5,7 @@ import {
   BadgeCheck,
   Ban,
   BookOpen,
+  GraduationCap,
   Briefcase,
   Building,
   Check,
@@ -137,6 +138,7 @@ const MYTRION_GLYPHS: Record<string, LucideIcon> = {
   manager: Users,
   analyst: LineChart,
   hr: Briefcase,
+  trailhead: GraduationCap,
 };
 
 /** Per-Mytrion glyph for the wizard picker (Lucide, consistent with the rest of the shell). */

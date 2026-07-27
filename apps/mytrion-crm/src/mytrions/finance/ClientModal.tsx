@@ -63,13 +63,20 @@ export function ClientModal({ client, onClose }: { client: FinanceClient; onClos
     };
   }, [onClose]);
 
+  /**
+   * The portal mounts on <body>, OUTSIDE `.fi-root` — so the wrapper must re-establish both the
+   * Finance token scope (`.fi-scope` carries --fi-debt / --fi-paid / radii) and the module accent
+   * (`data-mytrion="finance"` sets --accent). Without it the modal renders with the global accent
+   * and no money colours, which is exactly how the badges and red balances went missing.
+   */
   const body = (
-    <div
-      className="fi-modal-scrim"
-      role="presentation"
-      // Backdrop click closes; clicks inside the panel must not bubble out to it.
-      onClick={onClose}
-    >
+    <div className="fi-scope" data-mytrion="finance">
+      <div
+        className="fi-modal-scrim"
+        role="presentation"
+        // Backdrop click closes; clicks inside the panel must not bubble out to it.
+        onClick={onClose}
+      >
       <div
         className="fi-modal"
         role="dialog"
@@ -143,6 +150,7 @@ export function ClientModal({ client, onClose }: { client: FinanceClient; onClos
               body="Issuing and reconciling money codes for this carrier will live here, alongside the existing money-code request flow."
             />
           ) : null}
+          </div>
         </div>
       </div>
     </div>

@@ -8,7 +8,8 @@
  * only shape the UI — once these tabs get real endpoints, the endpoint is the security boundary
  * (HR → an `hr`-gated /v1/hr/*, mirroring Manager's `management` gate).
  *
- * Every tab is UI-only today; nothing here calls Zoho People yet.
+ * Every tab except Home is flagged `soon` — it renders the shared <ComingSoon /> rather than
+ * placeholder rows. Nothing in this module calls Zoho People yet.
  */
 import type { LucideIcon } from 'lucide-react';
 import { CalendarClock, Home, Inbox, UserRound, Users } from 'lucide-react';
@@ -26,6 +27,8 @@ export interface HrTab {
   tone: string;
   /** Extra sidebar-search terms (the label is always searched). */
   keywords: string[];
+  /** Not wired to a live source yet — the tab renders <ComingSoon /> and the nav shows a badge. */
+  soon?: boolean;
   /** Layer-2 gate: may THIS user open the tab? Default: any HR-level user. */
   access: (user: UserContext) => boolean;
 }
@@ -47,6 +50,7 @@ export const HR_TABS: HrTab[] = [
   },
   {
     id: 'employees',
+    soon: true,
     label: 'Employees',
     description: 'The people directory — every employee, their department, role and status.',
     icon: Users,
@@ -56,6 +60,7 @@ export const HR_TABS: HrTab[] = [
   },
   {
     id: 'attendance',
+    soon: true,
     label: 'Attendance',
     description: 'Check-ins, hours worked and absence, per employee and per day.',
     icon: CalendarClock,
@@ -65,6 +70,7 @@ export const HR_TABS: HrTab[] = [
   },
   {
     id: 'requests',
+    soon: true,
     label: 'Requests',
     description: 'Leave, time-off and other employee requests awaiting a decision.',
     icon: Inbox,
@@ -74,6 +80,7 @@ export const HR_TABS: HrTab[] = [
   },
   {
     id: 'profile',
+    soon: true,
     label: 'Profile',
     description: 'One employee record in full — personal, work and reporting details.',
     icon: UserRound,

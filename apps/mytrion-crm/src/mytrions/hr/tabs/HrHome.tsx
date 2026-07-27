@@ -1,30 +1,14 @@
-import { ArrowRight, CalendarClock, Inbox, UserCheck, UserRound, Users } from 'lucide-react';
-import { HrSection, PreviewBanner } from '../HrBits';
+import { ArrowRight, CalendarClock, Inbox, UserRound, Users } from 'lucide-react';
+import { HrSection } from '../HrBits';
 import { HR_TABS, type HrTabId } from '../hrNav';
 
 /**
- * HR → Home. The landing: headcount at a glance, then a jump into each workspace.
+ * HR → Home. The landing and launcher.
  *
- * The stat figures are PLACEHOLDERS (see peoplePreview.ts) — the banner says so. When Zoho People is
- * wired, headcount comes from `Employeestatus` (Active / Terminated) and the department split from
- * `Department`, both of which the live inspection confirmed exist.
+ * There is no "at a glance" figure row: headcount, check-ins and open requests all depend on tabs
+ * that are not wired to Zoho People yet, and a row of em-dashes is scaffolding pretending to be a
+ * dashboard. It comes back when there is something real to count.
  */
-
-interface Stat {
-  label: string;
-  value: string;
-  sub: string;
-  icon: typeof Users;
-  tone: string;
-}
-
-const STATS: Stat[] = [
-  { label: 'Headcount', value: '—', sub: 'all employees', icon: Users, tone: 'var(--tone-sky)' },
-  { label: 'Active', value: '—', sub: 'Employeestatus = Active', icon: UserCheck, tone: 'var(--tone-emerald)' },
-  { label: 'Checked in today', value: '—', sub: 'attendance feed', icon: CalendarClock, tone: 'var(--tone-teal)' },
-  { label: 'Open requests', value: '—', sub: 'awaiting a decision', icon: Inbox, tone: 'var(--tone-amber)' },
-];
-
 const JUMP_ICON: Record<HrTabId, typeof Users> = {
   home: Users,
   employees: Users,
@@ -47,27 +31,10 @@ export function HrHome({ onOpen }: { onOpen: (tab: HrTabId) => void }) {
           </h1>
           <p className="hr-sub">
             The people side of Octane — who works here, when they work, and what they&apos;re asking
-            for. Records come from Zoho People; this workspace is the view onto them.
+            for. Records will come from Zoho People; this workspace is the view onto them.
           </p>
         </div>
       </div>
-
-      <PreviewBanner what="Home" />
-
-      <HrSection title="At a glance">
-        <div className="hr-stats">
-          {STATS.map((s) => (
-            <div key={s.label} className="hr-stat" style={{ ['--hr-tone' as string]: s.tone }}>
-              <span className="hr-stat-l">
-                <s.icon size={12} />
-                {s.label}
-              </span>
-              <span className="hr-stat-n">{s.value}</span>
-              <span className="hr-stat-s">{s.sub}</span>
-            </div>
-          ))}
-        </div>
-      </HrSection>
 
       <HrSection title="Workspaces">
         <div className="hr-jump-grid">
@@ -88,7 +55,10 @@ export function HrHome({ onOpen }: { onOpen: (tab: HrTabId) => void }) {
                   </span>
                   <ArrowRight size={17} className="hr-jump-arrow" />
                 </div>
-                <span className="hr-jump-title">{tab.label}</span>
+                <span className="hr-jump-title">
+                  {tab.label}
+                  {tab.soon ? <span className="hr-soon">Soon</span> : null}
+                </span>
                 <span className="hr-jump-desc">{tab.description}</span>
               </button>
             );

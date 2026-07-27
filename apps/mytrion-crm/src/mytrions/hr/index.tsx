@@ -3,9 +3,9 @@ import { HrShell } from './HrShell';
 /**
  * HR Mytrion — people operations: Home, Employees, Attendance, Requests, Profile.
  *
- * STRUCTURAL ONLY. Every tab is finished UI with placeholder records; nothing reads Zoho People yet
- * (see peoplePreview.ts for the live field map the layouts were designed against). Each tab carries
- * a visible preview banner so the placeholders can never be mistaken for real employee data.
+ * STRUCTURAL ONLY. Nothing here reads Zoho People yet, and no tab renders invented data — the four
+ * unbuilt tabs show the shared <ComingSoon /> instead. The confirmed Zoho People field map, captured
+ * from a live call, is recorded in peopleSchema.ts for whoever wires them up.
  */
 export default function HrMytrion() {
   return (

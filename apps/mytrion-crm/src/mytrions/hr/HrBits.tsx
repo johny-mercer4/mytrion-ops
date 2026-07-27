@@ -1,28 +1,13 @@
 import type { ReactNode } from 'react';
-import { FlaskConical } from 'lucide-react';
 import { findHrTab, type HrTabId } from './hrNav';
 
 /**
- * Small shared pieces every HR tab uses — the page head, the preview banner, section headings and
- * the status pill. Kept here so the five tabs stay thin and structurally identical.
+ * Small shared pieces every HR tab uses — the page head, section headings and the status pill.
+ * Kept here so the tabs stay thin and structurally identical.
+ *
+ * There is deliberately no placeholder-data banner any more: no HR tab renders invented rows, so
+ * there is nothing to disclaim. Unbuilt tabs use the shared <ComingSoon /> instead.
  */
-
-/**
- * The honesty notice. HR is UI/UX scaffolding: nothing on any tab reads Zoho People yet, and the
- * rows shown are synthetic (see peoplePreview.ts). This renders on EVERY tab on purpose — a
- * placeholder screen that doesn't announce itself is how mock data ends up quoted as fact.
- */
-export function PreviewBanner({ what }: { what: string }) {
-  return (
-    <div className="hr-banner">
-      <FlaskConical size={15} />
-      <span>
-        <strong>Layout preview.</strong> {what} is not connected to Zoho People yet — the records
-        below are placeholders, not real employee data.
-      </span>
-    </div>
-  );
-}
 
 /** Kicker → title → sub, matching the Manager page head so the two modules read as one product. */
 export function HrPageHead({ tab, actions }: { tab: HrTabId; actions?: ReactNode }) {

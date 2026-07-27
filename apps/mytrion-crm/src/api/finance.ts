@@ -167,15 +167,34 @@ export function getClientPayments(carrierId: string): Promise<FinancePaymentsRes
   }) as Promise<FinancePaymentsResponse>;
 }
 
-/** Mart line items — the shared DWH transaction shape (see backend dwhTransactions.ts). */
+/**
+ * Mart line items — the shared DWH transaction shape (backend `DwhTxnResult`).
+ *
+ * Rows live under `data`, NOT `transactions`/`rows`. Getting that wrong renders an empty table for
+ * every carrier while looking like a legitimate "no activity" result, so the field is typed
+ * explicitly rather than probed.
+ */
 export interface FinanceTxnResponse {
-  transactions?: Record<string, unknown>[];
-  rows?: Record<string, unknown>[];
-  totals?: Record<string, unknown>;
-  [k: string]: unknown;
+  data: Record<string, unknown>[];
+  totals: {
+    transactions?: number;
+    line_items?: number;
+    funded_total?: number;
+    fuel_quantity?: number;
+    total_fuel_quantity?: number;
+    discount_amount?: number;
+  };
+  range?: Record<string, unknown>;
+  pagination?: Record<string, unknown>;
 }
 
-export function getClientTransactions(carrierId: string, range = 'month'): Promise<FinanceTxnResponse> {
+/** Ranges the modal offers. `all_time` is the default — see the Transactions panel for why. */
+export type TxnRange = 'month' | 'quarter' | 'year' | 'all_time';
+
+export function getClientTransactions(
+  carrierId: string,
+  range: TxnRange = 'all_time',
+): Promise<FinanceTxnResponse> {
   return request('GET', `/finance/clients/${encodeURIComponent(carrierId)}/transactions`, {
     query: { range, limit: 100 },
     headers: FIN_HEADERS,

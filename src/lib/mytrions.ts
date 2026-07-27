@@ -19,6 +19,7 @@ export const MYTRION_IDS = [
   'manager',
   'analyst',
   'hr',
+  'trailhead',
   'customer-service',
 ] as const;
 
@@ -54,6 +55,7 @@ export const MYTRION_DEPARTMENT: Record<MytrionId, string> = {
   manager: 'management',
   analyst: 'analytics',
   hr: 'hr',
+  trailhead: 'trailhead',
   'customer-service': 'customer-service',
 };
 

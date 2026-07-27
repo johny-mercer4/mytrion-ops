@@ -17,4 +17,5 @@ export const MYTRION_MODULES: Record<MytrionId, LazyExoticComponent<ComponentTyp
   manager: lazy(() => import('./manager')),
   analyst: lazy(() => import('./analyst')),
   hr: lazy(() => import('./hr')),
+  trailhead: lazy(() => import('./trailhead')),
 };

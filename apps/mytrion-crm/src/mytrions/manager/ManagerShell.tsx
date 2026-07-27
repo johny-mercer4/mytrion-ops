@@ -73,7 +73,7 @@ export function ManagerShell() {
   const activeDept = findManagerDepartment(view);
 
   return (
-    <MytrionShell id="manager" navSections={navSections} enableNavSearch disableDockChat>
+    <MytrionShell id="manager" navSections={navSections} enableNavSearch>
       <div className="mg-root">
         {view === 'overview' ? (
           <ManagerHome onOpenCard={openCard} onOpenDepartment={openDept} />

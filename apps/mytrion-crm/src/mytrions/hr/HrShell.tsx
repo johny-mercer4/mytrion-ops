@@ -15,6 +15,9 @@ import './hr.css';
  * A flat tab set rather than Manager's card-hub: HR is a workspace you live in, so every destination
  * sits in the sidebar. Home doubles as a launcher for people who arrive there first.
  *
+ * Every tab except Home is unbuilt and says so via the shared <ComingSoon /> — none of them render
+ * invented employees, attendance or requests.
+ *
  * The chat dock is disabled because there is no `hr` department agent on the backend
  * (AGENT_KEYS has no 'hr', and `agentKeyFor('hr')` deliberately returns null) — an enabled dock
  * would silently fall through to the orchestrator. Re-enable when an HR agent exists.
@@ -36,7 +39,7 @@ export function HrShell() {
       label: 'People',
       items: tabs.map((tab) => ({
         key: tab.id,
-        label: tab.label,
+        label: tab.soon ? `${tab.label} · Soon` : tab.label,
         icon: <tab.icon size={19} />,
         tone: tab.tone,
         active: view === tab.id,
@@ -47,7 +50,7 @@ export function HrShell() {
   ];
 
   return (
-    <MytrionShell id="hr" navSections={navSections} enableNavSearch disableDockChat>
+    <MytrionShell id="hr" navSections={navSections} enableNavSearch>
       <div className="hr-root">
         {view === 'home' ? <HrHome onOpen={open} /> : null}
         {view === 'employees' ? <HrEmployees /> : null}
