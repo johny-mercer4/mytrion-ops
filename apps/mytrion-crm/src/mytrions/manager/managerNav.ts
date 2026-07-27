@@ -1,12 +1,13 @@
 /**
  * Manager Mytrion navigation — two groups, mirroring how a manager actually works:
  *
- *   General      Overview (the hub; the Referrals workspace opens from here)
+ *   General      Overview (the hub; the workspace cards open from here)
  *   Departments  one entry per Octane department the manager oversees
  *
  * RBAC is layered. Layer 1 is entering the Manager Mytrion at all (`canAccess` in resolveAccess).
  * Layer 2 is `access(user)` per card/department here. Both only shape the UI — the endpoint behind
- * each surface is the real security boundary (Referrals → `management`-gated /v1/manager/referrals/*).
+ * each surface is the real security boundary (Referrals → `management`-gated /v1/manager/referrals/*,
+ * Loyalty Program → /v1/manager/loyalty/clients, which is NOT owner-scoped and so manager-only).
  * Departments are UI-only today, so their gate is open; when per-department RBAC lands, narrow the
  * `access` predicate rather than hiding items in the shell.
  */
@@ -20,11 +21,12 @@ import {
   Share2,
   Smartphone,
   TrendingUp,
+  Trophy,
 } from 'lucide-react';
 import type { UserContext } from '../../context/userContext';
 
 /** Cards on the Overview hub. Add an id here as new hub blocks land (payouts, approvals, KPIs, …). */
-export type ManagerCardId = 'referrals';
+export type ManagerCardId = 'referrals' | 'loyalty';
 
 export type ManagerDepartmentId =
   | 'sales'
@@ -75,6 +77,18 @@ export const MANAGER_CARDS: ManagerCard[] = [
     icon: Share2,
     tone: 'var(--tone-pink)',
     // Open to anyone who can enter Manager. To restrict later: access: (u) => isAdmin(u).
+    access: () => true,
+  },
+  {
+    id: 'loyalty',
+    label: 'Loyalty Program',
+    tag: 'Tiers',
+    description:
+      "Every carrier's loyalty tier — track from active cards, tier from this month's gallons. All agents, one board.",
+    icon: Trophy,
+    // Amber reads as the program's own signal (Gold/Bronze live on this scale) without colliding
+    // with Referrals' pink or any department hue.
+    tone: 'var(--tone-amber)',
     access: () => true,
   },
 ];

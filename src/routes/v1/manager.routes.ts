@@ -10,6 +10,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { ValidationError } from '../../lib/errors.js';
 import { requireDepartment } from './helpers.js';
 import type { TenantContext } from '../../types/tenantContext.js';
+import { fetchLoyaltyRoster } from '../../modules/manager/loyaltyRoster.js';
 import {
   fetchReferralAssociations,
   fetchReferralRecords,
@@ -43,5 +44,13 @@ export async function managerRoutes(app: FastifyInstance): Promise<void> {
     const limitRaw = (request.query as { limit?: string }).limit;
     const limit = limitRaw != null && limitRaw !== '' ? Number(limitRaw) : undefined;
     return fetchReferralAssociations(limit);
+  });
+
+  // Loyalty Program card — EVERY carrier's tier inputs (active cards + monthly gallons), agent-agnostic.
+  // Same DWH query as Sales' Data Center → Clients, minus the owner filter, so the two surfaces can
+  // never disagree on a client's tier. Not owner-scoped, hence manager-gated like every route here.
+  app.get('/manager/loyalty/clients', guard, async (request) => {
+    requireManagerAccess(request);
+    return fetchLoyaltyRoster();
   });
 }

@@ -5650,3 +5650,489 @@ same child under a different tenant still allowed, recurring types still repeat 
   tables + indexes), but worth knowing before running any migration command here.
 - Verified 0058 from scratch on a throwaway DB: 59 migrations applied, 47 tables, both new tables
   present.
+
+## 2026-07-27 — Manager Mytrion: Loyalty Program card
+
+Company-wide loyalty tier board, next to Referrals on the Manager Overview hub. Branch
+`feature/MytrionAll`.
+
+### Reused rather than rebuilt
+
+The tier logic already existed and already matched the Loyalty Tiers v3 spec exactly
+(`sales/redesign/loyalty.ts` — T1 1,100/1,500/2,000 · T2 2,200/3,000/4,500 · T3 segmented
+4–6/7–8/9–10/11–12). **Moved it to `mytrions/_shared/loyalty.ts`** (2 import sites) so Manager and
+Sales share ONE implementation — the program is company-wide, not Sales-specific, and a second copy
+would let the two surfaces disagree about a client's tier.
+
+Same for the data: `fetchAllClients()` in `dwhClientRoster.ts` reuses the exact `runClientsQuery` +
+`toClient` the agent-scoped roster uses, with only the owner predicate dropped (`ownedArm('true')`).
+One gallons basis, one active-card count, one billing cycle.
+
+### Measured before designing
+
+`fetchAllClients()` → **8,045 carriers, 2.4s, 3.27 MB** of JSON. So:
+- `loyaltyRoster.ts` projects to the 9 fields the board needs (~1 MB), dropping debt/phone/DOT/money
+  code — those belong to the Clients tab, not the loyalty program. A route test asserts the
+  projection so those columns can't creep back in.
+- Server orders by the tier gallons basis DESC; the grid renders in windows of 60. Alphabetical
+  would bury all 621 tiered clients behind thousands of zero-gallon carriers.
+- Distribution is always computed over the FULL roster, never the visible slice.
+
+### Colour — the ask, and the correction it forced
+
+Requested: gold for Gold, silver for Silver, bronze for Bronze, orange for not-reached. The shared
+`--tier-bronze` is **`#fb923c`, i.e. already orange**, so bronze and not-reached were the same hue.
+Fixed with a card-scoped `--lty-*` palette (true copper `#b87333` for bronze, `#f97316` for
+Building), leaving Sales' `--tier-*` untouched. Sales therefore still shows bronze-as-orange —
+propagating that is a one-line change if wanted.
+
+**First render exposed a worse problem:** the distribution bar came out 92% orange, because
+`resolveTier` collapses "fuelling but under Bronze" (3,952) and "no active cards at all" (3,472) into
+the same `level: 'none'`. Those are completely different business states. Split into a 5th `idle`
+bucket ("No cards", receding neutral + dashed border so the state survives greyscale/colour-blind
+viewing). Bar now reads 1.3 / 3.1 / 3.3 / 49.1 / 43.2 %. Dropped the redundant "No active cards"
+track chip since the tile selects that set.
+
+Verified by rendering the real markup against the real stylesheets in headless Chrome, dark AND
+light. That caught a genuine CSS bug: `--hz-pane` is a **gradient**, so the skeleton's
+`background: <image> var(--hz-pane)` space-separated shorthand was invalid and dropped the whole
+declaration — now two comma-separated layers with per-layer `background-position` in the keyframes.
+
+### Security
+
+`/v1/manager/loyalty/clients` is the one Manager read that is NOT owner-scoped, so
+`tests/unit/manager-loyalty-routes.test.ts` (9 tests) covers it: unauthenticated 401, non-management
+403, sales rep 403, and the header-elevation triad (`x-department-access: management`,
+`x-all-departments: true`, both) all 403 — each asserting the DWH was never touched, not merely that
+the body was withheld. Verified sessions ignore claimed headers
+(`FF_SESSION_DEPT_AUTHORITATIVE=1`), and `ADMIN_PROFILE_MARKERS` is exact-match `administrator,ceo`
+so a "Management" profile doesn't accidentally get all-department access.
+
+### Checks
+
+Backend typecheck + lint clean. CRM app: **10 tsc errors before and after — all pre-existing**
+(Finance, ChatPanel, RecordsTab strict-null). `vite build` succeeds. Full suite: the only delta vs
+the clean-tree baseline is `ringcentral-call-log` "logs a finished outbound lead call", which is a
+pre-existing **timeout flake** — passes 2 of 3 isolated runs with no code change, and my change isn't
+in that path. NOTE: the served bundle in `apps/mytrion-crm/app/` was NOT rebuilt; deploy needs
+`NODE_ENV=production vite build` committed (see the 2026-07-26 CORS entry).
+
+## 2026-07-27 — Loyalty bucket palette fix + HR Mytrion scaffold
+
+Branch `feature/MytrionAll`.
+
+### 1. Loyalty: Silver vs No-cards were indistinguishable
+
+Reviewed Data Center → Clients first (RecordsTab.tsx): its client cards are flat `var(--surface)`
+with the tier shown only on a badge — it shares NO css with the Manager board, so all changes here
+are isolated to `manager.css` and Sales is untouched.
+
+Root cause: `--lty-silver` was `#a9b4c2` and `--lty-idle` `#5b6673` — both slate-blue, and at a 13%
+wash they collapsed into each other. Fixed by making the five buckets ONE background recipe with two
+tuned custom properties instead of five bespoke treatments:
+
+    --tint    how strongly the bucket hue washes the surface
+    --sheen   a specular highlight band — set ONLY for the three medal tiers
+
+    gold 18% + gold sheen · silver 17% + WHITE sheen · bronze 16% + copper sheen
+    building 12% flat · idle 4% flat + dashed border
+
+Silver is now `#c3cfdd` (cool, bright) and idle `#6e7681` (hueless grey), and a white specular band
+is what actually makes silver read as polished metal. Silver and No-cards now differ on four
+independent axes — hue, tint strength, sheen, border style — so they stay distinct in light, dark
+AND greyscale. Light theme needed darker FILLS too, not just text (`#c3cfdd` vanishes on white).
+Both the client card and the distribution tile read the same properties, so they can't drift apart.
+
+### 2. HR Mytrion — structural UI only
+
+Promoted HR from a picker-only "coming soon" tile to a real Mytrion. Tabs: Home · Employees ·
+Attendance · Requests · Profile. Flat sidebar tab set (HR is a workspace you live in) rather than
+Manager's card-hub; Home doubles as a launcher.
+
+Registered in: `access/mytrions.config.ts` (MytrionId, MYTRIONS.hr, MYTRION_ORDER,
+MYTRION_URL_SLUG → `hrmytrion`, removed the duplicate picker tile), `mytrions/registry.ts` (lazy
+import so HR code-splits), `styles/global.css` (red accent, light + dark), and backend
+`src/lib/mytrions.ts` (MYTRION_IDS + MYTRION_DEPARTMENT `hr → 'hr'`).
+
+**Deliberately NOT added: `'hr'` to `KNOWN_DEPARTMENTS`.** `deriveWorkerDepartments` does a plain
+substring match, and `"christopher".includes("hr")` is TRUE — adding it would hand HR access to
+anyone whose profile or role happens to contain those two letters. KNOWN_DEPARTMENTS is
+documentation-only and not an enforced allowlist, so omitting it is safe; HR access comes from the
+DB-backed resolver via the access table instead, which is the correct path anyway.
+
+`agentKeyFor('hr')` returns null (there is no `hr` in AGENT_KEYS) and the shell sets
+`disableDockChat` — otherwise the chat dock would silently fall through to the orchestrator.
+
+**Zoho People inspected live** (100-record sample) so the layouts are shaped by reality, not guesses
+— the full field map is documented in `hr/peoplePreview.ts`. What it changed:
+- Name is composed from `FirstName` + `LastName`; `Full_Name` is only 73% populated.
+- `Department` 72%, `Designation` 70%, `LocationName` 66%, `Dateofjoining` 65% → every one of those
+  needs a real empty state, which the cards now render as an em-dash.
+- `Employeestatus` is the status source of truth: Active / Terminated (60/40 in the sample).
+- `tabularSections` is a nested object, not a scalar — needs its own sub-view later, not a column.
+- Real `Department` values are wired as the directory's filter chips (categories are live even
+  though the employee rows are not).
+- ⚠️ OPEN: the call returned exactly 100 rows for `limit: 200`. Either the org has 100 employees or
+  the wrapper/API caps a page at 100 — confirm before assuming the directory is complete.
+
+All employee/attendance/request rows are SYNTHETIC placeholders and every tab renders a
+`<PreviewBanner />` saying so, so nothing here can be mistaken for real HR data. Approve/Reject on
+Requests are rendered but disabled with a title explaining why — they are writes and need an
+audited, gated endpoint first.
+
+### Checks
+
+Backend + frontend typecheck clean (CRM app still 10 pre-existing errors, unchanged). `vite build`
+succeeds and HR code-splits. Lint 0 errors. Rendered every surface in headless Chrome, light and
+dark. Frontend tests: 187/188, the one failure (`dashDebtorsData`) is pre-existing on a clean tree.
+Backend suite is flaky under load — of 8 apparent new failures, `agent-scripted-turn`, `cs-routes`
+and `retention-cases` all pass 100% in isolation, and `touchpoints-routes` fails identically 3/9 on a
+clean tree. Zero real regressions.
+
+## 2026-07-27 — Loyalty bucket polish · HR badge · Finance Mytrion rebuilt
+
+Branch `feature/MytrionAll`.
+
+### 1. Loyalty — Silver vs No-cards, one background system
+
+Reviewed Data Center → Clients first: its cards are flat `var(--surface)` with the tier only on a
+badge, sharing no CSS with the Manager board — so these changes stay isolated to `manager.css`.
+
+Silver (`#a9b4c2`) and idle (`#5b6673`) were both slate-blue and collapsed together at a 13% wash.
+Replaced the five bespoke treatments with ONE recipe driven by two custom properties:
+
+    --tint    strength of the bucket hue wash
+    --sheen   a specular highlight band — metals only
+
+    gold 18% + gold sheen · silver 17% + WHITE sheen · bronze 16% + copper sheen
+    building 12% flat     · no-cards 4% flat + dashed border
+
+Silver is now `#c3cfdd` with a **white** specular band (that is what reads as polished metal) and
+idle is a hueless `#6e7681`. The two now differ on four independent axes — hue, tint, sheen, border
+style — so they survive light, dark and greyscale. Light theme needed darker FILLS too, not just
+text. The client card and the distribution tile read the same properties, so they can't drift.
+
+### 2. HR — badge + light mode
+
+`tag: 'People'` → `'HR'` (the TopBar context badge reads `MYTRIONS[id].tag`). Re-rendered all five
+tabs in light: hero, banners, stat tiles, employee cards, attendance table, request rows and the
+profile grid all read correctly. No changes needed.
+
+### 3. Finance Mytrion — rebuilt from zero
+
+**Deleted the entire old module** (`redesign/` shell, Dashboard/Transactions/Audits/Clients/
+SmartBalance/Home + `data.ts`). It was mock data end-to-end. Side effect: the CRM app's typecheck
+errors went **10 → 2**; eight of them lived in that dead code.
+
+Two tabs, both real:
+- **Home** — the EFS parent balance from the `finance.parent_snapshot` Deluge touchpoint. Verified
+  live: `{ balance: '715765.14', mode: 'COMFORT', captured_at: '2026-07-26T18:30:04-04:00' }`.
+  `balance` arrives as a STRING — coerced, never rendered raw. It's a SNAPSHOT, so the capture time
+  is displayed as prominently as the figure; a stale balance shown as current is how someone
+  over-sweeps. "Run refresh" fires `balance_run` then re-reads, and a failed run does NOT block the
+  re-read.
+- **Clients** — every carrier from `octane.dim_company` with computed debt.
+
+**Debt uses the Billing/Sales definition, not the dim.** `dim_company.debt_amount` / `.is_debtor`
+are stale (servercrm measured the dim at ~$6M vs ~$13.4M from invoices), so debt is computed from
+`public.cmp_invoice` with the shared predicate: PENDING/PARTIALLY_PAID, owes ≥ $1, ≥ 2 days old.
+Live: **8,045 carriers, 413 debtors, $2,008,487 outstanding**.
+
+**Speed.** The roster is 8k rows and the tab filters client-side, so payload is the whole game:
+- Dropped the mart scan the Loyalty roster does (Finance needs terms/credit/debt, not gallons) →
+  dim_company + cmp_invoice only.
+- Split the payload: a LEAN 10-field row for the table, with the rest of the profile fetched per
+  carrier when a modal opens. **3.63 MB / 1,328ms → 1.62 MB / 875ms.**
+- `useDeferredValue` on the search term so typing never blocks on re-filtering 8k rows; list renders
+  in windows of 50.
+- ⚠️ **`@fastify/compress` is NOT installed**, so JSON ships uncompressed — that 1.62 MB gzips to
+  ~200 KB. Adding compression is the single biggest remaining win and would benefit every route.
+
+**Client modal** — 1320px wide (the tables are 7–9 columns; a narrow sheet destroys them), portalled
+so the fixed scrim escapes the module's scroll container, Escape-to-close, body scroll locked. Six
+icon tabs, each loading only when opened so opening the modal costs one small request:
+Details (icon-per-field grid + roll-up) · Invoices (`cmp_invoice`) · Payments (our
+`payment_transactions`, matched on carrier_id) · Transactions (`mart_transaction_line_items` via the
+shared reader) · EFS and Money Codes as explicit coming-soon — both MOVE MONEY and stay unbuilt
+rather than half-wired.
+
+Finance is no longer in `COMING_SOON_MYTRION_IDS`; `resolveAccess.test.ts` was updated to match
+(it asserted finance was parked).
+
+`tests/unit/finance-routes.test.ts` — 21 tests: every route 401s unauthenticated and 403s a sales
+rep with the warehouse never queried, the header-elevation triad stays shut, non-numeric carrierIds
+are rejected before any query binds, and an unknown carrier is a 404 rather than an empty 200.
+
+### Checks
+
+Lint 0 errors. Backend typecheck clean (1 pre-existing). Frontend typecheck **2, down from 10**.
+`vite build` succeeds. Rendered Finance and HR in light AND dark.
+
+Frontend tests 187/188 — the one failure (`dashDebtorsData`) is pre-existing on a clean tree.
+
+⚠️ **The backend suite degrades badly under parallel load** and I have now added two more
+`buildApp()` suites (loyalty, finance), which makes it worse. A full run reported 37 failures; run in
+isolation, `cs-routes` (21/21), `desk-routes` (23/23), `agent-scripted-turn` (6/6) and
+`retention-cases` (23/23) all pass. The only real remainders are `data-center-routes`' post-call
+wizard test and `ringcentral-call-log`'s timeout flake — both pre-existing. Worth capping vitest
+concurrency or splitting the app-building suites into their own project.
+
+## 2026-07-27 — Finance modal: two real bugs + Details redesign
+
+Feedback from running the app locally caught two genuine defects, not just polish.
+
+### Bug 1 — the Transactions tab was always empty
+
+`listDwhTransactions` returns rows under **`data`** (backend `DwhTxnResult`), but the panel read
+`d.transactions ?? d.rows`. That resolves to `[]` for every carrier, and the panel rendered its
+"no transactions" empty state — a silent wrong answer that looks like a legitimate result. Typed
+the response explicitly instead of probing for a key.
+
+Compounding it, the default range was `month`. A carrier you open in this modal is often one you're
+chasing *because* they stopped fuelling, so the current month is the worst possible default.
+Now defaults to **all_time** with a Month / Quarter / Year / All-time switcher. Verified on AH
+EXPRESS (5777844): `month` → 0 rows (correct — last activity 22 May 2026), `all_time` → 100 rows,
+4,907 transactions, 561,658 gal, $2,029,366, in 420ms. Totals now come from the server roll-up
+rather than being re-summed from the 100-row page (which would have under-reported).
+
+### Bug 2 — the modal lost every scoped style
+
+The modal is portalled to `<body>`, i.e. OUTSIDE `.fi-root`, but `.fi-pill`, `.fi-btn`, `.fi-empty`
+and the `--fi-debt/--fi-paid/--fi-*` tokens were all declared as `.fi-root` descendants. Inside the
+portal they simply didn't apply: statuses rendered as bare text, the close button had no chrome, and
+outstanding balances came out white instead of red.
+
+Fixed both ends — every component rule dropped the `.fi-root ` ancestor (the `fi-` namespace already
+guarantees no collision), tokens now live on `.fi-root, .fi-scope`, and the portal wrapper is
+`<div className="fi-scope" data-mytrion="finance">` so it re-establishes both the Finance tokens and
+the module accent. `.fi-root` keeps `height/overflow` alone; `.fi-scope` must not, or it would clip
+the scrim.
+
+### Details redesigned + Invoices/Payments polish
+
+Replaced the 17-tile icon grid — every field had identical weight and no grouping, so answering
+"what are this carrier's terms?" meant reading all of it. Now four labelled sections (Company ·
+Billing & terms · Credit & exposure · Activity) with right-aligned label→value rows and dashed
+separators, plus a derived **Limit used %** that turns red at ≥90 (AH EXPRESS reads 135%).
+
+Badging system is now one recipe (`.fi-badge`, dot + label, hue via `--p`) shared across invoice
+status, payment status/mapping, LOC-suspended, fuelling status and fuel item, so a given word is
+never two colours. Aged debt is graded (30d+ amber, 60d+ red), still-open invoice rows carry a red
+left marker, tables have zebra striping and a totals `tfoot`, and roll-ups gained Total billed /
+Total paid / Returned counts.
+
+Checks: lint 0 errors, frontend typecheck 2 (both pre-existing, baseline was 10), `vite build`
+succeeds, frontend tests 187/188 (the failure is the pre-existing `dashDebtorsData`). Rendered the
+redesigned modal in light and dark.
+
+## 2026-07-27 — Analytics Mytrion opened + rebuilt in the design system
+
+Branch `feature/MytrionAll`. UI/UX only — the data path is untouched.
+
+Removed `analyst` from `COMING_SOON_MYTRION_IDS` so the Mytrion is enterable, and updated
+`resolveAccess.test.ts`, which asserted it was parked. Two tabs: **Dashboard** and **Reports**.
+
+### Data path unchanged, presentation rebuilt
+
+`useAnalyticsSnapshot` → `GET /v1/analytics/:dimension` (2h snapshot cache, 5-minute poll) still
+does the work. What changed is that the Tailwind `AnalyticsDashboard` was replaced by marks built on
+the module's own Horizon tokens (`.an-*`), matching Manager / HR / Finance. The active dimension
+still lives in the URL (`?dimension=transactions`) so a view stays linkable. The hook's bundled
+sample-data fallback now announces itself with a banner instead of rendering as though it were live.
+
+### The chart work (data-viz skill applied)
+
+**Found a real palette bug in the old chart.** `tones.ts` collapsed 9 semantic tones onto ~6
+Tailwind classes: `sky` and `info` both mapped to `bg-primary`, `teal`→`bg-good`, `amber`→`bg-warn`.
+On the Transactions breakdown that made **Diesel and Gasoline render in the identical colour** — two
+categories, one hue, no way to tell them apart.
+
+Replaced with a proper categorical palette assigned by SERIES INDEX in fixed order (never cycled,
+never by rank, so a filter can't repaint survivors), folding anything past 6 into "Other" rather
+than inventing a 7th hue. Ran the validator rather than eyeballing it — the naive Horizon
+`--tone-*` set FAILED four checks (lightness band, chroma floor, CVD ΔE 4.6, normal-vision 14.1);
+the adopted palette passes both modes:
+
+    dark  (surface #1b212c) — CVD ΔE 8.4, normal-vision 19.3, all ≥3:1        → PASS
+    light (surface #ffffff) — CVD ΔE 9.1, normal-vision 19.6, contrast WARN×3 → PASS + relief
+
+The light WARN obliges the **relief rule**, so every categorical mark carries a visible direct label
+(name + value + %) plus a legend — identity is never colour-alone. Status hues (good/bad) are
+reserved for deltas and never reused as a series colour; delta direction also carries an arrow
+glyph, not just a hue.
+
+Trend is BARS not a line — the values are discrete daily counts, and a line would imply a continuous
+quantity between days. Single series → no legend (the card title names it), 4px rounded ends
+anchored to the baseline, 2px gaps, the in-progress trailing day faded and labelled as such in its
+tooltip, axis labelled every ~4th day to avoid collisions.
+
+**Rendering it caught what the validator can't.** The breakdown fills were invisible: `.an-bd-fill`
+is a `<span>` inside a non-flex track, so it stayed `display: inline` where width/height are ignored
+— the track drew, the coloured bar didn't. Blockified the fill, the track and the legend swatch.
+That is exactly why the skill's last step is "render it and look at it".
+
+### Reports tab
+
+Catalog of six standing reports (fuel volume, receivables ageing, pipeline conversion, agent
+performance, billing reconciliation, client health). Structural only — each card names the real
+source it will read, carries a Soon tag, and its Export button is disabled with a reason. Nothing
+generates a file, and a banner says so.
+
+### Checks
+
+Lint 0 errors, frontend typecheck 2 (both pre-existing; baseline 10), `vite build` succeeds,
+frontend tests 187/188 (the failure is the pre-existing `dashDebtorsData`). Rendered light + dark.
+
+## 2026-07-27 — Chat dock removed from every department Mytrion (Admin only)
+
+The sidebar "Chat" item was showing on Analytics (and Finance, Collection, Verification). Chat is
+now Admin-only.
+
+Fixed centrally rather than per module: `MytrionShell`'s flag was inverted from `disableDockChat`
+(opt-out, default ON) to **`enableDockChat` (opt-in, default OFF)**, and the three modules that used
+to opt out (admin, hr, manager) simply dropped the prop. With an opt-out default every NEW Mytrion
+silently shipped a chat dock unless its author remembered to disable it — which is exactly how it
+reached Analytics. Now a Mytrion has to ask for it.
+
+Audited every chat surface in the app; only two exist:
+  • `admin/index.tsx` → `<ChatPanel variant="full" />` — Admin's own page, untouched and still there
+  • `MytrionShell` → the dock view, now unreachable (nothing opts in)
+Sales / Billing / Customer Service don't use `MytrionShell` and render no ChatPanel at all, so no
+change was needed there.
+
+Checks: lint 0 errors, typecheck 2 (both pre-existing), `vite build` succeeds, frontend tests
+187/188 (the failure is the pre-existing `dashDebtorsData`).
+
+## 2026-07-27 — Fake data purged from the CRM · Collection Mytrion rebuilt
+
+Branch `feature/MytrionAll`. Two jobs: remove invented data everywhere it was rendered, and stand up
+Collection in the design system.
+
+### Shared `<ComingSoon />`
+
+New `mytrions/_shared/ComingSoon.tsx` + module CSS — one "not built yet" surface for the whole app.
+Reads `--accent`, so it takes whatever hue the surrounding Mytrion sets. Takes a `sources` list so an
+unbuilt tab still records the real table/API it will read, which keeps the intent without pretending
+the data exists.
+
+### Fake data removed (audited the whole CRM, not just HR)
+
+1. **HR** — deleted `peoplePreview.ts` entirely (6 placeholder employees, 5 attendance rows,
+   5 requests). Employees / Attendance / Requests / Profile now render `<ComingSoon />`; Home lost
+   its em-dash "at a glance" tiles (scaffolding pretending to be a dashboard) and keeps the hero +
+   launcher. Nav and jump cards carry a `Soon` badge. The genuinely useful part — the live Zoho
+   People field map — survives as `peopleSchema.ts`, which contains **no data**, only the confirmed
+   field names, coverage percentages and the consequences for whoever wires the tabs.
+2. **Analytics** — the real prize. `analyst/data.ts` shipped an `ANALYTICS` fallback with invented
+   KPIs, a fabricated 14-day trend and a leaderboard of made-up agent names, and
+   `useAnalyticsSnapshot` substituted it **whenever the warehouse was unreachable** — a dashboard
+   that looked authoritative and was fiction. Deleted. `AnalyticsLoaded.block` is now
+   `AnalyticsBlock | null` with an `error` field; a failed fetch shows an error panel, and a failed
+   POLL over an already-loaded block keeps the figures but flags them **Stale**. `data.ts` is down to
+   56 lines of pure type contract.
+3. **Collection** — deleted `data.ts` (260 lines of invented cases / Array rows / inbox) along with
+   the Cases, CaseDetail, ArrayReport and Inbox components built on it.
+4. **Dead Tailwind analytics components** — `AnalyticsDashboard`, `AnalyticsKpiGrid`,
+   `AnalyticsTrendChart`, `AnalyticsBreakdown`, `AnalyticsLeaderboard`, `AnalyticsDimensionTabs`,
+   `DeltaPill`, `params.ts` and `tones.ts` all deleted (zero external importers). That also retires
+   the `tones.ts` defect at the source: it collapsed nine semantic tones onto ~six Tailwind classes,
+   so `sky` and `info` painted identically and two categories in a breakdown were indistinguishable.
+   Only `useAnalyticsSnapshot` survives from that folder.
+
+Verified clean: Sales (`data.ts` is action config, no seed rows), Customer Service ("live APIs only")
+and Sales Data Center ("NO mock data — every row is a real CRM record").
+
+⚠️ **`verification/data.ts` still holds 330 lines of fixtures.** Verification is the only remaining
+entry in `COMING_SOON_MYTRION_IDS`, so it is not routable and none of it renders — but the module
+would show invented applications the moment it is opened. Left in place rather than rebuilding a
+fourth module unasked; it needs the same treatment before Verification launches.
+
+### Collection Mytrion
+
+Rebuilt from scratch: `collection.css` (`.co-*`, same Horizon language as Manager / HR / Finance /
+Analytics), `collectionNav.ts` with Layer-2 access predicates, `CollectionBits.tsx`, and three tabs —
+**Home** (hero + workspace launcher, no invented figures), **Array Reports** and **Collection
+Cases**, both `<ComingSoon />` with their real sources named. Removed from
+`COMING_SOON_MYTRION_IDS` so the Mytrion is enterable; `resolveAccess.test.ts` updated to match.
+
+Notes recorded for the later build: Array has an existing servercrm sync
+(`jobs/arrayReportSync.js`, `services/arrayReportDwh.js`) that needs inspecting before its columns
+are settled, and Cases likely maps onto `retention_cases` + the shared `cmp_invoice` debt figure —
+but advancing a case is a WRITE and needs an audited, role-gated endpoint first.
+
+### Checks
+
+Lint 0 errors. Typecheck 2 (both pre-existing; baseline 10). `vite build` succeeds. Frontend tests
+187/188 — the failure is the pre-existing `dashDebtorsData`. Rendered Collection + HR coming-soon in
+dark.
+
+## 2026-07-27 — Trailhead (new) + Verification rebuilt · shared module shell extracted
+
+Branch `feature/MytrionAll`.
+
+### Extracted the shared module chrome first
+
+Manager, HR, Finance, Analytics and Collection had each grown their own copy of the same primitives
+(page, kicker, hero, section head, launcher cards, button, Soon chip) — five near-identical
+stylesheets, about to become seven. Extracted once:
+
+- `_shared/moduleShell.css` — the `.ms-*` primitives, Horizon language, no module-specific colour
+  (it reads `--accent`, which each module supplies via `[data-mytrion='<id>']`).
+- `_shared/ModuleShell.tsx` — a whole Mytrion from a declarative tab array: sidebar, Main tab with
+  hero + launcher, per-tab pages, Layer-2 access predicates, `Soon` badges. A tab either renders its
+  own `content` or declares `soon` and gets `<ComingSoon />`. **There is deliberately no third
+  option that fabricates rows.**
+
+Both new modules are now ~70 lines each with no nav file, no shell and no stylesheet. The older five
+can migrate as they're next touched.
+
+### Trailhead (new Mytrion)
+
+Octane's internal learning system, named after Salesforce's. Tabs: **Main · Courses · AI Instructor ·
+Exam hub** — everything below Main is `soon`.
+
+Registered end to end: `MytrionId` union, `MYTRIONS` rule, `MYTRION_ORDER`, URL slug `/main/trailhead`,
+`registry.ts` lazy import (so it code-splits), a teal accent in `global.css` (light + dark), a
+`GraduationCap` glyph in `icons.tsx`, and backend `MYTRION_IDS` + `MYTRION_DEPARTMENT`.
+`agentKeyFor('trailhead')` returns null — like `hr`, it has no entry in AGENT_KEYS and must not be
+cast. It is the one Mytrion with no department to narrow (learning is for everyone), so its access
+rule is open with adminBypass.
+
+Note: the picker's `hue` union has no `'teal'`, so the tile uses `'green'`; the module's real accent
+is the teal from `[data-mytrion='trailhead']`.
+
+### Verification rebuilt
+
+Deleted the module wholesale — including the **330 lines of fixtures flagged last session** (7 fake
+applications, 5 client requests, 8 notifications) plus the Applications, ApplicationModal,
+Configuration, Inbox and Toast components built on them. Rebuilt on ModuleShell with **Main ·
+Applications · Configuration Ruleset · Existing clients**, all `soon`.
+
+Each tab names a real source rather than guessing: there IS a live backend
+(`modules/verificationPipeline/service.ts`, `routes/v1/verificationPipeline.routes.ts`) reading the
+verification DB, and Existing clients will read the same `octane.dim_company` spine Finance and
+Sales already agree on.
+
+### Nothing is parked any more
+
+`COMING_SOON_MYTRION_IDS` is now **empty** — every Mytrion is enterable, with unbuilt tabs showing
+`<ComingSoon />` rather than the whole module being hidden. That is more useful than a dead picker
+tile and keeps modules from rotting unseen.
+
+`resolveAccess.test.ts` was rewritten to drive both assertions off the constant itself
+(`for (const parked of COMING_SOON_MYTRION_IDS) …`) instead of hardcoding ids, so it stays correct as
+Mytrions launch rather than needing an edit every time one does.
+
+### Fake-data audit closed
+
+Swept every `data.ts` in the app. Remaining files are clean: `analyst` (56 lines, types only after
+this session's trim), `sales` (action config), `customer-service` and `billing` — both types +
+helpers, whose fixtures were removed in earlier live-wiring passes and whose headers say so.
+**No fabricated rows remain anywhere in the CRM.**
+
+### Checks
+
+Lint 0 errors. Frontend typecheck 2, backend 1 — all pre-existing (frontend baseline was 10).
+`vite build` succeeds and both new modules code-split. Frontend tests 187/188 (the failure is the
+pre-existing `dashDebtorsData`); the three suites added this session are 54/54. Rendered Trailhead
+and Verification in dark.

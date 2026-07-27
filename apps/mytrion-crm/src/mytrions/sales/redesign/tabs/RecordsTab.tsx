@@ -21,7 +21,7 @@ import {
   tierLabel,
   type TierResult,
   type TierLevel,
-} from '../loyalty';
+} from '../../../_shared/loyalty';
 import { loadRecords, numFmt } from '../live';
 import { loadLeads, loadDeals, loadRejections, LEAD_STATUS_ORDER, DEAL_STAGE_ORDER } from '../dataCenterLive';
 import { useCachedLoad, formatCachedAt, type CachedLoad } from '../dcCache';

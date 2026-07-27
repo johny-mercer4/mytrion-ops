@@ -1,37 +1,17 @@
 /**
- * Reusable analytics dashboard kit.
+ * Analytics data access.
  *
- * Full dashboard (analyst page — also reads URL params):
- *   import { AnalyticsDashboard } from '@/components/analytics';
- *   <AnalyticsDashboard />
+ * The Tailwind presentation components that used to live here (AnalyticsDashboard, KpiGrid,
+ * TrendChart, Breakdown, Leaderboard, DimensionTabs, DeltaPill, tones, params) were deleted: they
+ * were superseded by the Horizon-styled marks in `mytrions/analyst/charts.tsx`, and `tones.ts`
+ * carried a real defect — it collapsed nine semantic tones onto ~six Tailwind classes, so `sky` and
+ * `info` painted the same colour and two categories in a breakdown were indistinguishable.
  *
- * Param-driven embed on another page:
- *   <AnalyticsDashboard
- *     params={{ dimension: 'transactions', sections: ['kpis', 'trend'], fresh: true }}
- *   />
- *
- * Or compose pieces yourself with the hook / props:
- *   const { current } = useAnalyticsSnapshot({ dimension: 'billing', fresh: true });
- *   <AnalyticsKpiGrid kpis={current.block.kpis} />
+ * What remains is the snapshot hook, which is presentation-agnostic.
  */
-export { AnalyticsDashboard, type AnalyticsDashboardProps, type AnalyticsSection } from './AnalyticsDashboard';
-export {
-  parseAnalyticsParams,
-  analyticsParamsToQuery,
-  type AnalyticsParams,
-} from './params';
-export { AnalyticsKpiGrid, type AnalyticsKpiGridProps } from './AnalyticsKpiGrid';
-export { AnalyticsTrendChart, type AnalyticsTrendChartProps } from './AnalyticsTrendChart';
-export { AnalyticsBreakdown, type AnalyticsBreakdownProps } from './AnalyticsBreakdown';
-export { AnalyticsLeaderboard, type AnalyticsLeaderboardProps } from './AnalyticsLeaderboard';
-export { AnalyticsDimensionTabs, ANALYTICS_DIMENSIONS, type AnalyticsDimensionTabsProps } from './AnalyticsDimensionTabs';
-export { DeltaPill, type DeltaPillProps } from './DeltaPill';
-export {
-  useAnalyticsSnapshot,
-  type AnalyticsLoaded,
-  type UseAnalyticsSnapshotOptions,
-  type UseAnalyticsSnapshotResult,
+export { useAnalyticsSnapshot } from './useAnalyticsSnapshot';
+export type {
+  AnalyticsLoaded,
+  UseAnalyticsSnapshotOptions,
+  UseAnalyticsSnapshotResult,
 } from './useAnalyticsSnapshot';
-export { BAR_CLASS, TEXT_CLASS } from './tones';
-// Re-export dimension type for callers that only import from this barrel.
-export type { AnalyticsDimension } from '@/mytrions/analyst/data';

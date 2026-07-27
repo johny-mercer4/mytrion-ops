@@ -107,11 +107,18 @@ function NavItemButton({
 }
 
 /**
- * The Mytrion frame: TopBar + a body of [labeled sidebar | center content]. The department's scoped
- * AI chat is a sidebar item ("Chat") that takes over the center when selected — no longer a permanent
- * dock. `children` is the center content (the department's panels); `nav` is the module's items
- * (defaults to a single active Home item). Pass `navSections` for categorized Admin-style nav;
- * `enableNavSearch` adds a filter field above the list.
+ * The Mytrion frame: TopBar + a body of [labeled sidebar | center content]. `children` is the center
+ * content (the department's panels); `nav` is the module's items (defaults to a single active Home
+ * item). Pass `navSections` for categorized Admin-style nav; `enableNavSearch` adds a filter field
+ * above the list.
+ *
+ * CHAT LIVES IN ADMIN ONLY. The sidebar "Chat" item is opt-IN via `enableDockChat` and nothing opts
+ * in today, so no department Mytrion shows it. Admin's chat is not this dock at all — it renders
+ * `<ChatPanel variant="full" />` as its own page (mytrions/admin/index.tsx).
+ *
+ * The flag is inverted (opt-in) rather than a `disableDockChat` sprinkled across nine modules: with
+ * an opt-out default, every new Mytrion silently ships a chat dock unless its author remembers to
+ * turn it off, which is how it ended up on Analytics.
  */
 export function MytrionShell({
   id,
@@ -119,7 +126,7 @@ export function MytrionShell({
   nav,
   navSections,
   enableNavSearch = false,
-  disableDockChat = false,
+  enableDockChat = false,
 }: {
   id: MytrionId;
   children: ReactNode;
@@ -128,7 +135,11 @@ export function MytrionShell({
   navSections?: NavSection[];
   /** Show a search field that filters sidebar items by label / keywords. */
   enableNavSearch?: boolean;
-  disableDockChat?: boolean;
+  /**
+   * Opt IN to the sidebar chat item. Default off — see the note above. Turning this on for a
+   * department Mytrion re-exposes that department's scoped agent in the sidebar.
+   */
+  enableDockChat?: boolean;
 }) {
   const user = useUserContext();
   const m = MYTRIONS[id];
@@ -196,7 +207,7 @@ export function MytrionShell({
           </div>
 
           <div className={styles.navGroup}>
-            {!disableDockChat && (
+            {enableDockChat && (
               <button
                 type="button"
                 title="Chat"

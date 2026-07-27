@@ -221,7 +221,7 @@ export default function AdminMytrion() {
   ];
 
   return (
-    <MytrionShell id="admin" navSections={navSections} enableNavSearch disableDockChat>
+    <MytrionShell id="admin" navSections={navSections} enableNavSearch>
       {tab === 'horizon' && (
         <div className={shellStyles.chatView}>
           <ChatPanel context={user} variant="full" />

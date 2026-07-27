@@ -25,7 +25,7 @@ import {
   tierLabel,
   trackCaption,
   type TierResult,
-} from './loyalty';
+} from '../../_shared/loyalty';
 
 export type ClientModalTab = 'overview' | 'loyalty' | 'cards' | 'activity' | 'billing' | 'manage';
 
