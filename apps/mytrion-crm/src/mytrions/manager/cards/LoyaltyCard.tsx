@@ -14,7 +14,13 @@ import {
 } from 'lucide-react';
 // Shared stale-while-revalidate cache (the app's Data-Center caching system) — instant re-entry.
 import { useCachedLoad, formatCachedAt } from '../../sales/redesign/dcCache';
-import { resolveTier, resolveTierForRow, tierLabel, type TierResult, type TrackId } from '../../_shared/loyalty';
+import {
+  resolveTierForRow,
+  tierBucketLabel,
+  tierLabel,
+  type TierResult,
+  type TrackId,
+} from '../../_shared/loyalty';
 import { listLoyaltyClients, loyaltyGallons, type LoyaltyClient } from '../../../api/loyalty';
 
 /**
@@ -27,7 +33,7 @@ import { listLoyaltyClients, loyaltyGallons, type LoyaltyClient } from '../../..
  *
  * Colour: a card is literally its tier — Gold cards read gold, Silver silver, Bronze a true copper
  * bronze, clients still below the Bronze threshold take orange ("Building"), and carriers with no
- * active cards at all take a receding neutral plus a dashed border ("No cards"). The shared --tier-*
+ * active cards at all take a receding neutral plus a dashed border ("No tier"). The shared --tier-*
  * scale renders bronze AS orange, which collides with that not-reached state, so this surface uses its
  * own --lty-* palette (see manager.css) and leaves Sales untouched.
  *
@@ -73,13 +79,8 @@ const ICON: Record<Bucket, typeof Trophy> = {
   building: Sprout,
   idle: MinusCircle,
 };
-const LABEL: Record<Bucket, string> = {
-  gold: tierLabel('gold'),
-  silver: tierLabel('silver'),
-  bronze: tierLabel('bronze'),
-  building: 'Building',
-  idle: 'No cards',
-};
+// Labels come from _shared/loyalty (tierBucketLabel). A local copy existed here and is exactly how
+// the two surfaces drift — Sales said one thing and this board another.
 
 /** Which bucket a resolved tier falls in. `track === null` means zero active cards. */
 function bucketOf(t: TierResult): Bucket {
@@ -132,7 +133,7 @@ function TierBadge({ bucket }: { bucket: Bucket }) {
   return (
     <span className="mg-lty-badge" style={bucketVars(bucket)}>
       <Icon size={11} />
-      {LABEL[bucket]}
+      {tierBucketLabel(bucket)}
     </span>
   );
 }
@@ -182,7 +183,7 @@ function Distribution({
             onClick={() => onSelect(selected === b ? null : b)}
           >
             <span className="mg-lty-tile-n">{n0(counts[b])}</span>
-            <span className="mg-lty-tile-l">{LABEL[b]}</span>
+            <span className="mg-lty-tile-l">{tierBucketLabel(b)}</span>
             <span className="mg-lty-tile-pct">
               {total > 0 ? `${((counts[b] / total) * 100).toFixed(1)}%` : '—'} of clients
             </span>
@@ -265,7 +266,7 @@ function ClientCard({ row }: { row: Scored }) {
         </div>
       ) : (
         <div className="mg-lty-prog-lbl">
-          <span>No active cards — no track</span>
+          <span>No card activity — no tier</span>
         </div>
       )}
     </article>

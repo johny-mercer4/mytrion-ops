@@ -364,7 +364,10 @@ export function tierBucketLabel(b: TierBucket): string {
     case 'building':
       return 'Building';
     default:
-      return 'No cards';
+      // "No tier", not "No cards": the bucket means the client earned no tier this month, which is
+      // the thing an agent acts on. Whether they hold plastic is a separate question — plenty of
+      // these carriers have cards issued, they just have not fuelled on them.
+      return 'No tier';
   }
 }
 
@@ -409,9 +412,9 @@ export function tierLabel(level: TierLevel): string {
   }
 }
 
-/** Modal caption, e.g. "Fleet · Large · 9–10 cards" or "No active cards this month". */
+/** Modal caption, e.g. "Fleet · Large · 9–10 cards" or the no-track reason. */
 export function trackCaption(t: TierResult): string {
-  if (!t.track) return 'No active cards this month';
+  if (!t.track) return 'No card activity this month or last — no tier';
   const parts = [t.trackLabel];
   if (t.segmentLabel) parts.push(t.segmentLabel);
   const cards = t.segment ? SEGMENT_META[t.segment].cards : TRACK_META[t.track].cards;

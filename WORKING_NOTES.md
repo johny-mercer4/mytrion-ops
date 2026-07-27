@@ -6771,3 +6771,30 @@ the HR module, plus matching `drizzle.config.ts` / `schema/index.ts` entries. Th
 and currently fails `pnpm typecheck` (`kpiTelemetryRepo.ts:61`, an `exactOptionalPropertyTypes` issue
 on a Drizzle `onConflictDoUpdate` where `setWhere` may be undefined). **I committed only my own files
 and left theirs untouched** — a full-repo typecheck will stay red until that lands.
+
+### Fix — Employees 500 (missing table)
+
+`GET /v1/hr/employees` 500ed because `hr_employees` never landed: `pnpm db:migrate` rolled back at `0061` on duplicate `(tenant_id, session_id)` in `mytrion_calls` (`sess-1`). Applied `0060_hr_employees`, patched `0061` to null duplicate session_ids before the unique index, re-ran migrate green. Endpoint now `200 { items: [], total: 0 }`.
+
+## 2026-07-28 (4) — "No cards" → "No tier"; ⚠️ widget bundle cannot be rebuilt
+
+Renamed the idle bucket. "No cards" described the input; "No tier" describes the state an agent acts
+on — and it was misleading, since plenty of those carriers DO hold cards, they just haven't fuelled.
+
+Manager had its own `LABEL` map duplicating `tierBucketLabel`, which is exactly how the two boards
+drift (Sales would have said one thing and the loyalty board another). Deleted it; Manager now calls
+the shared function, so the string exists once. Also tightened the no-track captions: under the new
+prev-month track rule "idle" means no transactions in EITHER month, so "No active cards this month"
+was inaccurate — now "No card activity this month or last — no tier".
+
+### ⚠️ The vendored bundle is stale and I cannot rebuild it
+
+`pnpm build:widget` fails on `apps/mytrion-crm/src/mytrions/manager/SalesManagement.tsx` — an
+UNTRACKED file from the other session working in this checkout (`exactOptionalPropertyTypes` on a
+`TaskWriteInput`). My three loyalty files compile clean in isolation (0 errors).
+
+Consequence, and it is the same trap logged on 2026-07-27: `apps/mytrion-crm/app` is a committed
+build artifact and the Dockerfile only COPYs it. `grep` confirms the shipped bundle contains neither
+`resolveTierForRow` nor "No tier" — so **the loyalty track fix (7f67f50) and this rename are both
+source-only and will NOT reach prod** until someone fixes that file and runs `pnpm build:widget`.
+Nothing else is required of these commits; they are complete apart from the artifact.

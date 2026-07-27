@@ -15,7 +15,6 @@ import { s } from '../dc';
 import { Icon, type IconName } from '../icons';
 import { badge, type BadgeVM } from '../salesData';
 import {
-  resolveTier,
   tierBucketOf,
   resolveTierForRow,
   trackCaption,
@@ -35,13 +34,6 @@ import { useSales } from '../ctx';
 import { LeadsView, DealsView, RejectionsView } from '../dataCenterViews';
 import { DcCardGridSkeleton, DcKanbanSkeleton, DcListSkeleton } from '../DataCenterSkeletons';
 import { MoneyCodesView } from '../dataCenterMoneyCodes';
-
-/** Tier level from this-CALENDAR-month gallons (the program basis), falling back to this-cycle
- *  gallons when the client has no current-month pumps yet — so a mid-month/empty month never
- *  collapses an otherwise-active client to "Building". Active-card count still sets the track. */
-function tierGallons(c: { gallonsThisMonth: number; cycleGallons: number }): number {
-  return c.gallonsThisMonth > 0 ? c.gallonsThisMonth : c.cycleGallons;
-}
 
 /** A styled native dropdown (accessible) for the Leads/Deals filters. */
 function DcSelect({
