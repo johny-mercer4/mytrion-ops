@@ -6798,3 +6798,97 @@ build artifact and the Dockerfile only COPYs it. `grep` confirms the shipped bun
 `resolveTierForRow` nor "No tier" — so **the loyalty track fix (7f67f50) and this rename are both
 source-only and will NOT reach prod** until someone fixes that file and runs `pnpm build:widget`.
 Nothing else is required of these commits; they are complete apart from the artifact.
+
+## 2026-07-28 — Mytrion HR Departments
+
+Inspected Zoho People `department` form (components + getRecords): 22 rows.
+Fields: Department, Department_Code, MailAlias, Department_Lead (+.ID/.MailID), Parent_Department (+.ID).
+
+- Migration `0063_hr_departments` + schema `hr_departments`
+- Migrated all 22 Zoho records into our table (`scripts/migrate-hr-departments-from-zoho.ts` / `POST /v1/hr/departments/sync`)
+- CRM tab **Departments** lists from own DB; admin create/edit/delete
+- RBAC: internal read; admin writes
+
+## 2026-07-28 — HR org links + Org Structure (real tables)
+
+### Zoho People org structure review
+
+- Legacy **department** form: available; we already migrated 22 rows into `hr_departments`.
+- **Designation** form exists in Zoho, but we intentionally do **not** create `hr_designations` —
+  designations are a picklist of distinct `hr_employees.designation` values.
+- Zoho People **v3** `/v3/orgstructure/...` needs `ZOHOPEOPLE.orgstructure.READ` (current token:
+  Invalid OAuth Scope). Even with scope, list/bulk orgstructure is poorly documented.
+- **Decision:** build Mytrion Org Structure from `hr_departments.parent_id` + linked employee
+  headcounts only — no mock nodes, no live Zoho org proxy.
+
+### Schema / migration `0064_hr_org_links`
+
+- `hr_employees.department_id` + `department_zoho_id` (FK-style link to `hr_departments`).
+- `hr_departments.parent_id` (self-link for tree).
+- Backfill: Department.ID from `raw_fields` → zoho id match → name match; parent via
+  `parent_zoho_id`.
+- Applied on Render: **88** employees, **60** linked / **28** unlinked (those 28 have null
+  department in Zoho), **22** departments with **20** parent links, **13** designation labels.
+
+### API + UI
+
+- `GET /v1/hr/meta/designations`, `GET /v1/hr/org-structure`
+- Employees: department select from `hr_departments` (`departmentId`); designation datalist picklist
+- New HR tab **Org Structure** — tree from real tables only
+- Department parent field is a select of existing department names (resolves `parent_id`)
+
+## 2026-07-28 (5) — Referral bonus engine + monthly cron
+
+Built the calculation engine and the cron. The ledger (`mytrion_referral_bonuses`, migration 0058),
+`referralBonusRepo` (incl. run audit) and the four declarative specs already existed; what was
+missing was the engine and any job.
+
+### Engine — `src/modules/manager/referralBonusEngine.ts`
+
+Per run: read both Zoho modules → join child→parent → collapse by carrier → read one month of DWH
+volume → apply each child's `Calculation` → upsert, bracketed by a `mytrion_referral_calc_runs` row.
+
+Three decisions worth recording:
+
+- **Join on the REF CODE, not the lookup.** `Child_Referrals.Parent_Referrer` is null across the
+  whole org (verified live); the populated key is `Parent_Referrers.ReferrerId` ↔
+  `Child_Referrals.Referrer_ID`. Joining on the lookup would have produced an empty ledger forever.
+- **Carrier-level, not record-level.** Several child records routinely share one `Carrier_ID` (all 4
+  live children share 5799524). Volume belongs to the carrier, so only the first child per
+  (carrier, type) is paid — ordered by record id so a re-run cannot move the award to a sibling and
+  trip the one-time unique index.
+- **One-time types write NO row below threshold** rather than a zero-value placeholder, so the
+  partial unique index never has to reconcile a placeholder against a real award later.
+
+A legacy child accrues BOTH legacy bonuses in the same month — pre-existing documented behaviour of
+`bonusTypesForCalculation` (the PDF treats types 1 and 2 as concurrent). My first test asserted one
+row and was wrong; corrected and now pinned explicitly.
+
+### DWH — `src/integrations/dwhReferralVolume.ts`
+
+One query returns month gallons, new cards and cumulative-through-month-end per carrier. "Swipe" is
+the NEW-CARD metric (`min(transaction_date)` per card falls in the month), not a transaction count.
+Everything is bounded by the period end so a backfill cannot award a one-time bonus in a month the
+client had not yet reached the threshold.
+
+**Live-verified against the warehouse** (carrier 5799524, June 2026): `gallons 0, newCards 0,
+cumulative 6,793.5`. Crucially the legacy set (`ULSD,ULSR`) and the new-logic set (`+DSL`) return the
+IDENTICAL cumulative — hard confirmation of the documented DSL gap: no row carries the literal `DSL`
+code, so types 3 and 4 currently behave exactly like the legacy pair. Still an unmade business call.
+
+### Cron
+
+`automation.referral.bonus-calc`, singleton, cron `30 0 1 * *` — 00:30 on the 1st, after the month
+has definitively closed and clear of the midnight job pile-up. Omitting `periodMonth` computes the
+month just ended; supplying `'YYYY-MM-01'` is the backfill/recompute hook. Added to
+`MANUAL_TRIGGERABLE_QUEUES` so Admin can run it on demand. **No auto-backfill on first run** — the
+DWH has the history, but silently generating months of payouts is not something to do implicitly;
+trigger the months you want explicitly.
+
+14 tests. Also had to widen the `manager-loyalty-routes` projection allow-list for
+`activeCardsPrevMonth` — that test pins an exact key set to stop Clients-tab fields leaking, and it
+correctly caught the new field.
+
+**Still blocked from producing anything:** `Calculation` is null on every Zoho record (a run reports
+`skippedNoCalculation` and succeeds with zero rows), and `FF_JOBS_ENABLED` is excluded in
+`render.yaml`, so the cron will not fire in prod until that is set in the Render env group.
