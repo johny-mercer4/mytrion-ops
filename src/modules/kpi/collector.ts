@@ -381,6 +381,12 @@ function dashboardData(value: unknown): Row | null {
   return root.data && typeof root.data === 'object' ? (root.data as Row) : null;
 }
 
+function dashboardError(value: unknown): string {
+  if (!value || typeof value !== 'object') return 'dashboard unavailable';
+  const error = (value as Row).error;
+  return typeof error === 'string' ? error : 'dashboard unavailable';
+}
+
 async function collectSwipes(
   ctx: TenantContext,
   workers: KpiWorker[],
@@ -423,9 +429,25 @@ async function collectSwipes(
         });
         continue;
       }
+      const response = await fetchAgentSalesDashboard(worker.displayName);
+      const data = dashboardData(response);
+      if (!data) {
+        const message = dashboardError(response);
+        if (/not found in dim_company/i.test(message)) {
+          await kpiMappingRepo.recordUnresolved(ctx, {
+            source: 'sales_dwh',
+            sourceKey: worker.zohoUserId,
+            observedLabel: worker.displayName,
+            reason: 'agent_not_found_in_dim_company',
+            ingestionRunId: run.id,
+          });
+          unresolved += 1;
+          continue;
+        }
+        unavailable += 1;
+        continue;
+      }
       try {
-        const data = dashboardData(await fetchAgentSalesDashboard(worker.displayName));
-        if (!data) throw new Error('dashboard unavailable');
         const daily = Array.isArray(data.dailyTransactionsByCarrier)
           ? (data.dailyTransactionsByCarrier as Row[])
           : [];

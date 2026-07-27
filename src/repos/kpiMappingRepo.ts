@@ -2,12 +2,30 @@ import { createId } from '@paralleldrive/cuid2';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
+  kpiIngestionRuns,
   kpiUnresolvedWorkerMappings,
   type KpiUnresolvedWorkerMapping,
 } from '../db/schema/index.js';
 import type { TenantContext } from '../types/tenantContext.js';
 
 export const kpiMappingRepo = {
+  async correctRunMappingSummary(
+    ctx: TenantContext,
+    ingestionRunId: string,
+    unresolvedMappings: number,
+    error: string | null,
+  ): Promise<void> {
+    await db
+      .update(kpiIngestionRuns)
+      .set({ unresolvedMappings, error })
+      .where(
+        and(
+          eq(kpiIngestionRuns.tenantId, ctx.tenantId),
+          eq(kpiIngestionRuns.id, ingestionRunId),
+        ),
+      );
+  },
+
   async recordUnresolved(
     ctx: TenantContext,
     input: {

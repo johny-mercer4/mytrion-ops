@@ -5,6 +5,7 @@ import {
   type ExternalMetricTotal,
   type KpiMetricValueInput,
 } from '../../repos/kpiRepo.js';
+import { kpiDailyBatchRepo } from '../../repos/kpiDailyBatchRepo.js';
 import { kpiTaskMetricsRepo } from '../../repos/kpiTaskMetricsRepo.js';
 import { kpiTelemetryRepo } from '../../repos/kpiTelemetryRepo.js';
 import { kpiWorkerRepo } from '../../repos/kpiWorkerRepo.js';
@@ -209,6 +210,7 @@ export async function computeDailyRollups(
       bounds.start,
       bounds.end,
     );
+    const workerValues = [];
     for (const worker of workers) {
       workerIds.add(worker.id);
       const values = workerDayValues(
@@ -221,16 +223,15 @@ export async function computeDailyRollups(
         },
         metricVersions,
       );
-      await kpiRepo.upsertDailyRollup(
-        ctx,
-        worker.id,
-        day,
-        env.KPI_REPORTING_TZ,
-        values,
-        sourceWatermarks,
-      );
-      rollups += 1;
+      workerValues.push({ workerId: worker.id, values });
     }
+    rollups += await kpiDailyBatchRepo.upsertDay(
+      ctx,
+      day,
+      env.KPI_REPORTING_TZ,
+      workerValues,
+      sourceWatermarks,
+    );
   }
   return { workers: workerIds.size, days: days.length, rollups };
 }

@@ -54,21 +54,6 @@ export interface TaskTypeDto {
   active: boolean;
 }
 
-export interface KpiIngestionRunDto {
-  id: string;
-  source: string;
-  mode: string;
-  status: string;
-  windowStart: string | null;
-  windowEnd: string | null;
-  recordsSeen: number;
-  recordsWritten: number;
-  unresolvedMappings: number;
-  error: string | null;
-  startedAt: string;
-  completedAt: string | null;
-}
-
 export interface TaskWriteInput {
   assigneeZohoUserId: string;
   type: string;
@@ -81,18 +66,6 @@ export interface TaskWriteInput {
 export async function listKpiWorkers(): Promise<KpiWorkerDto[]> {
   const data = (await request('GET', '/manager/sales/kpi/workers')) as { workers: KpiWorkerDto[] };
   return data.workers;
-}
-
-export async function getKpiCollectionHealth(): Promise<{
-  enabled: boolean;
-  reportingTimezone: string;
-  ingestionRuns: KpiIngestionRunDto[];
-}> {
-  return (await request('GET', '/manager/sales/kpi/collection-health')) as {
-    enabled: boolean;
-    reportingTimezone: string;
-    ingestionRuns: KpiIngestionRunDto[];
-  };
 }
 
 export async function listManagerTasks(filter: {

@@ -16,8 +16,6 @@ import {
   verifyTaskWebhookSignature,
   webhookPayloadHash,
 } from '../../modules/kpi/taskWebhookAuth.js';
-import { kpiRepo } from '../../repos/kpiRepo.js';
-import { kpiMappingRepo } from '../../repos/kpiMappingRepo.js';
 import {
   KPI_ACTIVITY_EVENT_NAMES,
   kpiTelemetryRepo,
@@ -99,11 +97,6 @@ const activitySchema = z.object({
     .min(1)
     .max(100),
 });
-const dateRangeSchema = z.object({
-  from: z.string().date(),
-  to: z.string().date(),
-});
-
 function managerContext(request: FastifyRequest): TenantContext {
   return requireDepartment(request, 'management', 'Sales KPI management');
 }
@@ -236,26 +229,6 @@ export async function salesKpiRoutes(app: FastifyInstance): Promise<void> {
   app.get('/manager/sales/kpi/workers', guard, async (request) => {
     const ctx = managerContext(request);
     return { workers: await kpiWorkerRepo.list(ctx, true) };
-  });
-  app.get('/manager/sales/kpi/collection-health', guard, async (request) => {
-    const ctx = managerContext(request);
-    return {
-      enabled: env.FF_KPI_COLLECTION_ENABLED,
-      reportingTimezone: env.KPI_REPORTING_TZ,
-      ingestionRuns: await kpiRepo.listIngestionRuns(ctx),
-      unresolvedWorkerMappings: await kpiMappingRepo.listUnresolved(ctx),
-    };
-  });
-  app.get('/manager/sales/kpi/workers/:workerId/daily', guard, async (request) => {
-    const ctx = managerContext(request);
-    const workerId = z.string().min(1).parse((request.params as { workerId?: string }).workerId);
-    const range = dateRangeSchema.parse(request.query ?? {});
-    return { days: await kpiRepo.listDaily(ctx, workerId, range.from, range.to) };
-  });
-  app.get('/manager/sales/kpi/workers/:workerId/monthly', guard, async (request) => {
-    const ctx = managerContext(request);
-    const workerId = z.string().min(1).parse((request.params as { workerId?: string }).workerId);
-    return { snapshots: await kpiRepo.listMonthly(ctx, workerId) };
   });
 
   app.get('/manager/sales/tasks/types', guard, async (request) => {

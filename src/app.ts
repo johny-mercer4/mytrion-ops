@@ -67,6 +67,7 @@ import { tasksRoutes } from './routes/v1/tasks.routes.js';
 import { toolsRoutes } from './routes/v1/tools.routes.js';
 import { touchpointsRoutes } from './routes/v1/touchpoints.routes.js';
 import { salesKpiRoutes } from './routes/v1/salesKpi.routes.js';
+import { kpiAdminRoutes } from './routes/v1/kpiAdmin.routes.js';
 
 // Redact auth-bearing request headers from Fastify's request logger (defense-in-depth: the default
 // serializer doesn't dump headers, but if request-header logging is ever enabled these must not leak).
@@ -302,6 +303,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(ringcentralRoutes);
       await v1.register(analyticsRoutes);
       await v1.register(salesKpiRoutes);
+      await v1.register(kpiAdminRoutes);
     },
     { prefix: API_PREFIX },
   );

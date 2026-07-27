@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, ClipboardList, RefreshCw, Send, XCircle } from 'lucide-react';
+import { RefreshCw, Send, XCircle } from 'lucide-react';
 import {
   createManagerTask,
-  getKpiCollectionHealth,
   listKpiWorkers,
   listManagerTasks,
   listTaskTypes,
   updateManagerTask,
-  type KpiIngestionRunDto,
   type KpiWorkerDto,
   type TaskTypeDto,
   type WorkerTaskDto,
@@ -15,8 +13,6 @@ import {
   type WorkerTaskStatus,
 } from '../../api/salesKpi';
 import './salesManagement.css';
-
-type View = 'tasks' | 'health';
 
 function friendly(value: string): string {
   return value.replaceAll('_', ' ');
@@ -27,13 +23,9 @@ function deadlineInput(value: string): string | undefined {
 }
 
 export function SalesManagement() {
-  const [view, setView] = useState<View>('tasks');
   const [workers, setWorkers] = useState<KpiWorkerDto[]>([]);
   const [types, setTypes] = useState<TaskTypeDto[]>([]);
   const [tasks, setTasks] = useState<WorkerTaskDto[]>([]);
-  const [runs, setRuns] = useState<KpiIngestionRunDto[]>([]);
-  const [enabled, setEnabled] = useState(false);
-  const [timezone, setTimezone] = useState('America/New_York');
   const [filterWorker, setFilterWorker] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,18 +43,14 @@ export function SalesManagement() {
     setLoading(true);
     setError(null);
     try {
-      const [workerRows, typeRows, taskRows, health] = await Promise.all([
+      const [workerRows, typeRows, taskRows] = await Promise.all([
         listKpiWorkers(),
         listTaskTypes(),
         listManagerTasks(),
-        getKpiCollectionHealth(),
       ]);
       setWorkers(workerRows);
       setTypes(typeRows);
       setTasks(taskRows);
-      setRuns(health.ingestionRuns);
-      setEnabled(health.enabled);
-      setTimezone(health.reportingTimezone);
       setForm((current) => ({
         ...current,
         assigneeZohoUserId: current.assigneeZohoUserId || workerRows[0]?.zohoUserId || '',
@@ -133,26 +121,17 @@ export function SalesManagement() {
         <div>
           <p className="mg-sales__eyebrow">Manager · Sales</p>
           <h1>Sales operations</h1>
-          <p>Assign work and verify that KPI source collection is healthy. No ratings are calculated here.</p>
+          <p>Assign and manage work for Sales agents. KPI collection is monitored in Mytrion Admin.</p>
         </div>
         <button className="mg-sales__button mg-sales__button--ghost" onClick={() => void load()}>
           <RefreshCw size={15} /> Refresh
         </button>
       </header>
 
-      <nav className="mg-sales__tabs" aria-label="Sales management sections">
-        <button aria-pressed={view === 'tasks'} onClick={() => setView('tasks')}>
-          <ClipboardList size={16} /> Tasks
-        </button>
-        <button aria-pressed={view === 'health'} onClick={() => setView('health')}>
-          <Activity size={16} /> Collection health
-        </button>
-      </nav>
-
       {error ? <div className="mg-sales__error">{error}</div> : null}
       {loading ? <div className="mg-sales__empty">Loading Sales operations…</div> : null}
 
-      {!loading && view === 'tasks' ? (
+      {!loading ? (
         <div className="mg-sales__task-grid">
           <form className="mg-sales__panel mg-sales__form" onSubmit={(event) => void createTask(event)}>
             <div className="mg-sales__panel-title">New assignment</div>
@@ -248,32 +227,6 @@ export function SalesManagement() {
         </div>
       ) : null}
 
-      {!loading && view === 'health' ? (
-        <div className="mg-sales__panel">
-          <div className="mg-sales__health-head">
-            <div>
-              <div className="mg-sales__panel-title">Collection runs</div>
-              <p>Reporting timezone: {timezone}</p>
-            </div>
-            <span className={`mg-sales__flag ${enabled ? 'is-on' : ''}`}>
-              {enabled ? 'Shadow collection enabled' : 'Feature flag disabled'}
-            </span>
-          </div>
-          <div className="mg-sales__runs">
-            {runs.map((run) => (
-              <div className="mg-sales__run" key={run.id}>
-                <div><strong>{run.source}</strong><span>{friendly(run.mode)}</span></div>
-                <span className={`mg-sales__run-status is-${run.status}`}>{run.status}</span>
-                <span>{run.recordsWritten} written</span>
-                <span>{run.unresolvedMappings} unresolved</span>
-                <span>{new Date(run.startedAt).toLocaleString()}</span>
-                {run.error ? <p>{run.error}</p> : null}
-              </div>
-            ))}
-            {runs.length === 0 ? <div className="mg-sales__empty">No collection runs have been recorded yet.</div> : null}
-          </div>
-        </div>
-      ) : null}
     </section>
   );
 }

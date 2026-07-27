@@ -63,6 +63,21 @@ vi.mock('../../src/repos/kpiMappingRepo.js', () => ({
   },
 }));
 
+vi.mock('../../src/repos/kpiAdminRepo.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/repos/kpiAdminRepo.js')>();
+  return {
+    ...actual,
+    kpiAdminRepo: {
+      dateBounds: vi.fn(async () => ({ from: '2026-07-26', to: '2026-07-26' })),
+      ingestionRuns: vi.fn(async () => []),
+      tableCounts: vi.fn(async () => ({})),
+      aggregateMetrics: vi.fn(async () => []),
+      workers: vi.fn(async () => []),
+      facts: vi.fn(async () => []),
+    },
+  };
+});
+
 vi.mock('../../src/repos/kpiTelemetryRepo.js', () => ({
   KPI_ACTIVITY_EVENT_NAMES: [
     'navigation.tab_open',
@@ -167,7 +182,7 @@ function bearer(value: string): Record<string, string> {
 }
 
 describe('Sales KPI route boundaries', () => {
-  it('rejects unauthenticated telemetry and non-manager KPI health reads', async () => {
+  it('rejects unauthenticated telemetry and non-admin KPI health reads', async () => {
     const telemetryResponse = await app.inject({
       method: 'POST',
       url: '/v1/kpi/presence',
@@ -180,10 +195,30 @@ describe('Sales KPI route boundaries', () => {
 
     const managerResponse = await app.inject({
       method: 'GET',
-      url: '/v1/manager/sales/kpi/collection-health',
+      url: '/v1/admin/kpi/overview',
       headers: bearer(await token('Billing Clerk')),
     });
     expect(managerResponse.statusCode).toBe(403);
+  });
+
+  it('exposes collection and data only through Mytrion Admin', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/kpi/overview?from=2026-07-26&to=2026-07-26',
+      headers: bearer(await token('Administrator')),
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      reportingTimezone: 'America/New_York',
+      range: { from: '2026-07-26', to: '2026-07-26' },
+    });
+
+    const removedManagerRoute = await app.inject({
+      method: 'GET',
+      url: '/v1/manager/sales/kpi/collection-health',
+      headers: bearer(await token('Administrator')),
+    });
+    expect(removedManagerRoute.statusCode).toBe(404);
   });
 
   it('derives Sales task and telemetry identity from the verified session', async () => {
