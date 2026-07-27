@@ -47,7 +47,12 @@
 }
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
+/* `position: relative; z-index: 2` so the sidebar outranks its later-in-DOM sibling `.cs-content`
+   (position: relative, z-index auto) — otherwise the content pane paints over anything the sidebar
+   pops out, e.g. the upward "View as" menu. */
 .cs-root .cs-sidebar {
+    position: relative;
+    z-index: 2;
     background: var(--hz-glass);
     backdrop-filter: blur(var(--hz-blur));
     -webkit-backdrop-filter: blur(var(--hz-blur));
