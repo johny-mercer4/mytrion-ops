@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { fetchAnalyticsSnapshot } from '@/api/analytics';
-import { ANALYTICS, type AnalyticsBlock, type AnalyticsDimension } from '@/mytrions/analyst/data';
+import type { AnalyticsBlock, AnalyticsDimension } from '@/mytrions/analyst/data';
 
+/**
+ * A loaded snapshot. `block` is null until the warehouse answers — there is NO bundled sample
+ * fallback any more. Substituting invented KPIs, trends and a leaderboard of made-up agent names
+ * for a failed fetch produced a dashboard that looked authoritative and was fiction; a failure now
+ * surfaces as `error` and the UI shows nothing rather than something false.
+ */
 export interface AnalyticsLoaded {
-  block: AnalyticsBlock;
-  /** 'live' = warehouse snapshot; 'sample' = bundled fallback (backend unreachable). */
-  source: 'live' | 'sample';
+  block: AnalyticsBlock | null;
   computedAt?: string;
+  /** Set when the last fetch for this dimension failed. */
+  error?: string;
 }
 
 export interface UseAnalyticsSnapshotOptions {
@@ -57,15 +63,16 @@ export function useAnalyticsSnapshot(opts: UseAnalyticsSnapshotOptions): UseAnal
       const snap = await fetchAnalyticsSnapshot(dim, { fresh: forceFresh });
       setLoaded((prev) => ({
         ...prev,
-        [dim]: { block: snap.block, source: 'live', computedAt: snap.computedAt },
+        [dim]: { block: snap.block, computedAt: snap.computedAt },
       }));
-    } catch {
-      // Backend off / DWH unconfigured → keep (or fall back to) the bundled sample block.
-      setLoaded((prev) =>
-        prev[dim]?.source === 'live'
-          ? prev
-          : { ...prev, [dim]: { block: ANALYTICS[dim], source: 'sample' } },
-      );
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Analytics snapshot unavailable';
+      // Keep a previously-loaded block visible (a poll blip must not blank a working dashboard)
+      // but attach the error so the surface can say the figures are stale.
+      setLoaded((prev) => ({
+        ...prev,
+        [dim]: { block: prev[dim]?.block ?? null, ...(prev[dim]?.computedAt ? { computedAt: prev[dim]!.computedAt } : {}), error: message },
+      }));
     }
   }, []);
 
@@ -92,7 +99,7 @@ export function useAnalyticsSnapshot(opts: UseAnalyticsSnapshotOptions): UseAnal
     }
   }, [dimension, load]);
 
-  const current: AnalyticsLoaded = loaded[dimension] ?? { block: ANALYTICS[dimension], source: 'sample' };
+  const current: AnalyticsLoaded = loaded[dimension] ?? { block: null };
 
   return {
     current,

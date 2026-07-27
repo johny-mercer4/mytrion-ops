@@ -200,6 +200,7 @@ describe('data-center clients — owner scope + RBAC (Clients roster + gallons)'
     carrierId: '123',
     companyName: 'Acme Trucking',
     contact: 'Jane Doe',
+    agentName: 'Robiya',
     phone: '555-0100',
     producedCards: 6,
     activeCards: 4,

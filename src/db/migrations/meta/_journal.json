@@ -407,6 +407,13 @@
       "when": 1784737200000,
       "tag": "0057_mytrion_access_modes",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1784740800000,
+      "tag": "0058_mytrion_referral_bonuses",
+      "breakpoints": true
     }
   ]
 }
