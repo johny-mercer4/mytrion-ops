@@ -414,6 +414,13 @@
       "when": 1784740800000,
       "tag": "0058_mytrion_referral_bonuses",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1784744400000,
+      "tag": "0059_mytrion_rejection_reports",
+      "breakpoints": true
     }
   ]
 }

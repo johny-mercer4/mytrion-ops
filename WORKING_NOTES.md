@@ -6334,3 +6334,91 @@ Widget bundle rebuilt and the `flex:none` rules verified present in the shipped 
 **Note:** CLAUDE.md rule 10 asks for the `modern-web-guidance` skill on UI work — it is not
 registered in this environment (`Unknown skill`), so the CSS change was made without it. Worth either
 installing the skill or dropping the rule.
+
+## 2026-07-27 — Standardize Sales Coming soon detail panels
+
+Single catalog `soonTabs.ts` (copy + hue + icon) shared by sidebar SOON chips and
+`ComingSoonPanel`. Panel layout moved to `.ss-soon-panel*` in `ss-horizon.css` so Tickets /
+Verification / Call Hub render the same composition. Removed unused DashSkeleton ComingSoonPanel.
+
+
+## 2026-07-27 (4) — Sales: Automations UX, tier client cards, Rejection Reports (partial)
+
+### ⚠️ `.env` MYTRION_OPS_DATABASE_URL points at PROD, not localhost:5433
+
+`pnpm db:migrate` run locally hits the **Render production database**
+(`dpg-…oregon-postgres.render.com/mytrion_ops_db`), not the docker Postgres CLAUDE.md documents on
+`localhost:5433` (that container's DB is `octane_assistant` and is empty of app tables). I hit this
+the normal way — started docker, ran `db:migrate` to reach head, then again after adding 0059 — and
+both went to prod.
+
+Impact of what landed: `0059_mytrion_rejection_reports` — one new table + 5 indexes, all
+`IF NOT EXISTS`, **purely additive**. No existing table, column or row was touched; the table is
+empty. Prod now reports 60 applied migrations against 60 local `.sql` files, i.e. exactly head, and
+the only new `mytrion_*` table is the one added here — so the earlier "reach head" run was a no-op.
+
+**Action needed:** either point local `.env` at `postgresql://…@localhost:5433/…` (matching CLAUDE.md
+§"Local run stack"), or add a guard so `db:migrate` refuses a non-local host without an explicit
+`--prod` style opt-in. Right now any developer following the documented workflow migrates prod.
+
+### 1. Automations — card content vanished on hover+scroll
+
+`catalogCard` (AutoCatalog.tsx) emitted `transform: scale(1)` at REST. That is not a no-op: it
+promotes the card to its own composited layer and makes it a containing block. Stacked on the
+`backdrop-filter: blur(20px)` `.ss-card-h` puts on all 24 catalog cards, a scroll that changes what
+the filter samples could leave the promoted layer un-repainted — the children were still in the DOM,
+just unpainted. `overflow: hidden` (which nothing needed) gave that stale layer something to clip
+against, and `transition: all` re-ran the blur rasterisation on every property change while also
+overriding the narrower transition ss-horizon.css sets. Now: transform only while dragging,
+no `overflow`, explicit 4-property transition. Rest appearance unchanged.
+
+### 2. Automations — dark-mode modal transparency
+
+The panel used `background: var(--surface)` = `rgba(24,31,45,0.66)`. Correct for a card sitting ON
+the page, far too see-through for a dialog OVER it — the catalog grid read straight through it
+(matches the screenshot). Added `--hz-modal-surface` (0.94 dark / 0.96 light) and pointed the
+existing-but-unreferenced `.ss-modal-box` recipe at it, then adopted that class on the modal and
+raised the scrim from `.62`/blur3 to `.78`/blur6 (matching dataCenterSheet). `--surface` itself is
+untouched, so the ~150 inline card/row/chip call sites don't flatten.
+
+### 3. Data Center → Clients
+
+`DcCardGridSkeleton` added — Clients was the only sub-tab falling through to `Gate`'s bare centred
+ring while Leads/Deals both passed a shaped skeleton. It mirrors the real card's box model so the
+grid doesn't jump.
+
+Tier gradient cards ported from the Manager loyalty board into `dc-clients.css`, scoped to `.dc-lty`
+(Sales' global `--tier-*` renders bronze AS orange, which collides with "building toward Bronze").
+Gold vs Bronze are separated on **three** axes, not hue alone, so the pair survives dim screens:
+gold is bright `#eaa32c` + metallic sheen sweep + inset halo; bronze is dark copper `#a25e28`,
+deliberately **matte** with no sheen and no halo. "No active cards" is dashed rather than a dimmer
+tier. The tier owns only the shell (edge/wash/rail/glow) — violet Gallons·Cycle, accent
+Gallons·Month and danger Owed keep their own semantics, so a tier can never be misread as a metric.
+Rendered all five buckets in headless Chrome to confirm separation and that the figures stay legible.
+Bucket helpers (`tierBucketOf`, `TIER_BUCKET_ORDER`) moved into `_shared/loyalty.ts` so Sales and
+Manager cannot diverge. Also fixed the Manager bug where `.is-gold` out-specified `:hover`, leaving
+gold the one card with no hover glow — the new recipe drives it off a `--halo` variable instead.
+
+### 4. Rejection Reports — schema + migration only (rest NOT built)
+
+Done: `src/db/schema/mytrion_rejection_reports.ts`, registered in `schema/index.ts` **and** in
+`drizzle.config.ts`'s explicit `schema[]` array (miss that and drizzle-kit never sees the table),
+plus hand-written `0059_mytrion_rejection_reports.sql` + journal entry.
+
+Hand-written because **`pnpm db:generate` is broken repo-wide**: `meta/0022_snapshot.json` and
+`0023_snapshot.json` both declare the same `prevId`, so drizzle-kit aborts with a snapshot collision.
+Snapshots stopped at 0024 anyway (25 snapshots vs 60 migrations), so 0025+ have all been hand-written
+with a hand-maintained journal — 0059 follows that. Worth repairing the 0022/0023 chain separately.
+
+Ownership design note: the row stores BOTH `agent_zoho_user_id` and `agent_name`. A sub-investigation
+recommended id-only (a live DWH check found no carrier with a name but no id), but that is the
+carrier→agent direction; the READ is the reverse — a worker's session Zoho id → their reports — and
+`dwhClientRoster.buildOwnedCte` unions an id-suffix arm with a NAME arm precisely because session ids
+and `dim_company.agent_zoho_user_id` don't reliably agree. Binding on id alone risks the documented
+"0 rows for everyone" failure, so both are stored and reads must match id-or-name.
+
+**Still to build:** `findCarrierOwner` in dwhClientRoster, `rejectionReportRepo`,
+`rejectionReports.routes.ts` (webhook `POST /v1/rejection-reports/webhook` with `x-rejection-secret`
++ the DB-backed `GET /v1/data-center/rejections`), `REJECTION_WEBHOOK_SECRET` env + log redaction,
+route registration, removal of the existing Zoho-backed `/data-center/rejections` (a second GET on
+the same path is `FST_ERR_DUPLICATED_ROUTE` **at boot**), and the Deluge snippet.

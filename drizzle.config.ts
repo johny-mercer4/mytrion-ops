@@ -42,6 +42,7 @@ export default defineConfig({
     './src/db/schema/mytrion_calls.ts',
     './src/db/schema/mytrion_inbox_messages.ts',
     './src/db/schema/mytrion_referral_bonuses.ts',
+    './src/db/schema/mytrion_rejection_reports.ts',
   ],
   out: './src/db/migrations',
   dialect: 'postgresql',

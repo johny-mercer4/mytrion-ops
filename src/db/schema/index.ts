@@ -37,3 +37,4 @@ export * from './payment_returns.js';
 export * from './mytrion_calls.js';
 export * from './mytrion_inbox_messages.js';
 export * from './mytrion_referral_bonuses.js';
+export * from './mytrion_rejection_reports.js';
