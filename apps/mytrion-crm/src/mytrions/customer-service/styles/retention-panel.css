@@ -754,8 +754,8 @@
 
 .cs-root .cs-ret-notes input:focus {
   outline: none;
-  border-color: transparent;
-  box-shadow: 0 0 0 3px var(--cs-accent-glow);
+  border-color: var(--cs-accent);
+  box-shadow: none;
 }
 
 .cs-root .cs-ret-act-foot {
@@ -939,8 +939,8 @@
 .cs-root .cs-ret-attempt select:focus,
 .cs-root .cs-ret-attempt input:focus {
   outline: none;
-  border-color: transparent;
-  box-shadow: 0 0 0 3px var(--cs-accent-glow);
+  border-color: var(--cs-accent);
+  box-shadow: none;
 }
 
 .cs-root .cs-ret-outcomes {

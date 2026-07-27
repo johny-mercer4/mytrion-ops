@@ -517,8 +517,8 @@
 /* Inputs: quiet accent focus ring */
 .cs-root .cs-form-input:focus {
     outline: none;
-    border-color: transparent;
-    box-shadow: 0 0 0 3px var(--cs-accent-soft);
+    border-color: var(--cs-accent-deep);
+    box-shadow: none;
 }
 
 /* Search inputs sit inside a wrapper that owns the focus ring (:focus-within),

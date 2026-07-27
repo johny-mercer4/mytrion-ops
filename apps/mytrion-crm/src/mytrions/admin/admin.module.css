@@ -163,8 +163,8 @@
 }
 .search:focus-within {
   background: var(--hz-pane-lift);
-  border-color: transparent;
-  box-shadow: 0 0 0 3px var(--accent-glow), var(--hz-glass-inset);
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--hz-pane-bd));
+  box-shadow: var(--hz-glass-inset);
 }
 .searchInput {
   flex: 1;
@@ -1290,8 +1290,8 @@
 .select:focus,
 .input:focus {
   background: var(--hz-pane-lift);
-  border-color: transparent;
-  box-shadow: 0 0 0 3px var(--accent-glow), var(--hz-glass-inset);
+  border-color: var(--accent);
+  box-shadow: var(--hz-glass-inset);
 }
 .progressTrack {
   height: 8px;
@@ -1878,8 +1878,8 @@
 .textarea:focus {
   outline: none;
   background: var(--hz-pane-lift);
-  border-color: transparent;
-  box-shadow: 0 0 0 3px var(--accent-glow), var(--hz-glass-inset);
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--hz-pane-bd));
+  box-shadow: var(--hz-glass-inset);
 }
 
 /* carrier users form + row actions */
