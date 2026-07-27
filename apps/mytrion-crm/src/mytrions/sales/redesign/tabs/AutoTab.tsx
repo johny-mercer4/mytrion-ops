@@ -307,9 +307,13 @@ export function AutoTab() {
         <AutoCatalog items={autoCatalog} onOpen={openAuto} />
       </div>
 
+      {/* Scrim matches dataCenterSheet (.78 / blur 6) — .62 / blur 3 left the catalog legible through
+          the dialog. The panel takes the shared `ss-modal-box` recipe (accent rail +
+          --hz-modal-surface + blur) instead of an inline --surface, which at 0.66 alpha was the main
+          reason the modal read as translucent in dark mode. */}
       {b && (
-        <div onClick={closeAuto} style={s('position:fixed;inset:0;z-index:115;background:rgba(3,7,14,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px')}>
-          <div onClick={(e) => e.stopPropagation()} style={s(`width:100%;max-width:${modalMaxW};max-height:88vh;display:flex;flex-direction:column;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);box-shadow:0 24px 48px rgba(0,0,0,0.2);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
+        <div onClick={closeAuto} style={s('position:fixed;inset:0;z-index:115;background:rgba(3,7,14,.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px')}>
+          <div className="ss-modal-box" onClick={(e) => e.stopPropagation()} style={s(`position:relative;width:100%;max-width:${modalMaxW};max-height:88vh;display:flex;flex-direction:column;border-radius:var(--radius-md);animation:ss-pop .22s cubic-bezier(.2,0,0,1) both;overflow:hidden`)}>
             <div style={s('flex-shrink:0;padding:24px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:16px;background:linear-gradient(180deg,rgba(var(--accent-rgb),0.03),transparent)')}>
               <div style={s(iconBox(autoIconColor(b), 48))}>
                 <Icon name={b.icon} size={22} strokeWidth={1.75} />
