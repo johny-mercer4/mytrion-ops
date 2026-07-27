@@ -320,7 +320,7 @@ export function RejectionsView({ rejections, search }: { rejections: RejectionVM
   return (
     <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);overflow:hidden;background:var(--surface)')}>
       <div style={s('display:grid;grid-template-columns:1.6fr 0.9fr 1.6fr 0.9fr 1fr;gap:10px;padding:12px 16px;background:var(--alt);font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>
-        <span>Company</span><span>Ticket</span><span>Reason</span><span>Reported</span><span style={s('text-align:right')}>Status</span>
+        <span>Company</span><span>Carrier</span><span>Reason</span><span>Reported</span><span style={s('text-align:right')}>Status</span>
       </div>
       {rows.map((r) => {
         const stBadge = badge(r.status, REJ_STATUS_COL[r.status] ?? 'var(--muted)');

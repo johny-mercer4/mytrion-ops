@@ -11,6 +11,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 
 import { isAdmin } from '../../access/resolveAccess';
 import { ActAsPicker } from '../../components/ActAsPicker';
+import { MytrionSwitchLink } from '../../components/MytrionSwitchLink';
 import { useImpersonation } from '../../context/ImpersonationProvider';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useTheme } from '../../hooks/useTheme';
@@ -130,6 +131,7 @@ export function BillingShell() {
         <div className="bm-header-title">MYTRION<span> HORIZON</span></div>
         <span className="bm-header-badge">BILLING</span>
         <div style={{ flex: 1 }} />
+        <MytrionSwitchLink className="bm-header-theme" />
         {admin ? (
           <div style={{ marginRight: 10 }}>
             <ActAsPicker />

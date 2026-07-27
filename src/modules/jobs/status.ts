@@ -50,6 +50,7 @@ export interface CatalogJob {
   description: string;
   /** Cron expression when `trigger === 'cron'`; otherwise null. */
   cron: string | null;
+  timezone: string | null;
   trigger: JobTriggerKind;
   /** "Scheduled (cron)" / "On demand (triggered)" / … */
   triggerLabel: string;
@@ -156,14 +157,20 @@ export function listJobCatalog(opts: {
   jobsEnabled: boolean;
   liveScheduleNames?: ReadonlySet<string> | undefined;
 } = { jobsEnabled: false }): CatalogJob[] {
-  const cronByName = new Map(CRON_SCHEDULES.map((s) => [s.name, s.cron]));
+  const scheduleByName = new Map(CRON_SCHEDULES.map((s) => [s.name, s]));
   const live = opts.liveScheduleNames ?? new Set<string>();
   const defs = [...ALL_JOBS, bulkIngestJob];
   return defs.map((j) => {
-    const cron = cronByName.get(j.name) ?? null;
+    const schedule = scheduleByName.get(j.name);
+    const cron = schedule?.cron ?? null;
     const trigger = triggerOf(j.name, cron);
     const meta = jobMeta(j.name);
-    const scheduleLabel = scheduleLabelFor({ trigger, cron, name: j.name });
+    const scheduleLabel = scheduleLabelFor({
+      trigger,
+      cron,
+      name: j.name,
+      ...(schedule?.timezone ? { timezone: schedule.timezone } : {}),
+    });
     let active = false;
     let statusLabel = 'Off';
     if (DISABLED_JOB_QUEUES.has(j.name)) {
@@ -187,6 +194,7 @@ export function listJobCatalog(opts: {
       title: meta.title,
       description: meta.description,
       cron,
+      timezone: schedule?.timezone ?? (cron ? env.JOBS_CRON_TZ : null),
       trigger,
       triggerLabel: triggerKindLabel(trigger),
       scheduleLabel: DISABLED_JOB_QUEUES.has(j.name) ? 'Disabled (not scheduled)' : scheduleLabel,

@@ -22,10 +22,12 @@ export interface LoyaltyClientRow {
   companyName: string;
   /** Current owning agent (`dim_company.agent`), '—' when the dim has none. */
   agentName: string;
-  /** Total active cards — drives the TRACK (T1 / T2 / T3 + segment). */
+  /** Total active cards on the account — context only; NOT the track (see _shared/loyalty.ts). */
   activeCards: number;
-  /** Cards that actually transacted this calendar month (context, not the track). */
+  /** Cards that actually transacted this calendar month. */
   activeCardsThisMonth: number;
+  /** Cards that transacted LAST calendar month — the program's track basis ("≥1 tx previous month"). */
+  activeCardsPrevMonth: number;
   /** This-calendar-month gallons — the program's tier basis. */
   gallonsThisMonth: number;
   /** This billing-cycle (26th→25th) gallons — the fallback basis before any pumps land this month. */
@@ -61,6 +63,7 @@ export async function fetchLoyaltyRoster(): Promise<LoyaltyRosterResult> {
       agentName: r.agentName,
       activeCards: r.activeCards,
       activeCardsThisMonth: r.activeCardsThisMonth,
+      activeCardsPrevMonth: r.activeCardsPrevMonth,
       gallonsThisMonth: r.gallonsThisMonth,
       cycleGallons: r.cycleGallons,
       gallonsPrevMonth: r.gallonsPrevMonth,

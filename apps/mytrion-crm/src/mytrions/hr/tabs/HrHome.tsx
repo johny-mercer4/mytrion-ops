@@ -1,17 +1,18 @@
-import { ArrowRight, CalendarClock, Inbox, UserRound, Users } from 'lucide-react';
+import { ArrowRight, Building2, CalendarClock, Inbox, Network, UserRound, Users } from 'lucide-react';
 import { HrSection } from '../HrBits';
 import { HR_TABS, type HrTabId } from '../hrNav';
 
 /**
  * HR → Home. The landing and launcher.
  *
- * There is no "at a glance" figure row: headcount, check-ins and open requests all depend on tabs
- * that are not wired to Zoho People yet, and a row of em-dashes is scaffolding pretending to be a
- * dashboard. It comes back when there is something real to count.
+ * There is no "at a glance" figure row yet — Attendance / Requests still soon. Employees,
+ * Departments, and Org Structure are live against our own tables.
  */
 const JUMP_ICON: Record<HrTabId, typeof Users> = {
   home: Users,
   employees: Users,
+  departments: Building2,
+  org: Network,
   attendance: CalendarClock,
   requests: Inbox,
   profile: UserRound,
@@ -31,7 +32,8 @@ export function HrHome({ onOpen }: { onOpen: (tab: HrTabId) => void }) {
           </h1>
           <p className="hr-sub">
             The people side of Octane — who works here, when they work, and what they&apos;re asking
-            for. Records will come from Zoho People; this workspace is the view onto them.
+            for. The employee directory lives in Mytrion&apos;s own database; other people workspaces
+            are still coming online.
           </p>
         </div>
       </div>

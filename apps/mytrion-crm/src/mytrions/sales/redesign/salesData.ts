@@ -100,6 +100,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: 'home', label: 'Home', icon: 'home' },
       // Badges filled at runtime (see Shell.badgeCounts).
       { id: 'inbox', label: 'Inbox', icon: 'inbox' },
+      { id: 'tasks', label: 'My Tasks', icon: 'clipboardCheck' },
     ],
   },
   {
@@ -150,6 +151,7 @@ export const TICKETS_ENABLED: boolean = !NAV.some((n) => n.id === 'tickets' && n
 export const NAVLABEL: Record<string, string> = {
   home: "Today's Briefing",
   inbox: 'Message Center',
+  tasks: 'Assignments',
   tickets: 'Support Queue',
   retention: 'Retention Desk',
   verification: 'Verification Desk',

@@ -139,6 +139,25 @@ export const retentionCaseSyncJob = defineJob({
 });
 
 /**
+ * Monthly on the 1st: compute the PREVIOUS month's referral bonuses into mytrion_referral_bonuses.
+ *
+ * Persisted rather than derived on demand so the ledger is permanent history. `periodMonth` is the
+ * backfill hook — omit it and the worker computes the month that just ended. Singleton + retryLimit
+ * 1: a re-run is safe (monthly rows upsert) but the one-time bonus types raise on a re-dated award,
+ * so retrying blindly is not useful.
+ */
+export const referralBonusCalcJob = defineJob({
+  name: 'automation.referral.bonus-calc',
+  schema: z.object({
+    /** 'YYYY-MM-01'. Omitted on cron; supplied to recompute or backfill a specific month. */
+    periodMonth: z.string().regex(/^\d{4}-\d{2}-01$/).optional(),
+    trigger: z.enum(['cron', 'manual']).optional(),
+    triggeredBy: z.string().max(120).optional(),
+  }),
+  queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 900, deadLetter: DEAD_LETTER_QUEUE },
+});
+
+/**
  * Every 15 minutes: apply overdue retention deadlines (2BD → Retention, vacation,
  * Open Pool SLA, 10BD → CITI, etc.). Deterministic — no LLM.
  */
@@ -149,6 +168,40 @@ export const retentionDeadlineSweepJob = defineJob({
     trigger: z.enum(['cron', 'manual']).optional(),
   }),
   queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 300, deadLetter: DEAD_LETTER_QUEUE },
+});
+
+export const kpiSalesHourlySyncJob = defineJob({
+  name: 'kpi.sales.hourly-sync',
+  schema: z.object({ trigger: z.enum(['cron', 'manual']).optional() }),
+  queue: { policy: 'singleton', retryLimit: 2, retryDelay: 60, expireInSeconds: 1800, deadLetter: DEAD_LETTER_QUEUE },
+});
+
+export const kpiSalesReconcileJob = defineJob({
+  name: 'kpi.sales.nightly-reconcile',
+  schema: z.object({
+    lookbackDays: z.number().int().min(1).max(90).optional(),
+    mode: z.enum(['reconcile', 'backfill']).optional(),
+    trigger: z.enum(['cron', 'manual']).optional(),
+  }),
+  queue: { policy: 'singleton', retryLimit: 2, retryDelay: 120, expireInSeconds: 3600, deadLetter: DEAD_LETTER_QUEUE },
+});
+
+export const kpiSalesDailyRollupJob = defineJob({
+  name: 'kpi.sales.daily-rollup',
+  schema: z.object({
+    days: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(31).optional(),
+    trigger: z.enum(['cron', 'manual']).optional(),
+  }),
+  queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 1800, deadLetter: DEAD_LETTER_QUEUE },
+});
+
+export const kpiSalesMonthCloseJob = defineJob({
+  name: 'kpi.sales.month-close',
+  schema: z.object({
+    periodStart: z.string().regex(/^\d{4}-\d{2}-01$/).optional(),
+    trigger: z.enum(['cron', 'manual']).optional(),
+  }),
+  queue: { policy: 'singleton', retryLimit: 1, expireInSeconds: 3600, deadLetter: DEAD_LETTER_QUEUE },
 });
 
 export const verificationRecheckJob = defineJob({
@@ -193,6 +246,11 @@ export const ALL_JOBS: Array<JobDef<z.ZodTypeAny>> = [
   retentionScanJob,
   retentionCaseSyncJob,
   retentionDeadlineSweepJob,
+  referralBonusCalcJob,
+  kpiSalesHourlySyncJob,
+  kpiSalesReconcileJob,
+  kpiSalesDailyRollupJob,
+  kpiSalesMonthCloseJob,
   verificationRecheckJob,
   checkpointSweepJob,
   // Mini-app notification queues — MUST be here so boss.ts createQueue() provisions them; the
@@ -222,20 +280,27 @@ export const DEPARTMENT_AUTOMATION_QUEUES = new Set<string>([
   verificationRecheckJob.name,
 ]);
 
-/** Cron schedule per automation queue (tz = JOBS_CRON_TZ). */
-export const CRON_SCHEDULES: Array<{ name: string; cron: string }> = [
+/** Cron schedule per automation queue. Per-job timezone overrides preserve existing schedules. */
+export const CRON_SCHEDULES: Array<{ name: string; cron: string; timezone?: string }> = [
   { name: debtorSweepJob.name, cron: '0 8 * * 1-5' }, // weekday mornings
   // Every hour: DWH → retention cases (incl. auto-close Returned). Singleton so runs never
   // overlap; Admin can also enqueue on demand for a manual / backfill pass.
   { name: retentionCaseSyncJob.name, cron: '0 * * * *' },
   // Every 15 minutes: Phase-1/2 timer paths (2BD, vacation, pool SLA, 10BD→CITI).
   { name: retentionDeadlineSweepJob.name, cron: '*/15 * * * *' },
+  // 00:30 on the 1st: the previous month is closed, and the half-hour offset keeps it clear of the
+  // midnight pile-up of every other daily job.
+  { name: referralBonusCalcJob.name, cron: '30 0 1 * *' },
   { name: verificationRecheckJob.name, cron: '0 7 * * *' }, // daily
   { name: checkpointSweepJob.name, cron: '30 3 * * *' }, // nightly
   { name: approvalsExpiryJob.name, cron: '15 * * * *' }, // hourly
   { name: memoryDecayJob.name, cron: '45 3 * * *' }, // nightly
   { name: notificationPollJob.name, cron: '*/2 * * * *' }, // card_status diff (no-op w/o pilot carriers)
   { name: statementWeeklyJob.name, cron: '0 7 * * 1' }, // weekly accounting bundle (no-op w/o pilot carriers)
+  { name: kpiSalesHourlySyncJob.name, cron: '10 * * * *', timezone: 'America/New_York' },
+  { name: kpiSalesReconcileJob.name, cron: '15 2 * * *', timezone: 'America/New_York' },
+  { name: kpiSalesDailyRollupJob.name, cron: '0 4 * * *', timezone: 'America/New_York' },
+  { name: kpiSalesMonthCloseJob.name, cron: '15 0 3 * *', timezone: 'America/New_York' },
 ];
 
 /** Queues an admin may trigger from Mytrion Admin (empty / optional payload only). */
@@ -243,8 +308,12 @@ export const MANUAL_TRIGGERABLE_QUEUES = new Set<string>([
   debtorSweepJob.name,
   retentionCaseSyncJob.name,
   retentionDeadlineSweepJob.name,
+  referralBonusCalcJob.name,
   verificationRecheckJob.name,
   checkpointSweepJob.name,
   approvalsExpiryJob.name,
   memoryDecayJob.name,
+  kpiSalesReconcileJob.name,
+  kpiSalesDailyRollupJob.name,
+  kpiSalesMonthCloseJob.name,
 ]);
