@@ -144,6 +144,21 @@ describe('POST /v1/rejection-reports/webhook', () => {
     expect(input.agentZohoUserId).toBeNull();
   });
 
+  it('treats a string "false" as false, not truthy', async () => {
+    // z.coerce.boolean() would make "false" true and silently flag every decline as fraud.
+    await post({ ...BODY, isFraud: 'false', isNetwork: 'true' }, 'test-rejection-secret');
+    const input = createMock.mock.calls[0]![1];
+    expect(input.isFraud).toBe(false);
+    expect(input.isNetwork).toBe(true);
+  });
+
+  it('accepts real JSON booleans too (what Deluge normally emits)', async () => {
+    await post({ ...BODY, isFraud: true, isNetwork: false }, 'test-rejection-secret');
+    const input = createMock.mock.calls[0]![1];
+    expect(input.isFraud).toBe(true);
+    expect(input.isNetwork).toBe(false);
+  });
+
   it('refuses an empty body instead of writing a blank row', async () => {
     // app.ts parses an empty JSON body as {} — an all-optional schema would accept it silently.
     const res = await post({}, 'test-rejection-secret');

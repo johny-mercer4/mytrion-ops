@@ -32,6 +32,18 @@ import { requireDepartment } from './helpers.js';
 const SECRET_HEADER = 'x-rejection-secret';
 
 /**
+ * A boolean that may arrive as a real JSON boolean or as a string.
+ *
+ * NOT `z.coerce.boolean()`: that is just JS truthiness, so the string "false" becomes `true` — which
+ * would flip `isFraud` / `isNetwork` on for every decline the moment Deluge quoted those values.
+ * Deluge's `Map.toString()` normally emits unquoted booleans, but the cost of being wrong here is a
+ * silently mislabelled fraud flag, so parse the string forms explicitly and reject anything else.
+ */
+const looseBool = z
+  .union([z.boolean(), z.enum(['true', 'false', '1', '0', 'yes', 'no'])])
+  .transform((v) => (typeof v === 'boolean' ? v : v === 'true' || v === '1' || v === 'yes'));
+
+/**
  * The Deluge payload. `carrierId` and `errorCode` are REQUIRED: app.ts's JSON parser turns an empty
  * body into `{}`, so an all-optional schema would silently accept a no-op POST and store a blank
  * row. Every string is bounded.
@@ -51,8 +63,8 @@ const webhookSchema = z.object({
   locationCity: z.string().max(160).optional(),
   state: z.string().max(80).optional(),
   stationName: z.string().max(300).optional(),
-  isNetwork: z.coerce.boolean().optional(),
-  isFraud: z.coerce.boolean().optional(),
+  isNetwork: looseBool.optional(),
+  isFraud: looseBool.optional(),
   paymentType: z.string().max(120).optional(),
   automatedResponse: z.string().max(4000).optional(),
   /** Deluge sends `yyyy-MM-dd HH:mm:ss` (no zone); anything Date can parse is accepted. */
