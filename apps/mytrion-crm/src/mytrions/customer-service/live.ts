@@ -347,11 +347,16 @@ function fmtDuration(secs: number): string {
 
 const BREAKDOWN_TONES: BreakdownItem['tone'][] = ['sky', 'good', 'purple', 'warn', 'amber', 'bad', 'teal', 'info', 'neutral'];
 
+/** Oldest → newest. The three sources don't agree on order — tickets/calls come back ascending from
+ *  our own routes, maintenance descending from its Deluge touchpoint — which drew the Maintenance
+ *  trend backwards (axis read "Jul 27 → Jun 30"). Sort here so every chart reads left-to-right. */
 function toVolume(daily: Array<{ day?: string; count?: number }> | undefined): VolumeDay[] {
-  return (daily ?? []).map((d) => ({
-    label: fmtDate(d.day).replace(/, \d{4}$/, ''),
-    value: Number(d.count) || 0,
-  }));
+  return [...(daily ?? [])]
+    .sort((a, b) => String(a.day ?? '').localeCompare(String(b.day ?? '')))
+    .map((d) => ({
+      label: fmtDate(d.day).replace(/, \d{4}$/, ''),
+      value: Number(d.count) || 0,
+    }));
 }
 
 function toBreakdown(
