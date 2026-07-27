@@ -754,7 +754,7 @@
 
 .cs-root .cs-ret-notes input:focus {
   outline: none;
-  border-color: var(--cs-accent);
+  border-color: transparent;
   box-shadow: 0 0 0 3px var(--cs-accent-glow);
 }
 
@@ -939,7 +939,7 @@
 .cs-root .cs-ret-attempt select:focus,
 .cs-root .cs-ret-attempt input:focus {
   outline: none;
-  border-color: var(--cs-accent);
+  border-color: transparent;
   box-shadow: 0 0 0 3px var(--cs-accent-glow);
 }
 

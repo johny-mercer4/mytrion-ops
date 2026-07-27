@@ -216,7 +216,9 @@
 .ss-root .ss-in:focus-visible {
   outline: none;
   background-color: var(--surface-2);
-  border-color: var(--accent) !important;
+  /* !important preserved from the original: `.ss-in` carries !important borders elsewhere in
+     theme.css, so without it the resting border would repaint and re-double the ring. */
+  border-color: transparent !important;
   box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 

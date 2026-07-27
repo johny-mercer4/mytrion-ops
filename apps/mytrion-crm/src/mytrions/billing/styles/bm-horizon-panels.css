@@ -142,7 +142,7 @@
 .bm-root .dc-edit-input:focus {
     outline: none;
     background: var(--hz-pane-lift);
-    border-color: var(--billing-accent);
+    border-color: transparent;
     box-shadow: 0 0 0 3px var(--billing-accent-glow), var(--hz-glass-inset);
 }
 
@@ -308,7 +308,7 @@
 .bm-root .pp-daterange input[type='date']:focus {
     outline: none;
     background: var(--hz-pane-lift);
-    border-color: var(--billing-accent);
+    border-color: transparent;
     box-shadow: 0 0 0 3px var(--billing-accent-glow), var(--hz-glass-inset);
 }
 
@@ -325,7 +325,7 @@
 }
 .bm-root .db-search-wrap:focus-within {
     background: var(--hz-pane-lift);
-    border-color: var(--billing-accent);
+    border-color: transparent;
     box-shadow: 0 0 0 3px var(--billing-accent-glow), var(--hz-glass-inset);
 }
 

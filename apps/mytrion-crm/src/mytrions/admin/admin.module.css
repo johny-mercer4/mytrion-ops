@@ -163,7 +163,7 @@
 }
 .search:focus-within {
   background: var(--hz-pane-lift);
-  border-color: color-mix(in srgb, var(--accent) 70%, var(--hz-pane-bd));
+  border-color: transparent;
   box-shadow: 0 0 0 3px var(--accent-glow), var(--hz-glass-inset);
 }
 .searchInput {
@@ -1290,7 +1290,7 @@
 .select:focus,
 .input:focus {
   background: var(--hz-pane-lift);
-  border-color: var(--accent);
+  border-color: transparent;
   box-shadow: 0 0 0 3px var(--accent-glow), var(--hz-glass-inset);
 }
 .progressTrack {
@@ -1878,7 +1878,7 @@
 .textarea:focus {
   outline: none;
   background: var(--hz-pane-lift);
-  border-color: color-mix(in srgb, var(--accent) 70%, var(--hz-pane-bd));
+  border-color: transparent;
   box-shadow: 0 0 0 3px var(--accent-glow), var(--hz-glass-inset);
 }
 

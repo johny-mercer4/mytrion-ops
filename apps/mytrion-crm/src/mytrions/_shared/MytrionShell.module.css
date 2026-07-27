@@ -92,7 +92,7 @@
   flex: none;
 }
 .navSearch:focus-within {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-color: transparent;
   box-shadow: 0 0 0 2px var(--accent-glow);
   color: var(--text-primary);
 }

@@ -36,7 +36,7 @@
 }
 .cs-root .cs-an-range-select:focus {
     outline: none;
-    border-color: var(--cs-accent);
+    border-color: transparent;
     box-shadow: 0 0 0 3px var(--cs-accent-glow);
 }
 

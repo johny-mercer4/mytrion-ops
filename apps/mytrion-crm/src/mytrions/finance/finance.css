@@ -333,7 +333,7 @@
 }
 .fi-search:focus-within {
   background: var(--hz-pane-lift);
-  border-color: var(--accent);
+  border-color: transparent;
   box-shadow: 0 0 0 3px var(--accent-glow), var(--hz-glass-inset);
 }
 .fi-search input {

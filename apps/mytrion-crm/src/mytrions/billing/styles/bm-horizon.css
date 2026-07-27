@@ -269,7 +269,7 @@
 .bm-root .bm-search-bar:focus-within,
 .bm-root .bm-select:focus {
     background: var(--hz-pane-lift);
-    border-color: var(--billing-accent);
+    border-color: transparent;
     box-shadow: 0 0 0 3px var(--billing-accent-glow), var(--hz-glass-inset);
 }
 

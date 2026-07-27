@@ -153,7 +153,7 @@
 .cs-root .cs-app-search:focus-within,
 .cs-root .cs-citi-search-bar:focus-within {
     background: var(--hz-pane-lift);
-    border-color: var(--cs-accent);
+    border-color: transparent;
     box-shadow: 0 0 0 3px var(--cs-accent-glow), var(--hz-glass-inset);
 }
 

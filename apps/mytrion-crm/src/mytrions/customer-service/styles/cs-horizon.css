@@ -506,7 +506,7 @@
 .cs-root .cs-form-textarea:focus {
     outline: none;
     background: var(--hz-pane-lift);
-    border-color: var(--cs-accent);
+    border-color: transparent;
     box-shadow: 0 0 0 3px var(--cs-accent-glow), var(--hz-glass-inset);
 }
 

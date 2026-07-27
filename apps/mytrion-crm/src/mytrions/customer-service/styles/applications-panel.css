@@ -107,7 +107,7 @@
 }
 
 .cs-root .cs-app-search:focus-within {
-    border-color: var(--cs-accent);
+    border-color: transparent;
     box-shadow: 0 0 0 3px var(--cs-accent-glow);
 }
 
@@ -502,7 +502,7 @@
 }
 
 .cs-root .cs-form-input:focus {
-    border-color: var(--cs-accent);
+    border-color: transparent;
     box-shadow: 0 0 0 3px var(--cs-accent-glow);
 }
 
