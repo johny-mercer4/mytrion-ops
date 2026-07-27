@@ -283,7 +283,7 @@ export function enqueueTurn(
   const key = sessKey(chatId, userId);
   const prev = chains.get(key) ?? Promise.resolve();
   const next = prev
-    .then(() => runTurn(chatId, key, carrierId, userPrompt, onReply, onStats))
+    .then(() => runTurn(chatId, userId, key, carrierId, userPrompt, onReply, onStats))
     .catch(async (err) => {
       console.error(`[${key}] turn failed`, err);
       onStats?.({ durationMs: 0, numTurns: 0, usage: null, isError: true, errMsg: err instanceof Error ? err.message : String(err) });
@@ -325,6 +325,7 @@ function startTypingKeepAlive(chatId: number): () => void {
  *  merely queued for a slot doesn't flash "writing…" while it waits. */
 async function runTurn(
   chatId: number,
+  userId: number,
   key: SessionKey,
   carrierId: string,
   userPrompt: TurnContent,
@@ -334,7 +335,7 @@ async function runTurn(
   await acquireSlot();
   const stopTyping = startTypingKeepAlive(chatId);
   try {
-    await runTurnInner(chatId, key, carrierId, userPrompt, onReply, onStats);
+    await runTurnInner(chatId, userId, key, carrierId, userPrompt, onReply, onStats);
   } finally {
     stopTyping();
     releaseSlot();
@@ -343,6 +344,7 @@ async function runTurn(
 
 async function runTurnInner(
   chatId: number,
+  userId: number,
   key: SessionKey,
   carrierId: string,
   userPrompt: TurnContent,
@@ -358,7 +360,7 @@ async function runTurnInner(
   // former and keeps the latter, so the first turn after a rebuild resumes an id that no longer
   // exists and the query throws instantly (live incident 2026-07-22 22:37: every turn died with
   // execMs=0, bot went silent). One retry with a FRESH session heals it.
-  const outcome = await runWithRotation(chatId, key, carrierId, userPrompt, resumableSession(key));
+  const outcome = await runWithRotation(chatId, userId, key, carrierId, userPrompt, resumableSession(key));
   const { finalText, stats } = outcome;
   const text = finalText.trim();
   // SILENCE is a valid outcome (anti-spam rules) — only deliver real replies.
@@ -395,6 +397,7 @@ async function runTurnInner(
  */
 async function runWithRotation(
   chatId: number,
+  userId: number,
   key: SessionKey,
   carrierId: string,
   userPrompt: TurnContent,
@@ -413,7 +416,7 @@ async function runWithRotation(
     const t = pickToken(tried);
     if (!t) throw new AllTokensLimitedError(soonestRecovery());
     try {
-      const res = await runQuery(chatId, key, carrierId, prompt, useResume, t.token);
+      const res = await runQuery(chatId, userId, key, carrierId, prompt, useResume, t.token);
       if (res.rateLimited) {
         markLimited(t.token, res.resetsAt);
         tried.add(t.token);
@@ -455,6 +458,7 @@ async function runWithRotation(
 
 async function runQuery(
   chatId: number,
+  userId: number,
   key: SessionKey,
   carrierId: string,
   userPrompt: TurnContent,
@@ -469,7 +473,7 @@ async function runQuery(
       env: { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: authToken },
       model: config.model,
       systemPrompt: systemPrompt(),
-      mcpServers: { octane: buildOctaneServer(chatId, carrierId), telegram: buildTelegramServer(chatId) },
+      mcpServers: { octane: buildOctaneServer(chatId, carrierId, userId), telegram: buildTelegramServer(chatId) },
       allowedTools: [
         'mcp__octane__telegram_progress',
         'mcp__octane__octane_whoami',

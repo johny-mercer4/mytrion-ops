@@ -27,6 +27,29 @@ function senderOk(chatId: number, userId: number): boolean {
   return ts != null && Date.now() - ts <= RECENT_MS;
 }
 
+/**
+ * BUTTON OWNERSHIP. Telegram lets ANY group member tap an inline button, forever — so a confirm
+ * meant for driver A ("unlock MY card — ✅ Ha") could be tapped by owner B and then act on B's
+ * account. We record which user a button message was sent FOR (the session that issued it) and the
+ * poll loop rejects taps from anyone else. In-memory + capped: a restart forgets ownership, so an
+ * UNKNOWN message id is allowed (fail-open only for pre-restart buttons — the RBAC + identity guard
+ * still bind the actual action to the tapper's own session).
+ */
+const BUTTON_OWNER_CAP = 500;
+const buttonOwner = new Map<number, number>();
+export function noteButtonOwner(messageId: number, userId: number): void {
+  if (buttonOwner.size >= BUTTON_OWNER_CAP) {
+    const oldest = buttonOwner.keys().next().value; // Map keeps insertion order
+    if (oldest !== undefined) buttonOwner.delete(oldest);
+  }
+  buttonOwner.set(messageId, userId);
+}
+/** True if this user may tap this button. Unknown message id (restart / non-tracked) = allowed. */
+export function buttonTapAllowed(messageId: number, userId: number): boolean {
+  const owner = buttonOwner.get(messageId);
+  return owner === undefined || owner === userId;
+}
+
 async function backend(path: string, payload: Record<string, unknown>, carrierId: string) {
   const res = await fetch(`${config.octaneBase}/v1${path}`, {
     method: 'POST',
@@ -43,14 +66,25 @@ const asker = {
   telegram_user_id: z.number().describe('Telegram id of the MESSAGE SENDER who asked — never anyone else'),
 };
 
-/** One server per chat: carrierId is closed over — the model has no carrier parameter at all. */
-export function buildOctaneServer(chatId: number, carrierId: string) {
-  const guard = (userId: number): string | null =>
-    senderOk(chatId, userId) ? null : 'refused: that user has not sent a recent message in this chat';
-  const run = async (path: string, userId: number, extra: Record<string, unknown> = {}) => {
-    const g = guard(userId);
-    if (g) return { content: [{ type: 'text' as const, text: g }], isError: true };
-    const data = await backend(path, { telegramUserId: String(userId), ...extra }, carrierId);
+/**
+ * One server per (chat, USER): carrierId AND the session's real Telegram user id are closed over.
+ * Per-user sessions (one session = one asker) let us BIND the actor here instead of trusting the
+ * model to pass the right `telegram_user_id`. The model still fills that param (schema unchanged),
+ * but `run` IGNORES it and always acts as `boundUserId` — so a prompt-injected "[from Owner id X]"
+ * line can't make the bot act as anyone but the person whose session this is. A mismatch is logged
+ * (injection signal) but never obeyed.
+ */
+export function buildOctaneServer(chatId: number, carrierId: string, boundUserId: number) {
+  const run = async (path: string, claimedUserId: number, extra: Record<string, unknown> = {}) => {
+    if (claimedUserId !== boundUserId) {
+      console.warn(`[octane] ${path}: tool claimed uid ${claimedUserId} but session is ${boundUserId} — forcing session uid (possible spoof)`);
+    }
+    // Bind to the SESSION's user, never the model-supplied one. senderOk is a belt-and-suspenders
+    // recency check on that bound id (the poll loop noted it on the very message that opened the turn).
+    if (!senderOk(chatId, boundUserId)) {
+      return { content: [{ type: 'text' as const, text: 'refused: no recent message from this user in this chat' }], isError: true };
+    }
+    const data = await backend(path, { telegramUserId: String(boundUserId), ...extra }, carrierId);
     return { content: [{ type: 'text' as const, text: JSON.stringify(data) }], isError: Boolean((data as { error?: boolean }).error) };
   };
 
@@ -174,7 +208,9 @@ export function buildOctaneServer(chatId: number, carrierId: string) {
           reply_to_message_id: z.number().optional(),
         },
         async ({ text, buttons, reply_to_message_id }) => {
-          await sendButtons(chatId, text, buttons, reply_to_message_id);
+          const sentId = await sendButtons(chatId, text, buttons, reply_to_message_id);
+          // Bind the button message to THIS session's user so only they can tap it (index.ts gate).
+          if (sentId != null) noteButtonOwner(sentId, boundUserId);
           return { content: [{ type: 'text' as const, text: 'buttons sent — now output SILENT and wait for the tap' }] };
         },
       ),

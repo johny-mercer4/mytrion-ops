@@ -7,7 +7,7 @@
 import { config } from './config.js';
 import { enqueueTurn, maxConcurrentTurns } from './sessions.js';
 import { getUpdates, sendMessage, sendTyping, setReaction, clearReaction, type TgMessage , answerCallback } from './telegram.js';
-import { noteSender } from './tools.js';
+import { noteSender, buttonTapAllowed } from './tools.js';
 import { notePhoto } from './telegramTools.js';
 import { noteEngaged, shouldEngage } from './filter.js';
 import { recordTurn, startMonitor } from './monitor.js';
@@ -116,6 +116,12 @@ async function main(): Promise<void> {
         if (cb?.message && cbCarrier) {
           void answerCallback(cb.id);
           if (!(await isRegistered(cbCarrier, cb.from.id))) continue;
+          // Button ownership: a tap only counts from the user the button was sent FOR. Anyone else
+          // (a confirm meant for another driver) is ignored — the spinner is already stopped above.
+          if (!buttonTapAllowed(cb.message.message_id, cb.from.id)) {
+            console.warn(`[${cb.message.chat.id}] uid ${cb.from.id} tapped a button not addressed to them — ignored`);
+            continue;
+          }
           const chatId = cb.message.chat.id;
           noteSender(chatId, cb.from.id);
           noteEngaged(chatId, cb.from.id);

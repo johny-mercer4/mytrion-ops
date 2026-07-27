@@ -143,12 +143,13 @@ export async function clearReaction(chatId: number, messageId: number): Promise<
 
 /** Message with tappable inline buttons — the group bot's real "UI". Buttons arrive back as
  *  callback_query taps (routed into the session as [button tap ...] lines). ≤8 buttons, 2/row. */
+/** Returns the sent message_id (for button-ownership tracking), or null if the send failed. */
 export async function sendButtons(
   chatId: number,
   text: string,
   buttons: Array<{ label: string; data: string }>,
   replyTo?: number,
-): Promise<void> {
+): Promise<number | null> {
   const rows: Array<Array<{ text: string; callback_data: string }>> = [];
   for (const b of buttons.slice(0, 8)) {
     const btn = { text: b.label.slice(0, 40), callback_data: b.data.slice(0, 64) };
@@ -156,7 +157,7 @@ export async function sendButtons(
     if (last && last.length < 2) last.push(btn);
     else rows.push([btn]);
   }
-  await queued(() =>
+  const res = await queued(() =>
     tgSend('sendMessage', {
       chat_id: chatId,
       text,
@@ -164,6 +165,8 @@ export async function sendButtons(
       ...(replyTo ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : {}),
     }),
   );
+  const body = (await res.json().catch(() => null)) as { ok?: boolean; result?: { message_id?: number } } | null;
+  return body?.ok && body.result?.message_id != null ? body.result.message_id : null;
 }
 
 /** Ack a button tap so Telegram stops the spinner on the client. */
