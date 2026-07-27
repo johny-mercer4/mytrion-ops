@@ -71,9 +71,8 @@ let dialContext: (DialContext & { at: number }) | null = null;
  * sessionId → the dial context that call latched when we first saw it.
  *
  * Re-reading the TTL'd global at hang-up time is wrong: `ended` arrives when the call finishes, so
- * every call longer than the TTL came back untagged and silently broke the whole post-call chain
- * (no forced Lead status wizard, no mytrion_calls row, no Mytrion_Call_Attempts bump). A four-minute
- * sales call — the normal case — lost its lead.
+ * every call longer than the TTL came back untagged and silently broke entity-specific follow-up
+ * (no forced Lead status wizard or Mytrion_Call_Attempts bump). The call fact itself is still saved.
  */
 const sessionDialCtx = new Map<string, DialContext>();
 

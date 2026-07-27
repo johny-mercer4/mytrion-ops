@@ -44,6 +44,8 @@ import { billingRoutes } from './routes/v1/billing.routes.js';
 import { financeRoutes } from './routes/v1/finance.routes.js';
 import { paymentsIngestRoutes } from './routes/v1/paymentsIngest.routes.js';
 import { inboxMessagesRoutes } from './routes/v1/inboxMessages.routes.js';
+import { hrRoutes } from './routes/v1/hr.routes.js';
+import { hrDepartmentsRoutes } from './routes/v1/hrDepartments.routes.js';
 import { rejectionReportsRoutes } from './routes/v1/rejectionReports.routes.js';
 import { agentRoutes } from './routes/v1/agent.routes.js';
 import { authRoutes } from './routes/v1/auth.routes.js';
@@ -64,6 +66,8 @@ import { filesRoutes } from './routes/v1/files.routes.js';
 import { tasksRoutes } from './routes/v1/tasks.routes.js';
 import { toolsRoutes } from './routes/v1/tools.routes.js';
 import { touchpointsRoutes } from './routes/v1/touchpoints.routes.js';
+import { salesKpiRoutes } from './routes/v1/salesKpi.routes.js';
+import { kpiAdminRoutes } from './routes/v1/kpiAdmin.routes.js';
 
 // Redact auth-bearing request headers from Fastify's request logger (defense-in-depth: the default
 // serializer doesn't dump headers, but if request-header logging is ever enabled these must not leak).
@@ -74,6 +78,7 @@ const LOG_REDACT_PATHS = [
   'req.headers["x-ingest-secret"]',
   'req.headers["x-inbox-secret"]',
   'req.headers["x-rejection-secret"]',
+  'req.headers["x-webhook-signature"]',
 ];
 
 function loggerOption() {
@@ -190,6 +195,10 @@ export async function buildApp(): Promise<FastifyInstance> {
       'x-act-as-user-name',
       'x-act-as-profile',
       'x-act-as-role',
+      'x-webhook-key-id',
+      'x-webhook-timestamp',
+      'x-webhook-signature',
+      'idempotency-key',
     ],
     credentials: true,
   });
@@ -282,6 +291,8 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(financeRoutes);
       await v1.register(paymentsIngestRoutes);
       await v1.register(inboxMessagesRoutes);
+      await v1.register(hrRoutes);
+      await v1.register(hrDepartmentsRoutes);
       // Owns GET /data-center/rejections (moved off the Zoho Desk scan) plus the Deluge webhook.
       await v1.register(rejectionReportsRoutes);
       await v1.register(agentRoutes);
@@ -291,6 +302,8 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(integrationsRoutes);
       await v1.register(ringcentralRoutes);
       await v1.register(analyticsRoutes);
+      await v1.register(salesKpiRoutes);
+      await v1.register(kpiAdminRoutes);
     },
     { prefix: API_PREFIX },
   );

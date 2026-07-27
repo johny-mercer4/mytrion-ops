@@ -13,6 +13,7 @@ import {
 } from './managerNav';
 import { DepartmentSoon } from './DepartmentSoon';
 import { ManagerHome } from './ManagerHome';
+import { SalesManagement } from './SalesManagement';
 import { LoyaltyCard } from './cards/LoyaltyCard';
 import { ReferralsCard } from './cards/ReferralsCard';
 import './manager.css';
@@ -80,7 +81,8 @@ export function ManagerShell() {
         ) : null}
         {view === 'referrals' ? <ReferralsCard onBack={() => setView('overview')} /> : null}
         {view === 'loyalty' ? <LoyaltyCard onBack={() => setView('overview')} /> : null}
-        {activeDept ? <DepartmentSoon dept={activeDept} /> : null}
+        {activeDept?.id === 'sales' ? <SalesManagement /> : null}
+        {activeDept && activeDept.id !== 'sales' ? <DepartmentSoon dept={activeDept} /> : null}
       </div>
     </MytrionShell>
   );

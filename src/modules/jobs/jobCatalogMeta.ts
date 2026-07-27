@@ -62,6 +62,22 @@ const META: Record<string, JobMeta> = {
     title: 'Checkpoint cleanup',
     description: 'Deletes idle LangGraph agent checkpoints past the configured retention window.',
   },
+  'kpi.sales.hourly-sync': {
+    title: 'Sales KPI hourly sync',
+    description: 'Imports recent Zoho calls, Deal applications and DWH card swipes for eligible Sales agents.',
+  },
+  'kpi.sales.nightly-reconcile': {
+    title: 'Sales KPI reconciliation',
+    description: 'Rechecks the recent source window, records corrections as revisions and rebuilds affected daily totals.',
+  },
+  'kpi.sales.daily-rollup': {
+    title: 'Sales KPI daily rollup',
+    description: 'Computes one New York reporting day of base KPI metrics for every eligible Sales agent.',
+  },
+  'kpi.sales.month-close': {
+    title: 'Sales KPI month close',
+    description: 'Creates immutable worker-month snapshot revisions after the 48-hour source grace period.',
+  },
 };
 
 export function jobMeta(name: string): JobMeta {
@@ -121,8 +137,9 @@ export function scheduleLabelFor(opts: {
   trigger: JobTriggerKind;
   cron: string | null;
   name: string;
+  timezone?: string;
 }): string {
-  if (opts.trigger === 'cron' && opts.cron) return humanizeCron(opts.cron);
+  if (opts.trigger === 'cron' && opts.cron) return humanizeCron(opts.cron, opts.timezone);
   if (opts.trigger === 'dead_letter') return 'Whenever a job fails permanently';
   if (opts.name === 'agent.run') return 'When an async agent task is created';
   if (opts.name === 'knowledge.bulk-ingest') return 'When a Train upload is queued';

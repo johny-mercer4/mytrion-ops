@@ -70,11 +70,28 @@ export function UserContextProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (state.phase !== 'authed' || !getSession()) return;
     let cancelled = false;
-    void refreshWorkerFromMe().then((changed) => {
-      if (!cancelled && changed) setState(syncBootState());
-    });
+    const sync = (): void => {
+      void refreshWorkerFromMe().then((changed) => {
+        if (!cancelled && changed) setState(syncBootState());
+      });
+    };
+    sync();
+    /**
+     * Re-check on tab focus as well as on mount. An admin editing someone's access in another tab
+     * (or telling them over chat) previously required the affected user to hard-reload before the
+     * change took effect, which read as "the override isn't working". Coming back to the tab is the
+     * natural moment to re-resolve, and /auth/me is cheap; the UI only re-renders if the grant
+     * actually changed.
+     */
+    const onFocus = (): void => {
+      if (document.visibilityState === 'visible') sync();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
     return () => {
       cancelled = true;
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
     };
   }, [state.phase]);
 

@@ -13,9 +13,11 @@ export interface LoyaltyClient {
   companyName: string;
   /** Current owning agent, '—' when the warehouse has none. */
   agentName: string;
-  /** Total active cards — drives the TRACK (Owner-Operator / Small Company / Fleet + segment). */
+  /** Total active cards on the account — context only; the TRACK uses prev-month transacting cards. */
   activeCards: number;
   activeCardsThisMonth: number;
+  /** Cards that transacted LAST month — the program's track basis (see _shared/loyalty.ts). */
+  activeCardsPrevMonth: number;
   /** This-calendar-month gallons — the program's tier basis. */
   gallonsThisMonth: number;
   /** Billing-cycle (26th→25th) gallons — the fallback basis before any pumps land this month. */

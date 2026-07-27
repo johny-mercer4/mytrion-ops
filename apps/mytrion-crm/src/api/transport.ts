@@ -206,6 +206,13 @@ export async function request(
       res = await doFetch();
     }
   } catch (e) {
+    // Preserve abort so callers (search-as-you-type) can ignore cancelled requests.
+    if (
+      (e instanceof DOMException && e.name === 'AbortError') ||
+      (e instanceof Error && e.name === 'AbortError')
+    ) {
+      throw e;
+    }
     throw new ApiError(`Could not reach the backend. ${(e as Error)?.message ?? ''}`, 'NETWORK', 0);
   }
 

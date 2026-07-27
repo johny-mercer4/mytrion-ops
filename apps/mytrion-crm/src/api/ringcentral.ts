@@ -49,5 +49,7 @@ export async function postRingCentralCallEvent(payload: RingCentralCallEventPayl
   await request('POST', '/ringcentral/call-events', {
     headers: SALES_HEADERS,
     body: payload,
+    // Calls belong to the person using the phone, never an admin's View-as subject.
+    impersonate: false,
   });
 }

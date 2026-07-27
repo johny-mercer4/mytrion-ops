@@ -1,11 +1,10 @@
 /**
  * HR Mytrion — the Zoho People field map.
  *
- * NO DATA LIVES HERE. This file records what the People API actually returns, captured from a live
- * `searchEmployees()` call on 2026-07-27 (100-record sample), so the tabs can be wired without
- * re-discovering the shape. The placeholder employee/attendance/request rows that used to sit
- * alongside it were deleted: a fabricated employee row is indistinguishable from a real one at a
- * glance, and the tabs now render an explicit Coming soon instead.
+ * NO RUNTIME DATA LIVES HERE. Field coverage was captured from a live People sample (2026-07-27).
+ * Employees now persist in `hr_employees` (see `/v1/hr/employees` + Zoho sync); this file remains
+ * the labelname / empty-state reference for mappers and UI filters. Attendance / requests are still
+ * unwired Zoho endpoints.
  *
  * ── Field coverage across the sample ─────────────────────────────────────────────────────────
  *   100%  EmailID · FirstName · LastName · EmployeeID (HRM###) · Employeestatus · Role
@@ -30,7 +29,12 @@
  * inspected yet; do not assume they mirror the employee form.
  */
 
-/** Real `Department` values observed in Zoho People — categories, not people. */
+/**
+ * Zoho People `department` form fields (components 2026-07-28):
+ *   Department · Department_Code · MailAlias · Department_Lead (+.ID, .MailID) ·
+ *   Parent_Department (+.ID)
+ * Live org now lives in `hr_departments` (22 rows migrated). This list remains a filter hint.
+ */
 export const PEOPLE_DEPARTMENTS = [
   'Uzbekistan Sales Team',
   'Canada Sales Team',
@@ -44,6 +48,16 @@ export const PEOPLE_DEPARTMENTS = [
   'IT',
   'Customer Retention',
   'Business Development',
+  'Human Resources',
+  'Operations',
+  'Marketing',
+  'Corporate Culture',
+  'Recruiting',
+  'Executives',
+  'Factoring',
+  'Fleet Maintenance',
+  'India Sales Team',
+  'US Sales Team',
 ] as const;
 
 /** Real `Employeestatus` values. */

@@ -3,8 +3,10 @@ import { MytrionShell, type NavSection } from '../_shared/MytrionShell';
 import { useUserContext } from '../../context/UserContextProvider';
 import { accessibleHrTabs, canOpenHrTab, type HrTabId } from './hrNav';
 import { HrAttendance } from './tabs/HrAttendance';
+import { HrDepartments } from './tabs/HrDepartments';
 import { HrEmployees } from './tabs/HrEmployees';
 import { HrHome } from './tabs/HrHome';
+import { HrOrgStructure } from './tabs/HrOrgStructure';
 import { HrProfile } from './tabs/HrProfile';
 import { HrRequests } from './tabs/HrRequests';
 import './hr.css';
@@ -15,8 +17,8 @@ import './hr.css';
  * A flat tab set rather than Manager's card-hub: HR is a workspace you live in, so every destination
  * sits in the sidebar. Home doubles as a launcher for people who arrive there first.
  *
- * Every tab except Home is unbuilt and says so via the shared <ComingSoon /> — none of them render
- * invented employees, attendance or requests.
+ * Employees / Departments / Org Structure are live (own DB). Attendance / Requests / Profile still
+ * use <ComingSoon />.
  *
  * The chat dock is disabled because there is no `hr` department agent on the backend
  * (AGENT_KEYS has no 'hr', and `agentKeyFor('hr')` deliberately returns null) — an enabled dock
@@ -54,6 +56,8 @@ export function HrShell() {
       <div className="hr-root">
         {view === 'home' ? <HrHome onOpen={open} /> : null}
         {view === 'employees' ? <HrEmployees /> : null}
+        {view === 'departments' ? <HrDepartments /> : null}
+        {view === 'org' ? <HrOrgStructure /> : null}
         {view === 'attendance' ? <HrAttendance /> : null}
         {view === 'requests' ? <HrRequests /> : null}
         {view === 'profile' ? <HrProfile /> : null}

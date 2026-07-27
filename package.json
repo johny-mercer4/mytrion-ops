@@ -23,6 +23,7 @@
     "meta:zoho-crm": "tsx metadataScripts/zohoCrmAnalyzer.ts",
     "meta:zoho-desk": "tsx metadataScripts/zohoDeskAnalyzer.ts",
     "meta:zoho-people": "tsx metadataScripts/zohoPeopleAnalyzer.ts",
+    "meta:zoho-people-records": "tsx metadataScripts/zohoPeopleBulkFetch.ts",
     "meta:fetch": "tsx metadataScripts/zohoMetadataFetcher.ts",
     "meta:dwh": "tsx metadataScripts/dwhAnalyzer.ts",
     "meta:pg-catalog": "tsx metadataScripts/pgCatalogAnalyzer.ts",

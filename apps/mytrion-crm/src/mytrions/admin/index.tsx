@@ -11,6 +11,7 @@ import { VerificationDatabase } from './VerificationDatabase';
 import { Jobs } from './Jobs';
 import { KnowledgeBase } from './KnowledgeBase';
 import { KnowledgeBrowser } from './KnowledgeBrowser';
+import { KpiData } from './KpiData';
 import { OctaneScope } from './scope/OctaneScope';
 import { AdminToastHost } from './toast';
 import { Train } from './Train';
@@ -33,6 +34,7 @@ type Tab =
   | 'cmp'
   | 'dwh'
   | 'verification-db'
+  | 'kpi-data'
   | 'access'
   | 'horizon';
 
@@ -132,6 +134,15 @@ export default function AdminMytrion() {
       id: 'ops',
       label: 'CRM & Ops',
       items: [
+        {
+          key: 'kpi-data',
+          tone: 'var(--tone-cyan)',
+          label: 'KPI Collection & Data',
+          icon: <DatabaseIcon />,
+          active: tab === 'kpi-data',
+          onClick: () => setTab('kpi-data'),
+          keywords: ['sales', 'metrics', 'collection', 'health', 'workers', 'facts'],
+        },
         {
           key: 'news',
           tone: 'var(--tone-amber)',
@@ -237,6 +248,7 @@ export default function AdminMytrion() {
       {tab === 'deals' && <Deals />}
       {tab === 'audit' && <AuditLog />}
       {tab === 'jobs' && <Jobs />}
+      {tab === 'kpi-data' && <KpiData />}
       {tab === 'cmp' && <CmpDatabase />}
       {tab === 'dwh' && <DwhDatabase />}
       {tab === 'verification-db' && <VerificationDatabase />}

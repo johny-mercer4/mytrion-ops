@@ -1,6 +1,6 @@
 import type { FastifyInstance, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
-import { RBACError } from '../../lib/errors.js';
+import { AppError, RBACError } from '../../lib/errors.js';
 import { MYTRION_IDS, roleKeyOf, toMytrionAccessModes, type MytrionId } from '../../lib/mytrions.js';
 import { listActiveUsersCached } from '../../modules/auth/actAsDirectory.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
@@ -65,6 +65,32 @@ function normalizedHome(
  * All endpoints require real admin (allDepartmentAccess) on the internal audience, matching
  * /admin/agents. Everything mutating is audit-logged. No table data is exposed here.
  */
+/**
+ * How many OTHER active workers still resolve to all-Mytrion access. Uses the same batch resolver
+ * the admin listing uses, so "who is an admin" is answered by exactly one authority rather than a
+ * second, divergent query.
+ */
+async function countOtherAllAccessUsers(
+  ctx: TenantContext,
+  excludeZohoUserId: string,
+): Promise<number | null> {
+  const directory = await listActiveUsersCached();
+  const inputs = directory
+    .filter((u) => u.zohoUserId !== excludeZohoUserId)
+    .map((u) => ({
+      tenantId: ctx.tenantId,
+      zohoUserId: u.zohoUserId,
+      userName: u.name ?? null,
+      profileName: u.profile ?? null,
+      zohoRole: u.role ?? null,
+    }));
+  if (inputs.length === 0) return 0;
+  const resolved = await mytrionAccessService.resolveBatch(ctx.tenantId, inputs);
+  let n = 0;
+  for (const r of resolved.values()) if (r.allDepartmentAccess) n += 1;
+  return n;
+}
+
 export async function mytrionAccessRoutes(app: FastifyInstance): Promise<void> {
   const guard: RouteShorthandOptions = { onRequest: [app.authenticate] };
 
@@ -117,6 +143,40 @@ export async function mytrionAccessRoutes(app: FastifyInstance): Promise<void> {
       const zohoUserId = request.params.zohoUserId.trim();
       if (!zohoUserId) throw new RBACError('zohoUserId is required');
       const body = userAccessBody.parse(request.body);
+
+      /**
+       * Last-admin guard. Profile-"Administrator" users used to be PINNED to all-access by the
+       * resolver, which made them impossible to manage — their override was computed and discarded.
+       * That floor is gone (see mytrionAccessService), so an override can now genuinely remove
+       * someone's admin access, and the lockout risk it was guarding against is real. Refuse the
+       * save that would leave the tenant with nobody holding all-access.
+       *
+       * ADMIN_USERS / BYPASS_USERS are exempt from this check on purpose: they are named in server
+       * env, cannot be edited from the app, and are the recovery path if this ever goes wrong.
+       */
+      // Scoped to the EXPLICIT "remove all-access" action, which is the real lockout vector. A
+      // deny-list edit is not checked: denies are overwhelmingly used on ordinary workers, and
+      // treating every one as a potential lockout would block routine edits (and cost a directory
+      // round-trip each time). A deny that empties the last admin's list remains possible in
+      // principle — ADMIN_USERS / BYPASS_USERS is the recovery path for that.
+      if (body.allDepartmentAccess === false) {
+        // Resolving "who else is an admin" needs the Zoho directory. If that lookup fails we let the
+        // save through rather than blocking admin work on an upstream hiccup — this rail is a
+        // convenience; ADMIN_USERS / BYPASS_USERS is the actual recovery path.
+        let remaining: number | null = null;
+        try {
+          remaining = await countOtherAllAccessUsers(ctx, zohoUserId);
+        } catch (err) {
+          request.log.warn({ err }, 'last-admin guard: could not resolve other all-access users');
+        }
+        if (remaining === 0) {
+          throw new AppError(
+            'This is the last user with all-Mytrion access — removing it would lock everyone out of Admin. Grant another user all-access first.',
+            { statusCode: 409, code: 'LAST_ADMIN', expose: true },
+          );
+        }
+      }
+
       const saved = await workerMytrionAccessRepo.upsert(ctx, {
         zohoUserId,
         userName: body.userName ?? null,
