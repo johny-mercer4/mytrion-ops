@@ -1,5 +1,6 @@
 import { createId } from '@paralleldrive/cuid2';
-import { index, integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { index, integer, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 // NOTE: no DB foreign keys by design — isolation + integrity live in the repo layer
 // (see CLAUDE.md), so each schema file loads standalone under drizzle-kit.
@@ -32,7 +33,7 @@ export const mytrionCalls = pgTable(
     /** Talk duration in whole seconds (0 when never connected). */
     durationSeconds: integer('duration_seconds').notNull().default(0),
     callStatus: text('call_status').$type<MytrionCallStatus>().notNull(),
-    sourceType: text('source_type').$type<MytrionCallSourceType>().notNull(),
+    sourceType: text('source_type').$type<MytrionCallSourceType>(),
     /** The lead / deal / retention_case id the call maps to (null if the source id was missing). */
     sourceId: text('source_id'),
     /** RingCentral session id — lets us dedupe / cross-reference the RC record. */
@@ -54,6 +55,9 @@ export const mytrionCalls = pgTable(
       table.sourceType,
       table.sourceId,
     ),
+    sessionUk: uniqueIndex('mytrion_calls_tenant_session_uk')
+      .on(table.tenantId, table.sessionId)
+      .where(sql`${table.sessionId} is not null`),
   }),
 );
 

@@ -44,12 +44,15 @@ import { AutoTab } from './tabs/AutoTab';
 import { DashTab } from './tabs/DashTab';
 import { CarriersTab } from './tabs/CarriersTab';
 import { ComingSoonPanel } from './tabs/ComingSoonPanel';
+import { TasksTab } from './tabs/TasksTab';
 import { soonHue } from './soonTabs';
+import { emitKpiActivity, useKpiPresence } from './kpiTelemetry';
 
 /** Wayfinding hue per nav id — the shared --tone-* scale (theme-aware; see styles/horizon.css). */
 const NAV_TONE: Record<string, string> = {
   home: 'var(--tone-sky)',
   inbox: 'var(--tone-cyan)',
+  tasks: 'var(--tone-emerald)',
   records: 'var(--tone-blue)',
   create: 'var(--tone-emerald)',
   carriers: 'var(--tone-teal)',
@@ -65,6 +68,7 @@ const NAV_TONE: Record<string, string> = {
 const FULL_BLEED = new Set(['tickets']);
 
 export function SalesRedesign() {
+  useKpiPresence();
   const user = useSessionUser();
   const userCtx = useUserContext();
   const admin = isAdmin(userCtx);
@@ -144,6 +148,10 @@ export function SalesRedesign() {
   const go = useCallback((next: string) => {
     setSection(next);
     setDetail(null);
+    emitKpiActivity('navigation.tab_open', {
+      entityType: 'tab',
+      entityId: next,
+    });
   }, []);
   const openDash = useCallback((sub?: 'sales' | 'company' | 'debtors' | 'powerbi') => {
     setFocusDashSub(sub ?? 'sales');
@@ -181,8 +189,14 @@ export function SalesRedesign() {
       pushToast,
       openDetail: setDetail,
       openClient,
-      openLead: setLead,
-      openDeal: setDeal,
+      openLead: (nextLead) => {
+        emitKpiActivity('crm.lead_open', { entityType: 'lead', entityId: nextLead.id });
+        setLead(nextLead);
+      },
+      openDeal: (nextDeal) => {
+        emitKpiActivity('crm.deal_open', { entityType: 'deal', entityId: nextDeal.id });
+        setDeal(nextDeal);
+      },
       go,
       openDash,
       focusDashSub,
@@ -376,6 +390,7 @@ export function SalesRedesign() {
                 <>
                   {section === 'home' && <HomeTab />}
                   {section === 'inbox' && <InboxTab />}
+                  {section === 'tasks' && <TasksTab />}
                   {section === 'tickets' && <TicketsTab />}
                   {section === 'retention' && <RetentionTab />}
                   {section === 'verification' && <VerificationTab />}
@@ -437,6 +452,7 @@ export function SalesRedesign() {
             lead={lead}
             onClose={() => setLead(null)}
             onCall={(phone) => {
+              emitKpiActivity('crm.call_click', { entityType: 'lead', entityId: lead.id, outcome: 'attempted' });
               // Dial silently when RC isn't ready — no "Phone / backend" error toasts.
               setDialContext({ leadId: lead.id });
               clickToDial(phone);
@@ -449,6 +465,7 @@ export function SalesRedesign() {
             deal={deal}
             onClose={() => setDeal(null)}
             onCall={(phone) => {
+              emitKpiActivity('crm.call_click', { entityType: 'deal', entityId: deal.id, outcome: 'attempted' });
               setDialContext({ dealId: deal.id });
               clickToDial(phone);
             }}

@@ -388,6 +388,14 @@ const EnvSchema = z.object({
   //     API_KEY). Blank is allowed: the route answers 503 at request time rather than blocking boot. ---
   REJECTION_WEBHOOK_SECRET: z.string().default(''),
 
+  // --- Sales KPI collection + external worker-task intake ---
+  // Collection is independently gated so migrations/UI can deploy before cron and browser telemetry.
+  FF_KPI_COLLECTION_ENABLED: flag('0'),
+  KPI_REPORTING_TZ: z.string().default('America/New_York'),
+  // One rotatable, task-create-only HMAC credential for trusted external automations.
+  MYTRION_TASK_WEBHOOK_KEY_ID: z.string().default('external-automation'),
+  MYTRION_TASK_WEBHOOK_SECRET: z.string().default(''),
+
   // --- File storage: Cloudflare R2 (S3-compatible) ---
   R2_ACCOUNT_ID: z.string().default(''),
   R2_ACCESS_KEY_ID: z.string().default(''),

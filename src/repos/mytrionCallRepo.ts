@@ -7,7 +7,7 @@ import {
   type NewMytrionCall,
 } from '../db/schema/index.js';
 import type { TenantContext } from '../types/tenantContext.js';
-import { firstOrThrow, normalizePagination } from './util.js';
+import { firstOrThrow, firstOrUndefined, isUniqueViolation, normalizePagination } from './util.js';
 
 /** The caller-supplied fields for one logged call; tenant + defaults are set by the repo. */
 export interface CreateCallInput {
@@ -16,7 +16,7 @@ export interface CreateCallInput {
   callTime?: Date;
   durationSeconds?: number;
   callStatus: MytrionCall['callStatus'];
-  sourceType: MytrionCallSourceType;
+  sourceType?: MytrionCallSourceType | null;
   sourceId?: string | null;
   sessionId?: string | null;
   direction?: string | null;
@@ -30,6 +30,10 @@ export interface CreateCallInput {
  */
 export const mytrionCallRepo = {
   async create(ctx: TenantContext, input: CreateCallInput): Promise<MytrionCall> {
+    if (input.sessionId) {
+      const existing = await this.findBySessionId(ctx, input.sessionId);
+      if (existing) return existing;
+    }
     const row: NewMytrionCall = {
       tenantId: ctx.tenantId,
       callerZohoUserId: input.callerZohoUserId,
@@ -37,14 +41,39 @@ export const mytrionCallRepo = {
       ...(input.callTime ? { callTime: input.callTime } : {}),
       durationSeconds: input.durationSeconds ?? 0,
       callStatus: input.callStatus,
-      sourceType: input.sourceType,
+      sourceType: input.sourceType ?? null,
       sourceId: input.sourceId ?? null,
       sessionId: input.sessionId ?? null,
       direction: input.direction ?? null,
       result: input.result ?? null,
     };
-    const rows = await db.insert(mytrionCalls).values(row).returning();
-    return firstOrThrow(rows, 'mytrion_calls insert returned no row');
+    try {
+      const rows = await db.insert(mytrionCalls).values(row).returning();
+      return firstOrThrow(rows, 'mytrion_calls insert returned no row');
+    } catch (error) {
+      if (input.sessionId && isUniqueViolation(error)) {
+        const winner = await this.findBySessionId(ctx, input.sessionId);
+        if (winner) return winner;
+      }
+      throw error;
+    }
+  },
+
+  async findBySessionId(
+    ctx: TenantContext,
+    sessionId: string,
+  ): Promise<MytrionCall | undefined> {
+    const rows = await db
+      .select()
+      .from(mytrionCalls)
+      .where(
+        and(
+          eq(mytrionCalls.tenantId, ctx.tenantId),
+          eq(mytrionCalls.sessionId, sessionId),
+        ),
+      )
+      .limit(1);
+    return firstOrUndefined(rows);
   },
 
   /** Count a source record's logged calls (tenant-scoped) — drives the Lead call-number auto-advance. */

@@ -28,6 +28,7 @@ import { STATUS_OPTIONS, allowedStatuses, reasonFieldFor } from './leadStatusFlo
 import { LeadStatusPicker } from './LeadStatusPicker';
 import { RecordActivityPanels } from './recordActivityPanels';
 import { DetailSheet, ModalFooter } from './dataCenterSheet';
+import { emitKpiActivity } from './kpiTelemetry';
 
 function avStyle(col: string): string {
   return `width:52px;height:52px;border-radius:var(--radius-md);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:Rajdhani,sans-serif;font-weight:700;font-size:20px;background:color-mix(in srgb,${col} 16%,transparent);color:${col}`;
@@ -185,6 +186,7 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
   const canCallPhone = Boolean(onCall && applied.Phone.trim());
 
   const startEdit = (): void => {
+    emitKpiActivity('crm.edit_open', { entityType: 'lead', entityId: lead.id });
     setForm(applied);
     setStatusForm(appliedStatus);
     setStatusReason('');
@@ -226,8 +228,18 @@ export function LeadModal({ lead, onClose, onCall }: { lead: LeadVM; onClose: ()
       invalidateDcCache('sales:leads');
       setEditing(false);
       const count = Object.keys(changes).length;
+      emitKpiActivity('crm.edit_save_success', {
+        entityType: 'lead',
+        entityId: lead.id,
+        outcome: 'success',
+      });
       pushToast('Lead updated', `${count} field${count === 1 ? '' : 's'} saved to Zoho.`);
     } catch (e) {
+      emitKpiActivity('crm.edit_save_failed', {
+        entityType: 'lead',
+        entityId: lead.id,
+        outcome: 'failed',
+      });
       pushToast('Update failed', e instanceof Error ? e.message : 'Could not save changes.');
     } finally {
       setSaving(false);
@@ -402,6 +414,7 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
   const canCallPhone = Boolean(onCall && callTarget.trim());
 
   const startEdit = (): void => {
+    emitKpiActivity('crm.edit_open', { entityType: 'deal', entityId: deal.id });
     setForm(applied);
     setEditing(true);
   };
@@ -438,8 +451,18 @@ export function DealModal({ deal, onClose, onCall }: { deal: DealVM; onClose: ()
       invalidateDcCache('sales:deals');
       setEditing(false);
       const count = Object.keys(changes).length;
+      emitKpiActivity('crm.edit_save_success', {
+        entityType: 'deal',
+        entityId: deal.id,
+        outcome: 'success',
+      });
       pushToast('Deal updated', `${count} field${count === 1 ? '' : 's'} saved to Zoho.`);
     } catch (e) {
+      emitKpiActivity('crm.edit_save_failed', {
+        entityType: 'deal',
+        entityId: deal.id,
+        outcome: 'failed',
+      });
       pushToast('Update failed', e instanceof Error ? e.message : 'Could not save changes.');
     } finally {
       setSaving(false);

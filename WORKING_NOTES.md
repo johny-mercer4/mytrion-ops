@@ -6837,6 +6837,53 @@ Fields: Department, Department_Code, MailAlias, Department_Lead (+.ID/.MailID), 
 - New HR tab **Org Structure** — tree from real tables only
 - Department parent field is a select of existing department names (resolves `parent_id`)
 
+## 2026-07-28 — Sales KPI collection foundation
+
+Implemented the collection-first Sales KPI platform without ratings, targets or rankings:
+
+- KPI worker directory, effective profile memberships, configurable population profiles, versioned
+  metrics, ingestion runs, revisioned external facts, daily rollups and immutable monthly snapshot
+  revisions.
+- First-party worker tasks with append-only lifecycle events, HMAC/idempotent automation webhook,
+  Manager → Sales task management, and Sales → My Tasks completion flow.
+- Server-authoritative semantic activity and presence telemetry (privacy allowlist, idle/hidden
+  handling, interval union across tabs/devices).
+- Zoho Calls, Deal `Application_Date`, local Mytrion calls and Sales DWH swipe collectors; hourly,
+  nightly reconciliation, daily rollup and New York month-close pg-boss jobs.
+- Manager collection health now separates source read failures from persisted, actionable unresolved
+  identity mappings. Missing/ambiguous identities are never guessed.
+- Existing outbound-call capture now persists calls without Lead/Deal context and deduplicates by
+  RingCentral session while retaining the authenticated actor separately from View-as state.
+
+Migrations `0061`, `0062` and `0065` were applied to the configured PostgreSQL database. The KPI
+feature flag remains off in the environment; the initial collection was invoked with a process-local
+flag only.
+
+### Initial shadow data
+
+The 90-day Zoho Calls attempt reached the COQL 100,000-row ceiling and the small Render database
+entered recovery during the resulting bulk insertion. The run is retained as failed with that exact
+reason. A bounded July 20–27 retry succeeded:
+
+- 128 active Zoho users synchronized; 65 exact `Sales Agent` workers eligible.
+- 13,541 Zoho Call records produced 33,504 revisioned call metric facts.
+- 116 Deals produced 629 Application facts including per-day completeness summaries.
+- 1,207 DWH rows produced 448 worker/day swipe facts.
+- Nine worker dashboard reads were unavailable and are recorded as a partial source error, not as
+  unresolved mappings or zeros.
+- July 26 daily rollups completed for all 65 workers. Initial memberships were backdated only where
+  the worker had exactly one original bootstrap membership; any prior profile history blocks that
+  adjustment.
+
+### Validation
+
+- KPI-focused backend tests: 24/24 pass.
+- Backend strict typecheck, production build and lint pass (lint retains 25 pre-existing warnings).
+- CRM strict typecheck and production build pass.
+- Full backend suite: 1,025/1,061 pass; 36 failures are pre-existing/concurrent suites (CS,
+  retention, touchpoints, registry expectations and database-backed timeout/recovery cases).
+- Full CRM suite: 212/213 pass; the unrelated debtors summary fixture expects no `debtorCount`.
+
 ## 2026-07-28 (5) — Referral bonus engine + monthly cron
 
 Built the calculation engine and the cron. The ledger (`mytrion_referral_bonuses`, migration 0058),

@@ -1,7 +1,7 @@
 /**
  * POST /v1/ringcentral/call-events → mytrion_calls persistence. Pins the rules that turn a
- * RingCentral call-end event into a call-log row: only finished OUTBOUND calls with a source
- * are logged; source precedence (retention_case → lead → deal); picked_up/missed derivation;
+ * RingCentral call-end event into a call-log row: every finished OUTBOUND call is logged;
+ * source precedence (retention_case → lead → deal); picked_up/missed derivation;
  * caller resolved from the zoho: principal; startTime → callTime.
  */
 import type { FastifyInstance } from 'fastify';
@@ -153,10 +153,27 @@ describe('mytrion_calls persistence', () => {
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 
-  it('does NOT log inbound, non-ended, or source-less calls', async () => {
+  it('does not log inbound or non-ended calls', async () => {
     await post({ ...ENDED_LEAD, direction: 'Inbound' });
     await post({ ...ENDED_LEAD, kind: 'connected' });
-    await post({ kind: 'ended', direction: 'Outbound', to: '+1555', durationMs: 10 }); // no source ids
     expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it('logs a finished outbound call even without Lead or Deal context', async () => {
+    await post({
+      kind: 'ended',
+      direction: 'Outbound',
+      to: '+1555',
+      durationMs: 10_000,
+      sessionId: 'source-less-session',
+    });
+    expect(createMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        sourceType: null,
+        sourceId: null,
+        sessionId: 'source-less-session',
+      }),
+    );
   });
 });

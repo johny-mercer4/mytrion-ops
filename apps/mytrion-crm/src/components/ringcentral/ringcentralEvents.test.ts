@@ -1,9 +1,9 @@
 /**
  * Dial-context correlation: which Lead / Deal / retention case an outbound call belongs to.
  *
- * This is the hinge the whole post-call chain hangs off — the forced Lead status wizard, the
- * mytrion_calls row, and the Mytrion_Call_Attempts bump all key off the id carried on the `ended`
- * event. A call that ends without one is silently dropped everywhere.
+ * This is the hinge for entity-specific follow-up — the forced Lead status wizard and the
+ * Mytrion_Call_Attempts bump key off the id carried on the `ended` event. The base call fact is
+ * captured even when no Lead or Deal context exists.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 

@@ -69,9 +69,10 @@ function callSource(body: CallEventBody): { sourceType: MytrionCallSourceType; s
   return null;
 }
 
-/** Zoho user id of the caller from the session principal (`zoho:<id>`), else the raw userId. */
+/** Authenticated actor, never the View-as subject. */
 function callerZohoUserId(ctx: TenantContext): string {
-  return ctx.userId.startsWith('zoho:') ? ctx.userId.slice('zoho:'.length) : ctx.userId;
+  const actorId = ctx.impersonatorUserId ?? ctx.userId;
+  return actorId.startsWith('zoho:') ? actorId.slice('zoho:'.length) : actorId;
 }
 
 /**
@@ -140,25 +141,23 @@ export async function ringcentralRoutes(app: FastifyInstance): Promise<void> {
       // No explicit answered flag in RC events — derive: talk time or a "connected" result.
       const pickedUp = durationMs > 0 || /connect/i.test(body.result ?? '');
 
-      if (source) {
-        try {
-          await mytrionCallRepo.create(ctx, {
-            callerZohoUserId: callerZohoUserId(ctx),
-            phoneNumber: body.to ?? null,
-            ...(body.startTime && !Number.isNaN(Date.parse(body.startTime))
-              ? { callTime: new Date(body.startTime) }
-              : {}),
-            durationSeconds: Math.round(durationMs / 1000),
-            callStatus: pickedUp ? 'picked_up' : 'missed',
-            sourceType: source.sourceType,
-            sourceId: source.sourceId,
-            sessionId: body.sessionId ?? null,
-            direction: body.direction,
-            result: body.result ?? null,
-          });
-        } catch (err) {
-          request.log.warn({ err }, 'mytrion_calls insert failed (call event still audited)');
-        }
+      try {
+        await mytrionCallRepo.create(ctx, {
+          callerZohoUserId: callerZohoUserId(ctx),
+          phoneNumber: body.to ?? null,
+          ...(body.startTime && !Number.isNaN(Date.parse(body.startTime))
+            ? { callTime: new Date(body.startTime) }
+            : {}),
+          durationSeconds: Math.round(durationMs / 1000),
+          callStatus: pickedUp ? 'picked_up' : 'missed',
+          sourceType: source?.sourceType ?? null,
+          sourceId: source?.sourceId ?? null,
+          sessionId: body.sessionId ?? null,
+          direction: body.direction,
+          result: body.result ?? null,
+        });
+      } catch (err) {
+        request.log.warn({ err }, 'mytrion_calls insert failed (call event still audited)');
       }
 
       // Increment the dialed Lead/Deal's "calls from Mytrion" counter (read current + 1). This field

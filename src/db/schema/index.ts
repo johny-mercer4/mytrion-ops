@@ -38,3 +38,7 @@ export * from './mytrion_calls.js';
 export * from './mytrion_inbox_messages.js';
 export * from './mytrion_referral_bonuses.js';
 export * from './mytrion_rejection_reports.js';
+export * from './sales_kpi.js';
+export * from './mytrion_worker_tasks.js';
+export * from './hr_employees.js';
+export * from './hr_departments.js';
