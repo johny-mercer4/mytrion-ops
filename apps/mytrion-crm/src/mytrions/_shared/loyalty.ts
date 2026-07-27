@@ -184,6 +184,63 @@ export function tierBucketOf(t: Pick<TierResult, 'level' | 'track'>): TierBucket
   return t.track === null ? 'idle' : 'building';
 }
 
+/**
+ * Rank for SORTING a client list: highest tier first, "no cards" last.
+ *
+ * Deliberately separate from `RANK` (which orders the *program* levels for reward eligibility) —
+ * this one has to place the two non-tier buckets, and `building` must outrank `idle` because a
+ * client working toward Bronze is a live account while one with no active cards is not.
+ */
+const BUCKET_RANK: Record<TierBucket, number> = {
+  gold: 5,
+  silver: 4,
+  bronze: 3,
+  building: 2,
+  idle: 1,
+};
+
+export function tierBucketRank(b: TierBucket): number {
+  return BUCKET_RANK[b];
+}
+
+/**
+ * Icon key per bucket. Each tier gets a distinct SILHOUETTE rather than one shared star, so a badge
+ * is identifiable at a glance and stays legible for anyone who can't separate the metal colours.
+ * The keys match the Sales icon registry (mytrions/sales/redesign/icons.tsx).
+ */
+export function tierBucketIcon(
+  b: TierBucket,
+): 'tierGold' | 'tierSilver' | 'tierBronze' | 'tierBuilding' | 'tierIdle' {
+  switch (b) {
+    case 'gold':
+      return 'tierGold';
+    case 'silver':
+      return 'tierSilver';
+    case 'bronze':
+      return 'tierBronze';
+    case 'building':
+      return 'tierBuilding';
+    default:
+      return 'tierIdle';
+  }
+}
+
+/**
+ * Bucket hue / label colour, from the `--lty-*` palette.
+ *
+ * NOT the global `--tier-*` scale: that renders bronze AS orange, which is the same hue this surface
+ * needs for "building toward Bronze", so the two buckets would be indistinguishable. `--lty-*` is
+ * defined on `.dc-lty` (sales/redesign/dc-clients.css), so any consumer of these must sit inside an
+ * element carrying that class.
+ */
+export function tierBucketColor(b: TierBucket): string {
+  return `var(--lty-${b})`;
+}
+
+export function tierBucketTextColor(b: TierBucket): string {
+  return `var(--lty-${b}-text)`;
+}
+
 export function tierBucketLabel(b: TierBucket): string {
   switch (b) {
     case 'gold':
