@@ -19,6 +19,8 @@ const SEND_MIN_GAP_MS = Number(process.env['TELEGRAM_MIN_GAP_MS'] ?? '40'); // �
 const SEND_TIMEOUT_MS = Number(process.env['TELEGRAM_SEND_TIMEOUT_MS'] ?? '10000');
 let sendChain: Promise<unknown> = Promise.resolve();
 let lastSendAt = 0;
+/** Bot-API 429 backoff: no outbound send before this ms-epoch (set from Telegram's retry_after). */
+let blockedUntil = 0;
 
 /** One outbound Bot-API POST, always time-bounded. */
 function tgPost(method: string, payload: Record<string, unknown>): Promise<Response> {
@@ -30,9 +32,33 @@ function tgPost(method: string, payload: Record<string, unknown>): Promise<Respo
   });
 }
 
+/**
+ * tgPost + Bot-API error handling for the must-deliver lane. On 429, honor Telegram's authoritative
+ * `retry_after` (stamp `blockedUntil` so the whole queue backs off, not just this send) and retry
+ * ONCE after the wait — sustained blind re-sending is what gets bots banned. Any other non-ok
+ * response is logged (a silently dropped reply is a user staring at nothing) but not retried.
+ */
+async function tgSend(method: string, payload: Record<string, unknown>): Promise<Response> {
+  let res = await tgPost(method, payload);
+  if (res.status === 429) {
+    const body = (await res.json().catch(() => null)) as { parameters?: { retry_after?: number } } | null;
+    const waitMs = Math.max(1, body?.parameters?.retry_after ?? 1) * 1000;
+    blockedUntil = Date.now() + waitMs;
+    console.warn(`[tg] 429 on ${method} — backing off ${waitMs}ms (retry_after)`);
+    await new Promise((r) => setTimeout(r, waitMs));
+    lastSendAt = Date.now();
+    res = await tgPost(method, payload);
+  }
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    console.error(`[tg] ${method} failed ${res.status}: ${errText.slice(0, 200)}`);
+  }
+  return res;
+}
+
 function queued<T>(fn: () => Promise<T>): Promise<T> {
   const run = sendChain.then(async () => {
-    const wait = lastSendAt + SEND_MIN_GAP_MS - Date.now();
+    const wait = Math.max(lastSendAt + SEND_MIN_GAP_MS, blockedUntil) - Date.now();
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
     lastSendAt = Date.now();
     return fn();
@@ -43,8 +69,9 @@ function queued<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 function bestEffort(fn: () => Promise<void>): Promise<void> {
-  if (Date.now() - lastSendAt < SEND_MIN_GAP_MS) return Promise.resolve(); // yield to real sends
-  lastSendAt = Date.now();
+  const now = Date.now();
+  if (now - lastSendAt < SEND_MIN_GAP_MS || now < blockedUntil) return Promise.resolve(); // yield to real sends + backoff
+  lastSendAt = now;
   return fn().catch(() => undefined);
 }
 
@@ -75,7 +102,7 @@ export async function getUpdates(offset: number): Promise<Array<{ update_id: num
 
 export async function sendMessage(chatId: number, text: string, replyTo?: number): Promise<void> {
   await queued(() =>
-    tgPost('sendMessage', {
+    tgSend('sendMessage', {
       chat_id: chatId,
       text,
       ...(replyTo ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : {}),
@@ -106,12 +133,12 @@ export function pickPhotoSize(photos: Array<{ file_id: string; width: number }>)
 
 /** Emoji reaction — the cheapest possible ack (the human agents' "done ✅" habit). */
 export async function setReaction(chatId: number, messageId: number, emoji: string): Promise<void> {
-  await queued(() => tgPost('setMessageReaction', { chat_id: chatId, message_id: messageId, reaction: [{ type: 'emoji', emoji }] }));
+  await queued(() => tgSend('setMessageReaction', { chat_id: chatId, message_id: messageId, reaction: [{ type: 'emoji', emoji }] }));
 }
 
 /** Remove any reaction the bot put on a message — an empty reaction array clears it. */
 export async function clearReaction(chatId: number, messageId: number): Promise<void> {
-  await queued(() => tgPost('setMessageReaction', { chat_id: chatId, message_id: messageId, reaction: [] }));
+  await queued(() => tgSend('setMessageReaction', { chat_id: chatId, message_id: messageId, reaction: [] }));
 }
 
 /** Message with tappable inline buttons — the group bot's real "UI". Buttons arrive back as
@@ -130,7 +157,7 @@ export async function sendButtons(
     else rows.push([btn]);
   }
   await queued(() =>
-    tgPost('sendMessage', {
+    tgSend('sendMessage', {
       chat_id: chatId,
       text,
       reply_markup: { inline_keyboard: rows },
@@ -141,7 +168,7 @@ export async function sendButtons(
 
 /** Ack a button tap so Telegram stops the spinner on the client. */
 export async function answerCallback(callbackId: string): Promise<void> {
-  await queued(() => tgPost('answerCallbackQuery', { callback_query_id: callbackId })).catch(() => {});
+  await queued(() => tgSend('answerCallbackQuery', { callback_query_id: callbackId })).catch(() => {});
 }
 
 export async function sendTyping(chatId: number): Promise<void> {

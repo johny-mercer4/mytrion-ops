@@ -5135,3 +5135,21 @@ Note: runWithRotation ALREADY handles a cross-account resume REJECTION gracefull
 the session and retries fresh on the new token. Residual if that path fires: the rare mid-turn
 double-write returns (write tool re-run on the fresh retry). So the cross-account resume result
 determines whether #2's fix is fully effective or we lean on the fallback.
+
+## 2026-07-28 — audit fixes on multi-token failover + stack restart
+
+Audited d19620f, fixed 4 findings (typecheck green, root test failures pre-exist on tip):
+1. **Signal handlers now exit** (`sessions.ts`) — SIGTERM/SIGINT flush then `process.exit(0)`;
+   before, `docker stop` hung its full grace period until SIGKILL, Ctrl+C needed two presses.
+2. **Write-replay guard** (`sessions.ts`) — stream watches `tool_use` for WRITE_RISK_TOOLS
+   (money_code, manual_code, override, card_action, service_request). If one fired before a
+   rate-limit failover, the retry sends a continue-nudge, NOT the original prompt (double money
+   code risk). If the resume then DIES post-write, refuse the blind fresh retry — fail the turn
+   (closes the residual noted 2026-07-25).
+3. **Error RESULT ≠ silence** (`sessions.ts`) — `error_max_turns`/`error_during_execution` end with
+   no text and no throw; runTurnInner now sends the bilingual fallback + errMsg to the monitor.
+4. **Telegram 429 honored** (`telegram.ts`) — must-deliver lane (tgSend) parses `retry_after`,
+   stamps a global `blockedUntil`, retries once; non-ok responses logged. Typing lane unchanged.
+
+Separately: whole local stack found DOWN (gateway container gone, :3001 down, :5433 down) —
+"can't access money code" report was this, not the code. Restarted per CLAUDE.md run stack.

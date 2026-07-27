@@ -98,8 +98,16 @@ function persist(): void {
   persistDirty = true;
   if (!persistTimer) persistTimer = setTimeout(flushPersist, PERSIST_DEBOUNCE_MS);
 }
-// Flush on shutdown so an in-window change isn't lost to the debounce.
-for (const sig of ['SIGTERM', 'SIGINT', 'beforeExit'] as const) process.once(sig, flushPersist);
+// Flush on shutdown so an in-window change isn't lost to the debounce. Signal handlers must
+// exit explicitly — installing one cancels Node's default terminate, so a bare flush would leave
+// `docker stop` hanging its full grace period until SIGKILL (and Ctrl+C needing a second press).
+process.once('beforeExit', flushPersist);
+for (const sig of ['SIGTERM', 'SIGINT'] as const) {
+  process.once(sig, () => {
+    flushPersist();
+    process.exit(0);
+  });
+}
 
 /**
  * Stale sweep — bounds unbounded growth. The key is now per-USER, so `sessions` gains an entry for
@@ -218,7 +226,27 @@ interface QueryOutcome {
   rateLimited: boolean;
   /** ms-epoch (or unix-seconds) the limit resets, when the SDK reported it. */
   resetsAt?: number;
+  /** A state-changing tool (money code, override, card action…) fired during THIS attempt. */
+  usedWriteTool: boolean;
 }
+
+/**
+ * Tools that CHANGE STATE (issue money, unlock pumps, block cards, open tickets). If one of these
+ * fired in an attempt that then rate-limited, the failover retry must NOT re-send the original user
+ * prompt — the resumed transcript shows the request twice and nothing stops the model obeying twice
+ * (a second money code = real money). The retry sends CONTINUE_AFTER_WRITE_PROMPT instead.
+ */
+const WRITE_RISK_TOOLS = new Set([
+  'mcp__octane__octane_money_code',
+  'mcp__octane__octane_manual_code',
+  'mcp__octane__octane_override',
+  'mcp__octane__octane_card_action',
+  'mcp__octane__octane_service_request',
+]);
+const CONTINUE_AFTER_WRITE_PROMPT =
+  '[system: the previous attempt was interrupted AFTER one or more actions already executed — see the ' +
+  'transcript above. Do NOT repeat any completed action (money code, manual code, override, card ' +
+  'action, service request). Report the result of what already ran to the user, in their language.]';
 
 /** Thrown when every configured token is exhausted for this turn — enqueue's catch sends a fallback. */
 class AllTokensLimitedError extends Error {
@@ -334,7 +362,15 @@ async function runTurnInner(
   const { finalText, stats } = outcome;
   const text = finalText.trim();
   // SILENCE is a valid outcome (anti-spam rules) — only deliver real replies.
-  if (text && text !== 'SILENT') await onReply(text.slice(0, 4000));
+  if (text && text !== 'SILENT') {
+    await onReply(text.slice(0, 4000));
+  } else if (stats.isError) {
+    // A terminal error RESULT (error_max_turns, error_during_execution) ends the stream with no
+    // text and no throw — without this the tagged user gets dead silence. Same one-line fallback
+    // the throw path sends; best-effort so a failed send can't fail the turn's bookkeeping.
+    console.error(`[${key}] turn ended in error result (${stats.errMsg ?? 'unknown'}) — sending fallback`);
+    await onReply(allTokensLimitedText(null)).catch(() => undefined);
+  }
   // Rotation bookkeeping: turn count + the context-size signal (cache_read of this turn).
   const meta = sessions.get(key);
   if (meta) {
@@ -366,6 +402,7 @@ async function runWithRotation(
 ): Promise<QueryOutcome> {
   const tried = new Set<string>();
   let useResume = resume;
+  let prompt = userPrompt;
   for (;;) {
     // Fast-fail the whole-pool-exhausted case: if EVERY token is cooling down and the soonest reset
     // is still far off, don't spawn a doomed CLI (a burst of queued turns would otherwise fire N
@@ -376,21 +413,35 @@ async function runWithRotation(
     const t = pickToken(tried);
     if (!t) throw new AllTokensLimitedError(soonestRecovery());
     try {
-      const res = await runQuery(chatId, key, carrierId, userPrompt, useResume, t.token);
+      const res = await runQuery(chatId, key, carrierId, prompt, useResume, t.token);
       if (res.rateLimited) {
         markLimited(t.token, res.resetsAt);
         tried.add(t.token);
         // Resume whatever session THIS attempt established (init stores it even when the turn then
         // rate-limits) so the next token CONTINUES the transcript instead of re-running from the
-        // user prompt — otherwise a write tool that already fired on this token runs again on the
-        // next one. Falls back to the incoming resume for the degenerate no-init case.
+        // user prompt. Falls back to the incoming resume for the degenerate no-init case.
         useResume = sessions.get(key)?.id ?? useResume;
+        // Replay guard: if a state-changing tool already fired, the retry must not re-issue the
+        // user's request — the transcript already holds it AND its executed tool call. Swap in the
+        // continue-nudge so the next attempt reports what happened instead of doing it again.
+        if (res.usedWriteTool) {
+          console.warn(`[${key}] write tool fired before the limit — retrying with continue-nudge, not the original prompt`);
+          prompt = CONTINUE_AFTER_WRITE_PROMPT;
+        }
         if (tokenCount() > 1) console.log(`[${key}] ${t.label} limited — rotating token`);
         continue;
       }
       return res;
     } catch (err) {
       if (useResume) {
+        // Replay guard, resume-death edition: if a write tool already executed (prompt was swapped
+        // to the continue-nudge) and the transcript proving it is now unreachable, a fresh retry
+        // would re-run the original request blind — fail the turn instead (user gets the fallback
+        // line; the write's receipt still lands via its own delivery channel).
+        if (prompt === CONTINUE_AFTER_WRITE_PROMPT) {
+          console.error(`[${key}] resume died AFTER a write fired — refusing blind fresh retry`);
+          throw err;
+        }
         console.error(`[${key}] resume of ${useResume} failed — retrying fresh:`, err instanceof Error ? err.message : err);
         sessions.delete(key);
         persist();
@@ -464,6 +515,7 @@ async function runQuery(
   // then SUCCEEDS should deliver its answer, not rotate.
   let sawRateLimit = false;
   let resetsAt: number | undefined;
+  let usedWriteTool = false;
   for await (const msg of q) {
     if (msg.type === 'system' && msg.subtype === 'init') {
       const prev = sessions.get(key);
@@ -478,7 +530,12 @@ async function runQuery(
       sawRateLimit = true;
       resetsAt = msg.rate_limit_info.resetsAt ?? resetsAt;
     }
-    if (msg.type === 'assistant' && msg.error === 'rate_limit') sawRateLimit = true;
+    if (msg.type === 'assistant') {
+      if (msg.error === 'rate_limit') sawRateLimit = true;
+      for (const block of msg.message.content) {
+        if (block.type === 'tool_use' && WRITE_RISK_TOOLS.has(block.name)) usedWriteTool = true;
+      }
+    }
     if (msg.type === 'result') {
       finalText = msg.subtype === 'success' ? msg.result : '';
       const r = msg as unknown as Record<string, unknown>;
@@ -488,8 +545,9 @@ async function runQuery(
         numTurns: Number(r['num_turns'] ?? 0) || 0,
         usage: (r['usage'] as Record<string, unknown> | undefined) ?? null,
         isError: msg.subtype !== 'success',
+        ...(msg.subtype !== 'success' ? { errMsg: `result: ${msg.subtype}` } : {}),
       };
     }
   }
-  return { finalText, stats, rateLimited: sawRateLimit && !finalText.trim(), resetsAt };
+  return { finalText, stats, rateLimited: sawRateLimit && !finalText.trim(), resetsAt, usedWriteTool };
 }
