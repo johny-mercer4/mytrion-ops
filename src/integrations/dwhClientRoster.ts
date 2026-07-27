@@ -345,3 +345,61 @@ export async function isCarrierOwned(
   );
   return rows.length > 0;
 }
+
+/** A carrier's owning Sales agent, as resolved for inbound events that only carry a carrier id. */
+export interface CarrierOwner {
+  carrierId: string;
+  companyName: string | null;
+  /** Zoho user id from the warehouse. May be null even when a name is known. */
+  agentZohoUserId: string | null;
+  /** Display name (`dim_company.agent`) — carried because reads match id-OR-name (see below). */
+  agentName: string | null;
+  source: 'dim_company' | 'zoho_deal';
+}
+
+/**
+ * Resolve which Sales agent owns a carrier — the REVERSE of the roster's owner scoping.
+ *
+ * The roster answers "which carriers belong to this session?"; this answers "who owns this carrier?",
+ * which is what an inbound webhook needs when all it has is a `carrier_id` (rejection reports).
+ * It lives here, next to `buildOwnedCte`, because this file is the single ownership authority — a
+ * second, divergent one is how the "Clients modal 403s for every non-admin" P0 happened.
+ *
+ * Returns BOTH the id and the name on purpose. Storing only the id would be wrong for the read path:
+ * a worker's session Zoho id and `dim_company.agent_zoho_user_id` carry different org prefixes, which
+ * is exactly why `buildOwnedCte` matches on the last 12 digits and falls back to the display name.
+ * Callers persist both and match id-or-name later.
+ *
+ * `dim_company` is preferred; when it has no agent for the carrier the Zoho deal owner is used as a
+ * second arm. Never resolve by company name — names are not unique across carriers.
+ */
+export async function findCarrierOwner(carrierId: string | number): Promise<CarrierOwner | null> {
+  const id = String(carrierId).trim();
+  if (!id) return null;
+  const rows = await dwhQuery<{
+    carrier_id: string;
+    company_name: string | null;
+    agent_zoho_user_id: string | null;
+    agent: string | null;
+  }>(
+    `select distinct on (carrier_id)
+            carrier_id::text as carrier_id,
+            company_name,
+            nullif(trim(agent_zoho_user_id::text), '') as agent_zoho_user_id,
+            nullif(trim(agent), '')                    as agent
+       from octane.dim_company
+      where carrier_id::text = $1
+      order by carrier_id, update_date desc nulls last
+      limit 1`,
+    [id],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    carrierId: row.carrier_id,
+    companyName: row.company_name?.trim() || null,
+    agentZohoUserId: row.agent_zoho_user_id,
+    agentName: row.agent,
+    source: 'dim_company',
+  };
+}

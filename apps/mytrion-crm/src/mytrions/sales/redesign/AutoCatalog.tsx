@@ -16,8 +16,28 @@ import {
 } from './autoCatalogOrder';
 import { AutoEmptyState } from './AutoActionResult';
 
+/**
+ * Catalog card style.
+ *
+ * Three things here are deliberate, because together they were making the card's CONTENT vanish
+ * while hovering and scrolling the grid:
+ *
+ *  - `transform` is emitted ONLY while dragging. A permanent `scale(1)` is not a no-op: it promotes
+ *    the card to its own composited layer and makes it a containing block for its children. Stacked
+ *    on the `backdrop-filter: blur(20px)` that `.ss-card-h` puts on every one of these cards, a
+ *    scroll that changes what the filter samples could leave the promoted layer un-repainted — the
+ *    children were still there, just not painted.
+ *  - `overflow: hidden` is gone. Nothing in the card overflows (icon box, SOON pill, drag handle,
+ *    title, code chips, description are all normal flow), so it bought nothing and gave that stale
+ *    layer something to clip against.
+ *  - `transition: all` is now an explicit property list. `all` re-runs the transition machinery for
+ *    every changed property — including ones that force the blur layer to re-rasterise — and it was
+ *    also overriding the narrower transition `.ss-card-h` sets in ss-horizon.css.
+ *
+ * Rest appearance is unchanged; the drag scale still animates (from `none`, which interpolates).
+ */
 const catalogCard = (soon: boolean, dragging: boolean): string =>
-  `text-align:left;padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${dragging ? 'var(--accent)' : 'var(--border)'};cursor:${soon ? 'default' : 'grab'};box-shadow:${dragging ? '0 12px 32px rgba(0,0,0,0.15)' : 'var(--shadow-sm)'};transform:${dragging ? 'scale(1.02)' : 'scale(1)'};position:relative;overflow:hidden;opacity:${soon ? 0.55 : dragging ? 0.95 : 1};width:100%;display:flex;flex-direction:column;gap:12px;transition:all .2s cubic-bezier(0.2, 0, 0, 1)`;
+  `text-align:left;padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid ${dragging ? 'var(--accent)' : 'var(--border)'};cursor:${soon ? 'default' : 'grab'};box-shadow:${dragging ? '0 12px 32px rgba(0,0,0,0.15)' : 'var(--shadow-sm)'};${dragging ? 'transform:scale(1.02);' : ''}position:relative;opacity:${soon ? 0.55 : dragging ? 0.95 : 1};width:100%;display:flex;flex-direction:column;gap:12px;transition:box-shadow .2s cubic-bezier(0.2,0,0,1),border-color .2s cubic-bezier(0.2,0,0,1),transform .2s cubic-bezier(0.2,0,0,1),opacity .2s cubic-bezier(0.2,0,0,1)`;
 
 function CategoryHeader({ category, count }: { category: AutoCategory; count: number }) {
   return (

@@ -19,6 +19,7 @@ import {
   tierColor,
   tierTextColor,
   tierLabel,
+  tierBucketOf,
   type TierResult,
   type TierLevel,
 } from '../../../_shared/loyalty';
@@ -28,7 +29,7 @@ import { useCachedLoad, formatCachedAt, type CachedLoad } from '../dcCache';
 import { getImpersonation } from '@/api/impersonation';
 import { useSales } from '../ctx';
 import { LeadsView, DealsView, RejectionsView } from '../dataCenterViews';
-import { DcKanbanSkeleton, DcListSkeleton } from '../DataCenterSkeletons';
+import { DcCardGridSkeleton, DcKanbanSkeleton, DcListSkeleton } from '../DataCenterSkeletons';
 import { MoneyCodesView } from '../dataCenterMoneyCodes';
 
 /** Tier level from this-CALENDAR-month gallons (the program basis), falling back to this-cycle
@@ -402,10 +403,12 @@ export function RecordsTab() {
       {dcSub === 'clients' && (
         <>
           {clientTotal > 0 && <TierDistribution counts={tierCounts} total={clientTotal} />}
-          <Gate loading={recsLoad.loading} error={recsLoad.data ? null : recsLoad.error} empty={clients.length === 0} emptyMsg={q ? 'No clients match your search.' : 'No clients in this book yet.'}>
-          <div style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:14px')}>
+          <Gate loading={recsLoad.loading} error={recsLoad.data ? null : recsLoad.error} empty={clients.length === 0} emptyMsg={q ? 'No clients match your search.' : 'No clients in this book yet.'} skeleton={<DcCardGridSkeleton label="clients" />}>
+          {/* .dc-lty scopes the tier palette; each card carries its bucket class so the shell (edge,
+              wash, rail, glow) reads as the tier while the figures below keep their own semantics. */}
+          <div className="dc-lty" style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:14px')}>
             {clients.map((c) => (
-              <div key={c.id} onClick={c.onClick} className="ss-card-h" style={s('padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);cursor:pointer;box-shadow:var(--shadow-sm)')}>
+              <div key={c.id} onClick={c.onClick} className={`dc-lty-c is-${tierBucketOf(c.tier)}`}>
                 <div style={s('display:flex;align-items:center;gap:12px')}>
                   <div style={s(c.avStyle)}>{c.initials}</div>
                   <div style={s('min-width:0;flex:1')}>

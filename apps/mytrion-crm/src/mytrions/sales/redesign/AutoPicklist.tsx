@@ -62,8 +62,18 @@ export function PicklistMicroLoader({ rows = 4, label = 'Loading' }: { rows?: nu
   );
 }
 
-/** Centered run-phase loader (progress ring + bar + phase copy). */
-export function AutoMacroLoader({ progress, phase }: { progress: number; phase: string }) {
+/**
+ * Centered run-phase loader.
+ *
+ * ONE indeterminate bar, on purpose. This used to show a spinning ring, a numeric percentage and a
+ * determinate bar for a single operation — three indicators for one wait, which the project's UI
+ * rules call out explicitly. Worse, the percentage was invented client-side
+ * (`p + (3 + Math.random() * 6)` capped at 92) so it stalled at 92% for the rest of every run and
+ * actively misinformed: a long automation looked stuck at "almost done". We do not know the real
+ * progress of a touchpoint dispatch, so we no longer pretend to — the sweep says "working", the
+ * phase label says what we're actually waiting on, and the Cancel button below gives a way out.
+ */
+export function AutoMacroLoader({ phase }: { phase: string }) {
   return (
     <div
       role="status"
@@ -72,26 +82,16 @@ export function AutoMacroLoader({ progress, phase }: { progress: number; phase: 
       aria-label={phase || 'Waiting for result'}
       style={s('padding:40px 20px;display:flex;flex-direction:column;align-items:center;text-align:center')}
     >
-      <div style={s('position:relative;width:64px;height:64px;margin-bottom:24px')}>
-        <div style={s('position:absolute;inset:0;border-radius:50%;border:3px solid var(--border);opacity:0.5')} />
-        <div style={s('position:absolute;inset:0;border-radius:50%;border:3px solid transparent;border-top-color:var(--accent);animation:ss-spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite')} />
-        <div style={s(`position:absolute;inset:0;display:flex;align-items:center;justify-content:center;${MONO};font-size:14px;font-weight:700;color:var(--accent)`)}>
-          {progress}%
-        </div>
-      </div>
       <div style={s('font-family:Rajdhani,sans-serif;font-size:21px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;margin-bottom:6px')}>
         {phase || 'Working…'}
       </div>
       <div style={s('font-size:14px;color:var(--muted);max-width:280px;line-height:1.5')}>
         Keep this window open. Closing now loses task status.
       </div>
-      <div style={s('width:100%;max-width:320px;height:6px;border-radius:99px;background:var(--raised);overflow:hidden;margin-top:24px')}>
-        <div
-          style={s(
-            `height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-2));width:${progress}%;transition:width .2s ease-out`,
-          )}
-        />
-      </div>
+      <div
+        className="ss-sweep"
+        style={s('width:100%;max-width:320px;height:6px;border-radius:99px;background:var(--raised);overflow:hidden;margin-top:24px')}
+      />
     </div>
   );
 }

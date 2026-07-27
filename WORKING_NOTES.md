@@ -6183,3 +6183,287 @@ pre-existing on `main` (identical with the change stashed), untouched here.
 
 **A frontend change is not deployed until `apps/mytrion-crm/app` is rebuilt and committed.** Merging to
 `main` is not enough. Same applies to `apps/mini-app/app` (currently in sync at `af018b2`).
+
+## 2026-07-27 (2) — Sales Mytrion: RingCentral prod auth, call-trigger correctness, Retention map
+
+### 1. RingCentral prod sign-in hung on "Loading…" — COOP
+
+`@fastify/helmet`'s default `Cross-Origin-Opener-Policy: same-origin` (confirmed live on the prod
+portal, root + SPA deep links + assets) puts any `window.open()` popup in a separate browsing context
+group, so `window.opener` is **null** inside it.
+
+Embeddable's sign-in is 3-legged OAuth through RC's own
+`apps.ringcentral.com/…/redirect.html`, whose `redirect.js` does
+`window.opener.oAuthCallback(…)` / `window.opener.postMessage({callbackUri}, …)` then `window.close()`.
+Opener severed → throws → popup never closes. That page's body is literally `<p>Loading...</p>`, which
+is exactly the stuck screen agents reported. Dev never reproduced it: the Vite dev server sends no COOP.
+
+Fix: `crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' }` in `src/app.ts` — keeps the
+document protected from a cross-origin opener, lets popups we open keep their opener. Regression test
+in `tests/unit/security-headers.test.ts`. **Not** a redirect-URI problem: both envs already use RC's
+hosted redirect.html, which is correct (a wrong one gives OAU-113, not a hang).
+
+### 2. Call-end trigger dropped the lead on any call over 30 seconds
+
+`ringcentralEvents.ts` re-read the TTL'd global dial context (`DIAL_CTX_TTL_MS = 30_000`, measured from
+the dial CLICK) when building **every** event — including `ended`, which by definition arrives when the
+call finishes. So a normal multi-minute sales call came back with no `leadId` / `dealId` /
+`retentionCaseId`, and the whole post-call chain silently no-opped: no forced Lead status wizard, no
+`mytrion_calls` row (the route needs a source), no `Mytrion_Call_Attempts` bump. Short calls worked,
+which is why it survived. Zero test coverage existed.
+
+Fix: latch the dial context per `sessionId` on first sight of the call (`sessionDialCtx`) and reuse it
+for that call's whole life; clear on `ended`. The TTL now bounds only click→call association, which is
+all it was ever for. Four tests in `ringcentralEvents.test.ts`, including a guard that a later untagged
+call cannot inherit a previous call's lead.
+
+### 3. Two "pre-existing" test failures were masking the Data Center write paths
+
+`vi.mock` spread a **class instance** (`{ ...mod.zohoCrmRecords, updateRecord }`). Spread copies only
+own enumerable props, so every prototype method became `undefined`. `getBlueprintTransitions(...)` then
+threw a *synchronous* TypeError that the route's `.catch(() => [])` cannot attach to → the post-call
+Status write looked like a 500. Product code was fine; the most important write path had no working
+test. Same root cause made `ringcentral-call-log` hit a live Zoho round-trip and time out.
+
+Both now use `Object.create(realInstance)` to keep the prototype chain. Added the coverage that was
+missing: the Blueprint branch (transition executed, `Status` never plain-written) and its 422, plus the
+`Mytrion_Call_Attempts` increment, first-call-from-unset, retention-call-counts-against-Deal, and
+Zoho-failure-doesn't-fail-the-POST. Backend suite 13 → 11 failures; the rest are unrelated pre-existing.
+
+### 4. Retention flow — how it actually behaves today
+
+Three phases in lookup tables (`retention_phases` / `retention_statuses`), one open case per carrier
+(`closed_at IS NULL`, partial unique on tenant+carrier).
+
+- **Phase 1 · Sales agent** — `p1_new → p1_in_progress`, outcomes `p1_reached` (5 BD watch),
+  `p1_out_of_reach` (1 BD per attempt, 5 max), `p1_vacation` (14 D), `p1_dissatisfied`,
+  `p1_no_action_2bd`, `p1_open_pool` / `p1_pool_assigned` (3 BD claim), terminal `p1_returned`.
+- **Phase 2 · Retention desk** — `p2_new → p2_working → p2_offer_pending`, terminal `p2_saved`,
+  `p2_refused`, `p2_lost`, `p2_out_of_business`, `p2_no_response`; 10 BD wait for a new transaction.
+- **Phase 3 · CITI** — `p3_hold` (7 D) → `p3_review` → terminal `p3_closed`.
+
+Caps: `MAX_OPEN_POOL_AGENTS = 3`, `MAX_OUT_OF_REACH_ATTEMPTS = 5`, `MAX_RETENTION_TO_POOL = 3`. All
+deadlines are business days except vacation (14 calendar) and CITI hold (7 calendar);
+`addBusinessDays` skips weekends only — **holidays are not modeled**.
+
+Automation is two pg-boss crons: `retentionCaseSync` hourly (DWH breach scan → open cases; any
+transaction after `created_at` auto-closes as `p1_returned`, all phases incl. CITI) and
+`retentionDeadlineSweep` every 15 min (all timer paths).
+
+**The live surface is much smaller than the schema suggests.** Three hardcoded consts in
+`killSwitches.ts` are all `false`: `RETENTION_OPEN_POOL_ESCALATION_ENABLED`,
+`RETENTION_PHASE2_ESCALATION_ENABLED`, `RETENTION_OPEN_POOL_CLAIM_ZOHO_TRANSFER_ENABLED`. Consequently:
+
+- Phase 2 and Open Pool are **unreachable**; `send_to_open_pool`, `escalate_retention` and
+  `no_action_2bd` throw "temporarily disabled"; Dissatisfied stays Phase 1 with Sales keeping the Zoho
+  Owner.
+- In `resolveExpiry`, only the vacation chain still fires: `14D_vacation → p1_vacation_followup`,
+  `2BD_vacation_followup → p1_awaiting_ops`, then Ops confirm (→ `p1_in_progress`) or deny (→ CITI).
+  Every other timer returns null. CITI is reachable today **only** via Ops denial.
+- The Sales board hides all this: `kanbanColOf` parks pool/Phase-2 cards on the stage they left from.
+
+**Open question for prod:** both crons require `FF_JOBS_ENABLED`, which `render.yaml` explicitly
+excludes ("pg-boss workers/crons stay off") — local `.env` has `FF_JOBS_ENABLED=1`,
+`JOBS_WORKER_MODE=inline`. If the `octane-assistant-secrets` env group doesn't set it, prod has **no
+case auto-generation, no auto-close on fuel return, and no timers at all**. Needs checking in Render.
+
+## 2026-07-27 (3) — Finance: modal tab strip crushed; main_transactions filters restored
+
+### 1. Client modal — the tab strip vanished on content-heavy tabs
+
+Reported as "the main filter tab is not visible when we click Transactions or others". Reproduced in
+headless Chrome against the real `finance.css` (harness: the exact ClientModal DOM + a 100-row
+transactions table). Measured at a 1512×900 viewport:
+
+```
+tabs  h=6.6   scrollHeight=24   ← crushed to a sliver; only the EFS/Money-Codes "Soon" pills peeked
+head  h=80.8  body h=665.4
+```
+
+Cause: `.fi-modal` is a column flex container. `.fi-modal-tabs` is `overflow-x: auto`, which makes it
+a **scroll container — and a scroll container's automatic minimum size is 0, not its content
+height**. So the strip was fully shrinkable while its sibling `.fi-modal-body` was floored at
+`min-height: 260px`. The flex algorithm took the deficit out of the only item that would yield.
+`.fi-modal-head` survived because it is not a scroll container, which is why the modal still looked
+half-normal and the bug read as "the tabs are gone" rather than "the layout is broken".
+
+Fix: `flex: none` on `.fi-modal-tabs` (and `.fi-modal-head` for the same reason). After: tabs
+38.4px against a 39px content height, and `80.8 + 38.4 + 633.6 = 752.8` exactly fills the modal.
+Verified stable at viewport heights 1100 / 900 / 760 / 620 / 520 — the strip holds at 38.4px at every
+one and the body absorbs the difference.
+
+**Same latent shape elsewhere, NOT changed** (could not make them reproduce): `.bm-copilot-chips` and
+`.cs-copilot-chips` are also unpinned `overflow-x: auto` strips in a column flex panel. They survive
+today only because their bodies use `min-height: 0` (basis 0 ⇒ shrink weight 0), so nothing forces a
+deficit until the viewport gets very short. Worth pinning if either panel ever grows a fixed-height
+sibling. Note `.fi-subbar` (the Transactions Range chips) scrolls away with the body — it is inside
+the scroller and not sticky. Left alone: it is visible on open and was not what was reported.
+
+### 2. `finance.main_transactions` — page/search silently stripped
+
+Confirmed a real capability regression, not a stale test. The entry moved from a servercrm
+passthrough (`financeList` → `looseFilters()`, which carried the widget's `page`/`search`) to a local
+DWH query understanding only `limit`. The params schema stayed a plain `z.object`, and **zod strips
+unknown keys silently**, so a caller paginating or searching got a 200 and the unfiltered first page.
+
+Restored rather than deleted, because the roster is ~8k carriers and page-1-of-everything is not an
+answer:
+
+- `fetchFinanceTransactions` now takes `{ limit, page, search }` → `LIMIT $1 OFFSET $2` with `page`
+  1-based, and an ILIKE `WHERE` across `company_name` / `carrier_id::text` / `card_number` /
+  `location_name`. LIKE metacharacters in the needle are escaped so a literal `%` or `_` matches
+  itself instead of widening the search. Args stay in step with the SQL ($3 only bound when searching).
+- The schema is now **`.strict()`** and bounds `page` to 1..1000 (a deep OFFSET should not be able to
+  stall the DWH). Strict is the point: an unsupported filter is now a 400 rather than a
+  wrong-but-successful read — the same rule `resolveWritePayload` enforces for CRM writes.
+
+Safe to tighten: the only caller is `scripts/financePanelSmoke.ts` (`{ limit: 2 }`). The frontend's
+`touchpointTypes.ts` entry is declaration-only — nothing in the CRM app invokes this key (the Finance
+UI reads `/v1/finance/*` and `finance.client_recent_transactions` instead).
+
+New `tests/unit/dwh-finance-transactions.test.ts` (8) asserts the emitted SQL and args, not just the
+schema: default page, OFFSET arithmetic, the four search columns, metacharacter escaping, and
+WHERE-before-ORDER-BY-before-LIMIT ordering.
+
+### Checks
+
+Backend typecheck green, lint 0 errors, suite 10 failures / 985 passed (was 11 / 976 — touchpoints
+catalog fixed, 8 added). Frontend 191/192, the one failure the long-standing `dashDebtorsData`.
+Widget bundle rebuilt and the `flex:none` rules verified present in the shipped CSS.
+
+**Note:** CLAUDE.md rule 10 asks for the `modern-web-guidance` skill on UI work — it is not
+registered in this environment (`Unknown skill`), so the CSS change was made without it. Worth either
+installing the skill or dropping the rule.
+
+## 2026-07-27 — Standardize Sales Coming soon detail panels
+
+Single catalog `soonTabs.ts` (copy + hue + icon) shared by sidebar SOON chips and
+`ComingSoonPanel`. Panel layout moved to `.ss-soon-panel*` in `ss-horizon.css` so Tickets /
+Verification / Call Hub render the same composition. Removed unused DashSkeleton ComingSoonPanel.
+
+
+## 2026-07-27 (4) — Sales: Automations UX, tier client cards, Rejection Reports (partial)
+
+### ⚠️ `.env` MYTRION_OPS_DATABASE_URL points at PROD, not localhost:5433
+
+`pnpm db:migrate` run locally hits the **Render production database**
+(`dpg-…oregon-postgres.render.com/mytrion_ops_db`), not the docker Postgres CLAUDE.md documents on
+`localhost:5433` (that container's DB is `octane_assistant` and is empty of app tables). I hit this
+the normal way — started docker, ran `db:migrate` to reach head, then again after adding 0059 — and
+both went to prod.
+
+Impact of what landed: `0059_mytrion_rejection_reports` — one new table + 5 indexes, all
+`IF NOT EXISTS`, **purely additive**. No existing table, column or row was touched; the table is
+empty. Prod now reports 60 applied migrations against 60 local `.sql` files, i.e. exactly head, and
+the only new `mytrion_*` table is the one added here — so the earlier "reach head" run was a no-op.
+
+**Action needed:** either point local `.env` at `postgresql://…@localhost:5433/…` (matching CLAUDE.md
+§"Local run stack"), or add a guard so `db:migrate` refuses a non-local host without an explicit
+`--prod` style opt-in. Right now any developer following the documented workflow migrates prod.
+
+### 1. Automations — card content vanished on hover+scroll
+
+`catalogCard` (AutoCatalog.tsx) emitted `transform: scale(1)` at REST. That is not a no-op: it
+promotes the card to its own composited layer and makes it a containing block. Stacked on the
+`backdrop-filter: blur(20px)` `.ss-card-h` puts on all 24 catalog cards, a scroll that changes what
+the filter samples could leave the promoted layer un-repainted — the children were still in the DOM,
+just unpainted. `overflow: hidden` (which nothing needed) gave that stale layer something to clip
+against, and `transition: all` re-ran the blur rasterisation on every property change while also
+overriding the narrower transition ss-horizon.css sets. Now: transform only while dragging,
+no `overflow`, explicit 4-property transition. Rest appearance unchanged.
+
+### 2. Automations — dark-mode modal transparency
+
+The panel used `background: var(--surface)` = `rgba(24,31,45,0.66)`. Correct for a card sitting ON
+the page, far too see-through for a dialog OVER it — the catalog grid read straight through it
+(matches the screenshot). Added `--hz-modal-surface` (0.94 dark / 0.96 light) and pointed the
+existing-but-unreferenced `.ss-modal-box` recipe at it, then adopted that class on the modal and
+raised the scrim from `.62`/blur3 to `.78`/blur6 (matching dataCenterSheet). `--surface` itself is
+untouched, so the ~150 inline card/row/chip call sites don't flatten.
+
+### 3. Data Center → Clients
+
+`DcCardGridSkeleton` added — Clients was the only sub-tab falling through to `Gate`'s bare centred
+ring while Leads/Deals both passed a shaped skeleton. It mirrors the real card's box model so the
+grid doesn't jump.
+
+Tier gradient cards ported from the Manager loyalty board into `dc-clients.css`, scoped to `.dc-lty`
+(Sales' global `--tier-*` renders bronze AS orange, which collides with "building toward Bronze").
+Gold vs Bronze are separated on **three** axes, not hue alone, so the pair survives dim screens:
+gold is bright `#eaa32c` + metallic sheen sweep + inset halo; bronze is dark copper `#a25e28`,
+deliberately **matte** with no sheen and no halo. "No active cards" is dashed rather than a dimmer
+tier. The tier owns only the shell (edge/wash/rail/glow) — violet Gallons·Cycle, accent
+Gallons·Month and danger Owed keep their own semantics, so a tier can never be misread as a metric.
+Rendered all five buckets in headless Chrome to confirm separation and that the figures stay legible.
+Bucket helpers (`tierBucketOf`, `TIER_BUCKET_ORDER`) moved into `_shared/loyalty.ts` so Sales and
+Manager cannot diverge. Also fixed the Manager bug where `.is-gold` out-specified `:hover`, leaving
+gold the one card with no hover glow — the new recipe drives it off a `--halo` variable instead.
+
+### 4. Rejection Reports — schema + migration only (rest NOT built)
+
+Done: `src/db/schema/mytrion_rejection_reports.ts`, registered in `schema/index.ts` **and** in
+`drizzle.config.ts`'s explicit `schema[]` array (miss that and drizzle-kit never sees the table),
+plus hand-written `0059_mytrion_rejection_reports.sql` + journal entry.
+
+Hand-written because **`pnpm db:generate` is broken repo-wide**: `meta/0022_snapshot.json` and
+`0023_snapshot.json` both declare the same `prevId`, so drizzle-kit aborts with a snapshot collision.
+Snapshots stopped at 0024 anyway (25 snapshots vs 60 migrations), so 0025+ have all been hand-written
+with a hand-maintained journal — 0059 follows that. Worth repairing the 0022/0023 chain separately.
+
+Ownership design note: the row stores BOTH `agent_zoho_user_id` and `agent_name`. A sub-investigation
+recommended id-only (a live DWH check found no carrier with a name but no id), but that is the
+carrier→agent direction; the READ is the reverse — a worker's session Zoho id → their reports — and
+`dwhClientRoster.buildOwnedCte` unions an id-suffix arm with a NAME arm precisely because session ids
+and `dim_company.agent_zoho_user_id` don't reliably agree. Binding on id alone risks the documented
+"0 rows for everyone" failure, so both are stored and reads must match id-or-name.
+
+**Still to build:** `findCarrierOwner` in dwhClientRoster, `rejectionReportRepo`,
+`rejectionReports.routes.ts` (webhook `POST /v1/rejection-reports/webhook` with `x-rejection-secret`
++ the DB-backed `GET /v1/data-center/rejections`), `REJECTION_WEBHOOK_SECRET` env + log redaction,
+route registration, removal of the existing Zoho-backed `/data-center/rejections` (a second GET on
+the same path is `FST_ERR_DUPLICATED_ROUTE` **at boot**), and the Deluge snippet.
+
+## 2026-07-27 (5) — Rejection Reports backend + Automations runner escape hatch
+
+### Rejection Reports now come from our table, not a Desk scan
+
+- `findCarrierOwner(carrierId)` added to `dwhClientRoster.ts` — deliberately in the file that is the
+  single ownership authority (its header warns that a second, divergent one caused the "Clients modal
+  403s for every non-admin" P0). Returns id AND name.
+- `rejectionReportRepo` — tenant-scoped; `create` is idempotent on the Desk ticket id (23505 →
+  re-read the winner, so a Deluge retry is a no-op); `listForAgent` matches id-**or**-name, comparing
+  the id by its last 12 digits exactly like `buildOwnedCte`.
+- `POST /v1/rejection-reports/webhook` — `x-rejection-secret`, `carrierId`+`errorCode` required so
+  app.ts's empty-body-as-`{}` parser can't create a blank row, best-effort owner resolution (a DWH
+  failure still records the decline as `unresolved` rather than losing it), synthetic system actor
+  for the audit, and the full card number is never put in audit detail.
+- `GET /v1/data-center/rejections` moved into the same file and is now agent-scoped; the Zoho Desk
+  version in `dataCenter.routes.ts` is deleted along with its import. Only one handler may own that
+  path — a second GET is `FST_ERR_DUPLICATED_ROUTE` **at boot**, so this had to land as one change.
+  Verified by booting the app and printing the route table: one GET, one webhook POST.
+- The list DTO omits the full PAN; only `cardLast4` goes over the wire.
+- Frontend `mapRejection` rewritten: company and reason are real columns now instead of being parsed
+  back out of a ticket subject, `number` shows the carrier id, and our `new/acknowledged/resolved`
+  states map onto the badge vocabulary `RejectionsView` already colours.
+
+7 tests in `tests/unit/rejection-reports.test.ts` cover the secret gate, owner binding, DWH-failure
+fallback, unknown carrier, empty-body rejection, agent scoping, and that no PAN reaches the client.
+
+Deluge snippet + secret + smoke test: `docs/deluge-rejection-report-webhook.md`.
+`REJECTION_WEBHOOK_SECRET` must be added to the Render `octane-assistant-secrets` env group — until
+then the endpoint answers 503 and the Deluge's own catch swallows it (tickets are unaffected).
+
+### Automations runner
+
+- `AutoMacroLoader` showed a spinning ring **and** a percentage **and** a bar for one wait. The
+  percentage was fabricated (`p + (3 + Math.random()*6)`, capped at 92), so every long run sat at
+  "92%" — worse than no number. Now one indeterminate `.ss-sweep` bar plus the phase label.
+- `closeAuto` early-returned while `running` and was the handler for BOTH the backdrop and the X, so
+  a hung automation had no exit but a page reload. Added: a run token (`runSeq`) so a late response
+  from a cancelled/closed/superseded run is discarded, a Cancel button, an ESC handler, and a 90s
+  watchdog that converts a never-settling run into a real error.
+- Known limit, documented in the code: the HTTP request is **not** aborted. `callTouchpoint` takes no
+  `AbortSignal` and threading one through every `autoRunners` branch is a separate change, so a
+  cancelled run completes in the background and its result is thrown away.
+
+Backend suite 992 passed / 10 failed (the same 10 pre-existing); frontend 193/194.

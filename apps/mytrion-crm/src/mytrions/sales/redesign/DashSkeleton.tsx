@@ -1,6 +1,5 @@
 /** Shared skeleton / empty chrome for dashboard panels. */
 import { s } from './dc';
-import { Icon } from './icons';
 
 export function DashSkeleton({ rows = 3 }: { rows?: number }) {
   return (
@@ -56,41 +55,6 @@ export function DebtorsSkeleton() {
       {Array.from({ length: 4 }, (_, i) => (
         <div key={i} className="ss-skel" style={s('height:108px')} />
       ))}
-    </div>
-  );
-}
-
-export function ComingSoonPanel({
-  title,
-  blurb,
-}: {
-  title: string;
-  blurb: string;
-}) {
-  return (
-    <div
-      style={s(
-        'padding:56px 28px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);text-align:center;box-shadow:var(--shadow-sm)',
-      )}
-    >
-      <div
-        style={s(
-          'width:56px;height:56px;border-radius:16px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent)',
-        )}
-      >
-        <Icon name="clock" size={26} strokeWidth={1.8} />
-      </div>
-      <div style={s('font-size:17px;font-weight:800')}>{title}</div>
-      <div style={s('font-size:14px;color:var(--muted);margin-top:6px;max-width:360px;margin-left:auto;margin-right:auto;line-height:1.45')}>
-        {blurb}
-      </div>
-      <span
-        style={s(
-          'display:inline-block;margin-top:16px;padding:5px 12px;border-radius:99px;background:color-mix(in srgb,var(--orange) 14%,transparent);color:var(--orange);font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase',
-        )}
-      >
-        Coming soon
-      </span>
     </div>
   );
 }

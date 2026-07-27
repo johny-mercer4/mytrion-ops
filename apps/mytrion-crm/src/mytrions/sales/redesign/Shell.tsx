@@ -30,6 +30,8 @@ import { useTheme } from '@/hooks/useTheme';
 import type { DealVM, LeadVM } from './dataCenterLive';
 import './theme.css';
 import './ss-horizon.css';
+// After ss-horizon so the tier card shell wins over the generic .ss-card-h surface.
+import './dc-clients.css';
 
 import { HomeTab } from './tabs/HomeTab';
 import { InboxTab } from './tabs/InboxTab';
@@ -42,6 +44,7 @@ import { AutoTab } from './tabs/AutoTab';
 import { DashTab } from './tabs/DashTab';
 import { CarriersTab } from './tabs/CarriersTab';
 import { ComingSoonPanel } from './tabs/ComingSoonPanel';
+import { soonHue } from './soonTabs';
 
 /** Wayfinding hue per nav id — the shared --tone-* scale (theme-aware; see styles/horizon.css). */
 const NAV_TONE: Record<string, string> = {
@@ -56,14 +59,6 @@ const NAV_TONE: Record<string, string> = {
   callHub: 'var(--tone-pink)',
   auto: 'var(--tone-indigo)',
   dash: 'var(--tone-rose)',
-};
-
-/** Colorful SOON chip hues per parked nav id. */
-const SOON_HUE: Record<string, string> = {
-  retention: 'var(--orange)',
-  verification: 'var(--violet)',
-  tickets: 'var(--accent)',
-  callHub: 'var(--ok)',
 };
 
 /** Tabs that render edge-to-edge (own scroll/height), bypassing the centered max-width wrapper. */
@@ -308,7 +303,7 @@ export function SalesRedesign() {
                 {group.items.map((n) => {
                   const active = section === n.id;
                   const soon = n.comingSoon === true;
-                  const soonHue = SOON_HUE[n.id] ?? 'var(--warn)';
+                  const chipHue = soonHue(n.id);
                   // Active background / colour / rail now live in ss-horizon.css (.ss-tab-x.is-active)
                   // so the rail can be a gradient — an inline inset box-shadow cannot be.
                   const style = `display:flex;align-items:center;gap:11px;padding:11px ${navCollapsed ? '0' : '12px'};${navCollapsed ? 'justify-content:center' : ''};width:100%;background:transparent;color:var(--muted);font-size:14px;font-weight:${active ? 700 : 600};cursor:pointer;opacity:${soon && !active ? '.72' : '1'};border-radius:var(--radius-md);overflow:hidden`;
@@ -323,7 +318,7 @@ export function SalesRedesign() {
                       <span className="ss-tab-ico" style={s('position:relative;flex-shrink:0;display:inline-flex')}>
                         <Icon name={n.icon} size={18} style={{ flexShrink: 0 }} />
                         {navCollapsed && soon ? (
-                          <span style={s(`position:absolute;top:-5px;right:-6px;width:8px;height:8px;border-radius:50%;background:${soonHue};border:1.5px solid var(--bg);box-shadow:0 0 0 1px color-mix(in srgb, ${soonHue} 40%, transparent)`)} />
+                          <span style={s(`position:absolute;top:-5px;right:-6px;width:8px;height:8px;border-radius:50%;background:${chipHue};border:1.5px solid var(--bg);box-shadow:0 0 0 1px color-mix(in srgb, ${chipHue} 40%, transparent)`)} />
                         ) : null}
                         {navCollapsed && !soon && badgeCounts[n.id] ? (
                           <span style={s('position:absolute;top:-6px;right:-7px;background:var(--accent);color:#fff;font-size:11px;font-weight:800;min-width:14px;height:14px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 3px;border:1.5px solid var(--bg)')}>{badgeCounts[n.id]}</span>
@@ -331,7 +326,7 @@ export function SalesRedesign() {
                       </span>
                       {!navCollapsed && <span style={s('flex:1;text-align:left')}>{n.label}</span>}
                       {!navCollapsed && soon ? (
-                        <span className="ss-soon-chip" style={{ ['--ss-soon-hue' as string]: soonHue }}>SOON</span>
+                        <span className="ss-soon-chip" style={{ ['--ss-soon-hue' as string]: chipHue }}>SOON</span>
                       ) : !navCollapsed && badgeCounts[n.id] ? (
                         <span style={s('background:var(--accent);color:#fff;font-size:11px;font-weight:800;min-width:18px;height:18px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px')}>{badgeCounts[n.id]}</span>
                       ) : null}

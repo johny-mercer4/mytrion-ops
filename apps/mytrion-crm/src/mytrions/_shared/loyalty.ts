@@ -165,6 +165,40 @@ export function tierRewards(level: TierLevel): Reward[] {
   });
 }
 
+/**
+ * DISPLAY BUCKETS — the four program tiers plus a fifth for carriers with no active cards.
+ *
+ * `resolveTier` collapses two entirely different business states onto `level: 'none'`: a client who
+ * IS fuelling but hasn't reached Bronze, and a carrier with no active cards at all. Rendering them
+ * as one colour makes ~92% of a roster a single block and tells you nothing. Both surfaces that draw
+ * the program (Manager's Loyalty board and Sales' Data Center → Clients) need the same split, so it
+ * lives here next to `resolveTier` rather than being defined twice.
+ */
+export type TierBucket = 'gold' | 'silver' | 'bronze' | 'building' | 'idle';
+
+export const TIER_BUCKET_ORDER: TierBucket[] = ['gold', 'silver', 'bronze', 'building', 'idle'];
+
+/** A carrier with no track at all (zero active cards) is 'idle'; otherwise it's working on Bronze. */
+export function tierBucketOf(t: Pick<TierResult, 'level' | 'track'>): TierBucket {
+  if (t.level !== 'none') return t.level;
+  return t.track === null ? 'idle' : 'building';
+}
+
+export function tierBucketLabel(b: TierBucket): string {
+  switch (b) {
+    case 'gold':
+      return 'Gold';
+    case 'silver':
+      return 'Silver';
+    case 'bronze':
+      return 'Bronze';
+    case 'building':
+      return 'Building';
+    default:
+      return 'No cards';
+  }
+}
+
 /** Tint / icon color (theme-aware token; bright in both themes). */
 export function tierColor(level: TierLevel): string {
   switch (level) {
