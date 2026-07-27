@@ -6422,3 +6422,48 @@ and `dim_company.agent_zoho_user_id` don't reliably agree. Binding on id alone r
 + the DB-backed `GET /v1/data-center/rejections`), `REJECTION_WEBHOOK_SECRET` env + log redaction,
 route registration, removal of the existing Zoho-backed `/data-center/rejections` (a second GET on
 the same path is `FST_ERR_DUPLICATED_ROUTE` **at boot**), and the Deluge snippet.
+
+## 2026-07-27 (5) — Rejection Reports backend + Automations runner escape hatch
+
+### Rejection Reports now come from our table, not a Desk scan
+
+- `findCarrierOwner(carrierId)` added to `dwhClientRoster.ts` — deliberately in the file that is the
+  single ownership authority (its header warns that a second, divergent one caused the "Clients modal
+  403s for every non-admin" P0). Returns id AND name.
+- `rejectionReportRepo` — tenant-scoped; `create` is idempotent on the Desk ticket id (23505 →
+  re-read the winner, so a Deluge retry is a no-op); `listForAgent` matches id-**or**-name, comparing
+  the id by its last 12 digits exactly like `buildOwnedCte`.
+- `POST /v1/rejection-reports/webhook` — `x-rejection-secret`, `carrierId`+`errorCode` required so
+  app.ts's empty-body-as-`{}` parser can't create a blank row, best-effort owner resolution (a DWH
+  failure still records the decline as `unresolved` rather than losing it), synthetic system actor
+  for the audit, and the full card number is never put in audit detail.
+- `GET /v1/data-center/rejections` moved into the same file and is now agent-scoped; the Zoho Desk
+  version in `dataCenter.routes.ts` is deleted along with its import. Only one handler may own that
+  path — a second GET is `FST_ERR_DUPLICATED_ROUTE` **at boot**, so this had to land as one change.
+  Verified by booting the app and printing the route table: one GET, one webhook POST.
+- The list DTO omits the full PAN; only `cardLast4` goes over the wire.
+- Frontend `mapRejection` rewritten: company and reason are real columns now instead of being parsed
+  back out of a ticket subject, `number` shows the carrier id, and our `new/acknowledged/resolved`
+  states map onto the badge vocabulary `RejectionsView` already colours.
+
+7 tests in `tests/unit/rejection-reports.test.ts` cover the secret gate, owner binding, DWH-failure
+fallback, unknown carrier, empty-body rejection, agent scoping, and that no PAN reaches the client.
+
+Deluge snippet + secret + smoke test: `docs/deluge-rejection-report-webhook.md`.
+`REJECTION_WEBHOOK_SECRET` must be added to the Render `octane-assistant-secrets` env group — until
+then the endpoint answers 503 and the Deluge's own catch swallows it (tickets are unaffected).
+
+### Automations runner
+
+- `AutoMacroLoader` showed a spinning ring **and** a percentage **and** a bar for one wait. The
+  percentage was fabricated (`p + (3 + Math.random()*6)`, capped at 92), so every long run sat at
+  "92%" — worse than no number. Now one indeterminate `.ss-sweep` bar plus the phase label.
+- `closeAuto` early-returned while `running` and was the handler for BOTH the backdrop and the X, so
+  a hung automation had no exit but a page reload. Added: a run token (`runSeq`) so a late response
+  from a cancelled/closed/superseded run is discarded, a Cancel button, an ESC handler, and a 90s
+  watchdog that converts a never-settling run into a real error.
+- Known limit, documented in the code: the HTTP request is **not** aborted. `callTouchpoint` takes no
+  `AbortSignal` and threading one through every `autoRunners` branch is a separate change, so a
+  cancelled run completes in the background and its result is thrown away.
+
+Backend suite 992 passed / 10 failed (the same 10 pre-existing); frontend 193/194.
