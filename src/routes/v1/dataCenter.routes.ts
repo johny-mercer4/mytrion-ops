@@ -19,7 +19,6 @@ import {
 } from '../../integrations/salesDataCenter.js';
 import { fetchAgentClients } from '../../integrations/dwhClientRoster.js';
 import { listClientCards, getClientBilling } from '../../integrations/dwhCards.js';
-import { listRejectionReportTickets } from '../../integrations/zohoDesk.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import { zohoCrm } from '../../integrations/zohoCrm.js';
 import {
@@ -349,20 +348,10 @@ export async function dataCenterRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  /**
-   * Rejection reports — the auto-created "Rejection Report: …" tickets from Zoho Desk (there is no
-   * Desk custom module for these; they're ordinary tickets keyed by subject). Org-wide (they're
-   * system reports, not owner-scoped), returned newest-first within the recent window.
-   */
-  app.get('/data-center/rejections', guard, async (request) => {
-    requireSalesAccess(request);
-    try {
-      const rejections = await listRejectionReportTickets();
-      return { rejections };
-    } catch (err) {
-      throw crmError(err);
-    }
-  });
+  // GET /data-center/rejections now lives in rejectionReports.routes.ts, served from our own
+  // mytrion_rejection_reports table (written by the Zoho Deluge webhook) instead of scanning a
+  // recent window of Desk tickets org-wide. It must be declared in exactly ONE place — a second GET
+  // on this path is FST_ERR_DUPLICATED_ROUTE at boot.
 
   /**
    * Owner-scoped inline edit of a CRM record (Lead/Deal). Mirrors the cs/billing deal-write pattern

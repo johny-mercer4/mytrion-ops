@@ -44,6 +44,7 @@ import { billingRoutes } from './routes/v1/billing.routes.js';
 import { financeRoutes } from './routes/v1/finance.routes.js';
 import { paymentsIngestRoutes } from './routes/v1/paymentsIngest.routes.js';
 import { inboxMessagesRoutes } from './routes/v1/inboxMessages.routes.js';
+import { rejectionReportsRoutes } from './routes/v1/rejectionReports.routes.js';
 import { agentRoutes } from './routes/v1/agent.routes.js';
 import { authRoutes } from './routes/v1/auth.routes.js';
 import { automationRoutes } from './routes/v1/automation.routes.js';
@@ -72,6 +73,7 @@ const LOG_REDACT_PATHS = [
   'req.headers["x-api-key"]',
   'req.headers["x-ingest-secret"]',
   'req.headers["x-inbox-secret"]',
+  'req.headers["x-rejection-secret"]',
 ];
 
 function loggerOption() {
@@ -157,7 +159,19 @@ export async function buildApp(): Promise<FastifyInstance> {
   combinedAuthPlugin(app);
   rbacPlugin(app);
 
-  await app.register(helmet, { contentSecurityPolicy: false });
+  await app.register(helmet, {
+    contentSecurityPolicy: false,
+    // helmet's default is COOP: same-origin, which puts any window.open() popup in a SEPARATE
+    // browsing context group and makes `window.opener` null inside it. That silently breaks every
+    // OAuth-popup sign-in we host — most visibly the RingCentral softphone: Embeddable opens the RC
+    // login popup, RC redirects it to its own redirect.html, and redirect.js hands the code back via
+    // `window.opener.oAuthCallback(...)` / `window.opener.postMessage({callbackUri}, ...)` then
+    // window.close(). With the opener severed that throws, so the popup never closes and the agent
+    // sits on redirect.html's literal "Loading..." forever. Dev never saw it because the Vite dev
+    // server sends no COOP at all. `same-origin-allow-popups` keeps this document protected from a
+    // cross-origin opener while letting popups WE open keep their opener reference.
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+  });
   await app.register(cors, {
     // Reflect the caller's Origin when allowed (exact match or allowed suffix, e.g.
     // *.zappsusercontent.com) — never a bare "*", since we send a custom x-api-key header.
@@ -268,6 +282,8 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(financeRoutes);
       await v1.register(paymentsIngestRoutes);
       await v1.register(inboxMessagesRoutes);
+      // Owns GET /data-center/rejections (moved off the Zoho Desk scan) plus the Deluge webhook.
+      await v1.register(rejectionReportsRoutes);
       await v1.register(agentRoutes);
       await v1.register(tasksRoutes);
       await v1.register(filesRoutes);

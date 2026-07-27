@@ -48,6 +48,52 @@ export function DcKanbanSkeleton({ label }: { label: string }) {
   );
 }
 
+/**
+ * 3-up card grid — the Clients roster. Mirrors the real card's box model (18px padding, 3 columns,
+ * 14px gap, avatar + title/carrier, a badge row, a figure row) so the grid does not jump when the
+ * data lands. Clients previously fell back to Gate's bare centred ring while Leads/Deals both had a
+ * shaped skeleton; this is the standardized loader for that tab.
+ */
+export function DcCardGridSkeleton({ label, count = 6 }: { label: string; count?: number }) {
+  return (
+    <div
+      className="ss-fu"
+      aria-busy="true"
+      aria-label={`Loading ${label}`}
+      style={s('display:grid;grid-template-columns:repeat(3,1fr);gap:14px')}
+    >
+      {Array.from({ length: count }, (_, i) => (
+        <div
+          key={i}
+          style={s(
+            'padding:18px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border)',
+          )}
+        >
+          <div style={s('display:flex;align-items:center;gap:12px')}>
+            <Skel w="40px" h="40px" />
+            <div style={s('flex:1;min-width:0;display:flex;flex-direction:column;gap:6px')}>
+              <Skel w="72%" h="14px" />
+              <Skel w="44%" h="11px" />
+            </div>
+          </div>
+          <div style={s('margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:8px')}>
+            <Skel w="76px" h="20px" extra="border-radius:99px" />
+            <Skel w="62px" h="20px" extra="border-radius:99px" />
+          </div>
+          <div style={s('display:flex;gap:16px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border2)')}>
+            {[0, 1, 2].map((c) => (
+              <div key={c} style={s('display:flex;flex-direction:column;gap:6px')}>
+                <Skel w="46px" h="17px" />
+                <Skel w="62px" h="11px" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Table-style rows for Leads/Deals list view. */
 export function DcListSkeleton({ label, cols = 5 }: { label: string; cols?: number }) {
   return (

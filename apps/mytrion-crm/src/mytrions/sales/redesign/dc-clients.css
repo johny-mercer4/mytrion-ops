@@ -1,0 +1,128 @@
+/**
+ * Data Center → Clients: loyalty-tier client cards.
+ *
+ * A client card IS its tier — Gold reads gold, Silver silver, Bronze a true copper, clients still
+ * climbing toward Bronze read orange, and carriers with no active cards recede to neutral with a
+ * dashed edge. Ported from the Manager Loyalty board so a carrier looks the same in both places.
+ *
+ * WHY A LOCAL --lty-* PALETTE: Sales' global `--tier-*` scale renders bronze AS orange, which is the
+ * same hue this surface needs for "building toward Bronze". Scoping to `.dc-lty` keeps the two
+ * apart without touching the tier badge tokens the rest of Sales uses.
+ *
+ * GOLD vs BRONZE (the pair that previously read as one warm smudge) is separated on three axes at
+ * once, not just hue, so it survives dim screens and colour-vision differences:
+ *   hue        gold #eaa32c (bright warm yellow)  vs  bronze #a25e28 (dark, desaturated copper)
+ *   finish     gold gets the metallic sheen sweep vs  bronze is deliberately MATTE (no sheen)
+ *   glow       gold gets the inset halo            vs  bronze has none
+ * Silver keeps a cool white sheen so it can't drift into gold either.
+ *
+ * LAYER ORDER IS LOAD-BEARING: `--hz-pane` is a `linear-gradient()`, i.e. an <image>. It must be the
+ * LAST comma-separated background layer, and a <color> is only legal in that final position. Space-
+ * separating it inside another layer makes the whole declaration invalid at computed-value time and
+ * the card paints bare — this has already bitten the Manager skeleton once.
+ *
+ * The tier owns only the card's SHELL (edge, wash, rail, glow). The figures inside keep their own
+ * semantic colours — violet Gallons·Cycle, accent Gallons·Month, danger Owed — so the tier can never
+ * be mistaken for a metric. That is also why the washes stay low-alpha and top-weighted: the numbers
+ * sit on the lower half of the card, over near-neutral pane.
+ */
+
+.ss-root .dc-lty {
+  --lty-gold: #eaa32c;
+  --lty-silver: #c3cfdd;
+  /* Browner and darker than --lty-building so copper and orange never read as one hue. */
+  --lty-bronze: #a25e28;
+  --lty-building: #f97316;
+  --lty-idle: #6e7681;
+}
+.ss-root.light .dc-lty {
+  --lty-silver: #8496ad;
+  --lty-idle: #9ba1aa;
+}
+
+/* Per-bucket drivers: --t hue, --tint wash strength, --sheen metallic sweep, --halo inner glow. */
+.ss-root .dc-lty .is-gold {
+  --t: var(--lty-gold);
+  --tint: 18%;
+  --sheen: color-mix(in srgb, var(--lty-gold) 22%, transparent);
+  --halo: 42%;
+}
+.ss-root .dc-lty .is-silver {
+  --t: var(--lty-silver);
+  --tint: 17%;
+  --sheen: color-mix(in srgb, #ffffff 17%, transparent);
+  --halo: 0%;
+}
+.ss-root .dc-lty .is-bronze {
+  --t: var(--lty-bronze);
+  --tint: 13%;
+  --sheen: transparent; /* matte on purpose — the main separator from Gold */
+  --halo: 0%;
+}
+.ss-root .dc-lty .is-building {
+  --t: var(--lty-building);
+  --tint: 11%;
+  --sheen: transparent;
+  --halo: 0%;
+}
+.ss-root .dc-lty .is-idle {
+  --t: var(--lty-idle);
+  --tint: 4%;
+  --sheen: transparent;
+  --halo: 0%;
+}
+.ss-root.light .dc-lty .is-silver {
+  --sheen: color-mix(in srgb, #ffffff 62%, transparent);
+}
+
+.ss-root .dc-lty-c {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  padding: 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--t) 26%, var(--border));
+  background:
+    linear-gradient(115deg, transparent 26%, var(--sheen, transparent) 46%, transparent 68%),
+    linear-gradient(157deg, color-mix(in srgb, var(--t) var(--tint, 13%), transparent), transparent 58%),
+    var(--hz-pane);
+  box-shadow:
+    inset 0 0 34px -14px color-mix(in srgb, var(--t) var(--halo, 0%), transparent),
+    var(--shadow-sm);
+  transition:
+    border-color var(--hz-dur-tone, 0.18s) var(--hz-ease, cubic-bezier(0.2, 0, 0, 1)),
+    box-shadow var(--hz-dur-tone, 0.18s) var(--hz-ease, cubic-bezier(0.2, 0, 0, 1));
+}
+
+/* Tier rail along the top edge — the fastest read when scanning a grid of 60. */
+.ss-root .dc-lty-c::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--t), color-mix(in srgb, var(--t) 12%, transparent));
+}
+
+/* Hover applies to EVERY bucket including gold — Manager's board accidentally excluded gold by
+   specificity and it was the one card that felt dead on hover. */
+.ss-root .dc-lty-c:hover {
+  border-color: color-mix(in srgb, var(--t) 58%, transparent);
+  box-shadow:
+    inset 0 0 34px -14px color-mix(in srgb, var(--t) var(--halo, 0%), transparent),
+    0 14px 34px -14px color-mix(in srgb, var(--t) 45%, transparent),
+    var(--shadow-sm);
+}
+
+/* "No active cards" is a different KIND of state, not a lower tier — say so structurally. */
+.ss-root .dc-lty-c.is-idle {
+  border-style: dashed;
+}
+.ss-root .dc-lty-c.is-idle::before {
+  opacity: 0.3;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ss-root .dc-lty-c {
+    transition: none;
+  }
+}

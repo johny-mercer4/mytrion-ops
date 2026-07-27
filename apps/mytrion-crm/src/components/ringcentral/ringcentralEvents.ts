@@ -53,29 +53,36 @@ const connectedAt = new Map<string, number>();
 let started = false;
 let loginState: boolean | null = null;
 
-/** Outbound calls are tagged with the lead/deal/case they were dialed from within this window. */
-const DIAL_CTX_TTL_MS = 30_000;
-let dialContext: {
+interface DialContext {
   leadId?: string;
   dealId?: string;
   retentionCaseId?: string;
-  at: number;
-} | null = null;
+}
+
+/**
+ * How long after the dial click a NEW call may still claim that click as its origin. This bounds
+ * only the click→call association: once a call has claimed it (see {@link sessionDialCtx}) the tag
+ * belongs to that call for its whole life, however long it runs.
+ */
+const DIAL_CTX_TTL_MS = 30_000;
+let dialContext: (DialContext & { at: number }) | null = null;
+
+/**
+ * sessionId → the dial context that call latched when we first saw it.
+ *
+ * Re-reading the TTL'd global at hang-up time is wrong: `ended` arrives when the call finishes, so
+ * every call longer than the TTL came back untagged and silently broke the whole post-call chain
+ * (no forced Lead status wizard, no mytrion_calls row, no Mytrion_Call_Attempts bump). A four-minute
+ * sales call — the normal case — lost its lead.
+ */
+const sessionDialCtx = new Map<string, DialContext>();
 
 /** Record which Data Center entity / retention case the next outbound call belongs to. */
-export function setDialContext(ctx: {
-  leadId?: string;
-  dealId?: string;
-  retentionCaseId?: string;
-}): void {
+export function setDialContext(ctx: DialContext): void {
   dialContext = { ...ctx, at: Date.now() };
 }
 
-function freshDialContext(): {
-  leadId?: string;
-  dealId?: string;
-  retentionCaseId?: string;
-} {
+function freshDialContext(): DialContext {
   if (!dialContext || Date.now() - dialContext.at > DIAL_CTX_TTL_MS) return {};
   const { leadId, dealId, retentionCaseId } = dialContext;
   return {
@@ -83,6 +90,19 @@ function freshDialContext(): {
     ...(dealId ? { dealId } : {}),
     ...(retentionCaseId ? { retentionCaseId } : {}),
   };
+}
+
+/**
+ * The dial context for this call: whatever it latched on first sight, else a still-fresh dial click
+ * (covers a call whose very first event is already `ended`, and calls with no sessionId to key on).
+ */
+function dialContextFor(sessionId: string): DialContext {
+  if (!sessionId) return freshDialContext();
+  const latched = sessionDialCtx.get(sessionId);
+  if (latched) return latched;
+  const fresh = freshDialContext();
+  if (Object.keys(fresh).length > 0) sessionDialCtx.set(sessionId, fresh);
+  return fresh;
 }
 
 function numOf(v: string | RawParty | undefined): string {
@@ -128,7 +148,7 @@ function buildCallEvent(kind: RingCentralEventKind, call: RawCall, sessionId: st
     if (start) durationMs = Math.max(0, Date.now() - start);
   }
 
-  const ctx = direction === 'Outbound' ? freshDialContext() : {};
+  const ctx = direction === 'Outbound' ? dialContextFor(sessionId) : {};
   return {
     kind,
     at: Date.now(),
@@ -171,6 +191,7 @@ function handleCall(kind: RingCentralEventKind, call: RawCall): void {
   if (kind === 'ended' && sessionId) {
     lastKind.delete(sessionId);
     connectedAt.delete(sessionId);
+    sessionDialCtx.delete(sessionId);
   }
 }
 

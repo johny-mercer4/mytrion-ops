@@ -869,3 +869,20 @@ html,body{height:100%;margin:0}
     box-shadow:0 8px 18px rgba(var(--accent-rgb),.28);
   }
   .ss-pool-btn-primary:hover{filter:brightness(1.06)}
+
+/* Indeterminate progress sweep — one bar, no fabricated percentage. Used by AutoMacroLoader, which
+   waits on a touchpoint dispatch whose real progress we cannot know. The element is the track; the
+   travelling highlight is ::after so callers only need the one class. */
+.ss-sweep { position: relative; overflow: hidden; }
+.ss-sweep::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 38%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--accent-2, var(--accent)), transparent);
+  animation: ss-sweep 1.15s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ss-sweep::after { animation-duration: 2.6s; }
+}

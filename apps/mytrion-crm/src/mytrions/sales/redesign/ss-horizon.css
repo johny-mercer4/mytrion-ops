@@ -27,6 +27,11 @@
 
   --surface: rgba(24, 31, 45, 0.66);
   --surface-2: rgba(28, 36, 52, 0.72);
+  /* Modal panels only. --surface/--surface-2 are ~0.66–0.72 alpha, which is right for a card sitting
+     ON the page but far too see-through for a dialog sitting OVER it: the Automations modal let the
+     catalog grid read straight through its body. A dedicated token lifts dialogs to near-opaque
+     without touching the ~150 inline call sites that use --surface for cards, rows and chips. */
+  --hz-modal-surface: rgba(26, 33, 48, 0.94);
   --alt: rgba(18, 24, 36, 0.58);
   --raised: rgba(255, 255, 255, 0.06);
 
@@ -54,6 +59,7 @@
 .ss-root.light {
   --surface: rgba(255, 255, 255, 0.82);
   --surface-2: rgba(255, 255, 255, 0.92);
+  --hz-modal-surface: rgba(255, 255, 255, 0.96);
   --alt: rgba(241, 244, 249, 0.72);
   --raised: rgba(15, 23, 42, 0.045);
 
@@ -245,7 +251,7 @@
   /* Ramp along the top edge, painted as a background layer so it survives internal scrolling. */
   background:
     linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 100%) top left / 100% 2px no-repeat,
-    var(--surface-2) !important;
+    var(--hz-modal-surface) !important;
   backdrop-filter: blur(var(--hz-blur));
   -webkit-backdrop-filter: blur(var(--hz-blur));
   border: 1px solid var(--border) !important;
@@ -415,6 +421,80 @@
   background: color-mix(in srgb, var(--ss-soon-hue, var(--warn)) 13%, transparent);
   border: 1px solid color-mix(in srgb, var(--ss-soon-hue, var(--warn)) 30%, transparent);
   box-shadow: none;
+}
+
+/* ── Coming-soon detail panel (Tickets / Verification / Call Hub / …) ────────
+   One composition for every parked tab: badge → icon well → title → blurb.
+   Hue comes from `--soon-hue` (set inline from soonTabs.ts). */
+.ss-root .ss-soon-panel {
+  --soon-hue: var(--warn);
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 48px 28px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background:
+    radial-gradient(
+      520px 280px at 50% 0%,
+      color-mix(in srgb, var(--soon-hue) 16%, transparent),
+      transparent 70%
+    ),
+    var(--surface);
+  text-align: center;
+}
+
+.ss-root .ss-soon-panel__badge {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  border-radius: 99px;
+  color: #fff;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--soon-hue) 92%, #fff),
+    color-mix(in srgb, var(--soon-hue) 55%, var(--accent))
+  );
+  box-shadow: 0 4px 14px -2px color-mix(in srgb, var(--soon-hue) 45%, transparent);
+}
+
+.ss-root .ss-soon-panel__icon {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--soon-hue);
+  background: color-mix(in srgb, var(--soon-hue) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--soon-hue) 30%, var(--border));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--soon-hue) 10%, transparent);
+}
+
+.ss-root .ss-soon-panel__title {
+  margin: 0;
+  font-family: Rajdhani, sans-serif;
+  font-weight: 700;
+  font-size: 28px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text);
+  line-height: 1.15;
+}
+
+.ss-root .ss-soon-panel__blurb {
+  margin: 0;
+  max-width: 420px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--muted);
 }
 
 
