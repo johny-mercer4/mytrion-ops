@@ -480,6 +480,13 @@ const EnvSchema = z.object({
   // is not enough, since NODE_ENV defaults to 'development' when unset (a misconfigured staging/
   // preview env sharing the prod bot token would otherwise expose it). Explicit opt-in required.
   FF_DEV_MOCK_TELEGRAM_ENABLED: flag('0'),
+  // Dev-only: the Zoho user id the static API_KEY session should present as. The API_KEY context
+  // has no Zoho identity (userId: 'system'), so every owner-scoped read — CS Home tiles, retention
+  // desk quota — fails closed locally with "No Zoho user id on the request for owner-scoped data".
+  // A real Zoho login sets `zoho:<id>` and is unaffected. Blank = off, and it is IGNORED in
+  // production regardless (see systemContext) — same reasoning as FF_DEV_MOCK_TELEGRAM_ENABLED:
+  // NODE_ENV alone is not a sufficient gate, so this must also be set explicitly.
+  DEV_MOCK_ZOHO_USER_ID: z.string().default(''),
   // Sales workers may run DESTRUCTIVE touchpoints (card deactivate/limits, money-code draw,
   // fraud release, EFS override) — widget parity, ON by default. 0 = admin-only, no code change.
   FF_TOUCHPOINT_DESTRUCTIVE_SALES: flag('1'),
