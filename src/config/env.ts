@@ -383,6 +383,11 @@ const EnvSchema = z.object({
   //     secret in the `x-inbox-secret` header, scoped to just that endpoint (NOT the full API_KEY). ---
   INBOX_WEBHOOK_SECRET: z.string().default(''),
 
+  // --- Rejection-report webhook (Zoho Desk Deluge → mytrion_rejection_reports). A dedicated shared
+  //     secret in the `x-rejection-secret` header, scoped to just that endpoint (NOT the full
+  //     API_KEY). Blank is allowed: the route answers 503 at request time rather than blocking boot. ---
+  REJECTION_WEBHOOK_SECRET: z.string().default(''),
+
   // --- File storage: Cloudflare R2 (S3-compatible) ---
   R2_ACCOUNT_ID: z.string().default(''),
   R2_ACCESS_KEY_ID: z.string().default(''),

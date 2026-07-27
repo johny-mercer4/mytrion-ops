@@ -44,6 +44,7 @@ import { billingRoutes } from './routes/v1/billing.routes.js';
 import { financeRoutes } from './routes/v1/finance.routes.js';
 import { paymentsIngestRoutes } from './routes/v1/paymentsIngest.routes.js';
 import { inboxMessagesRoutes } from './routes/v1/inboxMessages.routes.js';
+import { rejectionReportsRoutes } from './routes/v1/rejectionReports.routes.js';
 import { agentRoutes } from './routes/v1/agent.routes.js';
 import { authRoutes } from './routes/v1/auth.routes.js';
 import { automationRoutes } from './routes/v1/automation.routes.js';
@@ -72,6 +73,7 @@ const LOG_REDACT_PATHS = [
   'req.headers["x-api-key"]',
   'req.headers["x-ingest-secret"]',
   'req.headers["x-inbox-secret"]',
+  'req.headers["x-rejection-secret"]',
 ];
 
 function loggerOption() {
@@ -280,6 +282,8 @@ export async function buildApp(): Promise<FastifyInstance> {
       await v1.register(financeRoutes);
       await v1.register(paymentsIngestRoutes);
       await v1.register(inboxMessagesRoutes);
+      // Owns GET /data-center/rejections (moved off the Zoho Desk scan) plus the Deluge webhook.
+      await v1.register(rejectionReportsRoutes);
       await v1.register(agentRoutes);
       await v1.register(tasksRoutes);
       await v1.register(filesRoutes);

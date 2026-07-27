@@ -336,28 +336,33 @@ export interface RejectionVM {
   status: string;
 }
 
-interface RejContact {
-  lastName?: string | null;
-  account?: { accountName?: string | null } | null;
-}
+/** Our own workflow states → the badge vocabulary RejectionsView already colours. */
+const REJ_STATUS_LABEL: Record<string, string> = {
+  new: 'Open',
+  acknowledged: 'On Hold',
+  resolved: 'Resolved',
+};
 
+/**
+ * Rows now come from OUR `mytrion_rejection_reports` table (written by the Zoho Desk Deluge webhook)
+ * rather than a Desk ticket scan, so the company and reason are real columns instead of something
+ * parsed back out of a ticket subject. `number` shows the carrier id — the id agents actually search
+ * and cross-reference — and the reason leads with the EFS error code.
+ */
 function mapRejection(t: CrmRow): RejectionVM {
-  const subject = str(t.subject);
-  // "Rejection Report: <Company> - Error <code>" → split company / reason off the subject.
-  const m = subject.match(/^rejection report:\s*(.+?)\s*-\s*(.+)$/i);
-  const contact = (t.contact ?? {}) as RejContact;
-  const company =
-    str(contact.account?.accountName) || (m ? m[1] : '') || str(contact.lastName) || subject || '(unknown)';
-  const reason = (m ? m[2] : subject.replace(/^rejection report:\s*/i, '')) || 'Rejected';
-  const created = str(t.createdTime);
+  const company = str(t.companyName) || '(unknown)';
+  const code = str(t.errorCode);
+  const desc = str(t.errorDescription);
+  const reason = [code && `Error ${code}`, desc].filter(Boolean).join(' · ') || 'Rejected';
+  const when = str(t.occurredAt);
   return {
     id: str(t.id),
-    number: str(t.ticketNumber || t.number),
+    number: str(t.carrierId),
     company,
     initials: initialsOf(company),
     reason,
-    date: fmtDate(created) || relTime(created) || '—',
-    status: str(t.status) || 'Open',
+    date: fmtDate(when) || relTime(when) || '—',
+    status: REJ_STATUS_LABEL[str(t.status)] ?? 'Open',
   };
 }
 

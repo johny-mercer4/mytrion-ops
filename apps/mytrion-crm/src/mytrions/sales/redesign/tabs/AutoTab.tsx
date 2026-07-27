@@ -74,7 +74,6 @@ export function AutoTab() {
   const [autoLimitType, setAutoLimitType] = useState<string>(LIMITTYPES[0].value);
   const [autoLimitValue, setAutoLimitValue] = useState('');
   const [autoLimitDir, setAutoLimitDir] = useState<LimitDir>('increase');
-  const [autoProgress, setAutoProgress] = useState(0);
   const [autoPhase, setAutoPhase] = useState('');
   const [autoResult, setAutoResult] = useState<DonePayload | null>(null);
   const [autoAddr, setAutoAddr] = useState<Addr>({ address: '', city: '', state: '', zip: '' });
@@ -99,10 +98,33 @@ export function AutoTab() {
   const [txnReport, setTxnReport] = useState<TxnReportState | null>(null);
 
   const progTimer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  /**
+   * Run token. Every start bumps it and the handlers below ignore any result whose token is stale,
+   * so a slow response that lands after the user cancelled, closed, or switched automation can no
+   * longer overwrite the current view. NOTE: the HTTP request itself is not aborted — callTouchpoint
+   * takes no AbortSignal and threading one through every autoRunners branch is a separate change —
+   * so a cancelled run finishes in the background and its result is discarded.
+   */
+  const runSeq = useRef(0);
   const fetchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const dealInputRef = useRef<HTMLInputElement | null>(null);
   const cardInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => () => { clearInterval(progTimer.current); clearTimeout(fetchTimer.current); }, []);
+
+  // ESC closes the runner, at any step. Previously there was no keyboard exit at all: during a run
+  // the backdrop and X both no-opped, so a hung automation could only be escaped by reloading.
+  useEffect(() => {
+    if (!autoModal) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      closeAuto();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // closeAuto is stable enough for this purpose (it only touches refs + setState).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoModal]);
 
   const dealsLoad = useLoad(loadDeals, []);
   const DEAL_LIST = dealsLoad.data ?? [];
@@ -150,10 +172,11 @@ export function AutoTab() {
 
   const openAuto = (a: Automation): void => {
     if (a.soon) return;
+    abandonRun();
     setAutoModal(a); setAutoStep('config'); setAutoDeal(null); setAutoCard(null);
     setAutoDealQuery(''); setAutoShowDrop(false); setAutoCardQuery(''); setAutoShowCardDrop(false);
     setAutoLimitType(LIMITTYPES[0].value); setAutoLimitValue(''); setAutoLimitDir('increase');
-    setAutoProgress(0); setAutoPhase(''); setAutoResult(null); setAutoRunErr(null);
+    setAutoPhase(''); setAutoResult(null); setAutoRunErr(null);
     setInvRows([]); setTxnReport(null); setUnitDriver(UD0); setMoneyForm(MC0);
     setAutoAddr({ address: '', city: '', state: '', zip: '' });
     setAutoDue(''); setAutoPriority(''); setAutoAssignedTo(''); setAutoOwnerLoading(false);
@@ -167,7 +190,20 @@ export function AutoTab() {
     clearFocusAutomation();
     if (target) openAuto(target);
   }, [focusAutomationId, clearFocusAutomation]);
-  const closeAuto = (): void => { if (autoStep === 'running') return; clearInterval(progTimer.current); setAutoModal(null); };
+  /** Invalidate any in-flight run and stop its timers. */
+  const abandonRun = (): void => {
+    runSeq.current += 1;
+    clearInterval(progTimer.current);
+    clearTimeout(fetchTimer.current);
+  };
+  /**
+   * Closing is always allowed — including mid-run. It used to early-return while `running`, and
+   * since this was the handler for BOTH the backdrop and the X, a hung automation left the agent
+   * with no exit but a page reload.
+   */
+  const closeAuto = (): void => { abandonRun(); setAutoModal(null); };
+  /** Cancel from the running step: keep the modal open, go back to the form. */
+  const cancelRun = (): void => { abandonRun(); setAutoPhase(''); setAutoStep('config'); };
   const setDealQuery = (v: string): void => { setAutoDealQuery(v); setAutoShowDrop(true); };
   const selectDeal = (d: Deal): void => {
     setAutoDeal(d); setAutoShowDrop(false); setAutoDealQuery(''); setAutoCard(null); setAutoCardQuery('');
@@ -186,7 +222,8 @@ export function AutoTab() {
   const setMc = (k: keyof MoneyCodeForm, v: string): void => setMoneyForm((f) => ({ ...f, [k]: v }));
 
   const resetAuto = (): void => {
-    setAutoStep('config'); setAutoProgress(0); setAutoResult(null); setAutoCard(null);
+    abandonRun();
+    setAutoStep('config'); setAutoPhase(''); setAutoResult(null); setAutoCard(null);
     setAutoRunErr(null); setInvRows([]); setTxnReport(null);
   };
 
@@ -195,13 +232,23 @@ export function AutoTab() {
     if (!bm) return;
     setAutoRunErr(null); setAutoResult(null); setAutoStep('running'); setTxnReport(null);
     const phases = PHASE_MAP[bm.kind ?? ''] ?? ['Working…', 'Finishing…'];
-    let p = 6; setAutoProgress(6); setAutoPhase(phases[0] ?? 'Working…');
-    clearInterval(progTimer.current);
+    abandonRun();
+    const seq = runSeq.current;
+    setAutoPhase(phases[0] ?? 'Working…');
+    // Advance the PHASE LABEL only — there is no real progress figure to report (see AutoMacroLoader).
+    let phaseIdx = 0;
     progTimer.current = setInterval(() => {
-      p = Math.min(92, p + (3 + Math.random() * 6));
-      const idx = Math.min(phases.length - 1, Math.floor((p / 100) * phases.length));
-      setAutoProgress(Math.round(p)); setAutoPhase(phases[idx] ?? '');
-    }, 160);
+      phaseIdx = Math.min(phases.length - 1, phaseIdx + 1);
+      setAutoPhase(phases[phaseIdx] ?? '');
+      if (phaseIdx === phases.length - 1) clearInterval(progTimer.current);
+    }, 2500);
+    // Watchdog: a run that never settles becomes a real error instead of an endless spinner.
+    const watchdog = setTimeout(() => {
+      if (seq !== runSeq.current) return;
+      abandonRun();
+      setAutoRunErr('This is taking longer than expected. It may still be processing — check the record before retrying.');
+      setAutoStep('done');
+    }, 90_000);
     runAutomation({
       action: bm, deal: autoDeal, card: autoCard,
       invRange: autoInvRange, invStatus: autoInvStatus,
@@ -214,13 +261,18 @@ export function AutoTab() {
       setInvRows, setTxnReport,
     })
       .then((payload) => {
-        clearInterval(progTimer.current); setAutoProgress(100); setAutoResult(payload);
+        clearTimeout(watchdog);
+        if (seq !== runSeq.current) return; // cancelled / closed / another run started
+        clearInterval(progTimer.current);
+        setAutoResult(payload);
         fetchTimer.current = setTimeout(() => setAutoStep('done'), 240);
         if (payload.kind === 'link') window.open(payload.url, '_blank', 'noopener');
         logAutomation(bm.id);
       })
       .catch((e: unknown) => {
-        clearInterval(progTimer.current); setAutoProgress(0);
+        clearTimeout(watchdog);
+        if (seq !== runSeq.current) return;
+        clearInterval(progTimer.current);
         setAutoRunErr(e instanceof Error ? e.message : 'The action failed — try again.');
         setAutoStep('done');
       });
@@ -517,7 +569,18 @@ export function AutoTab() {
               )}
 
               {autoStep === 'running' && (
-                <AutoMacroLoader progress={autoProgress} phase={autoPhase} />
+                <>
+                  <AutoMacroLoader phase={autoPhase} />
+                  <div style={s('display:flex;justify-content:center;padding:0 20px 28px')}>
+                    <button
+                      type="button"
+                      onClick={cancelRun}
+                      style={s('height:38px;padding:0 20px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--alt);color:var(--text);font-weight:700;font-size:13px;cursor:pointer')}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
               )}
 
               {autoStep === 'done' && (autoRunErr ? (
