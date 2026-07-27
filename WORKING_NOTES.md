@@ -6467,3 +6467,66 @@ then the endpoint answers 503 and the Deluge's own catch swallows it (tickets ar
   cancelled run completes in the background and its result is thrown away.
 
 Backend suite 992 passed / 10 failed (the same 10 pre-existing); frontend 193/194.
+
+## 2026-07-27 (6) — Clients: tier filter, tier sort, distinct tier icons, stronger gradients
+
+### Filter
+
+Tiers were already filterable — but only from inside a dropdown labelled "All statuses", where
+picking Gold silently discarded the Debtor/Active choice (one `clientStatusFilter` string held both).
+Split into two independent filters that compose (Debtor **+** Gold):
+
+- the dropdown keeps only `all / debtor / active`;
+- tiers moved onto the loyalty distribution bar, whose legend entries are now toggle chips. That bar
+  already sat directly above the grid showing the same counts, so the filter is the number you click.
+  Clicking the active chip clears it; empty buckets are disabled (filtering to zero results is never
+  the intent); the stacked bar dims non-selected segments so it reflects the filter.
+
+Counts always describe the agent's FULL book, never the filtered slice — otherwise the denominator
+moves as you filter.
+
+### Sort
+
+Extracted to `clientSort.ts` (`compareClients`) so the rule is testable rather than inline: debtors
+first, then Gold → Silver → Bronze → Building → No cards. Money owed outranks loyalty deliberately —
+a Gold client who owes nothing needs no action today, any debtor does — so a Gold debtor still sits
+above a Bronze debtor. Two further keys (gallons desc, then name) exist for STABILITY, not ranking:
+without a total order the grid appears to reshuffle on every SWR revalidate. 6 tests.
+
+`tierBucketRank` lives in `_shared/loyalty.ts`, separate from the existing `RANK` — that one orders
+program levels for reward eligibility and has no place for `building`/`idle`.
+
+### Icons
+
+A star on every badge made Gold/Silver/Bronze read as one badge in three tints. Each bucket now has
+its own silhouette, registered in the Sales icon registry and mapped from shared code
+(`tierBucketIcon`) so Sales and Manager can't drift: Trophy / Medal / Award / Sprout / MinusCircle.
+
+### Gradients — separated on four axes, both themes
+
+Hue alone collapses on a dim screen, so each bucket differs in wash SHAPE as well:
+
+| | hue | wash shape | finish | glow | rail |
+|---|---|---|---|---|---|
+| gold | bright amber | diagonal, top-heavy | metallic sheen | warm halo | 100% |
+| silver | cool blue-grey | falls straight down | cool white sheen | none | 78% |
+| bronze | deep copper | pools at the BOTTOM | matte | none | 58% |
+| building | vivid orange | radial from top-left | matte | none | 40% |
+| idle | neutral | almost none | none | none | dashed |
+
+Rail length encodes rank too. Light mode is re-pitched rather than inherited: the dark alphas read as
+grubby smudges over a white pane and the cool sheens vanish entirely, so `--tint` and `--sheen` have
+their own light-mode values per bucket. Rendered both themes side by side in headless Chrome to check.
+
+**Metric colours changed** (approved): the Cycle/Month figures were violet and emerald, which fought
+the warm washes — violet on gold especially. Figures are now neutral `--text` with the semantic hue
+moved to the dot in the label, so the colour coding survives while contrast is guaranteed on all five
+washes in both themes. `Owed` keeps red on the figure because it is a warning; every wash fades out by
+~60% height, so the figure row sits on near-neutral pane in each bucket.
+
+### Checks
+
+Typecheck green, lint 0 errors, frontend 199/200 (the pre-existing `dashDebtorsData`), backend
+994 passed / 10 failed — the same 10 pre-existing. NOTE: the backend suite intermittently reports
+~34 failures when run immediately after a heavy build (timeouts + 403s in the DB/network suites);
+two consecutive clean runs both give 10. Worth chasing separately — it makes CI look flaky.
