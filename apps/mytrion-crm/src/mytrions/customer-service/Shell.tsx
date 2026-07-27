@@ -6,6 +6,7 @@ import { useCallback, useState, type ReactNode } from 'react';
 
 import { isAdmin } from '../../access/resolveAccess';
 import { ActAsPicker } from '../../components/ActAsPicker';
+import { MytrionSwitchLink } from '../../components/MytrionSwitchLink';
 import { useImpersonation } from '../../context/ImpersonationProvider';
 import { useUserContext } from '../../context/UserContextProvider';
 import { useTheme } from '../../hooks/useTheme';
@@ -245,6 +246,12 @@ export function CsShell() {
           </nav>
 
           <div className="cs-sidebar-footer">
+            {/* Route back to the picker — CS has bespoke chrome and never renders TopBar, so without
+                this it is a dead end for anyone holding more than one Mytrion. */}
+            <MytrionSwitchLink
+              className="cs-theme-toggle"
+              label={navCollapsed ? '' : 'Switch Mytrion'}
+            />
             <button
               type="button"
               className="cs-theme-toggle"

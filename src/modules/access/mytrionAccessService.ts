@@ -12,12 +12,22 @@
  * Per-Mytrion modes (read|full): env-admin / allDept → all full; else user explicit mode wins;
  * else role mode; else full (profile grants are implicit full). Mode does not affect entry.
  *
- * Safety: an env-marker admin (resolveAllDepartmentAccess — ADMIN_PROFILE_MARKERS / ADMIN_USERS /
- * BYPASS_USERS) is PINNED to all-access; the DB can never lower it (no lockout). On any DB error
- * the resolver fails OPEN to the legacy profile→department derivation (never all-out lockout).
+ * Safety / no-lockout: only the ENV BREAK-GLASS list (ADMIN_USERS / BYPASS_USERS — named users in
+ * server config, not editable from the app) is pinned to all-access and exempt from denies. An
+ * ADMIN_PROFILE_MARKERS profile/role ("Administrator", "ceo") still grants all-access BY DEFAULT,
+ * but that default is now overridable from Admin → User Management, because otherwise every
+ * Administrator-profile user was silently unmanageable: their override was computed and then thrown
+ * away, so the UI reported a saved grant the resolver ignored. The route layer refuses to save the
+ * override that would remove the LAST all-access user, which is what actually prevents a lockout.
+ * On any DB error the resolver fails OPEN to the legacy profile→department derivation.
  * Result is TTL-cached per (tenant, zohoUser) with coalesced in-flight fetches.
  */
-import { deriveWorkerDepartments, resolveAllDepartmentAccess } from '../../lib/department.js';
+import {
+  deriveWorkerDepartments,
+  isAdminUser,
+  isBypassUser,
+  resolveAllDepartmentAccess,
+} from '../../lib/department.js';
 import { logger } from '../../lib/logger.js';
 import {
   DEFAULT_PROFILE_SEED,
@@ -85,7 +95,13 @@ export interface ResolveWorkerAccessInput {
   userName?: string | null;
 }
 
-const TTL_MS = 60_000;
+/**
+ * Short on purpose. Admin saves DO invalidate this cache directly, but that only covers the process
+ * that handled the save — any other worker/instance keeps serving its own copy until expiry, which
+ * is one of the ways an access edit appeared not to apply. 10s keeps the read cheap while bounding
+ * how long a stale grant can survive anywhere in the fleet.
+ */
+const TTL_MS = 10_000;
 /** A degraded (DB-error fallback) result is cached only briefly so recovery self-corrects fast. */
 const DEGRADED_TTL_MS = 5_000;
 
@@ -172,18 +188,22 @@ function combineAccess(
   rd: MytrionRoleDefaultDto | undefined,
   ov: WorkerMytrionAccessDto | undefined,
 ): ComputeResult {
-  const envAdmin = resolveAllDepartmentAccess({
+  // Marker admin = all-access by DEFAULT (a baseline the DB may lower).
+  const markerAdmin = resolveAllDepartmentAccess({
     profile: input.profileName ?? null,
     role: input.zohoRole ?? null,
     userName: input.userName ?? null,
   });
+  // Break-glass = named in server env. Immovable, because it is the recovery path if an admin
+  // mis-configures themselves out of the app; it cannot be edited from inside the app.
+  const breakGlass = isAdminUser(input.userName ?? null) || isBypassUser(input.userName ?? null);
   const havePd = Boolean(pd && pd.active);
   const haveRd = Boolean(rd && rd.active);
   const haveOv = Boolean(ov && ov.active);
 
   // UNMANAGED non-admin (no profile / role default AND no override) → legacy profile-derived
   // access so rollout stays non-breaking until an admin configures something.
-  if (!envAdmin && !havePd && !haveRd && !haveOv) return { value: legacyAccess(input, false), degraded: false };
+  if (!markerAdmin && !havePd && !haveRd && !haveOv) return { value: legacyAccess(input, false), degraded: false };
 
   // Step 1 — base grant.
   // Profile default wins as the starting set. Role-only (no profile row) starts empty so the
@@ -211,6 +231,11 @@ function combineAccess(
     if (rd.homeMytrion != null) home = rd.homeMytrion;
   }
 
+  // Step 2.5 — MARKER FLOOR: a profile/role default must not silently strip an Administrator; only
+  // the explicit per-user override in Step 3 may lower them. Without this, adding any profile-default
+  // row for "Administrator" would quietly demote every admin in the org.
+  if (markerAdmin) allDept = true;
+
   // Step 3 — per-user override (replace allowed / subtract denied / override home + all-access).
   let denied: MytrionId[] = [];
   let viewAsUserIds: string[] = [];
@@ -224,17 +249,18 @@ function combineAccess(
     userModes = ov.mytrionAccessModes ?? {};
   }
 
-  // Step 4 — ADMIN FLOOR: an env-marker admin's all-access can never be lowered by the DB.
-  if (envAdmin) allDept = true;
+  // Step 4 — BREAK-GLASS FLOOR: only an env-named user's all-access is immovable by the DB. A
+  // profile/role marker admin is NOT pinned here any more — see the header.
+  if (breakGlass) allDept = true;
 
-  // Step 5 — accessible set. env-marker admins are EXEMPT from the deny-list (no-lockout).
+  // Step 5 — accessible set. Only break-glass users are EXEMPT from the deny-list.
   const fullSet = allDept ? [...MYTRION_IDS] : allowed;
-  const accessible = envAdmin ? fullSet : subtract(fullSet, denied);
+  const accessible = breakGlass ? fullSet : subtract(fullSet, denied);
 
   // `allDepartmentAccess: true` is a FULL bypass in every backend gate, so it can't express
   // "everything except X". A non-env-admin all-access grant WITH denies is downgraded to an
   // explicit department grant so the deny actually enforces (not just hidden in the UI list).
-  const enforceableAllDept = allDept && (envAdmin || denied.length === 0);
+  const enforceableAllDept = allDept && (breakGlass || denied.length === 0);
   const roleModes = haveRd && rd ? (rd.mytrionAccessModes ?? {}) : {};
   return {
     value: {
@@ -243,13 +269,15 @@ function combineAccess(
       allDepartmentAccess: enforceableAllDept,
       departments: enforceableAllDept ? [] : departmentsForMytrions(accessible),
       viewAsUserIds,
-      mytrionAccessModes: resolveModes(accessible, enforceableAllDept || envAdmin, roleModes, userModes),
+      mytrionAccessModes: resolveModes(accessible, enforceableAllDept || breakGlass, roleModes, userModes),
     },
     degraded: false,
   };
 }
 
 async function computeAccess(input: ResolveWorkerAccessInput): Promise<ComputeResult> {
+  // Only used for the DB-error fallback below: with no tables readable we cannot honour an
+  // override, so a marker admin falls back to all-access rather than to nothing.
   const envAdmin = resolveAllDepartmentAccess({
     profile: input.profileName ?? null,
     role: input.zohoRole ?? null,

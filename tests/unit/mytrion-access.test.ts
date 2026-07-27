@@ -245,24 +245,40 @@ describe('resolveWorkerAccess — per-user overrides', () => {
   });
 });
 
-describe('resolveWorkerAccess — admin lockout floor (env-marker admins can never be stripped)', () => {
-  it('an Administrator profile is pinned to all-access even if a DB override says false', async () => {
-    wa.findByZohoUserId.mockResolvedValue(override({ allDepartmentAccess: false, allowedMytrions: ['sales'] }));
+describe('resolveWorkerAccess — Administrator profiles are MANAGEABLE; env break-glass is not', () => {
+  /**
+   * The floor used to cover anything matching ADMIN_PROFILE_MARKERS ("administrator", "ceo"), which
+   * made every Administrator-profile user unmanageable: Admin → User Management computed and saved
+   * an override, then the resolver threw it away, so the UI showed a grant that was never enforced.
+   * The immovable floor is now only the env break-glass list (ADMIN_USERS / BYPASS_USERS), which
+   * cannot be edited from inside the app; a last-admin guard on the save route prevents lockout.
+   */
+  it('an Administrator profile is all-access by DEFAULT (nothing configured)', async () => {
+    wa.findByZohoUserId.mockResolvedValue(undefined);
     const r = await mytrionAccessService.resolveWorkerAccess(
       principal({ profileName: 'Administrator', userName: 'Ann' }),
     );
-    expect(r.allDepartmentAccess).toBe(true); // env-admin floor — DB cannot lower it
+    expect(r.allDepartmentAccess).toBe(true);
     expect(r.accessibleMytrions.length).toBe(MYTRION_IDS.length);
   });
 
-  it('a denied list is IGNORED for an env-admin (no-lockout: their Mytrion list is never emptied)', async () => {
+  it('an explicit override CAN lower an Administrator (this is the bug that was reported)', async () => {
+    wa.findByZohoUserId.mockResolvedValue(
+      override({ allDepartmentAccess: false, allowedMytrions: ['sales'] }),
+    );
+    const r = await mytrionAccessService.resolveWorkerAccess(
+      principal({ profileName: 'Administrator', userName: 'Ann' }),
+    );
+    expect(r.allDepartmentAccess).toBe(false);
+    expect(r.accessibleMytrions).toEqual(['sales']);
+  });
+
+  it('a deny now applies to an Administrator', async () => {
     wa.findByZohoUserId.mockResolvedValue(override({ deniedMytrions: ['finance'] }));
     const r = await mytrionAccessService.resolveWorkerAccess(principal({ profileName: 'Administrator' }));
-    expect(r.allDepartmentAccess).toBe(true);
-    // env-marker admins are exempt from the deny-list, so the full set stays visible
-    expect(r.accessibleMytrions).toContain('finance');
-    expect(r.accessibleMytrions.length).toBe(MYTRION_IDS.length);
+    expect(r.accessibleMytrions).not.toContain('finance');
   });
+
 });
 
 describe('resolveWorkerAccess — deny enforcement + inherit floor (review hardening)', () => {

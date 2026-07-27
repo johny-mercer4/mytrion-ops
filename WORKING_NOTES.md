@@ -6530,3 +6530,69 @@ Typecheck green, lint 0 errors, frontend 199/200 (the pre-existing `dashDebtorsD
 994 passed / 10 failed — the same 10 pre-existing. NOTE: the backend suite intermittently reports
 ~34 failures when run immediately after a heavy build (timeouts + 403s in the DB/network suites);
 two consecutive clean runs both give 10. Worth chasing separately — it makes CI look flaky.
+
+## 2026-07-28 — Admin user management: per-user overrides were a no-op for Administrators
+
+### Root cause
+
+`combineAccess` had an "admin lockout floor": anything matching `ADMIN_PROFILE_MARKERS` (default
+`administrator,ceo`) was pinned to `allDepartmentAccess = true` AND exempted from the deny-list. Zoho
+"Administrator" is a common profile, so for a large share of users — including whoever tests this —
+Admin → User Management computed and SAVED an override that the resolver then threw away. The UI
+reported a grant that was never enforced, which is exactly "the override by user itself is not
+working at all", and plausibly also "access to specific Mytrions is not working" and the auto-router
+complaint, since for those users nothing the admin panel does has any effect.
+
+This was deliberate and tested (`admin lockout floor` describe block), not an accident — so the fix
+is a contract change, not a patch.
+
+### The change
+
+The immovable floor is now ONLY the env break-glass list (`ADMIN_USERS` / `BYPASS_USERS`) — named in
+server config, not editable from inside the app, and therefore a real recovery path. A
+profile/role marker admin still gets all-access **by default** (Step 2.5, a floor a profile default
+row cannot silently lower — otherwise adding one "Administrator" default would demote every admin),
+but an explicit per-user override in Step 3 can now lower them. That is the whole feature.
+
+Replacing the floor removes the protection it provided, so the save route gained a **last-admin
+guard**: `allDepartmentAccess: false` is refused with 409 `LAST_ADMIN` when nobody else resolves to
+all-access. It counts via `resolveBatch` (the same authority the listing uses — not a second query),
+is scoped to the explicit "remove all-access" action rather than every deny-list edit (denies are
+routine on ordinary workers and would cost a directory round-trip each time), and fails OPEN if the
+Zoho directory lookup errors — blocking admin work on an upstream hiccup is worse than the small risk,
+and break-glass remains the backstop.
+
+Tests: the old floor tests were rewritten to the new contract (an override CAN lower an
+Administrator; a deny now applies), plus `mytrion-access-breakglass.test.ts` — a separate file because
+`env` is parsed at import so `vi.stubEnv` is too late, and it needs `ADMIN_USERS` set before load.
+
+### Changes not applying immediately
+
+Two contributors, both addressed:
+- the resolver's TTL cache was 60s. Admin saves DO call `invalidateUser`, but only in the process
+  that served the save — any other instance keeps its copy until expiry. Dropped to 10s.
+- the portal only re-resolved access from `/auth/me` on mount, so an affected user had to hard-reload.
+  Now also on tab focus/visibility, which is the natural moment; the UI re-renders only if the grant
+  actually changed.
+
+### Switch Mytrion everywhere
+
+`TopBar` already had a "Switch Mytrion" link, and every Mytrion built on `MytrionShell` inherits it —
+but **Billing and Customer Service have bespoke chrome** (`bm-header` / `cs-sidebar-footer`) and never
+render TopBar, so they were dead ends: once in, the only way out was editing the URL. Added
+`components/MytrionSwitchLink.tsx` — the same `/main` route, standalone, styled by the host via
+`className` so it sits right in both. Hidden for single-Mytrion users (a picker with one entry
+auto-enters again — a loop).
+
+### Not verified
+
+The auto-router complaint is *probably* the same root cause (for a marker admin the override's
+`homeMytrion` did apply, but nothing else did, so behaviour looked arbitrary). I could not reproduce
+it live — that needs a real session against prod data. Worth re-testing now the override actually
+applies, and if it still misbehaves, `Landing.tsx` + `pickHome` are the places to look.
+
+### Checks
+
+Typecheck green, lint 0 errors, backend 998 passed / 10 failed (the same pre-existing set), frontend
+199/200. NOTE the backend suite again reported 34 failures on the run immediately after a build and
+10 on the next — the post-build flake logged on 2026-07-27 is reproducible and worth chasing.
