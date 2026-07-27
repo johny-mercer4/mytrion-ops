@@ -7,7 +7,7 @@
 import { config } from './config.js';
 import { enqueueTurn, maxConcurrentTurns } from './sessions.js';
 import { getUpdates, sendMessage, sendTyping, setReaction, clearReaction, type TgMessage , answerCallback } from './telegram.js';
-import { noteSender, buttonTapAllowed } from './tools.js';
+import { noteSender } from './tools.js';
 import { notePhoto } from './telegramTools.js';
 import { noteEngaged, shouldEngage } from './filter.js';
 import { recordTurn, startMonitor } from './monitor.js';
@@ -15,6 +15,8 @@ import { logMessage } from './messageLog.js';
 import { isRegistered } from './access.js';
 import { carrierFor, chatMapSize, tryAutoBind } from './chatMap.js';
 import { tokenCount } from './authPool.js';
+import { dmAccessFor } from './dmAccess.js';
+import { consumeButtonTap } from './buttonOwnership.js';
 
 /**
  * One-time signpost for a TAGGED but unregistered user. Gate 2 used to be pure silence, which
@@ -25,12 +27,22 @@ import { tokenCount } from './authPool.js';
  */
 const REG_NUDGE_TTL_MS = 24 * 3600_000;
 const regNudge = new Map<number, number>();
+const dmNudge = new Map<number, number>();
+const BUTTON_UNAVAILABLE_TEXT =
+  "Bu tugma eskirgan yoki ishlatilgan. So‘rovni qaytadan yuboring. / This button expired or was already used. Please request it again.";
 function regNudgeText(): string {
   const link = config.miniAppLink ? `\n${config.miniAppLink}` : '';
   return (
     "I can only help registered Octane mini-app users. Ask your company owner for an invite link, or if you're a driver, register in the mini-app with your fuel card number." +
     "\n\nMen faqat Octane mini-app'da ro'yxatdan o'tgan foydalanuvchilarga yordam bera olaman. Kompaniya egangizdan taklif havolasini so'rang; haydovchilar mini-app'da karta raqami bilan ro'yxatdan o'tadi." +
     link
+  );
+}
+
+function dmNudgeText(): string {
+  return (
+    "Private assistant chat is available to registered company owners and managers. Drivers, please tag me in your company's support group." +
+    "\n\nShaxsiy assistant chat ro‘yxatdan o‘tgan kompaniya owner va managerlari uchun. Driverlar kompaniya support guruhida meni tag qiling."
   );
 }
 
@@ -64,7 +76,11 @@ function formatPrompt(m: TgMessage): string {
   const name = m.from?.first_name ?? m.from?.username ?? 'user';
   const body = m.text ?? m.caption ?? '';
   const photoHint = m.photo ? '\n[the user attached a photo — call telegram_read_image to read it if its contents matter]' : '';
-  return `[msg ${m.message_id} from ${name} (id ${m.from?.id ?? 0})]: ${body}${photoHint}`;
+  const channel =
+    m.chat.type === 'private'
+      ? 'PRIVATE_DM with a server-verified owner/manager'
+      : 'GROUP_CHAT';
+  return `[channel ${channel}]\n[msg ${m.message_id} from ${name} (id ${m.from?.id ?? 0})]: ${body}${photoHint}`;
 }
 
 /** Bridge a finished turn into the web monitor (question, wait, exec, tokens). */
@@ -112,16 +128,36 @@ async function main(): Promise<void> {
         // as a structured line — the tapper's id comes from Telegram itself (sender-verified by
         // construction), so tools may act on it like any spoken message.
         const cb = u.callback_query;
-        const cbCarrier = cb?.message ? await carrierFor(cb.message.chat.id) : null;
+        const cbPrivate =
+          cb?.message != null &&
+          (cb.message.chat.type === 'private' || cb.message.chat.id === cb.from.id);
+        const cbCarrier = cb?.message
+          ? cbPrivate
+            ? (await dmAccessFor(cb.from.id))?.carrierId ?? null
+            : await carrierFor(cb.message.chat.id)
+          : null;
         if (cb?.message && cbCarrier) {
-          void answerCallback(cb.id);
-          if (!(await isRegistered(cbCarrier, cb.from.id))) continue;
           // Button ownership: a tap only counts from the user the button was sent FOR. Anyone else
-          // (a confirm meant for another driver) is ignored — the spinner is already stopped above.
-          if (!buttonTapAllowed(cb.message.message_id, cb.from.id)) {
-            console.warn(`[${cb.message.chat.id}] uid ${cb.from.id} tapped a button not addressed to them — ignored`);
+          // (a confirm meant for another driver) is ignored without disclosing who owns it.
+          const tapResult = consumeButtonTap(
+            cb.message.chat.id,
+            cb.message.message_id,
+            cb.from.id,
+          );
+          if (tapResult !== 'allowed') {
+            void answerCallback(
+              cb.id,
+              tapResult === 'unavailable' ? BUTTON_UNAVAILABLE_TEXT : undefined,
+            );
+            console.warn(
+              `[${cb.message.chat.id}] uid ${cb.from.id} button tap rejected (${tapResult})`,
+            );
             continue;
           }
+          // Stop the spinner immediately for a valid tap, then re-check live registration before
+          // the action enters the session. A revoked user loses the consumed confirmation safely.
+          void answerCallback(cb.id);
+          if (!(await isRegistered(cbCarrier, cb.from.id))) continue;
           const chatId = cb.message.chat.id;
           noteSender(chatId, cb.from.id);
           noteEngaged(chatId, cb.from.id);
@@ -131,7 +167,10 @@ async function main(): Promise<void> {
           const cbAt = Date.now();
           logMessage({ ts: new Date().toISOString(), chatId, userId: cb.from.id, name, dir: 'in', text: `[tap] ${cb.data ?? ''}`, engaged: true });
           const cbStats = logTurn('button', chatId, cb.from.id, name, `[tap] ${cb.data ?? ''}`, cbAt, cbReply);
-          enqueueTurn(chatId, cb.from.id, cbCarrier, `[button tap from ${name} (id ${cb.from.id})]: ${cb.data ?? ''}`, async (text) => {
+          const cbChannel = cbPrivate
+            ? 'PRIVATE_DM with a server-verified owner/manager'
+            : 'GROUP_CHAT';
+          enqueueTurn(chatId, cb.from.id, cbCarrier, `[channel ${cbChannel}]\n[button tap from ${name} (id ${cb.from.id})]: ${cb.data ?? ''}`, `tg:${u.update_id}`, async (text) => {
             const finalText = stampElapsed(text, cbAt);
             cbReply.text = finalText;
             noteEngaged(chatId, cb.from.id);
@@ -140,15 +179,46 @@ async function main(): Promise<void> {
           }, cbStats);
           continue;
         }
+        // A callback from an unmapped/revoked chat still needs an ack so Telegram does not leave
+        // the client spinner running; it never reaches a session.
+        if (cb) {
+          void answerCallback(cb.id);
+          continue;
+        }
         const m = u.message;
         if (!m || m.from?.is_bot) continue;
         if (!m.text && !m.caption && !m.photo) continue;
-        let carrier = await carrierFor(m.chat.id);
+        const uid = m.from?.id ?? 0;
+        const isPrivate = m.chat.type === 'private';
+        // In a real Telegram private chat, chat.id equals the sender id. Enforce that invariant
+        // before asking Mytrion to resolve the mini-app registration.
+        let carrier = isPrivate
+          ? uid !== 0 && m.chat.id === uid
+            ? (await dmAccessFor(uid))?.carrierId ?? null
+            : null
+          : await carrierFor(m.chat.id);
         if (!carrier) {
+          if (isPrivate) {
+            if (
+              uid !== 0 &&
+              Date.now() - (dmNudge.get(uid) ?? 0) > REG_NUDGE_TTL_MS
+            ) {
+              dmNudge.set(uid, Date.now());
+              await sendMessage(m.chat.id, dmNudgeText(), m.message_id).catch(() => undefined);
+              logMessage({
+                ts: new Date().toISOString(),
+                chatId: m.chat.id,
+                userId: 0,
+                name: 'bot',
+                dir: 'out',
+                text: '[private-chat access signpost]',
+              });
+            }
+            continue;
+          }
           // Unmapped chat. AUTO-BIND: in a group, any message from a registered active owner
           // binds the chat to their carrier (server-verified) — announce once, then serve this
           // very message. Private chats and strangers' groups stay invisible (zero tokens).
-          const uid = m.from?.id ?? 0;
           const isGroup = m.chat.type === 'group' || m.chat.type === 'supergroup';
           if (uid !== 0 && isGroup) {
             const boundNow = await tryAutoBind(m.chat.id, uid);
@@ -211,7 +281,7 @@ async function main(): Promise<void> {
           baseStats(stats);
           void clearReaction(m.chat.id, m.message_id).catch(() => undefined);
         };
-        enqueueTurn(m.chat.id, m.from?.id ?? 0, carrier, formatPrompt(m), async (text) => {
+        enqueueTurn(m.chat.id, m.from?.id ?? 0, carrier, formatPrompt(m), `tg:${u.update_id}`, async (text) => {
           const finalText = stampElapsed(text, mAt);
           mReply.text = finalText;
           noteEngaged(m.chat.id, m.from?.id ?? 0);

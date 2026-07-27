@@ -431,6 +431,9 @@ const EnvSchema = z.object({
   // C-26 unit/driver, C-10 fraud request) — carrier-scoped, rate-limited, audit-logged. Off by
   // default: enable per environment once the pilot carrier is briefed.
   FF_MINIAPP_CARD_WRITES_ENABLED: flag('0'),
+  // Postgres-backed idempotency/fencing for support-bot writes. Enable only after migration 0058
+  // and the gateway operation-metadata rollout; metadata headers are mandatory when ON.
+  FF_SUPPORT_BOT_IDEMPOTENCY: flag('0'),
   /** Comma-separated carrier ids piloted for notification pollers (card_status diff). Empty =
    *  the cron job no-ops — per-carrier rollout, Onzmove first (see notification ultraplan). */
   NOTIFY_POLL_CARRIERS: z.string().default(''),

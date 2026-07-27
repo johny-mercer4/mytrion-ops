@@ -5153,3 +5153,114 @@ Audited d19620f, fixed 4 findings (typecheck green, root test failures pre-exist
 
 Separately: whole local stack found DOWN (gateway container gone, :3001 down, :5433 down) —
 "can't access money code" report was this, not the code. Restarted per CLAUDE.md run stack.
+
+## 2026-07-28 — review of agent-gateway multi-token branch
+
+Reviewed `build...feature/agent-gateway-multi-token-failover` without changing implementation.
+Open findings:
+
+1. `telegram_read_image` still trusts the model-supplied Telegram user id instead of binding the
+   per-user session id, so a prompt-injected id can read another recent sender's cached group photo.
+2. Write replay protection is incomplete: `octane_card_limits` and `octane_card_info` are absent
+   from `WRITE_RISK_TOOLS`, and a thrown resumed stream loses the attempt-local write marker before
+   the fresh-session replay path.
+3. The image transcription sub-query does not receive the token selected by `authPool`; a pool
+   configured only through the documented plural/numbered variables has no singular token for that
+   nested SDK call, while a legacy singular token bypasses rotation and can remain rate-limited.
+4. Button ownership is keyed only by Telegram `message_id` (which is chat-scoped), is fail-open
+   after restart/cap eviction, and does not consume a confirmation after its first tap.
+5. No committed unit tests exercise auth cooldown/rotation, write replay, button ownership, or
+   bound image identity; the two added scripts are live diagnostics and are excluded from the
+   gateway `tsconfig`.
+
+Verification: gateway typecheck passed; root lint and typecheck passed; cross-tenant RBAC suite
+passed. Full root tests: 882 passed / 38 failed across unrelated existing areas plus sandbox-local
+network restrictions; this branch changes no root implementation or root tests.
+
+## 2026-07-28 — owner/manager private agent chat + gateway safety
+
+Implemented the first agent-gateway upgrade slice:
+
+- Added `GET /v1/support-bot/dm-access`, resolved exclusively from the ACTIVE mini-app registration
+  through `registeredMiniAppCompanyRepo`. Only `owner` and `manager` return a carrier; drivers and
+  missing/revoked registrations fail closed.
+- Gateway private chats now resolve `(telegram user → carrier)` through that endpoint. Telegram's
+  private-chat `chat.id === from.id` invariant is enforced, every verified DM message engages
+  without an `@mention`, and group behavior remains mention/reply/follow-up gated.
+- Prompts now distinguish `GROUP_CHAT` from verified `PRIVATE_DM`: owner-authorized figures may be
+  discussed in DM, while money-code values, full card numbers and PINs remain tool-delivered only.
+- Bound `telegram_read_image` to the session user rather than its model-supplied id; its nested
+  vision query now uses the token selected for that attempt, so multi-token failover also applies.
+- Replaced global/fail-open button ownership with `(chatId,messageId,userId)` ownership, 10-minute
+  expiry, single-use consumption and fail-closed restart/eviction behavior.
+- Follow-up UX: button authorization returns `allowed | foreign | unavailable`. Expired, replayed,
+  evicted and restart-unknown taps get a visible bilingual Telegram alert asking the user to request
+  the action again; foreign-user taps are silently acknowledged with no ownership leak.
+- Completed write-replay classification for card limit/info writes. A streamed exception now
+  carries the attempt's write marker and refuses a fresh retry after any emitted write tool.
+- Refreshed the gateway README and added 13 focused tests for DM authorization/client behavior,
+  engagement, button isolation/replay/expiry and retry-safety classification.
+
+Verification: gateway + root typecheck green; root lint 0 errors (18 existing warnings); 35 focused
+gateway/RBAC tests green. Full suite: 895 passed / the same 38 unrelated failures as the pre-change
+run, plus the existing detached mini-app mock rejection. No deployment or live Telegram/API call
+was performed.
+
+## 2026-07-28 — offline real-time agent-gateway stress harness
+
+- Added `apps/agent-gateway/scripts/stressGateway.mts` and the `stress:offline` package command.
+- The harness simulates parallel `(chat,user)` turns with per-user ordering and a global concurrency
+  cap, while reporting completed/queued/active turns, throughput, elapsed time and RSS in real time.
+- It exercises the real button-ownership and write-risk helpers plus auth-pool rotation with exactly
+  three fake tokens. All numbered/singular token environment slots are cleared inside the process.
+- Network is denied in-process by replacing `globalThis.fetch`; no real Telegram, Mytrion, EFS,
+  Claude, or client request is made. Runs are capped at 1,000,000 synthetic turns to avoid OOM.
+- Added JSON output for CI and documented both live and JSON commands in the gateway README.
+- Verification: 1,000-turn live run passed (12/12 max concurrency, zero same-user overlap and
+  out-of-order completion); JSON run passed; standalone strict script typecheck, gateway/root
+  typecheck and 14 focused gateway tests passed; lint has 0 errors and the same 18 warnings.
+  Full suite remains red only outside this slice: 896 passed / 38 failed plus one existing detached
+  mini-app mock rejection; all three agent-gateway test files passed in the full run.
+
+## 2026-07-28 — Redis coordination/idempotency/staging plan
+
+- Added `docs/agent-gateway-redis-idempotency-staging-plan.md` with the detailed staging matrix in
+  `docs/agent-gateway-staging-load-test-matrix.md`; the split keeps both files below the repo limit.
+- The plan defines a Redis Streams ingress/worker model with per-session leases and fencing,
+  Postgres-backed idempotency for support-bot writes, failure-state semantics for external provider
+  uncertainty, staging load/failure scenarios, release gates, and a controlled rollout/rollback.
+- Planning only: no Redis dependency, database migration, runtime behavior, deployment, or external
+  request was added in this step.
+
+## 2026-07-28 — idempotency/fencing implementation started
+
+- Folded the agreed fence atomicity, turn replay, occurrence-slot, ingress failover, button,
+  stub/real-model, and token-failover refinements into the plan and staging matrix.
+- Added migration `0058_support_bot_operations.sql`: a global Postgres fencing sequence,
+  tenant/session fence registry, and tenant-scoped operation ledger with unique idempotency and
+  `(tenant, turn, write occurrence)` slots.
+- Added `supportBotOperationRepo`: fence verification and operation claim share one transaction
+  with the fence row locked; expired pre-external claims can be reclaimed, while any operation past
+  the external boundary routes to reconciliation.
+- Added deterministic canonical request/session/operation identity helpers and an executor that
+  returns sanitized replay results, blocks stale/conflicting/in-progress/unknown attempts, and marks
+  ambiguous provider failures unknown.
+- Moved support-bot caller lookup onto `registeredMiniAppCompanyRepo`, making caller resolution
+  request-tenant scoped instead of a direct route query.
+- Extracted `/support-bot/card-action` into its own route module. With
+  `FF_SUPPORT_BOT_IDEMPOTENCY=0` it preserves the legacy path; when enabled it requires gateway
+  operation metadata, issues a Postgres fence, and executes through the ledger.
+- Gateway turns now carry the Telegram update ID (`tg:<update_id>`). The card-action tool lazily
+  acquires a fence and supplies a gateway-generated idempotency key, persisted occurrence, session
+  hash, and fencing token; the model controls none of these values.
+- Added 18 focused operation/route/gateway-identity tests. Cross-tenant/RBAC baseline was 52/52;
+  the final combined focused run, including the existing gateway safety tests, was 64/64.
+- Root and gateway typechecks passed; lint remained 0 errors with only pre-existing warnings after
+  removing the one new assertion warning. `drizzle-kit check` remains blocked by the existing
+  0022/0023 snapshot-parent collision; migration 0058 was not applied. Feature flag stays OFF and no
+  deployment, Telegram, EFS, ServerCRM, or other external request was performed.
+- Full suite finished at 914 passed / 38 failed. The 38 failures match the existing unrelated
+  baseline areas; every new idempotency, fencing, card-action, and gateway test passed. The existing
+  detached mini-app mock rejection also remains.
+- Remaining prerequisite debt: `supportBot.routes.ts` was reduced but is still above the 600-line
+  cap. Continue Phase 0 route extraction before enabling the feature or starting Redis workers.

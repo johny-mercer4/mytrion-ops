@@ -70,6 +70,26 @@ function toDto(row: RegisteredMiniAppCompany): RegisteredMiniAppCompanyDto {
 }
 
 export const registeredMiniAppCompanyRepo = {
+  /** Active registration resolved from Telegram identity for trusted support-bot entrypoints. */
+  async findActiveByTelegramUserId(
+    ctx: TenantContext,
+    telegramUserId: string,
+    client: DbClient = db,
+  ): Promise<RegisteredMiniAppCompany | undefined> {
+    const rows = await client
+      .select()
+      .from(registeredMiniAppCompanies)
+      .where(
+        and(
+          eq(registeredMiniAppCompanies.tenantId, ctx.tenantId),
+          eq(registeredMiniAppCompanies.telegramUserId, telegramUserId),
+          eq(registeredMiniAppCompanies.status, 'active'),
+        ),
+      )
+      .limit(1);
+    return rows[0];
+  },
+
   async findByTelegramUserId(
     ctx: TenantContext,
     telegramUserId: string,

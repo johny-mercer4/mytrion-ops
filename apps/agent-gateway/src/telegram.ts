@@ -88,7 +88,7 @@ export interface TgMessage {
 export interface TgCallbackQuery {
   id: string;
   from: { id: number; first_name?: string; username?: string };
-  message?: { message_id: number; chat: { id: number } };
+  message?: { message_id: number; chat: { id: number; type?: string } };
   data?: string;
 }
 
@@ -169,9 +169,14 @@ export async function sendButtons(
   return body?.ok && body.result?.message_id != null ? body.result.message_id : null;
 }
 
-/** Ack a button tap so Telegram stops the spinner on the client. */
-export async function answerCallback(callbackId: string): Promise<void> {
-  await queued(() => tgSend('answerCallbackQuery', { callback_query_id: callbackId })).catch(() => {});
+/** Ack a button tap. Optional text is shown as an alert for an unavailable/expired action. */
+export async function answerCallback(callbackId: string, text?: string): Promise<void> {
+  await queued(() =>
+    tgSend('answerCallbackQuery', {
+      callback_query_id: callbackId,
+      ...(text ? { text: text.slice(0, 200), show_alert: true } : {}),
+    }),
+  ).catch(() => {});
 }
 
 export async function sendTyping(chatId: number): Promise<void> {

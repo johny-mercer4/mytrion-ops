@@ -22,14 +22,23 @@ import { AppError, RBACError } from '../../lib/errors.js';
 import { auditFromContext } from '../../modules/audit/auditLogger.js';
 import { env, isProduction } from '../../config/env.js';
 import { db } from '../../db/client.js';
-import { registeredMiniAppCompanies, supportBotChats, supportBotMessages, type RegisteredMiniAppCompany } from '../../db/schema/index.js';
+import { registeredMiniAppCompanies, supportBotChats, supportBotMessages } from '../../db/schema/index.js';
 import { DEFAULT_TENANT_ID } from '../../config/constants.js';
 import { findDealOwnerForCarrier } from '../../integrations/dwhClients.js';
 import { listDwhTransactions } from '../../integrations/dwhTransactions.js';
-import { sendDocument, sendPlainReply, TelegramChatUnreachableError } from '../../integrations/telegramCarrierBot.js';
+import { sendDocument, TelegramChatUnreachableError } from '../../integrations/telegramCarrierBot.js';
 import { TXN_FETCH_LIMIT, scopeRowsToCard } from '../../modules/carrier/driverCardScope.js';
 import { listLiveCardRows as listCardsLive } from '../../modules/carrier/liveCards.js';
 import { requireDriverCardNumber, telegramCtx } from '../../modules/carrier/miniAppAuth.js';
+import { resolveSupportBotDmAccess } from '../../modules/carrier/supportBotDmAccess.js';
+import {
+  requireSupportBotWrites as requireWrites,
+  resolveSupportBotCaller as resolveCaller,
+  resolveSupportBotCardByLast6 as resolveCardByLast6,
+  sendSupportBotPrivate as dmOrThrow,
+  supportBotCallerSchema as callerSchema,
+  takeSupportBotWrite as takeWrite,
+} from '../../modules/carrier/supportBotCaller.js';
 import { fileServiceRequest, SERVICE_REQUEST_KEYS, serviceRequestAllows } from '../../modules/carrier/serviceRequest.js';
 import { getCardEfsIdentity } from '../../integrations/dwhCards.js';
 import { executeZohoFunctionWithFallback } from '../../integrations/zohoFunctions.js';
@@ -38,53 +47,8 @@ import { notifyMiniApp } from '../../modules/notifications/service.js';
 import { takeToken } from '../../modules/security/rateBucket.js';
 import { efsWrapper } from '../../wrappers/efsWrapper.js';
 import { serverCrmWrapper } from '../../wrappers/serverCrmWrapper.js';
+import { supportBotCardActionRoutes } from './supportBotCardAction.routes.js';
 import { requireContext } from './helpers.js';
-
-const callerSchema = z.object({
-  /** The GROUP MEMBER who asked — the bot harness passes the Telegram sender id. */
-  telegramUserId: z.string().min(1).max(40),
-  /** The bot instance's deployed carrier (env-per-instance) — must match the registration. */
-  carrierId: z.string().min(1).max(40),
-});
-
-type SupportBotRole = 'owner' | 'driver';
-
-/**
- * The single RBAC gate: who is this Telegram user WITHIN this bot instance's carrier?
- * Fail-closed on every mismatch — unregistered, revoked, or another company's registration
- * all land on the same terse errors (no probing which company someone belongs to).
- */
-async function resolveCaller(
-  carrierId: string,
-  telegramUserId: string,
-): Promise<{ registration: RegisteredMiniAppCompany; role: SupportBotRole }> {
-  const rows = await db
-    .select()
-    .from(registeredMiniAppCompanies)
-    .where(
-      and(
-        eq(registeredMiniAppCompanies.telegramUserId, telegramUserId),
-        eq(registeredMiniAppCompanies.status, 'active'),
-      ),
-    )
-    .limit(1);
-  const registration = rows[0];
-  if (!registration) {
-    throw new AppError('This user is not registered in the mini-app yet.', {
-      statusCode: 404,
-      code: 'SUPPORT_BOT_NOT_REGISTERED',
-      expose: true,
-    });
-  }
-  if (String(registration.carrierId ?? '') !== carrierId) {
-    throw new AppError('This user does not belong to this group’s company.', {
-      statusCode: 403,
-      code: 'SUPPORT_BOT_CARRIER_MISMATCH',
-      expose: true,
-    });
-  }
-  return { registration, role: registration.profile === 'driver' ? 'driver' : 'owner' };
-}
 
 function takeReadToken(carrierId: string): void {
   if (!takeToken(`support-bot-read:${carrierId}`, 30)) {
@@ -96,42 +60,9 @@ function takeReadToken(carrierId: string): void {
   }
 }
 
-/** Resolve an OWNER's spoken "last 6 digits" to exactly one card of THEIR carrier. Ambiguity
- *  (or no match) is an error — the bot asks for more digits rather than guessing a card. */
-async function resolveCardByLast6(carrierId: string, last6: string): Promise<string> {
-  const digits = last6.replace(/\D/g, '');
-  if (digits.length < 4) {
-    throw new AppError('Give at least the last 4-6 digits of the card.', { statusCode: 400, code: 'SUPPORT_BOT_CARD_DIGITS', expose: true });
-  }
-  const cards = await listCardsLive(carrierId);
-  const matches = cards
-    .map((r) => String(r['card_number'] ?? ''))
-    .filter((n) => n && n.endsWith(digits));
-  if (matches.length === 1) return matches[0]!;
-  throw new AppError(
-    matches.length === 0 ? 'No card on this account ends with those digits.' : 'More than one card ends with those digits — give the last 6.',
-    { statusCode: matches.length === 0 ? 404 : 409, code: matches.length === 0 ? 'SUPPORT_BOT_CARD_NOT_FOUND' : 'SUPPORT_BOT_CARD_AMBIGUOUS', expose: true },
-  );
-}
-
-function requireWrites(): void {
-  if (!env.FF_MINIAPP_CARD_WRITES_ENABLED) {
-    throw new AppError('Card actions are not enabled yet.', { statusCode: 503, code: 'MINIAPP_WRITES_DISABLED', expose: true });
-  }
-}
-
-function takeWrite(carrierId: string): void {
-  if (!takeToken(`support-bot-write:${carrierId}`, 5)) {
-    throw new AppError('Too many card actions right now — try again in a minute.', { statusCode: 429, code: 'SUPPORT_BOT_RATE_LIMITED', expose: true });
-  }
-}
-
-/** Deliver sensitive content to the asker's PRIVATE Octane bot chat — never the group. */
-async function dmOrThrow(reg: RegisteredMiniAppCompany, text: string): Promise<void> {
-  await sendPlainReply(reg.telegramChatId ?? reg.telegramUserId, text);
-}
-
 export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
+  await supportBotCardActionRoutes(app);
+
   const messagesBatchSchema = z.object({
     carrierId: z.string().min(1),
     messages: z
@@ -153,6 +84,17 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
   });
 
   const guard = { onRequest: [app.sessionOrApiKey] };
+
+  /**
+   * Resolve a PRIVATE Telegram chat from sender identity. This never accepts a carrier from the
+   * caller: the active mini-app registration is the source of truth, and only owner/manager
+   * profiles are eligible. A null result deliberately reveals no registration details.
+   */
+  app.get('/support-bot/dm-access', guard, async (request) => {
+    const q = z.object({ telegramUserId: z.string().min(1).max(40) }).parse(request.query);
+    const access = await resolveSupportBotDmAccess(requireContext(request), q.telegramUserId);
+    return { access };
+  });
 
   /**
    * Multi-session chat map (MULTISESSION_ARCH M-0): which group chat belongs to which
@@ -331,7 +273,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
   /** Who is asking — lets the bot address the person correctly and offer the right menu. */
   app.post('/support-bot/whoami', guard, async (request) => {
     const body = callerSchema.parse(request.body);
-    const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    const { registration, role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
     // Responsible sales agent = the LIVE deal owner from the DWH, NOT whoever created the
     // registration link (the invite-stamped agentName is the link creator on older records) and
     // NEVER the client. findDealOwnerForCarrier matches the carrier EXACTLY, keeps closed deals,
@@ -361,7 +303,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
         status: z.enum(['active', 'inactive', 'hold']).optional(),
       })
       .parse(request.body);
-    const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    const { registration, role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
     takeReadToken(body.carrierId);
     const cardRows = await listCardsLive(body.carrierId);
     if (role === 'driver') {
@@ -450,7 +392,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
    */
   app.post('/support-bot/funds', guard, async (request) => {
     const body = callerSchema.parse(request.body);
-    const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    const { registration, role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
     takeReadToken(body.carrierId);
     const balance = await serverCrmWrapper.getCarrierBalance(body.carrierId).catch(() => null);
     const efsBalance = balance?.efs_balance;
@@ -491,7 +433,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
         limit: z.coerce.number().int().positive().max(20).default(10),
       })
       .parse(request.body);
-    const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    const { registration, role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
     takeReadToken(body.carrierId);
     const cardNumber =
       role === 'driver'
@@ -548,7 +490,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
         format: z.enum(['pdf', 'xlsx']).default('pdf'),
       })
       .parse(request.body);
-    const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    const { registration, role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
     if (role !== 'owner') {
       throw new AppError('Invoices are available to the company owner only.', {
         statusCode: 403,
@@ -613,7 +555,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
         to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       })
       .parse(request.body);
-    const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    const { registration, role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
     if (role !== 'owner') {
       throw new AppError('Invoices are available to the company owner only.', {
         statusCode: 403,
@@ -638,8 +580,8 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
       return `#${id} · ${date} · ${status} · ${money(r['total_amount'])}`;
     });
     if (rows.length > 0) {
-      await sendPlainReply(
-        registration.telegramChatId ?? body.telegramUserId,
+      await dmOrThrow(
+        registration,
         [
           `📄 Octane · Invoices (${label})`,
           `Billed: ${money(sum['sum_total_amount'])} · Open: ${money(sum['sum_open_balance'])}`,
@@ -681,7 +623,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
         cardLast6: z.string().trim().min(4).max(19).optional(),
       })
       .parse(request.body);
-    const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    const { registration, role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
     takeReadToken(body.carrierId);
     const cardNumber =
       role === 'driver'
@@ -754,7 +696,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
     const body = callerSchema
       .extend({ request: z.enum(SERVICE_REQUEST_KEYS), comment: z.string().max(2000).default('') })
       .parse(request.body);
-    const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    const { registration, role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
     if (!serviceRequestAllows(body.request, role)) {
       throw new AppError('This request type is not available for your role.', {
         statusCode: 403,
@@ -794,7 +736,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
   /** Card shipment tracking — owner read (68 chat asks). Same shape the mini-app uses. */
   app.post('/support-bot/tracking', guard, async (request) => {
     const body = callerSchema.parse(request.body);
-    const { role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    const { role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
     if (role !== 'owner') {
       throw new AppError('Shipment tracking is available to the account owner.', {
         statusCode: 403,
@@ -819,7 +761,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
     const body = callerSchema
       .extend({ range: z.string().max(20).default('all_time'), cardLast6: z.string().trim().min(4).max(19).optional() })
       .parse(request.body);
-    const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    const { registration, role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
     takeReadToken(body.carrierId);
     const result = await serverCrmWrapper.getLastUsed(body.carrierId, body.range);
     let rows = (result.data ?? []) as Array<Record<string, unknown>>;
@@ -838,7 +780,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
    */
   app.post('/support-bot/payment', guard, async (request) => {
     const body = callerSchema.parse(request.body);
-    const { role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    const { role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
     if (role !== 'owner') {
       throw new AppError('Payment status is available to the account owner.', { statusCode: 403, code: 'SUPPORT_BOT_OWNER_ONLY', expose: true });
     }
@@ -854,7 +796,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
    */
   app.post('/support-bot/billing-form', guard, async (request) => {
     const body = callerSchema.parse(request.body);
-    const { role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    const { role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
     if (role !== 'owner') {
       throw new AppError('The billing form is available to the account owner.', { statusCode: 403, code: 'SUPPORT_BOT_OWNER_ONLY', expose: true });
     }
@@ -891,7 +833,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
       throw new AppError('Money code is not enabled yet.', { statusCode: 503, code: 'MINIAPP_MONEY_CODE_DISABLED', expose: true });
     }
     const body = callerSchema.extend({ amount: z.coerce.number().positive().optional() }).parse(request.body);
-    const { role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    const { role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
     if (role !== 'owner') {
       throw new AppError('Money codes are issued by the account owner.', { statusCode: 403, code: 'SUPPORT_BOT_OWNER_ONLY', expose: true });
     }
@@ -938,7 +880,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
     const body = callerSchema
       .extend({ amount: z.coerce.number().positive(), unitNumber: z.string().trim().min(1).max(60), reason: z.string().trim().min(1).max(120) })
       .parse(request.body);
-    const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    const { registration, role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
     if (role !== 'owner') {
       throw new AppError('Money codes are issued by the account owner.', { statusCode: 403, code: 'SUPPORT_BOT_OWNER_ONLY', expose: true });
     }
@@ -968,29 +910,6 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
     return { success: true, deliveredTo: 'private_bot_chat' };
   });
 
-  /** Activate / deactivate a card by its last digits — owner, writes flag, ambiguity = ask. */
-  app.post('/support-bot/card-action', guard, async (request) => {
-    requireWrites();
-    const body = callerSchema
-      .extend({ cardLast6: z.string().trim().min(4).max(19), action: z.enum(['activate', 'deactivate']) })
-      .parse(request.body);
-    const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
-    if (role !== 'owner') {
-      throw new AppError('Card activation is an owner action.', { statusCode: 403, code: 'SUPPORT_BOT_OWNER_ONLY', expose: true });
-    }
-    takeWrite(body.carrierId);
-    const cardNumber = await resolveCardByLast6(body.carrierId, body.cardLast6);
-    const result = await efsWrapper.setCardStatus(body.carrierId, cardNumber, body.action);
-    await auditFromContext(telegramCtx('owner', registration.telegramUserId), {
-      action: 'carrier.support_bot.card_status_change',
-      status: 'ok',
-      resourceType: 'efs_card',
-      resourceId: cardNumber.slice(-6),
-      detail: { carrierId: body.carrierId, action: body.action, via: 'support-bot' },
-    });
-    return { success: true, last6: cardNumber.slice(-6), action: body.action, raw: result };
-  });
-
   /** Gallon limit change — owner, capped like the mini-app (MINIAPP_LIMIT_CHANGE_MAX). */
   app.post('/support-bot/card-limits', guard, async (request) => {
     requireWrites();
@@ -1002,7 +921,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
         value: z.coerce.number().positive().max(env.MINIAPP_LIMIT_CHANGE_MAX),
       })
       .parse(request.body);
-    const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    const { registration, role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
     if (role !== 'owner') {
       throw new AppError('Limit changes are an owner action.', { statusCode: 403, code: 'SUPPORT_BOT_OWNER_ONLY', expose: true });
     }
@@ -1033,7 +952,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
     if (!body.unitNumber && !body.driverId && !body.driverName) {
       throw new AppError('Provide a unit number, driver ID, or driver name to change.', { statusCode: 400, code: 'CARD_INFO_EMPTY', expose: true });
     }
-    const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    const { registration, role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
     if (role === 'driver' && body.driverName) {
       throw new AppError('The driver name on the card is managed by your company owner.', { statusCode: 403, code: 'DRIVER_NAME_OWNER_ONLY', expose: true });
     }
@@ -1060,7 +979,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
   /** Balance FIGURES — owner, delivered to their PRIVATE bot chat (never the group). */
   app.post('/support-bot/balance', guard, async (request) => {
     const body = callerSchema.parse(request.body);
-    const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    const { registration, role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
     if (role !== 'owner') {
       throw new AppError('Balance figures are for the account owner.', { statusCode: 403, code: 'SUPPORT_BOT_OWNER_ONLY', expose: true });
     }
@@ -1077,7 +996,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
   /** Manual entry code (= the full card number) — DM ONLY, own card for drivers. */
   app.post('/support-bot/manual-code', guard, async (request) => {
     const body = callerSchema.extend({ cardLast6: z.string().trim().min(4).max(19).optional() }).parse(request.body);
-    const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    const { registration, role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
     takeReadToken(body.carrierId);
     const cardNumber =
       role === 'driver'
@@ -1104,7 +1023,7 @@ export async function supportBotRoutes(app: FastifyInstance): Promise<void> {
       });
     }
     const body = callerSchema.parse(request.body);
-    const { registration, role } = await resolveCaller(body.carrierId, body.telegramUserId);
+    const { registration, role } = await resolveCaller(requireContext(request), body.carrierId, body.telegramUserId);
     if (role !== 'driver') {
       throw new AppError('Owners pick a card in the mini-app — open Card management there.', {
         statusCode: 403,

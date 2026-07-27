@@ -39,7 +39,7 @@ async function* imagePrompt(text: string, image: TgImage): AsyncGenerator<SDKUse
 
 /** Vision → text in a throwaway session (no resume, no tools, id discarded). General purpose:
  *  images are not only fuel cards — could be a receipt, a pump screen, a document, a screenshot. */
-async function extractImageText(image: TgImage): Promise<string> {
+async function extractImageText(image: TgImage, authToken: string): Promise<string> {
   const q = query({
     prompt: imagePrompt(
       'Transcribe what this image shows in 1-3 short lines. Include any text, numbers, or ' +
@@ -47,6 +47,7 @@ async function extractImageText(image: TgImage): Promise<string> {
       image,
     ),
     options: {
+      env: { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: authToken },
       model: config.model,
       systemPrompt: 'You transcribe images to plain text for another assistant. Be literal; no commentary.',
       disallowedTools: ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch', 'WebSearch'],
@@ -61,8 +62,11 @@ async function extractImageText(image: TgImage): Promise<string> {
   return text.trim().slice(0, 600);
 }
 
-/** One server per chat: the chatId is closed over, so the model can't point it at another chat. */
-export function buildTelegramServer(chatId: number) {
+/**
+ * One server per verified user thread. Both chat and user identity are closed over, so a
+ * prompt-injected Telegram id cannot read another group member's cached image.
+ */
+export function buildTelegramServer(chatId: number, boundUserId: number, authToken: string) {
   return createSdkMcpServer({
     name: 'telegram',
     version: '1.0.0',
@@ -74,14 +78,19 @@ export function buildTelegramServer(chatId: number) {
           'the message mentions or includes a photo and its contents matter to the request.',
         { telegram_user_id: z.number().describe('Telegram id of the asker — the image must be THEIRS') },
         async ({ telegram_user_id }) => {
+          if (telegram_user_id !== boundUserId) {
+            console.warn(
+              `[telegram] image tool claimed uid ${telegram_user_id} but session is ${boundUserId} — forcing session uid`,
+            );
+          }
           const entry = latestPhoto.get(chatId);
           if (!entry || Date.now() - entry.at > PHOTO_TTL_MS)
             return { content: [{ type: 'text' as const, text: 'No recent image is attached in this chat — ask them to resend it.' }], isError: true };
-          if (entry.userId !== telegram_user_id)
+          if (entry.userId !== boundUserId)
             return { content: [{ type: 'text' as const, text: "The recent image was sent by a DIFFERENT user — you may not read it for this asker. Ask them to send their own photo." }], isError: true };
           const image = await fetchPhotoBase64(entry.photo);
           if (!image) return { content: [{ type: 'text' as const, text: 'Could not download the attached image.' }], isError: true };
-          const text = await extractImageText(image);
+          const text = await extractImageText(image, authToken);
           return { content: [{ type: 'text' as const, text: text || '(the image could not be read)' }] };
         },
       ),

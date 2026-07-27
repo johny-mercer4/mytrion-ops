@@ -11,6 +11,11 @@ import { config } from './config.js';
 import { searchKb } from './kb/search.js';
 import { sendButtons, sendMessage, setReaction } from './telegram.js';
 import { logMessage } from './messageLog.js';
+import { noteButtonOwner } from './buttonOwnership.js';
+import {
+  gatewayOperationKey,
+  gatewaySessionKeyHash,
+} from './operationIdentity.js';
 
 /** chatId → (userId → last-seen ms). Filled by the poll loop for every inbound message. */
 export const recentSenders = new Map<number, Map<number, number>>();
@@ -27,33 +32,19 @@ function senderOk(chatId: number, userId: number): boolean {
   return ts != null && Date.now() - ts <= RECENT_MS;
 }
 
-/**
- * BUTTON OWNERSHIP. Telegram lets ANY group member tap an inline button, forever — so a confirm
- * meant for driver A ("unlock MY card — ✅ Ha") could be tapped by owner B and then act on B's
- * account. We record which user a button message was sent FOR (the session that issued it) and the
- * poll loop rejects taps from anyone else. In-memory + capped: a restart forgets ownership, so an
- * UNKNOWN message id is allowed (fail-open only for pre-restart buttons — the RBAC + identity guard
- * still bind the actual action to the tapper's own session).
- */
-const BUTTON_OWNER_CAP = 500;
-const buttonOwner = new Map<number, number>();
-export function noteButtonOwner(messageId: number, userId: number): void {
-  if (buttonOwner.size >= BUTTON_OWNER_CAP) {
-    const oldest = buttonOwner.keys().next().value; // Map keeps insertion order
-    if (oldest !== undefined) buttonOwner.delete(oldest);
-  }
-  buttonOwner.set(messageId, userId);
-}
-/** True if this user may tap this button. Unknown message id (restart / non-tracked) = allowed. */
-export function buttonTapAllowed(messageId: number, userId: number): boolean {
-  const owner = buttonOwner.get(messageId);
-  return owner === undefined || owner === userId;
-}
-
-async function backend(path: string, payload: Record<string, unknown>, carrierId: string) {
+async function backend(
+  path: string,
+  payload: Record<string, unknown>,
+  carrierId: string,
+  extraHeaders: Record<string, string> = {},
+) {
   const res = await fetch(`${config.octaneBase}/v1${path}`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${config.octaneKey}`, 'Content-Type': 'application/json' },
+    headers: {
+      Authorization: `Bearer ${config.octaneKey}`,
+      'Content-Type': 'application/json',
+      ...extraHeaders,
+    },
     body: JSON.stringify({ carrierId, ...payload }),
     signal: AbortSignal.timeout(30_000),
   });
@@ -74,7 +65,30 @@ const asker = {
  * line can't make the bot act as anyone but the person whose session this is. A mismatch is logged
  * (injection signal) but never obeyed.
  */
-export function buildOctaneServer(chatId: number, carrierId: string, boundUserId: number) {
+export function buildOctaneServer(
+  chatId: number,
+  carrierId: string,
+  boundUserId: number,
+  turnId: string,
+) {
+  const sessionKeyHash = gatewaySessionKeyHash(
+    config.environment,
+    config.botUsername,
+    chatId,
+    boundUserId,
+  );
+  let fencePromise: Promise<number | null> | null = null;
+  let writeOccurrence = 0;
+  const sessionFence = (): Promise<number | null> => {
+    fencePromise ??= backend(
+      '/support-bot/session-fence',
+      { sessionKeyHash },
+      carrierId,
+    ).then((result) =>
+      result['enabled'] === true ? Number(result['fencingToken']) : null,
+    );
+    return fencePromise;
+  };
   const run = async (path: string, claimedUserId: number, extra: Record<string, unknown> = {}) => {
     if (claimedUserId !== boundUserId) {
       console.warn(`[octane] ${path}: tool claimed uid ${claimedUserId} but session is ${boundUserId} — forcing session uid (possible spoof)`);
@@ -84,7 +98,32 @@ export function buildOctaneServer(chatId: number, carrierId: string, boundUserId
     if (!senderOk(chatId, boundUserId)) {
       return { content: [{ type: 'text' as const, text: 'refused: no recent message from this user in this chat' }], isError: true };
     }
-    const data = await backend(path, { telegramUserId: String(boundUserId), ...extra }, carrierId);
+    const payload = { telegramUserId: String(boundUserId), ...extra };
+    let headers: Record<string, string> = {};
+    if (path === '/support-bot/card-action') {
+      const fencingToken = await sessionFence();
+      if (fencingToken != null) {
+        const occurrence = writeOccurrence++;
+        headers = {
+          'Idempotency-Key': gatewayOperationKey({
+            environment: config.environment,
+            botIdentity: config.botUsername,
+            turnId,
+            writeOccurrence: occurrence,
+            tenantId: config.tenantId,
+            carrierId,
+            telegramUserId: boundUserId,
+            operationType: 'card_action',
+            arguments: payload,
+          }),
+          'X-Support-Bot-Turn-Id': turnId,
+          'X-Support-Bot-Write-Occurrence': String(occurrence),
+          'X-Support-Bot-Session-Key': sessionKeyHash,
+          'X-Support-Bot-Fencing-Token': String(fencingToken),
+        };
+      }
+    }
+    const data = await backend(path, payload, carrierId, headers);
     return { content: [{ type: 'text' as const, text: JSON.stringify(data) }], isError: Boolean((data as { error?: boolean }).error) };
   };
 
@@ -210,7 +249,7 @@ export function buildOctaneServer(chatId: number, carrierId: string, boundUserId
         async ({ text, buttons, reply_to_message_id }) => {
           const sentId = await sendButtons(chatId, text, buttons, reply_to_message_id);
           // Bind the button message to THIS session's user so only they can tap it (index.ts gate).
-          if (sentId != null) noteButtonOwner(sentId, boundUserId);
+          if (sentId != null) noteButtonOwner(chatId, sentId, boundUserId);
           return { content: [{ type: 'text' as const, text: 'buttons sent — now output SILENT and wait for the tap' }] };
         },
       ),

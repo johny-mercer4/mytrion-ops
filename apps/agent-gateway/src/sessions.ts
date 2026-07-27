@@ -18,6 +18,11 @@ import { buildTelegramServer } from './telegramTools.js';
 import { systemPrompt } from './prompt.js';
 import { sendTyping } from './telegram.js';
 import { markLimited, pickToken, soonestRecovery, tokenCount } from './authPool.js';
+import {
+  CONTINUE_AFTER_WRITE_PROMPT,
+  QueryStreamError,
+  WRITE_RISK_TOOLS,
+} from './retrySafety.js';
 
 const SESSIONS_FILE = 'data/sessions.json';
 
@@ -230,24 +235,6 @@ interface QueryOutcome {
   usedWriteTool: boolean;
 }
 
-/**
- * Tools that CHANGE STATE (issue money, unlock pumps, block cards, open tickets). If one of these
- * fired in an attempt that then rate-limited, the failover retry must NOT re-send the original user
- * prompt — the resumed transcript shows the request twice and nothing stops the model obeying twice
- * (a second money code = real money). The retry sends CONTINUE_AFTER_WRITE_PROMPT instead.
- */
-const WRITE_RISK_TOOLS = new Set([
-  'mcp__octane__octane_money_code',
-  'mcp__octane__octane_manual_code',
-  'mcp__octane__octane_override',
-  'mcp__octane__octane_card_action',
-  'mcp__octane__octane_service_request',
-]);
-const CONTINUE_AFTER_WRITE_PROMPT =
-  '[system: the previous attempt was interrupted AFTER one or more actions already executed — see the ' +
-  'transcript above. Do NOT repeat any completed action (money code, manual code, override, card ' +
-  'action, service request). Report the result of what already ran to the user, in their language.]';
-
 /** Thrown when every configured token is exhausted for this turn — enqueue's catch sends a fallback. */
 class AllTokensLimitedError extends Error {
   constructor(public readonly retryAt: number | null) {
@@ -277,13 +264,14 @@ export function enqueueTurn(
   userId: number,
   carrierId: string,
   userPrompt: TurnContent,
+  turnId: string,
   onReply: (text: string) => Promise<void>,
   onStats?: (stats: TurnStats) => void,
 ): void {
   const key = sessKey(chatId, userId);
   const prev = chains.get(key) ?? Promise.resolve();
   const next = prev
-    .then(() => runTurn(chatId, userId, key, carrierId, userPrompt, onReply, onStats))
+    .then(() => runTurn(chatId, userId, key, carrierId, userPrompt, turnId, onReply, onStats))
     .catch(async (err) => {
       console.error(`[${key}] turn failed`, err);
       onStats?.({ durationMs: 0, numTurns: 0, usage: null, isError: true, errMsg: err instanceof Error ? err.message : String(err) });
@@ -329,13 +317,14 @@ async function runTurn(
   key: SessionKey,
   carrierId: string,
   userPrompt: TurnContent,
+  turnId: string,
   onReply: (text: string) => Promise<void>,
   onStats?: (stats: TurnStats) => void,
 ): Promise<void> {
   await acquireSlot();
   const stopTyping = startTypingKeepAlive(chatId);
   try {
-    await runTurnInner(chatId, userId, key, carrierId, userPrompt, onReply, onStats);
+    await runTurnInner(chatId, userId, key, carrierId, userPrompt, turnId, onReply, onStats);
   } finally {
     stopTyping();
     releaseSlot();
@@ -348,6 +337,7 @@ async function runTurnInner(
   key: SessionKey,
   carrierId: string,
   userPrompt: TurnContent,
+  turnId: string,
   onReply: (text: string) => Promise<void>,
   onStats?: (stats: TurnStats) => void,
 ): Promise<void> {
@@ -360,7 +350,7 @@ async function runTurnInner(
   // former and keeps the latter, so the first turn after a rebuild resumes an id that no longer
   // exists and the query throws instantly (live incident 2026-07-22 22:37: every turn died with
   // execMs=0, bot went silent). One retry with a FRESH session heals it.
-  const outcome = await runWithRotation(chatId, userId, key, carrierId, userPrompt, resumableSession(key));
+  const outcome = await runWithRotation(chatId, userId, key, carrierId, userPrompt, turnId, resumableSession(key));
   const { finalText, stats } = outcome;
   const text = finalText.trim();
   // SILENCE is a valid outcome (anti-spam rules) — only deliver real replies.
@@ -401,6 +391,7 @@ async function runWithRotation(
   key: SessionKey,
   carrierId: string,
   userPrompt: TurnContent,
+  turnId: string,
   resume: string | undefined,
 ): Promise<QueryOutcome> {
   const tried = new Set<string>();
@@ -416,7 +407,7 @@ async function runWithRotation(
     const t = pickToken(tried);
     if (!t) throw new AllTokensLimitedError(soonestRecovery());
     try {
-      const res = await runQuery(chatId, userId, key, carrierId, prompt, useResume, t.token);
+      const res = await runQuery(chatId, userId, key, carrierId, prompt, turnId, useResume, t.token);
       if (res.rateLimited) {
         markLimited(t.token, res.resetsAt);
         tried.add(t.token);
@@ -436,6 +427,14 @@ async function runWithRotation(
       }
       return res;
     } catch (err) {
+      // `runQuery` can throw after a tool has already executed. Its normal QueryOutcome never
+      // returns in that case, so carry the write marker on the error and refuse every replay.
+      if (err instanceof QueryStreamError && err.usedWriteTool) {
+        console.error(
+          `[${key}] stream failed after a write tool was emitted — refusing retry`,
+        );
+        throw err;
+      }
       if (useResume) {
         // Replay guard, resume-death edition: if a write tool already executed (prompt was swapped
         // to the continue-nudge) and the transcript proving it is now unreachable, a fresh retry
@@ -462,6 +461,7 @@ async function runQuery(
   key: SessionKey,
   carrierId: string,
   userPrompt: TurnContent,
+  turnId: string,
   resume: string | undefined,
   authToken: string,
 ): Promise<QueryOutcome> {
@@ -473,7 +473,10 @@ async function runQuery(
       env: { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: authToken },
       model: config.model,
       systemPrompt: systemPrompt(),
-      mcpServers: { octane: buildOctaneServer(chatId, carrierId, userId), telegram: buildTelegramServer(chatId) },
+      mcpServers: {
+        octane: buildOctaneServer(chatId, carrierId, userId, turnId),
+        telegram: buildTelegramServer(chatId, userId, authToken),
+      },
       allowedTools: [
         'mcp__octane__telegram_progress',
         'mcp__octane__octane_whoami',
@@ -520,38 +523,50 @@ async function runQuery(
   let sawRateLimit = false;
   let resetsAt: number | undefined;
   let usedWriteTool = false;
-  for await (const msg of q) {
-    if (msg.type === 'system' && msg.subtype === 'init') {
-      const prev = sessions.get(key);
-      if (prev && prev.id === msg.session_id) {
-        prev.lastAt = Date.now();
-      } else {
-        sessions.set(key, { id: msg.session_id, startedAt: Date.now(), lastAt: Date.now(), turns: 0, lastCacheRead: 0 });
+  try {
+    for await (const msg of q) {
+      if (msg.type === 'system' && msg.subtype === 'init') {
+        const prev = sessions.get(key);
+        if (prev && prev.id === msg.session_id) {
+          prev.lastAt = Date.now();
+        } else {
+          sessions.set(key, {
+            id: msg.session_id,
+            startedAt: Date.now(),
+            lastAt: Date.now(),
+            turns: 0,
+            lastCacheRead: 0,
+          });
+        }
+        persist();
       }
-      persist();
-    }
-    if (msg.type === 'rate_limit_event' && msg.rate_limit_info.status === 'rejected') {
-      sawRateLimit = true;
-      resetsAt = msg.rate_limit_info.resetsAt ?? resetsAt;
-    }
-    if (msg.type === 'assistant') {
-      if (msg.error === 'rate_limit') sawRateLimit = true;
-      for (const block of msg.message.content) {
-        if (block.type === 'tool_use' && WRITE_RISK_TOOLS.has(block.name)) usedWriteTool = true;
+      if (msg.type === 'rate_limit_event' && msg.rate_limit_info.status === 'rejected') {
+        sawRateLimit = true;
+        resetsAt = msg.rate_limit_info.resetsAt ?? resetsAt;
+      }
+      if (msg.type === 'assistant') {
+        if (msg.error === 'rate_limit') sawRateLimit = true;
+        for (const block of msg.message.content) {
+          if (block.type === 'tool_use' && WRITE_RISK_TOOLS.has(block.name)) {
+            usedWriteTool = true;
+          }
+        }
+      }
+      if (msg.type === 'result') {
+        finalText = msg.subtype === 'success' ? msg.result : '';
+        const r = msg as unknown as Record<string, unknown>;
+        if (Number(r['api_error_status'] ?? 0) === 429) sawRateLimit = true;
+        stats = {
+          durationMs: Number(r['duration_ms'] ?? 0) || 0,
+          numTurns: Number(r['num_turns'] ?? 0) || 0,
+          usage: (r['usage'] as Record<string, unknown> | undefined) ?? null,
+          isError: msg.subtype !== 'success',
+          ...(msg.subtype !== 'success' ? { errMsg: `result: ${msg.subtype}` } : {}),
+        };
       }
     }
-    if (msg.type === 'result') {
-      finalText = msg.subtype === 'success' ? msg.result : '';
-      const r = msg as unknown as Record<string, unknown>;
-      if (Number(r['api_error_status'] ?? 0) === 429) sawRateLimit = true;
-      stats = {
-        durationMs: Number(r['duration_ms'] ?? 0) || 0,
-        numTurns: Number(r['num_turns'] ?? 0) || 0,
-        usage: (r['usage'] as Record<string, unknown> | undefined) ?? null,
-        isError: msg.subtype !== 'success',
-        ...(msg.subtype !== 'success' ? { errMsg: `result: ${msg.subtype}` } : {}),
-      };
-    }
+  } catch (err) {
+    throw new QueryStreamError(err, usedWriteTool);
   }
   return { finalText, stats, rateLimited: sawRateLimit && !finalText.trim(), resetsAt, usedWriteTool };
 }
