@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 // Shared stale-while-revalidate cache (the app's Data-Center caching system) — instant re-entry.
 import { useCachedLoad, formatCachedAt } from '../../sales/redesign/dcCache';
-import { resolveTier, tierLabel, type TierResult, type TrackId } from '../../_shared/loyalty';
+import { resolveTier, resolveTierForRow, tierLabel, type TierResult, type TrackId } from '../../_shared/loyalty';
 import { listLoyaltyClients, loyaltyGallons, type LoyaltyClient } from '../../../api/loyalty';
 
 /**
@@ -293,7 +293,8 @@ export function LoyaltyCard({ onBack }: { onBack?: () => void }) {
     () =>
       (roster?.clients ?? []).map((client) => {
         const gallons = loyaltyGallons(client);
-        const tier = resolveTier(client.activeCards, gallons);
+        // One shared entry point: prev-month cards for the track, this-month gallons, grace anchor.
+        const tier = resolveTierForRow(client);
         return { client, tier, bucket: bucketOf(tier), gallons };
       }),
     [roster],

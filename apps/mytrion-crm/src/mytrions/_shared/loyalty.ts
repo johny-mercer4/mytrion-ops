@@ -19,13 +19,20 @@
  * (T3-fleet silver = 13,500, gold = 23,000). That is the program working as specified, not a bug —
  * the badge tooltip spells out the track and threshold so the card explains itself.
  *
- * ⚠️ OPEN QUESTION — what counts as an "active card" for the TRACK.
- * This header used to claim "distinct cards with >=1 tx this calendar month", but both callers pass
- * `activeCards` (cards active on the account) and the warehouse exposes `activeCardsThisMonth` as a
- * SEPARATE, currently-unused field. The two can differ a lot — a carrier showing "1/6 active cards"
- * would land on a different track under the other reading, and therefore a different tier. The code
- * is documented here as-built (total active cards); switching to transacting-cards-only would re-tier
- * the whole book, so it needs a product decision, not a quiet edit.
+ * WHAT COUNTS AS AN "ACTIVE CARD" FOR THE TRACK — from the Loyalty Tiers v3 deck, verbatim:
+ *   "System counts active cards (>=1 transaction previous month) on 1st of each month.
+ *    4-6 cards -> Small segment · 7-8 -> Medium · 9-10 -> Large · 11-12 -> Fleet.
+ *    Segment and thresholds update automatically. Max: 12 active cards."
+ *
+ * So the track is PREVIOUS-MONTH TRANSACTING cards, snapshotted at the start of the month — NOT the
+ * cards active on the account. This used to read `activeCards` (the account total), which inflated
+ * the track for anyone holding idle plastic: a carrier with 20 issued cards and 3 trucks actually
+ * fuelling was scored against Fleet thresholds (10,000+ gal) and parked in "Building" forever. That
+ * is the "huge number of Building clients that aren't really Building" — they were being measured
+ * against a fleet they don't run. See {@link resolveTrackCards}.
+ *
+ * Gallons stay THIS month: the deck locks the segment on the 1st, then tiers on gallons accumulated
+ * against that segment's thresholds during the month.
  */
 
 export type TrackId = 'T1' | 'T2' | 'T3';
@@ -101,6 +108,65 @@ const REWARD_DEFS: RewardDef[] = [
   { title: "Love's rebate", desc: 'Per gallon · paid quarterly', minLevel: 'gold', value: '4¢/gal' },
 ];
 
+/** The card counts a roster row can offer, in the order the program prefers them. */
+export interface TrackCardsInput {
+  /** Distinct cards with >=1 transaction LAST calendar month — the program's basis. */
+  activeCardsPrevMonth?: number | undefined;
+  /** Distinct cards with >=1 transaction THIS month — used only for brand-new clients. */
+  activeCardsThisMonth?: number | undefined;
+}
+
+/**
+ * How many cards the TRACK is scored against.
+ *
+ * Previous-month transacting cards, per the deck. Falls through to this-month only when there is no
+ * previous month to read — a carrier that started fuelling on the 3rd has no prior-month count and
+ * would otherwise be scored as "no cards" for their whole first month.
+ *
+ * Deliberately does NOT fall back to the account's total active cards: that is the number that was
+ * inflating tracks, and a card with no transactions is not an active card by this program's
+ * definition. A carrier with plastic but no pumps in either month genuinely has no track — they show
+ * as "No cards", which is the honest answer rather than a Fleet threshold they will never meet.
+ */
+export function resolveTrackCards(c: TrackCardsInput): number {
+  const prev = c.activeCardsPrevMonth ?? 0;
+  if (prev > 0) return prev;
+  return c.activeCardsThisMonth ?? 0;
+}
+
+/** Everything the tier math needs from one roster row, in both surfaces' shape. */
+export interface TierRowInput extends TrackCardsInput {
+  gallonsThisMonth?: number | undefined;
+  cycleGallons?: number | undefined;
+  gallonsPrevMonth?: number | undefined;
+}
+
+/**
+ * Gallons the tier is scored on: this calendar month, falling back to the billing cycle before any
+ * pumps land this month (so a client does not read as "Building" for the first days of a month).
+ */
+export function tierGallonsOf(c: TierRowInput): number {
+  const month = c.gallonsThisMonth ?? 0;
+  return month > 0 ? month : (c.cycleGallons ?? 0);
+}
+
+/**
+ * Resolve a row's tier the way BOTH surfaces must: prev-month transacting cards for the track,
+ * this-month gallons for the level, and last month's own level as the grace anchor.
+ *
+ * Last month's level is recomputed from `gallonsPrevMonth` against the same card count — we do not
+ * store tier history, and the previous month's card count is the closest honest stand-in for the
+ * month before that. Grace can only prevent a drop, so a slightly-off anchor cannot over-grant.
+ */
+export function resolveTierForRow(c: TierRowInput): TierResult {
+  const cards = resolveTrackCards(c);
+  const heldLastMonth =
+    (c.gallonsPrevMonth ?? 0) > 0
+      ? resolveTier(cards, c.gallonsPrevMonth ?? 0).level
+      : undefined;
+  return resolveTier(cards, tierGallonsOf(c), { heldLastMonth });
+}
+
 export function resolveTrack(cards: number): TrackId | null {
   if (cards <= 0) return null;
   if (cards === 1) return 'T1';
@@ -122,11 +188,36 @@ function thresholdsFor(track: TrackId, segment: SegmentId | null): Thresholds {
   return T3_THRESHOLDS[segment ?? 'small'];
 }
 
+/** "1-month grace if within 10%" (deck footnote) — see {@link applyGrace}. */
+const GRACE_FLOOR = 0.9;
+
 function rawLevelFor(gallons: number, t: Thresholds): TierLevel {
   if (gallons >= t.gold) return 'gold';
   if (gallons >= t.silver) return 'silver';
   if (gallons >= t.bronze) return 'bronze';
   return 'none';
+}
+
+/**
+ * "1-month grace if within 10%": a client who HELD a tier last month keeps it for one more month if
+ * they land within 10% of that tier's threshold.
+ *
+ * Note this is a retention rule, not a discount. An earlier attempt implemented the band alone —
+ * "gallons >= 90% of a threshold grants that tier" — which is a different and wrong rule: it would
+ * let anyone reach Gold at 1,800 on T1 and so permanently move every threshold down 10%. Grace only
+ * ever prevents a DROP, never causes a promotion, so it needs last month's level as the anchor.
+ */
+function applyGrace(
+  computed: TierLevel,
+  heldLastMonth: TierLevel | undefined,
+  gallons: number,
+  t: Thresholds,
+): { level: TierLevel; grace: boolean } {
+  if (!heldLastMonth || heldLastMonth === 'none') return { level: computed, grace: false };
+  if (RANK[computed] >= RANK[heldLastMonth]) return { level: computed, grace: false };
+  const bar = t[heldLastMonth as Exclude<TierLevel, 'none'>];
+  if (gallons >= bar * GRACE_FLOOR) return { level: heldLastMonth, grace: true };
+  return { level: computed, grace: false };
 }
 
 /**
@@ -136,7 +227,14 @@ function rawLevelFor(gallons: number, t: Thresholds): TierLevel {
  * DWH `gallonsThisMonth`), which callers pass here (falling back to this-cycle gallons when a client
  * has no current-month pumps yet). Below the Bronze threshold → level 'none' ("Building toward Bronze").
  */
-export function resolveTier(activeCards: number, gallons: number): TierResult {
+export function resolveTier(
+  activeCards: number,
+  gallons: number,
+  opts: {
+    /** The level this client held LAST month — enables the deck's 1-month, within-10% grace. */
+    heldLastMonth?: TierLevel | undefined;
+  } = {},
+): TierResult {
   const track = resolveTrack(activeCards);
   if (!track) {
     return {
@@ -146,7 +244,8 @@ export function resolveTier(activeCards: number, gallons: number): TierResult {
   }
   const segment = resolveSegment(activeCards);
   const thresholds = thresholdsFor(track, segment);
-  const level = rawLevelFor(gallons, thresholds);
+  const computed = rawLevelFor(gallons, thresholds);
+  const { level, grace } = applyGrace(computed, opts.heldLastMonth, gallons, thresholds);
   const nextLevel = ASCEND.find((l) => RANK[l] > RANK[level]) ?? null;
   const gallonsToNext = nextLevel ? Math.max(0, thresholds[nextLevel] - gallons) : 0;
   return {
@@ -155,7 +254,7 @@ export function resolveTier(activeCards: number, gallons: number): TierResult {
     segment,
     segmentLabel: segment ? SEGMENT_META[segment].label : null,
     level,
-    grace: false,
+    grace,
     thresholds,
     nextLevel,
     gallonsToNext,

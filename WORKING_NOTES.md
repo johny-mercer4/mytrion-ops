@@ -6695,3 +6695,79 @@ the discrepancy called out; switching the input would re-tier the entire book, s
 Typecheck green; backend 1002 passed / 10 failed across two consecutive runs (the same pre-existing
 set); frontend 199/200. The 37-failure run seen earlier was the post-build flake again — it only
 appears on the run immediately following a build.
+
+## 2026-07-28 — Mytrion HR Employees (own DB + Zoho sync)
+
+HR tabs reviewed: Home live; **Employees** now live; Attendance / Requests / Profile still Coming soon.
+
+### Model
+- New `hr_employees` table (migration `0060_hr_employees`) — tenant-scoped directory, not a live Zoho People proxy.
+- Rows from Zoho sync (`source=zoho_people`, upsert by `zoho_record_id`) or manual admin create (`source=manual`).
+- `POST /v1/hr/employees/sync` pages Zoho People `getRecords` and bulk upserts.
+
+### RBAC
+- Reads (`GET /hr/employees*`) — any authenticated **internal** worker.
+- Create / edit / delete / sync — Mytrion Admin only (`allDepartmentAccess` | bypass | `role === admin`).
+- UI mirrors: Sync / Add / Edit / Delete shown only when `isAdmin(user)`.
+
+### Surface
+- CRM `HrEmployees` tab: search, status + department filters, table, admin modal CRUD, Sync from Zoho.
+- Client: `apps/mytrion-crm/src/api/hr.ts`.
+
+### Checks
+- Unit: `hr-routes.test.ts`, `hr-map-zoho-employee.test.ts` green.
+- Apply locally with `pnpm db:migrate` before trying Sync.
+
+## 2026-07-28 (3) — Loyalty track fixed to the v3 deck (prev-month transacting cards) + grace
+
+The Loyalty Tiers v3 deck settles the open question from the previous entry. Verbatim:
+
+> "System counts active cards (>=1 transaction previous month) on 1st of each month.
+>  4-6 cards -> Small · 7-8 -> Medium · 9-10 -> Large · 11-12 -> Fleet. Max: 12 active cards."
+> "Tier evaluated monthly · 1-month grace if within 10%"
+
+### The track was measuring the wrong thing
+
+Both surfaces passed `activeCards` — cards active ON THE ACCOUNT. The deck means cards that actually
+TRANSACTED last month. For anyone holding idle plastic those differ wildly, and always in the same
+direction: a carrier with 20 issued / 12 "active" cards but 3 trucks fuelling was scored against Fleet
+thresholds (bronze 10,000) and parked in "Building" permanently. That is the reported "huge number of
+Building clients that aren't really Building" — they were measured against a fleet they don't run.
+
+`resolveTrackCards()` now takes prev-month transacting cards, falling through to this-month ONLY when
+there is no previous month (a carrier that started mid-month would otherwise read as "no cards" for
+its whole first month). It deliberately does NOT fall back to the account total — a card with no
+transactions is not an active card under this program, and a carrier with plastic but no pumps in
+either month honestly has no track ("No cards" rather than an unreachable Fleet bar).
+
+Worked example now covered by a test: 3 transacting cards / 3,200 gal was `none` ("Building") under
+the old rule (T3-small bronze = 4,000); it is now T2 **Silver** (bronze 2,200 / silver 3,000).
+
+### Grace — implemented as a retention rule, not a discount
+
+`TierResult.grace` had always been hardcoded `false`. First attempt implemented the band alone —
+"gallons ≥ 90% of a threshold grants that tier" — and the tests caught that this is a DIFFERENT and
+wrong rule: it would let anyone hit Gold at 1,800 on T1, i.e. permanently move every threshold down
+10%. Grace can only prevent a DROP, so it needs last month's level as an anchor: `applyGrace()` keeps
+`heldLastMonth` when this month lands within 10% below that tier's bar, and never promotes.
+
+Last month's level is recomputed from `gallonsPrevMonth` (no tier history is stored). Since grace can
+only prevent a drop, an imperfect anchor can never over-grant.
+
+### One entry point
+
+`resolveTierForRow(row)` is now the only thing either surface calls — prev-month cards for the track,
+this-month gallons (cycle fallback) for the level, prev-month level as the grace anchor. Sales and
+Manager both use it, so they cannot drift. `LoyaltyClientRow` / `LoyaltyClient` gained
+`activeCardsPrevMonth`, which Manager's payload was missing entirely (Sales already had it).
+
+13 tests in `_shared/loyaltyTrack.test.ts`.
+
+### ⚠️ Another session is editing this working tree
+
+Mid-task the tree grew changes I did not make: `sales_kpi.ts`, `mytrion_worker_tasks.ts`,
+`hr_employees.ts`, `src/repos/kpiTelemetryRepo.ts`, `src/integrations/zohoPeople.ts`, `api/hr.ts` and
+the HR module, plus matching `drizzle.config.ts` / `schema/index.ts` entries. That work is mid-flight
+and currently fails `pnpm typecheck` (`kpiTelemetryRepo.ts:61`, an `exactOptionalPropertyTypes` issue
+on a Drizzle `onConflictDoUpdate` where `setWhere` may be undefined). **I committed only my own files
+and left theirs untouched** — a full-repo typecheck will stay red until that lands.

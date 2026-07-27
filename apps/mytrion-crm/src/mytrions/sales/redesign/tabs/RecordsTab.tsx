@@ -17,6 +17,7 @@ import { badge, type BadgeVM } from '../salesData';
 import {
   resolveTier,
   tierBucketOf,
+  resolveTierForRow,
   trackCaption,
   tierBucketIcon,
   tierBucketLabel,
@@ -302,10 +303,10 @@ export function RecordsTab() {
       if (clientStatusFilter === 'debtor') return c.status === 'debtor';
       return c.status === 'active';
     })
-    .filter((c) => !clientTierFilter || tierBucketOf(resolveTier(c.active, tierGallons(c))) === clientTierFilter)
+    .filter((c) => !clientTierFilter || tierBucketOf(resolveTierForRow(c)) === clientTierFilter)
     .map((c) => {
       const [lbl, col] = REC_STATUS[c.status];
-      const tier = resolveTier(c.active, tierGallons(c));
+      const tier = resolveTierForRow(c);
       return {
         id: c.id,
         name: c.name,
@@ -334,7 +335,7 @@ export function RecordsTab() {
 
   // Loyalty-tier distribution across the agent's whole book (not search-filtered).
   const tierCounts: Record<TierBucket, number> = { gold: 0, silver: 0, bronze: 0, building: 0, idle: 0 };
-  for (const c of recsLoad.data ?? []) tierCounts[tierBucketOf(resolveTier(c.active, tierGallons(c)))] += 1;
+  for (const c of recsLoad.data ?? []) tierCounts[tierBucketOf(resolveTierForRow(c))] += 1;
   const clientTotal = (recsLoad.data ?? []).length;
 
   return (
