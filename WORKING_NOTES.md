@@ -6939,3 +6939,92 @@ correctly caught the new field.
 **Still blocked from producing anything:** `Calculation` is null on every Zoho record (a run reports
 `skippedNoCalculation` and succeeds with zero rows), and `FF_JOBS_ENABLED` is excluded in
 `render.yaml`, so the cron will not fire in prod until that is set in the Render env group.
+
+## 2026-07-28 — Mytrion Database metadata browser (`feature/Setter`)
+
+- Added Admin → Data → **Mytrion Database**, a searchable, read-only browser for Mytrion's own
+  PostgreSQL metadata. It exposes non-system schemas, tables/views, row estimates, columns/SQL API
+  names, full/base data types, nullability, PK/UQ/FK roles, defaults and comments.
+- Added `GET /v1/admin/mytrion-schema`, restricted to authenticated internal true-admin sessions
+  and audit logged. Runtime database access goes through `mytrionSchemaRepo`; only catalog/statistic
+  relations are queried, never application rows.
+- Extended the shared PostgreSQL introspector with inserts/updates/deletes from `pg_stat_all_tables`
+  and a writes-per-day frequency estimate since `pg_stat_database.stats_reset` (falling back to
+  server start when statistics were never explicitly reset). The UI labels this as an estimate.
+- Added `pnpm mytrion:inspect` for on-demand full metadata export to
+  `metadataScripts/output/mytrion-database.{json,md}`, plus `--search`, `--table`, `--schema`, and
+  `--json` focused inspection. Fixed the shared catalog connector to apply managed-Postgres TLS for
+  the Ops target while preserving the DWH's intentional non-TLS connection.
+- Live validation returned **4 schemas, 84 tables/views and 1,089 columns** from
+  `mytrion_ops_db`. The focused `kpi_workers --json` inspection confirmed explicit `apiName` and
+  data-type metadata.
+- Security/feature tests: backend route + baseline RBAC 11/11; CRM schema browser 2/2. The Admin
+  navigation and new tab rendered in the local browser; the real metadata endpoint was separately
+  verified with an authenticated Admin token.
+- Strict backend/CRM builds and lint pass (25 existing warnings). Full suites remain red outside
+  this feature: backend 1,024/1,064 passes with 40 failures across pre-existing CS/retention/
+  touchpoint/agent fixtures and timeouts; CRM 214/215 passes with the existing `debtorCount`
+  expectation mismatch. The new metadata tests pass in both focused and full runs.
+
+## 2026-07-28 (6) — Sales Mytrion pass: RC sign-in visibility, nav, layout, Rejection Reports
+
+Branch `feature/Setter`, fast-forwarded to `origin/build` (0d570fc) first.
+
+### RingCentral — the sign-in page "not showing" (the important one)
+
+The COOP fix from earlier IS live in prod (`curl` confirms `cross-origin-opener-policy:
+same-origin-allow-popups`), so that was not it. The remaining cause is simpler and worse:
+
+**Nothing in our UI ever surfaced the signed-out state.** `ringCentralLoginState()` existed and was
+read by NOBODY (`grep` confirmed zero consumers). The softphone boots *minimised* to a small vendor
+pill, and the only signed-out signal was a toast fired on an explicit `logout` event — never on
+"never signed in". An agent who did not know to click that pill simply never saw a login screen, and
+every phone-backed feature (Data Center Leads/Deals calls, Retention calls, the post-call wizard,
+mytrion_calls logging, Mytrion_Call_Attempts) silently did nothing. That matches the report exactly,
+including why it "works on my localhost" — you know to click the pill.
+
+Added a persistent (not auto-dismissing) prompt in `RingCentralPhone`: after a 7s settle window, if
+login state is not `true`, it shows "Phone not signed in" + a **Sign in** button that calls
+`revealRingCentralWidget()` — expanding the vendor widget is the only place the RC login screen can
+render. Cleared on the `login` event, re-shown on `logout`. The 7s delay matters: the widget reports
+`loggedIn:false` first while restoring a persisted session, so anything shorter flashes a false
+prompt on every page load.
+
+This is deliberately robust to cause: it fixes an unnoticed pill, a blocked popup, and a collapsed
+dock alike, because in all three the agent now gets a visible, one-click path to the login screen.
+
+### The rest
+
+- **My Tasks → Coming soon** (`salesData.ts`), matching how Tickets/Verification/Call Hub are parked.
+- **Switch Mytrion in the Sales sidebar** — reused `MytrionSwitchLink` (added a `style` prop so it can
+  match the bespoke sidebar controls). The sidebar was a dead end: the only exit was the top bar,
+  which the full-bleed tabs cover.
+- **Coming-soon panels go full width.** They were clamped by `#ss-panels`' 1180px reading measure, so
+  a placeholder read as a small card adrift in a large empty page. `fullBleed || sectionComingSoon`
+  now takes the edge-to-edge branch.
+- **Quick Actions was thin for a real reason, not a cosmetic one.** The Home split used
+  `grid-template-columns: 1fr 1fr`, and a bare `1fr` track has an automatic minimum of MIN-CONTENT —
+  so the Recent Inbox column, whose cards carry long unbroken subject lines, grew past its half and
+  squeezed Quick Actions until every card title wrapped onto three lines. `minmax(0, 1fr)` lets the
+  text ellipsise instead of dictating the column width. Same fix applied to the upper 1.35fr split.
+
+### Rejection Reports
+
+- **Status column dropped.** Every row is `new` until someone works it, so it was a wall of identical
+  "Open" badges carrying no information. The width went to the decline reason, plus a Driver column.
+- **The reason is now readable.** EFS sends `202607280835|INACTIVE CARD` — `cleanErrorText()` strips
+  the numeric stamp and de-shouts the caps, and the row shows a compact code chip + clean text (red
+  for fraud/code 3, accent otherwise). The raw string is preserved on the VM.
+- **Rows open a detail modal** built on the shared `DetailSheet`, so it inherits the module's scrim /
+  accent rail / ESC + backdrop close rather than re-inventing a dialog. It leads with the SMS the
+  driver already received (the only part of the record the customer has seen), then decline / where /
+  account groups, with the raw EFS response behind a `<details>` for support escalation.
+  `ModalFooter` was not reused — it is the edit-oriented footer (save/cancel/call) and this view is
+  read-only, so it gets a single Close.
+
+Rendered the table in both themes in headless Chrome before committing.
+
+### Checks
+
+Typecheck green, lint 0 errors, frontend 214/215 — the one failure the long-standing `filterDebtors`
+case. Widget bundle rebuilt.

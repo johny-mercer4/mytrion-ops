@@ -100,7 +100,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: 'home', label: 'Home', icon: 'home' },
       // Badges filled at runtime (see Shell.badgeCounts).
       { id: 'inbox', label: 'Inbox', icon: 'inbox' },
-      { id: 'tasks', label: 'My Tasks', icon: 'clipboardCheck' },
+      // My Tasks parked — not ready yet; drop `comingSoon` to re-enable (TasksTab stays wired).
+      { id: 'tasks', label: 'My Tasks', icon: 'clipboardCheck', comingSoon: true },
     ],
   },
   {

@@ -30,6 +30,7 @@
     "meta:pg-table": "tsx metadataScripts/pgTableMetadata.ts",
     "dwh:inspect": "tsx scripts/dwhInspect.ts",
     "pg:inspect": "tsx scripts/pgInspect.ts",
+    "mytrion:inspect": "tsx scripts/mytrionInspect.ts",
     "mysql:inspect": "tsx scripts/mysqlInspect.ts",
     "zoho:smoke": "tsx scripts/zoho-smoke.ts",
     "zoho:mcp-probe": "tsx scripts/zoho-mcp-probe.ts",

@@ -4,6 +4,7 @@
  */
 import pg from 'pg';
 import { databaseUrl, env } from '../../src/config/env.js';
+import { dbSslOption } from '../../src/db/client.js';
 
 export type PgTarget = 'dwh' | 'ops';
 
@@ -140,6 +141,9 @@ interface StatRow {
   last_autovacuum: Date | null;
   last_analyze: Date | null;
   last_autoanalyze: Date | null;
+}
+
+interface DatabaseStatRow {
   stats_reset: Date | null;
 }
 
@@ -164,7 +168,12 @@ export function resolvePgUrl(target: PgTarget = 'dwh'): string {
 export async function connectPg(options: PgConnectOptions = {}): Promise<{ client: pg.Client; target: PgTarget }> {
   const target = options.target ?? 'dwh';
   const connectionString = options.connectionString ?? resolvePgUrl(target);
-  const client = new pg.Client({ connectionString });
+  const client = new pg.Client({
+    connectionString,
+    // The DWH is a direct non-TLS Postgres. Mytrion Ops is normally managed Postgres and uses the
+    // exact same TLS policy as the runtime app client.
+    ssl: target === 'dwh' ? false : dbSslOption(connectionString),
+  });
   await client.connect();
   return { client, target };
 }
@@ -236,7 +245,7 @@ function inferActivity(
   };
 }
 
-function emptyActivity(): TableActivity {
+function emptyActivity(statsResetAt: string | null): TableActivity {
   return {
     inserts: 0,
     updates: 0,
@@ -249,12 +258,12 @@ function emptyActivity(): TableActivity {
     lastAutovacuum: null,
     lastAnalyze: null,
     lastAutoanalyze: null,
-    statsResetAt: null,
+    statsResetAt,
   };
 }
 
-function statFromRow(row: StatRow | undefined): TableActivity {
-  if (!row) return emptyActivity();
+function statFromRow(row: StatRow | undefined, statsResetAt: string | null): TableActivity {
+  if (!row) return emptyActivity(statsResetAt);
   const inserts = Number(row.n_tup_ins);
   const updates = Number(row.n_tup_upd);
   const deletes = Number(row.n_tup_del);
@@ -270,7 +279,7 @@ function statFromRow(row: StatRow | undefined): TableActivity {
     lastAutovacuum: iso(row.last_autovacuum),
     lastAnalyze: iso(row.last_analyze),
     lastAutoanalyze: iso(row.last_autoanalyze),
-    statsResetAt: iso(row.stats_reset),
+    statsResetAt,
   };
 }
 
@@ -349,12 +358,17 @@ export async function fetchPgCatalog(client: pg.Client, target: PgTarget, genera
     `SELECT schemaname, relname,
             n_tup_ins::text, n_tup_upd::text, n_tup_del::text,
             n_live_tup::text, n_dead_tup::text,
-            last_vacuum, last_autovacuum, last_analyze, last_autoanalyze,
-            stats_reset
+            last_vacuum, last_autovacuum, last_analyze, last_autoanalyze
        FROM pg_stat_user_tables
       WHERE schemaname NOT IN ${schemaList}`,
     [...EXCLUDED_SCHEMAS],
   );
+  const { rows: databaseStats } = await client.query<DatabaseStatRow>(
+    `SELECT COALESCE(stats_reset, pg_postmaster_start_time()) AS stats_reset
+       FROM pg_stat_database
+      WHERE datname = current_database()`,
+  );
+  const statsResetAt = iso(databaseStats[0]?.stats_reset);
 
   const pkSet = new Set(pks.map((p) => `${p.table_schema}.${p.table_name}.${p.column_name}`));
   const tableComments = new Map<string, string | null>();
@@ -376,7 +390,7 @@ export async function fetchPgCatalog(client: pg.Client, target: PgTarget, genera
   for (const t of tables) {
     const qualified = `${t.table_schema}.${t.table_name}`;
     const comment = tableComments.get(qualified) ?? null;
-    const activity = statFromRow(statsByTable.get(qualified));
+    const activity = statFromRow(statsByTable.get(qualified), statsResetAt);
     const { activelyUpdated, activityStatus, activityReason } = inferActivity(activity, comment);
 
     byTable.set(qualified, {
@@ -480,7 +494,7 @@ export function renderCatalogMarkdown(catalog: PgCatalog): string {
         t.comment ? '' : '',
         `Activity: ${t.activityReason}`,
         '',
-        '| Column | Type | UDT | Nullable | PK | Deprecated | FK→ |',
+        '| Column / API name | Type | UDT | Nullable | PK | Deprecated | FK→ |',
         '| --- | --- | --- | --- | --- | --- | --- |',
       );
       const fkByCol = new Map(t.foreignKeys.map((fk) => [fk.column, fk.references]));
