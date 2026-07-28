@@ -16,6 +16,8 @@ import {
   updateCitifuel,
   type CitiWriteValue,
 } from '@/api/cs';
+import { useUserContext } from '@/context/UserContextProvider';
+import { ConfirmDialog } from './ConfirmDialog';
 import type { CitiRow } from './live';
 import { useScrollLock } from './useScrollLock';
 
@@ -73,6 +75,12 @@ export function CitiModal({
   useScrollLock();
   const boxRef = useRef<HTMLDivElement>(null);
 
+  // A new client is owned by whoever creates it — the widget left Owner blank, so every new record
+  // landed unowned and had to be assigned by hand. Only a VERIFIED Zoho session carries a real CRM
+  // user id; the dev mock's 'dev-user' is not one, and sending it as {id} would fail the Zoho write.
+  const me = useUserContext();
+  const myUserId = me.trusted ? me.userId : '';
+
   const [values, setValues] = useState<Record<string, string>>(() => ({
     Name: String(raw.Name ?? ''),
     App_ID: raw.App_ID == null ? '' : String(raw.App_ID),
@@ -88,13 +96,15 @@ export function CitiModal({
     Notes_1: String(raw.Notes_1 ?? ''),
     Company_Name: lookupId(raw.Company_Name),
     Agent_Name: lookupId(raw.Agent_Name),
-    Owner: lookupId(raw.Owner),
+    Owner: lookupId(raw.Owner) || (client === null ? myUserId : ''),
   }));
-  // Display labels for the lookups (so an existing selection shows its name, not the id).
+  // Display labels for the lookups (so an existing selection shows its name, not the id). The
+  // create-time Owner label comes from the session so the field reads correctly before the user
+  // roster arrives (userLookup keeps an out-of-roster value selectable using this label).
   const [labels, setLabels] = useState<Record<string, string>>({
     Company_Name: lookupName(raw.Company_Name),
     Agent_Name: lookupName(raw.Agent_Name),
-    Owner: lookupName(raw.Owner),
+    Owner: lookupName(raw.Owner) || (client === null && myUserId ? me.userName : ''),
   });
 
   /* Locked list (mirrors the widget) — live meta must not overwrite it. A
@@ -111,6 +121,7 @@ export function CitiModal({
   const [companyOpen, setCompanyOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -122,11 +133,13 @@ export function CitiModal({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !saving && !deleting) onClose();
+      // While the delete confirm is up it owns Escape (and stops propagation) — guard anyway so
+      // this can never dismiss the form out from under the dialog.
+      if (e.key === 'Escape' && !saving && !deleting && !confirmDelete) onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [saving, deleting, onClose]);
+  }, [saving, deleting, confirmDelete, onClose]);
 
   useEffect(() => {
     if (accountQuery.trim().length < 2) {
@@ -190,7 +203,7 @@ export function CitiModal({
 
   async function remove() {
     if (!client) return;
-    if (!window.confirm(`Delete "${client.name}" from Citifuel Clients? This cannot be undone.`)) return;
+    setConfirmDelete(false);
     setDeleting(true);
     try {
       await deleteCitifuel(client.id);
@@ -386,7 +399,11 @@ export function CitiModal({
             </span>
           ) : null}
           {!isCreating ? (
-            <button className="cs-btn cs-citi-delete-modal-btn" onClick={remove} disabled={saving || deleting}>
+            <button
+              className="cs-btn cs-citi-delete-modal-btn"
+              onClick={() => setConfirmDelete(true)}
+              disabled={saving || deleting}
+            >
               <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={TRASH_PATH} />
               </svg>
@@ -410,6 +427,17 @@ export function CitiModal({
           </button>
         </div>
       </div>
+
+      {confirmDelete && client ? (
+        <ConfirmDialog
+          title="Delete this client?"
+          body={`“${client.name}” will be removed from Citifuel Clients. This cannot be undone.`}
+          confirmLabel="Delete"
+          busy={deleting}
+          onConfirm={remove}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      ) : null}
     </div>
   );
 }

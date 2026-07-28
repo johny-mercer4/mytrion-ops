@@ -524,11 +524,16 @@
 }
 .cs-root .cs-modal-box {
     /* Ramp along the top edge, painted as a background layer so it survives internal scrolling. */
+    /* NO backdrop-filter here, deliberately. The sheet used to blur(28px) on top of the backdrop's
+       own blur(10px) + 62% tint — a second full-viewport blur pass for almost no visual gain, and it
+       wrapped the scrolling .cs-modal-body, so every scroll frame had to recomposite the blur
+       (the "modal scrolls in steps / freezes" report). The translucent --hz-pane-lift now layers
+       over the solid --modal-box-bg instead: same tint and top ramp, opaque sheet, nothing behind
+       to blur. */
     background:
         linear-gradient(90deg, var(--cs-accent) 0%, var(--accent-2) 100%) top left / 100% 2px no-repeat,
-        var(--hz-pane-lift);
-    backdrop-filter: blur(var(--hz-blur));
-    -webkit-backdrop-filter: blur(var(--hz-blur));
+        var(--hz-pane-lift),
+        var(--modal-box-bg);
     border: 1px solid var(--hz-glass-bd-hover);
     box-shadow: var(--hz-shadow-pop), var(--hz-glass-inset);
 }

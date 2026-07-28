@@ -349,13 +349,27 @@ export function RingCentralPhone() {
 
   return (
     <div
+      className="rc-phone-stack"
+      /*
+       * Right edge, not left: bottom-left sat on top of the Mytrion sidebar's footer (the "View as"
+       * button and the user card) and the first column of every wide table.
+       *
+       * `bottom: 96px` clears the 56px Copilot FAB that CS docks at bottom-right, and the vendor
+       * RingCentral pill, which also docks bottom-right.
+       *
+       * z-index sits BELOW the modal layer (CS backdrops are 9990/9995) so an open dialog paints
+       * over the card instead of the card burying that dialog's footer buttons — at 999999 it did
+       * exactly that. It stays above the Copilot FAB/panel (90/95); the panel is the one surface it
+       * can still overlap, which is what the dismiss control below is for.
+       */
       style={{
         position: 'fixed',
-        bottom: '24px',
-        left: '24px',
-        zIndex: 999999,
+        bottom: '96px',
+        right: '24px',
+        zIndex: 200,
         display: 'flex',
         flexDirection: 'column',
+        alignItems: 'flex-end',
         gap: '10px',
       }}
     >
@@ -408,6 +422,26 @@ export function RingCentralPhone() {
             }}
           >
             Sign in
+          </button>
+          {/* Persistent, but not immovable: the card shares the bottom-right corner with the CS
+              Copilot panel, so an agent who isn't using the phone can get it out of the way. */}
+          <button
+            type="button"
+            onClick={() => setShowSignIn(false)}
+            aria-label="Dismiss"
+            title="Dismiss"
+            style={{
+              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--muted)',
+              cursor: 'pointer',
+              padding: '2px',
+            }}
+          >
+            <X size={15} />
           </button>
         </div>
       )}
