@@ -374,19 +374,31 @@
 }
 
 /* ── Tables ──────────────────────────────────────────────────────────────── */
+/*
+ * `overflow: auto`, NOT hidden. This sheet is imported last, so at equal specificity it beat
+ * shared-base's `overflow-x: auto` and applications-panel's `overflow: auto` — which clipped every
+ * wide CS table dead (the Applications table is ~4200px against a ~960px pane) and made horizontal
+ * scrolling impossible. `auto` clips to the border-radius just as well as `hidden` does, and only
+ * shows a scrollbar when the content actually overflows.
+ *
+ * No backdrop-filter here or on the sticky header either: this element is the SCROLLPORT, so a blur
+ * on it has to be recomposited every scroll frame (and the sticky header re-pays it per frame).
+ * --hz-pane over the solid --surface gives the same tint with nothing showing through to blur.
+ */
 .cs-root .cs-table-wrap {
-    background: var(--hz-pane);
-    backdrop-filter: blur(var(--hz-blur));
-    -webkit-backdrop-filter: blur(var(--hz-blur));
+    background: var(--hz-pane), var(--surface);
     border: 1px solid var(--hz-pane-bd);
     border-radius: var(--r-lg);
-    overflow: hidden;
+    overflow: auto;
     box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
 }
+/* Opaque, so rows don't show through the labels as they scroll under it. --hz-pane-alt mixes
+   surface-alt toward TRANSPARENT; this mixes the same 72% toward the solid surface instead, so the
+   tint is identical without the translucency the blur used to hide. (It can't be layered as
+   `var(--hz-pane-alt), var(--surface)` — a color is only legal in a background's final layer, so
+   that whole declaration would be dropped as invalid.) */
 .cs-root .cs-table thead th {
-    background: var(--hz-pane-alt);
-    backdrop-filter: blur(var(--hz-blur));
-    -webkit-backdrop-filter: blur(var(--hz-blur));
+    background: color-mix(in srgb, var(--surface-alt) 72%, var(--surface));
     border-bottom: 1px solid var(--hz-pane-bd);
     box-shadow: 0 1px 0 0 color-mix(in srgb, var(--cs-accent) 14%, transparent);
     color: var(--th-color);

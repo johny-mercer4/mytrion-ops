@@ -15,10 +15,7 @@
 .cs-root .cs-an-lb-section,
 .cs-root .cs-an-error-card,
 .cs-root .cs-citi-stat-card,
-.cs-root .cs-citi-table-wrap,
-.cs-root .cs-app-table-wrap,
 .cs-root .cs-ret-quota-card,
-.cs-root .cs-ret-detail,
 .cs-root .cs-ret-act-block,
 .cs-root .cs-ret-timeline-wrap,
 .cs-root .cs-summary-item {
@@ -33,6 +30,28 @@
         border-color var(--hz-dur-tone) var(--hz-ease),
         box-shadow var(--hz-dur-tone) var(--hz-ease),
         transform var(--hz-dur-lift) var(--hz-ease);
+}
+
+/*
+ * SCROLLING panes — the same glass look, deliberately WITHOUT backdrop-filter.
+ *
+ * These three are scrollports (`overflow: auto`), so a blur on them is a blur on the scroll
+ * container itself: every scroll frame has to recomposite a full-pane 20px blur, and the sticky
+ * header re-pays that cost on each frame too. That is what made the Applications table stutter when
+ * dragged sideways. Layering the translucent --hz-pane over the solid --surface keeps the tint and
+ * hairline; nothing shows through the pane, so there is nothing left to blur.
+ */
+.cs-root .cs-citi-table-wrap,
+.cs-root .cs-app-table-wrap,
+.cs-root .cs-ret-detail {
+    position: relative;
+    background: var(--hz-pane), var(--surface);
+    border: 1px solid var(--hz-pane-bd);
+    box-shadow: var(--hz-shadow-rest), var(--hz-glass-inset);
+    transition:
+        background var(--hz-dur-tone) var(--hz-ease),
+        border-color var(--hz-dur-tone) var(--hz-ease),
+        box-shadow var(--hz-dur-tone) var(--hz-ease);
 }
 
 /* Interactive panes lift; containers (tables, charts, the hero) stay put. */
@@ -269,8 +288,11 @@
 .cs-root .cs-app-row:hover {
     background: var(--hz-glass-hover);
 }
+/* A sticky header must be OPAQUE — --hz-pane-alt mixes surface-alt toward transparent, so rows
+   scrolling beneath showed through the labels once the scrollport's blur was removed. Same 72% tint,
+   mixed toward the solid surface instead. */
 .cs-root .cs-app-table thead th {
-    background: var(--hz-pane-alt);
+    background: color-mix(in srgb, var(--surface-alt) 72%, var(--surface));
     border-bottom: 1px solid var(--hz-pane-bd);
     box-shadow: 0 1px 0 0 color-mix(in srgb, var(--cs-accent) 14%, transparent);
 }
