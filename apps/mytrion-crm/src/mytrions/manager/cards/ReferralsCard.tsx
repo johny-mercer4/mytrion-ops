@@ -45,9 +45,19 @@ function Value({ value }: { value: unknown }) {
   return <>{cell.text}</>;
 }
 
-function rowMatches(row: CrmRow, q: string): boolean {
-  if (!q) return true;
-  return Object.values(row).some((v) => renderCell(v).text.toLowerCase().includes(q));
+/**
+ * One row's searchable text, lowercased, built ONCE per fetch.
+ *
+ * This used to be a `rowMatches(row, q)` called from the render body, so every keystroke walked 687
+ * parents x ~22 fields and re-ran `renderCell` on each value — the same "whole table re-renders on
+ * every keystroke" problem already fixed for CS in 3737033, and it got far worse when the card started
+ * fetching all 687 parents instead of 200.
+ */
+function rowHaystack(row: CrmRow): string {
+  return Object.values(row)
+    .map((v) => renderCell(v).text)
+    .join(' \u0000 ')
+    .toLowerCase();
 }
 
 const str = (v: unknown): string => (v == null ? '' : String(v).trim());
@@ -172,11 +182,17 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
   const children = data?.children ?? null;
   const assoc = data?.assoc ?? null;
 
-  const { groups, orphans, linkedCount } = useMemo(() => {
-    const empty: { groups: ParentGroup[]; orphans: CrmRow[]; linkedCount: number } = {
+  const { groups, orphans, linkedCount, hay } = useMemo(() => {
+    const empty: {
+      groups: ParentGroup[];
+      orphans: CrmRow[];
+      linkedCount: number;
+      hay: Map<CrmRow, string>;
+    } = {
       groups: [],
       orphans: [],
       linkedCount: 0,
+      hay: new Map(),
     };
     if (!parents || !children) return empty;
     const built: ParentGroup[] = parents.rows.map((parent) => {
@@ -191,17 +207,27 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
     });
     const matched = new Set(built.flatMap((g) => g.children.map((c) => str(c.id))));
     const orphaned = children.rows.filter((c) => !matched.has(str(c.id)));
-    return { groups: built, orphans: orphaned, linkedCount: matched.size };
+    // Keyed by row identity, which is stable for the life of one fetch — the map dies with this memo.
+    const hay = new Map<CrmRow, string>();
+    for (const p of parents.rows) hay.set(p, rowHaystack(p));
+    for (const c of children.rows) hay.set(c, rowHaystack(c));
+    return { groups: built, orphans: orphaned, linkedCount: matched.size, hay };
   }, [parents, children]);
 
   const linked = (id: string, field: LinkField, kind: 'leads' | 'deals'): CrmRow[] =>
     assoc ? assoc[kind].rows.filter((r) => lookupId(r, field) === id) : [];
 
   const ql = q.trim().toLowerCase();
-  const shownGroups = groups.filter(
-    (g) => rowMatches(g.parent, ql) || g.children.some((c) => rowMatches(c, ql)),
-  );
-  const shownOrphans = orphans.filter((c) => rowMatches(c, ql));
+  // Memoised on the query, so typing only re-filters against prebuilt strings instead of re-deriving
+  // every cell's text; an empty query short-circuits to the full lists with no work at all.
+  const { shownGroups, shownOrphans } = useMemo(() => {
+    if (!ql) return { shownGroups: groups, shownOrphans: orphans };
+    const hit = (r: CrmRow): boolean => (hay.get(r) ?? '').includes(ql);
+    return {
+      shownGroups: groups.filter((g) => hit(g.parent) || g.children.some(hit)),
+      shownOrphans: orphans.filter(hit),
+    };
+  }, [groups, orphans, hay, ql]);
   const busy = loading || revalidating;
 
   return (
