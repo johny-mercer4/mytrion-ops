@@ -12,6 +12,7 @@ import { createSdkMcpServer, query, tool, type SDKUserMessage } from '@anthropic
 import { z } from 'zod';
 import { config } from './config.js';
 import { fetchPhotoBase64, type TgImage } from './telegram.js';
+import { visionStarted } from './metrics.js';
 
 /** chatId → the most recent photo WITH its sender and time. The binding matters: driver A's
  *  card photo must never be readable in driver B's ask — same own-card philosophy as RBAC. */
@@ -40,26 +41,33 @@ async function* imagePrompt(text: string, image: TgImage): AsyncGenerator<SDKUse
 /** Vision → text in a throwaway session (no resume, no tools, id discarded). General purpose:
  *  images are not only fuel cards — could be a receipt, a pump screen, a document, a screenshot. */
 async function extractImageText(image: TgImage, authToken: string): Promise<string> {
-  const q = query({
-    prompt: imagePrompt(
-      'Transcribe what this image shows in 1-3 short lines. Include any text, numbers, or ' +
-        'identifiers visible (card numbers, amounts, dates, error messages, etc.). No preamble.',
-      image,
-    ),
-    options: {
-      env: { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: authToken },
-      model: config.model,
-      systemPrompt: 'You transcribe images to plain text for another assistant. Be literal; no commentary.',
-      disallowedTools: ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch', 'WebSearch'],
-      permissionMode: 'bypassPermissions',
-      maxTurns: 1,
-    },
-  });
-  let text = '';
-  for await (const msg of q) {
-    if (msg.type === 'result' && msg.subtype === 'success') text = msg.result;
+  const settleVision = visionStarted();
+  try {
+    const q = query({
+      prompt: imagePrompt(
+        'Transcribe what this image shows in 1-3 short lines. Include any text, numbers, or ' +
+          'identifiers visible (card numbers, amounts, dates, error messages, etc.). No preamble.',
+        image,
+      ),
+      options: {
+        env: { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: authToken },
+        model: config.model,
+        systemPrompt: 'You transcribe images to plain text for another assistant. Be literal; no commentary.',
+        disallowedTools: ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch', 'WebSearch'],
+        permissionMode: 'bypassPermissions',
+        maxTurns: 1,
+      },
+    });
+    let text = '';
+    for await (const msg of q) {
+      if (msg.type === 'result' && msg.subtype === 'success') {
+        text = msg.result;
+      }
+    }
+    return text.trim().slice(0, 600);
+  } finally {
+    settleVision();
   }
-  return text.trim().slice(0, 600);
 }
 
 /**

@@ -73,11 +73,16 @@ export async function supportBotGatewayRoutes(
       header: (key: string, value: string) => void;
     },
   ): Promise<unknown> {
-    const token = String(
-      (request.query as Record<string, unknown>)?.['token'] ?? '',
-    );
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(
+      (request.query as Record<string, unknown>) ?? {},
+    )) {
+      if (typeof value === 'string' || typeof value === 'number') {
+        params.set(key, String(value));
+      }
+    }
     const response = await fetch(
-      `${monitorUpstream}${path}?token=${encodeURIComponent(token)}`,
+      `${monitorUpstream}${path}?${params.toString()}`,
       { signal: AbortSignal.timeout(10_000) },
     );
     reply.header(
@@ -100,6 +105,9 @@ export async function supportBotGatewayRoutes(
   );
   app.get('/support-bot/monitor/api/turns', async (request, reply) =>
     proxyMonitor('/api/turns', request, reply),
+  );
+  app.get('/support-bot/monitor/api/metrics', async (request, reply) =>
+    proxyMonitor('/api/metrics', request, reply),
   );
 
   app.get('/support-bot/chat-map', guard, async (request) => {

@@ -26,5 +26,7 @@ export class QueryStreamError extends Error {
   ) {
     super(cause instanceof Error ? cause.message : String(cause), { cause });
     this.name = 'QueryStreamError';
+    incrementCounter('provider_stream_throw_total');
   }
 }
+import { incrementCounter } from './metrics.js';

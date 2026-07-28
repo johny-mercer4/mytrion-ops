@@ -17,6 +17,7 @@ import { carrierFor, chatMapSize, tryAutoBind } from './chatMap.js';
 import { tokenCount } from './authPool.js';
 import { dmAccessFor } from './dmAccess.js';
 import { consumeButtonTap } from './buttonOwnership.js';
+import { startSamplers } from './metrics.js';
 
 /**
  * One-time signpost for a TAGGED but unregistered user. Gate 2 used to be pure silence, which
@@ -90,6 +91,7 @@ function logTurn(
   userId: number,
   name: string,
   question: string,
+  turnId: string,
   enqueuedAt: number,
   replyRef: { text: string },
 ) {
@@ -97,14 +99,20 @@ function logTurn(
     const un = (k: string): number => Number(stats.usage?.[k] ?? 0) || 0;
     recordTurn({
       ts: new Date(enqueuedAt).toISOString(),
+      completedAt: new Date().toISOString(),
       chatId,
       userId,
       name,
       kind,
+      turnId,
       question: question.slice(0, 300),
       reply: stats.isError && stats.errMsg ? `⚠ ${stats.errMsg}`.slice(0, 300) : replyRef.text.slice(0, 300),
-      waitMs: Math.max(0, Date.now() - enqueuedAt - stats.durationMs),
+      waitMs:
+        stats.queueWaitMs ??
+        Math.max(0, Date.now() - enqueuedAt - stats.durationMs),
       execMs: stats.durationMs,
+      ...(stats.totalMs != null ? { totalMs: stats.totalMs } : {}),
+      ...(stats.sendMs != null ? { sendMs: stats.sendMs } : {}),
       numTurns: stats.numTurns,
       inTok: un('input_tokens'),
       outTok: un('output_tokens'),
@@ -117,6 +125,7 @@ function logTurn(
 
 async function main(): Promise<void> {
   console.log(`octane-agent-gateway up · model=${config.model} · tokens=${tokenCount()} · maxConcurrent=${maxConcurrentTurns() || '∞'} · mapped chats=${await chatMapSize()}${config.groupChatId ? ' + env fallback' : ''}`);
+  startSamplers();
   startMonitor();
   let offset = 0;
   for (;;) {
@@ -166,11 +175,12 @@ async function main(): Promise<void> {
           const cbReply = { text: '' };
           const cbAt = Date.now();
           logMessage({ ts: new Date().toISOString(), chatId, userId: cb.from.id, name, dir: 'in', text: `[tap] ${cb.data ?? ''}`, engaged: true });
-          const cbStats = logTurn('button', chatId, cb.from.id, name, `[tap] ${cb.data ?? ''}`, cbAt, cbReply);
+          const cbTurnId = `tg:${u.update_id}`;
+          const cbStats = logTurn('button', chatId, cb.from.id, name, `[tap] ${cb.data ?? ''}`, cbTurnId, cbAt, cbReply);
           const cbChannel = cbPrivate
             ? 'PRIVATE_DM with a server-verified owner/manager'
             : 'GROUP_CHAT';
-          enqueueTurn(chatId, cb.from.id, cbCarrier, `[channel ${cbChannel}]\n[button tap from ${name} (id ${cb.from.id})]: ${cb.data ?? ''}`, `tg:${u.update_id}`, async (text) => {
+          enqueueTurn(chatId, cb.from.id, cbCarrier, `[channel ${cbChannel}]\n[button tap from ${name} (id ${cb.from.id})]: ${cb.data ?? ''}`, cbTurnId, async (text) => {
             const finalText = stampElapsed(text, cbAt);
             cbReply.text = finalText;
             noteEngaged(chatId, cb.from.id);
@@ -274,14 +284,15 @@ async function main(): Promise<void> {
         const mQuestion = (m.text ?? m.caption ?? '') + (m.photo ? ' [photo]' : '');
         const mReply = { text: '' };
         const mAt = Date.now();
-        const baseStats = logTurn('message', m.chat.id, m.from?.id ?? 0, mName, mQuestion, mAt, mReply);
+        const messageTurnId = `tg:${u.update_id}`;
+        const baseStats = logTurn('message', m.chat.id, m.from?.id ?? 0, mName, mQuestion, messageTurnId, mAt, mReply);
         // The 👀 was only a transient "working on it" indicator — remove it once the turn is done
         // (the reply itself is the acknowledgment), so old messages don't keep a stale eye reaction.
         const mStats: typeof baseStats = (stats) => {
           baseStats(stats);
           void clearReaction(m.chat.id, m.message_id).catch(() => undefined);
         };
-        enqueueTurn(m.chat.id, m.from?.id ?? 0, carrier, formatPrompt(m), `tg:${u.update_id}`, async (text) => {
+        enqueueTurn(m.chat.id, m.from?.id ?? 0, carrier, formatPrompt(m), messageTurnId, async (text) => {
           const finalText = stampElapsed(text, mAt);
           mReply.text = finalText;
           noteEngaged(m.chat.id, m.from?.id ?? 0);

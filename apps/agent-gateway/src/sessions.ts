@@ -16,13 +16,25 @@ import { config } from './config.js';
 import { buildOctaneServer } from './tools.js';
 import { buildTelegramServer } from './telegramTools.js';
 import { systemPrompt } from './prompt.js';
-import { sendTyping } from './telegram.js';
+import { startTypingKeepAlive } from './telegram.js';
 import { markLimited, pickToken, soonestRecovery, tokenCount } from './authPool.js';
+import {
+  incrementCounter,
+  subprocessStarted,
+  turnEnqueued,
+  type TurnLifecycle,
+} from './metrics.js';
 import {
   CONTINUE_AFTER_WRITE_PROMPT,
   QueryStreamError,
   WRITE_RISK_TOOLS,
 } from './retrySafety.js';
+import {
+  acquireTurnSlot,
+  releaseTurnSlot,
+} from './turnConcurrency.js';
+
+export { maxConcurrentTurns } from './turnConcurrency.js';
 
 const SESSIONS_FILE = 'data/sessions.json';
 
@@ -159,43 +171,6 @@ function resumableSession(key: SessionKey): string | undefined {
  *  parallel. Entries are pruned on settle so a group with many one-off askers doesn't leak keys. */
 const chains = new Map<SessionKey, Promise<void>>();
 
-/**
- * GLOBAL concurrency cap — a SAFETY VALVE, off by default.
- *
- * The product rule wins: a user who writes must NEVER wait just because the bot is busy answering
- * someone else. Different chats already run in parallel (per-chat chains); a global cap would queue
- * new chats behind a fixed number of slots — i.e. deliberately starve fresh users — so it is
- * DISABLED by default (MAX_CONCURRENT_TURNS unset or ≤0 = unlimited). The only real ceiling is then
- * the token pool's rate limits, which failover handles.
- *
- * Set MAX_CONCURRENT_TURNS ≥ 1 only if you ever need to bound simultaneous CLI subprocesses (e.g. a
- * tiny box). When set, extra turns queue and drain as slots free; per-chat ordering is unaffected.
- */
-const MAX_CONCURRENT_TURNS = Number(process.env['MAX_CONCURRENT_TURNS'] ?? '0');
-const CONCURRENCY_LIMITED = Number.isFinite(MAX_CONCURRENT_TURNS) && MAX_CONCURRENT_TURNS >= 1;
-let activeTurns = 0;
-const slotWaiters: Array<() => void> = [];
-/** Configured cap, or 0 when unlimited (boot log prints ∞). */
-export function maxConcurrentTurns(): number {
-  return CONCURRENCY_LIMITED ? MAX_CONCURRENT_TURNS : 0;
-}
-function acquireSlot(): Promise<void> {
-  if (!CONCURRENCY_LIMITED) return Promise.resolve(); // unlimited: every turn starts at once
-  if (activeTurns < MAX_CONCURRENT_TURNS) {
-    activeTurns++;
-    return Promise.resolve();
-  }
-  return new Promise<void>((resolve) => slotWaiters.push(resolve));
-}
-function releaseSlot(): void {
-  if (!CONCURRENCY_LIMITED) return;
-  const next = slotWaiters.shift();
-  // Hand the freed slot directly to the next waiter (activeTurns stays put); only decrement when
-  // nobody is waiting.
-  if (next) next();
-  else activeTurns--;
-}
-
 export type TurnContent = string | Array<Record<string, unknown>>;
 
 /** Wrap content blocks as the SDK's streaming-input user message (images ride as base64 blocks).
@@ -218,6 +193,9 @@ export interface TurnStats {
   numTurns: number;
   usage: Record<string, unknown> | null;
   isError: boolean;
+  queueWaitMs?: number;
+  totalMs?: number;
+  sendMs?: number;
   /** On a failed turn: the caught error's message — surfaced in the web monitor so a prod
    * failure is diagnosable from the dashboard, not only from Render logs. */
   errMsg?: string;
@@ -240,6 +218,7 @@ class AllTokensLimitedError extends Error {
   constructor(public readonly retryAt: number | null) {
     super('all auth tokens rate-limited');
     this.name = 'AllTokensLimitedError';
+    incrementCounter('provider_all_limited_total');
   }
 }
 
@@ -268,44 +247,52 @@ export function enqueueTurn(
   onReply: (text: string) => Promise<void>,
   onStats?: (stats: TurnStats) => void,
 ): void {
+  const lifecycle = turnEnqueued();
+  const measuredReply = lifecycle.wrapReply(onReply);
+  const measuredStats = lifecycle.wrapStats(onStats);
   const key = sessKey(chatId, userId);
   const prev = chains.get(key) ?? Promise.resolve();
   const next = prev
-    .then(() => runTurn(chatId, userId, key, carrierId, userPrompt, turnId, onReply, onStats))
+    .then(() =>
+      runTurn(
+        chatId,
+        userId,
+        key,
+        carrierId,
+        userPrompt,
+        turnId,
+        lifecycle,
+        measuredReply,
+        measuredStats,
+      ),
+    )
     .catch(async (err) => {
       console.error(`[${key}] turn failed`, err);
-      onStats?.({ durationMs: 0, numTurns: 0, usage: null, isError: true, errMsg: err instanceof Error ? err.message : String(err) });
       // A terminal error (e.g. SDK auth/init failure) used to leave the tagged user with total
       // silence, which reads as "the bot is dead" — worst for exactly the person who engaged.
       // Send one short bilingual fallback so a broken turn is visible, not invisible. Best-effort:
       // if even the send fails, swallow it (the queue must keep draining for the next turn).
       // When EVERY token is exhausted, name the wait so the user knows it's capacity, not a bug.
       try {
-        await onReply(allTokensLimitedText(err));
+        await measuredReply(allTokensLimitedText(err));
       } catch {
         /* send failed too — nothing more to do */
       }
+      measuredStats({
+        durationMs: 0,
+        numTurns: 0,
+        usage: null,
+        isError: true,
+        errMsg: err instanceof Error ? err.message : String(err),
+      });
     })
     .finally(() => {
+      lifecycle.settle();
       // Prune the queue entry once this was the last turn in the thread — otherwise the map grows
       // one entry per unique asker forever. If a newer turn already chained on, leave it.
       if (chains.get(key) === next) chains.delete(key);
     });
   chains.set(key, next);
-}
-
-/**
- * Telegram's "typing…" status auto-expires after ~5s, so a single sendTyping flashes for a moment
- * and then goes dark while a 20-40s turn (LLM + tools) keeps running — the client looks idle even
- * though the bot is working. Re-send the action every ~4s so a CONTINUOUS "writing…" shows until
- * the reply lands; the returned stop() clears the loop (the reply message itself also ends it).
- * Best-effort — a failed keep-alive tick never throws into the turn.
- */
-const TYPING_REFRESH_MS = 4000;
-function startTypingKeepAlive(chatId: number): () => void {
-  void sendTyping(chatId).catch(() => undefined);
-  const timer = setInterval(() => void sendTyping(chatId).catch(() => undefined), TYPING_REFRESH_MS);
-  return () => clearInterval(timer);
 }
 
 /** Keep the "typing…" indicator alive for the whole turn, then stop it once the reply is sent.
@@ -318,16 +305,18 @@ async function runTurn(
   carrierId: string,
   userPrompt: TurnContent,
   turnId: string,
+  lifecycle: TurnLifecycle,
   onReply: (text: string) => Promise<void>,
   onStats?: (stats: TurnStats) => void,
 ): Promise<void> {
-  await acquireSlot();
+  await acquireTurnSlot();
+  lifecycle.started();
   const stopTyping = startTypingKeepAlive(chatId);
   try {
     await runTurnInner(chatId, userId, key, carrierId, userPrompt, turnId, onReply, onStats);
   } finally {
     stopTyping();
-    releaseSlot();
+    releaseTurnSlot();
   }
 }
 
@@ -409,6 +398,7 @@ async function runWithRotation(
     try {
       const res = await runQuery(chatId, userId, key, carrierId, prompt, turnId, useResume, t.token);
       if (res.rateLimited) {
+        incrementCounter('provider_rate_limited_total');
         markLimited(t.token, res.resetsAt);
         tried.add(t.token);
         // Resume whatever session THIS attempt established (init stores it even when the turn then
@@ -419,6 +409,7 @@ async function runWithRotation(
         // user's request — the transcript already holds it AND its executed tool call. Swap in the
         // continue-nudge so the next attempt reports what happened instead of doing it again.
         if (res.usedWriteTool) {
+          incrementCounter('write_continue_nudge_total');
           console.warn(`[${key}] write tool fired before the limit — retrying with continue-nudge, not the original prompt`);
           prompt = CONTINUE_AFTER_WRITE_PROMPT;
         }
@@ -430,6 +421,7 @@ async function runWithRotation(
       // `runQuery` can throw after a tool has already executed. Its normal QueryOutcome never
       // returns in that case, so carry the write marker on the error and refuse every replay.
       if (err instanceof QueryStreamError && err.usedWriteTool) {
+        incrementCounter('write_retry_refused_total');
         console.error(
           `[${key}] stream failed after a write tool was emitted — refusing retry`,
         );
@@ -441,6 +433,7 @@ async function runWithRotation(
         // would re-run the original request blind — fail the turn instead (user gets the fallback
         // line; the write's receipt still lands via its own delivery channel).
         if (prompt === CONTINUE_AFTER_WRITE_PROMPT) {
+          incrementCounter('write_retry_refused_total');
           console.error(`[${key}] resume died AFTER a write fired — refusing blind fresh retry`);
           throw err;
         }
@@ -523,6 +516,7 @@ async function runQuery(
   let sawRateLimit = false;
   let resetsAt: number | undefined;
   let usedWriteTool = false;
+  const settleSubprocess = subprocessStarted();
   try {
     for await (const msg of q) {
       if (msg.type === 'system' && msg.subtype === 'init') {
@@ -554,6 +548,9 @@ async function runQuery(
       }
       if (msg.type === 'result') {
         finalText = msg.subtype === 'success' ? msg.result : '';
+        if (msg.subtype !== 'success') {
+          incrementCounter('provider_error_result_total');
+        }
         const r = msg as unknown as Record<string, unknown>;
         if (Number(r['api_error_status'] ?? 0) === 429) sawRateLimit = true;
         stats = {
@@ -567,6 +564,8 @@ async function runQuery(
     }
   } catch (err) {
     throw new QueryStreamError(err, usedWriteTool);
+  } finally {
+    settleSubprocess();
   }
   return { finalText, stats, rateLimited: sawRateLimit && !finalText.trim(), resetsAt, usedWriteTool };
 }

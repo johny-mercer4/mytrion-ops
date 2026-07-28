@@ -1,5 +1,6 @@
 /** Raw Telegram Bot API over fetch — no SDK dependency for an MVP this small. */
 import { config } from './config.js';
+import { incrementCounter } from './metrics.js';
 
 const API = `https://api.telegram.org/bot${config.botToken}`;
 
@@ -39,21 +40,35 @@ function tgPost(method: string, payload: Record<string, unknown>): Promise<Respo
  * response is logged (a silently dropped reply is a user staring at nothing) but not retried.
  */
 async function tgSend(method: string, payload: Record<string, unknown>): Promise<Response> {
-  let res = await tgPost(method, payload);
-  if (res.status === 429) {
-    const body = (await res.json().catch(() => null)) as { parameters?: { retry_after?: number } } | null;
-    const waitMs = Math.max(1, body?.parameters?.retry_after ?? 1) * 1000;
-    blockedUntil = Date.now() + waitMs;
-    console.warn(`[tg] 429 on ${method} — backing off ${waitMs}ms (retry_after)`);
-    await new Promise((r) => setTimeout(r, waitMs));
-    lastSendAt = Date.now();
-    res = await tgPost(method, payload);
+  try {
+    let res = await tgPost(method, payload);
+    if (res.status === 429) {
+      incrementCounter('tg_429_total');
+      const body = (await res.json().catch(() => null)) as {
+        parameters?: { retry_after?: number };
+      } | null;
+      const waitMs =
+        Math.max(1, body?.parameters?.retry_after ?? 1) * 1000;
+      blockedUntil = Date.now() + waitMs;
+      console.warn(
+        `[tg] 429 on ${method} — backing off ${waitMs}ms (retry_after)`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      lastSendAt = Date.now();
+      res = await tgPost(method, payload);
+    }
+    if (!res.ok) {
+      incrementCounter('tg_send_fail_total');
+      const errText = await res.text().catch(() => '');
+      console.error(
+        `[tg] ${method} failed ${res.status}: ${errText.slice(0, 200)}`,
+      );
+    }
+    return res;
+  } catch (error) {
+    incrementCounter('tg_send_fail_total');
+    throw error;
   }
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    console.error(`[tg] ${method} failed ${res.status}: ${errText.slice(0, 200)}`);
-  }
-  return res;
 }
 
 function queued<T>(fn: () => Promise<T>): Promise<T> {
@@ -93,11 +108,18 @@ export interface TgCallbackQuery {
 }
 
 export async function getUpdates(offset: number): Promise<Array<{ update_id: number; message?: TgMessage; callback_query?: TgCallbackQuery }>> {
-  const res = await fetch(`${API}/getUpdates?timeout=50&offset=${offset}&allowed_updates=%5B%22message%22%2C%22callback_query%22%5D`, {
-    signal: AbortSignal.timeout(60_000),
-  });
-  const body = (await res.json()) as { ok: boolean; result?: Array<{ update_id: number; message?: TgMessage; callback_query?: TgCallbackQuery }> };
-  return body.ok ? (body.result ?? []) : [];
+  try {
+    const res = await fetch(`${API}/getUpdates?timeout=50&offset=${offset}&allowed_updates=%5B%22message%22%2C%22callback_query%22%5D`, {
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (res.status === 429) incrementCounter('tg_429_total');
+    const body = (await res.json()) as { ok: boolean; result?: Array<{ update_id: number; message?: TgMessage; callback_query?: TgCallbackQuery }> };
+    if (!res.ok || !body.ok) incrementCounter('tg_poll_fail_total');
+    return body.ok ? (body.result ?? []) : [];
+  } catch (error) {
+    incrementCounter('tg_poll_fail_total');
+    throw error;
+  }
 }
 
 export async function sendMessage(chatId: number, text: string, replyTo?: number): Promise<void> {
@@ -182,6 +204,18 @@ export async function answerCallback(callbackId: string, text?: string): Promise
 export async function sendTyping(chatId: number): Promise<void> {
   // Cosmetic keep-alive — best-effort so it never queues ahead of (or delays) a real reply.
   await bestEffort(() => tgPost('sendChatAction', { chat_id: chatId, action: 'typing' }).then(() => undefined));
+}
+
+const TYPING_REFRESH_MS = 4000;
+
+/** Keep Telegram's expiring typing action alive until the caller settles the turn. */
+export function startTypingKeepAlive(chatId: number): () => void {
+  void sendTyping(chatId).catch(() => undefined);
+  const timer = setInterval(
+    () => void sendTyping(chatId).catch(() => undefined),
+    TYPING_REFRESH_MS,
+  );
+  return () => clearInterval(timer);
 }
 
 /** A downloaded image, ready to hand to the model as a base64 content block. */

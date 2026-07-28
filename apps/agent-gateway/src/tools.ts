@@ -16,6 +16,10 @@ import {
   gatewayOperationKey,
   gatewaySessionKeyHash,
 } from './operationIdentity.js';
+import {
+  incrementCounter,
+  noteBackendError,
+} from './metrics.js';
 
 /** chatId → (userId → last-seen ms). Filled by the poll loop for every inbound message. */
 export const recentSenders = new Map<number, Map<number, number>>();
@@ -49,7 +53,20 @@ async function backend(
     signal: AbortSignal.timeout(30_000),
   });
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!res.ok) return { error: true, status: res.status, message: String(data.message ?? '') };
+  if (!res.ok) {
+    const detail =
+      data['error'] && typeof data['error'] === 'object'
+        ? (data['error'] as Record<string, unknown>)
+        : data;
+    const code = String(detail['code'] ?? '');
+    noteBackendError(res.status, code);
+    return {
+      error: true,
+      status: res.status,
+      code,
+      message: String(detail['message'] ?? ''),
+    };
+  }
   return data;
 }
 
@@ -124,6 +141,9 @@ export function buildOctaneServer(
       }
     }
     const data = await backend(path, payload, carrierId, headers);
+    if (data['replayed'] === true) {
+      incrementCounter('write_replayed_total');
+    }
     return { content: [{ type: 'text' as const, text: JSON.stringify(data) }], isError: Boolean((data as { error?: boolean }).error) };
   };
 

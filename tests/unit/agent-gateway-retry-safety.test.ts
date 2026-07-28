@@ -1,10 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
   QueryStreamError,
   WRITE_RISK_TOOLS,
 } from '../../apps/agent-gateway/src/retrySafety.js';
+import {
+  _resetForTests,
+  metricsSnapshot,
+} from '../../apps/agent-gateway/src/metrics.js';
 
 describe('agent-gateway retry safety', () => {
+  beforeEach(() => _resetForTests());
+
   it('classifies every state-changing support-bot tool as non-replayable', () => {
     expect([...WRITE_RISK_TOOLS].sort()).toEqual(
       [
@@ -24,5 +30,8 @@ describe('agent-gateway retry safety', () => {
     expect(error.message).toBe('connection lost');
     expect(error.usedWriteTool).toBe(true);
     expect(error.cause).toBeInstanceOf(Error);
+    expect(
+      metricsSnapshot().counters.provider_stream_throw_total,
+    ).toBe(1);
   });
 });
