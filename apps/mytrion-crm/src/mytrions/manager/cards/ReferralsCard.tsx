@@ -228,7 +228,10 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
       shownOrphans: orphans.filter(hit),
     };
   }, [groups, orphans, hay, ql]);
-  const busy = loading || revalidating;
+  // One indicator per wait: the Refresh glyph spins ONLY for a background revalidation. While the cold
+  // load runs, the body skeleton is the single indicator — spinning both is the double loader the
+  // project rules forbid.
+  const spinRefresh = revalidating && !loading;
 
   return (
     <div className="mg-page">
@@ -250,9 +253,13 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
           </div>
         </div>
         <div className="mg-head-actions">
-          {cachedAt ? <span className="mg-cachedat">Updated {formatCachedAt(cachedAt)}</span> : null}
-          <button type="button" className="mg-btn" onClick={reload} disabled={busy}>
-            <RefreshCw size={15} className={busy ? 'mg-spin' : ''} />
+          {/* Reserved height either way — a caption that pops in on first load shoves the Refresh
+              button sideways. "Refreshing…" instead of a stale timestamp during a background refetch. */}
+          <span className="mg-cachedat">
+            {revalidating ? 'Refreshing…' : cachedAt ? `Updated ${formatCachedAt(cachedAt)}` : '\u00a0'}
+          </span>
+          <button type="button" className="mg-btn" onClick={reload} disabled={loading || revalidating}>
+            <RefreshCw size={15} className={spinRefresh ? 'mg-spin' : ''} />
             Refresh
           </button>
         </div>
@@ -294,7 +301,11 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
       ) : parents && children ? (
         <div className="mg-acc-list">
           {shownGroups.length === 0 && shownOrphans.length === 0 ? (
-            <div className="mg-empty">No referral records match “{q.trim()}”.</div>
+            <div className="mg-empty">
+              {q.trim()
+                ? `No referral records match “${q.trim()}”.`
+                : 'No parent referrers or child referrals in Zoho CRM yet.'}
+            </div>
           ) : null}
 
           {shownGroups.map((g) => {
@@ -347,7 +358,9 @@ export function ReferralsCard({ onBack }: { onBack?: () => void }) {
               <summary className="mg-acc-summary">
                 <ChevronRight size={16} className="mg-acc-chevron" />
                 <span className="mg-acc-name">Unlinked child referrals</span>
-                <span className="mg-count mg-count-zero">{shownOrphans.length}</span>
+                <span className={`mg-count ${shownOrphans.length ? 'mg-count-warn' : ''}`}>
+                  {shownOrphans.length}
+                </span>
               </summary>
               <div className="mg-acc-body">
                 <div className="mg-empty-sm">

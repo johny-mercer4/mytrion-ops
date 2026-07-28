@@ -720,6 +720,19 @@
   border-color: color-mix(in srgb, var(--danger) 30%, transparent);
   color: var(--danger);
 }
+/*
+ * A NON-ZERO count that needs attention — the orphan bucket. It was reusing .mg-count-zero, so a real
+ * number rendered in danger red and read as an error rather than a backlog. Same 9%/30% ratio, amber,
+ * matching the border .mg-acc-orphan already carries.
+ *
+ * Three semantics, three classes: .mg-count neutral · .mg-count-zero a zero that is a problem ·
+ * .mg-count-warn a non-zero needing attention. Never apply -zero to a number that is not literally 0.
+ */
+.mg-root .mg-count-warn {
+  background: color-mix(in srgb, var(--warning) 9%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+  color: var(--warning);
+}
 
 /* ── Chips ─────────────────────────────────────────────────────────────────── */
 .mg-root .mg-refchip,
