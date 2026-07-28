@@ -7508,3 +7508,79 @@ clearly exceed the declared count.
 
 Bundle rebuilt (`pnpm build:widget`) in the same commit — `apps/mytrion-crm/app` is a tracked artifact,
 and skipping it is exactly why the previous loyalty fix never reached prod.
+
+## 2026-07-29 — Sales Mytrion automation reliability (C-1/3/4/5/15/20/24/27, Q-1)
+
+Worked on `feature/Referrals`; existing referral/loyalty edits were preserved.
+
+- C-4/C-5 now treat the entered amount as a delta, enforce a 350-gallon maximum in the UI,
+  touchpoint schema, and shared environment default, write through servercrm's direct EFS limit
+  endpoint, and render the previous/resulting limit returned by EFS.
+- C-1/C-3 now share the direct EFS status-write endpoint. Card pickers fetch EFS first with DWH only
+  as a fallback, so activation is visible immediately in deactivation.
+- C-24 fetches the live EFS card roster/status and merges historical DWH usage only where the current
+  servercrm EFS summary omits a last-used timestamp. The previous blank-field bug (`last_used_date`
+  was not read) is fixed and the result uses explicit status/source badges.
+- C-20/Q-1 no longer `fetch()` the cross-origin signed invoice URL. The signed attachment URL is
+  opened directly, removing the browser CORS “Failed to fetch” failure.
+- C-15 loads jsPDF from the bundle with a safe vendor-base fallback, loads PDF helpers only for PDF,
+  uses bundled ExcelJS for Excel, and leaves CSV/Text dependency-free. Invoice references are
+  hydrated before filters run; output flags now apply consistently to grouped exports.
+- C-27 is fire-and-forget: the touchpoint queues `sales.boca-request`, returns immediately, and the
+  worker writes a C-27 Mytrion Inbox completion/failure message for the authenticated requester.
+  Jobs-off local development uses an immediate in-process fallback with the same inbox behavior.
+
+Regression coverage added for the 350/351 boundary, direct signed-link downloads (and absence of
+cross-origin fetch), every transaction match/filter/sort/range path, destructive touchpoint catalog
+metadata, and BOCA success/failure inbox delivery. `AutoTab.tsx` was reduced below the 600-line cap by
+extracting completed-result rendering.
+
+## 2026-07-29 — Referral bonus: the Calculation field was read off the WRONG module
+
+Audited all four bonus types against the supplied "Referral Bonus Calculation Types" PDF (one
+adversarial verifier per type, each proving its case with live DWH queries). The rates, thresholds,
+recipients, fuel sets and period grains in `referralBonusTypes.ts` all match the spec exactly —
+including Type 4's recipient exception (child, not parent). What was broken is everything around them.
+
+**Fixed now.**
+1. **`Calculation` came off `Child_Referrals`, where it is null on 100% of records.** The populated copy
+   is on `Parent_Referrers` — 665 of 687 (615 'Swipes (Legacy)', 50 'Gallons (Legacy)'), from the
+   2026-07-28 import. So a run today skipped every child and wrote ZERO rows while reporting success.
+   Now resolved parent-first, with a non-null child value honoured as an explicit override (the two
+   picklists are independent fields on independent ids and can drift).
+2. **One value now selects exactly ONE type.** `bonusTypesForCalculation` expanded EITHER legacy value
+   into BOTH legacy types, which made the two values indistinguishable in effect and paid the
+   per-gallon bonus on top of the per-swipe one for 615 referrers — a verified extra $508.92 on one
+   carrier's June alone (BUKHARA INC / IOK TRANS, 50,891.93 gal). The picklist is single-select and the
+   import deliberately split 615/50, so the split has to mean something.
+
+**Nothing has been mis-paid:** `FF_JOBS_ENABLED` is deliberately absent from render.yaml, so the monthly
+cron has never run in prod, and no HTTP route exposes `mytrion_referral_bonuses` at all.
+
+**Confirmed defects NOT yet fixed** (each verified, none reachable while the job is off):
+- `'DSL'` matches ZERO mart rows. Types 3/4's fuel set silently collapses to ULSD+ULSR — identical to
+  the legacy pair. The diesel codes that exist are DSL1 (31,899 gal), CDSL (47,701), BDSL (19,479),
+  BDSR, CBDL. `DEFD` must NOT be included (Diesel Exhaust Fluid, not fuel).
+- One-time types re-award every month once cumulative >= threshold. The only guard is a partial unique
+  index raising a raw 23505 INSIDE the per-child loop, which the single try/catch turns into a failed
+  run that abandons every remaining child. Re-running a month containing an approved/paid row also
+  throws (`setWhere` suppresses the update, `.returning()` is empty, `firstOrThrow` raises).
+- The one-time dedup key is the child RECORD id while the volume and award are keyed on CARRIER, so
+  duplicate child records under one carrier can be paid the same $50 twice.
+- 288,451 mart rows / 19.39M gallons carry a NULL `line_item_category` (100% of Feb–Jul 2025 — a
+  pipeline outage). They are silently dropped: ~$20,048.97 of Type 1 zeroed, and Type 2 swipe dates are
+  re-dated to the month the pipeline recovered.
+- No Zoho writeback for the spec's "mark as paid" step; `Child_Referrals.Paid` / `Parent_Paid` are
+  referenced in a comment only.
+
+**Open questions taken to the user with numbers attached** (money-affecting, not decidable from code):
+Type 2's "swipe" definition (first-EVER eligible swipe, as implemented, vs the PDF sentence's
+first-in-month — verified $9,650 vs $55,750 for June 2026 across all referred children, recurring);
+which codes 'DSL' means; whether 'Gallons (Parent)'/'Gallons (Child)' really bind to the 500/1,000
+one-time awards (the labels name only the recipient, and ZERO records use either value); the child
+roster source (Zoho holds 4 obvious test rows, all `Referrer_ID` 'REF-000002' matching no parent, while
+`octane.intm_zoho_deals.referral_source` holds 944 children / 582 parents); and how to treat the
+pre-existing one-time backlog on first enable (~$74,900 in a single run).
+
+Also fixed: `tests/unit/data-center-routes.test.ts` fixture missing `trucks` — the loyalty commit
+(9cd0887) left `pnpm typecheck` red because I only ran the web app's typecheck after that edit.

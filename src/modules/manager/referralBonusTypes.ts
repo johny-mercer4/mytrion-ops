@@ -144,19 +144,28 @@ export function isOneTimeBonusType(type: ReferralBonusType): boolean {
 }
 
 /**
- * Map a Zoho `Calculation` picklist value to the bonus types it selects.
+ * Map a Zoho `Calculation` picklist value to the bonus type it selects — ONE value, ONE type.
  *
- * The picklist is single-select, but the PDF describes types 1 and 2 as concurrent monthly payouts,
- * so a child on either legacy value accrues BOTH legacy bonuses. Unknown / unset (`-None-`, null)
- * selects nothing — as of 2026-07-27 `Calculation` is null on every record in both modules and will
- * be populated by BA/Admin.
+ * This used to expand EITHER legacy value into BOTH legacy types, on the reading that the PDF
+ * describes types 1 and 2 as concurrent monthly payouts. The live data says otherwise: `Calculation`
+ * is a single-select picklist and the 2026-07-28 import deliberately split the roster 615
+ * 'Swipes (Legacy)' vs 50 'Gallons (Legacy)'. Under the old expansion those two values were
+ * indistinguishable in effect, which would make the split meaningless — and it silently paid the
+ * per-gallon bonus on top of the per-swipe one for 615 referrers (a verified $508.92 extra on one
+ * carrier's June alone).
+ *
+ * Unknown / unset (`-None-`, null, an unrecognised value) selects nothing.
+ *
+ * The full picklist, verbatim and identical on both modules: '-None-', 'Swipes (Legacy)',
+ * 'Gallons (Legacy)', 'Gallons (Parent)', 'Gallons (Child)'.
+ *
+ * ⚠ 'Gallons (Parent)' → type 3 and 'Gallons (Child)' → type 4 is INFERRED from the recipient word.
+ * The labels encode neither the 500 vs 1,000 threshold nor "one-time", and ZERO records use either
+ * value today, so that binding is unconfirmed by data — see WORKING_NOTES 2026-07-29.
  */
 export function bonusTypesForCalculation(value: string | null | undefined): ReferralBonusType[] {
   const v = (value ?? '').trim();
   if (!v || v === '-None-') return [];
-  if (v === 'Gallons (Legacy)' || v === 'Swipes (Legacy)') {
-    return ['gallons_legacy', 'swipes_legacy'];
-  }
   const spec = REFERRAL_BONUS_SPECS.find((s) => s.zohoPicklistValue === v);
   return spec ? [spec.type] : [];
 }

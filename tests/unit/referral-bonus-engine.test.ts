@@ -133,10 +133,13 @@ describe('carrier-level collapsing', () => {
 
 describe('the four logics', () => {
   /**
-   * Either LEGACY picklist value accrues BOTH legacy bonuses — the PDF treats types 1 and 2 as
-   * concurrent monthly payouts, so one child produces two ledger rows in the same month.
+   * ONE picklist value selects exactly ONE bonus type (changed 2026-07-29).
+   *
+   * These two cases previously asserted the opposite — that either legacy value accrued BOTH legacy
+   * bonuses — which made the two values indistinguishable in effect and silently paid the per-gallon
+   * bonus on top of the per-swipe one for the 615 referrers set to 'Swipes (Legacy)'.
    */
-  it('a legacy child accrues gallons AND swipes in the same month', async () => {
+  it('Swipes (Legacy) pays ONLY the per-swipe bonus, not per-gallon as well', async () => {
     zoho([PARENT], [child({ Calculation: 'Swipes (Legacy)' })]);
     volume({ 5799524: { gallons: 2500, newCards: 3, cumulativeGallons: 9000 } });
     const s = await runReferralBonusCalculation(ctx, { periodMonth: PERIOD });
@@ -144,25 +147,50 @@ describe('the four logics', () => {
     const byType = Object.fromEntries(
       upsertMock.mock.calls.map(([, i]) => [(i as Record<string, unknown>).bonusType, i]),
     );
-    expect(Object.keys(byType).sort()).toEqual(['gallons_legacy', 'swipes_legacy']);
-    // $0.01 x 2,500 gal to the parent...
+    expect(Object.keys(byType)).toEqual(['swipes_legacy']);
+    // $50 per NEW card (not per transaction), to the parent.
+    expect(byType.swipes_legacy).toMatchObject({ qtyNewCards: 3, amountUsd: '150.00', recipientKind: 'parent' });
+    // The 2,500 gal would have added a $25.00 gallons_legacy row under the old expansion.
+    expect(s.rowsWritten).toBe(1);
+    expect(s.amountTotalUsd).toBe('150.00');
+  });
+
+  it('Gallons (Legacy) pays ONLY the per-gallon bonus', async () => {
+    zoho([PARENT], [child({ Calculation: 'Gallons (Legacy)' })]);
+    volume({ 5799524: { gallons: 2500, newCards: 3, cumulativeGallons: 9000 } });
+    const s = await runReferralBonusCalculation(ctx, { periodMonth: PERIOD });
+
+    const byType = Object.fromEntries(
+      upsertMock.mock.calls.map(([, i]) => [(i as Record<string, unknown>).bonusType, i]),
+    );
+    expect(Object.keys(byType)).toEqual(['gallons_legacy']);
     expect(byType.gallons_legacy).toMatchObject({
       qtyGallons: '2500.00',
       rate: '0.0100',
       amountUsd: '25.00',
       recipientKind: 'parent',
     });
-    // ...plus $50 per NEW card (not per transaction).
-    expect(byType.swipes_legacy).toMatchObject({ qtyNewCards: 3, amountUsd: '150.00' });
-    expect(s.amountTotalUsd).toBe('175.00');
+    expect(s.rowsWritten).toBe(1);
+    expect(s.amountTotalUsd).toBe('25.00');
   });
 
-  it('the same two rows come from the Gallons (Legacy) value too', async () => {
-    zoho([PARENT], [child({ Calculation: 'Gallons (Legacy)' })]);
-    volume({ 5799524: { gallons: 100, newCards: 1, cumulativeGallons: 100 } });
+  it('drives the logic from the PARENT when the child has no Calculation of its own', async () => {
+    // The live shape: 665 of 687 parents populated, null on 100% of children. Reading the child alone
+    // made every run write zero rows while reporting success.
+    zoho([{ ...PARENT, Calculation: 'Gallons (Legacy)' }], [child({ Calculation: null })]);
+    volume({ 5799524: { gallons: 1000, newCards: 2, cumulativeGallons: 1000 } });
     const s = await runReferralBonusCalculation(ctx, { periodMonth: PERIOD });
-    expect(s.rowsWritten).toBe(2);
-    expect(s.amountTotalUsd).toBe('51.00'); // $1.00 gallons + $50 one new card
+    expect(s.skippedNoCalculation).toBe(0);
+    expect(s.rowsWritten).toBe(1);
+    expect(s.amountTotalUsd).toBe('10.00');
+  });
+
+  it('honours a non-null child Calculation as an explicit override of the parent', async () => {
+    zoho([{ ...PARENT, Calculation: 'Gallons (Legacy)' }], [child({ Calculation: 'Swipes (Legacy)' })]);
+    volume({ 5799524: { gallons: 1000, newCards: 2, cumulativeGallons: 1000 } });
+    const s = await runReferralBonusCalculation(ctx, { periodMonth: PERIOD });
+    expect(upsertMock.mock.calls[0]![1]).toMatchObject({ bonusType: 'swipes_legacy' });
+    expect(s.amountTotalUsd).toBe('100.00');
   });
 
   it('gallons_parent awards $50 once at 500 cumulative gallons', async () => {
