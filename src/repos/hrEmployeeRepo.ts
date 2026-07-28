@@ -229,6 +229,107 @@ export const hrEmployeeRepo = {
     return rows.length > 0;
   },
 
+  /**
+   * Upsert a whole Zoho page in CHUNKED multi-row statements.
+   *
+   * `upsertFromZoho` costs ~4 round-trips per employee (findByZohoRecordId + two department lookups +
+   * the write). Against the Render Postgres, measured at ~266 ms RTT, 213 employees is ~226 s — so the
+   * full sync could never finish inside a request. It died partway and left the table half-populated
+   * with no error surfaced anywhere, which is why prod sat at 88 of 213 records.
+   *
+   * This resolves departments ONCE into a lookup map and writes in chunks, taking the same sync from
+   * ~850 round-trips to ~3. Conflicts target the partial unique index on (tenant, zoho_record_id) —
+   * its predicate has to be repeated in the ON CONFLICT clause for Postgres to match it.
+   */
+  async bulkUpsertFromZoho(
+    ctx: TenantContext,
+    inputs: readonly UpsertFromZohoInput[],
+    opts: { chunkSize?: number } = {},
+  ): Promise<{ written: number }> {
+    if (inputs.length === 0) return { written: 0 };
+    const chunkSize = Math.min(Math.max(opts.chunkSize ?? 100, 1), 500);
+
+    // One read instead of two per employee. Both arms of resolveDepartmentId (Zoho id, then exact
+    // name) are reproduced against the map so linking behaviour is unchanged.
+    const departments = await hrDepartmentRepo.list(ctx);
+    const byZohoId = new Map<string, { id: string; name: string }>();
+    const byName = new Map<string, { id: string; name: string }>();
+    for (const d of departments) {
+      if (d.zohoRecordId) byZohoId.set(d.zohoRecordId, { id: d.id, name: d.name });
+      byName.set(d.name, { id: d.id, name: d.name });
+    }
+
+    const now = new Date();
+    const rows: NewHrEmployee[] = inputs.map((input) => {
+      const zohoDeptId = input.departmentZohoId?.trim() || null;
+      const deptName = input.department?.trim() || null;
+      const link =
+        (zohoDeptId ? byZohoId.get(zohoDeptId) : undefined) ??
+        (deptName ? byName.get(deptName) : undefined);
+      return {
+        tenantId: ctx.tenantId,
+        zohoRecordId: input.zohoRecordId,
+        employeeId: input.employeeId?.trim() || null,
+        firstName: input.firstName.trim() || 'Unknown',
+        lastName: input.lastName.trim() || 'Unknown',
+        email: input.email?.trim() || null,
+        departmentId: link?.id ?? null,
+        department: link?.name ?? deptName,
+        departmentZohoId: zohoDeptId,
+        designation: input.designation?.trim() || null,
+        location: input.location?.trim() || null,
+        status: input.status?.trim() || 'Active',
+        role: input.role?.trim() || null,
+        dateOfJoining: input.dateOfJoining?.trim() || null,
+        mobile: input.mobile?.trim() || null,
+        reportingTo: input.reportingTo?.trim() || null,
+        reportingToZohoId: input.reportingToZohoId?.trim() || null,
+        photoUrl: input.photoUrl?.trim() || null,
+        source: 'zoho_people',
+        rawFields: input.rawFields ?? null,
+        lastSyncedAt: now,
+        updatedAt: now,
+      };
+    });
+
+    let written = 0;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+      const done = await db
+        .insert(hrEmployees)
+        .values(chunk)
+        .onConflictDoUpdate({
+          target: [hrEmployees.tenantId, hrEmployees.zohoRecordId],
+          targetWhere: sql`${hrEmployees.zohoRecordId} is not null`,
+          set: {
+            employeeId: sql`excluded.employee_id`,
+            firstName: sql`excluded.first_name`,
+            lastName: sql`excluded.last_name`,
+            email: sql`excluded.email`,
+            departmentId: sql`excluded.department_id`,
+            department: sql`excluded.department`,
+            departmentZohoId: sql`excluded.department_zoho_id`,
+            designation: sql`excluded.designation`,
+            location: sql`excluded.location`,
+            status: sql`excluded.status`,
+            role: sql`excluded.role`,
+            dateOfJoining: sql`excluded.date_of_joining`,
+            mobile: sql`excluded.mobile`,
+            reportingTo: sql`excluded.reporting_to`,
+            reportingToZohoId: sql`excluded.reporting_to_zoho_id`,
+            photoUrl: sql`excluded.photo_url`,
+            source: sql`excluded.source`,
+            rawFields: sql`excluded.raw_fields`,
+            lastSyncedAt: sql`excluded.last_synced_at`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+        })
+        .returning({ id: hrEmployees.id });
+      written += done.length;
+    }
+    return { written };
+  },
+
   async upsertFromZoho(ctx: TenantContext, input: UpsertFromZohoInput): Promise<'inserted' | 'updated'> {
     const existing = await this.findByZohoRecordId(ctx, input.zohoRecordId);
     const link = await resolveDepartmentId(ctx, {
