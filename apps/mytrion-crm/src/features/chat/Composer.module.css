@@ -21,6 +21,13 @@
   transform: translateY(-2px);
 }
 
+/* The pill owns the focus treatment — the bare textarea must not paint its own ring on top.
+   See the exclusion block in styles/global.css. */
+.pill .input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 .input {
   flex: 1;
   min-width: 0;

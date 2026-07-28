@@ -7,7 +7,17 @@
 import { useMemo, useState } from 'react';
 
 import type { AnalyticsBlock, KpiStat, VolumeDay } from './data';
-import { RANGE_LABELS, getCsContext, loadAnalytics, useLoad, type RangeId } from './live';
+import {
+  RANGE_LABELS,
+  getCsContext,
+  loadAnalytics,
+  localYmd,
+  rangeDays,
+  rangeLabel,
+  useLoad,
+  type CustomRange,
+  type RangeId,
+} from './live';
 
 type SubTab = 'tickets' | 'calls' | 'maintenance';
 
@@ -20,6 +30,20 @@ const SUB_TABS: { id: SubTab; label: string; icon: string }[] = [
 const SPARK_H = 60;
 const REFRESH_PATH =
   'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-14.357-2m14.357 2H15';
+const CALENDAR_PATH =
+  'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z';
+
+/** `YYYY-MM-DD` for today, optionally shifted — LOCAL parts, so it matches what an
+ *  `<input type="date">` reads back (a UTC ISO slice would shift the day). */
+const ymd = (daysFromToday = 0): string => localYmd(new Date(), daysFromToday);
+
+/** One-click windows inside the custom picker — all end today, so only the start varies. */
+const RANGE_PRESETS: { label: string; start: () => string }[] = [
+  { label: '7 days', start: () => ymd(-6) },
+  { label: '14 days', start: () => ymd(-13) },
+  { label: '90 days', start: () => ymd(-89) },
+  { label: 'Year to date', start: () => `${new Date().getFullYear()}-01-01` },
+];
 
 const PALETTE = ['#EAB308', '#16A34A', '#7A52C8', '#EA580C', '#D97706', '#D14B45', '#0E93B0', '#DB2777'];
 
@@ -82,21 +106,65 @@ function agentInitials(name: string): string {
 
 const KPI_ICON_CLASS = ['', 'cs-an-icon-warn', 'cs-an-icon-success', 'cs-an-icon-purple'];
 
+/** Stable "no data yet" block — see the note where it is used. */
+const EMPTY_BLOCK: AnalyticsBlock = {
+  kpis: [],
+  volume: [],
+  breakdown: [],
+  leaderboardCols: ['', '', ''],
+  leaderboard: [],
+};
+
 export function Analytics() {
   const [subTab, setSubTab] = useState<SubTab>('tickets');
+  // `range` + `custom` are the APPLIED window; `draft` is what the picker is editing. Kept apart so
+  // a half-typed date never refetches (useLoad drops its data when the deps change).
   const [range, setRange] = useState<RangeId>('this_month');
+  const [custom, setCustom] = useState<CustomRange | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [draft, setDraft] = useState<CustomRange>(() => ({ start: ymd(-29), end: ymd() }));
 
   const ctx = useLoad(getCsContext, []);
-  const analytics = useLoad(() => loadAnalytics(range, ctx.data), [range, ctx.data?.isManager ?? null]);
+  const analytics = useLoad(
+    () => loadAnalytics(range, ctx.data, custom),
+    [range, custom?.start ?? null, custom?.end ?? null, ctx.data?.isManager ?? null],
+  );
+
+  const today = ymd();
+  const draftDays = rangeDays(draft.start, draft.end);
+  const draftError =
+    !draft.start || !draft.end
+      ? 'Pick both a start and an end date.'
+      : draftDays === null
+        ? 'Those dates aren’t valid.'
+        : draftDays < 1
+          ? 'The end date must be on or after the start date.'
+          : draft.end > today
+            ? 'The end date can’t be in the future.'
+            : null;
+
+  const onRangeChange = (next: RangeId): void => {
+    if (next === 'custom') {
+      // Re-open on the window that's already applied, so the picker never loses the current pick.
+      if (custom) setDraft(custom);
+      setPicking(true);
+      return;
+    }
+    setPicking(false);
+    setCustom(null);
+    setRange(next);
+  };
+  const applyCustom = (): void => {
+    if (draftError) return;
+    setCustom({ ...draft });
+    setRange('custom');
+    setPicking(false);
+  };
 
   const isManager = ctx.data?.isManager === true;
-  const block: AnalyticsBlock = analytics.data?.[subTab] ?? {
-    kpis: [],
-    volume: [],
-    breakdown: [],
-    leaderboardCols: ['', '', ''],
-    leaderboard: [],
-  };
+  // EMPTY_BLOCK is a module constant, not an inline literal: a fresh object here would give `block` a
+  // new identity on every render and invalidate every memo below whenever data is absent.
+  const block: AnalyticsBlock = analytics.data?.[subTab] ?? EMPTY_BLOCK;
   const loading = analytics.loading || ctx.loading;
   const donutTotal = useMemo(() => block.breakdown.reduce((s, b) => s + b.value, 0), [block]);
   const maxLead = useMemo(() => Math.max(1, ...block.leaderboard.map((r) => r.col1)), [block]);
@@ -108,6 +176,11 @@ export function Analytics() {
       ),
     [block],
   );
+  // The chart geometry only depends on the data, but it used to be recomputed inline in JSX on every
+  // render — including every keystroke in the custom-range date fields, which re-render this panel.
+  const sparkLine = useMemo(() => sparkPoints(block.volume), [block.volume]);
+  const sparkArea = useMemo(() => areaPath(block.volume), [block.volume]);
+  const donutFill = useMemo(() => donutBackground(block.breakdown), [block.breakdown]);
 
   const tabCount = (id: SubTab): string => {
     const b = analytics.data?.[id];
@@ -123,15 +196,18 @@ export function Analytics() {
           <h2 className="cs-title">Analytics</h2>
           <div className="cs-subtitle">
             {isManager ? 'All agents' : 'Your performance'}
-            <span className="cs-an-range-chip">{RANGE_LABELS[range]}</span>
+            <span className={`cs-an-range-chip${range === 'custom' ? ' active' : ''}`}>
+              {rangeLabel(range, custom)}
+            </span>
           </div>
         </div>
         <div className="cs-an-header-controls">
           <select
             className="cs-an-range-select"
-            value={range}
-            onChange={(e) => setRange(e.target.value as RangeId)}
+            value={picking ? 'custom' : range}
+            onChange={(e) => onRangeChange(e.target.value as RangeId)}
             disabled={loading}
+            aria-label="Reporting period"
           >
             {(Object.keys(RANGE_LABELS) as RangeId[]).map((r) => (
               <option key={r} value={r}>
@@ -147,6 +223,85 @@ export function Analytics() {
           </button>
         </div>
       </div>
+
+      {/* ═══ CUSTOM RANGE (revealed by the "Custom Range…" option) ═══ */}
+      {picking ? (
+        <div className="cs-an-rc" role="group" aria-label="Custom date range">
+          <div className="cs-an-rc-head">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={CALENDAR_PATH} />
+            </svg>
+            Custom range
+            {draftDays !== null && draftDays > 0 ? (
+              <span className="cs-an-rc-count">
+                {draftDays.toLocaleString()} {draftDays === 1 ? 'day' : 'days'}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="cs-an-rc-fields">
+            <label className="cs-an-rc-field">
+              <span>From</span>
+              <input
+                type="date"
+                value={draft.start}
+                max={draft.end || today}
+                onChange={(e) => setDraft((d) => ({ ...d, start: e.target.value }))}
+              />
+            </label>
+            <span className="cs-an-rc-arrow" aria-hidden="true">
+              →
+            </span>
+            <label className="cs-an-rc-field">
+              <span>To</span>
+              <input
+                type="date"
+                value={draft.end}
+                min={draft.start}
+                max={today}
+                onChange={(e) => setDraft((d) => ({ ...d, end: e.target.value }))}
+              />
+            </label>
+          </div>
+
+          <div className="cs-an-rc-presets">
+            {RANGE_PRESETS.map((p) => {
+              const start = p.start();
+              return (
+                <button
+                  key={p.label}
+                  type="button"
+                  className={`cs-an-rc-preset${draft.start === start && draft.end === today ? ' active' : ''}`}
+                  onClick={() => setDraft({ start, end: today })}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="cs-an-rc-foot">
+            {draftError ? (
+              <span className="cs-an-rc-err">{draftError}</span>
+            ) : (
+              <span className="cs-an-rc-hint">Both dates are included in the window.</span>
+            )}
+            <div className="cs-an-rc-actions">
+              <button type="button" className="cs-an-rc-cancel" onClick={() => setPicking(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="cs-an-rc-apply"
+                onClick={applyCustom}
+                disabled={draftError !== null || loading}
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {analytics.error ? <div className="cs-an-error-card">Failed to load analytics: {analytics.error}</div> : null}
       {analytics.data?.unmatched ? (
@@ -215,8 +370,8 @@ export function Analytics() {
                   </linearGradient>
                 </defs>
                 <line className="cs-an-spark-baseline" x1="0" y1={SPARK_H - 1} x2="400" y2={SPARK_H - 1} />
-                <path d={areaPath(block.volume)} fill="url(#csAnGrad)" />
-                <polyline className="cs-an-spark-line" points={sparkPoints(block.volume)} fill="none" />
+                <path d={sparkArea} fill="url(#csAnGrad)" />
+                <polyline className="cs-an-spark-line" points={sparkLine} fill="none" />
               </svg>
               <div className="cs-an-spark-labels">
                 <span>{block.volume[0]?.label}</span>
@@ -233,7 +388,7 @@ export function Analytics() {
           <div className="cs-an-chart-head">Breakdown</div>
           {block.breakdown.length ? (
             <div className="cs-an-donut-wrap">
-              <div className="cs-an-donut" style={{ background: donutBackground(block.breakdown) }}>
+              <div className="cs-an-donut" style={{ background: donutFill }}>
                 <div className="cs-an-donut-hole">
                   <div className="cs-an-donut-total">{donutTotal.toLocaleString()}</div>
                   <div className="cs-an-donut-sublabel">total</div>

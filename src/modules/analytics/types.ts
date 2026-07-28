@@ -4,7 +4,14 @@
  * renders a snapshot verbatim.
  */
 
-export const ANALYTICS_DIMENSIONS = ['pipeline', 'transactions', 'billing'] as const;
+export const ANALYTICS_DIMENSIONS = [
+  'sales',
+  'pipeline',
+  'support',
+  'transactions',
+  'billing',
+  'receivables',
+] as const;
 export type AnalyticsDimension = (typeof ANALYTICS_DIMENSIONS)[number];
 
 export function isAnalyticsDimension(value: string): value is AnalyticsDimension {

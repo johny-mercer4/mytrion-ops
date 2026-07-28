@@ -53,4 +53,10 @@ export interface AnalyticsBlock {
   leaderboard: LeaderboardRow[];
 }
 
-export type AnalyticsDimension = 'pipeline' | 'transactions' | 'billing';
+export type AnalyticsDimension =
+  | 'sales'
+  | 'pipeline'
+  | 'support'
+  | 'transactions'
+  | 'billing'
+  | 'receivables';
