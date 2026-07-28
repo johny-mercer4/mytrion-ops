@@ -334,7 +334,7 @@
 .fi-search:focus-within {
   background: var(--hz-pane-lift);
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-glow), var(--hz-glass-inset);
+  box-shadow: var(--hz-glass-inset);
 }
 .fi-search input {
   flex: 1;

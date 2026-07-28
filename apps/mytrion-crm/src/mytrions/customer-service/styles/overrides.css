@@ -518,7 +518,7 @@
 .cs-root .cs-form-input:focus {
     outline: none;
     border-color: var(--cs-accent-deep);
-    box-shadow: 0 0 0 3px var(--cs-accent-soft);
+    box-shadow: none;
 }
 
 /* Search inputs sit inside a wrapper that owns the focus ring (:focus-within),

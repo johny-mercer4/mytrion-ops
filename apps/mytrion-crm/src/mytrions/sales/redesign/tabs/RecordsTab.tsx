@@ -15,8 +15,9 @@ import { s } from '../dc';
 import { Icon, type IconName } from '../icons';
 import { badge, type BadgeVM } from '../salesData';
 import {
-  resolveTier,
   tierBucketOf,
+  resolveTierForRow,
+  trackCaption,
   tierBucketIcon,
   tierBucketLabel,
   tierBucketColor,
@@ -25,7 +26,14 @@ import {
   type TierBucket,
 } from '../../../_shared/loyalty';
 import { loadRecords, numFmt } from '../live';
-import { loadLeads, loadDeals, loadRejections, LEAD_STATUS_ORDER, DEAL_STAGE_ORDER } from '../dataCenterLive';
+import {
+  loadLeads,
+  loadDeals,
+  loadRejections,
+  LEAD_STATUS_ORDER,
+  DEAL_STAGE_ORDER,
+  type RejectionVM,
+} from '../dataCenterLive';
 import { useCachedLoad, formatCachedAt, type CachedLoad } from '../dcCache';
 import { compareClients } from '../clientSort';
 import { getImpersonation } from '@/api/impersonation';
@@ -33,13 +41,7 @@ import { useSales } from '../ctx';
 import { LeadsView, DealsView, RejectionsView } from '../dataCenterViews';
 import { DcCardGridSkeleton, DcKanbanSkeleton, DcListSkeleton } from '../DataCenterSkeletons';
 import { MoneyCodesView } from '../dataCenterMoneyCodes';
-
-/** Tier level from this-CALENDAR-month gallons (the program basis), falling back to this-cycle
- *  gallons when the client has no current-month pumps yet — so a mid-month/empty month never
- *  collapses an otherwise-active client to "Building". Active-card count still sets the track. */
-function tierGallons(c: { gallonsThisMonth: number; cycleGallons: number }): number {
-  return c.gallonsThisMonth > 0 ? c.gallonsThisMonth : c.cycleGallons;
-}
+import { RejectionDetailModal } from '../RejectionDetailModal';
 
 /** A styled native dropdown (accessible) for the Leads/Deals filters. */
 function DcSelect({
@@ -91,7 +93,7 @@ const DC_TABS: DcTabDef[] = [
   { id: 'deals', label: 'Deals', icon: 'deals' },
   // Awaiting a redesign — the current view isn't usable. Drop `disabled` to re-enable; the
   // RejectionsView component + loadRejections() stay wired for when the redesign ships.
-  { id: 'rejections', label: 'Rejection Reports', icon: 'rejections', disabled: true },
+  { id: 'rejections', label: 'Rejection Reports', icon: 'rejections' },
   { id: 'money', label: 'Money Codes', icon: 'moneyCodes' },
 ];
 
@@ -264,6 +266,7 @@ export function RecordsTab() {
   const [dealStageFilter, setDealStageFilter] = useState('all');
   const [clientStatusFilter, setClientStatusFilter] = useState('all');
   const [clientTierFilter, setClientTierFilter] = useState<TierBucket | null>(null);
+  const [openRejection, setOpenRejection] = useState<RejectionVM | null>(null);
 
   // Cache keyed per acted-as agent so an admin's "view-as" switch doesn't cross-contaminate books.
   const actAs = getImpersonation()?.zohoUserId ?? 'self';
@@ -301,10 +304,10 @@ export function RecordsTab() {
       if (clientStatusFilter === 'debtor') return c.status === 'debtor';
       return c.status === 'active';
     })
-    .filter((c) => !clientTierFilter || tierBucketOf(resolveTier(c.active, tierGallons(c))) === clientTierFilter)
+    .filter((c) => !clientTierFilter || tierBucketOf(resolveTierForRow(c)) === clientTierFilter)
     .map((c) => {
       const [lbl, col] = REC_STATUS[c.status];
-      const tier = resolveTier(c.active, tierGallons(c));
+      const tier = resolveTierForRow(c);
       return {
         id: c.id,
         name: c.name,
@@ -333,7 +336,7 @@ export function RecordsTab() {
 
   // Loyalty-tier distribution across the agent's whole book (not search-filtered).
   const tierCounts: Record<TierBucket, number> = { gold: 0, silver: 0, bronze: 0, building: 0, idle: 0 };
-  for (const c of recsLoad.data ?? []) tierCounts[tierBucketOf(resolveTier(c.active, tierGallons(c)))] += 1;
+  for (const c of recsLoad.data ?? []) tierCounts[tierBucketOf(resolveTierForRow(c))] += 1;
   const clientTotal = (recsLoad.data ?? []).length;
 
   return (
@@ -476,8 +479,18 @@ export function RecordsTab() {
                     // One badge per bucket, each with its own silhouette — a star on all four made
                     // Gold/Silver/Bronze read as the same badge in different tints.
                     const bk = tierBucketOf(c.tier);
+                    // Tiers are relative to FLEET SIZE, so a grid legitimately shows a 1-card client
+                    // at Gold next to a 12-card client at Silver. Spell out the track + the bar they
+                    // were measured against, otherwise the board reads as broken.
+                    const th = c.tier.thresholds;
+                    const tip = th
+                      ? `${trackCaption(c.tier)} — ${tierBucketLabel(bk)}. ` +
+                        `Bronze ${numFmt(th.bronze)} / Silver ${numFmt(th.silver)} / Gold ${numFmt(th.gold)} gal this month; ` +
+                        `this client: ${numFmt(Math.round(c.tier.gallons))} gal` +
+                        (c.tier.nextLevel ? ` (${numFmt(Math.round(c.tier.gallonsToNext))} to ${c.tier.nextLevel})` : '')
+                      : 'No active cards this month — not in the program.';
                     return (
-                      <span style={s(badge(tierBucketLabel(bk), tierBucketColor(bk)).style + `;color:${tierBucketTextColor(bk)};display:inline-flex;align-items:center;gap:5px;flex-shrink:0`)}>
+                      <span title={tip} style={s(badge(tierBucketLabel(bk), tierBucketColor(bk)).style + `;color:${tierBucketTextColor(bk)};display:inline-flex;align-items:center;gap:5px;flex-shrink:0;cursor:help`)}>
                         <Icon name={tierBucketIcon(bk)} size={12} />{tierBucketLabel(bk)}{c.tier.grace ? ' •' : ''}
                       </span>
                     );
@@ -547,12 +560,22 @@ export function RecordsTab() {
       )}
 
       {dcSub === 'rejections' && (
-        <Gate loading={rejLoad.loading} error={rejLoad.data ? null : rejLoad.error} empty={(rejLoad.data?.length ?? 0) === 0} emptyMsg="No rejected applications — nice work.">
-          <RejectionsView rejections={rejLoad.data ?? []} search={search.rejections} />
+        <Gate
+          loading={rejLoad.loading}
+          error={rejLoad.data ? null : rejLoad.error}
+          empty={(rejLoad.data?.length ?? 0) === 0}
+          emptyMsg="No card declines recorded for your clients yet."
+          skeleton={<DcListSkeleton label="rejection reports" cols={5} />}
+        >
+          <RejectionsView rejections={rejLoad.data ?? []} search={search.rejections} onOpen={setOpenRejection} />
         </Gate>
       )}
 
       {dcSub === 'money' && <MoneyCodesView search={search.money} />}
+
+      {openRejection && (
+        <RejectionDetailModal row={openRejection} onClose={() => setOpenRejection(null)} />
+      )}
     </div>
   );
 }

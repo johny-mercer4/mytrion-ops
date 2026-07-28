@@ -303,38 +303,69 @@ export function DealsView({
 
 // ---------- Rejections (from Zoho Desk — real "Rejection Report" tickets) ----------
 
-const REJ_STATUS_COL: Record<string, string> = {
-  Open: 'var(--accent)',
-  'On Hold': 'var(--warn)',
-  Escalated: 'var(--violet)',
-  Closed: 'var(--muted)',
-  Resolved: 'var(--ok)',
-};
-
-export function RejectionsView({ rejections, search }: { rejections: RejectionVM[]; search: string }) {
+export function RejectionsView({
+  rejections,
+  search,
+  onOpen,
+}: {
+  rejections: RejectionVM[];
+  search: string;
+  onOpen: (r: RejectionVM) => void;
+}) {
   const q = search.toLowerCase();
   const rows = q
-    ? rejections.filter((r) => `${r.company} ${r.number} ${r.reason} ${r.status}`.toLowerCase().includes(q))
+    ? rejections.filter((r) =>
+        `${r.company} ${r.number} ${r.reason} ${r.driverName} ${r.cardLast4}`.toLowerCase().includes(q),
+      )
     : rejections;
+
+  // Status is gone: every row is 'new' until someone works it, so the column was a wall of identical
+  // "Open" badges carrying no information. The width goes to the decline reason instead, which is the
+  // thing an agent actually scans for. Fraud is the one state worth flagging, so it rides the row.
+  const COLS = 'grid-template-columns:1.5fr 0.8fr 1.9fr 0.9fr 0.8fr';
 
   return (
     <div style={s('border-radius:var(--radius-md);border:1px solid var(--border);overflow:hidden;background:var(--surface)')}>
-      <div style={s('display:grid;grid-template-columns:1.6fr 0.9fr 1.6fr 0.9fr 1fr;gap:10px;padding:12px 16px;background:var(--alt);font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)')}>
-        <span>Company</span><span>Ticket</span><span>Reason</span><span>Reported</span><span style={s('text-align:right')}>Status</span>
+      <div style={s(`display:grid;${COLS};gap:12px;padding:12px 16px;background:var(--alt);font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)`)}>
+        <span>Company</span><span>Carrier</span><span>Reason</span><span>Driver</span>
+        <span style={s('text-align:right')}>Reported</span>
       </div>
-      {rows.map((r) => {
-        const stBadge = badge(r.status, REJ_STATUS_COL[r.status] ?? 'var(--muted)');
-        return (
-          <div key={r.id} style={s('display:grid;grid-template-columns:1.6fr 0.9fr 1.6fr 0.9fr 1fr;gap:10px;padding:13px 16px;border-top:1px solid var(--border2);align-items:center;font-size:14px')}>
-            <div style={s('display:flex;align-items:center;gap:10px;min-width:0')}><div style={s(AV())}>{r.initials}</div><span style={s('font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{r.company}</span></div>
-            <span style={s("font-family:'JetBrains Mono',monospace;color:var(--text2)")}>#{r.number}</span>
-            <span style={s('color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')} title={r.reason}>{r.reason}</span>
-            <span style={s('color:var(--muted)')}>{r.date}</span>
-            <span style={s('text-align:right')}><span style={s(stBadge.style)}>{stBadge.text}</span></span>
+      {rows.length === 0 ? (
+        <div style={s('padding:26px 16px;text-align:center;color:var(--muted);font-size:14px')}>
+          No declines match that search.
+        </div>
+      ) : null}
+      {rows.map((r) => (
+        <button
+          key={r.id}
+          type="button"
+          onClick={() => onOpen(r)}
+          className="ss-row-h"
+          style={s(`width:100%;text-align:left;display:grid;${COLS};gap:12px;padding:13px 16px;border:none;border-top:1px solid var(--border2);background:none;color:var(--text);align-items:center;font-size:14px;font-family:inherit;cursor:pointer`)}
+        >
+          <div style={s('display:flex;align-items:center;gap:10px;min-width:0')}>
+            <div style={s(AV())}>{r.initials}</div>
+            <span style={s('font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
+              {r.company}
+            </span>
           </div>
-        );
-      })}
-      {rows.length === 0 && <EmptyRow msg="No rejection reports." />}
+          <span style={s("font-family:'JetBrains Mono',monospace;color:var(--text2)")}>#{r.number}</span>
+          <span style={s('min-width:0;display:flex;align-items:center;gap:8px')}>
+            {r.errorCode ? (
+              <span style={s(`flex-shrink:0;padding:2px 7px;border-radius:var(--radius-xs,6px);font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:700;background:color-mix(in srgb,${r.isFraud ? 'var(--danger)' : 'var(--accent)'} 14%,transparent);color:${r.isFraud ? 'var(--danger)' : 'var(--accent)'}`)}>
+                {r.errorCode}
+              </span>
+            ) : null}
+            <span style={s('color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')} title={r.errorRaw || r.errorText}>
+              {r.errorText || 'Declined'}
+            </span>
+          </span>
+          <span style={s('color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>
+            {r.driverName || '—'}
+          </span>
+          <span style={s('color:var(--muted);text-align:right;white-space:nowrap')}>{r.date}</span>
+        </button>
+      ))}
     </div>
   );
 }

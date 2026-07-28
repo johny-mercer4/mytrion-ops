@@ -6687,3 +6687,500 @@ instead. Worth either adding that skill or dropping the rule.
 Backend + CRM `tsc --noEmit` clean, `pnpm lint` 0 errors, CRM `pnpm build` green. CRM suite failures
 (17 tests / 4 files: stream, touchpoints, transport.refresh, dashDebtorsData) are byte-identical
 with these changes stashed — pre-existing, none in analyst.
+## 2026-07-28 — Admin user management: per-user overrides were a no-op for Administrators
+
+### Root cause
+
+`combineAccess` had an "admin lockout floor": anything matching `ADMIN_PROFILE_MARKERS` (default
+`administrator,ceo`) was pinned to `allDepartmentAccess = true` AND exempted from the deny-list. Zoho
+"Administrator" is a common profile, so for a large share of users — including whoever tests this —
+Admin → User Management computed and SAVED an override that the resolver then threw away. The UI
+reported a grant that was never enforced, which is exactly "the override by user itself is not
+working at all", and plausibly also "access to specific Mytrions is not working" and the auto-router
+complaint, since for those users nothing the admin panel does has any effect.
+
+This was deliberate and tested (`admin lockout floor` describe block), not an accident — so the fix
+is a contract change, not a patch.
+
+### The change
+
+The immovable floor is now ONLY the env break-glass list (`ADMIN_USERS` / `BYPASS_USERS`) — named in
+server config, not editable from inside the app, and therefore a real recovery path. A
+profile/role marker admin still gets all-access **by default** (Step 2.5, a floor a profile default
+row cannot silently lower — otherwise adding one "Administrator" default would demote every admin),
+but an explicit per-user override in Step 3 can now lower them. That is the whole feature.
+
+Replacing the floor removes the protection it provided, so the save route gained a **last-admin
+guard**: `allDepartmentAccess: false` is refused with 409 `LAST_ADMIN` when nobody else resolves to
+all-access. It counts via `resolveBatch` (the same authority the listing uses — not a second query),
+is scoped to the explicit "remove all-access" action rather than every deny-list edit (denies are
+routine on ordinary workers and would cost a directory round-trip each time), and fails OPEN if the
+Zoho directory lookup errors — blocking admin work on an upstream hiccup is worse than the small risk,
+and break-glass remains the backstop.
+
+Tests: the old floor tests were rewritten to the new contract (an override CAN lower an
+Administrator; a deny now applies), plus `mytrion-access-breakglass.test.ts` — a separate file because
+`env` is parsed at import so `vi.stubEnv` is too late, and it needs `ADMIN_USERS` set before load.
+
+### Changes not applying immediately
+
+Two contributors, both addressed:
+- the resolver's TTL cache was 60s. Admin saves DO call `invalidateUser`, but only in the process
+  that served the save — any other instance keeps its copy until expiry. Dropped to 10s.
+- the portal only re-resolved access from `/auth/me` on mount, so an affected user had to hard-reload.
+  Now also on tab focus/visibility, which is the natural moment; the UI re-renders only if the grant
+  actually changed.
+
+### Switch Mytrion everywhere
+
+`TopBar` already had a "Switch Mytrion" link, and every Mytrion built on `MytrionShell` inherits it —
+but **Billing and Customer Service have bespoke chrome** (`bm-header` / `cs-sidebar-footer`) and never
+render TopBar, so they were dead ends: once in, the only way out was editing the URL. Added
+`components/MytrionSwitchLink.tsx` — the same `/main` route, standalone, styled by the host via
+`className` so it sits right in both. Hidden for single-Mytrion users (a picker with one entry
+auto-enters again — a loop).
+
+### Not verified
+
+The auto-router complaint is *probably* the same root cause (for a marker admin the override's
+`homeMytrion` did apply, but nothing else did, so behaviour looked arbitrary). I could not reproduce
+it live — that needs a real session against prod data. Worth re-testing now the override actually
+applies, and if it still misbehaves, `Landing.tsx` + `pickHome` are the places to look.
+
+### Checks
+
+Typecheck green, lint 0 errors, backend 998 passed / 10 failed (the same pre-existing set), frontend
+199/200. NOTE the backend suite again reported 34 failures on the run immediately after a build and
+10 on the next — the post-build flake logged on 2026-07-27 is reproducible and worth chasing.
+
+## 2026-07-28 — Codex onboarding: Mytrion Horizon / Mytrion CRM
+
+Read-only architecture and product onboarding across the live `apps/mytrion-crm` portal, its
+Fastify backend, the sibling `HorizonNew` Figma export, current working notes, recent git history,
+deployment configuration, security context, access resolver, agent/tool runtime, repository layer,
+and external integration boundaries. No product code was changed and no tests were run.
+
+Key mental model:
+
+- `HorizonNew` is the visual prototype/source lineage; `apps/mytrion-crm` is the live internal
+  operating platform. Horizon's mesh, glass, type, motion, and per-workspace hue language is being
+  propagated into the live picker, shared shell, and bespoke Sales/Billing/CS workspaces.
+- Worker identity enters through Zoho OAuth. The backend mints the Bearer session and re-resolves
+  effective access from profile defaults + role defaults + per-user overrides on authenticated
+  requests. Frontend access checks are routing/UX only; backend context, route guards, repos, and
+  tool/agent registries are the enforcement layers.
+- The frontend is one code-split React SPA with 11 Mytrions. Admin, Sales, Billing, Finance,
+  Customer Service, Manager, and Analytics contain live surfaces of varying depth; Collection,
+  Verification, HR, Trailhead, and several sub-tabs deliberately render honest Coming Soon states
+  instead of fabricated operational data.
+- The API is a same-origin Fastify control plane over the Mytrion Ops Postgres, DWH Postgres,
+  verification DB, CMP/servercrm, Zoho CRM/Desk/People, RingCentral, EFS, browser automation,
+  Telegram/support-bot flows, realtime WebSockets, pg-boss jobs, and optional MCP/Composio systems.
+- The AI path is governed infrastructure: typed `AgentManifest` and `ToolManifest` catalogs,
+  department narrowing, server-side dispatch RBAC, risk classes, optional write approvals,
+  owner-scoped data tools, persistence, cost/budget limits, citations, and audit attribution.
+
+Watch points discovered during onboarding: current user-owned worktree changes are implementing
+manageable Administrator overrides + last-admin protection and Switch-Mytrion links for bespoke
+shells; architecture comments retain some retired API-key/client-asserted-scope wording; frontend
+and backend Mytrion taxonomies must remain synchronized; the committed Vite `app/` bundle must be
+rebuilt for deployment; `.env.example` contains a populated inbox webhook-secret-shaped value and
+should be treated as potentially exposed/rotated rather than assumed to be a harmless example.
+
+## 2026-07-28 — Zoho People metadata + bulk records; WorkDrive skill
+
+- Fixed `meta:zoho-people`: maps `labelname`/`comptype` (was empty apiName/type); supports
+  `--module=` / `--list` (all or by name). Shared helpers in `metadataScripts/lib/people*.ts`.
+- Added `pnpm meta:zoho-people-records` — paginated `getRecords` dump for one form.
+- Rewrote `.claude/skills/zoho-workdrive-api` (JSON:API workspaces/files/upload/share; not wired
+  in app yet). Synced People skill script docs; mirrored both skills under `.agents/skills/`.
+
+
+## 2026-07-28 (2) — Rejection Reports tab enabled + verified; loyalty tier check
+
+### Rejection Reports was still hard-disabled
+
+`DC_SUBS` in RecordsTab carried `{ id: 'rejections', …, disabled: true }`, so the tab rendered as
+"SOON" and was not navigable regardless of the backend work. Removed the flag, gave the Gate the
+standard `DcListSkeleton` (it had none), and relabelled the "Ticket" column to "Carrier" — the DB
+row surfaces the carrier id there now, not a Desk ticket number.
+
+### End-to-end verification (against the LOCAL db, never prod)
+
+Ran the real path with `MYTRION_OPS_DATABASE_URL` pointed at the docker Postgres:
+
+```
+WEBHOOK 201 {"id":"mrr_…","ownerSource":"dim_company"}
+RETRY   201 {"id":"mrr_…"}          ← same id: idempotency holds
+LIST    200 count=1
+ROW     …"cardLast4":"1234","isNetwork":true,"isFraud":false,
+         "agentName":"Daniel Brown","occurredAt":"2026-07-28T09:15:00.000Z"
+```
+
+Confirms: the DWH carrier→agent lookup really resolves (carrier 5806565 → Daniel Brown,
+`ownerSource: dim_company`), the Deluge's naive `yyyy-MM-dd HH:mm:ss` parses to a real timestamp,
+booleans survive as booleans, and the full PAN never reaches the wire. Scratch row deleted after.
+
+### Loyalty tiers — NOT a calculation bug
+
+Reported: "2K gallons is Gold but 14K is Silver?!". Ran the real thresholds on both cards:
+
+```
+DD SMART EXPRESS:  1 card,     2,045.79 gal → GOLD   (Owner-Operator; gold at 2,000)
+KUT EXPRESS LLC:  12 cards,   14,611.96 gal → SILVER (Fleet·Fleet; silver 13,500, gold 23,000)
+```
+
+Both correct per the Loyalty Tiers v3 thresholds, and both surfaces agree — Sales passes
+`c.activeCards` + `tierGallons`, Manager passes `client.activeCards` + `loyaltyGallons`, which are
+the same field and the same `gallonsThisMonth || cycleGallons` rule. No drift.
+
+The tier is RELATIVE TO FLEET SIZE by design: a one-truck operator on 2K is top-of-class, a 12-card
+fleet on 14.6K is mid. What was missing is that the card never said so, so a mixed grid reads as
+broken. The tier badge now carries a tooltip with the track, the three thresholds and the distance to
+the next tier.
+
+**⚠️ Open product question surfaced, not silently changed.** `loyalty.ts`'s header claimed the track
+counts "distinct cards with >=1 tx this calendar month", but both callers pass `activeCards` (cards
+active on the account) and the warehouse exposes `activeCardsThisMonth` as a separate, UNUSED field.
+They differ materially — DD SMART shows "1/6 active cards", and the other reading could put it on a
+different track and therefore a different tier. Header corrected to describe the code as-built, with
+the discrepancy called out; switching the input would re-tier the entire book, so it needs a decision.
+
+### Checks
+
+Typecheck green; backend 1002 passed / 10 failed across two consecutive runs (the same pre-existing
+set); frontend 199/200. The 37-failure run seen earlier was the post-build flake again — it only
+appears on the run immediately following a build.
+
+## 2026-07-28 — Mytrion HR Employees (own DB + Zoho sync)
+
+HR tabs reviewed: Home live; **Employees** now live; Attendance / Requests / Profile still Coming soon.
+
+### Model
+- New `hr_employees` table (migration `0060_hr_employees`) — tenant-scoped directory, not a live Zoho People proxy.
+- Rows from Zoho sync (`source=zoho_people`, upsert by `zoho_record_id`) or manual admin create (`source=manual`).
+- `POST /v1/hr/employees/sync` pages Zoho People `getRecords` and bulk upserts.
+
+### RBAC
+- Reads (`GET /hr/employees*`) — any authenticated **internal** worker.
+- Create / edit / delete / sync — Mytrion Admin only (`allDepartmentAccess` | bypass | `role === admin`).
+- UI mirrors: Sync / Add / Edit / Delete shown only when `isAdmin(user)`.
+
+### Surface
+- CRM `HrEmployees` tab: search, status + department filters, table, admin modal CRUD, Sync from Zoho.
+- Client: `apps/mytrion-crm/src/api/hr.ts`.
+
+### Checks
+- Unit: `hr-routes.test.ts`, `hr-map-zoho-employee.test.ts` green.
+- Apply locally with `pnpm db:migrate` before trying Sync.
+
+## 2026-07-28 (3) — Loyalty track fixed to the v3 deck (prev-month transacting cards) + grace
+
+The Loyalty Tiers v3 deck settles the open question from the previous entry. Verbatim:
+
+> "System counts active cards (>=1 transaction previous month) on 1st of each month.
+>  4-6 cards -> Small · 7-8 -> Medium · 9-10 -> Large · 11-12 -> Fleet. Max: 12 active cards."
+> "Tier evaluated monthly · 1-month grace if within 10%"
+
+### The track was measuring the wrong thing
+
+Both surfaces passed `activeCards` — cards active ON THE ACCOUNT. The deck means cards that actually
+TRANSACTED last month. For anyone holding idle plastic those differ wildly, and always in the same
+direction: a carrier with 20 issued / 12 "active" cards but 3 trucks fuelling was scored against Fleet
+thresholds (bronze 10,000) and parked in "Building" permanently. That is the reported "huge number of
+Building clients that aren't really Building" — they were measured against a fleet they don't run.
+
+`resolveTrackCards()` now takes prev-month transacting cards, falling through to this-month ONLY when
+there is no previous month (a carrier that started mid-month would otherwise read as "no cards" for
+its whole first month). It deliberately does NOT fall back to the account total — a card with no
+transactions is not an active card under this program, and a carrier with plastic but no pumps in
+either month honestly has no track ("No cards" rather than an unreachable Fleet bar).
+
+Worked example now covered by a test: 3 transacting cards / 3,200 gal was `none` ("Building") under
+the old rule (T3-small bronze = 4,000); it is now T2 **Silver** (bronze 2,200 / silver 3,000).
+
+### Grace — implemented as a retention rule, not a discount
+
+`TierResult.grace` had always been hardcoded `false`. First attempt implemented the band alone —
+"gallons ≥ 90% of a threshold grants that tier" — and the tests caught that this is a DIFFERENT and
+wrong rule: it would let anyone hit Gold at 1,800 on T1, i.e. permanently move every threshold down
+10%. Grace can only prevent a DROP, so it needs last month's level as an anchor: `applyGrace()` keeps
+`heldLastMonth` when this month lands within 10% below that tier's bar, and never promotes.
+
+Last month's level is recomputed from `gallonsPrevMonth` (no tier history is stored). Since grace can
+only prevent a drop, an imperfect anchor can never over-grant.
+
+### One entry point
+
+`resolveTierForRow(row)` is now the only thing either surface calls — prev-month cards for the track,
+this-month gallons (cycle fallback) for the level, prev-month level as the grace anchor. Sales and
+Manager both use it, so they cannot drift. `LoyaltyClientRow` / `LoyaltyClient` gained
+`activeCardsPrevMonth`, which Manager's payload was missing entirely (Sales already had it).
+
+13 tests in `_shared/loyaltyTrack.test.ts`.
+
+### ⚠️ Another session is editing this working tree
+
+Mid-task the tree grew changes I did not make: `sales_kpi.ts`, `mytrion_worker_tasks.ts`,
+`hr_employees.ts`, `src/repos/kpiTelemetryRepo.ts`, `src/integrations/zohoPeople.ts`, `api/hr.ts` and
+the HR module, plus matching `drizzle.config.ts` / `schema/index.ts` entries. That work is mid-flight
+and currently fails `pnpm typecheck` (`kpiTelemetryRepo.ts:61`, an `exactOptionalPropertyTypes` issue
+on a Drizzle `onConflictDoUpdate` where `setWhere` may be undefined). **I committed only my own files
+and left theirs untouched** — a full-repo typecheck will stay red until that lands.
+
+### Fix — Employees 500 (missing table)
+
+`GET /v1/hr/employees` 500ed because `hr_employees` never landed: `pnpm db:migrate` rolled back at `0061` on duplicate `(tenant_id, session_id)` in `mytrion_calls` (`sess-1`). Applied `0060_hr_employees`, patched `0061` to null duplicate session_ids before the unique index, re-ran migrate green. Endpoint now `200 { items: [], total: 0 }`.
+
+## 2026-07-28 (4) — "No cards" → "No tier"; ⚠️ widget bundle cannot be rebuilt
+
+Renamed the idle bucket. "No cards" described the input; "No tier" describes the state an agent acts
+on — and it was misleading, since plenty of those carriers DO hold cards, they just haven't fuelled.
+
+Manager had its own `LABEL` map duplicating `tierBucketLabel`, which is exactly how the two boards
+drift (Sales would have said one thing and the loyalty board another). Deleted it; Manager now calls
+the shared function, so the string exists once. Also tightened the no-track captions: under the new
+prev-month track rule "idle" means no transactions in EITHER month, so "No active cards this month"
+was inaccurate — now "No card activity this month or last — no tier".
+
+### ⚠️ The vendored bundle is stale and I cannot rebuild it
+
+`pnpm build:widget` fails on `apps/mytrion-crm/src/mytrions/manager/SalesManagement.tsx` — an
+UNTRACKED file from the other session working in this checkout (`exactOptionalPropertyTypes` on a
+`TaskWriteInput`). My three loyalty files compile clean in isolation (0 errors).
+
+Consequence, and it is the same trap logged on 2026-07-27: `apps/mytrion-crm/app` is a committed
+build artifact and the Dockerfile only COPYs it. `grep` confirms the shipped bundle contains neither
+`resolveTierForRow` nor "No tier" — so **the loyalty track fix (7f67f50) and this rename are both
+source-only and will NOT reach prod** until someone fixes that file and runs `pnpm build:widget`.
+Nothing else is required of these commits; they are complete apart from the artifact.
+
+## 2026-07-28 — Mytrion HR Departments
+
+Inspected Zoho People `department` form (components + getRecords): 22 rows.
+Fields: Department, Department_Code, MailAlias, Department_Lead (+.ID/.MailID), Parent_Department (+.ID).
+
+- Migration `0063_hr_departments` + schema `hr_departments`
+- Migrated all 22 Zoho records into our table (`scripts/migrate-hr-departments-from-zoho.ts` / `POST /v1/hr/departments/sync`)
+- CRM tab **Departments** lists from own DB; admin create/edit/delete
+- RBAC: internal read; admin writes
+
+## 2026-07-28 — HR org links + Org Structure (real tables)
+
+### Zoho People org structure review
+
+- Legacy **department** form: available; we already migrated 22 rows into `hr_departments`.
+- **Designation** form exists in Zoho, but we intentionally do **not** create `hr_designations` —
+  designations are a picklist of distinct `hr_employees.designation` values.
+- Zoho People **v3** `/v3/orgstructure/...` needs `ZOHOPEOPLE.orgstructure.READ` (current token:
+  Invalid OAuth Scope). Even with scope, list/bulk orgstructure is poorly documented.
+- **Decision:** build Mytrion Org Structure from `hr_departments.parent_id` + linked employee
+  headcounts only — no mock nodes, no live Zoho org proxy.
+
+### Schema / migration `0064_hr_org_links`
+
+- `hr_employees.department_id` + `department_zoho_id` (FK-style link to `hr_departments`).
+- `hr_departments.parent_id` (self-link for tree).
+- Backfill: Department.ID from `raw_fields` → zoho id match → name match; parent via
+  `parent_zoho_id`.
+- Applied on Render: **88** employees, **60** linked / **28** unlinked (those 28 have null
+  department in Zoho), **22** departments with **20** parent links, **13** designation labels.
+
+### API + UI
+
+- `GET /v1/hr/meta/designations`, `GET /v1/hr/org-structure`
+- Employees: department select from `hr_departments` (`departmentId`); designation datalist picklist
+- New HR tab **Org Structure** — tree from real tables only
+- Department parent field is a select of existing department names (resolves `parent_id`)
+
+## 2026-07-28 — Sales KPI collection foundation
+
+Implemented the collection-first Sales KPI platform without ratings, targets or rankings:
+
+- KPI worker directory, effective profile memberships, configurable population profiles, versioned
+  metrics, ingestion runs, revisioned external facts, daily rollups and immutable monthly snapshot
+  revisions.
+- First-party worker tasks with append-only lifecycle events, HMAC/idempotent automation webhook,
+  Manager → Sales task management, and Sales → My Tasks completion flow.
+- Server-authoritative semantic activity and presence telemetry (privacy allowlist, idle/hidden
+  handling, interval union across tabs/devices).
+- Zoho Calls, Deal `Application_Date`, local Mytrion calls and Sales DWH swipe collectors; hourly,
+  nightly reconciliation, daily rollup and New York month-close pg-boss jobs.
+- Manager collection health now separates source read failures from persisted, actionable unresolved
+  identity mappings. Missing/ambiguous identities are never guessed.
+- Existing outbound-call capture now persists calls without Lead/Deal context and deduplicates by
+  RingCentral session while retaining the authenticated actor separately from View-as state.
+
+Migrations `0061`, `0062` and `0065` were applied to the configured PostgreSQL database. The KPI
+feature flag remains off in the environment; the initial collection was invoked with a process-local
+flag only.
+
+### Initial shadow data
+
+The 90-day Zoho Calls attempt reached the COQL 100,000-row ceiling and the small Render database
+entered recovery during the resulting bulk insertion. The run is retained as failed with that exact
+reason. A bounded July 20–27 retry succeeded:
+
+- 128 active Zoho users synchronized; 65 exact `Sales Agent` workers eligible.
+- 13,541 Zoho Call records produced 33,504 revisioned call metric facts.
+- 116 Deals produced 629 Application facts including per-day completeness summaries.
+- 1,207 DWH rows produced 448 worker/day swipe facts.
+- Nine worker dashboard reads were unavailable and are recorded as a partial source error, not as
+  unresolved mappings or zeros.
+- July 26 daily rollups completed for all 65 workers. Initial memberships were backdated only where
+  the worker had exactly one original bootstrap membership; any prior profile history blocks that
+  adjustment.
+
+### Validation
+
+- KPI-focused backend tests: 24/24 pass.
+- Backend strict typecheck, production build and lint pass (lint retains 25 pre-existing warnings).
+- CRM strict typecheck and production build pass.
+- Full backend suite: 1,025/1,061 pass; 36 failures are pre-existing/concurrent suites (CS,
+  retention, touchpoints, registry expectations and database-backed timeout/recovery cases).
+- Full CRM suite: 212/213 pass; the unrelated debtors summary fixture expects no `debtorCount`.
+
+## 2026-07-28 (5) — Referral bonus engine + monthly cron
+
+Built the calculation engine and the cron. The ledger (`mytrion_referral_bonuses`, migration 0058),
+`referralBonusRepo` (incl. run audit) and the four declarative specs already existed; what was
+missing was the engine and any job.
+
+### Engine — `src/modules/manager/referralBonusEngine.ts`
+
+Per run: read both Zoho modules → join child→parent → collapse by carrier → read one month of DWH
+volume → apply each child's `Calculation` → upsert, bracketed by a `mytrion_referral_calc_runs` row.
+
+Three decisions worth recording:
+
+- **Join on the REF CODE, not the lookup.** `Child_Referrals.Parent_Referrer` is null across the
+  whole org (verified live); the populated key is `Parent_Referrers.ReferrerId` ↔
+  `Child_Referrals.Referrer_ID`. Joining on the lookup would have produced an empty ledger forever.
+- **Carrier-level, not record-level.** Several child records routinely share one `Carrier_ID` (all 4
+  live children share 5799524). Volume belongs to the carrier, so only the first child per
+  (carrier, type) is paid — ordered by record id so a re-run cannot move the award to a sibling and
+  trip the one-time unique index.
+- **One-time types write NO row below threshold** rather than a zero-value placeholder, so the
+  partial unique index never has to reconcile a placeholder against a real award later.
+
+A legacy child accrues BOTH legacy bonuses in the same month — pre-existing documented behaviour of
+`bonusTypesForCalculation` (the PDF treats types 1 and 2 as concurrent). My first test asserted one
+row and was wrong; corrected and now pinned explicitly.
+
+### DWH — `src/integrations/dwhReferralVolume.ts`
+
+One query returns month gallons, new cards and cumulative-through-month-end per carrier. "Swipe" is
+the NEW-CARD metric (`min(transaction_date)` per card falls in the month), not a transaction count.
+Everything is bounded by the period end so a backfill cannot award a one-time bonus in a month the
+client had not yet reached the threshold.
+
+**Live-verified against the warehouse** (carrier 5799524, June 2026): `gallons 0, newCards 0,
+cumulative 6,793.5`. Crucially the legacy set (`ULSD,ULSR`) and the new-logic set (`+DSL`) return the
+IDENTICAL cumulative — hard confirmation of the documented DSL gap: no row carries the literal `DSL`
+code, so types 3 and 4 currently behave exactly like the legacy pair. Still an unmade business call.
+
+### Cron
+
+`automation.referral.bonus-calc`, singleton, cron `30 0 1 * *` — 00:30 on the 1st, after the month
+has definitively closed and clear of the midnight job pile-up. Omitting `periodMonth` computes the
+month just ended; supplying `'YYYY-MM-01'` is the backfill/recompute hook. Added to
+`MANUAL_TRIGGERABLE_QUEUES` so Admin can run it on demand. **No auto-backfill on first run** — the
+DWH has the history, but silently generating months of payouts is not something to do implicitly;
+trigger the months you want explicitly.
+
+14 tests. Also had to widen the `manager-loyalty-routes` projection allow-list for
+`activeCardsPrevMonth` — that test pins an exact key set to stop Clients-tab fields leaking, and it
+correctly caught the new field.
+
+**Still blocked from producing anything:** `Calculation` is null on every Zoho record (a run reports
+`skippedNoCalculation` and succeeds with zero rows), and `FF_JOBS_ENABLED` is excluded in
+`render.yaml`, so the cron will not fire in prod until that is set in the Render env group.
+
+## 2026-07-28 — Mytrion Database metadata browser (`feature/Setter`)
+
+- Added Admin → Data → **Mytrion Database**, a searchable, read-only browser for Mytrion's own
+  PostgreSQL metadata. It exposes non-system schemas, tables/views, row estimates, columns/SQL API
+  names, full/base data types, nullability, PK/UQ/FK roles, defaults and comments.
+- Added `GET /v1/admin/mytrion-schema`, restricted to authenticated internal true-admin sessions
+  and audit logged. Runtime database access goes through `mytrionSchemaRepo`; only catalog/statistic
+  relations are queried, never application rows.
+- Extended the shared PostgreSQL introspector with inserts/updates/deletes from `pg_stat_all_tables`
+  and a writes-per-day frequency estimate since `pg_stat_database.stats_reset` (falling back to
+  server start when statistics were never explicitly reset). The UI labels this as an estimate.
+- Added `pnpm mytrion:inspect` for on-demand full metadata export to
+  `metadataScripts/output/mytrion-database.{json,md}`, plus `--search`, `--table`, `--schema`, and
+  `--json` focused inspection. Fixed the shared catalog connector to apply managed-Postgres TLS for
+  the Ops target while preserving the DWH's intentional non-TLS connection.
+- Live validation returned **4 schemas, 84 tables/views and 1,089 columns** from
+  `mytrion_ops_db`. The focused `kpi_workers --json` inspection confirmed explicit `apiName` and
+  data-type metadata.
+- Security/feature tests: backend route + baseline RBAC 11/11; CRM schema browser 2/2. The Admin
+  navigation and new tab rendered in the local browser; the real metadata endpoint was separately
+  verified with an authenticated Admin token.
+- Strict backend/CRM builds and lint pass (25 existing warnings). Full suites remain red outside
+  this feature: backend 1,024/1,064 passes with 40 failures across pre-existing CS/retention/
+  touchpoint/agent fixtures and timeouts; CRM 214/215 passes with the existing `debtorCount`
+  expectation mismatch. The new metadata tests pass in both focused and full runs.
+
+## 2026-07-28 (6) — Sales Mytrion pass: RC sign-in visibility, nav, layout, Rejection Reports
+
+Branch `feature/Setter`, fast-forwarded to `origin/build` (0d570fc) first.
+
+### RingCentral — the sign-in page "not showing" (the important one)
+
+The COOP fix from earlier IS live in prod (`curl` confirms `cross-origin-opener-policy:
+same-origin-allow-popups`), so that was not it. The remaining cause is simpler and worse:
+
+**Nothing in our UI ever surfaced the signed-out state.** `ringCentralLoginState()` existed and was
+read by NOBODY (`grep` confirmed zero consumers). The softphone boots *minimised* to a small vendor
+pill, and the only signed-out signal was a toast fired on an explicit `logout` event — never on
+"never signed in". An agent who did not know to click that pill simply never saw a login screen, and
+every phone-backed feature (Data Center Leads/Deals calls, Retention calls, the post-call wizard,
+mytrion_calls logging, Mytrion_Call_Attempts) silently did nothing. That matches the report exactly,
+including why it "works on my localhost" — you know to click the pill.
+
+Added a persistent (not auto-dismissing) prompt in `RingCentralPhone`: after a 7s settle window, if
+login state is not `true`, it shows "Phone not signed in" + a **Sign in** button that calls
+`revealRingCentralWidget()` — expanding the vendor widget is the only place the RC login screen can
+render. Cleared on the `login` event, re-shown on `logout`. The 7s delay matters: the widget reports
+`loggedIn:false` first while restoring a persisted session, so anything shorter flashes a false
+prompt on every page load.
+
+This is deliberately robust to cause: it fixes an unnoticed pill, a blocked popup, and a collapsed
+dock alike, because in all three the agent now gets a visible, one-click path to the login screen.
+
+### The rest
+
+- **My Tasks → Coming soon** (`salesData.ts`), matching how Tickets/Verification/Call Hub are parked.
+- **Switch Mytrion in the Sales sidebar** — reused `MytrionSwitchLink` (added a `style` prop so it can
+  match the bespoke sidebar controls). The sidebar was a dead end: the only exit was the top bar,
+  which the full-bleed tabs cover.
+- **Coming-soon panels go full width.** They were clamped by `#ss-panels`' 1180px reading measure, so
+  a placeholder read as a small card adrift in a large empty page. `fullBleed || sectionComingSoon`
+  now takes the edge-to-edge branch.
+- **Quick Actions was thin for a real reason, not a cosmetic one.** The Home split used
+  `grid-template-columns: 1fr 1fr`, and a bare `1fr` track has an automatic minimum of MIN-CONTENT —
+  so the Recent Inbox column, whose cards carry long unbroken subject lines, grew past its half and
+  squeezed Quick Actions until every card title wrapped onto three lines. `minmax(0, 1fr)` lets the
+  text ellipsise instead of dictating the column width. Same fix applied to the upper 1.35fr split.
+
+### Rejection Reports
+
+- **Status column dropped.** Every row is `new` until someone works it, so it was a wall of identical
+  "Open" badges carrying no information. The width went to the decline reason, plus a Driver column.
+- **The reason is now readable.** EFS sends `202607280835|INACTIVE CARD` — `cleanErrorText()` strips
+  the numeric stamp and de-shouts the caps, and the row shows a compact code chip + clean text (red
+  for fraud/code 3, accent otherwise). The raw string is preserved on the VM.
+- **Rows open a detail modal** built on the shared `DetailSheet`, so it inherits the module's scrim /
+  accent rail / ESC + backdrop close rather than re-inventing a dialog. It leads with the SMS the
+  driver already received (the only part of the record the customer has seen), then decline / where /
+  account groups, with the raw EFS response behind a `<details>` for support escalation.
+  `ModalFooter` was not reused — it is the edit-oriented footer (save/cancel/call) and this view is
+  read-only, so it gets a single Close.
+
+Rendered the table in both themes in headless Chrome before committing.
+
+### Checks
+
+Typecheck green, lint 0 errors, frontend 214/215 — the one failure the long-standing `filterDebtors`
+case. Widget bundle rebuilt.

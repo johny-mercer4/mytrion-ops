@@ -164,7 +164,7 @@
 .search:focus-within {
   background: var(--hz-pane-lift);
   border-color: color-mix(in srgb, var(--accent) 70%, var(--hz-pane-bd));
-  box-shadow: 0 0 0 3px var(--accent-glow), var(--hz-glass-inset);
+  box-shadow: var(--hz-glass-inset);
 }
 .searchInput {
   flex: 1;
@@ -1291,7 +1291,7 @@
 .input:focus {
   background: var(--hz-pane-lift);
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-glow), var(--hz-glass-inset);
+  box-shadow: var(--hz-glass-inset);
 }
 .progressTrack {
   height: 8px;
@@ -1879,7 +1879,7 @@
   outline: none;
   background: var(--hz-pane-lift);
   border-color: color-mix(in srgb, var(--accent) 70%, var(--hz-pane-bd));
-  box-shadow: 0 0 0 3px var(--accent-glow), var(--hz-glass-inset);
+  box-shadow: var(--hz-glass-inset);
 }
 
 /* carrier users form + row actions */

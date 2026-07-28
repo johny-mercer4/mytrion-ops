@@ -108,7 +108,7 @@
 
 .cs-root .cs-app-search:focus-within {
     border-color: var(--cs-accent);
-    box-shadow: 0 0 0 3px var(--cs-accent-glow);
+    box-shadow: none;
 }
 
 .cs-root .cs-app-search-icon {
@@ -503,7 +503,7 @@
 
 .cs-root .cs-form-input:focus {
     border-color: var(--cs-accent);
-    box-shadow: 0 0 0 3px var(--cs-accent-glow);
+    box-shadow: none;
 }
 
 .cs-root select.cs-form-input {

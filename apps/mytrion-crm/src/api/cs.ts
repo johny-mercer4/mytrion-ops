@@ -221,6 +221,41 @@ export function getCallsAnalytics(w: AnalyticsWindow, ownerEmail?: string): Prom
   }) as Promise<CallsAnalytics>;
 }
 
+/** Maintenance analytics — native COQL (replaced the cs.analytics.maintenance Deluge). Envelope
+ *  matches what the panel already reads, so only the transport changed. */
+export interface MaintenanceAnalytics {
+  success: boolean;
+  data: {
+    totals: {
+      current: number;
+      previous: number;
+      open: number;
+      closed: number;
+      halfComplete: number;
+      fullComplete: number;
+    };
+    byStatus: Array<{ status?: string; count?: number }>;
+    byCaseType: Array<{ caseType?: string; count?: number }>;
+    daily: Array<{ day?: string; count?: number }>;
+    byOwner: Array<{ id?: string; name?: string; count?: number }>;
+  };
+}
+
+export function getMaintenanceAnalytics(w: AnalyticsWindow): Promise<MaintenanceAnalytics> {
+  return request('GET', '/cs/analytics/maintenance', {
+    headers: CS_HEADERS,
+    query: windowQuery(w),
+  }) as Promise<MaintenanceAnalytics>;
+}
+
+/** Count for the Home "Maintenance" tile (windowed — the old Deluge count had no WHERE and read 0). */
+export function getMaintenanceCount(from: string, to: string): Promise<{ count: number }> {
+  return request('GET', '/cs/analytics/maintenance/count', {
+    headers: CS_HEADERS,
+    query: { from, to },
+  }) as Promise<{ count: number }>;
+}
+
 /** One open Desk ticket for the Home team panel — number, status, and assigned owner. */
 export interface CsOpenTicket {
   id: string;

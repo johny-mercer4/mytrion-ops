@@ -20,8 +20,9 @@ export async function applySchedules(boss: PgBoss): Promise<void> {
     CRON_SCHEDULES.filter(
       (s) =>
         !DISABLED_JOB_QUEUES.has(s.name) &&
+        (env.FF_KPI_COLLECTION_ENABLED || !s.name.startsWith('kpi.sales.')) &&
         (orchestratorOn || !DEPARTMENT_AUTOMATION_QUEUES.has(s.name)),
-    ).map((s) => [s.name, s.cron]),
+    ).map((s) => [s.name, s]),
   );
   const existing = await boss.getSchedules();
   for (const schedule of existing) {
@@ -30,7 +31,7 @@ export async function applySchedules(boss: PgBoss): Promise<void> {
       logger.info({ queue: schedule.name }, 'unscheduled stray cron');
     }
   }
-  for (const [name, cron] of wanted) {
-    await boss.schedule(name, cron, {}, { tz: env.JOBS_CRON_TZ });
+  for (const [name, schedule] of wanted) {
+    await boss.schedule(name, schedule.cron, {}, { tz: schedule.timezone ?? env.JOBS_CRON_TZ });
   }
 }

@@ -388,6 +388,14 @@ const EnvSchema = z.object({
   //     API_KEY). Blank is allowed: the route answers 503 at request time rather than blocking boot. ---
   REJECTION_WEBHOOK_SECRET: z.string().default(''),
 
+  // --- Sales KPI collection + external worker-task intake ---
+  // Collection is independently gated so migrations/UI can deploy before cron and browser telemetry.
+  FF_KPI_COLLECTION_ENABLED: flag('0'),
+  KPI_REPORTING_TZ: z.string().default('America/New_York'),
+  // One rotatable, task-create-only HMAC credential for trusted external automations.
+  MYTRION_TASK_WEBHOOK_KEY_ID: z.string().default('external-automation'),
+  MYTRION_TASK_WEBHOOK_SECRET: z.string().default(''),
+
   // --- File storage: Cloudflare R2 (S3-compatible) ---
   R2_ACCOUNT_ID: z.string().default(''),
   R2_ACCESS_KEY_ID: z.string().default(''),
@@ -472,6 +480,13 @@ const EnvSchema = z.object({
   // is not enough, since NODE_ENV defaults to 'development' when unset (a misconfigured staging/
   // preview env sharing the prod bot token would otherwise expose it). Explicit opt-in required.
   FF_DEV_MOCK_TELEGRAM_ENABLED: flag('0'),
+  // Dev-only: the Zoho user id the static API_KEY session should present as. The API_KEY context
+  // has no Zoho identity (userId: 'system'), so every owner-scoped read — CS Home tiles, retention
+  // desk quota — fails closed locally with "No Zoho user id on the request for owner-scoped data".
+  // A real Zoho login sets `zoho:<id>` and is unaffected. Blank = off, and it is IGNORED in
+  // production regardless (see systemContext) — same reasoning as FF_DEV_MOCK_TELEGRAM_ENABLED:
+  // NODE_ENV alone is not a sufficient gate, so this must also be set explicitly.
+  DEV_MOCK_ZOHO_USER_ID: z.string().default(''),
   // Sales workers may run DESTRUCTIVE touchpoints (card deactivate/limits, money-code draw,
   // fraud release, EFS override) — widget parity, ON by default. 0 = admin-only, no code change.
   FF_TOUCHPOINT_DESTRUCTIVE_SALES: flag('1'),

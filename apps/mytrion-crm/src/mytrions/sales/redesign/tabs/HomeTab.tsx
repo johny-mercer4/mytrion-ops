@@ -403,7 +403,7 @@ export function HomeTab() {
   return (
     <div className="ss-fu">
       {/* hero */}
-      <div style={s('display:grid;grid-template-columns:1.35fr 1fr;gap:18px;margin-bottom:18px')}>
+      <div style={s('display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:18px;margin-bottom:18px')}>
         <div style={s('position:relative;overflow:hidden;border-radius:var(--radius-md);padding:26px 28px;background:linear-gradient(120deg, rgba(var(--accent-rgb),.14), rgba(var(--violet-rgb),.10)), var(--surface);border:1px solid var(--border)')}>
           <div style={s('position:absolute;right:-40px;top:-40px;width:190px;height:190px;border-radius:50%;background:radial-gradient(circle,rgba(var(--accent-rgb),.22),transparent 70%);pointer-events:none')}></div>
           <div style={s('font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent)')}>{dateLabel}</div>
@@ -569,7 +569,11 @@ export function HomeTab() {
           {/* activity block hidden for now (its range fetch is disabled to save a round-trip) */}
 
           {/* CTA + inbox preview */}
-          <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px')}>
+          {/* minmax(0,1fr), NOT 1fr: a bare `1fr` track has an automatic minimum of MIN-CONTENT, so the
+              Recent Inbox column — whose cards carry long unbroken subject lines — grew past its half
+              and squeezed Quick Actions into a sliver that wrapped every card title onto three lines.
+              minmax(0,…) lets the text ellipsise instead of dictating the column width. */}
+          <div style={s('display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;margin-top:18px')}>
             <div>
               <div style={s('display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px')}><div style={s('display:flex;align-items:center;gap:9px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase')}><span style={s('color:var(--accent);display:flex')}><Icon name={ICO.bolt} size={17} /></span>Quick Actions</div><button onClick={goAuto} className="ss-tab-x" style={s('background:none;border:none;color:var(--accent);font-weight:700;font-size:13px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-md)')}>All guides →</button></div>
               <div style={s('display:flex;flex-direction:column;gap:12px')}>

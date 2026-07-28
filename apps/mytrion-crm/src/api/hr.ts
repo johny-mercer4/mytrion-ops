@@ -1,0 +1,191 @@
+/** Mytrion HR — employee directory (`/v1/hr/employees*`). Own DB, not a live Zoho People proxy. */
+import { request } from './transport';
+
+export interface HrEmployeeDto {
+  id: string;
+  zohoRecordId: string | null;
+  employeeId: string | null;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  departmentId: string | null;
+  department: string | null;
+  departmentZohoId: string | null;
+  designation: string | null;
+  location: string | null;
+  status: string;
+  role: string | null;
+  dateOfJoining: string | null;
+  mobile: string | null;
+  reportingTo: string | null;
+  reportingToZohoId: string | null;
+  photoUrl: string | null;
+  source: string;
+  lastSyncedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HrEmployeeWriteInput {
+  employeeId?: string | null;
+  firstName: string;
+  lastName: string;
+  email?: string | null;
+  departmentId?: string | null;
+  department?: string | null;
+  designation?: string | null;
+  location?: string | null;
+  status?: string;
+  role?: string | null;
+  dateOfJoining?: string | null;
+  mobile?: string | null;
+  reportingTo?: string | null;
+}
+
+export type HrEmployeePatchInput = Partial<HrEmployeeWriteInput>;
+
+export interface ListHrEmployeesOpts {
+  q?: string;
+  status?: string;
+  department?: string;
+  departmentId?: string;
+  limit?: number;
+  offset?: number;
+  signal?: AbortSignal;
+}
+
+export interface ListHrEmployeesResult {
+  items: HrEmployeeDto[];
+  total: number;
+}
+
+export async function listHrEmployees(opts: ListHrEmployeesOpts = {}): Promise<ListHrEmployeesResult> {
+  const data = await request('GET', '/hr/employees', {
+    query: {
+      q: opts.q,
+      status: opts.status,
+      department: opts.department,
+      departmentId: opts.departmentId,
+      limit: opts.limit,
+      offset: opts.offset,
+    },
+    ...(opts.signal ? { signal: opts.signal } : {}),
+  });
+  return data as ListHrEmployeesResult;
+}
+
+export async function listHrDesignations(signal?: AbortSignal): Promise<string[]> {
+  const data = await request('GET', '/hr/meta/designations', {
+    ...(signal ? { signal } : {}),
+  });
+  return (data as { designations?: string[] }).designations ?? [];
+}
+
+export interface HrOrgNodeDto {
+  id: string;
+  name: string;
+  code: string | null;
+  leadName: string | null;
+  parentId: string | null;
+  employeeCount: number;
+  activeEmployeeCount: number;
+  children: HrOrgNodeDto[];
+}
+
+export interface HrOrgStructureDto {
+  roots: HrOrgNodeDto[];
+  departmentCount: number;
+  employeeLinkedCount: number;
+  employeeUnlinkedCount: number;
+}
+
+export async function getHrOrgStructure(signal?: AbortSignal): Promise<HrOrgStructureDto> {
+  return (await request('GET', '/hr/org-structure', {
+    ...(signal ? { signal } : {}),
+  })) as HrOrgStructureDto;
+}
+
+export async function createHrEmployee(body: HrEmployeeWriteInput): Promise<HrEmployeeDto> {
+  return (await request('POST', '/hr/employees', { body })) as HrEmployeeDto;
+}
+
+export async function updateHrEmployee(id: string, body: HrEmployeePatchInput): Promise<HrEmployeeDto> {
+  return (await request('PATCH', `/hr/employees/${encodeURIComponent(id)}`, { body })) as HrEmployeeDto;
+}
+
+export async function deleteHrEmployee(id: string): Promise<void> {
+  await request('DELETE', `/hr/employees/${encodeURIComponent(id)}`);
+}
+
+// ── Departments (`hr_departments`) ───────────────────────────────────────────
+
+export interface HrDepartmentDto {
+  id: string;
+  zohoRecordId: string | null;
+  name: string;
+  code: string | null;
+  mailAlias: string | null;
+  leadName: string | null;
+  leadZohoId: string | null;
+  leadEmail: string | null;
+  parentName: string | null;
+  parentZohoId: string | null;
+  parentId: string | null;
+  source: string;
+  lastSyncedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HrDepartmentWriteInput {
+  name: string;
+  code?: string | null;
+  mailAlias?: string | null;
+  leadName?: string | null;
+  parentName?: string | null;
+}
+
+export type HrDepartmentPatchInput = Partial<HrDepartmentWriteInput>;
+
+export interface ListHrDepartmentsOpts {
+  q?: string;
+  limit?: number;
+  offset?: number;
+  signal?: AbortSignal;
+}
+
+export interface ListHrDepartmentsResult {
+  items: HrDepartmentDto[];
+  total: number;
+}
+
+export async function listHrDepartments(
+  opts: ListHrDepartmentsOpts = {},
+): Promise<ListHrDepartmentsResult> {
+  const data = await request('GET', '/hr/departments', {
+    query: {
+      q: opts.q,
+      limit: opts.limit,
+      offset: opts.offset,
+    },
+    ...(opts.signal ? { signal: opts.signal } : {}),
+  });
+  return data as ListHrDepartmentsResult;
+}
+
+export async function createHrDepartment(body: HrDepartmentWriteInput): Promise<HrDepartmentDto> {
+  return (await request('POST', '/hr/departments', { body })) as HrDepartmentDto;
+}
+
+export async function updateHrDepartment(
+  id: string,
+  body: HrDepartmentPatchInput,
+): Promise<HrDepartmentDto> {
+  return (await request('PATCH', `/hr/departments/${encodeURIComponent(id)}`, {
+    body,
+  })) as HrDepartmentDto;
+}
+
+export async function deleteHrDepartment(id: string): Promise<void> {
+  await request('DELETE', `/hr/departments/${encodeURIComponent(id)}`);
+}

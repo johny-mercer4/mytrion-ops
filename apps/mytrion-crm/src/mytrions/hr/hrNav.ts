@@ -8,14 +8,21 @@
  * only shape the UI — once these tabs get real endpoints, the endpoint is the security boundary
  * (HR → an `hr`-gated /v1/hr/*, mirroring Manager's `management` gate).
  *
- * Every tab except Home is flagged `soon` — it renders the shared <ComingSoon /> rather than
- * placeholder rows. Nothing in this module calls Zoho People yet.
+ * Attendance / Requests / Profile stay `soon`. Employees, Departments, and Org Structure
+ * are live against `hr_employees` / `hr_departments` (no mock trees).
  */
 import type { LucideIcon } from 'lucide-react';
-import { CalendarClock, Home, Inbox, UserRound, Users } from 'lucide-react';
+import { Building2, CalendarClock, Home, Inbox, Network, UserRound, Users } from 'lucide-react';
 import type { UserContext } from '../../context/userContext';
 
-export type HrTabId = 'home' | 'employees' | 'attendance' | 'requests' | 'profile';
+export type HrTabId =
+  | 'home'
+  | 'employees'
+  | 'departments'
+  | 'org'
+  | 'attendance'
+  | 'requests'
+  | 'profile';
 
 export interface HrTab {
   id: HrTabId;
@@ -50,12 +57,29 @@ export const HR_TABS: HrTab[] = [
   },
   {
     id: 'employees',
-    soon: true,
     label: 'Employees',
     description: 'The people directory — every employee, their department, role and status.',
     icon: Users,
     tone: 'var(--tone-sky)',
     keywords: ['directory', 'people', 'staff', 'headcount', 'roster'],
+    access: () => true,
+  },
+  {
+    id: 'departments',
+    label: 'Departments',
+    description: 'Org units — name, code, lead and parent department.',
+    icon: Building2,
+    tone: 'var(--tone-indigo)',
+    keywords: ['org', 'teams', 'units', 'structure', 'dept'],
+    access: () => true,
+  },
+  {
+    id: 'org',
+    label: 'Org Structure',
+    description: 'Department hierarchy with real headcount from linked employees.',
+    icon: Network,
+    tone: 'var(--tone-teal)',
+    keywords: ['hierarchy', 'tree', 'org chart', 'structure'],
     access: () => true,
   },
   {

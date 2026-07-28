@@ -146,6 +146,9 @@ describe('the trimmed projection never leaks Clients-tab fields', () => {
     expect(Object.keys(row).sort()).toEqual(
       [
         'activeCards',
+        // The TRACK basis: prev-month transacting cards, per the Loyalty Tiers v3 deck. A tier
+        // input, not a Clients-tab leak — the board cannot resolve a track without it.
+        'activeCardsPrevMonth',
         'activeCardsThisMonth',
         'agentName',
         'carrierId',

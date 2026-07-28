@@ -7,6 +7,9 @@ import {
   ALL_JOBS,
   DISABLED_JOB_QUEUES,
   MANUAL_TRIGGERABLE_QUEUES,
+  kpiSalesDailyRollupJob,
+  kpiSalesMonthCloseJob,
+  kpiSalesReconcileJob,
   retentionCaseSyncJob,
   retentionDeadlineSweepJob,
   type JobDef,
@@ -57,6 +60,25 @@ export async function triggerCatalogJob(
     data = {
       trigger: 'manual',
       ...(typeof payload.limit === 'number' ? { limit: payload.limit } : {}),
+    };
+  }
+  if (name === kpiSalesReconcileJob.name) {
+    data = {
+      trigger: 'manual',
+      ...(typeof payload.lookbackDays === 'number' ? { lookbackDays: payload.lookbackDays } : {}),
+      ...(payload.mode === 'backfill' || payload.mode === 'reconcile' ? { mode: payload.mode } : {}),
+    };
+  }
+  if (name === kpiSalesDailyRollupJob.name) {
+    data = {
+      trigger: 'manual',
+      ...(Array.isArray(payload.days) ? { days: payload.days } : {}),
+    };
+  }
+  if (name === kpiSalesMonthCloseJob.name) {
+    data = {
+      trigger: 'manual',
+      ...(typeof payload.periodStart === 'string' ? { periodStart: payload.periodStart } : {}),
     };
   }
 

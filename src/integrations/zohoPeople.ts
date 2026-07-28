@@ -1,6 +1,6 @@
 /**
- * Zoho People wrapper — employee reads (auth via ZohoWrapper/ZohoAuthService). Uses the legacy
- * forms API `getRecords` on the `employee` form (success sentinel `response.status === 0`;
+ * Zoho People wrapper — forms reads (auth via ZohoWrapper/ZohoAuthService). Uses the legacy
+ * forms API `getRecords` (success sentinel `response.status === 0`;
  * results are `{ "<recordId>": [ {fields…} ] }`). Filtering uses `searchParams` (Contains,
  * pipe = AND). See .claude/skills/zoho-people-api/SKILL.md §3–§4.
  */
@@ -9,17 +9,24 @@ import { ZohoWrapper } from './zohoBase.js';
 // Zoho People system field/label names. These are the standard ones; if this org renamed
 // them, adjust here (the metadata catalog `pnpm meta:zoho-people` lists the form's fields).
 const EMPLOYEE_FORM = 'employee';
+const DEPARTMENT_FORM = 'department';
 const FIELD_FIRST_NAME = 'FirstName';
 const FIELD_LAST_NAME = 'LastName';
 const FIELD_DEPARTMENT = 'Department';
 
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
+/** People getRecords hard cap per page (docs); live samples sometimes return ≤100. */
+const BULK_PAGE_SIZE = 200;
 
-export interface EmployeeRecord {
+/** Flat record from any People form getRecords response. */
+export interface PeopleFormRecord {
   recordId: string;
   fields: Record<string, unknown>;
 }
+
+/** @deprecated Prefer PeopleFormRecord — kept for existing employee callers. */
+export type EmployeeRecord = PeopleFormRecord;
 
 export interface SearchEmployeesInput {
   /** Matches first OR last name (partial). Two words → first + last. */
@@ -75,8 +82,8 @@ interface PeopleResponse {
   response?: { result?: unknown; status?: number; message?: string };
 }
 
-/** Parse a forms getRecords payload into flat employee records. */
-function parseGetRecords(json: PeopleResponse): EmployeeRecord[] {
+/** Parse a forms getRecords payload into flat records. */
+function parseGetRecords(json: PeopleResponse): PeopleFormRecord[] {
   const resp = json.response;
   const result = resp?.result;
   if (!Array.isArray(result)) {
@@ -85,7 +92,7 @@ function parseGetRecords(json: PeopleResponse): EmployeeRecord[] {
     }
     return [];
   }
-  const out: EmployeeRecord[] = [];
+  const out: PeopleFormRecord[] = [];
   for (const entry of result) {
     if (!entry || typeof entry !== 'object') continue;
     const recordId = Object.keys(entry)[0];
@@ -108,37 +115,82 @@ export class ZohoPeopleWrapper extends ZohoWrapper {
     super('zoho_people');
   }
 
-  private async fetchEmployeePage(criteria: Criterion[], limit: number): Promise<EmployeeRecord[]> {
-    const path = `/forms/${EMPLOYEE_FORM}/getRecords`;
+  private async fetchFormPage(
+    formLinkName: string,
+    opts: { sIndex: number; limit: number; criteria?: Criterion[] },
+  ): Promise<PeopleFormRecord[]> {
+    const path = `/forms/${formLinkName}/getRecords`;
     const res = await this.requestRaw('GET', path, {
       query: {
-        sIndex: 1,
-        limit,
-        ...(criteria.length > 0 ? { searchParams: criteria.map(criterion).join('|') } : {}),
+        sIndex: opts.sIndex,
+        limit: opts.limit,
+        ...(opts.criteria && opts.criteria.length > 0
+          ? { searchParams: opts.criteria.map(criterion).join('|') }
+          : {}),
       },
     });
     const text = await res.text();
     if (!res.ok) {
-      throw new Error(`[zoho-people] getRecords HTTP ${res.status}: ${text.slice(0, 300)}`);
+      throw new Error(
+        `[zoho-people] ${formLinkName}/getRecords HTTP ${res.status}: ${text.slice(0, 300)}`,
+      );
     }
     return parseGetRecords(text ? (JSON.parse(text) as PeopleResponse) : {});
+  }
+
+  private async listAllFormRecords(
+    formLinkName: string,
+    opts: { pageSize?: number; maxPages?: number } = {},
+  ): Promise<PeopleFormRecord[]> {
+    const pageSize = Math.min(
+      Math.max(Math.trunc(opts.pageSize ?? BULK_PAGE_SIZE), 1),
+      BULK_PAGE_SIZE,
+    );
+    const out: PeopleFormRecord[] = [];
+    let sIndex = 1;
+    let page = 0;
+    for (;;) {
+      if (opts.maxPages !== undefined && page >= opts.maxPages) break;
+      const batch = await this.fetchFormPage(formLinkName, { sIndex, limit: pageSize });
+      out.push(...batch);
+      page += 1;
+      if (batch.length < pageSize) break;
+      sIndex += pageSize;
+    }
+    return out;
   }
 
   /**
    * Search employees. No filters → first page of all employees; `name` and/or `department`
    * filter server-side. Results are deduped by recordId and capped at `limit`.
    */
-  async searchEmployees(input: SearchEmployeesInput = {}): Promise<EmployeeRecord[]> {
+  async searchEmployees(input: SearchEmployeesInput = {}): Promise<PeopleFormRecord[]> {
     const limit = Math.min(Math.max(Math.trunc(input.limit ?? DEFAULT_LIMIT), 1), MAX_LIMIT);
-    const byId = new Map<string, EmployeeRecord>();
+    const byId = new Map<string, PeopleFormRecord>();
     for (const criteria of buildCriteriaSets(input.name, input.department)) {
-      const page = await this.fetchEmployeePage(criteria, limit);
+      const page = await this.fetchFormPage(EMPLOYEE_FORM, {
+        sIndex: 1,
+        limit,
+        criteria,
+      });
       for (const record of page) {
         if (!byId.has(record.recordId)) byId.set(record.recordId, record);
       }
       if (byId.size >= limit) break;
     }
     return [...byId.values()].slice(0, limit);
+  }
+
+  /** Paginate the entire `employee` form into `hr_employees`. */
+  async listAllEmployees(opts: { pageSize?: number; maxPages?: number } = {}): Promise<PeopleFormRecord[]> {
+    return this.listAllFormRecords(EMPLOYEE_FORM, opts);
+  }
+
+  /** Paginate the entire `department` form into `hr_departments`. */
+  async listAllDepartments(
+    opts: { pageSize?: number; maxPages?: number } = {},
+  ): Promise<PeopleFormRecord[]> {
+    return this.listAllFormRecords(DEPARTMENT_FORM, opts);
   }
 }
 
