@@ -1,6 +1,13 @@
 import sensible from '@fastify/sensible';
 import Fastify from 'fastify';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { errorHandlerPlugin } from '../../src/plugins/errorHandler.js';
 import type { TenantContext } from '../../src/types/tenantContext.js';
 
@@ -90,6 +97,10 @@ describe('support-bot gateway routes tenant isolation', () => {
     mocks.listActiveByCarrier.mockResolvedValue([]);
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('passes the authenticated tenant to chat-map reads', async () => {
     const server = await app();
     const tenantA = await server.inject({
@@ -151,5 +162,28 @@ describe('support-bot gateway routes tenant isolation', () => {
       '9001',
     );
     expect(mocks.autoBindChat).not.toHaveBeenCalled();
+  });
+
+  it('proxies metrics and preserves monitor query parameters', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ pid: 42 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const server = await app();
+    const response = await server.inject({
+      method: 'GET',
+      url: '/support-bot/monitor/api/metrics?token=secret&since=2026-07-28T00%3A00%3A00.000Z',
+    });
+    await server.close();
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ pid: 42 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:8787/api/metrics?token=secret&since=2026-07-28T00%3A00%3A00.000Z',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 });

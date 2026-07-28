@@ -42,16 +42,22 @@ async function backend(
   carrierId: string,
   extraHeaders: Record<string, string> = {},
 ) {
-  const res = await fetch(`${config.octaneBase}/v1${path}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${config.octaneKey}`,
-      'Content-Type': 'application/json',
-      ...extraHeaders,
-    },
-    body: JSON.stringify({ carrierId, ...payload }),
-    signal: AbortSignal.timeout(30_000),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${config.octaneBase}/v1${path}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.octaneKey}`,
+        'Content-Type': 'application/json',
+        ...extraHeaders,
+      },
+      body: JSON.stringify({ carrierId, ...payload }),
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (error) {
+    noteBackendError(0, 'BACKEND_TRANSPORT_ERROR');
+    throw error;
+  }
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
     const detail =

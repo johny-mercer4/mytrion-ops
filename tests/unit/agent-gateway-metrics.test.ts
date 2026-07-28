@@ -3,6 +3,7 @@ import {
   _resetForTests,
   incrementCounter,
   metricsSnapshot,
+  noteBackendError,
   percentile,
   subprocessStarted,
   turnAggregates,
@@ -137,6 +138,25 @@ describe('agent-gateway metrics', () => {
     expect(metricsSnapshot().gauges).toMatchObject({
       active_subprocesses: 0,
       active_vision: 0,
+    });
+  });
+
+  it('classifies backend safety errors without losing status totals', () => {
+    noteBackendError(409, 'SUPPORT_BOT_IDEMPOTENCY_CONFLICT');
+    noteBackendError(409, 'SUPPORT_BOT_OPERATION_OUTCOME_UNKNOWN');
+    noteBackendError(409, 'SUPPORT_BOT_STALE_FENCE');
+    noteBackendError(0, 'BACKEND_TRANSPORT_ERROR');
+
+    const snapshot = metricsSnapshot();
+    expect(snapshot.counters).toMatchObject({
+      backend_error_total: 4,
+      idempotency_conflict_total: 1,
+      operation_unknown_total: 1,
+      stale_fence_total: 1,
+    });
+    expect(snapshot.backendErrorsByStatus).toEqual({
+      '0': 1,
+      '409': 3,
     });
   });
 });

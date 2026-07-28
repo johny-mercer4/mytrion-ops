@@ -5320,3 +5320,30 @@ was performed.
   mini-app mock rejection. Local backend smoke returned 200 for `/v1/health` and the extracted
   `/v1/support-bot/chat-map`; no gateway was started against a real bot token and no external
   Telegram, Claude, EFS or ServerCRM request was made.
+
+## 2026-07-28 — independent Phase 0 and metrics audit follow-up
+
+- Audited the committed Phase 0 route/repository, migration, idempotency, monitor and baseline
+  capture paths. Direct database access remains absent from support-bot routes, all touched source
+  files remain below the line caps, migration journal entries 0058/0059 are present, and
+  `FF_SUPPORT_BOT_IDEMPOTENCY` still defaults OFF.
+- Fixed four metrics edge cases: backend transport/timeout failures are now counted, a second
+  Telegram 429 after retry is counted, baseline capture preserves URL path prefixes and includes
+  its deadline sample, and captured turn latency is bounded to the same server-clock window as
+  counter deltas.
+- Added regression coverage for backend safety/status error classification and the proxied monitor
+  metrics route, including preservation of `token` and `since` query parameters.
+- Verified the monitor locally: unauthenticated `/api/metrics` returned 403, authenticated access
+  returned 200, and a synthetic turn settled with one completed turn, one histogram sample and no
+  leaked active gauge. The baseline script was dry-run against a prefixed fake monitor and aligned
+  two measured turns with a two-turn counter delta.
+- Confirmed the local app database contains the operation/fence tables and the tenant-scoped unique
+  chat index; a repeated local migration run completed cleanly. Production, DWH and MySQL were not
+  touched.
+- Verification: lint has 0 errors and the same 17 existing warnings; root, gateway and standalone
+  capture-script typechecks passed; focused tests passed 19/19; offline stress passed 100/100 with
+  zero same-user overlap or ordering violations. Full suite finished at 927 passed / the same 38
+  unrelated baseline failures plus the existing detached mini-app mock rejection.
+- A real Telegram gateway was deliberately not started because the bot token must have only one
+  long-polling consumer. No deployment or external Telegram, Claude, EFS or ServerCRM request was
+  performed.

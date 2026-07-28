@@ -56,6 +56,7 @@ async function tgSend(method: string, payload: Record<string, unknown>): Promise
       await new Promise((resolve) => setTimeout(resolve, waitMs));
       lastSendAt = Date.now();
       res = await tgPost(method, payload);
+      if (res.status === 429) incrementCounter('tg_429_total');
     }
     if (!res.ok) {
       incrementCounter('tg_send_fail_total');

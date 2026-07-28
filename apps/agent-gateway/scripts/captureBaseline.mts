@@ -96,7 +96,10 @@ function queryUrl(
   token: string,
   extra: Record<string, string> = {},
 ): URL {
-  const url = new URL(pathname, `${baseUrl}/`);
+  const url = new URL(
+    pathname.replace(/^\/+/, ''),
+    `${baseUrl.replace(/\/+$/, '')}/`,
+  );
   if (token) url.searchParams.set('token', token);
   for (const [key, value] of Object.entries(extra)) {
     url.searchParams.set(key, value);
@@ -183,17 +186,17 @@ function gaugeSummary(samples: MetricsResponse[]) {
 
 async function main(): Promise<void> {
   const opts = options();
-  const capturedAt = new Date();
-  const deadline = Date.now() + opts.minutes * 60_000;
   const samples: MetricsResponse[] = [];
   const turns = new Map<string, TurnRow>();
   let epoch: string | null = null;
-  let since = capturedAt.toISOString();
+  let capturedAt: Date | null = null;
+  let deadline = 0;
+  let since = '';
 
   console.log(
     `[baseline] ${opts.label}: ${opts.minutes} min, every ${opts.intervalSec}s, ${opts.baseUrl}`,
   );
-  do {
+  for (;;) {
     const metrics = await getJson<MetricsResponse>(
       queryUrl(opts.baseUrl, '/api/metrics', opts.token),
     );
@@ -205,6 +208,11 @@ async function main(): Promise<void> {
     }
     epoch = nextEpoch;
     samples.push(metrics);
+    if (!capturedAt) {
+      capturedAt = new Date(metrics.ts);
+      deadline = Date.now() + opts.minutes * 60_000;
+      since = capturedAt.toISOString();
+    }
 
     const page = await getJson<TurnsResponse>(
       queryUrl(opts.baseUrl, '/api/turns', opts.token, { since }),
@@ -228,12 +236,17 @@ async function main(): Promise<void> {
     console.log(
       `[baseline] samples=${samples.length} turns=${turns.size} remaining=${Math.max(0, Math.ceil(remaining / 1000))}s`,
     );
-    if (remaining > 0) {
-      await sleep(Math.min(remaining, opts.intervalSec * 1000));
-    }
-  } while (Date.now() < deadline);
-
-  const rows = [...turns.values()].filter((turn) => turn.totalMs != null);
+    if (remaining <= 0) break;
+    await sleep(Math.min(remaining, opts.intervalSec * 1000));
+  }
+  if (!capturedAt) throw new Error('monitor returned no metric samples');
+  const endedAt = Date.parse(samples.at(-1)?.ts ?? '');
+  const rows = [...turns.values()].filter(
+    (turn) =>
+      turn.totalMs != null &&
+      Date.parse(turn.ts) >= capturedAt.getTime() &&
+      Date.parse(turn.completedAt ?? turn.ts) <= endedAt,
+  );
   const waits = rows.map((turn) => turn.waitMs);
   const totals = rows.map((turn) => turn.totalMs ?? 0);
   const execs = rows.map((turn) => turn.execMs);
