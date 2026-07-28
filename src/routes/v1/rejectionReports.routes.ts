@@ -13,7 +13,9 @@
  *
  * Agent scoping matches id-OR-name (see rejectionReportRepo.listForAgent): a worker's session Zoho
  * id and the warehouse's `agent_zoho_user_id` carry different org prefixes, so neither identifier
- * alone finds every row. Admins / all-department callers see the whole tenant feed.
+ * alone finds every row. Owner-scoped for EVERYONE including admins — Data Center is "your
+ * pipeline", and every other sub-tab behaves that way; `?all=1` is the admin opt-in for the whole
+ * tenant feed.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -23,6 +25,7 @@ import { safeEqual } from '../../lib/crypto.js';
 import { AppError, AuthError } from '../../lib/errors.js';
 import { audit } from '../../modules/audit/auditLogger.js';
 import { systemContext } from '../../modules/auth/authService.js';
+import { resolveActAsTarget } from '../../modules/auth/actAsDirectory.js';
 import { resolveZohoUserId } from '../../modules/tools/serverCrmScope.js';
 import { rejectionReportRepo } from '../../repos/rejectionReportRepo.js';
 import type { MytrionRejectionReport } from '../../db/schema/index.js';
@@ -73,6 +76,8 @@ const webhookSchema = z.object({
 
 const listQuerySchema = z.object({
   zoho_user_id: z.string().max(120).optional(),
+  /** Admin-only escape hatch for the whole tenant feed; the default is owner-scoped. */
+  all: z.enum(['1']).optional(),
   limit: z.coerce.number().int().min(1).max(500).optional(),
   offset: z.coerce.number().int().min(0).optional(),
 });
@@ -197,8 +202,18 @@ export async function rejectionReportsRoutes(app: FastifyInstance): Promise<void
   });
 
   /**
-   * The agent's rejection reports (replaces the Zoho Desk scan). Admin / all-department callers see
-   * the whole tenant feed; everyone else sees the carriers they own, matched id-or-name.
+   * The agent's rejection reports — owner-scoped exactly like Leads/Deals on this tab.
+   *
+   * Admins are NOT special-cased into the org-wide feed. Data Center is "everything about YOUR
+   * pipeline": every other sub-tab resolves through `resolveZohoUserId` and shows the caller's own
+   * records (or the acted-as agent's), and rejections silently doing otherwise meant an admin saw a
+   * mixed org-wide list here while Leads and Deals showed their own book. `?all=1` is the explicit
+   * opt-in for the whole tenant.
+   *
+   * Matching is id-OR-name: a worker's session Zoho id and the warehouse's `agent_zoho_user_id`
+   * carry different org prefixes, so the id alone misses rows (see rejectionReportRepo.listForAgent).
+   * When acting as another agent we resolve THAT agent's display name from the CRM directory rather
+   * than passing the admin's own, which would match the wrong rows.
    */
   app.get('/data-center/rejections', guard, async (request) => {
     const ctx = requireSalesAccess(request);
@@ -208,18 +223,22 @@ export async function rejectionReportsRoutes(app: FastifyInstance): Promise<void
       ...(q.offset !== undefined ? { offset: q.offset } : {}),
     };
 
-    // Admin with no explicit target → the full feed. With ?zoho_user_id they act as that agent.
-    if (ctx.allDepartmentAccess && !q.zoho_user_id) {
+    if (q.all === '1' && (ctx.allDepartmentAccess || ctx.role === 'admin')) {
       const all = await rejectionReportRepo.listAll(ctx, page);
       return { rejections: all.map(toDto) };
     }
 
     const agentZohoUserId = resolveZohoUserId(ctx, q.zoho_user_id);
+    // Name fallback: our own name for the self case; the TARGET's name when acting as someone else,
+    // since matching on the admin's own name would pull the wrong agent's rows. Best-effort — the id
+    // arm still finds rows on its own if the directory lookup fails.
+    const agentName = q.zoho_user_id
+      ? ((await resolveActAsTarget(agentZohoUserId).catch(() => null))?.name ?? null)
+      : (ctx.userName ?? null);
+
     const rows = await rejectionReportRepo.listForAgent(ctx, {
       agentZohoUserId,
-      // The name arm only applies to the caller's OWN feed — when acting as someone else we have
-      // their id but not their name, and matching on the admin's name would leak the wrong rows.
-      agentName: q.zoho_user_id ? null : (ctx.userName ?? null),
+      agentName,
       ...page,
     });
     return { rejections: rows.map(toDto) };

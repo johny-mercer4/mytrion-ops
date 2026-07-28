@@ -7028,3 +7028,44 @@ Rendered the table in both themes in headless Chrome before committing.
 
 Typecheck green, lint 0 errors, frontend 214/215 — the one failure the long-standing `filterDebtors`
 case. Widget bundle rebuilt.
+
+## 2026-07-28 (7) — Rejection Reports: modal anchored to the viewport + owner-scoped
+
+### The modal opened at the container's midpoint
+
+`DetailSheet`'s scrim was already `position: fixed`, which is why this looked wrong rather than
+obviously broken. The cause is that **a filtered ancestor becomes the containing block for
+fixed-position descendants**, and Sales puts `backdrop-filter` on its chrome and card surfaces. So the
+scrim anchored to the (very tall) panel instead of the viewport: opening a row far down the Rejection
+Reports list put the dialog at the CONTAINER's centre and the agent had to scroll to find it.
+
+Fixed by rendering `DetailSheet` through a portal to `<body>` — the same fix, for the same reason, as
+Finance's `ClientModal`. The portal escapes `.ss-root`, which is where Sales' token bridge
+(`--surface`, `--border`, radii) and the `.light` class live, so the wrapper re-establishes both via
+`useTheme()`; without that the sheet renders with global tokens and ignores light mode. This fixes the
+Lead and Deal modals too — they share the sheet and had the same latent bug.
+
+### Rejections were not owner-scoped
+
+Two separate gaps, both silent:
+
+1. **`loadRejections()` never forwarded the acted-as agent** while `loadLeads`/`loadDeals` both do, so
+   View-as switched every other Data Center tab's identity and left this one alone.
+2. **The route special-cased admins into the org-wide feed.** Data Center is "everything about YOUR
+   pipeline" and every other sub-tab resolves through `resolveZohoUserId` — including for admins — so
+   an admin saw a mixed org-wide decline list here while Leads and Deals showed their own book. That
+   is what the screenshot showed.
+
+Now owner-scoped for everyone, matching id-OR-name (the session Zoho id and the warehouse's
+`agent_zoho_user_id` carry different org prefixes, so neither alone finds every row). When acting as
+another agent the name arm resolves THAT agent's name from the CRM directory rather than the admin's
+own, which would match the wrong rows. `?all=1` is the explicit admin opt-in for the tenant feed, and
+a plain agent passing it still gets only their own rows.
+
+3 new tests cover the admin-is-scoped case, the `?all=1` opt-in, and that `?all=1` does not privilege
+a non-admin. 12 total in that file.
+
+### Checks
+
+Typecheck green, backend 1057 passed / 10 failed (the same pre-existing set across two runs), widget
+rebuilt.
