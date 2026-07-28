@@ -6531,6 +6531,162 @@ Typecheck green, lint 0 errors, frontend 199/200 (the pre-existing `dashDebtorsD
 ~34 failures when run immediately after a heavy build (timeouts + 403s in the DB/network suites);
 two consecutive clean runs both give 10. Worth chasing separately — it makes CI look flaky.
 
+## 2026-07-22 — Analytics category dashboards + UI filters
+
+### Sidebar by category
+
+Rewired Analyst Mytrion nav from a single Dashboard tab to category pages: Sales, Customer Service, Finance, Billing, Transactions, Reports (`categories.ts` + `index.tsx`). URL: `/m/analyst?category=sales`.
+
+### UI parameter filters
+
+`DashboardFilters` + `filterBlock` — agent picker (admins: `listAgents`; others: self) and date presets (today / this week / this month / custom). Selections sync to URL (`agent`, `agentName`, `range`, `from`, `to`). Client-side: agent filters leaderboard; date filters trend points. KPIs/breakdown remain org snapshot totals until the warehouse API is parameterized.
+
+### Cleanup
+
+Removed broken WIP Individual/Managers dashboard files that imported deleted Tailwind analytics kit. Typecheck green for CRM app.
+
+## 2026-07-28 — Analytics agent/date filters → parameterized DWH
+
+### Problem
+UI agent/date filters only trimmed the client-side leaderboard/trend; KPIs stayed org-wide and a banner admitted warehouse snapshots were not per-agent.
+
+### Fix
+- `GET /v1/analytics/:dimension` accepts `agent`, `agent_name`, `range`, `from`, `to`.
+- `computeAnalyticsBlock(dimension, filters)` binds those into DWH SQL (`filters.ts` + `service.ts`): pipeline via `zoho_users` id-suffix / name; transactions/billing via `dim_company` ownership CTE (`buildOwnedCte`).
+- Filtered requests bypass the 2h org cache; non-admins cannot target another agent.
+- CRM `useAnalyticsSnapshot` + `CategoryDashboard` forward URL filters to the API (no more client-only agent banner).
+
+### Checks
+Unit: analytics-filters + analytics-cache green. Backend + CRM `tsc --noEmit` clean.
+
+### Hotfix — pipeline agent filter 500
+
+Agent-scoped pipeline stages joined `intm_zoho_deals.owner`, which does not exist → DWH error → UI "Internal server error". Now scopes stages via `EXISTS` on `zoho_deals` matched by `zoho_deal_id`. Verified: `?agent_name=Daniel+Brown` returns 200 with his KPIs/leaderboard.
+
+### Analytics date filters — empty Today/This week for agents
+
+Daniel Brown (and many reps) often have **0 fills today / this calendar week** while still having month activity (e.g. Jul 15–17, Jul 25). UI looked “broken”. Added **Last 7 days** preset, defaulted Custom to last 7 days, aligned Today trend to one day, and a banner when an agent has 0 fills in the selected window.
+
+### Hotfix — blank Sales dashboard / DWH connection timeouts
+
+Filtered views (`last_7_days`, agent picks, etc.) always hit live DWH with 4-wide `Promise.all` and no cache. Rapid filter changes + React double-fetch + warmers exhausted the shared pool (`max: 5`) → `timeout exceeded when trying to connect` → blank UI / 502.
+
+- Filtered snapshot cache (5 min) + in-flight dedupe; serve stale filtered on recompute failure.
+- Cap analytics query parallelism at 2 per compute.
+- Category dashboard shows “Loading…” / clearer timeout error instead of an empty dark panel.
+
+### Hotfix — pipeline statement timeout on stages (`intm_zoho_deals`)
+
+Even after cache/dedupe, `computePipeline` stages scanned `intm_zoho_deals` and regularly hit DWH `statement_timeout=30s` (especially `last_7_days` / org-wide). App Fills from `public.zoho_deals` was fine; the stages query killed the whole block → 502 / blank Sales.
+
+- Stages now aggregate `public.zoho_deals.stage` (same table + owner join as apps) — sub-second in spot checks.
+- Soft-fail individual pipeline queries so a single timeout still returns partial KPIs/trend/leaderboard.
+- Warmer skips a tick while interactive filtered/org computes are in flight.
+
+### Duplicate dashboards — CS ≡ Sales and Finance ≡ Billing
+
+Four sidebar categories rendered **two** distinct dashboards: `customer-service` was wired to the
+`pipeline` dimension (so CS showed the Sales deal funnel) and `finance` to `billing` (byte-identical
+to the Billing tab). Both now have their own warehouse-backed dimension.
+
+- **`support`** (Customer Service) — `public.zoho_desk_tickets`. KPIs Tickets Created / Closed /
+  Avg Resolution / Open Now; trend tickets-per-day; breakdown by status; leaderboard by channel.
+  SCD2 table with duplicate rows per ticket even among `is_active` (67221 rows / 64948 distinct
+  ids) → every aggregate counts `distinct t.id`.
+  **Not agent-scopable:** Desk `assignee_id` is the Desk org id space (`1057080…`), CRM
+  `zoho_users.id` is `6227679…` — zero overlap on full id *and* last-12-suffix, and the DWH has no
+  Desk-agent roster to bridge them. The agent picker is hidden for CS, and if an `agent` param is
+  passed anyway the caption says "org-wide" so an org number never reads as one agent's book.
+- **`receivables`** (Finance) — `public.cmp_invoice` + `cmp_invoice_payment`. KPIs Invoiced /
+  Collected / Outstanding / Overdue; trend collected-$-per-day; breakdown open AR by age bucket;
+  leaderboard largest outstanding balances. Open-invoice rule matches `dwhClientRoster`'s debt_cte
+  (`PENDING`/`PARTIALLY_PAID` and still owing ≥ $1) so Finance and the Clients roster agree.
+  Outstanding/overdue/aging are point-in-time, not window-filtered — an aging report scoped to
+  "today" is meaningless. Agent-scoped via `dim_company` ownership.
+
+**Refactor:** `service.ts` was 591 lines and two more computes would blow the 600-line cap, so each
+dimension moved to `src/modules/analytics/dimensions/*.ts`, shared helpers to `shared.ts`, and
+`service.ts` is now just the dispatcher. `ownedCarrierCteFor(alias, …)` generalises the ownership
+CTE (transactions `t`, billing `bh`, receivables `i`); the two old wrappers delegate to it.
+
+**Bug found while smoke-testing:** Billing's "Open Debtor Invoices" KPI read **0 forever** —
+`cmp_invoice.status` is stored UPPERCASE but the predicate compared `'pending'`/`'partially_paid'`.
+Now 1,529 org-wide / 46 for Daniel Brown. (It was invisible until Finance showed 1,366 open
+invoices next to Billing's 0.) Finance's count is slightly lower because it applies the ≥ $1
+still-owed floor; Billing's is a raw status count.
+
+### Checks
+`pnpm lint` 0 errors, `pnpm typecheck` + CRM `tsc --noEmit` clean. Analytics unit tests 21 green
+(6 new: `ownedCarrierCteFor` alias/binding + dimension registration). Live DWH spot-check of all
+five dimensions across today / last_7_days / this_month / custom / agent-scoped: 290–1110ms, no
+timeouts. Pre-existing unrelated failures (10 tests / 6 files: touchpoints, stream-adapter,
+zoho-crm, tools, retention-cs-caps, notification-templates) are identical before and after.
+UI render not visually verified — the app requires Zoho sign-in.
+
+### Sales dashboard was the CRM funnel, not a sales scorecard
+
+Reviewed against the "Sales_new" Power BI report (14 pages). Its recurring core metric set is
+**Active Companies, Unique Cards, New Cards, Volume (gallons), Revenue** — none of which our Sales
+dashboard showed. Sales was wired to the `pipeline` dimension (App Fills + deal stages), which is
+that report's **CRM** page, not its Sales scorecard.
+
+- **New `sales` dimension** (`dimensions/sales.ts`) — the five core KPIs with prior-period deltas,
+  volume/day trend, volume-by-company breakdown, agents-by-volume leaderboard (Volume / Cards /
+  Revenue), agent-scoped through the usual `dim_company` owner CTE.
+- **New `CRM` sidebar category** keeps the deal funnel on `pipeline` — nothing was thrown away, it
+  just moved to the category it actually describes.
+
+**Source:** `octane.mart_sales_dashboard_card_base` — the mart the Power BI report is itself built
+on (carrier / agent / card / volume / amount already denormalized, 1.27M rows, fresh to 2026-07-27).
+`first_transaction_date` is the CARD's first swipe and is single-valued per `card_number` (verified:
+zero cards carry more than one value), so New Cards = cards whose first swipe is in the window, and
+it is the cohort key if the report's cohort matrices get built later.
+**Perf caveat:** an unfiltered scan of that mart is ~3.5s; every query must stay date-bounded
+(date-filtered aggregates are 170ms–1.6s). Do not add an unbounded query against it.
+
+Not built from the report (deliberately out of scope for this pass): the cohort heatmaps, the filled
+US map by state, target-vs-actual gauges, referral/segmentation pages, and the FB-leads leaderboard.
+The `AnalyticsBlock` shape (KPIs + one trend + one breakdown + one leaderboard) covers a scorecard
+page; cohort matrices and maps would need new block types.
+
+### Checks
+`pnpm lint` 0 errors, backend + CRM `tsc --noEmit` clean, analytics unit tests 22 green. Live DWH
+spot-check of `sales` across today / last_7_days / this_month / custom / two agents: 509–1625ms.
+Full suite stable at the same 10 pre-existing failures / 6 files across repeated runs.
+
+### Analyst agent filter now follows "View as" (dropped the second picker)
+
+The analyst dashboards carried their own **SALES AGENT** combobox while the TopBar already had the
+app-wide **View as** (impersonation) control. Two controls, one question — they could disagree about
+whose numbers were on screen. The dashboard picker is gone; agent scoping now reads the
+impersonation state.
+
+- `DashboardFilters.tsx` — agent combobox removed (with its `listAgents` fetch, search/filter state
+  and `getSession`/`useUserContext` reads). It now only *reflects* the already-resolved
+  `value.agentName`; it must not re-derive the identity or the label could disagree with the KPIs
+  above it. Date pills / custom range unchanged.
+- `index.tsx` — resolves the agent: acting-as → that agent; else non-admin → **their own book**;
+  else (admin, not acting) → org-wide. Skipped entirely for Customer Service, which is not
+  agent-scopable.
+- `categories.ts` — `parseFilters` no longer reads `agent`/`agentName` from the URL and
+  `writeFilters` strips them, so a bookmarked legacy URL cannot silently re-scope a dashboard.
+- `analyst.css` — the ~2.1k of dead `.an-agent-*` / `.an-filter-agent` picker styles replaced by a
+  small `.an-viewas` indicator that picks up the accent treatment when an agent is active.
+
+**Regression this closed:** a plain rep has no View-as control at all (TopBar only renders it for
+admins or non-admins with an explicit `viewAsTargets` grant). Removing the picker without the
+non-admin self-scope branch would have stranded reps on org-wide figures with no way back to their
+own book — and the old picker's `pickSelf` was the only path they had. Scoping non-admins to self is
+also what `analytics.routes.ts` forces server-side anyway, so UI and backend now agree by default.
+
+Note: `CLAUDE.md` rule 10 points at a `modern-web-guidance` skill that does not exist in this repo
+(`.claude/skills/`) or in the user skills dir — matched the existing analyst `an-*` design system
+instead. Worth either adding that skill or dropping the rule.
+
+### Checks
+Backend + CRM `tsc --noEmit` clean, `pnpm lint` 0 errors, CRM `pnpm build` green. CRM suite failures
+(17 tests / 4 files: stream, touchpoints, transport.refresh, dashDebtorsData) are byte-identical
+with these changes stashed — pre-existing, none in analyst.
 ## 2026-07-28 — Admin user management: per-user overrides were a no-op for Administrators
 
 ### Root cause
@@ -7028,3 +7184,117 @@ Rendered the table in both themes in headless Chrome before committing.
 
 Typecheck green, lint 0 errors, frontend 214/215 — the one failure the long-standing `filterDebtors`
 case. Widget bundle rebuilt.
+
+## 2026-07-28 (7) — Rejection Reports: modal anchored to the viewport + owner-scoped
+
+### The modal opened at the container's midpoint
+
+`DetailSheet`'s scrim was already `position: fixed`, which is why this looked wrong rather than
+obviously broken. The cause is that **a filtered ancestor becomes the containing block for
+fixed-position descendants**, and Sales puts `backdrop-filter` on its chrome and card surfaces. So the
+scrim anchored to the (very tall) panel instead of the viewport: opening a row far down the Rejection
+Reports list put the dialog at the CONTAINER's centre and the agent had to scroll to find it.
+
+Fixed by rendering `DetailSheet` through a portal to `<body>` — the same fix, for the same reason, as
+Finance's `ClientModal`. The portal escapes `.ss-root`, which is where Sales' token bridge
+(`--surface`, `--border`, radii) and the `.light` class live, so the wrapper re-establishes both via
+`useTheme()`; without that the sheet renders with global tokens and ignores light mode. This fixes the
+Lead and Deal modals too — they share the sheet and had the same latent bug.
+
+### Rejections were not owner-scoped
+
+Two separate gaps, both silent:
+
+1. **`loadRejections()` never forwarded the acted-as agent** while `loadLeads`/`loadDeals` both do, so
+   View-as switched every other Data Center tab's identity and left this one alone.
+2. **The route special-cased admins into the org-wide feed.** Data Center is "everything about YOUR
+   pipeline" and every other sub-tab resolves through `resolveZohoUserId` — including for admins — so
+   an admin saw a mixed org-wide decline list here while Leads and Deals showed their own book. That
+   is what the screenshot showed.
+
+Now owner-scoped for everyone, matching id-OR-name (the session Zoho id and the warehouse's
+`agent_zoho_user_id` carry different org prefixes, so neither alone finds every row). When acting as
+another agent the name arm resolves THAT agent's name from the CRM directory rather than the admin's
+own, which would match the wrong rows. `?all=1` is the explicit admin opt-in for the tenant feed, and
+a plain agent passing it still gets only their own rows.
+
+3 new tests cover the admin-is-scoped case, the `?all=1` opt-in, and that `?all=1` does not privilege
+a non-admin. 12 total in that file.
+
+### Checks
+
+Typecheck green, backend 1057 passed / 10 failed (the same pre-existing set across two runs), widget
+rebuilt.
+
+## 2026-07-28 (8) — Billing switch button, Admin access matrix verified, HR sync root-caused
+
+### Billing "Switch Mytrion" button
+
+I had reused `.bm-header-theme`, which is a fixed **32×32 icon-only square** — so the text label had
+nowhere to go and spilled out of the box. Added `.bm-header-switch` to `bm-horizon.css`: same glass
+pane + billing-accent hover, but sized for a label (auto width, 32px height matching the header
+rhythm, 3px radius matching the BILLING badge). Rendered before/after to confirm.
+
+### Admin user management — verified working, no changes needed
+
+Exercised the resolver across the levels asked about (harness note: `invalidateAll()` is required
+BETWEEN scenarios — the resolver TTL-caches per (tenant,user,profile,role,name), and my first run
+returned the same answer nine times because of it):
+
+| scenario | allDept | home | accessible |
+|---|---|---|---|
+| profile default only | false | sales | 1 |
+| user override replaces set | false | null | billing, finance |
+| override + home | false | finance | 2 |
+| override → full access | **true** | null | 11 |
+| full access + home | **true** | **manager** | 11 |
+| home not in granted set | false | billing (falls back) | 1 |
+| deny the only grant | false | null | **0 → 403** |
+| full access minus finance | false | null | 10 (finance gone) |
+
+All correct, including the auto-router with full access. Worth noting this only works because of the
+Administrator-override fix from earlier today — before it, every row involving an override was a no-op
+for admin-profile users.
+
+### HR — the sync could never finish (root cause, measured)
+
+Prod had **88 of 213** Zoho People employees. Ruled out the obvious causes first: the fetch pages
+correctly (returns all 213), the mapper throws on none of them, and all 213 have DISTINCT
+`employeeId` and `zohoRecordId` — so neither the NOT NULL names nor the two partial unique indexes
+were dropping anything.
+
+The actual cause is cost. `upsertFromZoho` does ~4 DB round-trips per employee (existence check, two
+`resolveDepartmentId` lookups, the write). Measured RTT to the hosted Postgres is **266 ms**, so 213
+employees is ~226 s — the sync cannot finish inside a request. It died partway, left the table
+half-populated, and surfaced nothing, because per-record failures only land in a `errors[]` array that
+a timed-out caller never reads. My own first run confirmed it: killed at 280 s having got to 181 rows.
+
+Added `hrEmployeeRepo.bulkUpsertFromZoho` — resolves departments ONCE into a lookup map, then writes
+chunked multi-row `INSERT … ON CONFLICT DO UPDATE`. Conflicts target the partial unique index on
+`(tenant, zoho_record_id)`, whose predicate has to be repeated in the ON CONFLICT clause for Postgres
+to match it. ~850 round-trips → ~3.
+
+Result: **FETCHED=213 WRITTEN=213 ERRORS=0 in 10 s** (was: timeout at 280 s). Table now 213 rows,
+137 Active + 76 Terminated exactly matching Zoho, 0 duplicates, 179 department-linked.
+
+`inserted` is no longer distinguishable from a single ON CONFLICT statement, so it stays 0 and
+`updated` carries the total — fetched-vs-written was always the signal that matters, and it is exactly
+what a partial run shows up in.
+
+**Migration drift I found and then un-found:** `0060_hr_employees.sql` creates 22 columns while the
+schema declares 24 (`department_id`, `department_zoho_id` missing, plus their indexes) — a fresh
+`db:migrate` would build a table Drizzle's SELECT can't read. I wrote a 0061 to repair it, then found
+the parallel session had already fixed exactly this in `0064_hr_org_links.sql` (idempotent ALTERs plus
+a backfill). Deleted my file; the journal never referenced it. Nothing to do here.
+
+**Two product questions surfaced, not decided:**
+1. **Terminated employees are synced** (76 of 213). There is no status filter, so they now appear in
+   the directory. If HR only wants current staff, that is a filter on the sync or the read.
+2. **Sparse data is Zoho's, not ours.** Of 213 records, department is empty on 34, designation 42,
+   date-of-joining 44, mobile 93, reporting-to 41. Worth knowing before anyone hunts for a mapping bug.
+
+### NOT done
+
+**HR UI/UX beautification.** The data layer is now correct and complete, but I did not touch the HR
+tabs' presentation — doing that properly needs a pass over HrHome/HrEmployees plus hr.css, and I would
+rather leave it than half-style it.

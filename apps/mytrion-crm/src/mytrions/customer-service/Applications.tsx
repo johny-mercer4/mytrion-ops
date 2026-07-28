@@ -4,13 +4,13 @@
  * toast) over the DONE live-data layer: debounced server search, page state, optimistic
  * per-row onboarding toggles with revert-on-error, reload-after-save.
  */
-import { useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react';
 
 import { toggleOnboarding, type OnboardingField } from '@/api/cs';
 import { ApplicationModal } from './ApplicationModal';
 import { copyWithToast } from './copyToast';
 import {
-  AppCell,
+  AppRow,
   CHECK_PROP,
   columnsFor,
   isOnboardingField,
@@ -41,6 +41,8 @@ export function Applications() {
   const [page, setPage] = useState(1);
   const [openApp, setOpenApp] = useState<Application | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
+  /** `${app.id}|${field}` while a tick box saves. Row-scoped, so one toggle no longer marks that
+   *  column busy on all 200 rows — and untouched rows keep a null busyField, letting AppRow bail. */
   const [pendingToggle, setPendingToggle] = useState<string | null>(null);
   // Optimistic per-row overrides layered over the loaded page (tick-boxes update in place).
   const [overrides, setOverrides] = useState<Record<string, Partial<Application>>>({});
@@ -68,33 +70,38 @@ export function Applications() {
   }, [pageData.data, overrides]);
 
   const hasMore = pageData.data?.moreRecords === true;
-  const columns = columnsFor(subTab);
+  // Memoised: AppRow is memo'd on prop identity, and columnsFor returns a module-level constant
+  // per tab, so this only ever changes when the tab does.
+  const columns = useMemo(() => columnsFor(subTab), [subTab]);
   const openRow = openApp ? (rows.find((r) => r.id === openApp.id) ?? openApp) : null;
 
-  function notify(kind: ToastState['kind'], message: string) {
+  const notify = useCallback((kind: ToastState['kind'], message: string) => {
     setToast({ id: Date.now(), kind, message });
-  }
+  }, []);
 
   // Widget parity: load failures surface as an error toast.
   useEffect(() => {
     if (pageData.error) setToast({ id: Date.now(), kind: 'error', message: `Load failed: ${pageData.error}` });
   }, [pageData.error]);
 
-  async function onToggle(app: Application, field: OnboardingField, next: boolean) {
-    const prop = CHECK_PROP[field];
-    setPendingToggle(field);
-    setOverrides((o) => ({ ...o, [app.id]: { ...o[app.id], [prop]: next ? 1 : 0 } }));
-    try {
-      const res = await toggleOnboarding(app.id, field, next);
-      invalidateApplicationsCache();
-      notify(res.warning ? 'info' : 'success', res.warning ?? `${field.replace(/_/g, ' ')}: ${next ? 'Yes' : 'No'}`);
-    } catch (e) {
-      setOverrides((o) => ({ ...o, [app.id]: { ...o[app.id], [prop]: next ? 0 : 1 } }));
-      notify('error', `Failed to save: ${e instanceof Error ? e.message : e}`);
-    } finally {
-      setPendingToggle(null);
-    }
-  }
+  const onToggle = useCallback(
+    async (app: Application, field: OnboardingField, next: boolean) => {
+      const prop = CHECK_PROP[field];
+      setPendingToggle(`${app.id}|${field}`);
+      setOverrides((o) => ({ ...o, [app.id]: { ...o[app.id], [prop]: next ? 1 : 0 } }));
+      try {
+        const res = await toggleOnboarding(app.id, field, next);
+        invalidateApplicationsCache();
+        notify(res.warning ? 'info' : 'success', res.warning ?? `${field.replace(/_/g, ' ')}: ${next ? 'Yes' : 'No'}`);
+      } catch (e) {
+        setOverrides((o) => ({ ...o, [app.id]: { ...o[app.id], [prop]: next ? 0 : 1 } }));
+        notify('error', `Failed to save: ${e instanceof Error ? e.message : e}`);
+      } finally {
+        setPendingToggle(null);
+      }
+    },
+    [notify],
+  );
 
   function switchTab(id: SubTab) {
     if (loading || subTab === id) return;
@@ -108,29 +115,36 @@ export function Applications() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  /* Cell-level click: tick boxes toggle in place, ID cells copy, everything else opens the modal. */
-  function onCellClick(col: AppColumn, app: Application, ev: MouseEvent<HTMLTableCellElement>) {
-    if (col.key === 'check') {
-      if (isOnboardingField(col.field)) {
-        const on = app[CHECK_PROP[col.field]] === 1;
-        void onToggle(app, col.field, !on);
-      }
-      return;
-    }
-    if (col.key === 'app_id' || (col.key === 'id' && subTab !== 'clients')) {
-      if (app.appId) {
-        copyWithToast(app.appId, ev);
+  /* Cell-level click: tick boxes toggle in place, ID cells copy, everything else opens the modal.
+     useCallback'd (like onOpen below) because every one of the ~5,600 cells receives it — a fresh
+     identity each render would defeat AppRow's memo and re-render the whole table. */
+  const onCellClick = useCallback(
+    (col: AppColumn, app: Application, ev: MouseEvent<HTMLTableCellElement>) => {
+      if (col.key === 'check') {
+        if (isOnboardingField(col.field)) {
+          const on = app[CHECK_PROP[col.field]] === 1;
+          void onToggle(app, col.field, !on);
+        }
         return;
       }
-    }
-    if (col.key === 'id' && subTab === 'clients') {
-      if (app.carrierId) {
-        copyWithToast(app.carrierId, ev);
-        return;
+      if (col.key === 'app_id' || (col.key === 'id' && subTab !== 'clients')) {
+        if (app.appId) {
+          copyWithToast(app.appId, ev);
+          return;
+        }
       }
-    }
-    setOpenApp(app);
-  }
+      if (col.key === 'id' && subTab === 'clients') {
+        if (app.carrierId) {
+          copyWithToast(app.carrierId, ev);
+          return;
+        }
+      }
+      setOpenApp(app);
+    },
+    [subTab, onToggle],
+  );
+
+  const onOpenRow = useCallback((app: Application) => setOpenApp(app), []);
 
   return (
     <div className="cs-panel cs-applications-panel">
@@ -260,30 +274,17 @@ export function Applications() {
             </thead>
             <tbody>
               {rows.map((app) => (
-                <tr
+                <AppRow
                   key={app.id}
-                  className="cs-app-row"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      setOpenApp(app);
-                    }
-                  }}
-                >
-                  {columns.map((col, i) => (
-                    <td
-                      key={i}
-                      className={col.key === 'id' || col.key === 'app_id' ? 'cs-app-cell-copyable' : undefined}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onCellClick(col, app, e);
-                      }}
-                    >
-                      <AppCell col={col} app={app} subTab={subTab} pendingToggle={pendingToggle} />
-                    </td>
-                  ))}
-                </tr>
+                  app={app}
+                  columns={columns}
+                  subTab={subTab}
+                  busyField={
+                    pendingToggle?.startsWith(`${app.id}|`) ? pendingToggle.slice(app.id.length + 1) : null
+                  }
+                  onCellClick={onCellClick}
+                  onOpen={onOpenRow}
+                />
               ))}
             </tbody>
           </table>

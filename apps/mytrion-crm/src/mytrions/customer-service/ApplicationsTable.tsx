@@ -4,7 +4,7 @@
  * Columns whose CRM field the live view-model doesn't carry (Oldest_Open_Date,
  * Billing_Form_Y_N, Verification_Notes, Tracking_Number) render '—'.
  */
-import type { CSSProperties, ReactElement } from 'react';
+import { memo, type CSSProperties, type MouseEvent, type ReactElement } from 'react';
 
 import type { OnboardingField } from '@/api/cs';
 import { dotStyle } from './colors';
@@ -168,12 +168,14 @@ export function AppCell({
   col,
   app,
   subTab,
-  pendingToggle,
+  busyField,
 }: {
   col: AppColumn;
   app: Application;
   subTab: SubTab;
-  pendingToggle: string | null;
+  /** The onboarding field saving on THIS row, or null. Row-scoped so a toggle can't mark the same
+   *  column busy on all 200 rows — and so an unaffected row's props never change (see AppRow). */
+  busyField: string | null;
 }): ReactElement {
   switch (col.key) {
     /* Company name */
@@ -278,7 +280,7 @@ export function AppCell({
     case 'check': {
       if (!isOnboardingField(col.field)) return MUTED;
       const on = app[CHECK_PROP[col.field]] === 1;
-      const busy = pendingToggle === col.field;
+      const busy = busyField === col.field;
       return (
         <span
           className={`cs-cell-check${on ? ' is-on' : ''}${busy ? ' is-busy' : ''}`}
@@ -307,3 +309,54 @@ export function AppCell({
     }
   }
 }
+
+/**
+ * One table row, memoised.
+ *
+ * The panel renders up to 200 rows x 28 columns = ~5,600 cells. Search state lives in the panel, so
+ * before this every keystroke re-rendered all of them — measured at ~105ms per character, i.e. six
+ * dropped frames while typing. `memo` lets an untouched row bail out on the identity of its props,
+ * which is why the panel must hand it stable ones: a memoised `columns`, useCallback'd handlers, and
+ * a row-scoped `busyField` that stays null for every row except the one being saved.
+ */
+export const AppRow = memo(function AppRow({
+  app,
+  columns,
+  subTab,
+  busyField,
+  onCellClick,
+  onOpen,
+}: {
+  app: Application;
+  columns: AppColumn[];
+  subTab: SubTab;
+  busyField: string | null;
+  onCellClick: (col: AppColumn, app: Application, ev: MouseEvent<HTMLTableCellElement>) => void;
+  onOpen: (app: Application) => void;
+}) {
+  return (
+    <tr
+      className="cs-app-row"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          onOpen(app);
+        }
+      }}
+    >
+      {columns.map((col, i) => (
+        <td
+          key={i}
+          className={col.key === 'id' || col.key === 'app_id' ? 'cs-app-cell-copyable' : undefined}
+          onClick={(e) => {
+            e.stopPropagation();
+            onCellClick(col, app, e);
+          }}
+        >
+          <AppCell col={col} app={app} subTab={subTab} busyField={busyField} />
+        </td>
+      ))}
+    </tr>
+  );
+});

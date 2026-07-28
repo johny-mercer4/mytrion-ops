@@ -414,7 +414,10 @@ function mapRejection(t: CrmRow): RejectionVM {
 }
 
 export async function loadRejections(): Promise<RejectionVM[]> {
-  const rows = await listRejections();
+  // Forward the acted-as agent exactly like loadLeads/loadDeals — without this, View-as showed the
+  // admin's own (or the whole org's) declines while every other Data Center tab switched identity.
+  const actAsId = getImpersonation()?.zohoUserId;
+  const rows = await listRejections(actAsId);
   return rows.map(mapRejection);
 }
 

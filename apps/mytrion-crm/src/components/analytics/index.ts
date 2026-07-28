@@ -12,6 +12,7 @@
 export { useAnalyticsSnapshot } from './useAnalyticsSnapshot';
 export type {
   AnalyticsLoaded,
+  AnalyticsQueryFilters,
   UseAnalyticsSnapshotOptions,
   UseAnalyticsSnapshotResult,
 } from './useAnalyticsSnapshot';

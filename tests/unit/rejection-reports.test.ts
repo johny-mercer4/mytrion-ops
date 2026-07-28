@@ -191,6 +191,42 @@ describe('GET /v1/data-center/rejections', () => {
     expect(opts.agentName).toBe('Daniel Brown');
   });
 
+  it('an ADMIN with no target is owner-scoped too, not given the org feed', async () => {
+    // Data Center is "your pipeline": Leads/Deals resolve through resolveZohoUserId for admins as
+    // well, and rejections silently doing otherwise meant an admin saw a mixed org-wide list here.
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/data-center/rejections',
+      headers: { authorization: `Bearer ${await token('Administrator')}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(listAllMock).not.toHaveBeenCalled();
+    expect(listForAgentMock.mock.calls[0]![1]).toMatchObject({
+      agentZohoUserId: '6227679000031473048',
+      agentName: 'Daniel Brown',
+    });
+  });
+
+  it('?all=1 is the explicit admin opt-in for the whole tenant feed', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/data-center/rejections?all=1',
+      headers: { authorization: `Bearer ${await token('Administrator')}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(listAllMock).toHaveBeenCalled();
+  });
+
+  it('?all=1 does NOT give a plain agent the org feed', async () => {
+    await app.inject({
+      method: 'GET',
+      url: '/v1/data-center/rejections?all=1',
+      headers: { authorization: `Bearer ${await token('Sales Agent')}` },
+    });
+    expect(listAllMock).not.toHaveBeenCalled();
+    expect(listForAgentMock).toHaveBeenCalled();
+  });
+
   it('does not leak the whole feed to a non-admin', async () => {
     listForAgentMock.mockResolvedValueOnce([ROW]);
     const res = await app.inject({

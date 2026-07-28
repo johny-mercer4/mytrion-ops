@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { saveApplication } from '@/api/cs';
+import { ConfirmDialog } from './ConfirmDialog';
 import { copyWithToast } from './copyToast';
 import type { Application } from './data';
 import { useScrollLock } from './useScrollLock';
@@ -135,9 +136,15 @@ export function ApplicationModal({
     (f) => f.type !== 'readonly' && values[f.field] !== initialValue(f, app),
   ).length;
 
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+
   const requestClose = useCallback(() => {
     if (saving) return;
-    if (dirtyCount > 0 && !window.confirm('Discard unsaved changes?')) return;
+    // Unsaved edits get a real dialog rather than window.confirm's native, unthemed box.
+    if (dirtyCount > 0) {
+      setConfirmDiscard(true);
+      return;
+    }
     onClose();
   }, [saving, dirtyCount, onClose]);
 
@@ -147,11 +154,13 @@ export function ApplicationModal({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') requestClose();
+      // While the discard confirm is up it owns Escape (and stops propagation) — guard anyway so
+      // this can never re-open it, or close the form, from underneath the dialog.
+      if (e.key === 'Escape' && !confirmDiscard) requestClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [requestClose]);
+  }, [requestClose, confirmDiscard]);
 
   function set(field: string, value: string | boolean) {
     setValues((prev) => ({ ...prev, [field]: value }));
@@ -371,6 +380,23 @@ export function ApplicationModal({
           </button>
         </div>
       </div>
+
+      {confirmDiscard ? (
+        <ConfirmDialog
+          title="Discard unsaved changes?"
+          body={`${dirtyCount} change${dirtyCount === 1 ? '' : 's'} on this application ${
+            dirtyCount === 1 ? 'has' : 'have'
+          } not been saved. Closing now loses ${dirtyCount === 1 ? 'it' : 'them'}.`}
+          confirmLabel="Discard"
+          cancelLabel="Keep editing"
+          busy={false}
+          onConfirm={() => {
+            setConfirmDiscard(false);
+            onClose();
+          }}
+          onCancel={() => setConfirmDiscard(false)}
+        />
+      ) : null}
     </div>
   );
 }

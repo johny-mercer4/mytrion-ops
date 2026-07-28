@@ -93,4 +93,31 @@ describe('analytics snapshot cache', () => {
     computeMock.mockResolvedValue(block('ok'));
     expect((await getAnalyticsSnapshot('billing')).block.label).toBe('ok');
   });
+
+  it('caches filtered snapshots and dedupes concurrent filtered computes', async () => {
+    const filters = { agentName: 'Daniel Brown', range: 'last_7_days' as const };
+    let release!: (b: AnalyticsBlock) => void;
+    computeMock.mockReturnValue(new Promise((res) => (release = res)));
+    const a = getAnalyticsSnapshot('pipeline', { filters });
+    const b = getAnalyticsSnapshot('pipeline', { filters });
+    release(block('filtered'));
+    const [ra, rb] = await Promise.all([a, b]);
+    expect(ra).toBe(rb);
+    expect(computeMock).toHaveBeenCalledTimes(1);
+
+    computeMock.mockResolvedValue(block('again'));
+    expect((await getAnalyticsSnapshot('pipeline', { filters })).block.label).toBe('filtered');
+    expect(computeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('serves stale filtered snapshot when recompute fails', async () => {
+    const filters = { range: 'today' as const };
+    await getAnalyticsSnapshot('pipeline', { filters });
+    expect(computeMock).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(6 * 60_000); // past 5min filtered TTL
+    computeMock.mockRejectedValueOnce(new Error('timeout exceeded'));
+    const stale = await getAnalyticsSnapshot('pipeline', { filters });
+    expect(stale.block.label).toBe('v1');
+  });
 });

@@ -1,8 +1,21 @@
 /**
- * Shared centered detail sheet for Lead/Deal Data Center modals.
+ * Shared centered detail sheet for the Data Center modals (Lead / Deal / Rejection report).
  * Replaces the old full-viewport "separate page" drilldowns.
+ *
+ * Rendered through a PORTAL to <body>. The scrim is `position: fixed`, but that is not enough on its
+ * own: Sales puts `backdrop-filter` on its chrome and card surfaces, and a filtered ancestor becomes
+ * the containing block for fixed-position descendants. Mounted inline, the scrim therefore anchored
+ * to the (very tall) panel instead of the viewport, so opening a row far down the Rejection Reports
+ * list put the dialog at the CONTAINER's midpoint and the agent had to scroll to find it.
+ *
+ * The portal escapes `.ss-root`, which is where Sales' token bridge lives (--surface, --border, the
+ * radii) plus the `.light` theme class — so the wrapper below re-establishes both. Without it the
+ * sheet renders with global tokens and ignores light mode. Same fix, same reason, as Finance's
+ * ClientModal.
  */
 import { useEffect, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { useTheme } from '@/hooks/useTheme';
 import { s } from './dc';
 import { Icon } from './icons';
 
@@ -47,8 +60,11 @@ export function DetailSheet({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose, saving]);
 
-  return (
+  const { theme } = useTheme();
+
+  return createPortal(
     <div
+      className={`ss-root${theme === 'light' ? ' light' : ''}`}
       role="presentation"
       onClick={() => {
         if (!saving) onClose();
@@ -120,7 +136,8 @@ export function DetailSheet({
 
         <footer style={s('flex-shrink:0;border-top:1px solid var(--border);background:var(--surface)')}>{footer}</footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

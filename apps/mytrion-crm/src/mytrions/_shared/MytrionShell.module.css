@@ -96,6 +96,12 @@
   box-shadow: none;
   color: var(--text-primary);
 }
+/* The wrapper above owns the focus treatment — the bare field must not paint its own ring on top.
+   See the exclusion block in styles/global.css. */
+.navSearch input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
 .navSearch input {
   flex: 1;
   min-width: 0;

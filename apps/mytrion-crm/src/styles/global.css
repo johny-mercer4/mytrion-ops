@@ -183,6 +183,36 @@ button {
   border-radius: var(--radius-xs);
 }
 
+/*
+ * …EXCEPT a field whose WRAPPER already owns the focus treatment.
+ *
+ * Every module builds search/composer fields the same way: a bordered wrapper paints the accent
+ * border on :focus-within, and the field inside is deliberately bare (`border: none`). The rule
+ * above — plus each module's own `.<mod>-root :focus-visible` ring, which is a DESCENDANT selector —
+ * then lands on that bare field as a SECOND line inside the wrapper's border. That is the doubled
+ * outline; scoping it per component never reached it, because the offending selector matches the
+ * input rather than the wrapper.
+ *
+ * Only `input`/`textarea` are cleared, never the wrapper's buttons (a clear "×" still needs its own
+ * visible focus ring), and the wrapper keeps painting the accent border, so keyboard focus stays
+ * obvious. Add a wrapper here whenever you give one a :focus-within treatment.
+ *
+ * CSS-module wrappers can't be named from here (hashed class names) — those carry the same rule
+ * locally: admin.module.css `.search`, MytrionShell.module.css `.navSearch`, Composer.module.css
+ * `.pill`.
+ */
+.cs-root .cs-app-search input:focus-visible,
+.cs-root .cs-citi-search-bar input:focus-visible,
+.bm-root .bm-search-bar input:focus-visible,
+.bm-root .db-search-wrap input:focus-visible,
+.bm-root .bm-ai-input-row textarea:focus-visible,
+.mg-root .mg-search input:focus-visible,
+.hr-root .hr-search input:focus-visible,
+.fi-search input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 ::selection {
   background: var(--accent-glow);
   color: var(--text-primary);
