@@ -7298,3 +7298,32 @@ a backfill). Deleted my file; the journal never referenced it. Nothing to do her
 **HR UI/UX beautification.** The data layer is now correct and complete, but I did not touch the HR
 tabs' presentation — doing that properly needs a pass over HrHome/HrEmployees plus hr.css, and I would
 rather leave it than half-style it.
+
+## 2026-07-29 — Billing Transactions: search by amount (`fix/billing-tx-amount-search`)
+
+Searching the Transactions tab by amount returned nothing. It was never implemented, on either side:
+
+- **Client.** The row haystack carries `String(amount)` — the raw number — so `500.00` or `$1,234.56`
+  could not match as text, and a digits-only query was routed to *carrier id exact match only*
+  (widget parity, `isCarrierId`), which meant a plain `500` deliberately skipped the haystack too.
+- **Server.** `paymentTransactionRepo.search()` ILIKE'd sender/name/memo/description/txn-id/email
+  plus an exact carrier id. No amount predicate, so `$510.45` became `%$510.45%` → 0 rows.
+
+Both sides now parse a money query with the same grammar (`parseAmountQuery` in the repo,
+`parseTxSearch` in `transactionModel.ts`): optional `$`, thousands commas, up to 2 decimals.
+
+- Cents given (`510.45`, `$1,234.56`) → exact match. Whole dollars (`510`) → the cents range
+  `[510, 511)`, so typing the dollars finds the row without knowing its cents.
+- Compared on `abs(amount)` so returns/refunds stored as negatives still match.
+- Amount is OR'd in, so `5551234` still hits the carrier id and text matching is unchanged; the
+  digits-only carrier-id narrowing survives via the shared `txMatchesSearch` ordering.
+- Search placeholder now says "…, amount".
+
+### Checks
+
+Typecheck green both sides, lint 0 errors. New tests: `tests/unit/billing-amount-search.test.ts` (3)
+and `apps/mytrion-crm/src/mytrions/billing/transactionModel.test.ts` (8) — pass. Backend `tests/unit`
+has 7 pre-existing failures (tools/touchpoints/stream/notifications/retention/golive) — identical on a
+clean tree, unrelated. Verified the server predicate read-only against the live DB: row 220243
+(`$510.45`) is found by `510.45`, `$510.45`, `510` and `$510`, and a bogus amount returns 0.
+No in-browser pass — the CRM needs a Zoho OAuth sign-in I can't perform.
