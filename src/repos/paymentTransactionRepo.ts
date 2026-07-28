@@ -61,6 +61,19 @@ export interface MappingPatch {
   splitAllocations?: Record<string, unknown>[] | null;
 }
 
+/**
+ * Money-ish search query → the amount it names ("$1,234.56", "1,234", "500.5" → 1234.56 / 1234 / 500.5).
+ * `exact` is false for a whole-dollar query, which matches the cents range (1234 → 1234.00–1234.99)
+ * so a user who types the dollars finds the row without knowing its cents.
+ * (Mirrored client-side in apps/mytrion-crm/src/mytrions/billing/transactionModel.ts.)
+ */
+export function parseAmountQuery(query: string): { value: number; exact: boolean } | null {
+  const s = (query || '').trim().replace(/^\$\s*/, '').replace(/,/g, '');
+  if (!/^\d{1,12}(\.\d{1,2})?$/.test(s)) return null;
+  const value = Number(s);
+  return Number.isFinite(value) ? { value, exact: s.includes('.') } : null;
+}
+
 /** Candidate-search filters (a return → its original MX payment). */
 export interface CandidateFilters {
   query?: string | undefined;
@@ -127,7 +140,7 @@ export const paymentTransactionRepo = {
     return out;
   },
 
-  /** Free-text search across payer/memo/txn fields + exact carrier id. Capped, newest first. */
+  /** Free-text search across payer/memo/txn fields + exact carrier id + amount. Capped, newest first. */
   async search(query: string, limit = 500): Promise<PaymentTransaction[]> {
     const q = (query || '').trim();
     if (!q) return [];
@@ -141,6 +154,16 @@ export const paymentTransactionRepo = {
       ilike(paymentTransactions.email, like),
     ];
     if (/^\d+$/.test(q)) conds.push(eq(paymentTransactions.carrierId, q));
+    // Amount search: compare on abs() so a query works for returns/refunds stored as negatives.
+    const amt = parseAmountQuery(q);
+    if (amt) {
+      const abs = sql`abs(${paymentTransactions.amount})`;
+      conds.push(
+        amt.exact
+          ? sql`${abs} = ${amt.value.toFixed(2)}`
+          : sql`${abs} >= ${amt.value.toFixed(2)} and ${abs} < ${(amt.value + 1).toFixed(2)}`,
+      );
+    }
     return db
       .select()
       .from(paymentTransactions)

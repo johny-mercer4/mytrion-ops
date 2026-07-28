@@ -572,6 +572,24 @@ const EnvSchema = z.object({
   // Batch size for the agent-run queue worker (how many agent runs execute concurrently).
   JOBS_CONCURRENCY: z.coerce.number().int().positive().max(10).default(2),
   JOBS_CRON_TZ: z.string().default('America/Chicago'),
+  /**
+   * pg-boss's OWN pool, separate from DATABASE_POOL_MAX (the app pool).
+   *
+   * v12 runs several independent internal loops — queue-cache refresh, supervision, the cron
+   * timekeeper, the job navigator, maintenance — on top of one poller per registered worker (~20
+   * queues here). At the old value of 3 those loops queued behind each other, so a single slow or
+   * dropped connection made every waiter miss pg-boss's 10s acquire deadline at the same instant and
+   * emit "timeout exceeded when trying to connect" in a burst. Keep it comfortably above the number
+   * of concurrent internal loops, and mind the server budget: this is per process, and prod + local
+   * share one Render instance (~100 max_connections).
+   */
+  PGBOSS_POOL_MAX: z.coerce.number().int().positive().max(20).default(8),
+  /**
+   * How long pg-boss may wait for a pooled connection (its own default is 10s). A managed DB reached
+   * over the public internet needs more headroom than one on localhost — a fresh TLS handshake to
+   * Render from a dev laptop alone measures over a second.
+   */
+  PGBOSS_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
