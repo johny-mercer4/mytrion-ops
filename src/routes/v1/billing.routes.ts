@@ -23,6 +23,7 @@ import {
 } from '../../modules/billing/cmpWrites.js';
 import { searchCarrierInvoices } from '../../modules/billing/cmpReads.js';
 import { fuzzyResolveCarrier } from '../../modules/billing/fuzzyCarrier.js';
+import { assertReturnMatchable } from '../../modules/billing/returnsMatch.js';
 import {
   getPrepayCompanies,
   getPrepayExternalsBatch,
@@ -431,6 +432,10 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     if (!ret) throw new NotFoundError(`Return ${id} not found`);
     const tx = await paymentTransactionRepo.getById(b.transactionRecordId);
     if (!tx) throw new NotFoundError(`Transaction ${b.transactionRecordId} not found`);
+
+    // Refuses a second reversal of the same money (see returnsMatch.ts) — the server-side half of
+    // the rule the UI enforces by hiding the action; parity with the Deluge twin's guards.
+    assertReturnMatchable(ret, tx);
 
     let matchNote = 'not mapped — no CMP payment to reverse';
     let isReversed = false;

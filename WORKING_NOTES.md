@@ -7401,3 +7401,81 @@ has 7 pre-existing failures (tools/touchpoints/stream/notifications/retention/go
 clean tree, unrelated. Verified the server predicate read-only against the live DB: row 220243
 (`$510.45`) is found by `510.45`, `$510.45`, `510` and `$510`, and a bogus amount returns 0.
 No in-browser pass — the CRM needs a Zoho OAuth sign-in I can't perform.
+
+## 2026-07-29 — Returns: Zoho→PG match-state sync + double-reversal guard (`feature/returns-zoho-sync`)
+
+Asked to sync returns from the Zoho side into mytrion-ops and review the returns logic. Measured
+first (read-only, prod): the return **facts** are already in sync — Zoho `MX_Merchant_Returns` 144
+rows, PG `payment_returns` 144, zero missing either way, reasons/amounts/dates all present. The
+`mxReturnsSync` dual-write does its job.
+
+What never crossed is the **match state**, which is the half the Zoho workflow
+(`automation.processReturnUnmap`) writes moments after the ingest:
+
+| | Zoho | PG (before) |
+|---|---|---|
+| matched | 139 | 108 |
+| linked to a payment | 139 | 100 |
+| payments flagged returned | (all matched) | **3** |
+
+So the app showed 31 already-processed returns as **Unmatched** work, and 128 clawed-back payments
+looked like normal payments (no RETURNED badge) — 37 of them still `is_invoice_mapped`. Matching one
+of those in the app reverses CMP, so the stale queue was an invitation to **reverse the same money
+twice**. The UI guards (action hidden on matched rows, returned candidates disabled) are all driven
+off that same stale state, so they could not catch it.
+
+### servercrm — the sync
+
+- `services/zohoReturnMatchSync.js` — reconcile. Resolves Zoho `Original_Transaction.name` (the MX
+  payment id) → `payment_transactions.source_record_id` for source `mx`, writes matched /
+  original_transaction_id / match_note / matched_by / matched_at / is_reversed, and flags the linked
+  payment `is_returned`. Rules: never overwrite an app-side match (matched_by ≠ "Zoho (workflow)"),
+  never clear a flag (`is_reversed`/`is_returned` only go false→true), idempotent (every write
+  conditional), and row creation stays owned by the ingest — Zoho-only rows are reported, not created.
+- `is_reversed` is derived from the note by the same rules as the app's `cmpStatus()`. Three note
+  shapes contain the word "Reversed" while describing an outcome where nothing was reversed
+  (`(no CMP reference stored)` = pending, `FAILED` = needs a human, `mapped=false` = never in CMP) —
+  that is the trap the unit tests pin down.
+- `scripts/syncZohoReturnMatches.js` — CLI, **dry-run by default**, `--commit` / `--all` / `--days N`
+  / `--limit N`; laptop DB via `MYTRION_OPS_DATABASE_URL`, Render via `MYTRION_OPS_DB_INTERNAL`.
+- Wired into `jobs/mxReturnsSync.js` as a best-effort step after the Zoho upsert (14-day trailing
+  window on Modified_Time, `RETURN_MATCH_WINDOW_DAYS`), so state keeps flowing every 2h. A PG failure
+  never fails the Zoho sync — same contract as the existing dual-write. This is also the only path by
+  which the hourly `mxCmpRefBackfill` retry outcomes ("applied by retry", "retry exhausted") reach the
+  app at all; that job is Zoho-only.
+- Dry-run against prod: scanned 144 → 31 return rows to update, 127 payments to flag, 110 already
+  current, 3 left alone (app matches by Alan Berg), 0 missing, 8 returns whose payment predates the
+  2026-06-01 payments backfill (4 distinct MX ids, all card disputes — match recorded, link left null).
+
+### mytrion-ops — the guard
+
+`POST /billing/returns/:id/match` now calls `assertReturnMatchable` (new
+`src/modules/billing/returnsMatch.ts`) before touching CMP: 409 if the return is already matched
+(names who matched it) or the payment is already flagged returned. Parity with the Deluge twin
+`mytrionManualMatchReturn`, which has had these guards since day one; the React port dropped them.
+The client already surfaces server `error.message`, so the modal + toast show the reason.
+
+### Reviewed, not changed (ranked)
+
+1. **No auto-match in mytrion-ops.** Nothing in the app mirrors `processReturnUnmap` — no job, no
+   route. Every return in PG is matched by a human or not at all. Today Zoho does it and this sync
+   carries the result; when the Zoho modules retire, ACH returns and chargebacks silently stop being
+   reversed. This is the piece to build next (port the workflow: match by reference → reverse via
+   `cmpWrites.reverseMapping` → flag → the CMP-ref retry loop).
+2. **`payment_returns.carrier_id` is always NULL** (Zoho has no carrier on returns either), so the
+   repo's `carrierId` list filter and the index on it are dead. Carrier is reachable only through
+   the linked payment.
+3. **CMP outcome is parsed from English note text** in both the app (`cmpStatus`) and now this sync.
+   `is_reversed` is the structured column that should drive the pills; the notes should be commentary.
+4. **`original_transaction_name` is hardcoded `''`** in `toReturnWire`, so the Returns row shows no
+   payment reference for a matched return (the widget showed the MX payment id) — one join away.
+5. Returned transactions no longer pin to the top of the Transactions tab (widget behaviour); the
+   React list is strictly date-grouped, so a RETURNED row can sit pages down.
+
+### Checks
+
+Backend typecheck green, lint 0 errors. New tests: mytrion-ops `billing-returns-match.test.ts` (4) and
+servercrm `test/zohoReturnMatchSync.test.js` (11 — derivations + precedence + idempotency + dry-run
+against a fake pg client) — all pass; servercrm suite 19/20 → 30/31, the one failure (`wexBocaGate`
+dueDate) fails identically on a clean tree. The prod `--commit` was NOT run — that is a financial-data
+write, left for explicit approval.
