@@ -20,15 +20,15 @@ export async function syncHrEmployeesFromZoho(
   const records = await zohoPeople.listAllEmployees({
     ...(opts.maxPages !== undefined ? { maxPages: opts.maxPages } : {}),
   });
-  let inserted = 0;
-  let updated = 0;
   const errors: HrEmployeeSyncResult['errors'] = [];
 
+  /**
+   * Map first, so a malformed record is reported instead of aborting the write.
+   */
+  const mapped: ReturnType<typeof mapZohoEmployeeToUpsert>[] = [];
   for (const record of records) {
     try {
-      const outcome = await hrEmployeeRepo.upsertFromZoho(ctx, mapZohoEmployeeToUpsert(record));
-      if (outcome === 'inserted') inserted += 1;
-      else updated += 1;
+      mapped.push(mapZohoEmployeeToUpsert(record));
     } catch (err) {
       errors.push({
         zohoRecordId: record.recordId,
@@ -37,5 +37,18 @@ export async function syncHrEmployeesFromZoho(
     }
   }
 
-  return { fetched: records.length, inserted, updated, errors };
+  /**
+   * Batched write. The previous per-record loop cost ~4 DB round-trips each (existence check, two
+   * department lookups, the write); at the ~266 ms RTT to the hosted Postgres, 213 employees came to
+   * ~226 s, so a full sync never finished inside a request. It died partway, left the table
+   * half-populated, and surfaced nothing — prod sat at 88 of 213 records. Chunked multi-row upserts
+   * bring the same sync to ~3 round-trips.
+   *
+   * `written` counts rows the statement touched; insert-vs-update is no longer distinguishable from a
+   * single ON CONFLICT statement, so `updated` carries the total and `inserted` stays 0. The useful
+   * signal was always fetched-vs-written, which is what a partial run actually shows up in.
+   */
+  const { written } = await hrEmployeeRepo.bulkUpsertFromZoho(ctx, mapped);
+
+  return { fetched: records.length, inserted: 0, updated: written, errors };
 }

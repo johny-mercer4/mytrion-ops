@@ -7184,3 +7184,117 @@ Rendered the table in both themes in headless Chrome before committing.
 
 Typecheck green, lint 0 errors, frontend 214/215 — the one failure the long-standing `filterDebtors`
 case. Widget bundle rebuilt.
+
+## 2026-07-28 (7) — Rejection Reports: modal anchored to the viewport + owner-scoped
+
+### The modal opened at the container's midpoint
+
+`DetailSheet`'s scrim was already `position: fixed`, which is why this looked wrong rather than
+obviously broken. The cause is that **a filtered ancestor becomes the containing block for
+fixed-position descendants**, and Sales puts `backdrop-filter` on its chrome and card surfaces. So the
+scrim anchored to the (very tall) panel instead of the viewport: opening a row far down the Rejection
+Reports list put the dialog at the CONTAINER's centre and the agent had to scroll to find it.
+
+Fixed by rendering `DetailSheet` through a portal to `<body>` — the same fix, for the same reason, as
+Finance's `ClientModal`. The portal escapes `.ss-root`, which is where Sales' token bridge
+(`--surface`, `--border`, radii) and the `.light` class live, so the wrapper re-establishes both via
+`useTheme()`; without that the sheet renders with global tokens and ignores light mode. This fixes the
+Lead and Deal modals too — they share the sheet and had the same latent bug.
+
+### Rejections were not owner-scoped
+
+Two separate gaps, both silent:
+
+1. **`loadRejections()` never forwarded the acted-as agent** while `loadLeads`/`loadDeals` both do, so
+   View-as switched every other Data Center tab's identity and left this one alone.
+2. **The route special-cased admins into the org-wide feed.** Data Center is "everything about YOUR
+   pipeline" and every other sub-tab resolves through `resolveZohoUserId` — including for admins — so
+   an admin saw a mixed org-wide decline list here while Leads and Deals showed their own book. That
+   is what the screenshot showed.
+
+Now owner-scoped for everyone, matching id-OR-name (the session Zoho id and the warehouse's
+`agent_zoho_user_id` carry different org prefixes, so neither alone finds every row). When acting as
+another agent the name arm resolves THAT agent's name from the CRM directory rather than the admin's
+own, which would match the wrong rows. `?all=1` is the explicit admin opt-in for the tenant feed, and
+a plain agent passing it still gets only their own rows.
+
+3 new tests cover the admin-is-scoped case, the `?all=1` opt-in, and that `?all=1` does not privilege
+a non-admin. 12 total in that file.
+
+### Checks
+
+Typecheck green, backend 1057 passed / 10 failed (the same pre-existing set across two runs), widget
+rebuilt.
+
+## 2026-07-28 (8) — Billing switch button, Admin access matrix verified, HR sync root-caused
+
+### Billing "Switch Mytrion" button
+
+I had reused `.bm-header-theme`, which is a fixed **32×32 icon-only square** — so the text label had
+nowhere to go and spilled out of the box. Added `.bm-header-switch` to `bm-horizon.css`: same glass
+pane + billing-accent hover, but sized for a label (auto width, 32px height matching the header
+rhythm, 3px radius matching the BILLING badge). Rendered before/after to confirm.
+
+### Admin user management — verified working, no changes needed
+
+Exercised the resolver across the levels asked about (harness note: `invalidateAll()` is required
+BETWEEN scenarios — the resolver TTL-caches per (tenant,user,profile,role,name), and my first run
+returned the same answer nine times because of it):
+
+| scenario | allDept | home | accessible |
+|---|---|---|---|
+| profile default only | false | sales | 1 |
+| user override replaces set | false | null | billing, finance |
+| override + home | false | finance | 2 |
+| override → full access | **true** | null | 11 |
+| full access + home | **true** | **manager** | 11 |
+| home not in granted set | false | billing (falls back) | 1 |
+| deny the only grant | false | null | **0 → 403** |
+| full access minus finance | false | null | 10 (finance gone) |
+
+All correct, including the auto-router with full access. Worth noting this only works because of the
+Administrator-override fix from earlier today — before it, every row involving an override was a no-op
+for admin-profile users.
+
+### HR — the sync could never finish (root cause, measured)
+
+Prod had **88 of 213** Zoho People employees. Ruled out the obvious causes first: the fetch pages
+correctly (returns all 213), the mapper throws on none of them, and all 213 have DISTINCT
+`employeeId` and `zohoRecordId` — so neither the NOT NULL names nor the two partial unique indexes
+were dropping anything.
+
+The actual cause is cost. `upsertFromZoho` does ~4 DB round-trips per employee (existence check, two
+`resolveDepartmentId` lookups, the write). Measured RTT to the hosted Postgres is **266 ms**, so 213
+employees is ~226 s — the sync cannot finish inside a request. It died partway, left the table
+half-populated, and surfaced nothing, because per-record failures only land in a `errors[]` array that
+a timed-out caller never reads. My own first run confirmed it: killed at 280 s having got to 181 rows.
+
+Added `hrEmployeeRepo.bulkUpsertFromZoho` — resolves departments ONCE into a lookup map, then writes
+chunked multi-row `INSERT … ON CONFLICT DO UPDATE`. Conflicts target the partial unique index on
+`(tenant, zoho_record_id)`, whose predicate has to be repeated in the ON CONFLICT clause for Postgres
+to match it. ~850 round-trips → ~3.
+
+Result: **FETCHED=213 WRITTEN=213 ERRORS=0 in 10 s** (was: timeout at 280 s). Table now 213 rows,
+137 Active + 76 Terminated exactly matching Zoho, 0 duplicates, 179 department-linked.
+
+`inserted` is no longer distinguishable from a single ON CONFLICT statement, so it stays 0 and
+`updated` carries the total — fetched-vs-written was always the signal that matters, and it is exactly
+what a partial run shows up in.
+
+**Migration drift I found and then un-found:** `0060_hr_employees.sql` creates 22 columns while the
+schema declares 24 (`department_id`, `department_zoho_id` missing, plus their indexes) — a fresh
+`db:migrate` would build a table Drizzle's SELECT can't read. I wrote a 0061 to repair it, then found
+the parallel session had already fixed exactly this in `0064_hr_org_links.sql` (idempotent ALTERs plus
+a backfill). Deleted my file; the journal never referenced it. Nothing to do here.
+
+**Two product questions surfaced, not decided:**
+1. **Terminated employees are synced** (76 of 213). There is no status filter, so they now appear in
+   the directory. If HR only wants current staff, that is a filter on the sync or the read.
+2. **Sparse data is Zoho's, not ours.** Of 213 records, department is empty on 34, designation 42,
+   date-of-joining 44, mobile 93, reporting-to 41. Worth knowing before anyone hunts for a mapping bug.
+
+### NOT done
+
+**HR UI/UX beautification.** The data layer is now correct and complete, but I did not touch the HR
+tabs' presentation — doing that properly needs a pass over HrHome/HrEmployees plus hr.css, and I would
+rather leave it than half-style it.

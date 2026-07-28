@@ -131,7 +131,7 @@ export function BillingShell() {
         <div className="bm-header-title">MYTRION<span> HORIZON</span></div>
         <span className="bm-header-badge">BILLING</span>
         <div style={{ flex: 1 }} />
-        <MytrionSwitchLink className="bm-header-theme" />
+        <MytrionSwitchLink className="bm-header-switch" label="Switch Mytrion" />
         {admin ? (
           <div style={{ marginRight: 10 }}>
             <ActAsPicker />

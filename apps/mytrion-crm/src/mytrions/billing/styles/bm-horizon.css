@@ -128,6 +128,45 @@
     transform: var(--hz-hover-lift-sm);
 }
 
+/* Labelled sibling of the theme toggle — same glass chrome, but sized for TEXT.
+   `.bm-header-theme` is a fixed 32x32 icon square, so reusing it for "Switch Mytrion" crushed the
+   label into the box. Matches the header's 32px rhythm and the badge's 3px radius. */
+.bm-root .bm-header-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 32px;
+    padding: 0 11px;
+    flex-shrink: 0;
+    border-radius: 3px;
+    border: 1px solid var(--hz-pane-bd);
+    background: var(--hz-pane);
+    backdrop-filter: blur(var(--hz-blur-sm));
+    -webkit-backdrop-filter: blur(var(--hz-blur-sm));
+    box-shadow: var(--hz-glass-inset);
+    color: var(--text-secondary);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    text-decoration: none;
+    cursor: pointer;
+    transition:
+        color var(--hz-dur-wash) var(--hz-ease),
+        background var(--hz-dur-wash) var(--hz-ease),
+        border-color var(--hz-dur-wash) var(--hz-ease),
+        box-shadow var(--hz-dur-wash) var(--hz-ease),
+        transform var(--hz-dur-wash) var(--hz-ease);
+}
+.bm-root .bm-header-switch:hover {
+    background: var(--hz-pane-lift);
+    color: var(--billing-accent);
+    border-color: color-mix(in srgb, var(--billing-accent) 45%, var(--hz-pane-bd));
+    box-shadow: 0 4px 16px -4px var(--billing-accent-glow), var(--hz-glass-inset);
+    transform: var(--hz-hover-lift-sm);
+}
+
 /* The identity chip is the one solid piece of gradient in the chrome. */
 .bm-root .bm-header-avatar {
     background: linear-gradient(135deg, var(--billing-accent) 0%, var(--accent-2) 100%);
