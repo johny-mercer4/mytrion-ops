@@ -7479,3 +7479,56 @@ servercrm `test/zohoReturnMatchSync.test.js` (11 — derivations + precedence + 
 against a fake pg client) — all pass; servercrm suite 19/20 → 30/31, the one failure (`wexBocaGate`
 dueDate) fails identically on a clean tree. The prod `--commit` was NOT run — that is a financial-data
 write, left for explicit approval.
+
+## 2026-07-29 (2) — Returns: CMP reversal for ref-less mapped charges + a picker that can actually search (`fix/returns-cmp-reversal-and-picker`)
+
+Follow-up to the returns review. Two defects, both confirmed against prod data.
+
+### 1. A mapped MX charge could not be reversed in CMP at all
+
+`cmp_ref` is NULL on **all 7,632 mapped MX rows** (and all 836 mapped Stripe rows) — the portal
+auto-applies those payments and no ref was ever recorded; the backfill had none to copy.
+`reverseMapping` only reached the CMP resolver from *inside* the `cmpRef.kind === 'invoice'` branch,
+so a NULL ref fell through to `{ ok: true, kind: 'none' }`. Consequence: matching a return against any
+mapped MX payment did nothing in CMP, reported success, and — because the route reused its initial
+note — labelled it *"not mapped — no CMP payment to reverse"*. Bounced money stayed credited and the
+row looked clean. The Deluge twin never had this hole (`mytrionUnmapTransaction` → `mytrionResolveCmpRef`
+resolves live at return time).
+
+Fix: `ReverseInput` gains `resolveMissingRef` + `mappingType`. With no stored ref, a **return** now
+resolves the payment by carrier + amount + charged day and deletes it; the resolver only accepts an
+unambiguous match, so a miss returns `ok: false` and the return lands in Reconcile CMP instead of
+looking done. Guards:
+- **Manual unmap does NOT set the flag** — unmapping is a CRM correction and must not delete a genuine
+  portal payment (the customer really paid). Locked by a test.
+- **CRM-Sync mappings refuse to guess** — they deliberately never created a payment, so any CMP payment
+  present was made outside our system; flagged for a human rather than deleted.
+- No carrier/amount to look up → explicit failure, not a silent pass.
+- The route no longer reuses the "not mapped" note for a mapped payment ("mapped, but CMP held no
+  payment to reverse").
+
+### 2. The manual-match picker ignored what the agent typed
+
+`findReturnCandidates` used `f.customerName || f.query`, and the modal always sends `customerName` —
+so **the typed query was discarded on every return that has a customer name**, and neither id column
+was ever searched. Ported the Deluge's three modes properly:
+- **text** (≥2 chars): OR across `external_txn_id` (MX Reference), `source_record_id` (**MX Payment
+  ID** — the field Zoho labels "Payment ID" and stores in `Name`; a return's reference can be either),
+  `sender_name`, `name`. No amount/date narrowing — exact amount is what already failed, and a partial
+  return differs anyway.
+- **suggest**: same amount OR same customer (widget ORs them; we ANDed), bounded by end of the return day.
+- **window**: nothing suggested → the 7 days before the return.
+
+The route now returns the real `mode` (was hardcoded `'search'`), so the picker's "Suggested — same
+amount or same customer" and "showing all MX transactions from the 7 days before the return" hints
+finally appear.
+
+### Checks
+
+Typecheck green, lint 0 errors, 16/16 on the three billing suites (9 new in
+`tests/unit/billing-cmp-reverse.test.ts` — resolve-then-reverse, resolver miss, empty entries, the
+unmap path touching CMP zero times, CRM-Sync refusal, missing carrier, plus the stored-ref paths).
+Picker verified read-only against prod for return 06DB000LDJMG → payment 4000000122905814: found by
+Payment ID, by Reference, by customer text, and by a typed id even when `customerName` and a
+conflicting amount are also sent (the old code returned nothing); suggest and window modes both
+report their real mode. No CMP write was fired — the reversal path is covered by mocked tests only.
