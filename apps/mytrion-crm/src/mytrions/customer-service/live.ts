@@ -223,7 +223,7 @@ export async function loadHome(): Promise<HomeData> {
     // Native COQL. The Deluge's `maintenanceCases` is always 0 — its query has no WHERE clause,
     // which COQL rejects, and the failure is swallowed. This also makes the tile match its
     // "This month" label; the Deluge counted all time.
-    getMaintenanceCount(thisMonth.from.slice(0, 10), thisMonth.to.slice(0, 10)),
+    getMaintenanceCount(localYmd(thisMonth.from), localYmd(thisMonth.to)),
   ]);
   const metrics = metricsR.status === 'fulfilled' ? metricsR.value : {};
   const maintCount = maintR.status === 'fulfilled' ? maintR.value.count : null;
@@ -310,31 +310,79 @@ export async function loadCitiStats(): Promise<{ total: number; byStatus: Record
 
 // ---- Analytics ----
 
-export type RangeId = 'this_month' | 'last_month' | 'last_30' | 'this_quarter';
+export type RangeId = 'this_month' | 'last_month' | 'last_30' | 'this_quarter' | 'custom';
 
 export const RANGE_LABELS: Record<RangeId, string> = {
   this_month: 'This Month',
   last_month: 'Last Month',
   last_30: 'Last 30 Days',
   this_quarter: 'This Quarter',
+  custom: 'Custom Range…',
 };
 
-/** The widget's _computeWindow, verbatim semantics. */
-export function computeWindow(range: RangeId): AnalyticsWindow {
+/** An applied custom window: two INCLUSIVE local calendar days, each `YYYY-MM-DD`. */
+export interface CustomRange {
+  start: string;
+  end: string;
+}
+
+/** `YYYY-MM-DD` → local midnight. `new Date('2026-07-01')` is parsed as UTC, which lands on
+ *  Jun 30 in every western timezone — the wrong day for an `<input type="date">` value. */
+function parseYmd(ymd: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd.trim());
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * LOCAL calendar `YYYY-MM-DD` for an instant, optionally shifted by whole days.
+ *
+ * The Maintenance COQL window is date-only and INCLUSIVE, and the windows here are built from local
+ * midnights — so slicing their UTC ISO string ('2026-06-30T19:00:00Z'.slice(0, 10)) named the day
+ * BEFORE the window actually starts in every timezone ahead of UTC. That silently widened every
+ * Maintenance figure by a day (the Home "This month" tile counted from Jun 30).
+ */
+export function localYmd(at: Date | string, shiftDays = 0): string {
+  const d = at instanceof Date ? new Date(at.getTime()) : new Date(at);
+  if (shiftDays) d.setDate(d.getDate() + shiftDays);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Inclusive day count of a `YYYY-MM-DD` pair (1 for the same day); null if either date is bad. */
+export function rangeDays(start: string, end: string): number | null {
+  const a = parseYmd(start);
+  const b = parseYmd(end);
+  if (!a || !b) return null;
+  return Math.round((b.getTime() - a.getTime()) / 86_400_000) + 1;
+}
+
+/**
+ * The widget's _computeWindow, verbatim semantics — plus 'custom', which the widget never had.
+ * An incomplete/invalid custom pick falls back to This Month rather than an empty window.
+ */
+export function computeWindow(range: RangeId, custom?: CustomRange | null): AnalyticsWindow {
   const now = new Date();
   let from: Date;
   let to: Date;
-  if (range === 'this_month') {
-    from = new Date(now.getFullYear(), now.getMonth(), 1);
-    to = now;
+  const cFrom = range === 'custom' ? parseYmd(custom?.start ?? '') : null;
+  const cTo = range === 'custom' ? parseYmd(custom?.end ?? '') : null;
+  if (cFrom && cTo) {
+    // Both chosen days count in full — local 00:00 → local 23:59:59.999 — so picking one day
+    // ("Jul 1 → Jul 1") is a real day and not a zero-length window.
+    from = cFrom;
+    to = new Date(cTo.getFullYear(), cTo.getMonth(), cTo.getDate(), 23, 59, 59, 999);
   } else if (range === 'last_month') {
     from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     to = new Date(now.getFullYear(), now.getMonth(), 1);
   } else if (range === 'last_30') {
     to = now;
     from = new Date(now.getTime() - 30 * 86_400_000);
-  } else {
+  } else if (range === 'this_quarter') {
     from = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+    to = now;
+  } else {
+    from = new Date(now.getFullYear(), now.getMonth(), 1);
     to = now;
   }
   const len = to.getTime() - from.getTime();
@@ -344,6 +392,19 @@ export function computeWindow(range: RangeId): AnalyticsWindow {
     prevFrom: new Date(from.getTime() - len).toISOString(),
     prevTo: new Date(from.getTime()).toISOString(),
   };
+}
+
+/** The header chip: a preset's name, or the actual dates once a custom window is applied. */
+export function rangeLabel(range: RangeId, custom?: CustomRange | null): string {
+  const a = range === 'custom' ? parseYmd(custom?.start ?? '') : null;
+  const b = range === 'custom' ? parseYmd(custom?.end ?? '') : null;
+  if (!a || !b) return RANGE_LABELS[range];
+  const md = (d: Date): string => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const full = (d: Date): string =>
+    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  if (a.getTime() === b.getTime()) return full(a);
+  // Same year ⇒ print it once, on the end date.
+  return a.getFullYear() === b.getFullYear() ? `${md(a)} – ${full(b)}` : `${full(a)} – ${full(b)}`;
 }
 
 function fmtDuration(secs: number): string {
@@ -386,9 +447,12 @@ export interface AnalyticsData {
   maintenance: AnalyticsBlock;
 }
 
-export async function loadAnalytics(range: RangeId, ctx: CsContext | null): Promise<AnalyticsData> {
-  const w = computeWindow(range);
-  const ymd = (iso: string): string => iso.slice(0, 10);
+export async function loadAnalytics(
+  range: RangeId,
+  ctx: CsContext | null,
+  custom?: CustomRange | null,
+): Promise<AnalyticsData> {
+  const w = computeWindow(range, custom);
   const isManager = ctx?.isManager === true;
 
   const [ticketsR, callsR, maintR, rosterR] = await Promise.allSettled([
@@ -397,10 +461,12 @@ export async function loadAnalytics(range: RangeId, ctx: CsContext | null): Prom
     // Native COQL (was the cs.analytics.maintenance Deluge, which paginated 5k records and
     // reported open/closed as 0 — see integrations/csMaintenance.ts).
     getMaintenanceAnalytics({
-      from: ymd(w.from),
-      to: ymd(w.to),
-      prevFrom: ymd(w.prevFrom),
-      prevTo: ymd(w.prevTo),
+      from: localYmd(w.from),
+      to: localYmd(w.to),
+      prevFrom: localYmd(w.prevFrom),
+      // `prevTo` is the datetime window's EXCLUSIVE end (it equals `from`), but the COQL window is
+      // inclusive — step back a day or the boundary day is counted in BOTH periods.
+      prevTo: localYmd(w.prevTo, -1),
     }),
     isManager ? getDeskRoster() : Promise.resolve({ agents: [] }),
   ]);

@@ -133,6 +133,12 @@
     /* Keep the modal's scroll from chaining into the page behind it once it
        reaches the top/bottom (no background scroll-bleed). */
     overscroll-behavior: contain;
+    /* Scroll on its own compositor layer. The backdrop above it still carries backdrop-filter, and
+       without this the scrolling subtree and that blur share a layer — so each frame repaints the
+       blur, which is what made long forms (the Citifuel client / Application modals) scroll in jerks
+       instead of gliding. `contain: paint` also clips painting to this box, which is already true
+       visually, so it costs nothing. */
+    contain: paint;
 }
 
 /* ─── Footer ──────────────────────────────────────────────── */
@@ -221,4 +227,77 @@
 .cs-root .cs-btn-ghost:hover:not(:disabled) {
     color: var(--text-primary);
     border-color: var(--ghost-color);
+}
+
+/* ─── Confirm dialog ──────────────────────────────────────────
+   Destructive-action confirm (ConfirmDialog.tsx), replacing window.confirm(). Reuses the backdrop
+   and sheet above; the raised z-index lets it stack OVER a host modal that opened it (the Citifuel
+   client modal opens this for Delete), since both share .cs-modal-backdrop's 9990. */
+.cs-root .cs-confirm-backdrop {
+    z-index: 9995;
+}
+
+.cs-root .cs-confirm-box {
+    max-width: 420px;
+    padding: 1.25rem;
+    gap: 1.125rem;
+}
+
+.cs-root .cs-confirm-body {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.875rem;
+}
+
+.cs-root .cs-confirm-icon {
+    flex: none;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-md);
+    background: var(--cs-danger-soft);
+    border: 1px solid color-mix(in srgb, var(--cs-danger) 22%, transparent);
+    color: var(--cs-danger);
+}
+
+.cs-root .cs-confirm-copy {
+    min-width: 0;
+}
+
+.cs-root .cs-confirm-title {
+    margin: 0 0 0.3rem;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.cs-root .cs-confirm-text {
+    margin: 0;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.cs-root .cs-confirm-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+.cs-root .cs-confirm-danger {
+    background: var(--cs-danger);
+    color: #FFFFFF;
+    border-color: transparent;
+    font-weight: 600;
+}
+
+.cs-root .cs-confirm-danger:hover:not(:disabled) {
+    filter: brightness(0.93);
+}
+
+.cs-root .cs-confirm-danger:focus-visible {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--cs-danger) 26%, transparent);
 }

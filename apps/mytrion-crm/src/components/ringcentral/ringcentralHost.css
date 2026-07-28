@@ -14,3 +14,15 @@ iframe[src*="ringcentral-embeddable"] {
 iframe#rc-widget-adapter-frame:hover {
   cursor: pointer !important;
 }
+
+/*
+ * The phone's fixed card stack (sign-in prompt + call toasts) sits outside every Mytrion root, and
+ * `.cs-root { isolation: isolate }` traps a modal's z-index inside that root — so the card would
+ * paint over an open dialog's footer buttons no matter how high the dialog's z-index goes. Step
+ * aside while a CS modal is open instead; useScrollLock sets the flag for its lifetime.
+ */
+/* !important because the stack carries an inline `display: flex` (this component styles inline
+   throughout), and an inline declaration outranks any stylesheet selector. */
+body[data-cs-modal-open] .rc-phone-stack {
+  display: none !important;
+}

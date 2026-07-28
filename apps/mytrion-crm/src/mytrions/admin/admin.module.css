@@ -166,6 +166,12 @@
   border-color: color-mix(in srgb, var(--accent) 70%, var(--hz-pane-bd));
   box-shadow: var(--hz-glass-inset);
 }
+/* The wrapper above owns the focus treatment, so the bare field must not paint its own ring on top
+   — that reads as a doubled border. See the exclusion block in styles/global.css. */
+.search .searchInput:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
 .searchInput {
   flex: 1;
   min-width: 0;
