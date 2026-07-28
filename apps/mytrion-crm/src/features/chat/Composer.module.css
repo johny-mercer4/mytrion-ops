@@ -17,7 +17,7 @@
 
 .pill:focus-within {
   border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
-  box-shadow: 0 12px 40px color-mix(in srgb, var(--accent) 15%, transparent), 0 0 0 3px var(--accent-glow);
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--accent) 15%, transparent);
   transform: translateY(-2px);
 }
 

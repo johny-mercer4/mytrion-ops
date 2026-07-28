@@ -7,14 +7,19 @@ import {
   type MytrionId,
 } from '@/access/mytrions.config';
 import { installRcConsoleFilter } from './rcConsoleFilter';
-import { RC_ADAPTER_SCRIPT_ID, dockRingCentralWidget } from './ringcentralDial';
+import {
+  RC_ADAPTER_SCRIPT_ID,
+  dockRingCentralWidget,
+  revealRingCentralWidget,
+} from './ringcentralDial';
 import { ringcentralStylesDataUri } from './ringcentralEmbedStyles';
 import {
   resetRingCentralLoginState,
+  ringCentralLoginState,
   subscribeRingCentral,
   type RingCentralCallEvent,
 } from './ringcentralEvents';
-import { X, AlertCircle } from 'lucide-react';
+import { X, AlertCircle, Phone } from 'lucide-react';
 import './ringcentralHost.css';
 
 // Install as soon as this module loads — Embeddable can emit AGW-401 before the mount effect
@@ -26,6 +31,14 @@ const RC_ALLOWED_MYTRIONS = new Set<MytrionId>(['sales', 'customer-service']);
 
 /** Ignore brief logged-out blips while Embeddable restores a persisted session. */
 const LOGOUT_TOAST_GRACE_MS = 2500;
+
+/**
+ * How long to let the widget settle before we tell the agent they are signed out.
+ *
+ * The vendor restores a persisted session asynchronously and reports `loggedIn:false` first, so
+ * anything shorter than this flashes a false "sign in" prompt on every page load.
+ */
+const SIGNED_OUT_PROMPT_DELAY_MS = 7000;
 
 /** How long to wait for the vendor iframe after injecting adapter.js. */
 const FRAME_WAIT_MS = 12_000;
@@ -169,6 +182,16 @@ export function RingCentralPhone() {
   })();
 
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
+  /**
+   * Whether to show the "phone not signed in" prompt.
+   *
+   * This exists because the softphone boots MINIMISED to a small vendor pill, and until now nothing
+   * in our own UI ever surfaced the signed-out state — `ringCentralLoginState()` was read by nobody.
+   * An agent who did not know to click that pill simply never saw a sign-in screen, which is exactly
+   * the "RingCentral doesn't show the sign in page" report. Every feature tied to the phone (Data
+   * Center Leads/Deals, Retention calls) silently does nothing in that state, so it has to be loud.
+   */
+  const [showSignIn, setShowSignIn] = useState(false);
 
   const addToast = (type: ToastType, title: string, message: string) => {
     const id = ++toastId;
@@ -228,14 +251,21 @@ export function RingCentralPhone() {
 
     void boot('mount');
 
+    // Ask once the widget has had time to restore a session; re-checked on every login/logout below.
+    const signedOutTimer = window.setTimeout(() => {
+      if (!cancelled) setShowSignIn(ringCentralLoginState() !== true);
+    }, SIGNED_OUT_PROMPT_DELAY_MS);
+
     const unsubscribe = subscribeRingCentral((event: RingCentralCallEvent) => {
       if (cancelled) return;
       if (event.kind === 'login') {
+        setShowSignIn(false);
         // Don't pop the widget open on login — leave it docked; the agent opens it when they want.
         clearPendingLogoutToast();
         return;
       }
       if (event.kind !== 'logout') return;
+      setShowSignIn(true);
       // Debounce: Embeddable can flap logged-out during session restore after refresh.
       clearPendingLogoutToast();
       pendingLogoutToast = setTimeout(() => {
@@ -301,6 +331,7 @@ export function RingCentralPhone() {
 
     return () => {
       cancelled = true;
+      window.clearTimeout(signedOutTimer);
       clearPendingLogoutToast();
       unsubscribe();
       window.clearInterval(cursorTimer);
@@ -314,7 +345,7 @@ export function RingCentralPhone() {
   // Full unmount (logout / leave worker portal) always tears down the vendor iframe.
   useEffect(() => () => teardownAdapter(), []);
 
-  if (toasts.length === 0) return null;
+  if (toasts.length === 0 && !showSignIn) return null;
 
   return (
     <div
@@ -328,6 +359,58 @@ export function RingCentralPhone() {
         gap: '10px',
       }}
     >
+      {showSignIn && (
+        /* Persistent on purpose — not a toast. Every phone-backed feature is inert until the agent
+           signs in, so this stays put until they do. Clicking EXPANDS the vendor widget, which is the
+           only place the RingCentral login screen can render. */
+        <div
+          role="status"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            padding: '12px 14px',
+            minWidth: '280px',
+            maxWidth: '340px',
+            borderRadius: 'var(--radius-md, 12px)',
+            background: 'var(--hz-modal-surface, var(--surface))',
+            border: '1px solid color-mix(in srgb, var(--warn, #f59e0b) 40%, transparent)',
+            borderLeft: '4px solid var(--warn, #f59e0b)',
+            boxShadow: 'var(--shadow, 0 18px 48px -18px rgba(0,0,0,.6))',
+            color: 'var(--text)',
+          }}
+        >
+          <Phone size={18} color="var(--warn, #f59e0b)" />
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+            <div style={{ fontWeight: 600, fontSize: '14px' }}>Phone not signed in</div>
+            <div style={{ fontSize: '12.5px', color: 'var(--muted)', lineHeight: 1.45 }}>
+              Calling, call logging and the post-call wizard stay off until you sign in.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              revealRingCentralWidget();
+              setShowSignIn(false);
+            }}
+            style={{
+              flexShrink: 0,
+              height: '32px',
+              padding: '0 14px',
+              borderRadius: 'var(--radius-md, 10px)',
+              border: 'none',
+              background: 'var(--accent)',
+              color: '#fff',
+              fontWeight: 700,
+              fontSize: '13px',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            Sign in
+          </button>
+        </div>
+      )}
       {toasts.map((t) => (
         <div
           key={t.id}

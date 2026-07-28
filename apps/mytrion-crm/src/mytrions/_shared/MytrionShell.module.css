@@ -93,7 +93,7 @@
 }
 .navSearch:focus-within {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-  box-shadow: 0 0 0 2px var(--accent-glow);
+  box-shadow: none;
   color: var(--text-primary);
 }
 .navSearch input {
@@ -302,7 +302,7 @@
 .shell[data-horizon='on'] .navSearch:focus-within {
   background: var(--hz-glass-hover);
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
-  box-shadow: 0 0 0 3px var(--accent-glow);
+  box-shadow: none;
 }
 
 .shell[data-horizon='on'] .navBtn {

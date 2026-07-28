@@ -26,7 +26,14 @@ import {
   type TierBucket,
 } from '../../../_shared/loyalty';
 import { loadRecords, numFmt } from '../live';
-import { loadLeads, loadDeals, loadRejections, LEAD_STATUS_ORDER, DEAL_STAGE_ORDER } from '../dataCenterLive';
+import {
+  loadLeads,
+  loadDeals,
+  loadRejections,
+  LEAD_STATUS_ORDER,
+  DEAL_STAGE_ORDER,
+  type RejectionVM,
+} from '../dataCenterLive';
 import { useCachedLoad, formatCachedAt, type CachedLoad } from '../dcCache';
 import { compareClients } from '../clientSort';
 import { getImpersonation } from '@/api/impersonation';
@@ -34,6 +41,7 @@ import { useSales } from '../ctx';
 import { LeadsView, DealsView, RejectionsView } from '../dataCenterViews';
 import { DcCardGridSkeleton, DcKanbanSkeleton, DcListSkeleton } from '../DataCenterSkeletons';
 import { MoneyCodesView } from '../dataCenterMoneyCodes';
+import { RejectionDetailModal } from '../RejectionDetailModal';
 
 /** A styled native dropdown (accessible) for the Leads/Deals filters. */
 function DcSelect({
@@ -258,6 +266,7 @@ export function RecordsTab() {
   const [dealStageFilter, setDealStageFilter] = useState('all');
   const [clientStatusFilter, setClientStatusFilter] = useState('all');
   const [clientTierFilter, setClientTierFilter] = useState<TierBucket | null>(null);
+  const [openRejection, setOpenRejection] = useState<RejectionVM | null>(null);
 
   // Cache keyed per acted-as agent so an admin's "view-as" switch doesn't cross-contaminate books.
   const actAs = getImpersonation()?.zohoUserId ?? 'self';
@@ -558,11 +567,15 @@ export function RecordsTab() {
           emptyMsg="No card declines recorded for your clients yet."
           skeleton={<DcListSkeleton label="rejection reports" cols={5} />}
         >
-          <RejectionsView rejections={rejLoad.data ?? []} search={search.rejections} />
+          <RejectionsView rejections={rejLoad.data ?? []} search={search.rejections} onOpen={setOpenRejection} />
         </Gate>
       )}
 
       {dcSub === 'money' && <MoneyCodesView search={search.money} />}
+
+      {openRejection && (
+        <RejectionDetailModal row={openRejection} onClose={() => setOpenRejection(null)} />
+      )}
     </div>
   );
 }

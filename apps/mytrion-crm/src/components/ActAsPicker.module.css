@@ -20,14 +20,6 @@
   justify-content: center;
   flex-wrap: wrap;
 }
-.menuUp {
-  top: auto;
-  bottom: calc(100% + 8px);
-  left: 0;
-  right: 0;
-  width: 100%;
-  max-height: min(340px, 50vh);
-}
 
 .trigger {
   display: inline-flex;
@@ -114,6 +106,19 @@
   box-shadow: var(--shadow-lg);
   z-index: 50;
   overflow: hidden;
+}
+
+/* Sidebar placement — opens UPWARD from a footer trigger (CS).
+   MUST stay after `.menu`: same specificity, so source order decides. Declared before it, `.menu`'s
+   `top` won while this block's `bottom` survived — top+bottom both set, collapsing the menu to 2px
+   (the "View as does nothing" bug). */
+.menuUp {
+  top: auto;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  max-height: min(340px, 50vh);
 }
 
 .searchRow {

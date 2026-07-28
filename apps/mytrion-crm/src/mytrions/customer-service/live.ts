@@ -9,8 +9,11 @@ import {
   getCitifuelStats,
   getCsContext,
   getDeskRoster,
+  getMaintenanceAnalytics,
+  getMaintenanceCount,
   getTeamOpenTickets,
   type CsOpenTicket,
+  type MaintenanceAnalytics,
   getTicketsAnalytics,
   type AnalyticsWindow,
   type CsContext,
@@ -208,7 +211,7 @@ export async function loadHome(): Promise<HomeData> {
   const thisMonth = monthWindow(0);
   const lastMonth = monthWindow(-1);
   // Independent sources fail independently (widget parity: CRM metrics may load while DWH is down).
-  const [metricsR, teamOpenR, myTicketsR] = await Promise.allSettled([
+  const [metricsR, teamOpenR, myTicketsR, maintR] = await Promise.allSettled([
     csTouchpoint('cs.home.metrics', {}),
     getTeamOpenTickets(thisMonth.from, thisMonth.to),
     getTicketsAnalytics({
@@ -217,8 +220,13 @@ export async function loadHome(): Promise<HomeData> {
       prevFrom: lastMonth.from,
       prevTo: lastMonth.to,
     }),
+    // Native COQL. The Deluge's `maintenanceCases` is always 0 — its query has no WHERE clause,
+    // which COQL rejects, and the failure is swallowed. This also makes the tile match its
+    // "This month" label; the Deluge counted all time.
+    getMaintenanceCount(thisMonth.from.slice(0, 10), thisMonth.to.slice(0, 10)),
   ]);
   const metrics = metricsR.status === 'fulfilled' ? metricsR.value : {};
+  const maintCount = maintR.status === 'fulfilled' ? maintR.value.count : null;
   const teamOpen = teamOpenR.status === 'fulfilled' ? teamOpenR.value : null;
   const myTickets = myTicketsR.status === 'fulfilled' ? myTicketsR.value : null;
   const myTotals = myTickets && !myTickets.unmatched ? myTickets.data?.totals : undefined;
@@ -244,7 +252,7 @@ export async function loadHome(): Promise<HomeData> {
       openTickets: teamOpen ? String(teamOpen.openTickets) : '—',
       pendingApps: stat(metrics.pendingApps),
       activeClients: stat(metrics.activeClients),
-      maintenance: stat(metrics.maintenanceCases),
+      maintenance: maintCount === null ? '—' : String(maintCount),
     },
     my: {
       pendingApps: stat(metrics.myPendingApps),
@@ -347,11 +355,16 @@ function fmtDuration(secs: number): string {
 
 const BREAKDOWN_TONES: BreakdownItem['tone'][] = ['sky', 'good', 'purple', 'warn', 'amber', 'bad', 'teal', 'info', 'neutral'];
 
+/** Oldest → newest. The three sources don't agree on order — tickets/calls come back ascending from
+ *  our own routes, maintenance descending from its Deluge touchpoint — which drew the Maintenance
+ *  trend backwards (axis read "Jul 27 → Jun 30"). Sort here so every chart reads left-to-right. */
 function toVolume(daily: Array<{ day?: string; count?: number }> | undefined): VolumeDay[] {
-  return (daily ?? []).map((d) => ({
-    label: fmtDate(d.day).replace(/, \d{4}$/, ''),
-    value: Number(d.count) || 0,
-  }));
+  return [...(daily ?? [])]
+    .sort((a, b) => String(a.day ?? '').localeCompare(String(b.day ?? '')))
+    .map((d) => ({
+      label: fmtDate(d.day).replace(/, \d{4}$/, ''),
+      value: Number(d.count) || 0,
+    }));
 }
 
 function toBreakdown(
@@ -381,17 +394,20 @@ export async function loadAnalytics(range: RangeId, ctx: CsContext | null): Prom
   const [ticketsR, callsR, maintR, rosterR] = await Promise.allSettled([
     getTicketsAnalytics(w),
     getCallsAnalytics(w),
-    csTouchpoint('cs.analytics.maintenance', {
-      fromDate: ymd(w.from),
-      toDate: ymd(w.to),
-      prevFromDate: ymd(w.prevFrom),
-      prevToDate: ymd(w.prevTo),
+    // Native COQL (was the cs.analytics.maintenance Deluge, which paginated 5k records and
+    // reported open/closed as 0 — see integrations/csMaintenance.ts).
+    getMaintenanceAnalytics({
+      from: ymd(w.from),
+      to: ymd(w.to),
+      prevFrom: ymd(w.prevFrom),
+      prevTo: ymd(w.prevTo),
     }),
     isManager ? getDeskRoster() : Promise.resolve({ agents: [] }),
   ]);
   const tickets = ticketsR.status === 'fulfilled' ? ticketsR.value : {};
   const calls = callsR.status === 'fulfilled' ? callsR.value : {};
-  const maint = maintR.status === 'fulfilled' ? maintR.value : {};
+  // Typed (unlike the old untyped Deluge result), so the failure fallback needs the same shape.
+  const maint: Partial<MaintenanceAnalytics> = maintR.status === 'fulfilled' ? maintR.value : {};
   const roster = rosterR.status === 'fulfilled' ? rosterR.value.agents : [];
 
   const tAgents = tickets.data?.agents ?? [];
@@ -409,7 +425,7 @@ export async function loadAnalytics(range: RangeId, ctx: CsContext | null): Prom
   }
   const tTotals = tickets.data?.totals ?? {};
   const cTotals = calls.data?.totals ?? {};
-  const mTotals = maint.data?.totals ?? {};
+  const mTotals: Partial<MaintenanceAnalytics['data']['totals']> = maint.data?.totals ?? {};
 
   // Manager leaderboard: tickets keyed by Desk id, calls by CRM email — join on email (widget parity).
   const rosterById = new Map(roster.map((r) => [r.id, r]));

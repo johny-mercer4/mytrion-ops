@@ -44,10 +44,16 @@
     transition: background var(--hz-dur-tone) var(--hz-ease);
 }
 
-.bm-root .bm-header,
+/* Both sit above the ambient backdrop (z-index 0). The header must ALSO outrank the body: they are
+   siblings, so an equal z-index let the later-in-DOM body paint over the header — burying the
+   "View as" dropdown under the panel's KPI cards. Keep the header's shared-base rank (100). */
 .bm-root .bm-body {
     position: relative;
     z-index: 1;
+}
+.bm-root .bm-header {
+    position: relative;
+    z-index: 100;
 }
 
 /* ── Masthead ────────────────────────────────────────────────────────────── */
@@ -264,7 +270,7 @@
 .bm-root .bm-select:focus {
     background: var(--hz-pane-lift);
     border-color: var(--billing-accent);
-    box-shadow: 0 0 0 3px var(--billing-accent-glow), var(--hz-glass-inset);
+    box-shadow: var(--hz-glass-inset);
 }
 
 /* ── Buttons ─────────────────────────────────────────────────────────────── */

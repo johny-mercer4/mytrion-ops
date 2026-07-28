@@ -10,6 +10,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { serverCrm } from '../../integrations/serverCrm.js';
+import { countMaintenanceCases, fetchMaintenanceAnalytics } from '../../integrations/csMaintenance.js';
 import { zohoCrmRecords } from '../../integrations/zohoCrmRecords.js';
 import { DESK_DEPARTMENTS, zohoDesk } from '../../integrations/zohoDesk.js';
 import { enrichTicketOwners } from '../../modules/tools/deskOwners.js';
@@ -39,6 +40,8 @@ const windowQuery = z.object({
 
 const ticketsQuery = windowQuery.extend({ assigneeId: z.string().max(60).optional() });
 const callsQuery = windowQuery.extend({ ownerEmail: z.string().max(200).optional() });
+/** Home tile: just the current window (no previous-period comparison). */
+const countQuery = z.object({ from: z.string().min(10).max(40), to: z.string().min(10).max(40) });
 
 /** Trim a string-ish Desk field to a non-empty string, else null. */
 function sstr(v: unknown): string | null {
@@ -195,6 +198,30 @@ export async function csAnalyticsRoutes(app: FastifyInstance): Promise<void> {
       query.ownerEmail = own;
     }
     return serverCrm.get('/api/desk/dwh/calls/analytics', query);
+  });
+
+  /**
+   * Maintenance analytics — native COQL (replaces the `cs.analytics.maintenance` Deluge, which
+   * paginated 5,000 records and mis-bucketed every status; see integrations/csMaintenance.ts).
+   * Org-wide, like the Deluge it replaces: Maintenance rows are not owned by the CS desk.
+   */
+  app.get('/cs/analytics/maintenance', guard, async (request) => {
+    requireCsAccess(request);
+    const q = windowQuery.parse(request.query);
+    const data = await fetchMaintenanceAnalytics({
+      from: q.from.slice(0, 10),
+      to: q.to.slice(0, 10),
+      prevFrom: q.prevFrom.slice(0, 10),
+      prevTo: q.prevTo.slice(0, 10),
+    });
+    return { success: true, data };
+  });
+
+  /** Count for the CS Home "Maintenance" tile — a windowed COUNT (the Deluge's had no WHERE → 0). */
+  app.get('/cs/analytics/maintenance/count', guard, async (request) => {
+    requireCsAccess(request);
+    const q = countQuery.parse(request.query);
+    return { count: await countMaintenanceCases(q.from.slice(0, 10), q.to.slice(0, 10)) };
   });
 
   /** Desk agent roster (leaderboard + drill-in) — manager tier only. */

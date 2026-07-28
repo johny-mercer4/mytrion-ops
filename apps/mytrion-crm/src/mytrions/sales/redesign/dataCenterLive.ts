@@ -334,6 +334,37 @@ export interface RejectionVM {
   reason: string;
   date: string;
   status: string;
+  // --- Detail fields (the row is a summary; the modal shows these) ---
+  errorCode: string;
+  /** Cleaned, human-readable decline text. */
+  errorText: string;
+  /** The raw EFS string, kept verbatim for support escalation. */
+  errorRaw: string;
+  cardLast4: string;
+  driverName: string;
+  location: string;
+  station: string;
+  paymentType: string;
+  isNetwork: boolean;
+  isFraud: boolean;
+  /** The SMS the automation sent the driver, if any. */
+  automatedResponse: string;
+  agentName: string;
+  /** Full timestamp for the modal (the row shows the short date). */
+  occurredAtLong: string;
+}
+
+/**
+ * EFS decline text arrives pipe-delimited with a leading timestamp token, e.g.
+ * `202607280835|INACTIVE CARD`. The row only has room for the human half, so strip the numeric
+ * stamp and title-case what's left; the raw string is preserved on the VM for the modal.
+ */
+function cleanErrorText(raw: string): string {
+  const parts = raw.split('|').map((s) => s.trim()).filter(Boolean);
+  const human = parts.filter((s) => !/^\d{6,}$/.test(s)).join(' · ');
+  const text = human || raw.trim();
+  // EFS shouts in caps; sentence case reads better in a dense table.
+  return text === text.toUpperCase() ? text.charAt(0) + text.slice(1).toLowerCase() : text;
 }
 
 /** Our own workflow states → the badge vocabulary RejectionsView already colours. */
@@ -352,17 +383,33 @@ const REJ_STATUS_LABEL: Record<string, string> = {
 function mapRejection(t: CrmRow): RejectionVM {
   const company = str(t.companyName) || '(unknown)';
   const code = str(t.errorCode);
-  const desc = str(t.errorDescription);
-  const reason = [code && `Error ${code}`, desc].filter(Boolean).join(' · ') || 'Rejected';
+  const raw = str(t.errorDescription);
+  const errorText = raw ? cleanErrorText(raw) : '';
   const when = str(t.occurredAt);
+  const city = str(t.locationCity);
+  const state = str(t.locationState);
+  const loc = str(t.locationName);
   return {
     id: str(t.id),
     number: str(t.carrierId),
     company,
     initials: initialsOf(company),
-    reason,
+    reason: [code && `Error ${code}`, errorText].filter(Boolean).join(' · ') || 'Rejected',
     date: fmtDate(when) || relTime(when) || '—',
     status: REJ_STATUS_LABEL[str(t.status)] ?? 'Open',
+    errorCode: code,
+    errorText,
+    errorRaw: raw,
+    cardLast4: str(t.cardLast4),
+    driverName: str(t.driverName),
+    location: [loc, [city, state].filter(Boolean).join(', ')].filter(Boolean).join(' — '),
+    station: str(t.stationName),
+    paymentType: str(t.paymentType),
+    isNetwork: t.isNetwork === true,
+    isFraud: t.isFraud === true,
+    automatedResponse: str(t.automatedResponse),
+    agentName: str(t.agentName),
+    occurredAtLong: when ? new Date(when).toLocaleString() : '—',
   };
 }
 

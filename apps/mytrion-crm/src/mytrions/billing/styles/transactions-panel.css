@@ -63,7 +63,7 @@
 .bm-root .chase-input::placeholder { color: var(--text-muted); }
 .bm-root .chase-input:focus {
     border-color: var(--billing-accent);
-    box-shadow: 0 0 0 3px var(--accent-bg);
+    box-shadow: none;
 }
 /* Reference field highlighted amber when it's the cause of a duplicate. */
 .bm-root .chase-input.is-dup {

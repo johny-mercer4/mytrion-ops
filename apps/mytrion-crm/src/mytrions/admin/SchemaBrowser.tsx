@@ -7,8 +7,8 @@ import x from './SchemaBrowser.module.css';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
 
-/** Table-header grid: name | type | rows | activity | last updated | columns. */
-const TABLE_COLS = { gridTemplateColumns: '2fr 0.7fr 0.9fr 0.8fr 1.2fr 0.7fr' } as const;
+/** Table-header grid: name | type | rows | write frequency | last updated | columns. */
+const TABLE_COLS = { gridTemplateColumns: '1.8fr 0.65fr 0.75fr 1.25fr 0.95fr 0.55fr' } as const;
 /** Column-row grid: name | type | null | key | default | comment. */
 const COL_COLS = { gridTemplateColumns: '1.4fr 1.7fr 0.5fr 0.6fr 1fr 1.3fr' } as const;
 
@@ -17,6 +17,7 @@ type KindFilter = 'all' | 'tables' | 'views';
 interface Activity {
   label: string;
   tone: string;
+  detail?: string;
 }
 
 export interface SchemaBrowserProps {
@@ -44,6 +45,39 @@ function activityOf(iso: string | null): Activity {
   if (age < DAY_MS) return { label: 'Live', tone: s.pillGood ?? '' };
   if (age < WEEK_MS) return { label: 'Recent', tone: s.pillWarn ?? '' };
   return { label: 'Idle', tone: s.pillNeutral ?? '' };
+}
+
+function compactNumber(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  if (value >= 10) return value.toFixed(0);
+  if (value >= 1) return value.toFixed(1);
+  return value.toFixed(2);
+}
+
+function tableActivity(t: DbTable): Activity {
+  const writes = t.writeActivity;
+  if (!writes) return activityOf(t.updateTime);
+  const tone =
+    writes.totalWrites > 0
+      ? s.pillGood ?? ''
+      : writes.frequency === 'Unknown'
+        ? s.pillWarn ?? ''
+        : s.pillNeutral ?? '';
+  const rate = writes.writesPerDay == null ? null : `${compactNumber(writes.writesPerDay)}/day`;
+  const reset = writes.statsResetAt ? new Date(writes.statsResetAt).toLocaleString() : 'unknown';
+  return {
+    label: rate && writes.totalWrites > 0 ? `${writes.frequency} · ${rate}` : writes.frequency,
+    tone,
+    detail:
+      `${writes.totalWrites.toLocaleString()} writes since stats reset (${reset}): ` +
+      `${writes.inserts.toLocaleString()} inserts, ${writes.updates.toLocaleString()} updates, ` +
+      `${writes.deletes.toLocaleString()} deletes.`,
+  };
+}
+
+function isActive(t: DbTable): boolean {
+  return (t.writeActivity?.totalWrites ?? 0) > 0 || activityOf(t.updateTime).label === 'Live';
 }
 
 function relativeTime(iso: string | null): string {
@@ -119,7 +153,11 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
     (t: DbTable): number => {
       if (!q) return 0;
       return t.columns.filter(
-        (c) => c.name.toLowerCase().includes(q) || c.type.toLowerCase().includes(q),
+        (c) =>
+          c.name.toLowerCase().includes(q) ||
+          c.type.toLowerCase().includes(q) ||
+          c.dataType.toLowerCase().includes(q) ||
+          c.comment.toLowerCase().includes(q),
       ).length;
     },
     [q],
@@ -131,14 +169,22 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
       if (schemaFilter && t.schema !== schemaFilter) return false;
       if (kind === 'tables' && t.type === 'VIEW') return false;
       if (kind === 'views' && t.type !== 'VIEW') return false;
-      if (activeOnly && activityOf(t.updateTime).label !== 'Live') return false;
+      if (activeOnly && !isActive(t)) return false;
       if (!q) return true;
-      return tableKey(t).toLowerCase().includes(q) || columnMatches(t) > 0;
+      const tableMetadata = [
+        tableKey(t),
+        t.type,
+        t.comment,
+        t.writeActivity?.frequency ?? '',
+      ]
+        .join(' ')
+        .toLowerCase();
+      return tableMetadata.includes(q) || columnMatches(t) > 0;
     });
   }, [snap, schemaFilter, kind, activeOnly, q, columnMatches]);
 
   const liveCount = useMemo(
-    () => (snap?.tables ?? []).filter((t) => activityOf(t.updateTime).label === 'Live').length,
+    () => (snap?.tables ?? []).filter(isActive).length,
     [snap],
   );
   const viewCount = useMemo(
@@ -199,7 +245,7 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
           )}
           <div className={s.statTile}>
             <span className={s.statNum}>{liveCount}</span>
-            <span className={s.statLabel}>Updated &lt; 24h</span>
+            <span className={s.statLabel}>Tables with activity</span>
           </div>
           <div className={s.statTile}>
             <span className={s.statNum}>{viewCount}</span>
@@ -249,7 +295,7 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
             className={`${s.filterChip} ${activeOnly ? s.filterChipOn : ''}`}
             onClick={() => setActiveOnly((v) => !v)}
           >
-            Active (&lt; 24h)
+            Has activity
           </button>
           {snap && (
             <>
@@ -294,7 +340,7 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
           <span>Table</span>
           <span>Type</span>
           <span>Rows (approx)</span>
-          <span>Activity</span>
+          <span>Write frequency</span>
           <span>Last updated</span>
           <span className={s.right}>Columns</span>
         </div>
@@ -304,7 +350,7 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
           const matched = columnMatches(t);
           const open =
             expanded.has(tkey) || (q !== '' && matched > 0 && !tkey.toLowerCase().includes(q));
-          const act = activityOf(t.updateTime);
+          const act = tableActivity(t);
           return (
             <div key={tkey} className={x.schemaItem}>
               <button
@@ -324,8 +370,8 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
                   {t.type === 'VIEW' ? 'View' : t.type === 'MATERIALIZED VIEW' ? 'Matview' : 'Table'}
                 </span>
                 <span className={s.mono}>{rowsLabel(t.approxRows)}</span>
-                <span>
-                  <span className={`${s.pill} ${act.tone}`}>
+                <span title={act.detail}>
+                  <span className={`${s.pill} ${act.tone} ${x.frequencyPill}`}>
                     <span className={s.dot} />
                     {act.label}
                   </span>
@@ -342,7 +388,7 @@ export function SchemaBrowser({ title, subtitle, load, loadingMessage = 'Loading
               {open && (
                 <div className={x.colWrap}>
                   <div className={x.colHead} style={COL_COLS}>
-                    <span>Column</span>
+                    <span>Column / API name</span>
                     <span>Type</span>
                     <span>Null</span>
                     <span>Key</span>
