@@ -10,26 +10,38 @@
  * underlying roster query (see integrations/dwhClientRoster.ts). The thresholds + rewards below are
  * static program rules from the spec. No React/imports here — trivially unit-testable.
  *
- * Track by active-card count:
- *   T1 Owner-Operator (1) · T2 Small Company (2–3) · T3 Fleet (4+, segmented; capped at 12 cards).
+ * Track by FLEET SIZE IN TRUCKS (`octane.dim_company.trucks`, declared on the Zoho Deal):
+ *   T1 Owner-Operator (exactly 1 truck) · T2 Small Company (2–3) · T3 Fleet (4+, segmented, capped at 12).
  * Tier by total company gallons this calendar month vs the track/segment thresholds.
  *
- * A tier is RELATIVE TO FLEET SIZE, which surprises people reading a grid: a 1-card owner-operator
+ * A tier is RELATIVE TO FLEET SIZE, which surprises people reading a grid: a 1-truck owner-operator
  * on 2,046 gal is Gold (T1 gold = 2,000) while a 12-card fleet on 14,612 gal is only Silver
  * (T3-fleet silver = 13,500, gold = 23,000). That is the program working as specified, not a bug —
  * the badge tooltip spells out the track and threshold so the card explains itself.
  *
- * WHAT COUNTS AS AN "ACTIVE CARD" FOR THE TRACK — from the Loyalty Tiers v3 deck, verbatim:
- *   "System counts active cards (>=1 transaction previous month) on 1st of each month.
- *    4-6 cards -> Small segment · 7-8 -> Medium · 9-10 -> Large · 11-12 -> Fleet.
- *    Segment and thresholds update automatically. Max: 12 active cards."
+ * TWO AXES, DELIBERATELY SEPARATE (see {@link resolveTierForRow}):
  *
- * So the track is PREVIOUS-MONTH TRANSACTING cards, snapshotted at the start of the month — NOT the
- * cards active on the account. This used to read `activeCards` (the account total), which inflated
- * the track for anyone holding idle plastic: a carrier with 20 issued cards and 3 trucks actually
- * fuelling was scored against Fleet thresholds (10,000+ gal) and parked in "Building" forever. That
- * is the "huge number of Building clients that aren't really Building" — they were being measured
- * against a fleet they don't run. See {@link resolveTrackCards}.
+ *   MEMBERSHIP GATE — fuel activity. From the Loyalty Tiers v3 deck, verbatim:
+ *     "System counts active cards (>=1 transaction previous month) on 1st of each month.
+ *      4-6 cards -> Small segment · 7-8 -> Medium · 9-10 -> Large · 11-12 -> Fleet.
+ *      Segment and thresholds update automatically. Max: 12 active cards."
+ *   The deck's transaction test still decides who is IN the program: no pumps this month or last →
+ *   no track, which is the honest answer rather than a threshold they will never meet.
+ *
+ *   BUCKETING — declared trucks. The deck's card count was only ever a PROXY for fleet size (this
+ *   file has always said "a tier is relative to fleet size"), and the proxy was wrong often enough to
+ *   report as a bug: of 3,947 carriers with exactly 1 truck, only 812 were badged Owner-Operator, and
+ *   360 carriers badged Owner-Operator did not have one truck. Superseded 2026-07-29 by the real
+ *   number; the deck's card wording is retained for membership only.
+ *
+ * Both errors had the same shape: a carrier holding idle plastic, or running several cards on one
+ * truck, was measured against a fleet they don't run — a carrier with 20 issued cards and 3 trucks
+ * actually fuelling was scored against Fleet thresholds (10,000+ gal) and parked in "Building"
+ * forever. That is the "huge number of Building clients that aren't really Building".
+ *
+ * When the truck count is unknown (null for ~184 carriers; no carrier legitimately reports 0) the old
+ * card proxy still scores them, so nobody silently drops out of the program. See
+ * {@link resolveFleetSize} and {@link resolveTrackCards}.
  *
  * Gallons stay THIS month: the deck locks the segment on the 1st, then tiers on gallons accumulated
  * against that segment's thresholds during the month.
@@ -64,23 +76,25 @@ export interface TierResult {
   gallonsToNext: number;
   /** Gallons used to resolve the level (this billing cycle). */
   gallons: number;
-  /** Active-card count driving the track (the client's current active cards). */
-  activeCards: number;
+  /** The fleet size the track was bucketed on — trucks when known, transacting cards as the proxy. */
+  fleetSize: number;
+  /** False when `fleetSize` is the card-count fallback because no truck count was available. */
+  fleetSizeKnown: boolean;
 }
 
 const RANK: Record<TierLevel, number> = { none: 0, bronze: 1, silver: 2, gold: 3 };
 const ASCEND: Exclude<TierLevel, 'none'>[] = ['bronze', 'silver', 'gold'];
 
-const TRACK_META: Record<TrackId, { label: string; cards: string }> = {
-  T1: { label: 'Owner-Operator', cards: '1 card' },
-  T2: { label: 'Small Company', cards: '2–3 cards' },
-  T3: { label: 'Fleet', cards: '4+ cards' },
+const TRACK_META: Record<TrackId, { label: string; fleet: string }> = {
+  T1: { label: 'Owner-Operator', fleet: '1 truck' },
+  T2: { label: 'Small Company', fleet: '2–3 trucks' },
+  T3: { label: 'Fleet', fleet: '4+ trucks' },
 };
-const SEGMENT_META: Record<SegmentId, { label: string; cards: string }> = {
-  small: { label: 'Small', cards: '4–6 cards' },
-  medium: { label: 'Medium', cards: '7–8 cards' },
-  large: { label: 'Large', cards: '9–10 cards' },
-  fleet: { label: 'Fleet', cards: '11–12 cards' },
+const SEGMENT_META: Record<SegmentId, { label: string; fleet: string }> = {
+  small: { label: 'Small', fleet: '4–6 trucks' },
+  medium: { label: 'Medium', fleet: '7–8 trucks' },
+  large: { label: 'Large', fleet: '9–10 trucks' },
+  fleet: { label: 'Fleet', fleet: '11–12 trucks' },
 };
 
 const T1_THRESHOLDS: Thresholds = { bronze: 1100, silver: 1500, gold: 2000 };
@@ -117,16 +131,17 @@ export interface TrackCardsInput {
 }
 
 /**
- * How many cards the TRACK is scored against.
+ * Fuel activity, in transacting cards — the program-MEMBERSHIP GATE, and the fallback bucketer when a
+ * carrier's truck count is unknown. It is no longer the track basis (trucks are — see
+ * {@link resolveFleetSize}), but the arithmetic is unchanged and it is still load-bearing twice over.
  *
  * Previous-month transacting cards, per the deck. Falls through to this-month only when there is no
  * previous month to read — a carrier that started fuelling on the 3rd has no prior-month count and
  * would otherwise be scored as "no cards" for their whole first month.
  *
- * Deliberately does NOT fall back to the account's total active cards: that is the number that was
- * inflating tracks, and a card with no transactions is not an active card by this program's
- * definition. A carrier with plastic but no pumps in either month genuinely has no track — they show
- * as "No cards", which is the honest answer rather than a Fleet threshold they will never meet.
+ * Deliberately does NOT fall back to the account's total active cards: a card with no transactions is
+ * not an active card by this program's definition. A carrier with plastic but no pumps in either month
+ * genuinely has no track.
  */
 export function resolveTrackCards(c: TrackCardsInput): number {
   const prev = c.activeCardsPrevMonth ?? 0;
@@ -134,8 +149,28 @@ export function resolveTrackCards(c: TrackCardsInput): number {
   return c.activeCardsThisMonth ?? 0;
 }
 
+/** The declared fleet size a roster row can offer. */
+export interface FleetSizeInput {
+  /**
+   * Trucks the carrier declared on their Zoho Deal, mirrored into `octane.dim_company.trucks`.
+   * null / 0 / absent all mean UNKNOWN: the column is null for ~184 carriers and no carrier
+   * legitimately reports 0, so a 0 arriving from a sync is an unfilled field, not "no trucks".
+   */
+  trucks?: number | null | undefined;
+}
+
+/**
+ * The one place that decides what a KNOWN fleet size is. The `>= 1` integer guard is what makes
+ * "0 trucks is not an owner-operator" structural rather than incidental — 0, negatives, NaN, null
+ * and non-integers all resolve to unknown and can never reach the `=== 1` arm of resolveTrack.
+ */
+export function resolveFleetSize(c: FleetSizeInput): number | null {
+  const t = c.trucks;
+  return typeof t === 'number' && Number.isInteger(t) && t >= 1 ? t : null;
+}
+
 /** Everything the tier math needs from one roster row, in both surfaces' shape. */
-export interface TierRowInput extends TrackCardsInput {
+export interface TierRowInput extends TrackCardsInput, FleetSizeInput {
   gallonsThisMonth?: number | undefined;
   cycleGallons?: number | undefined;
   gallonsPrevMonth?: number | undefined;
@@ -151,34 +186,49 @@ export function tierGallonsOf(c: TierRowInput): number {
 }
 
 /**
- * Resolve a row's tier the way BOTH surfaces must: prev-month transacting cards for the track,
- * this-month gallons for the level, and last month's own level as the grace anchor.
+ * Resolve a row's tier the way BOTH surfaces must. TWO INDEPENDENT AXES — keeping them separate is
+ * the whole point of this function:
  *
- * Last month's level is recomputed from `gallonsPrevMonth` against the same card count — we do not
- * store tier history, and the previous month's card count is the closest honest stand-in for the
- * month before that. Grace can only prevent a drop, so a slightly-off anchor cannot over-grant.
+ *   1. ACTIVITY is the program-membership GATE. No pumps this month or last → no track at all
+ *      ("No tier"), whatever the fleet size. This is what keeps 2,975 one-truck carriers with zero
+ *      fuel activity out of "Building" — collapsing this into the fleet check re-creates the "huge
+ *      number of Building clients that aren't really Building" symptom.
+ *   2. FLEET SIZE buckets the track. Trucks when we know them, transacting cards as the fallback
+ *      proxy for the ~184 carriers whose declared truck count is missing (19 of them hold a live
+ *      track today, one at 9,259 gal — dropping them would be a regression).
+ *
+ * Last month's level is recomputed from `gallonsPrevMonth` against the SAME fleet size — we do not
+ * store tier history. Grace can only prevent a drop, so a slightly-off anchor cannot over-grant.
  */
 export function resolveTierForRow(c: TierRowInput): TierResult {
-  const cards = resolveTrackCards(c);
+  const activity = resolveTrackCards(c);
+  // Gate first: no fuel in either month means no track, so nothing downstream can grant one.
+  if (activity <= 0) return resolveTier(0, tierGallonsOf(c));
+  const fleet = resolveFleetSize(c) ?? activity;
   const heldLastMonth =
     (c.gallonsPrevMonth ?? 0) > 0
-      ? resolveTier(cards, c.gallonsPrevMonth ?? 0).level
+      ? resolveTier(fleet, c.gallonsPrevMonth ?? 0).level
       : undefined;
-  return resolveTier(cards, tierGallonsOf(c), { heldLastMonth });
+  return resolveTier(fleet, tierGallonsOf(c), { heldLastMonth, fleetSizeKnown: resolveFleetSize(c) !== null });
 }
 
-export function resolveTrack(cards: number): TrackId | null {
-  if (cards <= 0) return null;
-  if (cards === 1) return 'T1';
-  if (cards <= 3) return 'T2';
+/**
+ * Fleet-size → track. The boundaries are unchanged from the card-based version; only the number
+ * passed in changed. The arms are ordered and mutually exclusive, so T1 is exactly {1}, T2 exactly
+ * {2,3} and T3 is [4, ∞) — every fleet size lands in exactly one track.
+ */
+export function resolveTrack(fleetSize: number): TrackId | null {
+  if (fleetSize <= 0) return null;
+  if (fleetSize === 1) return 'T1';
+  if (fleetSize <= 3) return 'T2';
   return 'T3';
 }
 
-export function resolveSegment(cards: number): SegmentId | null {
-  if (cards < 4) return null;
-  if (cards <= 6) return 'small';
-  if (cards <= 8) return 'medium';
-  if (cards <= 10) return 'large';
+export function resolveSegment(fleetSize: number): SegmentId | null {
+  if (fleetSize < 4) return null;
+  if (fleetSize <= 6) return 'small';
+  if (fleetSize <= 8) return 'medium';
+  if (fleetSize <= 10) return 'large';
   return 'fleet'; // 11–12, and caps anything above 12 to Fleet
 }
 
@@ -221,28 +271,35 @@ function applyGrace(
 }
 
 /**
- * Resolve a client's tier. The TRACK/segment come from the client's ACTIVE-CARD count (their real
- * active cards — not just cards that transacted this month, so a client with active cards always gets
- * a track); the LEVEL comes from `gallons` — the program basis is this-CALENDAR-month gallons (see the
- * DWH `gallonsThisMonth`), which callers pass here (falling back to this-cycle gallons when a client
- * has no current-month pumps yet). Below the Bronze threshold → level 'none' ("Building toward Bronze").
+ * Resolve a client's tier. The TRACK/segment come from the client's FLEET SIZE — callers should go
+ * through {@link resolveTierForRow}, which gates on fuel activity first and falls back to transacting
+ * cards when the truck count is unknown. The LEVEL comes from `gallons` — the program basis is
+ * this-CALENDAR-month gallons (see the DWH `gallonsThisMonth`), falling back to this-cycle gallons
+ * when a client has no current-month pumps yet. Below Bronze → level 'none' ("Building toward Bronze").
+ *
+ * Passing a CARD count as `fleetSize` is now a semantic bug even though it typechecks: an 85-card
+ * carrier would be scored against an 85-truck fleet's thresholds.
  */
 export function resolveTier(
-  activeCards: number,
+  fleetSize: number,
   gallons: number,
   opts: {
     /** The level this client held LAST month — enables the deck's 1-month, within-10% grace. */
     heldLastMonth?: TierLevel | undefined;
+    /** False when the fleet size is the card-count fallback rather than a declared truck count. */
+    fleetSizeKnown?: boolean | undefined;
   } = {},
 ): TierResult {
-  const track = resolveTrack(activeCards);
+  const fleetSizeKnown = opts.fleetSizeKnown ?? true;
+  const track = resolveTrack(fleetSize);
   if (!track) {
     return {
       track: null, trackLabel: '', segment: null, segmentLabel: null, level: 'none',
-      grace: false, thresholds: null, nextLevel: null, gallonsToNext: 0, gallons, activeCards,
+      grace: false, thresholds: null, nextLevel: null, gallonsToNext: 0, gallons,
+      fleetSize, fleetSizeKnown,
     };
   }
-  const segment = resolveSegment(activeCards);
+  const segment = resolveSegment(fleetSize);
   const thresholds = thresholdsFor(track, segment);
   const computed = rawLevelFor(gallons, thresholds);
   const { level, grace } = applyGrace(computed, opts.heldLastMonth, gallons, thresholds);
@@ -259,7 +316,8 @@ export function resolveTier(
     nextLevel,
     gallonsToNext,
     gallons,
-    activeCards,
+    fleetSize,
+    fleetSizeKnown,
   };
 }
 
@@ -412,11 +470,16 @@ export function tierLabel(level: TierLevel): string {
   }
 }
 
-/** Modal caption, e.g. "Fleet · Large · 9–10 cards" or the no-track reason. */
+/** Modal caption, e.g. "Fleet · Large · 9–10 trucks" or the no-track reason. */
 export function trackCaption(t: TierResult): string {
-  if (!t.track) return 'No card activity this month or last — no tier';
+  // The reason for no track is ACTIVITY (the membership gate), not the fleet size — saying "no card
+  // activity" would misattribute it now that trucks do the bucketing.
+  if (!t.track) return 'No fuel activity this month or last — no tier';
   const parts = [t.trackLabel];
   if (t.segmentLabel) parts.push(t.segmentLabel);
-  const cards = t.segment ? SEGMENT_META[t.segment].cards : TRACK_META[t.track].cards;
-  return `${parts.join(' · ')} · ${cards}`;
+  const fleet = t.segment ? SEGMENT_META[t.segment].fleet : TRACK_META[t.track].fleet;
+  const caption = `${parts.join(' · ')} · ${fleet}`;
+  // Be honest about the ~184 carriers scored on the fallback proxy instead of a declared truck count —
+  // it also gives Ops a visible nudge to fill the Zoho Trucks field.
+  return t.fleetSizeKnown ? caption : `${caption} · fleet size unknown, scored on cards`;
 }

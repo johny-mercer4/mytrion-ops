@@ -7450,3 +7450,61 @@ the 100k ceiling (50 pages).
 **Not fixed, and NOT fixable by fetching more:** "linked 0 · unlinked 4" stays. All 4 children carry
 `Referrer_ID` 'REF-000002', which matches no parent record, and `Parent_Referrer` is null on 100% of
 children org-wide. That is a data problem in Zoho, not a paging one.
+
+## 2026-07-29 — Loyalty: owner-operator now means ONE TRUCK, not one card
+
+Reported as "in Manager loyalty the owner operator carriers are the ones which only 1 truck — fix that
+error". It was a wrong FIELD, not a wrong boundary. `resolveTrack` bucketed on a fuel-CARD count and
+called the 1-card bucket "Owner-Operator"; the word "trucks" appeared nowhere in the loyalty path. The
+boundary was already `=== 1` and already correct — no threshold needed moving.
+
+This also CLOSES the open question left at WORKING_NOTES.md:6843 ("switching the input would re-tier the
+entire book, so it needs a decision"). Decision: the fleet-size axis is `octane.dim_company.trucks`.
+
+**Two axes, deliberately separate.** The one number was doing two jobs, which is why a naive
+`trucks === 1` swap would be wrong:
+- ACTIVITY (prev-month transacting cards) stays the program-MEMBERSHIP gate. No pumps → no track.
+  This keeps the ~2,975 one-truck carriers with zero fuel activity out of "Building" — collapsing the
+  two axes would re-create the "huge number of Building clients that aren't really Building" symptom
+  the 2026-07-28 fix removed.
+- TRUCKS bucket the track. Unknown trucks (184 carriers, null; no carrier legitimately reports 0) fall
+  back to the old card proxy, so nobody drops out of the program — 19 of those hold a live track today,
+  one at 9,259 gal. `trackCaption` says "fleet size unknown, scored on cards" when that happens.
+
+`trucks` had to be wired the whole way: it was never selected. dim_company.trucks → OWNED_COLS → outer
+select → ClientDbRow/AgentClientRow (via a new `intOrNull`, NOT `num()`, which coerces null to 0 and
+would have turned "unknown" into "zero trucks") → LoyaltyClientRow → the two frontend API types →
+RecordVM → ClientRecord. All five type edits land together on purpose: if `trucks` reached Manager but
+not Sales, the two surfaces would silently disagree about the same carrier, which is the one failure
+mode `_shared/loyalty.ts` exists to prevent.
+
+**Verified live over all 8,059 carriers:** trucks known 7,875 / unknown 184. Tracks now T1 982 · T2 628
+· T3 395 · no tier 6,054. Of 3,947 one-truck carriers, 972 are also fuelling and are now correctly
+badged Owner-Operator; the rest are correctly gated out by activity.
+
+**Fixed alongside:** `ClientModal` called `resolveTier(client.active, …)` — the account's ALL-TIME card
+total — bypassing `resolveTierForRow`, so the modal could already disagree with the grid row that
+opened it. After this change that argument is a fleet size, so passing a card total would score an
+85-card carrier as an 85-truck fleet. Now goes through the one entry point.
+
+`TierResult.activeCards` → `fleetSize` (+ new `fleetSizeKnown`). Verified zero consumers read the old
+field. Boundaries, gallon thresholds and the 10% grace rule are untouched — not in scope.
+
+**LEFT ALONE on purpose: the carrier mini-app `companyType`** (`inviteService.ts:161`,
+`CarrierUserForm.tsx`, `ClientManagePanel.tsx`, `CarrierUsers.tsx`). Same words, different concept, and
+RBAC-bearing: `requireRegisteredOwner` gates driver management on `companyType === 'fleet-manager'`,
+and the value is PERSISTED (`carrier_invitations.company_type`), so re-basing it needs a migration +
+backfill. For "does this owner drive the truck themself", card count is the right proxy. Do not "fix"
+it to match loyalty.
+
+**Open risk, flagged to the user, NOT papered over in the tier math:** declared trucks is self-reported
+at signup and sometimes wrong. 160 carriers declare 1 truck while running 2+ transacting cards. The
+worst is carrier 5810474 RAWDEAL LOGISTICS LLC — trucks=1, 21 cards, 29,538 gal last month — which now
+scores T1 **gold** at the 2,000-gal owner-operator bar and takes every Gold reward (Love's rebate,
+TA/Petro discount, 30% money-code limit). One truck cannot pump 29,538 gal/month, so that is bad data,
+not a bad tier. Options offered: keep as-is (the rule as stated) + an Ops report of the ~160
+disagreements to fix at source; or add a sanity guard that scores on distinct fuelled units when they
+clearly exceed the declared count.
+
+Bundle rebuilt (`pnpm build:widget`) in the same commit — `apps/mytrion-crm/app` is a tracked artifact,
+and skipping it is exactly why the previous loyalty fix never reached prod.

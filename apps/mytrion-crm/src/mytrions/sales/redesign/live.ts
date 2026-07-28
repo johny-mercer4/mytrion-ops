@@ -290,6 +290,8 @@ export interface RecordVM {
   phone: string;
   cards: number;
   active: number;
+  /** Declared trucks — the loyalty tier's TRACK basis; `null` = unknown (falls back to cards). */
+  trucks: number | null;
   /** This billing-cycle gallons (DWH roster query — mart_transaction_line_items, 26th→25th cycle). */
   gallons: string;
   /** Raw billing-cycle gallons (numeric) — drives the loyalty tier level. */
@@ -326,6 +328,7 @@ function mapRecord(c: AgentClient): RecordVM {
     phone: c.phone,
     cards: c.producedCards,
     active: c.activeCards,
+    trucks: c.trucks,
     gallons: galFmt(c.cycleGallons),
     cycleGallons: c.cycleGallons,
     status,

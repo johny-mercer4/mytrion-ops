@@ -15,7 +15,21 @@ const { coqlMock, volumeMock, upsertMock, startRunMock, finishRunMock } = vi.hoi
   finishRunMock: vi.fn(async () => undefined),
 }));
 
-vi.mock('../../src/integrations/zohoCrm.js', () => ({ zohoCrm: { runCoql: coqlMock } }));
+vi.mock('../../src/integrations/zohoCrm.js', () => ({
+  zohoCrm: {
+    runCoql: coqlMock,
+    /**
+     * The engine drains both rosters (a parent missing from the map earns its referrer nothing), so it
+     * calls runCoqlAll. The stub serves one page from the same `coqlMock` the tests program and adapts
+     * it to the drain shape — `truncated: false` matters, because the engine refuses to calculate on a
+     * partial roster.
+     */
+    runCoqlAll: async (q: string) => {
+      const page = (await coqlMock(q)) as { rows: Record<string, unknown>[] };
+      return { rows: page.rows, truncated: false, pages: 1 };
+    },
+  },
+}));
 vi.mock('../../src/integrations/dwhReferralVolume.js', () => ({ fetchReferralVolume: volumeMock }));
 vi.mock('../../src/repos/referralBonusRepo.js', () => ({
   referralBonusRepo: { upsert: upsertMock, startRun: startRunMock, finishRun: finishRunMock },
