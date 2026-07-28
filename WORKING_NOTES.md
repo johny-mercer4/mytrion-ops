@@ -5288,3 +5288,35 @@ was performed.
   the same 38 unrelated baseline failures, plus the existing detached mini-app mock rejection.
   Migrations 0058/0059 remain unapplied, idempotency remains feature-flagged OFF, and no deployment
   or external Telegram/EFS/ServerCRM request was performed.
+
+## 2026-07-28 — Phase 0 committed + pre-Redis baseline instrumentation
+
+- Registered migrations 0058 and 0059 in Drizzle's journal. A fresh throwaway Postgres migrated
+  through all 60 journal entries, the second migrator run was a no-op, and the 0058/0059 SQL files
+  each executed twice successfully to verify statement-level idempotency. The throwaway DB was
+  removed afterward.
+- Applied the journaled migrations to the local Docker `octane_assistant` app database only.
+  Production, DWH and MySQL were not touched; `FF_SUPPORT_BOT_IDEMPOTENCY` remains OFF.
+- Added in-memory gateway baseline metrics: measured queue/total/SDK/send latency rings; active
+  turn, vision and subprocess gauges; RSS/heap/event-loop samplers; Telegram, provider, backend,
+  replay, reconciliation and stale-fence counters. Main Claude attempts and image-vision attempts
+  both contribute to subprocess pressure.
+- Turn lifecycle now spans enqueue through normal or fallback Telegram delivery. Per-user queue
+  wait is measured after the optional global slot is acquired, and turn errors are counted once at
+  the outer promise settlement. `sessions.ts` remains below target at 571 lines after moving the
+  concurrency semaphore into `turnConcurrency.ts`.
+- Extended the monitor with `/api/metrics` and incremental `/api/turns?since=` output. New turn
+  rows carry stable `turnId`, completion cursors, measured total/send times and truncation metadata;
+  old JSONL rows remain readable and are excluded from new total/wait percentile calculations.
+- Card-action replay responses now expose only the safe `replayed: true` execution metadata so the
+  gateway can count result replays; fresh response bodies are unchanged.
+- Added `baseline:capture`, which polls metrics and turns incrementally, aborts on truncation or a
+  process restart by default, segments explicitly allowed restart epochs, and writes a repo-root
+  evaluation report. A localhost fake-monitor dry run produced a valid report; the fake artifact
+  was removed.
+- Verification: lint 0 errors / the same 17 existing warnings; root and gateway typechecks, build,
+  standalone capture-script typecheck, 65 focused tests and a 100-turn offline stress run passed.
+  Full suite: 925 passed / the same 38 unrelated baseline failures plus the existing detached
+  mini-app mock rejection. Local backend smoke returned 200 for `/v1/health` and the extracted
+  `/v1/support-bot/chat-map`; no gateway was started against a real bot token and no external
+  Telegram, Claude, EFS or ServerCRM request was made.

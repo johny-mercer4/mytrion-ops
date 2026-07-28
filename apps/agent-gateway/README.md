@@ -51,3 +51,23 @@ pnpm --silent stress:offline --users 100 --messages 10 --concurrency 12 --json
 Bir run maksimum 1,000,000 synthetic turn bilan cheklangan. Yakuniy `PASS` user queue tartibi,
 global concurrency limiti, button ownership/replay/expiry, write-risk classification va fake-token
 rotation invariantlari buzilmaganini bildiradi.
+
+## Baseline metrics
+
+Monitor process-local baseline metriclarini JSON ko‘rinishida beradi:
+
+- `GET /api/metrics` — queue/turn/subprocess gauges, counters va rolling histograms;
+- `GET /api/turns?since=<iso>` — incremental measured turnlar, truncation metadata bilan.
+
+`MONITOR_TOKEN` o‘rnatilgan bo‘lsa har ikkala endpointga `?token=...` kerak. Redis rollout
+oldidan kamida 24 soatlik baseline olish tavsiya qilinadi; 5 daqiqa faqat dry run:
+
+```bash
+cd apps/agent-gateway
+pnpm baseline:capture --label pre-redis-smoke --minutes 5 --interval-sec 30
+pnpm baseline:capture --label pre-redis --minutes 1440 --interval-sec 30
+```
+
+Natija repo rootidagi `eval-reports/baseline-phase0-<label>.json` fayliga yoziladi. Gateway capture
+paytida restart bo‘lsa script default holatda fail qiladi; `--allow-restart` har process epoch
+counter deltalarini alohida hisoblab keyin jamlaydi.
