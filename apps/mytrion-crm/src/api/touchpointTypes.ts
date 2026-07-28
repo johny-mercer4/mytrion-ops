@@ -123,6 +123,11 @@ export interface BillingFormResult {
 }
 
 export interface MoneyCodePreview {
+  /**
+   * The authoritative draw-reason vocabulary, straight from servercrm's own validator. Preferred over
+   * the frontend fallback so the list cannot drift out of sync with what the backend will accept.
+   */
+  moneycode_reasons?: string[];
   company_name?: string;
   available?: number | string;
   eligible?: boolean;

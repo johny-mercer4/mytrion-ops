@@ -55,7 +55,9 @@ const closeX16 = (
   <Icon name="close" size={16} strokeWidth={2.4} />
 );
 const UD0: UnitDriverForm = { unitNumber: '', driverName: '', driverId: '' };
-const MC0: MoneyCodeForm = { amount: '', reason: MONEY_CODE_REASONS[0], unitNumber: '' };
+// Reason starts EMPTY on purpose: pre-selecting the first option let an agent draw without ever
+// choosing why, and the reason ends up on the EFS check. `moneyReady` already requires it.
+const MC0: MoneyCodeForm = { amount: '', reason: '', unitNumber: '' };
 
 export function AutoTab() {
   const { focusAutomationId, clearFocusAutomation } = useSales();
@@ -488,7 +490,12 @@ export function AutoTab() {
                         <div style={s('display:grid;grid-template-columns:1fr 1fr;gap:12px')}>
                           <div><Lbl t="Amount" /><input value={moneyForm.amount} onChange={(e) => setMc('amount', e.target.value)} type="number" placeholder="e.g. 150" className="ss-in" style={s(inp42)} /></div>
                           <div><Lbl t="Unit #" /><input value={moneyForm.unitNumber} onChange={(e) => setMc('unitNumber', e.target.value)} placeholder="Unit" className="ss-in" style={s(inp42)} /></div>
-                          <div style={s('grid-column:1 / -1')}><Lbl t="Reason" /><select value={moneyForm.reason} onChange={(e) => setMc('reason', e.target.value)} className="ss-in" style={s(inp42)}>{MONEY_CODE_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}</select></div>
+                          <div style={s('grid-column:1 / -1')}><Lbl t="Reason" /><select value={moneyForm.reason} onChange={(e) => setMc('reason', e.target.value)} aria-label="Why is this money code needed?" className="ss-in" style={s(inp42)}>
+                            {/* Server list wins — servercrm validates against its own set, so the
+                                fallback constant is only for a preview that has not landed yet. */}
+                            <option value="" disabled>Why is this money code needed?</option>
+                            {(mcPreview?.moneycode_reasons?.length ? mcPreview.moneycode_reasons : MONEY_CODE_REASONS).map((r) => <option key={r} value={r}>{r}</option>)}
+                          </select></div>
                         </div>
                       )}
                     </div>

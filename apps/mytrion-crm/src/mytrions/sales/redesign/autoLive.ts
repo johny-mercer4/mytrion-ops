@@ -173,11 +173,40 @@ export const LIMITTYPES = [
 ] as const;
 export const LIMIT_CHANGE_MAX = 350;
 
+/**
+ * Draw reasons for a money code — the business's canonical B-codes.
+ *
+ * These are NOT free labels. servercrm validates the submitted string against this exact set and
+ * rejects anything else with 400 `moneycode_reason is required and must be one of: …`, so the four
+ * invented placeholders that used to live here ('Driver stranded — fuel needed', 'Emergency cash
+ * advance', 'Breakdown / roadside', 'Other') made EVERY draw from Sales Mytrion fail.
+ *
+ * The `B-n ` prefix is the load-bearing part: at issue time servercrm takes the first token
+ * (`"B-2 For Fuel"` → `"B-2"`) and puts it in the EFS money-code `notes` field as
+ * `req{id} B-2 U{unit}`, hard-truncated to 30 chars. EFS never sees the label text.
+ *
+ * ⚠ Character-exact, including the ONE lowercase label: 'B-12 For lumper fee'. The business kept that
+ * casing deliberately and servercrm's Set is case-sensitive — 'For Lumper Fee' would 400.
+ *
+ * This list is only a FALLBACK. The money-code preview returns the authoritative list as
+ * `moneycode_reasons`, which the form prefers, so the vocabulary can change server-side without a
+ * frontend deploy (mirrors the Zoho self-service widget's behaviour).
+ */
 export const MONEY_CODE_REASONS = [
-  'Driver stranded — fuel needed',
-  'Emergency cash advance',
-  'Breakdown / roadside',
-  'Other',
+  'B-1 For Truck Service',
+  'B-2 For Fuel',
+  'B-3 For Personal Expenses',
+  'B-4 For Towing',
+  'B-5 For Cash Advance',
+  'B-6 For Salary',
+  'B-7 For Parking',
+  'B-8 For Truck Wash',
+  'B-9 For Truck Scale',
+  'B-10 For Shower',
+  'B-11 For Trailer',
+  'B-12 For lumper fee',
+  'B-13 For Straps',
+  'B-14 For Company Charge',
 ] as const;
 
 export const EFS_LOGIN_URL = 'https://www.wexdrive.com/otr/pdf/EFS_eMgr-CredGuide.pdf';
