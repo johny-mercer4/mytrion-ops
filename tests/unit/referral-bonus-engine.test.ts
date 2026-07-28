@@ -54,7 +54,7 @@ function zoho(parents: Record<string, unknown>[], children: Record<string, unkno
   );
 }
 
-function volume(map: Record<number, { gallons: number; newCards: number; cumulativeGallons: number }>) {
+function volume(map: Record<number, { gallons: number; swipes: number; cumulativeGallons: number }>) {
   volumeMock.mockReset();
   volumeMock.mockImplementation(async () => {
     const m = new Map<number, unknown>();
@@ -89,7 +89,7 @@ describe('period selection', () => {
 describe('joining child → parent', () => {
   it('joins on the REF code, not the (empty) Parent_Referrer lookup', async () => {
     zoho([PARENT], [child({ Parent_Referrer: null })]);
-    volume({ 5799524: { gallons: 1000, newCards: 0, cumulativeGallons: 1000 } });
+    volume({ 5799524: { gallons: 1000, swipes: 0, cumulativeGallons: 1000 } });
     await runReferralBonusCalculation(ctx, { periodMonth: PERIOD });
     expect(upsertMock).toHaveBeenCalledTimes(1);
     expect(upsertMock.mock.calls[0]![1]).toMatchObject({
@@ -101,7 +101,7 @@ describe('joining child → parent', () => {
 
   it('does not pay a parent-recipient bonus when the REF code matches nothing', async () => {
     zoho([PARENT], [child({ Referrer_ID: 'REF-999999' })]);
-    volume({ 5799524: { gallons: 1000, newCards: 0, cumulativeGallons: 1000 } });
+    volume({ 5799524: { gallons: 1000, swipes: 0, cumulativeGallons: 1000 } });
     const s = await runReferralBonusCalculation(ctx, { periodMonth: PERIOD });
     expect(upsertMock).not.toHaveBeenCalled();
     expect(s.unresolved).toBe(1);
@@ -116,7 +116,7 @@ describe('carrier-level collapsing', () => {
       child({ id: 'C2' }),
       child({ id: 'C3' }),
     ]);
-    volume({ 5799524: { gallons: 1000, newCards: 0, cumulativeGallons: 1000 } });
+    volume({ 5799524: { gallons: 1000, swipes: 0, cumulativeGallons: 1000 } });
     const s = await runReferralBonusCalculation(ctx, { periodMonth: PERIOD });
     expect(upsertMock).toHaveBeenCalledTimes(1);
     expect(s.amountTotalUsd).toBe('10.00'); // 1000 gal x $0.01, not x3
@@ -124,7 +124,7 @@ describe('carrier-level collapsing', () => {
 
   it('is deterministic about which child record is paid', async () => {
     zoho([PARENT], [child({ id: 'C9' }), child({ id: 'C2' })]);
-    volume({ 5799524: { gallons: 500, newCards: 0, cumulativeGallons: 500 } });
+    volume({ 5799524: { gallons: 500, swipes: 0, cumulativeGallons: 500 } });
     await runReferralBonusCalculation(ctx, { periodMonth: PERIOD });
     // Lowest record id wins, so a re-run cannot move the award to a sibling.
     expect(upsertMock.mock.calls[0]![1]).toMatchObject({ childReferralId: 'C2' });
@@ -141,7 +141,7 @@ describe('the four logics', () => {
    */
   it('Swipes (Legacy) pays ONLY the per-swipe bonus, not per-gallon as well', async () => {
     zoho([PARENT], [child({ Calculation: 'Swipes (Legacy)' })]);
-    volume({ 5799524: { gallons: 2500, newCards: 3, cumulativeGallons: 9000 } });
+    volume({ 5799524: { gallons: 2500, swipes: 3, cumulativeGallons: 9000 } });
     const s = await runReferralBonusCalculation(ctx, { periodMonth: PERIOD });
 
     const byType = Object.fromEntries(
@@ -157,7 +157,7 @@ describe('the four logics', () => {
 
   it('Gallons (Legacy) pays ONLY the per-gallon bonus', async () => {
     zoho([PARENT], [child({ Calculation: 'Gallons (Legacy)' })]);
-    volume({ 5799524: { gallons: 2500, newCards: 3, cumulativeGallons: 9000 } });
+    volume({ 5799524: { gallons: 2500, swipes: 3, cumulativeGallons: 9000 } });
     const s = await runReferralBonusCalculation(ctx, { periodMonth: PERIOD });
 
     const byType = Object.fromEntries(
@@ -178,7 +178,7 @@ describe('the four logics', () => {
     // The live shape: 665 of 687 parents populated, null on 100% of children. Reading the child alone
     // made every run write zero rows while reporting success.
     zoho([{ ...PARENT, Calculation: 'Gallons (Legacy)' }], [child({ Calculation: null })]);
-    volume({ 5799524: { gallons: 1000, newCards: 2, cumulativeGallons: 1000 } });
+    volume({ 5799524: { gallons: 1000, swipes: 2, cumulativeGallons: 1000 } });
     const s = await runReferralBonusCalculation(ctx, { periodMonth: PERIOD });
     expect(s.skippedNoCalculation).toBe(0);
     expect(s.rowsWritten).toBe(1);
@@ -187,7 +187,7 @@ describe('the four logics', () => {
 
   it('honours a non-null child Calculation as an explicit override of the parent', async () => {
     zoho([{ ...PARENT, Calculation: 'Gallons (Legacy)' }], [child({ Calculation: 'Swipes (Legacy)' })]);
-    volume({ 5799524: { gallons: 1000, newCards: 2, cumulativeGallons: 1000 } });
+    volume({ 5799524: { gallons: 1000, swipes: 2, cumulativeGallons: 1000 } });
     const s = await runReferralBonusCalculation(ctx, { periodMonth: PERIOD });
     expect(upsertMock.mock.calls[0]![1]).toMatchObject({ bonusType: 'swipes_legacy' });
     expect(s.amountTotalUsd).toBe('100.00');
@@ -195,7 +195,7 @@ describe('the four logics', () => {
 
   it('gallons_parent awards $50 once at 500 cumulative gallons', async () => {
     zoho([PARENT], [child({ Calculation: 'Gallons (Parent)' })]);
-    volume({ 5799524: { gallons: 100, newCards: 0, cumulativeGallons: 520 } });
+    volume({ 5799524: { gallons: 100, swipes: 0, cumulativeGallons: 520 } });
     await runReferralBonusCalculation(ctx, { periodMonth: PERIOD });
     expect(upsertMock.mock.calls[0]![1]).toMatchObject({
       bonusType: 'gallons_parent',
@@ -207,7 +207,7 @@ describe('the four logics', () => {
 
   it('gallons_child pays the CHILD at 1,000 cumulative — the documented exception', async () => {
     zoho([PARENT], [child({ Calculation: 'Gallons (Child)' })]);
-    volume({ 5799524: { gallons: 100, newCards: 0, cumulativeGallons: 1200 } });
+    volume({ 5799524: { gallons: 100, swipes: 0, cumulativeGallons: 1200 } });
     await runReferralBonusCalculation(ctx, { periodMonth: PERIOD });
     expect(upsertMock.mock.calls[0]![1]).toMatchObject({
       bonusType: 'gallons_child',
@@ -219,7 +219,7 @@ describe('the four logics', () => {
 
   it('writes NO row below a one-time threshold', async () => {
     zoho([PARENT], [child({ Calculation: 'Gallons (Child)' })]);
-    volume({ 5799524: { gallons: 100, newCards: 0, cumulativeGallons: 999 } });
+    volume({ 5799524: { gallons: 100, swipes: 0, cumulativeGallons: 999 } });
     const s = await runReferralBonusCalculation(ctx, { periodMonth: PERIOD });
     expect(upsertMock).not.toHaveBeenCalled();
     expect(s.rowsWritten).toBe(0);
@@ -227,7 +227,7 @@ describe('the four logics', () => {
 
   it('writes no row for a zero-volume month', async () => {
     zoho([PARENT], [child({ Calculation: 'Gallons (Legacy)' })]);
-    volume({ 5799524: { gallons: 0, newCards: 0, cumulativeGallons: 0 } });
+    volume({ 5799524: { gallons: 0, swipes: 0, cumulativeGallons: 0 } });
     await runReferralBonusCalculation(ctx, { periodMonth: PERIOD });
     expect(upsertMock).not.toHaveBeenCalled();
   });
@@ -236,7 +236,7 @@ describe('the four logics', () => {
 describe('today’s live state — Calculation is unset everywhere', () => {
   it('computes nothing and reports it, rather than failing', async () => {
     zoho([PARENT], [child({ Calculation: null }), child({ id: 'C2', Calculation: null })]);
-    volume({ 5799524: { gallons: 5000, newCards: 2, cumulativeGallons: 50000 } });
+    volume({ 5799524: { gallons: 5000, swipes: 2, cumulativeGallons: 50000 } });
     const s = await runReferralBonusCalculation(ctx, { periodMonth: PERIOD });
     expect(s.skippedNoCalculation).toBe(2);
     expect(s.rowsWritten).toBe(0);

@@ -162,7 +162,7 @@ function usd(n: number): string {
  */
 function computeAmount(
   spec: ReferralBonusSpec,
-  vol: { gallons: number; newCards: number; cumulativeGallons: number },
+  vol: { gallons: number; swipes: number; cumulativeGallons: number },
 ): { amount: number; qtyGallons: number | null; qtyNewCards: number | null } | null {
   switch (spec.type) {
     case 'gallons_legacy': {
@@ -170,8 +170,10 @@ function computeAmount(
       return { amount: vol.gallons * spec.rateUsd, qtyGallons: vol.gallons, qtyNewCards: null };
     }
     case 'swipes_legacy': {
-      if (vol.newCards <= 0) return null;
-      return { amount: vol.newCards * spec.rateUsd, qtyGallons: null, qtyNewCards: vol.newCards };
+      if (vol.swipes <= 0) return null;
+      // `qtyNewCards` keeps its column name (qty_new_cards) to avoid a migration, but it now holds the
+      // program's SWIPE count — distinct cards that transacted in the month, not first-ever cards.
+      return { amount: vol.swipes * spec.rateUsd, qtyGallons: null, qtyNewCards: vol.swipes };
     }
     default: {
       // One-time: award in the month the cumulative threshold is first crossed. The repo's partial

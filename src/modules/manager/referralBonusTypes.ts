@@ -72,11 +72,16 @@ const GALLONS_LEGACY: ReferralBonusSpec = {
 /**
  * Type 2 — Swipes (Legacy): $50 per unique NEW CARD, every month, to the parent.
  *
- * "Swipe" resolves to the Sales Mytrion dashboard's NEW-CARD metric: a card counts in the month its
- * first-ever transaction falls, i.e. servercrm agentDwh.js
- * `MIN(transaction_date) OVER (PARTITION BY carrier_id, card_number)`, with `card_number IS NOT
- * NULL`. Note the dashboard field literally named `swipes_*` is `COUNT(DISTINCT transaction_id)`
- * (transactions) — that is NOT this metric; the one to mirror is `new_cards_*`.
+ * THE PROGRAM DEFINES THE SWIPE — not the Sales Mytrion dashboard. Per the calculation spec: "a card
+ * qualifies as a new swipe in a given month only via its FIRST transaction that month — further
+ * transactions on the same card in the same month do not generate additional swipe bonuses." So it is
+ * one count per unique card per month, and it RECURS: a card fuelling in March and April is a swipe in
+ * both.
+ *
+ * This used to be defined as the dashboard's `new_cards_*` metric (a card's FIRST-EVER appearance),
+ * which paid a referrer $50 once per card per LIFETIME instead of per month — roughly a 6x
+ * under-count. The dashboard is a separate surface with its own definitions (its `swipes_*` field is
+ * `count(distinct transaction_id)`, i.e. per fill-up) and neither of its metrics governs this program.
  */
 const SWIPES_LEGACY: ReferralBonusSpec = {
   type: 'swipes_legacy',

@@ -7584,3 +7584,31 @@ pre-existing one-time backlog on first enable (~$74,900 in a single run).
 
 Also fixed: `tests/unit/data-center-routes.test.ts` fixture missing `trucks` — the loyalty commit
 (9cd0887) left `pnpm typecheck` red because I only ran the web app's typecheck after that edit.
+
+## 2026-07-29 — Referral bonus swipe: the PROGRAM defines it, not the Sales dashboard
+
+Corrected after the user pointed out the distinction: the Sales Mytrion dashboard (and Home) are their
+own surface and stay untouched; the loyalty/bonus program is a different thing with its own rules.
+
+`referralBonusTypes.ts` had it in writing — "'Swipe' resolves to the Sales Mytrion dashboard's NEW-CARD
+metric" — so Type 2 counted cards whose FIRST-EVER eligible transaction fell in the month. That pays a
+referrer $50 once per card per LIFETIME. The calculation spec says the opposite: "a card qualifies as a
+new swipe in a given month only via its FIRST transaction that month — further transactions on the same
+card in the same month do not generate additional swipe bonuses." One count per unique card per month,
+recurring monthly.
+
+Now `count(distinct card_number)` inside the period month (`dwhReferralVolume.ts`), and the runtime
+field is renamed `newCards` → `swipes` so the misnomer that caused the conflation cannot re-teach it.
+The DB column keeps its `qty_new_cards` name (no migration) with a comment saying what it now holds.
+
+Verified live — IOK TRANS LLC (carrier 5796264), June 2026, ULSD+ULSR:
+  PROGRAM rule (distinct cards in month):   35 swipes → $1,750
+  OLD basis (dashboard new-card metric):     3 swipes → $150
+So the old basis under-paid this carrier's referrer by ~12x for the month.
+
+NEITHER of the dashboard's two metrics governs this program, and both remain untouched:
+  · dashboard `new_cards_*` = a card's first-EVER appearance (what this wrongly borrowed)
+  · dashboard `swipes_*`    = count(distinct transaction_id), i.e. per fill-up
+`salesDashboards.ts`, `dashSalesData.ts` and `SalesDashPanel.tsx` are unmodified — confirmed by
+git status — and no dashboard or Home file references `_shared/loyalty` at all, so the loyalty track
+change cannot have moved a dashboard number either.
