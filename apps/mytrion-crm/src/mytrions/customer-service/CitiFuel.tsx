@@ -4,7 +4,7 @@
  * headers / cs-app-pagination / cs-toast) over the DONE live-data layer: debounced server
  * search, live status-filter tabs + per-status stats, single view+edit modal, inline delete.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { CitiModal } from './CitiModal';
 import { Toast, type ToastState } from './Toast';
@@ -59,6 +59,64 @@ const COLS: Col[] = [
   { key: 'phone', label: 'Phone' },
   { key: 'email', label: 'Email' },
 ];
+
+function cellValue(row: CitiRow, col: Col): string {
+  const v = row[col.key];
+  if (col.date) return fmtDate(v) || '—';
+  return v ? String(v) : '—';
+}
+
+/**
+ * One table row, memoised — same reasoning as Applications' AppRow. Search state lives in the
+ * panel, so without this every keystroke re-rendered all ~450 cells AND rebuilt three inline style
+ * objects per row for React to diff. The per-cell styles are plain classes now (see
+ * citi-fuel-panel.css), so a row renders no throwaway objects at all.
+ *
+ * COLS is a module constant and `onOpen` is useCallback'd in the panel, so an untouched row bails.
+ */
+const CitiTableRow = memo(function CitiTableRow({
+  row,
+  onOpen,
+}: {
+  row: CitiRow;
+  onOpen: (row: CitiRow) => void;
+}) {
+  return (
+    <tr tabIndex={0} onClick={() => onOpen(row)} onKeyDown={(e) => e.key === 'Enter' && onOpen(row)}>
+      {COLS.map((col) => (
+        <td key={col.key}>
+          {col.badge ? (
+            row[col.key] ? (
+              <span className={`cs-badge ${citiBadge(String(row[col.key]))}`}>{String(row[col.key])}</span>
+            ) : (
+              <span className="cs-badge cs-badge-muted">—</span>
+            )
+          ) : col.date ? (
+            <span className="cs-citi-cell-date">{cellValue(row, col)}</span>
+          ) : col.key === 'name' ? (
+            <div className="cs-citi-cell-name">{row.name || '—'}</div>
+          ) : (
+            <span className="cs-citi-cell-text">{cellValue(row, col)}</span>
+          )}
+        </td>
+      ))}
+      <td onClick={(e) => e.stopPropagation()}>
+        <button
+          className="cs-citi-action-btn cs-citi-delete-btn"
+          title="Delete record"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen(row);
+          }}
+        >
+          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={TRASH_PATH} />
+          </svg>
+        </button>
+      </td>
+    </tr>
+  );
+});
 
 /** Widget summary-card accent per status label. */
 const STAT_COLOR: Record<string, string> = {
@@ -140,11 +198,12 @@ export function CitiFuel() {
     setPage(n);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
-  function openClient(row: CitiRow) {
+  // useCallback'd: every row receives it, and a fresh identity would defeat CitiTableRow's memo.
+  const openClient = useCallback((row: CitiRow) => {
     setCreating(false);
     setModalClient(row);
     setModalOpen(true);
-  }
+  }, []);
   function openCreate() {
     setCreating(true);
     setModalClient(null);
@@ -154,12 +213,6 @@ export function CitiFuel() {
   useEffect(() => {
     if (list.error) setToast({ id: Date.now(), kind: 'error', message: `Load failed: ${list.error}` });
   }, [list.error]);
-
-  function cellValue(row: CitiRow, col: Col): string {
-    const v = row[col.key];
-    if (col.date) return fmtDate(v) || '—';
-    return v ? String(v) : '—';
-  }
 
   return (
     <div className="cs-panel cs-citi-fuel-panel">
@@ -248,39 +301,7 @@ export function CitiFuel() {
             </thead>
             <tbody>
               {sortedRows.map((row) => (
-                <tr key={row.id} tabIndex={0} onClick={() => openClient(row)} onKeyDown={(e) => e.key === 'Enter' && openClient(row)}>
-                  {COLS.map((col) => (
-                    <td key={col.key}>
-                      {col.badge ? (
-                        row[col.key] ? (
-                          <span className={`cs-badge ${citiBadge(String(row[col.key]))}`}>{String(row[col.key])}</span>
-                        ) : (
-                          <span className="cs-badge cs-badge-muted">—</span>
-                        )
-                      ) : col.date ? (
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{cellValue(row, col)}</span>
-                      ) : col.key === 'name' ? (
-                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{row.name || '—'}</div>
-                      ) : (
-                        <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>{cellValue(row, col)}</span>
-                      )}
-                    </td>
-                  ))}
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <button
-                      className="cs-citi-action-btn cs-citi-delete-btn"
-                      title="Delete record"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openClient(row);
-                      }}
-                    >
-                      <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={TRASH_PATH} />
-                      </svg>
-                    </button>
-                  </td>
-                </tr>
+                <CitiTableRow key={row.id} row={row} onOpen={openClient} />
               ))}
               {!loading && sortedRows.length === 0 ? (
                 <tr>

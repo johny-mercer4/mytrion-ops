@@ -106,6 +106,15 @@ function agentInitials(name: string): string {
 
 const KPI_ICON_CLASS = ['', 'cs-an-icon-warn', 'cs-an-icon-success', 'cs-an-icon-purple'];
 
+/** Stable "no data yet" block — see the note where it is used. */
+const EMPTY_BLOCK: AnalyticsBlock = {
+  kpis: [],
+  volume: [],
+  breakdown: [],
+  leaderboardCols: ['', '', ''],
+  leaderboard: [],
+};
+
 export function Analytics() {
   const [subTab, setSubTab] = useState<SubTab>('tickets');
   // `range` + `custom` are the APPLIED window; `draft` is what the picker is editing. Kept apart so
@@ -153,13 +162,9 @@ export function Analytics() {
   };
 
   const isManager = ctx.data?.isManager === true;
-  const block: AnalyticsBlock = analytics.data?.[subTab] ?? {
-    kpis: [],
-    volume: [],
-    breakdown: [],
-    leaderboardCols: ['', '', ''],
-    leaderboard: [],
-  };
+  // EMPTY_BLOCK is a module constant, not an inline literal: a fresh object here would give `block` a
+  // new identity on every render and invalidate every memo below whenever data is absent.
+  const block: AnalyticsBlock = analytics.data?.[subTab] ?? EMPTY_BLOCK;
   const loading = analytics.loading || ctx.loading;
   const donutTotal = useMemo(() => block.breakdown.reduce((s, b) => s + b.value, 0), [block]);
   const maxLead = useMemo(() => Math.max(1, ...block.leaderboard.map((r) => r.col1)), [block]);
@@ -171,6 +176,11 @@ export function Analytics() {
       ),
     [block],
   );
+  // The chart geometry only depends on the data, but it used to be recomputed inline in JSX on every
+  // render — including every keystroke in the custom-range date fields, which re-render this panel.
+  const sparkLine = useMemo(() => sparkPoints(block.volume), [block.volume]);
+  const sparkArea = useMemo(() => areaPath(block.volume), [block.volume]);
+  const donutFill = useMemo(() => donutBackground(block.breakdown), [block.breakdown]);
 
   const tabCount = (id: SubTab): string => {
     const b = analytics.data?.[id];
@@ -360,8 +370,8 @@ export function Analytics() {
                   </linearGradient>
                 </defs>
                 <line className="cs-an-spark-baseline" x1="0" y1={SPARK_H - 1} x2="400" y2={SPARK_H - 1} />
-                <path d={areaPath(block.volume)} fill="url(#csAnGrad)" />
-                <polyline className="cs-an-spark-line" points={sparkPoints(block.volume)} fill="none" />
+                <path d={sparkArea} fill="url(#csAnGrad)" />
+                <polyline className="cs-an-spark-line" points={sparkLine} fill="none" />
               </svg>
               <div className="cs-an-spark-labels">
                 <span>{block.volume[0]?.label}</span>
@@ -378,7 +388,7 @@ export function Analytics() {
           <div className="cs-an-chart-head">Breakdown</div>
           {block.breakdown.length ? (
             <div className="cs-an-donut-wrap">
-              <div className="cs-an-donut" style={{ background: donutBackground(block.breakdown) }}>
+              <div className="cs-an-donut" style={{ background: donutFill }}>
                 <div className="cs-an-donut-hole">
                   <div className="cs-an-donut-total">{donutTotal.toLocaleString()}</div>
                   <div className="cs-an-donut-sublabel">total</div>
