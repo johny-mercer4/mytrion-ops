@@ -407,6 +407,20 @@
       "when": 1784737200000,
       "tag": "0057_mytrion_access_modes",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1784740800000,
+      "tag": "0058_support_bot_operations",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1784744400000,
+      "tag": "0059_support_bot_chat_tenant_scope",
+      "breakpoints": true
     }
   ]
 }
