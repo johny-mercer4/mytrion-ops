@@ -7298,3 +7298,16 @@ a backfill). Deleted my file; the journal never referenced it. Nothing to do her
 **HR UI/UX beautification.** The data layer is now correct and complete, but I did not touch the HR
 tabs' presentation — doing that properly needs a pass over HrHome/HrEmployees plus hr.css, and I would
 rather leave it than half-style it.
+
+## 2026-07-29 — Billing Mytrion colors broken (missing CSS asset)
+
+Prod console: stylesheet `https://octane-ops-ai.onrender.com/assets/index-CwpF6G9d.css` refused
+because MIME was `application/json` — the file 404ed and the not-found handler returned JSON.
+`index.html` still pointed at that hash after commit `f89affb` deleted the CSS during a
+rebase-bundle rebuild (JS was updated to `index-C-Zlcfe9.js`, CSS href left stale).
+
+Fix: `pnpm build:widget` so `app/index.html` and `app/assets/*` hashes match again
+(entry now `index-vD7wZkth.js` + `index-DYzu9WTp.css`; billing styles in `index-B3yk86w_.css`).
+Colors return once this bundle is deployed. Touchpoints `401` on
+`/v1/touchpoints/billing.datacenter.deals` is a separate auth issue, not the CSS break.
+Mismatched JS chunks (`index-C-Zlcfe9.js` + `index-DM6WA7bf.js`) also triggered React #321.
