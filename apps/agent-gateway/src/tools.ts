@@ -262,7 +262,7 @@ export function buildOctaneServer(
           return { content: [{ type: 'text' as const, text: 'reacted' }] };
         },
       ),
-      tool('octane_override', "Unlock the asking DRIVER's own held card for ~30 minutes. Only after their explicit yes to a confirm question.", asker, ({ telegram_user_id }) => run('/support-bot/override', telegram_user_id)),
+      tool('octane_override', "Unlock the asking DRIVER's own held card for ~30 minutes. Only after their explicit yes to a confirm question.", asker, ({ telegram_user_id }) => run('/support-bot/override', telegram_user_id, { requestId: turnId })),
     ],
   });
 }

@@ -5264,3 +5264,27 @@ was performed.
   detached mini-app mock rejection also remains.
 - Remaining prerequisite debt: `supportBot.routes.ts` was reduced but is still above the 600-line
   cap. Continue Phase 0 route extraction before enabling the feature or starting Redis workers.
+
+## 2026-07-28 — support-bot Phase 0 route/repository cleanup
+
+- Split the 1,079-line `supportBot.routes.ts` into gateway control-plane, document delivery and
+  private-value route modules. The original route is now 523 lines; every support-bot route module
+  is below the 580-line target.
+- Removed every direct database query/import from support-bot routes. Message ingest and chat-map
+  persistence now go through `supportBotGatewayRepo`; registration access-list reads go through
+  `registeredMiniAppCompanyRepo`.
+- Made chat mapping tenant-safe at both query and uniqueness levels. Migration
+  `0059_support_bot_chat_tenant_scope.sql` replaces the global `chat_id` unique index with
+  `(tenant_id, chat_id)`, and auto-bind locks/claims the tenant-scoped row without re-pointing an
+  already enabled mapping.
+- Fixed the existing `findByTelegramUserId` lookup so `tenant_id` is part of the SQL predicate
+  before `LIMIT 1`, rather than filtering one arbitrary global result in application code.
+- Replaced override receipt notification's ineffective `Date.now()` dedupe key with the stable,
+  gateway-supplied Telegram turn/request ID. The model cannot supply or alter this value.
+- Added cross-tenant gateway-route tests covering chat-map reads, access-list lookup and rejected
+  auto-bind when no registration exists in the authenticated tenant.
+- Verification: root and gateway typechecks passed; lint has 0 errors and the same 17 existing
+  warnings; focused gateway/security suite passed 71/71. Full suite finished at 917 passed /
+  the same 38 unrelated baseline failures, plus the existing detached mini-app mock rejection.
+  Migrations 0058/0059 remain unapplied, idempotency remains feature-flagged OFF, and no deployment
+  or external Telegram/EFS/ServerCRM request was performed.
