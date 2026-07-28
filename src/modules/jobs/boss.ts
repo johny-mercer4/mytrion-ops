@@ -4,10 +4,11 @@
  * graceful shutdown. JOBS_WORKER_MODE decides whether THIS process executes jobs ('inline'),
  * only enqueues ('send-only' — a dedicated dist/worker.js executes), or is off entirely.
  */
-import { PgBoss } from 'pg-boss';
+import { PgBoss, type ConstructorOptions } from 'pg-boss';
 import { databaseUrl, env } from '../../config/env.js';
 import { dbSslOption } from '../../db/client.js';
 import { logger } from '../../lib/logger.js';
+import { classifyBossError, EMPTY_TRANSIENT_WINDOW } from './bossErrors.js';
 import { ALL_JOBS } from './catalog.js';
 import { bulkIngestJob } from './workers/knowledgeIngest.js';
 import { applySchedules } from './scheduler.js';
@@ -16,15 +17,59 @@ import { registerWorkers } from './workers/index.js';
 let boss: PgBoss | null = null;
 let started = false;
 
+/** Burst state for transient link errors — see bossErrors.ts for why they are collapsed. */
+const TRANSIENT_LOG_WINDOW_MS = 30_000;
+let transientWindow = EMPTY_TRANSIENT_WINDOW;
+
+function logBossError(err: unknown): void {
+  const { action, window } = classifyBossError(err, Date.now(), transientWindow, TRANSIENT_LOG_WINDOW_MS);
+  transientWindow = window;
+  switch (action.kind) {
+    case 'error':
+      logger.error({ err }, 'pg-boss error');
+      return;
+    case 'warn':
+      // No stack on purpose: it only ever shows pg-boss's own poll loop, never the cause. The link
+      // and the pool ceiling are the facts worth having.
+      logger.warn(
+        { message: action.message, occurrences: action.occurrences, poolMax: env.PGBOSS_POOL_MAX },
+        'pg-boss database link unavailable (retrying)',
+      );
+      return;
+    case 'suppress':
+      return;
+  }
+}
+
+/**
+ * pg-boss hands its whole config object to `new pg.Pool()`, so pg's socket options are honoured at
+ * runtime even though pg-boss's own `ConstructorOptions` stops at `max` / `connectionTimeoutMillis`.
+ * Declared as an intersection rather than a cast so the extra keys stay type-checked.
+ */
+type BossOptions = ConstructorOptions & {
+  keepAlive?: boolean;
+  keepAliveInitialDelayMillis?: number;
+};
+
 export function getBoss(): PgBoss {
   if (!boss) {
-    boss = new PgBoss({
+    const options: BossOptions = {
       connectionString: databaseUrl,
       schema: env.PGBOSS_SCHEMA,
-      max: 3, // small pool — the app pool + checkpointer already use the connection budget
+      max: env.PGBOSS_POOL_MAX,
+      connectionTimeoutMillis: env.PGBOSS_CONNECT_TIMEOUT_MS,
+      /*
+       * Notice a half-open socket instead of handing a dead connection to the next poll and then
+       * waiting out the whole acquire timeout on it. macOS defaults TCP keepalive to two hours idle,
+       * which is useless here, so the probe delay is set explicitly: a laptop resuming from sleep or
+       * a connection reaped by Render mid-idle now fails fast and is replaced.
+       */
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10_000,
       ssl: dbSslOption(databaseUrl),
-    });
-    boss.on('error', (err) => logger.error({ err }, 'pg-boss error'));
+    };
+    boss = new PgBoss(options);
+    boss.on('error', logBossError);
   }
   return boss;
 }
