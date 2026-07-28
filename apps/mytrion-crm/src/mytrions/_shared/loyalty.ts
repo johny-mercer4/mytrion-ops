@@ -94,7 +94,14 @@ const SEGMENT_META: Record<SegmentId, { label: string; fleet: string }> = {
   small: { label: 'Small', fleet: '4–6 trucks' },
   medium: { label: 'Medium', fleet: '7–8 trucks' },
   large: { label: 'Large', fleet: '9–10 trucks' },
-  fleet: { label: 'Fleet', fleet: '11–12 trucks' },
+  /**
+   * Open-ended on purpose. "11–12" was honest when the axis was CARDS, because the deck caps the
+   * program at 12 active cards — but trucks are not capped (the declared counts run into the
+   * thousands), and resolveSegment folds everything above 12 into this segment. A carrier showing
+   * "Trucks 21" must not sit under a caption claiming 11–12. The THRESHOLDS still top out here; only
+   * the wording is open-ended.
+   */
+  fleet: { label: 'Fleet', fleet: '11+ trucks' },
 };
 
 const T1_THRESHOLDS: Thresholds = { bronze: 1100, silver: 1500, gold: 2000 };
