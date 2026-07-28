@@ -89,8 +89,11 @@ interface DcTabDef {
 
 const DC_TABS: DcTabDef[] = [
   { id: 'clients', label: 'Clients', icon: 'clients' },
-  { id: 'leads', label: 'Leads', icon: 'leads' },
-  { id: 'deals', label: 'Deals', icon: 'deals' },
+  // Leads + Deals parked as "Coming soon". Drop `disabled` to re-enable — LeadsView / DealsView and
+  // loadLeads() / loadDeals() stay wired, and the COQL loads are `enabled`-gated on dcSub so nothing
+  // fetches while parked.
+  { id: 'leads', label: 'Leads', icon: 'leads', disabled: true },
+  { id: 'deals', label: 'Deals', icon: 'deals', disabled: true },
   // Awaiting a redesign — the current view isn't usable. Drop `disabled` to re-enable; the
   // RejectionsView component + loadRejections() stay wired for when the redesign ships.
   { id: 'rejections', label: 'Rejection Reports', icon: 'rejections' },

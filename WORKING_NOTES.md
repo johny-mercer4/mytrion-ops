@@ -7299,6 +7299,80 @@ a backfill). Deleted my file; the journal never referenced it. Nothing to do her
 tabs' presentation — doing that properly needs a pass over HrHome/HrEmployees plus hr.css, and I would
 rather leave it than half-style it.
 
+## 2026-07-29 — Sales KPI jobs paused
+
+Paused all four Sales KPI pg-boss jobs while Zoho API request volume is reviewed:
+`kpi.sales.hourly-sync`, `kpi.sales.nightly-reconcile`, `kpi.sales.daily-rollup`, and
+`kpi.sales.month-close`. They remain in the catalog for visibility, but are now included in
+`DISABLED_JOB_QUEUES`, removed from Admin manual triggers, excluded from worker registration, and
+unscheduled automatically at boot. Existing KPI facts and rollups are preserved.
+
+## 2026-07-29 — Sales Data Center: Leads + Deals parked as Coming soon
+
+Leads and Deals sub-tabs in the Sales Data Center now render disabled with a SOON chip, same
+mechanism the other parked tabs already use (`disabled` on `DC_TABS` in
+`apps/mytrion-crm/src/mytrions/sales/redesign/tabs/RecordsTab.tsx`). Clients / Rejection Reports /
+Money Codes are untouched.
+
+Nothing was deleted: `LeadsView` / `DealsView`, `loadLeads()` / `loadDeals()`, the status/source/stage
+filters and the board-vs-list toggle all stay wired — drop `disabled` on the two entries to bring them
+back. `dcSub` is local state defaulting to `clients` and nothing else in the app navigates to a Data
+Center sub-tab, so the tabs are genuinely unreachable while parked, and the COQL loads are
+`enabled`-gated on `dcSub` so no Zoho requests fire for them.
+
+## 2026-07-29 — "Phone not signed in" card no longer nags signed-in agents
+
+Reported as the card reappearing over and over while the agent WAS signed into RingCentral. Four
+separate causes in `apps/mytrion-crm/src/components/ringcentral/RingCentralPhone.tsx`, all of them in
+how the card decided it had something to say:
+
+1. **Unknown was read as signed-out.** The check was a single `setTimeout` at 7s doing
+   `ringCentralLoginState() !== true`, and that state is `null` until the vendor iframe reports — after
+   a config fetch, an adapter script load, an iframe handshake the code itself allows **12s** for
+   (`FRAME_WAIT_MS`), and an async session restore. A boot slower than 7s prompted an agent who was
+   signed in the whole time.
+2. **It never re-checked.** One sample, then latched. Anything that beat it — or any missed
+   `rc-login-status-notify` — left the card up permanently.
+3. **A raw `logout` event showed it instantly.** The author knew Embeddable flaps logged-out during
+   session restore (that's why the *toast* is debounced 2.5s) but the card was set from the raw event
+   with no grace at all.
+4. **Dismissal was per-mount.** `allowed` flips on every hop out of Sales/CS, re-running the effect
+   and resetting component state, so closing the card lasted until the next navigation.
+
+Now: sign-in state is reduced by a pure `nextSignInPrompt()` (`signInPrompt.ts`, 10 tests) polled every
+1.5s. Only a state that is **known** false and **stays** false for `SIGNED_OUT_CONFIRM_MS` prompts;
+unknown never prompts; the card **retracts itself** the moment a session is reported instead of
+latching; the mute is module-level so closing it survives navigation, and clears on the next observed
+sign-in so a genuine later logout can still prompt. The "session ended" toast re-reads the state at
+fire time, so a resolved flap no longer toasts.
+
+Also fixed alongside: the card followed the agent onto Billing / Finance / Admin / the picker. The
+component lives in `WorkerLayout` and renders on every worker route — only the *widget* is route-gated
+— so the `!allowed` branch now hides the card too.
+
+**Known limit (not fixed):** we only ever learn sign-in state from edge-triggered widget postMessages.
+If Embeddable emits a spurious `loggedIn:false` and never re-emits `true` (its own state never
+changed), our belief stays false and the card is *correct by its inputs* but wrong in fact — the mute
+is what saves the agent. A positive "what is the login status" query to the widget would close that
+hole; the vendor docs we have (`.claude/skills/ringcentral-api`) don't document one, so it wasn't
+invented.
+
+**Pre-existing failure seen while running the suite, NOT touched:**
+`src/mytrions/sales/redesign/dashDebtorsData.test.ts` — `debtorsSummary` now returns a `debtorCount`
+field the test's `toEqual` doesn't list. Stale test, unrelated to this change.
+
+## 2026-07-29 — Billing Mytrion colors broken (missing CSS asset)
+
+Prod console: stylesheet `https://octane-ops-ai.onrender.com/assets/index-CwpF6G9d.css` refused
+because MIME was `application/json` — the file 404ed and the not-found handler returned JSON.
+`index.html` still pointed at that hash after commit `f89affb` deleted the CSS during a
+rebase-bundle rebuild (JS was updated to `index-C-Zlcfe9.js`, CSS href left stale).
+
+Fix: `pnpm build:widget` so `app/index.html` and `app/assets/*` hashes match again
+(entry now `index-vD7wZkth.js` + `index-DYzu9WTp.css`; billing styles in `index-B3yk86w_.css`).
+Colors return once this bundle is deployed. Touchpoints `401` on
+`/v1/touchpoints/billing.datacenter.deals` is a separate auth issue, not the CSS break.
+Mismatched JS chunks (`index-C-Zlcfe9.js` + `index-DM6WA7bf.js`) also triggered React #321.
 ## 2026-07-29 — Billing Transactions: search by amount (`fix/billing-tx-amount-search`)
 
 Searching the Transactions tab by amount returned nothing. It was never implemented, on either side:
