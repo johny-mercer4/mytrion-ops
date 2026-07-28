@@ -7612,3 +7612,9 @@ NEITHER of the dashboard's two metrics governs this program, and both remain unt
 `salesDashboards.ts`, `dashSalesData.ts` and `SalesDashPanel.tsx` are unmodified — confirmed by
 git status — and no dashboard or Home file references `_shared/loyalty` at all, so the loyalty track
 change cannot have moved a dashboard number either.
+
+## 2026-07-29 — Sales sidebar: SOON tabs at bottom
+
+Reordered `NAV_GROUPS` in `salesData.ts`: daily → sell (incl. live Retention) →
+measure → soon. Parked tabs (My Tasks, Tickets, Verification, Call Hub) now sit
+at the bottom of the Sales Mytrion sidebar instead of above Automations/Dashboard.
