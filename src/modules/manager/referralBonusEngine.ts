@@ -64,6 +64,13 @@ interface ChildRow {
   calculation: string | null;
 }
 
+/**
+ * Rows per COQL page when loading the referral rosters. Zoho's own max (2000) is the cheapest per row
+ * on the tiered credit scale, and these SELECTs are only 5-6 narrow columns, so there is no reason to
+ * page smaller here — unlike the card's wide 25-column drain.
+ */
+const BONUS_COQL_PAGE_SIZE = 2000;
+
 const str = (v: unknown): string => (v == null ? '' : String(v).trim());
 const strOrNull = (v: unknown): string | null => str(v) || null;
 
@@ -88,9 +95,19 @@ export function previousMonthStart(date: Date): string {
 }
 
 async function loadParents(): Promise<Map<string, ParentRow>> {
-  const res = await zohoCrm.runCoql(
-    'select id, ReferrerId, Name, Company_Name from Parent_Referrers where id is not null limit 0, 2000',
+  // Drained, not one page: a parent missing from this map earns its referrer NOTHING, so a silent
+  // cut-off is a money bug. Parents grew by 680 in a single import on 2026-07-28, and the old
+  // hardcoded `limit 0, 2000` had no signal at all for overflow. `id desc` makes the offset paging
+  // sound — Created_Time is not a total order in this module (one import shares a timestamp).
+  const res = await zohoCrm.runCoqlAll(
+    'select id, ReferrerId, Name, Company_Name from Parent_Referrers where id is not null order by id desc',
+    { pageSize: BONUS_COQL_PAGE_SIZE },
   );
+  if (res.truncated) {
+    throw new Error(
+      `[referral-bonus] parent referrer drain hit a pagination guard after ${res.rows.length} rows — refusing to calculate on a partial roster`,
+    );
+  }
   const byCode = new Map<string, ParentRow>();
   for (const r of res.rows) {
     const code = str(r.ReferrerId);
@@ -105,9 +122,16 @@ async function loadParents(): Promise<Map<string, ParentRow>> {
 }
 
 async function loadChildren(): Promise<ChildRow[]> {
-  const res = await zohoCrm.runCoql(
-    'select id, Referrer_ID, Name, Company_Name, Carrier_ID, Calculation from Child_Referrals where id is not null limit 0, 2000',
+  // Drained for the same reason as the parents: a child left out of this list is a bonus never paid.
+  const res = await zohoCrm.runCoqlAll(
+    'select id, Referrer_ID, Name, Company_Name, Carrier_ID, Calculation from Child_Referrals where id is not null order by id desc',
+    { pageSize: BONUS_COQL_PAGE_SIZE },
   );
+  if (res.truncated) {
+    throw new Error(
+      `[referral-bonus] child referral drain hit a pagination guard after ${res.rows.length} rows — refusing to calculate on a partial roster`,
+    );
+  }
   return res.rows.map((r) => ({
     id: str(r.id),
     referrerId: strOrNull(r.Referrer_ID),

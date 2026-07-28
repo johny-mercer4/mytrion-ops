@@ -7401,3 +7401,52 @@ has 7 pre-existing failures (tools/touchpoints/stream/notifications/retention/go
 clean tree, unrelated. Verified the server predicate read-only against the live DB: row 220243
 (`$510.45`) is found by `510.45`, `$510.45`, `510` and `$510`, and a bogus amount returns 0.
 No in-browser pass — the CRM needs a Zoho OAuth sign-in I can't perform.
+
+## 2026-07-29 — Referrals: COQL drained instead of capped at 200 (+ a silent ordering bug)
+
+The Manager Referrals card showed "200 parent referrers" because it fetched ONE COQL page of 200 and
+reported the page length as the total. There are 687. Every child whose parent fell outside that page
+was then reported as *unlinked*, because the parent→child grouping is client-side over the fetched
+slice — so the cap was not just under-counting, it was mis-classifying.
+
+**New shared paginator.** `zohoCrm.runCoqlAll(baseQuery, {pageSize, maxRows, budgetMs})` drains a COQL
+query page by page (`src/integrations/zohoCrm.ts`). It replaces a third copy of a loop that already
+existed twice privately (`kpi/collector.ts pagedCoql`, `salesDashboards.ts coqlAllDeals`) and finally
+gives the exported-but-unused `MAX_COQL_ROWS` a caller. Termination needs BOTH signals: an offset past
+the end returns HTTP 200 `{"data":[]}` with **no `info` block**, so `more_records` alone is unsafe;
+a short page is the reliable marker. Hard stops: the 100k offset ceiling (this repo hit it in prod on a
+Calls drain), an optional row budget, and a wall-clock budget. `truncated` now means "a guard stopped
+us with rows still upstream" — never just "the last page was short".
+
+**Ordering was quietly broken.** `order by Created_Time desc` is not a total order here: 680 of 687
+parents share one timestamp from the 2026-07-28 import, so every page boundary fell inside one tie
+group — offset paging over that can duplicate and skip rows. Worse, within the tie Zoho ordered `id`
+ASCENDING, so the "newest 200" page started at REF-000513 and the genuinely newest record (REF-000692)
+was absent. Now `order by Created_Time desc, id desc`. Verified live: page 1 starts at REF-000692.
+
+**Page size 1000** as requested. Note for later: COQL credits are tiered (≤200 → 1, ≤1000 → 2,
+≤2000 → 3), so 2000/page is ~33% cheaper per row; 1000 keeps one page comfortably inside the outbound
+timeout on the card's wide 22–25 column SELECT. The bonus engine's narrow 5-column SELECTs use 2000.
+
+**`?limit` semantics changed.** It is now an optional row *budget*, not a page size, and an invalid
+value means "drain everything" instead of silently falling back to 200 — `?limit=abc` used to
+resurrect the exact bug being fixed (routes parse it with bare `Number()`, no zod).
+
+**Money bug fixed alongside:** `referralBonusEngine` read the same two modules at a hardcoded
+`limit 0, 2000`, unpaginated and with no overflow signal. A parent missing from that map earns its
+referrer nothing. Both loaders now drain, and refuse to calculate at all if a guard trips — a partial
+roster must not silently produce partial payouts.
+
+**Verified live through the real code path:** parents total=687 pages=1, children total=4, links 0/0,
+`truncated=false` everywhere. An honest total cannot come from COQL `count(id)` — aggregates return
+SYNTAX_ERROR / "missing clause: group by" on this org — so a complete drain IS the only source of a
+true total.
+
+**Multi-page paths are unit-tested** (`tests/unit/coql-paginate.test.ts`, 10 tests) because prod can't
+exercise them: 687 and 4 both fit in one page, so the loop would otherwise ship unexercised. Covers
+page-walking, short-page stop, missing-`info` stop, 204, row budget, time budget, page-size clamp, and
+the 100k ceiling (50 pages).
+
+**Not fixed, and NOT fixable by fetching more:** "linked 0 · unlinked 4" stays. All 4 children carry
+`Referrer_ID` 'REF-000002', which matches no parent record, and `Parent_Referrer` is null on 100% of
+children org-wide. That is a data problem in Zoho, not a paging one.
