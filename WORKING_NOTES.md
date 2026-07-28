@@ -7298,3 +7298,24 @@ a backfill). Deleted my file; the journal never referenced it. Nothing to do her
 **HR UI/UX beautification.** The data layer is now correct and complete, but I did not touch the HR
 tabs' presentation — doing that properly needs a pass over HrHome/HrEmployees plus hr.css, and I would
 rather leave it than half-style it.
+
+## 2026-07-29 — Sales KPI jobs paused
+
+Paused all four Sales KPI pg-boss jobs while Zoho API request volume is reviewed:
+`kpi.sales.hourly-sync`, `kpi.sales.nightly-reconcile`, `kpi.sales.daily-rollup`, and
+`kpi.sales.month-close`. They remain in the catalog for visibility, but are now included in
+`DISABLED_JOB_QUEUES`, removed from Admin manual triggers, excluded from worker registration, and
+unscheduled automatically at boot. Existing KPI facts and rollups are preserved.
+
+## 2026-07-29 — Sales Data Center: Leads + Deals parked as Coming soon
+
+Leads and Deals sub-tabs in the Sales Data Center now render disabled with a SOON chip, same
+mechanism the other parked tabs already use (`disabled` on `DC_TABS` in
+`apps/mytrion-crm/src/mytrions/sales/redesign/tabs/RecordsTab.tsx`). Clients / Rejection Reports /
+Money Codes are untouched.
+
+Nothing was deleted: `LeadsView` / `DealsView`, `loadLeads()` / `loadDeals()`, the status/source/stage
+filters and the board-vs-list toggle all stay wired — drop `disabled` on the two entries to bring them
+back. `dcSub` is local state defaulting to `clients` and nothing else in the app navigates to a Data
+Center sub-tab, so the tabs are genuinely unreachable while parked, and the COQL loads are
+`enabled`-gated on `dcSub` so no Zoho requests fire for them.
