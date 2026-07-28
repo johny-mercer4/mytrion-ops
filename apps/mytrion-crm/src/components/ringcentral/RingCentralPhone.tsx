@@ -19,6 +19,7 @@ import {
   subscribeRingCentral,
   type RingCentralCallEvent,
 } from './ringcentralEvents';
+import { nextSignInPrompt } from './signInPrompt';
 import { X, AlertCircle, Phone } from 'lucide-react';
 import './ringcentralHost.css';
 
@@ -33,12 +34,16 @@ const RC_ALLOWED_MYTRIONS = new Set<MytrionId>(['sales', 'customer-service']);
 const LOGOUT_TOAST_GRACE_MS = 2500;
 
 /**
- * How long to let the widget settle before we tell the agent they are signed out.
+ * How long the widget must CONTINUOUSLY report signed-out before we say so.
  *
  * The vendor restores a persisted session asynchronously and reports `loggedIn:false` first, so
- * anything shorter than this flashes a false "sign in" prompt on every page load.
+ * anything shorter than this flashes a false "sign in" prompt on every page load. Never shorten it
+ * below the vendor's restore window.
  */
-const SIGNED_OUT_PROMPT_DELAY_MS = 7000;
+const SIGNED_OUT_CONFIRM_MS = 6000;
+
+/** How often the sign-in card is re-evaluated against the widget's reported state. */
+const SIGNED_OUT_POLL_MS = 1500;
 
 /** How long to wait for the vendor iframe after injecting adapter.js. */
 const FRAME_WAIT_MS = 12_000;
@@ -54,6 +59,16 @@ interface ToastMsg {
 
 let toastId = 0;
 let pendingLogoutToast: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * "Stop telling me" — module-level on purpose, so it survives a remount.
+ *
+ * `allowed` flips every time the agent hops out of Sales/CS, which re-runs the mount effect and used
+ * to reset a per-component dismissal, so the card returned on every navigation no matter how many
+ * times it was closed. Cleared the moment a signed-in state is observed, so a genuine later logout
+ * still gets to prompt.
+ */
+let signInCardMuted = false;
 
 function clearPendingLogoutToast(): void {
   if (pendingLogoutToast !== null) {
@@ -208,6 +223,10 @@ export function RingCentralPhone() {
   useEffect(() => {
     if (!allowed) {
       teardownAdapter();
+      // The component lives in WorkerLayout, so it renders on every worker route — only the WIDGET is
+      // route-gated. Without this the card followed the agent onto Billing / Finance / Admin / the
+      // picker, prompting them to sign into a softphone that is not even mounted there.
+      setShowSignIn(false);
       return;
     }
 
@@ -251,26 +270,54 @@ export function RingCentralPhone() {
 
     void boot('mount');
 
-    // Ask once the widget has had time to restore a session; re-checked on every login/logout below.
-    const signedOutTimer = window.setTimeout(() => {
-      if (!cancelled) setShowSignIn(ringCentralLoginState() !== true);
-    }, SIGNED_OUT_PROMPT_DELAY_MS);
+    /**
+     * Continuous, not one-shot.
+     *
+     * The old check sampled the login state ONCE, 7s after mount, and treated "unknown" as
+     * signed-out — but the adapter alone is allowed 12s to produce its iframe (FRAME_WAIT_MS), and a
+     * route hop wipes the cached state, so a slow boot showed "Phone not signed in" to an agent who
+     * was signed in the whole time and nothing ever re-checked it. Now only a state that is KNOWN
+     * false and STAYS false prompts, and the card retracts itself as soon as the widget reports a
+     * session.
+     */
+    let signedOutSince: number | null = null;
+    const evaluateSignIn = (): void => {
+      if (cancelled) return;
+      const next = nextSignInPrompt({
+        state: ringCentralLoginState(),
+        signedOutSince,
+        muted: signInCardMuted,
+        now: Date.now(),
+        confirmMs: SIGNED_OUT_CONFIRM_MS,
+      });
+      signedOutSince = next.signedOutSince;
+      signInCardMuted = next.muted;
+      setShowSignIn(next.show);
+    };
+    evaluateSignIn();
+    const signedOutTimer = window.setInterval(evaluateSignIn, SIGNED_OUT_POLL_MS);
 
     const unsubscribe = subscribeRingCentral((event: RingCentralCallEvent) => {
       if (cancelled) return;
       if (event.kind === 'login') {
+        signedOutSince = null;
+        // A fresh session re-arms the prompt for a future genuine logout.
+        signInCardMuted = false;
         setShowSignIn(false);
         // Don't pop the widget open on login — leave it docked; the agent opens it when they want.
         clearPendingLogoutToast();
         return;
       }
       if (event.kind !== 'logout') return;
-      setShowSignIn(true);
-      // Debounce: Embeddable can flap logged-out during session restore after refresh.
+      // Deliberately does NOT show the card: Embeddable flaps logged-out during session restore
+      // (exactly why the toast below is debounced), and reacting to the raw event is what put
+      // "Phone not signed in" in front of signed-in agents. evaluateSignIn() prompts if it holds.
       clearPendingLogoutToast();
       pendingLogoutToast = setTimeout(() => {
         pendingLogoutToast = null;
         if (cancelled) return;
+        // The flap resolved and the session is back — there is nothing to report.
+        if (ringCentralLoginState() === true) return;
         // Toast only — do NOT auto-expand the widget; the agent opens it to sign in again.
         addToast(
           'error',
@@ -331,7 +378,7 @@ export function RingCentralPhone() {
 
     return () => {
       cancelled = true;
-      window.clearTimeout(signedOutTimer);
+      window.clearInterval(signedOutTimer);
       clearPendingLogoutToast();
       unsubscribe();
       window.clearInterval(cursorTimer);
@@ -405,6 +452,10 @@ export function RingCentralPhone() {
             type="button"
             onClick={() => {
               revealRingCentralWidget();
+              // Mute until the widget actually reports a session. Without this the poll — which
+              // already holds a confirmed signed-out state — puts the card straight back a second
+              // after the click, on top of the login screen it just opened.
+              signInCardMuted = true;
               setShowSignIn(false);
             }}
             style={{
@@ -427,7 +478,12 @@ export function RingCentralPhone() {
               Copilot panel, so an agent who isn't using the phone can get it out of the way. */}
           <button
             type="button"
-            onClick={() => setShowSignIn(false)}
+            onClick={() => {
+              // Sticks for the rest of the session (cleared on the next sign-in) — closing it used
+              // to last only until the next route hop.
+              signInCardMuted = true;
+              setShowSignIn(false);
+            }}
             aria-label="Dismiss"
             title="Dismiss"
             style={{
